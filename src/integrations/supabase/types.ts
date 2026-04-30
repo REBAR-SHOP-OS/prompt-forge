@@ -14,16 +14,353 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      audit_api_request_logs: {
+        Row: {
+          created_at: string
+          error_code: string | null
+          estimated_cost: number
+          id: string
+          latency_ms: number | null
+          method: string
+          model_key: string | null
+          provider_key: string | null
+          request_id: string
+          route: string
+          status_code: number | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          error_code?: string | null
+          estimated_cost?: number
+          id?: string
+          latency_ms?: number | null
+          method: string
+          model_key?: string | null
+          provider_key?: string | null
+          request_id: string
+          route: string
+          status_code?: number | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          error_code?: string | null
+          estimated_cost?: number
+          id?: string
+          latency_ms?: number | null
+          method?: string
+          model_key?: string | null
+          provider_key?: string | null
+          request_id?: string
+          route?: string
+          status_code?: number | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_api_request_logs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "core_user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      audit_audit_logs: {
+        Row: {
+          action: string
+          actor_user_id: string | null
+          created_at: string
+          id: string
+          metadata: Json
+          request_id: string | null
+          target_id: string | null
+          target_type: string
+        }
+        Insert: {
+          action: string
+          actor_user_id?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json
+          request_id?: string | null
+          target_id?: string | null
+          target_type: string
+        }
+        Update: {
+          action?: string
+          actor_user_id?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json
+          request_id?: string | null
+          target_id?: string | null
+          target_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_audit_logs_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "core_user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      billing_credit_transactions: {
+        Row: {
+          amount: number
+          created_at: string
+          description: string | null
+          id: string
+          job_id: string | null
+          type: Database["public"]["Enums"]["credit_tx_type"]
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          job_id?: string | null
+          type: Database["public"]["Enums"]["credit_tx_type"]
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          job_id?: string | null
+          type?: Database["public"]["Enums"]["credit_tx_type"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "billing_credit_transactions_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "generator_generation_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "billing_credit_transactions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "core_user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      core_ai_provider_registry: {
+        Row: {
+          base_url: string | null
+          created_at: string
+          default_model: string
+          display_name: string
+          enabled: boolean
+          provider_key: string
+          updated_at: string
+        }
+        Insert: {
+          base_url?: string | null
+          created_at?: string
+          default_model: string
+          display_name: string
+          enabled?: boolean
+          provider_key: string
+          updated_at?: string
+        }
+        Update: {
+          base_url?: string | null
+          created_at?: string
+          default_model?: string
+          display_name?: string
+          enabled?: boolean
+          provider_key?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      core_user_profiles: {
+        Row: {
+          created_at: string
+          credits_balance: number
+          email: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          credits_balance?: number
+          email: string
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          credits_balance?: number
+          email?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      generator_generation_jobs: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          id: string
+          input_prompt: string
+          model_key: string | null
+          negative_prompt: string | null
+          provider_job_id: string | null
+          provider_key: string | null
+          requested_aspect_ratio: string | null
+          requested_duration: number | null
+          status: Database["public"]["Enums"]["job_status"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          input_prompt: string
+          model_key?: string | null
+          negative_prompt?: string | null
+          provider_job_id?: string | null
+          provider_key?: string | null
+          requested_aspect_ratio?: string | null
+          requested_duration?: number | null
+          status?: Database["public"]["Enums"]["job_status"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          input_prompt?: string
+          model_key?: string | null
+          negative_prompt?: string | null
+          provider_job_id?: string | null
+          provider_key?: string | null
+          requested_aspect_ratio?: string | null
+          requested_duration?: number | null
+          status?: Database["public"]["Enums"]["job_status"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "generator_generation_jobs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "core_user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      generator_video_assets: {
+        Row: {
+          aspect_ratio: string | null
+          created_at: string
+          deleted_at: string | null
+          duration: number | null
+          id: string
+          job_id: string
+          storage_path: string
+          thumbnail_url: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          aspect_ratio?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          duration?: number | null
+          id?: string
+          job_id: string
+          storage_path: string
+          thumbnail_url?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          aspect_ratio?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          duration?: number | null
+          id?: string
+          job_id?: string
+          storage_path?: string
+          thumbnail_url?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "generator_video_assets_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "generator_generation_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "generator_video_assets_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "core_user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "user" | "admin"
+      credit_tx_type: "grant" | "spend" | "refund" | "adjustment"
+      job_status:
+        | "pending"
+        | "queued"
+        | "processing"
+        | "completed"
+        | "failed"
+        | "cancelled"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +487,17 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["user", "admin"],
+      credit_tx_type: ["grant", "spend", "refund", "adjustment"],
+      job_status: [
+        "pending",
+        "queued",
+        "processing",
+        "completed",
+        "failed",
+        "cancelled",
+      ],
+    },
   },
 } as const
