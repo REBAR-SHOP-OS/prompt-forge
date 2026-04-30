@@ -55,12 +55,12 @@ export async function authenticate(req: Request): Promise<AuthContext | null> {
   const token = authHeader.slice("Bearer ".length);
 
   const client = createClient(getEnv("SUPABASE_URL"), getEnv("SUPABASE_ANON_KEY"));
-  const { data, error } = await client.auth.getClaims(token);
-  if (error || !data?.claims?.sub) return null;
+  const { data, error } = await client.auth.getUser(token);
+  if (error || !data?.user?.id) return null;
 
   return {
-    userId: data.claims.sub as string,
-    email: (data.claims.email as string) ?? null,
+    userId: data.user.id,
+    email: data.user.email ?? null,
     authHeader,
   };
 }
