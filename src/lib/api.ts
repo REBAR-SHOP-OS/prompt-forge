@@ -1,60 +1,19 @@
-// Centralized backend API layer. Attaches JWT to all calls and handles 401/403.
-import { supabase } from "@/integrations/supabase/client";
+// Shim. New code: import from @/core/api/client and module APIs directly.
+export { ApiError, request } from "@/core/api/client";
+export type { Me } from "@/core/api/types";
 
-const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID as string;
-const FUNCTIONS_BASE = `https://${PROJECT_ID}.supabase.co/functions/v1`;
+import { request } from "@/core/api/client";
+import type { Me } from "@/core/api/types";
+import { creditApi } from "@/modules/credit-management/api";
+import { adminApi } from "@/modules/admin-monitor/api";
+import { generatorUiApi } from "@/modules/generator-ui/api";
+import type { ProviderKey } from "@/modules/external-api-adapter/contract";
 
-export class ApiError extends Error {
-  constructor(public status: number, public code: string, message: string, public requestId?: string) {
-    super(message);
-  }
-}
-
-async function authHeader(): Promise<Record<string, string>> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(await authHeader()),
-    ...((init.headers as Record<string, string>) ?? {}),
-  };
-  const res = await fetch(`${FUNCTIONS_BASE}${path}`, { ...init, headers });
-  const text = await res.text();
-  let body: any = null;
-  try { body = text ? JSON.parse(text) : null; } catch { /* keep as text */ }
-
-  if (!res.ok) {
-    const code = body?.error?.code ?? `HTTP_${res.status}`;
-    const msg = body?.error?.message ?? res.statusText ?? "Request failed";
-    if (res.status === 401) {
-      // Session likely expired — sign out so guards redirect to login.
-      await supabase.auth.signOut();
-    }
-    throw new ApiError(res.status, code, msg, body?.requestId);
-  }
-  return body as T;
-}
-
-export interface Me {
-  id: string;
-  email: string;
-  role: "user" | "admin";
-  credits_balance: number;
-  created_at: string;
-  requestId?: string;
-}
-
+/** @deprecated Import the relevant module API instead. */
 export const api = {
-  health: () => request<{ status: string; version: string; timestamp: string }>("/health"),
+  health: () => adminApi.getHealth(),
   me: () => request<Me>("/me"),
-  credits: () => request<{ credits_balance: number; requestId?: string }>("/usage-credits"),
-  routePreview: (input: { providerKey: "flow" | "wan"; requestedModel?: string; prompt: string }) =>
-    request<{ providerKey: string; resolvedModel: string; estimatedCost: number; requestId: string }>(
-      "/ai-gateway-route-preview",
-      { method: "POST", body: JSON.stringify(input) },
-    ),
+  credits: () => creditApi.getBalance(),
+  routePreview: (input: { providerKey: ProviderKey; requestedModel?: string; prompt: string }) =>
+    generatorUiApi.routePreview(input),
 };

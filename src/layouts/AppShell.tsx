@@ -1,7 +1,7 @@
 import { Link, NavLink, Outlet } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/context/AuthProvider";
-import UserBadge from "@/components/system/UserBadge";
+import { useAuth } from "@/core/auth/AuthProvider";
+import UserBadge from "@/core/ui/UserBadge";
 
 export default function AppShell() {
   const { signOut, profile } = useAuth();
