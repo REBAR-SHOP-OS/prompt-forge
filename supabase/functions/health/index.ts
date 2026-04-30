@@ -1,12 +1,8 @@
-import { corsHeaders, jsonResponse } from "../_shared/utils.ts";
-
-const VERSION = "0.1.0-foundation";
+// admin-monitor edge surface: service health.
+import { corsHeaders, jsonResponse } from "../_shared/core/http.ts";
+import { adminMonitor } from "../_shared/modules/admin-monitor/service.ts";
 
 Deno.serve((req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  return jsonResponse({
-    status: "ok",
-    version: VERSION,
-    timestamp: new Date().toISOString(),
-  });
+  return jsonResponse(adminMonitor.getHealth());
 });
