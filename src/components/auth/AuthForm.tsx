@@ -136,13 +136,11 @@ export default function AuthForm({ mode }: Props) {
           {resending ? "Sending…" : "Resend confirmation email / ارسال مجدد ایمیل تأیید"}
         </Button>
       )}
-      <p className="text-center text-sm text-muted-foreground">
-        {mode === "login" ? (
-          <>No account? <Link to="/signup" className="text-foreground underline">Sign up</Link></>
-        ) : (
-          <>Already have one? <Link to="/login" className="text-foreground underline">Sign in</Link></>
-        )}
-      </p>
+      {mode === "signup" && (
+        <p className="text-center text-sm text-muted-foreground">
+          Already have one? <Link to="/login" className="text-foreground underline">Sign in</Link>
+        </p>
+      )}
     </form>
   );
 }
