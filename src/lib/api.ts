@@ -1,19 +1,17 @@
-// Shim. New code: import from @/core/api/client and module APIs directly.
+// Shim. New code: import the per-domain gateway from
+//   @/modules/<domain>/gateway
+// directly. This aggregator is kept only for backwards compatibility.
 export { ApiError, request } from "@/core/api/client";
 export type { Me } from "@/core/api/types";
 
-import { request } from "@/core/api/client";
-import type { Me } from "@/core/api/types";
-import { creditApi } from "@/modules/credit-management/api";
-import { adminApi } from "@/modules/admin-monitor/api";
-import { generatorUiApi } from "@/modules/generator-ui/api";
-import type { ProviderKey } from "@/modules/external-api-adapter/contract";
+import { adminMonitorGateway } from "@/modules/admin-monitor/gateway";
+import { creditManagementGateway } from "@/modules/credit-management/gateway";
+import { generatorUiGateway } from "@/modules/generator-ui/gateway";
 
-/** @deprecated Import the relevant module API instead. */
+/** @deprecated Import the relevant per-domain gateway instead. */
 export const api = {
-  health: () => adminApi.getHealth(),
-  me: () => request<Me>("/me"),
-  credits: () => creditApi.getBalance(),
-  routePreview: (input: { providerKey: ProviderKey; requestedModel?: string; prompt: string }) =>
-    generatorUiApi.routePreview(input),
+  health: () => adminMonitorGateway.getHealth(),
+  me: () => generatorUiGateway.getMe(),
+  credits: () => creditManagementGateway.getMyBalance(),
+  routePreview: generatorUiGateway.routePreview,
 };

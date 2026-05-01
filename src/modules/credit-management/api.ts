@@ -1,6 +1,7 @@
-import { request } from "@/core/api/client";
+// Deprecated: prefer `creditManagementGateway` from "./gateway".
+import { creditManagementGateway } from "./gateway";
 import type { CreditApi } from "./contract";
 
 export const creditApi: CreditApi = {
-  getBalance: () => request<{ credits_balance: number; requestId?: string }>("/usage-credits"),
+  getBalance: () => creditManagementGateway.getMyBalance(),
 };
