@@ -1,6 +1,3 @@
-import { request } from "@/core/api/client";
-import type { AdminApi, HealthSummary } from "./contract";
-
-export const adminApi: AdminApi = {
-  getHealth: () => request<HealthSummary>("/health"),
-};
+// Deprecated: prefer `adminMonitorGateway` from "./gateway".
+// Kept as a thin re-export so existing call sites continue to work.
+export { adminMonitorGateway as adminApi } from "./gateway";
