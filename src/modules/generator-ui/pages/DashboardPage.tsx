@@ -1,4 +1,4 @@
-import { type FormEvent, useMemo, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowRight,
   ChevronDown,
@@ -7,18 +7,102 @@ import {
   Film,
   Hammer,
   LayoutGrid,
+  LoaderCircle,
   Sparkles,
   Upload
 } from 'lucide-react'
 
+import { ApiError } from '@/core/api/client'
+import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
+import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
+
 type ForgeMode = 'Prompt' | 'Image' | 'Video' | 'Agent'
-type GeneratedVideo = {
-  id: number
-  prompt: string
-  status: 'Queued'
-}
+type VideoJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
 
 const modes: ForgeMode[] = ['Prompt', 'Image', 'Video', 'Agent']
+const VIDEO_POLL_INTERVAL_MS = 4_000
+
+function isTerminalStatus(status: string) {
+  return status === 'completed' || status === 'failed' || status === 'cancelled'
+}
+
+function normalizeStatus(status: string): VideoJobStatus {
+  if (status === 'completed' || status === 'failed' || status === 'cancelled' || status === 'processing') {
+    return status
+  }
+
+  return 'pending'
+}
+
+function formatStatusLabel(status: string) {
+  switch (normalizeStatus(status)) {
+    case 'completed':
+      return 'Ready'
+    case 'processing':
+      return 'Rendering'
+    case 'failed':
+      return 'Failed'
+    case 'cancelled':
+      return 'Cancelled'
+    default:
+      return 'Queued'
+  }
+}
+
+function formatCreatedAt(value: string) {
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return 'Just now'
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  }).format(date)
+}
+
+function mergeJob(currentJobs: JobDetail[], nextJob: JobDetail) {
+  const remainingJobs = currentJobs.filter((job) => job.id !== nextJob.id)
+  return [nextJob, ...remainingJobs].sort(
+    (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
+  )
+}
+
+async function hydrateJobs(summaries: JobSummary[]) {
+  const hydratedJobs = await Promise.all(
+    summaries.map(async (summary) => {
+      try {
+        return await jobOrchestratorGateway.getJob(summary.id)
+      } catch {
+        return {
+          ...summary,
+          video: null
+        } satisfies JobDetail
+      }
+    })
+  )
+
+  return hydratedJobs.sort(
+    (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
+  )
+}
+
+function buildSeededJob(prompt: string, result: CreateJobResult): JobDetail {
+  return {
+    id: result.jobId,
+    status: result.status,
+    input_prompt: prompt,
+    provider_key: result.providerKey,
+    model_key: result.resolvedModel,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    video: null,
+    requestId: result.requestId
+  }
+}
 
 export default function DashboardPage() {
   const [promptText, setPromptText] = useState('')
@@ -26,9 +110,13 @@ export default function DashboardPage() {
   const [isDragging, setIsDragging] = useState(false)
   const [startContext] = useState('Start')
   const [endGoal] = useState('End')
-  const [generatedVideos, setGeneratedVideos] = useState<GeneratedVideo[]>([])
+  const [generatedVideos, setGeneratedVideos] = useState<JobDetail[]>([])
+  const [isLibraryLoading, setIsLibraryLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [videoColumnMessage, setVideoColumnMessage] = useState<string | null>(null)
+  const pollTimerRef = useRef<number | null>(null)
 
-  const canSubmit = promptText.trim().length > 0
+  const canSubmit = promptText.trim().length > 0 && !isSubmitting
 
   const emptyStateLabel = useMemo(() => {
     if (isDragging) {
@@ -38,25 +126,106 @@ export default function DashboardPage() {
     return promptText.trim().length > 0 ? 'Shape the next version' : 'Start forging a prompt'
   }, [isDragging, promptText])
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    let isActive = true
+
+    async function loadVideoJobs() {
+      try {
+        setVideoColumnMessage(null)
+        const jobs = await jobOrchestratorGateway.listMyJobs()
+        const hydratedJobs = await hydrateJobs(jobs)
+
+        if (!isActive) {
+          return
+        }
+
+        setGeneratedVideos(hydratedJobs)
+      } catch (error) {
+        if (!isActive) {
+          return
+        }
+
+        setVideoColumnMessage(
+          error instanceof ApiError ? `${error.code}: ${error.message}` : 'Could not load generated videos.'
+        )
+      } finally {
+        if (isActive) {
+          setIsLibraryLoading(false)
+        }
+      }
+    }
+
+    loadVideoJobs()
+
+    return () => {
+      isActive = false
+    }
+  }, [])
+
+  useEffect(() => {
+    const activeJobs = generatedVideos.filter((job) => !isTerminalStatus(job.status))
+
+    if (activeJobs.length === 0) {
+      if (pollTimerRef.current) {
+        window.clearTimeout(pollTimerRef.current)
+        pollTimerRef.current = null
+      }
+      return
+    }
+
+    pollTimerRef.current = window.setTimeout(async () => {
+      try {
+        const refreshedJobs = await Promise.all(activeJobs.map((job) => jobOrchestratorGateway.getJob(job.id)))
+        setGeneratedVideos((currentJobs) =>
+          refreshedJobs.reduce((jobs, refreshedJob) => mergeJob(jobs, refreshedJob), currentJobs)
+        )
+      } catch (error) {
+        setVideoColumnMessage(
+          error instanceof ApiError ? `${error.code}: ${error.message}` : 'Could not refresh video status.'
+        )
+      }
+    }, VIDEO_POLL_INTERVAL_MS)
+
+    return () => {
+      if (pollTimerRef.current) {
+        window.clearTimeout(pollTimerRef.current)
+        pollTimerRef.current = null
+      }
+    }
+  }, [generatedVideos])
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
     if (!canSubmit) {
       return
     }
 
-    if (mode === 'Video') {
-      setGeneratedVideos((currentVideos) => [
-        {
-          id: Date.now(),
-          prompt: promptText.trim(),
-          status: 'Queued'
-        },
-        ...currentVideos
-      ])
+    const nextPrompt = promptText.trim()
+
+    if (mode !== 'Video') {
+      setPromptText('')
+      return
     }
 
-    setPromptText('')
+    setIsSubmitting(true)
+    setVideoColumnMessage(null)
+
+    try {
+      const createdJob = await jobOrchestratorGateway.createJob({
+        providerKey: 'flow',
+        prompt: nextPrompt
+      })
+
+      setGeneratedVideos((currentJobs) => mergeJob(currentJobs, buildSeededJob(nextPrompt, createdJob)))
+      setPromptText('')
+    } catch (error) {
+      setVideoColumnMessage(
+        error instanceof ApiError ? `${error.code}: ${error.message}` : 'Could not start video generation.'
+      )
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -128,26 +297,70 @@ export default function DashboardPage() {
           </span>
         </div>
 
+        {videoColumnMessage ? (
+          <div className="mt-3 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs leading-5 text-rose-100">
+            {videoColumnMessage}
+          </div>
+        ) : null}
+
         <div className="mt-3 flex-1 overflow-y-auto pr-1">
-          {generatedVideos.length > 0 ? (
+          {isLibraryLoading ? (
+            <div className="grid h-full place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
+              <div>
+                <LoaderCircle className="mx-auto h-8 w-8 animate-spin text-zinc-500" aria-hidden="true" />
+                <p className="mt-3 text-sm font-medium text-zinc-300">Loading your renders</p>
+                <p className="mt-2 text-xs leading-5 text-zinc-600">Previously generated videos will appear here.</p>
+              </div>
+            </div>
+          ) : generatedVideos.length > 0 ? (
             <div className="grid gap-3">
-              {generatedVideos.map((video) => (
-                <article key={video.id} className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
-                  <div className="grid aspect-video place-items-center rounded-xl border border-white/10 bg-[#15171a] text-zinc-500">
-                    <Clapperboard className="h-8 w-8" aria-hidden="true" />
-                  </div>
-                  <p className="mt-3 max-h-12 overflow-hidden text-sm font-medium leading-6 text-zinc-200">
-                    {video.prompt}
-                  </p>
-                  <div className="mt-3 flex items-center justify-between text-xs text-zinc-500">
-                    <span className="inline-flex items-center gap-2">
-                      <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />
-                      {video.status}
-                    </span>
-                    <span>Video</span>
-                  </div>
-                </article>
-              ))}
+              {generatedVideos.map((video) => {
+                const status = normalizeStatus(video.status)
+                const statusDotClassName =
+                  status === 'completed'
+                    ? 'bg-emerald-300'
+                    : status === 'failed' || status === 'cancelled'
+                      ? 'bg-rose-300'
+                      : 'bg-amber-300'
+
+                return (
+                  <article key={video.id} className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+                    <div className="overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
+                      {video.video?.storage_path ? (
+                        <video
+                          className="aspect-video h-full w-full bg-black object-cover"
+                          src={video.video.storage_path}
+                          controls
+                          muted
+                          playsInline
+                          preload="metadata"
+                        />
+                      ) : (
+                        <div className="grid aspect-video place-items-center text-zinc-500">
+                          <Clapperboard className="h-8 w-8" aria-hidden="true" />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-3 flex items-start justify-between gap-3">
+                      <p className="max-h-12 overflow-hidden text-sm font-medium leading-6 text-zinc-200">
+                        {video.input_prompt}
+                      </p>
+                      {status === 'processing' ? (
+                        <LoaderCircle className="mt-1 h-4 w-4 shrink-0 animate-spin text-amber-300" aria-hidden="true" />
+                      ) : null}
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500">
+                      <span className="inline-flex items-center gap-2">
+                        <span className={`h-1.5 w-1.5 rounded-full ${statusDotClassName}`} />
+                        {formatStatusLabel(video.status)}
+                      </span>
+                      <span>{formatCreatedAt(video.created_at)}</span>
+                    </div>
+                  </article>
+                )
+              })}
             </div>
           ) : (
             <div className="grid h-full place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
@@ -219,7 +432,11 @@ export default function DashboardPage() {
               disabled={!canSubmit}
               aria-label="Forge prompt"
             >
-              <ArrowRight className="h-5 w-5 stroke-[2.2]" aria-hidden="true" />
+              {isSubmitting ? (
+                <LoaderCircle className="h-5 w-5 animate-spin stroke-[2.2]" aria-hidden="true" />
+              ) : (
+                <ArrowRight className="h-5 w-5 stroke-[2.2]" aria-hidden="true" />
+              )}
             </button>
           </div>
         </div>
