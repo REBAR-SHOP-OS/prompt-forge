@@ -154,6 +154,7 @@ export default function DashboardPage() {
   const [videoColumnMessage, setVideoColumnMessage] = useState<string | null>(null)
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
+  const [isVideoSidebarOpen, setIsVideoSidebarOpen] = useState(false)
   const pollTimerRef = useRef<number | null>(null)
   const promptInputRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -355,9 +356,11 @@ export default function DashboardPage() {
       />
 
       <button
-        className="fixed left-4 top-4 z-20 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-5 sm:top-5"
+        className="fixed left-4 top-4 z-40 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-5 sm:top-5"
         type="button"
-        aria-label="Open workspace menu"
+        aria-expanded={isVideoSidebarOpen}
+        aria-label={isVideoSidebarOpen ? 'Close generated videos sidebar' : 'Open generated videos sidebar'}
+        onClick={() => setIsVideoSidebarOpen((isOpen) => !isOpen)}
       >
         <LayoutGrid className="h-[18px] w-[18px]" aria-hidden="true" />
       </button>
@@ -381,18 +384,42 @@ export default function DashboardPage() {
         </div>
       </main>
 
+      <button
+        type="button"
+        aria-label="Close generated videos sidebar"
+        className={`fixed inset-0 z-20 bg-black/35 transition lg:hidden ${
+          isVideoSidebarOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+        }`}
+        onClick={() => setIsVideoSidebarOpen(false)}
+      />
+
       <aside
-        className="fixed bottom-5 right-4 top-5 z-20 hidden w-72 flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/80 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.36)] backdrop-blur-xl lg:flex xl:right-5 xl:w-80"
+        className={`fixed bottom-3 right-3 top-3 z-30 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/90 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.36)] backdrop-blur-xl transition duration-300 sm:bottom-5 sm:right-4 sm:top-5 sm:w-80 lg:z-20 lg:w-72 xl:right-5 xl:w-80 ${
+          isVideoSidebarOpen
+            ? 'pointer-events-auto visible translate-x-0 opacity-100'
+            : 'pointer-events-none invisible translate-x-[calc(100%+1.25rem)] opacity-0'
+        }`}
         aria-label="Generated videos"
+        aria-hidden={!isVideoSidebarOpen}
       >
         <div className="flex items-center justify-between border-b border-white/10 pb-3">
           <div>
             <p className="text-xs font-medium text-zinc-500">Video column</p>
             <h2 className="text-sm font-semibold text-zinc-100">Generated videos</h2>
           </div>
-          <span className="grid h-8 min-w-8 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
-            {generatedVideos.length}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="grid h-8 min-w-8 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
+              {generatedVideos.length}
+            </span>
+            <button
+              type="button"
+              className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-100"
+              aria-label="Close generated videos sidebar"
+              onClick={() => setIsVideoSidebarOpen(false)}
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
         </div>
 
         {videoColumnMessage ? (
@@ -484,7 +511,9 @@ export default function DashboardPage() {
       </aside>
 
       <form
-        className="fixed bottom-4 left-1/2 z-30 grid w-[min(45rem,calc(100vw-1rem))] -translate-x-1/2 gap-3 rounded-[22px] border border-white/10 bg-[#111214]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(45rem,calc(100vw-2rem))] sm:p-4 lg:left-[calc(50vw_-_10rem)]"
+        className={`fixed bottom-4 left-1/2 z-30 grid w-[min(45rem,calc(100vw-1rem))] -translate-x-1/2 gap-3 rounded-[22px] border border-white/10 bg-[#111214]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl transition-[left] duration-300 sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(45rem,calc(100vw-2rem))] sm:p-4 ${
+          isVideoSidebarOpen ? 'lg:left-[calc(50vw_-_9rem)]' : 'lg:left-1/2'
+        }`}
         onSubmit={handleSubmit}
       >
         <div className="flex min-h-11 items-center gap-2 sm:min-h-12 sm:gap-3" aria-label="Prompt path">
