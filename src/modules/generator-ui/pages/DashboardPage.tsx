@@ -62,6 +62,20 @@ function formatStatusLabel(status: string) {
   }
 }
 
+function getStatusDotClassName(status: string) {
+  const normalizedStatus = normalizeStatus(status)
+
+  if (normalizedStatus === 'completed') {
+    return 'bg-emerald-300'
+  }
+
+  if (normalizedStatus === 'failed' || normalizedStatus === 'cancelled') {
+    return 'bg-rose-300'
+  }
+
+  return 'bg-amber-300'
+}
+
 function formatCreatedAt(value: string) {
   const date = new Date(value)
 
@@ -154,6 +168,7 @@ export default function DashboardPage() {
   const [videoColumnMessage, setVideoColumnMessage] = useState<string | null>(null)
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
+  const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
   const [isWorkspaceSidebarOpen, setIsWorkspaceSidebarOpen] = useState(false)
   const pollTimerRef = useRef<number | null>(null)
   const promptInputRef = useRef<HTMLTextAreaElement | null>(null)
@@ -163,6 +178,17 @@ export default function DashboardPage() {
   const canSubmit = hasComposerInput && !isSubmitting
   const startUploadCount = uploadedFiles.filter((file) => file.target === 'Start').length
   const endUploadCount = uploadedFiles.filter((file) => file.target === 'End').length
+  const previewVideo = useMemo(() => {
+    if (generatedVideos.length === 0) {
+      return null
+    }
+
+    return (
+      generatedVideos.find((video) => video.id === previewVideoId) ??
+      generatedVideos.find((video) => video.video?.storage_path) ??
+      generatedVideos[0]
+    )
+  }, [generatedVideos, previewVideoId])
 
   const emptyStateLabel = useMemo(() => {
     if (isDragging) {
@@ -299,7 +325,10 @@ export default function DashboardPage() {
         prompt: nextPrompt
       })
 
-      setGeneratedVideos((currentJobs) => mergeJob(currentJobs, buildSeededJob(nextPrompt, createdJob)))
+      const seededJob = buildSeededJob(nextPrompt, createdJob)
+
+      setPreviewVideoId(seededJob.id)
+      setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
       setPromptText('')
       setUploadedFiles([])
     } catch (error) {
@@ -366,13 +395,55 @@ export default function DashboardPage() {
       </button>
 
       <main className="grid min-h-screen place-items-center px-4 pb-40" aria-live="polite">
-        <div className="-translate-y-10 text-center sm:-translate-y-8">
-          <div className="relative mx-auto mb-4 grid h-14 w-14 place-items-center text-zinc-100" aria-hidden="true">
-            <Hammer className="h-10 w-10 -rotate-12 stroke-[1.7]" />
-            <Sparkles className="absolute right-0 top-0 h-5 w-5 text-amber-300 stroke-[1.8]" />
+        {previewVideo ? (
+          <div className="-translate-y-10 w-[min(50rem,calc(100vw-2rem))] sm:-translate-y-8">
+            <div className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur">
+              <div className="relative aspect-video max-h-[52vh] w-full overflow-hidden bg-black">
+                {previewVideo.video?.storage_path ? (
+                  <video
+                    key={previewVideo.id}
+                    className="h-full w-full bg-black object-contain"
+                    src={previewVideo.video.storage_path}
+                    controls
+                    playsInline
+                    preload="metadata"
+                  />
+                ) : (
+                  <div className="grid h-full place-items-center px-6 text-center">
+                    <div>
+                      {normalizeStatus(previewVideo.status) === 'processing' ? (
+                        <LoaderCircle className="mx-auto h-10 w-10 animate-spin text-amber-300" aria-hidden="true" />
+                      ) : (
+                        <Clapperboard className="mx-auto h-10 w-10 text-zinc-600" aria-hidden="true" />
+                      )}
+                      <p className="mt-4 text-sm font-semibold text-zinc-300">{formatStatusLabel(previewVideo.status)}</p>
+                      <p className="mt-2 text-xs leading-5 text-zinc-600">
+                        Video preview will appear here when the render is ready.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="max-h-12 min-w-0 overflow-hidden text-sm font-medium leading-6 text-zinc-200">
+                  {previewVideo.input_prompt}
+                </p>
+                <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
+                  <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(previewVideo.status)}`} />
+                  {formatStatusLabel(previewVideo.status)}
+                </span>
+              </div>
+            </div>
           </div>
-          <p className="m-0 text-base font-medium text-zinc-400 sm:text-lg">{emptyStateLabel}</p>
-        </div>
+        ) : (
+          <div className="-translate-y-10 text-center sm:-translate-y-8">
+            <div className="relative mx-auto mb-4 grid h-14 w-14 place-items-center text-zinc-100" aria-hidden="true">
+              <Hammer className="h-10 w-10 -rotate-12 stroke-[1.7]" />
+              <Sparkles className="absolute right-0 top-0 h-5 w-5 text-amber-300 stroke-[1.8]" />
+            </div>
+            <p className="m-0 text-base font-medium text-zinc-400 sm:text-lg">{emptyStateLabel}</p>
+          </div>
+        )}
       </main>
 
       <button
@@ -455,15 +526,25 @@ export default function DashboardPage() {
             <div className="grid gap-3">
               {generatedVideos.map((video) => {
                 const status = normalizeStatus(video.status)
-                const statusDotClassName =
-                  status === 'completed'
-                    ? 'bg-emerald-300'
-                    : status === 'failed' || status === 'cancelled'
-                      ? 'bg-rose-300'
-                      : 'bg-amber-300'
+                const isPreviewSelected = previewVideo?.id === video.id
 
                 return (
-                  <article key={video.id} className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+                  <article
+                    key={video.id}
+                    className={`cursor-pointer rounded-2xl border p-3 transition hover:border-white/20 hover:bg-white/[0.055] ${
+                      isPreviewSelected ? 'border-amber-300/35 bg-amber-300/[0.055]' : 'border-white/10 bg-white/[0.035]'
+                    }`}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Preview ${video.input_prompt}`}
+                    onClick={() => setPreviewVideoId(video.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        setPreviewVideoId(video.id)
+                      }
+                    }}
+                  >
                     <div className="overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
                       {video.video?.storage_path ? (
                         <video
@@ -492,7 +573,7 @@ export default function DashboardPage() {
 
                     <div className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500">
                       <span className="inline-flex items-center gap-2">
-                        <span className={`h-1.5 w-1.5 rounded-full ${statusDotClassName}`} />
+                        <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(video.status)}`} />
                         {formatStatusLabel(video.status)}
                       </span>
                       <span>{formatCreatedAt(video.created_at)}</span>
