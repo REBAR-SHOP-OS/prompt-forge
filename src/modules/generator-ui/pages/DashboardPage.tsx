@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 
 import { ApiError } from '@/core/api/client'
+import { useAuth } from '@/core/auth/AuthProvider'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 
@@ -106,6 +107,7 @@ function buildSeededJob(prompt: string, result: CreateJobResult): JobDetail {
 }
 
 export default function DashboardPage() {
+  const { session, loading: authLoading } = useAuth()
   const [promptText, setPromptText] = useState('')
   const [mode, setMode] = useState<ForgeMode>('Prompt')
   const [isDragging, setIsDragging] = useState(false)
@@ -129,6 +131,11 @@ export default function DashboardPage() {
   }, [isDragging, promptText])
 
   useEffect(() => {
+    if (authLoading) return
+    if (!session) {
+      setIsLibraryLoading(false)
+      return
+    }
     let isActive = true
 
     async function loadVideoJobs() {
@@ -162,7 +169,7 @@ export default function DashboardPage() {
     return () => {
       isActive = false
     }
-  }, [])
+  }, [authLoading, session])
 
   useEffect(() => {
     const activeJobs = generatedVideos.filter((job) => !isTerminalStatus(job.status))
