@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 
 import { ApiError } from '@/core/api/client'
+import { useAuth } from '@/core/auth/AuthProvider'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 
