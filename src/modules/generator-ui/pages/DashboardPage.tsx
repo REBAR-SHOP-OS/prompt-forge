@@ -1,7 +1,22 @@
 import { type FormEvent, useMemo, useState } from 'react'
-import { ArrowRight, ChevronDown, ChevronsRight, Hammer, LayoutGrid, Sparkles, Upload } from 'lucide-react'
+import {
+  ArrowRight,
+  ChevronDown,
+  ChevronsRight,
+  Clapperboard,
+  Film,
+  Hammer,
+  LayoutGrid,
+  Sparkles,
+  Upload
+} from 'lucide-react'
 
 type ForgeMode = 'Prompt' | 'Image' | 'Video' | 'Agent'
+type GeneratedVideo = {
+  id: number
+  prompt: string
+  status: 'Queued'
+}
 
 const modes: ForgeMode[] = ['Prompt', 'Image', 'Video', 'Agent']
 
@@ -11,6 +26,7 @@ export default function DashboardPage() {
   const [isDragging, setIsDragging] = useState(false)
   const [startContext] = useState('Start')
   const [endGoal] = useState('End')
+  const [generatedVideos, setGeneratedVideos] = useState<GeneratedVideo[]>([])
 
   const canSubmit = promptText.trim().length > 0
 
@@ -27,6 +43,17 @@ export default function DashboardPage() {
 
     if (!canSubmit) {
       return
+    }
+
+    if (mode === 'Video') {
+      setGeneratedVideos((currentVideos) => [
+        {
+          id: Date.now(),
+          prompt: promptText.trim(),
+          status: 'Queued'
+        },
+        ...currentVideos
+      ])
     }
 
     setPromptText('')
@@ -87,8 +114,57 @@ export default function DashboardPage() {
         </div>
       </main>
 
+      <aside
+        className="fixed bottom-5 right-4 top-5 z-20 hidden w-72 flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/80 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.36)] backdrop-blur-xl lg:flex xl:right-5 xl:w-80"
+        aria-label="Generated videos"
+      >
+        <div className="flex items-center justify-between border-b border-white/10 pb-3">
+          <div>
+            <p className="text-xs font-medium text-zinc-500">Video column</p>
+            <h2 className="text-sm font-semibold text-zinc-100">Generated videos</h2>
+          </div>
+          <span className="grid h-8 min-w-8 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
+            {generatedVideos.length}
+          </span>
+        </div>
+
+        <div className="mt-3 flex-1 overflow-y-auto pr-1">
+          {generatedVideos.length > 0 ? (
+            <div className="grid gap-3">
+              {generatedVideos.map((video) => (
+                <article key={video.id} className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+                  <div className="grid aspect-video place-items-center rounded-xl border border-white/10 bg-[#15171a] text-zinc-500">
+                    <Clapperboard className="h-8 w-8" aria-hidden="true" />
+                  </div>
+                  <p className="mt-3 max-h-12 overflow-hidden text-sm font-medium leading-6 text-zinc-200">
+                    {video.prompt}
+                  </p>
+                  <div className="mt-3 flex items-center justify-between text-xs text-zinc-500">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />
+                      {video.status}
+                    </span>
+                    <span>Video</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="grid h-full place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
+              <div>
+                <Film className="mx-auto h-8 w-8 text-zinc-600" aria-hidden="true" />
+                <p className="mt-3 text-sm font-medium text-zinc-300">No videos yet</p>
+                <p className="mt-2 text-xs leading-5 text-zinc-600">
+                  Choose Video mode and forge a prompt. New generations will collect here.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </aside>
+
       <form
-        className="fixed bottom-4 left-1/2 z-30 grid w-[min(45rem,calc(100vw-1rem))] -translate-x-1/2 gap-3 rounded-[22px] border border-white/10 bg-[#111214]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(45rem,calc(100vw-2rem))] sm:p-4"
+        className="fixed bottom-4 left-1/2 z-30 grid w-[min(45rem,calc(100vw-1rem))] -translate-x-1/2 gap-3 rounded-[22px] border border-white/10 bg-[#111214]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(45rem,calc(100vw-2rem))] sm:p-4 lg:left-[calc(50vw_-_10rem)]"
         onSubmit={handleSubmit}
       >
         <div className="flex min-h-11 items-center gap-2 sm:min-h-12 sm:gap-3" aria-label="Prompt path">
