@@ -154,7 +154,7 @@ export default function DashboardPage() {
   const [videoColumnMessage, setVideoColumnMessage] = useState<string | null>(null)
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
-  const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(false)
+  const [isWorkspaceSidebarOpen, setIsWorkspaceSidebarOpen] = useState(false)
   const pollTimerRef = useRef<number | null>(null)
   const promptInputRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -358,9 +358,9 @@ export default function DashboardPage() {
       <button
         className="fixed left-4 top-4 z-50 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-5 sm:top-5"
         type="button"
-        aria-expanded={isLeftSidebarOpen}
-        aria-label={isLeftSidebarOpen ? 'Close workspace sidebar' : 'Open workspace sidebar'}
-        onClick={() => setIsLeftSidebarOpen((isOpen) => !isOpen)}
+        aria-expanded={isWorkspaceSidebarOpen}
+        aria-label={isWorkspaceSidebarOpen ? 'Close workspace sidebar' : 'Open workspace sidebar'}
+        onClick={() => setIsWorkspaceSidebarOpen((isOpen) => !isOpen)}
       >
         <LayoutGrid className="h-[18px] w-[18px]" aria-hidden="true" />
       </button>
@@ -379,27 +379,27 @@ export default function DashboardPage() {
         type="button"
         aria-label="Close workspace sidebar"
         className={`fixed inset-0 z-20 bg-black/35 transition lg:hidden ${
-          isLeftSidebarOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+          isWorkspaceSidebarOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
         }`}
-        onClick={() => setIsLeftSidebarOpen(false)}
+        onClick={() => setIsWorkspaceSidebarOpen(false)}
       />
 
       <aside
-        className={`fixed bottom-3 left-3 top-3 z-30 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/90 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.36)] backdrop-blur-xl transition duration-300 sm:bottom-5 sm:left-4 sm:top-5 sm:w-80 lg:z-30 lg:w-72 xl:left-5 xl:w-80 ${
-          isLeftSidebarOpen
+        className={`fixed bottom-3 right-3 top-3 z-30 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/90 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.36)] backdrop-blur-xl transition duration-300 sm:bottom-5 sm:right-4 sm:top-5 sm:w-80 lg:z-30 lg:w-72 xl:right-5 xl:w-80 ${
+          isWorkspaceSidebarOpen
             ? 'pointer-events-auto visible translate-x-0 opacity-100'
-            : 'pointer-events-none invisible -translate-x-[calc(100%+1.25rem)] opacity-0'
+            : 'pointer-events-none invisible translate-x-[calc(100%+1.25rem)] opacity-0'
         }`}
         aria-label="Workspace sidebar"
-        aria-hidden={!isLeftSidebarOpen}
+        aria-hidden={!isWorkspaceSidebarOpen}
       >
-        <div className="flex items-center justify-between border-b border-white/10 pb-3 pl-9">
+        <div className="flex items-center justify-between border-b border-white/10 pb-3">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">Workspace</p>
           <button
             type="button"
             className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-100"
             aria-label="Close workspace sidebar"
-            onClick={() => setIsLeftSidebarOpen(false)}
+            onClick={() => setIsWorkspaceSidebarOpen(false)}
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
