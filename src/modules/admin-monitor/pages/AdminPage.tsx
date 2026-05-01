@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { adminApi } from "@/modules/admin-monitor/api";
+import { adminMonitorGateway } from "@/modules/admin-monitor/gateway";
 import type { HealthSummary } from "@/modules/admin-monitor/contract";
 
 export default function AdminPage() {
@@ -8,7 +8,7 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    adminApi.getHealth().then(setHealth).catch((e) => setError((e as Error).message));
+    adminMonitorGateway.getHealth().then(setHealth).catch((e) => setError((e as Error).message));
   }, []);
 
   return (

@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ApiError } from "@/core/api/client";
-import { generatorUiApi } from "@/modules/generator-ui/api";
+import { generatorUiGateway } from "@/modules/generator-ui/gateway";
 import type { ProviderKey, RoutePreviewResult } from "@/modules/external-api-adapter/contract";
 
 export default function RoutePreviewCard() {
@@ -21,7 +21,7 @@ export default function RoutePreviewCard() {
     if (!prompt.trim()) { setError("Prompt required"); return; }
     setLoading(true);
     try {
-      const r = await generatorUiApi.routePreview({ providerKey: provider, prompt });
+      const r = await generatorUiGateway.routePreview({ providerKey: provider, prompt });
       setResult(r);
     } catch (e) {
       setError(e instanceof ApiError ? `${e.code}: ${e.message}` : (e as Error).message);
