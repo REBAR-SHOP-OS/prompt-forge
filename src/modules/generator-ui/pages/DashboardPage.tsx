@@ -1,16 +1,19 @@
-import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowRight,
   ChevronDown,
   ChevronsRight,
   Clapperboard,
+  FileUp,
   Film,
   Hammer,
   LayoutGrid,
   LoaderCircle,
+  Paperclip,
   Plus,
   Sparkles,
-  Upload
+  Upload,
+  X
 } from 'lucide-react'
 
 import { ApiError } from '@/core/api/client'
@@ -20,6 +23,14 @@ import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 
 type ForgeMode = 'Prompt' | 'Image' | 'Video' | 'Agent'
 type VideoJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
+type UploadTarget = 'Start' | 'End'
+type UploadedFile = {
+  id: number
+  name: string
+  size: number
+  target: UploadTarget
+  type: string
+}
 
 const modes: ForgeMode[] = ['Prompt', 'Image', 'Video', 'Agent']
 const VIDEO_POLL_INTERVAL_MS = 4_000
@@ -64,6 +75,30 @@ function formatCreatedAt(value: string) {
     hour: 'numeric',
     minute: '2-digit'
   }).format(date)
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function buildPromptWithUploadedFiles(prompt: string, files: UploadedFile[]) {
+  if (files.length === 0) {
+    return prompt
+  }
+
+  const fileContext = files
+    .map((file) => `- ${file.target}: ${file.name} (${formatFileSize(file.size)})`)
+    .join('\n')
+
+  return [prompt || 'Generate from uploaded context', `Attached files:\n${fileContext}`].filter(Boolean).join('\n\n')
 }
 
 function mergeJob(currentJobs: JobDetail[], nextJob: JobDetail) {
@@ -117,18 +152,24 @@ export default function DashboardPage() {
   const [isLibraryLoading, setIsLibraryLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [videoColumnMessage, setVideoColumnMessage] = useState<string | null>(null)
+  const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const pollTimerRef = useRef<number | null>(null)
   const promptInputRef = useRef<HTMLTextAreaElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  const canSubmit = promptText.trim().length > 0 && !isSubmitting
+  const hasComposerInput = promptText.trim().length > 0 || uploadedFiles.length > 0
+  const canSubmit = hasComposerInput && !isSubmitting
+  const startUploadCount = uploadedFiles.filter((file) => file.target === 'Start').length
+  const endUploadCount = uploadedFiles.filter((file) => file.target === 'End').length
 
   const emptyStateLabel = useMemo(() => {
     if (isDragging) {
       return 'Drop context into the forge'
     }
 
-    return promptText.trim().length > 0 ? 'Shape the next version' : 'Start forging a prompt'
-  }, [isDragging, promptText])
+    return hasComposerInput ? 'Shape the next version' : 'Start forging a prompt'
+  }, [hasComposerInput, isDragging])
 
   useEffect(() => {
     if (authLoading) return
@@ -203,6 +244,36 @@ export default function DashboardPage() {
     }
   }, [generatedVideos])
 
+  function openFileUpload(target: UploadTarget) {
+    setUploadTarget(target)
+    fileInputRef.current?.click()
+  }
+
+  function addUploadedFiles(files: FileList | null, target = uploadTarget) {
+    if (!files?.length) {
+      return
+    }
+
+    const nextFiles = Array.from(files).map((file, index) => ({
+      id: Date.now() + index,
+      name: file.name,
+      size: file.size,
+      target,
+      type: file.type || 'file'
+    }))
+
+    setUploadedFiles((currentFiles) => [...currentFiles, ...nextFiles])
+  }
+
+  function handleFileInputChange(event: ChangeEvent<HTMLInputElement>) {
+    addUploadedFiles(event.currentTarget.files)
+    event.currentTarget.value = ''
+  }
+
+  function removeUploadedFile(fileId: number) {
+    setUploadedFiles((currentFiles) => currentFiles.filter((file) => file.id !== fileId))
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
@@ -210,10 +281,11 @@ export default function DashboardPage() {
       return
     }
 
-    const nextPrompt = promptText.trim()
+    const nextPrompt = buildPromptWithUploadedFiles(promptText.trim(), uploadedFiles)
 
     if (mode !== 'Video') {
       setPromptText('')
+      setUploadedFiles([])
       return
     }
 
@@ -228,6 +300,7 @@ export default function DashboardPage() {
 
       setGeneratedVideos((currentJobs) => mergeJob(currentJobs, buildSeededJob(nextPrompt, createdJob)))
       setPromptText('')
+      setUploadedFiles([])
     } catch (error) {
       setVideoColumnMessage(
         error instanceof ApiError ? `${error.code}: ${error.message}` : 'Could not start video generation.'
@@ -263,12 +336,22 @@ export default function DashboardPage() {
       onDrop={(event) => {
         event.preventDefault()
         setIsDragging(false)
+        addUploadedFiles(event.dataTransfer.files, 'Start')
       }}
     >
       <div
         className={`pointer-events-none absolute inset-0 border transition duration-200 ${
           isDragging ? 'border-amber-300/40 bg-amber-300/[0.045]' : 'border-transparent'
         }`}
+      />
+
+      <input
+        ref={fileInputRef}
+        className="sr-only"
+        type="file"
+        multiple
+        accept="image/*,video/*,audio/*,.pdf,.txt,.md,.doc,.docx"
+        onChange={handleFileInputChange}
       />
 
       <button
@@ -282,7 +365,8 @@ export default function DashboardPage() {
       <button
         className="fixed bottom-5 left-5 z-20 hidden h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:grid"
         type="button"
-        aria-label="Attach context"
+        aria-label="Upload start context"
+        onClick={() => openFileUpload('Start')}
       >
         <Upload className="h-[18px] w-[18px]" aria-hidden="true" />
       </button>
@@ -405,19 +489,60 @@ export default function DashboardPage() {
       >
         <div className="flex min-h-11 items-center gap-2 sm:min-h-12 sm:gap-3" aria-label="Prompt path">
           <button
-            className="inline-flex h-11 min-w-12 items-center justify-center rounded-md border border-[#2a2d32] bg-black/10 px-3 text-xs font-semibold text-zinc-200/70 sm:h-12 sm:min-w-[3.25rem]"
+            className="inline-flex h-11 min-w-12 items-center justify-center gap-2 rounded-md border border-[#2a2d32] bg-black/10 px-3 text-xs font-semibold text-zinc-200/70 transition hover:border-white/20 hover:bg-white/[0.045] sm:h-12 sm:min-w-[3.25rem]"
             type="button"
+            onClick={() => openFileUpload('Start')}
           >
             {startContext}
+            {startUploadCount > 0 ? (
+              <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-300 px-1 text-[10px] text-zinc-950">
+                {startUploadCount}
+              </span>
+            ) : (
+              <FileUp className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
+            )}
           </button>
           <ChevronsRight className="h-4 w-4 shrink-0 text-zinc-600" aria-hidden="true" />
           <button
-            className="inline-flex h-11 min-w-12 items-center justify-center rounded-md border border-[#2a2d32] bg-black/10 px-3 text-xs font-semibold text-zinc-200/70 sm:h-12 sm:min-w-[3.25rem]"
+            className="inline-flex h-11 min-w-12 items-center justify-center gap-2 rounded-md border border-[#2a2d32] bg-black/10 px-3 text-xs font-semibold text-zinc-200/70 transition hover:border-white/20 hover:bg-white/[0.045] sm:h-12 sm:min-w-[3.25rem]"
             type="button"
+            onClick={() => openFileUpload('End')}
           >
             {endGoal}
+            {endUploadCount > 0 ? (
+              <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-300 px-1 text-[10px] text-zinc-950">
+                {endUploadCount}
+              </span>
+            ) : (
+              <FileUp className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
+            )}
           </button>
         </div>
+
+        {uploadedFiles.length > 0 ? (
+          <div className="flex max-h-24 flex-wrap gap-2 overflow-y-auto border-t border-white/10 pt-3">
+            {uploadedFiles.map((file) => (
+              <span
+                key={file.id}
+                className="inline-flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-white/[0.045] px-3 py-1.5 text-xs text-zinc-300"
+              >
+                <Paperclip className="h-3.5 w-3.5 shrink-0 text-zinc-500" aria-hidden="true" />
+                <span className="max-w-[11rem] truncate">
+                  {file.target}: {file.name}
+                </span>
+                <span className="shrink-0 text-zinc-600">{formatFileSize(file.size)}</span>
+                <button
+                  type="button"
+                  className="grid h-4 w-4 shrink-0 place-items-center rounded-full text-zinc-500 transition hover:bg-white/10 hover:text-zinc-100"
+                  onClick={() => removeUploadedFile(file.id)}
+                  aria-label={`Remove ${file.name}`}
+                >
+                  <X className="h-3 w-3" aria-hidden="true" />
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
 
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
           <label className="sr-only" htmlFor="prompt-input">
