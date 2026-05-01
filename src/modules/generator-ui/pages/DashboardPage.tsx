@@ -107,6 +107,7 @@ function buildSeededJob(prompt: string, result: CreateJobResult): JobDetail {
 }
 
 export default function DashboardPage() {
+  const { session, loading: authLoading } = useAuth()
   const [promptText, setPromptText] = useState('')
   const [mode, setMode] = useState<ForgeMode>('Prompt')
   const [isDragging, setIsDragging] = useState(false)
