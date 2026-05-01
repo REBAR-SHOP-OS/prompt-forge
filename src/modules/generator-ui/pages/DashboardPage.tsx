@@ -8,6 +8,7 @@ import {
   Hammer,
   LayoutGrid,
   LoaderCircle,
+  Plus,
   Sparkles,
   Upload
 } from 'lucide-react'
@@ -115,6 +116,7 @@ export default function DashboardPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [videoColumnMessage, setVideoColumnMessage] = useState<string | null>(null)
   const pollTimerRef = useRef<number | null>(null)
+  const promptInputRef = useRef<HTMLTextAreaElement | null>(null)
 
   const canSubmit = promptText.trim().length > 0 && !isSubmitting
 
@@ -228,6 +230,11 @@ export default function DashboardPage() {
     }
   }
 
+  function handleAddVideoCard() {
+    setMode('Video')
+    promptInputRef.current?.focus()
+  }
+
   return (
     <section
       className="relative min-h-screen overflow-hidden bg-black text-zinc-100"
@@ -303,7 +310,16 @@ export default function DashboardPage() {
           </div>
         ) : null}
 
-        <div className="mt-3 flex-1 overflow-y-auto pr-1">
+        <div className="relative mt-3 flex-1 overflow-y-auto pr-1">
+          <button
+            type="button"
+            onClick={handleAddVideoCard}
+            className="absolute right-2 top-2 z-10 grid h-7 w-7 place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100"
+            aria-label="Add new video card"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+          </button>
+
           {isLibraryLoading ? (
             <div className="grid h-full place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
               <div>
@@ -402,6 +418,7 @@ export default function DashboardPage() {
           </label>
           <textarea
             id="prompt-input"
+            ref={promptInputRef}
             value={promptText}
             onChange={(event) => setPromptText(event.target.value)}
             placeholder="What do you want to forge?"
