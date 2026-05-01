@@ -1,6 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/core/auth/AuthProvider";
 import RoutePreviewCard from "@/modules/generator-ui/components/RoutePreviewCard";
+import GenerateVideoCard from "@/modules/generator-ui/components/GenerateVideoCard";
 
 export default function DashboardPage() {
   const { profile } = useAuth();
@@ -34,6 +35,7 @@ export default function DashboardPage() {
         </Card>
       </div>
 
+      <GenerateVideoCard />
       <RoutePreviewCard />
     </div>
   );

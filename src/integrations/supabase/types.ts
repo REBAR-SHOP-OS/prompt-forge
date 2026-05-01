@@ -343,6 +343,31 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      generator_complete_job: {
+        Args: {
+          _aspect_ratio: string
+          _duration: number
+          _job_id: string
+          _storage_path: string
+          _thumbnail_url: string
+          _user_id: string
+        }
+        Returns: string
+      }
+      generator_mark_job_processing: {
+        Args: { _job_id: string; _provider_job_id: string; _user_id: string }
+        Returns: undefined
+      }
+      generator_start_job: {
+        Args: {
+          _cost: number
+          _model_key: string
+          _prompt: string
+          _provider_key: string
+          _user_id: string
+        }
+        Returns: string
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
