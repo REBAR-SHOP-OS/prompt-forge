@@ -13,7 +13,6 @@ import {
   Paperclip,
   Plus,
   Sparkles,
-  Upload,
   X
 } from 'lucide-react'
 
@@ -364,15 +363,6 @@ export default function DashboardPage() {
         onClick={() => setIsLeftSidebarOpen((isOpen) => !isOpen)}
       >
         <LayoutGrid className="h-[18px] w-[18px]" aria-hidden="true" />
-      </button>
-
-      <button
-        className="fixed bottom-5 left-5 z-20 hidden h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:grid"
-        type="button"
-        aria-label="Upload start context"
-        onClick={() => openFileUpload('Start')}
-      >
-        <Upload className="h-[18px] w-[18px]" aria-hidden="true" />
       </button>
 
       <main className="grid min-h-screen place-items-center px-4 pb-40" aria-live="polite">
