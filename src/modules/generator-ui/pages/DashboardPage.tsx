@@ -131,6 +131,11 @@ export default function DashboardPage() {
   }, [isDragging, promptText])
 
   useEffect(() => {
+    if (authLoading) return
+    if (!session) {
+      setIsLibraryLoading(false)
+      return
+    }
     let isActive = true
 
     async function loadVideoJobs() {
@@ -164,7 +169,7 @@ export default function DashboardPage() {
     return () => {
       isActive = false
     }
-  }, [])
+  }, [authLoading, session])
 
   useEffect(() => {
     const activeJobs = generatedVideos.filter((job) => !isTerminalStatus(job.status))
