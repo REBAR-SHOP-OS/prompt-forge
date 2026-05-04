@@ -1457,12 +1457,15 @@ export default function DashboardPage() {
                         }
                       }}
                     >
-                      <div className="overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
+                      <div
+                        className="overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
+                        onClick={(event) => event.stopPropagation()}
+                      >
                         {video.video?.storage_path ? (
                           <video
-                            className="aspect-video h-full w-full bg-black object-cover"
+                            className="aspect-video h-full w-full bg-black object-contain"
                             src={video.video.storage_path}
-                            muted
+                            controls
                             playsInline
                             preload="metadata"
                           />
