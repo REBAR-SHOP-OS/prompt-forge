@@ -812,6 +812,7 @@ export default function DashboardPage() {
       let createdJob
       let seedFrames: { firstFrameUrl?: string; lastFrameUrl?: string } = {}
       let pendingEndAppendUrl: string | null = null
+      let pendingStartPrependUrl: string | null = null
 
       if (isTextToVideo) {
         createdJob = await jobOrchestratorGateway.createJob({
@@ -831,15 +832,16 @@ export default function DashboardPage() {
         })
         seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
       } else if (readyStartFrame?.url) {
-        // Only Start: reuse Start as both first and last frame.
+        // Only Start: generate text-to-video, then prepend the Start image
+        // as a 2-second still clip at the front of the completed video.
         createdJob = await jobOrchestratorGateway.createJob({
           providerKey: 'wan',
+          requestedModel: 'wan2.7-t2v-2026-04-25',
           prompt: nextPrompt,
-          firstFrameUrl: readyStartFrame.url,
-          lastFrameUrl: readyStartFrame.url,
           durationSeconds,
         })
-        seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyStartFrame.url }
+        pendingStartPrependUrl = readyStartFrame.url
+        seedFrames = { firstFrameUrl: readyStartFrame.url }
       } else if (readyEndFrame?.url) {
         // Only End: generate text-to-video first, then append the End image
         // as a 2-second still clip after the job completes.
@@ -862,6 +864,14 @@ export default function DashboardPage() {
         setPendingEndAppends((current) => {
           const next = { ...current, [seededJob.id]: pendingEndAppendUrl as string }
           persistPendingEndAppends(next)
+          return next
+        })
+      }
+
+      if (pendingStartPrependUrl) {
+        setPendingStartPrepends((current) => {
+          const next = { ...current, [seededJob.id]: pendingStartPrependUrl as string }
+          persistPendingStartPrepends(next)
           return next
         })
       }
