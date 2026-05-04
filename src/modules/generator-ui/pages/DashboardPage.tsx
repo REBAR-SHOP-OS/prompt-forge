@@ -16,10 +16,22 @@ import {
   LoaderCircle,
   Paperclip,
   Plus,
+  RotateCcw,
   Sparkles,
   Trash2,
   X
 } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 
 import { ApiError } from '@/core/api/client'
 import { useAuth } from '@/core/auth/AuthProvider'
@@ -775,6 +787,28 @@ export default function DashboardPage() {
     }
   }
 
+  function handleStartOver() {
+    // Hide every History card by adding their IDs to the "deleted" set
+    // (same mechanism the per-card delete uses; DB rows are kept).
+    setDeletedIds((current) => {
+      const next = new Set(current)
+      for (const v of generatedVideos) next.add(v.id)
+      if (deletedStorageKey) {
+        try { window.localStorage.setItem(deletedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
+      }
+      return next
+    })
+    // Reset the composer to a fresh state.
+    setPromptText('')
+    setUploadedFiles([])
+    setComposerError(null)
+    setVideoColumnMessage(null)
+    setUploadTarget('Start')
+    setGenerationMode('image-to-video')
+    setDurationSeconds(5)
+    setPreviewVideoId(null)
+  }
+
   return (
     <section
       className="relative min-h-screen overflow-hidden bg-black text-zinc-100"
@@ -823,6 +857,32 @@ export default function DashboardPage() {
       >
         <LayoutGrid className="h-[18px] w-[18px]" aria-hidden="true" />
       </button>
+
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <button
+            className="fixed left-1/2 top-4 z-50 flex h-9 -translate-x-1/2 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100 sm:top-5"
+            type="button"
+            aria-label="Start over"
+          >
+            <RotateCcw className="h-[14px] w-[14px]" aria-hidden="true" />
+            <span>Start over</span>
+          </button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Start over?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This clears every card in History and resets the prompt, frames, mode, and duration.
+              Saved videos in Your library are kept.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleStartOver}>Start over</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <main className="grid min-h-screen place-items-center px-4 pb-40" aria-live="polite">
         {previewVideo ? (
