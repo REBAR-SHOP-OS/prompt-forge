@@ -1112,18 +1112,44 @@ export default function DashboardPage() {
                         <p className="max-h-12 overflow-hidden text-sm font-medium leading-6 text-zinc-200">
                           {video.input_prompt}
                         </p>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            toggleApproved(video.id)
-                          }}
-                          aria-label="Remove from library"
-                          title="Remove from library"
-                          className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/30 hover:bg-rose-300/10 hover:text-rose-200"
-                        >
-                          <X className="h-3.5 w-3.5" aria-hidden="true" />
-                        </button>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          {video.video?.storage_path ? (
+                            <a
+                              href={video.video.storage_path}
+                              download
+                              onClick={(event) => event.stopPropagation()}
+                              aria-label="Download video"
+                              title="Download video"
+                              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                            >
+                              <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                            </a>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              toggleApproved(video.id)
+                            }}
+                            aria-label="Remove from library"
+                            title="Remove from library"
+                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/30 hover:bg-rose-300/10 hover:text-rose-200"
+                          >
+                            <X className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              deleteCard(video.id)
+                            }}
+                            aria-label="Delete card"
+                            title="Delete card"
+                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        </div>
                       </div>
                       <div className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500">
                         <span className="inline-flex items-center gap-2">
