@@ -787,6 +787,28 @@ export default function DashboardPage() {
     }
   }
 
+  function handleStartOver() {
+    // Hide every History card by adding their IDs to the "deleted" set
+    // (same mechanism the per-card delete uses; DB rows are kept).
+    setDeletedIds((current) => {
+      const next = new Set(current)
+      for (const v of generatedVideos) next.add(v.id)
+      if (deletedStorageKey) {
+        try { window.localStorage.setItem(deletedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
+      }
+      return next
+    })
+    // Reset the composer to a fresh state.
+    setPromptText('')
+    setUploadedFiles([])
+    setComposerError(null)
+    setVideoColumnMessage(null)
+    setUploadTarget('Start')
+    setGenerationMode('image-to-video')
+    setDurationSeconds(5)
+    setPreviewVideoId(null)
+  }
+
   return (
     <section
       className="relative min-h-screen overflow-hidden bg-black text-zinc-100"
