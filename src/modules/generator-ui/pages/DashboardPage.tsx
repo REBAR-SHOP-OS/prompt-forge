@@ -158,7 +158,7 @@ async function hydrateJobs(summaries: JobSummary[]) {
 function buildSeededJob(
   prompt: string,
   result: CreateJobResult,
-  frames?: { firstFrameUrl: string; lastFrameUrl: string }
+  frames?: { firstFrameUrl?: string; lastFrameUrl?: string }
 ): JobDetail {
   return {
     id: result.jobId,
