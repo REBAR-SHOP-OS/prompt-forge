@@ -182,7 +182,10 @@ export default function DashboardPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const hasComposerInput = promptText.trim().length > 0 || uploadedFiles.length > 0
-  const canSubmit = hasComposerInput && !isSubmitting
+  const readyStartFrame = uploadedFiles.find((file) => file.target === 'Start' && file.status === 'ready' && file.url)
+  const readyEndFrame = uploadedFiles.find((file) => file.target === 'End' && file.status === 'ready' && file.url)
+  const hasUploadingFiles = uploadedFiles.some((file) => file.status === 'uploading')
+  const canSubmit = hasComposerInput && Boolean(readyStartFrame?.url && readyEndFrame?.url) && !hasUploadingFiles && !isSubmitting
   const startUploadCount = uploadedFiles.filter((file) => file.target === 'Start').length
   const endUploadCount = uploadedFiles.filter((file) => file.target === 'End').length
   const previewVideo = useMemo(() => {
@@ -283,6 +286,49 @@ export default function DashboardPage() {
     fileInputRef.current?.click()
   }
 
+  async function uploadFrameFile(file: File, target: UploadTarget, fileId: number) {
+    const userId = session?.user?.id
+    if (!userId) {
+      setUploadedFiles((currentFiles) => currentFiles.map((uploadedFile) => (
+        uploadedFile.id === fileId
+          ? { ...uploadedFile, status: 'failed', error: 'Sign in before uploading frames' }
+          : uploadedFile
+      )))
+      return
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setUploadedFiles((currentFiles) => currentFiles.map((uploadedFile) => (
+        uploadedFile.id === fileId
+          ? { ...uploadedFile, status: 'failed', error: 'Only image frames are supported' }
+          : uploadedFile
+      )))
+      return
+    }
+
+    const extension = file.name.split('.').pop()?.toLowerCase() || 'png'
+    const storagePath = `${userId}/${target.toLowerCase()}-${Date.now()}-${crypto.randomUUID()}.${extension}`
+    const { error } = await supabase.storage
+      .from(FRAMES_BUCKET)
+      .upload(storagePath, file, { contentType: file.type, upsert: false })
+
+    if (error) {
+      setUploadedFiles((currentFiles) => currentFiles.map((uploadedFile) => (
+        uploadedFile.id === fileId
+          ? { ...uploadedFile, status: 'failed', error: error.message }
+          : uploadedFile
+      )))
+      return
+    }
+
+    const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+    setUploadedFiles((currentFiles) => currentFiles.map((uploadedFile) => (
+      uploadedFile.id === fileId
+        ? { ...uploadedFile, status: 'ready', url: data.publicUrl, error: null }
+        : uploadedFile
+    )))
+  }
+
   function addUploadedFiles(files: FileList | null, target = uploadTarget) {
     if (!files?.length) {
       return
@@ -293,10 +339,16 @@ export default function DashboardPage() {
       name: file.name,
       size: file.size,
       target,
-      type: file.type || 'file'
+      type: file.type || 'file',
+      status: 'uploading' as const,
+      url: null,
+      error: null
     }))
 
     setUploadedFiles((currentFiles) => [...currentFiles, ...nextFiles])
+    nextFiles.forEach((nextFile, index) => {
+      uploadFrameFile(files[index], target, nextFile.id)
+    })
   }
 
   function handleFileInputChange(event: ChangeEvent<HTMLInputElement>) {
@@ -321,12 +373,22 @@ export default function DashboardPage() {
     setVideoColumnMessage(null)
 
     try {
+      if (!readyStartFrame?.url || !readyEndFrame?.url) {
+        setVideoColumnMessage('Add one Start image and one End image before rendering.')
+        return
+      }
+
       const createdJob = await jobOrchestratorGateway.createJob({
-        providerKey: 'flow',
-        prompt: nextPrompt
+        providerKey: 'wan',
+        prompt: nextPrompt,
+        firstFrameUrl: readyStartFrame.url,
+        lastFrameUrl: readyEndFrame.url
       })
 
-      const seededJob = buildSeededJob(nextPrompt, createdJob)
+      const seededJob = buildSeededJob(nextPrompt, createdJob, {
+        firstFrameUrl: readyStartFrame.url,
+        lastFrameUrl: readyEndFrame.url
+      })
 
       setPreviewVideoId(seededJob.id)
       setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
