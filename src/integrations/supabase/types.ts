@@ -211,8 +211,10 @@ export type Database = {
         Row: {
           created_at: string
           deleted_at: string | null
+          first_frame_url: string | null
           id: string
           input_prompt: string
+          last_frame_url: string | null
           model_key: string | null
           negative_prompt: string | null
           provider_job_id: string | null
@@ -226,8 +228,10 @@ export type Database = {
         Insert: {
           created_at?: string
           deleted_at?: string | null
+          first_frame_url?: string | null
           id?: string
           input_prompt: string
+          last_frame_url?: string | null
           model_key?: string | null
           negative_prompt?: string | null
           provider_job_id?: string | null
@@ -241,8 +245,10 @@ export type Database = {
         Update: {
           created_at?: string
           deleted_at?: string | null
+          first_frame_url?: string | null
           id?: string
           input_prompt?: string
+          last_frame_url?: string | null
           model_key?: string | null
           negative_prompt?: string | null
           provider_job_id?: string | null
