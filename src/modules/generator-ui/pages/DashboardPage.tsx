@@ -196,7 +196,8 @@ async function hydrateJobs(summaries: JobSummary[]) {
   )
 
   return hydratedJobs.sort(
-    (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
+    // Ascending: oldest first (card #1 at top), newest at the bottom.
+    (left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime()
   )
 }
 
