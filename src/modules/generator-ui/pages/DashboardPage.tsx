@@ -5,6 +5,8 @@ import {
   BookmarkPlus,
   ChevronsRight,
   Clapperboard,
+  Combine,
+  Download,
   FileUp,
   Film,
   Hammer,
@@ -15,6 +17,7 @@ import {
   Paperclip,
   Plus,
   Sparkles,
+  Trash2,
   X
 } from 'lucide-react'
 
@@ -23,6 +26,7 @@ import { useAuth } from '@/core/auth/AuthProvider'
 import { supabase } from '@/integrations/supabase/client'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
+import { mergeVideoUrls } from '@/modules/generator-ui/lib/mergeVideos'
 
 type VideoJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
 type UploadTarget = 'Start' | 'End'
