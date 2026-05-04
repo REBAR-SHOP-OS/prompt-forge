@@ -189,24 +189,31 @@ export default function DashboardPage() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
   const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false)
+  const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
   const pollTimerRef = useRef<number | null>(null)
   const promptInputRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
+  const isTextToVideo = generationMode === 'text-to-video'
   const hasComposerInput = promptText.trim().length > 0 || uploadedFiles.length > 0
   const readyStartFrame = uploadedFiles.find((file) => file.target === 'Start' && file.status === 'ready' && file.url)
   const readyEndFrame = uploadedFiles.find((file) => file.target === 'End' && file.status === 'ready' && file.url)
   const hasUploadingFiles = uploadedFiles.some((file) => file.status === 'uploading')
   const hasReadyFrames = Boolean(readyStartFrame?.url && readyEndFrame?.url)
-  const canSubmit = hasComposerInput && hasReadyFrames && !hasUploadingFiles && !isSubmitting
+  const framesSatisfied = isTextToVideo ? true : hasReadyFrames
+  const canSubmit = promptText.trim().length > 0 && framesSatisfied && !hasUploadingFiles && !isSubmitting
   const blockedReason = useMemo(() => {
     if (isSubmitting) return null
     if (hasUploadingFiles) return 'Waiting for frame uploads to finish…'
-    if (!readyStartFrame) return 'Add a Start frame image (use the Start button on the left).'
-    if (!readyEndFrame) return 'Add an End frame image (use the End button on the left).'
-    if (!promptText.trim()) return 'Describe the motion between the two frames.'
+    if (!promptText.trim()) {
+      return isTextToVideo
+        ? 'Describe the video you want to generate.'
+        : 'Describe the motion between the two frames.'
+    }
+    if (!isTextToVideo && !readyStartFrame) return 'Add a Start frame image (use the Start button on the left).'
+    if (!isTextToVideo && !readyEndFrame) return 'Add an End frame image (use the End button on the left).'
     return null
-  }, [isSubmitting, hasUploadingFiles, readyStartFrame, readyEndFrame, promptText])
+  }, [isSubmitting, hasUploadingFiles, readyStartFrame, readyEndFrame, promptText, isTextToVideo])
   const [composerError, setComposerError] = useState<string | null>(null)
   const startUploadCount = uploadedFiles.filter((file) => file.target === 'Start').length
   const endUploadCount = uploadedFiles.filter((file) => file.target === 'End').length
