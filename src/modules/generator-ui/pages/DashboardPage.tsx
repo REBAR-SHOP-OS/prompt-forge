@@ -681,9 +681,25 @@ export default function DashboardPage() {
                       <span className="inline-flex items-center gap-2">
                         <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(video.status)}`} />
                         {formatStatusLabel(video.status)}
+                        {(status === 'processing' || status === 'pending') ? (
+                          (() => {
+                            const pct = getJobProgressPercent(video)
+                            return pct !== null ? <span className="tabular-nums text-amber-300">{pct}%</span> : null
+                          })()
+                        ) : null}
                       </span>
                       <span>{formatCreatedAt(video.created_at)}</span>
                     </div>
+                    {(status === 'processing' || status === 'pending') ? (
+                      (() => {
+                        const pct = getJobProgressPercent(video) ?? 0
+                        return (
+                          <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/10">
+                            <div className="h-full rounded-full bg-amber-300 transition-all duration-500" style={{ width: `${pct}%` }} />
+                          </div>
+                        )
+                      })()
+                    ) : null}
                   </article>
                 )
               })}
