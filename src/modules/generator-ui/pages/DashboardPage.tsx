@@ -185,7 +185,17 @@ export default function DashboardPage() {
   const readyStartFrame = uploadedFiles.find((file) => file.target === 'Start' && file.status === 'ready' && file.url)
   const readyEndFrame = uploadedFiles.find((file) => file.target === 'End' && file.status === 'ready' && file.url)
   const hasUploadingFiles = uploadedFiles.some((file) => file.status === 'uploading')
-  const canSubmit = hasComposerInput && Boolean(readyStartFrame?.url && readyEndFrame?.url) && !hasUploadingFiles && !isSubmitting
+  const hasReadyFrames = Boolean(readyStartFrame?.url && readyEndFrame?.url)
+  const canSubmit = hasComposerInput && hasReadyFrames && !hasUploadingFiles && !isSubmitting
+  const blockedReason = useMemo(() => {
+    if (isSubmitting) return null
+    if (hasUploadingFiles) return 'Waiting for frame uploads to finish…'
+    if (!readyStartFrame) return 'Add a Start frame image (use the Start button on the left).'
+    if (!readyEndFrame) return 'Add an End frame image (use the End button on the left).'
+    if (!promptText.trim()) return 'Describe the motion between the two frames.'
+    return null
+  }, [isSubmitting, hasUploadingFiles, readyStartFrame, readyEndFrame, promptText])
+  const [composerError, setComposerError] = useState<string | null>(null)
   const startUploadCount = uploadedFiles.filter((file) => file.target === 'Start').length
   const endUploadCount = uploadedFiles.filter((file) => file.target === 'End').length
   const previewVideo = useMemo(() => {
@@ -364,17 +374,19 @@ export default function DashboardPage() {
     event.preventDefault()
 
     if (!canSubmit) {
+      setComposerError(blockedReason ?? 'Add a prompt and Start/End frames before rendering.')
       return
     }
 
     const nextPrompt = buildPromptWithUploadedFiles(promptText.trim(), uploadedFiles)
 
     setIsSubmitting(true)
+    setComposerError(null)
     setVideoColumnMessage(null)
 
     try {
       if (!readyStartFrame?.url || !readyEndFrame?.url) {
-        setVideoColumnMessage('Add one Start image and one End image before rendering.')
+        setComposerError('Add one Start image and one End image before rendering.')
         return
       }
 
@@ -395,9 +407,9 @@ export default function DashboardPage() {
       setPromptText('')
       setUploadedFiles([])
     } catch (error) {
-      setVideoColumnMessage(
-        error instanceof ApiError ? `${error.code}: ${error.message}` : 'Could not start video generation.'
-      )
+      const message = error instanceof ApiError ? `${error.code}: ${error.message}` : 'Could not start video generation.'
+      setComposerError(message)
+      setVideoColumnMessage(message)
     } finally {
       setIsSubmitting(false)
     }
@@ -718,6 +730,12 @@ export default function DashboardPage() {
                 ))}
               </div>
             ) : null}
+
+            {composerError ? (
+              <p className="text-xs leading-5 text-rose-300">{composerError}</p>
+            ) : blockedReason && hasComposerInput ? (
+              <p className="text-xs leading-5 text-zinc-500">{blockedReason}</p>
+            ) : null}
           </div>
 
           <div className="flex items-center justify-between gap-2 sm:justify-end">
@@ -728,7 +746,7 @@ export default function DashboardPage() {
             <button
               className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-zinc-100 text-zinc-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
               type="submit"
-              disabled={!canSubmit}
+              disabled={isSubmitting || hasUploadingFiles}
               aria-label="Generate video"
             >
               {isSubmitting ? (
