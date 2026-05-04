@@ -56,6 +56,16 @@ export const jobService: JobService = {
     if (error) throw new Error(error.message);
   },
 
+  async failJob(svc, params) {
+    const { error } = await svc.rpc("generator_fail_job", {
+      _user_id: params.userId,
+      _job_id: params.jobId,
+      _reason: params.reason ?? null,
+      _refund: params.refundCredits ?? true,
+    });
+    if (error) throw new Error(error.message);
+  },
+
   async completeJob(svc, params) {
     const { data, error } = await svc.rpc("generator_complete_job", {
       _user_id: params.userId,

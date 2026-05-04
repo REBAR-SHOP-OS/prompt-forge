@@ -35,6 +35,12 @@ export interface JobService {
   getMyJob(userId: string, jobId: string, client: SupabaseClient): Promise<JobDetail | null>;
   createJob(svc: SupabaseClient, input: CreateJobInput): Promise<string>;
   markProcessing(svc: SupabaseClient, userId: string, jobId: string, providerJobId: string | null): Promise<void>;
+  failJob(svc: SupabaseClient, params: {
+    userId: string;
+    jobId: string;
+    reason?: string | null;
+    refundCredits?: boolean;
+  }): Promise<void>;
   completeJob(svc: SupabaseClient, params: {
     userId: string;
     jobId: string;

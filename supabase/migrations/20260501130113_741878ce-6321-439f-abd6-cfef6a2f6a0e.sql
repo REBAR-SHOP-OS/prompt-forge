@@ -1,7 +1,9 @@
-ALTER TABLE public.core_user_profiles DISABLE TRIGGER USER;
-
-UPDATE public.core_user_profiles
-SET credits_balance = 50, updated_at = now()
-WHERE id = '55779da2-1d7d-4ce2-b5bb-19e3dc8cfd40';
-
-ALTER TABLE public.core_user_profiles ENABLE TRIGGER USER;
+-- Intentionally left as a no-op.
+--
+-- A previous version of this migration attempted to mutate a hard-coded
+-- profile row and temporarily disable user triggers. That behavior is unsafe
+-- for shared environments and does not belong in the product migration stream.
+--
+-- Keep environment-specific credit seeding in an operator runbook or a
+-- dedicated non-production seed step instead.
+SELECT 1;

@@ -2,6 +2,7 @@
 // Provider/model resolution + cost estimation. Provider keys read from env only.
 import type { SupabaseClient } from "../../core/supabase.ts";
 import type { AiGateway, GenerationStartResult, ProviderKey, ResolvedRoute } from "./contract.ts";
+import { getEnv } from "../../core/env.ts";
 
 interface ModelCostConfig {
   // Cost per 1k prompt characters (proxy unit for preview-stage estimation).
@@ -24,6 +25,10 @@ function getProviderApiKey(providerKey: ProviderKey): string | null {
   if (providerKey === "flow") return Deno.env.get("FLOW_API_KEY") ?? null;
   if (providerKey === "wan") return Deno.env.get("WAN_API_KEY") ?? null;
   return null;
+}
+
+function allowMockGeneration(): boolean {
+  return getEnv("ALLOW_MOCK_GENERATION", false).toLowerCase() === "true";
 }
 
 async function resolveRoute(
@@ -56,8 +61,7 @@ async function startGeneration(
   _prompt: string,
 ): Promise<GenerationStartResult> {
   const apiKey = getProviderApiKey(providerKey);
-  // No real provider key configured → synchronous mock so the contract matches.
-  if (!apiKey) {
+  if (!apiKey && allowMockGeneration()) {
     return {
       providerJobId: `mock_${crypto.randomUUID()}`,
       videoUrl: MOCK_VIDEO_URL,
@@ -67,8 +71,13 @@ async function startGeneration(
       isComplete: true,
     };
   }
-  // Real-provider branch is intentionally not implemented in Phase 5.
-  // Whenever a key is configured, behave like a queued async start.
+
+  if (!apiKey) {
+    throw new Error(`provider API key missing for ${providerKey}`);
+  }
+
+  // Real-provider branch is intentionally still async here.
+  // We return a queued job, but only when a real provider key is configured.
   return {
     providerJobId: `${providerKey}_${crypto.randomUUID()}`,
     videoUrl: null,

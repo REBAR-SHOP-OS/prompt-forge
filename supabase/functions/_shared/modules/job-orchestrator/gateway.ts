@@ -119,24 +119,52 @@ export const jobOrchestratorGateway = {
           try {
             gen = await aiGateway.startGeneration(route.providerKey, route.resolvedModel, prompt);
           } catch (e) {
+            await jobService.failJob(svc, {
+              userId: auth.userId,
+              jobId,
+              reason: (e as Error).message,
+              refundCredits: true,
+            });
             logError("startGeneration failed", { error: (e as Error).message, jobId });
             return errorResponse("PROVIDER_ERROR", "Provider failed to start generation", 502, ctx.requestId);
           }
 
-          await jobService.markProcessing(svc, auth.userId, jobId, gen.providerJobId);
+          try {
+            await jobService.markProcessing(svc, auth.userId, jobId, gen.providerJobId);
+          } catch (e) {
+            await jobService.failJob(svc, {
+              userId: auth.userId,
+              jobId,
+              reason: (e as Error).message,
+              refundCredits: true,
+            });
+            logError("markProcessing failed", { error: (e as Error).message, jobId });
+            return errorResponse("JOB_STATE_ERROR", "Could not update job state", 500, ctx.requestId);
+          }
 
           let videoAssetId: string | null = null;
           let finalStatus: "processing" | "completed" = "processing";
           if (gen.isComplete && gen.videoUrl) {
-            videoAssetId = await jobService.completeJob(svc, {
-              userId: auth.userId,
-              jobId,
-              storagePath: gen.videoUrl,
-              thumbnailUrl: gen.thumbnailUrl,
-              aspectRatio: gen.aspectRatio,
-              duration: gen.duration,
-            });
-            finalStatus = "completed";
+            try {
+              videoAssetId = await jobService.completeJob(svc, {
+                userId: auth.userId,
+                jobId,
+                storagePath: gen.videoUrl,
+                thumbnailUrl: gen.thumbnailUrl,
+                aspectRatio: gen.aspectRatio,
+                duration: gen.duration,
+              });
+              finalStatus = "completed";
+            } catch (e) {
+              await jobService.failJob(svc, {
+                userId: auth.userId,
+                jobId,
+                reason: (e as Error).message,
+                refundCredits: true,
+              });
+              logError("completeJob failed", { error: (e as Error).message, jobId });
+              return errorResponse("JOB_COMPLETE_ERROR", "Could not finalize generated video", 500, ctx.requestId);
+            }
           }
 
           await writeAuditLog(svc, {

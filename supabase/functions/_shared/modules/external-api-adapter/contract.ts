@@ -31,9 +31,10 @@ export interface AiGateway {
   getProviderApiKey(p: ProviderKey): string | null;
   /**
    * Trigger a generation against the external provider. In Phase 5 the call is
-   * mocked deterministically when no provider key is configured; the public
-   * contract is identical to a real provider call so the adapter can be swapped
-   * later without touching the orchestrator.
+   * mocked deterministically only when mock generation is explicitly enabled
+   * and no provider key is configured; the public contract is identical to a
+   * real provider call so the adapter can be swapped later without touching
+   * the orchestrator.
    */
   startGeneration(
     providerKey: ProviderKey,
