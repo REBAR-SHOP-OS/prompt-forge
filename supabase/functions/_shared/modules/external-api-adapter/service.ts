@@ -21,7 +21,7 @@ interface ModelCostConfig {
 const COST_MAP: Record<string, ModelCostConfig> = {
   "flow-video-1": { costPer1kChars: 0.04 },
   "wan-video-1": { costPer1kChars: 0.03 },
-  "wan2.7-i2v": { costPer1kChars: 0.05 },
+  "wan2.7-i2v-2026-04-25": { costPer1kChars: 0.05 },
 };
 
 const MOCK_VIDEO_URL = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
@@ -104,7 +104,8 @@ async function startWanI2V(
   }
 
   // Per Wan image-to-video general API reference, the new media[] protocol
-  // accepts first_frame and last_frame entries.
+  // accepts first_frame and last_frame entries. Defaults below match the docs'
+  // recommended starter values for the first+last frame combination.
   const body = {
     model: resolvedModel,
     input: {
@@ -114,7 +115,12 @@ async function startWanI2V(
         { type: "last_frame", url: input.lastFrameUrl },
       ],
     },
-    parameters: {},
+    parameters: {
+      resolution: "720P",
+      duration: 5,
+      prompt_extend: true,
+      watermark: false,
+    },
   };
 
   const res = await fetch(`${DASHSCOPE_BASE_URL}${DASHSCOPE_CREATE_PATH}`, {
@@ -129,8 +135,16 @@ async function startWanI2V(
 
   const json = (await res.json().catch(() => ({}))) as DashScopeCreateResponse;
   if (!res.ok) {
-    logError("dashscope create failed", { status: res.status, code: json.code, message: json.message });
-    throw new Error(`DashScope ${res.status}: ${json.code ?? ""} ${json.message ?? "unknown error"}`.trim());
+    logError("dashscope create failed", {
+      status: res.status,
+      code: json.code,
+      message: json.message,
+      requestId: json.request_id,
+      model: resolvedModel,
+    });
+    throw new Error(
+      `DashScope ${res.status} ${json.code ?? ""} ${json.message ?? "unknown error"} (request_id=${json.request_id ?? "?"})`.trim(),
+    );
   }
   const taskId = json.output?.task_id;
   if (!taskId) {
