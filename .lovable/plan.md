@@ -1,20 +1,24 @@
-# پخش ویدئو در کارت Library
+# ویرایش پرامت و ساخت مجدد از روی هر کارت
 
-در پنل Library سمت چپ، thumbnail هر ویدئو ذخیره‌شده فقط یک تگ `<video>` بدون `controls` است (روی فایل‌های `.webm` تولیدشده با MediaRecorder، فریم اول هم نمایش داده نمی‌شود → کادر سیاه خالی). با کلیک روی کارت، ID انتخاب می‌شود و در player وسط صفحه پخش می‌شود، اما کاربر انتظار دارد همان‌جا داخل کارت هم بتواند پلی کند.
+به هر کارت History (و به‌صورت اختیاری Library) یک دکمه‌ی ✏️ «ویرایش و ساخت مجدد» اضافه می‌شود. با کلیک روی این دکمه:
 
-## تغییر
+1. پرامت همان ویدئو در composer پایین صفحه بارگذاری می‌شود.
+2. اگر کارت Image-to-Video بوده، فریم‌های Start/End آن به عنوان seed در uploader قرار می‌گیرند (مثل رفتار فعلی Reuse). اگر Text-to-Video بوده، حالت composer به Text-to-Video سوئیچ می‌کند.
+3. composer focus می‌گیرد و کاربر می‌تواند پرامت را ویرایش کند.
+4. با زدن Submit همان فلوی ساخت معمولی اجرا می‌شود (یک job جدید). کارت اصلی دست‌نخورده باقی می‌ماند تا کاربر بتواند نسخه‌های مختلف را مقایسه کند.
 
-در `src/modules/generator-ui/pages/DashboardPage.tsx` (تقریباً خط ۱۴۶۰–۱۴۷۴، داخل map روی `approvedVideos`):
+این کار از مکانیزم Reuse موجود (که در `pages/DashboardPage.tsx` خط ۸۳۳–۸۸۰ اطراف کار می‌کند) استفاده می‌کند تا کد جدید کم باشد.
 
-- افزودن attribute `controls` به تگ `<video>` thumbnail.
-- تغییر `object-cover` به `object-contain` تا کل فریم دیده شود.
-- حذف `muted` (تا با controls صدا هم پخش شود).
-- اضافه‌کردن `onClick={e => e.stopPropagation()}` روی wrapper تا کلیک روی کنترل‌های ویدئو باعث trigger شدن انتخاب کارت/بستن پنل نشود.
+## تغییرات
 
-با این تغییر کاربر می‌تواند مستقیماً داخل کارت Library روی Play بزند و ویدئو را ببیند، و هم‌زمان کلیک روی بقیه‌ی نواحی کارت همان رفتار قبلی (نمایش در player اصلی) را حفظ می‌کند.
+**`src/modules/generator-ui/pages/DashboardPage.tsx`**
+- یک تابع جدید `editAndReuseJob(job: JobDetail)` اضافه می‌شود که:
+  - `setPromptText(job.input_prompt)`
+  - اگر `first_frame_url` یا `last_frame_url` دارد → `setGenerationMode('image-to-video')` و ساخت `UploadedFile`های ready با همان URLها (مشابه seed موجود).
+  - در غیر این صورت → `setGenerationMode('text-to-video')` و `setUploadedFiles([])`.
+  - بستن پنل History/Library در صورت باز بودن.
+  - `promptInputRef.current?.focus()` و scroll به composer.
+- در map مربوط به History (خط ۱۲۵۰–۱۳۳۶) یک دکمه‌ی جدید با آیکون `Pencil` (یا `RotateCcw` که قبلاً import شده) کنار دکمه‌های Bookmark/Trash اضافه می‌شود؛ `onClick` آن `event.stopPropagation()` و `editAndReuseJob(video)` را صدا می‌زند.
+- همان دکمه در کارت‌های Library (خط ۱۴۹۲–۱۵۱۵) هم تکرار می‌شود.
 
-## فایل تغییر
-
-- `src/modules/generator-ui/pages/DashboardPage.tsx` — فقط بلوک thumbnail داخل کارت Library.
-
-تغییر دیگری لازم نیست.
+تنها همین فایل تغییر می‌کند. هیچ تغییر بکند یا migration لازم نیست — هر بار ساخت یک job جدید مستقل با هزینه‌ی اعتبار عادی است.
