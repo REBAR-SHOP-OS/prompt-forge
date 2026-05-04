@@ -159,7 +159,9 @@ function getJobProgressPercent(job: { status: string; progress_percent?: number 
   const startedAt = Date.parse(job.created_at)
   if (!Number.isFinite(startedAt)) return status === 'pending' ? 8 : 25
   const elapsed = Date.now() - startedAt
-  const ratio = elapsed / 150_000 // ~2.5 min expected
+  // Wan 2.7 typically takes ~30-40s of real time per 1s of output. Use 35s/s heuristic, capped to 10s clips.
+  const expectedMs = 10 * 35_000
+  const ratio = elapsed / expectedMs
   return Math.max(status === 'pending' ? 8 : 18, Math.min(95, Math.round(18 + ratio * 77)))
 }
 
@@ -224,7 +226,7 @@ export default function DashboardPage() {
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
-  const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15>(5)
+  const [durationSeconds, setDurationSeconds] = useState<5 | 10>(5)
   const userId = session?.user?.id ?? null
   const approvedStorageKey = userId ? `approved-videos:${userId}` : null
   const [approvedIds, setApprovedIds] = useState<Set<string>>(() => new Set())
@@ -1529,7 +1531,7 @@ export default function DashboardPage() {
             </button>
           </div>
           <div role="radiogroup" aria-label="Clip duration" className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
-            {([5, 10, 15] as const).map((sec) => {
+            {([5, 10] as const).map((sec) => {
               const active = durationSeconds === sec
               return (
                 <button
