@@ -27,6 +27,7 @@ import { supabase } from '@/integrations/supabase/client'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { mergeVideoUrls } from '@/modules/generator-ui/lib/mergeVideos'
+import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 
 type VideoJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
 type UploadTarget = 'Start' | 'End'
@@ -662,7 +663,8 @@ export default function DashboardPage() {
       }
       setUploadedFiles([placeholder])
       try {
-        const blob = await captureLastFrameAsBlob(prev.video.storage_path)
+        const proxied = await proxiedVideoUrl(prev.video.storage_path)
+        const blob = await captureLastFrameAsBlob(proxied)
         const storagePath = `${userId}/start-${Date.now()}-${crypto.randomUUID()}.png`
         const { error } = await supabase.storage
           .from(FRAMES_BUCKET)
@@ -703,10 +705,11 @@ export default function DashboardPage() {
     setMergeProgress(0)
     setVideoColumnMessage(null)
     try {
-      const urls = completedSourceVideos
+      const rawUrls = completedSourceVideos
         .slice()
         .reverse() // oldest -> newest, in chronological order
         .map((v) => v.video!.storage_path)
+      const urls = await Promise.all(rawUrls.map((u) => proxiedVideoUrl(u)))
 
       const blob = await mergeVideoUrls(urls, (p) => setMergeProgress(Math.round(p.ratio * 100)))
 
@@ -764,7 +767,8 @@ export default function DashboardPage() {
       setTimeout(() => URL.revokeObjectURL(blobUrl), 4_000)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Merge failed'
-      setVideoColumnMessage(`Merge failed: ${msg}`)
+      console.error('[merge] failed', err)
+      setVideoColumnMessage(`Could not load source video for merge — please try again in a moment. (${msg})`)
     } finally {
       setIsMerging(false)
       setMergeProgress(0)
