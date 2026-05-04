@@ -1,7 +1,6 @@
 import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowRight,
-  ChevronDown,
   ChevronsRight,
   Clapperboard,
   FileUp,
@@ -21,7 +20,6 @@ import { useAuth } from '@/core/auth/AuthProvider'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 
-type ForgeMode = 'Prompt' | 'Image' | 'Video' | 'Agent'
 type VideoJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
 type UploadTarget = 'Start' | 'End'
 type UploadedFile = {
@@ -32,7 +30,6 @@ type UploadedFile = {
   type: string
 }
 
-const modes: ForgeMode[] = ['Prompt', 'Image', 'Video', 'Agent']
 const VIDEO_POLL_INTERVAL_MS = 4_000
 
 function isTerminalStatus(status: string) {
@@ -158,7 +155,6 @@ function buildSeededJob(prompt: string, result: CreateJobResult): JobDetail {
 export default function DashboardPage() {
   const { session, loading: authLoading } = useAuth()
   const [promptText, setPromptText] = useState('')
-  const [mode, setMode] = useState<ForgeMode>('Prompt')
   const [isDragging, setIsDragging] = useState(false)
   const [startContext] = useState('Start')
   const [endGoal] = useState('End')
@@ -310,12 +306,6 @@ export default function DashboardPage() {
 
     const nextPrompt = buildPromptWithUploadedFiles(promptText.trim(), uploadedFiles)
 
-    if (mode !== 'Video') {
-      setPromptText('')
-      setUploadedFiles([])
-      return
-    }
-
     setIsSubmitting(true)
     setVideoColumnMessage(null)
 
@@ -341,7 +331,6 @@ export default function DashboardPage() {
   }
 
   function handleAddVideoCard() {
-    setMode('Video')
     promptInputRef.current?.focus()
   }
 
@@ -618,61 +607,49 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        {uploadedFiles.length > 0 ? (
-          <div className="flex max-h-24 flex-wrap gap-2 overflow-y-auto border-t border-white/10 pt-3">
-            {uploadedFiles.map((file) => (
-              <span
-                key={file.id}
-                className="inline-flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-white/[0.045] px-3 py-1.5 text-xs text-zinc-300"
-              >
-                <Paperclip className="h-3.5 w-3.5 shrink-0 text-zinc-500" aria-hidden="true" />
-                <span className="max-w-[11rem] truncate">
-                  {file.target}: {file.name}
-                </span>
-                <span className="shrink-0 text-zinc-600">{formatFileSize(file.size)}</span>
-                <button
-                  type="button"
-                  className="grid h-4 w-4 shrink-0 place-items-center rounded-full text-zinc-500 transition hover:bg-white/10 hover:text-zinc-100"
-                  onClick={() => removeUploadedFile(file.id)}
-                  aria-label={`Remove ${file.name}`}
-                >
-                  <X className="h-3 w-3" aria-hidden="true" />
-                </button>
-              </span>
-            ))}
-          </div>
-        ) : null}
-
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-          <label className="sr-only" htmlFor="prompt-input">
-            Prompt
-          </label>
-          <textarea
-            id="prompt-input"
-            ref={promptInputRef}
-            value={promptText}
-            onChange={(event) => setPromptText(event.target.value)}
-            placeholder="What do you want to forge?"
-            rows={1}
-            className="min-h-12 max-h-40 w-full resize-y border-0 bg-transparent text-[15px] leading-6 text-zinc-100 outline-none placeholder:text-zinc-500/70"
-          />
+          <div className="grid gap-3">
+            <label className="sr-only" htmlFor="prompt-input">
+              Prompt
+            </label>
+            <textarea
+              id="prompt-input"
+              ref={promptInputRef}
+              value={promptText}
+              onChange={(event) => setPromptText(event.target.value)}
+              placeholder="What do you want to forge?"
+              rows={1}
+              className="min-h-12 max-h-40 w-full resize-y border-0 bg-transparent text-[15px] leading-6 text-zinc-100 outline-none placeholder:text-zinc-500/70"
+            />
+
+            {uploadedFiles.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {uploadedFiles.map((file) => (
+                  <span
+                    key={file.id}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs text-zinc-300"
+                  >
+                    <Paperclip className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
+                    <span className="max-w-[12rem] truncate">{file.name}</span>
+                    <span className="text-zinc-500">{file.target}</span>
+                    <button
+                      type="button"
+                      className="grid h-4 w-4 place-items-center rounded-full text-zinc-500 transition hover:text-zinc-100"
+                      aria-label={`Remove ${file.name}`}
+                      onClick={() => removeUploadedFile(file.id)}
+                    >
+                      <X className="h-3 w-3" aria-hidden="true" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
 
           <div className="flex items-center justify-between gap-2 sm:justify-end">
-            <label className="relative inline-flex h-10 min-w-32 items-center rounded-full border border-[#2a2d32] bg-black/20 text-sm font-semibold text-zinc-200/80">
-              <span className="sr-only">Output mode</span>
-              <select
-                value={mode}
-                onChange={(event) => setMode(event.target.value as ForgeMode)}
-                className="h-full w-full appearance-none rounded-full bg-transparent py-0 pl-4 pr-10 outline-none"
-              >
-                {modes.map((item) => (
-                  <option key={item} value={item} className="text-zinc-950">
-                    {item}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-3 h-4 w-4 text-zinc-500" aria-hidden="true" />
-            </label>
+            <span className="inline-flex h-10 min-w-32 items-center justify-center rounded-full border border-[#2a2d32] bg-black/20 px-4 text-sm font-semibold text-zinc-200/80">
+              Prompt
+            </span>
 
             <button
               className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-zinc-100 text-zinc-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
