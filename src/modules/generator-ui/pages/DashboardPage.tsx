@@ -636,23 +636,9 @@ export default function DashboardPage() {
         )}
       </main>
 
-      <button
-        type="button"
-        aria-label="Close history panel"
-        className={`fixed inset-0 z-20 bg-black/35 transition lg:hidden ${
-          isHistoryPanelOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
-        }`}
-        onClick={() => setIsHistoryPanelOpen(false)}
-      />
-
       <aside
-        className={`fixed bottom-3 right-3 top-3 z-30 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/90 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.36)] backdrop-blur-xl transition duration-300 sm:bottom-5 sm:right-4 sm:top-5 sm:w-80 lg:z-30 lg:w-72 xl:right-5 xl:w-80 ${
-          isHistoryPanelOpen
-            ? 'pointer-events-auto visible translate-x-0 opacity-100'
-            : 'pointer-events-none invisible translate-x-[calc(100%+1.25rem)] opacity-0'
-        }`}
-        aria-label="History panel"
-        aria-hidden={!isHistoryPanelOpen}
+        className="fixed bottom-3 right-3 top-3 z-30 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/90 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.36)] backdrop-blur-xl sm:bottom-5 sm:right-4 sm:top-5 sm:w-80 lg:w-72 xl:right-5 xl:w-80"
+        aria-label="Recent outputs"
       >
         <div className="flex items-center justify-between border-b border-white/10 pb-3">
           <div className="inline-flex items-center gap-2">
@@ -662,14 +648,6 @@ export default function DashboardPage() {
               {generatedVideos.length}
             </span>
           </div>
-          <button
-            type="button"
-            className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-100"
-            aria-label="Close history panel"
-            onClick={() => setIsHistoryPanelOpen(false)}
-          >
-            <X className="h-4 w-4" aria-hidden="true" />
-          </button>
         </div>
 
         <div className="mt-4 flex items-center justify-between">
