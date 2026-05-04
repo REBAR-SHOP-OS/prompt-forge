@@ -197,7 +197,7 @@ function buildSeededJob(
 }
 
 export default function DashboardPage() {
-  const { session, loading: authLoading } = useAuth()
+  const { session, profile, signOut, loading: authLoading } = useAuth()
   const [promptText, setPromptText] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const [startContext] = useState('Start')
