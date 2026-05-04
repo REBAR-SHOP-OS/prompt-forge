@@ -169,8 +169,16 @@ function getJobProgressPercent(job: { status: string; progress_percent?: number 
 function mergeJob(currentJobs: JobDetail[], nextJob: JobDetail) {
   const remainingJobs = currentJobs.filter((job) => job.id !== nextJob.id)
   return [nextJob, ...remainingJobs].sort(
-    (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
+    // Ascending: oldest first (card #1 at top), newest at the bottom.
+    (left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime()
   )
+}
+
+// Strip the auto-appended "Attached files:" block that buildPromptWithUploadedFiles adds,
+// so the continuation seed carries only the user's original creative description.
+function stripAttachedFilesBlock(prompt: string): string {
+  const idx = prompt.indexOf('\n\nAttached files:')
+  return (idx >= 0 ? prompt.slice(0, idx) : prompt).trim()
 }
 
 async function hydrateJobs(summaries: JobSummary[]) {
