@@ -17,6 +17,7 @@ import {
   LoaderCircle,
   LogOut,
   Paperclip,
+  Pencil,
   Plus,
   RotateCcw,
   Sparkles,
@@ -888,6 +889,55 @@ export default function DashboardPage() {
     })
   }
 
+  function editAndReuseJob(job: { input_prompt: string; first_frame_url?: string | null; last_frame_url?: string | null }) {
+    setComposerError(null)
+    setVideoColumnMessage(null)
+    setPromptText(job.input_prompt ?? '')
+
+    const hasFrames = Boolean(job.first_frame_url || job.last_frame_url)
+    if (hasFrames) {
+      setGenerationMode('image-to-video')
+      const seeds: UploadedFile[] = []
+      const baseId = Date.now()
+      if (job.first_frame_url) {
+        seeds.push({
+          id: baseId,
+          name: 'reused-start.png',
+          size: 0,
+          target: 'Start',
+          type: 'image/png',
+          status: 'ready',
+          url: job.first_frame_url,
+          error: null,
+        })
+      }
+      if (job.last_frame_url) {
+        seeds.push({
+          id: baseId + 1,
+          name: 'reused-end.png',
+          size: 0,
+          target: 'End',
+          type: 'image/png',
+          status: 'ready',
+          url: job.last_frame_url,
+          error: null,
+        })
+      }
+      setUploadedFiles(seeds)
+      setUploadTarget(job.first_frame_url ? 'End' : 'Start')
+    } else {
+      setGenerationMode('text-to-video')
+      setUploadedFiles([])
+    }
+
+    setIsApprovedPanelOpen(false)
+
+    requestAnimationFrame(() => {
+      promptInputRef.current?.focus()
+      promptInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }
+
   async function handleMergeAllVideos() {
     if (isMerging) return
     if (completedSourceVideos.length < 2) {
@@ -1324,6 +1374,18 @@ export default function DashboardPage() {
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation()
+                            editAndReuseJob(video)
+                          }}
+                          aria-label="Edit prompt and regenerate"
+                          title="Edit prompt and regenerate"
+                          className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                        >
+                          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
                             deleteCard(video.id)
                           }}
                           aria-label="Delete card"
@@ -1503,6 +1565,18 @@ export default function DashboardPage() {
                             className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/30 hover:bg-rose-300/10 hover:text-rose-200"
                           >
                             <X className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              editAndReuseJob(video)
+                            }}
+                            aria-label="Edit prompt and regenerate"
+                            title="Edit prompt and regenerate"
+                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                          >
+                            <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                           </button>
                           <button
                             type="button"
