@@ -948,12 +948,29 @@ export default function DashboardPage() {
     setPreviewVideoId(null)
 
     // Continuity rule: each new card must continue the previous render.
-    // Auto-seed the previous video's last frame as the Start frame.
-    const prev = generatedVideos.find(
-      (v) => !deletedIds.has(v.id)
-        && normalizeStatus(v.status) === 'completed'
-        && v.video?.storage_path,
-    )
+    // generatedVideos is sorted ascending (oldest -> newest), so the most
+    // recent completed render is the LAST matching item — scan from the end.
+    let prev: JobDetail | undefined
+    for (let i = generatedVideos.length - 1; i >= 0; i--) {
+      const v = generatedVideos[i]
+      if (
+        !deletedIds.has(v.id) &&
+        normalizeStatus(v.status) === 'completed' &&
+        v.video?.storage_path
+      ) {
+        prev = v
+        break
+      }
+    }
+
+    // Pre-fill the prompt with a continuation seed of the previous card's prompt
+    // so the next clip continues the same scene/content (the user can still edit it).
+    if (prev) {
+      const previousPrompt = stripAttachedFilesBlock(prev.input_prompt || '')
+      if (previousPrompt) {
+        setPromptText(`ادامه: ${previousPrompt} — صحنه را به‌صورت طبیعی از همان‌جا که قبلی تمام شد ادامه بده.`)
+      }
+    }
 
     if (prev?.video?.storage_path && userId) {
       setGenerationMode('image-to-video')
