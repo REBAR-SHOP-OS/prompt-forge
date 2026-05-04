@@ -1,24 +1,58 @@
-# ویرایش پرامت و ساخت مجدد از روی هر کارت
+## هدف
 
-به هر کارت History (و به‌صورت اختیاری Library) یک دکمه‌ی ✏️ «ویرایش و ساخت مجدد» اضافه می‌شود. با کلیک روی این دکمه:
+قانون ساده‌ای که کاربر مشخص کرد:
+- **فقط عکس Start** → آن عکس را اول ویدئو قرار بده، ادامه ویدئو با پرامت ساخته شود. (End را فراموش کن، آن را به‌عنوان Last frame استفاده نکن)
+- **فقط عکس End** → ویدئویی با پرامت بساز که در **انتها** به عکس End برسد. (این منطق فعلاً درست کار می‌کند)
+- **هر دو فریم** → مثل قبل image-to-video با first+last.
 
-1. پرامت همان ویدئو در composer پایین صفحه بارگذاری می‌شود.
-2. اگر کارت Image-to-Video بوده، فریم‌های Start/End آن به عنوان seed در uploader قرار می‌گیرند (مثل رفتار فعلی Reuse). اگر Text-to-Video بوده، حالت composer به Text-to-Video سوئیچ می‌کند.
-3. composer focus می‌گیرد و کاربر می‌تواند پرامت را ویرایش کند.
-4. با زدن Submit همان فلوی ساخت معمولی اجرا می‌شود (یک job جدید). کارت اصلی دست‌نخورده باقی می‌ماند تا کاربر بتواند نسخه‌های مختلف را مقایسه کند.
+## مشکل فعلی
 
-این کار از مکانیزم Reuse موجود (که در `pages/DashboardPage.tsx` خط ۸۳۳–۸۸۰ اطراف کار می‌کند) استفاده می‌کند تا کد جدید کم باشد.
+در `src/modules/generator-ui/pages/DashboardPage.tsx` (خط ~746)، حالت "فقط Start" به‌اشتباه همان عکس Start را به‌عنوان `lastFrameUrl` هم می‌فرستد:
 
-## تغییرات
+```ts
+firstFrameUrl: readyStartFrame.url,
+lastFrameUrl: readyStartFrame.url,  // ← غلط
+```
+
+این باعث می‌شود ویدئو از Start شروع و دوباره به همان Start برگردد (بدون حرکت واقعی مطابق پرامت).
+
+## راه‌حل
+
+شاخه‌ی "Start-only" را متقارن با شاخه‌ی "End-only" بازنویسی کنیم:
+
+1. یک job **text-to-video** (`wan2.7-t2v-2026-04-25`) با پرامت بساز.
+2. عکس Start را به‌عنوان یک کلیپ ساکن ۲ ثانیه‌ای به **ابتدای** ویدئوی نهایی **prepend** کن.
+
+### تغییرات کد
 
 **`src/modules/generator-ui/pages/DashboardPage.tsx`**
-- یک تابع جدید `editAndReuseJob(job: JobDetail)` اضافه می‌شود که:
-  - `setPromptText(job.input_prompt)`
-  - اگر `first_frame_url` یا `last_frame_url` دارد → `setGenerationMode('image-to-video')` و ساخت `UploadedFile`های ready با همان URLها (مشابه seed موجود).
-  - در غیر این صورت → `setGenerationMode('text-to-video')` و `setUploadedFiles([])`.
-  - بستن پنل History/Library در صورت باز بودن.
-  - `promptInputRef.current?.focus()` و scroll به composer.
-- در map مربوط به History (خط ۱۲۵۰–۱۳۳۶) یک دکمه‌ی جدید با آیکون `Pencil` (یا `RotateCcw` که قبلاً import شده) کنار دکمه‌های Bookmark/Trash اضافه می‌شود؛ `onClick` آن `event.stopPropagation()` و `editAndReuseJob(video)` را صدا می‌زند.
-- همان دکمه در کارت‌های Library (خط ۱۴۹۲–۱۵۱۵) هم تکرار می‌شود.
 
-تنها همین فایل تغییر می‌کند. هیچ تغییر بکند یا migration لازم نیست — هر بار ساخت یک job جدید مستقل با هزینه‌ی اعتبار عادی است.
+1. **State جدید**: `pendingStartPrepends` (موازی با `pendingEndAppends` موجود)، شامل persist در localStorage تحت کلید `pending-start-prepends:${userId}`.
+
+2. **شاخه Start-only در `handleSubmit`** (خطوط 746-755): به‌جای ارسال Start به‌عنوان first+last، به text-to-video تغییر دهد و url عکس Start را در `pendingStartPrepends` ذخیره کند:
+   ```ts
+   } else if (readyStartFrame?.url) {
+     createdJob = await jobOrchestratorGateway.createJob({
+       providerKey: 'wan',
+       requestedModel: 'wan2.7-t2v-2026-04-25',
+       prompt: nextPrompt,
+       durationSeconds,
+     })
+     pendingStartPrependUrl = readyStartFrame.url
+     seedFrames = { firstFrameUrl: readyStartFrame.url }
+   }
+   ```
+
+3. **useEffect جدید برای پردازش prepend**: کپی از useEffect موجود `pendingEndAppends` (خطوط 555-619)، با تفاوت اینکه ترتیب در `mergeVideoUrls` معکوس شود — `[stillPublic, proxiedSrc]` به‌جای `[proxiedSrc, stillPublic]`.
+
+4. **مسیر فایل‌های موقت**: `start-still-...` و `with-start-...` به‌جای `end-still-` / `with-end-`.
+
+### بدون تغییر
+
+- بک‌اند، edge functionها، و قرارداد `jobOrchestratorGateway` تغییر نمی‌کنند.
+- منطق "هر دو فریم" و "فقط End" دست‌نخورده باقی می‌ماند.
+- کتابخانه‌های `imageUrlToClip` و `mergeVideoUrls` همان‌هایی هستند که End-append استفاده می‌کند.
+
+## فایل‌های تغییر یافته
+
+- `src/modules/generator-ui/pages/DashboardPage.tsx` (تنها فایل)
