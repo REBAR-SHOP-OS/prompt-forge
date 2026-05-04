@@ -414,22 +414,30 @@ export default function DashboardPage() {
     setVideoColumnMessage(null)
 
     try {
-      if (!readyStartFrame?.url || !readyEndFrame?.url) {
-        setComposerError('Add one Start image and one End image before rendering.')
-        return
+      let createdJob
+      let seedFrames: { firstFrameUrl?: string; lastFrameUrl?: string } = {}
+
+      if (isTextToVideo) {
+        createdJob = await jobOrchestratorGateway.createJob({
+          providerKey: 'wan',
+          requestedModel: 'wan2.7-t2v-2026-04-25',
+          prompt: nextPrompt,
+        })
+      } else {
+        if (!readyStartFrame?.url || !readyEndFrame?.url) {
+          setComposerError('Add one Start image and one End image before rendering.')
+          return
+        }
+        createdJob = await jobOrchestratorGateway.createJob({
+          providerKey: 'wan',
+          prompt: nextPrompt,
+          firstFrameUrl: readyStartFrame.url,
+          lastFrameUrl: readyEndFrame.url,
+        })
+        seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
       }
 
-      const createdJob = await jobOrchestratorGateway.createJob({
-        providerKey: 'wan',
-        prompt: nextPrompt,
-        firstFrameUrl: readyStartFrame.url,
-        lastFrameUrl: readyEndFrame.url
-      })
-
-      const seededJob = buildSeededJob(nextPrompt, createdJob, {
-        firstFrameUrl: readyStartFrame.url,
-        lastFrameUrl: readyEndFrame.url
-      })
+      const seededJob = buildSeededJob(nextPrompt, createdJob, seedFrames)
 
       setPreviewVideoId(seededJob.id)
       setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
