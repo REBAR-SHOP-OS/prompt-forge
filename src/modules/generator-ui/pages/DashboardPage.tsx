@@ -515,6 +515,74 @@ export default function DashboardPage() {
     }
   }, [generatedVideos])
 
+  // When a job that has a pending end-frame append completes, merge a 2s
+  // still clip of the End image to the end of the video and replace the
+  // job's video with the merged output.
+  useEffect(() => {
+    if (!userId) return
+    const pendingIds = Object.keys(pendingEndAppends)
+    if (pendingIds.length === 0) return
+
+    pendingIds.forEach((jobId) => {
+      if (processingEndAppendRef.current.has(jobId)) return
+      const job = generatedVideos.find((j) => j.id === jobId)
+      if (!job) return
+      if (normalizeStatus(job.status) !== 'completed') return
+      if (!job.video?.storage_path) return
+
+      const endImageUrl = pendingEndAppends[jobId]
+      processingEndAppendRef.current.add(jobId)
+
+      ;(async () => {
+        try {
+          const proxiedSrc = await proxiedVideoUrl(job.video!.storage_path)
+          const stillClipBlob = await imageUrlToClip(endImageUrl, 2)
+
+          // Upload the still clip to storage so mergeVideoUrls can fetch it.
+          const stillPath = `${userId}/end-still-${Date.now()}-${crypto.randomUUID()}.webm`
+          const { error: stillErr } = await supabase.storage
+            .from(MERGED_BUCKET)
+            .upload(stillPath, stillClipBlob, { contentType: 'video/webm', upsert: false })
+          if (stillErr) throw new Error(stillErr.message)
+          const stillPublic = supabase.storage.from(MERGED_BUCKET).getPublicUrl(stillPath).data.publicUrl
+
+          const mergedBlob = await mergeVideoUrls([proxiedSrc, stillPublic])
+          const mergedPath = `${userId}/with-end-${Date.now()}-${crypto.randomUUID()}.webm`
+          const { error: upErr } = await supabase.storage
+            .from(MERGED_BUCKET)
+            .upload(mergedPath, mergedBlob, { contentType: 'video/webm', upsert: false })
+          if (upErr) throw new Error(upErr.message)
+          const mergedPublic = supabase.storage.from(MERGED_BUCKET).getPublicUrl(mergedPath).data.publicUrl
+
+          // Replace the job's video URL in local state so the UI shows the
+          // merged version (with the End frame appended).
+          setGeneratedVideos((current) =>
+            current.map((j) =>
+              j.id === jobId && j.video
+                ? { ...j, video: { ...j.video, storage_path: mergedPublic } }
+                : j,
+            ),
+          )
+        } catch (err) {
+          console.error('[end-append] failed', err)
+          setVideoColumnMessage(
+            `Could not append End frame to video: ${err instanceof Error ? err.message : 'unknown error'}`,
+          )
+        } finally {
+          // Remove from pending map regardless of outcome to avoid retry loops.
+          setPendingEndAppends((current) => {
+            if (!(jobId in current)) return current
+            const next = { ...current }
+            delete next[jobId]
+            persistPendingEndAppends(next)
+            return next
+          })
+          processingEndAppendRef.current.delete(jobId)
+        }
+      })()
+    })
+  }, [generatedVideos, pendingEndAppends, userId])
+
   // Smooth progress ticker: re-render once per second while any job is active
   // so the time-based progress bar advances visibly between API polls.
   const [, setProgressTick] = useState(0)
