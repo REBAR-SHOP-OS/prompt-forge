@@ -603,8 +603,89 @@ export default function DashboardPage() {
     })
   }
 
-  return (
-    <section
+  async function handleMergeAllVideos() {
+    if (isMerging) return
+    if (completedSourceVideos.length < 2) {
+      setVideoColumnMessage('Need at least 2 finished videos to merge.')
+      return
+    }
+    if (!userId) {
+      setVideoColumnMessage('Sign in to merge videos.')
+      return
+    }
+    setIsMerging(true)
+    setMergeProgress(0)
+    setVideoColumnMessage(null)
+    try {
+      const urls = completedSourceVideos
+        .slice()
+        .reverse() // oldest -> newest, in chronological order
+        .map((v) => v.video!.storage_path)
+
+      const blob = await mergeVideoUrls(urls, (p) => setMergeProgress(Math.round(p.ratio * 100)))
+
+      const filename = `merged-${Date.now()}.webm`
+      const storagePath = `${userId}/${filename}`
+      const { error: upErr } = await supabase.storage
+        .from(MERGED_BUCKET)
+        .upload(storagePath, blob, { contentType: 'video/webm', upsert: false })
+      if (upErr) throw new Error(upErr.message)
+      const { data } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(storagePath)
+      const publicUrl = data.publicUrl
+
+      const mergedId = `merged-${crypto.randomUUID()}`
+      const entry: JobDetail = {
+        id: mergedId,
+        status: 'completed',
+        input_prompt: `Final merged video — ${urls.length} clips`,
+        provider_key: 'merged',
+        model_key: 'browser-canvas',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        video: {
+          id: mergedId,
+          storage_path: publicUrl,
+          thumbnail_url: null,
+          aspect_ratio: null,
+          duration: null,
+        },
+      }
+
+      setMergedEntries((current) => {
+        const next = [entry, ...current]
+        persistMerged(next)
+        return next
+      })
+      // Auto-add to library (left panel).
+      setApprovedIds((current) => {
+        const next = new Set(current)
+        next.add(mergedId)
+        if (approvedStorageKey) {
+          try { window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
+        }
+        return next
+      })
+      setPreviewVideoId(mergedId)
+
+      // Trigger download.
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 4_000)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Merge failed'
+      setVideoColumnMessage(`Merge failed: ${msg}`)
+    } finally {
+      setIsMerging(false)
+      setMergeProgress(0)
+    }
+  }
+
+
       className="relative min-h-screen overflow-hidden bg-black text-zinc-100"
       style={{
         backgroundImage:
