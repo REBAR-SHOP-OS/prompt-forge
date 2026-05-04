@@ -5,3 +5,27 @@ verify_jwt = false
 
 [functions.jobs-delete]
 verify_jwt = false
+
+[functions.jobs-get]
+verify_jwt = false
+
+[functions.jobs-list]
+verify_jwt = false
+
+[functions.jobs-create]
+verify_jwt = false
+
+[functions.me]
+verify_jwt = false
+
+[functions.usage-credits]
+verify_jwt = false
+
+[functions.videos-list]
+verify_jwt = false
+
+[functions.ai-gateway-route-preview]
+verify_jwt = false
+
+[functions.health]
+verify_jwt = false
