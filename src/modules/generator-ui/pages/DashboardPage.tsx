@@ -798,6 +798,137 @@ export default function DashboardPage() {
         </div>
       </aside>
 
+      {/* Left library panel — only opens via the LayoutGrid icon. Shows approved videos. */}
+      <button
+        type="button"
+        aria-label="Close library"
+        className={`fixed inset-0 z-20 bg-black/35 transition lg:hidden ${
+          isApprovedPanelOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+        }`}
+        onClick={() => setIsApprovedPanelOpen(false)}
+      />
+
+      <aside
+        className={`fixed bottom-3 left-3 top-3 z-40 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.4)] backdrop-blur-xl transition duration-300 sm:bottom-5 sm:left-16 sm:top-5 sm:w-80 lg:w-72 xl:w-80 ${
+          isApprovedPanelOpen
+            ? 'pointer-events-auto visible translate-x-0 opacity-100'
+            : 'pointer-events-none invisible -translate-x-[calc(100%+1.25rem)] opacity-0'
+        }`}
+        aria-label="Library"
+        aria-hidden={!isApprovedPanelOpen}
+      >
+        <div className="flex items-center justify-between border-b border-white/10 pb-3">
+          <div className="inline-flex items-center gap-2">
+            <Library className="h-4 w-4 text-emerald-300" aria-hidden="true" />
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">Library</p>
+            <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
+              {generatedVideos.filter((v) => approvedIds.has(v.id)).length}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-100"
+            aria-label="Close library"
+            onClick={() => setIsApprovedPanelOpen(false)}
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="mt-4">
+          <p className="text-xs font-medium text-zinc-500">Saved videos</p>
+          <h2 className="text-sm font-semibold text-zinc-100">Your library</h2>
+        </div>
+
+        <div className="mt-3 flex-1 overflow-y-auto pr-1">
+          {(() => {
+            const approvedVideos = generatedVideos.filter((video) => approvedIds.has(video.id))
+            if (approvedVideos.length === 0) {
+              return (
+                <div className="grid h-full place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
+                  <div>
+                    <Library className="mx-auto h-8 w-8 text-zinc-600" aria-hidden="true" />
+                    <p className="mt-3 text-sm font-medium text-zinc-300">No saved videos yet</p>
+                    <p className="mt-2 text-xs leading-5 text-zinc-600">
+                      Approve a render from the right panel to keep it here.
+                    </p>
+                  </div>
+                </div>
+              )
+            }
+            return (
+              <div className="grid gap-3">
+                {approvedVideos.map((video) => {
+                  const isPreviewSelected = previewVideo?.id === video.id
+                  return (
+                    <article
+                      key={video.id}
+                      className={`cursor-pointer rounded-2xl border p-3 transition hover:border-white/20 hover:bg-white/[0.055] ${
+                        isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : 'border-white/10 bg-white/[0.035]'
+                      }`}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Preview ${video.input_prompt}`}
+                      onClick={() => {
+                        setPreviewVideoId(video.id)
+                        setIsApprovedPanelOpen(false)
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          setPreviewVideoId(video.id)
+                          setIsApprovedPanelOpen(false)
+                        }
+                      }}
+                    >
+                      <div className="overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
+                        {video.video?.storage_path ? (
+                          <video
+                            className="aspect-video h-full w-full bg-black object-cover"
+                            src={video.video.storage_path}
+                            muted
+                            playsInline
+                            preload="metadata"
+                          />
+                        ) : (
+                          <div className="grid aspect-video place-items-center text-zinc-500">
+                            <Clapperboard className="h-8 w-8" aria-hidden="true" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-3 flex items-start justify-between gap-3">
+                        <p className="max-h-12 overflow-hidden text-sm font-medium leading-6 text-zinc-200">
+                          {video.input_prompt}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            toggleApproved(video.id)
+                          }}
+                          aria-label="Remove from library"
+                          title="Remove from library"
+                          className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/30 hover:bg-rose-300/10 hover:text-rose-200"
+                        >
+                          <X className="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500">
+                        <span className="inline-flex items-center gap-2">
+                          <BookmarkCheck className="h-3.5 w-3.5 text-emerald-300" aria-hidden="true" />
+                          Saved
+                        </span>
+                        <span>{formatCreatedAt(video.created_at)}</span>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            )
+          })()}
+        </div>
+      </aside>
+
       <form
         className="fixed bottom-4 left-1/2 z-30 grid w-[min(45rem,calc(100vw-1rem))] -translate-x-1/2 gap-3 rounded-[22px] border border-white/10 bg-[#111214]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(45rem,calc(100vw-2rem))] sm:p-4"
         onSubmit={handleSubmit}
