@@ -879,7 +879,7 @@ export default function DashboardPage() {
             <Library className="mr-2 h-4 w-4" aria-hidden="true" />
             <span>Library</span>
             <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-              {approvedVideos.length}
+              {approvedIds.size}
             </span>
           </DropdownMenuItem>
           <DropdownMenuItem disabled className="opacity-100 focus:bg-transparent">
