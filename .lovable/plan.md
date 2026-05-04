@@ -1,60 +1,45 @@
 ## Goal
 
-Make the `+` icon (top-right of the History panel) enforce **continuation**: every new card must continue the previous render. Concretely, clicking `+` should:
+Let the user choose the generated clip length — **5 / 10 / 15 seconds** — from a small toggle in the composer (next to the existing "Text to Video / Image to Video" tabs). The chosen value is sent end-to-end to the Wan provider, which already accepts a `duration` parameter.
 
-1. Find the most recent **completed** video (the latest non-deleted render).
-2. Auto-extract that video's **last frame** as a PNG.
-3. Upload it to the existing `wan-frames` storage bucket.
-4. Pre-fill the composer in **Image to Video** mode with that frame as the **Start** image.
-5. Leave the user only to add an **End** frame + prompt before clicking Render.
-
-This makes every new clip a true continuation — the first frame of clip N+1 equals the last frame of clip N. Combined with the existing "merge all" feature, the final stitched video plays as one continuous shot.
+Default: **5 seconds** (current behavior, no change for users who don't touch the toggle).
 
 ## UX Behavior
 
-- Clicking `+` clears the composer (as today) and immediately:
-  - Switches mode to **Image to Video** (locks continuity).
-  - Shows a `Uploading…` chip labeled `continuation-from-<jobId>.png` in the Start slot.
-  - Once the frame is captured + uploaded, the chip flips to `Ready`.
-- If there are **no prior completed videos**, `+` behaves exactly as before — empty composer, user picks Start/End manually.
-- If frame capture fails (CORS on the video URL, decode error, etc.), show an inline error in the composer: "Continuation seed failed — upload a Start frame manually." The composer still works normally.
-- Existing manual flow (user uploads Start/End themselves) is untouched.
+- New segmented control in the composer: `5s · 10s · 15s` (single-select pill group, same style as the existing mode tabs).
+- Visible in **both** Text to Video and Image to Video modes.
+- Selection persists in component state for the session; not stored across reloads (keeps it lightweight).
+- Sent with every render request; cost/credits handling stays as today (no per-second multiplier in this change — that can be a separate follow-up if desired).
 
-## Technical Changes (single file)
+## Technical Changes
 
-### `src/modules/generator-ui/pages/DashboardPage.tsx`
+### 1. `src/modules/job-orchestrator/contract.ts` (frontend contract)
+Add `durationSeconds?: 5 | 10 | 15` to `CreateJobInput`.
 
-1. **New helper `captureLastFrameAsBlob(videoUrl)`** — pure browser:
-   - Creates a hidden `<video crossOrigin="anonymous" muted playsInline>`.
-   - On `loadedmetadata`, seeks to `duration - 0.05`.
-   - On `seeked`, draws to a `<canvas>` at the video's native dimensions.
-   - Returns the canvas as a PNG `Blob` via `canvas.toBlob`.
-   - Falls back to a brief `play()/pause()` cycle before seeking when the browser refuses an immediate seek on a remote stream.
+### 2. `src/modules/generator-ui/pages/DashboardPage.tsx`
+- New state: `const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15>(5)`.
+- Add a 3-button segmented control in the composer toolbar row (same row as the mode tabs).
+- In `handleSubmit`, include `durationSeconds` in both `createJob` calls (T2V and I2V).
 
-2. **Convert `handleAddVideoCard` to async** and after the existing reset:
-   - Look up the most recent completed visible job: `generatedVideos.find(v => !deletedIds.has(v.id) && normalizeStatus(v.status) === 'completed' && v.video?.storage_path)`.
-   - If found and `userId` is present:
-     - `setGenerationMode('image-to-video')`.
-     - Insert a placeholder `UploadedFile` with `status: 'uploading'`, `target: 'Start'`.
-     - Call `captureLastFrameAsBlob(prev.video.storage_path)`.
-     - Upload the blob to the `wan-frames` bucket at `${userId}/start-${Date.now()}-${uuid}.png`.
-     - Replace the placeholder with `{ status: 'ready', url: publicUrl, size: blob.size }`.
-   - On any failure, drop the placeholder and set an inline `composerError` so the user can recover by uploading manually.
+### 3. `supabase/functions/_shared/modules/job-orchestrator/gateway.ts`
+- Extend `CreateJobSchema` with `durationSeconds: z.union([z.literal(5), z.literal(10), z.literal(15)]).optional()`.
+- Pass `durationSeconds` through to `aiGateway.startGeneration({...})`.
 
-3. No changes to the orchestrator, edge functions, contracts, DB, or storage policies. The `wan-frames` bucket is already public and the existing user-scoped upload path already works for this user.
+### 4. `supabase/functions/_shared/modules/external-api-adapter/contract.ts`
+- Add `durationSeconds?: 5 | 10 | 15 | null` to `GenerationStartInput`.
+
+### 5. `supabase/functions/_shared/modules/external-api-adapter/service.ts`
+- In `startWanI2V`: replace hardcoded `duration: 5` with `duration: input.durationSeconds ?? 5`.
+- In `startWanT2V`: same swap.
+- The mock paths (other `duration: 5` spots used for non-Wan providers) stay as-is — they're stubs that report a fake duration in the response, not a request parameter.
 
 ## What stays unchanged
-
-- Edge functions, job orchestrator, DB schema, RLS, contracts.
-- All other dashboard behavior: text-to-video mode, manual uploads, merge, delete, library, polling, progress bars.
-- The `+` button still sits in the same spot in the right "Recent outputs" header.
+- Credit costs, cost map, polling, progress estimation, edge function deployments wiring.
+- DB schema, RLS, storage.
+- All other dashboard behavior (continuation `+`, merge, library, delete, etc.).
 
 ## Acceptance
-
-- After at least one completed render exists, clicking `+`:
-  - Switches the composer into Image to Video mode.
-  - Shows a Start chip that goes from `Uploading` → `Ready` within a couple of seconds.
-  - The Start frame's image is the visually-identical last frame of the previously-played video.
-- The Render button enables once an End frame and prompt are added — same as today.
-- With zero prior completed videos, `+` opens an empty composer (no error).
-- If frame capture fails, an inline error message explains and the user can still manually upload a Start frame.
+- Composer shows a `5s / 10s / 15s` selector.
+- Choosing `10s` and rendering produces a ~10s clip from Wan.
+- Choosing nothing keeps today's 5s default.
+- Switching modes (Text↔Image) preserves the duration choice.

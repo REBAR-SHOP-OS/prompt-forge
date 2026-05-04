@@ -198,6 +198,7 @@ export default function DashboardPage() {
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
+  const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15>(5)
   const userId = session?.user?.id ?? null
   const approvedStorageKey = userId ? `approved-videos:${userId}` : null
   const [approvedIds, setApprovedIds] = useState<Set<string>>(() => new Set())
@@ -560,6 +561,7 @@ export default function DashboardPage() {
           providerKey: 'wan',
           requestedModel: 'wan2.7-t2v-2026-04-25',
           prompt: nextPrompt,
+          durationSeconds,
         })
       } else {
         if (!readyStartFrame?.url || !readyEndFrame?.url) {
@@ -571,6 +573,7 @@ export default function DashboardPage() {
           prompt: nextPrompt,
           firstFrameUrl: readyStartFrame.url,
           lastFrameUrl: readyEndFrame.url,
+          durationSeconds,
         })
         seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
       }
@@ -1280,6 +1283,23 @@ export default function DashboardPage() {
             >
               Image to Video
             </button>
+          </div>
+          <div role="radiogroup" aria-label="Clip duration" className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
+            {([5, 10, 15] as const).map((sec) => {
+              const active = durationSeconds === sec
+              return (
+                <button
+                  key={sec}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setDurationSeconds(sec)}
+                  className={`rounded-full px-3 py-1.5 transition ${active ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+                >
+                  {sec}s
+                </button>
+              )
+            })}
           </div>
         </div>
 

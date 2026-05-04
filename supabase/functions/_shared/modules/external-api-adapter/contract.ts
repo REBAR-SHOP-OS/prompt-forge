@@ -15,6 +15,8 @@ export interface GenerationStartInput {
   firstFrameUrl?: string | null;
   /** Last-frame image URL (publicly fetchable by the provider). */
   lastFrameUrl?: string | null;
+  /** Requested clip length in seconds (5, 10, or 15). Defaults to 5. */
+  durationSeconds?: 5 | 10 | 15 | null;
 }
 
 export interface GenerationStartResult {

@@ -34,6 +34,7 @@ const CreateJobSchema = z.object({
   prompt: z.string().min(1).max(4000),
   firstFrameUrl: z.string().url().max(2048).optional(),
   lastFrameUrl: z.string().url().max(2048).optional(),
+  durationSeconds: z.union([z.literal(5), z.literal(10), z.literal(15)]).optional(),
 });
 
 const GetJobSchema = z.object({ jobId: z.string().uuid() });
@@ -193,6 +194,7 @@ export const jobOrchestratorGateway = {
               prompt,
               firstFrameUrl,
               lastFrameUrl,
+              durationSeconds: parsed.data.durationSeconds ?? null,
             });
           } catch (e) {
             // failJob RPC may not exist; fall back to a direct status update so
