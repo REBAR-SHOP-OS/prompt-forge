@@ -1,69 +1,60 @@
 ## Goal
 
-Restructure the dashboard's panels:
+On the dashboard:
 
-1. **Right "Recent outputs" panel** → always visible (static), no open/close, no `X` button. This is the live workbench where in-progress and recent renders show up.
-2. **Left "Library" panel** → new panel, slides in from the **left**, opens **only** when the 4-square (`LayoutGrid`) icon at the top-left is clicked. Hidden by default.
-3. **Left panel only shows approved videos** → users explicitly "approve" / "send to library" a finished video from the right panel. Only those approved videos appear on the left.
+1. **Delete on every card** — each render card (right "Recent outputs" panel and left "Library" panel) gets a small trash icon that removes it.
+2. **Merge / concatenate icon** — a new icon at the top of the right panel that, after several videos have been generated, joins all completed videos (in order) into a single final video, makes it downloadable, and **automatically saves the final merged video into the left "Saved videos / Your library" panel**.
+
+Pure frontend work — no backend changes. Merging happens entirely in the browser.
 
 ## UX Behavior
 
-- **4-square icon (top-left)**: now toggles the **left** library panel (was previously toggling the right history panel).
-- **Right panel** is permanently mounted on the right edge of the screen, no toggle, no close button. The "+" (new render), prompt composer behavior, and progress bars stay exactly as they are.
-- **Approve action** on right-panel cards:
-  - Appears only when a render is in `completed` status (has a video).
-  - A small "Save to library" button (bookmark/check icon) on each completed card.
-  - Clicking it adds the job to the user's approved set; clicking again removes it.
-  - Approved cards on the right show a subtle "In library" badge so the user knows what's already saved.
-- **Left panel** lists only approved videos:
-  - Same card layout as the right panel (poster, prompt, date), no progress bar (always completed).
-  - Empty state: "No saved videos yet — approve a render from the right to keep it here."
-  - Has a close `X` (since this one IS toggleable).
-  - Clicking a card sets it as the main preview (same as right panel).
+### Delete (per card)
+- Small trash icon on every card in **both** the right "Recent outputs" panel and the left "Library" panel.
+- Click → confirm via a tiny inline prompt (single click + `confirm()` is fine for v1).
+- Removes the card from view (locally hidden) and removes it from the approved set if present.
+- Persisted in `localStorage` as a `deletedIds` set keyed per user (`deleted-videos:<userId>`), same pattern as `approvedIds`. The job still exists server-side but is filtered out everywhere on the client.
+- If the deleted card is currently the main preview, the preview falls back to the next available video.
 
-## Persistence
+### Merge all videos (right panel header)
+- New `Combine` icon (lucide `Combine` or `Layers`) appears in the right panel header next to the existing `+` button.
+- **Enabled only** when there are at least **2 completed** videos with `video.storage_path`.
+- Click flow:
+  1. Disable button, show small spinner + "Merging…" label.
+  2. In-browser, fetch each completed video's `storage_path` as a `Blob`, draw frame-by-frame to a `<canvas>` and capture via `MediaRecorder` → produces one `video/webm` blob.
+  3. Upload the merged blob to Supabase Storage in a new bucket (e.g., `merged-videos`) under `<userId>/merged-<timestamp>.webm`, get the public URL.
+  4. Insert a synthetic "merged" entry into `generatedVideos` state with `status: 'completed'`, `input_prompt: 'Final merged video — N clips'`, and a fake `video.storage_path` pointing at the uploaded URL.
+  5. Add its id to `approvedIds` so it appears in the **left "Saved videos / Your library"** panel automatically.
+  6. Trigger an immediate browser download of the merged file.
+- Persist merged-video metadata in `localStorage` (`merged-videos:<userId>`) so it survives reloads without backend changes.
 
-- Approved video IDs are persisted in `localStorage` keyed per user (`approved-videos:<userId>`).
-  - Survives reloads, no backend migration needed.
-  - Future-proof: if we later want this server-side, the same `approvedIds` set can be backed by a Supabase table without UI changes.
+### Empty / disabled states
+- Merge button shows tooltip "Need at least 2 finished videos" when fewer than 2 completed clips exist.
 
-## Technical Changes (single file)
+## Technical Changes (single file + 1 new helper file + 1 storage bucket)
 
-### `src/modules/generator-ui/pages/DashboardPage.tsx`
+### 1. `src/modules/generator-ui/pages/DashboardPage.tsx`
+- Add state `deletedIds: Set<string>` + `mergedEntries: MergedEntry[]`, both persisted in `localStorage` keyed by `userId`.
+- Filter `generatedVideos` for display: `visibleVideos = generatedVideos.filter(v => !deletedIds.has(v.id))`. Use `visibleVideos` in both panels.
+- Inject `mergedEntries` into the displayed list as virtual `JobDetail`-shaped items (always `status: 'completed'`, never polled).
+- Add `Trash2` icon button on each card in both panels (right panel: next to bookmark; left panel: same row).
+- Add `Combine` icon button in the right panel header (line ~661 area, next to the `+` button).
+- New `handleMergeAllVideos` function that orchestrates fetch → canvas concat → upload → state update.
 
-1. **State**:
-   - Rename `isHistoryPanelOpen` → `isApprovedPanelOpen` (governs the LEFT panel).
-   - Add `approvedIds: Set<string>` + `toggleApproved(jobId)` helper, persisted via `localStorage` keyed on `session.user.id`.
-   - Load approved IDs in a `useEffect` on user change.
+### 2. New helper: `src/modules/generator-ui/lib/mergeVideos.ts`
+- Pure utility: `mergeVideoUrls(urls: string[], onProgress?: (n) => void): Promise<Blob>`
+- Implementation: sequentially load each URL into a hidden `<video>`, paint frames onto a shared `<canvas>` at ~30fps, capture canvas stream with `MediaRecorder({ mimeType: 'video/webm;codecs=vp9' })`, return final blob.
+- Audio is dropped in v1 (canvas/MediaRecorder audio mux is fragile across browsers). We can add audio in a follow-up if needed.
 
-2. **4-square button** (top-left):
-   - Now toggles `isApprovedPanelOpen` instead of `isHistoryPanelOpen`.
-   - `aria-expanded` / labels updated.
-
-3. **Right `<aside>` (Recent outputs)**:
-   - Remove `isHistoryPanelOpen` conditional classes — always rendered, fixed to right edge.
-   - Remove the `X` close button from its header (keep History label, count, and the `+` add button).
-   - On each completed card, add an "Approve / In library" toggle button next to the prompt.
-
-4. **New left `<aside>` (Library / Approved videos)**:
-   - Mirrors the right panel's card style.
-   - Iterates over `generatedVideos.filter(v => approvedIds.has(v.id) && v.video?.storage_path)`.
-   - Slides in from the left with `translate-x-[calc(-100%-1.25rem)]` when closed.
-   - Has its own `X` close button.
-   - Backdrop overlay only for this left panel on small screens.
-
-5. **Layout adjustments**:
-   - The center content (`main`) currently has padding for the always-on right panel. Keep that the same; nothing changes for the center.
-   - Remove the now-stale right-panel backdrop overlay (since right panel never overlays).
+### 3. Storage bucket (one migration)
+- Create public bucket `merged-videos` with RLS allowing authenticated users to insert/select their own files (path prefix = `auth.uid()/...`).
 
 ## What stays unchanged
-
-- Polling, progress bars, generation mode toggle (Text/Image to Video), composer/form, "+" new-card button, edge functions, contracts, database. Pure frontend layout + a localStorage-backed approval flag.
+- Edge functions, job orchestrator, all DB tables for jobs, polling, composer, generation modes, contracts.
+- Bookmark/approve flow and `approvedIds` storage stay exactly as today; merged videos are simply auto-added to that set.
 
 ## Acceptance
-
-- Right "Recent outputs" panel is visible at all times; no `X`; clicking outside doesn't close it.
-- Top-left 4-square icon toggles a separate **left**-side panel.
-- Left panel is empty until the user clicks "Save to library" / "Approve" on a completed render in the right panel.
-- Approved videos persist across page reloads (per logged-in user).
-- Un-approving a video removes it from the left panel.
+- Every card (both panels) has a working trash icon; deleted cards stay gone after reload.
+- A "merge" icon appears in the right panel; disabled until ≥2 completed clips exist.
+- Clicking merge produces one downloadable `.webm` and a new card in the **left "Saved videos / Your library"** panel labeled as the final merged video.
+- Merged video persists across reloads and can itself be deleted from the library.
