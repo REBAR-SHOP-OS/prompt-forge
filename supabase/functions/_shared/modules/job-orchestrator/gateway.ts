@@ -25,7 +25,7 @@ import type { DomainContractMeta } from "../_gateway/types.ts";
 export const JOB_ORCHESTRATOR_CONTRACT: DomainContractMeta = {
   domain: "job-orchestrator",
   version: "v1",
-  operations: ["listMyJobs", "createJob", "getJob"],
+  operations: ["listMyJobs", "createJob", "getJob", "deleteJob"],
 } as const;
 
 const CreateJobSchema = z.object({
