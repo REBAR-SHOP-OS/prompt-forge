@@ -341,17 +341,31 @@ export default function DashboardPage() {
   const [composerError, setComposerError] = useState<string | null>(null)
   const startUploadCount = uploadedFiles.filter((file) => file.target === 'Start').length
   const endUploadCount = uploadedFiles.filter((file) => file.target === 'End').length
+  const visibleVideos = useMemo(() => {
+    const all = [...mergedEntries, ...generatedVideos]
+    return all.filter((v) => !deletedIds.has(v.id))
+  }, [generatedVideos, mergedEntries, deletedIds])
+
+  const completedSourceVideos = useMemo(
+    () => generatedVideos.filter(
+      (v) => !deletedIds.has(v.id)
+        && normalizeStatus(v.status) === 'completed'
+        && v.video?.storage_path
+    ),
+    [generatedVideos, deletedIds]
+  )
+
   const previewVideo = useMemo(() => {
-    if (generatedVideos.length === 0) {
+    if (visibleVideos.length === 0) {
       return null
     }
 
     return (
-      generatedVideos.find((video) => video.id === previewVideoId) ??
-      generatedVideos.find((video) => video.video?.storage_path) ??
-      generatedVideos[0]
+      visibleVideos.find((video) => video.id === previewVideoId) ??
+      visibleVideos.find((video) => video.video?.storage_path) ??
+      visibleVideos[0]
     )
-  }, [generatedVideos, previewVideoId])
+  }, [visibleVideos, previewVideoId])
 
   const emptyStateLabel = useMemo(() => {
     if (isDragging) {
