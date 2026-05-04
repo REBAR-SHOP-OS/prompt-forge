@@ -288,12 +288,15 @@ export default function DashboardPage() {
   const deletedStorageKey = userId ? `deleted-videos:${userId}` : null
   const mergedStorageKey = userId ? `merged-videos:${userId}` : null
   const pendingEndAppendsKey = userId ? `pending-end-appends:${userId}` : null
+  const pendingStartPrependsKey = userId ? `pending-start-prepends:${userId}` : null
   const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set())
   const [mergedEntries, setMergedEntries] = useState<JobDetail[]>([])
   const [isMerging, setIsMerging] = useState(false)
   const [mergeProgress, setMergeProgress] = useState<number>(0)
   const [pendingEndAppends, setPendingEndAppends] = useState<Record<string, string>>({})
+  const [pendingStartPrepends, setPendingStartPrepends] = useState<Record<string, string>>({})
   const processingEndAppendRef = useRef<Set<string>>(new Set())
+  const processingStartPrependRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     if (!pendingEndAppendsKey) {
@@ -312,6 +315,26 @@ export default function DashboardPage() {
     if (!pendingEndAppendsKey) return
     try {
       window.localStorage.setItem(pendingEndAppendsKey, JSON.stringify(next))
+    } catch { /* ignore */ }
+  }
+
+  useEffect(() => {
+    if (!pendingStartPrependsKey) {
+      setPendingStartPrepends({})
+      return
+    }
+    try {
+      const raw = window.localStorage.getItem(pendingStartPrependsKey)
+      setPendingStartPrepends(raw ? (JSON.parse(raw) as Record<string, string>) : {})
+    } catch {
+      setPendingStartPrepends({})
+    }
+  }, [pendingStartPrependsKey])
+
+  function persistPendingStartPrepends(next: Record<string, string>) {
+    if (!pendingStartPrependsKey) return
+    try {
+      window.localStorage.setItem(pendingStartPrependsKey, JSON.stringify(next))
     } catch { /* ignore */ }
   }
 
