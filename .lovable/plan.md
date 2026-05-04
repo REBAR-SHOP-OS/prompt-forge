@@ -1,45 +1,54 @@
-## Goal
+## Problem
 
-Let the user choose the generated clip length — **5 / 10 / 15 seconds** — from a small toggle in the composer (next to the existing "Text to Video / Image to Video" tabs). The chosen value is sent end-to-end to the Wan provider, which already accepts a `duration` parameter.
+Clicking the merge icon shows: **"Merge failed: Failed to load video: https://dashscope-463f.oss-accelerate.aliyuncs.com/..."**
 
-Default: **5 seconds** (current behavior, no change for users who don't touch the toggle).
+Root cause: the provider (Wan / Aliyun OSS) returns video URLs that do **not** include CORS headers. The merge code (`mergeVideoUrls`) and the continuation-seed code (`captureLastFrameAsBlob`) both load these URLs into a `<video crossOrigin="anonymous">` element so the canvas can read pixels. Without CORS headers from the origin, the load is rejected — the same reason the "Continuation seed failed" red message also appears in the screenshot.
 
-## UX Behavior
+This cannot be fixed purely on the frontend. We need a same-origin proxy that re-serves the bytes with proper CORS headers.
 
-- New segmented control in the composer: `5s · 10s · 15s` (single-select pill group, same style as the existing mode tabs).
-- Visible in **both** Text to Video and Image to Video modes.
-- Selection persists in component state for the session; not stored across reloads (keeps it lightweight).
-- Sent with every render request; cost/credits handling stays as today (no per-second multiplier in this change — that can be a separate follow-up if desired).
+## Solution
 
-## Technical Changes
+Add a small streaming proxy edge function and route every external video URL through it before feeding it to the `<video>` element used for canvas capture.
 
-### 1. `src/modules/job-orchestrator/contract.ts` (frontend contract)
-Add `durationSeconds?: 5 | 10 | 15` to `CreateJobInput`.
+### 1. New edge function: `video-proxy`
 
-### 2. `src/modules/generator-ui/pages/DashboardPage.tsx`
-- New state: `const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15>(5)`.
-- Add a 3-button segmented control in the composer toolbar row (same row as the mode tabs).
-- In `handleSubmit`, include `durationSeconds` in both `createJob` calls (T2V and I2V).
+`supabase/functions/video-proxy/index.ts`
 
-### 3. `supabase/functions/_shared/modules/job-orchestrator/gateway.ts`
-- Extend `CreateJobSchema` with `durationSeconds: z.union([z.literal(5), z.literal(10), z.literal(15)]).optional()`.
-- Pass `durationSeconds` through to `aiGateway.startGeneration({...})`.
+- `GET /video-proxy?url=<encoded provider URL>`
+- Auth-required (uses `authenticate` from `_shared/core/auth.ts`) so it can't be abused as an open relay.
+- Allow-list of host suffixes: `dashscope-*.aliyuncs.com`, `*.aliyuncs.com`, plus the project's own Supabase storage host. Reject anything else with 400.
+- Forwards `Range` request header to upstream and mirrors `Content-Type`, `Content-Length`, `Content-Range`, `Accept-Ranges`, `ETag` on the response (range support is required for `<video>` seeking, which `captureLastFrameAsBlob` uses).
+- Adds CORS headers: `Access-Control-Allow-Origin: *`, `Access-Control-Expose-Headers: Content-Length, Content-Range, Accept-Ranges`.
+- Streams the upstream body straight through (`return new Response(upstream.body, ...)`) — no buffering.
+- Add `[functions.video-proxy] verify_jwt = false` is **not** needed; we keep JWT on, and the frontend passes the token via a query param (`&token=...`) because `<video>` can't set Authorization headers. The function accepts the token from either the `Authorization` header or a `token` query string.
 
-### 4. `supabase/functions/_shared/modules/external-api-adapter/contract.ts`
-- Add `durationSeconds?: 5 | 10 | 15 | null` to `GenerationStartInput`.
+### 2. Frontend helper: `proxiedVideoUrl(url)`
 
-### 5. `supabase/functions/_shared/modules/external-api-adapter/service.ts`
-- In `startWanI2V`: replace hardcoded `duration: 5` with `duration: input.durationSeconds ?? 5`.
-- In `startWanT2V`: same swap.
-- The mock paths (other `duration: 5` spots used for non-Wan providers) stay as-is — they're stubs that report a fake duration in the response, not a request parameter.
+New file `src/modules/generator-ui/lib/proxiedVideoUrl.ts`:
 
-## What stays unchanged
-- Credit costs, cost map, polling, progress estimation, edge function deployments wiring.
-- DB schema, RLS, storage.
-- All other dashboard behavior (continuation `+`, merge, library, delete, etc.).
+- If the URL already points at our own Supabase storage / same origin → return as-is.
+- Otherwise return `${FUNCTIONS_BASE}/video-proxy?url=<encoded>&token=<access_token>`.
+- Reads the current session from `supabase.auth.getSession()` to attach the token.
 
-## Acceptance
-- Composer shows a `5s / 10s / 15s` selector.
-- Choosing `10s` and rendering produces a ~10s clip from Wan.
-- Choosing nothing keeps today's 5s default.
-- Switching modes (Text↔Image) preserves the duration choice.
+### 3. Wire the helper into the two callers
+
+`src/modules/generator-ui/pages/DashboardPage.tsx`
+- In `handleMergeAllVideos`, map each `storage_path` through `proxiedVideoUrl(...)` before passing to `mergeVideoUrls`.
+- In `handleAddVideoCard` (continuation seeding), pass the proxied URL into `captureLastFrameAsBlob`.
+
+No change to `mergeVideos.ts` itself — it keeps `crossOrigin = 'anonymous'`, which now works because the proxy responds with `Access-Control-Allow-Origin: *`.
+
+### 4. Minor UX
+
+- Update the inline error to be friendlier: `"Could not load source video for merge — please try again in a moment."` while still logging the underlying message to the console for debugging.
+
+## Files Touched
+
+- **New**: `supabase/functions/video-proxy/index.ts`
+- **New**: `src/modules/generator-ui/lib/proxiedVideoUrl.ts`
+- **Edit**: `src/modules/generator-ui/pages/DashboardPage.tsx` (use proxied URLs in merge + continuation seed; clearer error copy)
+
+## Result
+
+- Clicking the merge icon will load every clip through the same-origin proxy, concatenate them into one `.webm`, upload to the `merged-videos` bucket, **auto-add it to "Saved videos / Your library"**, set it as the active preview, and trigger a browser download — exactly the existing flow, just no longer broken by CORS.
+- Continuation seeding (the `+` icon that grabs the last frame of the previous clip) will also start working again.
