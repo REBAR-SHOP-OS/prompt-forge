@@ -284,10 +284,33 @@ export default function DashboardPage() {
 
   const deletedStorageKey = userId ? `deleted-videos:${userId}` : null
   const mergedStorageKey = userId ? `merged-videos:${userId}` : null
+  const pendingEndAppendsKey = userId ? `pending-end-appends:${userId}` : null
   const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set())
   const [mergedEntries, setMergedEntries] = useState<JobDetail[]>([])
   const [isMerging, setIsMerging] = useState(false)
   const [mergeProgress, setMergeProgress] = useState<number>(0)
+  const [pendingEndAppends, setPendingEndAppends] = useState<Record<string, string>>({})
+  const processingEndAppendRef = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    if (!pendingEndAppendsKey) {
+      setPendingEndAppends({})
+      return
+    }
+    try {
+      const raw = window.localStorage.getItem(pendingEndAppendsKey)
+      setPendingEndAppends(raw ? (JSON.parse(raw) as Record<string, string>) : {})
+    } catch {
+      setPendingEndAppends({})
+    }
+  }, [pendingEndAppendsKey])
+
+  function persistPendingEndAppends(next: Record<string, string>) {
+    if (!pendingEndAppendsKey) return
+    try {
+      window.localStorage.setItem(pendingEndAppendsKey, JSON.stringify(next))
+    } catch { /* ignore */ }
+  }
 
   useEffect(() => {
     if (!deletedStorageKey) {
