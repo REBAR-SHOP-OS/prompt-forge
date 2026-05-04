@@ -641,6 +641,70 @@ export default function DashboardPage() {
     })
   }, [generatedVideos, pendingEndAppends, userId])
 
+  // Mirror of the end-append effect, but PREPENDS the Start frame as a 2s
+  // still clip to the front of the generated text-to-video output.
+  useEffect(() => {
+    if (!userId) return
+    const pendingIds = Object.keys(pendingStartPrepends)
+    if (pendingIds.length === 0) return
+
+    pendingIds.forEach((jobId) => {
+      if (processingStartPrependRef.current.has(jobId)) return
+      const job = generatedVideos.find((j) => j.id === jobId)
+      if (!job) return
+      if (normalizeStatus(job.status) !== 'completed') return
+      if (!job.video?.storage_path) return
+
+      const startImageUrl = pendingStartPrepends[jobId]
+      processingStartPrependRef.current.add(jobId)
+
+      ;(async () => {
+        try {
+          const proxiedSrc = await proxiedVideoUrl(job.video!.storage_path)
+          const stillClipBlob = await imageUrlToClip(startImageUrl, 2)
+
+          const stillPath = `${userId}/start-still-${Date.now()}-${crypto.randomUUID()}.webm`
+          const { error: stillErr } = await supabase.storage
+            .from(MERGED_BUCKET)
+            .upload(stillPath, stillClipBlob, { contentType: 'video/webm', upsert: false })
+          if (stillErr) throw new Error(stillErr.message)
+          const stillPublic = supabase.storage.from(MERGED_BUCKET).getPublicUrl(stillPath).data.publicUrl
+
+          // Prepend: still clip first, then the generated video.
+          const mergedBlob = await mergeVideoUrls([stillPublic, proxiedSrc])
+          const mergedPath = `${userId}/with-start-${Date.now()}-${crypto.randomUUID()}.webm`
+          const { error: upErr } = await supabase.storage
+            .from(MERGED_BUCKET)
+            .upload(mergedPath, mergedBlob, { contentType: 'video/webm', upsert: false })
+          if (upErr) throw new Error(upErr.message)
+          const mergedPublic = supabase.storage.from(MERGED_BUCKET).getPublicUrl(mergedPath).data.publicUrl
+
+          setGeneratedVideos((current) =>
+            current.map((j) =>
+              j.id === jobId && j.video
+                ? { ...j, video: { ...j.video, storage_path: mergedPublic } }
+                : j,
+            ),
+          )
+        } catch (err) {
+          console.error('[start-prepend] failed', err)
+          setVideoColumnMessage(
+            `Could not prepend Start frame to video: ${err instanceof Error ? err.message : 'unknown error'}`,
+          )
+        } finally {
+          setPendingStartPrepends((current) => {
+            if (!(jobId in current)) return current
+            const next = { ...current }
+            delete next[jobId]
+            persistPendingStartPrepends(next)
+            return next
+          })
+          processingStartPrependRef.current.delete(jobId)
+        }
+      })()
+    })
+  }, [generatedVideos, pendingStartPrepends, userId])
+
   // Smooth progress ticker: re-render once per second while any job is active
   // so the time-based progress bar advances visibly between API polls.
   const [, setProgressTick] = useState(0)
