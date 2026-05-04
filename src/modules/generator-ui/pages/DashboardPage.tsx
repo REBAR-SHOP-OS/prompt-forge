@@ -496,15 +496,41 @@ export default function DashboardPage() {
                   />
                 ) : (
                   <div className="grid h-full place-items-center px-6 text-center">
-                    <div>
-                      {normalizeStatus(previewVideo.status) === 'processing' ? (
-                        <LoaderCircle className="mx-auto h-10 w-10 animate-spin text-amber-300" aria-hidden="true" />
-                      ) : (
-                        <Clapperboard className="mx-auto h-10 w-10 text-zinc-600" aria-hidden="true" />
-                      )}
-                      <p className="mt-4 text-sm font-semibold text-zinc-300">{formatStatusLabel(previewVideo.status)}</p>
-                      <p className="mt-2 text-xs leading-5 text-zinc-600">Waiting for render output.</p>
-                    </div>
+                    {(() => {
+                      const status = normalizeStatus(previewVideo.status)
+                      const isRendering = status === 'processing' || status === 'pending'
+                      const pct = isRendering ? getJobProgressPercent(previewVideo) ?? 0 : 0
+                      const startedAt = Date.parse(previewVideo.created_at)
+                      const longRender = Number.isFinite(startedAt) && Date.now() - startedAt > 240_000
+                      return (
+                        <div className="w-full max-w-sm">
+                          {isRendering ? (
+                            <LoaderCircle className="mx-auto h-10 w-10 animate-spin text-amber-300" aria-hidden="true" />
+                          ) : (
+                            <Clapperboard className="mx-auto h-10 w-10 text-zinc-600" aria-hidden="true" />
+                          )}
+                          <p className="mt-4 text-sm font-semibold text-zinc-300">{formatStatusLabel(previewVideo.status)}</p>
+                          {isRendering ? (
+                            <>
+                              <p className="mt-1 text-3xl font-semibold tabular-nums text-zinc-100">{pct}%</p>
+                              <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                                <div
+                                  className="h-full rounded-full bg-amber-300 transition-all duration-500"
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+                              <p className="mt-2 text-xs leading-5 text-zinc-500">
+                                {longRender
+                                  ? 'Still rendering — provider is taking longer than usual.'
+                                  : `About ${Math.max(0, 100 - pct)}% remaining`}
+                              </p>
+                            </>
+                          ) : (
+                            <p className="mt-2 text-xs leading-5 text-zinc-600">Waiting for render output.</p>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>
                 )}
               </div>
@@ -515,6 +541,12 @@ export default function DashboardPage() {
                 <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
                   <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(previewVideo.status)}`} />
                   {formatStatusLabel(previewVideo.status)}
+                  {(() => {
+                    const status = normalizeStatus(previewVideo.status)
+                    if (status !== 'processing' && status !== 'pending') return null
+                    const pct = getJobProgressPercent(previewVideo)
+                    return pct !== null ? <span className="tabular-nums text-amber-300">{pct}%</span> : null
+                  })()}
                 </span>
               </div>
             </div>
