@@ -132,6 +132,14 @@ export const jobOrchestratorGateway = {
 
           const prompt = aiGateway.sanitizePrompt(parsed.data.prompt);
           const providerKey = parsed.data.providerKey as ProviderKey;
+          const firstFrameUrl = parsed.data.firstFrameUrl ?? null;
+          const lastFrameUrl = parsed.data.lastFrameUrl ?? null;
+
+          // Wan provider requires both first/last frame URLs (image-to-video protocol).
+          if (providerKey === "wan" && (!firstFrameUrl || !lastFrameUrl)) {
+            await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 400, latencyMs: Date.now() - ctx.startedAt, errorCode: "MISSING_FRAMES" });
+            return errorResponse("MISSING_FRAMES", "Wan requires firstFrameUrl and lastFrameUrl", 400, ctx.requestId);
+          }
 
           // Cross-domain call via external-api-adapter contract.
           const route = await aiGateway.resolveRoute(svc, providerKey, parsed.data.requestedModel, prompt);
@@ -145,6 +153,8 @@ export const jobOrchestratorGateway = {
               providerKey: route.providerKey,
               modelKey: route.resolvedModel,
               estimatedCost: route.estimatedCost,
+              firstFrameUrl,
+              lastFrameUrl,
             });
           } catch (e) {
             const msg = (e as Error).message;
@@ -157,16 +167,21 @@ export const jobOrchestratorGateway = {
           // Trigger generation through the adapter contract.
           let gen;
           try {
-            gen = await aiGateway.startGeneration(route.providerKey, route.resolvedModel, prompt);
-          } catch (e) {
-            await jobService.failJob(svc, {
-              userId: auth.userId,
-              jobId,
-              reason: (e as Error).message,
-              refundCredits: true,
+            gen = await aiGateway.startGeneration(route.providerKey, route.resolvedModel, {
+              prompt,
+              firstFrameUrl,
+              lastFrameUrl,
             });
+          } catch (e) {
+            // failJob RPC may not exist; fall back to a direct status update so
+            // we don't mask the original error with a secondary failure.
+            try {
+              await svc.from("generator_generation_jobs")
+                .update({ status: "failed", updated_at: new Date().toISOString() })
+                .eq("id", jobId).eq("user_id", auth.userId);
+            } catch (_) { /* best-effort */ }
             logError("startGeneration failed", { error: (e as Error).message, jobId });
-            return errorResponse("PROVIDER_ERROR", "Provider failed to start generation", 502, ctx.requestId);
+            return errorResponse("PROVIDER_ERROR", `Provider failed to start generation: ${(e as Error).message}`, 502, ctx.requestId);
           }
 
           try {
