@@ -22,7 +22,13 @@ const COST_MAP: Record<string, ModelCostConfig> = {
   "flow-video-1": { costPer1kChars: 0.04 },
   "wan-video-1": { costPer1kChars: 0.03 },
   "wan2.7-i2v-2026-04-25": { costPer1kChars: 0.05 },
+  "wan2.7-t2v-2026-04-25": { costPer1kChars: 0.05 },
 };
+
+/** Returns true when the resolved Wan model is text-to-video (no frames). */
+function isWanTextToVideoModel(model: string): boolean {
+  return /-t2v(-|$)/i.test(model);
+}
 
 const MOCK_VIDEO_URL = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
 const MOCK_THUMB = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg";
