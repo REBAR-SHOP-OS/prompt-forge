@@ -547,9 +547,9 @@ export default function DashboardPage() {
       <button
         className="fixed left-4 top-4 z-50 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-5 sm:top-5"
         type="button"
-        aria-expanded={isHistoryPanelOpen}
-        aria-label={isHistoryPanelOpen ? 'Close history panel' : 'Open history panel'}
-        onClick={() => setIsHistoryPanelOpen((isOpen) => !isOpen)}
+        aria-expanded={isApprovedPanelOpen}
+        aria-label={isApprovedPanelOpen ? 'Close library' : 'Open library'}
+        onClick={() => setIsApprovedPanelOpen((isOpen) => !isOpen)}
       >
         <LayoutGrid className="h-[18px] w-[18px]" aria-hidden="true" />
       </button>
