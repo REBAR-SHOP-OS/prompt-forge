@@ -9,6 +9,14 @@ export interface ResolvedRoute {
   estimatedCost: number;
 }
 
+export interface GenerationStartInput {
+  prompt: string;
+  /** First-frame image URL (publicly fetchable by the provider). */
+  firstFrameUrl?: string | null;
+  /** Last-frame image URL (publicly fetchable by the provider). */
+  lastFrameUrl?: string | null;
+}
+
 export interface GenerationStartResult {
   providerJobId: string;
   /** Final asset URL when synchronous. Null for async providers. */
@@ -18,6 +26,18 @@ export interface GenerationStartResult {
   duration: number | null;
   /** Whether the generation completed during this call. */
   isComplete: boolean;
+}
+
+export type PollStatus = "pending" | "processing" | "completed" | "failed";
+
+export interface GenerationPollResult {
+  status: PollStatus;
+  videoUrl: string | null;
+  thumbnailUrl: string | null;
+  aspectRatio: string | null;
+  duration: number | null;
+  /** Provider error reason when status === "failed". */
+  reason?: string | null;
 }
 
 export interface AiGateway {
@@ -30,15 +50,20 @@ export interface AiGateway {
   sanitizePrompt(p: string): string;
   getProviderApiKey(p: ProviderKey): string | null;
   /**
-   * Trigger a generation against the external provider. In Phase 5 the call is
-   * mocked deterministically only when mock generation is explicitly enabled
-   * and no provider key is configured; the public contract is identical to a
-   * real provider call so the adapter can be swapped later without touching
-   * the orchestrator.
+   * Trigger a generation against the external provider.
+   * Wan (DashScope) is async: returns providerJobId, isComplete=false.
    */
   startGeneration(
     providerKey: ProviderKey,
     resolvedModel: string,
-    prompt: string,
+    input: GenerationStartInput,
   ): Promise<GenerationStartResult>;
+  /**
+   * Poll an in-flight generation by providerJobId. Used by the orchestrator
+   * to surface terminal states without coupling to provider-specific logic.
+   */
+  pollGeneration(
+    providerKey: ProviderKey,
+    providerJobId: string,
+  ): Promise<GenerationPollResult>;
 }

@@ -6,7 +6,7 @@ export const jobService: JobService = {
   async listMyJobs(userId, client, limit = 20) {
     const { data, error } = await client
       .from("generator_generation_jobs")
-      .select("id, status, input_prompt, provider_key, model_key, provider_job_id, created_at, updated_at")
+      .select("id, status, input_prompt, provider_key, model_key, provider_job_id, first_frame_url, last_frame_url, created_at, updated_at")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(limit);
@@ -17,7 +17,7 @@ export const jobService: JobService = {
   async getMyJob(userId, jobId, client) {
     const { data, error } = await client
       .from("generator_generation_jobs")
-      .select("id, status, input_prompt, provider_key, model_key, provider_job_id, created_at, updated_at")
+      .select("id, status, input_prompt, provider_key, model_key, provider_job_id, first_frame_url, last_frame_url, created_at, updated_at")
       .eq("user_id", userId)
       .eq("id", jobId)
       .maybeSingle();
@@ -44,7 +44,22 @@ export const jobService: JobService = {
       _cost: Math.max(1, Math.ceil(input.estimatedCost || 1)),
     });
     if (error) throw new Error(error.message);
-    return data as string;
+    const jobId = data as string;
+
+    // Persist optional first/last frame URLs on the job row (not part of the
+    // RPC signature to keep credit-debit logic stable).
+    if (input.firstFrameUrl || input.lastFrameUrl) {
+      const { error: updErr } = await svc
+        .from("generator_generation_jobs")
+        .update({
+          first_frame_url: input.firstFrameUrl ?? null,
+          last_frame_url: input.lastFrameUrl ?? null,
+        })
+        .eq("id", jobId)
+        .eq("user_id", input.userId);
+      if (updErr) throw new Error(`frame url persist failed: ${updErr.message}`);
+    }
+    return jobId;
   },
 
   async markProcessing(svc, userId, jobId, providerJobId) {

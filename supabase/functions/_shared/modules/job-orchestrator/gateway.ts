@@ -32,6 +32,8 @@ const CreateJobSchema = z.object({
   providerKey: z.enum(["flow", "wan"]),
   requestedModel: z.string().trim().min(1).max(100).optional(),
   prompt: z.string().min(1).max(4000),
+  firstFrameUrl: z.string().url().max(2048).optional(),
+  lastFrameUrl: z.string().url().max(2048).optional(),
 });
 
 const GetJobSchema = z.object({ jobId: z.string().uuid() });
@@ -65,10 +67,48 @@ export const jobOrchestratorGateway = {
           if (!parsed.success) {
             return errorResponse("VALIDATION_ERROR", "jobId required", 400, ctx.requestId);
           }
-          const detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient);
+          let detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient);
           if (!detail) {
             return errorResponse("NOT_FOUND", "Job not found", 404, ctx.requestId);
           }
+
+          // Inline polling: if job is still processing and has a providerJobId,
+          // ask the adapter for an update and finalize it server-side.
+          if (
+            detail.status === "processing" &&
+            detail.provider_job_id &&
+            detail.provider_key
+          ) {
+            try {
+              const poll = await aiGateway.pollGeneration(
+                detail.provider_key as ProviderKey,
+                detail.provider_job_id,
+              );
+              if (poll.status === "completed" && poll.videoUrl) {
+                await jobService.completeJob(svc, {
+                  userId: auth.userId,
+                  jobId: detail.id,
+                  storagePath: poll.videoUrl,
+                  thumbnailUrl: poll.thumbnailUrl,
+                  aspectRatio: poll.aspectRatio,
+                  duration: poll.duration,
+                });
+                detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
+              } else if (poll.status === "failed") {
+                // Mark job failed without refund (per current credit policy).
+                await svc
+                  .from("generator_generation_jobs")
+                  .update({ status: "failed", updated_at: new Date().toISOString() })
+                  .eq("id", detail.id)
+                  .eq("user_id", auth.userId);
+                detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
+              }
+            } catch (e) {
+              // Don't fail the request just because polling errored — return current state.
+              logError("inline poll failed", { error: (e as Error).message, jobId: detail.id });
+            }
+          }
+
           await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
           return jsonResponse({ ...detail, requestId: ctx.requestId });
         }
@@ -92,6 +132,14 @@ export const jobOrchestratorGateway = {
 
           const prompt = aiGateway.sanitizePrompt(parsed.data.prompt);
           const providerKey = parsed.data.providerKey as ProviderKey;
+          const firstFrameUrl = parsed.data.firstFrameUrl ?? null;
+          const lastFrameUrl = parsed.data.lastFrameUrl ?? null;
+
+          // Wan provider requires both first/last frame URLs (image-to-video protocol).
+          if (providerKey === "wan" && (!firstFrameUrl || !lastFrameUrl)) {
+            await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 400, latencyMs: Date.now() - ctx.startedAt, errorCode: "MISSING_FRAMES" });
+            return errorResponse("MISSING_FRAMES", "Wan requires firstFrameUrl and lastFrameUrl", 400, ctx.requestId);
+          }
 
           // Cross-domain call via external-api-adapter contract.
           const route = await aiGateway.resolveRoute(svc, providerKey, parsed.data.requestedModel, prompt);
@@ -105,6 +153,8 @@ export const jobOrchestratorGateway = {
               providerKey: route.providerKey,
               modelKey: route.resolvedModel,
               estimatedCost: route.estimatedCost,
+              firstFrameUrl,
+              lastFrameUrl,
             });
           } catch (e) {
             const msg = (e as Error).message;
@@ -117,16 +167,21 @@ export const jobOrchestratorGateway = {
           // Trigger generation through the adapter contract.
           let gen;
           try {
-            gen = await aiGateway.startGeneration(route.providerKey, route.resolvedModel, prompt);
-          } catch (e) {
-            await jobService.failJob(svc, {
-              userId: auth.userId,
-              jobId,
-              reason: (e as Error).message,
-              refundCredits: true,
+            gen = await aiGateway.startGeneration(route.providerKey, route.resolvedModel, {
+              prompt,
+              firstFrameUrl,
+              lastFrameUrl,
             });
+          } catch (e) {
+            // failJob RPC may not exist; fall back to a direct status update so
+            // we don't mask the original error with a secondary failure.
+            try {
+              await svc.from("generator_generation_jobs")
+                .update({ status: "failed", updated_at: new Date().toISOString() })
+                .eq("id", jobId).eq("user_id", auth.userId);
+            } catch (_) { /* best-effort */ }
             logError("startGeneration failed", { error: (e as Error).message, jobId });
-            return errorResponse("PROVIDER_ERROR", "Provider failed to start generation", 502, ctx.requestId);
+            return errorResponse("PROVIDER_ERROR", `Provider failed to start generation: ${(e as Error).message}`, 502, ctx.requestId);
           }
 
           try {
