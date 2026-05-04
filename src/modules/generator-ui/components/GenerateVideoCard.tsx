@@ -9,7 +9,6 @@ import { useAuth } from "@/core/auth/AuthProvider";
 import { supabase } from "@/integrations/supabase/client";
 import { jobOrchestratorGateway } from "@/modules/job-orchestrator/gateway";
 import type { JobDetail } from "@/modules/job-orchestrator/contract";
-import type { ProviderKey } from "@/modules/external-api-adapter/contract";
 
 const POLL_INTERVAL_MS = 2000;
 const POLL_MAX_MS = 10 * 60_000; // Wan i2v jobs can take several minutes.
@@ -28,7 +27,7 @@ const emptyFrame: FrameState = { uploading: false, url: null, error: null, fileN
 
 export default function GenerateVideoCard() {
   const { session, refreshProfile } = useAuth();
-  const [provider, setProvider] = useState<ProviderKey>("wan");
+  const [provider, setProvider] = useState<"wan">("wan");
   const [prompt, setPrompt] = useState("");
   const [firstFrame, setFirstFrame] = useState<FrameState>(emptyFrame);
   const [lastFrame, setLastFrame] = useState<FrameState>(emptyFrame);
@@ -164,7 +163,7 @@ export default function GenerateVideoCard() {
         <div className="grid gap-3 sm:grid-cols-[160px_1fr]">
           <div className="space-y-2">
             <Label>Provider</Label>
-            <Select value={provider} onValueChange={(v) => setProvider(v as ProviderKey)}>
+            <Select value={provider} onValueChange={() => setProvider("wan")}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="wan">wan (i2v)</SelectItem>

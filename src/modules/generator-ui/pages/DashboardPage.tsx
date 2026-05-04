@@ -17,6 +17,7 @@ import {
 
 import { ApiError } from '@/core/api/client'
 import { useAuth } from '@/core/auth/AuthProvider'
+import { supabase } from '@/integrations/supabase/client'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 
@@ -28,9 +29,13 @@ type UploadedFile = {
   size: number
   target: UploadTarget
   type: string
+  status: 'uploading' | 'ready' | 'failed'
+  url: string | null
+  error: string | null
 }
 
 const VIDEO_POLL_INTERVAL_MS = 4_000
+const FRAMES_BUCKET = 'wan-frames'
 
 function isTerminalStatus(status: string) {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
@@ -138,13 +143,19 @@ async function hydrateJobs(summaries: JobSummary[]) {
   )
 }
 
-function buildSeededJob(prompt: string, result: CreateJobResult): JobDetail {
+function buildSeededJob(
+  prompt: string,
+  result: CreateJobResult,
+  frames?: { firstFrameUrl: string; lastFrameUrl: string }
+): JobDetail {
   return {
     id: result.jobId,
     status: result.status,
     input_prompt: prompt,
     provider_key: result.providerKey,
     model_key: result.resolvedModel,
+    first_frame_url: frames?.firstFrameUrl ?? null,
+    last_frame_url: frames?.lastFrameUrl ?? null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     video: null,
@@ -171,7 +182,10 @@ export default function DashboardPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const hasComposerInput = promptText.trim().length > 0 || uploadedFiles.length > 0
-  const canSubmit = hasComposerInput && !isSubmitting
+  const readyStartFrame = uploadedFiles.find((file) => file.target === 'Start' && file.status === 'ready' && file.url)
+  const readyEndFrame = uploadedFiles.find((file) => file.target === 'End' && file.status === 'ready' && file.url)
+  const hasUploadingFiles = uploadedFiles.some((file) => file.status === 'uploading')
+  const canSubmit = hasComposerInput && Boolean(readyStartFrame?.url && readyEndFrame?.url) && !hasUploadingFiles && !isSubmitting
   const startUploadCount = uploadedFiles.filter((file) => file.target === 'Start').length
   const endUploadCount = uploadedFiles.filter((file) => file.target === 'End').length
   const previewVideo = useMemo(() => {
@@ -272,6 +286,49 @@ export default function DashboardPage() {
     fileInputRef.current?.click()
   }
 
+  async function uploadFrameFile(file: File, target: UploadTarget, fileId: number) {
+    const userId = session?.user?.id
+    if (!userId) {
+      setUploadedFiles((currentFiles) => currentFiles.map((uploadedFile) => (
+        uploadedFile.id === fileId
+          ? { ...uploadedFile, status: 'failed', error: 'Sign in before uploading frames' }
+          : uploadedFile
+      )))
+      return
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setUploadedFiles((currentFiles) => currentFiles.map((uploadedFile) => (
+        uploadedFile.id === fileId
+          ? { ...uploadedFile, status: 'failed', error: 'Only image frames are supported' }
+          : uploadedFile
+      )))
+      return
+    }
+
+    const extension = file.name.split('.').pop()?.toLowerCase() || 'png'
+    const storagePath = `${userId}/${target.toLowerCase()}-${Date.now()}-${crypto.randomUUID()}.${extension}`
+    const { error } = await supabase.storage
+      .from(FRAMES_BUCKET)
+      .upload(storagePath, file, { contentType: file.type, upsert: false })
+
+    if (error) {
+      setUploadedFiles((currentFiles) => currentFiles.map((uploadedFile) => (
+        uploadedFile.id === fileId
+          ? { ...uploadedFile, status: 'failed', error: error.message }
+          : uploadedFile
+      )))
+      return
+    }
+
+    const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+    setUploadedFiles((currentFiles) => currentFiles.map((uploadedFile) => (
+      uploadedFile.id === fileId
+        ? { ...uploadedFile, status: 'ready', url: data.publicUrl, error: null }
+        : uploadedFile
+    )))
+  }
+
   function addUploadedFiles(files: FileList | null, target = uploadTarget) {
     if (!files?.length) {
       return
@@ -282,10 +339,16 @@ export default function DashboardPage() {
       name: file.name,
       size: file.size,
       target,
-      type: file.type || 'file'
+      type: file.type || 'file',
+      status: 'uploading' as const,
+      url: null,
+      error: null
     }))
 
     setUploadedFiles((currentFiles) => [...currentFiles, ...nextFiles])
+    nextFiles.forEach((nextFile, index) => {
+      uploadFrameFile(files[index], target, nextFile.id)
+    })
   }
 
   function handleFileInputChange(event: ChangeEvent<HTMLInputElement>) {
@@ -310,12 +373,22 @@ export default function DashboardPage() {
     setVideoColumnMessage(null)
 
     try {
+      if (!readyStartFrame?.url || !readyEndFrame?.url) {
+        setVideoColumnMessage('Add one Start image and one End image before rendering.')
+        return
+      }
+
       const createdJob = await jobOrchestratorGateway.createJob({
-        providerKey: 'flow',
-        prompt: nextPrompt
+        providerKey: 'wan',
+        prompt: nextPrompt,
+        firstFrameUrl: readyStartFrame.url,
+        lastFrameUrl: readyEndFrame.url
       })
 
-      const seededJob = buildSeededJob(nextPrompt, createdJob)
+      const seededJob = buildSeededJob(nextPrompt, createdJob, {
+        firstFrameUrl: readyStartFrame.url,
+        lastFrameUrl: readyEndFrame.url
+      })
 
       setPreviewVideoId(seededJob.id)
       setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
@@ -369,7 +442,7 @@ export default function DashboardPage() {
         className="sr-only"
         type="file"
         multiple
-        accept="image/*,video/*,audio/*,.pdf,.txt,.md,.doc,.docx"
+        accept="image/*"
         onChange={handleFileInputChange}
       />
 
@@ -631,7 +704,8 @@ export default function DashboardPage() {
                   >
                     <Paperclip className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
                     <span className="max-w-[12rem] truncate">{file.name}</span>
-                    <span className="text-zinc-500">{file.target}</span>
+                    <span className="text-zinc-500">{file.status === 'uploading' ? 'Uploading' : file.target}</span>
+                    {file.status === 'failed' ? <span className="text-rose-200">{file.error}</span> : null}
                     <button
                       type="button"
                       className="grid h-4 w-4 place-items-center rounded-full text-zinc-500 transition hover:text-zinc-100"
@@ -655,7 +729,7 @@ export default function DashboardPage() {
               className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-zinc-100 text-zinc-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
               type="submit"
               disabled={!canSubmit}
-              aria-label="Forge prompt"
+              aria-label="Generate video"
             >
               {isSubmitting ? (
                 <LoaderCircle className="h-5 w-5 animate-spin stroke-[2.2]" aria-hidden="true" />

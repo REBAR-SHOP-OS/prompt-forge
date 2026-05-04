@@ -9,7 +9,7 @@ import { generatorUiGateway } from "@/modules/generator-ui/gateway";
 import type { ProviderKey, RoutePreviewResult } from "@/modules/external-api-adapter/contract";
 
 export default function RoutePreviewCard() {
-  const [provider, setProvider] = useState<ProviderKey>("flow");
+  const [provider, setProvider] = useState<ProviderKey>("wan");
   const [prompt, setPrompt] = useState("");
   const [result, setResult] = useState<RoutePreviewResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -43,8 +43,7 @@ export default function RoutePreviewCard() {
             <Select value={provider} onValueChange={(v) => setProvider(v as ProviderKey)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="flow">flow</SelectItem>
-                <SelectItem value="wan">wan</SelectItem>
+                <SelectItem value="wan">wan (i2v)</SelectItem>
               </SelectContent>
             </Select>
           </div>

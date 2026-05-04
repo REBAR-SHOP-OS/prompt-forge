@@ -26,7 +26,7 @@ export interface JobDetail extends JobSummary {
 }
 
 export interface CreateJobInput {
-  providerKey: "flow" | "wan";
+  providerKey: "wan";
   requestedModel?: string;
   prompt: string;
   firstFrameUrl?: string;
