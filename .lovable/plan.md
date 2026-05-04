@@ -1,60 +1,60 @@
 ## Goal
 
-On the dashboard:
+Make the `+` icon (top-right of the History panel) enforce **continuation**: every new card must continue the previous render. Concretely, clicking `+` should:
 
-1. **Delete on every card** — each render card (right "Recent outputs" panel and left "Library" panel) gets a small trash icon that removes it.
-2. **Merge / concatenate icon** — a new icon at the top of the right panel that, after several videos have been generated, joins all completed videos (in order) into a single final video, makes it downloadable, and **automatically saves the final merged video into the left "Saved videos / Your library" panel**.
+1. Find the most recent **completed** video (the latest non-deleted render).
+2. Auto-extract that video's **last frame** as a PNG.
+3. Upload it to the existing `wan-frames` storage bucket.
+4. Pre-fill the composer in **Image to Video** mode with that frame as the **Start** image.
+5. Leave the user only to add an **End** frame + prompt before clicking Render.
 
-Pure frontend work — no backend changes. Merging happens entirely in the browser.
+This makes every new clip a true continuation — the first frame of clip N+1 equals the last frame of clip N. Combined with the existing "merge all" feature, the final stitched video plays as one continuous shot.
 
 ## UX Behavior
 
-### Delete (per card)
-- Small trash icon on every card in **both** the right "Recent outputs" panel and the left "Library" panel.
-- Click → confirm via a tiny inline prompt (single click + `confirm()` is fine for v1).
-- Removes the card from view (locally hidden) and removes it from the approved set if present.
-- Persisted in `localStorage` as a `deletedIds` set keyed per user (`deleted-videos:<userId>`), same pattern as `approvedIds`. The job still exists server-side but is filtered out everywhere on the client.
-- If the deleted card is currently the main preview, the preview falls back to the next available video.
+- Clicking `+` clears the composer (as today) and immediately:
+  - Switches mode to **Image to Video** (locks continuity).
+  - Shows a `Uploading…` chip labeled `continuation-from-<jobId>.png` in the Start slot.
+  - Once the frame is captured + uploaded, the chip flips to `Ready`.
+- If there are **no prior completed videos**, `+` behaves exactly as before — empty composer, user picks Start/End manually.
+- If frame capture fails (CORS on the video URL, decode error, etc.), show an inline error in the composer: "Continuation seed failed — upload a Start frame manually." The composer still works normally.
+- Existing manual flow (user uploads Start/End themselves) is untouched.
 
-### Merge all videos (right panel header)
-- New `Combine` icon (lucide `Combine` or `Layers`) appears in the right panel header next to the existing `+` button.
-- **Enabled only** when there are at least **2 completed** videos with `video.storage_path`.
-- Click flow:
-  1. Disable button, show small spinner + "Merging…" label.
-  2. In-browser, fetch each completed video's `storage_path` as a `Blob`, draw frame-by-frame to a `<canvas>` and capture via `MediaRecorder` → produces one `video/webm` blob.
-  3. Upload the merged blob to Supabase Storage in a new bucket (e.g., `merged-videos`) under `<userId>/merged-<timestamp>.webm`, get the public URL.
-  4. Insert a synthetic "merged" entry into `generatedVideos` state with `status: 'completed'`, `input_prompt: 'Final merged video — N clips'`, and a fake `video.storage_path` pointing at the uploaded URL.
-  5. Add its id to `approvedIds` so it appears in the **left "Saved videos / Your library"** panel automatically.
-  6. Trigger an immediate browser download of the merged file.
-- Persist merged-video metadata in `localStorage` (`merged-videos:<userId>`) so it survives reloads without backend changes.
+## Technical Changes (single file)
 
-### Empty / disabled states
-- Merge button shows tooltip "Need at least 2 finished videos" when fewer than 2 completed clips exist.
+### `src/modules/generator-ui/pages/DashboardPage.tsx`
 
-## Technical Changes (single file + 1 new helper file + 1 storage bucket)
+1. **New helper `captureLastFrameAsBlob(videoUrl)`** — pure browser:
+   - Creates a hidden `<video crossOrigin="anonymous" muted playsInline>`.
+   - On `loadedmetadata`, seeks to `duration - 0.05`.
+   - On `seeked`, draws to a `<canvas>` at the video's native dimensions.
+   - Returns the canvas as a PNG `Blob` via `canvas.toBlob`.
+   - Falls back to a brief `play()/pause()` cycle before seeking when the browser refuses an immediate seek on a remote stream.
 
-### 1. `src/modules/generator-ui/pages/DashboardPage.tsx`
-- Add state `deletedIds: Set<string>` + `mergedEntries: MergedEntry[]`, both persisted in `localStorage` keyed by `userId`.
-- Filter `generatedVideos` for display: `visibleVideos = generatedVideos.filter(v => !deletedIds.has(v.id))`. Use `visibleVideos` in both panels.
-- Inject `mergedEntries` into the displayed list as virtual `JobDetail`-shaped items (always `status: 'completed'`, never polled).
-- Add `Trash2` icon button on each card in both panels (right panel: next to bookmark; left panel: same row).
-- Add `Combine` icon button in the right panel header (line ~661 area, next to the `+` button).
-- New `handleMergeAllVideos` function that orchestrates fetch → canvas concat → upload → state update.
+2. **Convert `handleAddVideoCard` to async** and after the existing reset:
+   - Look up the most recent completed visible job: `generatedVideos.find(v => !deletedIds.has(v.id) && normalizeStatus(v.status) === 'completed' && v.video?.storage_path)`.
+   - If found and `userId` is present:
+     - `setGenerationMode('image-to-video')`.
+     - Insert a placeholder `UploadedFile` with `status: 'uploading'`, `target: 'Start'`.
+     - Call `captureLastFrameAsBlob(prev.video.storage_path)`.
+     - Upload the blob to the `wan-frames` bucket at `${userId}/start-${Date.now()}-${uuid}.png`.
+     - Replace the placeholder with `{ status: 'ready', url: publicUrl, size: blob.size }`.
+   - On any failure, drop the placeholder and set an inline `composerError` so the user can recover by uploading manually.
 
-### 2. New helper: `src/modules/generator-ui/lib/mergeVideos.ts`
-- Pure utility: `mergeVideoUrls(urls: string[], onProgress?: (n) => void): Promise<Blob>`
-- Implementation: sequentially load each URL into a hidden `<video>`, paint frames onto a shared `<canvas>` at ~30fps, capture canvas stream with `MediaRecorder({ mimeType: 'video/webm;codecs=vp9' })`, return final blob.
-- Audio is dropped in v1 (canvas/MediaRecorder audio mux is fragile across browsers). We can add audio in a follow-up if needed.
-
-### 3. Storage bucket (one migration)
-- Create public bucket `merged-videos` with RLS allowing authenticated users to insert/select their own files (path prefix = `auth.uid()/...`).
+3. No changes to the orchestrator, edge functions, contracts, DB, or storage policies. The `wan-frames` bucket is already public and the existing user-scoped upload path already works for this user.
 
 ## What stays unchanged
-- Edge functions, job orchestrator, all DB tables for jobs, polling, composer, generation modes, contracts.
-- Bookmark/approve flow and `approvedIds` storage stay exactly as today; merged videos are simply auto-added to that set.
+
+- Edge functions, job orchestrator, DB schema, RLS, contracts.
+- All other dashboard behavior: text-to-video mode, manual uploads, merge, delete, library, polling, progress bars.
+- The `+` button still sits in the same spot in the right "Recent outputs" header.
 
 ## Acceptance
-- Every card (both panels) has a working trash icon; deleted cards stay gone after reload.
-- A "merge" icon appears in the right panel; disabled until ≥2 completed clips exist.
-- Clicking merge produces one downloadable `.webm` and a new card in the **left "Saved videos / Your library"** panel labeled as the final merged video.
-- Merged video persists across reloads and can itself be deleted from the library.
+
+- After at least one completed render exists, clicking `+`:
+  - Switches the composer into Image to Video mode.
+  - Shows a Start chip that goes from `Uploading` → `Ready` within a couple of seconds.
+  - The Start frame's image is the visually-identical last frame of the previously-played video.
+- The Render button enables once an End frame and prompt are added — same as today.
+- With zero prior completed videos, `+` opens an empty composer (no error).
+- If frame capture fails, an inline error message explains and the user can still manually upload a Start frame.
