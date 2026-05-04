@@ -47,13 +47,13 @@ export const adminMonitorGateway = {
       });
       if (out.status >= 400) {
         const body = out.body as { error?: { code: string; message: string } };
-        return errorResponse(body.error?.code ?? "ERROR", body.error?.message ?? "Error", out.status, ctx.requestId);
+        return errorResponse(req, body.error?.code ?? "ERROR", body.error?.message ?? "Error", out.status, ctx.requestId);
       }
-      return jsonResponse({ ...(out.body as object), requestId: ctx.requestId }, out.status);
+      return jsonResponse(req, { ...(out.body as object), requestId: ctx.requestId }, out.status);
     } catch (e) {
       logError("admin-monitor gateway unhandled", { error: (e as Error).message, operation });
       await writeApiRequestLog(svc, { ...ctx, statusCode: 500, latencyMs: Date.now() - ctx.startedAt, errorCode: "INTERNAL" });
-      return errorResponse("INTERNAL", "Internal error", 500, ctx.requestId);
+      return errorResponse(req, "INTERNAL", "Internal error", 500, ctx.requestId);
     }
   },
 };

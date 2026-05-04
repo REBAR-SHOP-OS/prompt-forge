@@ -28,7 +28,7 @@ export const generatorUiGateway = {
       const auth = await authenticate(req);
       if (!auth) {
         await writeApiRequestLog(svc, { ...ctx, statusCode: 401, latencyMs: Date.now() - ctx.startedAt, errorCode: "UNAUTHORIZED" });
-        return errorResponse("UNAUTHORIZED", "Missing or invalid token", 401, ctx.requestId);
+        return errorResponse(req, "UNAUTHORIZED", "Missing or invalid token", 401, ctx.requestId);
       }
 
       switch (operation) {
@@ -41,15 +41,15 @@ export const generatorUiGateway = {
           if (pErr || rErr) {
             logError("generator-ui getMe lookup failed", { pErr: pErr?.message, rErr: rErr?.message });
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 500, latencyMs: Date.now() - ctx.startedAt, errorCode: "DB_ERROR" });
-            return errorResponse("DB_ERROR", "Could not load profile", 500, ctx.requestId);
+            return errorResponse(req, "DB_ERROR", "Could not load profile", 500, ctx.requestId);
           }
           if (!profile) {
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 404, latencyMs: Date.now() - ctx.startedAt, errorCode: "PROFILE_NOT_FOUND" });
-            return errorResponse("PROFILE_NOT_FOUND", "Profile not found", 404, ctx.requestId);
+            return errorResponse(req, "PROFILE_NOT_FOUND", "Profile not found", 404, ctx.requestId);
           }
           const role = roles?.some((r) => r.role === "admin") ? "admin" : "user";
           await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
-          return jsonResponse({
+          return jsonResponse(req, {
             id: profile.id,
             email: profile.email,
             role,
@@ -60,12 +60,12 @@ export const generatorUiGateway = {
         }
         default:
           await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 404, latencyMs: Date.now() - ctx.startedAt, errorCode: "UNKNOWN_OPERATION" });
-          return errorResponse("UNKNOWN_OPERATION", `Unknown operation: ${operation}`, 404, ctx.requestId);
+          return errorResponse(req, "UNKNOWN_OPERATION", `Unknown operation: ${operation}`, 404, ctx.requestId);
       }
     } catch (e) {
       logError("generator-ui gateway unhandled", { error: (e as Error).message, operation });
       await writeApiRequestLog(svc, { ...ctx, statusCode: 500, latencyMs: Date.now() - ctx.startedAt, errorCode: "INTERNAL" });
-      return errorResponse("INTERNAL", "Internal error", 500, ctx.requestId);
+      return errorResponse(req, "INTERNAL", "Internal error", 500, ctx.requestId);
     }
   },
 };

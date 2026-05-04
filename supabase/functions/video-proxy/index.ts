@@ -10,7 +10,7 @@
 // Auth: requires a valid Supabase JWT in the Authorization header.
 
 import { authenticate } from "../_shared/core/auth.ts";
-import { corsHeaders, errorResponse } from "../_shared/core/http.ts";
+import { corsHeaders, errorResponse, preflightResponse } from "../_shared/core/http.ts";
 
 const passthroughResponseHeaders = [
   "content-type",
@@ -84,42 +84,39 @@ async function fetchUpstream(req: Request, url: URL, redirectCount = 0): Promise
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", {
-      headers: {
-        ...corsHeaders,
-        "Access-Control-Expose-Headers":
-          "Content-Length, Content-Range, Accept-Ranges, Content-Type, ETag",
-      },
+    return preflightResponse(req, {
+      "Access-Control-Expose-Headers":
+        "Content-Length, Content-Range, Accept-Ranges, Content-Type, ETag",
     });
   }
 
   if (req.method !== "GET" && req.method !== "HEAD") {
-    return errorResponse("METHOD_NOT_ALLOWED", "Method not allowed", 405);
+    return errorResponse(req, "METHOD_NOT_ALLOWED", "Method not allowed", 405);
   }
 
   if (!(await authenticate(req))) {
-    return errorResponse("UNAUTHORIZED", "Unauthorized", 401);
+    return errorResponse(req, "UNAUTHORIZED", "Unauthorized", 401);
   }
 
   const reqUrl = new URL(req.url);
   const target = reqUrl.searchParams.get("url");
   if (!target) {
-    return errorResponse("MISSING_URL", "Missing url", 400);
+    return errorResponse(req, "MISSING_URL", "Missing url", 400);
   }
 
   let upstreamUrl: URL;
   try {
     upstreamUrl = new URL(target);
   } catch {
-    return errorResponse("INVALID_URL", "Invalid url", 400);
+    return errorResponse(req, "INVALID_URL", "Invalid url", 400);
   }
 
   if (!isSupportedProtocol(upstreamUrl.protocol)) {
-    return errorResponse("UNSUPPORTED_PROTOCOL", "Unsupported protocol", 400);
+    return errorResponse(req, "UNSUPPORTED_PROTOCOL", "Unsupported protocol", 400);
   }
 
   if (!isAllowedHost(upstreamUrl.hostname)) {
-    return errorResponse("HOST_NOT_ALLOWED", "Host not allowed", 400);
+    return errorResponse(req, "HOST_NOT_ALLOWED", "Host not allowed", 400);
   }
 
   let upstream: Response;
@@ -127,6 +124,7 @@ Deno.serve(async (req) => {
     upstream = await fetchUpstream(req, upstreamUrl);
   } catch (error) {
     return errorResponse(
+      req,
       "UPSTREAM_FETCH_FAILED",
       error instanceof Error ? error.message : "Upstream fetch failed",
       502,
@@ -134,10 +132,10 @@ Deno.serve(async (req) => {
   }
 
   if (!isAllowedContentType(upstream.headers.get("content-type"))) {
-    return errorResponse("UNSUPPORTED_CONTENT_TYPE", "Upstream content type is not allowed", 415);
+    return errorResponse(req, "UNSUPPORTED_CONTENT_TYPE", "Upstream content type is not allowed", 415);
   }
 
-  const responseHeaders = new Headers(corsHeaders);
+  const responseHeaders = new Headers(corsHeaders(req));
   responseHeaders.set(
     "Access-Control-Expose-Headers",
     "Content-Length, Content-Range, Accept-Ranges, Content-Type, ETag",
