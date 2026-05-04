@@ -17,6 +17,7 @@ import {
   LoaderCircle,
   LogOut,
   Paperclip,
+  Pencil,
   Plus,
   RotateCcw,
   Sparkles,
