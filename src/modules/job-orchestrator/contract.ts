@@ -27,6 +27,8 @@ export interface CreateJobInput {
   providerKey: "flow" | "wan";
   requestedModel?: string;
   prompt: string;
+  firstFrameUrl?: string;
+  lastFrameUrl?: string;
 }
 
 export interface CreateJobResult {
