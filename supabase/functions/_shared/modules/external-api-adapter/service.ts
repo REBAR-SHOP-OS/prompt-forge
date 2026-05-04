@@ -84,14 +84,54 @@ interface DashScopeTaskResponse {
     task_status?: "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED" | "UNKNOWN" | "CANCELED";
     video_url?: string;
     submit_time?: string;
+    scheduled_time?: string;
     end_time?: string;
     code?: string;
     message?: string;
+    /** Some providers return progress like "50%" or a numeric value. */
+    progress?: number | string;
   };
   usage?: { duration?: number; SR?: number; output_video_duration?: number; video_count?: number };
   request_id?: string;
   code?: string;
   message?: string;
+}
+
+// Expected total render time for 5s 720P i2v on Wan, used purely to estimate
+// progress when DashScope does not return a real percentage. Conservative so
+// progress doesn't sit at 95% for too short a time.
+const WAN_EXPECTED_RENDER_MS = 150_000; // ~2.5 minutes
+
+function parseProviderProgress(raw: number | string | undefined): number | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return Math.max(0, Math.min(100, Math.round(raw <= 1 ? raw * 100 : raw)));
+  }
+  if (typeof raw === "string") {
+    const m = raw.match(/(\d+(?:\.\d+)?)/);
+    if (m) return Math.max(0, Math.min(100, Math.round(parseFloat(m[1]))));
+  }
+  return null;
+}
+
+function estimateWanProgress(
+  status: string,
+  submitTime: string | undefined,
+  providerProgress: number | null,
+): number {
+  if (providerProgress !== null) return providerProgress;
+  if (status === "SUCCEEDED") return 100;
+  if (status === "FAILED" || status === "CANCELED") return 0;
+  if (status === "PENDING") return 8;
+  // RUNNING / UNKNOWN: time-based.
+  const startedAt = submitTime ? Date.parse(submitTime.replace(" ", "T") + "Z") : NaN;
+  if (Number.isFinite(startedAt)) {
+    const elapsed = Date.now() - startedAt;
+    const ratio = elapsed / WAN_EXPECTED_RENDER_MS;
+    // Map to 18..95 range so it always feels like progress.
+    return Math.max(18, Math.min(95, Math.round(18 + ratio * 77)));
+  }
+  return 25;
 }
 
 async function startWanI2V(
