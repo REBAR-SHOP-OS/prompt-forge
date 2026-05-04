@@ -38,6 +38,21 @@ const CreateJobSchema = z.object({
 
 const GetJobSchema = z.object({ jobId: z.string().uuid() });
 
+// Estimate render progress when the provider hasn't reported one yet.
+// Uses status + created_at so the UI never shows a static "Rendering" with no
+// numeric feedback. Bounded to [18, 95] while in flight.
+function estimateProgressFromJob(status: string, createdAt: string | undefined): number | null {
+  if (status === "completed") return 100;
+  if (status === "failed" || status === "cancelled") return null;
+  const startedAt = createdAt ? Date.parse(createdAt) : NaN;
+  // ~2.5 min expected for 5s 720P i2v on Wan; adjust gently if it changes.
+  const expectedMs = 150_000;
+  if (!Number.isFinite(startedAt)) return status === "pending" ? 8 : 25;
+  const elapsed = Date.now() - startedAt;
+  const ratio = elapsed / expectedMs;
+  return Math.max(status === "pending" ? 8 : 18, Math.min(95, Math.round(18 + ratio * 77)));
+}
+
 export const jobOrchestratorGateway = {
   contract: JOB_ORCHESTRATOR_CONTRACT,
 
