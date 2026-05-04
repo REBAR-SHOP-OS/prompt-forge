@@ -861,6 +861,7 @@ export default function DashboardPage() {
         addUploadedFiles(event.dataTransfer.files, 'Start')
       }}
     >
+      {showWelcome && <WelcomeVideoOverlay onClose={dismissWelcome} />}
       <div
         className={`pointer-events-none absolute inset-0 border transition duration-200 ${
           isDragging ? 'border-amber-300/40 bg-amber-300/[0.045]' : 'border-transparent'
