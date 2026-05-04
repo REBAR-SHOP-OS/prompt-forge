@@ -43,6 +43,7 @@ type UploadedFile = {
 
 const VIDEO_POLL_INTERVAL_MS = 4_000
 const FRAMES_BUCKET = 'wan-frames'
+const MERGED_BUCKET = 'merged-videos'
 
 function isTerminalStatus(status: string) {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
