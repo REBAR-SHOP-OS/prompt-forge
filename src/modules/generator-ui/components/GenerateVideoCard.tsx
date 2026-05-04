@@ -168,7 +168,6 @@ export default function GenerateVideoCard() {
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="wan">wan (i2v)</SelectItem>
-                <SelectItem value="flow">flow</SelectItem>
               </SelectContent>
             </Select>
           </div>
