@@ -8,6 +8,8 @@ export interface JobSummary {
   provider_key: string | null;
   model_key: string | null;
   provider_job_id?: string | null;
+  first_frame_url?: string | null;
+  last_frame_url?: string | null;
   created_at: string;
   updated_at?: string;
 }
@@ -28,6 +30,8 @@ export interface CreateJobInput {
   providerKey: string;
   modelKey: string;
   estimatedCost: number;
+  firstFrameUrl?: string | null;
+  lastFrameUrl?: string | null;
 }
 
 export interface JobService {

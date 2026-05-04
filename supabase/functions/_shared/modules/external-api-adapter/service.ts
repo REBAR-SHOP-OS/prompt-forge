@@ -1,8 +1,17 @@
 // External API Adapter — service implementation.
-// Provider/model resolution + cost estimation. Provider keys read from env only.
+// Provider/model resolution + cost estimation + real provider calls.
+// Wan provider uses Alibaba DashScope (Singapore) image-to-video API.
 import type { SupabaseClient } from "../../core/supabase.ts";
-import type { AiGateway, GenerationStartResult, ProviderKey, ResolvedRoute } from "./contract.ts";
+import type {
+  AiGateway,
+  GenerationPollResult,
+  GenerationStartInput,
+  GenerationStartResult,
+  ProviderKey,
+  ResolvedRoute,
+} from "./contract.ts";
 import { getEnv } from "../../core/env.ts";
+import { logError } from "../../core/observability.ts";
 
 interface ModelCostConfig {
   // Cost per 1k prompt characters (proxy unit for preview-stage estimation).
@@ -12,10 +21,15 @@ interface ModelCostConfig {
 const COST_MAP: Record<string, ModelCostConfig> = {
   "flow-video-1": { costPer1kChars: 0.04 },
   "wan-video-1": { costPer1kChars: 0.03 },
+  "wan2.7-i2v": { costPer1kChars: 0.05 },
 };
 
 const MOCK_VIDEO_URL = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
 const MOCK_THUMB = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg";
+
+const DASHSCOPE_BASE_URL = "https://dashscope-intl.aliyuncs.com";
+const DASHSCOPE_CREATE_PATH = "/api/v1/services/aigc/video-generation/video-synthesis";
+const DASHSCOPE_TASK_PATH = "/api/v1/tasks";
 
 function sanitizePrompt(p: string): string {
   return p.replace(/\s+/g, " ").trim();
@@ -55,12 +69,133 @@ async function resolveRoute(
   return { providerKey, resolvedModel, estimatedCost };
 }
 
+// ----- Wan / DashScope ------------------------------------------------------
+
+interface DashScopeCreateResponse {
+  output?: { task_id?: string; task_status?: string };
+  request_id?: string;
+  code?: string;
+  message?: string;
+}
+
+interface DashScopeTaskResponse {
+  output?: {
+    task_id?: string;
+    task_status?: "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED" | "UNKNOWN" | "CANCELED";
+    video_url?: string;
+    submit_time?: string;
+    end_time?: string;
+    code?: string;
+    message?: string;
+  };
+  usage?: { video_duration?: number; video_ratio?: string };
+  request_id?: string;
+  code?: string;
+  message?: string;
+}
+
+async function startWanI2V(
+  resolvedModel: string,
+  input: GenerationStartInput,
+  apiKey: string,
+): Promise<GenerationStartResult> {
+  if (!input.firstFrameUrl || !input.lastFrameUrl) {
+    throw new Error("Wan i2v requires both firstFrameUrl and lastFrameUrl");
+  }
+
+  // Per Wan image-to-video general API reference, the new media[] protocol
+  // accepts first_frame and last_frame entries.
+  const body = {
+    model: resolvedModel,
+    input: {
+      prompt: input.prompt,
+      media: [
+        { type: "first_frame", url: input.firstFrameUrl },
+        { type: "last_frame", url: input.lastFrameUrl },
+      ],
+    },
+    parameters: {},
+  };
+
+  const res = await fetch(`${DASHSCOPE_BASE_URL}${DASHSCOPE_CREATE_PATH}`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "X-DashScope-Async": "enable",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const json = (await res.json().catch(() => ({}))) as DashScopeCreateResponse;
+  if (!res.ok) {
+    logError("dashscope create failed", { status: res.status, code: json.code, message: json.message });
+    throw new Error(`DashScope ${res.status}: ${json.code ?? ""} ${json.message ?? "unknown error"}`.trim());
+  }
+  const taskId = json.output?.task_id;
+  if (!taskId) {
+    throw new Error(`DashScope returned no task_id (request_id=${json.request_id ?? "?"})`);
+  }
+
+  return {
+    providerJobId: taskId,
+    videoUrl: null,
+    thumbnailUrl: null,
+    aspectRatio: null,
+    duration: null,
+    isComplete: false,
+  };
+}
+
+async function pollWanI2V(taskId: string, apiKey: string): Promise<GenerationPollResult> {
+  const res = await fetch(`${DASHSCOPE_BASE_URL}${DASHSCOPE_TASK_PATH}/${encodeURIComponent(taskId)}`, {
+    method: "GET",
+    headers: { "Authorization": `Bearer ${apiKey}` },
+  });
+  const json = (await res.json().catch(() => ({}))) as DashScopeTaskResponse;
+  if (!res.ok) {
+    logError("dashscope poll failed", { status: res.status, code: json.code, message: json.message });
+    throw new Error(`DashScope ${res.status}: ${json.code ?? ""} ${json.message ?? "unknown error"}`.trim());
+  }
+  const status = json.output?.task_status ?? "UNKNOWN";
+  if (status === "SUCCEEDED") {
+    return {
+      status: "completed",
+      videoUrl: json.output?.video_url ?? null,
+      thumbnailUrl: null,
+      aspectRatio: json.usage?.video_ratio ?? null,
+      duration: json.usage?.video_duration ?? null,
+    };
+  }
+  if (status === "FAILED" || status === "CANCELED") {
+    return {
+      status: "failed",
+      videoUrl: null,
+      thumbnailUrl: null,
+      aspectRatio: null,
+      duration: null,
+      reason: json.output?.message ?? json.message ?? `task ${status.toLowerCase()}`,
+    };
+  }
+  if (status === "RUNNING") {
+    return { status: "processing", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null };
+  }
+  return { status: "pending", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null };
+}
+
+// ----- Public adapter -------------------------------------------------------
+
 async function startGeneration(
   providerKey: ProviderKey,
   resolvedModel: string,
-  _prompt: string,
+  input: GenerationStartInput,
 ): Promise<GenerationStartResult> {
   const apiKey = getProviderApiKey(providerKey);
+
+  if (providerKey === "wan" && apiKey) {
+    return await startWanI2V(resolvedModel, input, apiKey);
+  }
+
   if (!apiKey && allowMockGeneration()) {
     return {
       providerJobId: `mock_${crypto.randomUUID()}`,
@@ -76,8 +211,7 @@ async function startGeneration(
     throw new Error(`provider API key missing for ${providerKey}`);
   }
 
-  // Real-provider branch is intentionally still async here.
-  // We return a queued job, but only when a real provider key is configured.
+  // Fallback for other real providers without specific implementation: queued.
   return {
     providerJobId: `${providerKey}_${crypto.randomUUID()}`,
     videoUrl: null,
@@ -88,9 +222,35 @@ async function startGeneration(
   };
 }
 
+async function pollGeneration(
+  providerKey: ProviderKey,
+  providerJobId: string,
+): Promise<GenerationPollResult> {
+  const apiKey = getProviderApiKey(providerKey);
+
+  // Mock providerJobIds always come back complete (mock generations are sync).
+  if (providerJobId.startsWith("mock_")) {
+    return {
+      status: "completed",
+      videoUrl: MOCK_VIDEO_URL,
+      thumbnailUrl: MOCK_THUMB,
+      aspectRatio: "16:9",
+      duration: 5,
+    };
+  }
+
+  if (providerKey === "wan" && apiKey) {
+    return await pollWanI2V(providerJobId, apiKey);
+  }
+
+  // Unknown provider / no key — treat as still processing rather than failing.
+  return { status: "processing", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null };
+}
+
 export const aiGateway: AiGateway = {
   resolveRoute,
   sanitizePrompt,
   getProviderApiKey,
   startGeneration,
+  pollGeneration,
 };
