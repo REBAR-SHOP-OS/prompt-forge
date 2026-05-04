@@ -5,6 +5,8 @@ import {
   BookmarkPlus,
   ChevronsRight,
   Clapperboard,
+  Combine,
+  Download,
   FileUp,
   Film,
   Hammer,
@@ -15,6 +17,7 @@ import {
   Paperclip,
   Plus,
   Sparkles,
+  Trash2,
   X
 } from 'lucide-react'
 
@@ -23,6 +26,7 @@ import { useAuth } from '@/core/auth/AuthProvider'
 import { supabase } from '@/integrations/supabase/client'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
+import { mergeVideoUrls } from '@/modules/generator-ui/lib/mergeVideos'
 
 type VideoJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
 type UploadTarget = 'Start' | 'End'
@@ -39,6 +43,7 @@ type UploadedFile = {
 
 const VIDEO_POLL_INTERVAL_MS = 4_000
 const FRAMES_BUCKET = 'wan-frames'
+const MERGED_BUCKET = 'merged-videos'
 
 function isTerminalStatus(status: string) {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
@@ -233,6 +238,82 @@ export default function DashboardPage() {
       return next
     })
   }
+
+  const deletedStorageKey = userId ? `deleted-videos:${userId}` : null
+  const mergedStorageKey = userId ? `merged-videos:${userId}` : null
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set())
+  const [mergedEntries, setMergedEntries] = useState<JobDetail[]>([])
+  const [isMerging, setIsMerging] = useState(false)
+  const [mergeProgress, setMergeProgress] = useState<number>(0)
+
+  useEffect(() => {
+    if (!deletedStorageKey) {
+      setDeletedIds(new Set())
+      return
+    }
+    try {
+      const raw = window.localStorage.getItem(deletedStorageKey)
+      setDeletedIds(raw ? new Set(JSON.parse(raw) as string[]) : new Set())
+    } catch {
+      setDeletedIds(new Set())
+    }
+  }, [deletedStorageKey])
+
+  useEffect(() => {
+    if (!mergedStorageKey) {
+      setMergedEntries([])
+      return
+    }
+    try {
+      const raw = window.localStorage.getItem(mergedStorageKey)
+      setMergedEntries(raw ? (JSON.parse(raw) as JobDetail[]) : [])
+    } catch {
+      setMergedEntries([])
+    }
+  }, [mergedStorageKey])
+
+  function persistDeleted(next: Set<string>) {
+    if (!deletedStorageKey) return
+    try {
+      window.localStorage.setItem(deletedStorageKey, JSON.stringify(Array.from(next)))
+    } catch { /* ignore */ }
+  }
+
+  function persistMerged(next: JobDetail[]) {
+    if (!mergedStorageKey) return
+    try {
+      window.localStorage.setItem(mergedStorageKey, JSON.stringify(next))
+    } catch { /* ignore */ }
+  }
+
+  function deleteCard(jobId: string) {
+    if (typeof window !== 'undefined' && !window.confirm('Delete this video card?')) return
+    setDeletedIds((current) => {
+      const next = new Set(current)
+      next.add(jobId)
+      persistDeleted(next)
+      return next
+    })
+    // Also remove from approved set if present
+    setApprovedIds((current) => {
+      if (!current.has(jobId)) return current
+      const next = new Set(current)
+      next.delete(jobId)
+      if (approvedStorageKey) {
+        try { window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
+      }
+      return next
+    })
+    // If it's a merged entry, drop it from the merged store too.
+    setMergedEntries((current) => {
+      if (!current.some((e) => e.id === jobId)) return current
+      const next = current.filter((e) => e.id !== jobId)
+      persistMerged(next)
+      return next
+    })
+    if (previewVideoId === jobId) setPreviewVideoId(null)
+  }
+
   const pollTimerRef = useRef<number | null>(null)
   const promptInputRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -260,17 +341,31 @@ export default function DashboardPage() {
   const [composerError, setComposerError] = useState<string | null>(null)
   const startUploadCount = uploadedFiles.filter((file) => file.target === 'Start').length
   const endUploadCount = uploadedFiles.filter((file) => file.target === 'End').length
+  const visibleVideos = useMemo(() => {
+    const all = [...mergedEntries, ...generatedVideos]
+    return all.filter((v) => !deletedIds.has(v.id))
+  }, [generatedVideos, mergedEntries, deletedIds])
+
+  const completedSourceVideos = useMemo(
+    () => generatedVideos.filter(
+      (v) => !deletedIds.has(v.id)
+        && normalizeStatus(v.status) === 'completed'
+        && v.video?.storage_path
+    ),
+    [generatedVideos, deletedIds]
+  )
+
   const previewVideo = useMemo(() => {
-    if (generatedVideos.length === 0) {
+    if (visibleVideos.length === 0) {
       return null
     }
 
     return (
-      generatedVideos.find((video) => video.id === previewVideoId) ??
-      generatedVideos.find((video) => video.video?.storage_path) ??
-      generatedVideos[0]
+      visibleVideos.find((video) => video.id === previewVideoId) ??
+      visibleVideos.find((video) => video.video?.storage_path) ??
+      visibleVideos[0]
     )
-  }, [generatedVideos, previewVideoId])
+  }, [visibleVideos, previewVideoId])
 
   const emptyStateLabel = useMemo(() => {
     if (isDragging) {
@@ -508,6 +603,88 @@ export default function DashboardPage() {
     })
   }
 
+  async function handleMergeAllVideos() {
+    if (isMerging) return
+    if (completedSourceVideos.length < 2) {
+      setVideoColumnMessage('Need at least 2 finished videos to merge.')
+      return
+    }
+    if (!userId) {
+      setVideoColumnMessage('Sign in to merge videos.')
+      return
+    }
+    setIsMerging(true)
+    setMergeProgress(0)
+    setVideoColumnMessage(null)
+    try {
+      const urls = completedSourceVideos
+        .slice()
+        .reverse() // oldest -> newest, in chronological order
+        .map((v) => v.video!.storage_path)
+
+      const blob = await mergeVideoUrls(urls, (p) => setMergeProgress(Math.round(p.ratio * 100)))
+
+      const filename = `merged-${Date.now()}.webm`
+      const storagePath = `${userId}/${filename}`
+      const { error: upErr } = await supabase.storage
+        .from(MERGED_BUCKET)
+        .upload(storagePath, blob, { contentType: 'video/webm', upsert: false })
+      if (upErr) throw new Error(upErr.message)
+      const { data } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(storagePath)
+      const publicUrl = data.publicUrl
+
+      const mergedId = `merged-${crypto.randomUUID()}`
+      const entry: JobDetail = {
+        id: mergedId,
+        status: 'completed',
+        input_prompt: `Final merged video — ${urls.length} clips`,
+        provider_key: 'merged',
+        model_key: 'browser-canvas',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        video: {
+          id: mergedId,
+          storage_path: publicUrl,
+          thumbnail_url: null,
+          aspect_ratio: null,
+          duration: null,
+        },
+      }
+
+      setMergedEntries((current) => {
+        const next = [entry, ...current]
+        persistMerged(next)
+        return next
+      })
+      // Auto-add to library (left panel).
+      setApprovedIds((current) => {
+        const next = new Set(current)
+        next.add(mergedId)
+        if (approvedStorageKey) {
+          try { window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
+        }
+        return next
+      })
+      setPreviewVideoId(mergedId)
+
+      // Trigger download.
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 4_000)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Merge failed'
+      setVideoColumnMessage(`Merge failed: ${msg}`)
+    } finally {
+      setIsMerging(false)
+      setMergeProgress(0)
+    }
+  }
+
   return (
     <section
       className="relative min-h-screen overflow-hidden bg-black text-zinc-100"
@@ -648,9 +825,30 @@ export default function DashboardPage() {
             <History className="h-4 w-4 text-amber-300" aria-hidden="true" />
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">History</p>
             <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
-              {generatedVideos.length}
+              {generatedVideos.filter((v) => !deletedIds.has(v.id)).length}
             </span>
           </div>
+          <button
+            type="button"
+            onClick={handleMergeAllVideos}
+            disabled={isMerging || completedSourceVideos.length < 2}
+            className="grid h-8 min-w-8 place-items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-2 text-xs font-semibold text-zinc-300 transition hover:border-emerald-300/30 hover:text-emerald-200 disabled:cursor-not-allowed disabled:opacity-40"
+            title={
+              completedSourceVideos.length < 2
+                ? 'Need at least 2 finished videos'
+                : 'Merge all videos into one final clip'
+            }
+            aria-label="Merge all videos"
+          >
+            {isMerging ? (
+              <>
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                <span className="tabular-nums">{mergeProgress}%</span>
+              </>
+            ) : (
+              <Combine className="h-4 w-4" aria-hidden="true" />
+            )}
+          </button>
         </div>
 
         <div className="mt-4 flex items-center justify-between">
@@ -683,9 +881,9 @@ export default function DashboardPage() {
                 <p className="mt-2 text-xs leading-5 text-zinc-600">Recent outputs will appear here.</p>
               </div>
             </div>
-          ) : generatedVideos.length > 0 ? (
+          ) : generatedVideos.filter((v) => !deletedIds.has(v.id)).length > 0 ? (
             <div className="grid gap-3">
-              {generatedVideos.map((video) => {
+              {generatedVideos.filter((v) => !deletedIds.has(v.id)).map((video) => {
                 const status = normalizeStatus(video.status)
                 const isPreviewSelected = previewVideo?.id === video.id
 
@@ -727,36 +925,50 @@ export default function DashboardPage() {
                       <p className="max-h-12 overflow-hidden text-sm font-medium leading-6 text-zinc-200">
                         {video.input_prompt}
                       </p>
-                      {status === 'processing' ? (
-                        <LoaderCircle className="mt-1 h-4 w-4 shrink-0 animate-spin text-amber-300" aria-hidden="true" />
-                      ) : status === 'completed' && video.video?.storage_path ? (
-                        (() => {
-                          const isApproved = approvedIds.has(video.id)
-                          return (
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                toggleApproved(video.id)
-                              }}
-                              aria-pressed={isApproved}
-                              aria-label={isApproved ? 'Remove from library' : 'Save to library'}
-                              title={isApproved ? 'Saved in library — click to remove' : 'Save to library'}
-                              className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border transition ${
-                                isApproved
-                                  ? 'border-emerald-300/40 bg-emerald-300/10 text-emerald-200 hover:bg-emerald-300/15'
-                                  : 'border-white/10 bg-white/[0.03] text-zinc-400 hover:border-white/20 hover:text-zinc-100'
-                              }`}
-                            >
-                              {isApproved ? (
-                                <BookmarkCheck className="h-3.5 w-3.5" aria-hidden="true" />
-                              ) : (
-                                <BookmarkPlus className="h-3.5 w-3.5" aria-hidden="true" />
-                              )}
-                            </button>
-                          )
-                        })()
-                      ) : null}
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {status === 'processing' ? (
+                          <LoaderCircle className="mt-1 h-4 w-4 shrink-0 animate-spin text-amber-300" aria-hidden="true" />
+                        ) : status === 'completed' && video.video?.storage_path ? (
+                          (() => {
+                            const isApproved = approvedIds.has(video.id)
+                            return (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  toggleApproved(video.id)
+                                }}
+                                aria-pressed={isApproved}
+                                aria-label={isApproved ? 'Remove from library' : 'Save to library'}
+                                title={isApproved ? 'Saved in library — click to remove' : 'Save to library'}
+                                className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border transition ${
+                                  isApproved
+                                    ? 'border-emerald-300/40 bg-emerald-300/10 text-emerald-200 hover:bg-emerald-300/15'
+                                    : 'border-white/10 bg-white/[0.03] text-zinc-400 hover:border-white/20 hover:text-zinc-100'
+                                }`}
+                              >
+                                {isApproved ? (
+                                  <BookmarkCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                                ) : (
+                                  <BookmarkPlus className="h-3.5 w-3.5" aria-hidden="true" />
+                                )}
+                              </button>
+                            )
+                          })()
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            deleteCard(video.id)
+                          }}
+                          aria-label="Delete card"
+                          title="Delete card"
+                          className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500">
@@ -822,7 +1034,7 @@ export default function DashboardPage() {
             <Library className="h-4 w-4 text-emerald-300" aria-hidden="true" />
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">Library</p>
             <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
-              {generatedVideos.filter((v) => approvedIds.has(v.id)).length}
+              {visibleVideos.filter((v) => approvedIds.has(v.id)).length}
             </span>
           </div>
           <button
@@ -842,7 +1054,7 @@ export default function DashboardPage() {
 
         <div className="mt-3 flex-1 overflow-y-auto pr-1">
           {(() => {
-            const approvedVideos = generatedVideos.filter((video) => approvedIds.has(video.id))
+            const approvedVideos = visibleVideos.filter((video) => approvedIds.has(video.id))
             if (approvedVideos.length === 0) {
               return (
                 <div className="grid h-full place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
@@ -900,18 +1112,44 @@ export default function DashboardPage() {
                         <p className="max-h-12 overflow-hidden text-sm font-medium leading-6 text-zinc-200">
                           {video.input_prompt}
                         </p>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            toggleApproved(video.id)
-                          }}
-                          aria-label="Remove from library"
-                          title="Remove from library"
-                          className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/30 hover:bg-rose-300/10 hover:text-rose-200"
-                        >
-                          <X className="h-3.5 w-3.5" aria-hidden="true" />
-                        </button>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          {video.video?.storage_path ? (
+                            <a
+                              href={video.video.storage_path}
+                              download
+                              onClick={(event) => event.stopPropagation()}
+                              aria-label="Download video"
+                              title="Download video"
+                              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                            >
+                              <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                            </a>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              toggleApproved(video.id)
+                            }}
+                            aria-label="Remove from library"
+                            title="Remove from library"
+                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/30 hover:bg-rose-300/10 hover:text-rose-200"
+                          >
+                            <X className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              deleteCard(video.id)
+                            }}
+                            aria-label="Delete card"
+                            title="Delete card"
+                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        </div>
                       </div>
                       <div className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500">
                         <span className="inline-flex items-center gap-2">
