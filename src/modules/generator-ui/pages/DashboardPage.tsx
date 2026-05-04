@@ -1062,8 +1062,7 @@ export default function DashboardPage() {
     setVideoColumnMessage(null)
     try {
       const rawUrls = completedSourceVideos
-        .slice()
-        .reverse() // oldest -> newest, in chronological order
+        // generatedVideos is already ascending (oldest -> newest), so this is chronological.
         .map((v) => v.video!.storage_path)
       const urls = await Promise.all(rawUrls.map((u) => proxiedVideoUrl(u)))
 
