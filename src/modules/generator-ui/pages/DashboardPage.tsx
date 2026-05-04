@@ -881,9 +881,9 @@ export default function DashboardPage() {
                 <p className="mt-2 text-xs leading-5 text-zinc-600">Recent outputs will appear here.</p>
               </div>
             </div>
-          ) : generatedVideos.length > 0 ? (
+          ) : generatedVideos.filter((v) => !deletedIds.has(v.id)).length > 0 ? (
             <div className="grid gap-3">
-              {generatedVideos.map((video) => {
+              {generatedVideos.filter((v) => !deletedIds.has(v.id)).map((video) => {
                 const status = normalizeStatus(video.status)
                 const isPreviewSelected = previewVideo?.id === video.id
 
