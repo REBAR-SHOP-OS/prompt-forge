@@ -438,7 +438,16 @@ export default function DashboardPage() {
   }
 
   function handleAddVideoCard() {
-    promptInputRef.current?.focus()
+    setPromptText('')
+    setUploadedFiles([])
+    setComposerError(null)
+    setVideoColumnMessage(null)
+    setUploadTarget('Start')
+    setPreviewVideoId(null)
+    requestAnimationFrame(() => {
+      promptInputRef.current?.focus()
+      promptInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
   }
 
   return (
