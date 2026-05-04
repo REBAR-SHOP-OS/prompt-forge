@@ -5,6 +5,7 @@ import {
   BookmarkPlus,
   ChevronsRight,
   Clapperboard,
+  Coins,
   Combine,
   Download,
   FileUp,
@@ -14,11 +15,13 @@ import {
   LayoutGrid,
   Library,
   LoaderCircle,
+  LogOut,
   Paperclip,
   Plus,
   RotateCcw,
   Sparkles,
   Trash2,
+  UserRound,
   X
 } from 'lucide-react'
 import {
@@ -32,6 +35,14 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 import { ApiError } from '@/core/api/client'
 import { useAuth } from '@/core/auth/AuthProvider'
