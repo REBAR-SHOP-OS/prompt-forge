@@ -188,8 +188,48 @@ export default function DashboardPage() {
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
-  const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false)
+  const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
+  const userId = session?.user?.id ?? null
+  const approvedStorageKey = userId ? `approved-videos:${userId}` : null
+  const [approvedIds, setApprovedIds] = useState<Set<string>>(() => new Set())
+
+  useEffect(() => {
+    if (!approvedStorageKey) {
+      setApprovedIds(new Set())
+      return
+    }
+    try {
+      const raw = window.localStorage.getItem(approvedStorageKey)
+      if (raw) {
+        const parsed = JSON.parse(raw) as string[]
+        setApprovedIds(new Set(parsed))
+      } else {
+        setApprovedIds(new Set())
+      }
+    } catch {
+      setApprovedIds(new Set())
+    }
+  }, [approvedStorageKey])
+
+  function toggleApproved(jobId: string) {
+    setApprovedIds((current) => {
+      const next = new Set(current)
+      if (next.has(jobId)) {
+        next.delete(jobId)
+      } else {
+        next.add(jobId)
+      }
+      if (approvedStorageKey) {
+        try {
+          window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(next)))
+        } catch {
+          /* ignore quota errors */
+        }
+      }
+      return next
+    })
+  }
   const pollTimerRef = useRef<number | null>(null)
   const promptInputRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
