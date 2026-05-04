@@ -925,36 +925,50 @@ export default function DashboardPage() {
                       <p className="max-h-12 overflow-hidden text-sm font-medium leading-6 text-zinc-200">
                         {video.input_prompt}
                       </p>
-                      {status === 'processing' ? (
-                        <LoaderCircle className="mt-1 h-4 w-4 shrink-0 animate-spin text-amber-300" aria-hidden="true" />
-                      ) : status === 'completed' && video.video?.storage_path ? (
-                        (() => {
-                          const isApproved = approvedIds.has(video.id)
-                          return (
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                toggleApproved(video.id)
-                              }}
-                              aria-pressed={isApproved}
-                              aria-label={isApproved ? 'Remove from library' : 'Save to library'}
-                              title={isApproved ? 'Saved in library — click to remove' : 'Save to library'}
-                              className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border transition ${
-                                isApproved
-                                  ? 'border-emerald-300/40 bg-emerald-300/10 text-emerald-200 hover:bg-emerald-300/15'
-                                  : 'border-white/10 bg-white/[0.03] text-zinc-400 hover:border-white/20 hover:text-zinc-100'
-                              }`}
-                            >
-                              {isApproved ? (
-                                <BookmarkCheck className="h-3.5 w-3.5" aria-hidden="true" />
-                              ) : (
-                                <BookmarkPlus className="h-3.5 w-3.5" aria-hidden="true" />
-                              )}
-                            </button>
-                          )
-                        })()
-                      ) : null}
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {status === 'processing' ? (
+                          <LoaderCircle className="mt-1 h-4 w-4 shrink-0 animate-spin text-amber-300" aria-hidden="true" />
+                        ) : status === 'completed' && video.video?.storage_path ? (
+                          (() => {
+                            const isApproved = approvedIds.has(video.id)
+                            return (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  toggleApproved(video.id)
+                                }}
+                                aria-pressed={isApproved}
+                                aria-label={isApproved ? 'Remove from library' : 'Save to library'}
+                                title={isApproved ? 'Saved in library — click to remove' : 'Save to library'}
+                                className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border transition ${
+                                  isApproved
+                                    ? 'border-emerald-300/40 bg-emerald-300/10 text-emerald-200 hover:bg-emerald-300/15'
+                                    : 'border-white/10 bg-white/[0.03] text-zinc-400 hover:border-white/20 hover:text-zinc-100'
+                                }`}
+                              >
+                                {isApproved ? (
+                                  <BookmarkCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                                ) : (
+                                  <BookmarkPlus className="h-3.5 w-3.5" aria-hidden="true" />
+                                )}
+                              </button>
+                            )
+                          })()
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            deleteCard(video.id)
+                          }}
+                          aria-label="Delete card"
+                          title="Delete card"
+                          className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500">
