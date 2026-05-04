@@ -25,35 +25,17 @@ import type { DomainContractMeta } from "../_gateway/types.ts";
 export const JOB_ORCHESTRATOR_CONTRACT: DomainContractMeta = {
   domain: "job-orchestrator",
   version: "v1",
-  operations: ["listMyJobs", "createJob", "getJob", "deleteJob"],
+  operations: ["listMyJobs", "createJob", "getJob"],
 } as const;
 
 const CreateJobSchema = z.object({
-  providerKey: z.literal("wan"),
+  providerKey: z.enum(["flow", "wan"]),
   requestedModel: z.string().trim().min(1).max(100).optional(),
   prompt: z.string().min(1).max(4000),
-  firstFrameUrl: z.string().url().max(2048).optional(),
-  lastFrameUrl: z.string().url().max(2048).optional(),
   durationSeconds: z.union([z.literal(5), z.literal(10), z.literal(15)]).optional(),
 });
 
 const GetJobSchema = z.object({ jobId: z.string().uuid() });
-const DeleteJobSchema = z.object({ jobId: z.string().uuid() });
-
-// Estimate render progress when the provider hasn't reported one yet.
-// Uses status + created_at so the UI never shows a static "Rendering" with no
-// numeric feedback. Bounded to [18, 95] while in flight.
-function estimateProgressFromJob(status: string, createdAt: string | undefined): number | null {
-  if (status === "completed") return 100;
-  if (status === "failed" || status === "cancelled") return null;
-  const startedAt = createdAt ? Date.parse(createdAt) : NaN;
-  // ~2.5 min expected for 5s 720P i2v on Wan; adjust gently if it changes.
-  const expectedMs = 150_000;
-  if (!Number.isFinite(startedAt)) return status === "pending" ? 8 : 25;
-  const elapsed = Date.now() - startedAt;
-  const ratio = elapsed / expectedMs;
-  return Math.max(status === "pending" ? 8 : 18, Math.min(95, Math.round(18 + ratio * 77)));
-}
 
 export const jobOrchestratorGateway = {
   contract: JOB_ORCHESTRATOR_CONTRACT,
@@ -84,56 +66,12 @@ export const jobOrchestratorGateway = {
           if (!parsed.success) {
             return errorResponse("VALIDATION_ERROR", "jobId required", 400, ctx.requestId);
           }
-          let detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient);
+          const detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient);
           if (!detail) {
             return errorResponse("NOT_FOUND", "Job not found", 404, ctx.requestId);
           }
-
-          let progressPercent: number | null = null;
-          if (
-            detail.status === "processing" &&
-            detail.provider_job_id &&
-            detail.provider_key
-          ) {
-            try {
-              const poll = await aiGateway.pollGeneration(
-                detail.provider_key as ProviderKey,
-                detail.provider_job_id,
-              );
-              if (poll.status === "completed" && poll.videoUrl) {
-                await jobService.completeJob(svc, {
-                  userId: auth.userId,
-                  jobId: detail.id,
-                  storagePath: poll.videoUrl,
-                  thumbnailUrl: poll.thumbnailUrl,
-                  aspectRatio: poll.aspectRatio,
-                  duration: poll.duration,
-                });
-                detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
-                progressPercent = 100;
-              } else if (poll.status === "failed") {
-                // Mark job failed without refund (per current credit policy).
-                await svc
-                  .from("generator_generation_jobs")
-                  .update({ status: "failed", updated_at: new Date().toISOString() })
-                  .eq("id", detail.id)
-                  .eq("user_id", auth.userId);
-                detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
-                progressPercent = null;
-              } else {
-                progressPercent = poll.progressPercent ?? estimateProgressFromJob(detail.status, detail.created_at);
-              }
-            } catch (e) {
-              // Don't fail the request just because polling errored — return current state.
-              logError("inline poll failed", { error: (e as Error).message, jobId: detail.id });
-              progressPercent = estimateProgressFromJob(detail.status, detail.created_at);
-            }
-          } else {
-            progressPercent = estimateProgressFromJob(detail.status, detail.created_at);
-          }
-
           await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
-          return jsonResponse({ ...detail, progress_percent: progressPercent, requestId: ctx.requestId });
+          return jsonResponse({ ...detail, requestId: ctx.requestId });
         }
 
         case "createJob": {
@@ -155,15 +93,6 @@ export const jobOrchestratorGateway = {
 
           const prompt = aiGateway.sanitizePrompt(parsed.data.prompt);
           const providerKey = parsed.data.providerKey as ProviderKey;
-          const firstFrameUrl = parsed.data.firstFrameUrl ?? null;
-          const lastFrameUrl = parsed.data.lastFrameUrl ?? null;
-
-          // Image-to-video requires BOTH frames; text-to-video requires NEITHER.
-          // Reject inconsistent state (only one frame provided).
-          if ((firstFrameUrl && !lastFrameUrl) || (!firstFrameUrl && lastFrameUrl)) {
-            await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 400, latencyMs: Date.now() - ctx.startedAt, errorCode: "MISSING_FRAMES" });
-            return errorResponse("MISSING_FRAMES", "Image-to-video requires BOTH firstFrameUrl and lastFrameUrl", 400, ctx.requestId);
-          }
 
           // Cross-domain call via external-api-adapter contract.
           const route = await aiGateway.resolveRoute(svc, providerKey, parsed.data.requestedModel, prompt);
@@ -177,8 +106,6 @@ export const jobOrchestratorGateway = {
               providerKey: route.providerKey,
               modelKey: route.resolvedModel,
               estimatedCost: route.estimatedCost,
-              firstFrameUrl,
-              lastFrameUrl,
             });
           } catch (e) {
             const msg = (e as Error).message;
@@ -193,20 +120,17 @@ export const jobOrchestratorGateway = {
           try {
             gen = await aiGateway.startGeneration(route.providerKey, route.resolvedModel, {
               prompt,
-              firstFrameUrl,
-              lastFrameUrl,
-              durationSeconds: parsed.data.durationSeconds ?? null,
+              durationSeconds: parsed.data.durationSeconds ?? 5,
             });
           } catch (e) {
-            // failJob RPC may not exist; fall back to a direct status update so
-            // we don't mask the original error with a secondary failure.
-            try {
-              await svc.from("generator_generation_jobs")
-                .update({ status: "failed", updated_at: new Date().toISOString() })
-                .eq("id", jobId).eq("user_id", auth.userId);
-            } catch (_) { /* best-effort */ }
+            await jobService.failJob(svc, {
+              userId: auth.userId,
+              jobId,
+              reason: (e as Error).message,
+              refundCredits: true,
+            });
             logError("startGeneration failed", { error: (e as Error).message, jobId });
-            return errorResponse("PROVIDER_ERROR", `Provider failed to start generation: ${(e as Error).message}`, 502, ctx.requestId);
+            return errorResponse("PROVIDER_ERROR", "Provider failed to start generation", 502, ctx.requestId);
           }
 
           try {
@@ -268,70 +192,6 @@ export const jobOrchestratorGateway = {
             resolvedModel: route.resolvedModel,
             requestId: ctx.requestId,
           });
-        }
-
-        case "deleteJob": {
-          if (req.method !== "POST") {
-            return errorResponse("METHOD_NOT_ALLOWED", "Use POST", 405, ctx.requestId);
-          }
-          if (!rateLimit(`jobs-delete:${auth.userId}`, 30, 60_000)) {
-            return errorResponse("RATE_LIMITED", "Too many requests", 429, ctx.requestId);
-          }
-          let body: unknown;
-          try { body = await req.json(); } catch {
-            return errorResponse("INVALID_JSON", "Invalid JSON body", 400, ctx.requestId);
-          }
-          const parsed = DeleteJobSchema.safeParse(body);
-          if (!parsed.success) {
-            return errorResponse("VALIDATION_ERROR", "jobId required", 400, ctx.requestId);
-          }
-
-          let storagePaths: string[] = [];
-          try {
-            storagePaths = await jobService.deleteJob(svc, auth.userId, parsed.data.jobId);
-          } catch (e) {
-            const msg = (e as Error).message;
-            const code = msg.includes("not found") ? "NOT_FOUND" : "DELETE_FAILED";
-            const status = code === "NOT_FOUND" ? 404 : 500;
-            return errorResponse(code, msg, status, ctx.requestId);
-          }
-
-          // Best-effort: purge files from Storage. Group by bucket.
-          // storage_path may be a full URL (external provider) or a
-          // "<bucket>/<path>" string. We only delete from our own buckets.
-          const KNOWN_BUCKETS = ["merged-videos", "wan-frames"];
-          const byBucket: Record<string, string[]> = {};
-          for (const raw of storagePaths) {
-            if (!raw || /^https?:\/\//i.test(raw)) {
-              // Try to extract bucket+path from a Supabase storage URL.
-              const m = raw.match(/\/storage\/v1\/object\/(?:public\/)?([^/]+)\/(.+)$/);
-              if (m && KNOWN_BUCKETS.includes(m[1])) {
-                (byBucket[m[1]] ??= []).push(decodeURIComponent(m[2]));
-              }
-              continue;
-            }
-            const bucket = KNOWN_BUCKETS.find((b) => raw.startsWith(`${b}/`));
-            if (bucket) (byBucket[bucket] ??= []).push(raw.slice(bucket.length + 1));
-          }
-          for (const [bucket, paths] of Object.entries(byBucket)) {
-            try {
-              const { error: rmErr } = await svc.storage.from(bucket).remove(paths);
-              if (rmErr) logError("storage remove failed", { bucket, error: rmErr.message });
-            } catch (e) {
-              logError("storage remove threw", { bucket, error: (e as Error).message });
-            }
-          }
-
-          await writeAuditLog(svc, {
-            actorUserId: auth.userId,
-            action: "job_orchestrator.delete_job",
-            targetType: "generation_job",
-            targetId: parsed.data.jobId,
-            requestId: ctx.requestId,
-            metadata: { purgedFiles: storagePaths.length },
-          });
-          await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
-          return jsonResponse({ ok: true, jobId: parsed.data.jobId, requestId: ctx.requestId });
         }
 
         default:
