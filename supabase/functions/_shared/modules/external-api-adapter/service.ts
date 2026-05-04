@@ -195,7 +195,63 @@ async function startWanI2V(
   const taskId = json.output?.task_id;
   if (!taskId) {
     throw new Error(`DashScope returned no task_id (request_id=${json.request_id ?? "?"})`);
+}
+
+async function startWanT2V(
+  resolvedModel: string,
+  input: GenerationStartInput,
+  apiKey: string,
+): Promise<GenerationStartResult> {
+  // Wan 2.7 text-to-video: prompt only, no media. Same async create endpoint.
+  const body = {
+    model: resolvedModel,
+    input: { prompt: input.prompt },
+    parameters: {
+      resolution: "720P",
+      ratio: "16:9",
+      duration: 5,
+      prompt_extend: true,
+      watermark: false,
+    },
+  };
+
+  const res = await fetch(`${DASHSCOPE_BASE_URL}${DASHSCOPE_CREATE_PATH}`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "X-DashScope-Async": "enable",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const json = (await res.json().catch(() => ({}))) as DashScopeCreateResponse;
+  if (!res.ok) {
+    logError("dashscope t2v create failed", {
+      status: res.status,
+      code: json.code,
+      message: json.message,
+      requestId: json.request_id,
+      model: resolvedModel,
+    });
+    throw new Error(
+      `DashScope ${res.status} ${json.code ?? ""} ${json.message ?? "unknown error"} (request_id=${json.request_id ?? "?"})`.trim(),
+    );
   }
+  const taskId = json.output?.task_id;
+  if (!taskId) {
+    throw new Error(`DashScope returned no task_id (request_id=${json.request_id ?? "?"})`);
+  }
+
+  return {
+    providerJobId: taskId,
+    videoUrl: null,
+    thumbnailUrl: null,
+    aspectRatio: null,
+    duration: null,
+    isComplete: false,
+  };
+}
 
   return {
     providerJobId: taskId,
