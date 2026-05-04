@@ -117,6 +117,18 @@ function buildPromptWithUploadedFiles(prompt: string, files: UploadedFile[]) {
   return [prompt || 'Generate from uploaded context', `Attached files:\n${fileContext}`].filter(Boolean).join('\n\n')
 }
 
+function getJobProgressPercent(job: { status: string; progress_percent?: number | null; created_at: string }): number | null {
+  if (typeof job.progress_percent === 'number') return Math.max(0, Math.min(100, Math.round(job.progress_percent)))
+  const status = normalizeStatus(job.status)
+  if (status === 'completed') return 100
+  if (status === 'failed' || status === 'cancelled') return null
+  const startedAt = Date.parse(job.created_at)
+  if (!Number.isFinite(startedAt)) return status === 'pending' ? 8 : 25
+  const elapsed = Date.now() - startedAt
+  const ratio = elapsed / 150_000 // ~2.5 min expected
+  return Math.max(status === 'pending' ? 8 : 18, Math.min(95, Math.round(18 + ratio * 77)))
+}
+
 function mergeJob(currentJobs: JobDetail[], nextJob: JobDetail) {
   const remainingJobs = currentJobs.filter((job) => job.id !== nextJob.id)
   return [nextJob, ...remainingJobs].sort(
