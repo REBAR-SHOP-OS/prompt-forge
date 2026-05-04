@@ -195,6 +195,16 @@ async function startWanI2V(
   const taskId = json.output?.task_id;
   if (!taskId) {
     throw new Error(`DashScope returned no task_id (request_id=${json.request_id ?? "?"})`);
+  }
+
+  return {
+    providerJobId: taskId,
+    videoUrl: null,
+    thumbnailUrl: null,
+    aspectRatio: null,
+    duration: null,
+    isComplete: false,
+  };
 }
 
 async function startWanT2V(
@@ -242,16 +252,6 @@ async function startWanT2V(
   if (!taskId) {
     throw new Error(`DashScope returned no task_id (request_id=${json.request_id ?? "?"})`);
   }
-
-  return {
-    providerJobId: taskId,
-    videoUrl: null,
-    thumbnailUrl: null,
-    aspectRatio: null,
-    duration: null,
-    isComplete: false,
-  };
-}
 
   return {
     providerJobId: taskId,
