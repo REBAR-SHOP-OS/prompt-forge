@@ -729,6 +729,33 @@ export default function DashboardPage() {
                       </p>
                       {status === 'processing' ? (
                         <LoaderCircle className="mt-1 h-4 w-4 shrink-0 animate-spin text-amber-300" aria-hidden="true" />
+                      ) : status === 'completed' && video.video?.storage_path ? (
+                        (() => {
+                          const isApproved = approvedIds.has(video.id)
+                          return (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                toggleApproved(video.id)
+                              }}
+                              aria-pressed={isApproved}
+                              aria-label={isApproved ? 'Remove from library' : 'Save to library'}
+                              title={isApproved ? 'Saved in library — click to remove' : 'Save to library'}
+                              className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border transition ${
+                                isApproved
+                                  ? 'border-emerald-300/40 bg-emerald-300/10 text-emerald-200 hover:bg-emerald-300/15'
+                                  : 'border-white/10 bg-white/[0.03] text-zinc-400 hover:border-white/20 hover:text-zinc-100'
+                              }`}
+                            >
+                              {isApproved ? (
+                                <BookmarkCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                              ) : (
+                                <BookmarkPlus className="h-3.5 w-3.5" aria-hidden="true" />
+                              )}
+                            </button>
+                          )
+                        })()
                       ) : null}
                     </div>
 
