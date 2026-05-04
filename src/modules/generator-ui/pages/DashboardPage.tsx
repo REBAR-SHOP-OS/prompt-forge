@@ -399,11 +399,8 @@ export default function DashboardPage() {
         // Real job: backend delete (DB rows + Storage files).
         await jobOrchestratorGateway.deleteJob(jobId)
       }
-      // Refresh server list so it stays in sync.
-      try {
-        const fresh = await jobOrchestratorGateway.listMyJobs()
-        setGeneratedVideos(fresh)
-      } catch { /* ignore */ }
+      // Drop from in-memory list as well so the card never reappears on re-render.
+      setGeneratedVideos((current) => current.filter((v) => v.id !== jobId))
     } catch (err) {
       // Roll back the hide so the user sees the card again.
       setDeletedIds((current) => {
