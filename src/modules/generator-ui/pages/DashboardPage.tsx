@@ -47,6 +47,7 @@ import {
 import { ApiError } from '@/core/api/client'
 import { useAuth } from '@/core/auth/AuthProvider'
 import { supabase } from '@/integrations/supabase/client'
+import WelcomeVideoOverlay from '@/modules/generator-ui/components/WelcomeVideoOverlay'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { mergeVideoUrls } from '@/modules/generator-ui/lib/mergeVideos'
@@ -226,6 +227,22 @@ export default function DashboardPage() {
   const userId = session?.user?.id ?? null
   const approvedStorageKey = userId ? `approved-videos:${userId}` : null
   const [approvedIds, setApprovedIds] = useState<Set<string>>(() => new Set())
+  const [showWelcome, setShowWelcome] = useState(false)
+
+  useEffect(() => {
+    if (!userId) return
+    const key = `welcome_seen_${userId}`
+    try {
+      if (!window.localStorage.getItem(key)) setShowWelcome(true)
+    } catch { /* ignore */ }
+  }, [userId])
+
+  function dismissWelcome() {
+    if (userId) {
+      try { window.localStorage.setItem(`welcome_seen_${userId}`, '1') } catch { /* ignore */ }
+    }
+    setShowWelcome(false)
+  }
 
   useEffect(() => {
     if (!approvedStorageKey) {
@@ -844,6 +861,7 @@ export default function DashboardPage() {
         addUploadedFiles(event.dataTransfer.files, 'Start')
       }}
     >
+      {showWelcome && <WelcomeVideoOverlay onClose={dismissWelcome} />}
       <div
         className={`pointer-events-none absolute inset-0 border transition duration-200 ${
           isDragging ? 'border-amber-300/40 bg-amber-300/[0.045]' : 'border-transparent'
