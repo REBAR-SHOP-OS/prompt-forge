@@ -1,6 +1,8 @@
 import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowRight,
+  BookmarkCheck,
+  BookmarkPlus,
   ChevronsRight,
   Clapperboard,
   FileUp,
@@ -8,6 +10,7 @@ import {
   Hammer,
   History,
   LayoutGrid,
+  Library,
   LoaderCircle,
   Paperclip,
   Plus,
