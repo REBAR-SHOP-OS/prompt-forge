@@ -360,6 +360,12 @@ export type Database = {
         }
         Returns: string
       }
+      generator_delete_job: {
+        Args: { _job_id: string; _user_id: string }
+        Returns: {
+          storage_path: string
+        }[]
+      }
       generator_mark_job_processing: {
         Args: { _job_id: string; _provider_job_id: string; _user_id: string }
         Returns: undefined
