@@ -288,12 +288,15 @@ export default function DashboardPage() {
   const deletedStorageKey = userId ? `deleted-videos:${userId}` : null
   const mergedStorageKey = userId ? `merged-videos:${userId}` : null
   const pendingEndAppendsKey = userId ? `pending-end-appends:${userId}` : null
+  const pendingStartPrependsKey = userId ? `pending-start-prepends:${userId}` : null
   const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set())
   const [mergedEntries, setMergedEntries] = useState<JobDetail[]>([])
   const [isMerging, setIsMerging] = useState(false)
   const [mergeProgress, setMergeProgress] = useState<number>(0)
   const [pendingEndAppends, setPendingEndAppends] = useState<Record<string, string>>({})
+  const [pendingStartPrepends, setPendingStartPrepends] = useState<Record<string, string>>({})
   const processingEndAppendRef = useRef<Set<string>>(new Set())
+  const processingStartPrependRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     if (!pendingEndAppendsKey) {
@@ -312,6 +315,26 @@ export default function DashboardPage() {
     if (!pendingEndAppendsKey) return
     try {
       window.localStorage.setItem(pendingEndAppendsKey, JSON.stringify(next))
+    } catch { /* ignore */ }
+  }
+
+  useEffect(() => {
+    if (!pendingStartPrependsKey) {
+      setPendingStartPrepends({})
+      return
+    }
+    try {
+      const raw = window.localStorage.getItem(pendingStartPrependsKey)
+      setPendingStartPrepends(raw ? (JSON.parse(raw) as Record<string, string>) : {})
+    } catch {
+      setPendingStartPrepends({})
+    }
+  }, [pendingStartPrependsKey])
+
+  function persistPendingStartPrepends(next: Record<string, string>) {
+    if (!pendingStartPrependsKey) return
+    try {
+      window.localStorage.setItem(pendingStartPrependsKey, JSON.stringify(next))
     } catch { /* ignore */ }
   }
 
@@ -618,6 +641,70 @@ export default function DashboardPage() {
     })
   }, [generatedVideos, pendingEndAppends, userId])
 
+  // Mirror of the end-append effect, but PREPENDS the Start frame as a 2s
+  // still clip to the front of the generated text-to-video output.
+  useEffect(() => {
+    if (!userId) return
+    const pendingIds = Object.keys(pendingStartPrepends)
+    if (pendingIds.length === 0) return
+
+    pendingIds.forEach((jobId) => {
+      if (processingStartPrependRef.current.has(jobId)) return
+      const job = generatedVideos.find((j) => j.id === jobId)
+      if (!job) return
+      if (normalizeStatus(job.status) !== 'completed') return
+      if (!job.video?.storage_path) return
+
+      const startImageUrl = pendingStartPrepends[jobId]
+      processingStartPrependRef.current.add(jobId)
+
+      ;(async () => {
+        try {
+          const proxiedSrc = await proxiedVideoUrl(job.video!.storage_path)
+          const stillClipBlob = await imageUrlToClip(startImageUrl, 2)
+
+          const stillPath = `${userId}/start-still-${Date.now()}-${crypto.randomUUID()}.webm`
+          const { error: stillErr } = await supabase.storage
+            .from(MERGED_BUCKET)
+            .upload(stillPath, stillClipBlob, { contentType: 'video/webm', upsert: false })
+          if (stillErr) throw new Error(stillErr.message)
+          const stillPublic = supabase.storage.from(MERGED_BUCKET).getPublicUrl(stillPath).data.publicUrl
+
+          // Prepend: still clip first, then the generated video.
+          const mergedBlob = await mergeVideoUrls([stillPublic, proxiedSrc])
+          const mergedPath = `${userId}/with-start-${Date.now()}-${crypto.randomUUID()}.webm`
+          const { error: upErr } = await supabase.storage
+            .from(MERGED_BUCKET)
+            .upload(mergedPath, mergedBlob, { contentType: 'video/webm', upsert: false })
+          if (upErr) throw new Error(upErr.message)
+          const mergedPublic = supabase.storage.from(MERGED_BUCKET).getPublicUrl(mergedPath).data.publicUrl
+
+          setGeneratedVideos((current) =>
+            current.map((j) =>
+              j.id === jobId && j.video
+                ? { ...j, video: { ...j.video, storage_path: mergedPublic } }
+                : j,
+            ),
+          )
+        } catch (err) {
+          console.error('[start-prepend] failed', err)
+          setVideoColumnMessage(
+            `Could not prepend Start frame to video: ${err instanceof Error ? err.message : 'unknown error'}`,
+          )
+        } finally {
+          setPendingStartPrepends((current) => {
+            if (!(jobId in current)) return current
+            const next = { ...current }
+            delete next[jobId]
+            persistPendingStartPrepends(next)
+            return next
+          })
+          processingStartPrependRef.current.delete(jobId)
+        }
+      })()
+    })
+  }, [generatedVideos, pendingStartPrepends, userId])
+
   // Smooth progress ticker: re-render once per second while any job is active
   // so the time-based progress bar advances visibly between API polls.
   const [, setProgressTick] = useState(0)
@@ -725,6 +812,7 @@ export default function DashboardPage() {
       let createdJob
       let seedFrames: { firstFrameUrl?: string; lastFrameUrl?: string } = {}
       let pendingEndAppendUrl: string | null = null
+      let pendingStartPrependUrl: string | null = null
 
       if (isTextToVideo) {
         createdJob = await jobOrchestratorGateway.createJob({
@@ -744,15 +832,16 @@ export default function DashboardPage() {
         })
         seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
       } else if (readyStartFrame?.url) {
-        // Only Start: reuse Start as both first and last frame.
+        // Only Start: generate text-to-video, then prepend the Start image
+        // as a 2-second still clip at the front of the completed video.
         createdJob = await jobOrchestratorGateway.createJob({
           providerKey: 'wan',
+          requestedModel: 'wan2.7-t2v-2026-04-25',
           prompt: nextPrompt,
-          firstFrameUrl: readyStartFrame.url,
-          lastFrameUrl: readyStartFrame.url,
           durationSeconds,
         })
-        seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyStartFrame.url }
+        pendingStartPrependUrl = readyStartFrame.url
+        seedFrames = { firstFrameUrl: readyStartFrame.url }
       } else if (readyEndFrame?.url) {
         // Only End: generate text-to-video first, then append the End image
         // as a 2-second still clip after the job completes.
@@ -775,6 +864,14 @@ export default function DashboardPage() {
         setPendingEndAppends((current) => {
           const next = { ...current, [seededJob.id]: pendingEndAppendUrl as string }
           persistPendingEndAppends(next)
+          return next
+        })
+      }
+
+      if (pendingStartPrependUrl) {
+        setPendingStartPrepends((current) => {
+          const next = { ...current, [seededJob.id]: pendingStartPrependUrl as string }
+          persistPendingStartPrepends(next)
           return next
         })
       }
