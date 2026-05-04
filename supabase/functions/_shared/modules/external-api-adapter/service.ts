@@ -319,6 +319,9 @@ async function startGeneration(
   const apiKey = getProviderApiKey(providerKey);
 
   if (providerKey === "wan" && apiKey) {
+    if (isWanTextToVideoModel(resolvedModel)) {
+      return await startWanT2V(resolvedModel, input, apiKey);
+    }
     return await startWanI2V(resolvedModel, input, apiKey);
   }
 
