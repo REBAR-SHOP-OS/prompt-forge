@@ -17,6 +17,7 @@ import {
 
 import { ApiError } from '@/core/api/client'
 import { useAuth } from '@/core/auth/AuthProvider'
+import { supabase } from '@/integrations/supabase/client'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 
@@ -28,9 +29,13 @@ type UploadedFile = {
   size: number
   target: UploadTarget
   type: string
+  status: 'uploading' | 'ready' | 'failed'
+  url: string | null
+  error: string | null
 }
 
 const VIDEO_POLL_INTERVAL_MS = 4_000
+const FRAMES_BUCKET = 'wan-frames'
 
 function isTerminalStatus(status: string) {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
@@ -138,13 +143,19 @@ async function hydrateJobs(summaries: JobSummary[]) {
   )
 }
 
-function buildSeededJob(prompt: string, result: CreateJobResult): JobDetail {
+function buildSeededJob(
+  prompt: string,
+  result: CreateJobResult,
+  frames?: { firstFrameUrl: string; lastFrameUrl: string }
+): JobDetail {
   return {
     id: result.jobId,
     status: result.status,
     input_prompt: prompt,
     provider_key: result.providerKey,
     model_key: result.resolvedModel,
+    first_frame_url: frames?.firstFrameUrl ?? null,
+    last_frame_url: frames?.lastFrameUrl ?? null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     video: null,
