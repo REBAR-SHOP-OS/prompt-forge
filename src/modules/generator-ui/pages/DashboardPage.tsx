@@ -889,6 +889,55 @@ export default function DashboardPage() {
     })
   }
 
+  function editAndReuseJob(job: { input_prompt: string; first_frame_url?: string | null; last_frame_url?: string | null }) {
+    setComposerError(null)
+    setVideoColumnMessage(null)
+    setPromptText(job.input_prompt ?? '')
+
+    const hasFrames = Boolean(job.first_frame_url || job.last_frame_url)
+    if (hasFrames) {
+      setGenerationMode('image-to-video')
+      const seeds: UploadedFile[] = []
+      const baseId = Date.now()
+      if (job.first_frame_url) {
+        seeds.push({
+          id: baseId,
+          name: 'reused-start.png',
+          size: 0,
+          target: 'Start',
+          type: 'image/png',
+          status: 'ready',
+          url: job.first_frame_url,
+          error: null,
+        })
+      }
+      if (job.last_frame_url) {
+        seeds.push({
+          id: baseId + 1,
+          name: 'reused-end.png',
+          size: 0,
+          target: 'End',
+          type: 'image/png',
+          status: 'ready',
+          url: job.last_frame_url,
+          error: null,
+        })
+      }
+      setUploadedFiles(seeds)
+      setUploadTarget(job.first_frame_url ? 'End' : 'Start')
+    } else {
+      setGenerationMode('text-to-video')
+      setUploadedFiles([])
+    }
+
+    setIsApprovedPanelOpen(false)
+
+    requestAnimationFrame(() => {
+      promptInputRef.current?.focus()
+      promptInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }
+
   async function handleMergeAllVideos() {
     if (isMerging) return
     if (completedSourceVideos.length < 2) {
