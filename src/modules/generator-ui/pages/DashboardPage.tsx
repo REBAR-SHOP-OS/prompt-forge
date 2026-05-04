@@ -51,6 +51,7 @@ import WelcomeVideoOverlay from '@/modules/generator-ui/components/WelcomeVideoO
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { mergeVideoUrls } from '@/modules/generator-ui/lib/mergeVideos'
+import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 
 type VideoJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
@@ -365,8 +366,8 @@ export default function DashboardPage() {
   const readyStartFrame = uploadedFiles.find((file) => file.target === 'Start' && file.status === 'ready' && file.url)
   const readyEndFrame = uploadedFiles.find((file) => file.target === 'End' && file.status === 'ready' && file.url)
   const hasUploadingFiles = uploadedFiles.some((file) => file.status === 'uploading')
-  const hasReadyFrames = Boolean(readyStartFrame?.url && readyEndFrame?.url)
-  const framesSatisfied = isTextToVideo ? true : hasReadyFrames
+  const hasAnyReadyFrame = Boolean(readyStartFrame?.url || readyEndFrame?.url)
+  const framesSatisfied = isTextToVideo ? true : hasAnyReadyFrame
   const canSubmit = promptText.trim().length > 0 && framesSatisfied && !hasUploadingFiles && !isSubmitting
   const blockedReason = useMemo(() => {
     if (isSubmitting) return null
@@ -374,10 +375,11 @@ export default function DashboardPage() {
     if (!promptText.trim()) {
       return isTextToVideo
         ? 'Describe the video you want to generate.'
-        : 'Describe the motion between the two frames.'
+        : 'Describe the motion for the frame(s).'
     }
-    if (!isTextToVideo && !readyStartFrame) return 'Add a Start frame image (use the Start button on the left).'
-    if (!isTextToVideo && !readyEndFrame) return 'Add an End frame image (use the End button on the left).'
+    if (!isTextToVideo && !readyStartFrame && !readyEndFrame) {
+      return 'Add a Start or End frame image (use the Start/End buttons on the left).'
+    }
     return null
   }, [isSubmitting, hasUploadingFiles, readyStartFrame, readyEndFrame, promptText, isTextToVideo])
   const [composerError, setComposerError] = useState<string | null>(null)
