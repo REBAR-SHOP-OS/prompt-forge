@@ -38,6 +38,21 @@ const CreateJobSchema = z.object({
 
 const GetJobSchema = z.object({ jobId: z.string().uuid() });
 
+// Estimate render progress when the provider hasn't reported one yet.
+// Uses status + created_at so the UI never shows a static "Rendering" with no
+// numeric feedback. Bounded to [18, 95] while in flight.
+function estimateProgressFromJob(status: string, createdAt: string | undefined): number | null {
+  if (status === "completed") return 100;
+  if (status === "failed" || status === "cancelled") return null;
+  const startedAt = createdAt ? Date.parse(createdAt) : NaN;
+  // ~2.5 min expected for 5s 720P i2v on Wan; adjust gently if it changes.
+  const expectedMs = 150_000;
+  if (!Number.isFinite(startedAt)) return status === "pending" ? 8 : 25;
+  const elapsed = Date.now() - startedAt;
+  const ratio = elapsed / expectedMs;
+  return Math.max(status === "pending" ? 8 : 18, Math.min(95, Math.round(18 + ratio * 77)));
+}
+
 export const jobOrchestratorGateway = {
   contract: JOB_ORCHESTRATOR_CONTRACT,
 
@@ -72,8 +87,7 @@ export const jobOrchestratorGateway = {
             return errorResponse("NOT_FOUND", "Job not found", 404, ctx.requestId);
           }
 
-          // Inline polling: if job is still processing and has a providerJobId,
-          // ask the adapter for an update and finalize it server-side.
+          let progressPercent: number | null = null;
           if (
             detail.status === "processing" &&
             detail.provider_job_id &&
@@ -94,6 +108,7 @@ export const jobOrchestratorGateway = {
                   duration: poll.duration,
                 });
                 detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
+                progressPercent = 100;
               } else if (poll.status === "failed") {
                 // Mark job failed without refund (per current credit policy).
                 await svc
@@ -102,15 +117,21 @@ export const jobOrchestratorGateway = {
                   .eq("id", detail.id)
                   .eq("user_id", auth.userId);
                 detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
+                progressPercent = null;
+              } else {
+                progressPercent = poll.progressPercent ?? estimateProgressFromJob(detail.status, detail.created_at);
               }
             } catch (e) {
               // Don't fail the request just because polling errored — return current state.
               logError("inline poll failed", { error: (e as Error).message, jobId: detail.id });
+              progressPercent = estimateProgressFromJob(detail.status, detail.created_at);
             }
+          } else {
+            progressPercent = estimateProgressFromJob(detail.status, detail.created_at);
           }
 
           await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
-          return jsonResponse({ ...detail, requestId: ctx.requestId });
+          return jsonResponse({ ...detail, progress_percent: progressPercent, requestId: ctx.requestId });
         }
 
         case "createJob": {

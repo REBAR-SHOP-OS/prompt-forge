@@ -38,6 +38,8 @@ export interface GenerationPollResult {
   duration: number | null;
   /** Provider error reason when status === "failed". */
   reason?: string | null;
+  /** 0-100 progress estimate (provider-real if available, else time-based). */
+  progressPercent?: number | null;
 }
 
 export interface AiGateway {

@@ -117,6 +117,18 @@ function buildPromptWithUploadedFiles(prompt: string, files: UploadedFile[]) {
   return [prompt || 'Generate from uploaded context', `Attached files:\n${fileContext}`].filter(Boolean).join('\n\n')
 }
 
+function getJobProgressPercent(job: { status: string; progress_percent?: number | null; created_at: string }): number | null {
+  if (typeof job.progress_percent === 'number') return Math.max(0, Math.min(100, Math.round(job.progress_percent)))
+  const status = normalizeStatus(job.status)
+  if (status === 'completed') return 100
+  if (status === 'failed' || status === 'cancelled') return null
+  const startedAt = Date.parse(job.created_at)
+  if (!Number.isFinite(startedAt)) return status === 'pending' ? 8 : 25
+  const elapsed = Date.now() - startedAt
+  const ratio = elapsed / 150_000 // ~2.5 min expected
+  return Math.max(status === 'pending' ? 8 : 18, Math.min(95, Math.round(18 + ratio * 77)))
+}
+
 function mergeJob(currentJobs: JobDetail[], nextJob: JobDetail) {
   const remainingJobs = currentJobs.filter((job) => job.id !== nextJob.id)
   return [nextJob, ...remainingJobs].sort(
@@ -289,6 +301,16 @@ export default function DashboardPage() {
         pollTimerRef.current = null
       }
     }
+  }, [generatedVideos])
+
+  // Smooth progress ticker: re-render once per second while any job is active
+  // so the time-based progress bar advances visibly between API polls.
+  const [, setProgressTick] = useState(0)
+  useEffect(() => {
+    const hasActive = generatedVideos.some((job) => !isTerminalStatus(job.status))
+    if (!hasActive) return
+    const id = window.setInterval(() => setProgressTick((tick) => tick + 1), 1000)
+    return () => window.clearInterval(id)
   }, [generatedVideos])
 
   function openFileUpload(target: UploadTarget) {
@@ -484,15 +506,41 @@ export default function DashboardPage() {
                   />
                 ) : (
                   <div className="grid h-full place-items-center px-6 text-center">
-                    <div>
-                      {normalizeStatus(previewVideo.status) === 'processing' ? (
-                        <LoaderCircle className="mx-auto h-10 w-10 animate-spin text-amber-300" aria-hidden="true" />
-                      ) : (
-                        <Clapperboard className="mx-auto h-10 w-10 text-zinc-600" aria-hidden="true" />
-                      )}
-                      <p className="mt-4 text-sm font-semibold text-zinc-300">{formatStatusLabel(previewVideo.status)}</p>
-                      <p className="mt-2 text-xs leading-5 text-zinc-600">Waiting for render output.</p>
-                    </div>
+                    {(() => {
+                      const status = normalizeStatus(previewVideo.status)
+                      const isRendering = status === 'processing' || status === 'pending'
+                      const pct = isRendering ? getJobProgressPercent(previewVideo) ?? 0 : 0
+                      const startedAt = Date.parse(previewVideo.created_at)
+                      const longRender = Number.isFinite(startedAt) && Date.now() - startedAt > 240_000
+                      return (
+                        <div className="w-full max-w-sm">
+                          {isRendering ? (
+                            <LoaderCircle className="mx-auto h-10 w-10 animate-spin text-amber-300" aria-hidden="true" />
+                          ) : (
+                            <Clapperboard className="mx-auto h-10 w-10 text-zinc-600" aria-hidden="true" />
+                          )}
+                          <p className="mt-4 text-sm font-semibold text-zinc-300">{formatStatusLabel(previewVideo.status)}</p>
+                          {isRendering ? (
+                            <>
+                              <p className="mt-1 text-3xl font-semibold tabular-nums text-zinc-100">{pct}%</p>
+                              <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                                <div
+                                  className="h-full rounded-full bg-amber-300 transition-all duration-500"
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+                              <p className="mt-2 text-xs leading-5 text-zinc-500">
+                                {longRender
+                                  ? 'Still rendering — provider is taking longer than usual.'
+                                  : `About ${Math.max(0, 100 - pct)}% remaining`}
+                              </p>
+                            </>
+                          ) : (
+                            <p className="mt-2 text-xs leading-5 text-zinc-600">Waiting for render output.</p>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>
                 )}
               </div>
@@ -503,6 +551,12 @@ export default function DashboardPage() {
                 <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
                   <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(previewVideo.status)}`} />
                   {formatStatusLabel(previewVideo.status)}
+                  {(() => {
+                    const status = normalizeStatus(previewVideo.status)
+                    if (status !== 'processing' && status !== 'pending') return null
+                    const pct = getJobProgressPercent(previewVideo)
+                    return pct !== null ? <span className="tabular-nums text-amber-300">{pct}%</span> : null
+                  })()}
                 </span>
               </div>
             </div>
@@ -637,9 +691,25 @@ export default function DashboardPage() {
                       <span className="inline-flex items-center gap-2">
                         <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(video.status)}`} />
                         {formatStatusLabel(video.status)}
+                        {(status === 'processing' || status === 'pending') ? (
+                          (() => {
+                            const pct = getJobProgressPercent(video)
+                            return pct !== null ? <span className="tabular-nums text-amber-300">{pct}%</span> : null
+                          })()
+                        ) : null}
                       </span>
                       <span>{formatCreatedAt(video.created_at)}</span>
                     </div>
+                    {(status === 'processing' || status === 'pending') ? (
+                      (() => {
+                        const pct = getJobProgressPercent(video) ?? 0
+                        return (
+                          <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/10">
+                            <div className="h-full rounded-full bg-amber-300 transition-all duration-500" style={{ width: `${pct}%` }} />
+                          </div>
+                        )
+                      })()
+                    ) : null}
                   </article>
                 )
               })}

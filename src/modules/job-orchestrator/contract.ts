@@ -10,6 +10,8 @@ export interface JobSummary {
   last_frame_url?: string | null;
   created_at: string;
   updated_at?: string;
+  /** 0-100 estimated render progress; null when unknown/terminal-failed. */
+  progress_percent?: number | null;
 }
 
 export interface JobVideo {
