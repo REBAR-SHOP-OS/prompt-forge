@@ -38,6 +38,7 @@ const CreateJobSchema = z.object({
 });
 
 const GetJobSchema = z.object({ jobId: z.string().uuid() });
+const DeleteJobSchema = z.object({ jobId: z.string().uuid() });
 
 // Estimate render progress when the provider hasn't reported one yet.
 // Uses status + created_at so the UI never shows a static "Rendering" with no
