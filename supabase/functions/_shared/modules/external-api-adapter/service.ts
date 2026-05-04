@@ -300,6 +300,7 @@ async function pollGeneration(
       thumbnailUrl: MOCK_THUMB,
       aspectRatio: "16:9",
       duration: 5,
+      progressPercent: 100,
     };
   }
 
@@ -308,7 +309,7 @@ async function pollGeneration(
   }
 
   // Unknown provider / no key — treat as still processing rather than failing.
-  return { status: "processing", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null };
+  return { status: "processing", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null, progressPercent: 25 };
 }
 
 export const aiGateway: AiGateway = {
