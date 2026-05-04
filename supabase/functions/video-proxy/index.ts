@@ -3,137 +3,161 @@
 // loading the video into a <video crossOrigin="anonymous"> element for
 // canvas capture (needed by the in-browser merger and last-frame seeder).
 //
-// This function re-serves the bytes with permissive CORS headers and
+// This function re-serves the bytes with controlled CORS headers and
 // supports HTTP Range requests so <video> can seek.
 //
-// Usage: GET /video-proxy?url=<encoded>&token=<access_token>
-// Auth: requires a valid Supabase JWT. Token may come from the
-// Authorization header OR (because <video> can't set headers) from a
-// `token` query string parameter.
+// Usage: GET /video-proxy?url=<encoded>
+// Auth: requires a valid Supabase JWT in the Authorization header.
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { authenticate } from "../_shared/core/auth.ts";
+import { corsHeaders, errorResponse } from "../_shared/core/http.ts";
 
-const corsHeaders: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, range",
-  "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-  "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges, Content-Type, ETag",
-};
+const passthroughResponseHeaders = [
+  "content-type",
+  "content-length",
+  "content-range",
+  "accept-ranges",
+  "etag",
+  "last-modified",
+  "cache-control",
+];
 
 const ALLOWED_HOST_SUFFIXES = [
-  "aliyuncs.com",     // dashscope-*.oss-*.aliyuncs.com
-  "supabase.co",      // own storage
+  "aliyuncs.com",
+  "supabase.co",
   "supabase.in",
 ];
+
+const ALLOWED_CONTENT_TYPES = [
+  "application/octet-stream",
+  "binary/octet-stream",
+];
+
+const MAX_REDIRECTS = 3;
 
 function isAllowedHost(hostname: string): boolean {
   const h = hostname.toLowerCase();
   return ALLOWED_HOST_SUFFIXES.some((suffix) => h === suffix || h.endsWith(`.${suffix}`));
 }
 
-async function authenticate(req: Request, urlObj: URL): Promise<boolean> {
-  let token: string | null = null;
-  const authHeader = req.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) {
-    token = authHeader.slice("Bearer ".length);
-  } else {
-    token = urlObj.searchParams.get("token");
+function isSupportedProtocol(protocol: string): boolean {
+  return protocol === "https:" || protocol === "http:";
+}
+
+function isAllowedContentType(contentType: string | null): boolean {
+  if (!contentType) return true;
+  const normalized = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
+  return normalized.startsWith("video/") || ALLOWED_CONTENT_TYPES.includes(normalized);
+}
+
+async function fetchUpstream(req: Request, url: URL, redirectCount = 0): Promise<Response> {
+  const headers = new Headers();
+  const range = req.headers.get("Range");
+  if (range) headers.set("Range", range);
+
+  const upstream = await fetch(url.toString(), {
+    method: req.method,
+    headers,
+    redirect: "manual",
+  });
+
+  if (upstream.status >= 300 && upstream.status < 400) {
+    if (redirectCount >= MAX_REDIRECTS) {
+      throw new Error("Too many upstream redirects");
+    }
+
+    const location = upstream.headers.get("location");
+    if (!location) {
+      throw new Error("Redirect missing location header");
+    }
+
+    const redirectedUrl = new URL(location, url);
+    if (!isSupportedProtocol(redirectedUrl.protocol) || !isAllowedHost(redirectedUrl.hostname)) {
+      throw new Error("Redirect target not allowed");
+    }
+
+    return await fetchUpstream(req, redirectedUrl, redirectCount + 1);
   }
-  if (!token) return false;
 
-  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-  const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return false;
-
-  const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  const { data, error } = await client.auth.getUser(token);
-  return !error && !!data?.user?.id;
+  return upstream;
 }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
-  if (req.method !== "GET" && req.method !== "HEAD") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    return new Response("ok", {
+      headers: {
+        ...corsHeaders,
+        "Access-Control-Expose-Headers":
+          "Content-Length, Content-Range, Accept-Ranges, Content-Type, ETag",
+      },
     });
+  }
+
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    return errorResponse("METHOD_NOT_ALLOWED", "Method not allowed", 405);
+  }
+
+  if (!(await authenticate(req))) {
+    return errorResponse("UNAUTHORIZED", "Unauthorized", 401);
   }
 
   const reqUrl = new URL(req.url);
-
-  if (!(await authenticate(req, reqUrl))) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
   const target = reqUrl.searchParams.get("url");
   if (!target) {
-    return new Response(JSON.stringify({ error: "Missing url" }), {
-      status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return errorResponse("MISSING_URL", "Missing url", 400);
   }
 
   let upstreamUrl: URL;
   try {
     upstreamUrl = new URL(target);
   } catch {
-    return new Response(JSON.stringify({ error: "Invalid url" }), {
-      status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return errorResponse("INVALID_URL", "Invalid url", 400);
   }
 
-  if (upstreamUrl.protocol !== "https:" && upstreamUrl.protocol !== "http:") {
-    return new Response(JSON.stringify({ error: "Unsupported protocol" }), {
-      status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  if (!isSupportedProtocol(upstreamUrl.protocol)) {
+    return errorResponse("UNSUPPORTED_PROTOCOL", "Unsupported protocol", 400);
   }
+
   if (!isAllowedHost(upstreamUrl.hostname)) {
-    return new Response(JSON.stringify({ error: "Host not allowed" }), {
-      status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return errorResponse("HOST_NOT_ALLOWED", "Host not allowed", 400);
   }
-
-  const fwdHeaders: Record<string, string> = {};
-  const range = req.headers.get("Range");
-  if (range) fwdHeaders["Range"] = range;
 
   let upstream: Response;
   try {
-    upstream = await fetch(upstreamUrl.toString(), {
-      method: req.method,
-      headers: fwdHeaders,
-      redirect: "follow",
-    });
-  } catch (e) {
-    return new Response(JSON.stringify({ error: `Upstream fetch failed: ${(e as Error).message}` }), {
-      status: 502,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    upstream = await fetchUpstream(req, upstreamUrl);
+  } catch (error) {
+    return errorResponse(
+      "UPSTREAM_FETCH_FAILED",
+      error instanceof Error ? error.message : "Upstream fetch failed",
+      502,
+    );
   }
 
-  const respHeaders = new Headers(corsHeaders);
-  const passthrough = ["content-type", "content-length", "content-range", "accept-ranges", "etag", "last-modified", "cache-control"];
-  for (const h of passthrough) {
-    const v = upstream.headers.get(h);
-    if (v) respHeaders.set(h, v);
+  if (!isAllowedContentType(upstream.headers.get("content-type"))) {
+    return errorResponse("UNSUPPORTED_CONTENT_TYPE", "Upstream content type is not allowed", 415);
   }
-  if (!respHeaders.has("content-type")) {
-    respHeaders.set("content-type", "video/mp4");
+
+  const responseHeaders = new Headers(corsHeaders);
+  responseHeaders.set(
+    "Access-Control-Expose-Headers",
+    "Content-Length, Content-Range, Accept-Ranges, Content-Type, ETag",
+  );
+
+  for (const header of passthroughResponseHeaders) {
+    const value = upstream.headers.get(header);
+    if (value) responseHeaders.set(header, value);
   }
-  if (!respHeaders.has("accept-ranges")) {
-    respHeaders.set("accept-ranges", "bytes");
+
+  if (!responseHeaders.has("content-type")) {
+    responseHeaders.set("content-type", "video/mp4");
+  }
+
+  if (!responseHeaders.has("accept-ranges")) {
+    responseHeaders.set("accept-ranges", "bytes");
   }
 
   return new Response(upstream.body, {
     status: upstream.status,
-    headers: respHeaders,
+    headers: responseHeaders,
   });
 });
