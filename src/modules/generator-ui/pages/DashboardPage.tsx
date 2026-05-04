@@ -494,11 +494,14 @@ export default function DashboardPage() {
       return null
     }
 
-    return (
-      visibleVideos.find((video) => video.id === previewVideoId) ??
-      visibleVideos.find((video) => video.video?.storage_path) ??
-      visibleVideos[0]
-    )
+    // Newest item is at the END of visibleVideos (ascending order). Auto-preview
+    // the most recent completed render when nothing is explicitly selected.
+    const explicit = visibleVideos.find((video) => video.id === previewVideoId)
+    if (explicit) return explicit
+    for (let i = visibleVideos.length - 1; i >= 0; i--) {
+      if (visibleVideos[i].video?.storage_path) return visibleVideos[i]
+    }
+    return visibleVideos[visibleVideos.length - 1]
   }, [visibleVideos, previewVideoId])
 
   const emptyStateLabel = useMemo(() => {
