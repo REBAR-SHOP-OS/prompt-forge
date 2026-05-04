@@ -87,8 +87,7 @@ export const jobOrchestratorGateway = {
             return errorResponse("NOT_FOUND", "Job not found", 404, ctx.requestId);
           }
 
-          // Inline polling: if job is still processing and has a providerJobId,
-          // ask the adapter for an update and finalize it server-side.
+          let progressPercent: number | null = null;
           if (
             detail.status === "processing" &&
             detail.provider_job_id &&
@@ -109,6 +108,7 @@ export const jobOrchestratorGateway = {
                   duration: poll.duration,
                 });
                 detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
+                progressPercent = 100;
               } else if (poll.status === "failed") {
                 // Mark job failed without refund (per current credit policy).
                 await svc
@@ -117,15 +117,21 @@ export const jobOrchestratorGateway = {
                   .eq("id", detail.id)
                   .eq("user_id", auth.userId);
                 detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
+                progressPercent = null;
+              } else {
+                progressPercent = poll.progressPercent ?? estimateProgressFromJob(detail.status, detail.created_at);
               }
             } catch (e) {
               // Don't fail the request just because polling errored — return current state.
               logError("inline poll failed", { error: (e as Error).message, jobId: detail.id });
+              progressPercent = estimateProgressFromJob(detail.status, detail.created_at);
             }
+          } else {
+            progressPercent = estimateProgressFromJob(detail.status, detail.created_at);
           }
 
           await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
-          return jsonResponse({ ...detail, requestId: ctx.requestId });
+          return jsonResponse({ ...detail, progress_percent: progressPercent, requestId: ctx.requestId });
         }
 
         case "createJob": {
