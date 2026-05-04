@@ -5,6 +5,7 @@ import {
   BookmarkPlus,
   ChevronsRight,
   Clapperboard,
+  Coins,
   Combine,
   Download,
   FileUp,
@@ -14,11 +15,13 @@ import {
   LayoutGrid,
   Library,
   LoaderCircle,
+  LogOut,
   Paperclip,
   Plus,
   RotateCcw,
   Sparkles,
   Trash2,
+  UserRound,
   X
 } from 'lucide-react'
 import {
@@ -32,6 +35,14 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 import { ApiError } from '@/core/api/client'
 import { useAuth } from '@/core/auth/AuthProvider'
@@ -197,7 +208,7 @@ function buildSeededJob(
 }
 
 export default function DashboardPage() {
-  const { session, loading: authLoading } = useAuth()
+  const { session, profile, signOut, loading: authLoading } = useAuth()
   const [promptText, setPromptText] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const [startContext] = useState('Start')
@@ -848,15 +859,43 @@ export default function DashboardPage() {
         onChange={handleFileInputChange}
       />
 
-      <button
-        className="fixed left-4 top-4 z-50 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-5 sm:top-5"
-        type="button"
-        aria-expanded={isApprovedPanelOpen}
-        aria-label={isApprovedPanelOpen ? 'Close library' : 'Open library'}
-        onClick={() => setIsApprovedPanelOpen((isOpen) => !isOpen)}
-      >
-        <LayoutGrid className="h-[18px] w-[18px]" aria-hidden="true" />
-      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            className="fixed left-4 top-4 z-50 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-5 sm:top-5"
+            type="button"
+            aria-label="Open menu"
+          >
+            <LayoutGrid className="h-[18px] w-[18px]" aria-hidden="true" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" sideOffset={8} className="w-64">
+          <DropdownMenuLabel className="flex items-center gap-2 text-xs font-normal text-muted-foreground">
+            <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
+            <span className="truncate">{profile?.email ?? session?.user.email ?? 'Account'}</span>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => setIsApprovedPanelOpen(true)}>
+            <Library className="mr-2 h-4 w-4" aria-hidden="true" />
+            <span>Library</span>
+            <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+              {approvedIds.size}
+            </span>
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled className="opacity-100 focus:bg-transparent">
+            <Coins className="mr-2 h-4 w-4 text-amber-300/80" aria-hidden="true" />
+            <span>Credits</span>
+            <span className="ml-auto text-xs font-medium tabular-nums text-zinc-100">
+              {profile?.credits_balance ?? '—'}
+            </span>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => { void signOut() }} className="text-red-400 focus:text-red-300">
+            <LogOut className="mr-2 h-4 w-4" aria-hidden="true" />
+            <span>Sign out</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       <AlertDialog>
         <AlertDialogTrigger asChild>
