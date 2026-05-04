@@ -88,7 +88,7 @@ interface DashScopeTaskResponse {
     code?: string;
     message?: string;
   };
-  usage?: { video_duration?: number; video_ratio?: string };
+  usage?: { duration?: number; SR?: number; output_video_duration?: number; video_count?: number };
   request_id?: string;
   code?: string;
   message?: string;
@@ -168,17 +168,22 @@ async function pollWanI2V(taskId: string, apiKey: string): Promise<GenerationPol
   });
   const json = (await res.json().catch(() => ({}))) as DashScopeTaskResponse;
   if (!res.ok) {
-    logError("dashscope poll failed", { status: res.status, code: json.code, message: json.message });
-    throw new Error(`DashScope ${res.status}: ${json.code ?? ""} ${json.message ?? "unknown error"}`.trim());
+    logError("dashscope poll failed", {
+      status: res.status, code: json.code, message: json.message, requestId: json.request_id,
+    });
+    throw new Error(
+      `DashScope ${res.status} ${json.code ?? ""} ${json.message ?? "unknown error"} (request_id=${json.request_id ?? "?"})`.trim(),
+    );
   }
   const status = json.output?.task_status ?? "UNKNOWN";
   if (status === "SUCCEEDED") {
+    const sr = json.usage?.SR;
     return {
       status: "completed",
       videoUrl: json.output?.video_url ?? null,
       thumbnailUrl: null,
-      aspectRatio: json.usage?.video_ratio ?? null,
-      duration: json.usage?.video_duration ?? null,
+      aspectRatio: typeof sr === "number" ? `${sr}P` : null,
+      duration: json.usage?.output_video_duration ?? json.usage?.duration ?? null,
     };
   }
   if (status === "FAILED" || status === "CANCELED") {
