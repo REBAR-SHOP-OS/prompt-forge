@@ -6,12 +6,8 @@ export interface JobSummary {
   provider_key: string | null;
   model_key: string | null;
   provider_job_id?: string | null;
-  first_frame_url?: string | null;
-  last_frame_url?: string | null;
   created_at: string;
   updated_at?: string;
-  /** 0-100 estimated render progress; null when unknown/terminal-failed. */
-  progress_percent?: number | null;
 }
 
 export interface JobVideo {
@@ -28,12 +24,9 @@ export interface JobDetail extends JobSummary {
 }
 
 export interface CreateJobInput {
-  providerKey: "wan";
+  providerKey: "flow" | "wan";
   requestedModel?: string;
   prompt: string;
-  firstFrameUrl?: string;
-  lastFrameUrl?: string;
-  /** Requested clip length in seconds. Defaults to 5 server-side. */
   durationSeconds?: 5 | 10 | 15;
 }
 
