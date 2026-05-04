@@ -590,13 +590,96 @@ export default function DashboardPage() {
     }
   }
 
-  function handleAddVideoCard() {
+  async function captureLastFrameAsBlob(videoUrl: string): Promise<Blob> {
+    return await new Promise((resolve, reject) => {
+      const v = document.createElement('video')
+      v.crossOrigin = 'anonymous'
+      v.muted = true
+      v.playsInline = true
+      v.preload = 'auto'
+      v.src = videoUrl
+      const onError = () => reject(new Error('Could not load previous video for continuation'))
+      v.onerror = onError
+      v.onloadedmetadata = () => {
+        const target = Math.max(0, (Number.isFinite(v.duration) ? v.duration : 0) - 0.05)
+        const onSeeked = () => {
+          try {
+            const canvas = document.createElement('canvas')
+            canvas.width = v.videoWidth || 1280
+            canvas.height = v.videoHeight || 720
+            const ctx = canvas.getContext('2d')
+            if (!ctx) return reject(new Error('Canvas unavailable'))
+            ctx.drawImage(v, 0, 0, canvas.width, canvas.height)
+            canvas.toBlob((blob) => {
+              if (!blob) return reject(new Error('Could not capture last frame'))
+              resolve(blob)
+            }, 'image/png')
+          } catch (err) {
+            reject(err as Error)
+          }
+        }
+        v.onseeked = onSeeked
+        try {
+          v.currentTime = target
+        } catch {
+          v.play().then(() => v.pause()).then(() => { v.currentTime = target }).catch(onError)
+        }
+      }
+    })
+  }
+
+  async function handleAddVideoCard() {
     setPromptText('')
     setUploadedFiles([])
     setComposerError(null)
     setVideoColumnMessage(null)
     setUploadTarget('Start')
     setPreviewVideoId(null)
+
+    // Continuity rule: each new card must continue the previous render.
+    // Auto-seed the previous video's last frame as the Start frame.
+    const prev = generatedVideos.find(
+      (v) => !deletedIds.has(v.id)
+        && normalizeStatus(v.status) === 'completed'
+        && v.video?.storage_path,
+    )
+
+    if (prev?.video?.storage_path && userId) {
+      setGenerationMode('image-to-video')
+      const seedId = Date.now()
+      const placeholder: UploadedFile = {
+        id: seedId,
+        name: `continuation-from-${prev.id.slice(0, 6)}.png`,
+        size: 0,
+        target: 'Start',
+        type: 'image/png',
+        status: 'uploading',
+        url: null,
+        error: null,
+      }
+      setUploadedFiles([placeholder])
+      try {
+        const blob = await captureLastFrameAsBlob(prev.video.storage_path)
+        const storagePath = `${userId}/start-${Date.now()}-${crypto.randomUUID()}.png`
+        const { error } = await supabase.storage
+          .from(FRAMES_BUCKET)
+          .upload(storagePath, blob, { contentType: 'image/png', upsert: false })
+        if (error) throw new Error(error.message)
+        const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+        setUploadedFiles((current) =>
+          current.map((f) =>
+            f.id === seedId
+              ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size }
+              : f,
+          ),
+        )
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Could not seed continuation frame'
+        setUploadedFiles((current) => current.filter((f) => f.id !== seedId))
+        setComposerError(`Continuation seed failed: ${msg}. Upload a Start frame manually.`)
+      }
+    }
+
     requestAnimationFrame(() => {
       promptInputRef.current?.focus()
       promptInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
