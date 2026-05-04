@@ -47,6 +47,7 @@ import {
 import { ApiError } from '@/core/api/client'
 import { useAuth } from '@/core/auth/AuthProvider'
 import { supabase } from '@/integrations/supabase/client'
+import WelcomeVideoOverlay from '@/modules/generator-ui/components/WelcomeVideoOverlay'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { mergeVideoUrls } from '@/modules/generator-ui/lib/mergeVideos'
