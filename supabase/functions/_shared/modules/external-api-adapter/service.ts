@@ -163,7 +163,7 @@ async function startWanI2V(
     },
     parameters: {
       resolution: "720P",
-      duration: 5,
+      duration: input.durationSeconds ?? 5,
       prompt_extend: true,
       watermark: false,
     },
@@ -219,7 +219,7 @@ async function startWanT2V(
     parameters: {
       resolution: "720P",
       ratio: "16:9",
-      duration: 5,
+      duration: input.durationSeconds ?? 5,
       prompt_extend: true,
       watermark: false,
     },

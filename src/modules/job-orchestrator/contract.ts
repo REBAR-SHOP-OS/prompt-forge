@@ -33,6 +33,8 @@ export interface CreateJobInput {
   prompt: string;
   firstFrameUrl?: string;
   lastFrameUrl?: string;
+  /** Requested clip length in seconds. Defaults to 5 server-side. */
+  durationSeconds?: 5 | 10 | 15;
 }
 
 export interface CreateJobResult {
