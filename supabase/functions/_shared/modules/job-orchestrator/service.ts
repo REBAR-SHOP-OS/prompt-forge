@@ -93,4 +93,15 @@ export const jobService: JobService = {
     if (error) throw new Error(error.message);
     return data as string;
   },
+
+  async deleteJob(svc, userId, jobId) {
+    const { data, error } = await svc.rpc("generator_delete_job", {
+      _user_id: userId,
+      _job_id: jobId,
+    });
+    if (error) throw new Error(error.message);
+    return ((data ?? []) as Array<{ storage_path: string }>)
+      .map((r) => r.storage_path)
+      .filter((p): p is string => typeof p === "string" && p.length > 0);
+  },
 };

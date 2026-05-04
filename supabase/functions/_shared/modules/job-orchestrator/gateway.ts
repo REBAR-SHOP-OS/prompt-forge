@@ -25,7 +25,7 @@ import type { DomainContractMeta } from "../_gateway/types.ts";
 export const JOB_ORCHESTRATOR_CONTRACT: DomainContractMeta = {
   domain: "job-orchestrator",
   version: "v1",
-  operations: ["listMyJobs", "createJob", "getJob"],
+  operations: ["listMyJobs", "createJob", "getJob", "deleteJob"],
 } as const;
 
 const CreateJobSchema = z.object({
@@ -38,6 +38,7 @@ const CreateJobSchema = z.object({
 });
 
 const GetJobSchema = z.object({ jobId: z.string().uuid() });
+const DeleteJobSchema = z.object({ jobId: z.string().uuid() });
 
 // Estimate render progress when the provider hasn't reported one yet.
 // Uses status + created_at so the UI never shows a static "Rendering" with no
@@ -267,6 +268,70 @@ export const jobOrchestratorGateway = {
             resolvedModel: route.resolvedModel,
             requestId: ctx.requestId,
           });
+        }
+
+        case "deleteJob": {
+          if (req.method !== "POST") {
+            return errorResponse("METHOD_NOT_ALLOWED", "Use POST", 405, ctx.requestId);
+          }
+          if (!rateLimit(`jobs-delete:${auth.userId}`, 30, 60_000)) {
+            return errorResponse("RATE_LIMITED", "Too many requests", 429, ctx.requestId);
+          }
+          let body: unknown;
+          try { body = await req.json(); } catch {
+            return errorResponse("INVALID_JSON", "Invalid JSON body", 400, ctx.requestId);
+          }
+          const parsed = DeleteJobSchema.safeParse(body);
+          if (!parsed.success) {
+            return errorResponse("VALIDATION_ERROR", "jobId required", 400, ctx.requestId);
+          }
+
+          let storagePaths: string[] = [];
+          try {
+            storagePaths = await jobService.deleteJob(svc, auth.userId, parsed.data.jobId);
+          } catch (e) {
+            const msg = (e as Error).message;
+            const code = msg.includes("not found") ? "NOT_FOUND" : "DELETE_FAILED";
+            const status = code === "NOT_FOUND" ? 404 : 500;
+            return errorResponse(code, msg, status, ctx.requestId);
+          }
+
+          // Best-effort: purge files from Storage. Group by bucket.
+          // storage_path may be a full URL (external provider) or a
+          // "<bucket>/<path>" string. We only delete from our own buckets.
+          const KNOWN_BUCKETS = ["merged-videos", "wan-frames"];
+          const byBucket: Record<string, string[]> = {};
+          for (const raw of storagePaths) {
+            if (!raw || /^https?:\/\//i.test(raw)) {
+              // Try to extract bucket+path from a Supabase storage URL.
+              const m = raw.match(/\/storage\/v1\/object\/(?:public\/)?([^/]+)\/(.+)$/);
+              if (m && KNOWN_BUCKETS.includes(m[1])) {
+                (byBucket[m[1]] ??= []).push(decodeURIComponent(m[2]));
+              }
+              continue;
+            }
+            const bucket = KNOWN_BUCKETS.find((b) => raw.startsWith(`${b}/`));
+            if (bucket) (byBucket[bucket] ??= []).push(raw.slice(bucket.length + 1));
+          }
+          for (const [bucket, paths] of Object.entries(byBucket)) {
+            try {
+              const { error: rmErr } = await svc.storage.from(bucket).remove(paths);
+              if (rmErr) logError("storage remove failed", { bucket, error: rmErr.message });
+            } catch (e) {
+              logError("storage remove threw", { bucket, error: (e as Error).message });
+            }
+          }
+
+          await writeAuditLog(svc, {
+            actorUserId: auth.userId,
+            action: "job_orchestrator.delete_job",
+            targetType: "generation_job",
+            targetId: parsed.data.jobId,
+            requestId: ctx.requestId,
+            metadata: { purgedFiles: storagePaths.length },
+          });
+          await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
+          return jsonResponse({ ok: true, jobId: parsed.data.jobId, requestId: ctx.requestId });
         }
 
         default:

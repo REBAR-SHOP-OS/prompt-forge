@@ -354,15 +354,19 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
-  function deleteCard(jobId: string) {
-    if (typeof window !== 'undefined' && !window.confirm('Delete this video card?')) return
+  async function deleteCard(jobId: string) {
+    if (typeof window !== 'undefined' && !window.confirm('Delete this video card permanently?')) return
+
+    const isMerged = jobId.startsWith('merged-')
+    const mergedEntry = isMerged ? mergedEntries.find((e) => e.id === jobId) : null
+
+    // Optimistic UI removal
     setDeletedIds((current) => {
       const next = new Set(current)
       next.add(jobId)
       persistDeleted(next)
       return next
     })
-    // Also remove from approved set if present
     setApprovedIds((current) => {
       if (!current.has(jobId)) return current
       const next = new Set(current)
@@ -372,7 +376,6 @@ export default function DashboardPage() {
       }
       return next
     })
-    // If it's a merged entry, drop it from the merged store too.
     setMergedEntries((current) => {
       if (!current.some((e) => e.id === jobId)) return current
       const next = current.filter((e) => e.id !== jobId)
@@ -380,6 +383,35 @@ export default function DashboardPage() {
       return next
     })
     if (previewVideoId === jobId) setPreviewVideoId(null)
+
+    try {
+      if (isMerged) {
+        // Local-only entry: purge its file from merged-videos bucket if owned by us.
+        const url = mergedEntry?.video?.storage_path
+        if (url && userId) {
+          const m = url.match(/\/storage\/v1\/object\/(?:public\/)?merged-videos\/(.+)$/)
+          if (m) {
+            const path = decodeURIComponent(m[1])
+            await supabase.storage.from(MERGED_BUCKET).remove([path])
+          }
+        }
+      } else {
+        // Real job: backend delete (DB rows + Storage files).
+        await jobOrchestratorGateway.deleteJob(jobId)
+      }
+      // Drop from in-memory list as well so the card never reappears on re-render.
+      setGeneratedVideos((current) => current.filter((v) => v.id !== jobId))
+    } catch (err) {
+      // Roll back the hide so the user sees the card again.
+      setDeletedIds((current) => {
+        const next = new Set(current)
+        next.delete(jobId)
+        persistDeleted(next)
+        return next
+      })
+      const msg = err instanceof ApiError ? err.message : (err as Error).message
+      if (typeof window !== 'undefined') window.alert(`Delete failed: ${msg}`)
+    }
   }
 
   const pollTimerRef = useRef<number | null>(null)

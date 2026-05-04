@@ -55,4 +55,5 @@ export interface JobService {
     aspectRatio: string | null;
     duration: number | null;
   }): Promise<string>;
+  deleteJob(svc: SupabaseClient, userId: string, jobId: string): Promise<string[]>;
 }

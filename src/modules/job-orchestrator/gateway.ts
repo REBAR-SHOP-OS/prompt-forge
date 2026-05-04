@@ -25,4 +25,10 @@ export const jobOrchestratorGateway = {
 
   getJob: (jobId: string) =>
     request<JobDetail>(`/jobs-get?jobId=${encodeURIComponent(jobId)}`),
+
+  deleteJob: (jobId: string) =>
+    request<{ ok: true; jobId: string }>("/jobs-delete", {
+      method: "POST",
+      body: JSON.stringify({ jobId }),
+    }),
 };
