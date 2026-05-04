@@ -303,6 +303,16 @@ export default function DashboardPage() {
     }
   }, [generatedVideos])
 
+  // Smooth progress ticker: re-render once per second while any job is active
+  // so the time-based progress bar advances visibly between API polls.
+  const [, setProgressTick] = useState(0)
+  useEffect(() => {
+    const hasActive = generatedVideos.some((job) => !isTerminalStatus(job.status))
+    if (!hasActive) return
+    const id = window.setInterval(() => setProgressTick((tick) => tick + 1), 1000)
+    return () => window.clearInterval(id)
+  }, [generatedVideos])
+
   function openFileUpload(target: UploadTarget) {
     setUploadTarget(target)
     fileInputRef.current?.click()
