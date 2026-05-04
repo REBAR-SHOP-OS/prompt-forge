@@ -216,6 +216,9 @@ async function pollWanI2V(taskId: string, apiKey: string): Promise<GenerationPol
     );
   }
   const status = json.output?.task_status ?? "UNKNOWN";
+  const providerProgress = parseProviderProgress(json.output?.progress);
+  const progressPercent = estimateWanProgress(status, json.output?.submit_time, providerProgress);
+
   if (status === "SUCCEEDED") {
     const sr = json.usage?.SR;
     return {
@@ -224,6 +227,7 @@ async function pollWanI2V(taskId: string, apiKey: string): Promise<GenerationPol
       thumbnailUrl: null,
       aspectRatio: typeof sr === "number" ? `${sr}P` : null,
       duration: json.usage?.output_video_duration ?? json.usage?.duration ?? null,
+      progressPercent: 100,
     };
   }
   if (status === "FAILED" || status === "CANCELED") {
@@ -234,12 +238,13 @@ async function pollWanI2V(taskId: string, apiKey: string): Promise<GenerationPol
       aspectRatio: null,
       duration: null,
       reason: json.output?.message ?? json.message ?? `task ${status.toLowerCase()}`,
+      progressPercent: null,
     };
   }
   if (status === "RUNNING") {
-    return { status: "processing", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null };
+    return { status: "processing", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null, progressPercent };
   }
-  return { status: "pending", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null };
+  return { status: "pending", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null, progressPercent };
 }
 
 // ----- Public adapter -------------------------------------------------------
