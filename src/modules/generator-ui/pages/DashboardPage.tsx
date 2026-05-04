@@ -442,7 +442,7 @@ export default function DashboardPage() {
         className="sr-only"
         type="file"
         multiple
-        accept="image/*,video/*,audio/*,.pdf,.txt,.md,.doc,.docx"
+        accept="image/*"
         onChange={handleFileInputChange}
       />
 
@@ -704,7 +704,8 @@ export default function DashboardPage() {
                   >
                     <Paperclip className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
                     <span className="max-w-[12rem] truncate">{file.name}</span>
-                    <span className="text-zinc-500">{file.target}</span>
+                    <span className="text-zinc-500">{file.status === 'uploading' ? 'Uploading' : file.target}</span>
+                    {file.status === 'failed' ? <span className="text-rose-200">{file.error}</span> : null}
                     <button
                       type="button"
                       className="grid h-4 w-4 place-items-center rounded-full text-zinc-500 transition hover:text-zinc-100"
@@ -728,7 +729,7 @@ export default function DashboardPage() {
               className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-zinc-100 text-zinc-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
               type="submit"
               disabled={!canSubmit}
-              aria-label="Forge prompt"
+              aria-label="Generate video"
             >
               {isSubmitting ? (
                 <LoaderCircle className="h-5 w-5 animate-spin stroke-[2.2]" aria-hidden="true" />
