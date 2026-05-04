@@ -238,6 +238,82 @@ export default function DashboardPage() {
       return next
     })
   }
+
+  const deletedStorageKey = userId ? `deleted-videos:${userId}` : null
+  const mergedStorageKey = userId ? `merged-videos:${userId}` : null
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set())
+  const [mergedEntries, setMergedEntries] = useState<JobDetail[]>([])
+  const [isMerging, setIsMerging] = useState(false)
+  const [mergeProgress, setMergeProgress] = useState<number>(0)
+
+  useEffect(() => {
+    if (!deletedStorageKey) {
+      setDeletedIds(new Set())
+      return
+    }
+    try {
+      const raw = window.localStorage.getItem(deletedStorageKey)
+      setDeletedIds(raw ? new Set(JSON.parse(raw) as string[]) : new Set())
+    } catch {
+      setDeletedIds(new Set())
+    }
+  }, [deletedStorageKey])
+
+  useEffect(() => {
+    if (!mergedStorageKey) {
+      setMergedEntries([])
+      return
+    }
+    try {
+      const raw = window.localStorage.getItem(mergedStorageKey)
+      setMergedEntries(raw ? (JSON.parse(raw) as JobDetail[]) : [])
+    } catch {
+      setMergedEntries([])
+    }
+  }, [mergedStorageKey])
+
+  function persistDeleted(next: Set<string>) {
+    if (!deletedStorageKey) return
+    try {
+      window.localStorage.setItem(deletedStorageKey, JSON.stringify(Array.from(next)))
+    } catch { /* ignore */ }
+  }
+
+  function persistMerged(next: JobDetail[]) {
+    if (!mergedStorageKey) return
+    try {
+      window.localStorage.setItem(mergedStorageKey, JSON.stringify(next))
+    } catch { /* ignore */ }
+  }
+
+  function deleteCard(jobId: string) {
+    if (typeof window !== 'undefined' && !window.confirm('Delete this video card?')) return
+    setDeletedIds((current) => {
+      const next = new Set(current)
+      next.add(jobId)
+      persistDeleted(next)
+      return next
+    })
+    // Also remove from approved set if present
+    setApprovedIds((current) => {
+      if (!current.has(jobId)) return current
+      const next = new Set(current)
+      next.delete(jobId)
+      if (approvedStorageKey) {
+        try { window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
+      }
+      return next
+    })
+    // If it's a merged entry, drop it from the merged store too.
+    setMergedEntries((current) => {
+      if (!current.some((e) => e.id === jobId)) return current
+      const next = current.filter((e) => e.id !== jobId)
+      persistMerged(next)
+      return next
+    })
+    if (previewVideoId === jobId) setPreviewVideoId(null)
+  }
+
   const pollTimerRef = useRef<number | null>(null)
   const promptInputRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
