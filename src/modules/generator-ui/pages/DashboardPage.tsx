@@ -730,6 +730,12 @@ export default function DashboardPage() {
                 ))}
               </div>
             ) : null}
+
+            {composerError ? (
+              <p className="text-xs leading-5 text-rose-300">{composerError}</p>
+            ) : blockedReason && hasComposerInput ? (
+              <p className="text-xs leading-5 text-zinc-500">{blockedReason}</p>
+            ) : null}
           </div>
 
           <div className="flex items-center justify-between gap-2 sm:justify-end">
@@ -740,7 +746,7 @@ export default function DashboardPage() {
             <button
               className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-zinc-100 text-zinc-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
               type="submit"
-              disabled={!canSubmit}
+              disabled={isSubmitting || hasUploadingFiles}
               aria-label="Generate video"
             >
               {isSubmitting ? (
