@@ -598,6 +598,7 @@ export default function DashboardPage() {
     try {
       let createdJob
       let seedFrames: { firstFrameUrl?: string; lastFrameUrl?: string } = {}
+      let pendingEndAppendUrl: string | null = null
 
       if (isTextToVideo) {
         createdJob = await jobOrchestratorGateway.createJob({
@@ -606,11 +607,8 @@ export default function DashboardPage() {
           prompt: nextPrompt,
           durationSeconds,
         })
-      } else {
-        if (!readyStartFrame?.url || !readyEndFrame?.url) {
-          setComposerError('Add one Start image and one End image before rendering.')
-          return
-        }
+      } else if (readyStartFrame?.url && readyEndFrame?.url) {
+        // Both frames provided — standard image-to-video.
         createdJob = await jobOrchestratorGateway.createJob({
           providerKey: 'wan',
           prompt: nextPrompt,
@@ -619,9 +617,41 @@ export default function DashboardPage() {
           durationSeconds,
         })
         seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
+      } else if (readyStartFrame?.url) {
+        // Only Start: reuse Start as both first and last frame.
+        createdJob = await jobOrchestratorGateway.createJob({
+          providerKey: 'wan',
+          prompt: nextPrompt,
+          firstFrameUrl: readyStartFrame.url,
+          lastFrameUrl: readyStartFrame.url,
+          durationSeconds,
+        })
+        seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyStartFrame.url }
+      } else if (readyEndFrame?.url) {
+        // Only End: generate text-to-video first, then append the End image
+        // as a 2-second still clip after the job completes.
+        createdJob = await jobOrchestratorGateway.createJob({
+          providerKey: 'wan',
+          requestedModel: 'wan2.7-t2v-2026-04-25',
+          prompt: nextPrompt,
+          durationSeconds,
+        })
+        pendingEndAppendUrl = readyEndFrame.url
+        seedFrames = { lastFrameUrl: readyEndFrame.url }
+      } else {
+        setComposerError('Add a Start or End image before rendering.')
+        return
       }
 
       const seededJob = buildSeededJob(nextPrompt, createdJob, seedFrames)
+
+      if (pendingEndAppendUrl) {
+        setPendingEndAppends((current) => {
+          const next = { ...current, [seededJob.id]: pendingEndAppendUrl as string }
+          persistPendingEndAppends(next)
+          return next
+        })
+      }
 
       setPreviewVideoId(seededJob.id)
       setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
