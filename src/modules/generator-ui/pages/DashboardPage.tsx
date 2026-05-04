@@ -754,37 +754,68 @@ export default function DashboardPage() {
         className="fixed bottom-4 left-1/2 z-30 grid w-[min(45rem,calc(100vw-1rem))] -translate-x-1/2 gap-3 rounded-[22px] border border-white/10 bg-[#111214]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(45rem,calc(100vw-2rem))] sm:p-4"
         onSubmit={handleSubmit}
       >
-        <div className="flex min-h-11 items-center gap-2 sm:min-h-12 sm:gap-3" aria-label="Prompt path">
-          <button
-            className="inline-flex h-11 min-w-12 items-center justify-center gap-2 rounded-md border border-[#2a2d32] bg-black/10 px-3 text-xs font-semibold text-zinc-200/70 transition hover:border-white/20 hover:bg-white/[0.045] sm:h-12 sm:min-w-[3.25rem]"
-            type="button"
-            onClick={() => openFileUpload('Start')}
-          >
-            {startContext}
-            {startUploadCount > 0 ? (
-              <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-300 px-1 text-[10px] text-zinc-950">
-                {startUploadCount}
-              </span>
-            ) : (
-              <FileUp className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
-            )}
-          </button>
-          <ChevronsRight className="h-4 w-4 shrink-0 text-zinc-600" aria-hidden="true" />
-          <button
-            className="inline-flex h-11 min-w-12 items-center justify-center gap-2 rounded-md border border-[#2a2d32] bg-black/10 px-3 text-xs font-semibold text-zinc-200/70 transition hover:border-white/20 hover:bg-white/[0.045] sm:h-12 sm:min-w-[3.25rem]"
-            type="button"
-            onClick={() => openFileUpload('End')}
-          >
-            {endGoal}
-            {endUploadCount > 0 ? (
-              <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-300 px-1 text-[10px] text-zinc-950">
-                {endUploadCount}
-              </span>
-            ) : (
-              <FileUp className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
-            )}
-          </button>
+        <div className="flex flex-wrap items-center gap-2" aria-label="Generation mode">
+          <div role="tablist" aria-label="Choose generation mode" className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={isTextToVideo}
+              onClick={() => {
+                setGenerationMode('text-to-video')
+                setComposerError(null)
+              }}
+              className={`rounded-full px-3 py-1.5 transition ${isTextToVideo ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+            >
+              Text to Video
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={!isTextToVideo}
+              onClick={() => {
+                setGenerationMode('image-to-video')
+                setComposerError(null)
+              }}
+              className={`rounded-full px-3 py-1.5 transition ${!isTextToVideo ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+            >
+              Image to Video
+            </button>
+          </div>
         </div>
+
+        {!isTextToVideo ? (
+          <div className="flex min-h-11 items-center gap-2 sm:min-h-12 sm:gap-3" aria-label="Prompt path">
+            <button
+              className="inline-flex h-11 min-w-12 items-center justify-center gap-2 rounded-md border border-[#2a2d32] bg-black/10 px-3 text-xs font-semibold text-zinc-200/70 transition hover:border-white/20 hover:bg-white/[0.045] sm:h-12 sm:min-w-[3.25rem]"
+              type="button"
+              onClick={() => openFileUpload('Start')}
+            >
+              {startContext}
+              {startUploadCount > 0 ? (
+                <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-300 px-1 text-[10px] text-zinc-950">
+                  {startUploadCount}
+                </span>
+              ) : (
+                <FileUp className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
+              )}
+            </button>
+            <ChevronsRight className="h-4 w-4 shrink-0 text-zinc-600" aria-hidden="true" />
+            <button
+              className="inline-flex h-11 min-w-12 items-center justify-center gap-2 rounded-md border border-[#2a2d32] bg-black/10 px-3 text-xs font-semibold text-zinc-200/70 transition hover:border-white/20 hover:bg-white/[0.045] sm:h-12 sm:min-w-[3.25rem]"
+              type="button"
+              onClick={() => openFileUpload('End')}
+            >
+              {endGoal}
+              {endUploadCount > 0 ? (
+                <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-300 px-1 text-[10px] text-zinc-950">
+                  {endUploadCount}
+                </span>
+              ) : (
+                <FileUp className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
+              )}
+            </button>
+          </div>
+        ) : null}
 
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
           <div className="grid gap-3">
