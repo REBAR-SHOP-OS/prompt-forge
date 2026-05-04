@@ -29,7 +29,7 @@ export const JOB_ORCHESTRATOR_CONTRACT: DomainContractMeta = {
 } as const;
 
 const CreateJobSchema = z.object({
-  providerKey: z.enum(["flow", "wan"]),
+  providerKey: z.literal("wan"),
   requestedModel: z.string().trim().min(1).max(100).optional(),
   prompt: z.string().min(1).max(4000),
   firstFrameUrl: z.string().url().max(2048).optional(),
@@ -136,7 +136,7 @@ export const jobOrchestratorGateway = {
           const lastFrameUrl = parsed.data.lastFrameUrl ?? null;
 
           // Wan provider requires both first/last frame URLs (image-to-video protocol).
-          if (providerKey === "wan" && (!firstFrameUrl || !lastFrameUrl)) {
+          if (!firstFrameUrl || !lastFrameUrl) {
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 400, latencyMs: Date.now() - ctx.startedAt, errorCode: "MISSING_FRAMES" });
             return errorResponse("MISSING_FRAMES", "Wan requires firstFrameUrl and lastFrameUrl", 400, ctx.requestId);
           }
