@@ -1422,9 +1422,10 @@ export default function DashboardPage() {
             </div>
           ) : generatedVideos.filter((v) => !deletedIds.has(v.id)).length > 0 ? (
             <div className="grid gap-3">
-              {generatedVideos.filter((v) => !deletedIds.has(v.id)).map((video) => {
+              {generatedVideos.filter((v) => !deletedIds.has(v.id)).map((video, index) => {
                 const status = normalizeStatus(video.status)
                 const isPreviewSelected = previewVideo?.id === video.id
+                const cardNumber = index + 1
 
                 return (
                   <article
@@ -1434,7 +1435,7 @@ export default function DashboardPage() {
                     }`}
                     role="button"
                     tabIndex={0}
-                    aria-label={`Preview ${video.input_prompt}`}
+                    aria-label={`Preview card ${cardNumber}: ${video.input_prompt}`}
                     onClick={() => setPreviewVideoId(video.id)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' || event.key === ' ') {
@@ -1443,7 +1444,13 @@ export default function DashboardPage() {
                       }
                     }}
                   >
-                    <div className="overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
+                    <div className="relative overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
+                      <span
+                        className="pointer-events-none absolute left-2 top-2 z-10 grid h-6 min-w-6 place-items-center rounded-full border border-white/15 bg-black/70 px-1.5 text-[11px] font-semibold tabular-nums text-zinc-100 shadow-[0_2px_8px_rgba(0,0,0,0.5)] backdrop-blur"
+                        aria-label={`Card number ${cardNumber}`}
+                      >
+                        #{cardNumber}
+                      </span>
                       {video.video?.storage_path ? (
                         <video
                           className="aspect-video h-full w-full bg-black object-cover"
