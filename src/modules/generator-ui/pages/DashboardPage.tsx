@@ -1272,12 +1272,12 @@ export default function DashboardPage() {
           <div className="w-8" />
         </header>
 
-        {/* Right column — Approved (ساخته‌شده‌ها) */}
+        {/* Right column — Approved (Generated) */}
         <aside className="absolute right-4 top-4 bottom-4 z-20 flex w-[320px] flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/80 backdrop-blur shadow-[0_28px_110px_rgba(0,0,0,0.45)]">
           <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
             <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-zinc-200">
               <BookmarkCheck className="h-3.5 w-3.5" />
-              ساخته‌شده‌ها
+              Generated
               <span className="ml-1 rounded-full border border-white/10 bg-zinc-900 px-1.5 py-0.5 text-[10px] tracking-normal text-zinc-300">
                 {approvedVideos.length}
               </span>
@@ -1287,7 +1287,7 @@ export default function DashboardPage() {
 
           <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
             <div>
-              <p className="text-xs text-zinc-400">ویدئوهای تاییدشده</p>
+              <p className="text-xs text-zinc-400">Approved videos</p>
               <p className="text-sm font-medium text-white">Approved outputs</p>
             </div>
             <button
@@ -1298,7 +1298,7 @@ export default function DashboardPage() {
                 // "make another shot that continues the previous one" action.
                 const latest = completedVideos[completedVideos.length - 1]
                 if (!latest) {
-                  setComposerError('هنوز ویدئویی ساخته نشده که بتوان ادامه‌اش را گرفت.')
+                  setComposerError('No video to continue from yet.')
                   return
                 }
                 setPreviewVideoId(latest.id)
@@ -1307,7 +1307,7 @@ export default function DashboardPage() {
                 setTimeout(() => { editAndReusePreviousClip() }, 0)
               }}
               disabled={completedVideos.length === 0}
-              title="ادامه از آخرین ویدئوی ساخته‌شده"
+              title="Continue from the latest video"
               className={`inline-flex h-7 w-7 items-center justify-center rounded-md border transition ${
                 completedVideos.length > 0
                   ? 'border-white/15 bg-zinc-900 text-zinc-200 hover:border-emerald-400/40 hover:text-white'
@@ -1321,7 +1321,7 @@ export default function DashboardPage() {
           <div className="flex-1 space-y-3 overflow-y-auto p-4">
             {approvedVideos.length === 0 ? (
               <div className="rounded-xl border border-dashed border-white/10 bg-zinc-900/40 px-3 py-6 text-center text-xs text-zinc-500">
-                هنوز ویدئویی تایید نشده است.
+                No approved videos yet.
               </div>
             ) : (
               approvedVideos.map((video, index) => {
