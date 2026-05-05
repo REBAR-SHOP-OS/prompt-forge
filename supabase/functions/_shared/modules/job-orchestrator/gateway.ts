@@ -11,8 +11,9 @@
 // "processing" for the worker/poller to finish in a later phase.
 
 import { z } from "https://esm.sh/zod@3.23.8";
-import { errorResponse, jsonResponse, startRequest } from "../../core/http.ts";
+import { errorResponse, jsonResponse, readJsonBody, startRequest } from "../../core/http.ts";
 import { authenticate } from "../../core/auth.ts";
+import { getEnv } from "../../core/env.ts";
 import { getServiceClient, getUserScopedClient } from "../../core/supabase.ts";
 import { logError, writeApiRequestLog } from "../../core/observability.ts";
 import { writeAuditLog } from "../../core/audit.ts";
@@ -39,6 +40,33 @@ const CreateJobSchema = z.object({
 
 const GetJobSchema = z.object({ jobId: z.string().uuid() });
 const DeleteJobSchema = z.object({ jobId: z.string().uuid() });
+
+const SUPABASE_PUBLIC_STORAGE_PREFIX = `${new URL(getEnv("SUPABASE_URL")).origin}/storage/v1/object/public/wan-frames/`;
+const EXTRA_PUBLIC_FRAME_HOSTS = getEnv("ALLOWED_PUBLIC_FRAME_HOSTS", false)
+  .split(",")
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean);
+
+function isAllowedFrameUrl(url: string, userId: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+
+  if (parsed.protocol !== "https:") {
+    return false;
+  }
+
+  if (parsed.href.startsWith(SUPABASE_PUBLIC_STORAGE_PREFIX)) {
+    const path = parsed.pathname;
+    const prefix = `/storage/v1/object/public/wan-frames/${userId}/`;
+    return path.startsWith(prefix);
+  }
+
+  return EXTRA_PUBLIC_FRAME_HOSTS.includes(parsed.hostname.toLowerCase());
+}
 
 // Estimate render progress when the provider hasn't reported one yet.
 // Uses status + created_at so the UI never shows a static "Rendering" with no
@@ -112,7 +140,6 @@ export const jobOrchestratorGateway = {
                 detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
                 progressPercent = 100;
               } else if (poll.status === "failed") {
-                // Mark job failed without refund (per current credit policy).
                 await svc
                   .from("generator_generation_jobs")
                   .update({ status: "failed", updated_at: new Date().toISOString() })
@@ -144,11 +171,13 @@ export const jobOrchestratorGateway = {
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 429, latencyMs: Date.now() - ctx.startedAt, errorCode: "RATE_LIMITED" });
             return errorResponse("RATE_LIMITED", "Too many requests", 429, ctx.requestId);
           }
-          let body: unknown;
-          try { body = await req.json(); } catch {
-            return errorResponse("INVALID_JSON", "Invalid JSON body", 400, ctx.requestId);
+
+          const bodyResult = await readJsonBody<unknown>(req, ctx.requestId);
+          if (!bodyResult.ok) {
+            return bodyResult.response;
           }
-          const parsed = CreateJobSchema.safeParse(body);
+
+          const parsed = CreateJobSchema.safeParse(bodyResult.value);
           if (!parsed.success) {
             return jsonResponse({ error: { code: "VALIDATION_ERROR", details: parsed.error.flatten().fieldErrors }, requestId: ctx.requestId }, 400);
           }
@@ -157,6 +186,26 @@ export const jobOrchestratorGateway = {
           const providerKey = parsed.data.providerKey as ProviderKey;
           const firstFrameUrl = parsed.data.firstFrameUrl ?? null;
           const lastFrameUrl = parsed.data.lastFrameUrl ?? null;
+
+          if (firstFrameUrl && !isAllowedFrameUrl(firstFrameUrl, auth.userId)) {
+            await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 400, latencyMs: Date.now() - ctx.startedAt, errorCode: "INVALID_FIRST_FRAME_URL" });
+            return errorResponse(
+              "INVALID_FIRST_FRAME_URL",
+              "firstFrameUrl must point to your own public wan-frames upload",
+              400,
+              ctx.requestId,
+            );
+          }
+
+          if (lastFrameUrl && !isAllowedFrameUrl(lastFrameUrl, auth.userId)) {
+            await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 400, latencyMs: Date.now() - ctx.startedAt, errorCode: "INVALID_LAST_FRAME_URL" });
+            return errorResponse(
+              "INVALID_LAST_FRAME_URL",
+              "lastFrameUrl must point to your own public wan-frames upload",
+              400,
+              ctx.requestId,
+            );
+          }
 
           // Image-to-video requires BOTH frames; text-to-video requires NEITHER.
           // Reject inconsistent state (only one frame provided).
@@ -277,11 +326,13 @@ export const jobOrchestratorGateway = {
           if (!rateLimit(`jobs-delete:${auth.userId}`, 30, 60_000)) {
             return errorResponse("RATE_LIMITED", "Too many requests", 429, ctx.requestId);
           }
-          let body: unknown;
-          try { body = await req.json(); } catch {
-            return errorResponse("INVALID_JSON", "Invalid JSON body", 400, ctx.requestId);
+
+          const bodyResult = await readJsonBody<unknown>(req, ctx.requestId);
+          if (!bodyResult.ok) {
+            return bodyResult.response;
           }
-          const parsed = DeleteJobSchema.safeParse(body);
+
+          const parsed = DeleteJobSchema.safeParse(bodyResult.value);
           if (!parsed.success) {
             return errorResponse("VALIDATION_ERROR", "jobId required", 400, ctx.requestId);
           }
