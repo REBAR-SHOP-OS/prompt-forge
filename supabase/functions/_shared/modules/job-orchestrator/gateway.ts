@@ -45,11 +45,18 @@ const GetJobSchema = z.object({
   jobId: z.string().uuid(),
 });
 
-const SUPABASE_PUBLIC_STORAGE_PREFIX = `${new URL(getEnv("SUPABASE_URL")).origin}/storage/v1/object/public/wan-frames/`;
+const FRAME_BUCKET = "wan-frames";
+const SUPABASE_PUBLIC_STORAGE_PREFIX = `${new URL(getEnv("SUPABASE_URL")).origin}/storage/v1/object/public/${FRAME_BUCKET}/`;
 const EXTRA_PUBLIC_FRAME_HOSTS = getEnv("ALLOWED_PUBLIC_FRAME_HOSTS", false)
   .split(",")
   .map((value) => value.trim().toLowerCase())
   .filter(Boolean);
+const ALLOWED_FRAME_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const DEFAULT_MAX_FRAME_BYTES = 10 * 1024 * 1024;
+const MAX_FRAME_BYTES = (() => {
+  const raw = Number.parseInt(getEnv("MAX_PUBLIC_FRAME_BYTES", false) || "", 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_MAX_FRAME_BYTES;
+})();
 
 function isAllowedFrameUrl(url: string, userId: string): boolean {
   let parsed: URL;
@@ -65,11 +72,110 @@ function isAllowedFrameUrl(url: string, userId: string): boolean {
 
   if (parsed.href.startsWith(SUPABASE_PUBLIC_STORAGE_PREFIX)) {
     const path = parsed.pathname;
-    const prefix = `/storage/v1/object/public/wan-frames/${userId}/`;
+    const prefix = `/storage/v1/object/public/${FRAME_BUCKET}/${userId}/`;
     return path.startsWith(prefix);
   }
 
   return EXTRA_PUBLIC_FRAME_HOSTS.includes(parsed.hostname.toLowerCase());
+}
+
+function getOwnedFrameObjectPath(url: string, userId: string): string | null {
+  if (!url.startsWith(SUPABASE_PUBLIC_STORAGE_PREFIX)) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(url);
+    const prefix = `/storage/v1/object/public/${FRAME_BUCKET}/${userId}/`;
+    if (!parsed.pathname.startsWith(prefix)) {
+      return null;
+    }
+    const path = decodeURIComponent(parsed.pathname.slice(prefix.length));
+    return path.trim() ? path : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeMetadataString(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function normalizeMetadataNumber(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+async function validateOwnedSupabaseFrameAsset(
+  svc: ReturnType<typeof getServiceClient>,
+  url: string,
+  userId: string,
+): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
+  const objectPath = getOwnedFrameObjectPath(url, userId);
+  if (!objectPath) {
+    return {
+      ok: false,
+      code: "INVALID_FRAME_URL",
+      message: "Frame URL must stay inside your own wan-frames folder",
+    };
+  }
+
+  const filename = objectPath.split("/").filter(Boolean).pop();
+  if (!filename) {
+    return {
+      ok: false,
+      code: "INVALID_FRAME_URL",
+      message: "Frame URL is missing a file name",
+    };
+  }
+
+  const { data, error } = await svc.storage.from(FRAME_BUCKET).list(userId, {
+    limit: 100,
+    search: filename,
+  });
+  if (error) {
+    logError("frame metadata lookup failed", { error: error.message, userId, filename });
+    return {
+      ok: false,
+      code: "FRAME_LOOKUP_FAILED",
+      message: "Could not verify uploaded frame metadata",
+    };
+  }
+
+  const entry = (data ?? []).find((item) => item.name === filename);
+  if (!entry) {
+    return {
+      ok: false,
+      code: "FRAME_NOT_FOUND",
+      message: "Uploaded frame was not found in storage",
+    };
+  }
+
+  const metadata = (entry.metadata ?? {}) as Record<string, unknown>;
+  const mimeType = normalizeMetadataString(metadata.mimetype ?? metadata.contentType);
+  const sizeBytes = normalizeMetadataNumber(metadata.size ?? metadata.contentLength);
+
+  if (!ALLOWED_FRAME_MIME_TYPES.has(mimeType)) {
+    return {
+      ok: false,
+      code: "UNSUPPORTED_FRAME_TYPE",
+      message: "Frames must be JPEG, PNG, or WebP images",
+    };
+  }
+
+  if (sizeBytes <= 0 || sizeBytes > MAX_FRAME_BYTES) {
+    return {
+      ok: false,
+      code: "FRAME_TOO_LARGE",
+      message: `Frames must be smaller than ${Math.floor(MAX_FRAME_BYTES / (1024 * 1024))} MB`,
+    };
+  }
+
+  return { ok: true };
 }
 
 // Estimates progress for processing jobs when the upstream provider or our
@@ -264,6 +370,20 @@ export const jobOrchestratorGateway = {
               400,
               ctx.requestId,
             );
+          }
+
+          if (firstFrameUrl) {
+            const frameValidation = await validateOwnedSupabaseFrameAsset(svc, firstFrameUrl, auth.userId);
+            if (!frameValidation.ok) {
+              return errorResponse(req, frameValidation.code, frameValidation.message, 400, ctx.requestId);
+            }
+          }
+
+          if (lastFrameUrl) {
+            const frameValidation = await validateOwnedSupabaseFrameAsset(svc, lastFrameUrl, auth.userId);
+            if (!frameValidation.ok) {
+              return errorResponse(req, frameValidation.code, frameValidation.message, 400, ctx.requestId);
+            }
           }
 
           // Image-to-video accepts a first frame by itself or a first+last pair.
