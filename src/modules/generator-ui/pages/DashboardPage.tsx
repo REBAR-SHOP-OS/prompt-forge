@@ -1614,7 +1614,7 @@ export default function DashboardPage() {
                     <>
                       <X className="h-8 w-8 text-rose-400" />
                       <p className="text-xs uppercase tracking-[0.22em] text-rose-300">
-                        ساخت ویدئو ناموفق بود
+                        Video generation failed
                       </p>
                     </>
                   ) : (
