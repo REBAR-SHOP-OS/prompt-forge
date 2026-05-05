@@ -23,13 +23,30 @@ function configuredOrigins(): string[] {
   return DEFAULT_DEV_ORIGINS;
 }
 
+// Origins from Lovable's preview/published infrastructure are always
+// allow-listed so the deployed app (and its preview iframe) can reach the
+// backend without per-project CORS configuration. Custom origins can still be
+// added via CORS_ALLOW_ORIGINS / CORS_ALLOW_ORIGIN env vars.
+const LOVABLE_ORIGIN_PATTERNS: RegExp[] = [
+  /^https?:\/\/([a-z0-9-]+\.)*lovable\.app$/i,
+  /^https?:\/\/([a-z0-9-]+\.)*lovable\.dev$/i,
+  /^https?:\/\/([a-z0-9-]+\.)*lovableproject\.com$/i,
+  /^https?:\/\/([a-z0-9-]+\.)*sandbox\.lovable\.dev$/i,
+];
+
+function isLovableOrigin(origin: string): boolean {
+  return LOVABLE_ORIGIN_PATTERNS.some((re) => re.test(origin));
+}
+
 function allowedOrigin(req?: Request): string | null {
   const origins = configuredOrigins();
   const origin = req?.headers.get("origin")?.trim();
   if (!origin) {
     return origins.length === 1 ? origins[0] : null;
   }
-  return origins.includes(origin) ? origin : null;
+  if (origins.includes(origin)) return origin;
+  if (isLovableOrigin(origin)) return origin;
+  return null;
 }
 
 function baseSecurityHeaders(): Record<string, string> {
