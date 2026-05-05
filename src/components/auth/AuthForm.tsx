@@ -133,7 +133,7 @@ export default function AuthForm({ mode }: Props) {
           onClick={onResend}
           disabled={resending}
         >
-          {resending ? "Sending…" : "Resend confirmation email / ارسال مجدد ایمیل تأیید"}
+          {resending ? "Sending…" : "Resend confirmation email"}
         </Button>
       )}
       {mode === "signup" && (
