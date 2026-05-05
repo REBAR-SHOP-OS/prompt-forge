@@ -1,51 +1,44 @@
+# Fix: "Could not start video generation"
 
-# Speed Optimization Plan
+## What's actually wrong
 
-Profiling showed three real causes of perceived slowness. None of them is a JS hot-loop (CPU stays under 1%). Each fix is independent and non-destructive.
+The button is failing with **"Could not start video generation"** because the browser's `fetch()` to the `jobs-create` Edge Function fails at the network layer ("Failed to fetch" in the network log). This happens **before** the function executes — it's a CORS preflight rejection.
 
-## Findings
+### Evidence
+- **Browser network log** for `POST /functions/v1/jobs-create`: `Error: Failed to fetch` (no HTTP status returned).
+- **Direct server-side test** of the same function (via `supabase--curl_edge_functions`): returns **HTTP 200** with a valid `jobId`. So the function logic, auth, credits, and provider routing all work.
+- **Preflight test** (`OPTIONS` from `Origin: https://...lovableproject.com`) returns **200**, but the response is **missing the `Access-Control-Allow-Origin` header**. The browser therefore blocks the actual POST.
+- The shared CORS helper (`supabase/functions/_shared/core/http.ts`) already contains a `LOVABLE_ORIGIN_PATTERNS` regex that allow-lists `*.lovableproject.com`, `*.lovable.app`, etc. — but the **currently deployed** `jobs-create` function is using an older bundle that doesn't echo the origin back. (Edge function logs show it last booted at 16:32:03 with no recent code update; recent shared-file edits to `http.ts` haven't been picked up because no edge function under `supabase/functions/` was re-saved.)
 
-1. **Initial load ~9s in dev preview.** 44 separate script requests, with `lucide-react` (155 KB / 2.1 s) and `@supabase/supabase-js` (131 KB / 1.7 s) being the largest. `DashboardPage.tsx` itself is 60 KB and loaded eagerly even on the login screen.
-2. **Polling effect restarts on every state change.** The `useEffect` that polls in-flight jobs depends on the entire `generatedVideos` array. Every `progress_percent` update creates a new array reference → effect cleans up + re-runs → timer is reset. Wasteful and causes extra renders.
-3. **Right-column "Outputs" renders a full `<video controls>` element per generated clip.** Each `<video>` opens a decode pipeline. With 5–10 clips this noticeably slows scrolling, focus changes, and re-renders.
+This also explains the earlier 401 reports on `jobs-delete` / `jobs-get`: same root cause — the browser can't complete the request, so the UI surfaces a generic failure.
 
-## Fixes
+## The fix
 
-### 1. Lazy-load the dashboard route
-- Convert `DashboardPage` import in `src/App.tsx` to `React.lazy(() => import(...))` and wrap the render in `<Suspense>` with a minimal loader.
-- Result: unauthenticated users no longer pay the 60 KB + transitive cost; authed users see the login fallback faster on cold loads.
+Force a redeploy of the affected edge functions so they bundle the **current** shared `http.ts` (with the Lovable-origin allow-list). Edge functions are auto-deployed when their `index.ts` is touched.
 
-### 2. Stabilize the polling loop
-In `src/modules/generator-ui/pages/DashboardPage.tsx`:
-- Replace the `[generatedVideos]` dependency with a memoized **list of active job IDs** (`useMemo` joining IDs into a string), so the effect only re-subscribes when the *set of active jobs* actually changes — not on every progress tick.
-- Keep the current `setTimeout` cadence (4 s) but read fresh `generatedVideos` via a `ref` inside the timer callback.
-- Use `Promise.allSettled` instead of `Promise.all` so one failed `getJob` doesn't blank the whole batch.
+### Steps
 
-### 3. Lightweight video cards in the Outputs column
-Replace each `<video controls>` card with a click-to-expand pattern:
-- Default state: a `<video>` with `preload="metadata"` and **no `controls`**, rendering only the poster frame (first frame). No decode pipeline runs until clicked.
-- Clicking the card calls the existing `startPreviewVideo(video.id)` (already wired) which moves playback to the large center stage — that's where users actually watch.
-- Add a small play icon overlay so the affordance is obvious.
-- Keep the bookmark + delete buttons unchanged.
+1. **Touch each affected edge function `index.ts`** so the platform rebuilds them with the latest shared CORS code:
+   - `supabase/functions/jobs-create/index.ts`
+   - `supabase/functions/jobs-get/index.ts`
+   - `supabase/functions/jobs-list/index.ts`
+   - `supabase/functions/jobs-delete/index.ts`
+   - `supabase/functions/me/index.ts`
+   - `supabase/functions/usage-credits/index.ts`
+   - `supabase/functions/videos-list/index.ts`
+   - `supabase/functions/ai-gateway-route-preview/index.ts`
+   - `supabase/functions/video-proxy/index.ts`
+   
+   No behavior change — just add a trivial comment line to trigger redeploy.
 
-This single change typically takes the right column from "noticeably laggy with 5+ clips" to instant.
+2. **Verify** the preflight after redeploy by calling `OPTIONS` with an `Origin: ...lovableproject.com` header and confirming the response includes `Access-Control-Allow-Origin: https://...lovableproject.com`.
 
-### 4. Minor wins (bundled with above)
-- Memoize `completedVideos`, `approvedIds`, and the cards' click handlers with `useCallback` so toggling the bookmark on one card doesn't re-render every other card.
-- Add `React.memo` around the card subcomponent (extracted as a small inline component) so each card only re-renders when its own props change.
+3. **Re-test** the user flow: enter a prompt (e.g., "یک خودرو در حال حرکت"), choose Text-to-Video / 5s, click submit. Expect a job card to appear in History with status "Rendering" instead of the red "Could not start video generation" toast.
 
-## Files touched
+### Why not change CORS env vars?
+The shared code already handles Lovable origins automatically via regex; no env var (`CORS_ALLOW_ORIGINS`) needs to be set. The only missing piece is getting the new code onto the deployed functions, which a redeploy accomplishes.
 
-- `src/App.tsx` — lazy import + Suspense fallback
-- `src/modules/generator-ui/pages/DashboardPage.tsx` — polling effect, card extraction, memoization, `<video>` simplification
+### Files touched
+- 9 edge function `index.ts` files (one-line no-op comment to trigger redeploy)
 
-## Out of scope (and why)
-
-- **Video generation time itself** (the "stuck at 95%") is provider-side (wan2.7). I won't lower the polling interval below 4 s — that would only increase backend cost without speeding up the actual render. I'll surface progress more honestly: while polling, show the timestamp of the last update so the user can see we're still alive.
-- **Replacing `lucide-react` with per-icon imports** isn't needed — modern lucide-react already tree-shakes in production builds; the 2 s cost only appears in Vite dev mode.
-
-## Expected outcome
-
-- Cold load (dev preview): ~9 s → ~5 s (lazy dashboard)
-- Outputs column with 10 clips: smooth scroll, instant toggle (was visibly laggy)
-- Network: same poll cadence but no redundant restarts; failed pings no longer drop the whole batch
+No frontend changes, no DB migrations, no secrets needed.
