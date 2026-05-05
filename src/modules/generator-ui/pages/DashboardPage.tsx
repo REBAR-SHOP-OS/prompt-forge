@@ -882,7 +882,12 @@ export default function DashboardPage() {
         })
       }
     } catch (error) {
-      const message = error instanceof ApiError ? `${error.code}: ${error.message}` : 'Could not start video generation.'
+      console.error('[handleSubmit] video generation failed', error)
+      const message = error instanceof ApiError
+        ? `${error.code}: ${error.message}`
+        : (error instanceof Error && error.message)
+          ? `Could not start video generation: ${error.message}`
+          : 'Could not start video generation.'
       setComposerError(message)
       setVideoColumnMessage(message)
     } finally {
