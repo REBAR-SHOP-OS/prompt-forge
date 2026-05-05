@@ -682,7 +682,6 @@ export default function DashboardPage() {
           if (stillErr) throw new Error(stillErr.message)
           const stillPublic = supabase.storage.from(MERGED_BUCKET).getPublicUrl(stillPath).data.publicUrl
 
-          // Prepend: still clip first, then the generated video.
           const mergedBlob = await mergeVideoUrls([stillPublic, proxiedSrc])
           const mergedPath = `${userId}/with-start-${Date.now()}-${crypto.randomUUID()}.webm`
           const { error: upErr } = await supabase.storage
@@ -717,19 +716,30 @@ export default function DashboardPage() {
     })
   }, [generatedVideos, pendingStartPrepends, userId])
 
-  // Smooth progress ticker: re-render once per second while any job is active
-  // so the time-based progress bar advances visibly between API polls.
-  const [, setProgressTick] = useState(0)
   useEffect(() => {
-    const hasActive = generatedVideos.some((job) => !isTerminalStatus(job.status))
-    if (!hasActive) return
-    const id = window.setInterval(() => setProgressTick((tick) => tick + 1), 1000)
-    return () => window.clearInterval(id)
-  }, [generatedVideos])
+    if (!previewVideoId && previewVideo?.id) {
+      setPreviewVideoId(previewVideo.id)
+    }
+  }, [previewVideoId, previewVideo?.id])
 
-  function openFileUpload(target: UploadTarget) {
+  function focusPromptInput() {
+    promptInputRef.current?.focus()
+  }
+
+  function triggerFilePicker(target: UploadTarget) {
     setUploadTarget(target)
     fileInputRef.current?.click()
+  }
+
+  function handleFilesDrop(event: React.DragEvent<HTMLElement>) {
+    event.preventDefault()
+    setIsDragging(false)
+    addUploadedFiles(event.dataTransfer.files)
+  }
+
+  function handleFileInputChange(event: ChangeEvent<HTMLInputElement>) {
+    addUploadedFiles(event.target.files)
+    event.target.value = ''
   }
 
   async function uploadFrameFile(file: File, target: UploadTarget, fileId: number) {
@@ -761,7 +771,7 @@ export default function DashboardPage() {
     if (error) {
       setUploadedFiles((currentFiles) => currentFiles.map((uploadedFile) => (
         uploadedFile.id === fileId
-          ? { ...uploadedFile, status: 'failed', error: error.message }
+          ? { ...uploadedFile, status: 'failed', error: error.message } 
           : uploadedFile
       )))
       return
@@ -788,18 +798,13 @@ export default function DashboardPage() {
       type: file.type || 'file',
       status: 'uploading' as const,
       url: null,
-      error: null
+      error: null,
     }))
 
     setUploadedFiles((currentFiles) => [...currentFiles, ...nextFiles])
     nextFiles.forEach((nextFile, index) => {
       uploadFrameFile(files[index], target, nextFile.id)
     })
-  }
-
-  function handleFileInputChange(event: ChangeEvent<HTMLInputElement>) {
-    addUploadedFiles(event.currentTarget.files)
-    event.currentTarget.value = ''
   }
 
   function removeUploadedFile(fileId: number) {
@@ -844,15 +849,14 @@ export default function DashboardPage() {
         })
         seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
       } else if (readyStartFrame?.url) {
-        // Only Start: generate text-to-video, then prepend the Start image
-        // as a 2-second still clip at the front of the completed video.
+        // Only Start: generate directly from the first frame so the prompt
+        // animates that image instead of creating a separate text-only clip.
         createdJob = await jobOrchestratorGateway.createJob({
           providerKey: 'wan',
-          requestedModel: 'wan2.7-t2v-2026-04-25',
           prompt: nextPrompt,
+          firstFrameUrl: readyStartFrame.url,
           durationSeconds,
         })
-        pendingStartPrependUrl = readyStartFrame.url
         seedFrames = { firstFrameUrl: readyStartFrame.url }
       } else if (readyEndFrame?.url) {
         // Only End: generate text-to-video first, then append the End image
@@ -871,27 +875,25 @@ export default function DashboardPage() {
       }
 
       const seededJob = buildSeededJob(nextPrompt, createdJob, seedFrames)
-
-      if (pendingEndAppendUrl) {
-        setPendingEndAppends((current) => {
-          const next = { ...current, [seededJob.id]: pendingEndAppendUrl as string }
-          persistPendingEndAppends(next)
-          return next
-        })
-      }
-
-      if (pendingStartPrependUrl) {
-        setPendingStartPrepends((current) => {
-          const next = { ...current, [seededJob.id]: pendingStartPrependUrl as string }
-          persistPendingStartPrepends(next)
-          return next
-        })
-      }
-
       setPreviewVideoId(seededJob.id)
       setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
       setPromptText('')
       setUploadedFiles([])
+
+      if (pendingEndAppendUrl) {
+        setPendingEndAppends((current) => {
+          const next = { ...current, [seededJob.id]: pendingEndAppendUrl }
+          persistPendingEndAppends(next)
+          return next
+        })
+      }
+      if (pendingStartPrependUrl) {
+        setPendingStartPrepends((current) => {
+          const next = { ...current, [seededJob.id]: pendingStartPrependUrl }
+          persistPendingStartPrepends(next)
+          return next
+        })
+      }
     } catch (error) {
       const message = error instanceof ApiError ? `${error.code}: ${error.message}` : 'Could not start video generation.'
       setComposerError(message)
@@ -901,189 +903,213 @@ export default function DashboardPage() {
     }
   }
 
-  async function captureLastFrameAsBlob(videoUrl: string): Promise<Blob> {
-    return await new Promise((resolve, reject) => {
-      const v = document.createElement('video')
-      v.crossOrigin = 'anonymous'
-      v.muted = true
-      v.playsInline = true
-      v.preload = 'auto'
-      v.src = videoUrl
-      const onError = () => reject(new Error('Could not load previous video for continuation'))
-      v.onerror = onError
-      v.onloadedmetadata = () => {
-        const target = Math.max(0, (Number.isFinite(v.duration) ? v.duration : 0) - 0.05)
-        const onSeeked = () => {
-          try {
-            const canvas = document.createElement('canvas')
-            canvas.width = v.videoWidth || 1280
-            canvas.height = v.videoHeight || 720
-            const ctx = canvas.getContext('2d')
-            if (!ctx) return reject(new Error('Canvas unavailable'))
-            ctx.drawImage(v, 0, 0, canvas.width, canvas.height)
-            canvas.toBlob((blob) => {
-              if (!blob) return reject(new Error('Could not capture last frame'))
-              resolve(blob)
-            }, 'image/png')
-          } catch (err) {
-            reject(err as Error)
-          }
-        }
-        v.onseeked = onSeeked
-        try {
-          v.currentTime = target
-        } catch {
-          v.play().then(() => v.pause()).then(() => { v.currentTime = target }).catch(onError)
-        }
-      }
-    })
-  }
-
-  async function handleAddVideoCard() {
+  function resetComposer() {
     setPromptText('')
     setUploadedFiles([])
-    setComposerError(null)
     setVideoColumnMessage(null)
-    setUploadTarget('Start')
-    setPreviewVideoId(null)
-
-    // Continuity rule: each new card must continue the previous render.
-    // generatedVideos is sorted ascending (oldest -> newest), so the most
-    // recent completed render is the LAST matching item — scan from the end.
-    let prev: JobDetail | undefined
-    for (let i = generatedVideos.length - 1; i >= 0; i--) {
-      const v = generatedVideos[i]
-      if (
-        !deletedIds.has(v.id) &&
-        normalizeStatus(v.status) === 'completed' &&
-        v.video?.storage_path
-      ) {
-        prev = v
-        break
-      }
-    }
-
-    // Pre-fill the prompt with a continuation seed of the previous card's prompt
-    // so the next clip continues the same scene/content (the user can still edit it).
-    if (prev) {
-      const previousPrompt = stripAttachedFilesBlock(prev.input_prompt || '')
-      if (previousPrompt) {
-        setPromptText(`ادامه: ${previousPrompt} — صحنه را به‌صورت طبیعی از همان‌جا که قبلی تمام شد ادامه بده.`)
-      }
-    }
-
-    if (prev?.video?.storage_path && userId) {
-      setGenerationMode('image-to-video')
-      const seedId = Date.now()
-      const placeholder: UploadedFile = {
-        id: seedId,
-        name: `continuation-from-${prev.id.slice(0, 6)}.png`,
-        size: 0,
-        target: 'Start',
-        type: 'image/png',
-        status: 'uploading',
-        url: null,
-        error: null,
-      }
-      setUploadedFiles([placeholder])
-      try {
-        const proxied = await proxiedVideoUrl(prev.video.storage_path)
-        const blob = await captureLastFrameAsBlob(proxied)
-        const storagePath = `${userId}/start-${Date.now()}-${crypto.randomUUID()}.png`
-        const { error } = await supabase.storage
-          .from(FRAMES_BUCKET)
-          .upload(storagePath, blob, { contentType: 'image/png', upsert: false })
-        if (error) throw new Error(error.message)
-        const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
-        setUploadedFiles((current) =>
-          current.map((f) =>
-            f.id === seedId
-              ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size }
-              : f,
-          ),
-        )
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Could not seed continuation frame'
-        setUploadedFiles((current) => current.filter((f) => f.id !== seedId))
-        setComposerError(`Continuation seed failed: ${msg}. Upload a Start frame manually.`)
-      }
-    }
-
-    requestAnimationFrame(() => {
-      promptInputRef.current?.focus()
-      promptInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    })
   }
 
-  function editAndReuseJob(job: { input_prompt: string; first_frame_url?: string | null; last_frame_url?: string | null }) {
-    setComposerError(null)
-    setVideoColumnMessage(null)
-    setPromptText(job.input_prompt ?? '')
+  async function handleSignOut() {
+    await signOut()
+  }
 
-    const hasFrames = Boolean(job.first_frame_url || job.last_frame_url)
-    if (hasFrames) {
-      setGenerationMode('image-to-video')
-      const seeds: UploadedFile[] = []
-      const baseId = Date.now()
-      if (job.first_frame_url) {
-        seeds.push({
-          id: baseId,
-          name: 'reused-start.png',
-          size: 0,
-          target: 'Start',
-          type: 'image/png',
-          status: 'ready',
-          url: job.first_frame_url,
-          error: null,
-        })
-      }
-      if (job.last_frame_url) {
-        seeds.push({
-          id: baseId + 1,
-          name: 'reused-end.png',
-          size: 0,
-          target: 'End',
-          type: 'image/png',
-          status: 'ready',
-          url: job.last_frame_url,
-          error: null,
-        })
-      }
-      setUploadedFiles(seeds)
-      setUploadTarget(job.first_frame_url ? 'End' : 'Start')
-    } else {
-      setGenerationMode('text-to-video')
+  function startPreviewVideo(jobId: string) {
+    setPreviewVideoId(jobId)
+  }
+
+  function handleDragOver(event: React.DragEvent<HTMLElement>) {
+    event.preventDefault()
+    setIsDragging(true)
+  }
+
+  function handleDragLeave(event: React.DragEvent<HTMLElement>) {
+    event.preventDefault()
+    setIsDragging(false)
+  }
+
+  async function appendEndFrameToActiveClip() {
+    const job = previewVideo
+    const end = readyEndFrame?.url
+    if (!job?.video?.storage_path || !end || !userId) {
+      setComposerError('Add an End image and select a completed clip first.')
+      return
+    }
+    try {
+      setIsSubmitting(true)
+      setComposerError(null)
+      const proxiedSrc = await proxiedVideoUrl(job.video.storage_path)
+      const stillClipBlob = await imageUrlToClip(end, 2)
+      const stillPath = `${userId}/end-still-${Date.now()}-${crypto.randomUUID()}.webm`
+      const { error: stillErr } = await supabase.storage
+        .from(MERGED_BUCKET)
+        .upload(stillPath, stillClipBlob, { contentType: 'video/webm', upsert: false })
+      if (stillErr) throw new Error(stillErr.message)
+      const stillPublic = supabase.storage.from(MERGED_BUCKET).getPublicUrl(stillPath).data.publicUrl
+
+      const mergedBlob = await mergeVideoUrls([proxiedSrc, stillPublic], (p) => setMergeProgress(p))
+      const filename = `with-end-${Date.now()}.webm`
+      const storagePath = `${userId}/${filename}`
+      const { error: upErr } = await supabase.storage
+        .from(MERGED_BUCKET)
+        .upload(storagePath, mergedBlob, { contentType: 'video/webm', upsert: false })
+      if (upErr) throw new Error(upErr.message)
+      const publicUrl = supabase.storage.from(MERGED_BUCKET).getPublicUrl(storagePath).data.publicUrl
+
+      setGeneratedVideos((current) =>
+        current.map((v) =>
+          v.id === job.id && v.video
+            ? { ...v, video: { ...v.video, storage_path: publicUrl } }
+            : v,
+        ),
+      )
+      setPreviewVideoId(job.id)
+    } catch (err) {
+      setComposerError(`Could not append End frame: ${err instanceof Error ? err.message : 'unknown error'}`)
+    } finally {
+      setIsSubmitting(false)
+      setMergeProgress(0)
+    }
+  }
+
+  async function prependStartFrameToActiveClip() {
+    const job = previewVideo
+    const start = readyStartFrame?.url
+    if (!job?.video?.storage_path || !start || !userId) {
+      setComposerError('Add a Start image and select a completed clip first.')
+      return
+    }
+    try {
+      setIsSubmitting(true)
+      setComposerError(null)
+      const proxiedSrc = await proxiedVideoUrl(job.video.storage_path)
+      const stillClipBlob = await imageUrlToClip(start, 2)
+      const stillPath = `${userId}/start-still-${Date.now()}-${crypto.randomUUID()}.webm`
+      const { error: stillErr } = await supabase.storage
+        .from(MERGED_BUCKET)
+        .upload(stillPath, stillClipBlob, { contentType: 'video/webm', upsert: false })
+      if (stillErr) throw new Error(stillErr.message)
+      const stillPublic = supabase.storage.from(MERGED_BUCKET).getPublicUrl(stillPath).data.publicUrl
+
+      const mergedBlob = await mergeVideoUrls([stillPublic, proxiedSrc], (p) => setMergeProgress(p))
+      const filename = `with-start-${Date.now()}.webm`
+      const storagePath = `${userId}/${filename}`
+      const { error: upErr } = await supabase.storage
+        .from(MERGED_BUCKET)
+        .upload(storagePath, mergedBlob, { contentType: 'video/webm', upsert: false })
+      if (upErr) throw new Error(upErr.message)
+      const publicUrl = supabase.storage.from(MERGED_BUCKET).getPublicUrl(storagePath).data.publicUrl
+
+      setGeneratedVideos((current) =>
+        current.map((v) =>
+          v.id === job.id && v.video
+            ? { ...v, video: { ...v.video, storage_path: publicUrl } }
+            : v,
+        ),
+      )
+      setPreviewVideoId(job.id)
+    } catch (err) {
+      setComposerError(`Could not prepend Start frame: ${err instanceof Error ? err.message : 'unknown error'}`)
+    } finally {
+      setIsSubmitting(false)
+      setMergeProgress(0)
+    }
+  }
+
+  async function editAndReusePreviousClip() {
+    const prev = previewVideo
+    if (!prev || !userId) {
+      setComposerError('Select a previous clip first.')
+      return
+    }
+
+    try {
+      setComposerError(null)
+
+      // Seed prompt with previous clip's original prompt (without appended file list).
+      const basePrompt = stripAttachedFilesBlock(prev.input_prompt ?? '')
+      setPromptText(basePrompt)
+
+      // Clear current uploads; we'll seed Start/End from the previous clip itself.
       setUploadedFiles([])
+
+      // Seed Start from the previous video's LAST frame when possible. This makes
+      // the new prompt naturally continue from the selected clip.
+      if (prev?.video?.storage_path && userId) {
+        try {
+          const proxied = await proxiedVideoUrl(prev.video.storage_path)
+          const clip = await imageUrlToClip(proxied, 0.05)
+          // imageUrlToClip returns a video, not a still. We need a frame grab, so
+          // use the browser to sample the last frame and upload it as a PNG.
+          const video = document.createElement('video')
+          video.src = proxied
+          video.crossOrigin = 'anonymous'
+          video.muted = true
+          await new Promise<void>((resolve, reject) => {
+            video.onloadedmetadata = () => resolve()
+            video.onerror = () => reject(new Error('Could not load previous clip for frame seeding.'))
+          })
+          const targetTime = Math.max(0, (video.duration || 0) - 0.05)
+          await new Promise<void>((resolve, reject) => {
+            const onSeeked = () => resolve()
+            video.onseeked = onSeeked
+            video.onerror = () => reject(new Error('Could not seek previous clip.'))
+            video.currentTime = targetTime
+          })
+          const canvas = document.createElement('canvas')
+          canvas.width = video.videoWidth || 1280
+          canvas.height = video.videoHeight || 720
+          const ctx = canvas.getContext('2d')
+          if (!ctx) throw new Error('Canvas unavailable')
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+          const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((b) => b ? resolve(b) : reject(new Error('Frame export failed')), 'image/png'))
+          const storagePath = `${userId}/start-${Date.now()}-${crypto.randomUUID()}.png`
+          const { error: upErr } = await supabase.storage
+            .from(FRAMES_BUCKET)
+            .upload(storagePath, blob, { contentType: 'image/png', upsert: false })
+          if (upErr) throw upErr
+          const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+          const seeded: UploadedFile = {
+            id: Date.now(),
+            name: 'seed-from-previous.png',
+            size: blob.size,
+            target: 'Start',
+            type: 'image/png',
+            status: 'ready',
+            url: data.publicUrl,
+            error: null,
+          }
+          setUploadedFiles([seeded])
+        } catch (e) {
+          // Non-fatal: user can still type a prompt and attach frames manually.
+          setVideoColumnMessage((e as Error).message)
+        }
+      }
+
+      focusPromptInput()
+    } catch (e) {
+      setComposerError((e as Error).message)
     }
-
-    setIsApprovedPanelOpen(false)
-
-    requestAnimationFrame(() => {
-      promptInputRef.current?.focus()
-      promptInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    })
   }
 
-  async function handleMergeAllVideos() {
-    if (isMerging) return
+  async function mergeVisibleVideos() {
     if (completedSourceVideos.length < 2) {
-      setVideoColumnMessage('Need at least 2 finished videos to merge.')
+      setVideoColumnMessage('Complete at least two videos before merging.')
       return
     }
     if (!userId) {
-      setVideoColumnMessage('Sign in to merge videos.')
+      setVideoColumnMessage('Sign in before merging videos.')
       return
     }
+
     setIsMerging(true)
     setMergeProgress(0)
     setVideoColumnMessage(null)
-    try {
-      const rawUrls = completedSourceVideos
-        // generatedVideos is already ascending (oldest -> newest), so this is chronological.
-        .map((v) => v.video!.storage_path)
-      const urls = await Promise.all(rawUrls.map((u) => proxiedVideoUrl(u)))
 
-      const blob = await mergeVideoUrls(urls, (p) => setMergeProgress(Math.round(p.ratio * 100)))
+    try {
+      const urls = completedSourceVideos
+        .map((v) => v.video!.storage_path)
+
+      const blob = await mergeVideoUrls(urls, (p) => setMergeProgress(p))
 
       const filename = `merged-${Date.now()}.webm`
       const storagePath = `${userId}/${filename}`
@@ -1138,758 +1164,648 @@ export default function DashboardPage() {
       a.remove()
       setTimeout(() => URL.revokeObjectURL(blobUrl), 4_000)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Merge failed'
-      console.error('[merge] failed', err)
-      setVideoColumnMessage(`Could not load source video for merge — please try again in a moment. (${msg})`)
+      setVideoColumnMessage(`Could not merge videos: ${err instanceof Error ? err.message : 'unknown error'}`)
     } finally {
       setIsMerging(false)
       setMergeProgress(0)
     }
   }
 
-  function handleStartOver() {
-    // Hide every History card by adding their IDs to the "deleted" set
-    // (same mechanism the per-card delete uses; DB rows are kept).
-    setDeletedIds((current) => {
-      const next = new Set(current)
-      for (const v of generatedVideos) next.add(v.id)
-      if (deletedStorageKey) {
-        try { window.localStorage.setItem(deletedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
-      }
-      return next
-    })
-    // Reset the composer to a fresh state.
-    setPromptText('')
-    setUploadedFiles([])
-    setComposerError(null)
-    setVideoColumnMessage(null)
-    setUploadTarget('Start')
-    setGenerationMode('image-to-video')
-    setDurationSeconds(5)
-    setPreviewVideoId(null)
-  }
-
   return (
-    <section
-      className="relative min-h-screen overflow-hidden bg-black text-zinc-100"
-      style={{
-        backgroundImage:
-          'linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px)',
-        backgroundSize: '64px 64px'
-      }}
-      onDragEnter={() => setIsDragging(true)}
-      onDragOver={(event) => {
-        event.preventDefault()
-        setIsDragging(true)
-      }}
-      onDragLeave={(event) => {
-        if (event.currentTarget === event.target) {
-          setIsDragging(false)
-        }
-      }}
-      onDrop={(event) => {
-        event.preventDefault()
-        setIsDragging(false)
-        addUploadedFiles(event.dataTransfer.files, 'Start')
-      }}
-    >
-      {showWelcome && <WelcomeVideoOverlay onClose={dismissWelcome} />}
-      <div
-        className={`pointer-events-none absolute inset-0 border transition duration-200 ${
-          isDragging ? 'border-amber-300/40 bg-amber-300/[0.045]' : 'border-transparent'
-        }`}
-      />
-
+    <div className="min-h-screen bg-black text-zinc-100">
       <input
         ref={fileInputRef}
-        className="sr-only"
         type="file"
         multiple
-        accept="image/*"
+        className="hidden"
         onChange={handleFileInputChange}
       />
+      {showWelcome && <WelcomeVideoOverlay onClose={dismissWelcome} />}
+      <div className="mx-auto flex min-h-screen w-full max-w-[1800px] flex-col gap-6 px-4 py-6 md:px-6 xl:flex-row">
+        <aside className="w-full rounded-[28px] border border-white/10 bg-zinc-950/80 p-5 shadow-[0_28px_110px_rgba(0,0,0,0.45)] xl:sticky xl:top-6 xl:h-[calc(100vh-3rem)] xl:max-h-[calc(100vh-3rem)] xl:w-[18rem] xl:flex-none xl:overflow-hidden">
+          <div className="flex h-full flex-col gap-5">
+            <div className="space-y-2">
+              <p className="text-xs uppercase tracking-[0.26em] text-zinc-500">Prompt Forge</p>
+              <h1 className="text-2xl font-semibold tracking-tight text-white">Build your clip narrative</h1>
+              <p className="max-w-xs text-sm leading-6 text-zinc-400">
+                Shape a motion prompt, seed it with frames, and keep only the clips worth carrying forward.
+              </p>
+            </div>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            className="fixed left-4 top-4 z-50 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-5 sm:top-5"
-            type="button"
-            aria-label="Open menu"
-          >
-            <LayoutGrid className="h-[18px] w-[18px]" aria-hidden="true" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" sideOffset={8} className="w-64">
-          <DropdownMenuLabel className="flex items-center gap-2 text-xs font-normal text-muted-foreground">
-            <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
-            <span className="truncate">{profile?.email ?? session?.user.email ?? 'Account'}</span>
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => setIsApprovedPanelOpen(true)}>
-            <Library className="mr-2 h-4 w-4" aria-hidden="true" />
-            <span>Library</span>
-            <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-              {approvedIds.size}
-            </span>
-          </DropdownMenuItem>
-          <DropdownMenuItem disabled className="opacity-100 focus:bg-transparent">
-            <Coins className="mr-2 h-4 w-4 text-amber-300/80" aria-hidden="true" />
-            <span>Credits</span>
-            <span className="ml-auto text-xs font-medium tabular-nums text-zinc-100">
-              {profile?.credits_balance ?? '—'}
-            </span>
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => { void signOut() }} className="text-red-400 focus:text-red-300">
-            <LogOut className="mr-2 h-4 w-4" aria-hidden="true" />
-            <span>Sign out</span>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            <div className="space-y-3 rounded-[22px] border border-white/10 bg-zinc-900/90 p-4">
+              <div className="flex items-center gap-3 text-sm text-zinc-200">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-800 text-zinc-100">
+                  <UserRound className="h-4 w-4" />
+                </div>
+                <div className="space-y-1">
+                  <p className="font-medium text-white">{profile?.email ?? session?.user?.email ?? 'Guest builder'}</p>
+                  <p className="text-xs text-zinc-500">{profile?.role === 'admin' ? 'Administrator' : 'Creator workspace'}</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+                <span className="flex items-center gap-2 font-medium">
+                  <Coins className="h-4 w-4" />
+                  Credits available
+                </span>
+                <span className="text-lg font-semibold text-white">{profile?.credits_balance ?? 0}</span>
+              </div>
+            </div>
 
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <button
-            className="fixed left-1/2 top-4 z-50 flex h-9 -translate-x-1/2 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100 sm:top-5"
-            type="button"
-            aria-label="Start over"
-          >
-            <RotateCcw className="h-[14px] w-[14px]" aria-hidden="true" />
-            <span>Start over</span>
-          </button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Start over?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This clears every card in History and resets the prompt, frames, mode, and duration.
-              Saved videos in Your library are kept.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleStartOver}>Start over</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <main className="grid min-h-screen place-items-center px-4 pb-40" aria-live="polite">
-        {previewVideo ? (
-          <div className="-translate-y-10 w-[min(50rem,calc(100vw-2rem))] sm:-translate-y-8">
-            <div className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur">
-              <div className="relative aspect-video max-h-[52vh] w-full overflow-hidden bg-black">
-                {previewVideo.video?.storage_path ? (
-                  <video
-                    key={previewVideo.id}
-                    className="h-full w-full bg-black object-contain"
-                    src={previewVideo.video.storage_path}
-                    controls
-                    playsInline
-                    preload="metadata"
-                  />
-                ) : (
-                  <div className="grid h-full place-items-center px-6 text-center">
-                    {(() => {
-                      const status = normalizeStatus(previewVideo.status)
-                      const isRendering = status === 'processing' || status === 'pending'
-                      const pct = isRendering ? getJobProgressPercent(previewVideo) ?? 0 : 0
-                      const startedAt = Date.parse(previewVideo.created_at)
-                      const longRender = Number.isFinite(startedAt) && Date.now() - startedAt > 240_000
-                      return (
-                        <div className="w-full max-w-sm">
-                          {isRendering ? (
-                            <LoaderCircle className="mx-auto h-10 w-10 animate-spin text-amber-300" aria-hidden="true" />
-                          ) : (
-                            <Clapperboard className="mx-auto h-10 w-10 text-zinc-600" aria-hidden="true" />
-                          )}
-                          <p className="mt-4 text-sm font-semibold text-zinc-300">{formatStatusLabel(previewVideo.status)}</p>
-                          {isRendering ? (
-                            <>
-                              <p className="mt-1 text-3xl font-semibold tabular-nums text-zinc-100">{pct}%</p>
-                              <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                                <div
-                                  className="h-full rounded-full bg-amber-300 transition-all duration-500"
-                                  style={{ width: `${pct}%` }}
-                                />
-                              </div>
-                              <p className="mt-2 text-xs leading-5 text-zinc-500">
-                                {longRender
-                                  ? 'Still rendering — provider is taking longer than usual.'
-                                  : `About ${Math.max(0, 100 - pct)}% remaining`}
-                              </p>
-                            </>
-                          ) : (
-                            <p className="mt-2 text-xs leading-5 text-zinc-600">Waiting for render output.</p>
-                          )}
-                        </div>
-                      )
-                    })()}
+            <div className="grid gap-2 text-sm text-zinc-300 sm:grid-cols-3 xl:grid-cols-1">
+              {[
+                {
+                  icon: Hammer,
+                  label: 'Start Context',
+                  value: startContext,
+                  actionLabel: 'Set Start',
+                  onAction: () => triggerFilePicker('Start')
+                },
+                {
+                  icon: ArrowRight,
+                  label: 'End Goal',
+                  value: endGoal,
+                  actionLabel: 'Set End',
+                  onAction: () => triggerFilePicker('End')
+                },
+                {
+                  icon: Sparkles,
+                  label: 'Video Generation',
+                  value: generationMode === 'image-to-video' ? 'Image-to-video' : 'Text-to-video',
+                  actionLabel: 'Prompt Only',
+                  onAction: focusPromptInput
+                }
+              ].map(({ icon: Icon, label, value, actionLabel, onAction }) => (
+                <div
+                  key={label}
+                  className="group relative overflow-hidden rounded-[22px] border border-white/10 bg-zinc-900/85 p-4 transition hover:border-emerald-400/40 hover:bg-zinc-900"
+                >
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.14),transparent_55%)] opacity-0 transition group-hover:opacity-100" />
+                  <div className="relative flex h-full flex-col gap-4">
+                    <div className="flex items-center justify-between text-xs uppercase tracking-[0.22em] text-zinc-500">
+                      <span>{label}</span>
+                      <Icon className="h-4 w-4 text-zinc-600" />
+                    </div>
+                    <p className="text-lg font-medium tracking-tight text-white">{value}</p>
+                    <button
+                      type="button"
+                      onClick={onAction}
+                      className="inline-flex items-center gap-2 self-start rounded-full border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-emerald-400/40 hover:text-emerald-200"
+                    >
+                      {actionLabel}
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
                   </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-3 rounded-[24px] border border-white/10 bg-zinc-950/90 p-4">
+              <div className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-zinc-500">
+                <Library className="h-4 w-4" />
+                Video Library
+              </div>
+              <div className="max-h-64 space-y-3 overflow-y-auto pr-1 xl:max-h-none xl:flex-1">
+                {isLibraryLoading ? (
+                  <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-zinc-900/70 px-3 py-4 text-sm text-zinc-400">
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                    Loading saved clips...
+                  </div>
+                ) : approvedIds.size === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-white/10 bg-zinc-900/60 px-4 py-6 text-sm leading-6 text-zinc-500">
+                    Approve finished renders to keep them in this reusable stack.
+                  </div>
+                ) : (
+                  visibleVideos
+                    .filter((video) => approvedIds.has(video.id))
+                    .slice(0, 6)
+                    .map((video) => {
+                      const isActive = previewVideoId === video.id
+                      return (
+                        <button
+                          key={`approved-${video.id}`}
+                          type="button"
+                          onClick={() => startPreviewVideo(video.id)}
+                          className={`w-full rounded-2xl border px-3 py-3 text-left transition ${
+                            isActive
+                              ? 'border-emerald-400/60 bg-emerald-500/10 text-white'
+                              : 'border-white/10 bg-zinc-900/70 text-zinc-300 hover:border-white/20 hover:text-white'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-medium text-white line-clamp-1">{video.input_prompt || 'Approved render'}</p>
+                              <p className="text-xs text-zinc-500">{formatCreatedAt(video.created_at)}</p>
+                            </div>
+                            <BookmarkCheck className="h-4 w-4" />
+                          </div>
+                        </button>
+                      )
+                    })
                 )}
               </div>
-              <div className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="max-h-12 min-w-0 overflow-hidden text-sm font-medium leading-6 text-zinc-200">
-                  {previewVideo.input_prompt}
-                </p>
-                <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
-                  <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(previewVideo.status)}`} />
-                  {formatStatusLabel(previewVideo.status)}
-                  {(() => {
-                    const status = normalizeStatus(previewVideo.status)
-                    if (status !== 'processing' && status !== 'pending') return null
-                    const pct = getJobProgressPercent(previewVideo)
-                    return pct !== null ? <span className="tabular-nums text-amber-300">{pct}%</span> : null
-                  })()}
-                </span>
-              </div>
+              {approvedIds.size > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setIsApprovedPanelOpen((current) => !current)}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-zinc-400 transition hover:text-white"
+                >
+                  <History className="h-4 w-4" />
+                  {isApprovedPanelOpen ? 'Hide approved stack' : 'Show full approved stack'}
+                </button>
+              ) : null}
+            </div>
+
+            <div className="mt-auto flex flex-wrap items-center gap-3 pt-2 text-sm text-zinc-500">
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-zinc-300 transition hover:border-white/20 hover:text-white"
+              >
+                <LogOut className="h-4 w-4" />
+                Sign out
+              </button>
             </div>
           </div>
-        ) : (
-          <div className="-translate-y-10 text-center sm:-translate-y-8">
-            <div className="relative mx-auto mb-4 grid h-14 w-14 place-items-center text-zinc-100" aria-hidden="true">
-              <Hammer className="h-10 w-10 -rotate-12 stroke-[1.7]" />
-              <Sparkles className="absolute right-0 top-0 h-5 w-5 text-amber-300 stroke-[1.8]" />
-            </div>
-            <p className="m-0 text-base font-medium text-zinc-400 sm:text-lg">{emptyStateLabel}</p>
-          </div>
-        )}
-      </main>
+        </aside>
 
-      <aside
-        className="fixed bottom-3 right-3 top-3 z-30 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/90 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.36)] backdrop-blur-xl sm:bottom-5 sm:right-4 sm:top-5 sm:w-80 lg:w-72 xl:right-5 xl:w-80"
-        aria-label="Recent outputs"
-      >
-        <div className="flex items-center justify-between border-b border-white/10 pb-3">
-          <div className="inline-flex items-center gap-2">
-            <History className="h-4 w-4 text-amber-300" aria-hidden="true" />
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">History</p>
-            <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
-              {generatedVideos.filter((v) => !deletedIds.has(v.id)).length}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={handleMergeAllVideos}
-            disabled={isMerging || completedSourceVideos.length < 2}
-            className="grid h-8 min-w-8 place-items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-2 text-xs font-semibold text-zinc-300 transition hover:border-emerald-300/30 hover:text-emerald-200 disabled:cursor-not-allowed disabled:opacity-40"
-            title={
-              completedSourceVideos.length < 2
-                ? 'Need at least 2 finished videos'
-                : 'Merge all videos into one final clip'
-            }
-            aria-label="Merge all videos"
-          >
-            {isMerging ? (
-              <>
-                <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                <span className="tabular-nums">{mergeProgress}%</span>
-              </>
-            ) : (
-              <Combine className="h-4 w-4" aria-hidden="true" />
-            )}
-          </button>
-        </div>
-
-        <div className="mt-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-zinc-500">Video renders</p>
-            <h2 className="text-sm font-semibold text-zinc-100">Recent outputs</h2>
-          </div>
-          <button
-            type="button"
-            onClick={handleAddVideoCard}
-            className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100"
-            aria-label="Add new video card"
-          >
-            <Plus className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
-
-        {videoColumnMessage ? (
-          <div className="mt-3 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs leading-5 text-rose-100">
-            {videoColumnMessage}
-          </div>
-        ) : null}
-
-        <div className="mt-3 flex-1 overflow-y-auto pr-1">
-          {isLibraryLoading ? (
-            <div className="grid h-full place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
-              <div>
-                <LoaderCircle className="mx-auto h-8 w-8 animate-spin text-zinc-500" aria-hidden="true" />
-                <p className="mt-3 text-sm font-medium text-zinc-300">Syncing render history</p>
-                <p className="mt-2 text-xs leading-5 text-zinc-600">Recent outputs will appear here.</p>
-              </div>
-            </div>
-          ) : generatedVideos.filter((v) => !deletedIds.has(v.id)).length > 0 ? (
-            <div className="grid gap-3">
-              {generatedVideos.filter((v) => !deletedIds.has(v.id)).map((video, index) => {
-                const status = normalizeStatus(video.status)
-                const isPreviewSelected = previewVideo?.id === video.id
-                const cardNumber = index + 1
-
-                return (
-                  <article
-                    key={video.id}
-                    className={`cursor-pointer rounded-2xl border p-3 transition hover:border-white/20 hover:bg-white/[0.055] ${
-                      isPreviewSelected ? 'border-white/20 bg-white/[0.06]' : 'border-white/10 bg-white/[0.035]'
-                    }`}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`Preview card ${cardNumber}: ${video.input_prompt}`}
-                    onClick={() => setPreviewVideoId(video.id)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault()
-                        setPreviewVideoId(video.id)
-                      }
-                    }}
+        <section className="flex min-w-0 flex-1 flex-col gap-6">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+            <div className="flex min-h-[420px] flex-col rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(24,24,27,0.92),rgba(6,6,7,0.98))] p-6 shadow-[0_28px_110px_rgba(0,0,0,0.45)]">
+              <div className="flex flex-col gap-5 border-b border-white/10 pb-5 md:flex-row md:items-start md:justify-between">
+                <div className="space-y-3">
+                  <p className="text-xs uppercase tracking-[0.26em] text-zinc-500">Video Workspace</p>
+                  <div className="space-y-2">
+                    <h2 className="text-2xl font-semibold tracking-tight text-white">{emptyStateLabel}</h2>
+                    <p className="max-w-2xl text-sm leading-6 text-zinc-400">
+                      Move from the first visual anchor toward the ending you want, then keep iterating until the sequence feels right.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-400">
+                  <button
+                    type="button"
+                    onClick={resetComposer}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 transition hover:border-white/20 hover:text-white"
                   >
-                    <div className="relative overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
-                      <span
-                        className="pointer-events-none absolute left-2 top-2 z-10 grid h-6 min-w-6 place-items-center rounded-full border border-white/15 bg-black/70 px-1.5 text-[11px] font-semibold tabular-nums text-zinc-100 shadow-[0_2px_8px_rgba(0,0,0,0.5)] backdrop-blur"
-                        aria-label={`Card number ${cardNumber}`}
+                    <RotateCcw className="h-4 w-4" />
+                    Clear inputs
+                  </button>
+                  <button
+                    type="button"
+                    onClick={editAndReusePreviousClip}
+                    disabled={!previewVideo}
+                    className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 transition ${
+                      previewVideo
+                        ? 'border-white/10 text-zinc-300 hover:border-emerald-400/40 hover:text-white'
+                        : 'cursor-not-allowed border-white/5 text-zinc-600'
+                    }`}
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Edit &amp; reuse
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-6 flex-1 space-y-5">
+                <div className="grid gap-4 md:grid-cols-2">
+                  {[
+                    { key: 'Start' as const, label: 'Start frame', count: startUploadCount, target: 'Start' as const },
+                    { key: 'End' as const, label: 'End frame', count: endUploadCount, target: 'End' as const }
+                  ].map(({ key, label, count, target }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => triggerFilePicker(target)}
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleFilesDrop}
+                      className={`group relative flex min-h-[176px] flex-col justify-between overflow-hidden rounded-[28px] border border-dashed p-5 text-left transition ${
+                        isDragging
+                          ? 'border-emerald-400/60 bg-emerald-500/10'
+                          : 'border-white/10 bg-zinc-900/65 hover:border-emerald-400/35 hover:bg-zinc-900/85'
+                      }`}
+                    >
+                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.16),transparent_60%)] opacity-0 transition group-hover:opacity-100" />
+                      <div className="relative flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">{label}</p>
+                          <p className="mt-2 text-lg font-medium text-white">Drop an image or browse</p>
+                        </div>
+                        <FileUp className="h-5 w-5 text-zinc-600 transition group-hover:text-emerald-300" />
+                      </div>
+                      <div className="relative flex items-center justify-between gap-3 text-sm text-zinc-400">
+                        <span>{count === 0 ? 'No frame attached yet' : `${count} file${count > 1 ? 's' : ''} attached`}</span>
+                        <span className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-1 text-xs uppercase tracking-[0.18em] text-zinc-300">
+                          {target}
+                          <Plus className="h-3 w-3" />
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {uploadedFiles.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {uploadedFiles.map((file) => (
+                      <div
+                        key={file.id}
+                        className={`inline-flex items-center gap-3 rounded-full border px-4 py-2 text-sm ${
+                          file.status === 'failed'
+                            ? 'border-rose-500/40 bg-rose-500/10 text-rose-100'
+                            : 'border-white/10 bg-zinc-900/75 text-zinc-200'
+                        }`}
                       >
-                        #{cardNumber}
-                      </span>
-                      {video.video?.storage_path ? (
+                        <span className="font-medium text-white">{file.name}</span>
+                        <span className="text-xs uppercase tracking-[0.18em] text-zinc-500">
+                          {file.status === 'uploading' ? 'Uploading' : file.target}
+                        </span>
+                        {file.status === 'failed' ? <span className="text-xs text-rose-200">{file.error}</span> : null}
+                        <button
+                          type="button"
+                          onClick={() => removeUploadedFile(file.id)}
+                          className="inline-flex items-center justify-center rounded-full border border-white/10 p-1 text-zinc-400 transition hover:border-white/20 hover:text-white"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto]">
+                  <div className="space-y-2">
+                    <label htmlFor="prompt-input" className="text-sm font-medium text-zinc-300">
+                      Prompt
+                    </label>
+                    <textarea
+                      ref={promptInputRef}
+                      id="prompt-input"
+                      value={promptText}
+                      onChange={(event) => setPromptText(event.target.value)}
+                      placeholder="Describe the motion, tone, camera move, or transformation you want from the frame(s)..."
+                      className="h-36 w-full rounded-[26px] border border-white/10 bg-zinc-950/85 px-5 py-4 text-sm leading-6 text-white placeholder:text-zinc-500 focus:border-emerald-400/50 focus:outline-none focus:ring-2 focus:ring-emerald-400/20"
+                    />
+                  </div>
+                  <form
+                    onSubmit={handleSubmit}
+                    className="flex flex-col gap-3 rounded-[26px] border border-white/10 bg-zinc-900/70 p-4 xl:w-[18rem]"
+                  >
+                    <div className="space-y-2">
+                      <p className="text-xs uppercase tracking-[0.24em] text-zinc-500">Generation mode</p>
+                      <div className="grid grid-cols-2 gap-2 rounded-full border border-white/10 bg-zinc-950/70 p-1">
+                        {([
+                          { label: 'Image-to-video', value: 'image-to-video' },
+                          { label: 'Text-to-video', value: 'text-to-video' }
+                        ] as const).map((option) => {
+                          const isSelected = generationMode === option.value
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => setGenerationMode(option.value)}
+                              className={`rounded-full px-3 py-2 text-xs font-medium transition ${
+                                isSelected
+                                  ? 'bg-emerald-400 text-black shadow-[0_12px_30px_rgba(16,185,129,0.2)]'
+                                  : 'text-zinc-400 hover:text-white'
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="text-xs uppercase tracking-[0.24em] text-zinc-500">Duration</p>
+                      <div className="grid grid-cols-2 gap-2 rounded-full border border-white/10 bg-zinc-950/70 p-1">
+                        {([5, 10] as const).map((seconds) => {
+                          const isSelected = durationSeconds === seconds
+                          return (
+                            <button
+                              key={seconds}
+                              type="button"
+                              onClick={() => setDurationSeconds(seconds)}
+                              className={`rounded-full px-3 py-2 text-xs font-medium transition ${
+                                isSelected
+                                  ? 'bg-white text-black shadow-[0_12px_30px_rgba(255,255,255,0.15)]'
+                                  : 'text-zinc-400 hover:text-white'
+                              }`}
+                            >
+                              {seconds}s
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-1 items-end">
+                      <button
+                        type="submit"
+                        disabled={hasUploadingFiles || isSubmitting}
+                        className={`w-full rounded-[22px] px-4 py-3 text-sm font-semibold transition ${
+                          hasUploadingFiles || isSubmitting
+                            ? 'cursor-not-allowed bg-zinc-800 text-zinc-500'
+                            : 'bg-white text-black shadow-[0_18px_40px_rgba(255,255,255,0.16)] hover:-translate-y-0.5 hover:bg-emerald-300'
+                        }`}
+                      >
+                        {isSubmitting ? 'Rendering…' : 'Render video'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                {composerError ? (
+                  <p className="text-sm text-rose-300">{composerError}</p>
+                ) : blockedReason && hasComposerInput ? (
+                  <p className="text-xs leading-5 text-zinc-500">{blockedReason}</p>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="flex min-h-[420px] flex-col rounded-[30px] border border-white/10 bg-zinc-950/92 p-5 shadow-[0_28px_110px_rgba(0,0,0,0.45)]">
+              <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.24em] text-zinc-500">Preview</p>
+                  <h2 className="mt-2 text-xl font-semibold tracking-tight text-white">
+                    {previewVideo?.input_prompt ? 'Latest selected render' : 'Nothing rendered yet'}
+                  </h2>
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-zinc-900/80 px-3 py-1.5 text-xs uppercase tracking-[0.18em] text-zinc-300">
+                  <Film className="h-3.5 w-3.5" />
+                  {previewVideo ? formatStatusLabel(previewVideo.status) : 'Idle'}
+                </div>
+              </div>
+
+              {videoColumnMessage ? (
+                <div className="mt-4 rounded-2xl border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
+                  {videoColumnMessage}
+                </div>
+              ) : null}
+
+              <div className="mt-5 flex-1">
+                {previewVideo ? (
+                  <div className="flex h-full flex-col gap-4">
+                    <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-black">
+                      {previewVideo.video?.storage_path ? (
                         <video
-                          className="aspect-video h-full w-full bg-black object-cover"
-                          src={video.video.storage_path}
+                          key={previewVideo.video.storage_path}
+                          src={previewVideo.video.storage_path}
                           controls
-                          muted
+                          autoPlay
                           playsInline
-                          preload="metadata"
+                          className="aspect-video w-full bg-black object-contain"
                         />
                       ) : (
-                        <div className="grid aspect-video place-items-center text-zinc-500">
-                          <Clapperboard className="h-8 w-8" aria-hidden="true" />
+                        <div className="flex aspect-video items-center justify-center bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.12),transparent_60%)] text-sm text-zinc-500">
+                          <div className="flex flex-col items-center gap-3">
+                            <LoaderCircle className="h-6 w-6 animate-spin text-emerald-300" />
+                            {normalizeStatus(previewVideo.status) === 'failed'
+                              ? 'Render failed before a preview was created.'
+                              : 'This render is still being forged.'}
+                          </div>
                         </div>
                       )}
                     </div>
 
-                    <div className="mt-3 flex items-start justify-between gap-3">
-                      <p className="max-h-12 overflow-hidden text-sm font-medium leading-6 text-zinc-200">
-                        {video.input_prompt}
-                      </p>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        {status === 'processing' ? (
-                          <LoaderCircle className="mt-1 h-4 w-4 shrink-0 animate-spin text-amber-300" aria-hidden="true" />
-                        ) : status === 'completed' && video.video?.storage_path ? (
-                          (() => {
-                            const isApproved = approvedIds.has(video.id)
-                            return (
+                    <div className="flex flex-col gap-3 rounded-[24px] border border-white/10 bg-zinc-900/78 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 text-sm text-zinc-400">
+                            <span className={`h-2.5 w-2.5 rounded-full ${getStatusDotClassName(previewVideo.status)}`} />
+                            {formatStatusLabel(previewVideo.status)}
+                          </div>
+                          <p className="text-base font-medium leading-7 text-white">
+                            {stripAttachedFilesBlock(previewVideo.input_prompt) || 'Untitled render'}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleApproved(previewVideo.id)}
+                            className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition ${
+                              approvedIds.has(previewVideo.id)
+                                ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-100'
+                                : 'border-white/10 text-zinc-300 hover:border-white/20 hover:text-white'
+                            }`}
+                          >
+                            {approvedIds.has(previewVideo.id) ? <BookmarkCheck className="h-4 w-4" /> : <BookmarkPlus className="h-4 w-4" />}
+                            {approvedIds.has(previewVideo.id) ? 'Approved' : 'Approve'}
+                          </button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
                               <button
                                 type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  toggleApproved(video.id)
-                                }}
-                                aria-pressed={isApproved}
-                                aria-label={isApproved ? 'Remove from library' : 'Save to library'}
-                                title={isApproved ? 'Saved in library — click to remove' : 'Save to library'}
-                                className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border transition ${
-                                  isApproved
-                                    ? 'border-emerald-300/40 bg-emerald-300/10 text-emerald-200 hover:bg-emerald-300/15'
-                                    : 'border-white/10 bg-white/[0.03] text-zinc-400 hover:border-white/20 hover:text-zinc-100'
-                                }`}
+                                className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:border-rose-400/40 hover:text-rose-200"
                               >
-                                {isApproved ? (
-                                  <BookmarkCheck className="h-3.5 w-3.5" aria-hidden="true" />
-                                ) : (
-                                  <BookmarkPlus className="h-3.5 w-3.5" aria-hidden="true" />
-                                )}
+                                <Trash2 className="h-4 w-4" />
+                                Delete
                               </button>
-                            )
-                          })()
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            editAndReuseJob(video)
-                          }}
-                          aria-label="Edit prompt and regenerate"
-                          title="Edit prompt and regenerate"
-                          className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
-                        >
-                          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            deleteCard(video.id)
-                          }}
-                          aria-label="Delete card"
-                          title="Delete card"
-                          className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500">
-                      <span className="inline-flex items-center gap-2">
-                        <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(video.status)}`} />
-                        {formatStatusLabel(video.status)}
-                        {(status === 'processing' || status === 'pending') ? (
-                          (() => {
-                            const pct = getJobProgressPercent(video)
-                            return pct !== null ? <span className="tabular-nums text-amber-300">{pct}%</span> : null
-                          })()
-                        ) : null}
-                      </span>
-                      <span>{formatCreatedAt(video.created_at)}</span>
-                    </div>
-                    {(status === 'processing' || status === 'pending') ? (
-                      (() => {
-                        const pct = getJobProgressPercent(video) ?? 0
-                        return (
-                          <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/10">
-                            <div className="h-full rounded-full bg-amber-300 transition-all duration-500" style={{ width: `${pct}%` }} />
-                          </div>
-                        )
-                      })()
-                    ) : null}
-                  </article>
-                )
-              })}
-            </div>
-          ) : (
-            <div className="grid h-full place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
-              <div>
-                <Film className="mx-auto h-8 w-8 text-zinc-600" aria-hidden="true" />
-                <p className="mt-3 text-sm font-medium text-zinc-300">No renders yet</p>
-                <p className="mt-2 text-xs leading-5 text-zinc-600">New video generations will collect here.</p>
-              </div>
-            </div>
-          )}
-        </div>
-      </aside>
-
-      {/* Left library panel — only opens via the LayoutGrid icon. Shows approved videos. */}
-      <button
-        type="button"
-        aria-label="Close library"
-        className={`fixed inset-0 z-20 bg-black/35 transition lg:hidden ${
-          isApprovedPanelOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
-        }`}
-        onClick={() => setIsApprovedPanelOpen(false)}
-      />
-
-      <aside
-        className={`fixed bottom-3 left-3 top-3 z-40 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.4)] backdrop-blur-xl transition duration-300 sm:bottom-5 sm:left-16 sm:top-5 sm:w-80 lg:w-72 xl:w-80 ${
-          isApprovedPanelOpen
-            ? 'pointer-events-auto visible translate-x-0 opacity-100'
-            : 'pointer-events-none invisible -translate-x-[calc(100%+1.25rem)] opacity-0'
-        }`}
-        aria-label="Library"
-        aria-hidden={!isApprovedPanelOpen}
-      >
-        <div className="flex items-center justify-between border-b border-white/10 pb-3">
-          <div className="inline-flex items-center gap-2">
-            <Library className="h-4 w-4 text-emerald-300" aria-hidden="true" />
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">Library</p>
-            <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
-              {visibleVideos.filter((v) => approvedIds.has(v.id)).length}
-            </span>
-          </div>
-          <button
-            type="button"
-            className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-100"
-            aria-label="Close library"
-            onClick={() => setIsApprovedPanelOpen(false)}
-          >
-            <X className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
-
-        <div className="mt-4">
-          <p className="text-xs font-medium text-zinc-500">Saved videos</p>
-          <h2 className="text-sm font-semibold text-zinc-100">Your library</h2>
-        </div>
-
-        <div className="mt-3 flex-1 overflow-y-auto pr-1">
-          {(() => {
-            const approvedVideos = visibleVideos.filter((video) => approvedIds.has(video.id))
-            if (approvedVideos.length === 0) {
-              return (
-                <div className="grid h-full place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
-                  <div>
-                    <Library className="mx-auto h-8 w-8 text-zinc-600" aria-hidden="true" />
-                    <p className="mt-3 text-sm font-medium text-zinc-300">No saved videos yet</p>
-                    <p className="mt-2 text-xs leading-5 text-zinc-600">
-                      Approve a render from the right panel to keep it here.
-                    </p>
-                  </div>
-                </div>
-              )
-            }
-            return (
-              <div className="grid gap-3">
-                {approvedVideos.map((video) => {
-                  const isPreviewSelected = previewVideo?.id === video.id
-                  return (
-                    <article
-                      key={video.id}
-                      className={`cursor-pointer rounded-2xl border p-3 transition hover:border-white/20 hover:bg-white/[0.055] ${
-                        isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : 'border-white/10 bg-white/[0.035]'
-                      }`}
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`Preview ${video.input_prompt}`}
-                      onClick={() => {
-                        setPreviewVideoId(video.id)
-                        setIsApprovedPanelOpen(false)
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault()
-                          setPreviewVideoId(video.id)
-                          setIsApprovedPanelOpen(false)
-                        }
-                      }}
-                    >
-                      <div
-                        className="overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        {video.video?.storage_path ? (
-                          <video
-                            className="aspect-video h-full w-full bg-black object-contain"
-                            src={video.video.storage_path}
-                            controls
-                            playsInline
-                            preload="metadata"
-                          />
-                        ) : (
-                          <div className="grid aspect-video place-items-center text-zinc-500">
-                            <Clapperboard className="h-8 w-8" aria-hidden="true" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="mt-3 flex items-start justify-between gap-3">
-                        <p className="max-h-12 overflow-hidden text-sm font-medium leading-6 text-zinc-200">
-                          {video.input_prompt}
-                        </p>
-                        <div className="flex shrink-0 items-center gap-1.5">
-                          {video.video?.storage_path ? (
-                            <a
-                              href={video.video.storage_path}
-                              download
-                              onClick={(event) => event.stopPropagation()}
-                              aria-label="Download video"
-                              title="Download video"
-                              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
-                            >
-                              <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                            </a>
-                          ) : null}
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              toggleApproved(video.id)
-                            }}
-                            aria-label="Remove from library"
-                            title="Remove from library"
-                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/30 hover:bg-rose-300/10 hover:text-rose-200"
-                          >
-                            <X className="h-3.5 w-3.5" aria-hidden="true" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              editAndReuseJob(video)
-                            }}
-                            aria-label="Edit prompt and regenerate"
-                            title="Edit prompt and regenerate"
-                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
-                          >
-                            <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              deleteCard(video.id)
-                            }}
-                            aria-label="Delete card"
-                            title="Delete card"
-                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                          </button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent className="border-white/10 bg-zinc-950 text-white">
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete this render?</AlertDialogTitle>
+                                <AlertDialogDescription className="text-zinc-400">
+                                  This removes the card from your history and attempts to purge its stored video file.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel className="border-white/10 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-white">Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => deleteCard(previewVideo.id)}
+                                  className="bg-rose-500 text-white hover:bg-rose-400"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </div>
                       </div>
-                      <div className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500">
-                        <span className="inline-flex items-center gap-2">
-                          <BookmarkCheck className="h-3.5 w-3.5 text-emerald-300" aria-hidden="true" />
-                          Saved
-                        </span>
-                        <span>{formatCreatedAt(video.created_at)}</span>
+
+                      <div className="flex flex-wrap items-center gap-3 text-xs uppercase tracking-[0.16em] text-zinc-500">
+                        <span className="rounded-full border border-white/10 px-3 py-1">{previewVideo.model_key ?? 'Model pending'}</span>
+                        <span className="rounded-full border border-white/10 px-3 py-1">{formatCreatedAt(previewVideo.created_at)}</span>
+                        {(() => {
+                          const p = getJobProgressPercent(previewVideo)
+                          return (typeof p === 'number' && !isTerminalStatus(previewVideo.status)) ? (
+                            <span className="rounded-full border border-emerald-400/20 px-3 py-1 text-emerald-200">{p}%</span>
+                          ) : null
+                        })()}
                       </div>
-                    </article>
-                  )
-                })}
-              </div>
-            )
-          })()}
-        </div>
-      </aside>
 
-      <form
-        className="fixed bottom-4 left-1/2 z-30 grid w-[min(45rem,calc(100vw-1rem))] -translate-x-1/2 gap-3 rounded-[22px] border border-white/10 bg-[#111214]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(45rem,calc(100vw-2rem))] sm:p-4"
-        onSubmit={handleSubmit}
-      >
-        <div className="flex flex-wrap items-center gap-2" aria-label="Generation mode">
-          <div role="tablist" aria-label="Choose generation mode" className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={isTextToVideo}
-              onClick={() => {
-                setGenerationMode('text-to-video')
-                setComposerError(null)
-              }}
-              className={`rounded-full px-3 py-1.5 transition ${isTextToVideo ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
-            >
-              Text to Video
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={!isTextToVideo}
-              onClick={() => {
-                setGenerationMode('image-to-video')
-                setComposerError(null)
-              }}
-              className={`rounded-full px-3 py-1.5 transition ${!isTextToVideo ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
-            >
-              Image to Video
-            </button>
+                      {/* One-click visual edit helpers for cases where the user only
+                          has a Start or End image and wants to merge that still with
+                          the active preview without creating a new render. */}
+                      {(readyStartFrame?.url || readyEndFrame?.url) && previewVideo.video?.storage_path ? (
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          {readyStartFrame?.url ? (
+                            <button
+                              type="button"
+                              onClick={prependStartFrameToActiveClip}
+                              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:border-emerald-400/40 hover:text-white"
+                            >
+                              <ArrowRight className="h-4 w-4 rotate-180" />
+                              Prepend Start
+                            </button>
+                          ) : null}
+                          {readyEndFrame?.url ? (
+                            <button
+                              type="button"
+                              onClick={appendEndFrameToActiveClip}
+                              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:border-emerald-400/40 hover:text-white"
+                            >
+                              <ArrowRight className="h-4 w-4" />
+                              Append End
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex h-full min-h-[18rem] flex-col items-center justify-center rounded-[28px] border border-dashed border-white/10 bg-zinc-900/60 px-8 text-center">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-zinc-950 text-zinc-500">
+                      <Clapperboard className="h-7 w-7" />
+                    </div>
+                    <h3 className="mt-5 text-lg font-medium text-white">Render output lands here</h3>
+                    <p className="mt-2 max-w-md text-sm leading-6 text-zinc-500">
+                      Upload frame references, shape the motion with a prompt, and the latest result will become your preview surface.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-          <div role="radiogroup" aria-label="Clip duration" className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
-            {([5, 10] as const).map((sec) => {
-              const active = durationSeconds === sec
-              return (
+
+          <div className="rounded-[30px] border border-white/10 bg-zinc-950/90 p-5 shadow-[0_28px_110px_rgba(0,0,0,0.45)]">
+            <div className="flex flex-col gap-4 border-b border-white/10 pb-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.24em] text-zinc-500">Render history</p>
+                <h2 className="mt-2 text-xl font-semibold tracking-tight text-white">Iterate, merge, and choose the winners</h2>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
                 <button
-                  key={sec}
                   type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => setDurationSeconds(sec)}
-                  className={`rounded-full px-3 py-1.5 transition ${active ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+                  onClick={mergeVisibleVideos}
+                  disabled={completedSourceVideos.length < 2 || isMerging}
+                  className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition ${
+                    completedSourceVideos.length >= 2 && !isMerging
+                      ? 'border-white/10 text-zinc-200 hover:border-emerald-400/40 hover:text-white'
+                      : 'cursor-not-allowed border-white/5 text-zinc-600'
+                  }`}
                 >
-                  {sec}s
+                  {isMerging ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Combine className="h-4 w-4" />}
+                  Merge approved clips
                 </button>
-              )
-            })}
-          </div>
-        </div>
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-zinc-900/80 px-3 py-1.5 text-xs uppercase tracking-[0.18em] text-zinc-400">
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                  {visibleVideos.length} visible cards
+                </div>
+              </div>
+            </div>
 
-        {!isTextToVideo ? (
-          <div className="flex min-h-11 items-center gap-2 sm:min-h-12 sm:gap-3" aria-label="Prompt path">
-            <button
-              className="inline-flex h-11 min-w-12 items-center justify-center gap-2 rounded-md border border-[#2a2d32] bg-black/10 px-3 text-xs font-semibold text-zinc-200/70 transition hover:border-white/20 hover:bg-white/[0.045] sm:h-12 sm:min-w-[3.25rem]"
-              type="button"
-              onClick={() => openFileUpload('Start')}
-            >
-              {startContext}
-              {startUploadCount > 0 ? (
-                <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-300 px-1 text-[10px] text-zinc-950">
-                  {startUploadCount}
-                </span>
-              ) : (
-                <FileUp className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
-              )}
-            </button>
-            <ChevronsRight className="h-4 w-4 shrink-0 text-zinc-600" aria-hidden="true" />
-            <button
-              className="inline-flex h-11 min-w-12 items-center justify-center gap-2 rounded-md border border-[#2a2d32] bg-black/10 px-3 text-xs font-semibold text-zinc-200/70 transition hover:border-white/20 hover:bg-white/[0.045] sm:h-12 sm:min-w-[3.25rem]"
-              type="button"
-              onClick={() => openFileUpload('End')}
-            >
-              {endGoal}
-              {endUploadCount > 0 ? (
-                <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-300 px-1 text-[10px] text-zinc-950">
-                  {endUploadCount}
-                </span>
-              ) : (
-                <FileUp className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
-              )}
-            </button>
-          </div>
-        ) : null}
-
-        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-          <div className="grid gap-3">
-            <label className="sr-only" htmlFor="prompt-input">
-              Prompt
-            </label>
-            <textarea
-              id="prompt-input"
-              ref={promptInputRef}
-              value={promptText}
-              onChange={(event) => setPromptText(event.target.value)}
-              placeholder="What do you want to forge?"
-              rows={1}
-              className="min-h-12 max-h-40 w-full resize-y border-0 bg-transparent text-[15px] leading-6 text-zinc-100 outline-none placeholder:text-zinc-500/70"
-            />
-
-            {uploadedFiles.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {uploadedFiles.map((file) => (
-                  <span
-                    key={file.id}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs text-zinc-300"
-                  >
-                    <Paperclip className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
-                    <span className="max-w-[12rem] truncate">{file.name}</span>
-                    <span className="text-zinc-500">{file.status === 'uploading' ? 'Uploading' : file.target}</span>
-                    {file.status === 'failed' ? <span className="text-rose-200">{file.error}</span> : null}
-                    <button
-                      type="button"
-                      className="grid h-4 w-4 place-items-center rounded-full text-zinc-500 transition hover:text-zinc-100"
-                      aria-label={`Remove ${file.name}`}
-                      onClick={() => removeUploadedFile(file.id)}
-                    >
-                      <X className="h-3 w-3" aria-hidden="true" />
-                    </button>
-                  </span>
-                ))}
+            {mergeProgress > 0 && isMerging ? (
+              <div className="mt-4 rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+                Merging video stack… {mergeProgress}%
               </div>
             ) : null}
 
-            {composerError ? (
-              <p className="text-xs leading-5 text-rose-300">{composerError}</p>
-            ) : blockedReason && hasComposerInput ? (
-              <p className="text-xs leading-5 text-zinc-500">{blockedReason}</p>
-            ) : null}
-          </div>
-
-          <div className="flex items-center justify-between gap-2 sm:justify-end">
-            <span className="inline-flex h-10 min-w-32 items-center justify-center rounded-full border border-[#2a2d32] bg-black/20 px-4 text-sm font-semibold text-zinc-200/80">
-              Prompt
-            </span>
-
-            <button
-              className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-zinc-100 text-zinc-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
-              type="submit"
-              disabled={isSubmitting || hasUploadingFiles}
-              aria-label="Generate video"
-            >
-              {isSubmitting ? (
-                <LoaderCircle className="h-5 w-5 animate-spin stroke-[2.2]" aria-hidden="true" />
+            <div className="mt-5 grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+              {visibleVideos.length === 0 ? (
+                <div className="col-span-full rounded-[26px] border border-dashed border-white/10 bg-zinc-900/55 px-6 py-12 text-center text-sm text-zinc-500">
+                  Your clips will appear here once you start rendering. Approved items stay easy to spot, and completed videos can be merged when you are ready.
+                </div>
               ) : (
-                <ArrowRight className="h-5 w-5 stroke-[2.2]" aria-hidden="true" />
+                visibleVideos.map((video) => {
+                  const status = normalizeStatus(video.status)
+                  const isActive = previewVideoId === video.id
+                  const isApproved = approvedIds.has(video.id)
+
+                  return (
+                    <div
+                      key={video.id}
+                      className={`group flex h-full flex-col overflow-hidden rounded-[26px] border bg-zinc-900/78 transition ${
+                        isActive
+                          ? 'border-emerald-400/55 shadow-[0_22px_45px_rgba(16,185,129,0.14)]'
+                          : 'border-white/10 hover:border-white/20'
+                      } ${isApproved ? 'ring-1 ring-emerald-400/25' : ''}`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => startPreviewVideo(video.id)}
+                        className="flex flex-1 flex-col text-left"
+                      >
+                        <div className="relative aspect-video overflow-hidden bg-black">
+                          {video.video?.storage_path ? (
+                            <video
+                              src={video.video.storage_path}
+                              muted
+                              playsInline
+                              className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.16),transparent_60%)] text-zinc-500">
+                              {status === 'failed' ? (
+                                <X className="h-6 w-6" />
+                              ) : (
+                                <LoaderCircle className="h-6 w-6 animate-spin" />
+                              )}
+                            </div>
+                          )}
+                          <div className="absolute inset-x-0 top-0 flex items-center justify-between px-4 py-3">
+                            <span className={`inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/45 px-3 py-1 text-xs uppercase tracking-[0.18em] backdrop-blur ${status === 'completed' ? 'text-emerald-200' : status === 'failed' ? 'text-rose-200' : 'text-zinc-300'}`}>
+                              <span className={`h-2 w-2 rounded-full ${getStatusDotClassName(video.status)}`} />
+                              {formatStatusLabel(video.status)}
+                            </span>
+                            {isApproved ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/85 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-black">
+                                <BookmarkCheck className="h-3 w-3" />
+                                Approved
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="flex flex-1 flex-col gap-4 p-4">
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium leading-6 text-white line-clamp-2">
+                              {stripAttachedFilesBlock(video.input_prompt) || 'Untitled render'}
+                            </p>
+                            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-zinc-500">
+                              <span>{formatCreatedAt(video.created_at)}</span>
+                              <span className="text-zinc-700">/</span>
+                              <span>{video.model_key ?? 'Pending model'}</span>
+                              {(() => {
+                                const p = getJobProgressPercent(video)
+                                return (typeof p === 'number' && !isTerminalStatus(video.status)) ? (
+                                  <>
+                                    <span className="text-zinc-700">/</span>
+                                    <span className="text-emerald-200">{p}%</span>
+                                  </>
+                                ) : null
+                              })()}
+                            </div>
+                          </div>
+
+                          <div className="mt-auto flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2 text-xs text-zinc-500">
+                              <ChevronsRight className="h-4 w-4" />
+                              {video.video?.storage_path ? 'Preview ready' : 'Still processing'}
+                            </div>
+                            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-1 text-xs uppercase tracking-[0.16em] text-zinc-300">
+                              {status === 'completed' ? 'Open preview' : 'Tracking'}
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                  )
+                })
               )}
-            </button>
+            </div>
           </div>
-        </div>
-      </form>
-    </section>
+        </section>
+      </div>
+    </div>
   )
 }

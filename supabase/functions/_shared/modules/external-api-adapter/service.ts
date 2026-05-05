@@ -157,18 +157,30 @@ async function startWanI2V(
   input: GenerationStartInput,
   apiKey: string,
 ): Promise<GenerationStartResult> {
-  if (!input.firstFrameUrl || !input.lastFrameUrl) {
-    throw new Error("Wan i2v requires both firstFrameUrl and lastFrameUrl");
+  if (!input.firstFrameUrl) {
+    throw new Error("Wan i2v requires firstFrameUrl");
   }
 
-  // Per Wan image-to-video generation docs, `input` accepts prompt + image URLs.
-  // `parameters` carries render settings like resolution/duration.
+  // Wan 2.7 accepts either:
+  // - first_frame
+  // - first_frame + last_frame
+  // using the same image-to-video endpoint.
+  const media = [
+    {
+      type: "first_frame",
+      url: input.firstFrameUrl,
+    },
+    ...(input.lastFrameUrl ? [{
+      type: "last_frame",
+      url: input.lastFrameUrl,
+    }] : []),
+  ];
+
   const payload = {
     model: resolvedModel,
     input: {
       prompt: sanitizePrompt(input.prompt),
-      first_frame_url: input.firstFrameUrl,
-      last_frame_url: input.lastFrameUrl,
+      media,
     },
     parameters: {
       resolution: "720P",
