@@ -1,31 +1,31 @@
 project_id = "sacxoanuyetjfrfllkzx"
 
 [functions.video-proxy]
-verify_jwt = false
+verify_jwt = true
 
 [functions.jobs-delete]
-verify_jwt = false
+verify_jwt = true
 
 [functions.jobs-get]
-verify_jwt = false
+verify_jwt = true
 
 [functions.jobs-list]
-verify_jwt = false
+verify_jwt = true
 
 [functions.jobs-create]
-verify_jwt = false
+verify_jwt = true
 
 [functions.me]
-verify_jwt = false
+verify_jwt = true
 
 [functions.usage-credits]
-verify_jwt = false
+verify_jwt = true
 
 [functions.videos-list]
-verify_jwt = false
+verify_jwt = true
 
 [functions.ai-gateway-route-preview]
-verify_jwt = false
+verify_jwt = true
 
 [functions.health]
 verify_jwt = false
