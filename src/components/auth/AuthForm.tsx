@@ -49,7 +49,7 @@ export default function AuthForm({ mode }: Props) {
         if (!data.session) {
           setNeedsConfirm(true);
           setInfo(
-            "Account created. Please check your inbox to verify your email before signing in. / حساب ساخته شد. لطفاً برای فعال‌سازی، ایمیل خود را بررسی کنید.",
+            "Account created. Please check your inbox to verify your email before signing in.",
           );
           return;
         }
