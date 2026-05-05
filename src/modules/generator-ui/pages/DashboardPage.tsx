@@ -1498,15 +1498,20 @@ export default function DashboardPage() {
                       <button
                         type="button"
                         onClick={() => startPreviewVideo(video.id)}
-                        className="block w-full overflow-hidden rounded-lg bg-black"
+                        className="group/play relative block w-full overflow-hidden rounded-lg bg-black"
                       >
                         <video
                           src={video.video!.storage_path}
                           muted
                           playsInline
-                          controls
+                          preload="metadata"
                           className="aspect-video w-full bg-black object-contain"
                         />
+                        <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/0 transition group-hover/play:bg-black/30">
+                          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-black opacity-0 shadow-lg transition group-hover/play:opacity-100">
+                            <svg viewBox="0 0 24 24" className="h-4 w-4 translate-x-[1px] fill-current"><path d="M8 5v14l11-7z" /></svg>
+                          </span>
+                        </span>
                       </button>
 
                       <div className="mt-2 flex items-start justify-between gap-2 px-1">
