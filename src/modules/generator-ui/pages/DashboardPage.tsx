@@ -4,46 +4,17 @@ import {
   BookmarkCheck,
   BookmarkPlus,
   ChevronsRight,
-  Clapperboard,
-  Coins,
-  Combine,
-  Download,
   FileUp,
-  Film,
-  Hammer,
   History,
   LayoutGrid,
-  Library,
   LoaderCircle,
-  LogOut,
   Paperclip,
   Pencil,
   Plus,
   RotateCcw,
-  Sparkles,
   Trash2,
-  UserRound,
-  X
+  X,
 } from 'lucide-react'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 
 import { ApiError } from '@/core/api/client'
 import { useAuth } from '@/core/auth/AuthProvider'
@@ -1181,630 +1152,366 @@ export default function DashboardPage() {
         onChange={handleFileInputChange}
       />
       {showWelcome && <WelcomeVideoOverlay onClose={dismissWelcome} />}
-      <div className="mx-auto flex min-h-screen w-full max-w-[1800px] flex-col gap-6 px-4 py-6 md:px-6 xl:flex-row">
-        <aside className="w-full rounded-[28px] border border-white/10 bg-zinc-950/80 p-5 shadow-[0_28px_110px_rgba(0,0,0,0.45)] xl:sticky xl:top-6 xl:h-[calc(100vh-3rem)] xl:max-h-[calc(100vh-3rem)] xl:w-[18rem] xl:flex-none xl:overflow-hidden">
-          <div className="flex h-full flex-col gap-5">
-            <div className="space-y-2">
-              <p className="text-xs uppercase tracking-[0.26em] text-zinc-500">Prompt Forge</p>
-              <h1 className="text-2xl font-semibold tracking-tight text-white">Build your clip narrative</h1>
-              <p className="max-w-xs text-sm leading-6 text-zinc-400">
-                Shape a motion prompt, seed it with frames, and keep only the clips worth carrying forward.
-              </p>
-            </div>
-
-            <div className="space-y-3 rounded-[22px] border border-white/10 bg-zinc-900/90 p-4">
-              <div className="flex items-center gap-3 text-sm text-zinc-200">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-800 text-zinc-100">
-                  <UserRound className="h-4 w-4" />
-                </div>
-                <div className="space-y-1">
-                  <p className="font-medium text-white">{profile?.email ?? session?.user?.email ?? 'Guest builder'}</p>
-                  <p className="text-xs text-zinc-500">{profile?.role === 'admin' ? 'Administrator' : 'Creator workspace'}</p>
-                </div>
-              </div>
-              <div className="flex items-center justify-between rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
-                <span className="flex items-center gap-2 font-medium">
-                  <Coins className="h-4 w-4" />
-                  Credits available
-                </span>
-                <span className="text-lg font-semibold text-white">{profile?.credits_balance ?? 0}</span>
-              </div>
-            </div>
-
-            <div className="grid gap-2 text-sm text-zinc-300 sm:grid-cols-3 xl:grid-cols-1">
-              {[
-                {
-                  icon: Hammer,
-                  label: 'Start Context',
-                  value: startContext,
-                  actionLabel: 'Set Start',
-                  onAction: () => triggerFilePicker('Start')
-                },
-                {
-                  icon: ArrowRight,
-                  label: 'End Goal',
-                  value: endGoal,
-                  actionLabel: 'Set End',
-                  onAction: () => triggerFilePicker('End')
-                },
-                {
-                  icon: Sparkles,
-                  label: 'Video Generation',
-                  value: generationMode === 'image-to-video' ? 'Image-to-video' : 'Text-to-video',
-                  actionLabel: 'Prompt Only',
-                  onAction: focusPromptInput
-                }
-              ].map(({ icon: Icon, label, value, actionLabel, onAction }) => (
-                <div
-                  key={label}
-                  className="group relative overflow-hidden rounded-[22px] border border-white/10 bg-zinc-900/85 p-4 transition hover:border-emerald-400/40 hover:bg-zinc-900"
-                >
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.14),transparent_55%)] opacity-0 transition group-hover:opacity-100" />
-                  <div className="relative flex h-full flex-col gap-4">
-                    <div className="flex items-center justify-between text-xs uppercase tracking-[0.22em] text-zinc-500">
-                      <span>{label}</span>
-                      <Icon className="h-4 w-4 text-zinc-600" />
-                    </div>
-                    <p className="text-lg font-medium tracking-tight text-white">{value}</p>
-                    <button
-                      type="button"
-                      onClick={onAction}
-                      className="inline-flex items-center gap-2 self-start rounded-full border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-emerald-400/40 hover:text-emerald-200"
-                    >
-                      {actionLabel}
-                      <Plus className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="space-y-3 rounded-[24px] border border-white/10 bg-zinc-950/90 p-4">
-              <div className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-zinc-500">
-                <Library className="h-4 w-4" />
-                Video Library
-              </div>
-              <div className="max-h-64 space-y-3 overflow-y-auto pr-1 xl:max-h-none xl:flex-1">
-                {isLibraryLoading ? (
-                  <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-zinc-900/70 px-3 py-4 text-sm text-zinc-400">
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                    Loading saved clips...
-                  </div>
-                ) : approvedIds.size === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-white/10 bg-zinc-900/60 px-4 py-6 text-sm leading-6 text-zinc-500">
-                    Approve finished renders to keep them in this reusable stack.
-                  </div>
-                ) : (
-                  visibleVideos
-                    .filter((video) => approvedIds.has(video.id))
-                    .slice(0, 6)
-                    .map((video) => {
-                      const isActive = previewVideoId === video.id
-                      return (
-                        <button
-                          key={`approved-${video.id}`}
-                          type="button"
-                          onClick={() => startPreviewVideo(video.id)}
-                          className={`w-full rounded-2xl border px-3 py-3 text-left transition ${
-                            isActive
-                              ? 'border-emerald-400/60 bg-emerald-500/10 text-white'
-                              : 'border-white/10 bg-zinc-900/70 text-zinc-300 hover:border-white/20 hover:text-white'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-medium text-white line-clamp-1">{video.input_prompt || 'Approved render'}</p>
-                              <p className="text-xs text-zinc-500">{formatCreatedAt(video.created_at)}</p>
-                            </div>
-                            <BookmarkCheck className="h-4 w-4" />
-                          </div>
-                        </button>
-                      )
-                    })
-                )}
-              </div>
-              {approvedIds.size > 0 ? (
-                <button
-                  type="button"
-                  onClick={() => setIsApprovedPanelOpen((current) => !current)}
-                  className="inline-flex items-center gap-2 text-sm font-medium text-zinc-400 transition hover:text-white"
-                >
-                  <History className="h-4 w-4" />
-                  {isApprovedPanelOpen ? 'Hide approved stack' : 'Show full approved stack'}
-                </button>
-              ) : null}
-            </div>
-
-            <div className="mt-auto flex flex-wrap items-center gap-3 pt-2 text-sm text-zinc-500">
-              <button
-                type="button"
-                onClick={handleSignOut}
-                className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-zinc-300 transition hover:border-white/20 hover:text-white"
-              >
-                <LogOut className="h-4 w-4" />
-                Sign out
-              </button>
-            </div>
+      {/* Minimal Apple-style stage layout */}
+      <div
+        className="relative min-h-screen w-full overflow-hidden"
+        style={{
+          backgroundImage:
+            'radial-gradient(rgba(255,255,255,0.04) 1px, transparent 1px)',
+          backgroundSize: '28px 28px',
+        }}
+      >
+        {/* Top bar */}
+        <header className="absolute inset-x-0 top-0 z-30 flex items-center justify-between px-5 py-4">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSignOut}
+              title="Sign out"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-zinc-900/60 text-zinc-300 transition hover:border-white/20 hover:text-white"
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </button>
           </div>
-        </aside>
 
-        <section className="flex min-w-0 flex-1 flex-col gap-6">
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-            <div className="flex min-h-[420px] flex-col rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(24,24,27,0.92),rgba(6,6,7,0.98))] p-6 shadow-[0_28px_110px_rgba(0,0,0,0.45)]">
-              <div className="flex flex-col gap-5 border-b border-white/10 pb-5 md:flex-row md:items-start md:justify-between">
-                <div className="space-y-3">
-                  <p className="text-xs uppercase tracking-[0.26em] text-zinc-500">Video Workspace</p>
-                  <div className="space-y-2">
-                    <h2 className="text-2xl font-semibold tracking-tight text-white">{emptyStateLabel}</h2>
-                    <p className="max-w-2xl text-sm leading-6 text-zinc-400">
-                      Move from the first visual anchor toward the ending you want, then keep iterating until the sequence feels right.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-400">
-                  <button
-                    type="button"
-                    onClick={resetComposer}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 transition hover:border-white/20 hover:text-white"
-                  >
-                    <RotateCcw className="h-4 w-4" />
-                    Clear inputs
-                  </button>
-                  <button
-                    type="button"
-                    onClick={editAndReusePreviousClip}
-                    disabled={!previewVideo}
-                    className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 transition ${
-                      previewVideo
-                        ? 'border-white/10 text-zinc-300 hover:border-emerald-400/40 hover:text-white'
-                        : 'cursor-not-allowed border-white/5 text-zinc-600'
+          <button
+            type="button"
+            onClick={() => {
+              resetComposer()
+              setPreviewVideoId(null)
+            }}
+            className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-zinc-900/70 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.22em] text-zinc-200 backdrop-blur transition hover:border-white/30 hover:text-white"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Start over
+          </button>
+
+          <div className="w-8" />
+        </header>
+
+        {/* Right HISTORY panel */}
+        <aside className="absolute right-4 top-4 z-20 w-[320px] max-h-[calc(100vh-2rem)] overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/80 backdrop-blur shadow-[0_28px_110px_rgba(0,0,0,0.45)]">
+          <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+            <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-zinc-200">
+              <History className="h-3.5 w-3.5" />
+              History
+              <span className="ml-1 rounded-full border border-white/10 bg-zinc-900 px-1.5 py-0.5 text-[10px] tracking-normal text-zinc-300">
+                {visibleVideos.length}
+              </span>
+            </div>
+            <LayoutGrid className="h-4 w-4 text-zinc-500" />
+          </div>
+
+          <div className="flex items-center justify-between px-4 pt-3">
+            <div>
+              <p className="text-xs text-zinc-400">Video renders</p>
+              <p className="text-sm font-medium text-white">Recent outputs</p>
+            </div>
+            <button
+              type="button"
+              onClick={editAndReusePreviousClip}
+              disabled={!previewVideo}
+              title="Continue from last card"
+              className={`inline-flex h-7 w-7 items-center justify-center rounded-md border transition ${
+                previewVideo
+                  ? 'border-white/15 bg-zinc-900 text-zinc-200 hover:border-emerald-400/40 hover:text-white'
+                  : 'cursor-not-allowed border-white/5 text-zinc-600'
+              }`}
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="max-h-[calc(100vh-12rem)] space-y-3 overflow-y-auto p-4">
+            {visibleVideos.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-white/10 bg-zinc-900/40 px-3 py-6 text-center text-xs text-zinc-500">
+                No renders yet.
+              </div>
+            ) : (
+              visibleVideos.map((video, index) => {
+                const isActive = previewVideo?.id === video.id
+                return (
+                  <div
+                    key={video.id}
+                    className={`group relative rounded-xl border bg-zinc-900/70 p-2 transition ${
+                      isActive
+                        ? 'border-emerald-400/60 ring-1 ring-emerald-400/20'
+                        : 'border-white/10 hover:border-white/20'
                     }`}
                   >
-                    <Pencil className="h-4 w-4" />
-                    Edit &amp; reuse
-                  </button>
-                </div>
-              </div>
-
-              <div className="mt-6 flex-1 space-y-5">
-                <div className="grid gap-4 md:grid-cols-2">
-                  {[
-                    { key: 'Start' as const, label: 'Start frame', count: startUploadCount, target: 'Start' as const },
-                    { key: 'End' as const, label: 'End frame', count: endUploadCount, target: 'End' as const }
-                  ].map(({ key, label, count, target }) => (
+                    <div className="absolute left-3 top-3 z-10 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-100">
+                      #{index + 1}
+                    </div>
                     <button
-                      key={key}
                       type="button"
-                      onClick={() => triggerFilePicker(target)}
-                      onDragOver={handleDragOver}
-                      onDragLeave={handleDragLeave}
-                      onDrop={handleFilesDrop}
-                      className={`group relative flex min-h-[176px] flex-col justify-between overflow-hidden rounded-[28px] border border-dashed p-5 text-left transition ${
-                        isDragging
-                          ? 'border-emerald-400/60 bg-emerald-500/10'
-                          : 'border-white/10 bg-zinc-900/65 hover:border-emerald-400/35 hover:bg-zinc-900/85'
-                      }`}
+                      onClick={() => startPreviewVideo(video.id)}
+                      className="block w-full overflow-hidden rounded-lg bg-black"
                     >
-                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.16),transparent_60%)] opacity-0 transition group-hover:opacity-100" />
-                      <div className="relative flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">{label}</p>
-                          <p className="mt-2 text-lg font-medium text-white">Drop an image or browse</p>
-                        </div>
-                        <FileUp className="h-5 w-5 text-zinc-600 transition group-hover:text-emerald-300" />
-                      </div>
-                      <div className="relative flex items-center justify-between gap-3 text-sm text-zinc-400">
-                        <span>{count === 0 ? 'No frame attached yet' : `${count} file${count > 1 ? 's' : ''} attached`}</span>
-                        <span className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-1 text-xs uppercase tracking-[0.18em] text-zinc-300">
-                          {target}
-                          <Plus className="h-3 w-3" />
-                        </span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-
-                {uploadedFiles.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {uploadedFiles.map((file) => (
-                      <div
-                        key={file.id}
-                        className={`inline-flex items-center gap-3 rounded-full border px-4 py-2 text-sm ${
-                          file.status === 'failed'
-                            ? 'border-rose-500/40 bg-rose-500/10 text-rose-100'
-                            : 'border-white/10 bg-zinc-900/75 text-zinc-200'
-                        }`}
-                      >
-                        <span className="font-medium text-white">{file.name}</span>
-                        <span className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-                          {file.status === 'uploading' ? 'Uploading' : file.target}
-                        </span>
-                        {file.status === 'failed' ? <span className="text-xs text-rose-200">{file.error}</span> : null}
-                        <button
-                          type="button"
-                          onClick={() => removeUploadedFile(file.id)}
-                          className="inline-flex items-center justify-center rounded-full border border-white/10 p-1 text-zinc-400 transition hover:border-white/20 hover:text-white"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto]">
-                  <div className="space-y-2">
-                    <label htmlFor="prompt-input" className="text-sm font-medium text-zinc-300">
-                      Prompt
-                    </label>
-                    <textarea
-                      ref={promptInputRef}
-                      id="prompt-input"
-                      value={promptText}
-                      onChange={(event) => setPromptText(event.target.value)}
-                      placeholder="Describe the motion, tone, camera move, or transformation you want from the frame(s)..."
-                      className="h-36 w-full rounded-[26px] border border-white/10 bg-zinc-950/85 px-5 py-4 text-sm leading-6 text-white placeholder:text-zinc-500 focus:border-emerald-400/50 focus:outline-none focus:ring-2 focus:ring-emerald-400/20"
-                    />
-                  </div>
-                  <form
-                    onSubmit={handleSubmit}
-                    className="flex flex-col gap-3 rounded-[26px] border border-white/10 bg-zinc-900/70 p-4 xl:w-[18rem]"
-                  >
-                    <div className="space-y-2">
-                      <p className="text-xs uppercase tracking-[0.24em] text-zinc-500">Generation mode</p>
-                      <div className="grid grid-cols-2 gap-2 rounded-full border border-white/10 bg-zinc-950/70 p-1">
-                        {([
-                          { label: 'Image-to-video', value: 'image-to-video' },
-                          { label: 'Text-to-video', value: 'text-to-video' }
-                        ] as const).map((option) => {
-                          const isSelected = generationMode === option.value
-                          return (
-                            <button
-                              key={option.value}
-                              type="button"
-                              onClick={() => setGenerationMode(option.value)}
-                              className={`rounded-full px-3 py-2 text-xs font-medium transition ${
-                                isSelected
-                                  ? 'bg-emerald-400 text-black shadow-[0_12px_30px_rgba(16,185,129,0.2)]'
-                                  : 'text-zinc-400 hover:text-white'
-                              }`}
-                            >
-                              {option.label}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <p className="text-xs uppercase tracking-[0.24em] text-zinc-500">Duration</p>
-                      <div className="grid grid-cols-2 gap-2 rounded-full border border-white/10 bg-zinc-950/70 p-1">
-                        {([5, 10] as const).map((seconds) => {
-                          const isSelected = durationSeconds === seconds
-                          return (
-                            <button
-                              key={seconds}
-                              type="button"
-                              onClick={() => setDurationSeconds(seconds)}
-                              className={`rounded-full px-3 py-2 text-xs font-medium transition ${
-                                isSelected
-                                  ? 'bg-white text-black shadow-[0_12px_30px_rgba(255,255,255,0.15)]'
-                                  : 'text-zinc-400 hover:text-white'
-                              }`}
-                            >
-                              {seconds}s
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-1 items-end">
-                      <button
-                        type="submit"
-                        disabled={hasUploadingFiles || isSubmitting}
-                        className={`w-full rounded-[22px] px-4 py-3 text-sm font-semibold transition ${
-                          hasUploadingFiles || isSubmitting
-                            ? 'cursor-not-allowed bg-zinc-800 text-zinc-500'
-                            : 'bg-white text-black shadow-[0_18px_40px_rgba(255,255,255,0.16)] hover:-translate-y-0.5 hover:bg-emerald-300'
-                        }`}
-                      >
-                        {isSubmitting ? 'Rendering…' : 'Render video'}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-
-                {composerError ? (
-                  <p className="text-sm text-rose-300">{composerError}</p>
-                ) : blockedReason && hasComposerInput ? (
-                  <p className="text-xs leading-5 text-zinc-500">{blockedReason}</p>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="flex min-h-[420px] flex-col rounded-[30px] border border-white/10 bg-zinc-950/92 p-5 shadow-[0_28px_110px_rgba(0,0,0,0.45)]">
-              <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-4">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.24em] text-zinc-500">Preview</p>
-                  <h2 className="mt-2 text-xl font-semibold tracking-tight text-white">
-                    {previewVideo?.input_prompt ? 'Latest selected render' : 'Nothing rendered yet'}
-                  </h2>
-                </div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-zinc-900/80 px-3 py-1.5 text-xs uppercase tracking-[0.18em] text-zinc-300">
-                  <Film className="h-3.5 w-3.5" />
-                  {previewVideo ? formatStatusLabel(previewVideo.status) : 'Idle'}
-                </div>
-              </div>
-
-              {videoColumnMessage ? (
-                <div className="mt-4 rounded-2xl border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
-                  {videoColumnMessage}
-                </div>
-              ) : null}
-
-              <div className="mt-5 flex-1">
-                {previewVideo ? (
-                  <div className="flex h-full flex-col gap-4">
-                    <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-black">
-                      {previewVideo.video?.storage_path ? (
+                      {video.video?.storage_path ? (
                         <video
-                          key={previewVideo.video.storage_path}
-                          src={previewVideo.video.storage_path}
-                          controls
-                          autoPlay
+                          src={video.video.storage_path}
+                          muted
                           playsInline
+                          controls
                           className="aspect-video w-full bg-black object-contain"
                         />
                       ) : (
-                        <div className="flex aspect-video items-center justify-center bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.12),transparent_60%)] text-sm text-zinc-500">
-                          <div className="flex flex-col items-center gap-3">
-                            <LoaderCircle className="h-6 w-6 animate-spin text-emerald-300" />
-                            {normalizeStatus(previewVideo.status) === 'failed'
-                              ? 'Render failed before a preview was created.'
-                              : 'This render is still being forged.'}
-                          </div>
+                        <div className="flex aspect-video items-center justify-center text-zinc-500">
+                          {normalizeStatus(video.status) === 'failed' ? (
+                            <X className="h-5 w-5" />
+                          ) : (
+                            <LoaderCircle className="h-5 w-5 animate-spin" />
+                          )}
                         </div>
                       )}
+                    </button>
+
+                    <div className="mt-2 flex items-start justify-between gap-2 px-1">
+                      <p className="line-clamp-2 flex-1 text-xs leading-5 text-zinc-200">
+                        {stripAttachedFilesBlock(video.input_prompt) || 'Untitled render'}
+                      </p>
+                      <div className="flex shrink-0 items-center gap-1 text-zinc-400">
+                        <button
+                          type="button"
+                          onClick={() => toggleApproved(video.id)}
+                          title={approvedIds.has(video.id) ? 'Unapprove' : 'Approve'}
+                          className="rounded p-1 transition hover:bg-white/5 hover:text-white"
+                        >
+                          {approvedIds.has(video.id) ? (
+                            <BookmarkCheck className="h-3.5 w-3.5" />
+                          ) : (
+                            <BookmarkPlus className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={editAndReusePreviousClip}
+                          title="Edit & continue"
+                          className="rounded p-1 transition hover:bg-white/5 hover:text-white"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteCard(video.id)}
+                          title="Delete"
+                          className="rounded p-1 transition hover:bg-rose-500/10 hover:text-rose-300"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="flex flex-col gap-3 rounded-[24px] border border-white/10 bg-zinc-900/78 p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 text-sm text-zinc-400">
-                            <span className={`h-2.5 w-2.5 rounded-full ${getStatusDotClassName(previewVideo.status)}`} />
-                            {formatStatusLabel(previewVideo.status)}
-                          </div>
-                          <p className="text-base font-medium leading-7 text-white">
-                            {stripAttachedFilesBlock(previewVideo.input_prompt) || 'Untitled render'}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => toggleApproved(previewVideo.id)}
-                            className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition ${
-                              approvedIds.has(previewVideo.id)
-                                ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-100'
-                                : 'border-white/10 text-zinc-300 hover:border-white/20 hover:text-white'
-                            }`}
-                          >
-                            {approvedIds.has(previewVideo.id) ? <BookmarkCheck className="h-4 w-4" /> : <BookmarkPlus className="h-4 w-4" />}
-                            {approvedIds.has(previewVideo.id) ? 'Approved' : 'Approve'}
-                          </button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <button
-                                type="button"
-                                className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:border-rose-400/40 hover:text-rose-200"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                                Delete
-                              </button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent className="border-white/10 bg-zinc-950 text-white">
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete this render?</AlertDialogTitle>
-                                <AlertDialogDescription className="text-zinc-400">
-                                  This removes the card from your history and attempts to purge its stored video file.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel className="border-white/10 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-white">Cancel</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => deleteCard(previewVideo.id)}
-                                  className="bg-rose-500 text-white hover:bg-rose-400"
-                                >
-                                  Delete
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-3 text-xs uppercase tracking-[0.16em] text-zinc-500">
-                        <span className="rounded-full border border-white/10 px-3 py-1">{previewVideo.model_key ?? 'Model pending'}</span>
-                        <span className="rounded-full border border-white/10 px-3 py-1">{formatCreatedAt(previewVideo.created_at)}</span>
-                        {(() => {
-                          const p = getJobProgressPercent(previewVideo)
-                          return (typeof p === 'number' && !isTerminalStatus(previewVideo.status)) ? (
-                            <span className="rounded-full border border-emerald-400/20 px-3 py-1 text-emerald-200">{p}%</span>
-                          ) : null
-                        })()}
-                      </div>
-
-                      {/* One-click visual edit helpers for cases where the user only
-                          has a Start or End image and wants to merge that still with
-                          the active preview without creating a new render. */}
-                      {(readyStartFrame?.url || readyEndFrame?.url) && previewVideo.video?.storage_path ? (
-                        <div className="flex flex-wrap items-center gap-2 pt-1">
-                          {readyStartFrame?.url ? (
-                            <button
-                              type="button"
-                              onClick={prependStartFrameToActiveClip}
-                              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:border-emerald-400/40 hover:text-white"
-                            >
-                              <ArrowRight className="h-4 w-4 rotate-180" />
-                              Prepend Start
-                            </button>
-                          ) : null}
-                          {readyEndFrame?.url ? (
-                            <button
-                              type="button"
-                              onClick={appendEndFrameToActiveClip}
-                              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:border-emerald-400/40 hover:text-white"
-                            >
-                              <ArrowRight className="h-4 w-4" />
-                              Append End
-                            </button>
-                          ) : null}
-                        </div>
-                      ) : null}
+                    <div className="mt-1.5 flex items-center justify-between px-1 text-[10px] text-zinc-500">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(video.status)}`} />
+                        {formatStatusLabel(video.status)}
+                      </span>
+                      <span>{formatCreatedAt(video.created_at)}</span>
                     </div>
                   </div>
-                ) : (
-                  <div className="flex h-full min-h-[18rem] flex-col items-center justify-center rounded-[28px] border border-dashed border-white/10 bg-zinc-900/60 px-8 text-center">
-                    <div className="flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-zinc-950 text-zinc-500">
-                      <Clapperboard className="h-7 w-7" />
-                    </div>
-                    <h3 className="mt-5 text-lg font-medium text-white">Render output lands here</h3>
-                    <p className="mt-2 max-w-md text-sm leading-6 text-zinc-500">
-                      Upload frame references, shape the motion with a prompt, and the latest result will become your preview surface.
-                    </p>
-                  </div>
-                )}
+                )
+              })
+            )}
+          </div>
+        </aside>
+
+        {/* Center stage: video + caption */}
+        <main className="flex min-h-screen w-full items-center justify-center px-6 pb-56 pt-24">
+          <div className="w-full max-w-[1100px] pr-[340px]">
+            <div className="overflow-hidden rounded-xl bg-black">
+              {previewVideo?.video?.storage_path ? (
+                <video
+                  key={previewVideo.video.storage_path}
+                  src={previewVideo.video.storage_path}
+                  controls
+                  autoPlay
+                  playsInline
+                  className="aspect-video w-full bg-black object-contain"
+                />
+              ) : (
+                <div className="flex aspect-video w-full items-center justify-center bg-black text-zinc-700">
+                  {previewVideo && normalizeStatus(previewVideo.status) !== 'failed' ? (
+                    <LoaderCircle className="h-8 w-8 animate-spin" />
+                  ) : null}
+                </div>
+              )}
+            </div>
+
+            {previewVideo ? (
+              <div className="mt-3 flex items-center justify-between gap-4 px-1 text-xs text-zinc-400">
+                <p className="line-clamp-1 flex-1">
+                  {previewVideo.input_prompt || 'Untitled render'}
+                </p>
+                <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-zinc-900/70 px-2.5 py-1">
+                  <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(previewVideo.status)}`} />
+                  {formatStatusLabel(previewVideo.status)}
+                </span>
+              </div>
+            ) : null}
+          </div>
+        </main>
+
+        {/* Floating bottom composer */}
+        <div className="absolute inset-x-0 bottom-6 z-20 flex justify-center px-6 pr-[360px]">
+          <form
+            onSubmit={handleSubmit}
+            className="w-full max-w-[640px] rounded-[28px] border border-white/10 bg-zinc-900/85 p-3 shadow-[0_28px_80px_rgba(0,0,0,0.55)] backdrop-blur"
+          >
+            {/* Row 1: mode + duration */}
+            <div className="flex items-center justify-between gap-3 px-2 pt-1">
+              <div className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-zinc-950/70 p-0.5 text-[11px]">
+                {([
+                  { label: 'Text to Video', value: 'text-to-video' },
+                  { label: 'Image to Video', value: 'image-to-video' },
+                ] as const).map((option) => {
+                  const isSelected = generationMode === option.value
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setGenerationMode(option.value)}
+                      className={`rounded-full px-3 py-1.5 transition ${
+                        isSelected ? 'bg-white text-black' : 'text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-zinc-950/70 p-0.5 text-[11px]">
+                {([5, 10] as const).map((seconds) => {
+                  const isSelected = durationSeconds === seconds
+                  return (
+                    <button
+                      key={seconds}
+                      type="button"
+                      onClick={() => setDurationSeconds(seconds)}
+                      className={`rounded-full px-3 py-1.5 transition ${
+                        isSelected ? 'bg-white text-black' : 'text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      {seconds}s
+                    </button>
+                  )
+                })}
               </div>
             </div>
-          </div>
 
-          <div className="rounded-[30px] border border-white/10 bg-zinc-950/90 p-5 shadow-[0_28px_110px_rgba(0,0,0,0.45)]">
-            <div className="flex flex-col gap-4 border-b border-white/10 pb-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-[0.24em] text-zinc-500">Render history</p>
-                <h2 className="mt-2 text-xl font-semibold tracking-tight text-white">Iterate, merge, and choose the winners</h2>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
+            {/* Row 2: Start » End */}
+            {!isTextToVideo ? (
+              <div className="mt-3 flex items-center justify-center gap-2 px-2">
                 <button
                   type="button"
-                  onClick={mergeVisibleVideos}
-                  disabled={completedSourceVideos.length < 2 || isMerging}
-                  className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition ${
-                    completedSourceVideos.length >= 2 && !isMerging
-                      ? 'border-white/10 text-zinc-200 hover:border-emerald-400/40 hover:text-white'
-                      : 'cursor-not-allowed border-white/5 text-zinc-600'
+                  onClick={() => triggerFilePicker('Start')}
+                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition ${
+                    readyStartFrame
+                      ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-100'
+                      : 'border-white/10 bg-zinc-950/60 text-zinc-300 hover:border-white/20 hover:text-white'
                   }`}
                 >
-                  {isMerging ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Combine className="h-4 w-4" />}
-                  Merge approved clips
+                  Start
+                  <FileUp className="h-3.5 w-3.5" />
                 </button>
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-zinc-900/80 px-3 py-1.5 text-xs uppercase tracking-[0.18em] text-zinc-400">
-                  <LayoutGrid className="h-3.5 w-3.5" />
-                  {visibleVideos.length} visible cards
-                </div>
-              </div>
-            </div>
-
-            {mergeProgress > 0 && isMerging ? (
-              <div className="mt-4 rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
-                Merging video stack… {mergeProgress}%
+                <ChevronsRight className="h-4 w-4 text-zinc-600" />
+                <button
+                  type="button"
+                  onClick={() => triggerFilePicker('End')}
+                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition ${
+                    readyEndFrame
+                      ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-100'
+                      : 'border-white/10 bg-zinc-950/60 text-zinc-300 hover:border-white/20 hover:text-white'
+                  }`}
+                >
+                  End
+                  <FileUp className="h-3.5 w-3.5" />
+                </button>
               </div>
             ) : null}
 
-            <div className="mt-5 grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-              {visibleVideos.length === 0 ? (
-                <div className="col-span-full rounded-[26px] border border-dashed border-white/10 bg-zinc-900/55 px-6 py-12 text-center text-sm text-zinc-500">
-                  Your clips will appear here once you start rendering. Approved items stay easy to spot, and completed videos can be merged when you are ready.
-                </div>
-              ) : (
-                visibleVideos.map((video) => {
-                  const status = normalizeStatus(video.status)
-                  const isActive = previewVideoId === video.id
-                  const isApproved = approvedIds.has(video.id)
-
-                  return (
-                    <div
-                      key={video.id}
-                      className={`group flex h-full flex-col overflow-hidden rounded-[26px] border bg-zinc-900/78 transition ${
-                        isActive
-                          ? 'border-emerald-400/55 shadow-[0_22px_45px_rgba(16,185,129,0.14)]'
-                          : 'border-white/10 hover:border-white/20'
-                      } ${isApproved ? 'ring-1 ring-emerald-400/25' : ''}`}
+            {/* Attached file chips */}
+            {uploadedFiles.length > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-1.5 px-2">
+                {uploadedFiles.map((file) => (
+                  <span
+                    key={file.id}
+                    className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] ${
+                      file.status === 'failed'
+                        ? 'border-rose-500/40 bg-rose-500/10 text-rose-100'
+                        : 'border-white/10 bg-zinc-950/70 text-zinc-300'
+                    }`}
+                  >
+                    <Paperclip className="h-3 w-3" />
+                    <span className="max-w-[140px] truncate">{file.name}</span>
+                    <span className="text-zinc-500">{file.target}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeUploadedFile(file.id)}
+                      className="text-zinc-500 hover:text-white"
                     >
-                      <button
-                        type="button"
-                        onClick={() => startPreviewVideo(video.id)}
-                        className="flex flex-1 flex-col text-left"
-                      >
-                        <div className="relative aspect-video overflow-hidden bg-black">
-                          {video.video?.storage_path ? (
-                            <video
-                              src={video.video.storage_path}
-                              muted
-                              playsInline
-                              className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
-                            />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.16),transparent_60%)] text-zinc-500">
-                              {status === 'failed' ? (
-                                <X className="h-6 w-6" />
-                              ) : (
-                                <LoaderCircle className="h-6 w-6 animate-spin" />
-                              )}
-                            </div>
-                          )}
-                          <div className="absolute inset-x-0 top-0 flex items-center justify-between px-4 py-3">
-                            <span className={`inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/45 px-3 py-1 text-xs uppercase tracking-[0.18em] backdrop-blur ${status === 'completed' ? 'text-emerald-200' : status === 'failed' ? 'text-rose-200' : 'text-zinc-300'}`}>
-                              <span className={`h-2 w-2 rounded-full ${getStatusDotClassName(video.status)}`} />
-                              {formatStatusLabel(video.status)}
-                            </span>
-                            {isApproved ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/85 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-black">
-                                <BookmarkCheck className="h-3 w-3" />
-                                Approved
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
-                        <div className="flex flex-1 flex-col gap-4 p-4">
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium leading-6 text-white line-clamp-2">
-                              {stripAttachedFilesBlock(video.input_prompt) || 'Untitled render'}
-                            </p>
-                            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-zinc-500">
-                              <span>{formatCreatedAt(video.created_at)}</span>
-                              <span className="text-zinc-700">/</span>
-                              <span>{video.model_key ?? 'Pending model'}</span>
-                              {(() => {
-                                const p = getJobProgressPercent(video)
-                                return (typeof p === 'number' && !isTerminalStatus(video.status)) ? (
-                                  <>
-                                    <span className="text-zinc-700">/</span>
-                                    <span className="text-emerald-200">{p}%</span>
-                                  </>
-                                ) : null
-                              })()}
-                            </div>
-                          </div>
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
 
-                          <div className="mt-auto flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2 text-xs text-zinc-500">
-                              <ChevronsRight className="h-4 w-4" />
-                              {video.video?.storage_path ? 'Preview ready' : 'Still processing'}
-                            </div>
-                            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-1 text-xs uppercase tracking-[0.16em] text-zinc-300">
-                              {status === 'completed' ? 'Open preview' : 'Tracking'}
-                            </span>
-                          </div>
-                        </div>
-                      </button>
-                    </div>
-                  )
-                })
-              )}
+            {/* Row 3: prompt + submit */}
+            <div className="mt-3 flex items-end gap-2 rounded-2xl border border-white/10 bg-zinc-950/70 px-3 py-2">
+              <textarea
+                ref={promptInputRef}
+                value={promptText}
+                onChange={(e) => setPromptText(e.target.value)}
+                placeholder="What do you want to forge?"
+                rows={1}
+                className="min-h-[36px] flex-1 resize-none bg-transparent text-sm text-white placeholder:text-zinc-500 focus:outline-none"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    ;(e.currentTarget.form as HTMLFormElement | null)?.requestSubmit()
+                  }
+                }}
+              />
+              <button
+                type="submit"
+                disabled={!canSubmit}
+                className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition ${
+                  canSubmit
+                    ? 'bg-white text-black hover:bg-emerald-300'
+                    : 'cursor-not-allowed bg-zinc-800 text-zinc-600'
+                }`}
+              >
+                {isSubmitting ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ArrowRight className="h-4 w-4" />
+                )}
+              </button>
             </div>
+
+            {composerError ? (
+              <p className="mt-2 px-2 text-[11px] text-rose-300">{composerError}</p>
+            ) : blockedReason && hasComposerInput ? (
+              <p className="mt-2 px-2 text-[11px] text-zinc-500">{blockedReason}</p>
+            ) : null}
+          </form>
+        </div>
+
+        {/* Merge progress chip (top-center, below header) */}
+        {isMerging && mergeProgress > 0 ? (
+          <div className="absolute left-1/2 top-16 z-20 -translate-x-1/2 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-4 py-1.5 text-xs text-emerald-100 backdrop-blur">
+            Merging… {mergeProgress}%
           </div>
-        </section>
+        ) : null}
+
+        {/* Non-blocking column message */}
+        {videoColumnMessage ? (
+          <div className="absolute left-1/2 top-16 z-20 -translate-x-1/2 rounded-full border border-amber-400/30 bg-amber-400/10 px-4 py-1.5 text-xs text-amber-100 backdrop-blur">
+            {videoColumnMessage}
+          </div>
+        ) : null}
       </div>
     </div>
   )
