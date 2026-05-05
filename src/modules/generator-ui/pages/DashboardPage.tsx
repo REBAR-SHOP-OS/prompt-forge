@@ -8,11 +8,14 @@ import {
   History,
   LayoutGrid,
   LoaderCircle,
+  LogOut,
   Paperclip,
   Pencil,
   Plus,
   RotateCcw,
   Trash2,
+  User,
+  Video,
   X,
 } from 'lucide-react'
 
