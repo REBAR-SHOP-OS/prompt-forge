@@ -14,11 +14,7 @@ interface AuthState {
   signOut: () => Promise<void>;
 }
 
-const authContextKey = "__aura_clip_auth_context__";
-
-const AuthContext = (globalThis as typeof globalThis & {
-  [authContextKey]?: ReturnType<typeof createContext<AuthState | undefined>>;
-})[authContextKey] ??= createContext<AuthState | undefined>(undefined);
+const AuthContext = createContext<AuthState | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -76,8 +72,4 @@ export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
-}
-
-export function useOptionalAuth() {
-  return useContext(AuthContext);
 }

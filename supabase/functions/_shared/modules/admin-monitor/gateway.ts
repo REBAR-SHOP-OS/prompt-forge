@@ -6,7 +6,7 @@
 // All admin-monitor edge functions MUST call adminMonitorGateway.handle().
 // Direct imports of ./service from outside this folder are deprecated.
 
-import { errorResponse, jsonResponse, methodNotAllowed, startRequest } from "../../core/http.ts";
+import { errorResponse, jsonResponse, startRequest } from "../../core/http.ts";
 import { logError, writeApiRequestLog } from "../../core/observability.ts";
 import { getServiceClient } from "../../core/supabase.ts";
 import { adminMonitor } from "./service.ts";
@@ -38,9 +38,6 @@ export const adminMonitorGateway = {
     const ctx = startRequest(req, `/${ADMIN_MONITOR_CONTRACT.domain}/${operation}`);
     const svc = getServiceClient();
     try {
-      if (req.method !== "GET" && req.method !== "HEAD") {
-        return methodNotAllowed(req, ["GET", "HEAD"], ctx.requestId);
-      }
       const out = await dispatch({ req, operation });
       await writeApiRequestLog(svc, {
         ...ctx,
@@ -50,13 +47,13 @@ export const adminMonitorGateway = {
       });
       if (out.status >= 400) {
         const body = out.body as { error?: { code: string; message: string } };
-        return errorResponse(req, body.error?.code ?? "ERROR", body.error?.message ?? "Error", out.status, ctx.requestId);
+        return errorResponse(body.error?.code ?? "ERROR", body.error?.message ?? "Error", out.status, ctx.requestId);
       }
-      return jsonResponse(req, { ...(out.body as object), requestId: ctx.requestId }, out.status);
+      return jsonResponse({ ...(out.body as object), requestId: ctx.requestId }, out.status);
     } catch (e) {
       logError("admin-monitor gateway unhandled", { error: (e as Error).message, operation });
       await writeApiRequestLog(svc, { ...ctx, statusCode: 500, latencyMs: Date.now() - ctx.startedAt, errorCode: "INTERNAL" });
-      return errorResponse(req, "INTERNAL", "Internal error", 500, ctx.requestId);
+      return errorResponse("INTERNAL", "Internal error", 500, ctx.requestId);
     }
   },
 };

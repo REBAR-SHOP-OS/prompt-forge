@@ -3,7 +3,7 @@
 // Public contract (v1):
 //   - getMyBalance(): { credits_balance } — auth required; RLS-enforced read.
 
-import { errorResponse, jsonResponse, methodNotAllowed, startRequest } from "../../core/http.ts";
+import { errorResponse, jsonResponse, startRequest } from "../../core/http.ts";
 import { authenticate } from "../../core/auth.ts";
 import { getServiceClient, getUserScopedClient } from "../../core/supabase.ts";
 import { logError, writeApiRequestLog } from "../../core/observability.ts";
@@ -23,13 +23,10 @@ export const creditManagementGateway = {
     const ctx = startRequest(req, `/${CREDIT_MANAGEMENT_CONTRACT.domain}/${operation}`);
     const svc = getServiceClient();
     try {
-      if (req.method !== "GET" && req.method !== "HEAD") {
-        return methodNotAllowed(req, ["GET", "HEAD"], ctx.requestId);
-      }
       const auth = await authenticate(req);
       if (!auth) {
         await writeApiRequestLog(svc, { ...ctx, statusCode: 401, latencyMs: Date.now() - ctx.startedAt, errorCode: "UNAUTHORIZED" });
-        return errorResponse(req, "UNAUTHORIZED", "Missing or invalid token", 401, ctx.requestId);
+        return errorResponse("UNAUTHORIZED", "Missing or invalid token", 401, ctx.requestId);
       }
 
       switch (operation) {
@@ -38,19 +35,19 @@ export const creditManagementGateway = {
           const balance = await creditService.getBalance(auth.userId, userClient);
           if (balance === null) {
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 404, latencyMs: Date.now() - ctx.startedAt, errorCode: "PROFILE_NOT_FOUND" });
-            return errorResponse(req, "PROFILE_NOT_FOUND", "Profile not found", 404, ctx.requestId);
+            return errorResponse("PROFILE_NOT_FOUND", "Profile not found", 404, ctx.requestId);
           }
           await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
-          return jsonResponse(req, { credits_balance: balance, requestId: ctx.requestId });
+          return jsonResponse({ credits_balance: balance, requestId: ctx.requestId });
         }
         default:
           await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 404, latencyMs: Date.now() - ctx.startedAt, errorCode: "UNKNOWN_OPERATION" });
-          return errorResponse(req, "UNKNOWN_OPERATION", `Unknown operation: ${operation}`, 404, ctx.requestId);
+          return errorResponse("UNKNOWN_OPERATION", `Unknown operation: ${operation}`, 404, ctx.requestId);
       }
     } catch (e) {
       logError("credit-management gateway unhandled", { error: (e as Error).message, operation });
       await writeApiRequestLog(svc, { ...ctx, statusCode: 500, latencyMs: Date.now() - ctx.startedAt, errorCode: "INTERNAL" });
-      return errorResponse(req, "INTERNAL", "Internal error", 500, ctx.requestId);
+      return errorResponse("INTERNAL", "Internal error", 500, ctx.requestId);
     }
   },
 };

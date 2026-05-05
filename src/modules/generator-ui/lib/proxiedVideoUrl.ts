@@ -1,38 +1,15 @@
-// Loads an external video through the authenticated video-proxy edge function
-// and returns a local blob URL that can safely be handed to <video>.
+// Wraps an external video URL through our same-origin video-proxy edge function
+// so the bytes come back with proper CORS headers (required for canvas capture
+// in the merger and last-frame extractor).
+//
+// URLs that are already same-origin or hosted on our own Supabase storage are
+// returned unchanged.
 
 import { supabase } from "@/integrations/supabase/client";
 import { FUNCTIONS_BASE } from "@/core/api/client";
 
 const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID as string;
 const OWN_SUPABASE_HOST = `${PROJECT_ID}.supabase.co`;
-
-const proxiedVideoCache = new Map<string, Promise<string>>();
-
-async function authHeader(): Promise<Record<string, string>> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-async function fetchProxiedVideoBlobUrl(url: string): Promise<string> {
-  const headers = await authHeader();
-  if (!headers.Authorization) {
-    return url;
-  }
-
-  const qs = new URLSearchParams({ url });
-  const response = await fetch(`${FUNCTIONS_BASE}/video-proxy?${qs.toString()}`, {
-    headers,
-  });
-
-  if (!response.ok) {
-    throw new Error(`Video proxy failed with ${response.status}`);
-  }
-
-  const blob = await response.blob();
-  return URL.createObjectURL(blob);
-}
 
 export async function proxiedVideoUrl(url: string): Promise<string> {
   let parsed: URL;
@@ -42,22 +19,22 @@ export async function proxiedVideoUrl(url: string): Promise<string> {
     return url;
   }
 
+  // Same-origin or our own Supabase storage host — no proxy needed.
   if (typeof window !== "undefined" && parsed.host === window.location.host) {
     return url;
   }
-
   if (parsed.host === OWN_SUPABASE_HOST) {
     return url;
   }
 
-  let pending = proxiedVideoCache.get(url);
-  if (!pending) {
-    pending = fetchProxiedVideoBlobUrl(url).catch((error) => {
-      proxiedVideoCache.delete(url);
-      throw error;
-    });
-    proxiedVideoCache.set(url, pending);
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) {
+    // Not signed in — fall back to the raw URL (will likely fail CORS, but
+    // the caller will surface a clearer error).
+    return url;
   }
 
-  return await pending;
+  const qs = new URLSearchParams({ url, token });
+  return `${FUNCTIONS_BASE}/video-proxy?${qs.toString()}`;
 }

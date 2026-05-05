@@ -5,7 +5,7 @@
 //     auth required, rate limited, audit logged.
 
 import { z } from "https://esm.sh/zod@3.23.8";
-import { errorResponse, jsonResponse, methodNotAllowed, startRequest } from "../../core/http.ts";
+import { errorResponse, jsonResponse, startRequest } from "../../core/http.ts";
 import { authenticate } from "../../core/auth.ts";
 import { getServiceClient } from "../../core/supabase.ts";
 import { logError, writeApiRequestLog } from "../../core/observability.ts";
@@ -24,7 +24,7 @@ export const EXTERNAL_API_ADAPTER_CONTRACT: DomainContractMeta = {
 const RoutePreviewSchema = z.object({
   providerKey: z.enum(["flow", "wan"]),
   requestedModel: z.string().trim().min(1).max(100).optional(),
-  prompt: z.string().trim().min(1).max(4000),
+  prompt: z.string().min(1).max(4000),
 });
 
 export const externalApiAdapterGateway = {
@@ -35,54 +35,34 @@ export const externalApiAdapterGateway = {
     const svc = getServiceClient();
     try {
       if (req.method !== "POST") {
-        return methodNotAllowed(req, ["POST"], ctx.requestId);
+        return errorResponse("METHOD_NOT_ALLOWED", "Use POST", 405, ctx.requestId);
       }
       const auth = await authenticate(req);
       if (!auth) {
         await writeApiRequestLog(svc, { ...ctx, statusCode: 401, latencyMs: Date.now() - ctx.startedAt, errorCode: "UNAUTHORIZED" });
-        return errorResponse(req, "UNAUTHORIZED", "Missing or invalid token", 401, ctx.requestId);
+        return errorResponse("UNAUTHORIZED", "Missing or invalid token", 401, ctx.requestId);
       }
 
       switch (operation) {
         case "routePreview": {
-          const limit = rateLimit(`route-preview:${auth.userId}`, 30, 60_000);
-          if (!limit.allowed) {
+          if (!rateLimit(`route-preview:${auth.userId}`, 30, 60_000)) {
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 429, latencyMs: Date.now() - ctx.startedAt, errorCode: "RATE_LIMITED" });
-            return errorResponse(req, "RATE_LIMITED", "Too many requests", 429, ctx.requestId, {
-              "Retry-After": String(limit.retryAfterSeconds),
-            });
+            return errorResponse("RATE_LIMITED", "Too many requests", 429, ctx.requestId);
           }
 
           let body: unknown;
           try { body = await req.json(); } catch {
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 400, latencyMs: Date.now() - ctx.startedAt, errorCode: "INVALID_JSON" });
-            return errorResponse(req, "INVALID_JSON", "Invalid JSON body", 400, ctx.requestId);
+            return errorResponse("INVALID_JSON", "Invalid JSON body", 400, ctx.requestId);
           }
           const parsed = RoutePreviewSchema.safeParse(body);
           if (!parsed.success) {
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 400, latencyMs: Date.now() - ctx.startedAt, errorCode: "VALIDATION_ERROR" });
-            return jsonResponse(req, { error: { code: "VALIDATION_ERROR", details: parsed.error.flatten().fieldErrors }, requestId: ctx.requestId }, 400);
+            return jsonResponse({ error: { code: "VALIDATION_ERROR", details: parsed.error.flatten().fieldErrors }, requestId: ctx.requestId }, 400);
           }
 
           const prompt = aiGateway.sanitizePrompt(parsed.data.prompt);
           const providerKey = parsed.data.providerKey as ProviderKey;
-          if (providerKey !== "wan") {
-            await writeApiRequestLog(svc, {
-              ...ctx,
-              userId: auth.userId,
-              statusCode: 400,
-              latencyMs: Date.now() - ctx.startedAt,
-              errorCode: "UNSUPPORTED_PROVIDER",
-            });
-            return errorResponse(
-              req,
-              "UNSUPPORTED_PROVIDER",
-              `Provider ${providerKey} is not enabled in the current production-safe build`,
-              400,
-              ctx.requestId,
-            );
-          }
-
           const resolved = await aiGateway.resolveRoute(svc, providerKey, parsed.data.requestedModel, prompt);
 
           await writeApiRequestLog(svc, {
@@ -97,7 +77,7 @@ export const externalApiAdapterGateway = {
             requestId: ctx.requestId,
             metadata: { resolvedModel: resolved.resolvedModel, estimatedCost: resolved.estimatedCost, promptLength: prompt.length },
           });
-          return jsonResponse(req, {
+          return jsonResponse({
             providerKey: resolved.providerKey,
             resolvedModel: resolved.resolvedModel,
             estimatedCost: resolved.estimatedCost,
@@ -106,12 +86,12 @@ export const externalApiAdapterGateway = {
         }
         default:
           await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 404, latencyMs: Date.now() - ctx.startedAt, errorCode: "UNKNOWN_OPERATION" });
-          return errorResponse(req, "UNKNOWN_OPERATION", `Unknown operation: ${operation}`, 404, ctx.requestId);
+          return errorResponse("UNKNOWN_OPERATION", `Unknown operation: ${operation}`, 404, ctx.requestId);
       }
     } catch (e) {
       logError("external-api-adapter gateway unhandled", { error: (e as Error).message, operation });
       await writeApiRequestLog(svc, { ...ctx, statusCode: 500, latencyMs: Date.now() - ctx.startedAt, errorCode: "INTERNAL" });
-      return errorResponse(req, "INTERNAL", "Internal error", 500, ctx.requestId);
+      return errorResponse("INTERNAL", "Internal error", 500, ctx.requestId);
     }
   },
 };

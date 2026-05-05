@@ -23,16 +23,7 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
     ...(await authHeader()),
     ...((init.headers as Record<string, string>) ?? {}),
   };
-  let res: Response;
-  try {
-    res = await fetch(`${FUNCTIONS_BASE}${path}`, { ...init, headers });
-  } catch (e) {
-    // Network-level failure (DNS, CORS preflight rejection, offline, etc.).
-    // Surface a structured error so the UI can show a useful message instead
-    // of a generic "Could not start..." string.
-    const msg = e instanceof Error ? e.message : "Network request failed";
-    throw new ApiError(0, "NETWORK_ERROR", `Cannot reach backend: ${msg}`);
-  }
+  const res = await fetch(`${FUNCTIONS_BASE}${path}`, { ...init, headers });
   const text = await res.text();
   // deno-lint-ignore no-explicit-any
   let body: any = null;
