@@ -1456,12 +1456,28 @@ export default function DashboardPage() {
               ) : (
                 <div className="flex aspect-video w-full flex-col items-center justify-center gap-3 bg-black text-zinc-600">
                   {previewVideo && normalizeStatus(previewVideo.status) !== 'failed' ? (
-                    <>
-                      <LoaderCircle className="h-8 w-8 animate-spin text-zinc-400" />
-                      <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-                        در حال ساخت ویدئو…
-                      </p>
-                    </>
+                    (() => {
+                      const pct = getJobProgressPercent(previewVideo)
+                      return (
+                        <>
+                          <LoaderCircle className="h-8 w-8 animate-spin text-zinc-400" />
+                          <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                            در حال ساخت ویدئو…
+                          </p>
+                          {typeof pct === 'number' ? (
+                            <div className="mt-2 flex w-48 flex-col items-center gap-1.5">
+                              <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/5">
+                                <div
+                                  className="h-full rounded-full bg-emerald-400/80 transition-all duration-500"
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+                              <span className="text-[11px] tabular-nums text-zinc-300">{pct}%</span>
+                            </div>
+                          ) : null}
+                        </>
+                      )
+                    })()
                   ) : previewVideo && normalizeStatus(previewVideo.status) === 'failed' ? (
                     <>
                       <X className="h-8 w-8 text-rose-400" />
