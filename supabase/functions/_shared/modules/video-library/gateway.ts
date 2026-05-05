@@ -5,7 +5,7 @@
 //
 // No edge endpoint wired yet; gateway exists so future ingress is centralized.
 
-import { errorResponse, jsonResponse, startRequest } from "../../core/http.ts";
+import { errorResponse, jsonResponse, methodNotAllowed, startRequest } from "../../core/http.ts";
 import { authenticate } from "../../core/auth.ts";
 import { getServiceClient, getUserScopedClient } from "../../core/supabase.ts";
 import { logError, writeApiRequestLog } from "../../core/observability.ts";
@@ -25,6 +25,9 @@ export const videoLibraryGateway = {
     const ctx = startRequest(req, `/${VIDEO_LIBRARY_CONTRACT.domain}/${operation}`);
     const svc = getServiceClient();
     try {
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        return methodNotAllowed(req, ["GET", "HEAD"], ctx.requestId);
+      }
       const auth = await authenticate(req);
       if (!auth) {
         await writeApiRequestLog(svc, { ...ctx, statusCode: 401, latencyMs: Date.now() - ctx.startedAt, errorCode: "UNAUTHORIZED" });

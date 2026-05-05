@@ -32,6 +32,13 @@ function allowedOrigin(req?: Request): string | null {
   return origins.includes(origin) ? origin : null;
 }
 
+function baseSecurityHeaders(): Record<string, string> {
+  return {
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+  };
+}
+
 export function corsHeaders(
   req?: Request,
   extraHeaders: Record<string, string> = {},
@@ -43,6 +50,7 @@ export function corsHeaders(
       "authorization, x-client-info, apikey, content-type, x-request-id, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
     "Access-Control-Allow-Methods": "GET, POST, DELETE, HEAD, OPTIONS",
     "Vary": "Origin",
+    ...baseSecurityHeaders(),
     ...extraHeaders,
   };
 }
@@ -51,7 +59,12 @@ export function preflightResponse(
   req: Request,
   extraHeaders: Record<string, string> = {},
 ): Response {
-  return new Response("ok", { headers: corsHeaders(req, extraHeaders) });
+  return new Response("ok", {
+    headers: corsHeaders(req, {
+      "Access-Control-Max-Age": "600",
+      ...extraHeaders,
+    }),
+  });
 }
 
 export function jsonResponse(
@@ -60,11 +73,19 @@ export function jsonResponse(
   status = 200,
   extraHeaders: Record<string, string> = {},
 ): Response {
+  const requestId =
+    typeof body === "object" && body !== null && "requestId" in body &&
+      typeof (body as { requestId?: unknown }).requestId === "string"
+      ? (body as { requestId: string }).requestId
+      : undefined;
+
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       ...corsHeaders(req),
+      "Cache-Control": "no-store",
       "Content-Type": "application/json",
+      ...(requestId ? { "X-Request-Id": requestId } : {}),
       ...extraHeaders,
     },
   });
@@ -76,8 +97,24 @@ export function errorResponse(
   message: string,
   status: number,
   requestId?: string,
+  extraHeaders: Record<string, string> = {},
 ): Response {
-  return jsonResponse(req, { error: { code, message }, requestId }, status);
+  return jsonResponse(req, { error: { code, message }, requestId }, status, extraHeaders);
+}
+
+export function methodNotAllowed(
+  req: Request,
+  allowed: string[],
+  requestId?: string,
+): Response {
+  return errorResponse(
+    req,
+    "METHOD_NOT_ALLOWED",
+    `Use ${allowed.join(" or ")}`,
+    405,
+    requestId,
+    { "Allow": allowed.join(", ") },
+  );
 }
 
 export function newRequestId(): string {

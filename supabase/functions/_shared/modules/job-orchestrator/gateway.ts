@@ -1,46 +1,51 @@
 // Job-Orchestrator — domain gateway (single public ingress for this domain).
 //
 // Public contract (v1):
-//   - listMyJobs() -> { items: JobSummary[] }
-//   - createJob({ providerKey, requestedModel?, prompt }) -> { jobId, status, video? }
-//   - getJob({ jobId })  -> JobDetail
-//
-// createJob orchestrates: external-api-adapter.resolveRoute → start_job RPC
-// (atomic credit debit) → external-api-adapter.startGeneration → if complete,
-// complete_job RPC (writes asset + flips status). If async, leaves job in
-// "processing" for the worker/poller to finish in a later phase.
+//   - listMyJobs() -> JobSummary[]
+//   - getJob({ jobId }) -> JobDetail
+//   - createJob({ providerKey, requestedModel?, prompt, durationSeconds?, firstFrameUrl?, lastFrameUrl? })
+//       auth required; validates credits; creates pending job; debits; transitions to
+//       "processing" for the worker/poller to finish in a later phase.
+//   - deleteJob({ jobId })
+//       auth required; soft-deletes job record + best-effort storage purge.
 
 import { z } from "https://esm.sh/zod@3.23.8";
-import { errorResponse, jsonResponse, startRequest } from "../../core/http.ts";
+import { errorResponse, jsonResponse, methodNotAllowed, startRequest } from "../../core/http.ts";
 import { authenticate } from "../../core/auth.ts";
 import { getServiceClient, getUserScopedClient } from "../../core/supabase.ts";
 import { logError, writeApiRequestLog } from "../../core/observability.ts";
 import { writeAuditLog } from "../../core/audit.ts";
 import { rateLimit } from "../../core/ratelimit.ts";
-import { jobService } from "./service.ts";
 import { aiGateway } from "../external-api-adapter/service.ts";
 import type { ProviderKey } from "../external-api-adapter/contract.ts";
+import { jobService } from "./service.ts";
 import type { DomainContractMeta } from "../_gateway/types.ts";
 
 export const JOB_ORCHESTRATOR_CONTRACT: DomainContractMeta = {
   domain: "job-orchestrator",
   version: "v1",
-  operations: ["listMyJobs", "createJob", "getJob", "deleteJob"],
+  operations: ["listMyJobs", "getJob", "createJob", "deleteJob"],
 } as const;
 
 const CreateJobSchema = z.object({
-  providerKey: z.literal("wan"),
+  providerKey: z.enum(["flow", "wan"]),
   requestedModel: z.string().trim().min(1).max(100).optional(),
   prompt: z.string().min(1).max(4000),
-  firstFrameUrl: z.string().url().max(2048).optional(),
-  lastFrameUrl: z.string().url().max(2048).optional(),
-  durationSeconds: z.union([z.literal(5), z.literal(10), z.literal(15)]).optional(),
+  durationSeconds: z.number().int().min(1).max(60).nullable().optional(),
+  firstFrameUrl: z.string().url().optional(),
+  lastFrameUrl: z.string().url().optional(),
 });
 
-const GetJobSchema = z.object({ jobId: z.string().uuid() });
-const DeleteJobSchema = z.object({ jobId: z.string().uuid() });
+const DeleteJobSchema = z.object({
+  jobId: z.string().uuid(),
+});
 
-// Estimate render progress when the provider hasn't reported one yet.
+const GetJobSchema = z.object({
+  jobId: z.string().uuid(),
+});
+
+// Estimates progress for processing jobs when the upstream provider or our
+// job row doesn't have one yet.
 // Uses status + created_at so the UI never shows a static "Rendering" with no
 // numeric feedback. Bounded to [18, 95] while in flight.
 function estimateProgressFromJob(status: string, createdAt: string | undefined): number | null {
@@ -72,12 +77,18 @@ export const jobOrchestratorGateway = {
 
       switch (operation) {
         case "listMyJobs": {
+          if (req.method !== "GET" && req.method !== "HEAD") {
+            return methodNotAllowed(req, ["GET", "HEAD"], ctx.requestId);
+          }
           const items = await jobService.listMyJobs(auth.userId, userClient);
           await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
           return jsonResponse(req, { items, requestId: ctx.requestId });
         }
 
         case "getJob": {
+          if (req.method !== "GET" && req.method !== "HEAD") {
+            return methodNotAllowed(req, ["GET", "HEAD"], ctx.requestId);
+          }
           const url = new URL(req.url);
           const jobIdParam = url.searchParams.get("jobId") ?? undefined;
           const parsed = GetJobSchema.safeParse({ jobId: jobIdParam });
@@ -138,11 +149,14 @@ export const jobOrchestratorGateway = {
 
         case "createJob": {
           if (req.method !== "POST") {
-            return errorResponse(req, "METHOD_NOT_ALLOWED", "Use POST", 405, ctx.requestId);
+            return methodNotAllowed(req, ["POST"], ctx.requestId);
           }
-          if (!rateLimit(`jobs-create:${auth.userId}`, 10, 60_000)) {
+          const limit = rateLimit(`jobs-create:${auth.userId}`, 10, 60_000);
+          if (!limit.allowed) {
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 429, latencyMs: Date.now() - ctx.startedAt, errorCode: "RATE_LIMITED" });
-            return errorResponse(req, "RATE_LIMITED", "Too many requests", 429, ctx.requestId);
+            return errorResponse(req, "RATE_LIMITED", "Too many requests", 429, ctx.requestId, {
+              "Retry-After": String(limit.retryAfterSeconds),
+            });
           }
           let body: unknown;
           try { body = await req.json(); } catch {
@@ -272,10 +286,13 @@ export const jobOrchestratorGateway = {
 
         case "deleteJob": {
           if (req.method !== "POST") {
-            return errorResponse(req, "METHOD_NOT_ALLOWED", "Use POST", 405, ctx.requestId);
+            return methodNotAllowed(req, ["POST"], ctx.requestId);
           }
-          if (!rateLimit(`jobs-delete:${auth.userId}`, 30, 60_000)) {
-            return errorResponse(req, "RATE_LIMITED", "Too many requests", 429, ctx.requestId);
+          const limit = rateLimit(`jobs-delete:${auth.userId}`, 30, 60_000);
+          if (!limit.allowed) {
+            return errorResponse(req, "RATE_LIMITED", "Too many requests", 429, ctx.requestId, {
+              "Retry-After": String(limit.retryAfterSeconds),
+            });
           }
           let body: unknown;
           try { body = await req.json(); } catch {
