@@ -1189,19 +1189,61 @@ export default function DashboardPage() {
       >
         {/* Top bar */}
         <header className="absolute inset-x-0 top-0 z-30 flex items-center justify-between px-5 py-4">
-          <div className="flex items-center gap-2">
+          <div className="relative flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setIsApprovedPanelOpen((v) => !v)}
-              title="ویدئوهای ساخته‌شده"
+              onClick={() => setIsModulesMenuOpen((v) => !v)}
+              title="ماژول‌ها"
               className={`inline-flex h-8 w-8 items-center justify-center rounded-md border transition ${
-                isApprovedPanelOpen
+                isModulesMenuOpen || isApprovedPanelOpen || isProfilePanelOpen
                   ? 'border-emerald-400/50 bg-emerald-500/10 text-emerald-100'
                   : 'border-white/10 bg-zinc-900/60 text-zinc-300 hover:border-white/20 hover:text-white'
               }`}
             >
               <LayoutGrid className="h-4 w-4" />
             </button>
+
+            {isModulesMenuOpen ? (
+              <>
+                {/* click-outside backdrop */}
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setIsModulesMenuOpen(false)}
+                />
+                <div
+                  className="absolute left-0 top-10 z-50 w-56 overflow-hidden rounded-xl border border-white/10 bg-zinc-950/95 p-1.5 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur"
+                  dir="rtl"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsModulesMenuOpen(false)
+                      setIsProfilePanelOpen(true)
+                      setIsApprovedPanelOpen(false)
+                    }}
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-right text-sm text-zinc-200 transition hover:bg-white/5 hover:text-white"
+                  >
+                    <User className="h-4 w-4 text-zinc-400" />
+                    <span className="flex-1">پروفایل کاربر</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsModulesMenuOpen(false)
+                      setIsApprovedPanelOpen(true)
+                      setIsProfilePanelOpen(false)
+                    }}
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-right text-sm text-zinc-200 transition hover:bg-white/5 hover:text-white"
+                  >
+                    <Video className="h-4 w-4 text-zinc-400" />
+                    <span className="flex-1">ویدئوهای ساخته‌شده</span>
+                    <span className="rounded-full border border-white/10 bg-zinc-900 px-1.5 py-0.5 text-[10px] tabular-nums text-zinc-300">
+                      {completedVideos.length}
+                    </span>
+                  </button>
+                </div>
+              </>
+            ) : null}
           </div>
 
           <button
