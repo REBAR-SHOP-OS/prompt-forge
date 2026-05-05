@@ -38,7 +38,7 @@ export const generatorUiGateway = {
         case "getMe": {
           const userClient = getUserScopedClient(auth.authHeader);
           const [{ data: profile, error: pErr }, { data: roles, error: rErr }] = await Promise.all([
-            userClient.from("profiles").select("id,email,credits_balance").eq("id", auth.userId).maybeSingle(),
+            userClient.from("core_user_profiles").select("id,email,credits_balance").eq("id", auth.userId).maybeSingle(),
             userClient.from("user_roles").select("role").eq("user_id", auth.userId),
           ]);
 
