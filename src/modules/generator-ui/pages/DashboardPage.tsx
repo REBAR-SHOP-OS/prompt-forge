@@ -1621,7 +1621,7 @@ export default function DashboardPage() {
                     <>
                       <LayoutGrid className="h-8 w-8 text-zinc-700" />
                       <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-                        پیش‌نمایش ویدئو ساخته‌شده اینجا نمایش داده می‌شود
+                        Generated video preview will appear here
                       </p>
                     </>
                   )}
