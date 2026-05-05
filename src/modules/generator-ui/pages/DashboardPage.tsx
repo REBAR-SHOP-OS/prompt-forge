@@ -946,7 +946,7 @@ export default function DashboardPage() {
       if (stillErr) throw new Error(stillErr.message)
       const stillPublic = supabase.storage.from(MERGED_BUCKET).getPublicUrl(stillPath).data.publicUrl
 
-      const mergedBlob = await mergeVideoUrls([proxiedSrc, stillPublic], (p) => setMergeProgress(p))
+      const mergedBlob = await mergeVideoUrls([proxiedSrc, stillPublic], (p) => setMergeProgress(Math.round(p.ratio * 100)))
       const filename = `with-end-${Date.now()}.webm`
       const storagePath = `${userId}/${filename}`
       const { error: upErr } = await supabase.storage
@@ -990,7 +990,7 @@ export default function DashboardPage() {
       if (stillErr) throw new Error(stillErr.message)
       const stillPublic = supabase.storage.from(MERGED_BUCKET).getPublicUrl(stillPath).data.publicUrl
 
-      const mergedBlob = await mergeVideoUrls([stillPublic, proxiedSrc], (p) => setMergeProgress(p))
+      const mergedBlob = await mergeVideoUrls([stillPublic, proxiedSrc], (p) => setMergeProgress(Math.round(p.ratio * 100)))
       const filename = `with-start-${Date.now()}.webm`
       const storagePath = `${userId}/${filename}`
       const { error: upErr } = await supabase.storage
@@ -1109,7 +1109,7 @@ export default function DashboardPage() {
       const urls = completedSourceVideos
         .map((v) => v.video!.storage_path)
 
-      const blob = await mergeVideoUrls(urls, (p) => setMergeProgress(p))
+      const blob = await mergeVideoUrls(urls, (p) => setMergeProgress(Math.round(p.ratio * 100)))
 
       const filename = `merged-${Date.now()}.webm`
       const storagePath = `${userId}/${filename}`
