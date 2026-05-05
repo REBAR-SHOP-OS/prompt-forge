@@ -1193,7 +1193,7 @@ export default function DashboardPage() {
             <button
               type="button"
               onClick={() => setIsModulesMenuOpen((v) => !v)}
-              title="ماژول‌ها"
+              title="Modules"
               className={`inline-flex h-8 w-8 items-center justify-center rounded-md border transition ${
                 isModulesMenuOpen || isApprovedPanelOpen || isProfilePanelOpen
                   ? 'border-emerald-400/50 bg-emerald-500/10 text-emerald-100'
@@ -1212,7 +1212,6 @@ export default function DashboardPage() {
                 />
                 <div
                   className="absolute left-0 top-10 z-50 w-56 overflow-hidden rounded-xl border border-white/10 bg-zinc-950/95 p-1.5 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur"
-                  dir="rtl"
                 >
                   <button
                     type="button"
@@ -1221,10 +1220,10 @@ export default function DashboardPage() {
                       setIsProfilePanelOpen(true)
                       setIsApprovedPanelOpen(false)
                     }}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-right text-sm text-zinc-200 transition hover:bg-white/5 hover:text-white"
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-zinc-200 transition hover:bg-white/5 hover:text-white"
                   >
                     <User className="h-4 w-4 text-zinc-400" />
-                    <span className="flex-1">پروفایل کاربر</span>
+                    <span className="flex-1">User profile</span>
                   </button>
                   <button
                     type="button"
@@ -1233,10 +1232,10 @@ export default function DashboardPage() {
                       setIsApprovedPanelOpen(true)
                       setIsProfilePanelOpen(false)
                     }}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-right text-sm text-zinc-200 transition hover:bg-white/5 hover:text-white"
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-zinc-200 transition hover:bg-white/5 hover:text-white"
                   >
                     <Video className="h-4 w-4 text-zinc-400" />
-                    <span className="flex-1">ویدئوهای ساخته‌شده</span>
+                    <span className="flex-1">Generated videos</span>
                     <span className="rounded-full border border-white/10 bg-zinc-900 px-1.5 py-0.5 text-[10px] tabular-nums text-zinc-300">
                       {completedVideos.length}
                     </span>
