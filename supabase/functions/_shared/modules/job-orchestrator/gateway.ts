@@ -10,7 +10,8 @@
 //       auth required; soft-deletes job record + best-effort storage purge.
 
 import { z } from "https://esm.sh/zod@3.23.8";
-import { errorResponse, jsonResponse, methodNotAllowed, startRequest } from "../../core/http.ts";
+import { errorResponse, jsonResponse, methodNotAllowed, readJsonBody, startRequest } from "../../core/http.ts";
+import { getEnv } from "../../core/env.ts";
 import { authenticate } from "../../core/auth.ts";
 import { getServiceClient, getUserScopedClient } from "../../core/supabase.ts";
 import { logError, writeApiRequestLog } from "../../core/observability.ts";
@@ -31,7 +32,7 @@ const CreateJobSchema = z.object({
   providerKey: z.enum(["flow", "wan"]),
   requestedModel: z.string().trim().min(1).max(100).optional(),
   prompt: z.string().min(1).max(4000),
-  durationSeconds: z.number().int().min(1).max(60).nullable().optional(),
+  durationSeconds: z.union([z.literal(5), z.literal(10), z.literal(15)]).nullable().optional(),
   firstFrameUrl: z.string().url().optional(),
   lastFrameUrl: z.string().url().optional(),
 });
@@ -43,6 +44,33 @@ const DeleteJobSchema = z.object({
 const GetJobSchema = z.object({
   jobId: z.string().uuid(),
 });
+
+const SUPABASE_PUBLIC_STORAGE_PREFIX = `${new URL(getEnv("SUPABASE_URL")).origin}/storage/v1/object/public/wan-frames/`;
+const EXTRA_PUBLIC_FRAME_HOSTS = getEnv("ALLOWED_PUBLIC_FRAME_HOSTS", false)
+  .split(",")
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean);
+
+function isAllowedFrameUrl(url: string, userId: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+
+  if (parsed.protocol !== "https:") {
+    return false;
+  }
+
+  if (parsed.href.startsWith(SUPABASE_PUBLIC_STORAGE_PREFIX)) {
+    const path = parsed.pathname;
+    const prefix = `/storage/v1/object/public/wan-frames/${userId}/`;
+    return path.startsWith(prefix);
+  }
+
+  return EXTRA_PUBLIC_FRAME_HOSTS.includes(parsed.hostname.toLowerCase());
+}
 
 // Estimates progress for processing jobs when the upstream provider or our
 // job row doesn't have one yet.
@@ -137,11 +165,12 @@ export const jobOrchestratorGateway = {
                 detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
                 progressPercent = 100;
               } else if (poll.status === "failed") {
+                const failureReason = poll.reason ?? "provider task failed";
                 try {
                   await jobService.failJob(svc, {
                     userId: auth.userId,
                     jobId: detail.id,
-                    reason: "provider task failed",
+                    reason: failureReason,
                     refundCredits: true,
                   });
                 } catch (failError) {
@@ -184,11 +213,13 @@ export const jobOrchestratorGateway = {
               "Retry-After": String(limit.retryAfterSeconds),
             });
           }
-          let body: unknown;
-          try { body = await req.json(); } catch {
-            return errorResponse(req, "INVALID_JSON", "Invalid JSON body", 400, ctx.requestId);
+
+          const bodyResult = await readJsonBody<unknown>(req, ctx.requestId);
+          if (!bodyResult.ok) {
+            return bodyResult.response;
           }
-          const parsed = CreateJobSchema.safeParse(body);
+
+          const parsed = CreateJobSchema.safeParse(bodyResult.value);
           if (!parsed.success) {
             return jsonResponse(req, { error: { code: "VALIDATION_ERROR", details: parsed.error.flatten().fieldErrors }, requestId: ctx.requestId }, 400);
           }
@@ -210,6 +241,26 @@ export const jobOrchestratorGateway = {
               req,
               "UNSUPPORTED_PROVIDER",
               `Provider ${providerKey} is not enabled in the current production-safe build`,
+              400,
+              ctx.requestId,
+            );
+          }
+
+          if (firstFrameUrl && !isAllowedFrameUrl(firstFrameUrl, auth.userId)) {
+            return errorResponse(
+              req,
+              "INVALID_FIRST_FRAME_URL",
+              "firstFrameUrl must point to your own public wan-frames upload",
+              400,
+              ctx.requestId,
+            );
+          }
+
+          if (lastFrameUrl && !isAllowedFrameUrl(lastFrameUrl, auth.userId)) {
+            return errorResponse(
+              req,
+              "INVALID_LAST_FRAME_URL",
+              "lastFrameUrl must point to your own public wan-frames upload",
               400,
               ctx.requestId,
             );
@@ -351,11 +402,13 @@ export const jobOrchestratorGateway = {
               "Retry-After": String(limit.retryAfterSeconds),
             });
           }
-          let body: unknown;
-          try { body = await req.json(); } catch {
-            return errorResponse(req, "INVALID_JSON", "Invalid JSON body", 400, ctx.requestId);
+
+          const bodyResult = await readJsonBody<unknown>(req, ctx.requestId);
+          if (!bodyResult.ok) {
+            return bodyResult.response;
           }
-          const parsed = DeleteJobSchema.safeParse(body);
+
+          const parsed = DeleteJobSchema.safeParse(bodyResult.value);
           if (!parsed.success) {
             return errorResponse(req, "VALIDATION_ERROR", "jobId required", 400, ctx.requestId);
           }
