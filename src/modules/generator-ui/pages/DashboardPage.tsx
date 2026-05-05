@@ -1234,11 +1234,24 @@ export default function DashboardPage() {
             </div>
             <button
               type="button"
-              onClick={editAndReusePreviousClip}
-              disabled={!previewVideo}
-              title="ادامه از آخرین کارت"
+              onClick={() => {
+                // Always continue from the latest completed render, regardless
+                // of what's currently in preview. This makes the + icon a clear
+                // "make another shot that continues the previous one" action.
+                const latest = completedVideos[completedVideos.length - 1]
+                if (!latest) {
+                  setComposerError('هنوز ویدئویی ساخته نشده که بتوان ادامه‌اش را گرفت.')
+                  return
+                }
+                setPreviewVideoId(latest.id)
+                // Defer one tick so previewVideo memo picks up the new id
+                // before the continuation routine reads it.
+                setTimeout(() => { editAndReusePreviousClip() }, 0)
+              }}
+              disabled={completedVideos.length === 0}
+              title="ادامه از آخرین ویدئوی ساخته‌شده"
               className={`inline-flex h-7 w-7 items-center justify-center rounded-md border transition ${
-                previewVideo
+                completedVideos.length > 0
                   ? 'border-white/15 bg-zinc-900 text-zinc-200 hover:border-emerald-400/40 hover:text-white'
                   : 'cursor-not-allowed border-white/5 text-zinc-600'
               }`}
