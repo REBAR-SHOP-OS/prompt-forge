@@ -24,7 +24,7 @@ export const EXTERNAL_API_ADAPTER_CONTRACT: DomainContractMeta = {
 const RoutePreviewSchema = z.object({
   providerKey: z.enum(["flow", "wan"]),
   requestedModel: z.string().trim().min(1).max(100).optional(),
-  prompt: z.string().min(1).max(4000),
+  prompt: z.string().trim().min(1).max(4000),
 });
 
 export const externalApiAdapterGateway = {
