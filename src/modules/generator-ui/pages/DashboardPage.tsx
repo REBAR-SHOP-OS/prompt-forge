@@ -4,46 +4,17 @@ import {
   BookmarkCheck,
   BookmarkPlus,
   ChevronsRight,
-  Clapperboard,
-  Coins,
-  Combine,
-  Download,
   FileUp,
-  Film,
-  Hammer,
   History,
   LayoutGrid,
-  Library,
   LoaderCircle,
-  LogOut,
   Paperclip,
   Pencil,
   Plus,
   RotateCcw,
-  Sparkles,
   Trash2,
-  UserRound,
-  X
+  X,
 } from 'lucide-react'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 
 import { ApiError } from '@/core/api/client'
 import { useAuth } from '@/core/auth/AuthProvider'
