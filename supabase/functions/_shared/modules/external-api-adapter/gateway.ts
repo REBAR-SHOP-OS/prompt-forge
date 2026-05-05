@@ -5,7 +5,7 @@
 //     auth required, rate limited, audit logged.
 
 import { z } from "https://esm.sh/zod@3.23.8";
-import { errorResponse, jsonResponse, startRequest } from "../../core/http.ts";
+import { errorResponse, jsonResponse, methodNotAllowed, startRequest } from "../../core/http.ts";
 import { authenticate } from "../../core/auth.ts";
 import { getServiceClient } from "../../core/supabase.ts";
 import { logError, writeApiRequestLog } from "../../core/observability.ts";
@@ -35,7 +35,7 @@ export const externalApiAdapterGateway = {
     const svc = getServiceClient();
     try {
       if (req.method !== "POST") {
-        return errorResponse(req, "METHOD_NOT_ALLOWED", "Use POST", 405, ctx.requestId);
+        return methodNotAllowed(req, ["POST"], ctx.requestId);
       }
       const auth = await authenticate(req);
       if (!auth) {
@@ -45,9 +45,12 @@ export const externalApiAdapterGateway = {
 
       switch (operation) {
         case "routePreview": {
-          if (!rateLimit(`route-preview:${auth.userId}`, 30, 60_000)) {
+          const limit = rateLimit(`route-preview:${auth.userId}`, 30, 60_000);
+          if (!limit.allowed) {
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 429, latencyMs: Date.now() - ctx.startedAt, errorCode: "RATE_LIMITED" });
-            return errorResponse(req, "RATE_LIMITED", "Too many requests", 429, ctx.requestId);
+            return errorResponse(req, "RATE_LIMITED", "Too many requests", 429, ctx.requestId, {
+              "Retry-After": String(limit.retryAfterSeconds),
+            });
           }
 
           let body: unknown;

@@ -6,7 +6,7 @@
 // All admin-monitor edge functions MUST call adminMonitorGateway.handle().
 // Direct imports of ./service from outside this folder are deprecated.
 
-import { errorResponse, jsonResponse, startRequest } from "../../core/http.ts";
+import { errorResponse, jsonResponse, methodNotAllowed, startRequest } from "../../core/http.ts";
 import { logError, writeApiRequestLog } from "../../core/observability.ts";
 import { getServiceClient } from "../../core/supabase.ts";
 import { adminMonitor } from "./service.ts";
@@ -38,6 +38,9 @@ export const adminMonitorGateway = {
     const ctx = startRequest(req, `/${ADMIN_MONITOR_CONTRACT.domain}/${operation}`);
     const svc = getServiceClient();
     try {
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        return methodNotAllowed(req, ["GET", "HEAD"], ctx.requestId);
+      }
       const out = await dispatch({ req, operation });
       await writeApiRequestLog(svc, {
         ...ctx,

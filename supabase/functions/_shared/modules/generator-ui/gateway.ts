@@ -1,12 +1,12 @@
 // Generator-UI — domain gateway (single public ingress for this domain).
 //
 // Public contract (v1):
-//   - getMe() -> MeProfile        (auth required; RLS-enforced read)
-//
+//   - getMe() -> { id, email, role, credits_balance }
+//     auth required; reads profiles + roles through RLS.
 // Note: routePreview is owned by external-api-adapter; the dashboard reaches
 // it via that domain's gateway, not through this one.
 
-import { errorResponse, jsonResponse, startRequest } from "../../core/http.ts";
+import { errorResponse, jsonResponse, methodNotAllowed, startRequest } from "../../core/http.ts";
 import { authenticate } from "../../core/auth.ts";
 import { getServiceClient, getUserScopedClient } from "../../core/supabase.ts";
 import { logError, writeApiRequestLog } from "../../core/observability.ts";
@@ -25,6 +25,9 @@ export const generatorUiGateway = {
     const ctx = startRequest(req, `/${GENERATOR_UI_CONTRACT.domain}/${operation}`);
     const svc = getServiceClient();
     try {
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        return methodNotAllowed(req, ["GET", "HEAD"], ctx.requestId);
+      }
       const auth = await authenticate(req);
       if (!auth) {
         await writeApiRequestLog(svc, { ...ctx, statusCode: 401, latencyMs: Date.now() - ctx.startedAt, errorCode: "UNAUTHORIZED" });
@@ -35,9 +38,10 @@ export const generatorUiGateway = {
         case "getMe": {
           const userClient = getUserScopedClient(auth.authHeader);
           const [{ data: profile, error: pErr }, { data: roles, error: rErr }] = await Promise.all([
-            userClient.from("core_user_profiles").select("id, email, credits_balance, created_at").eq("id", auth.userId).maybeSingle(),
+            userClient.from("profiles").select("id,email,credits_balance").eq("id", auth.userId).maybeSingle(),
             userClient.from("user_roles").select("role").eq("user_id", auth.userId),
           ]);
+
           if (pErr || rErr) {
             logError("generator-ui getMe lookup failed", { pErr: pErr?.message, rErr: rErr?.message });
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 500, latencyMs: Date.now() - ctx.startedAt, errorCode: "DB_ERROR" });
@@ -54,7 +58,6 @@ export const generatorUiGateway = {
             email: profile.email,
             role,
             credits_balance: profile.credits_balance,
-            created_at: profile.created_at,
             requestId: ctx.requestId,
           });
         }

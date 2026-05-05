@@ -10,7 +10,7 @@
 // Auth: requires a valid Supabase JWT in the Authorization header.
 
 import { authenticate } from "../_shared/core/auth.ts";
-import { corsHeaders, errorResponse, preflightResponse } from "../_shared/core/http.ts";
+import { corsHeaders, errorResponse, methodNotAllowed, preflightResponse, startRequest } from "../_shared/core/http.ts";
 
 const passthroughResponseHeaders = [
   "content-type",
@@ -34,6 +34,8 @@ const ALLOWED_CONTENT_TYPES = [
 ];
 
 const MAX_REDIRECTS = 3;
+const MAX_TARGET_URL_LENGTH = 2_048;
+const UPSTREAM_FETCH_TIMEOUT_MS = 30_000;
 
 function isAllowedHost(hostname: string): boolean {
   const h = hostname.toLowerCase();
@@ -59,6 +61,7 @@ async function fetchUpstream(req: Request, url: URL, redirectCount = 0): Promise
     method: req.method,
     headers,
     redirect: "manual",
+    signal: AbortSignal.timeout(UPSTREAM_FETCH_TIMEOUT_MS),
   });
 
   if (upstream.status >= 300 && upstream.status < 400) {
@@ -83,40 +86,45 @@ async function fetchUpstream(req: Request, url: URL, redirectCount = 0): Promise
 }
 
 Deno.serve(async (req) => {
+  const ctx = startRequest(req, "/video-proxy");
   if (req.method === "OPTIONS") {
     return preflightResponse(req, {
       "Access-Control-Expose-Headers":
         "Content-Length, Content-Range, Accept-Ranges, Content-Type, ETag",
+      "X-Request-Id": ctx.requestId,
     });
   }
 
   if (req.method !== "GET" && req.method !== "HEAD") {
-    return errorResponse(req, "METHOD_NOT_ALLOWED", "Method not allowed", 405);
+    return methodNotAllowed(req, ["GET", "HEAD"], ctx.requestId);
   }
 
   if (!(await authenticate(req))) {
-    return errorResponse(req, "UNAUTHORIZED", "Unauthorized", 401);
+    return errorResponse(req, "UNAUTHORIZED", "Unauthorized", 401, ctx.requestId);
   }
 
   const reqUrl = new URL(req.url);
   const target = reqUrl.searchParams.get("url");
   if (!target) {
-    return errorResponse(req, "MISSING_URL", "Missing url", 400);
+    return errorResponse(req, "MISSING_URL", "Missing url", 400, ctx.requestId);
+  }
+  if (target.length > MAX_TARGET_URL_LENGTH) {
+    return errorResponse(req, "URL_TOO_LONG", "Video url is too long", 400, ctx.requestId);
   }
 
   let upstreamUrl: URL;
   try {
     upstreamUrl = new URL(target);
   } catch {
-    return errorResponse(req, "INVALID_URL", "Invalid url", 400);
+    return errorResponse(req, "INVALID_URL", "Invalid url", 400, ctx.requestId);
   }
 
   if (!isSupportedProtocol(upstreamUrl.protocol)) {
-    return errorResponse(req, "UNSUPPORTED_PROTOCOL", "Unsupported protocol", 400);
+    return errorResponse(req, "UNSUPPORTED_PROTOCOL", "Unsupported protocol", 400, ctx.requestId);
   }
 
   if (!isAllowedHost(upstreamUrl.hostname)) {
-    return errorResponse(req, "HOST_NOT_ALLOWED", "Host not allowed", 400);
+    return errorResponse(req, "HOST_NOT_ALLOWED", "Host not allowed", 400, ctx.requestId);
   }
 
   let upstream: Response;
@@ -128,11 +136,12 @@ Deno.serve(async (req) => {
       "UPSTREAM_FETCH_FAILED",
       error instanceof Error ? error.message : "Upstream fetch failed",
       502,
+      ctx.requestId,
     );
   }
 
   if (!isAllowedContentType(upstream.headers.get("content-type"))) {
-    return errorResponse(req, "UNSUPPORTED_CONTENT_TYPE", "Upstream content type is not allowed", 415);
+    return errorResponse(req, "UNSUPPORTED_CONTENT_TYPE", "Upstream content type is not allowed", 415, ctx.requestId);
   }
 
   const responseHeaders = new Headers(corsHeaders(req));
@@ -140,6 +149,8 @@ Deno.serve(async (req) => {
     "Access-Control-Expose-Headers",
     "Content-Length, Content-Range, Accept-Ranges, Content-Type, ETag",
   );
+  responseHeaders.set("Cache-Control", "private, no-store");
+  responseHeaders.set("X-Request-Id", ctx.requestId);
 
   for (const header of passthroughResponseHeaders) {
     const value = upstream.headers.get(header);
