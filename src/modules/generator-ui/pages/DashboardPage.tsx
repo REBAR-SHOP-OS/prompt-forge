@@ -1279,7 +1279,7 @@ export default function DashboardPage() {
               <BookmarkCheck className="h-3.5 w-3.5" />
               Generated
               <span className="ml-1 rounded-full border border-white/10 bg-zinc-900 px-1.5 py-0.5 text-[10px] tracking-normal text-zinc-300">
-                {approvedVideos.length}
+                {completedVideos.length}
               </span>
             </div>
             <History className="h-4 w-4 text-zinc-500" />
@@ -1287,8 +1287,8 @@ export default function DashboardPage() {
 
           <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
             <div>
-              <p className="text-xs text-zinc-400">Approved videos</p>
-              <p className="text-sm font-medium text-white">Approved outputs</p>
+              <p className="text-xs text-zinc-400">All generated videos</p>
+              <p className="text-sm font-medium text-white">Outputs</p>
             </div>
             <button
               type="button"
@@ -1319,13 +1319,14 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex-1 space-y-3 overflow-y-auto p-4">
-            {approvedVideos.length === 0 ? (
+            {completedVideos.length === 0 ? (
               <div className="rounded-xl border border-dashed border-white/10 bg-zinc-900/40 px-3 py-6 text-center text-xs text-zinc-500">
-                No approved videos yet.
+                No videos generated yet.
               </div>
             ) : (
-              approvedVideos.map((video, index) => {
+              completedVideos.map((video, index) => {
                 const isActive = previewVideo?.id === video.id
+                const approved = approvedIds.has(video.id)
                 return (
                   <div
                     key={video.id}
@@ -1360,14 +1361,23 @@ export default function DashboardPage() {
                         <button
                           type="button"
                           onClick={() => toggleApproved(video.id)}
-                          title="Remove from approved"
-                          className="rounded p-1 transition hover:bg-white/5 hover:text-white"
+                          title={approved ? 'Remove approval' : 'Approve video'}
+                          className={`rounded p-1 transition hover:bg-white/5 hover:text-white ${
+                            approved ? 'text-emerald-300' : ''
+                          }`}
                         >
-                          <BookmarkCheck className="h-3.5 w-3.5" />
+                          {approved ? (
+                            <BookmarkCheck className="h-3.5 w-3.5" />
+                          ) : (
+                            <BookmarkPlus className="h-3.5 w-3.5" />
+                          )}
                         </button>
                         <button
                           type="button"
-                          onClick={editAndReusePreviousClip}
+                          onClick={() => {
+                            setPreviewVideoId(video.id)
+                            setTimeout(() => { editAndReusePreviousClip() }, 0)
+                          }}
                           title="Edit and continue"
                           className="rounded p-1 transition hover:bg-white/5 hover:text-white"
                         >
