@@ -1257,6 +1257,8 @@ export default function DashboardPage() {
               setComposerError(null)
               setVideoColumnMessage(null)
               setIsApprovedPanelOpen(false)
+              setIsProfilePanelOpen(false)
+              setIsModulesMenuOpen(false)
               setGenerationMode('image-to-video')
               setDurationSeconds(5)
               setUploadTarget('Start')
