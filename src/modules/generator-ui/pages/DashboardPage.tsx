@@ -1594,7 +1594,7 @@ export default function DashboardPage() {
                         <>
                           <LoaderCircle className="h-8 w-8 animate-spin text-zinc-400" />
                           <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-                            در حال ساخت ویدئو…
+                            Generating video…
                           </p>
                           {typeof pct === 'number' ? (
                             <div className="mt-2 flex w-48 flex-col items-center gap-1.5">
