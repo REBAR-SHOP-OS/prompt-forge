@@ -435,11 +435,11 @@ export default function DashboardPage() {
     if (hasUploadingFiles) return 'Waiting for frame uploads to finish…'
     if (!promptText.trim()) {
       return isTextToVideo
-        ? 'Describe the video you want to generate.'
-        : 'Describe the motion for the frame(s).'
+        ? 'توضیح بده چه ویدئویی می‌خواهی بسازی.'
+        : 'حرکت یا تغییری که می‌خواهی روی عکس اعمال شود را توصیف کن.'
     }
     if (!isTextToVideo && !readyStartFrame && !readyEndFrame) {
-      return 'Add a Start or End frame image (use the Start/End buttons on the left).'
+      return 'حداقل یک عکس Start یا End اضافه کن (از دکمه‌های Start/End پایین).'
     }
     return null
   }, [isSubmitting, hasUploadingFiles, readyStartFrame, readyEndFrame, promptText, isTextToVideo])
@@ -882,7 +882,12 @@ export default function DashboardPage() {
         })
       }
     } catch (error) {
-      const message = error instanceof ApiError ? `${error.code}: ${error.message}` : 'Could not start video generation.'
+      console.error('[handleSubmit] video generation failed', error)
+      const message = error instanceof ApiError
+        ? `${error.code}: ${error.message}`
+        : (error instanceof Error && error.message)
+          ? `Could not start video generation: ${error.message}`
+          : 'Could not start video generation.'
       setComposerError(message)
       setVideoColumnMessage(message)
     } finally {
