@@ -1189,8 +1189,8 @@ export default function DashboardPage() {
           <div className="w-8" />
         </header>
 
-        {/* Right HISTORY panel */}
-        <aside className="absolute right-4 top-4 z-20 w-[320px] max-h-[calc(100vh-2rem)] overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/80 backdrop-blur shadow-[0_28px_110px_rgba(0,0,0,0.45)]">
+        {/* Right HISTORY column — full height vertical stack */}
+        <aside className="absolute right-4 top-4 bottom-4 z-20 flex w-[320px] flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/80 backdrop-blur shadow-[0_28px_110px_rgba(0,0,0,0.45)]">
           <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
             <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-zinc-200">
               <History className="h-3.5 w-3.5" />
@@ -1202,7 +1202,7 @@ export default function DashboardPage() {
             <LayoutGrid className="h-4 w-4 text-zinc-500" />
           </div>
 
-          <div className="flex items-center justify-between px-4 pt-3">
+          <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
             <div>
               <p className="text-xs text-zinc-400">Video renders</p>
               <p className="text-sm font-medium text-white">Recent outputs</p>
@@ -1222,7 +1222,7 @@ export default function DashboardPage() {
             </button>
           </div>
 
-          <div className="max-h-[calc(100vh-12rem)] space-y-3 overflow-y-auto p-4">
+          <div className="flex-1 space-y-3 overflow-y-auto p-4">
             {visibleVideos.length === 0 ? (
               <div className="rounded-xl border border-dashed border-white/10 bg-zinc-900/40 px-3 py-6 text-center text-xs text-zinc-500">
                 No renders yet.

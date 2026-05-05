@@ -1,36 +1,34 @@
-I found the root cause: the generation request is not reaching `jobs-create` as an application request. The browser network snapshot shows `POST /functions/v1/jobs-create` failing with `Failed to fetch`, and the backend has only a boot/preflight log at that time, with no corresponding job-create request log. A direct preflight check also shows the response is missing `Access-Control-Allow-Origin` for the app’s preview/published origins. So the browser is blocking video generation at CORS before the function can start the job.
+هدف نهایی: بخش HISTORY در سمت راست دقیقاً مثل یک ستون عمودی بلند عمل کند، و هر ویدئویی که ساخته می‌شود به صورت کارت داخل این ستون نمایش داده شود؛ شماره‌گذاری از بالا با 1 شروع شود و اولین ویدئوی ساخته‌شده همیشه بالای ستون بماند.
 
-Plan:
+برنامه اجرا:
+1. ستون HISTORY را از حالت پنل کوتاه/محدود به یک ستون عمودی تمام‌قد در سمت راست تبدیل می‌کنم.
+   - ارتفاع ستون تقریباً از بالای صفحه تا پایین صفحه خواهد بود.
+   - فضای داخلی ستون اسکرول‌پذیر می‌شود تا با زیاد شدن ویدئوها چیدمان خراب نشود.
+   - عرض ستون و فاصله‌ی ویدئوی اصلی از آن طوری تنظیم می‌شود که روی محتوای مرکز صفحه نیفتد.
 
-1. Fix CORS at the shared backend layer
-   - Update `supabase/functions/_shared/core/http.ts` so deployed app origins are allowed, not only localhost/default origins.
-   - Preserve support for configured `CORS_ALLOW_ORIGINS` / `CORS_ALLOW_ORIGIN`.
-   - Add safe project-origin matching for:
-     - the Lovable preview domain currently used by the app,
-     - the published app domain,
-     - the Lovable internal preview domain seen in the failed request.
-   - Keep security headers and preflight behavior intact.
+2. کارت‌های ویدئو داخل ستون را تثبیت می‌کنم.
+   - هر خروجی تولیدشده یک کارت مستقل خواهد داشت.
+   - کارت شامل پیش‌نمایش ویدئو یا وضعیت در حال ساخت/خطا، متن پرامپت، وضعیت، زمان ساخت و اکشن‌های موجود مثل حذف/ادامه/تأیید خواهد بود.
+   - حالت خالی ستون همچنان نمایش داده می‌شود وقتی هنوز ویدئویی ساخته نشده است.
 
-2. Apply the fix consistently to all functions using the shared CORS helper
-   - Redeploy the affected backend functions that import `preflightResponse` / `jsonResponse`, especially:
-     - `jobs-create`
-     - `jobs-get`
-     - `jobs-list`
-     - `jobs-delete`
-     - `me`
-     - `usage-credits`
-     - `ai-gateway-route-preview`
-     - `video-proxy`
-   - This avoids fixing generation while leaving polling/history/playback blocked by the same CORS issue.
+3. ترتیب و شماره‌گذاری را مطابق خواسته شما قطعی می‌کنم.
+   - لیست از قدیمی‌ترین به جدیدترین نمایش داده می‌شود.
+   - اولین ویدئوی ساخته‌شده همیشه کارت شماره 1 در بالای ستون می‌ماند.
+   - ویدئوهای بعدی با شماره‌های 2، 3، 4 و ... زیر آن اضافه می‌شوند.
+   - این ترتیب هم برای ویدئوهای تازه ساخته‌شده و هم برای تاریخچه‌ای که از قبل بارگذاری می‌شود حفظ می‌شود.
 
-3. Improve frontend error reporting without changing the UI design
-   - Update the shared API client to convert browser-level fetch failures into a structured `NETWORK_ERROR` message instead of the generic “Could not start video generation.”
-   - Keep the current Apple-style UI layout unchanged.
-   - The visible error will become more useful if a true network/CORS/backend reachability issue happens again.
+4. رفتارهای فعلی را نمی‌شکنم.
+   - ساخت ویدئو، polling وضعیت، پیش‌نمایش ویدئو، حذف کارت، ادامه دادن از ویدئوی قبلی و انتخاب کارت برای preview حفظ می‌شود.
+   - فقط ظاهر و چیدمان ستون HISTORY و اطمینان از ترتیب نمایش اصلاح می‌شود.
 
-4. Validate without spending generation credits
-   - Test `OPTIONS /jobs-create` from the preview and published origins and confirm `Access-Control-Allow-Origin` is present.
-   - Test a safe invalid `POST /jobs-create` request that returns validation/auth feedback but does not start a provider generation.
-   - Confirm recent backend logs show the request is reaching the function after the CORS fix.
+جزئیات فنی:
+- فایل اصلی تغییر: `src/modules/generator-ui/pages/DashboardPage.tsx`
+- در حال حاضر منطق مرتب‌سازی در کد تا حد زیادی با نیاز شما هماهنگ است و بر اساس `created_at` صعودی مرتب می‌کند؛ آن را حفظ/محکم‌تر می‌کنم تا خروجی‌های merge شده و generated همیشه با همین ترتیب نهایی نمایش داده شوند.
+- بخش JSX مربوط به `Right HISTORY panel` اصلاح می‌شود تا ستون تمام‌قد و card list واضح‌تر شود.
+- تغییرات محدود و غیرمخرب خواهند بود؛ نیازی به تغییر دیتابیس یا backend نیست.
 
-No database schema changes are needed. The existing video generation/provider logic will be preserved.
+اعتبارسنجی بعد از اجرا:
+- بررسی می‌کنم که ستون در سمت راست تمام‌قد دیده شود.
+- بررسی می‌کنم که کارت‌ها به صورت عمودی زیر هم باشند.
+- بررسی می‌کنم شماره‌ها از بالا با 1 شروع شوند.
+- بررسی می‌کنم اولین ویدئو بالا بماند و ویدئوهای جدید زیر آن اضافه شوند.
