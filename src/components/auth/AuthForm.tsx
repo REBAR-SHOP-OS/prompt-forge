@@ -90,7 +90,7 @@ export default function AuthForm({ mode }: Props) {
       });
       if (error) throw error;
       setInfo(
-        "Confirmation email sent. / ایمیل تأیید ارسال شد.",
+        "Confirmation email sent.",
       );
     } catch (err) {
       setError((err as Error).message);
