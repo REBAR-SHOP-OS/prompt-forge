@@ -80,6 +80,13 @@ export const jobOrchestratorGateway = {
           if (req.method !== "GET" && req.method !== "HEAD") {
             return methodNotAllowed(req, ["GET", "HEAD"], ctx.requestId);
           }
+          const limit = rateLimit(`jobs-list:${auth.userId}`, 30, 60_000);
+          if (!limit.allowed) {
+            await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 429, latencyMs: Date.now() - ctx.startedAt, errorCode: "RATE_LIMITED" });
+            return errorResponse(req, "RATE_LIMITED", "Too many requests", 429, ctx.requestId, {
+              "Retry-After": String(limit.retryAfterSeconds),
+            });
+          }
           const items = await jobService.listMyJobs(auth.userId, userClient);
           await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
           return jsonResponse(req, { items, requestId: ctx.requestId });
@@ -88,6 +95,13 @@ export const jobOrchestratorGateway = {
         case "getJob": {
           if (req.method !== "GET" && req.method !== "HEAD") {
             return methodNotAllowed(req, ["GET", "HEAD"], ctx.requestId);
+          }
+          const limit = rateLimit(`jobs-get:${auth.userId}`, 120, 60_000);
+          if (!limit.allowed) {
+            await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 429, latencyMs: Date.now() - ctx.startedAt, errorCode: "RATE_LIMITED" });
+            return errorResponse(req, "RATE_LIMITED", "Too many requests", 429, ctx.requestId, {
+              "Retry-After": String(limit.retryAfterSeconds),
+            });
           }
           const url = new URL(req.url);
           const jobIdParam = url.searchParams.get("jobId") ?? undefined;
@@ -123,12 +137,24 @@ export const jobOrchestratorGateway = {
                 detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
                 progressPercent = 100;
               } else if (poll.status === "failed") {
-                // Mark job failed without refund (per current credit policy).
-                await svc
-                  .from("generator_generation_jobs")
-                  .update({ status: "failed", updated_at: new Date().toISOString() })
-                  .eq("id", detail.id)
-                  .eq("user_id", auth.userId);
+                try {
+                  await jobService.failJob(svc, {
+                    userId: auth.userId,
+                    jobId: detail.id,
+                    reason: "provider task failed",
+                    refundCredits: true,
+                  });
+                } catch (failError) {
+                  await svc
+                    .from("generator_generation_jobs")
+                    .update({ status: "failed", updated_at: new Date().toISOString() })
+                    .eq("id", detail.id)
+                    .eq("user_id", auth.userId);
+                  logError("job fail transition fallback used", {
+                    error: (failError as Error).message,
+                    jobId: detail.id,
+                  });
+                }
                 detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
                 progressPercent = null;
               } else {
@@ -172,6 +198,23 @@ export const jobOrchestratorGateway = {
           const firstFrameUrl = parsed.data.firstFrameUrl ?? null;
           const lastFrameUrl = parsed.data.lastFrameUrl ?? null;
 
+          if (providerKey !== "wan") {
+            await writeApiRequestLog(svc, {
+              ...ctx,
+              userId: auth.userId,
+              statusCode: 400,
+              latencyMs: Date.now() - ctx.startedAt,
+              errorCode: "UNSUPPORTED_PROVIDER",
+            });
+            return errorResponse(
+              req,
+              "UNSUPPORTED_PROVIDER",
+              `Provider ${providerKey} is not enabled in the current production-safe build`,
+              400,
+              ctx.requestId,
+            );
+          }
+
           // Image-to-video accepts a first frame by itself or a first+last pair.
           // Reject a last frame without a first frame.
           if (!firstFrameUrl && lastFrameUrl) {
@@ -212,13 +255,27 @@ export const jobOrchestratorGateway = {
               durationSeconds: parsed.data.durationSeconds ?? null,
             });
           } catch (e) {
-            // failJob RPC may not exist; fall back to a direct status update so
-            // we don't mask the original error with a secondary failure.
             try {
-              await svc.from("generator_generation_jobs")
-                .update({ status: "failed", updated_at: new Date().toISOString() })
-                .eq("id", jobId).eq("user_id", auth.userId);
-            } catch (_) { /* best-effort */ }
+              await jobService.failJob(svc, {
+                userId: auth.userId,
+                jobId,
+                reason: (e as Error).message,
+                refundCredits: true,
+              });
+            } catch (failError) {
+              try {
+                await svc.from("generator_generation_jobs")
+                  .update({ status: "failed", updated_at: new Date().toISOString() })
+                  .eq("id", jobId)
+                  .eq("user_id", auth.userId);
+              } catch (_) {
+                /* best-effort */
+              }
+              logError("failJob after startGeneration failed", {
+                error: (failError as Error).message,
+                jobId,
+              });
+            }
             logError("startGeneration failed", { error: (e as Error).message, jobId });
             return errorResponse(req, "PROVIDER_ERROR", `Provider failed to start generation: ${(e as Error).message}`, 502, ctx.requestId);
           }
