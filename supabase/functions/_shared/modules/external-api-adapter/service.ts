@@ -293,9 +293,9 @@ async function pollWanI2V(taskId: string, apiKey: string): Promise<GenerationPol
   }
 
   if (status === "FAILED" || status === "CANCELED") {
-    const msg = json.output?.message || json.message || "provider task failed";
-    logError("dashscope task failed", { taskId, msg, code: json.output?.code ?? json.code });
-    return { status: "failed" };
+    const reason = json.output?.message || json.message || "provider task failed";
+    logError("dashscope task failed", { taskId, reason, code: json.output?.code ?? json.code });
+    return { status: "failed", reason };
   }
 
   const providerProgress = parseProviderProgress(json.output?.progress);
@@ -310,6 +310,7 @@ async function pollWanI2V(taskId: string, apiKey: string): Promise<GenerationPol
 export const aiGateway: AiGateway = {
   sanitizePrompt,
   resolveRoute,
+  getProviderApiKey,
 
   async startGeneration(
     providerKey,
@@ -320,14 +321,13 @@ export const aiGateway: AiGateway = {
 
     // Mock mode useful for early phases / local demo without provider billing.
     if (allowMockGeneration()) {
-      const isT2V = !input.firstFrameUrl && !input.lastFrameUrl;
       return {
         providerJobId: `mock_${crypto.randomUUID()}`,
         isComplete: true,
         videoUrl: MOCK_VIDEO_URL,
         thumbnailUrl: MOCK_THUMB,
         duration: input.durationSeconds ?? 5,
-        aspectRatio: isT2V ? "16:9" : "16:9",
+        aspectRatio: "16:9",
       };
     }
 
