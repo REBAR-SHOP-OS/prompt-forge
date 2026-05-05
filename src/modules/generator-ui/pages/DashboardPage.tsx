@@ -545,10 +545,28 @@ export default function DashboardPage() {
     }
   }, [authLoading, session])
 
-  useEffect(() => {
-    const activeJobs = generatedVideos.filter((job) => !isTerminalStatus(job.status))
+  // Stable signature of in-flight job IDs — only changes when the *set* of
+  // active jobs changes, not on every progress tick. This prevents the polling
+  // timer from being torn down and rebuilt on every refresh.
+  const activeJobIdsKey = useMemo(
+    () =>
+      generatedVideos
+        .filter((job) => !isTerminalStatus(job.status))
+        .map((job) => job.id)
+        .sort()
+        .join(','),
+    [generatedVideos]
+  )
 
-    if (activeJobs.length === 0) {
+  // Keep a ref to the latest jobs so the timer callback always reads fresh
+  // data without re-subscribing.
+  const generatedVideosRef = useRef(generatedVideos)
+  useEffect(() => {
+    generatedVideosRef.current = generatedVideos
+  }, [generatedVideos])
+
+  useEffect(() => {
+    if (!activeJobIdsKey) {
       if (pollTimerRef.current) {
         window.clearTimeout(pollTimerRef.current)
         pollTimerRef.current = null
@@ -556,26 +574,54 @@ export default function DashboardPage() {
       return
     }
 
-    pollTimerRef.current = window.setTimeout(async () => {
-      try {
-        const refreshedJobs = await Promise.all(activeJobs.map((job) => jobOrchestratorGateway.getJob(job.id)))
+    let cancelled = false
+
+    const tick = async () => {
+      const activeIds = generatedVideosRef.current
+        .filter((job) => !isTerminalStatus(job.status))
+        .map((job) => job.id)
+      if (activeIds.length === 0) return
+
+      const settled = await Promise.allSettled(
+        activeIds.map((id) => jobOrchestratorGateway.getJob(id))
+      )
+      if (cancelled) return
+
+      const refreshed = settled
+        .filter((r): r is PromiseFulfilledResult<JobDetail> => r.status === 'fulfilled')
+        .map((r) => r.value)
+
+      if (refreshed.length > 0) {
         setGeneratedVideos((currentJobs) =>
-          refreshedJobs.reduce((jobs, refreshedJob) => mergeJob(jobs, refreshedJob), currentJobs)
+          refreshed.reduce((jobs, refreshedJob) => mergeJob(jobs, refreshedJob), currentJobs)
         )
-      } catch (error) {
+      }
+
+      const firstRejection = settled.find((r) => r.status === 'rejected') as
+        | PromiseRejectedResult
+        | undefined
+      if (firstRejection && refreshed.length === 0) {
+        const error = firstRejection.reason
         setVideoColumnMessage(
           error instanceof ApiError ? `${error.code}: ${error.message}` : 'Could not refresh render status.'
         )
       }
-    }, VIDEO_POLL_INTERVAL_MS)
+
+      if (!cancelled) {
+        pollTimerRef.current = window.setTimeout(tick, VIDEO_POLL_INTERVAL_MS)
+      }
+    }
+
+    pollTimerRef.current = window.setTimeout(tick, VIDEO_POLL_INTERVAL_MS)
 
     return () => {
+      cancelled = true
       if (pollTimerRef.current) {
         window.clearTimeout(pollTimerRef.current)
         pollTimerRef.current = null
       }
     }
-  }, [generatedVideos])
+  }, [activeJobIdsKey])
 
   // When a job that has a pending end-frame append completes, merge a 2s
   // still clip of the End image to the end of the video and replace the
