@@ -545,10 +545,28 @@ export default function DashboardPage() {
     }
   }, [authLoading, session])
 
-  useEffect(() => {
-    const activeJobs = generatedVideos.filter((job) => !isTerminalStatus(job.status))
+  // Stable signature of in-flight job IDs — only changes when the *set* of
+  // active jobs changes, not on every progress tick. This prevents the polling
+  // timer from being torn down and rebuilt on every refresh.
+  const activeJobIdsKey = useMemo(
+    () =>
+      generatedVideos
+        .filter((job) => !isTerminalStatus(job.status))
+        .map((job) => job.id)
+        .sort()
+        .join(','),
+    [generatedVideos]
+  )
 
-    if (activeJobs.length === 0) {
+  // Keep a ref to the latest jobs so the timer callback always reads fresh
+  // data without re-subscribing.
+  const generatedVideosRef = useRef(generatedVideos)
+  useEffect(() => {
+    generatedVideosRef.current = generatedVideos
+  }, [generatedVideos])
+
+  useEffect(() => {
+    if (!activeJobIdsKey) {
       if (pollTimerRef.current) {
         window.clearTimeout(pollTimerRef.current)
         pollTimerRef.current = null
@@ -556,26 +574,54 @@ export default function DashboardPage() {
       return
     }
 
-    pollTimerRef.current = window.setTimeout(async () => {
-      try {
-        const refreshedJobs = await Promise.all(activeJobs.map((job) => jobOrchestratorGateway.getJob(job.id)))
+    let cancelled = false
+
+    const tick = async () => {
+      const activeIds = generatedVideosRef.current
+        .filter((job) => !isTerminalStatus(job.status))
+        .map((job) => job.id)
+      if (activeIds.length === 0) return
+
+      const settled = await Promise.allSettled(
+        activeIds.map((id) => jobOrchestratorGateway.getJob(id))
+      )
+      if (cancelled) return
+
+      const refreshed = settled
+        .filter((r): r is PromiseFulfilledResult<JobDetail> => r.status === 'fulfilled')
+        .map((r) => r.value)
+
+      if (refreshed.length > 0) {
         setGeneratedVideos((currentJobs) =>
-          refreshedJobs.reduce((jobs, refreshedJob) => mergeJob(jobs, refreshedJob), currentJobs)
+          refreshed.reduce((jobs, refreshedJob) => mergeJob(jobs, refreshedJob), currentJobs)
         )
-      } catch (error) {
+      }
+
+      const firstRejection = settled.find((r) => r.status === 'rejected') as
+        | PromiseRejectedResult
+        | undefined
+      if (firstRejection && refreshed.length === 0) {
+        const error = firstRejection.reason
         setVideoColumnMessage(
           error instanceof ApiError ? `${error.code}: ${error.message}` : 'Could not refresh render status.'
         )
       }
-    }, VIDEO_POLL_INTERVAL_MS)
+
+      if (!cancelled) {
+        pollTimerRef.current = window.setTimeout(tick, VIDEO_POLL_INTERVAL_MS)
+      }
+    }
+
+    pollTimerRef.current = window.setTimeout(tick, VIDEO_POLL_INTERVAL_MS)
 
     return () => {
+      cancelled = true
       if (pollTimerRef.current) {
         window.clearTimeout(pollTimerRef.current)
         pollTimerRef.current = null
       }
     }
-  }, [generatedVideos])
+  }, [activeJobIdsKey])
 
   // When a job that has a pending end-frame append completes, merge a 2s
   // still clip of the End image to the end of the video and replace the
@@ -1452,15 +1498,20 @@ export default function DashboardPage() {
                       <button
                         type="button"
                         onClick={() => startPreviewVideo(video.id)}
-                        className="block w-full overflow-hidden rounded-lg bg-black"
+                        className="group/play relative block w-full overflow-hidden rounded-lg bg-black"
                       >
                         <video
                           src={video.video!.storage_path}
                           muted
                           playsInline
-                          controls
+                          preload="metadata"
                           className="aspect-video w-full bg-black object-contain"
                         />
+                        <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/0 transition group-hover/play:bg-black/30">
+                          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-black opacity-0 shadow-lg transition group-hover/play:opacity-100">
+                            <svg viewBox="0 0 24 24" className="h-4 w-4 translate-x-[1px] fill-current"><path d="M8 5v14l11-7z" /></svg>
+                          </span>
+                        </span>
                       </button>
 
                       <div className="mt-2 flex items-start justify-between gap-2 px-1">
