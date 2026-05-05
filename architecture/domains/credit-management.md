@@ -86,11 +86,12 @@ HAVING p.credits_balance <> COALESCE(SUM(t.amount), 0);
 ## RLS notes
 
 Existing policies preserved exactly:
-- `profiles: users select own` / `profiles: admins select all` /
-  `profiles: users update own` / `profiles: admins update all`
+- `profiles: users select own` / `profiles: admins select all`
+- No client `UPDATE` policy exists on `core_user_profiles`; profile writes go
+  through backend or service-role flows.
 - `guard_profile_updates` trigger keeps `credits_balance` writable only by
   admin or service role.
 - `credits: users select own` / `credits: admins select all`
 
-Cutover never modifies any of these. The trigger is the safety net that
-prevents a cutover bug from letting a user mint credits.
+Cutover never modifies any of these. The write lock plus trigger are the safety
+net that prevents a cutover bug from letting a user mint credits.
