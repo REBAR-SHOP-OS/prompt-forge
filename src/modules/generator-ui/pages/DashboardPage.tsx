@@ -1398,13 +1398,13 @@ export default function DashboardPage() {
           </div>
         </aside>
 
-        {/* Left slide-in panel — ویدئوهای ساخته‌شده */}
+        {/* Left slide-in panel — Generated videos */}
         {isApprovedPanelOpen ? (
           <aside className="absolute left-4 top-16 bottom-4 z-30 flex w-[340px] flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/90 backdrop-blur shadow-[0_28px_110px_rgba(0,0,0,0.55)]">
             <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
               <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-zinc-200">
                 <LayoutGrid className="h-3.5 w-3.5" />
-                ویدئوهای ساخته‌شده
+                Generated videos
                 <span className="ml-1 rounded-full border border-white/10 bg-zinc-900 px-1.5 py-0.5 text-[10px] tracking-normal text-zinc-300">
                   {completedVideos.length}
                 </span>
@@ -1413,7 +1413,7 @@ export default function DashboardPage() {
                 type="button"
                 onClick={() => setIsApprovedPanelOpen(false)}
                 className="rounded p-1 text-zinc-400 transition hover:bg-white/5 hover:text-white"
-                title="بستن"
+                title="Close"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -1421,7 +1421,7 @@ export default function DashboardPage() {
             <div className="flex-1 space-y-3 overflow-y-auto p-4">
               {completedVideos.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-white/10 bg-zinc-900/40 px-3 py-6 text-center text-xs text-zinc-500">
-                  هنوز ویدئویی ساخته نشده است.
+                  No videos generated yet.
                 </div>
               ) : (
                 completedVideos.map((video, index) => {
@@ -1455,13 +1455,13 @@ export default function DashboardPage() {
 
                       <div className="mt-2 flex items-start justify-between gap-2 px-1">
                         <p className="line-clamp-2 flex-1 text-xs leading-5 text-zinc-200">
-                          {stripAttachedFilesBlock(video.input_prompt) || 'بدون عنوان'}
+                          {stripAttachedFilesBlock(video.input_prompt) || 'Untitled'}
                         </p>
                         <div className="flex shrink-0 items-center gap-1 text-zinc-400">
                           <button
                             type="button"
                             onClick={() => toggleApproved(video.id)}
-                            title={approved ? 'برداشتن تایید' : 'تایید و افزودن به ساخته‌شده‌ها'}
+                            title={approved ? 'Remove approval' : 'Approve and add to generated'}
                             className={`rounded p-1 transition hover:bg-white/5 hover:text-white ${
                               approved ? 'text-emerald-300' : ''
                             }`}
@@ -1475,7 +1475,7 @@ export default function DashboardPage() {
                           <button
                             type="button"
                             onClick={() => deleteCard(video.id)}
-                            title="حذف"
+                            title="Delete"
                             className="rounded p-1 transition hover:bg-rose-500/10 hover:text-rose-300"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
