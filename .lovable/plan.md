@@ -1,62 +1,34 @@
-## Goal
+## Problem
 
-Two refinements to the History column on the dashboard:
+The toast "Could not start video generation" appears because the app's TypeScript build is currently failing with 3 errors in `src/modules/generator-ui/pages/DashboardPage.tsx`:
 
-1. **Continuity prompt** — when the user clicks the **+** button to add a new card, the prompt for the new card must continue the *content* of the previous card (not just reuse its last frame as the Start image).
-2. **Numbered cards in chronological order** — show a sequence number on each History card. Card **#1** is the first one created, then **#2**, **#3**… The first card sits at the **top** of the column and newer cards appear **below** it.
-
-Everything else (start/end frame logic, merging, library, delete, edit-and-reuse) stays as-is.
-
----
-
-## Changes
-
-### 1. History order: oldest → newest (top → bottom)
-
-Currently `mergeJob` and `hydrateJobs` sort `created_at` descending (newest first). Flip both to ascending so card #1 is rendered at the top.
-
-The "preview latest by default" behavior in the empty-preview-id branch should pick the **last** completed video instead of the first, so the most recent render still auto-previews.
-
-**File:** `src/modules/generator-ui/pages/DashboardPage.tsx`
-- `mergeJob` — sort ascending by `created_at`.
-- `hydrateJobs` — sort ascending by `created_at`.
-- `previewVideo` fallback — pick the last item with a `storage_path` (newest), not the first.
-- `handleAddVideoCard` — "previous render" lookup currently uses `find(...)` which returns the first match; with ascending order this would return the **oldest**. Switch to scanning from the end (`findLast` or reverse-iterate) so it grabs the **newest completed** card as the seed for continuation.
-
-### 2. Numbered card badge
-
-Add a small circular badge in the top-left corner of each History card showing its 1-based index (`#1`, `#2`, …). Numbering is based on chronological order (creation time), so it's stable: the first card forged is always **1**, even after deletions of later cards.
-
-Implementation:
-- Compute `chronologicalIndex` per visible card from the ascending-sorted History list (1-based).
-- Render a small badge overlaid on the video thumbnail (top-left), styled like the existing badges (white/10 border, dark bg, tabular-nums).
-
-### 3. Continuity prompt on **+**
-
-`handleAddVideoCard` already auto-seeds the previous video's last frame as the Start frame. Extend it to also pre-fill the prompt input with a *continuation* of the previous card's prompt.
-
-Approach (no AI call — keep it instant and offline):
-- Take the previous card's `input_prompt`, strip the `Attached files:` block that `buildPromptWithUploadedFiles` appends.
-- Build a Persian continuation seed:
-  `«ادامه: {previous prompt}» — صحنه را به‌صورت طبیعی از همان‌جا که قبلی تمام شد ادامه بده.`
-- Set `promptText` to this seed so the user sees it pre-filled and can tweak before hitting Prompt.
-- The previous card's last frame continues to be uploaded as the Start frame (existing behavior), so the visual continuity is preserved alongside the textual continuity.
-
-If there is no previous completed card, leave the prompt empty (current behavior).
-
----
-
-## Technical details
-
-```text
-History column (top → bottom)
-┌─────────────────────────┐
-│ [#1]  first render      │  ← oldest
-│ [#2]  second render     │
-│ [#3]  third render      │  ← newest, auto-previewed
-└─────────────────────────┘
+```
+(949,98) (993,98) (1112,71)
+Argument of type 'MergeProgress' is not assignable to parameter of type 'SetStateAction<number>'
 ```
 
-Files touched: only `src/modules/generator-ui/pages/DashboardPage.tsx`.
+`mergeVideoUrls(...)` callback receives a `MergeProgress` object `{ ratio, clipIndex, totalClips }`, but the code calls `setMergeProgress(p)` where `mergeProgress` is typed as `number`. Because the bundle fails to compile cleanly, the most recent client code never reaches the browser and the `jobs-create` POST shows up as `Failed to fetch`, surfacing the generic toast.
 
-No backend, schema, or edge-function changes required.
+## Fix
+
+In `src/modules/generator-ui/pages/DashboardPage.tsx`, convert the `MergeProgress` payload to the percentage number expected by the existing UI (`{mergeProgress}%` on line 1710):
+
+Replace each of the 3 callback sites:
+
+```ts
+(p) => setMergeProgress(p)
+```
+
+with:
+
+```ts
+(p) => setMergeProgress(Math.round(p.ratio * 100))
+```
+
+Lines affected: 949, 993, 1112.
+
+No other changes needed — `mergeProgress` stays `number` (0–100), and the existing display `Merging video stack… {mergeProgress}%` continues to work correctly.
+
+## Verification
+
+After the edit, the build should pass and the Start-only image-to-video request (visible in network logs as a valid POST to `/jobs-create` with `firstFrameUrl`) will succeed normally.
