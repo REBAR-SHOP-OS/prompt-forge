@@ -8,11 +8,14 @@ import {
   History,
   LayoutGrid,
   LoaderCircle,
+  LogOut,
   Paperclip,
   Pencil,
   Plus,
   RotateCcw,
   Trash2,
+  User,
+  Video,
   X,
 } from 'lucide-react'
 
@@ -206,6 +209,8 @@ export default function DashboardPage() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
+  const [isModulesMenuOpen, setIsModulesMenuOpen] = useState(false)
+  const [isProfilePanelOpen, setIsProfilePanelOpen] = useState(false)
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
   const [durationSeconds, setDurationSeconds] = useState<5 | 10>(5)
   const userId = session?.user?.id ?? null
@@ -1184,19 +1189,61 @@ export default function DashboardPage() {
       >
         {/* Top bar */}
         <header className="absolute inset-x-0 top-0 z-30 flex items-center justify-between px-5 py-4">
-          <div className="flex items-center gap-2">
+          <div className="relative flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setIsApprovedPanelOpen((v) => !v)}
-              title="ویدئوهای ساخته‌شده"
+              onClick={() => setIsModulesMenuOpen((v) => !v)}
+              title="ماژول‌ها"
               className={`inline-flex h-8 w-8 items-center justify-center rounded-md border transition ${
-                isApprovedPanelOpen
+                isModulesMenuOpen || isApprovedPanelOpen || isProfilePanelOpen
                   ? 'border-emerald-400/50 bg-emerald-500/10 text-emerald-100'
                   : 'border-white/10 bg-zinc-900/60 text-zinc-300 hover:border-white/20 hover:text-white'
               }`}
             >
               <LayoutGrid className="h-4 w-4" />
             </button>
+
+            {isModulesMenuOpen ? (
+              <>
+                {/* click-outside backdrop */}
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setIsModulesMenuOpen(false)}
+                />
+                <div
+                  className="absolute left-0 top-10 z-50 w-56 overflow-hidden rounded-xl border border-white/10 bg-zinc-950/95 p-1.5 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur"
+                  dir="rtl"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsModulesMenuOpen(false)
+                      setIsProfilePanelOpen(true)
+                      setIsApprovedPanelOpen(false)
+                    }}
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-right text-sm text-zinc-200 transition hover:bg-white/5 hover:text-white"
+                  >
+                    <User className="h-4 w-4 text-zinc-400" />
+                    <span className="flex-1">پروفایل کاربر</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsModulesMenuOpen(false)
+                      setIsApprovedPanelOpen(true)
+                      setIsProfilePanelOpen(false)
+                    }}
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-right text-sm text-zinc-200 transition hover:bg-white/5 hover:text-white"
+                  >
+                    <Video className="h-4 w-4 text-zinc-400" />
+                    <span className="flex-1">ویدئوهای ساخته‌شده</span>
+                    <span className="rounded-full border border-white/10 bg-zinc-900 px-1.5 py-0.5 text-[10px] tabular-nums text-zinc-300">
+                      {completedVideos.length}
+                    </span>
+                  </button>
+                </div>
+              </>
+            ) : null}
           </div>
 
           <button
@@ -1210,6 +1257,8 @@ export default function DashboardPage() {
               setComposerError(null)
               setVideoColumnMessage(null)
               setIsApprovedPanelOpen(false)
+              setIsProfilePanelOpen(false)
+              setIsModulesMenuOpen(false)
               setGenerationMode('image-to-video')
               setDurationSeconds(5)
               setUploadTarget('Start')
@@ -1446,6 +1495,81 @@ export default function DashboardPage() {
                   )
                 })
               )}
+            </div>
+          </aside>
+        ) : null}
+
+        {/* Left column — User profile */}
+        {isProfilePanelOpen ? (
+          <aside
+            className="absolute left-4 top-16 bottom-4 z-30 flex w-[340px] flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/90 backdrop-blur shadow-[0_28px_110px_rgba(0,0,0,0.55)]"
+            dir="rtl"
+          >
+            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+              <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-zinc-200">
+                <User className="h-3.5 w-3.5" />
+                پروفایل کاربر
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsProfilePanelOpen(false)}
+                className="rounded p-1 text-zinc-400 transition hover:bg-white/5 hover:text-white"
+                title="بستن"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex-1 space-y-4 overflow-y-auto p-4">
+              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-zinc-900/60 p-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-zinc-800 text-zinc-200">
+                  <User className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm text-zinc-100" dir="ltr">
+                    {profile?.email ?? session?.user?.email ?? '—'}
+                  </p>
+                  <p className="text-[11px] text-zinc-500">
+                    {profile?.role === 'admin' ? 'مدیر' : 'کاربر'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-3">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">اعتبار</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-100">
+                    {profile?.credits_balance ?? 0}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-3">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">ویدئوها</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-100">
+                    {completedVideos.length}
+                  </p>
+                </div>
+              </div>
+
+              {profile?.created_at ? (
+                <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-3">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">عضویت از</p>
+                  <p className="mt-1 text-xs text-zinc-300">
+                    {new Date(profile.created_at).toLocaleDateString('fa-IR')}
+                  </p>
+                </div>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={() => {
+                  void signOut()
+                  setIsProfilePanelOpen(false)
+                }}
+                disabled={authLoading}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-200 transition hover:border-rose-400/50 hover:bg-rose-500/20 disabled:opacity-50"
+              >
+                <LogOut className="h-4 w-4" />
+                خروج از حساب
+              </button>
             </div>
           </aside>
         ) : null}
