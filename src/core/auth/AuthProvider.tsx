@@ -14,16 +14,7 @@ interface AuthState {
   signOut: () => Promise<void>;
 }
 
-declare global {
-  // Keeps AuthProvider/useAuth on the same context object across Vite HMR updates.
-  // Without this, a stale Provider can briefly wrap a fresh useAuth hook and return undefined.
-  // eslint-disable-next-line no-var
-  var __AURA_CLIP_AUTH_CONTEXT__: ReturnType<typeof createContext<AuthState | undefined>> | undefined;
-}
-
-const AuthContext =
-  globalThis.__AURA_CLIP_AUTH_CONTEXT__ ??
-  (globalThis.__AURA_CLIP_AUTH_CONTEXT__ = createContext<AuthState | undefined>(undefined));
+const AuthContext = createContext<AuthState | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
