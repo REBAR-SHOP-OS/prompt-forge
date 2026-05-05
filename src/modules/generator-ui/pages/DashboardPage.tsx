@@ -1632,8 +1632,8 @@ export default function DashboardPage() {
             <div className="mt-3 flex items-center justify-between gap-4 px-1 text-xs text-zinc-400">
               <p className="line-clamp-1 flex-1">
                 {previewVideo
-                  ? stripAttachedFilesBlock(previewVideo.input_prompt) || 'بدون عنوان'
-                  : 'هنوز ویدئویی ساخته نشده است.'}
+                  ? stripAttachedFilesBlock(previewVideo.input_prompt) || 'Untitled'
+                  : 'No videos generated yet.'}
               </p>
               {previewVideo ? (
                 <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-zinc-900/70 px-2.5 py-1">
