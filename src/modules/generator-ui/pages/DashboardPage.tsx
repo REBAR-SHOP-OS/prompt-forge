@@ -448,8 +448,24 @@ export default function DashboardPage() {
   const endUploadCount = uploadedFiles.filter((file) => file.target === 'End').length
   const visibleVideos = useMemo(() => {
     const all = [...mergedEntries, ...generatedVideos]
-    return all.filter((v) => !deletedIds.has(v.id))
+    return all
+      .filter((v) => !deletedIds.has(v.id))
+      .sort((l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime())
   }, [generatedVideos, mergedEntries, deletedIds])
+
+  // Only videos that have actually finished rendering and have a playable file.
+  const completedVideos = useMemo(
+    () => visibleVideos.filter(
+      (v) => normalizeStatus(v.status) === 'completed' && v.video?.storage_path
+    ),
+    [visibleVideos]
+  )
+
+  // Only videos the user has explicitly approved (shown in right column).
+  const approvedVideos = useMemo(
+    () => completedVideos.filter((v) => approvedIds.has(v.id)),
+    [completedVideos, approvedIds]
+  )
 
   const completedSourceVideos = useMemo(
     () => generatedVideos.filter(
