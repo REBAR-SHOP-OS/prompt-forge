@@ -440,11 +440,11 @@ export default function DashboardPage() {
     if (hasUploadingFiles) return 'Waiting for frame uploads to finish…'
     if (!promptText.trim()) {
       return isTextToVideo
-        ? 'توضیح بده چه ویدئویی می‌خواهی بسازی.'
-        : 'حرکت یا تغییری که می‌خواهی روی عکس اعمال شود را توصیف کن.'
+        ? 'Describe the video you want to generate.'
+        : 'Describe the motion or change to apply to the image.'
     }
     if (!isTextToVideo && !readyStartFrame && !readyEndFrame) {
-      return 'حداقل یک عکس Start یا End اضافه کن (از دکمه‌های Start/End پایین).'
+      return 'Add at least one Start or End image (use the Start/End buttons below).'
     }
     return null
   }, [isSubmitting, hasUploadingFiles, readyStartFrame, readyEndFrame, promptText, isTextToVideo])
