@@ -1422,10 +1422,10 @@ export default function DashboardPage() {
           </aside>
         ) : null}
 
-        {/* Center stage: video + caption */}
+        {/* Center stage: video preview + caption */}
         <main className="flex min-h-screen w-full items-center justify-center px-6 pb-56 pt-24">
           <div className="w-full max-w-[1100px] pr-[340px]">
-            <div className="overflow-hidden rounded-xl bg-black">
+            <div className="overflow-hidden rounded-xl border border-white/10 bg-black shadow-[0_28px_80px_rgba(0,0,0,0.5)]">
               {previewVideo?.video?.storage_path ? (
                 <video
                   key={previewVideo.video.storage_path}
@@ -1436,25 +1436,46 @@ export default function DashboardPage() {
                   className="aspect-video w-full bg-black object-contain"
                 />
               ) : (
-                <div className="flex aspect-video w-full items-center justify-center bg-black text-zinc-700">
+                <div className="flex aspect-video w-full flex-col items-center justify-center gap-3 bg-black text-zinc-600">
                   {previewVideo && normalizeStatus(previewVideo.status) !== 'failed' ? (
-                    <LoaderCircle className="h-8 w-8 animate-spin" />
-                  ) : null}
+                    <>
+                      <LoaderCircle className="h-8 w-8 animate-spin text-zinc-400" />
+                      <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                        در حال ساخت ویدئو…
+                      </p>
+                    </>
+                  ) : previewVideo && normalizeStatus(previewVideo.status) === 'failed' ? (
+                    <>
+                      <X className="h-8 w-8 text-rose-400" />
+                      <p className="text-xs uppercase tracking-[0.22em] text-rose-300">
+                        ساخت ویدئو ناموفق بود
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <LayoutGrid className="h-8 w-8 text-zinc-700" />
+                      <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                        پیش‌نمایش ویدئو ساخته‌شده اینجا نمایش داده می‌شود
+                      </p>
+                    </>
+                  )}
                 </div>
               )}
             </div>
 
-            {previewVideo ? (
-              <div className="mt-3 flex items-center justify-between gap-4 px-1 text-xs text-zinc-400">
-                <p className="line-clamp-1 flex-1">
-                  {previewVideo.input_prompt || 'Untitled render'}
-                </p>
+            <div className="mt-3 flex items-center justify-between gap-4 px-1 text-xs text-zinc-400">
+              <p className="line-clamp-1 flex-1">
+                {previewVideo
+                  ? stripAttachedFilesBlock(previewVideo.input_prompt) || 'بدون عنوان'
+                  : 'هنوز ویدئویی ساخته نشده است.'}
+              </p>
+              {previewVideo ? (
                 <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-zinc-900/70 px-2.5 py-1">
                   <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(previewVideo.status)}`} />
                   {formatStatusLabel(previewVideo.status)}
                 </span>
-              </div>
-            ) : null}
+              ) : null}
+            </div>
           </div>
         </main>
 
