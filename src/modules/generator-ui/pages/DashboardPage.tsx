@@ -206,6 +206,8 @@ export default function DashboardPage() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
+  const [isModulesMenuOpen, setIsModulesMenuOpen] = useState(false)
+  const [isProfilePanelOpen, setIsProfilePanelOpen] = useState(false)
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
   const [durationSeconds, setDurationSeconds] = useState<5 | 10>(5)
   const userId = session?.user?.id ?? null
