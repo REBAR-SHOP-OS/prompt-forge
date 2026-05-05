@@ -1202,8 +1202,18 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => {
-              resetComposer()
+              // Full UI reset — clear composer, preview, errors, panels, and
+              // mode selectors. Keep generated/approved history intact.
+              setPromptText('')
+              setUploadedFiles([])
               setPreviewVideoId(null)
+              setComposerError(null)
+              setVideoColumnMessage(null)
+              setIsApprovedPanelOpen(false)
+              setGenerationMode('image-to-video')
+              setDurationSeconds(5)
+              setUploadTarget('Start')
+              setIsDragging(false)
             }}
             className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-zinc-900/70 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.22em] text-zinc-200 backdrop-blur transition hover:border-white/30 hover:text-white"
           >
