@@ -24,8 +24,6 @@ const passthroughResponseHeaders = [
 
 const ALLOWED_HOST_SUFFIXES = [
   "aliyuncs.com",
-  "supabase.co",
-  "supabase.in",
 ];
 
 const ALLOWED_CONTENT_TYPES = [
@@ -43,7 +41,7 @@ function isAllowedHost(hostname: string): boolean {
 }
 
 function isSupportedProtocol(protocol: string): boolean {
-  return protocol === "https:" || protocol === "http:";
+  return protocol === "https:";
 }
 
 function isAllowedContentType(contentType: string | null): boolean {
