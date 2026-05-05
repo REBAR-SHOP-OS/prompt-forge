@@ -1,58 +1,67 @@
 ## هدف
 
-قانون ساده‌ای که کاربر مشخص کرد:
-- **فقط عکس Start** → آن عکس را اول ویدئو قرار بده، ادامه ویدئو با پرامت ساخته شود. (End را فراموش کن، آن را به‌عنوان Last frame استفاده نکن)
-- **فقط عکس End** → ویدئویی با پرامت بساز که در **انتها** به عکس End برسد. (این منطق فعلاً درست کار می‌کند)
-- **هر دو فریم** → مثل قبل image-to-video با first+last.
+پاکسازی فایل‌های مرده/شیم در ریپو **بدون هیچ تغییر رفتاری**. وضعیت فعلی پروژه (Dashboard، منطق Start-only/End-only/both، احراز هویت، شماره‌گذاری کارت‌ها) به‌عنوان baseline ثابت می‌ماند و نقاط ورود فعلی (`src/main.tsx` → `src/App.tsx` → `AuthProvider` + `LoginPage`/`DashboardPage`) دست‌نخورده باقی می‌مانند.
 
-## مشکل فعلی
+## فایل‌هایی که حذف می‌شوند
 
-در `src/modules/generator-ui/pages/DashboardPage.tsx` (خط ~746)، حالت "فقط Start" به‌اشتباه همان عکس Start را به‌عنوان `lastFrameUrl` هم می‌فرستد:
+پس از بررسی ارجاعات (هیچ مصرف‌کننده‌ی فعالی ندارند):
 
-```ts
-firstFrameUrl: readyStartFrame.url,
-lastFrameUrl: readyStartFrame.url,  // ← غلط
-```
+**شیم‌های قدیمی (re-export فقط):**
+- `src/context/AuthProvider.tsx` — شیم به `@/core/auth/AuthProvider`، صفر مصرف‌کننده.
+- `src/components/system/LoadingScreen.tsx` — شیم به `@/core/ui/LoadingScreen`، صفر مصرف‌کننده.
+- `src/components/system/UserBadge.tsx` — شیم به `@/core/ui/UserBadge`، صفر مصرف‌کننده.
+- `src/routes/ProtectedRoute.tsx` — شیم، صفر مصرف‌کننده.
+- `src/routes/AdminRoute.tsx` — شیم، صفر مصرف‌کننده.
+- `src/pages/admin/AdminPage.tsx` — شیم، صفر مصرف‌کننده.
+- `src/pages/app/DashboardPage.tsx` — شیم، صفر مصرف‌کننده (App.tsx مستقیم از ماژول import می‌کند).
 
-این باعث می‌شود ویدئو از Start شروع و دوباره به همان Start برگردد (بدون حرکت واقعی مطابق پرامت).
+**صفحات/کامپوننت‌های یتیم:**
+- `src/pages/auth/SignupPage.tsx` — هیچ مسیری به آن وصل نیست.
+- `src/pages/auth/LoginPage.tsx` — استفاده می‌شود توسط App.tsx، **نگه داشته می‌شود** (اصلاح: import داخلی به AuthForm حذف می‌شود فقط اگر AuthForm حذف شود — جزئیات پایین).
+- `src/pages/Index.tsx` — placeholder بدون router مصرف‌کننده.
+- `src/pages/NotFound.tsx` — هیچ router فعالی، صفر مصرف‌کننده.
+- `src/pages/system/UnauthorizedPage.tsx` — صفر مصرف‌کننده.
+- `src/layouts/AppShell.tsx` — صفر مصرف‌کننده.
+- `src/components/NavLink.tsx` — صفر مصرف‌کننده.
+- `src/core/migration/cutover.ts` — فقط داخل خودش استفاده می‌شود، صفر مصرف‌کننده‌ی خارجی.
 
-## راه‌حل
+**کامپوننت‌های ماژول بلااستفاده:**
+- `src/modules/generator-ui/components/GenerateVideoCard.tsx` — صفر مصرف‌کننده (DashboardPage از آن استفاده نمی‌کند).
+- `src/modules/generator-ui/components/RoutePreviewCard.tsx` — صفر مصرف‌کننده.
 
-شاخه‌ی "Start-only" را متقارن با شاخه‌ی "End-only" بازنویسی کنیم:
+**نکته درباره `AuthForm` و `LoginPage/SignupPage`:**
+- `LoginPage` در App.tsx استفاده می‌شود → نگه داشته می‌شود.
+- `SignupPage` بلااستفاده است → حذف می‌شود.
+- `AuthForm` فقط توسط `LoginPage` و `SignupPage` استفاده می‌شود؛ پس از حذف SignupPage، `AuthForm` همچنان توسط LoginPage مصرف می‌شود → **نگه داشته می‌شود**.
 
-1. یک job **text-to-video** (`wan2.7-t2v-2026-04-25`) با پرامت بساز.
-2. عکس Start را به‌عنوان یک کلیپ ساکن ۲ ثانیه‌ای به **ابتدای** ویدئوی نهایی **prepend** کن.
+**نکته درباره `src/lib/api.ts`:**
+- شیم با ۱۷ ارجاع (احتمالاً غیرمستقیم در ماژول‌های backend). با توجه به ریسک، **نگه داشته می‌شود** در این پاکسازی.
 
-### تغییرات کد
+## فایل‌هایی که دست‌نخورده می‌مانند
 
-**`src/modules/generator-ui/pages/DashboardPage.tsx`**
+- `src/App.tsx`, `src/main.tsx`
+- `src/core/**` (به جز `migration/cutover.ts`)
+- `src/modules/generator-ui/pages/DashboardPage.tsx` و libهای آن (`mergeVideos`, `imageToClip`, `proxiedVideoUrl`, `WelcomeVideoOverlay`)
+- `src/modules/job-orchestrator/**`
+- `src/integrations/supabase/**`
+- تمام `src/components/ui/**` (shadcn)
+- تمام edge functions در `supabase/functions/**`
+- `supabase/config.toml`
+- ماژول‌های backend دیگر (`admin-monitor`, `credit-management`, `video-library`, `external-api-adapter`) — حتی اگر در UI فعلی استفاده نمی‌شوند، بک‌اند آن‌ها فعال است؛ طبق پاسخ شما (صفر تغییر رفتاری) دست‌نخورده می‌مانند.
 
-1. **State جدید**: `pendingStartPrepends` (موازی با `pendingEndAppends` موجود)، شامل persist در localStorage تحت کلید `pending-start-prepends:${userId}`.
+## مراحل اجرا
 
-2. **شاخه Start-only در `handleSubmit`** (خطوط 746-755): به‌جای ارسال Start به‌عنوان first+last، به text-to-video تغییر دهد و url عکس Start را در `pendingStartPrepends` ذخیره کند:
-   ```ts
-   } else if (readyStartFrame?.url) {
-     createdJob = await jobOrchestratorGateway.createJob({
-       providerKey: 'wan',
-       requestedModel: 'wan2.7-t2v-2026-04-25',
-       prompt: nextPrompt,
-       durationSeconds,
-     })
-     pendingStartPrependUrl = readyStartFrame.url
-     seedFrames = { firstFrameUrl: readyStartFrame.url }
-   }
-   ```
+1. حذف ۱۵ فایل مرده‌ی فهرست‌شده‌ی بالا با `rm`.
+2. اجرای جستجوی نهایی برای اطمینان از عدم وجود import شکسته (`rg "context/AuthProvider|components/system|routes/Protected|routes/Admin|pages/admin/AdminPage|pages/app/DashboardPage|pages/Index|pages/NotFound|pages/system/Unauthorized|layouts/AppShell|components/NavLink|migration/cutover|GenerateVideoCard|RoutePreviewCard|pages/auth/SignupPage" src/`).
+3. اگر هر import شکسته‌ای پیدا شد، فایل را برمی‌گردانیم (rollback ایمن).
+4. هیچ تغییری در فایل‌های باقیمانده اعمال نمی‌شود.
 
-3. **useEffect جدید برای پردازش prepend**: کپی از useEffect موجود `pendingEndAppends` (خطوط 555-619)، با تفاوت اینکه ترتیب در `mergeVideoUrls` معکوس شود — `[stillPublic, proxiedSrc]` به‌جای `[proxiedSrc, stillPublic]`.
+## ریسک و ایمنی
 
-4. **مسیر فایل‌های موقت**: `start-still-...` و `with-start-...` به‌جای `end-still-` / `with-end-`.
+- **ریسک رفتاری: صفر** — تمام فایل‌های حذف‌شده هیچ مصرف‌کننده‌ی فعالی ندارند (تأیید شده با `rg`).
+- **ریسک build: صفر** — TypeScript بعد از حذف خطایی نخواهد داد چون چیزی به این فایل‌ها import نمی‌کند.
+- اگر لازم شد بازگرداندن، از History پروژه استفاده می‌شود.
 
-### بدون تغییر
+## خروجی نهایی
 
-- بک‌اند، edge functionها، و قرارداد `jobOrchestratorGateway` تغییر نمی‌کنند.
-- منطق "هر دو فریم" و "فقط End" دست‌نخورده باقی می‌ماند.
-- کتابخانه‌های `imageUrlToClip` و `mergeVideoUrls` همان‌هایی هستند که End-append استفاده می‌کند.
-
-## فایل‌های تغییر یافته
-
-- `src/modules/generator-ui/pages/DashboardPage.tsx` (تنها فایل)
+ریپوی تمیزتر با ~۱۵ فایل کمتر، رفتار اپ ۱۰۰٪ یکسان با وضعیت فعلی baseline.
