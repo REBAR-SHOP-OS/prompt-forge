@@ -66,6 +66,23 @@ export const externalApiAdapterGateway = {
 
           const prompt = aiGateway.sanitizePrompt(parsed.data.prompt);
           const providerKey = parsed.data.providerKey as ProviderKey;
+          if (providerKey !== "wan") {
+            await writeApiRequestLog(svc, {
+              ...ctx,
+              userId: auth.userId,
+              statusCode: 400,
+              latencyMs: Date.now() - ctx.startedAt,
+              errorCode: "UNSUPPORTED_PROVIDER",
+            });
+            return errorResponse(
+              req,
+              "UNSUPPORTED_PROVIDER",
+              `Provider ${providerKey} is not enabled in the current production-safe build`,
+              400,
+              ctx.requestId,
+            );
+          }
+
           const resolved = await aiGateway.resolveRoute(svc, providerKey, parsed.data.requestedModel, prompt);
 
           await writeApiRequestLog(svc, {
