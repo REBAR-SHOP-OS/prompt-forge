@@ -1502,18 +1502,17 @@ export default function DashboardPage() {
         {isProfilePanelOpen ? (
           <aside
             className="absolute left-4 top-16 bottom-4 z-30 flex w-[340px] flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/90 backdrop-blur shadow-[0_28px_110px_rgba(0,0,0,0.55)]"
-            dir="rtl"
           >
             <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
               <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-zinc-200">
                 <User className="h-3.5 w-3.5" />
-                پروفایل کاربر
+                User profile
               </div>
               <button
                 type="button"
                 onClick={() => setIsProfilePanelOpen(false)}
                 className="rounded p-1 text-zinc-400 transition hover:bg-white/5 hover:text-white"
-                title="بستن"
+                title="Close"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -1524,24 +1523,24 @@ export default function DashboardPage() {
                   <User className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm text-zinc-100" dir="ltr">
+                  <p className="truncate text-sm text-zinc-100">
                     {profile?.email ?? session?.user?.email ?? '—'}
                   </p>
                   <p className="text-[11px] text-zinc-500">
-                    {profile?.role === 'admin' ? 'مدیر' : 'کاربر'}
+                    {profile?.role === 'admin' ? 'Admin' : 'User'}
                   </p>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-3">
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">اعتبار</p>
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">Credits</p>
                   <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-100">
                     {profile?.credits_balance ?? 0}
                   </p>
                 </div>
                 <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-3">
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">ویدئوها</p>
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">Videos</p>
                   <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-100">
                     {completedVideos.length}
                   </p>
@@ -1550,9 +1549,9 @@ export default function DashboardPage() {
 
               {profile?.created_at ? (
                 <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-3">
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">عضویت از</p>
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">Member since</p>
                   <p className="mt-1 text-xs text-zinc-300">
-                    {new Date(profile.created_at).toLocaleDateString('fa-IR')}
+                    {new Date(profile.created_at).toLocaleDateString('en-US')}
                   </p>
                 </div>
               ) : null}
@@ -1567,7 +1566,7 @@ export default function DashboardPage() {
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-200 transition hover:border-rose-400/50 hover:bg-rose-500/20 disabled:opacity-50"
               >
                 <LogOut className="h-4 w-4" />
-                خروج از حساب
+                Sign out
               </button>
             </div>
           </aside>
