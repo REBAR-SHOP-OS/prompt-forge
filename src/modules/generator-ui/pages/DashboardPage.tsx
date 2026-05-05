@@ -1182,9 +1182,13 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={handleSignOut}
-              title="Sign out"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-zinc-900/60 text-zinc-300 transition hover:border-white/20 hover:text-white"
+              onClick={() => setIsApprovedPanelOpen((v) => !v)}
+              title="ویدئوهای ساخته‌شده"
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-md border transition ${
+                isApprovedPanelOpen
+                  ? 'border-emerald-400/50 bg-emerald-500/10 text-emerald-100'
+                  : 'border-white/10 bg-zinc-900/60 text-zinc-300 hover:border-white/20 hover:text-white'
+              }`}
             >
               <LayoutGrid className="h-4 w-4" />
             </button>
