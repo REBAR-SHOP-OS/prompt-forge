@@ -314,21 +314,26 @@ export default function DashboardPage() {
     return fromAsset ?? '16:9'
   }
   const ratioToCss = (r: Ratio): string => (r === '9:16' ? '9 / 16' : r === '1:1' ? '1 / 1' : '16 / 9')
+  // Vertical budget for the preview stage: full viewport minus the top header
+  // strip (~3rem) and minus the fixed composer at the bottom (~14rem incl.
+  // its bottom offset and the helper text under it). This guarantees the
+  // preview never slides under the chat box.
+  const PREVIEW_MAX_HEIGHT = 'calc(100vh - 17rem)'
   const ratioToHeight = (r: Ratio): string => {
     // Available width between left rail and right history sidebar ≈ calc(100vw - 26rem).
-    // Height = width * (h/w), capped at 82vh so very tall screens don't overflow.
-    if (r === '9:16') return 'min(82vh, calc((100vw - 26rem) * 16 / 9))'
-    if (r === '1:1') return 'min(82vh, calc(100vw - 26rem))'
-    return 'min(82vh, calc((100vw - 26rem) * 9 / 16))'
+    // Height = width * (h/w), capped so the preview always sits above the composer.
+    if (r === '9:16') return `min(${PREVIEW_MAX_HEIGHT}, calc((100vw - 26rem) * 16 / 9))`
+    if (r === '1:1') return `min(${PREVIEW_MAX_HEIGHT}, calc(100vw - 26rem))`
+    return `min(${PREVIEW_MAX_HEIGHT}, calc((100vw - 26rem) * 9 / 16))`
   }
   // Width of the preview stage = height * (w/h). Used to hard-cap the outer
   // preview card so its footer (long prompt text + status pill) can never
   // stretch the card wider than the actual video frame, which would create
   // an empty band beside the video on narrow ratios (9:16, 1:1).
   const ratioToWidth = (r: Ratio): string => {
-    if (r === '9:16') return 'min(calc(100vw - 26rem), calc(82vh * 9 / 16))'
-    if (r === '1:1') return 'min(calc(100vw - 26rem), 82vh)'
-    return 'min(calc(100vw - 26rem), calc(82vh * 16 / 9))'
+    if (r === '9:16') return 'min(calc(100vw - 26rem), calc((100vh - 17rem) * 9 / 16))'
+    if (r === '1:1') return 'min(calc(100vw - 26rem), calc(100vh - 17rem))'
+    return 'min(calc(100vw - 26rem), calc((100vh - 17rem) * 16 / 9))'
   }
   // Project-level ratio lock: once the first clip of a project is created,
   // every subsequent clip in the same project must use the same aspect ratio.
