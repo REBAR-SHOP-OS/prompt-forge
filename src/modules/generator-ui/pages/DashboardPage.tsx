@@ -64,7 +64,25 @@ import { supabase } from '@/integrations/supabase/client'
 import WelcomeVideoOverlay from '@/modules/generator-ui/components/WelcomeVideoOverlay'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
-import { mergeVideoUrls } from '@/modules/generator-ui/lib/mergeVideos'
+import { mergeVideoUrls, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
+
+const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
+  { id: 'cut', label: 'Cut', durationMs: 0 },
+  { id: 'fade', label: 'Fade', durationMs: 500 },
+  { id: 'crossfade', label: 'Crossfade', durationMs: 500 },
+  { id: 'slide-left', label: 'Slide ←', durationMs: 500 },
+  { id: 'slide-right', label: 'Slide →', durationMs: 500 },
+  { id: 'wipe', label: 'Wipe', durationMs: 500 },
+  { id: 'zoom', label: 'Zoom', durationMs: 500 },
+]
+const TRANSITION_LABEL: Record<TransitionId, string> = TRANSITION_OPTIONS.reduce(
+  (acc, o) => { acc[o.id] = o.label; return acc },
+  {} as Record<TransitionId, string>,
+)
+const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.reduce(
+  (acc, o) => { acc[o.id] = o.durationMs; return acc },
+  {} as Record<TransitionId, number>,
+)
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 
