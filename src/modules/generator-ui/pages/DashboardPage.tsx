@@ -1926,12 +1926,12 @@ export default function DashboardPage() {
       <button
         type="button"
         onClick={handleMergeAllVideos}
-        disabled={isMerging || completedSourceVideos.length < 2}
+        disabled={isMerging || (completedSourceVideos.length + visibleUserImages.length) < 2}
         className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-emerald-300/30 hover:bg-emerald-300/[0.06] hover:text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
         aria-label="Merge all cards into one final film"
         title={
-          completedSourceVideos.length < 2
-            ? 'Need at least 2 finished videos'
+          (completedSourceVideos.length + visibleUserImages.length) < 2
+            ? 'Need at least 2 finished items (videos or images)'
             : musicUrl
               ? `Final film with music (${formatTimeMS(musicRange[0])} – ${formatTimeMS(musicRange[1])})`
               : 'Merge all cards into one final film'
