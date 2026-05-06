@@ -216,13 +216,33 @@ function paintTransitionFrame(
   }
 }
 
+import {
+  paintOverlays,
+  preloadOverlayImages,
+  ensureFontsLoaded,
+  type ClipOverlay,
+  type LoadedOverlayImages,
+} from './overlays'
+
 export async function mergeVideoUrls(
   urls: string[],
   onProgress?: MergeProgressCallback,
   audio?: MergeAudioOptions,
   transitions?: TransitionSpec[],
+  overlaysPerClip?: (ClipOverlay[] | undefined)[],
 ): Promise<MergeResult> {
   if (urls.length === 0) throw new Error('No videos to merge')
+
+  // Preload overlay images and fonts up front so paint is synchronous.
+  const allOverlays: ClipOverlay[] = []
+  for (const arr of overlaysPerClip ?? []) {
+    if (arr) allOverlays.push(...arr)
+  }
+  const loadedOverlayImages: LoadedOverlayImages = allOverlays.length > 0
+    ? await preloadOverlayImages(allOverlays)
+    : new Map()
+  if (allOverlays.length > 0) await ensureFontsLoaded(allOverlays)
+
 
   const useSoundtrack = Boolean(audio && audio.endSec > audio.startSec)
   const musicVolume = Math.max(0, Math.min(1, audio?.musicVolume ?? 1))
