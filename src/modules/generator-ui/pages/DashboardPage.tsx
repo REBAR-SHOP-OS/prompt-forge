@@ -1534,11 +1534,38 @@ export default function DashboardPage() {
         </DropdownMenuContent>
       </DropdownMenu>
 
+      <div className="fixed left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-2 sm:top-5">
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <button
+            className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100"
+            type="button"
+            aria-label="Start over"
+          >
+            <RotateCcw className="h-[14px] w-[14px]" aria-hidden="true" />
+            <span>Start over</span>
+          </button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Start over?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This clears every card in History and resets the prompt, frames, mode, and duration.
+              Saved videos in Your library are kept.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleStartOver}>Start over</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <button
         type="button"
         onClick={handleMergeAllVideos}
         disabled={isMerging || completedSourceVideos.length < 2}
-        className="fixed left-1/2 top-4 z-50 ml-[120px] flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-emerald-300/30 hover:bg-emerald-300/[0.06] hover:text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40 sm:top-5"
+        className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-emerald-300/30 hover:bg-emerald-300/[0.06] hover:text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
         aria-label="Merge all cards into one final film"
         title={
           completedSourceVideos.length < 2
@@ -1573,7 +1600,7 @@ export default function DashboardPage() {
       <button
         type="button"
         onClick={handleMusicButtonClick}
-        className="fixed left-1/2 top-4 z-50 ml-[260px] flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-amber-300/30 hover:bg-amber-300/[0.06] hover:text-amber-100 sm:top-5"
+        className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-amber-300/30 hover:bg-amber-300/[0.06] hover:text-amber-100"
         aria-label={musicUrl ? 'Edit soundtrack' : 'Add soundtrack'}
         title={musicUrl ? 'Edit soundtrack' : 'Add a music file as soundtrack for the Final Film'}
       >
@@ -1669,32 +1696,7 @@ export default function DashboardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <button
-            className="fixed left-1/2 top-4 z-50 flex h-9 -translate-x-1/2 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100 sm:top-5"
-            type="button"
-            aria-label="Start over"
-          >
-            <RotateCcw className="h-[14px] w-[14px]" aria-hidden="true" />
-            <span>Start over</span>
-          </button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Start over?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This clears every card in History and resets the prompt, frames, mode, and duration.
-              Saved videos in Your library are kept.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleStartOver}>Start over</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      </div>
 
       <main className="grid min-h-screen place-items-center px-4 pb-40" aria-live="polite">
         {previewVideo ? (

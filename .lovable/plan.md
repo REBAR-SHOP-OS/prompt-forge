@@ -1,25 +1,26 @@
-## مشکل
+## Goal
+Group the three top toolbar buttons (Start over, Final film, Music) as a single, visually-centered cluster at the top-center of the page.
 
-در پیش‌نمایش 9:16، یک ناحیه‌ی سیاه اضافه در سمت راست ویدیو دیده می‌شود (که در تصویر با رنگ نارنجی مشخص شده). دلیلش این است که کانتینر بیرونی (که border و گوشه‌های گرد دارد) عرض بیشتری از ویدیوی داخلی می‌گیرد.
+## Current problem
+Each button is independently `fixed` with `left-1/2` plus hardcoded margin offsets (`ml-[120px]`, `ml-[260px]`, and `-translate-x-1/2`). This makes them look slightly off-center, asymmetric, and fragile (the cluster shifts when the Music button label changes width, and "Start over" sits centered while the other two extend rightward).
 
-علت: کانتینر بیرونی هیچ محدودیت عرض ندارد و به‌خاطر ردیف status/prompt که زیر ویدیو قرار دارد، می‌تواند پهن‌تر از قاب 9:16 رشد کند. در نتیجه قاب ویدیو در سمت چپ این کانتینر قرار می‌گیرد و سمت راست آن فضای خالی سیاه می‌ماند.
+## Fix
+In `src/modules/generator-ui/pages/DashboardPage.tsx` (around lines 1537–1697):
 
-## راه‌حل
+1. Wrap the three buttons (Start over, Final film, Music) in a single fixed container:
+   ```
+   <div className="fixed left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-2 sm:top-5">
+     {/* Start over button */}
+     {/* Final film button */}
+     {/* Music button */}
+   </div>
+   ```
+2. Remove the `fixed`, `left-1/2`, `top-4`, `ml-[120px]`, `ml-[260px]`, `-translate-x-1/2`, `sm:top-5`, and `z-50` utility classes from each individual button — they become normal flex children.
+3. Preferred visual order left → right: **Start over**, **Final film**, **Music** (matches the screenshot).
+4. Keep all other existing behavior, dialogs, handlers, and the Music label truncation untouched.
 
-روی کانتینر بیرونی (خط ۱۷۰۲ در `DashboardPage.tsx`) یک `width: max-content` با همان `maxWidth` کانتینر داخلی ست می‌کنیم تا دقیقاً به اندازه‌ی قاب ویدیو شود — نه پهن‌تر:
+## Result
+The three icons render as one centered, evenly-spaced toolbar at the top of the page, perfectly aligned regardless of label width or viewport size, matching the user's intent in the screenshot.
 
-```tsx
-<div
-  className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
-  style={{
-    width: 'max-content',
-    maxWidth: 'calc(100vw - 26rem)',
-  }}
->
-```
-
-این باعث می‌شود ردیف status/prompt هم از عرض ویدیو پیروی کند و هیچ فضای سیاه اضافی در سمت راست باقی نماند — برای هر سه ابعاد (9:16, 1:1, 16:9) یکسان و درست عمل می‌کند.
-
-## فایل تغییر
-
-- فقط `src/modules/generator-ui/pages/DashboardPage.tsx` — افزودن style به کانتینر بیرونی پیش‌نمایش.
+## Files
+- `src/modules/generator-ui/pages/DashboardPage.tsx`
