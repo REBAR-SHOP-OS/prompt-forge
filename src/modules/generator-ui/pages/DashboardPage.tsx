@@ -681,6 +681,24 @@ export default function DashboardPage() {
     [generatedVideos, deletedIds]
   )
 
+  // Aspect-ratio chain lock: once the user has any clip in the current chain,
+  // every subsequent clip must match the FIRST clip's aspect ratio. The lock
+  // releases automatically when the chain is empty (e.g. after Start Over).
+  const lockedRatio = useMemo<Ratio | null>(() => {
+    const chain = generatedVideos.filter((v) => !deletedIds.has(v.id))
+    if (chain.length === 0) return null
+    // generatedVideos is newest-first; the oldest (first in chain) is last.
+    const first = chain[chain.length - 1]
+    return getRatioFor(first)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generatedVideos, deletedIds])
+
+  useEffect(() => {
+    if (lockedRatio && aspectRatio !== lockedRatio) {
+      setAspectRatio(lockedRatio)
+    }
+  }, [lockedRatio, aspectRatio])
+
   // Right-panel display order: oldest first (chronological ASC), with manual drag-and-drop overrides.
   const displayedVideos = useMemo(() => {
     const filtered = generatedVideos.filter((v) => !deletedIds.has(v.id))
