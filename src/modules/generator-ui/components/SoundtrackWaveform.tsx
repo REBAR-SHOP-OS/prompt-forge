@@ -109,10 +109,8 @@ export const SoundtrackWaveform = forwardRef<SoundtrackWaveformHandle, Props>(
       const handleSeek = () => setCurrentTime(ws.getCurrentTime())
       const handleInteraction = () => {
         setCurrentTime(ws.getCurrentTime())
-        // User clicked/scrubbed the waveform — clear any selection-stop boundary
-        // and start playing from the new position.
+        // فقط موقعیت را به‌روز کن؛ پخش با دکمه Play توسط کاربر انجام می‌شود.
         stopAtRef.current = null
-        void ws.play()
       }
       const handlePlay = () => setIsPlaying(true)
       const handlePause = () => setIsPlaying(false)
