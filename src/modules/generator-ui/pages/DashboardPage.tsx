@@ -1801,7 +1801,7 @@ export default function DashboardPage() {
                 )}
               </div>
               <div className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="max-h-12 min-w-0 overflow-hidden text-sm font-medium leading-6 text-zinc-200">
+                <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
                   {previewVideo.input_prompt}
                 </p>
                 <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
