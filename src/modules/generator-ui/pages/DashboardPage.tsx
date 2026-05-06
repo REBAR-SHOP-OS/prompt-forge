@@ -2469,7 +2469,7 @@ export default function DashboardPage() {
                           className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
                           style={{ aspectRatio: '1 / 1' }}
                         >
-                          <img
+                          <SignedImg
                             src={img.storage_path}
                             alt="Uploaded reference"
                             className="h-full w-full object-cover"
