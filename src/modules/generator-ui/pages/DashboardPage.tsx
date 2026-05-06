@@ -1600,7 +1600,7 @@ export default function DashboardPage() {
       <button
         type="button"
         onClick={handleMusicButtonClick}
-        className="fixed left-1/2 top-4 z-50 ml-[260px] flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-amber-300/30 hover:bg-amber-300/[0.06] hover:text-amber-100 sm:top-5"
+        className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-amber-300/30 hover:bg-amber-300/[0.06] hover:text-amber-100"
         aria-label={musicUrl ? 'Edit soundtrack' : 'Add soundtrack'}
         title={musicUrl ? 'Edit soundtrack' : 'Add a music file as soundtrack for the Final Film'}
       >
