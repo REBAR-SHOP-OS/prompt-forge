@@ -313,6 +313,36 @@ export default function DashboardPage() {
     return fromAsset ?? '16:9'
   }
   const ratioToCss = (r: Ratio): string => (r === '9:16' ? '9 / 16' : r === '1:1' ? '1 / 1' : '16 / 9')
+  const ratioToHeight = (r: Ratio): string => {
+    // Available width between left rail and right history sidebar ≈ calc(100vw - 26rem).
+    // Height = width * (h/w), capped at 82vh so very tall screens don't overflow.
+    if (r === '9:16') return 'min(82vh, calc((100vw - 26rem) * 16 / 9))'
+    if (r === '1:1') return 'min(82vh, calc(100vw - 26rem))'
+    return 'min(82vh, calc((100vw - 26rem) * 9 / 16))'
+  }
+  // Project-level ratio lock: once the first clip of a project is created,
+  // every subsequent clip in the same project must use the same aspect ratio.
+  // Cleared by Start Over.
+  const [lockedProjectRatio, setLockedProjectRatio] = useState<Ratio | null>(() => {
+    if (typeof window === 'undefined') return null
+    try {
+      const v = window.localStorage.getItem('generator:lockedProjectRatio')
+      if (v === '9:16' || v === '1:1' || v === '16:9') return v
+    } catch { /* ignore */ }
+    return null
+  })
+  const persistLockedRatio = (r: Ratio | null) => {
+    try {
+      if (r) window.localStorage.setItem('generator:lockedProjectRatio', r)
+      else window.localStorage.removeItem('generator:lockedProjectRatio')
+    } catch { /* ignore */ }
+  }
+  // Keep the selector in sync when a lock is active.
+  useEffect(() => {
+    if (lockedProjectRatio && aspectRatio !== lockedProjectRatio) {
+      setAspectRatio(lockedProjectRatio)
+    }
+  }, [lockedProjectRatio, aspectRatio])
   const userId = session?.user?.id ?? null
   const approvedStorageKey = userId ? `approved-videos:${userId}` : null
   const [approvedIds, setApprovedIds] = useState<Set<string>>(() => new Set())
