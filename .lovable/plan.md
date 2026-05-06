@@ -1,62 +1,29 @@
 ## Goal
 
-The "Prompt" pill (highlighted in orange in the screenshot, next to the submit arrow) is currently a static label. Convert it into a clickable button that takes whatever the user has typed in the prompt textarea and rewrites it into the best possible video-generation prompt using Lovable AI, then replaces the textarea content with the improved version.
+Currently the video preview stretches tall enough to slide *underneath* the fixed chat composer at the bottom (visible in the screenshot — the bottom of the video is hidden behind the prompt box). Fix: cap the preview's vertical size so it always sits fully above the composer, regardless of aspect ratio (9:16, 1:1, 16:9).
 
-## UX behavior
+## Root cause
 
-- If the textarea is empty (or only whitespace), the button is disabled.
-- On click:
-  - Show a loading state on the button (spinner + disabled).
-  - Send the current `promptText` to a new edge function.
-  - On success: replace `promptText` with the enhanced prompt returned by AI.
-  - On error (rate limit 429, credits 402, anything else): show a small inline error / toast in the existing composer error spot. Original prompt is preserved.
-- During enhancement, the main "Generate" submit arrow is also disabled to avoid races.
+In `src/modules/generator-ui/pages/DashboardPage.tsx`, the preview stage size helpers `ratioToHeight` and `ratioToWidth` (lines 316–332) cap the preview at **`82vh`**. The composer is `position: fixed` at the bottom (line 2311) and occupies roughly the bottom ~13rem of the screen (composer card + its `bottom-[clamp(1rem,4.8vh,3.4rem)]` offset + the helper text "Describe the motion for the frame(s)" rendered below). 82vh leaves only ~18vh for everything else — on common viewports (e.g. the user's 1354px tall window) the video extends well into the composer's footprint, producing the overlap shown in the screenshot.
 
-## Technical changes
+## Fix
 
-### 1. New edge function — `supabase/functions/enhance-prompt/index.ts`
+Replace the `82vh` cap with a viewport-relative budget that explicitly subtracts the composer's height:
 
-- Accepts `POST { prompt: string }`.
-- Requires auth (reuses `authenticate` from `_shared/core/auth.ts`).
-- Calls Lovable AI Gateway (`https://ai.gateway.lovable.dev/v1/chat/completions`) with:
-  - Model: `google/gemini-3-flash-preview` (default per guidelines).
-  - System prompt: "You are an expert prompt engineer for AI video generation. Rewrite the user's prompt into a single, vivid, cinematic, concrete prompt optimized for image-to-video / text-to-video models. Preserve the user's original language (Persian stays Persian, English stays English). Keep it under ~80 words. Output ONLY the rewritten prompt, no preamble, no quotes, no explanation."
-  - User message: the raw prompt.
-- Reads `LOVABLE_API_KEY` from env.
-- Returns `{ enhancedPrompt: string }` on success.
-- Surfaces 429 (rate limit) and 402 (credits) with the same status to the client so the UI can show a friendly message.
-- CORS via existing `corsHeaders`.
-- Add a `[functions.enhance-prompt]` block in `supabase/config.toml` only if needed (default `verify_jwt = true` is fine — we authenticate manually with the user token like other functions).
+- New constant: `PREVIEW_MAX_HEIGHT = 'calc(100vh - 17rem)'`
+  - ~3rem reserved for the top header strip (Start Over / Final Film / Music tabs)
+  - ~14rem reserved for the composer (its bottom offset + padding + textarea + helper line)
+- Use this constant in both `ratioToHeight` (height term) and `ratioToWidth` (the height-derived width term), keeping the existing horizontal `calc(100vw - 26rem)` cap untouched.
 
-### 2. Frontend — `src/modules/generator-ui/pages/DashboardPage.tsx`
-
-Around lines 2452–2455, replace the static `<span>Prompt</span>` with a `<button type="button">` that:
-- Shows `Sparkles` icon (lucide-react) + "Prompt" text, or `LoaderCircle` spinner while enhancing.
-- `disabled` when `promptText.trim().length === 0`, when already enhancing, or when `isSubmitting`.
-- `onClick` calls a new local handler `handleEnhancePrompt` that:
-  - Sets `isEnhancingPrompt` state to true.
-  - Calls `supabase.functions.invoke('enhance-prompt', { body: { prompt: promptText.trim() } })`.
-  - On success: `setPromptText(data.enhancedPrompt)`.
-  - On 429: set `composerError` to "Rate limit reached. Try again in a moment."
-  - On 402: set `composerError` to "AI credits exhausted. Add credits to continue."
-  - On any other error: set `composerError` to "Could not enhance prompt. Please try again."
-  - In `finally`: set `isEnhancingPrompt` to false.
-- Add new state: `const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false)`.
-- Also disable the submit button while `isEnhancingPrompt`.
-
-Visual styling stays consistent with current pill: `inline-flex h-10 ... rounded-full border border-[#2a2d32] bg-black/20 ...`, plus hover/active states (`hover:border-white/20 hover:bg-white/[0.05]`) and `disabled:opacity-40 disabled:cursor-not-allowed`.
+Result: on any viewport, the preview card scales down so its bottom edge stays above the composer. The horizontal cap and aspect-ratio math are preserved, so 9:16 / 1:1 / 16:9 clips still render at their correct shape and never produce empty bands beside the video.
 
 ## Files touched
 
-- **New**: `supabase/functions/enhance-prompt/index.ts`
-- **Edited**: `src/modules/generator-ui/pages/DashboardPage.tsx`
-
-No DB migration, no new secrets (Lovable AI uses the auto-provisioned `LOVABLE_API_KEY`), no new packages.
+- **Edited only**: `src/modules/generator-ui/pages/DashboardPage.tsx` — `ratioToCss` / `ratioToHeight` / `ratioToWidth` block (lines 316–332). No other code, no new state, no new components, no new packages.
 
 ## Acceptance check
 
-1. Type a rough Persian or English prompt in the textarea.
-2. Click the "Prompt" pill — a spinner appears briefly.
-3. The textarea content is replaced with a polished, cinematic version of the same idea, in the same language.
-4. Empty textarea → button is disabled.
-5. If AI gateway returns 429/402, a friendly inline error appears and the original prompt is preserved.
+1. Open a 9:16 (REELS) preview at the current viewport — the entire video, including its footer (prompt + status pill), is fully visible above the composer; nothing is hidden behind it.
+2. Same for 1:1 and 16:9.
+3. Resize the window taller / shorter — the preview always shrinks to leave the composer fully visible; it never overlaps.
+4. The right HISTORY sidebar and left rail are unaffected.
