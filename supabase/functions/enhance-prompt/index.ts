@@ -129,10 +129,10 @@ Deno.serve(async (req) => {
     // Build user message: multimodal when images are present, plain text otherwise.
     const userContent: unknown = imageUrls.length > 0
       ? [
-          { type: "text", text: prompt },
+          { type: "text", text: effectivePrompt },
           ...imageUrls.map((url) => ({ type: "image_url", image_url: { url } })),
         ]
-      : prompt;
+      : effectivePrompt;
 
     const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -144,7 +144,7 @@ Deno.serve(async (req) => {
         // gemini-2.5-flash supports vision and is fast/cheap.
         model: "google/gemini-2.5-flash",
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: systemPrompt },
           { role: "user", content: userContent },
         ],
       }),
