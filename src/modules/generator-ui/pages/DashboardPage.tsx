@@ -1264,15 +1264,6 @@ export default function DashboardPage() {
       })
       setPreviewVideoId(mergedId)
 
-      // Trigger download.
-      const blobUrl = URL.createObjectURL(mergeRes.blob)
-      const a = document.createElement('a')
-      a.href = blobUrl
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 4_000)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Merge failed'
       console.error('[merge] failed', err)
