@@ -2014,30 +2014,6 @@ export default function DashboardPage() {
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation()
-                              toggleApproved(video.id)
-                            }}
-                            aria-label="Remove from library"
-                            title="Remove from library"
-                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/30 hover:bg-rose-300/10 hover:text-rose-200"
-                          >
-                            <X className="h-3.5 w-3.5" aria-hidden="true" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              editAndReuseJob(video)
-                            }}
-                            aria-label="Edit prompt and regenerate"
-                            title="Edit prompt and regenerate"
-                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
-                          >
-                            <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
                               deleteCard(video.id)
                             }}
                             aria-label="Delete card"

@@ -1,29 +1,23 @@
-# FINAL FILM button: preview-only
+# Library cards: keep only Download + Delete
 
-When the **FINAL FILM** button is clicked, build the merged film from the current cards (with their order, transitions, and soundtrack) and show it in the central preview area only. Do not auto-download the file. Always re-merge from scratch on every click (so it reflects the latest cards/transitions/music).
+In the **left Library panel** (Your library), each saved video card currently shows four icons in the action row: Download, X (remove from library), Pencil (edit prompt & regenerate), Trash (delete). Reduce that to two icons: **Download** and **Delete**.
 
-## What stays the same
-- Re-merges from scratch on every click (already the case).
-- Shows the merged result in the preview area (already calls `setPreviewVideoId(mergedId)`).
-- Adds the merged film to the right-side history panel as a "Final merged video — N clips" card (already happens; lets the user re-select it later).
-- Auto-saves to the left library panel (already happens).
+When Delete is pressed, the video is permanently removed (storage file + DB row when applicable). This already works in the existing `deleteCard` function — no behavior change needed there.
 
-## What changes — single small edit in `DashboardPage.tsx`
-In `handleMergeAllVideos`, remove the block that triggers an automatic file download right after the upload finishes:
+## Changes
 
-```ts
-// Trigger download.
-const blobUrl = URL.createObjectURL(mergeRes.blob)
-const a = document.createElement('a')
-a.href = blobUrl
-a.download = filename
-document.body.appendChild(a)
-a.click()
-a.remove()
-setTimeout(() => URL.revokeObjectURL(blobUrl), 4_000)
-```
+`src/modules/generator-ui/pages/DashboardPage.tsx`, inside the Library card render block (around lines 2013–2036):
 
-That block is deleted. Nothing else is touched. The user can still download the merged film manually via the existing download control on the preview / library card if they want to keep a copy.
+- Remove the **X** button that calls `toggleApproved(video.id)` ("Remove from library").
+- Remove the **Pencil** button that calls `editAndReuseJob(video)` ("Edit prompt and regenerate").
+
+The **Download** anchor and the **Trash** (Delete) button stay exactly as they are. `deleteCard` already:
+- Asks for confirmation.
+- Removes the file from the `merged-videos` storage bucket for merged entries.
+- Calls `jobOrchestratorGateway.deleteJob` to delete DB rows + storage files for real jobs.
+- Removes the entry from the in-memory list and clears the preview if it was selected.
+
+So pressing Delete in the Library will fully delete the video, as requested.
 
 ## Files touched
-- `src/modules/generator-ui/pages/DashboardPage.tsx` — remove the auto-download block in `handleMergeAllVideos`.
+- `src/modules/generator-ui/pages/DashboardPage.tsx`
