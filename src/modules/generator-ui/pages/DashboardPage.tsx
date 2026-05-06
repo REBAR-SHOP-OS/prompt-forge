@@ -99,7 +99,6 @@ const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.red
   (acc, o) => { acc[o.id] = o.durationMs; return acc },
   {} as Record<TransitionId, number>,
 )
-import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 
 type VideoJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
