@@ -1861,11 +1861,11 @@ export default function DashboardPage() {
                             title="Transition between these clips"
                             aria-label={`Transition: ${TRANSITION_LABEL[transitionId]}`}
                           >
-                            <Sparkles className="h-3 w-3 text-amber-300" aria-hidden="true" />
+                            <TransitionPreview id={transitionId} size={22} />
                             <span>{TRANSITION_LABEL[transitionId]}</span>
                           </button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="center" className="min-w-[10rem]">
+                        <DropdownMenuContent align="center" className="min-w-[12rem]">
                           <DropdownMenuLabel>Transition</DropdownMenuLabel>
                           <DropdownMenuSeparator />
                           {TRANSITION_OPTIONS.map((opt) => (
@@ -1874,9 +1874,10 @@ export default function DashboardPage() {
                               onSelect={() => {
                                 setTransitions((current) => ({ ...current, [video.id]: opt.id }))
                               }}
-                              className={transitionId === opt.id ? 'bg-white/[0.06] text-zinc-100' : ''}
+                              className={`flex items-center gap-2 ${transitionId === opt.id ? 'bg-white/[0.06] text-zinc-100' : ''}`}
                             >
-                              {opt.label}
+                              <TransitionPreview id={opt.id} size={32} />
+                              <span>{opt.label}</span>
                             </DropdownMenuItem>
                           ))}
                         </DropdownMenuContent>
