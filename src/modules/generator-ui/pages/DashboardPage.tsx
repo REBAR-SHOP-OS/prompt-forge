@@ -1801,7 +1801,7 @@ export default function DashboardPage() {
               className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
               style={{
                 width: ratioToWidth(getRatioFor(previewVideo)),
-                maxWidth: 'calc(100vw - 26rem)',
+                maxWidth: 'calc(100vw - 56rem)',
                 maxHeight: `${previewMaxHeightPx}px`,
               }}
             >
@@ -1810,7 +1810,7 @@ export default function DashboardPage() {
                 style={{
                   aspectRatio: ratioToCss(getRatioFor(previewVideo)),
                   height: ratioToHeight(getRatioFor(previewVideo)),
-                  maxWidth: 'calc(100vw - 26rem)',
+                  maxWidth: 'calc(100vw - 56rem)',
                 }}
               >
                 {previewVideo.video?.storage_path ? (
