@@ -1782,19 +1782,9 @@ export default function DashboardPage() {
             <Button type="button" variant="ghost" onClick={handleClearMusic}>
               Remove
             </Button>
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handlePreviewMusicRange}
-                disabled={musicDuration <= 0}
-              >
-                Preview
-              </Button>
-              <Button type="button" onClick={() => setIsMusicDialogOpen(false)}>
-                Done
-              </Button>
-            </div>
+            <Button type="button" onClick={() => setIsMusicDialogOpen(false)}>
+              Done
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
