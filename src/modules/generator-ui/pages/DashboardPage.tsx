@@ -2055,7 +2055,8 @@ export default function DashboardPage() {
                           src={video.video.storage_path}
                           poster={video.video.thumbnail_url ?? undefined}
                           controls
-                          muted
+                          controlsList="nodownload noremoteplayback"
+                          disablePictureInPicture
                           playsInline
                           preload="auto"
                           onLoadedMetadata={(event) => {
