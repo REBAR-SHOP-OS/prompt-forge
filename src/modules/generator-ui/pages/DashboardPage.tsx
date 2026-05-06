@@ -291,6 +291,9 @@ export default function DashboardPage() {
     }
   }, [])
   const [videoColumnMessage, setVideoColumnMessage] = useState<string | null>(null)
+  const [userImages, setUserImages] = useState<UserImageItem[]>([])
+  const [isUploadingImage, setIsUploadingImage] = useState(false)
+  const imageUploadInputRef = useRef<HTMLInputElement | null>(null)
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
