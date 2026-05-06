@@ -1171,48 +1171,104 @@ export default function DashboardPage() {
     })
   }
 
-  function editAndReuseJob(job: { input_prompt: string; first_frame_url?: string | null; last_frame_url?: string | null }) {
+  async function editAndReuseJob(job: {
+    id?: string
+    input_prompt?: string
+    first_frame_url?: string | null
+    last_frame_url?: string | null
+    status?: string
+    video?: { storage_path?: string | null } | null
+  }) {
     setComposerError(null)
     setVideoColumnMessage(null)
-    setPromptText(job.input_prompt ?? '')
-
-    const hasFrames = Boolean(job.first_frame_url || job.last_frame_url)
-    if (hasFrames) {
-      setGenerationMode('image-to-video')
-      const seeds: UploadedFile[] = []
-      const baseId = Date.now()
-      if (job.first_frame_url) {
-        seeds.push({
-          id: baseId,
-          name: 'reused-start.png',
-          size: 0,
-          target: 'Start',
-          type: 'image/png',
-          status: 'ready',
-          url: job.first_frame_url,
-          error: null,
-        })
-      }
-      if (job.last_frame_url) {
-        seeds.push({
-          id: baseId + 1,
-          name: 'reused-end.png',
-          size: 0,
-          target: 'End',
-          type: 'image/png',
-          status: 'ready',
-          url: job.last_frame_url,
-          error: null,
-        })
-      }
-      setUploadedFiles(seeds)
-      setUploadTarget(job.first_frame_url ? 'End' : 'Start')
-    } else {
-      setGenerationMode('text-to-video')
-      setUploadedFiles([])
-    }
-
+    // Continuation flow: the new prompt extends the clicked clip, so start
+    // with an empty prompt and seed Start with this clip's LAST frame.
+    setPromptText('')
+    setUploadedFiles([])
+    setUploadTarget('Start')
     setIsApprovedPanelOpen(false)
+    setPreviewVideoId(null)
+
+    const canContinue =
+      Boolean(job.id)
+      && Boolean(job.video?.storage_path)
+      && normalizeStatus(job.status ?? '') === 'completed'
+      && Boolean(userId)
+
+    if (canContinue) {
+      setGenerationMode('image-to-video')
+      const seedId = Date.now()
+      const placeholder: UploadedFile = {
+        id: seedId,
+        name: `continuation-from-${(job.id as string).slice(0, 6)}.png`,
+        size: 0,
+        target: 'Start',
+        type: 'image/png',
+        status: 'uploading',
+        url: null,
+        error: null,
+      }
+      setUploadedFiles([placeholder])
+      try {
+        const proxied = await proxiedVideoUrl(job.video!.storage_path as string)
+        const blob = await captureLastFrameAsBlob(proxied)
+        const storagePath = `${userId}/start-${Date.now()}-${crypto.randomUUID()}.png`
+        const { error } = await supabase.storage
+          .from(FRAMES_BUCKET)
+          .upload(storagePath, blob, { contentType: 'image/png', upsert: false })
+        if (error) throw new Error(error.message)
+        const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+        setUploadedFiles((current) =>
+          current.map((f) =>
+            f.id === seedId
+              ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size }
+              : f,
+          ),
+        )
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Could not seed continuation frame'
+        setUploadedFiles((current) => current.filter((f) => f.id !== seedId))
+        setComposerError(`Continuation seed failed: ${msg}. Upload a Start frame manually.`)
+      }
+    } else {
+      // Fallback: clip not yet rendered → reuse original frames + prompt.
+      const hasFrames = Boolean(job.first_frame_url || job.last_frame_url)
+      if (hasFrames) {
+        setGenerationMode('image-to-video')
+        const seeds: UploadedFile[] = []
+        const baseId = Date.now()
+        if (job.first_frame_url) {
+          seeds.push({
+            id: baseId,
+            name: 'reused-start.png',
+            size: 0,
+            target: 'Start',
+            type: 'image/png',
+            status: 'ready',
+            url: job.first_frame_url,
+            error: null,
+          })
+        }
+        if (job.last_frame_url) {
+          seeds.push({
+            id: baseId + 1,
+            name: 'reused-end.png',
+            size: 0,
+            target: 'End',
+            type: 'image/png',
+            status: 'ready',
+            url: job.last_frame_url,
+            error: null,
+          })
+        }
+        setUploadedFiles(seeds)
+        setUploadTarget(job.first_frame_url ? 'End' : 'Start')
+        setPromptText(job.input_prompt ?? '')
+      } else {
+        setGenerationMode('text-to-video')
+        setPromptText(job.input_prompt ?? '')
+      }
+    }
 
     requestAnimationFrame(() => {
       promptInputRef.current?.focus()
