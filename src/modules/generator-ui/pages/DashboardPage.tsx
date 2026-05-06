@@ -13,6 +13,7 @@ import {
   GripVertical,
   Hammer,
   History,
+  ImagePlus,
   LayoutGrid,
   Library,
   LoaderCircle,
@@ -103,9 +104,16 @@ type UploadedFile = {
   error: string | null
 }
 
+type UserImageItem = {
+  id: string
+  storage_path: string
+  created_at: string
+}
+
 const VIDEO_POLL_INTERVAL_MS = 4_000
 const FRAMES_BUCKET = 'wan-frames'
 const MERGED_BUCKET = 'merged-videos'
+const USER_IMAGES_BUCKET = 'user-images'
 
 function isTerminalStatus(status: string) {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
@@ -290,6 +298,9 @@ export default function DashboardPage() {
     }
   }, [])
   const [videoColumnMessage, setVideoColumnMessage] = useState<string | null>(null)
+  const [userImages, setUserImages] = useState<UserImageItem[]>([])
+  const [isUploadingImage, setIsUploadingImage] = useState(false)
+  const imageUploadInputRef = useRef<HTMLInputElement | null>(null)
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
@@ -807,6 +818,87 @@ export default function DashboardPage() {
       isActive = false
     }
   }, [authLoading, session])
+
+  // Hydrate user-uploaded images from Lovable Cloud
+  useEffect(() => {
+    if (authLoading || !userId) return
+    let cancelled = false
+    ;(async () => {
+      const { data, error } = await supabase
+        .from('generator_user_images')
+        .select('id, storage_path, created_at')
+        .order('created_at', { ascending: false })
+      if (cancelled) return
+      if (error) {
+        setVideoColumnMessage(`Could not load images: ${error.message}`)
+        return
+      }
+      setUserImages((data ?? []) as UserImageItem[])
+    })()
+    return () => { cancelled = true }
+  }, [authLoading, userId])
+
+  const handlePickImage = () => {
+    if (isUploadingImage) return
+    imageUploadInputRef.current?.click()
+  }
+
+  const handleImageSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || !userId) return
+    if (!file.type.startsWith('image/')) {
+      setVideoColumnMessage('Please choose an image file.')
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setVideoColumnMessage('Image must be smaller than 10 MB.')
+      return
+    }
+    setIsUploadingImage(true)
+    setVideoColumnMessage(null)
+    try {
+      const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png'
+      const path = `${userId}/${crypto.randomUUID()}.${ext}`
+      const up = await supabase.storage
+        .from(USER_IMAGES_BUCKET)
+        .upload(path, file, { contentType: file.type, upsert: false })
+      if (up.error) throw up.error
+      const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
+      const publicUrl = pub.publicUrl
+      const { data: row, error: insErr } = await supabase
+        .from('generator_user_images')
+        .insert({
+          user_id: userId,
+          storage_path: publicUrl,
+          size_bytes: file.size,
+          mime_type: file.type,
+        })
+        .select('id, storage_path, created_at')
+        .single()
+      if (insErr) throw insErr
+      setUserImages((prev) => [row as UserImageItem, ...prev])
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Upload failed.'
+      setVideoColumnMessage(`Image upload failed: ${msg}`)
+    } finally {
+      setIsUploadingImage(false)
+    }
+  }
+
+  const handleDeleteUserImage = async (imageId: string) => {
+    const prev = userImages
+    setUserImages((curr) => curr.filter((i) => i.id !== imageId))
+    const { error } = await supabase
+      .from('generator_user_images')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', imageId)
+    if (error) {
+      setUserImages(prev)
+      setVideoColumnMessage(`Could not delete image: ${error.message}`)
+    }
+  }
+
 
   useEffect(() => {
     const activeJobs = generatedVideos.filter((job) => !isTerminalStatus(job.status))
@@ -2049,14 +2141,37 @@ export default function DashboardPage() {
             <p className="text-xs font-medium text-zinc-500">Video renders</p>
             <h2 className="text-sm font-semibold text-zinc-100">Recent outputs</h2>
           </div>
-          <button
-            type="button"
-            onClick={handleAddVideoCard}
-            className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100"
-            aria-label="Add new video card"
-          >
-            <Plus className="h-4 w-4" aria-hidden="true" />
-          </button>
+          <div className="flex items-center gap-2">
+            <input
+              ref={imageUploadInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleImageSelected}
+            />
+            <button
+              type="button"
+              onClick={handlePickImage}
+              disabled={isUploadingImage}
+              className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+              aria-label="Upload image"
+              title="Upload image"
+            >
+              {isUploadingImage ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <ImagePlus className="h-4 w-4" aria-hidden="true" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={handleAddVideoCard}
+              className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100"
+              aria-label="Add new video card"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
         </div>
 
         {videoColumnMessage ? (
@@ -2074,8 +2189,40 @@ export default function DashboardPage() {
                 <p className="mt-2 text-xs leading-5 text-zinc-600">Recent outputs will appear here.</p>
               </div>
             </div>
-          ) : displayedVideos.length > 0 ? (
+          ) : displayedVideos.length > 0 || userImages.length > 0 ? (
             <div className="grid min-w-0 gap-3">
+              {userImages.map((img) => (
+                <article
+                  key={`img-${img.id}`}
+                  className="w-full min-w-0 rounded-2xl border border-white/10 bg-white/[0.035] p-3 transition hover:border-white/20 hover:bg-white/[0.055]"
+                >
+                  <div
+                    className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
+                    style={{ aspectRatio: '1 / 1' }}
+                  >
+                    <img
+                      src={img.storage_path}
+                      alt="Uploaded reference"
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <p className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-400">
+                      Uploaded image
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteUserImage(img.id)}
+                      aria-label="Delete image"
+                      title="Delete image"
+                      className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                  </div>
+                </article>
+              ))}
               {displayedVideos.map((video, index) => {
                 const status = normalizeStatus(video.status)
                 const isPreviewSelected = previewVideo?.id === video.id
