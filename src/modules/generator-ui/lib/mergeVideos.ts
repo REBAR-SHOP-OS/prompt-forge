@@ -20,6 +20,10 @@ export interface MergeAudioOptions {
   src: string
   startSec: number
   endSec: number
+  /** 0..1, default 1 */
+  musicVolume?: number
+  /** 0..1, default 0 (music-only). Set >0 to mix clip audio in. */
+  clipVolume?: number
 }
 
 export type TransitionId =
