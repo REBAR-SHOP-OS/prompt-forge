@@ -861,7 +861,7 @@ export default function DashboardPage() {
     ;(async () => {
       const { data, error } = await supabase
         .from('generator_user_images')
-        .select('id, storage_path, created_at')
+        .select('id, storage_path, created_at, still_duration_seconds, width, height')
         .order('created_at', { ascending: false })
       if (cancelled) return
       if (error) {
