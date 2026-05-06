@@ -605,10 +605,10 @@ export default function DashboardPage() {
           const stillPublic = supabase.storage.from(MERGED_BUCKET).getPublicUrl(stillPath).data.publicUrl
 
           const mergedBlob = await mergeVideoUrls([proxiedSrc, stillPublic])
-          const mergedPath = `${userId}/with-end-${Date.now()}-${crypto.randomUUID()}.mp4`
+          const mergedPath = `${userId}/with-end-${Date.now()}-${crypto.randomUUID()}.webm`
           const { error: upErr } = await supabase.storage
             .from(MERGED_BUCKET)
-            .upload(mergedPath, mergedBlob, { contentType: 'video/mp4', upsert: false })
+            .upload(mergedPath, mergedBlob, { contentType: 'video/webm', upsert: false })
           if (upErr) throw new Error(upErr.message)
           const mergedPublic = supabase.storage.from(MERGED_BUCKET).getPublicUrl(mergedPath).data.publicUrl
 
@@ -672,10 +672,10 @@ export default function DashboardPage() {
 
           // Prepend: still clip first, then the generated video.
           const mergedBlob = await mergeVideoUrls([stillPublic, proxiedSrc])
-          const mergedPath = `${userId}/with-start-${Date.now()}-${crypto.randomUUID()}.mp4`
+          const mergedPath = `${userId}/with-start-${Date.now()}-${crypto.randomUUID()}.webm`
           const { error: upErr } = await supabase.storage
             .from(MERGED_BUCKET)
-            .upload(mergedPath, mergedBlob, { contentType: 'video/mp4', upsert: false })
+            .upload(mergedPath, mergedBlob, { contentType: 'video/webm', upsert: false })
           if (upErr) throw new Error(upErr.message)
           const mergedPublic = supabase.storage.from(MERGED_BUCKET).getPublicUrl(mergedPath).data.publicUrl
 
@@ -1054,11 +1054,11 @@ export default function DashboardPage() {
 
       const blob = await mergeVideoUrls(urls, (p) => setMergeProgress(Math.round(p.ratio * 100)))
 
-      const filename = `merged-${Date.now()}.mp4`
+      const filename = `merged-${Date.now()}.webm`
       const storagePath = `${userId}/${filename}`
       const { error: upErr } = await supabase.storage
         .from(MERGED_BUCKET)
-        .upload(storagePath, blob, { contentType: 'video/mp4', upsert: false })
+        .upload(storagePath, blob, { contentType: 'video/webm', upsert: false })
       if (upErr) throw new Error(upErr.message)
       const { data } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(storagePath)
       const publicUrl = data.publicUrl
