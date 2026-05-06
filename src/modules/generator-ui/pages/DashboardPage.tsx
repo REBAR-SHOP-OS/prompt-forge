@@ -2057,6 +2057,7 @@ export default function DashboardPage() {
                           controls
                           controlsList="nodownload noremoteplayback"
                           disablePictureInPicture
+                          muted
                           playsInline
                           preload="auto"
                           onLoadedMetadata={(event) => {
