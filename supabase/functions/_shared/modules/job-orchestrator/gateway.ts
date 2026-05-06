@@ -216,6 +216,7 @@ export const jobOrchestratorGateway = {
           const route = await aiGateway.resolveRoute(svc, providerKey, parsed.data.requestedModel, prompt);
 
           // Atomic: validate credits + create pending job + debit.
+          const chosenAspectRatio = parsed.data.aspectRatio ?? "16:9";
           let jobId: string;
           try {
             jobId = await jobService.createJob(svc, {
@@ -226,6 +227,8 @@ export const jobOrchestratorGateway = {
               estimatedCost: route.estimatedCost,
               firstFrameUrl,
               lastFrameUrl,
+              aspectRatio: chosenAspectRatio,
+              durationSeconds: parsed.data.durationSeconds ?? null,
             });
           } catch (e) {
             const msg = (e as Error).message;
@@ -243,6 +246,7 @@ export const jobOrchestratorGateway = {
               firstFrameUrl,
               lastFrameUrl,
               durationSeconds: parsed.data.durationSeconds ?? null,
+              aspectRatio: chosenAspectRatio,
             });
           } catch (e) {
             // failJob RPC may not exist; fall back to a direct status update so
