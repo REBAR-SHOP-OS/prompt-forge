@@ -46,18 +46,20 @@ export const jobService: JobService = {
     if (error) throw new Error(error.message);
     const jobId = data as string;
 
-    // Persist optional first/last frame URLs on the job row (not part of the
-    // RPC signature to keep credit-debit logic stable).
-    if (input.firstFrameUrl || input.lastFrameUrl) {
+    // Persist optional first/last frame URLs and the user's requested
+    // aspect ratio / duration on the job row (not part of the credit RPC).
+    const updates: Record<string, unknown> = {};
+    if (input.firstFrameUrl !== undefined) updates.first_frame_url = input.firstFrameUrl ?? null;
+    if (input.lastFrameUrl !== undefined) updates.last_frame_url = input.lastFrameUrl ?? null;
+    if (input.aspectRatio) updates.requested_aspect_ratio = input.aspectRatio;
+    if (input.durationSeconds) updates.requested_duration = input.durationSeconds;
+    if (Object.keys(updates).length > 0) {
       const { error: updErr } = await svc
         .from("generator_generation_jobs")
-        .update({
-          first_frame_url: input.firstFrameUrl ?? null,
-          last_frame_url: input.lastFrameUrl ?? null,
-        })
+        .update(updates)
         .eq("id", jobId)
         .eq("user_id", input.userId);
-      if (updErr) throw new Error(`frame url persist failed: ${updErr.message}`);
+      if (updErr) throw new Error(`job metadata persist failed: ${updErr.message}`);
     }
     return jobId;
   },
