@@ -1197,10 +1197,19 @@ export default function DashboardPage() {
     try {
       // Use the right-panel display order (top → bottom) so "what you see is what gets merged"
       const completedIds = new Set(completedSourceVideos.map((v) => v.id))
-      const rawUrls = displayedVideos
-        .filter((v) => completedIds.has(v.id) && v.video?.storage_path)
-        .map((v) => v.video!.storage_path)
+      const orderedClips = displayedVideos.filter(
+        (v) => completedIds.has(v.id) && v.video?.storage_path,
+      )
+      const rawUrls = orderedClips.map((v) => v.video!.storage_path)
       const urls = await Promise.all(rawUrls.map((u) => proxiedVideoUrl(u)))
+
+      // Build per-gap transition specs (one entry per gap = clips - 1).
+      const transitionsForMerge: TransitionSpec[] = orderedClips
+        .slice(0, -1)
+        .map((clip) => {
+          const id = transitions[clip.id] ?? 'cut'
+          return { id, durationMs: TRANSITION_DURATION[id] ?? 0 }
+        })
 
       const audioOpt = musicUrl && musicRange[1] > musicRange[0]
         ? { src: musicUrl, startSec: musicRange[0], endSec: musicRange[1] }
@@ -1209,6 +1218,7 @@ export default function DashboardPage() {
         urls,
         (p) => setMergeProgress(Math.round(p.ratio * 100)),
         audioOpt,
+        transitionsForMerge,
       )
 
       const filename = `merged-${Date.now()}.${mergeRes.extension}`
