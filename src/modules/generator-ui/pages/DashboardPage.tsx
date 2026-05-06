@@ -781,7 +781,7 @@ export default function DashboardPage() {
     const sourceId = draggingId || event.dataTransfer.getData('text/plain')
     setDraggingId(null)
     if (!sourceId || sourceId === targetId) return
-    const currentIds = displayedVideos.map((v) => v.id)
+    const currentIds = displayedClips.map((c) => c.id)
     const from = currentIds.indexOf(sourceId)
     const to = currentIds.indexOf(targetId)
     if (from === -1 || to === -1) return
@@ -793,17 +793,74 @@ export default function DashboardPage() {
   const handleCardDragEnd = () => setDraggingId(null)
 
 
-  const previewVideo = useMemo(() => {
-    if (visibleVideos.length === 0) {
-      return null
-    }
+  // Unified clip list (videos + uploaded images), ordered by created_at ASC,
+  // with manual drag-and-drop overrides. Both kinds share the same numbering,
+  // ordering, drag handlers, and Final Film merge sequence.
+  const visibleUserImages = useMemo(
+    () => userImages.filter((i) => !deletedIds.has(i.id)),
+    [userImages, deletedIds],
+  )
 
-    return (
-      visibleVideos.find((video) => video.id === previewVideoId) ??
-      visibleVideos.find((video) => video.video?.storage_path) ??
-      visibleVideos[0]
+  const displayedClips = useMemo<UnifiedClip[]>(() => {
+    const items: UnifiedClip[] = [
+      ...displayedVideos.map((job) => ({
+        kind: 'video' as const,
+        id: job.id,
+        createdAt: job.created_at,
+        job,
+      })),
+      ...visibleUserImages.map((image) => ({
+        kind: 'image' as const,
+        id: image.id,
+        createdAt: image.created_at,
+        image,
+      })),
+    ]
+    const chronoAsc = items.sort(
+      (l, r) => new Date(l.createdAt).getTime() - new Date(r.createdAt).getTime(),
     )
-  }, [visibleVideos, previewVideoId])
+    if (!manualOrder) return chronoAsc
+    const byId = new Map(chronoAsc.map((c) => [c.id, c]))
+    const ordered: UnifiedClip[] = []
+    for (const id of manualOrder) {
+      const c = byId.get(id)
+      if (c) {
+        ordered.push(c)
+        byId.delete(id)
+      }
+    }
+    for (const c of chronoAsc) {
+      if (byId.has(c.id)) ordered.push(c)
+    }
+    return ordered
+  }, [displayedVideos, visibleUserImages, manualOrder])
+
+  type PreviewItem =
+    | { kind: 'video'; job: JobDetail }
+    | { kind: 'image'; image: UserImageItem }
+
+  const previewItem = useMemo<PreviewItem | null>(() => {
+    if (previewVideoId) {
+      const found = displayedClips.find((c) => c.id === previewVideoId)
+      if (found) {
+        return found.kind === 'video'
+          ? { kind: 'video', job: found.job }
+          : { kind: 'image', image: found.image }
+      }
+    }
+    if (visibleVideos.length > 0) {
+      const v =
+        visibleVideos.find((video) => video.video?.storage_path) ??
+        visibleVideos[0]
+      return { kind: 'video', job: v }
+    }
+    const firstImage = displayedClips.find((c) => c.kind === 'image')
+    if (firstImage && firstImage.kind === 'image') return { kind: 'image', image: firstImage.image }
+    return null
+  }, [displayedClips, previewVideoId, visibleVideos])
+
+  // Backwards-compat alias used by existing card highlight + start-frame code paths
+  const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
 
   const emptyStateLabel = useMemo(() => {
     if (isDragging) {
