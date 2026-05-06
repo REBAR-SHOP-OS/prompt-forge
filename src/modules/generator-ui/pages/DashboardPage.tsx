@@ -347,6 +347,7 @@ export default function DashboardPage() {
   const [isMusicDialogOpen, setIsMusicDialogOpen] = useState(false)
   const musicFileInputRef = useRef<HTMLInputElement | null>(null)
   const musicPreviewAudioRef = useRef<HTMLAudioElement | null>(null)
+  const musicWaveformRef = useRef<SoundtrackWaveformHandle | null>(null)
   const [pendingEndAppends, setPendingEndAppends] = useState<Record<string, string>>({})
   const [pendingStartPrepends, setPendingStartPrepends] = useState<Record<string, string>>({})
   const processingEndAppendRef = useRef<Set<string>>(new Set())
