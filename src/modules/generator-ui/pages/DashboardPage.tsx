@@ -2141,14 +2141,37 @@ export default function DashboardPage() {
             <p className="text-xs font-medium text-zinc-500">Video renders</p>
             <h2 className="text-sm font-semibold text-zinc-100">Recent outputs</h2>
           </div>
-          <button
-            type="button"
-            onClick={handleAddVideoCard}
-            className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100"
-            aria-label="Add new video card"
-          >
-            <Plus className="h-4 w-4" aria-hidden="true" />
-          </button>
+          <div className="flex items-center gap-2">
+            <input
+              ref={imageUploadInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleImageSelected}
+            />
+            <button
+              type="button"
+              onClick={handlePickImage}
+              disabled={isUploadingImage}
+              className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+              aria-label="Upload image"
+              title="Upload image"
+            >
+              {isUploadingImage ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <ImagePlus className="h-4 w-4" aria-hidden="true" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={handleAddVideoCard}
+              className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100"
+              aria-label="Add new video card"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
         </div>
 
         {videoColumnMessage ? (
