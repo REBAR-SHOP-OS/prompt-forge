@@ -294,7 +294,7 @@ export default function DashboardPage() {
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
-  const [durationSeconds, setDurationSeconds] = useState<5 | 10>(5)
+  const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15>(5)
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '1:1' | '16:9'>(() => {
     if (typeof window === 'undefined') return '16:9'
     try {
@@ -2369,7 +2369,7 @@ export default function DashboardPage() {
             </button>
           </div>
           <div role="radiogroup" aria-label="Clip duration" className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
-            {([5, 10] as const).map((sec) => {
+            {([5, 10, 15] as const).map((sec) => {
               const active = durationSeconds === sec
               return (
                 <button
