@@ -1475,39 +1475,32 @@ export default function DashboardPage() {
             </div>
 
             {musicUrl ? (
-              <audio
-                ref={musicPreviewAudioRef}
-                src={musicUrl}
-                controls
-                onLoadedMetadata={handleMusicLoadedMetadata}
-                className="w-full"
+              <SoundtrackWaveform
+                ref={musicWaveformRef}
+                url={musicUrl}
+                range={musicRange[1] > musicRange[0] ? musicRange : [0, Math.max(0.1, musicDuration)]}
+                onReady={(d) => {
+                  setMusicDuration(d)
+                  if (musicRange[1] <= musicRange[0]) {
+                    setMusicRange([0, d])
+                  }
+                }}
+                onRangeChange={(r) => {
+                  if (r[1] > r[0]) setMusicRange([r[0], r[1]])
+                }}
               />
-            ) : null}
-
-            {musicDuration > 0 ? (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs text-zinc-400">
-                  <span>Selection</span>
-                  <span className="tabular-nums text-zinc-200">
-                    {formatTimeMS(musicRange[0])} – {formatTimeMS(musicRange[1])}
-                  </span>
-                </div>
-                <Slider
-                  min={0}
-                  max={Math.max(0.1, musicDuration)}
-                  step={0.1}
-                  value={musicRange}
-                  onValueChange={(v) => {
-                    if (v.length === 2) {
-                      const [a, b] = v
-                      if (b > a) setMusicRange([a, b])
-                    }
-                  }}
-                />
-              </div>
             ) : (
               <p className="text-xs text-zinc-500">Loading audio…</p>
             )}
+
+            {musicDuration > 0 ? (
+              <div className="flex items-center justify-between text-xs text-zinc-400">
+                <span>Selection</span>
+                <span className="tabular-nums text-zinc-200">
+                  {formatTimeMS(musicRange[0])} – {formatTimeMS(musicRange[1])}
+                </span>
+              </div>
+            ) : null}
           </div>
 
           <DialogFooter className="gap-2 sm:justify-between">
