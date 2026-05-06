@@ -103,18 +103,20 @@ Deno.serve(async (req) => {
     }
 
 
-    if (!prompt) {
-      return new Response(JSON.stringify({ error: "prompt is required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    if (prompt.length > 4000) {
-      return new Response(JSON.stringify({ error: "prompt too long" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const systemPrompt = `${BASE_SYSTEM_PROMPT}\n\n${
+      mode === "silent"
+        ? SILENT_SUFFIX
+        : mode === "narrated"
+          ? narratedSuffix(narratorScript)
+          : DEFAULT_SUFFIX
+    }`;
+
+    // For narrated mode with no user prompt, seed with the script so the model
+    // has something to anchor the visual scene to.
+    const effectivePrompt = prompt || (mode === "narrated"
+      ? `Cinematic short scene built around this narrator script: "${narratorScript}"`
+      : "");
+
 
     const apiKey = Deno.env.get("LOVABLE_API_KEY");
     if (!apiKey) {
