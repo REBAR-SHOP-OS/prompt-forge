@@ -266,14 +266,16 @@ export async function mergeVideoUrls(
   }
 
   let soundtrackEl: HTMLAudioElement | null = null
-  let soundtrackTimeListener: (() => void) | null = null
+  let soundtrackEndedHandler: (() => void) | null = null
+  let soundtrackClampRaf = 0
   if (useSoundtrack && audio && audioCtx && audioDest) {
     try {
       soundtrackEl = document.createElement('audio')
       soundtrackEl.crossOrigin = 'anonymous'
       soundtrackEl.src = audio.src
       soundtrackEl.preload = 'auto'
-      soundtrackEl.loop = true
+      // We handle looping manually so we always wrap to winStart, never to 0.
+      soundtrackEl.loop = false
       await new Promise<void>((resolve, reject) => {
         const onReady = () => { soundtrackEl!.removeEventListener('loadedmetadata', onReady); resolve() }
         const onErr = () => { soundtrackEl!.removeEventListener('error', onErr); reject(new Error('Failed to load soundtrack')) }
@@ -343,13 +345,29 @@ export async function mergeVideoUrls(
   if (soundtrackEl && audio) {
     const winStart = Math.max(0, audio.startSec)
     const winEnd = Math.max(winStart + 0.05, audio.endSec)
-    soundtrackTimeListener = () => {
+    // Re-seek immediately before play() — some browsers reset currentTime
+    // while the element is idle, which would otherwise leak the unselected
+    // intro of the file into the recording.
+    try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
+    // rAF clamp loop: snap back to winStart the instant currentTime crosses
+    // winEnd. This is much tighter than 'timeupdate' (~250ms granularity)
+    // and guarantees nothing past winEnd is captured.
+    const clampTick = () => {
       if (!soundtrackEl) return
       if (soundtrackEl.currentTime >= winEnd) {
-        soundtrackEl.currentTime = winStart
+        try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
       }
+      soundtrackClampRaf = requestAnimationFrame(clampTick)
     }
-    soundtrackEl.addEventListener('timeupdate', soundtrackTimeListener)
+    soundtrackClampRaf = requestAnimationFrame(clampTick)
+    // If the file's natural end is reached before winEnd (shouldn't happen
+    // given the clamp above, but defensive), wrap to winStart and resume.
+    soundtrackEndedHandler = () => {
+      if (!soundtrackEl) return
+      try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
+      void soundtrackEl.play().catch(() => { /* ignore */ })
+    }
+    soundtrackEl.addEventListener('ended', soundtrackEndedHandler)
     try { await soundtrackEl.play() } catch { /* ignore autoplay reject */ }
   }
 
@@ -469,7 +487,8 @@ export async function mergeVideoUrls(
   await stopped
 
   if (soundtrackEl) {
-    if (soundtrackTimeListener) soundtrackEl.removeEventListener('timeupdate', soundtrackTimeListener)
+    if (soundtrackClampRaf) cancelAnimationFrame(soundtrackClampRaf)
+    if (soundtrackEndedHandler) soundtrackEl.removeEventListener('ended', soundtrackEndedHandler)
     try { soundtrackEl.pause() } catch { /* ignore */ }
     soundtrackEl.src = ''
   }
