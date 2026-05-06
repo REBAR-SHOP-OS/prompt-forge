@@ -1,72 +1,43 @@
-## Goal
+# Reorderable, numbered history cards (oldest → newest)
 
-ریشه‌ای حل کردن مشکل صدا در فیلم نهایی: خروجی به جای WebM به‌صورت MP4 (H.264 + AAC) ضبط شود تا در همه‌جا (QuickTime، VLC، موبایل، ادیتورها) صدا پخش شود، و صدای اصلی هر کلیپ هم در ادغام حاضر باشد (وقتی کاربر موزیک نگذاشته است).
+Change the right-side "Recent outputs" panel so that:
+1. The **first generated video appears at the top** and the newest at the bottom (currently it's reversed).
+2. Each card displays a **sequence number** (1, 2, 3, …) matching its visual order.
+3. The user can **drag-and-drop cards** to reorder them, and that order is used everywhere (preview navigation, merge, final film).
 
-## Root Cause
+## Changes
 
-دو مشکل به‌هم پیوسته:
+### 1. Display order (oldest first)
+File: `src/modules/generator-ui/pages/DashboardPage.tsx`
 
-1. **Container webm**: MediaRecorder در حال حاضر `video/webm;codecs=vp9,opus` تولید می‌کند. بسیاری از پلیرها (QuickTime، Premiere، گالری بعضی موبایل‌ها) فایل webm را اصلاً پخش نمی‌کنند یا audio track آن را نمی‌شناسند → کاربر تصور می‌کند «صدا ندارد».
-2. **حذف کامل صدای کلیپ‌ها**: در منطق فعلی، عناصر `<video>` همیشه `muted = true` هستند و هیچ track صوتی‌ای از کلیپ‌ها وارد stream خروجی نمی‌شود؛ فقط وقتی کاربر موزیک می‌گذارد یک audio track اضافه می‌شود. وقتی موزیک نیست، خروجی هیچ track صوتی‌ای ندارد و این هم مشکل پخش را بدتر می‌کند.
+- The render list currently uses `generatedVideos` (sorted DESC by `created_at`). We will derive a new `displayedVideos` list in the aside that:
+  - Filters out `deletedIds`.
+  - Applies the user's manual order if present (see step 3); otherwise sorts ASC by `created_at` (oldest at top).
+- Update `handleMergeAllVideos`: today it does `.slice().reverse()` on `completedSourceVideos` to get chronological order. Replace that with the new `displayedVideos` order (drop the `.reverse()`), so the merge always follows exactly what the user sees.
 
-## Fix
+### 2. Numbering
+- In the card render loop (`.map((video, index) => …)`), add a small numbered badge in the top-left corner of the thumbnail showing `index + 1`.
+- Style: small rounded pill with `bg-black/60`, white text, `tabular-nums`, positioned absolutely over the `<video>` thumbnail (the thumbnail container becomes `relative`).
 
-### ۱) ترجیح کانتینر MP4 (H.264 + AAC)
+### 3. Drag-and-drop reordering
+- Add a new state `manualOrder: string[] | null` (array of job ids). `null` means "use default chronological order".
+- Implement lightweight HTML5 drag-and-drop (no new library) on each `<article>`:
+  - `draggable`, `onDragStart` (store dragged id), `onDragOver` (preventDefault), `onDrop` (compute new order and update `manualOrder`).
+  - Add a small grip handle icon (lucide `GripVertical`) on the right side of the card header for clear affordance.
+- When new videos arrive, append their ids to `manualOrder` (if it exists) so user-set order is preserved while still showing new items at the bottom.
+- When a card is deleted, remove its id from `manualOrder`.
 
-در `pickMimeType()` (در `src/modules/generator-ui/lib/mergeVideos.ts`)، ترتیب کاندیداها به این صورت تغییر می‌کند:
+### 4. Effect on existing features
+- `previewVideo` selection logic stays the same (it uses ids, not order).
+- The merge-all and final-film flows now use `displayedVideos` order, ensuring "what you see is what gets merged" — top card = first clip in the final film.
+- "History count" badge stays as is (filtered length).
 
-```text
-video/mp4;codecs=avc1.42E01E,mp4a.40.2
-video/mp4;codecs=avc1,mp4a
-video/mp4
-video/webm;codecs=vp9,opus
-video/webm;codecs=vp8,opus
-video/webm
-```
+## Technical notes
 
-- Chromium ≥ 130 و Safari ≥ 14.1 از ضبط مستقیم MP4 پشتیبانی می‌کنند → برای اکثر کاربران خروجی به‌صورت `.mp4` خواهد بود.
-- اگر مرورگر MP4 را پشتیبانی نکند (Firefox، Chromium قدیمی‌تر)، به‌طور خودکار به WebM/Opus برمی‌گردد بدون شکست.
-- یک تابع کوچک `mimeTypeToExtension(mt)` اضافه می‌شود که از روی mime type انتخاب‌شده پسوند صحیح (`mp4` یا `webm`) را می‌دهد.
-- API تابع `mergeVideoUrls` به جای `Promise<Blob>` به `Promise<{ blob: Blob; extension: 'mp4' | 'webm'; mimeType: string }>` تغییر می‌کند تا فراخواننده پسوند درست را بداند.
+- No new dependencies; native HTML5 DnD is sufficient for ~dozens of cards in a vertical list.
+- `manualOrder` is component-local state (not persisted to DB) — refreshing the page returns to chronological order. We can persist later if requested.
+- All changes are confined to `DashboardPage.tsx`.
 
-### ۲) همیشه یک audio track در stream خروجی وجود داشته باشد
-
-برای جلوگیری از فایل‌های «بدون audio track» که مشکل‌ساز هستند:
-
-- یک `AudioContext` همیشه ساخته می‌شود و یک `MediaStreamAudioDestinationNode` به‌عنوان خروجی صدا.
-- این destination همیشه یک audio track به stream اصلی اضافه می‌کند (حتی اگر صامت باشد).
-- اگر کاربر موزیک گذاشته باشد → عنصر `<audio>` موزیک از طریق `createMediaElementSource` به destination وصل می‌شود و کلیپ‌ها muted می‌مانند (رفتار فعلی، حفظ می‌شود).
-- اگر موزیک نگذاشته باشد → برای هر کلیپ ویدیو، عنصر `<video>` با `muted = false` ساخته می‌شود و صدای آن از طریق `createMediaElementSource` به همان destination وصل می‌شود. وقتی کلیپ تمام شد، گره صوتی آن disconnect می‌شود و گره کلیپ بعدی متصل می‌شود (در نتیجه صدای هر کلیپ در نوبت خود شنیده می‌شود).
-- توجه: `createMediaElementSource` صدا را از پخش‌کنندهٔ پیش‌فرض جدا می‌کند و فقط به destination هدایت می‌کند → کاربر هنگام render چیزی نمی‌شنود (رفتار فعلی حفظ می‌شود).
-
-### ۳) به‌روزرسانی فراخواننده (DashboardPage)
-
-در `handleMergeAllVideos`:
-
-- نتیجه‌ی `mergeVideoUrls` به‌صورت `{ blob, extension }` گرفته می‌شود.
-- نام فایل: `merged-${Date.now()}.${extension}` (به‌جای `.webm` ثابت).
-- contentType آپلود به Storage از `blob.type` استفاده می‌کند.
-- بقیه‌ی منطق (آپلود، entry, preview، دانلود) بدون تغییر.
-
-## Files Touched
-
-- `src/modules/generator-ui/lib/mergeVideos.ts`:
-  - بازنویسی `pickMimeType` با ترجیح MP4
-  - افزودن export `mimeTypeToExtension`
-  - تضمین وجود همیشگی یک audio track در stream خروجی
-  - mux کردن صدای هر کلیپ هنگامی که موزیک وجود ندارد
-  - تغییر return type به `{ blob, extension, mimeType }`
-- `src/modules/generator-ui/pages/DashboardPage.tsx`:
-  - به‌روزرسانی فراخوانی `mergeVideoUrls` و انتخاب پسوند فایل بر اساس `extension` برگشتی
-
-## Compatibility & Risk
-
-- مرورگرهایی که MP4 را پشتیبانی نکنند (مثل Firefox فعلی)، هم‌چنان WebM/Opus دریافت می‌کنند — اما حالا با audio track معتبر، که خود مشکل «بدون صدا» را در پلیرهای WebM-aware (Chrome, VLC) حل می‌کند.
-- `createMediaElementSource` فقط یک‌بار قابل ساخت برای هر media element است؛ چون برای هر کلیپ یک عنصر `<video>` تازه می‌سازیم، مشکلی نیست.
-- اگر مرورگر CORS کلیپ‌ها را به‌درستی نگذارد، `createMediaElementSource` خطا می‌دهد و در آن صورت کلیپ بدون صدا اما ویدیویش render می‌شود (graceful fallback).
-- بدون تغییر در سرویس آپلود، DB، یا منطق UI/طراحی.
-
-## Out of Scope
-
-- بدون افزودن ffmpeg.wasm یا transcoding سمت سرور.
-- بدون تغییر در رفتار موزیک (slider, dialog, …).
+## Out of scope
+- Persisting custom order across reloads.
+- Touch-drag on mobile (HTML5 DnD has limited mobile support; can add later with a library if needed).

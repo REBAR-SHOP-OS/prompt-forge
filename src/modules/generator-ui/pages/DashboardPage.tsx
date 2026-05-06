@@ -10,6 +10,7 @@ import {
   Download,
   FileUp,
   Film,
+  GripVertical,
   Hammer,
   History,
   LayoutGrid,
@@ -302,6 +303,8 @@ export default function DashboardPage() {
   const pendingEndAppendsKey = userId ? `pending-end-appends:${userId}` : null
   const pendingStartPrependsKey = userId ? `pending-start-prepends:${userId}` : null
   const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set())
+  const [manualOrder, setManualOrder] = useState<string[] | null>(null)
+  const [draggingId, setDraggingId] = useState<string | null>(null)
   const [mergedEntries, setMergedEntries] = useState<JobDetail[]>([])
   const [isMerging, setIsMerging] = useState(false)
   const [mergeProgress, setMergeProgress] = useState<number>(0)
@@ -499,6 +502,54 @@ export default function DashboardPage() {
     ),
     [generatedVideos, deletedIds]
   )
+
+  // Right-panel display order: oldest first (chronological ASC), with manual drag-and-drop overrides.
+  const displayedVideos = useMemo(() => {
+    const filtered = generatedVideos.filter((v) => !deletedIds.has(v.id))
+    const chronoAsc = [...filtered].sort(
+      (l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime()
+    )
+    if (!manualOrder) return chronoAsc
+    const byId = new Map(chronoAsc.map((v) => [v.id, v]))
+    const ordered: typeof chronoAsc = []
+    for (const id of manualOrder) {
+      const v = byId.get(id)
+      if (v) {
+        ordered.push(v)
+        byId.delete(id)
+      }
+    }
+    for (const v of chronoAsc) {
+      if (byId.has(v.id)) ordered.push(v)
+    }
+    return ordered
+  }, [generatedVideos, deletedIds, manualOrder])
+
+  const handleCardDragStart = (id: string) => (event: React.DragEvent) => {
+    setDraggingId(id)
+    event.dataTransfer.effectAllowed = 'move'
+    try { event.dataTransfer.setData('text/plain', id) } catch {}
+  }
+  const handleCardDragOver = (event: React.DragEvent) => {
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+  }
+  const handleCardDrop = (targetId: string) => (event: React.DragEvent) => {
+    event.preventDefault()
+    const sourceId = draggingId || event.dataTransfer.getData('text/plain')
+    setDraggingId(null)
+    if (!sourceId || sourceId === targetId) return
+    const currentIds = displayedVideos.map((v) => v.id)
+    const from = currentIds.indexOf(sourceId)
+    const to = currentIds.indexOf(targetId)
+    if (from === -1 || to === -1) return
+    const next = [...currentIds]
+    next.splice(from, 1)
+    next.splice(to, 0, sourceId)
+    setManualOrder(next)
+  }
+  const handleCardDragEnd = () => setDraggingId(null)
+
 
   const previewVideo = useMemo(() => {
     if (visibleVideos.length === 0) {
@@ -1125,9 +1176,10 @@ export default function DashboardPage() {
     setMergeProgress(0)
     setVideoColumnMessage(null)
     try {
-      const rawUrls = completedSourceVideos
-        .slice()
-        .reverse() // oldest -> newest, in chronological order
+      // Use the right-panel display order (top → bottom) so "what you see is what gets merged"
+      const completedIds = new Set(completedSourceVideos.map((v) => v.id))
+      const rawUrls = displayedVideos
+        .filter((v) => completedIds.has(v.id) && v.video?.storage_path)
         .map((v) => v.video!.storage_path)
       const urls = await Promise.all(rawUrls.map((u) => proxiedVideoUrl(u)))
 
@@ -1618,18 +1670,24 @@ export default function DashboardPage() {
                 <p className="mt-2 text-xs leading-5 text-zinc-600">Recent outputs will appear here.</p>
               </div>
             </div>
-          ) : generatedVideos.filter((v) => !deletedIds.has(v.id)).length > 0 ? (
+          ) : displayedVideos.length > 0 ? (
             <div className="grid gap-3">
-              {generatedVideos.filter((v) => !deletedIds.has(v.id)).map((video) => {
+              {displayedVideos.map((video, index) => {
                 const status = normalizeStatus(video.status)
                 const isPreviewSelected = previewVideo?.id === video.id
+                const isDragging = draggingId === video.id
 
                 return (
                   <article
                     key={video.id}
+                    draggable
+                    onDragStart={handleCardDragStart(video.id)}
+                    onDragOver={handleCardDragOver}
+                    onDrop={handleCardDrop(video.id)}
+                    onDragEnd={handleCardDragEnd}
                     className={`cursor-pointer rounded-2xl border p-3 transition hover:border-white/20 hover:bg-white/[0.055] ${
                       isPreviewSelected ? 'border-white/20 bg-white/[0.06]' : 'border-white/10 bg-white/[0.035]'
-                    }`}
+                    } ${isDragging ? 'opacity-50' : ''}`}
                     role="button"
                     tabIndex={0}
                     aria-label={`Preview ${video.input_prompt}`}
@@ -1641,7 +1699,7 @@ export default function DashboardPage() {
                       }
                     }}
                   >
-                    <div className="overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
+                    <div className="relative overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
                       {video.video?.storage_path ? (
                         <video
                           className="aspect-video h-full w-full bg-black object-cover"
@@ -1656,6 +1714,12 @@ export default function DashboardPage() {
                           <Clapperboard className="h-8 w-8" aria-hidden="true" />
                         </div>
                       )}
+                      <span
+                        className="pointer-events-none absolute left-2 top-2 grid h-6 min-w-6 place-items-center rounded-full bg-black/70 px-1.5 text-xs font-semibold tabular-nums text-white shadow-md ring-1 ring-white/15"
+                        aria-label={`Card ${index + 1}`}
+                      >
+                        {index + 1}
+                      </span>
                     </div>
 
                     <div className="mt-3 flex items-start justify-between gap-3">
@@ -1663,6 +1727,14 @@ export default function DashboardPage() {
                         {video.input_prompt}
                       </p>
                       <div className="flex shrink-0 items-center gap-1.5">
+                        <span
+                          onClick={(event) => event.stopPropagation()}
+                          className="grid h-7 w-5 shrink-0 cursor-grab place-items-center text-zinc-500 transition hover:text-zinc-200 active:cursor-grabbing"
+                          title="Drag to reorder"
+                          aria-label="Drag to reorder"
+                        >
+                          <GripVertical className="h-4 w-4" aria-hidden="true" />
+                        </span>
                         {status === 'processing' ? (
                           <LoaderCircle className="mt-1 h-4 w-4 shrink-0 animate-spin text-amber-300" aria-hidden="true" />
                         ) : status === 'completed' && video.video?.storage_path ? (
