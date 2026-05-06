@@ -1670,18 +1670,24 @@ export default function DashboardPage() {
                 <p className="mt-2 text-xs leading-5 text-zinc-600">Recent outputs will appear here.</p>
               </div>
             </div>
-          ) : generatedVideos.filter((v) => !deletedIds.has(v.id)).length > 0 ? (
+          ) : displayedVideos.length > 0 ? (
             <div className="grid gap-3">
-              {generatedVideos.filter((v) => !deletedIds.has(v.id)).map((video) => {
+              {displayedVideos.map((video, index) => {
                 const status = normalizeStatus(video.status)
                 const isPreviewSelected = previewVideo?.id === video.id
+                const isDragging = draggingId === video.id
 
                 return (
                   <article
                     key={video.id}
+                    draggable
+                    onDragStart={handleCardDragStart(video.id)}
+                    onDragOver={handleCardDragOver}
+                    onDrop={handleCardDrop(video.id)}
+                    onDragEnd={handleCardDragEnd}
                     className={`cursor-pointer rounded-2xl border p-3 transition hover:border-white/20 hover:bg-white/[0.055] ${
                       isPreviewSelected ? 'border-white/20 bg-white/[0.06]' : 'border-white/10 bg-white/[0.035]'
-                    }`}
+                    } ${isDragging ? 'opacity-50' : ''}`}
                     role="button"
                     tabIndex={0}
                     aria-label={`Preview ${video.input_prompt}`}
@@ -1693,7 +1699,7 @@ export default function DashboardPage() {
                       }
                     }}
                   >
-                    <div className="overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
+                    <div className="relative overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
                       {video.video?.storage_path ? (
                         <video
                           className="aspect-video h-full w-full bg-black object-cover"
@@ -1708,6 +1714,12 @@ export default function DashboardPage() {
                           <Clapperboard className="h-8 w-8" aria-hidden="true" />
                         </div>
                       )}
+                      <span
+                        className="pointer-events-none absolute left-2 top-2 grid h-6 min-w-6 place-items-center rounded-full bg-black/70 px-1.5 text-xs font-semibold tabular-nums text-white shadow-md ring-1 ring-white/15"
+                        aria-label={`Card ${index + 1}`}
+                      >
+                        {index + 1}
+                      </span>
                     </div>
 
                     <div className="mt-3 flex items-start justify-between gap-3">
@@ -1715,6 +1727,14 @@ export default function DashboardPage() {
                         {video.input_prompt}
                       </p>
                       <div className="flex shrink-0 items-center gap-1.5">
+                        <span
+                          onClick={(event) => event.stopPropagation()}
+                          className="grid h-7 w-5 shrink-0 cursor-grab place-items-center text-zinc-500 transition hover:text-zinc-200 active:cursor-grabbing"
+                          title="Drag to reorder"
+                          aria-label="Drag to reorder"
+                        >
+                          <GripVertical className="h-4 w-4" aria-hidden="true" />
+                        </span>
                         {status === 'processing' ? (
                           <LoaderCircle className="mt-1 h-4 w-4 shrink-0 animate-spin text-amber-300" aria-hidden="true" />
                         ) : status === 'completed' && video.video?.storage_path ? (
