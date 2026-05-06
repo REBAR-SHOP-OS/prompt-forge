@@ -272,6 +272,46 @@ export default function DashboardPage() {
   useEffect(() => {
     try { window.localStorage.setItem('generator:aspectRatio', aspectRatio) } catch { /* ignore */ }
   }, [aspectRatio])
+  // Per-job aspect ratio map so the preview chrome matches the clip exactly,
+  // even before the asset row carries `aspect_ratio`. Persisted in localStorage.
+  type Ratio = '9:16' | '1:1' | '16:9'
+  const [clipAspectRatios, setClipAspectRatios] = useState<Record<string, Ratio>>(() => {
+    if (typeof window === 'undefined') return {}
+    try {
+      const raw = window.localStorage.getItem('generator:clipAspectRatios')
+      if (!raw) return {}
+      const parsed = JSON.parse(raw) as Record<string, Ratio>
+      return parsed && typeof parsed === 'object' ? parsed : {}
+    } catch { return {} }
+  })
+  const rememberClipRatio = (id: string, r: Ratio) => {
+    setClipAspectRatios((curr) => {
+      if (curr[id] === r) return curr
+      const next = { ...curr, [id]: r }
+      try { window.localStorage.setItem('generator:clipAspectRatios', JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }
+  const normalizeRatio = (v: unknown): Ratio | null => {
+    if (v === '9:16' || v === '1:1' || v === '16:9') return v
+    if (typeof v === 'string') {
+      // provider sometimes returns "720P"; ignore non-standard values
+      const m = v.match(/^(\d+):(\d+)$/)
+      if (m) {
+        const key = `${m[1]}:${m[2]}` as Ratio
+        if (key === '9:16' || key === '1:1' || key === '16:9') return key
+      }
+    }
+    return null
+  }
+  const getRatioFor = (video: { id: string; video?: { aspect_ratio?: string | null } | null } | null | undefined): Ratio => {
+    if (!video) return aspectRatio
+    const local = clipAspectRatios[video.id]
+    if (local) return local
+    const fromAsset = normalizeRatio(video.video?.aspect_ratio ?? null)
+    return fromAsset ?? '16:9'
+  }
+  const ratioToCss = (r: Ratio): string => (r === '9:16' ? '9 / 16' : r === '1:1' ? '1 / 1' : '16 / 9')
   const userId = session?.user?.id ?? null
   const approvedStorageKey = userId ? `approved-videos:${userId}` : null
   const [approvedIds, setApprovedIds] = useState<Set<string>>(() => new Set())
