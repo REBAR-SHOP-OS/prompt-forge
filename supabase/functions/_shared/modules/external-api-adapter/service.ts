@@ -145,21 +145,23 @@ async function startWanI2V(
   input: GenerationStartInput,
   apiKey: string,
 ): Promise<GenerationStartResult> {
-  if (!input.firstFrameUrl || !input.lastFrameUrl) {
-    throw new Error("Wan i2v requires both firstFrameUrl and lastFrameUrl");
+  if (!input.firstFrameUrl && !input.lastFrameUrl) {
+    throw new Error("Wan i2v requires at least firstFrameUrl or lastFrameUrl");
   }
 
   // Per Wan image-to-video general API reference, the new media[] protocol
-  // accepts first_frame and last_frame entries. Defaults below match the docs'
-  // recommended starter values for the first+last frame combination.
+  // accepts first_frame and/or last_frame entries. When only one frame is
+  // provided, the model treats it as the anchor and generates the rest of
+  // the clip from the prompt.
+  const media: Array<{ type: "first_frame" | "last_frame"; url: string }> = [];
+  if (input.firstFrameUrl) media.push({ type: "first_frame", url: input.firstFrameUrl });
+  if (input.lastFrameUrl) media.push({ type: "last_frame", url: input.lastFrameUrl });
+
   const body = {
     model: resolvedModel,
     input: {
       prompt: input.prompt,
-      media: [
-        { type: "first_frame", url: input.firstFrameUrl },
-        { type: "last_frame", url: input.lastFrameUrl },
-      ],
+      media,
     },
     parameters: {
       resolution: "720P",
