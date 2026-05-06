@@ -115,7 +115,14 @@ type UserImageItem = {
   id: string
   storage_path: string
   created_at: string
+  still_duration_seconds: number
+  width?: number | null
+  height?: number | null
 }
+
+type UnifiedClip =
+  | { kind: 'video'; id: string; createdAt: string; job: JobDetail }
+  | { kind: 'image'; id: string; createdAt: string; image: UserImageItem }
 
 const VIDEO_POLL_INTERVAL_MS = 4_000
 const FRAMES_BUCKET = 'wan-frames'
@@ -774,7 +781,7 @@ export default function DashboardPage() {
     const sourceId = draggingId || event.dataTransfer.getData('text/plain')
     setDraggingId(null)
     if (!sourceId || sourceId === targetId) return
-    const currentIds = displayedVideos.map((v) => v.id)
+    const currentIds = displayedClips.map((c) => c.id)
     const from = currentIds.indexOf(sourceId)
     const to = currentIds.indexOf(targetId)
     if (from === -1 || to === -1) return
@@ -786,17 +793,74 @@ export default function DashboardPage() {
   const handleCardDragEnd = () => setDraggingId(null)
 
 
-  const previewVideo = useMemo(() => {
-    if (visibleVideos.length === 0) {
-      return null
-    }
+  // Unified clip list (videos + uploaded images), ordered by created_at ASC,
+  // with manual drag-and-drop overrides. Both kinds share the same numbering,
+  // ordering, drag handlers, and Final Film merge sequence.
+  const visibleUserImages = useMemo(
+    () => userImages.filter((i) => !deletedIds.has(i.id)),
+    [userImages, deletedIds],
+  )
 
-    return (
-      visibleVideos.find((video) => video.id === previewVideoId) ??
-      visibleVideos.find((video) => video.video?.storage_path) ??
-      visibleVideos[0]
+  const displayedClips = useMemo<UnifiedClip[]>(() => {
+    const items: UnifiedClip[] = [
+      ...displayedVideos.map((job) => ({
+        kind: 'video' as const,
+        id: job.id,
+        createdAt: job.created_at,
+        job,
+      })),
+      ...visibleUserImages.map((image) => ({
+        kind: 'image' as const,
+        id: image.id,
+        createdAt: image.created_at,
+        image,
+      })),
+    ]
+    const chronoAsc = items.sort(
+      (l, r) => new Date(l.createdAt).getTime() - new Date(r.createdAt).getTime(),
     )
-  }, [visibleVideos, previewVideoId])
+    if (!manualOrder) return chronoAsc
+    const byId = new Map(chronoAsc.map((c) => [c.id, c]))
+    const ordered: UnifiedClip[] = []
+    for (const id of manualOrder) {
+      const c = byId.get(id)
+      if (c) {
+        ordered.push(c)
+        byId.delete(id)
+      }
+    }
+    for (const c of chronoAsc) {
+      if (byId.has(c.id)) ordered.push(c)
+    }
+    return ordered
+  }, [displayedVideos, visibleUserImages, manualOrder])
+
+  type PreviewItem =
+    | { kind: 'video'; job: JobDetail }
+    | { kind: 'image'; image: UserImageItem }
+
+  const previewItem = useMemo<PreviewItem | null>(() => {
+    if (previewVideoId) {
+      const found = displayedClips.find((c) => c.id === previewVideoId)
+      if (found) {
+        return found.kind === 'video'
+          ? { kind: 'video', job: found.job }
+          : { kind: 'image', image: found.image }
+      }
+    }
+    if (visibleVideos.length > 0) {
+      const v =
+        visibleVideos.find((video) => video.video?.storage_path) ??
+        visibleVideos[0]
+      return { kind: 'video', job: v }
+    }
+    const firstImage = displayedClips.find((c) => c.kind === 'image')
+    if (firstImage && firstImage.kind === 'image') return { kind: 'image', image: firstImage.image }
+    return null
+  }, [displayedClips, previewVideoId, visibleVideos])
+
+  // Backwards-compat alias used by existing card highlight + start-frame code paths
+  const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
 
   const emptyStateLabel = useMemo(() => {
     if (isDragging) {
@@ -854,7 +918,7 @@ export default function DashboardPage() {
     ;(async () => {
       const { data, error } = await supabase
         .from('generator_user_images')
-        .select('id, storage_path, created_at')
+        .select('id, storage_path, created_at, still_duration_seconds, width, height')
         .order('created_at', { ascending: false })
       if (cancelled) return
       if (error) {
@@ -902,7 +966,7 @@ export default function DashboardPage() {
           size_bytes: file.size,
           mime_type: file.type,
         })
-        .select('id, storage_path, created_at')
+        .select('id, storage_path, created_at, still_duration_seconds, width, height')
         .single()
       if (insErr) throw insErr
       setUserImages((prev) => [row as UserImageItem, ...prev])
@@ -925,6 +989,15 @@ export default function DashboardPage() {
       setUserImages(prev)
       setVideoColumnMessage(`Could not delete image: ${error.message}`)
     }
+  }
+
+  const updateImageDuration = (imageId: string, secondsRaw: number) => {
+    const seconds = Math.max(1, Math.min(15, Math.round(secondsRaw) || 1))
+    setUserImages((curr) => curr.map((i) => (i.id === imageId ? { ...i, still_duration_seconds: seconds } : i)))
+    void supabase
+      .from('generator_user_images')
+      .update({ still_duration_seconds: seconds })
+      .eq('id', imageId)
   }
 
 
@@ -1547,8 +1620,12 @@ export default function DashboardPage() {
 
   async function handleMergeAllVideos() {
     if (isMerging) return
-    if (completedSourceVideos.length < 2) {
-      setVideoColumnMessage('Need at least 2 finished videos to merge.')
+    const completedVideoIds = new Set(completedSourceVideos.map((v) => v.id))
+    const eligibleClips = displayedClips.filter((c) =>
+      c.kind === 'image' ? true : completedVideoIds.has(c.id) && c.job.video?.storage_path,
+    )
+    if (eligibleClips.length < 2) {
+      setVideoColumnMessage('Need at least 2 finished items (videos or images) to merge.')
       return
     }
     if (!userId) {
@@ -1559,16 +1636,49 @@ export default function DashboardPage() {
     setMergeProgress(0)
     setVideoColumnMessage(null)
     try {
-      // Use the right-panel display order (top → bottom) so "what you see is what gets merged"
-      const completedIds = new Set(completedSourceVideos.map((v) => v.id))
-      const orderedClips = displayedVideos.filter(
-        (v) => completedIds.has(v.id) && v.video?.storage_path,
-      )
-      const rawUrls = orderedClips.map((v) => v.video!.storage_path)
-      const urls = await Promise.all(rawUrls.map((u) => proxiedVideoUrl(u)))
+      // Determine target dimensions from the first video clip (mergeVideos.ts uses
+      // the first clip's intrinsic size). If no video, fall back to a 1080p frame.
+      const firstVideo = eligibleClips.find((c) => c.kind === 'video') as Extract<UnifiedClip, { kind: 'video' }> | undefined
+      let targetSize: { width: number; height: number } | undefined
+      if (firstVideo?.job.video?.storage_path) {
+        try {
+          const probeUrl = await proxiedVideoUrl(firstVideo.job.video.storage_path)
+          targetSize = await new Promise((resolve) => {
+            const v = document.createElement('video')
+            v.crossOrigin = 'anonymous'
+            v.muted = true
+            v.preload = 'metadata'
+            v.onloadedmetadata = () => resolve({ width: v.videoWidth || 1280, height: v.videoHeight || 720 })
+            v.onerror = () => resolve({ width: 1280, height: 720 })
+            v.src = probeUrl
+          })
+        } catch { targetSize = { width: 1280, height: 720 } }
+      } else {
+        const r = aspectRatio
+        targetSize = r === '9:16' ? { width: 1080, height: 1920 } : r === '1:1' ? { width: 1080, height: 1080 } : { width: 1920, height: 1080 }
+      }
+
+      // Build the merge URL list in display order, converting image clips to
+      // short still-frame webm clips uploaded to the merged-videos bucket.
+      const urls: string[] = []
+      for (const clip of eligibleClips) {
+        if (clip.kind === 'video') {
+          urls.push(await proxiedVideoUrl(clip.job.video!.storage_path as string))
+        } else {
+          const seconds = Math.max(1, Math.min(15, clip.image.still_duration_seconds || 3))
+          const blob = await imageUrlToClip(clip.image.storage_path, seconds, targetSize)
+          const stillPath = `${userId}/still-${clip.image.id}-${Date.now()}.webm`
+          const up = await supabase.storage
+            .from(MERGED_BUCKET)
+            .upload(stillPath, blob, { contentType: 'video/webm', upsert: false })
+          if (up.error) throw new Error(up.error.message)
+          const { data: pub } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(stillPath)
+          urls.push(await proxiedVideoUrl(pub.publicUrl))
+        }
+      }
 
       // Build per-gap transition specs (one entry per gap = clips - 1).
-      const transitionsForMerge: TransitionSpec[] = orderedClips
+      const transitionsForMerge: TransitionSpec[] = eligibleClips
         .slice(0, -1)
         .map((clip) => {
           const id = transitions[clip.id] ?? 'cut'
@@ -1604,7 +1714,7 @@ export default function DashboardPage() {
       // The merged mp4 inherits the first source clip's intrinsic dimensions
       // (mergeVideos.ts uses videoWidth/Height of the first clip). Mirror that
       // here so the preview chrome matches what's actually in the file.
-      const firstClipId = orderedClips[0]?.id
+      const firstClipId = eligibleClips[0]?.id
       const mergedRatio: Ratio = (firstClipId ? clipAspectRatios[firstClipId] : undefined) ?? aspectRatio
       const entry: JobDetail = {
         id: mergedId,
@@ -1657,6 +1767,7 @@ export default function DashboardPage() {
       const next = new Set(current)
       for (const v of generatedVideos) next.add(v.id)
       for (const e of mergedEntries) next.add(e.id)
+      for (const i of userImages) next.add(i.id)
       if (deletedStorageKey) {
         try { window.localStorage.setItem(deletedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
       }
@@ -1815,12 +1926,12 @@ export default function DashboardPage() {
       <button
         type="button"
         onClick={handleMergeAllVideos}
-        disabled={isMerging || completedSourceVideos.length < 2}
+        disabled={isMerging || (completedSourceVideos.length + visibleUserImages.length) < 2}
         className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-emerald-300/30 hover:bg-emerald-300/[0.06] hover:text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
         aria-label="Merge all cards into one final film"
         title={
-          completedSourceVideos.length < 2
-            ? 'Need at least 2 finished videos'
+          (completedSourceVideos.length + visibleUserImages.length) < 2
+            ? 'Need at least 2 finished items (videos or images)'
             : musicUrl
               ? `Final film with music (${formatTimeMS(musicRange[0])} – ${formatTimeMS(musicRange[1])})`
               : 'Merge all cards into one final film'
@@ -2029,12 +2140,49 @@ export default function DashboardPage() {
         aria-live="polite"
         style={{ minHeight: `${previewMaxHeightPx + 56}px`, paddingTop: '56px' }}
       >
-        {previewVideo ? (
+        {previewItem ? (
+          previewItem.kind === 'image' ? (
+            <div className="flex w-full justify-center">
+              <div
+                className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
+                style={{
+                  width: ratioToWidth(aspectRatio),
+                  maxWidth: 'calc(100vw - 56rem)',
+                  maxHeight: `${previewMaxHeightPx}px`,
+                }}
+              >
+                <div
+                  className="relative overflow-hidden bg-black"
+                  style={{
+                    aspectRatio: ratioToCss(aspectRatio),
+                    height: ratioToHeight(aspectRatio),
+                    maxWidth: 'calc(100vw - 56rem)',
+                  }}
+                >
+                  <img
+                    key={previewItem.image.id}
+                    src={previewItem.image.storage_path}
+                    alt="Uploaded reference"
+                    className="h-full w-full bg-black object-contain"
+                  />
+                </div>
+                <div className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
+                    Uploaded image · {previewItem.image.still_duration_seconds}s in Final Film
+                  </p>
+                  <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                    Image
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : (
           <div className="flex w-full justify-center">
             <div
               className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
               style={{
-                width: ratioToWidth(getRatioFor(previewVideo)),
+                width: ratioToWidth(getRatioFor(previewItem.job)),
                 maxWidth: 'calc(100vw - 56rem)',
                 maxHeight: `${previewMaxHeightPx}px`,
               }}
@@ -2042,16 +2190,16 @@ export default function DashboardPage() {
               <div
                 className="relative overflow-hidden bg-black"
                 style={{
-                  aspectRatio: ratioToCss(getRatioFor(previewVideo)),
-                  height: ratioToHeight(getRatioFor(previewVideo)),
+                  aspectRatio: ratioToCss(getRatioFor(previewItem.job)),
+                  height: ratioToHeight(getRatioFor(previewItem.job)),
                   maxWidth: 'calc(100vw - 56rem)',
                 }}
               >
-                {previewVideo.video?.storage_path ? (
+                {previewItem.job.video?.storage_path ? (
                   <video
-                    key={previewVideo.id}
+                    key={previewItem.job.id}
                     className="h-full w-full bg-black object-contain"
-                    src={previewVideo.video.storage_path}
+                    src={previewItem.job.video.storage_path}
                     controls
                     playsInline
                     preload="metadata"
@@ -2059,10 +2207,10 @@ export default function DashboardPage() {
                 ) : (
                   <div className="grid h-full place-items-center px-6 text-center">
                     {(() => {
-                      const status = normalizeStatus(previewVideo.status)
+                      const status = normalizeStatus(previewItem.job.status)
                       const isRendering = status === 'processing' || status === 'pending'
-                      const pct = isRendering ? getJobProgressPercent(previewVideo) ?? 0 : 0
-                      const startedAt = Date.parse(previewVideo.created_at)
+                      const pct = isRendering ? getJobProgressPercent(previewItem.job) ?? 0 : 0
+                      const startedAt = Date.parse(previewItem.job.created_at)
                       const longRender = Number.isFinite(startedAt) && Date.now() - startedAt > 240_000
                       return (
                         <div className="w-full max-w-sm">
@@ -2106,7 +2254,7 @@ export default function DashboardPage() {
                           ) : (
                             <Clapperboard className="mx-auto h-10 w-10 text-zinc-600" aria-hidden="true" />
                           )}
-                          <p className="mt-4 text-sm font-semibold text-zinc-300">{formatStatusLabel(previewVideo.status)}</p>
+                          <p className="mt-4 text-sm font-semibold text-zinc-300">{formatStatusLabel(previewItem.job.status)}</p>
                           {isRendering ? (
                             <p className="mt-2 text-xs leading-5 text-zinc-500">
                               {longRender
@@ -2124,21 +2272,22 @@ export default function DashboardPage() {
               </div>
               <div className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
-                  {previewVideo.input_prompt}
+                  {previewItem.job.input_prompt}
                 </p>
                 <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
-                  <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(previewVideo.status)}`} />
-                  {formatStatusLabel(previewVideo.status)}
+                  <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(previewItem.job.status)}`} />
+                  {formatStatusLabel(previewItem.job.status)}
                   {(() => {
-                    const status = normalizeStatus(previewVideo.status)
+                    const status = normalizeStatus(previewItem.job.status)
                     if (status !== 'processing' && status !== 'pending') return null
-                    const pct = getJobProgressPercent(previewVideo)
+                    const pct = getJobProgressPercent(previewItem.job)
                     return pct !== null ? <span className="tabular-nums text-amber-300">{pct}%</span> : null
                   })()}
                 </span>
               </div>
             </div>
           </div>
+          )
         ) : (
           <div className="-translate-y-10 text-center sm:-translate-y-8">
             <div className="relative mx-auto mb-4 grid h-14 w-14 place-items-center text-zinc-100" aria-hidden="true">
@@ -2217,46 +2366,148 @@ export default function DashboardPage() {
                 <p className="mt-2 text-xs leading-5 text-zinc-600">Recent outputs will appear here.</p>
               </div>
             </div>
-          ) : displayedVideos.length > 0 || userImages.length > 0 ? (
+          ) : displayedClips.length > 0 ? (
             <div className="grid min-w-0 gap-3">
-              {userImages.map((img) => (
-                <article
-                  key={`img-${img.id}`}
-                  className="w-full min-w-0 rounded-2xl border border-white/10 bg-white/[0.035] p-3 transition hover:border-white/20 hover:bg-white/[0.055]"
-                >
-                  <div
-                    className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
-                    style={{ aspectRatio: '1 / 1' }}
-                  >
-                    <img
-                      src={img.storage_path}
-                      alt="Uploaded reference"
-                      className="h-full w-full object-cover"
-                      loading="lazy"
-                    />
-                  </div>
-                  <div className="mt-3 flex items-center justify-between gap-2">
-                    <p className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-400">
-                      Uploaded image
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteUserImage(img.id)}
-                      aria-label="Delete image"
-                      title="Delete image"
-                      className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                    </button>
-                  </div>
-                </article>
-              ))}
-              {displayedVideos.map((video, index) => {
+              {displayedClips.map((clip, index) => {
+                const isLast = index === displayedClips.length - 1
+                const isDragging = draggingId === clip.id
+
+                if (clip.kind === 'image') {
+                  const img = clip.image
+                  const isPreviewSelected = previewVideoId === clip.id
+                  const transitionId: TransitionId = transitions[clip.id] ?? 'cut'
+                  return (
+                    <Fragment key={`img-${img.id}`}>
+                      <article
+                        draggable
+                        onDragStart={handleCardDragStart(clip.id)}
+                        onDragOver={handleCardDragOver}
+                        onDrop={handleCardDrop(clip.id)}
+                        onDragEnd={handleCardDragEnd}
+                        className={`w-full min-w-0 cursor-pointer rounded-2xl border p-3 transition hover:border-white/20 hover:bg-white/[0.055] ${
+                          isPreviewSelected ? 'border-white/20 bg-white/[0.06]' : 'border-white/10 bg-white/[0.035]'
+                        } ${isDragging ? 'opacity-50' : ''}`}
+                        role="button"
+                        tabIndex={0}
+                        aria-label="Preview uploaded image"
+                        onClick={() => setPreviewVideoId(clip.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            setPreviewVideoId(clip.id)
+                          }
+                        }}
+                      >
+                        <div
+                          className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
+                          style={{ aspectRatio: '1 / 1' }}
+                        >
+                          <img
+                            src={img.storage_path}
+                            alt="Uploaded reference"
+                            className="h-full w-full object-cover"
+                            loading="lazy"
+                          />
+                          <span
+                            className="pointer-events-none absolute left-2 top-2 grid h-6 min-w-6 place-items-center rounded-full bg-black/70 px-1.5 text-xs font-semibold tabular-nums text-white shadow-md ring-1 ring-white/15"
+                            aria-label={`Card ${index + 1}`}
+                          >
+                            {index + 1}
+                          </span>
+                        </div>
+                        <div className="mt-3 flex items-start justify-between gap-2">
+                          <p className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-200">
+                            Uploaded image
+                          </p>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <span
+                              onClick={(event) => event.stopPropagation()}
+                              className="grid h-7 w-5 shrink-0 cursor-grab place-items-center text-zinc-500 transition hover:text-zinc-200 active:cursor-grabbing"
+                              title="Drag to reorder"
+                              aria-label="Drag to reorder"
+                            >
+                              <GripVertical className="h-4 w-4" aria-hidden="true" />
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                handleDeleteUserImage(img.id)
+                              }}
+                              aria-label="Delete image"
+                              title="Delete image"
+                              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                            </button>
+                          </div>
+                        </div>
+                        <div
+                          className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <label className="inline-flex items-center gap-2">
+                            <span>Duration</span>
+                            <input
+                              type="number"
+                              min={1}
+                              max={15}
+                              step={1}
+                              value={img.still_duration_seconds}
+                              onChange={(e) => updateImageDuration(img.id, Number(e.target.value))}
+                              className="h-7 w-14 rounded-md border border-white/10 bg-white/[0.04] px-2 text-center text-xs text-zinc-100 outline-none focus:border-white/30"
+                              aria-label="Image duration in Final Film (seconds)"
+                            />
+                            <span>s</span>
+                          </label>
+                          <span>{formatCreatedAt(img.created_at)}</span>
+                        </div>
+                      </article>
+                      {!isLast ? (
+                        <div
+                          className="flex items-center gap-2 px-1 text-xs text-zinc-500"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-white/25 hover:text-zinc-100"
+                                title="Transition between these clips"
+                                aria-label={`Transition: ${TRANSITION_LABEL[transitionId]}`}
+                              >
+                                <TransitionPreview id={transitionId} size={22} />
+                                <span>{TRANSITION_LABEL[transitionId]}</span>
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="center" className="min-w-[12rem]">
+                              <DropdownMenuLabel>Transition</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              {TRANSITION_OPTIONS.map((opt) => (
+                                <DropdownMenuItem
+                                  key={opt.id}
+                                  onSelect={() => {
+                                    setTransitions((current) => ({ ...current, [clip.id]: opt.id }))
+                                  }}
+                                  className={`flex items-center gap-2 ${transitionId === opt.id ? 'bg-white/[0.06] text-zinc-100' : ''}`}
+                                >
+                                  <TransitionPreview id={opt.id} size={32} />
+                                  <span>{opt.label}</span>
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                          <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
+                        </div>
+                      ) : null}
+                    </Fragment>
+                  )
+                }
+
+                const video = clip.job
                 const status = normalizeStatus(video.status)
                 const isPreviewSelected = previewVideo?.id === video.id
-                const isDragging = draggingId === video.id
-
-                const isLast = index === displayedVideos.length - 1
                 const transitionId: TransitionId = transitions[video.id] ?? 'cut'
 
                 return (

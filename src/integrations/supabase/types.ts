@@ -277,6 +277,7 @@ export type Database = {
           id: string
           mime_type: string | null
           size_bytes: number | null
+          still_duration_seconds: number
           storage_path: string
           updated_at: string
           user_id: string
@@ -289,6 +290,7 @@ export type Database = {
           id?: string
           mime_type?: string | null
           size_bytes?: number | null
+          still_duration_seconds?: number
           storage_path: string
           updated_at?: string
           user_id: string
@@ -301,6 +303,7 @@ export type Database = {
           id?: string
           mime_type?: string | null
           size_bytes?: number | null
+          still_duration_seconds?: number
           storage_path?: string
           updated_at?: string
           user_id?: string
