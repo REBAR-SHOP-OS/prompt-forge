@@ -1176,9 +1176,10 @@ export default function DashboardPage() {
     setMergeProgress(0)
     setVideoColumnMessage(null)
     try {
-      const rawUrls = completedSourceVideos
-        .slice()
-        .reverse() // oldest -> newest, in chronological order
+      // Use the right-panel display order (top → bottom) so "what you see is what gets merged"
+      const completedIds = new Set(completedSourceVideos.map((v) => v.id))
+      const rawUrls = displayedVideos
+        .filter((v) => completedIds.has(v.id) && v.video?.storage_path)
         .map((v) => v.video!.storage_path)
       const urls = await Promise.all(rawUrls.map((u) => proxiedVideoUrl(u)))
 
