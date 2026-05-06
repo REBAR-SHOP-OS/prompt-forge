@@ -323,9 +323,10 @@ export async function mergeVideoUrls(
   }
 
   let rafId = 0
-  const loopPaint = (video: HTMLVideoElement) => {
+  const loopPaint = (video: HTMLVideoElement, overlays?: ClipOverlay[]) => {
     const tick = () => {
       drawContain(ctx, video, width, height)
+      if (overlays && overlays.length > 0) paintOverlays(ctx, width, height, overlays, loadedOverlayImages)
       rafId = requestAnimationFrame(tick)
     }
     tick()
