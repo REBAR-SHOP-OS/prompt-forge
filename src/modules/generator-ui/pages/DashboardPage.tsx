@@ -2446,20 +2446,30 @@ export default function DashboardPage() {
                           className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500"
                           onClick={(event) => event.stopPropagation()}
                         >
-                          <label className="inline-flex items-center gap-2">
+                          <div className="inline-flex items-center gap-2">
                             <span>Duration</span>
-                            <input
-                              type="number"
-                              min={1}
-                              max={15}
-                              step={1}
-                              value={img.still_duration_seconds}
-                              onChange={(e) => updateImageDuration(img.id, Number(e.target.value))}
-                              className="h-7 w-14 rounded-md border border-white/10 bg-white/[0.04] px-2 text-center text-xs text-zinc-100 outline-none focus:border-white/30"
-                              aria-label="Image duration in Final Film (seconds)"
-                            />
-                            <span>s</span>
-                          </label>
+                            <div
+                              role="radiogroup"
+                              aria-label="Image duration in Final Film"
+                              className="inline-flex rounded-full border border-white/10 bg-black/20 p-0.5 text-[11px] font-semibold"
+                            >
+                              {([5, 10, 15] as const).map((sec) => {
+                                const active = (img.still_duration_seconds || 3) === sec
+                                return (
+                                  <button
+                                    key={sec}
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={active}
+                                    onClick={() => updateImageDuration(img.id, sec)}
+                                    className={`rounded-full px-2.5 py-1 transition ${active ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+                                  >
+                                    {sec}s
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </div>
                           <span>{formatCreatedAt(img.created_at)}</span>
                         </div>
                       </article>
