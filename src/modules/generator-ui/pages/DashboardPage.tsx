@@ -2474,6 +2474,7 @@ export default function DashboardPage() {
                             className="h-full w-full object-cover"
                             loading="lazy"
                           />
+                          <ClipOverlayLayer overlays={overlaysApi.getForClip(clip.id)} />
                           <span
                             className="pointer-events-none absolute left-2 top-2 grid h-6 min-w-6 place-items-center rounded-full bg-black/70 px-1.5 text-xs font-semibold tabular-nums text-white shadow-md ring-1 ring-white/15"
                             aria-label={`Card ${index + 1}`}
@@ -2486,6 +2487,25 @@ export default function DashboardPage() {
                             Uploaded image
                           </p>
                           <div className="flex shrink-0 items-center gap-1.5">
+                            <span onClick={(event) => event.stopPropagation()}>
+                              <OverlayEditorPopover
+                                overlays={overlaysApi.getForClip(clip.id)}
+                                selectedId={selectedOverlayId}
+                                onSelect={(id) => { setSelectedOverlayId(id); setPreviewVideoId(clip.id) }}
+                                onAddText={async () => {
+                                  setPreviewVideoId(clip.id)
+                                  const id = await overlaysApi.addText('image', clip.id)
+                                  if (id) setSelectedOverlayId(id)
+                                }}
+                                onAddImage={async (file) => {
+                                  setPreviewVideoId(clip.id)
+                                  const id = await overlaysApi.addImage('image', clip.id, file)
+                                  if (id) setSelectedOverlayId(id)
+                                }}
+                                onUpdate={(id, patch) => overlaysApi.update(id, patch)}
+                                onDelete={(id) => { overlaysApi.remove(id); if (selectedOverlayId === id) setSelectedOverlayId(null) }}
+                              />
+                            </span>
                             <span
                               onClick={(event) => event.stopPropagation()}
                               className="grid h-7 w-5 shrink-0 cursor-grab place-items-center text-zinc-500 transition hover:text-zinc-200 active:cursor-grabbing"
