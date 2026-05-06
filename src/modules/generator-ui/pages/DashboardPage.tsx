@@ -1004,6 +1004,7 @@ export default function DashboardPage() {
       }
 
       const seededJob = buildSeededJob(nextPrompt, createdJob, seedFrames)
+      rememberClipRatio(seededJob.id, aspectRatio)
 
       if (pendingEndAppendUrl) {
         setPendingEndAppends((current) => {
