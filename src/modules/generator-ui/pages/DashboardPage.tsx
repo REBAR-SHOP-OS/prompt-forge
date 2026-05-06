@@ -16,6 +16,7 @@ import {
   LayoutGrid,
   Library,
   LoaderCircle,
+  Lock,
   LogOut,
   Music,
   Music2,
@@ -679,6 +680,24 @@ export default function DashboardPage() {
     ),
     [generatedVideos, deletedIds]
   )
+
+  // Aspect-ratio chain lock: once the user has any clip in the current chain,
+  // every subsequent clip must match the FIRST clip's aspect ratio. The lock
+  // releases automatically when the chain is empty (e.g. after Start Over).
+  const lockedRatio = useMemo<Ratio | null>(() => {
+    const chain = generatedVideos.filter((v) => !deletedIds.has(v.id))
+    if (chain.length === 0) return null
+    // generatedVideos is newest-first; the oldest (first in chain) is last.
+    const first = chain[chain.length - 1]
+    return getRatioFor(first)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generatedVideos, deletedIds])
+
+  useEffect(() => {
+    if (lockedRatio && aspectRatio !== lockedRatio) {
+      setAspectRatio(lockedRatio)
+    }
+  }, [lockedRatio, aspectRatio])
 
   // Right-panel display order: oldest first (chronological ASC), with manual drag-and-drop overrides.
   const displayedVideos = useMemo(() => {
@@ -2484,22 +2503,34 @@ export default function DashboardPage() {
               { value: '16:9', label: '16:9', hint: 'YouTube' },
             ] as const).map((opt) => {
               const active = aspectRatio === opt.value
+              const isLocked = lockedRatio !== null && opt.value !== lockedRatio
+              const isLockedActive = lockedRatio !== null && opt.value === lockedRatio
+              const lockTitle = isLocked
+                ? `Locked — this chain is ${lockedRatio}. Start Over to change aspect ratio.`
+                : isLockedActive
+                  ? `Locked to match the first clip in this chain (${lockedRatio}). Start Over to change.`
+                  : `${opt.label} — ${opt.hint}`
               return (
                 <button
                   key={opt.value}
                   type="button"
                   role="radio"
                   aria-checked={active}
-                  onClick={() => setAspectRatio(opt.value)}
-                  title={`${opt.label} — ${opt.hint}`}
+                  aria-disabled={isLocked}
+                  disabled={isLocked}
+                  onClick={() => { if (!isLocked) setAspectRatio(opt.value) }}
+                  title={lockTitle}
                   className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition ${
                     active
                       ? 'bg-zinc-100 text-zinc-950'
                       : 'text-zinc-400 hover:text-zinc-200'
-                  }`}
+                  } ${isLocked ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}
                 >
                   <span>{opt.label}</span>
                   <span className={`text-[10px] uppercase tracking-wide ${active ? 'text-zinc-500' : 'text-zinc-500'}`}>{opt.hint}</span>
+                  {(isLocked || isLockedActive) ? (
+                    <Lock className="h-3 w-3 opacity-70" aria-hidden="true" />
+                  ) : null}
                 </button>
               )
             })}
