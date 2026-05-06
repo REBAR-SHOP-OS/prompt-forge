@@ -1,67 +1,41 @@
-# Fix: Merge progress stuck at 0%
+هدف نهایی: آیکون اتصال باید همه کارت‌های آماده را به ترتیب به هم بچسباند و یک خروجی دانلودی MP4 بسازد، بدون اینکه روی 3% گیر کند یا تبدیل غیرضروری و کند انجام دهد.
 
-## Problem
+فرضیه ریشه‌ای جدید: مشکل فقط «نمایش درصد» نیست؛ مسیر فعلی هر کلیپ را کامل با ffmpeg.wasm دوباره encode می‌کند و برای لود/اجرای wasm از منابع خارجی استفاده می‌کند، بنابراین روی مرورگر کاربر بسیار کند می‌شود و ظاهراً روی 3% می‌ماند. برای هدف واقعی شما، باید اول مسیر سریعِ اتصال مستقیم MP4ها اجرا شود و فقط اگر واقعاً لازم بود به encode کامل fallback کنیم.
 
-When the user clicks the "merge all videos" icon, the circular progress indicator sits at **0%** for a very long time (often the entire merge), even though the merge is actually working in the background. The current `mergeVideoUrls` only emits a progress update **after** each full clip finishes transcoding. For a single 5–10s clip on `ffmpeg.wasm` (single-threaded UMD core), that first transcode can take 30–90+ seconds — during which the UI shows 0%, looking frozen.
+برنامه اجرا:
 
-On top of that:
-- The first call also has to download the ~25 MB FFmpeg core from unpkg. No progress is shown for that phase either.
-- If `ffmpeg.load()` hangs or throws, there is no console diagnostic — it just looks stuck.
-- There is no internal hook into FFmpeg's native `progress` event, which reports real per-frame progress while a clip is being processed.
+1. بازنویسی منطق اتصال در `src/modules/generator-ui/lib/mergeVideos.ts`
+   - حفظ قانون اجباری خروجی: همیشه `video/mp4` و نام فایل `.mp4`.
+   - اضافه کردن مسیر سریع: اگر ویدئوها از قبل MP4 قابل اتصال باشند، از concat demuxer با `-c copy` استفاده می‌کنم تا بدون re-encode به هم وصل شوند.
+   - در این مسیر دیگر هر کارت جداگانه به H.264/AAC دوباره تبدیل نمی‌شود؛ فقط فایل‌ها نوشته می‌شوند، لیست concat ساخته می‌شود و خروجی نهایی MP4 تولید می‌شود.
+   - این باید چند برابر سریع‌تر از مسیر فعلی باشد.
 
-## Root cause
+2. نگه‌داشتن fallback امن برای موارد خاص
+   - اگر concat مستقیم شکست خورد، فقط همان‌وقت مسیر normalize/transcode اجرا شود.
+   - برای منابع بدون صدا همچنان silent audio fallback حفظ می‌شود تا خروجی نهایی خراب یا بی‌صدا نشود.
+   - خطاهای ffmpeg واضح‌تر ثبت می‌شوند تا اگر یک کلیپ ناسازگار بود، دلیل مشخص باشد.
 
-`src/modules/generator-ui/lib/mergeVideos.ts` only calls `onProgress` between clips:
+3. اصلاح لود ffmpeg برای Vite/مرورگر
+   - طبق مستندات ffmpeg.wasm برای Vite، مسیر core را از `umd` به `esm` تغییر می‌دهم.
+   - نسخه core را با نسخه پیشنهادی خود پکیج هماهنگ می‌کنم تا mismatch کمتر شود.
+   - اگر لازم باشد، برای حالت development هدرهای cross-origin isolation را در `vite.config.ts` اضافه می‌کنم، اما برای حل اصلی به مسیر single-thread/core و concat سریع تکیه می‌کنم تا وابستگی به SharedArrayBuffer کمتر شود.
 
-```ts
-onProgress?.({ ratio: ((i + 1) / urls.length) * 0.85, ... })
-```
+4. بهبود تجربه کاربر در درصد پیشرفت
+   - 1%: شروع و آماده‌سازی
+   - 3–15%: بارگذاری ffmpeg و دریافت ویدئوها
+   - 15–90%: اتصال مستقیم یا fallback transcode
+   - 90–100%: ساخت Blob، آپلود به کتابخانه و دانلود
+   - متن خطای عمومی «Could not load source video» را برای merge اصلاح می‌کنم تا اگر مشکل اتصال/encode بود، پیام درست‌تری نمایش داده شود.
 
-So during the longest part of the work — the actual transcode of clip 1 — the ratio stays at 0.
+5. بررسی اتصال همه کارت‌ها
+   - در `DashboardPage.tsx` مسیر `handleMergeAllVideos` را چک می‌کنم که فقط کارت‌های ویدئوی آماده، به ترتیب درست، وارد merge شوند.
+   - خروجی همچنان در history اضافه شود، preview شود، در storage آپلود شود، و دانلود مستقیم MP4 انجام شود.
 
-## Fix
+6. اعتبارسنجی بعد از اجرا
+   - با ابزارها بررسی می‌کنم که کد دیگر مسیر transcode کامل را به عنوان حالت پیش‌فرض اجرا نکند.
+   - بررسی می‌کنم content type، پسوند فایل و دانلود همگی MP4 باشند.
+   - اگر امکان اجرای تست/بررسی خودکار باشد، مسیر merge utility و importها را validate می‌کنم.
 
-Rewrite the progress reporting in `mergeVideos.ts` so the UI advances continuously from the moment the user clicks merge, until the final MP4 is ready.
-
-### 1. Emit progress immediately + during FFmpeg load
-
-- Emit `ratio: 0.01` right when `mergeVideoUrls` is called, so the ring leaves 0% instantly.
-- Reserve a small budget (e.g. `0 → 0.05`) for the FFmpeg core download/load. Emit `0.03` when load starts and `0.05` when it finishes.
-
-### 2. Use FFmpeg's native `progress` event for per-clip progress
-
-`@ffmpeg/ffmpeg` v0.12 exposes `ff.on('progress', ({ progress }) => …)` where `progress` is `0..1` for the currently-running command. Hook into it and translate into the overall ratio:
-
-```
-overall = 0.05 + (clipIndex - 1 + clipProgress) / totalClips * 0.85
-```
-
-So while clip 1 is transcoding, the bar moves smoothly from 5% up to ~ 5% + 85% / N. Then clip 2 takes over, etc.
-
-### 3. Reserve final 10% for concat + readFile
-
-Concat with `-c copy` is fast but not instant. Bump the bar to `0.92` when concat starts and `1.0` when the blob is built.
-
-### 4. Diagnostics
-
-- Add `ff.on('log', …)` that forwards to `console.debug('[ffmpeg]', message)` so we can see what's happening in DevTools next time.
-- Wrap `getFFmpeg()` so a load failure throws a clear `Error('FFmpeg core failed to load: …')` instead of hanging.
-- Add `console.info` markers at each stage (`load`, `fetch clip i`, `transcode clip i`, `concat`, `done`) so any future "stuck" report can be diagnosed in seconds.
-
-### 5. Caller doesn't change
-
-`DashboardPage.tsx` already does:
-```ts
-const blob = await mergeVideoUrls(urls, (p) => setMergeProgress(Math.round(p.ratio * 100)))
-```
-That keeps working — it just now receives many more progress callbacks instead of N.
-
-## Files touched
-
-- `src/modules/generator-ui/lib/mergeVideos.ts` — only this file.
-
-## Out of scope
-
-- No UI changes. The circular ring already binds to `mergeProgress`; making that value move smoothly is enough.
-- No change to MP4 output, audio handling, or the upload/download flow — those work correctly today.
-- No COOP/COEP headers (we stay on the single-threaded UMD core which works without them; multi-threaded would be a bigger separate change).
+ریسک کنترل‌شده:
+- بعضی MP4ها ممکن است codec/timescale متفاوت داشته باشند و concat مستقیم را قبول نکنند؛ برای همین fallback کامل را حذف نمی‌کنم، فقط از حالت پیش‌فرض خارجش می‌کنم.
+- مسیر fallback هنوز کندتر است، ولی فقط برای کلیپ‌های ناسازگار اجرا می‌شود نه برای همه موارد عادی.

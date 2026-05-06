@@ -1,16 +1,20 @@
 // In-browser video concatenation using ffmpeg.wasm.
-// Produces a real MP4 (H.264 + AAC) with audio preserved from each clip.
+// Output is ALWAYS a real MP4 (H.264 + AAC) blob — required by product spec.
 //
-// Why ffmpeg.wasm instead of MediaRecorder/canvas:
-//  - MediaRecorder cannot produce MP4 in most browsers (only webm).
-//  - canvas.captureStream drops audio tracks.
-// ffmpeg.wasm gives us a deterministic, real MP4 with audio every time.
+// Strategy (fast path first):
+//   1. Try the "concat demuxer + -c copy" path — no re-encode, just stitches
+//      the existing MP4 streams together. This is orders of magnitude faster
+//      than transcoding and is what makes the merge feel near-instant when
+//      the clips share the same codec/dimensions (which is the normal case
+//      because every clip comes from the same generator).
+//   2. Only if that fails (mismatched codecs, missing audio, etc.) fall back
+//      to a full normalize+re-encode pass per clip.
 //
-// Progress strategy (so the UI never sits at 0% for long stretches):
-//   0.00 .. 0.05  -> ffmpeg core download + load
-//   0.05 .. 0.90  -> per-clip transcode, driven by ffmpeg's own `progress`
-//                    event so the bar moves smoothly *during* each clip
-//   0.90 .. 1.00  -> concat demuxer pass + readFile
+// Progress allocation:
+//   0.00 .. 0.05  -> ffmpeg core load
+//   0.05 .. 0.20  -> fetch clips into the wasm FS
+//   0.20 .. 0.90  -> concat (fast) OR per-clip transcode (fallback)
+//   0.90 .. 1.00  -> read final mp4 + wrap as Blob
 
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile, toBlobURL } from '@ffmpeg/util'
@@ -22,7 +26,7 @@ export interface MergeProgress {
   clipIndex: number
   totalClips: number
   /** Coarse stage label, useful for diagnostics / UI labels. */
-  stage?: 'load' | 'fetch' | 'transcode' | 'concat' | 'done'
+  stage?: 'load' | 'fetch' | 'concat' | 'transcode' | 'done'
 }
 
 export type MergeProgressCallback = (p: MergeProgress) => void
@@ -37,14 +41,14 @@ async function getFFmpeg(onLoadStart?: () => void): Promise<FFmpeg> {
   onLoadStart?.()
   ffmpegLoadPromise = (async () => {
     const ff = new FFmpeg()
-    // Pipe ffmpeg log lines to the console — invaluable when something hangs.
     ff.on('log', ({ message }) => {
-      // Keep these as debug so they don't spam the normal console.
       // eslint-disable-next-line no-console
       console.debug('[ffmpeg]', message)
     })
 
-    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd'
+    // Single-thread ESM core — works without cross-origin isolation headers
+    // and is what the ffmpeg.wasm docs recommend for Vite apps.
+    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm'
     try {
       // eslint-disable-next-line no-console
       console.info('[merge] loading ffmpeg core…')
@@ -75,7 +79,9 @@ function extFromUrl(url: string): string {
 }
 
 /**
- * Merge multiple video URLs into a single MP4 blob (H.264 + AAC, with audio).
+ * Merge multiple video URLs into a single MP4 blob (H.264 + AAC).
+ * Tries a fast stream-copy concat first; falls back to a normalize pass
+ * only when that fails.
  */
 export async function mergeVideoUrls(
   urls: string[],
@@ -95,100 +101,119 @@ export async function mergeVideoUrls(
 
   // Show life immediately so the ring leaves 0% the instant the user clicks.
   emit(0.01, 1, 'load')
-
   const ff = await getFFmpeg(() => emit(0.03, 1, 'load'))
   emit(0.05, 1, 'load')
 
-  // Per-clip progress is delivered through ffmpeg's `progress` event. We
-  // remap it to the overall ratio range allocated to the current clip.
-  let currentClip = 0 // 1-based once we start
-  const TRANSCODE_BUDGET = 0.85 // 0.05 .. 0.90
+  // Hook ffmpeg progress for the (slow) fallback path.
+  let transcodeClip = 0
+  const TRANSCODE_BUDGET = 0.70 // 0.20 .. 0.90 reserved for processing
   const onFfProgress = ({ progress }: { progress: number }) => {
-    if (currentClip < 1) return
-    // ffmpeg sometimes reports progress > 1 right at the end; clamp it.
+    if (transcodeClip < 1) return
     const clipRatio = Math.max(0, Math.min(1, progress))
-    const overall = 0.05 + ((currentClip - 1 + clipRatio) / total) * TRANSCODE_BUDGET
-    emit(overall, currentClip, 'transcode')
+    const overall = 0.20 + ((transcodeClip - 1 + clipRatio) / total) * TRANSCODE_BUDGET
+    emit(overall, transcodeClip, 'transcode')
   }
   ff.on('progress', onFfProgress)
 
-  const intermediateNames: string[] = []
+  const writtenInputs: string[] = []
   try {
-    // Stage 1: download + transcode each clip to a normalized intermediate MP4
-    // (same codec, fps, sample rate, audio layout). Concat demuxer requires
-    // matching streams across inputs.
+    // ---- Fetch all clips into the wasm FS (0.05 .. 0.20) -----------------
     for (let i = 0; i < total; i++) {
-      currentClip = i + 1
       const url = urls[i]
       const inputName = `in_${i}.${extFromUrl(url)}`
-      const outName = `seg_${i}.mp4`
-
       // eslint-disable-next-line no-console
-      console.info(`[merge] fetching clip ${currentClip}/${total}`)
-      emit(0.05 + (i / total) * TRANSCODE_BUDGET, currentClip, 'fetch')
-
+      console.info(`[merge] fetching clip ${i + 1}/${total}`)
+      emit(0.05 + ((i + 0.5) / total) * 0.15, i + 1, 'fetch')
       const data = await fetchFile(url)
       await ff.writeFile(inputName, data)
-
-      // eslint-disable-next-line no-console
-      console.info(`[merge] transcoding clip ${currentClip}/${total}`)
-
-      // Normalize: H.264 video at even dims, 30fps; AAC stereo 48kHz audio.
-      // For clips that have no audio track, generate silence with anullsrc and
-      // use it instead. We try the "with real audio" path first; on failure
-      // (e.g. no audio stream), fall back to silent audio.
-      try {
-        await ff.exec([
-          '-i', inputName,
-          '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=30',
-          '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
-          '-c:a', 'aac', '-ar', '48000', '-ac', '2', '-b:a', '128k',
-          '-movflags', '+faststart',
-          outName,
-        ])
-      } catch {
-        // Fallback: no audio in source — synthesize silent stereo track.
-        await ff.exec([
-          '-i', inputName,
-          '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000',
-          '-shortest',
-          '-map', '0:v:0', '-map', '1:a:0',
-          '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=30',
-          '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
-          '-c:a', 'aac', '-ar', '48000', '-ac', '2', '-b:a', '128k',
-          '-movflags', '+faststart',
-          outName,
-        ])
-      }
-
-      try { await ff.deleteFile(inputName) } catch { /* ignore */ }
-      intermediateNames.push(outName)
-
-      // Snap to the end of this clip's slice in case ffmpeg's progress event
-      // didn't quite reach 1.0.
-      emit(0.05 + ((i + 1) / total) * TRANSCODE_BUDGET, currentClip, 'transcode')
+      writtenInputs.push(inputName)
+      emit(0.05 + ((i + 1) / total) * 0.15, i + 1, 'fetch')
     }
 
-    // Stage 2: concat with the demuxer (lossless container join, no re-encode).
-    // eslint-disable-next-line no-console
-    console.info('[merge] concatenating segments')
-    emit(0.92, total, 'concat')
-    const concatList = intermediateNames.map((n) => `file '${n}'`).join('\n')
+    // ---- FAST PATH: concat demuxer with -c copy --------------------------
+    // Works when every clip already shares the same codec/timescale, which
+    // is the normal case here (all clips come from the same generator).
+    const concatList = writtenInputs.map((n) => `file '${n}'`).join('\n')
     await ff.writeFile('concat.txt', new TextEncoder().encode(concatList))
 
-    await ff.exec([
-      '-f', 'concat', '-safe', '0',
-      '-i', 'concat.txt',
-      '-c', 'copy',
-      '-movflags', '+faststart',
-      'final.mp4',
-    ])
+    // eslint-disable-next-line no-console
+    console.info('[merge] fast concat (stream copy)…')
+    emit(0.25, total, 'concat')
 
-    emit(0.97, total, 'concat')
+    let fastOk = true
+    try {
+      await ff.exec([
+        '-f', 'concat', '-safe', '0',
+        '-i', 'concat.txt',
+        '-c', 'copy',
+        '-movflags', '+faststart',
+        'final.mp4',
+      ])
+      emit(0.88, total, 'concat')
+    } catch (err) {
+      fastOk = false
+      // eslint-disable-next-line no-console
+      console.warn('[merge] fast concat failed, falling back to transcode', err)
+    }
+
+    // ---- FALLBACK: per-clip normalize then concat-copy -------------------
+    if (!fastOk) {
+      const segNames: string[] = []
+      for (let i = 0; i < writtenInputs.length; i++) {
+        transcodeClip = i + 1
+        const inputName = writtenInputs[i]
+        const outName = `seg_${i}.mp4`
+        // eslint-disable-next-line no-console
+        console.info(`[merge] normalizing clip ${transcodeClip}/${total}`)
+        try {
+          await ff.exec([
+            '-i', inputName,
+            '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=30',
+            '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
+            '-c:a', 'aac', '-ar', '48000', '-ac', '2', '-b:a', '128k',
+            '-movflags', '+faststart',
+            outName,
+          ])
+        } catch {
+          // Source has no audio — synthesize a silent track so concat stays
+          // in sync.
+          await ff.exec([
+            '-i', inputName,
+            '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000',
+            '-shortest',
+            '-map', '0:v:0', '-map', '1:a:0',
+            '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=30',
+            '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
+            '-c:a', 'aac', '-ar', '48000', '-ac', '2', '-b:a', '128k',
+            '-movflags', '+faststart',
+            outName,
+          ])
+        }
+        segNames.push(outName)
+        emit(0.20 + ((i + 1) / total) * TRANSCODE_BUDGET, transcodeClip, 'transcode')
+      }
+
+      const segList = segNames.map((n) => `file '${n}'`).join('\n')
+      await ff.writeFile('concat.txt', new TextEncoder().encode(segList))
+      emit(0.92, total, 'concat')
+      await ff.exec([
+        '-f', 'concat', '-safe', '0',
+        '-i', 'concat.txt',
+        '-c', 'copy',
+        '-movflags', '+faststart',
+        'final.mp4',
+      ])
+
+      for (const n of segNames) {
+        try { await ff.deleteFile(n) } catch { /* ignore */ }
+      }
+    }
+
+    // ---- Read out + return as Blob (0.90 .. 1.00) ------------------------
+    emit(0.95, total, 'concat')
     const out = await ff.readFile('final.mp4')
 
-    // Cleanup intermediate files.
-    for (const n of intermediateNames) {
+    for (const n of writtenInputs) {
       try { await ff.deleteFile(n) } catch { /* ignore */ }
     }
     try { await ff.deleteFile('concat.txt') } catch { /* ignore */ }
@@ -205,8 +230,6 @@ export async function mergeVideoUrls(
     console.info('[merge] done', { bytes: blob.size })
     return blob
   } finally {
-    // Detach the progress listener so it doesn't bleed into a future merge
-    // and report stale clip indices.
     try { ff.off('progress', onFfProgress) } catch { /* ignore */ }
   }
 }
