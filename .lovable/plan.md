@@ -1,67 +1,74 @@
-## Goal
+## Problem
 
-When the user picks an aspect ratio (9:16 Reels, 1:1 Post, 16:9 YouTube) and submits a prompt, the generated clip, every preview surface, and the merged final film must all use exactly that ratio — never a forced 16:9 letterbox.
+When the user picks 9:16 (Reels) or 1:1 (Post), the generated clip is correct, but the **main preview stage** still appears as a wide 16:9-shaped black box with the actual video letterboxed inside it (visible in the screenshot — tall portrait video sitting in a wide dark frame).
 
-## Root causes found
+## Root cause
 
-1. **Backend i2v call drops the ratio.** In `supabase/functions/_shared/modules/external-api-adapter/service.ts`, `startWanI2V` (image-to-video) sends `resolution: "720P"` but no `ratio` parameter, so DashScope falls back to its default (16:9). Only `startWanT2V` currently passes `ratio: input.aspectRatio`.
-2. **All preview containers are hard-locked to `aspect-video` (16:9).** In `src/modules/generator-ui/pages/DashboardPage.tsx`:
-   - main preview stage (line ~1558),
-   - history thumbnails (line ~1736),
-   - approved-panel previews (line ~1993).
-   This pillar/letterboxes 9:16 and 1:1 clips inside a 16:9 frame.
-3. **Per-job aspect ratio isn't tracked locally.** The frontend already sends `aspectRatio` to `createJob`, but the returned `JobDetail` shown in the UI has no client-known ratio to drive the preview container, so the UI can't size itself correctly even if we fix the CSS.
-4. **Merged-final entry stores `aspect_ratio: null`.** The merged record (line ~1261) doesn't carry the ratio either, so the same 16:9 container distorts the final film preview.
+In `src/modules/generator-ui/pages/DashboardPage.tsx` the main preview is structured as:
 
-The merge canvas itself (`mergeVideos.ts`) already adopts the first clip's intrinsic `videoWidth`/`videoHeight`, so once clips are produced in the right ratio, the merged video file will already be correct — only the preview chrome needs to follow.
+```text
+<div class="w-[min(96rem, 100vw-26rem)]">         ← outer wrapper, ~very wide
+  <div class="rounded border bg-…">               ← card chrome
+    <div class="max-h-[82vh] w-full"               ← stage box
+         style={{ aspectRatio: '9 / 16' }}>
+      <video class="h-full w-full object-contain" />
+    </div>
+  </div>
+</div>
+```
 
-## Plan
+The inner stage uses `w-full` + `aspectRatio`. With `w-full ≈ 1500px` and `aspect-ratio: 9/16`, CSS would compute height ≈ 2666px. `max-h-[82vh]` then *clips* the visible height but **does not shrink the box's width**. Result: the box stays ~1500px wide while the `<video object-contain>` inside fits a 9:16 frame and pillarboxes. That's the wide dark frame in the screenshot.
 
-### 1. Backend — pass aspect ratio to Wan i2v
+The history thumbnails and approved-panel previews are fine — they live in narrow grid cells, so `w-full + aspectRatio` produces the right shape. Only the hero preview is broken.
 
-File: `supabase/functions/_shared/modules/external-api-adapter/service.ts`
+## Fix
 
-In `startWanI2V`, add `ratio: input.aspectRatio ?? "16:9"` to the `parameters` object, mirroring `startWanT2V`. No contract changes needed — `GenerationStartInput.aspectRatio` is already plumbed through `jobOrchestratorGateway.createJob` → `aiGateway.startGeneration`.
+Drive the stage size from **height** rather than width, so for any ratio the box's width is computed from the available viewport height. The outer wrapper becomes a centering flex layout instead of a fixed-width column.
 
-### 2. Frontend — remember the chosen ratio per job
+Concretely, in `DashboardPage.tsx` around lines 1601–1608, replace the outer wrapper + stage box with:
 
-File: `src/modules/generator-ui/pages/DashboardPage.tsx`
+```tsx
+<main className="grid min-h-screen place-items-center px-4 pb-40" aria-live="polite">
+  {previewVideo ? (
+    <div className="-translate-y-6 sm:-translate-y-4 flex w-full justify-center">
+      <div className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur">
+        <div
+          className="relative overflow-hidden bg-black"
+          style={{
+            aspectRatio: ratioToCss(getRatioFor(previewVideo)),
+            height: 'min(82vh, calc(100vw - 26rem))',
+            // height drives size; width = height * ratio. For 9:16 a tall box;
+            // for 16:9 a wide box; for 1:1 a square. All bounded by viewport.
+            maxWidth: 'calc(100vw - 26rem)',
+          }}
+        >
+          {/* …existing <video> / placeholder… */}
+        </div>
+      </div>
+    </div>
+  ) : ( /* …unchanged empty state… */ )}
+</main>
+```
 
-- Maintain a local `Record<jobId, '9:16' | '1:1' | '16:9'>` (e.g. `clipAspectRatios`) persisted in `localStorage`, mirroring how `mergedEntries` / `approvedIds` are stored.
-- When `createJob` returns, store `{ [jobId]: aspectRatio }` for the just-submitted job.
-- For merged entries, store the ratio used for that final film as well (read from the first source clip's ratio, defaulting to current `aspectRatio` state).
-- Helper: `getRatioFor(video) → '9:16' | '1:1' | '16:9'` that prefers the local map, then falls back to the video record's `aspect_ratio`, then to `'16:9'`.
+Why this works:
+- For **9:16**: height = 82vh → width = 82vh × 9/16 (a tall, narrow stage).
+- For **1:1**: height = 82vh → width = 82vh (a square stage).
+- For **16:9**: height tries 82vh × 16/9, but `maxWidth: calc(100vw - 26rem)` clamps width and `aspect-ratio` recomputes height — yielding the familiar wide stage capped by the right-hand history panel.
 
-### 3. Frontend — make every preview container follow the clip's ratio
-
-Same file. Replace the hard-coded `aspect-video` classes with a dynamic `style={{ aspectRatio: ratioToCss(ratio) }}` (and drop `aspect-video`):
-
-- Main preview stage (~line 1558): use `getRatioFor(previewVideo)`. Keep `max-h-[82vh]`, `w-full`, `object-contain`, and let width be capped so 9:16 doesn't exceed viewport height.
-- History thumbnail (~line 1736): use the per-card ratio.
-- Approved-panel preview (~line 1993): same.
-- Empty/placeholder states (`grid aspect-video place-items-center`) at ~1744 and ~2000: same dynamic ratio so the skeleton matches the clip that will land.
-
-`ratioToCss('9:16') = '9 / 16'`, etc.
-
-### 4. Merged final film — record + preview correct ratio
-
-Same file, around line 1248–1264:
-- Set `aspect_ratio` on the merged `JobDetail` to the source-clip ratio (so reload still works).
-- Also store it in the `clipAspectRatios` map under the merged id.
-- Main preview will then automatically pick it up via `getRatioFor`.
-
-(`mergeVideos.ts` is already correct — it inherits canvas dimensions from the first clip, so a 9:16 source produces a 9:16 mp4.)
-
-### 5. Hint to user (small, optional polish)
-
-Show the active ratio chip subtly above the player (e.g. `9:16 · Reels`) so it's clear which ratio the current preview is locked to. Not required for correctness.
+No other preview surfaces need changes; per-job ratio tracking (`getRatioFor`, `clipAspectRatios`, merged-entry ratio, backend `ratio` on i2v) from the previous round is already correct.
 
 ## Files touched
 
-- `supabase/functions/_shared/modules/external-api-adapter/service.ts` — add `ratio` to i2v body.
-- `src/modules/generator-ui/pages/DashboardPage.tsx` — per-job ratio map, dynamic preview containers, merged-entry ratio.
+- `src/modules/generator-ui/pages/DashboardPage.tsx` — only the main preview stage container (≈ lines 1601–1608).
 
 ## Out of scope
 
-- No DB migration: the existing `aspect_ratio` column on the video asset is already populated by `completeJob` when the provider returns it; the local map is a frontend-only enhancement so the UI can render correctly even before the asset row exists (during processing).
-- No changes to `mergeVideos.ts` or `imageToClip.ts` — they already respect intrinsic clip dimensions.
+- Backend, merging logic, history thumbnails, approved panel — already correct.
+- No changes to layout of the right-hand history sidebar or the bottom prompt bar.
+
+## Verification
+
+1. Pick **9:16 Reels**, generate → main preview is a tall portrait box with no side bars.
+2. Pick **1:1 Post**, generate → main preview is a centered square.
+3. Pick **16:9 YouTube**, generate → main preview is the wide stage as before.
+4. Resize the viewport: stage scales but never overflows the viewport height (82vh) or collides with the history sidebar.
