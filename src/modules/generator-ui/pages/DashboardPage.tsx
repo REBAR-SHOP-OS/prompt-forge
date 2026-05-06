@@ -77,6 +77,10 @@ import { TransitionPreview } from '@/modules/generator-ui/components/TransitionP
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { mergeVideoUrls, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
+import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
+import { useClipOverlays } from '@/modules/generator-ui/lib/useClipOverlays'
+import { ClipOverlayLayer } from '@/modules/generator-ui/components/ClipOverlayLayer'
+import { OverlayEditorPopover } from '@/modules/generator-ui/components/OverlayEditorPopover'
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
@@ -95,7 +99,6 @@ const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.red
   (acc, o) => { acc[o.id] = o.durationMs; return acc },
   {} as Record<TransitionId, number>,
 )
-import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 
 type VideoJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
@@ -407,6 +410,9 @@ export default function DashboardPage() {
   // `lockedProjectRatio` is kept only for Final Film merge/preview consistency,
   // not to override the user's per-clip selection.
   const userId = session?.user?.id ?? null
+  const overlaysApi = useClipOverlays(userId)
+  // (overlay editing context tracked via selectedOverlayId only)
+  const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null)
   const approvedStorageKey = userId ? `approved-videos:${userId}` : null
   const [approvedIds, setApprovedIds] = useState<Set<string>>(() => new Set())
   const [showWelcome, setShowWelcome] = useState(false)
@@ -1661,12 +1667,17 @@ export default function DashboardPage() {
       // Build the merge URL list in display order, converting image clips to
       // short still-frame webm clips uploaded to the merged-videos bucket.
       const urls: string[] = []
+      const overlaysPerClip: (import('@/modules/generator-ui/lib/overlays').ClipOverlay[] | undefined)[] = []
       for (const clip of eligibleClips) {
+        const ov = overlaysApi.getForClip(clip.id)
         if (clip.kind === 'video') {
           urls.push(await proxiedVideoUrl(clip.job.video!.storage_path as string))
+          overlaysPerClip.push(ov)
         } else {
           const seconds = Math.max(1, Math.min(15, clip.image.still_duration_seconds || 3))
-          const blob = await imageUrlToClip(clip.image.storage_path, seconds, targetSize)
+          // Burn overlays into the still clip itself so the recorded webm
+          // already contains them (no extra paint needed at merge time).
+          const blob = await imageUrlToClip(clip.image.storage_path, seconds, targetSize, ov)
           const stillPath = `${userId}/still-${clip.image.id}-${Date.now()}.webm`
           const up = await supabase.storage
             .from(MERGED_BUCKET)
@@ -1674,6 +1685,8 @@ export default function DashboardPage() {
           if (up.error) throw new Error(up.error.message)
           const { data: pub } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(stillPath)
           urls.push(await proxiedVideoUrl(pub.publicUrl))
+          // Already burned into the still — don't paint again during merge.
+          overlaysPerClip.push(undefined)
         }
       }
 
@@ -1699,6 +1712,7 @@ export default function DashboardPage() {
         (p) => setMergeProgress(Math.round(p.ratio * 100)),
         audioOpt,
         transitionsForMerge,
+        overlaysPerClip,
       )
 
       const filename = `merged-${Date.now()}.${mergeRes.extension}`
@@ -2165,15 +2179,40 @@ export default function DashboardPage() {
                     alt="Uploaded reference"
                     className="h-full w-full bg-black object-contain"
                   />
+                  <ClipOverlayLayer
+                    overlays={overlaysApi.getForClip(previewItem.image.id)}
+                    editable
+                    selectedId={selectedOverlayId}
+                    onSelect={setSelectedOverlayId}
+                    onChange={(id, patch) => overlaysApi.update(id, patch)}
+                  />
                 </div>
                 <div className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
                     Uploaded image · {previewItem.image.still_duration_seconds}s in Final Film
                   </p>
-                  <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
-                    <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
-                    Image
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <OverlayEditorPopover
+                      overlays={overlaysApi.getForClip(previewItem.image.id)}
+                      selectedId={selectedOverlayId}
+                      onSelect={setSelectedOverlayId}
+                      onAddText={async () => {
+                        const id = await overlaysApi.addText('image', previewItem.image.id)
+                        if (id) setSelectedOverlayId(id)
+                      }}
+                      onAddImage={async (file) => {
+                        const id = await overlaysApi.addImage('image', previewItem.image.id, file)
+                        if (id) setSelectedOverlayId(id)
+                      }}
+                      onUpdate={(id, patch) => overlaysApi.update(id, patch)}
+                      onDelete={(id) => { overlaysApi.remove(id); if (selectedOverlayId === id) setSelectedOverlayId(null) }}
+                      triggerClassName="inline-flex h-8 items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-zinc-300 hover:bg-white/10"
+                    />
+                    <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
+                      <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                      Image
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2196,14 +2235,23 @@ export default function DashboardPage() {
                 }}
               >
                 {previewItem.job.video?.storage_path ? (
-                  <video
-                    key={previewItem.job.id}
-                    className="h-full w-full bg-black object-contain"
-                    src={previewItem.job.video.storage_path}
-                    controls
-                    playsInline
-                    preload="metadata"
-                  />
+                  <>
+                    <video
+                      key={previewItem.job.id}
+                      className="h-full w-full bg-black object-contain"
+                      src={previewItem.job.video.storage_path}
+                      controls
+                      playsInline
+                      preload="metadata"
+                    />
+                    <ClipOverlayLayer
+                      overlays={overlaysApi.getForClip(previewItem.job.id)}
+                      editable
+                      selectedId={selectedOverlayId}
+                      onSelect={setSelectedOverlayId}
+                      onChange={(id, patch) => overlaysApi.update(id, patch)}
+                    />
+                  </>
                 ) : (
                   <div className="grid h-full place-items-center px-6 text-center">
                     {(() => {
@@ -2274,16 +2322,34 @@ export default function DashboardPage() {
                 <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
                   {previewItem.job.input_prompt}
                 </p>
-                <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
-                  <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(previewItem.job.status)}`} />
-                  {formatStatusLabel(previewItem.job.status)}
-                  {(() => {
-                    const status = normalizeStatus(previewItem.job.status)
-                    if (status !== 'processing' && status !== 'pending') return null
-                    const pct = getJobProgressPercent(previewItem.job)
-                    return pct !== null ? <span className="tabular-nums text-amber-300">{pct}%</span> : null
-                  })()}
-                </span>
+                <div className="flex items-center gap-2">
+                  <OverlayEditorPopover
+                    overlays={overlaysApi.getForClip(previewItem.job.id)}
+                    selectedId={selectedOverlayId}
+                    onSelect={setSelectedOverlayId}
+                    onAddText={async () => {
+                      const id = await overlaysApi.addText('video', previewItem.job.id)
+                      if (id) setSelectedOverlayId(id)
+                    }}
+                    onAddImage={async (file) => {
+                      const id = await overlaysApi.addImage('video', previewItem.job.id, file)
+                      if (id) setSelectedOverlayId(id)
+                    }}
+                    onUpdate={(id, patch) => overlaysApi.update(id, patch)}
+                    onDelete={(id) => { overlaysApi.remove(id); if (selectedOverlayId === id) setSelectedOverlayId(null) }}
+                    triggerClassName="inline-flex h-8 items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-zinc-300 hover:bg-white/10"
+                  />
+                  <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
+                    <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(previewItem.job.status)}`} />
+                    {formatStatusLabel(previewItem.job.status)}
+                    {(() => {
+                      const status = normalizeStatus(previewItem.job.status)
+                      if (status !== 'processing' && status !== 'pending') return null
+                      const pct = getJobProgressPercent(previewItem.job)
+                      return pct !== null ? <span className="tabular-nums text-amber-300">{pct}%</span> : null
+                    })()}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -2408,6 +2474,7 @@ export default function DashboardPage() {
                             className="h-full w-full object-cover"
                             loading="lazy"
                           />
+                          <ClipOverlayLayer overlays={overlaysApi.getForClip(clip.id)} />
                           <span
                             className="pointer-events-none absolute left-2 top-2 grid h-6 min-w-6 place-items-center rounded-full bg-black/70 px-1.5 text-xs font-semibold tabular-nums text-white shadow-md ring-1 ring-white/15"
                             aria-label={`Card ${index + 1}`}
@@ -2420,6 +2487,25 @@ export default function DashboardPage() {
                             Uploaded image
                           </p>
                           <div className="flex shrink-0 items-center gap-1.5">
+                            <span onClick={(event) => event.stopPropagation()}>
+                              <OverlayEditorPopover
+                                overlays={overlaysApi.getForClip(clip.id)}
+                                selectedId={selectedOverlayId}
+                                onSelect={(id) => { setSelectedOverlayId(id); setPreviewVideoId(clip.id) }}
+                                onAddText={async () => {
+                                  setPreviewVideoId(clip.id)
+                                  const id = await overlaysApi.addText('image', clip.id)
+                                  if (id) setSelectedOverlayId(id)
+                                }}
+                                onAddImage={async (file) => {
+                                  setPreviewVideoId(clip.id)
+                                  const id = await overlaysApi.addImage('image', clip.id, file)
+                                  if (id) setSelectedOverlayId(id)
+                                }}
+                                onUpdate={(id, patch) => overlaysApi.update(id, patch)}
+                                onDelete={(id) => { overlaysApi.remove(id); if (selectedOverlayId === id) setSelectedOverlayId(null) }}
+                              />
+                            </span>
                             <span
                               onClick={(event) => event.stopPropagation()}
                               className="grid h-7 w-5 shrink-0 cursor-grab place-items-center text-zinc-500 transition hover:text-zinc-200 active:cursor-grabbing"
@@ -2570,6 +2656,7 @@ export default function DashboardPage() {
                           <Clapperboard className="h-8 w-8" aria-hidden="true" />
                         </div>
                       )}
+                      <ClipOverlayLayer overlays={overlaysApi.getForClip(video.id)} />
                       <span
                         className="pointer-events-none absolute left-2 top-2 grid h-6 min-w-6 place-items-center rounded-full bg-black/70 px-1.5 text-xs font-semibold tabular-nums text-white shadow-md ring-1 ring-white/15"
                         aria-label={`Card ${index + 1}`}
@@ -2583,6 +2670,25 @@ export default function DashboardPage() {
                         {video.input_prompt}
                       </p>
                       <div className="flex shrink-0 items-center gap-1.5">
+                        <span onClick={(event) => event.stopPropagation()}>
+                          <OverlayEditorPopover
+                            overlays={overlaysApi.getForClip(video.id)}
+                            selectedId={selectedOverlayId}
+                            onSelect={(id) => { setSelectedOverlayId(id); setPreviewVideoId(video.id) }}
+                            onAddText={async () => {
+                              setPreviewVideoId(video.id)
+                              const id = await overlaysApi.addText('video', video.id)
+                              if (id) setSelectedOverlayId(id)
+                            }}
+                            onAddImage={async (file) => {
+                              setPreviewVideoId(video.id)
+                              const id = await overlaysApi.addImage('video', video.id, file)
+                              if (id) setSelectedOverlayId(id)
+                            }}
+                            onUpdate={(id, patch) => overlaysApi.update(id, patch)}
+                            onDelete={(id) => { overlaysApi.remove(id); if (selectedOverlayId === id) setSelectedOverlayId(null) }}
+                          />
+                        </span>
                         <span
                           onClick={(event) => event.stopPropagation()}
                           className="grid h-7 w-5 shrink-0 cursor-grab place-items-center text-zinc-500 transition hover:text-zinc-200 active:cursor-grabbing"

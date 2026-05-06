@@ -216,13 +216,33 @@ function paintTransitionFrame(
   }
 }
 
+import {
+  paintOverlays,
+  preloadOverlayImages,
+  ensureFontsLoaded,
+  type ClipOverlay,
+  type LoadedOverlayImages,
+} from './overlays'
+
 export async function mergeVideoUrls(
   urls: string[],
   onProgress?: MergeProgressCallback,
   audio?: MergeAudioOptions,
   transitions?: TransitionSpec[],
+  overlaysPerClip?: (ClipOverlay[] | undefined)[],
 ): Promise<MergeResult> {
   if (urls.length === 0) throw new Error('No videos to merge')
+
+  // Preload overlay images and fonts up front so paint is synchronous.
+  const allOverlays: ClipOverlay[] = []
+  for (const arr of overlaysPerClip ?? []) {
+    if (arr) allOverlays.push(...arr)
+  }
+  const loadedOverlayImages: LoadedOverlayImages = allOverlays.length > 0
+    ? await preloadOverlayImages(allOverlays)
+    : new Map()
+  if (allOverlays.length > 0) await ensureFontsLoaded(allOverlays)
+
 
   const useSoundtrack = Boolean(audio && audio.endSec > audio.startSec)
   const musicVolume = Math.max(0, Math.min(1, audio?.musicVolume ?? 1))
@@ -303,9 +323,10 @@ export async function mergeVideoUrls(
   }
 
   let rafId = 0
-  const loopPaint = (video: HTMLVideoElement) => {
+  const loopPaint = (video: HTMLVideoElement, overlays?: ClipOverlay[]) => {
     const tick = () => {
       drawContain(ctx, video, width, height)
+      if (overlays && overlays.length > 0) paintOverlays(ctx, width, height, overlays, loadedOverlayImages)
       rafId = requestAnimationFrame(tick)
     }
     tick()
@@ -389,6 +410,7 @@ export async function mergeVideoUrls(
   for (let i = 0; i < urls.length; i++) {
     const video = preloaded[i]
     const dur = Number.isFinite(video.duration) ? video.duration : 0
+    const clipOverlays = overlaysPerClip?.[i]
 
     let clipNode: MediaElementAudioSourceNode | null = null
     if (captureClipAudio && audioCtx && audioDest) {
@@ -408,10 +430,14 @@ export async function mergeVideoUrls(
     if (i > 0 && prevVideo) {
       const spec = transitions?.[i - 1] ?? { id: 'cut' as TransitionId, durationMs: 0 }
       if (spec.id !== 'cut' && spec.durationMs > 0) {
-        // Snapshot the last frame of the outgoing clip.
+        // Snapshot the last frame of the outgoing clip (with prev overlays).
         snapCtx.fillStyle = '#000'
         snapCtx.fillRect(0, 0, width, height)
         drawContain(snapCtx, prevVideo, width, height)
+        const prevOverlays = overlaysPerClip?.[i - 1]
+        if (prevOverlays && prevOverlays.length > 0) {
+          paintOverlays(snapCtx, width, height, prevOverlays, loadedOverlayImages)
+        }
 
         // Begin playing the incoming clip muted-of-RAF; we paint the blended frame manually.
         cancelAnimationFrame(rafId)
@@ -423,6 +449,13 @@ export async function mergeVideoUrls(
             const now = performance.now()
             const t = Math.min(1, (now - start) / spec.durationMs)
             paintTransitionFrame(ctx, width, height, snapshot, video, spec, t)
+            // Fade incoming overlays in alongside the transition's progress.
+            if (clipOverlays && clipOverlays.length > 0) {
+              ctx.save()
+              ctx.globalAlpha = t
+              paintOverlays(ctx, width, height, clipOverlays, loadedOverlayImages)
+              ctx.restore()
+            }
             if (t >= 1) {
               resolve()
               return
@@ -439,7 +472,7 @@ export async function mergeVideoUrls(
         }
 
         // Continue painting the incoming clip from now on.
-        loopPaint(video)
+        loopPaint(video, clipOverlays)
 
         await new Promise<void>((resolve) => {
           const onEnded = () => {
@@ -456,7 +489,7 @@ export async function mergeVideoUrls(
           prevClipNode = null
         }
         await video.play().catch(() => {/* autoplay */})
-        loopPaint(video)
+        loopPaint(video, clipOverlays)
         await new Promise<void>((resolve) => {
           const onEnded = () => {
             video.removeEventListener('ended', onEnded)
@@ -469,7 +502,7 @@ export async function mergeVideoUrls(
     } else {
       // First clip — no transition in.
       await video.play().catch(() => {/* autoplay */})
-      loopPaint(video)
+      loopPaint(video, clipOverlays)
       await new Promise<void>((resolve) => {
         const onEnded = () => {
           video.removeEventListener('ended', onEnded)

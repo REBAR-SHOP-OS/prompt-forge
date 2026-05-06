@@ -26,10 +26,13 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
   })
 }
 
+import { paintOverlays, preloadOverlayImages, ensureFontsLoaded, type ClipOverlay } from './overlays'
+
 export async function imageUrlToClip(
   imageUrl: string,
   durationSeconds: number,
   size?: { width: number; height: number },
+  overlays?: ClipOverlay[],
 ): Promise<Blob> {
   const img = await loadImage(imageUrl)
   const width = Math.max(640, Math.floor(size?.width ?? img.naturalWidth ?? 1280))
@@ -51,6 +54,13 @@ export async function imageUrlToClip(
   const dy = (height - dh) / 2
   ctx.drawImage(img, dx, dy, dw, dh)
 
+  // Preload overlay images and fonts before recording.
+  const loadedOverlayImages = overlays && overlays.length > 0
+    ? await preloadOverlayImages(overlays)
+    : undefined
+  if (overlays && overlays.length > 0) await ensureFontsLoaded(overlays)
+  if (overlays && overlays.length > 0) paintOverlays(ctx, width, height, overlays, loadedOverlayImages)
+
   const fps = 30
   const stream = canvas.captureStream(fps)
   const recorder = new MediaRecorder(stream, { mimeType: pickMimeType() })
@@ -65,6 +75,7 @@ export async function imageUrlToClip(
   const tick = () => {
     if (stop) return
     ctx.drawImage(img, dx, dy, dw, dh)
+    if (overlays && overlays.length > 0) paintOverlays(ctx, width, height, overlays, loadedOverlayImages)
     requestAnimationFrame(tick)
   }
   tick()

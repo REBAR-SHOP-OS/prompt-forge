@@ -207,6 +207,78 @@ export type Database = {
         }
         Relationships: []
       }
+      generator_clip_overlays: {
+        Row: {
+          bg_color: string | null
+          clip_id: string
+          clip_kind: string
+          color: string | null
+          created_at: string
+          deleted_at: string | null
+          font_family: string | null
+          font_weight: number | null
+          id: string
+          image_path: string | null
+          image_url: string | null
+          kind: string
+          rotation: number
+          scale: number
+          text_align: string | null
+          text_value: string | null
+          updated_at: string
+          user_id: string
+          x: number
+          y: number
+          z_index: number
+        }
+        Insert: {
+          bg_color?: string | null
+          clip_id: string
+          clip_kind: string
+          color?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          font_family?: string | null
+          font_weight?: number | null
+          id?: string
+          image_path?: string | null
+          image_url?: string | null
+          kind: string
+          rotation?: number
+          scale?: number
+          text_align?: string | null
+          text_value?: string | null
+          updated_at?: string
+          user_id: string
+          x?: number
+          y?: number
+          z_index?: number
+        }
+        Update: {
+          bg_color?: string | null
+          clip_id?: string
+          clip_kind?: string
+          color?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          font_family?: string | null
+          font_weight?: number | null
+          id?: string
+          image_path?: string | null
+          image_url?: string | null
+          kind?: string
+          rotation?: number
+          scale?: number
+          text_align?: string | null
+          text_value?: string | null
+          updated_at?: string
+          user_id?: string
+          x?: number
+          y?: number
+          z_index?: number
+        }
+        Relationships: []
+      }
       generator_generation_jobs: {
         Row: {
           created_at: string
