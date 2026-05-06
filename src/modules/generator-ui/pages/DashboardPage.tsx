@@ -1395,6 +1395,9 @@ export default function DashboardPage() {
     setGenerationMode('image-to-video')
     setDurationSeconds(5)
     setPreviewVideoId(null)
+    // Releasing the project lock so the user can pick a different ratio.
+    setLockedProjectRatio(null)
+    persistLockedRatio(null)
   }
 
   return (
@@ -1645,7 +1648,7 @@ export default function DashboardPage() {
                 className="relative overflow-hidden bg-black"
                 style={{
                   aspectRatio: ratioToCss(getRatioFor(previewVideo)),
-                  height: 'min(82vh, calc((100vw - 26rem) * 9 / 16))',
+                  height: ratioToHeight(getRatioFor(previewVideo)),
                   maxWidth: 'calc(100vw - 26rem)',
                 }}
               >
@@ -2194,25 +2197,44 @@ export default function DashboardPage() {
               )
             })}
           </div>
-          <div role="radiogroup" aria-label="Aspect ratio" className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
+          <div role="radiogroup" aria-label="Aspect ratio" className="inline-flex items-center rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
             {([
               { value: '9:16', label: '9:16', hint: 'Reels' },
               { value: '1:1', label: '1:1', hint: 'Post' },
               { value: '16:9', label: '16:9', hint: 'YouTube' },
             ] as const).map((opt) => {
               const active = aspectRatio === opt.value
+              const isLocked = lockedProjectRatio !== null
+              const disabled = isLocked && !active
               return (
                 <button
                   key={opt.value}
                   type="button"
                   role="radio"
                   aria-checked={active}
-                  onClick={() => setAspectRatio(opt.value)}
-                  title={`${opt.label} — ${opt.hint}`}
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition ${active ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+                  aria-disabled={disabled}
+                  disabled={disabled}
+                  onClick={() => { if (!disabled) setAspectRatio(opt.value) }}
+                  title={
+                    isLocked
+                      ? (active
+                          ? `${opt.label} — locked for this project. Use Start Over to change.`
+                          : 'Locked to project ratio. Use Start Over to change.')
+                      : `${opt.label} — ${opt.hint}`
+                  }
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition ${
+                    active
+                      ? 'bg-zinc-100 text-zinc-950'
+                      : disabled
+                        ? 'cursor-not-allowed text-zinc-600'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
                 >
                   <span>{opt.label}</span>
                   <span className={`text-[10px] uppercase tracking-wide ${active ? 'text-zinc-500' : 'text-zinc-500'}`}>{opt.hint}</span>
+                  {active && isLocked ? (
+                    <Lock className="h-3 w-3 text-zinc-500" aria-hidden="true" />
+                  ) : null}
                 </button>
               )
             })}
