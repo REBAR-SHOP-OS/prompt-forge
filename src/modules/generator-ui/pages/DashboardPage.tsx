@@ -259,6 +259,17 @@ export default function DashboardPage() {
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
   const [durationSeconds, setDurationSeconds] = useState<5 | 10>(5)
+  const [aspectRatio, setAspectRatio] = useState<'9:16' | '1:1' | '16:9'>(() => {
+    if (typeof window === 'undefined') return '16:9'
+    try {
+      const v = window.localStorage.getItem('generator:aspectRatio')
+      if (v === '9:16' || v === '1:1' || v === '16:9') return v
+    } catch { /* ignore */ }
+    return '16:9'
+  })
+  useEffect(() => {
+    try { window.localStorage.setItem('generator:aspectRatio', aspectRatio) } catch { /* ignore */ }
+  }, [aspectRatio])
   const userId = session?.user?.id ?? null
   const approvedStorageKey = userId ? `approved-videos:${userId}` : null
   const [approvedIds, setApprovedIds] = useState<Set<string>>(() => new Set())
