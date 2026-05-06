@@ -503,6 +503,54 @@ export default function DashboardPage() {
     [generatedVideos, deletedIds]
   )
 
+  // Right-panel display order: oldest first (chronological ASC), with manual drag-and-drop overrides.
+  const displayedVideos = useMemo(() => {
+    const filtered = generatedVideos.filter((v) => !deletedIds.has(v.id))
+    const chronoAsc = [...filtered].sort(
+      (l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime()
+    )
+    if (!manualOrder) return chronoAsc
+    const byId = new Map(chronoAsc.map((v) => [v.id, v]))
+    const ordered: typeof chronoAsc = []
+    for (const id of manualOrder) {
+      const v = byId.get(id)
+      if (v) {
+        ordered.push(v)
+        byId.delete(id)
+      }
+    }
+    for (const v of chronoAsc) {
+      if (byId.has(v.id)) ordered.push(v)
+    }
+    return ordered
+  }, [generatedVideos, deletedIds, manualOrder])
+
+  const handleCardDragStart = (id: string) => (event: React.DragEvent) => {
+    setDraggingId(id)
+    event.dataTransfer.effectAllowed = 'move'
+    try { event.dataTransfer.setData('text/plain', id) } catch {}
+  }
+  const handleCardDragOver = (event: React.DragEvent) => {
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+  }
+  const handleCardDrop = (targetId: string) => (event: React.DragEvent) => {
+    event.preventDefault()
+    const sourceId = draggingId || event.dataTransfer.getData('text/plain')
+    setDraggingId(null)
+    if (!sourceId || sourceId === targetId) return
+    const currentIds = displayedVideos.map((v) => v.id)
+    const from = currentIds.indexOf(sourceId)
+    const to = currentIds.indexOf(targetId)
+    if (from === -1 || to === -1) return
+    const next = [...currentIds]
+    next.splice(from, 1)
+    next.splice(to, 0, sourceId)
+    setManualOrder(next)
+  }
+  const handleCardDragEnd = () => setDraggingId(null)
+
+
   const previewVideo = useMemo(() => {
     if (visibleVideos.length === 0) {
       return null
