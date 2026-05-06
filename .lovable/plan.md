@@ -1,34 +1,33 @@
 ## مشکل
-در تصویر، پنل History سمت راست از لبه راست صفحه بیرون زده و دکمه‌ها/متن کارت‌ها بریده می‌شوند. علت ساختاری: متن prompt در ردیف `flex` کارت بدون `min-w-0` است، پس کلمات طولانی (مثل نام فایل پیوست) عرض پنل را به‌زور باز می‌کنند و کل ردیف از کادر بیرون می‌زند. این مستقل از نسبت تصویر (1:1، 9:16، ...) است؛ کاربر می‌خواهد در همین عرض فعلی، محتوای کارت کامل دیده شود.
+در پایین پنل History یک نوار اسکرول افقی ظاهر شده. علت: عنصر `<video controls>` در داخل کارت‌ها یک حداقل عرض ذاتی (intrinsic min‑width) برای نوار کنترل اعمال می‌کند که از عرض پنل بزرگ‌تر می‌شود؛ container قابل‌اسکرول `overflow-y-auto` هم به‌صورت پیش‌فرض اجازه اسکرول افقی می‌دهد.
 
-## تغییر
-فقط در `src/modules/generator-ui/pages/DashboardPage.tsx`، خطوط 2031–2034 (ردیف عنوان کارت در پنل راست):
+## تغییر (در `src/modules/generator-ui/pages/DashboardPage.tsx`)
 
-پیش:
+1) خط 1954 — جلوگیری از اسکرول افقی در ستون History:
 ```tsx
-<div className="mt-3 flex items-start justify-between gap-3">
-  <p className="max-h-12 overflow-hidden text-sm font-medium leading-6 text-zinc-200">
-    {video.input_prompt}
-  </p>
-```
-پس:
-```tsx
-<div className="mt-3 flex items-start justify-between gap-2">
-  <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
-    {video.input_prompt}
-  </p>
+// از:
+<div className="mt-3 flex-1 overflow-y-auto pr-1">
+// به:
+<div className="mt-3 flex-1 overflow-y-auto overflow-x-hidden pr-1">
 ```
 
-تغییرات:
-- `min-w-0 flex-1` → اجازه می‌دهد متن داخل ردیف flex کوچک شود به جای فشار آوردن به کارت.
-- `whitespace-normal break-words` → کلمات طولانی (filename فارسی/انگلیسی) درون کارت می‌شکنند و سرریز نمی‌کنند.
-- `gap-3 → gap-2` → فاصله کمی کمتر، تا 4 آیکن کنار متن راحت‌تر جا شوند.
+2) خط 1964 — اضافه‌کردن `min-w-0` به grid کارت‌ها تا فرزندان flex/grid اجازه shrink بگیرند:
+```tsx
+// از:
+<div className="grid gap-3">
+// به:
+<div className="grid min-w-0 gap-3">
+```
+
+3) خطوط 1995–1997 — اضافه‌کردن `min-w-0` به wrapper ویدیو تا `<video controls>` نتواند کارت را گشاد کند:
+```tsx
+<div
+  className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
+  style={{ aspectRatio: ratioToCss(getRatioFor(video)) }}
+>
+```
 
 ## چرا امن است
-- فقط CSS است؛ هیچ منطق، state یا API تغییر نمی‌کند.
-- markup کارت، نسبت ویدیو (`aspectRatio`)، و عرض پنل (که در پیام قبلی تنظیم شد) دست‌نخورده می‌مانند.
-- در همه نسبت‌ها (1:1, 9:16, 16:9) و همه breakpoints اعمال می‌شود چون مشکل ساختاری است نه ابعادی.
-
-## خارج از scope
-- تغییر آیکن‌ها، رنگ‌ها، یا ساختار دکمه‌ها.
-- تغییر مجدد عرض ستون.
+- صرفاً CSS است؛ هیچ منطق، state یا API تغییر نمی‌کند.
+- ابعاد عمودی، نسبت تصویر، عرض پنل و markup کارت دست‌نخورده می‌مانند.
+- اسکرول عمودی (که برای پیمایش لیست لازم است) حفظ می‌شود.

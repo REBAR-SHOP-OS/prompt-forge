@@ -1951,7 +1951,7 @@ export default function DashboardPage() {
           </div>
         ) : null}
 
-        <div className="mt-3 flex-1 overflow-y-auto pr-1">
+        <div className="mt-3 flex-1 overflow-y-auto overflow-x-hidden pr-1">
           {isLibraryLoading ? (
             <div className="grid h-full place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
               <div>
