@@ -934,6 +934,15 @@ export default function DashboardPage() {
     }
   }
 
+  const updateImageDuration = (imageId: string, secondsRaw: number) => {
+    const seconds = Math.max(1, Math.min(15, Math.round(secondsRaw) || 1))
+    setUserImages((curr) => curr.map((i) => (i.id === imageId ? { ...i, still_duration_seconds: seconds } : i)))
+    void supabase
+      .from('generator_user_images')
+      .update({ still_duration_seconds: seconds })
+      .eq('id', imageId)
+  }
+
 
   useEffect(() => {
     const activeJobs = generatedVideos.filter((job) => !isTerminalStatus(job.status))
