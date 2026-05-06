@@ -921,6 +921,7 @@ export default function DashboardPage() {
           requestedModel: 'wan2.7-t2v-2026-04-25',
           prompt: nextPrompt,
           durationSeconds,
+          aspectRatio,
         })
       } else if (readyStartFrame?.url && readyEndFrame?.url) {
         // Both frames provided — standard image-to-video.
@@ -930,6 +931,7 @@ export default function DashboardPage() {
           firstFrameUrl: readyStartFrame.url,
           lastFrameUrl: readyEndFrame.url,
           durationSeconds,
+          aspectRatio,
         })
         seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
       } else if (readyStartFrame?.url) {
@@ -940,6 +942,7 @@ export default function DashboardPage() {
           prompt: nextPrompt,
           firstFrameUrl: readyStartFrame.url,
           durationSeconds,
+          aspectRatio,
         })
         seedFrames = { firstFrameUrl: readyStartFrame.url }
       } else if (readyEndFrame?.url) {
@@ -949,6 +952,7 @@ export default function DashboardPage() {
           prompt: nextPrompt,
           lastFrameUrl: readyEndFrame.url,
           durationSeconds,
+          aspectRatio,
         })
         seedFrames = { lastFrameUrl: readyEndFrame.url }
       } else {
