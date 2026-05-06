@@ -819,6 +819,87 @@ export default function DashboardPage() {
     }
   }, [authLoading, session])
 
+  // Hydrate user-uploaded images from Lovable Cloud
+  useEffect(() => {
+    if (authLoading || !userId) return
+    let cancelled = false
+    ;(async () => {
+      const { data, error } = await supabase
+        .from('generator_user_images')
+        .select('id, storage_path, created_at')
+        .order('created_at', { ascending: false })
+      if (cancelled) return
+      if (error) {
+        setVideoColumnMessage(`Could not load images: ${error.message}`)
+        return
+      }
+      setUserImages((data ?? []) as UserImageItem[])
+    })()
+    return () => { cancelled = true }
+  }, [authLoading, userId])
+
+  const handlePickImage = () => {
+    if (isUploadingImage) return
+    imageUploadInputRef.current?.click()
+  }
+
+  const handleImageSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || !userId) return
+    if (!file.type.startsWith('image/')) {
+      setVideoColumnMessage('Please choose an image file.')
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setVideoColumnMessage('Image must be smaller than 10 MB.')
+      return
+    }
+    setIsUploadingImage(true)
+    setVideoColumnMessage(null)
+    try {
+      const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png'
+      const path = `${userId}/${crypto.randomUUID()}.${ext}`
+      const up = await supabase.storage
+        .from(USER_IMAGES_BUCKET)
+        .upload(path, file, { contentType: file.type, upsert: false })
+      if (up.error) throw up.error
+      const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
+      const publicUrl = pub.publicUrl
+      const { data: row, error: insErr } = await supabase
+        .from('generator_user_images')
+        .insert({
+          user_id: userId,
+          storage_path: publicUrl,
+          size_bytes: file.size,
+          mime_type: file.type,
+        })
+        .select('id, storage_path, created_at')
+        .single()
+      if (insErr) throw insErr
+      setUserImages((prev) => [row as UserImageItem, ...prev])
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Upload failed.'
+      setVideoColumnMessage(`Image upload failed: ${msg}`)
+    } finally {
+      setIsUploadingImage(false)
+    }
+  }
+
+  const handleDeleteUserImage = async (imageId: string) => {
+    const prev = userImages
+    setUserImages((curr) => curr.filter((i) => i.id !== imageId))
+    const { error } = await supabase
+      .from('generator_user_images')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', imageId)
+    if (error) {
+      setUserImages(prev)
+      setVideoColumnMessage(`Could not delete image: ${error.message}`)
+    }
+  }
+
+
   useEffect(() => {
     const activeJobs = generatedVideos.filter((job) => !isTerminalStatus(job.status))
 
