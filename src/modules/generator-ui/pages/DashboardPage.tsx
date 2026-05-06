@@ -1951,7 +1951,7 @@ export default function DashboardPage() {
           </div>
         ) : null}
 
-        <div className="mt-3 flex-1 overflow-y-auto pr-1">
+        <div className="mt-3 flex-1 overflow-y-auto overflow-x-hidden pr-1">
           {isLibraryLoading ? (
             <div className="grid h-full place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
               <div>
@@ -1961,7 +1961,7 @@ export default function DashboardPage() {
               </div>
             </div>
           ) : displayedVideos.length > 0 ? (
-            <div className="grid gap-3">
+            <div className="grid min-w-0 gap-3">
               {displayedVideos.map((video, index) => {
                 const status = normalizeStatus(video.status)
                 const isPreviewSelected = previewVideo?.id === video.id
@@ -1993,7 +1993,7 @@ export default function DashboardPage() {
                     }}
                   >
                     <div
-                      className="relative w-full overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
+                      className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
                       style={{ aspectRatio: ratioToCss(getRatioFor(video)) }}
                     >
                       {video.video?.storage_path ? (
