@@ -2174,7 +2174,7 @@ export default function DashboardPage() {
                     maxWidth: 'calc(100vw - 56rem)',
                   }}
                 >
-                  <img
+                  <SignedImg
                     key={previewItem.image.id}
                     src={previewItem.image.storage_path}
                     alt="Uploaded reference"
