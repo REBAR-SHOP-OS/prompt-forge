@@ -19,6 +19,7 @@ import {
   LogOut,
   Music,
   Music2,
+  SlidersHorizontal,
   Paperclip,
   Pencil,
   Plus,
