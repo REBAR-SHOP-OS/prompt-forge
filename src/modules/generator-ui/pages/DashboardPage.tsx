@@ -16,6 +16,8 @@ import {
   Library,
   LoaderCircle,
   LogOut,
+  Music,
+  Music2,
   Paperclip,
   Pencil,
   Plus,
