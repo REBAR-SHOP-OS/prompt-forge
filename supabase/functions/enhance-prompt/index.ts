@@ -1,15 +1,26 @@
 // Enhance-prompt edge function: rewrites the user's video-generation prompt
 // into a polished, cinematic version using the Lovable AI Gateway.
+// If the user attached one or more images (Start/End frames), the AI will
+// FIRST analyze the image(s) and THEN write the prompt for that exact image,
+// preserving subject identity and adding camera/motion/mood.
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 
 const SYSTEM_PROMPT = [
   "You are an expert prompt engineer for AI video generation models",
   "(image-to-video and text-to-video).",
-  "Rewrite the user's prompt into a single, vivid, cinematic, concrete prompt.",
-  "Include subject, action, setting, lighting, camera motion, and mood when relevant.",
-  "Preserve the user's original language exactly (Persian stays Persian, English stays English, etc.).",
-  "Keep it under ~80 words. Output ONLY the rewritten prompt — no preamble, no quotes, no explanation, no markdown.",
+  "If one or more images are attached, FIRST silently analyze each image",
+  "(subject, composition, lighting, colors, style, key details) and then",
+  "write a single cinematic video prompt for THAT EXACT image: keep the",
+  "subject's identity, setting, palette, and style intact, and add the",
+  "scene/action, camera motion, lighting, and mood implied by the user's text.",
+  "If no image is attached, just rewrite the user's text into a single,",
+  "vivid, cinematic, concrete prompt with subject, action, setting,",
+  "lighting, camera motion, and mood when relevant.",
+  "Preserve the user's original language exactly (Persian stays Persian,",
+  "English stays English, etc.).",
+  "Keep it under ~80 words. Output ONLY the rewritten prompt — no preamble,",
+  "no quotes, no explanation, no markdown.",
 ].join(" ");
 
 Deno.serve(async (req) => {
@@ -26,6 +37,15 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
+    const rawUrls: unknown = body?.imageUrls;
+    const imageUrls: string[] = Array.isArray(rawUrls)
+      ? rawUrls
+          .filter((u): u is string => typeof u === "string")
+          .map((u) => u.trim())
+          .filter((u) => /^https?:\/\//i.test(u))
+          .slice(0, 4)
+      : [];
+
     if (!prompt) {
       return new Response(JSON.stringify({ error: "prompt is required" }), {
         status: 400,
@@ -47,6 +67,14 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Build user message: multimodal when images are present, plain text otherwise.
+    const userContent: unknown = imageUrls.length > 0
+      ? [
+          { type: "text", text: prompt },
+          ...imageUrls.map((url) => ({ type: "image_url", image_url: { url } })),
+        ]
+      : prompt;
+
     const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -54,10 +82,11 @@ Deno.serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        // gemini-2.5-flash supports vision and is fast/cheap.
+        model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: prompt },
+          { role: "user", content: userContent },
         ],
       }),
     });
