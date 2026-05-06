@@ -255,6 +255,7 @@ export default function DashboardPage() {
   const [generatedVideos, setGeneratedVideos] = useState<JobDetail[]>([])
   const [isLibraryLoading, setIsLibraryLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false)
   const [videoColumnMessage, setVideoColumnMessage] = useState<string | null>(null)
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
