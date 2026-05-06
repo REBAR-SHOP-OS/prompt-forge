@@ -2537,7 +2537,7 @@ export default function DashboardPage() {
                             <div
                               role="radiogroup"
                               aria-label="Image duration in Final Film"
-                              className="inline-flex rounded-full border border-white/10 bg-black/20 p-0.5 text-[11px] font-semibold"
+                              className="inline-flex items-center rounded-full border border-white/10 bg-black/20 p-0.5 text-[11px] font-semibold"
                             >
                               {([5, 10, 15] as const).map((sec) => {
                                 const active = (img.still_duration_seconds || 3) === sec
@@ -2554,6 +2554,47 @@ export default function DashboardPage() {
                                   </button>
                                 )
                               })}
+                              <div
+                                className={`ml-0.5 inline-flex items-center rounded-full px-1.5 py-0.5 transition ${
+                                  ![5, 10, 15].includes(img.still_duration_seconds || 3)
+                                    ? 'bg-zinc-100 text-zinc-950'
+                                    : 'text-zinc-400'
+                                }`}
+                                title="Custom duration in seconds (1–600)"
+                              >
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={600}
+                                  step={1}
+                                  defaultValue={img.still_duration_seconds || 3}
+                                  key={`dur-${img.id}-${img.still_duration_seconds}`}
+                                  aria-label="Custom image duration in seconds"
+                                  className="w-10 bg-transparent text-right outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                  onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur()
+                                    if (e.key === 'Escape') {
+                                      ;(e.currentTarget as HTMLInputElement).value = String(img.still_duration_seconds || 3)
+                                      ;(e.currentTarget as HTMLInputElement).blur()
+                                    }
+                                  }}
+                                  onBlur={(e) => {
+                                    const raw = e.currentTarget.value.trim()
+                                    if (!raw) {
+                                      e.currentTarget.value = String(img.still_duration_seconds || 3)
+                                      return
+                                    }
+                                    const n = Number(raw)
+                                    if (!Number.isFinite(n)) {
+                                      e.currentTarget.value = String(img.still_duration_seconds || 3)
+                                      return
+                                    }
+                                    updateImageDuration(img.id, n)
+                                  }}
+                                />
+                                <span className="pl-0.5 pr-1">s</span>
+                              </div>
                             </div>
                           </div>
                           <span>{formatCreatedAt(img.created_at)}</span>
