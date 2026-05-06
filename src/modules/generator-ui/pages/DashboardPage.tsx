@@ -2369,7 +2369,7 @@ export default function DashboardPage() {
             </button>
           </div>
           <div role="radiogroup" aria-label="Clip duration" className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
-            {([5, 10] as const).map((sec) => {
+            {([5, 10, 15] as const).map((sec) => {
               const active = durationSeconds === sec
               return (
                 <button
