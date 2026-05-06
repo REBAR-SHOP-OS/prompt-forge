@@ -1706,9 +1706,12 @@ export default function DashboardPage() {
                 const isPreviewSelected = previewVideo?.id === video.id
                 const isDragging = draggingId === video.id
 
+                const isLast = index === displayedVideos.length - 1
+                const transitionId: TransitionId = transitions[video.id] ?? 'cut'
+
                 return (
+                  <Fragment key={video.id}>
                   <article
-                    key={video.id}
                     draggable
                     onDragStart={handleCardDragStart(video.id)}
                     onDragOver={handleCardDragOver}
