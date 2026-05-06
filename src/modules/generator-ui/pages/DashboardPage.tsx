@@ -2390,37 +2390,22 @@ export default function DashboardPage() {
               { value: '16:9', label: '16:9', hint: 'YouTube' },
             ] as const).map((opt) => {
               const active = aspectRatio === opt.value
-              const isLocked = lockedProjectRatio !== null
-              const disabled = isLocked && !active
               return (
                 <button
                   key={opt.value}
                   type="button"
                   role="radio"
                   aria-checked={active}
-                  aria-disabled={disabled}
-                  disabled={disabled}
-                  onClick={() => { if (!disabled) setAspectRatio(opt.value) }}
-                  title={
-                    isLocked
-                      ? (active
-                          ? `${opt.label} — locked for this project. Use Start Over to change.`
-                          : 'Locked to project ratio. Use Start Over to change.')
-                      : `${opt.label} — ${opt.hint}`
-                  }
+                  onClick={() => setAspectRatio(opt.value)}
+                  title={`${opt.label} — ${opt.hint}`}
                   className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition ${
                     active
                       ? 'bg-zinc-100 text-zinc-950'
-                      : disabled
-                        ? 'cursor-not-allowed text-zinc-600'
-                        : 'text-zinc-400 hover:text-zinc-200'
+                      : 'text-zinc-400 hover:text-zinc-200'
                   }`}
                 >
                   <span>{opt.label}</span>
                   <span className={`text-[10px] uppercase tracking-wide ${active ? 'text-zinc-500' : 'text-zinc-500'}`}>{opt.hint}</span>
-                  {active && isLocked ? (
-                    <Lock className="h-3 w-3 text-zinc-500" aria-hidden="true" />
-                  ) : null}
                 </button>
               )
             })}
