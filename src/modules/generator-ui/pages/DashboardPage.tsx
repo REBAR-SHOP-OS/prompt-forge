@@ -1978,7 +1978,7 @@ export default function DashboardPage() {
                     onDragOver={handleCardDragOver}
                     onDrop={handleCardDrop(video.id)}
                     onDragEnd={handleCardDragEnd}
-                    className={`cursor-pointer rounded-2xl border p-3 transition hover:border-white/20 hover:bg-white/[0.055] ${
+                    className={`w-full min-w-0 cursor-pointer rounded-2xl border p-3 transition hover:border-white/20 hover:bg-white/[0.055] ${
                       isPreviewSelected ? 'border-white/20 bg-white/[0.06]' : 'border-white/10 bg-white/[0.035]'
                     } ${isDragging ? 'opacity-50' : ''}`}
                     role="button"
@@ -1998,7 +1998,7 @@ export default function DashboardPage() {
                     >
                       {video.video?.storage_path ? (
                         <video
-                          className="h-full w-full bg-black object-cover"
+                          className="h-full w-full max-w-full bg-black object-cover"
                           src={video.video.storage_path}
                           poster={video.video.thumbnail_url ?? undefined}
                           controls
