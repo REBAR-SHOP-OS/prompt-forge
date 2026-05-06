@@ -207,12 +207,9 @@ export const jobOrchestratorGateway = {
             );
           }
 
-          // Image-to-video requires BOTH frames; text-to-video requires NEITHER.
-          // Reject inconsistent state (only one frame provided).
-          if ((firstFrameUrl && !lastFrameUrl) || (!firstFrameUrl && lastFrameUrl)) {
-            await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 400, latencyMs: Date.now() - ctx.startedAt, errorCode: "MISSING_FRAMES" });
-            return errorResponse("MISSING_FRAMES", "Image-to-video requires BOTH firstFrameUrl and lastFrameUrl", 400, ctx.requestId);
-          }
+          // Image-to-video accepts one or both frames; text-to-video provides
+          // neither. No additional cross-frame validation needed here.
+
 
           // Cross-domain call via external-api-adapter contract.
           const route = await aiGateway.resolveRoute(svc, providerKey, parsed.data.requestedModel, prompt);
