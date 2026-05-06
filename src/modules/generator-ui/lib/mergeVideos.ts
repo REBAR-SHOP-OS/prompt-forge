@@ -225,7 +225,11 @@ export async function mergeVideoUrls(
   if (urls.length === 0) throw new Error('No videos to merge')
 
   const useSoundtrack = Boolean(audio && audio.endSec > audio.startSec)
-  const captureClipAudio = !useSoundtrack
+  const musicVolume = Math.max(0, Math.min(1, audio?.musicVolume ?? 1))
+  // When no soundtrack is used, default to capturing full clip audio.
+  // When soundtrack is used, default to 0 (music-only) unless caller opts in.
+  const clipVolume = Math.max(0, Math.min(1, audio?.clipVolume ?? (useSoundtrack ? 0 : 1)))
+  const captureClipAudio = clipVolume > 0
 
   const first = await loadVideo(urls[0], captureClipAudio)
   const width = Math.max(640, Math.floor(first.videoWidth || 1280))
