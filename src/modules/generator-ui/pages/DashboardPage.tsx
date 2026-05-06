@@ -2217,14 +2217,23 @@ export default function DashboardPage() {
                 }}
               >
                 {previewItem.job.video?.storage_path ? (
-                  <video
-                    key={previewItem.job.id}
-                    className="h-full w-full bg-black object-contain"
-                    src={previewItem.job.video.storage_path}
-                    controls
-                    playsInline
-                    preload="metadata"
-                  />
+                  <>
+                    <video
+                      key={previewItem.job.id}
+                      className="h-full w-full bg-black object-contain"
+                      src={previewItem.job.video.storage_path}
+                      controls
+                      playsInline
+                      preload="metadata"
+                    />
+                    <ClipOverlayLayer
+                      overlays={overlaysApi.getForClip(previewItem.job.id)}
+                      editable
+                      selectedId={selectedOverlayId}
+                      onSelect={setSelectedOverlayId}
+                      onChange={(id, patch) => overlaysApi.update(id, patch)}
+                    />
+                  </>
                 ) : (
                   <div className="grid h-full place-items-center px-6 text-center">
                     {(() => {
