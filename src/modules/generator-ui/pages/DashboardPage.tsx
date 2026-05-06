@@ -1993,7 +1993,7 @@ export default function DashboardPage() {
                     }}
                   >
                     <div
-                      className="relative w-full overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
+                      className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
                       style={{ aspectRatio: ratioToCss(getRatioFor(video)) }}
                     >
                       {video.video?.storage_path ? (
