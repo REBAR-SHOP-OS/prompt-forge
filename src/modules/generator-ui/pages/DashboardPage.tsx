@@ -909,7 +909,7 @@ export default function DashboardPage() {
           size_bytes: file.size,
           mime_type: file.type,
         })
-        .select('id, storage_path, created_at')
+        .select('id, storage_path, created_at, still_duration_seconds, width, height')
         .single()
       if (insErr) throw insErr
       setUserImages((prev) => [row as UserImageItem, ...prev])
