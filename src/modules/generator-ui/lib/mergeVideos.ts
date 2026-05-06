@@ -289,6 +289,46 @@ export async function mergeVideoUrls(
     }
   }
 
+  let rafId = 0
+  const loopPaint = (video: HTMLVideoElement) => {
+    const tick = () => {
+      drawContain(ctx, video, width, height)
+      rafId = requestAnimationFrame(tick)
+    }
+    tick()
+  }
+
+  // Pre-load ALL clips before starting the recorder. This avoids capturing
+  // black frames at the start while videos are still being fetched/decoded,
+  // and removes inter-clip loading gaps.
+  const preloaded: HTMLVideoElement[] = [first]
+  for (let i = 1; i < urls.length; i++) {
+    preloaded.push(await loadVideo(urls[i], captureClipAudio))
+  }
+  let totalDuration = 0
+  for (const v of preloaded) {
+    totalDuration += Number.isFinite(v.duration) ? v.duration : 0
+  }
+
+  // Paint the very first frame onto the canvas BEFORE the recorder starts so
+  // the captured stream begins on real content (not a black fill).
+  await new Promise<void>((resolve) => {
+    const onSeeked = () => {
+      first.removeEventListener('seeked', onSeeked)
+      drawContain(ctx, first, width, height)
+      resolve()
+    }
+    first.addEventListener('seeked', onSeeked)
+    try {
+      first.currentTime = 0
+    } catch {
+      // Some browsers throw if currentTime is set before metadata; fall back.
+      first.removeEventListener('seeked', onSeeked)
+      drawContain(ctx, first, width, height)
+      resolve()
+    }
+  })
+
   const chosenMime = pickMimeType()
   const recorder = new MediaRecorder(outStream, { mimeType: chosenMime })
   const chunks: Blob[] = []
@@ -313,28 +353,12 @@ export async function mergeVideoUrls(
     try { await soundtrackEl.play() } catch { /* ignore autoplay reject */ }
   }
 
-  let rafId = 0
-  const loopPaint = (video: HTMLVideoElement) => {
-    const tick = () => {
-      drawContain(ctx, video, width, height)
-      rafId = requestAnimationFrame(tick)
-    }
-    tick()
-  }
-
-  // Pre-measure total duration for progress display.
-  let totalDuration = 0
-  for (const u of urls) {
-    const v = await loadVideo(u, false)
-    totalDuration += Number.isFinite(v.duration) ? v.duration : 0
-  }
-
   let elapsedDuration = 0
   let prevVideo: HTMLVideoElement | null = null
   let prevClipNode: MediaElementAudioSourceNode | null = null
 
   for (let i = 0; i < urls.length; i++) {
-    const video = i === 0 ? first : await loadVideo(urls[i], captureClipAudio)
+    const video = preloaded[i]
     const dur = Number.isFinite(video.duration) ? video.duration : 0
 
     let clipNode: MediaElementAudioSourceNode | null = null
