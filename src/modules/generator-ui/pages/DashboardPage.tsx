@@ -87,6 +87,7 @@ const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.red
 )
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
+import { downloadVideoAtRatio } from '@/modules/generator-ui/lib/downloadVideoAtRatio'
 
 type VideoJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
 type UploadTarget = 'Start' | 'End'
