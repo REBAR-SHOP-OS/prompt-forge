@@ -1287,6 +1287,11 @@ export default function DashboardPage() {
       const publicUrl = data.publicUrl
 
       const mergedId = `merged-${crypto.randomUUID()}`
+      // The merged mp4 inherits the first source clip's intrinsic dimensions
+      // (mergeVideos.ts uses videoWidth/Height of the first clip). Mirror that
+      // here so the preview chrome matches what's actually in the file.
+      const firstClipId = orderedClips[0]?.id
+      const mergedRatio: Ratio = (firstClipId ? clipAspectRatios[firstClipId] : undefined) ?? aspectRatio
       const entry: JobDetail = {
         id: mergedId,
         status: 'completed',
@@ -1299,10 +1304,11 @@ export default function DashboardPage() {
           id: mergedId,
           storage_path: publicUrl,
           thumbnail_url: null,
-          aspect_ratio: null,
+          aspect_ratio: mergedRatio,
           duration: null,
         },
       }
+      rememberClipRatio(mergedId, mergedRatio)
 
       setMergedEntries((current) => {
         const next = [entry, ...current]
