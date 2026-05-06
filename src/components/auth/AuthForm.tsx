@@ -65,6 +65,7 @@ export default function AuthForm({ mode }: Props) {
           throw error;
         }
       }
+      try { sessionStorage.removeItem("intro_played"); } catch { /* ignore */ }
       navigate("/app", { replace: true });
     } catch (err) {
       setError((err as Error).message);
