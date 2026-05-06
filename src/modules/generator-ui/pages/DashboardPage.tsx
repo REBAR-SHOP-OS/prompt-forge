@@ -2481,14 +2481,25 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center justify-between gap-2 sm:justify-end">
-            <span className="inline-flex h-10 min-w-32 items-center justify-center rounded-full border border-[#2a2d32] bg-black/20 px-4 text-sm font-semibold text-zinc-200/80">
+            <button
+              type="button"
+              onClick={handleEnhancePrompt}
+              disabled={promptText.trim().length === 0 || isEnhancingPrompt || isSubmitting}
+              aria-label="Enhance prompt with AI"
+              className="inline-flex h-10 min-w-32 items-center justify-center gap-2 rounded-full border border-[#2a2d32] bg-black/20 px-4 text-sm font-semibold text-zinc-200/80 transition hover:border-amber-300/60 hover:bg-white/[0.05] hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#2a2d32] disabled:hover:bg-black/20 disabled:hover:text-zinc-200/80"
+            >
+              {isEnhancingPrompt ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Sparkles className="h-4 w-4" aria-hidden="true" />
+              )}
               Prompt
-            </span>
+            </button>
 
             <button
               className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-zinc-100 text-zinc-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
               type="submit"
-              disabled={isSubmitting || hasUploadingFiles}
+              disabled={isSubmitting || hasUploadingFiles || isEnhancingPrompt}
               aria-label="Generate video"
             >
               {isSubmitting ? (
