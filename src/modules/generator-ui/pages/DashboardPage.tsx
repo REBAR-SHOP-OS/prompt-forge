@@ -1972,7 +1972,12 @@ export default function DashboardPage() {
                           preload="auto"
                           onLoadedMetadata={(event) => {
                             const el = event.currentTarget
-                            try { if (el.currentTime === 0) el.currentTime = 0.05 } catch { /* ignore */ }
+                            try {
+                              if (el.currentTime === 0) {
+                                const dur = Number.isFinite(el.duration) ? el.duration : 0
+                                el.currentTime = dur > 0 ? Math.min(4, Math.max(0, dur - 0.05)) : 0.05
+                              }
+                            } catch { /* ignore */ }
                           }}
                         />
                       ) : (
@@ -2230,7 +2235,12 @@ export default function DashboardPage() {
                             preload="auto"
                             onLoadedMetadata={(event) => {
                               const el = event.currentTarget
-                              try { if (el.currentTime === 0) el.currentTime = 0.05 } catch { /* ignore */ }
+                              try {
+                                if (el.currentTime === 0) {
+                                  const dur = Number.isFinite(el.duration) ? el.duration : 0
+                                  el.currentTime = dur > 0 ? Math.min(4, Math.max(0, dur - 0.05)) : 0.05
+                                }
+                              } catch { /* ignore */ }
                             }}
                           />
                         ) : (
