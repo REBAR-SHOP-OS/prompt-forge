@@ -1446,11 +1446,43 @@ export default function DashboardPage() {
     setDeletedIds((current) => {
       const next = new Set(current)
       for (const v of generatedVideos) next.add(v.id)
+      for (const e of mergedEntries) next.add(e.id)
       if (deletedStorageKey) {
         try { window.localStorage.setItem(deletedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
       }
       return next
     })
+    // Wipe the merged Final Film(s) entirely so the preview goes blank
+    // and the FINAL FILM tab disappears.
+    setMergedEntries([])
+    persistMerged([])
+    // Clear approved selections + per-clip transitions + manual ordering.
+    setApprovedIds(new Set())
+    if (approvedStorageKey) {
+      try { window.localStorage.setItem(approvedStorageKey, JSON.stringify([])) } catch { /* ignore */ }
+    }
+    setTransitions({})
+    setManualOrder(null)
+    setPendingEndAppends({})
+    setPendingStartPrepends({})
+    if (pendingEndAppendsKey) {
+      try { window.localStorage.setItem(pendingEndAppendsKey, JSON.stringify({})) } catch { /* ignore */ }
+    }
+    if (pendingStartPrependsKey) {
+      try { window.localStorage.setItem(pendingStartPrependsKey, JSON.stringify({})) } catch { /* ignore */ }
+    }
+    // Tear down the soundtrack so the audio chip in the top tabs disappears.
+    if (musicUrl) {
+      try { URL.revokeObjectURL(musicUrl) } catch { /* ignore */ }
+    }
+    setMusicName(null)
+    setMusicUrl(null)
+    setMusicDuration(0)
+    setMusicRange([0, 0])
+    setIsMusicDialogOpen(false)
+    // Reset any in-flight merge progress UI.
+    setIsMerging(false)
+    setMergeProgress(0)
     // Reset the composer to a fresh state.
     setPromptText('')
     setUploadedFiles([])
