@@ -323,7 +323,9 @@ export default function DashboardPage() {
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
-  const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15>(5)
+  const [durationSeconds, setDurationSeconds] = useState<number>(5)
+  const [isCustomDurationOpen, setIsCustomDurationOpen] = useState(false)
+  const [customDurationDraft, setCustomDurationDraft] = useState<string>('')
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '1:1' | '16:9'>(() => {
     if (typeof window === 'undefined') return '16:9'
     try {
