@@ -1600,11 +1600,15 @@ export default function DashboardPage() {
 
       <main className="grid min-h-screen place-items-center px-4 pb-40" aria-live="polite">
         {previewVideo ? (
-          <div className="-translate-y-6 w-[min(96rem,calc(100vw-26rem))] sm:-translate-y-4">
+          <div className="-translate-y-6 sm:-translate-y-4 flex w-full justify-center">
             <div className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur">
               <div
-                className="relative max-h-[82vh] w-full overflow-hidden bg-black"
-                style={{ aspectRatio: ratioToCss(getRatioFor(previewVideo)) }}
+                className="relative overflow-hidden bg-black"
+                style={{
+                  aspectRatio: ratioToCss(getRatioFor(previewVideo)),
+                  height: 'min(82vh, calc((100vw - 26rem) * 9 / 16))',
+                  maxWidth: 'calc(100vw - 26rem)',
+                }}
               >
                 {previewVideo.video?.storage_path ? (
                   <video
