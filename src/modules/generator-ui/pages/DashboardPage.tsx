@@ -1059,8 +1059,9 @@ export default function DashboardPage() {
       let pendingEndAppendUrl: string | null = null
       let pendingStartPrependUrl: string | null = null
 
-      // Effective ratio: a project-locked ratio (set by the first clip) wins.
-      const effectiveRatio: Ratio = lockedProjectRatio ?? aspectRatio
+      // The user's current selection always wins for per-clip generation.
+      // (lockedProjectRatio still controls Final Film merge/preview only.)
+      const effectiveRatio: Ratio = aspectRatio
 
       if (isTextToVideo) {
         createdJob = await jobOrchestratorGateway.createJob({
