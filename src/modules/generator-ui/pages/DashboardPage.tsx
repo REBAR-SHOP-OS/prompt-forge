@@ -2346,16 +2346,28 @@ export default function DashboardPage() {
                           </p>
                           <div className="flex shrink-0 items-center gap-1">
                             {video.video?.storage_path ? (
-                              <a
-                                href={video.video.storage_path}
-                                download
-                                onClick={(event) => event.stopPropagation()}
-                                aria-label="Download video"
-                                title="Download video"
-                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  handleDownloadAtRatio(
+                                    video.id,
+                                    video.video?.storage_path,
+                                    getRatioFor(video),
+                                    video.input_prompt,
+                                  )
+                                }}
+                                disabled={downloadingId === video.id}
+                                aria-label={`Download as ${getRatioFor(video)}`}
+                                title={`Download as ${getRatioFor(video)}`}
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:cursor-wait disabled:opacity-60"
                               >
-                                <Download className="h-3 w-3" aria-hidden="true" />
-                              </a>
+                                {downloadingId === video.id ? (
+                                  <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                ) : (
+                                  <Download className="h-3 w-3" aria-hidden="true" />
+                                )}
+                              </button>
                             ) : null}
                             <button
                               type="button"
