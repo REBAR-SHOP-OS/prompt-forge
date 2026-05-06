@@ -1667,12 +1667,17 @@ export default function DashboardPage() {
       // Build the merge URL list in display order, converting image clips to
       // short still-frame webm clips uploaded to the merged-videos bucket.
       const urls: string[] = []
+      const overlaysPerClip: (import('@/modules/generator-ui/lib/overlays').ClipOverlay[] | undefined)[] = []
       for (const clip of eligibleClips) {
+        const ov = overlaysApi.getForClip(clip.id)
         if (clip.kind === 'video') {
           urls.push(await proxiedVideoUrl(clip.job.video!.storage_path as string))
+          overlaysPerClip.push(ov)
         } else {
           const seconds = Math.max(1, Math.min(15, clip.image.still_duration_seconds || 3))
-          const blob = await imageUrlToClip(clip.image.storage_path, seconds, targetSize)
+          // Burn overlays into the still clip itself so the recorded webm
+          // already contains them (no extra paint needed at merge time).
+          const blob = await imageUrlToClip(clip.image.storage_path, seconds, targetSize, ov)
           const stillPath = `${userId}/still-${clip.image.id}-${Date.now()}.webm`
           const up = await supabase.storage
             .from(MERGED_BUCKET)
@@ -1680,6 +1685,8 @@ export default function DashboardPage() {
           if (up.error) throw new Error(up.error.message)
           const { data: pub } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(stillPath)
           urls.push(await proxiedVideoUrl(pub.publicUrl))
+          // Already burned into the still — don't paint again during merge.
+          overlaysPerClip.push(undefined)
         }
       }
 
@@ -1705,6 +1712,7 @@ export default function DashboardPage() {
         (p) => setMergeProgress(Math.round(p.ratio * 100)),
         audioOpt,
         transitionsForMerge,
+        overlaysPerClip,
       )
 
       const filename = `merged-${Date.now()}.${mergeRes.extension}`
