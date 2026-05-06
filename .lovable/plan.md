@@ -1,51 +1,58 @@
-## مشکل
-دکمه‌ی **Download** که کاربر در اسکرین‌شات روی آن دایره کشیده، منوی **native مرورگر** (روی `<video controls>`) است. این منو فایل خام را که provider ساخته دانلود می‌کند — حتی اگر کاربر در UI نسبت `1:1` یا `16:9` انتخاب کرده باشد، فایل دانلودی همان نسبت اصلی provider را دارد. این منو از داخل کد قابل تغییر نیست.
+## هدف
+وقتی نسبت ابعاد تصویر آپلود‌شده با نسبت انتخابی کاربر (9:16 / 1:1 / 16:9) متفاوت است، تصویر باید **کامل** درون فریم انتخابی نمایش داده شود (object-contain با پس‌زمینه مشکی letterbox/pillarbox)، نه crop شود — و خروجی provider هم باید همین شکل باشد.
 
-## راه‌حل
-1. منوی native دانلود مرورگر را با `controlsList="nodownload"` خاموش کنیم.
-2. یک **دکمه‌ی Download سفارشی** بالای player اضافه کنیم که قبل از دانلود، ویدیو را **با aspect ratio انتخاب‌شده‌ی کاربر crop/re-encode می‌کند** (object-cover روی canvas + MediaRecorder → webm) و سپس فایل نهایی را دانلود می‌دهد.
-3. همین منطق روی دکمه‌ی Download کارت‌های history (خط 2294) هم اعمال شود تا تجربه یکدست باشد.
+## استراتژی
+قبل از فراخوانی `jobs-create`، تصویر/تصاویر ورودی را روی یک canvas با ابعاد دقیق نسبت انتخابی (مثلاً 720×1280 برای 9:16) با object-contain رندر می‌کنیم، نسخه‌ی نرمال‌شده را در همان bucket (`wan-frames`) آپلود می‌کنیم و URL جدید را به‌جای URL اصلی به provider می‌فرستیم. provider هم همان فریم آماده را به ویدیوی همان نسبت تبدیل می‌کند.
 
 ## تغییرات
 
-### فایل جدید: `src/modules/generator-ui/lib/downloadVideoAtRatio.ts`
-یک utility export می‌کند:
+### فایل جدید: `src/modules/generator-ui/lib/normalizeImageToRatio.ts`
+Export یک تابع:
 ```ts
-downloadVideoAtRatio(src: string, ratio: '9:16'|'1:1'|'16:9', filename?: string): Promise<void>
+normalizeImageToRatio(srcUrl: string, ratio: '9:16'|'1:1'|'16:9'): Promise<Blob>
 ```
-- ویدیو را در یک `<video>` مخفی بارگذاری می‌کند (با `crossOrigin="anonymous"`).
-- یک canvas با ابعاد دقیق نسبت انتخابی می‌سازد (مثلاً 1080×1080 برای 1:1، 608×1080 برای 9:16، 1080×608 برای 16:9).
-- هر فریم را با **object-cover** (مقیاس ماکزیمم + center-crop) روی canvas می‌کشد.
-- `canvas.captureStream(30)` + در صورت امکان `video.captureStream()` برای audio track → `MediaRecorder` با `video/webm`.
-- پس از پایان پخش، blob را به‌صورت `clip-9x16.webm` دانلود می‌دهد.
+- ابعاد هدف: 720×1280 (9:16)، 1024×1024 (1:1)، 1280×720 (16:9).
+- canvas را با مشکی پر می‌کند، تصویر را با `object-contain` (scale = min(w/sw, h/sh)) وسط‌چین می‌کشد.
+- خروجی PNG Blob با ابعاد دقیق هدف.
 
 ### فایل: `src/modules/generator-ui/pages/DashboardPage.tsx`
 
-**1) خط 1817-1824 (player اصلی)** — افزودن `controlsList="nodownload"` و `disablePictureInPicture` به تگ video برای حذف منوی سه‌نقطه native:
-```tsx
-<video
-  ...
-  controls
-  controlsList="nodownload noremoteplayback"
-  disablePictureInPicture
-  ...
-/>
+**1) Import** تابع جدید کنار سایر imports.
+
+**2) helper جدید درون component** (نزدیک `uploadFrameFile`):
+```ts
+async function prepareFrameForRatio(srcUrl: string, ratio: Ratio, target: 'start'|'end'): Promise<string> {
+  const blob = await normalizeImageToRatio(srcUrl, ratio)
+  const userId = session?.user?.id
+  if (!userId) return srcUrl
+  const path = `${userId}/${target}-norm-${ratio.replace(':','x')}-${Date.now()}-${crypto.randomUUID()}.png`
+  const { error } = await supabase.storage.from(FRAMES_BUCKET).upload(path, blob, { contentType: 'image/png', upsert: false })
+  if (error) { console.error('frame normalize upload failed', error); return srcUrl }
+  return supabase.storage.from(FRAMES_BUCKET).getPublicUrl(path).data.publicUrl
+}
 ```
 
-**2) افزودن دکمه‌ی Download سفارشی** بالای player اصلی (در همان container دور خط 1815). دکمه: 
-- وقتی `previewVideo.video?.storage_path` موجود است نمایش داده شود.
-- روی کلیک → `downloadVideoAtRatio(src, getRatioFor(previewVideo))` فراخوانی شود.
-- در حین پردازش، spinner و disabled شود؛ خطا با toast.
+**3) در `handleEnter`/submit (حدود خط 1100-1130)** قبل از فراخوانی `jobOrchestratorGateway.createJob`، URLهای فریم را با نسبت `effectiveRatio` نرمال کن:
+```ts
+const startUrl = readyStartFrame?.url
+  ? await prepareFrameForRatio(readyStartFrame.url, effectiveRatio, 'start')
+  : null
+const endUrl = readyEndFrame?.url
+  ? await prepareFrameForRatio(readyEndFrame.url, effectiveRatio, 'end')
+  : null
+```
+سپس در همه‌ی شاخه‌های `createJob` به‌جای `readyStartFrame.url`/`readyEndFrame.url` از `startUrl`/`endUrl` استفاده شود. `seedFrames` هم با URLهای جدید پر شود تا preview محلی همان frame letterboxed را نشان دهد.
 
-**3) خط 2294-2303 (history card download)** — تبدیل `<a download>` به `<button>` که `downloadVideoAtRatio(src, getRatioFor(video))` را صدا می‌زند تا دانلود از history نیز با نسبت انتخابی کاربر باشد.
-
-**4) خط 2000-2010 (carousel `<video controls>`)** — افزودن `controlsList="nodownload"` برای جلوگیری از منوی native در آن تگ video هم.
+**4) (اختیاری/سازگار)** هیچ تغییری در RLS یا backend لازم نیست؛ از همان bucket و همان مسیر کاربر استفاده می‌کند.
 
 ## چرا امن است
-- منطق provider/backend دست‌نخورده است؛ فقط لایه‌ی client-side download تغییر می‌کند.
-- اگر مرورگر `MediaRecorder`/`captureStream` را پشتیبانی نکند (موارد بسیار نادر)، کد throw می‌کند و toast خطا نشان می‌دهد — ویدیوی اصلی حذف نمی‌شود.
-- فایل خروجی webm است؛ تمام مرورگرهای مدرن و VLC/پلیرهای سیستم آن را پخش می‌کنند.
-- audio track در صورت موفقیت captureStream حفظ می‌شود؛ در غیر این صورت ویدیوی silent دانلود می‌شود (همچنان با ابعاد درست).
+- آپلود اولیه‌ی کاربر دست‌نخورده باقی می‌ماند؛ فقط یک نسخه‌ی نرمال‌شده‌ی **مشتق‌شده** اضافه می‌شود.
+- اگر آپلود نرمال‌سازی fail کرد، fallback به URL اصلی است — جریان شکسته نمی‌شود.
+- ابعاد و نسبت ارسالی به provider با `aspectRatio` همگام است (طبق تغییر قبلی)، پس provider خروجی را با همان نسبت تولید می‌کند و چون فریم ورودی letterboxed است، تصویر کامل دیده می‌شود.
+- چون پس‌زمینه مشکی است، با theme فعلی (سیاه) سازگار است و در preview/Final Film یکدست به‌نظر می‌رسد.
 
 ## نتیجه
-هر دانلود (چه از player اصلی، چه از کارت history، چه از منوی مرورگر) **دقیقاً با همان نسبت ابعادی که کاربر در نوار 9:16/1:1/16:9 انتخاب کرده** ذخیره می‌شود.
+- 9:16 با تصویر افقی → تصویر کامل افقی در وسط، نوارهای مشکی بالا و پایین.
+- 16:9 با تصویر عمودی → تصویر کامل عمودی در وسط، نوارهای مشکی چپ و راست.
+- 1:1 با هر نسبت → تصویر کامل وسط، نوارهای مشکی در طرف کوتاه‌تر.
+- در تمام موارد، خروجی ویدیویی provider دقیقاً با همان ترکیب‌بندی letterboxed تولید می‌شود.

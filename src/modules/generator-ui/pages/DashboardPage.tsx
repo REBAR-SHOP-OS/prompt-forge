@@ -88,6 +88,7 @@ const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.red
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 import { downloadVideoAtRatio } from '@/modules/generator-ui/lib/downloadVideoAtRatio'
+import { normalizeImageToRatio } from '@/modules/generator-ui/lib/normalizeImageToRatio'
 
 type VideoJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
 type UploadTarget = 'Start' | 'End'
@@ -1089,6 +1090,40 @@ export default function DashboardPage() {
       // (lockedProjectRatio still controls Final Film merge/preview only.)
       const effectiveRatio: Ratio = aspectRatio
 
+      // Letterbox/pillarbox uploaded frames into the chosen ratio so the
+      // WHOLE image is visible inside the requested frame (no cropping).
+      // The provider then receives a frame already shaped to the target
+      // ratio, so the rendered video honors both image content and ratio.
+      const userIdForUpload = session?.user?.id ?? null
+      const prepareFrameForRatio = async (
+        srcUrl: string,
+        target: 'start' | 'end',
+      ): Promise<string> => {
+        if (!userIdForUpload) return srcUrl
+        try {
+          const blob = await normalizeImageToRatio(srcUrl, effectiveRatio)
+          const path = `${userIdForUpload}/${target}-norm-${effectiveRatio.replace(':', 'x')}-${Date.now()}-${crypto.randomUUID()}.png`
+          const { error: upErr } = await supabase.storage
+            .from(FRAMES_BUCKET)
+            .upload(path, blob, { contentType: 'image/png', upsert: false })
+          if (upErr) {
+            console.error('frame normalize upload failed', upErr)
+            return srcUrl
+          }
+          return supabase.storage.from(FRAMES_BUCKET).getPublicUrl(path).data.publicUrl
+        } catch (err) {
+          console.error('frame normalize failed', err)
+          return srcUrl
+        }
+      }
+
+      const startUrl = readyStartFrame?.url
+        ? await prepareFrameForRatio(readyStartFrame.url, 'start')
+        : null
+      const endUrl = readyEndFrame?.url
+        ? await prepareFrameForRatio(readyEndFrame.url, 'end')
+        : null
+
       if (isTextToVideo) {
         createdJob = await jobOrchestratorGateway.createJob({
           providerKey: 'wan',
@@ -1097,38 +1132,38 @@ export default function DashboardPage() {
           durationSeconds,
           aspectRatio: effectiveRatio,
         })
-      } else if (readyStartFrame?.url && readyEndFrame?.url) {
+      } else if (startUrl && endUrl) {
         // Both frames provided — standard image-to-video.
         createdJob = await jobOrchestratorGateway.createJob({
           providerKey: 'wan',
           prompt: nextPrompt,
-          firstFrameUrl: readyStartFrame.url,
-          lastFrameUrl: readyEndFrame.url,
+          firstFrameUrl: startUrl,
+          lastFrameUrl: endUrl,
           durationSeconds,
           aspectRatio: effectiveRatio,
         })
-        seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
-      } else if (readyStartFrame?.url) {
+        seedFrames = { firstFrameUrl: startUrl, lastFrameUrl: endUrl }
+      } else if (startUrl) {
         // Only Start: real image-to-video anchored on the Start frame so the
         // prompt is executed directly on the uploaded image.
         createdJob = await jobOrchestratorGateway.createJob({
           providerKey: 'wan',
           prompt: nextPrompt,
-          firstFrameUrl: readyStartFrame.url,
+          firstFrameUrl: startUrl,
           durationSeconds,
           aspectRatio: effectiveRatio,
         })
-        seedFrames = { firstFrameUrl: readyStartFrame.url }
-      } else if (readyEndFrame?.url) {
+        seedFrames = { firstFrameUrl: startUrl }
+      } else if (endUrl) {
         // Only End: real image-to-video anchored on the End frame.
         createdJob = await jobOrchestratorGateway.createJob({
           providerKey: 'wan',
           prompt: nextPrompt,
-          lastFrameUrl: readyEndFrame.url,
+          lastFrameUrl: endUrl,
           durationSeconds,
           aspectRatio: effectiveRatio,
         })
-        seedFrames = { lastFrameUrl: readyEndFrame.url }
+        seedFrames = { lastFrameUrl: endUrl }
       } else {
         setComposerError('Add a Start or End image before rendering.')
         return
