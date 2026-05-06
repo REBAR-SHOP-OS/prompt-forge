@@ -1,26 +1,20 @@
 ## Goal
-Group the three top toolbar buttons (Start over, Final film, Music) as a single, visually-centered cluster at the top-center of the page.
+Replace the spinner + linear progress bar in the rendering preview with a circular **Progress Indicator** that displays the percentage in its center.
 
-## Current problem
-Each button is independently `fixed` with `left-1/2` plus hardcoded margin offsets (`ml-[120px]`, `ml-[260px]`, and `-translate-x-1/2`). This makes them look slightly off-center, asymmetric, and fragile (the cluster shifts when the Music button label changes width, and "Start over" sits centered while the other two extend rightward).
+## Change
+In `src/modules/generator-ui/pages/DashboardPage.tsx` (lines ~1736–1763), inside the rendering placeholder:
 
-## Fix
-In `src/modules/generator-ui/pages/DashboardPage.tsx` (around lines 1537–1697):
-
-1. Wrap the three buttons (Start over, Final film, Music) in a single fixed container:
-   ```
-   <div className="fixed left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-2 sm:top-5">
-     {/* Start over button */}
-     {/* Final film button */}
-     {/* Music button */}
-   </div>
-   ```
-2. Remove the `fixed`, `left-1/2`, `top-4`, `ml-[120px]`, `ml-[260px]`, `-translate-x-1/2`, `sm:top-5`, and `z-50` utility classes from each individual button — they become normal flex children.
-3. Preferred visual order left → right: **Start over**, **Final film**, **Music** (matches the screenshot).
-4. Keep all other existing behavior, dialogs, handlers, and the Music label truncation untouched.
+- Remove the `LoaderCircle` spinner, the large "18%" text, and the thin horizontal bar.
+- Replace them with a circular SVG progress ring:
+  - 128×128 container, two concentric circles (track + progress).
+  - Track: `text-white/10`, stroke-width 8.
+  - Progress arc: `text-amber-300`, stroke-width 8, rounded caps, `strokeDasharray` driven by `pct`, rotated -90° so it starts at 12 o'clock.
+  - Centered overlay shows `{pct}%` in large tabular-nums.
+  - Proper `role="progressbar"` + `aria-valuenow/min/max`.
+- Keep the status label and the "About N% remaining" / long-render message below it unchanged.
 
 ## Result
-The three icons render as one centered, evenly-spaced toolbar at the top of the page, perfectly aligned regardless of label width or viewport size, matching the user's intent in the screenshot.
+Rendering screen shows a clean circular progress ring with the live percentage in the middle, replacing the previous spinner + thin bar layout.
 
 ## Files
 - `src/modules/generator-ui/pages/DashboardPage.tsx`
