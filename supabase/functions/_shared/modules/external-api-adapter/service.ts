@@ -165,6 +165,7 @@ async function startWanI2V(
     },
     parameters: {
       resolution: "720P",
+      ratio: input.aspectRatio ?? "16:9",
       duration: input.durationSeconds ?? 5,
       prompt_extend: true,
       watermark: false,

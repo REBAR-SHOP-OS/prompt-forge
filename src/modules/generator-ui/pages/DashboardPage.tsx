@@ -272,6 +272,46 @@ export default function DashboardPage() {
   useEffect(() => {
     try { window.localStorage.setItem('generator:aspectRatio', aspectRatio) } catch { /* ignore */ }
   }, [aspectRatio])
+  // Per-job aspect ratio map so the preview chrome matches the clip exactly,
+  // even before the asset row carries `aspect_ratio`. Persisted in localStorage.
+  type Ratio = '9:16' | '1:1' | '16:9'
+  const [clipAspectRatios, setClipAspectRatios] = useState<Record<string, Ratio>>(() => {
+    if (typeof window === 'undefined') return {}
+    try {
+      const raw = window.localStorage.getItem('generator:clipAspectRatios')
+      if (!raw) return {}
+      const parsed = JSON.parse(raw) as Record<string, Ratio>
+      return parsed && typeof parsed === 'object' ? parsed : {}
+    } catch { return {} }
+  })
+  const rememberClipRatio = (id: string, r: Ratio) => {
+    setClipAspectRatios((curr) => {
+      if (curr[id] === r) return curr
+      const next = { ...curr, [id]: r }
+      try { window.localStorage.setItem('generator:clipAspectRatios', JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }
+  const normalizeRatio = (v: unknown): Ratio | null => {
+    if (v === '9:16' || v === '1:1' || v === '16:9') return v
+    if (typeof v === 'string') {
+      // provider sometimes returns "720P"; ignore non-standard values
+      const m = v.match(/^(\d+):(\d+)$/)
+      if (m) {
+        const key = `${m[1]}:${m[2]}` as Ratio
+        if (key === '9:16' || key === '1:1' || key === '16:9') return key
+      }
+    }
+    return null
+  }
+  const getRatioFor = (video: { id: string; video?: { aspect_ratio?: string | null } | null } | null | undefined): Ratio => {
+    if (!video) return aspectRatio
+    const local = clipAspectRatios[video.id]
+    if (local) return local
+    const fromAsset = normalizeRatio(video.video?.aspect_ratio ?? null)
+    return fromAsset ?? '16:9'
+  }
+  const ratioToCss = (r: Ratio): string => (r === '9:16' ? '9 / 16' : r === '1:1' ? '1 / 1' : '16 / 9')
   const userId = session?.user?.id ?? null
   const approvedStorageKey = userId ? `approved-videos:${userId}` : null
   const [approvedIds, setApprovedIds] = useState<Set<string>>(() => new Set())
@@ -964,6 +1004,7 @@ export default function DashboardPage() {
       }
 
       const seededJob = buildSeededJob(nextPrompt, createdJob, seedFrames)
+      rememberClipRatio(seededJob.id, aspectRatio)
 
       if (pendingEndAppendUrl) {
         setPendingEndAppends((current) => {
@@ -1246,6 +1287,11 @@ export default function DashboardPage() {
       const publicUrl = data.publicUrl
 
       const mergedId = `merged-${crypto.randomUUID()}`
+      // The merged mp4 inherits the first source clip's intrinsic dimensions
+      // (mergeVideos.ts uses videoWidth/Height of the first clip). Mirror that
+      // here so the preview chrome matches what's actually in the file.
+      const firstClipId = orderedClips[0]?.id
+      const mergedRatio: Ratio = (firstClipId ? clipAspectRatios[firstClipId] : undefined) ?? aspectRatio
       const entry: JobDetail = {
         id: mergedId,
         status: 'completed',
@@ -1258,10 +1304,11 @@ export default function DashboardPage() {
           id: mergedId,
           storage_path: publicUrl,
           thumbnail_url: null,
-          aspect_ratio: null,
+          aspect_ratio: mergedRatio,
           duration: null,
         },
       }
+      rememberClipRatio(mergedId, mergedRatio)
 
       setMergedEntries((current) => {
         const next = [entry, ...current]
@@ -1555,7 +1602,10 @@ export default function DashboardPage() {
         {previewVideo ? (
           <div className="-translate-y-6 w-[min(96rem,calc(100vw-26rem))] sm:-translate-y-4">
             <div className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur">
-              <div className="relative aspect-video max-h-[82vh] w-full overflow-hidden bg-black">
+              <div
+                className="relative max-h-[82vh] w-full overflow-hidden bg-black"
+                style={{ aspectRatio: ratioToCss(getRatioFor(previewVideo)) }}
+              >
                 {previewVideo.video?.storage_path ? (
                   <video
                     key={previewVideo.id}
@@ -1730,10 +1780,13 @@ export default function DashboardPage() {
                       }
                     }}
                   >
-                    <div className="relative overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
+                    <div
+                      className="relative w-full overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
+                      style={{ aspectRatio: ratioToCss(getRatioFor(video)) }}
+                    >
                       {video.video?.storage_path ? (
                         <video
-                          className="aspect-video h-full w-full bg-black object-cover"
+                          className="h-full w-full bg-black object-cover"
                           src={video.video.storage_path}
                           controls
                           muted
@@ -1741,7 +1794,7 @@ export default function DashboardPage() {
                           preload="metadata"
                         />
                       ) : (
-                        <div className="grid aspect-video place-items-center text-zinc-500">
+                        <div className="grid h-full w-full place-items-center text-zinc-500">
                           <Clapperboard className="h-8 w-8" aria-hidden="true" />
                         </div>
                       )}
@@ -1985,19 +2038,20 @@ export default function DashboardPage() {
                       }}
                     >
                       <div
-                        className="overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
+                        className="w-full overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
+                        style={{ aspectRatio: ratioToCss(getRatioFor(video)) }}
                         onClick={(event) => event.stopPropagation()}
                       >
                         {video.video?.storage_path ? (
                           <video
-                            className="aspect-video h-full w-full bg-black object-contain"
+                            className="h-full w-full bg-black object-contain"
                             src={video.video.storage_path}
                             controls
                             playsInline
                             preload="metadata"
                           />
                         ) : (
-                          <div className="grid aspect-video place-items-center text-zinc-500">
+                          <div className="grid h-full w-full place-items-center text-zinc-500">
                             <Clapperboard className="h-8 w-8" aria-hidden="true" />
                           </div>
                         )}
