@@ -113,6 +113,9 @@ export function useClipOverlays(userId: string | null | undefined) {
       contentType: file.type || undefined,
     })
     if (upErr) { console.warn('overlay upload failed', upErr); return }
+    // Bucket is private — store the canonical "object/public/<bucket>/<key>"
+    // URL form for compatibility with legacy rows. Read sites resolve it
+    // through `resolveSignedUrl()` to a short-lived signed URL.
     const { data: pub } = supabase.storage.from(OVERLAY_BUCKET).getPublicUrl(path)
     const payload = {
       user_id: userId,
