@@ -17,6 +17,8 @@ export interface GenerationStartInput {
   lastFrameUrl?: string | null;
   /** Requested clip length in seconds (5, 10, or 15). Defaults to 5. */
   durationSeconds?: 5 | 10 | 15 | null;
+  /** Requested output aspect ratio. Defaults to 16:9. */
+  aspectRatio?: "9:16" | "1:1" | "16:9" | null;
 }
 
 export interface GenerationStartResult {

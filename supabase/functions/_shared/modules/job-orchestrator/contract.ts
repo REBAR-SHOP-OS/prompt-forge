@@ -34,6 +34,8 @@ export interface CreateJobInput {
   estimatedCost: number;
   firstFrameUrl?: string | null;
   lastFrameUrl?: string | null;
+  aspectRatio?: "9:16" | "1:1" | "16:9" | null;
+  durationSeconds?: 5 | 10 | 15 | null;
 }
 
 export interface JobService {

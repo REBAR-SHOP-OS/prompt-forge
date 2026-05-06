@@ -259,6 +259,17 @@ export default function DashboardPage() {
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
   const [durationSeconds, setDurationSeconds] = useState<5 | 10>(5)
+  const [aspectRatio, setAspectRatio] = useState<'9:16' | '1:1' | '16:9'>(() => {
+    if (typeof window === 'undefined') return '16:9'
+    try {
+      const v = window.localStorage.getItem('generator:aspectRatio')
+      if (v === '9:16' || v === '1:1' || v === '16:9') return v
+    } catch { /* ignore */ }
+    return '16:9'
+  })
+  useEffect(() => {
+    try { window.localStorage.setItem('generator:aspectRatio', aspectRatio) } catch { /* ignore */ }
+  }, [aspectRatio])
   const userId = session?.user?.id ?? null
   const approvedStorageKey = userId ? `approved-videos:${userId}` : null
   const [approvedIds, setApprovedIds] = useState<Set<string>>(() => new Set())
@@ -910,6 +921,7 @@ export default function DashboardPage() {
           requestedModel: 'wan2.7-t2v-2026-04-25',
           prompt: nextPrompt,
           durationSeconds,
+          aspectRatio,
         })
       } else if (readyStartFrame?.url && readyEndFrame?.url) {
         // Both frames provided — standard image-to-video.
@@ -919,6 +931,7 @@ export default function DashboardPage() {
           firstFrameUrl: readyStartFrame.url,
           lastFrameUrl: readyEndFrame.url,
           durationSeconds,
+          aspectRatio,
         })
         seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
       } else if (readyStartFrame?.url) {
@@ -929,6 +942,7 @@ export default function DashboardPage() {
           prompt: nextPrompt,
           firstFrameUrl: readyStartFrame.url,
           durationSeconds,
+          aspectRatio,
         })
         seedFrames = { firstFrameUrl: readyStartFrame.url }
       } else if (readyEndFrame?.url) {
@@ -938,6 +952,7 @@ export default function DashboardPage() {
           prompt: nextPrompt,
           lastFrameUrl: readyEndFrame.url,
           durationSeconds,
+          aspectRatio,
         })
         seedFrames = { lastFrameUrl: readyEndFrame.url }
       } else {
@@ -2084,6 +2099,29 @@ export default function DashboardPage() {
                   className={`rounded-full px-3 py-1.5 transition ${active ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
                 >
                   {sec}s
+                </button>
+              )
+            })}
+          </div>
+          <div role="radiogroup" aria-label="Aspect ratio" className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
+            {([
+              { value: '9:16', label: '9:16', hint: 'Reels' },
+              { value: '1:1', label: '1:1', hint: 'Post' },
+              { value: '16:9', label: '16:9', hint: 'YouTube' },
+            ] as const).map((opt) => {
+              const active = aspectRatio === opt.value
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setAspectRatio(opt.value)}
+                  title={`${opt.label} — ${opt.hint}`}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition ${active ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+                >
+                  <span>{opt.label}</span>
+                  <span className={`text-[10px] uppercase tracking-wide ${active ? 'text-zinc-500' : 'text-zinc-500'}`}>{opt.hint}</span>
                 </button>
               )
             })}

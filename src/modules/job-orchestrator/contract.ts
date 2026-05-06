@@ -27,6 +27,8 @@ export interface JobDetail extends JobSummary {
   requestId?: string;
 }
 
+export type AspectRatio = "9:16" | "1:1" | "16:9";
+
 export interface CreateJobInput {
   providerKey: "wan";
   requestedModel?: string;
@@ -35,6 +37,8 @@ export interface CreateJobInput {
   lastFrameUrl?: string;
   /** Requested clip length in seconds. Defaults to 5 server-side. */
   durationSeconds?: 5 | 10 | 15;
+  /** Requested output aspect ratio. Defaults to 16:9 server-side. */
+  aspectRatio?: AspectRatio;
 }
 
 export interface CreateJobResult {
