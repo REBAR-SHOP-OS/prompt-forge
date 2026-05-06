@@ -1,40 +1,33 @@
-# Fix: Black frames at the start of merged preview
+# Make soundtrack playback + section selection obvious
 
-## Problem
+## Current behavior
 
-When clips are joined, the resulting video shows several seconds of black at the beginning (and can show short black gaps between clips). The user wants the merged preview to contain only the connected clips — no black filler.
+The "Soundtrack for Final Film" dialog already has the requested capabilities, but they're hard to see:
 
-## Root Cause
+- The **Play / Pause button** for the uploaded music exists, but it's a tiny, very dim circle in the bottom-left of the waveform — easy to miss against the dark background.
+- The **green region on the waveform IS the selection** that gets applied to the entire Final Film. Dragging the edges of that green box changes the start/end. The merge pipeline already uses `musicRange` as `audioOpt = { src, startSec, endSec }` and loops that exact section across all clips.
+- A **Preview** button in the footer plays only the selected range.
 
-In `src/modules/generator-ui/lib/mergeVideos.ts`, the `MediaRecorder` is started **before** any video frame is painted to the canvas:
+So the feature works — the user just can't tell. The fix is to make playback and selection visible and self-explanatory inside the dialog.
 
-1. `recorder.start(250)` is called on line 301.
-2. After that, the code runs the **pre-measure loop** (lines 327–330) that sequentially loads every clip via `loadVideo(...)` to compute `totalDuration`. This network/decoding work can take several seconds.
-3. Only then does `video.play()` happen for the first clip.
+## Changes
 
-During steps 2–3 the canvas still holds its initial black `fillRect`, so the recorder captures multiple seconds of black at the very start of the file.
+Edit only `src/modules/generator-ui/components/SoundtrackWaveform.tsx`:
 
-A secondary, smaller source: between clips on a `cut` transition, `loadVideo` for the next clip happens after the previous clip's `ended` (canvas keeps last frame, which is fine), but if the next clip's `play()` is slow the same last frame just freezes — acceptable. The dominant issue is the startup black.
+1. **Make the Play / Pause button clearly visible**: bigger (h-8 w-8), brighter border (`white/25`) and background (`white/10`), white icon.
+2. **Add a "Play selection" button** right next to it (emerald-tinted to match the green region) that plays only the chosen section and stops at the end. This duplicates the footer "Preview" inline so it's discoverable.
+3. **Brighten the time counter** (`text-zinc-200` instead of `text-zinc-400`) so `0:00 / 2:33` is readable.
+4. **Add a one-line hint** under the controls: "Drag the edges of the green box to choose the section. That section will play across the entire Final Film." — explains in plain words that the selection drives the final film soundtrack.
 
-## Fix
+No changes to the dialog footer, the merge pipeline, the `musicRange` state, or the contract — the selection and looping behavior already work end-to-end.
 
-Reorder the merge pipeline so the recorder only starts once the first frame is on the canvas:
+## Files
 
-1. **Pre-load all videos first** (move the pre-measure loop above recorder setup). Compute `totalDuration` and keep an array of preloaded `HTMLVideoElement`s so we don't reload them inside the main loop.
-2. **Paint the first frame of clip 0** onto the canvas before recording (seek to 0, wait for `seeked`/`canplay`, draw once via `drawContain`).
-3. **Then** create `MediaRecorder`, start it, start soundtrack playback, and begin the main play/render loop using the already-loaded videos.
-4. Inside the main loop, reuse the preloaded `HTMLVideoElement`s instead of calling `loadVideo` again — this also removes any inter-clip loading gap.
-5. Keep the existing tail `setTimeout(250)` so the last frame isn't truncated, but it will now contain the real last frame (not black).
-
-## Files To Change
-
-- `src/modules/generator-ui/lib/mergeVideos.ts` — reorder pipeline as above; remove the duplicate `loadVideo` call inside the main `for` loop; ensure `first` is part of the preloaded array.
-
-No UI, contract, or backend changes required. No new dependencies.
+- `src/modules/generator-ui/components/SoundtrackWaveform.tsx` (controls + hint only)
 
 ## Acceptance
 
-- Merged video starts immediately on the first frame of clip 1 (no black intro).
-- Transitions between clips behave exactly as before (cut/fade/crossfade/slide/wipe/zoom).
-- Soundtrack timing and clip-audio routing remain unchanged.
-- Total duration ≈ sum of clip durations (minus transition overlaps), with no extra black padding.
+- The play / pause button is clearly visible and plays the full uploaded track.
+- A visible "Play selection" button plays only the highlighted green region and stops at its end.
+- Dragging the edges of the green region updates the selection and the time read-out.
+- The selected range is what the Final Film uses (unchanged behavior).
