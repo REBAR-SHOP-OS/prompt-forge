@@ -7,6 +7,7 @@ import {
   OVERLAY_WEIGHT_PRESETS,
   type ClipOverlay,
 } from '@/modules/generator-ui/lib/overlays'
+import { SignedImg } from '@/modules/generator-ui/components/SignedImg'
 
 export interface OverlayEditorPopoverProps {
   overlays: ClipOverlay[]
