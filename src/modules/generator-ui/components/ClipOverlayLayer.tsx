@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ClipOverlay } from '@/modules/generator-ui/lib/overlays'
+import { SignedImg } from '@/modules/generator-ui/components/SignedImg'
 
 export interface ClipOverlayLayerProps {
   overlays: ClipOverlay[]
@@ -126,7 +127,7 @@ export function ClipOverlayLayer({
         }
 
         return (
-          <img
+          <SignedImg
             key={o.id}
             src={o.image_url ?? ''}
             alt=""

@@ -138,18 +138,23 @@ export async function preloadOverlayImages(
   overlays: ClipOverlay[],
 ): Promise<LoadedOverlayImages> {
   const map: LoadedOverlayImages = new Map()
+  // Lazy import to avoid pulling React into a non-React module's load graph
+  // (the helper itself is plain TS, but it imports the supabase client).
+  const { resolveSignedUrl } = await import('./signedStorageUrl')
   const tasks: Promise<void>[] = []
   for (const o of overlays) {
     if (o.kind !== 'image' || !o.image_url) continue
     if (map.has(o.id)) continue
-    const url = o.image_url
-    tasks.push(new Promise<void>((resolve) => {
-      const img = new Image()
-      img.crossOrigin = 'anonymous'
-      img.onload = () => { map.set(o.id, img); resolve() }
-      img.onerror = () => { resolve() }
-      img.src = url
-    }))
+    tasks.push((async () => {
+      const url = await resolveSignedUrl(o.image_url as string)
+      await new Promise<void>((resolve) => {
+        const img = new Image()
+        img.crossOrigin = 'anonymous'
+        img.onload = () => { map.set(o.id, img); resolve() }
+        img.onerror = () => { resolve() }
+        img.src = url
+      })
+    })())
   }
   await Promise.all(tasks)
   return map

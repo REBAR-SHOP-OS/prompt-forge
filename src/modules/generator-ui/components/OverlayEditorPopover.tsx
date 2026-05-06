@@ -7,6 +7,7 @@ import {
   OVERLAY_WEIGHT_PRESETS,
   type ClipOverlay,
 } from '@/modules/generator-ui/lib/overlays'
+import { SignedImg } from '@/modules/generator-ui/components/SignedImg'
 
 export interface OverlayEditorPopoverProps {
   overlays: ClipOverlay[]
@@ -213,7 +214,7 @@ export function OverlayEditorPopover(props: OverlayEditorPopoverProps) {
         {selected && selected.kind === 'image' ? (
           <div className="space-y-2 border-t border-white/10 pt-2">
             <div className="flex items-center gap-2">
-              <img src={selected.image_url ?? ''} alt="" className="h-12 w-12 rounded border border-white/10 object-contain" />
+              <SignedImg src={selected.image_url ?? ''} alt="" className="h-12 w-12 rounded border border-white/10 object-contain" />
               <Button size="sm" variant="secondary" className="h-7 px-2 text-xs"
                 onClick={() => fileRef.current?.click()}>
                 Replace

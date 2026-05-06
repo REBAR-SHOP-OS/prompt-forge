@@ -17,12 +17,16 @@ function pickMimeType(): string {
 }
 
 async function loadImage(url: string): Promise<HTMLImageElement> {
+  // Resolve private-bucket URLs (user-images, overlay-assets, merged-videos)
+  // into short-lived signed URLs before loading.
+  const { resolveSignedUrl } = await import('./signedStorageUrl')
+  const resolved = await resolveSignedUrl(url)
   return await new Promise((resolve, reject) => {
     const img = new Image()
     img.crossOrigin = 'anonymous'
     img.onload = () => resolve(img)
-    img.onerror = () => reject(new Error(`Failed to load image: ${url}`))
-    img.src = url
+    img.onerror = () => reject(new Error(`Failed to load image: ${resolved}`))
+    img.src = resolved
   })
 }
 

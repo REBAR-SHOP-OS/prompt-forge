@@ -81,6 +81,7 @@ import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { useClipOverlays } from '@/modules/generator-ui/lib/useClipOverlays'
 import { ClipOverlayLayer } from '@/modules/generator-ui/components/ClipOverlayLayer'
 import { OverlayEditorPopover } from '@/modules/generator-ui/components/OverlayEditorPopover'
+import { SignedImg } from '@/modules/generator-ui/components/SignedImg'
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
@@ -2173,7 +2174,7 @@ export default function DashboardPage() {
                     maxWidth: 'calc(100vw - 56rem)',
                   }}
                 >
-                  <img
+                  <SignedImg
                     key={previewItem.image.id}
                     src={previewItem.image.storage_path}
                     alt="Uploaded reference"
@@ -2468,7 +2469,7 @@ export default function DashboardPage() {
                           className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
                           style={{ aspectRatio: '1 / 1' }}
                         >
-                          <img
+                          <SignedImg
                             src={img.storage_path}
                             alt="Uploaded reference"
                             className="h-full w-full object-cover"

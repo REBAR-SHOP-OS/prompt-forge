@@ -19,12 +19,15 @@ export async function proxiedVideoUrl(url: string): Promise<string> {
     return url;
   }
 
-  // Same-origin or our own Supabase storage host — no proxy needed.
+  // Same-origin or our own Supabase storage host — sign private-bucket URLs
+  // (user-images, overlay-assets, merged-videos) and return everything else
+  // unchanged.
   if (typeof window !== "undefined" && parsed.host === window.location.host) {
     return url;
   }
   if (parsed.host === OWN_SUPABASE_HOST) {
-    return url;
+    const { resolveSignedUrl } = await import("./signedStorageUrl");
+    return await resolveSignedUrl(url);
   }
 
   const { data } = await supabase.auth.getSession();
