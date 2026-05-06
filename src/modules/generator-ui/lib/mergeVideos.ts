@@ -20,6 +20,10 @@ export interface MergeAudioOptions {
   src: string
   startSec: number
   endSec: number
+  /** 0..1, default 1 */
+  musicVolume?: number
+  /** 0..1, default 0 (music-only). Set >0 to mix clip audio in. */
+  clipVolume?: number
 }
 
 export type TransitionId =
@@ -221,7 +225,11 @@ export async function mergeVideoUrls(
   if (urls.length === 0) throw new Error('No videos to merge')
 
   const useSoundtrack = Boolean(audio && audio.endSec > audio.startSec)
-  const captureClipAudio = !useSoundtrack
+  const musicVolume = Math.max(0, Math.min(1, audio?.musicVolume ?? 1))
+  // When no soundtrack is used, default to capturing full clip audio.
+  // When soundtrack is used, default to 0 (music-only) unless caller opts in.
+  const clipVolume = Math.max(0, Math.min(1, audio?.clipVolume ?? (useSoundtrack ? 0 : 1)))
+  const captureClipAudio = clipVolume > 0
 
   const first = await loadVideo(urls[0], captureClipAudio)
   const width = Math.max(640, Math.floor(first.videoWidth || 1280))
@@ -284,7 +292,10 @@ export async function mergeVideoUrls(
       })
       soundtrackEl.currentTime = Math.max(0, audio.startSec)
       const source = audioCtx.createMediaElementSource(soundtrackEl)
-      source.connect(audioDest)
+      const gain = audioCtx.createGain()
+      gain.gain.value = musicVolume
+      source.connect(gain)
+      gain.connect(audioDest)
     } catch (err) {
       console.warn('[mergeVideoUrls] soundtrack disabled:', err)
       soundtrackEl = null
@@ -383,7 +394,10 @@ export async function mergeVideoUrls(
     if (captureClipAudio && audioCtx && audioDest) {
       try {
         clipNode = audioCtx.createMediaElementSource(video)
-        clipNode.connect(audioDest)
+        const gain = audioCtx.createGain()
+        gain.gain.value = clipVolume
+        clipNode.connect(gain)
+        gain.connect(audioDest)
       } catch (err) {
         console.warn('[mergeVideoUrls] clip audio skipped:', err)
         clipNode = null
