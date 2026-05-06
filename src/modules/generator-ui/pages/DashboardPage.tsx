@@ -2103,6 +2103,29 @@ export default function DashboardPage() {
               )
             })}
           </div>
+          <div role="radiogroup" aria-label="Aspect ratio" className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
+            {([
+              { value: '9:16', label: '9:16', hint: 'Reels' },
+              { value: '1:1', label: '1:1', hint: 'Post' },
+              { value: '16:9', label: '16:9', hint: 'YouTube' },
+            ] as const).map((opt) => {
+              const active = aspectRatio === opt.value
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setAspectRatio(opt.value)}
+                  title={`${opt.label} — ${opt.hint}`}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition ${active ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+                >
+                  <span>{opt.label}</span>
+                  <span className={`text-[10px] uppercase tracking-wide ${active ? 'text-zinc-500' : 'text-zinc-500'}`}>{opt.hint}</span>
+                </button>
+              )
+            })}
+          </div>
         </div>
 
         {!isTextToVideo ? (
