@@ -1,43 +1,67 @@
-# Reorderable, numbered history cards (oldest → newest)
+# Transitions between cards (final film)
 
-Change the right-side "Recent outputs" panel so that:
-1. The **first generated video appears at the top** and the newest at the bottom (currently it's reversed).
-2. Each card displays a **sequence number** (1, 2, 3, …) matching its visual order.
-3. The user can **drag-and-drop cards** to reorder them, and that order is used everywhere (preview navigation, merge, final film).
+Add a small **transition picker between every two adjacent cards** in the right-side history panel. The user chooses from a few sample transitions; when "Final film" is rendered, those transitions are applied between the corresponding clips.
+
+## UX
+
+Between each pair of adjacent cards in the history list, render a thin horizontal divider with a centered chip showing the current transition (e.g. `Cut`, `Fade`, `Crossfade`, `Slide ←`, `Slide →`, `Wipe`, `Zoom`). Clicking the chip opens a small popover/menu listing the samples; selecting one updates state.
+
+Default for every gap = `Cut` (current behavior, no visual change to today's output).
+
+```text
+[ Card 1 ]
+———— ⤳  Crossfade  ▾ ————
+[ Card 2 ]
+———— ⤳  Cut       ▾ ————
+[ Card 3 ]
+```
+
+## Sample transitions (v1)
+
+Lightweight, all renderable with the existing `<canvas>` + `MediaRecorder` pipeline (no FFmpeg needed):
+
+1. **Cut** — instant switch (current default, 0 ms)
+2. **Fade to black** — outgoing fades to black, incoming fades from black (~500 ms)
+3. **Crossfade** — outgoing dissolves into incoming (~500 ms)
+4. **Slide left** — incoming slides in from the right pushing outgoing out (~500 ms)
+5. **Slide right** — mirror of slide left (~500 ms)
+6. **Wipe** — incoming reveals via a moving vertical edge (~500 ms)
+7. **Zoom** — outgoing scales up while fading; incoming scales in from 0.9× (~500 ms)
+
+Duration is fixed at 500 ms in v1 (configurable later).
 
 ## Changes
 
-### 1. Display order (oldest first)
-File: `src/modules/generator-ui/pages/DashboardPage.tsx`
+### 1. State — `DashboardPage.tsx`
+- Add `transitions: Record<string, TransitionId>` keyed by **the id of the card on the LEFT side of the gap** (i.e. the gap below card N is keyed by card N's id).
+- Default = `'cut'`. Persist in component state only (not DB) for v1.
+- New `TransitionId` type and `TRANSITION_OPTIONS` constant (id, label, durationMs).
 
-- The render list currently uses `generatedVideos` (sorted DESC by `created_at`). We will derive a new `displayedVideos` list in the aside that:
-  - Filters out `deletedIds`.
-  - Applies the user's manual order if present (see step 3); otherwise sorts ASC by `created_at` (oldest at top).
-- Update `handleMergeAllVideos`: today it does `.slice().reverse()` on `completedSourceVideos` to get chronological order. Replace that with the new `displayedVideos` order (drop the `.reverse()`), so the merge always follows exactly what the user sees.
+### 2. UI — `DashboardPage.tsx` aside list
+- In the `displayedVideos.map(...)` loop, after each card except the last one, render a `<div>` with a centered `<DropdownMenu>` (shadcn) trigger labeled with the current transition.
+- `e.stopPropagation()` on the trigger so clicking it doesn't select the card for preview.
+- Use `lucide-react` icon `Sparkles` (or `MoveHorizontal`) next to the label.
 
-### 2. Numbering
-- In the card render loop (`.map((video, index) => …)`), add a small numbered badge in the top-left corner of the thumbnail showing `index + 1`.
-- Style: small rounded pill with `bg-black/60`, white text, `tabular-nums`, positioned absolutely over the `<video>` thumbnail (the thumbnail container becomes `relative`).
+### 3. Pass transitions to merge — `DashboardPage.tsx` `handleMergeAllVideos`
+- Build a `transitionsForMerge: TransitionSpec[]` array with one entry per gap, in the same order as `rawUrls` (length = `urls.length - 1`).
+- Pass it as a new optional argument to `mergeVideoUrls`.
 
-### 3. Drag-and-drop reordering
-- Add a new state `manualOrder: string[] | null` (array of job ids). `null` means "use default chronological order".
-- Implement lightweight HTML5 drag-and-drop (no new library) on each `<article>`:
-  - `draggable`, `onDragStart` (store dragged id), `onDragOver` (preventDefault), `onDrop` (compute new order and update `manualOrder`).
-  - Add a small grip handle icon (lucide `GripVertical`) on the right side of the card header for clear affordance.
-- When new videos arrive, append their ids to `manualOrder` (if it exists) so user-set order is preserved while still showing new items at the bottom.
-- When a card is deleted, remove its id from `manualOrder`.
+### 4. Apply transitions during render — `mergeVideos.ts`
+- Extend `mergeVideoUrls` signature to accept `transitions?: TransitionSpec[]`.
+- Refactor the per-clip loop:
+  - Before the LAST 500 ms of the outgoing clip ends, start preloading & buffering the next clip.
+  - When the outgoing clip emits the `ended` event, run a **transition phase**: a `requestAnimationFrame` loop for `durationMs` that paints a blended frame using both the previous clip's last frame (snapshot to an offscreen canvas) and the next clip's current frame — using the right blend mode for each transition type (`globalAlpha` for fade/crossfade, `drawImage` offsets for slide/wipe, `scale` transforms for zoom).
+  - For `cut` (durationMs = 0), behavior is identical to today.
+- Audio:
+  - Soundtrack mode: unchanged (background music plays continuously through transitions).
+  - Original-clip-audio mode: cleanly disconnect the outgoing clip's audio at the start of the transition and connect the incoming clip's audio (slight overlap is acceptable for crossfade; for fade-to-black we briefly silence by lowering a `GainNode`).
 
-### 4. Effect on existing features
-- `previewVideo` selection logic stays the same (it uses ids, not order).
-- The merge-all and final-film flows now use `displayedVideos` order, ensuring "what you see is what gets merged" — top card = first clip in the final film.
-- "History count" badge stays as is (filtered length).
+### 5. Files touched
+- `src/modules/generator-ui/pages/DashboardPage.tsx` — new state, dropdowns between cards, pass transitions to merger
+- `src/modules/generator-ui/lib/mergeVideos.ts` — new `TransitionSpec` type, transition rendering loop
+- (no new dependencies)
 
-## Technical notes
-
-- No new dependencies; native HTML5 DnD is sufficient for ~dozens of cards in a vertical list.
-- `manualOrder` is component-local state (not persisted to DB) — refreshing the page returns to chronological order. We can persist later if requested.
-- All changes are confined to `DashboardPage.tsx`.
-
-## Out of scope
-- Persisting custom order across reloads.
-- Touch-drag on mobile (HTML5 DnD has limited mobile support; can add later with a library if needed).
+## Out of scope (v1)
+- Custom transition durations
+- Persisting transition selections across reloads
+- 3D / WebGL transitions (flip, cube, morph) — possible v2 with a shader pass

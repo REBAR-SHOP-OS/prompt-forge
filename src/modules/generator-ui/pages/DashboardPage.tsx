@@ -1,4 +1,4 @@
-import { type ChangeEvent, type FormEvent, type SyntheticEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, type ChangeEvent, type FormEvent, type SyntheticEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowRight,
   BookmarkCheck,
@@ -64,7 +64,25 @@ import { supabase } from '@/integrations/supabase/client'
 import WelcomeVideoOverlay from '@/modules/generator-ui/components/WelcomeVideoOverlay'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
-import { mergeVideoUrls } from '@/modules/generator-ui/lib/mergeVideos'
+import { mergeVideoUrls, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
+
+const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
+  { id: 'cut', label: 'Cut', durationMs: 0 },
+  { id: 'fade', label: 'Fade', durationMs: 500 },
+  { id: 'crossfade', label: 'Crossfade', durationMs: 500 },
+  { id: 'slide-left', label: 'Slide ←', durationMs: 500 },
+  { id: 'slide-right', label: 'Slide →', durationMs: 500 },
+  { id: 'wipe', label: 'Wipe', durationMs: 500 },
+  { id: 'zoom', label: 'Zoom', durationMs: 500 },
+]
+const TRANSITION_LABEL: Record<TransitionId, string> = TRANSITION_OPTIONS.reduce(
+  (acc, o) => { acc[o.id] = o.label; return acc },
+  {} as Record<TransitionId, string>,
+)
+const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.reduce(
+  (acc, o) => { acc[o.id] = o.durationMs; return acc },
+  {} as Record<TransitionId, number>,
+)
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 
@@ -305,6 +323,7 @@ export default function DashboardPage() {
   const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set())
   const [manualOrder, setManualOrder] = useState<string[] | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [transitions, setTransitions] = useState<Record<string, TransitionId>>({})
   const [mergedEntries, setMergedEntries] = useState<JobDetail[]>([])
   const [isMerging, setIsMerging] = useState(false)
   const [mergeProgress, setMergeProgress] = useState<number>(0)
@@ -1178,10 +1197,19 @@ export default function DashboardPage() {
     try {
       // Use the right-panel display order (top → bottom) so "what you see is what gets merged"
       const completedIds = new Set(completedSourceVideos.map((v) => v.id))
-      const rawUrls = displayedVideos
-        .filter((v) => completedIds.has(v.id) && v.video?.storage_path)
-        .map((v) => v.video!.storage_path)
+      const orderedClips = displayedVideos.filter(
+        (v) => completedIds.has(v.id) && v.video?.storage_path,
+      )
+      const rawUrls = orderedClips.map((v) => v.video!.storage_path)
       const urls = await Promise.all(rawUrls.map((u) => proxiedVideoUrl(u)))
+
+      // Build per-gap transition specs (one entry per gap = clips - 1).
+      const transitionsForMerge: TransitionSpec[] = orderedClips
+        .slice(0, -1)
+        .map((clip) => {
+          const id = transitions[clip.id] ?? 'cut'
+          return { id, durationMs: TRANSITION_DURATION[id] ?? 0 }
+        })
 
       const audioOpt = musicUrl && musicRange[1] > musicRange[0]
         ? { src: musicUrl, startSec: musicRange[0], endSec: musicRange[1] }
@@ -1190,6 +1218,7 @@ export default function DashboardPage() {
         urls,
         (p) => setMergeProgress(Math.round(p.ratio * 100)),
         audioOpt,
+        transitionsForMerge,
       )
 
       const filename = `merged-${Date.now()}.${mergeRes.extension}`
@@ -1677,9 +1706,12 @@ export default function DashboardPage() {
                 const isPreviewSelected = previewVideo?.id === video.id
                 const isDragging = draggingId === video.id
 
+                const isLast = index === displayedVideos.length - 1
+                const transitionId: TransitionId = transitions[video.id] ?? 'cut'
+
                 return (
+                  <Fragment key={video.id}>
                   <article
-                    key={video.id}
                     draggable
                     onDragStart={handleCardDragStart(video.id)}
                     onDragOver={handleCardDragOver}
@@ -1816,6 +1848,44 @@ export default function DashboardPage() {
                       })()
                     ) : null}
                   </article>
+                  {!isLast ? (
+                    <div
+                      className="flex items-center gap-2 px-1 text-xs text-zinc-500"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-white/25 hover:text-zinc-100"
+                            title="Transition between these clips"
+                            aria-label={`Transition: ${TRANSITION_LABEL[transitionId]}`}
+                          >
+                            <Sparkles className="h-3 w-3 text-amber-300" aria-hidden="true" />
+                            <span>{TRANSITION_LABEL[transitionId]}</span>
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="center" className="min-w-[10rem]">
+                          <DropdownMenuLabel>Transition</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          {TRANSITION_OPTIONS.map((opt) => (
+                            <DropdownMenuItem
+                              key={opt.id}
+                              onSelect={() => {
+                                setTransitions((current) => ({ ...current, [video.id]: opt.id }))
+                              }}
+                              className={transitionId === opt.id ? 'bg-white/[0.06] text-zinc-100' : ''}
+                            >
+                              {opt.label}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
+                    </div>
+                  ) : null}
+                  </Fragment>
                 )
               })}
             </div>
