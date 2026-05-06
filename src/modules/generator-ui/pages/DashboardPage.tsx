@@ -1965,10 +1965,15 @@ export default function DashboardPage() {
                         <video
                           className="h-full w-full bg-black object-cover"
                           src={video.video.storage_path}
+                          poster={video.video.thumbnail_url ?? undefined}
                           controls
                           muted
                           playsInline
-                          preload="metadata"
+                          preload="auto"
+                          onLoadedMetadata={(event) => {
+                            const el = event.currentTarget
+                            try { if (el.currentTime === 0) el.currentTime = 0.05 } catch { /* ignore */ }
+                          }}
                         />
                       ) : (
                         <div className="grid h-full w-full place-items-center text-zinc-500">
