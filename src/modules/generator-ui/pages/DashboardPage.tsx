@@ -87,8 +87,6 @@ const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.red
 )
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
-import { downloadVideoAtRatio } from '@/modules/generator-ui/lib/downloadVideoAtRatio'
-import { normalizeImageToRatio } from '@/modules/generator-ui/lib/normalizeImageToRatio'
 
 type VideoJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
 type UploadTarget = 'Start' | 'End'
@@ -385,32 +383,6 @@ export default function DashboardPage() {
   const approvedStorageKey = userId ? `approved-videos:${userId}` : null
   const [approvedIds, setApprovedIds] = useState<Set<string>>(() => new Set())
   const [showWelcome, setShowWelcome] = useState(false)
-  const [downloadingId, setDownloadingId] = useState<string | null>(null)
-
-  const handleDownloadAtRatio = async (
-    id: string,
-    src: string | null | undefined,
-    ratio: '9:16' | '1:1' | '16:9',
-    promptForName?: string,
-  ) => {
-    if (!src) return
-    if (downloadingId) return
-    setDownloadingId(id)
-    try {
-      const safe = (promptForName ?? 'clip')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 40) || 'clip'
-      await downloadVideoAtRatio(src, ratio, `${safe}-${ratio.replace(':', 'x')}.webm`)
-    } catch (err) {
-      console.error('downloadVideoAtRatio failed', err)
-      // eslint-disable-next-line no-alert
-      window.alert('Download failed. Please try again.')
-    } finally {
-      setDownloadingId(null)
-    }
-  }
 
   useEffect(() => {
     if (!userId) return
@@ -1090,40 +1062,6 @@ export default function DashboardPage() {
       // (lockedProjectRatio still controls Final Film merge/preview only.)
       const effectiveRatio: Ratio = aspectRatio
 
-      // Letterbox/pillarbox uploaded frames into the chosen ratio so the
-      // WHOLE image is visible inside the requested frame (no cropping).
-      // The provider then receives a frame already shaped to the target
-      // ratio, so the rendered video honors both image content and ratio.
-      const userIdForUpload = session?.user?.id ?? null
-      const prepareFrameForRatio = async (
-        srcUrl: string,
-        target: 'start' | 'end',
-      ): Promise<string> => {
-        if (!userIdForUpload) return srcUrl
-        try {
-          const blob = await normalizeImageToRatio(srcUrl, effectiveRatio)
-          const path = `${userIdForUpload}/${target}-norm-${effectiveRatio.replace(':', 'x')}-${Date.now()}-${crypto.randomUUID()}.png`
-          const { error: upErr } = await supabase.storage
-            .from(FRAMES_BUCKET)
-            .upload(path, blob, { contentType: 'image/png', upsert: false })
-          if (upErr) {
-            console.error('frame normalize upload failed', upErr)
-            return srcUrl
-          }
-          return supabase.storage.from(FRAMES_BUCKET).getPublicUrl(path).data.publicUrl
-        } catch (err) {
-          console.error('frame normalize failed', err)
-          return srcUrl
-        }
-      }
-
-      const startUrl = readyStartFrame?.url
-        ? await prepareFrameForRatio(readyStartFrame.url, 'start')
-        : null
-      const endUrl = readyEndFrame?.url
-        ? await prepareFrameForRatio(readyEndFrame.url, 'end')
-        : null
-
       if (isTextToVideo) {
         createdJob = await jobOrchestratorGateway.createJob({
           providerKey: 'wan',
@@ -1132,38 +1070,38 @@ export default function DashboardPage() {
           durationSeconds,
           aspectRatio: effectiveRatio,
         })
-      } else if (startUrl && endUrl) {
+      } else if (readyStartFrame?.url && readyEndFrame?.url) {
         // Both frames provided — standard image-to-video.
         createdJob = await jobOrchestratorGateway.createJob({
           providerKey: 'wan',
           prompt: nextPrompt,
-          firstFrameUrl: startUrl,
-          lastFrameUrl: endUrl,
+          firstFrameUrl: readyStartFrame.url,
+          lastFrameUrl: readyEndFrame.url,
           durationSeconds,
           aspectRatio: effectiveRatio,
         })
-        seedFrames = { firstFrameUrl: startUrl, lastFrameUrl: endUrl }
-      } else if (startUrl) {
+        seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
+      } else if (readyStartFrame?.url) {
         // Only Start: real image-to-video anchored on the Start frame so the
         // prompt is executed directly on the uploaded image.
         createdJob = await jobOrchestratorGateway.createJob({
           providerKey: 'wan',
           prompt: nextPrompt,
-          firstFrameUrl: startUrl,
+          firstFrameUrl: readyStartFrame.url,
           durationSeconds,
           aspectRatio: effectiveRatio,
         })
-        seedFrames = { firstFrameUrl: startUrl }
-      } else if (endUrl) {
+        seedFrames = { firstFrameUrl: readyStartFrame.url }
+      } else if (readyEndFrame?.url) {
         // Only End: real image-to-video anchored on the End frame.
         createdJob = await jobOrchestratorGateway.createJob({
           providerKey: 'wan',
           prompt: nextPrompt,
-          lastFrameUrl: endUrl,
+          lastFrameUrl: readyEndFrame.url,
           durationSeconds,
           aspectRatio: effectiveRatio,
         })
-        seedFrames = { lastFrameUrl: endUrl }
+        seedFrames = { lastFrameUrl: readyEndFrame.url }
       } else {
         setComposerError('Add a Start or End image before rendering.')
         return
@@ -1876,40 +1814,14 @@ export default function DashboardPage() {
                 }}
               >
                 {previewVideo.video?.storage_path ? (
-                  <>
-                    <video
-                      key={previewVideo.id}
-                      className="h-full w-full bg-black object-contain"
-                      src={previewVideo.video.storage_path}
-                      controls
-                      controlsList="nodownload noremoteplayback"
-                      disablePictureInPicture
-                      playsInline
-                      preload="metadata"
-                    />
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleDownloadAtRatio(
-                          previewVideo.id,
-                          previewVideo.video?.storage_path,
-                          getRatioFor(previewVideo),
-                          previewVideo.input_prompt,
-                        )
-                      }
-                      disabled={downloadingId === previewVideo.id}
-                      title={`Download as ${getRatioFor(previewVideo)}`}
-                      aria-label={`Download as ${getRatioFor(previewVideo)}`}
-                      className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/60 px-3 py-1.5 text-xs font-semibold text-zinc-100 backdrop-blur transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:cursor-wait disabled:opacity-60"
-                    >
-                      {downloadingId === previewVideo.id ? (
-                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                      ) : (
-                        <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                      )}
-                      <span>{getRatioFor(previewVideo)}</span>
-                    </button>
-                  </>
+                  <video
+                    key={previewVideo.id}
+                    className="h-full w-full bg-black object-contain"
+                    src={previewVideo.video.storage_path}
+                    controls
+                    playsInline
+                    preload="metadata"
+                  />
                 ) : (
                   <div className="grid h-full place-items-center px-6 text-center">
                     {(() => {
@@ -2090,8 +2002,6 @@ export default function DashboardPage() {
                           src={video.video.storage_path}
                           poster={video.video.thumbnail_url ?? undefined}
                           controls
-                          controlsList="nodownload noremoteplayback"
-                          disablePictureInPicture
                           muted
                           playsInline
                           preload="auto"
@@ -2381,28 +2291,16 @@ export default function DashboardPage() {
                           </p>
                           <div className="flex shrink-0 items-center gap-1">
                             {video.video?.storage_path ? (
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  handleDownloadAtRatio(
-                                    video.id,
-                                    video.video?.storage_path,
-                                    getRatioFor(video),
-                                    video.input_prompt,
-                                  )
-                                }}
-                                disabled={downloadingId === video.id}
-                                aria-label={`Download as ${getRatioFor(video)}`}
-                                title={`Download as ${getRatioFor(video)}`}
-                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:cursor-wait disabled:opacity-60"
+                              <a
+                                href={video.video.storage_path}
+                                download
+                                onClick={(event) => event.stopPropagation()}
+                                aria-label="Download video"
+                                title="Download video"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
                               >
-                                {downloadingId === video.id ? (
-                                  <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
-                                ) : (
-                                  <Download className="h-3 w-3" aria-hidden="true" />
-                                )}
-                              </button>
+                                <Download className="h-3 w-3" aria-hidden="true" />
+                              </a>
                             ) : null}
                             <button
                               type="button"
