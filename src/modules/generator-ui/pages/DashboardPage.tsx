@@ -10,6 +10,7 @@ import {
   Download,
   FileUp,
   Film,
+  GripVertical,
   Hammer,
   History,
   LayoutGrid,
