@@ -1,30 +1,41 @@
+# خواسته
+خروجی دانلود ادغام کارت‌ها باید **MP4** باشه (نه webm) و صدا هم داشته باشه. این یک قانون الزامی است.
+
 # مشکل
-وقتی روی آیکون «اتصال کارت‌ها» (merge) می‌زنی و ویدیوی نهایی ادغام‌شده دانلود می‌شه، **بدون صدا** است. اما دانلود تک‌تک کارت‌ها صدا داره.
+- `MediaRecorder` در اکثر مرورگرها فقط `webm` تولید می‌کنه، نه `mp4` واقعی.
+- روش فعلی (canvas + MediaRecorder) صدا رو هم drop می‌کنه.
+- صرفاً عوض کردن پسوند یا `contentType` به `mp4` فایل رو معتبر نمی‌کنه.
 
-## ریشه مشکل
-فایل `src/modules/generator-ui/lib/mergeVideos.ts` ادغام رو با `canvas.captureStream()` + `MediaRecorder` انجام می‌ده. این روش فقط فریم‌های تصویری canvas رو ضبط می‌کنه و audio track ویدیوها کلاً حذف می‌شه. در کامنت بالای فایل هم صریح نوشته شده:
-> "Audio is dropped in v1 (canvas/MediaRecorder audio mux is fragile)."
+# راه‌حل: ffmpeg.wasm
+استفاده از `@ffmpeg/ffmpeg` (نسخه 0.12) برای ادغام واقعی در مرورگر. خروجی: MP4 با ویدیو H.264 و صدای AAC.
 
-# راه‌حل
-بازنویسی `mergeVideos.ts` با ترکیب stream تصویری canvas و stream صوتی هر کلیپ از طریق `WebAudio API`:
+## مراحل
+1. **نصب پکیج‌ها** (انجام شد): `@ffmpeg/ffmpeg`, `@ffmpeg/util`
+2. **بازنویسی `src/modules/generator-ui/lib/mergeVideos.ts`**:
+   - بارگذاری lazy ffmpeg core از CDN (`unpkg`) با `toBlobURL` (لازم برای SharedArrayBuffer-less mode)
+   - برای هر کلیپ ورودی: دانلود → نرمال‌سازی به MP4 یکنواخت (H.264, yuv420p, 30fps, ابعاد زوج، AAC stereo 48kHz) — concat demuxer به استریم‌های هماهنگ نیاز داره
+   - برای کلیپ‌های بدون audio track، تولید audio خاموش با `anullsrc` تا concat به‌هم نریزه
+   - مرحله نهایی: `concat demuxer` با `-c copy` (بدون re-encode دوم — سریع و بدون افت کیفیت)
+   - خروجی `Blob` با `type: 'video/mp4'`
+   - حفظ امضای تابع و callback پیشرفت بدون تغییر
+3. **به‌روزرسانی `src/modules/generator-ui/pages/DashboardPage.tsx`** در سه نقطه:
+   - خط ~1057: `merged-${Date.now()}.mp4` به جای `.webm`
+   - خط ~1061: `contentType: 'video/mp4'`
+   - خطوط ~600 و ~666 (مسیر prepend/append استیل): همان تغییرات (پسوند `.mp4` و contentType)
+   - خطوط ~608 و ~675: نام فایل خروجی merge با پسوند `.mp4`
 
-1. ساخت یک `AudioContext` و `MediaStreamAudioDestinationNode` مشترک
-2. برای هر ویدیو: گرفتن `MediaElementAudioSourceNode` از `<video>` و وصل کردن به destination مشترک (به جای خروجی speaker)
-3. ترکیب `canvas.captureStream()` (ویدیو) + `destination.stream` (صوت) در یک `MediaStream` واحد
-4. دادن این stream ترکیبی به `MediaRecorder` با `mimeType: 'video/webm;codecs=vp9,opus'` (یا fallback به vp8/opus)
-5. حذف `muted=true` از تگ video (لازمه برای autoplay اما باید صدا از طریق WebAudio routing بره — استفاده از `video.muted=true` همراه با `MediaElementSource` در WebAudio کار نمی‌کنه چون در بعضی مرورگرها سورس صامت می‌شه؛ راه‌حل: `muted=false` + `volume=0` روی خود element تا از speaker پخش نشه ولی WebAudio صدا رو بگیره). در عمل بهترین روش: نگه داشتن `muted=true` روی element و استفاده از `AudioContext.createMediaElementSource` که در اکثر مرورگرها صدا رو حتی با element.muted=true به graph می‌فرسته — اگر مشکل ساز شد، fallback به `volume=0`.
-6. بسته شدن AudioContext در پایان برای آزادسازی منابع
-
-## نکات فنی
-- `MediaElementAudioSourceNode` فقط یک‌بار در طول عمر element قابل ساخته شدن است؛ پس برای هر ویدیو که load می‌کنیم، فوراً source بسازیم و نگه داریم
-- اگر کلیپی audio track نداشت، چیزی به graph اضافه نمی‌شه (silent gap طبیعیه)
-- mimeType جدید: اول `video/webm;codecs=vp9,opus`، بعد `video/webm;codecs=vp8,opus`، در نهایت `video/webm`
-- خروجی همچنان `.webm` باقی می‌مونه (بدون تغییر در نام/پسوند فایل)
-
-## فایل‌های تحت تأثیر
-- `src/modules/generator-ui/lib/mergeVideos.ts` — تنها فایل ویرایش‌شده
+## ملاحظات فنی
+- **اندازه bundle**: ffmpeg core ~25MB از CDN لود می‌شه (یک‌بار، cached). lazy load در زمان اولین merge انجام می‌شه تا startup app کند نشه.
+- **عملکرد**: نرمال‌سازی هر کلیپ با `-preset ultrafast` تا تأخیر مرورگر حداقل بمونه.
+- **سازگاری**: ffmpeg.wasm 0.12 در همه مرورگرهای مدرن کار می‌کنه (نسخه single-thread، بدون نیاز به COOP/COEP headers).
+- **پیشرفت UI**: 85% پیشرفت برای transcode هر کلیپ، 15% آخر برای concat — تجربه bar روان می‌مونه.
 
 ## تضمین رفتار
-- ظاهر UI و آیکون merge هیچ تغییری نمی‌کنه
-- نام فایل دانلودی، فرمت webm، و progress callback همگی یکسان باقی می‌مونن
-- فقط track صوتی به خروجی اضافه می‌شه
+- ظاهر دکمه merge، آیکون، و UX دانلود هیچ تغییری نمی‌کنه
+- منطق مسیرهای دیگر (text-to-video، i2v، prepend/append استیل) دست‌نخورده باقی می‌مونه — فقط فرمت میانی و خروجی mp4 می‌شه
+- صدای کلیپ‌های اصلی در خروجی نهایی حفظ می‌شه
+
+## فایل‌های تحت تأثیر
+- `src/modules/generator-ui/lib/mergeVideos.ts` (بازنویسی کامل)
+- `src/modules/generator-ui/pages/DashboardPage.tsx` (تغییر پسوند و contentType در ۴-۵ نقطه)
+- `package.json` (پکیج‌ها قبلاً اضافه شدن)
