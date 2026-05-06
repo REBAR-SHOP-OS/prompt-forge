@@ -832,26 +832,23 @@ export default function DashboardPage() {
         })
         seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
       } else if (readyStartFrame?.url) {
-        // Only Start: generate text-to-video, then prepend the Start image
-        // as a 2-second still clip at the front of the completed video.
+        // Only Start: real image-to-video anchored on the Start frame so the
+        // prompt is executed directly on the uploaded image.
         createdJob = await jobOrchestratorGateway.createJob({
           providerKey: 'wan',
-          requestedModel: 'wan2.7-t2v-2026-04-25',
           prompt: nextPrompt,
+          firstFrameUrl: readyStartFrame.url,
           durationSeconds,
         })
-        pendingStartPrependUrl = readyStartFrame.url
         seedFrames = { firstFrameUrl: readyStartFrame.url }
       } else if (readyEndFrame?.url) {
-        // Only End: generate text-to-video first, then append the End image
-        // as a 2-second still clip after the job completes.
+        // Only End: real image-to-video anchored on the End frame.
         createdJob = await jobOrchestratorGateway.createJob({
           providerKey: 'wan',
-          requestedModel: 'wan2.7-t2v-2026-04-25',
           prompt: nextPrompt,
+          lastFrameUrl: readyEndFrame.url,
           durationSeconds,
         })
-        pendingEndAppendUrl = readyEndFrame.url
         seedFrames = { lastFrameUrl: readyEndFrame.url }
       } else {
         setComposerError('Add a Start or End image before rendering.')
