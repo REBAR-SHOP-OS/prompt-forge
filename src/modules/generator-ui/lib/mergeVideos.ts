@@ -394,7 +394,10 @@ export async function mergeVideoUrls(
     if (captureClipAudio && audioCtx && audioDest) {
       try {
         clipNode = audioCtx.createMediaElementSource(video)
-        clipNode.connect(audioDest)
+        const gain = audioCtx.createGain()
+        gain.gain.value = clipVolume
+        clipNode.connect(gain)
+        gain.connect(audioDest)
       } catch (err) {
         console.warn('[mergeVideoUrls] clip audio skipped:', err)
         clipNode = null
