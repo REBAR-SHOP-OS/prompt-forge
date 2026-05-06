@@ -17,18 +17,34 @@ export interface MergeProgress {
 
 export type MergeProgressCallback = (p: MergeProgress) => void
 
-function pickMimeType(): string {
-  const candidates = [
-    'video/webm;codecs=vp9',
-    'video/webm;codecs=vp8',
-    'video/webm',
-  ]
+function pickMimeType(withAudio: boolean): string {
+  const candidates = withAudio
+    ? [
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm;codecs=opus',
+        'video/webm',
+      ]
+    : [
+        'video/webm;codecs=vp9',
+        'video/webm;codecs=vp8',
+        'video/webm',
+      ]
   for (const mt of candidates) {
     if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(mt)) {
       return mt
     }
   }
   return 'video/webm'
+}
+
+export interface MergeAudioOptions {
+  /** Object URL or remote URL of the audio file to use as soundtrack. */
+  src: string
+  /** Inclusive start offset in seconds within the audio file. */
+  startSec: number
+  /** Exclusive end offset in seconds within the audio file. */
+  endSec: number
 }
 
 async function loadVideo(url: string): Promise<HTMLVideoElement> {
