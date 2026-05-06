@@ -17,18 +17,34 @@ export interface MergeProgress {
 
 export type MergeProgressCallback = (p: MergeProgress) => void
 
-function pickMimeType(): string {
-  const candidates = [
-    'video/webm;codecs=vp9',
-    'video/webm;codecs=vp8',
-    'video/webm',
-  ]
+function pickMimeType(withAudio: boolean): string {
+  const candidates = withAudio
+    ? [
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm;codecs=opus',
+        'video/webm',
+      ]
+    : [
+        'video/webm;codecs=vp9',
+        'video/webm;codecs=vp8',
+        'video/webm',
+      ]
   for (const mt of candidates) {
     if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(mt)) {
       return mt
     }
   }
   return 'video/webm'
+}
+
+export interface MergeAudioOptions {
+  /** Object URL or remote URL of the audio file to use as soundtrack. */
+  src: string
+  /** Inclusive start offset in seconds within the audio file. */
+  startSec: number
+  /** Exclusive end offset in seconds within the audio file. */
+  endSec: number
 }
 
 async function loadVideo(url: string): Promise<HTMLVideoElement> {
@@ -66,6 +82,7 @@ function drawContain(
 export async function mergeVideoUrls(
   urls: string[],
   onProgress?: MergeProgressCallback,
+  audio?: MergeAudioOptions,
 ): Promise<Blob> {
   if (urls.length === 0) throw new Error('No videos to merge')
 
@@ -84,8 +101,51 @@ export async function mergeVideoUrls(
   ctx.fillRect(0, 0, width, height)
 
   const fps = 30
-  const stream = canvas.captureStream(fps)
-  const recorder = new MediaRecorder(stream, { mimeType: pickMimeType() })
+  const videoStream = canvas.captureStream(fps)
+
+  // --- Optional soundtrack: route an <audio> element through Web Audio so its
+  // track can be added to the recorded MediaStream. Video clip audio is muted
+  // (the source <video> elements are muted), so the soundtrack is the only
+  // audio in the output.
+  let audioCtx: AudioContext | null = null
+  let audioEl: HTMLAudioElement | null = null
+  let audioStopTimer: number | null = null
+  let outStream: MediaStream = videoStream
+
+  if (audio && audio.endSec > audio.startSec) {
+    try {
+      audioEl = document.createElement('audio')
+      audioEl.crossOrigin = 'anonymous'
+      audioEl.src = audio.src
+      audioEl.preload = 'auto'
+      audioEl.loop = true
+      await new Promise<void>((resolve, reject) => {
+        const onReady = () => { audioEl!.removeEventListener('loadedmetadata', onReady); resolve() }
+        const onErr = () => { audioEl!.removeEventListener('error', onErr); reject(new Error('Failed to load soundtrack')) }
+        audioEl!.addEventListener('loadedmetadata', onReady)
+        audioEl!.addEventListener('error', onErr)
+      })
+      audioEl.currentTime = Math.max(0, audio.startSec)
+
+      const Ctor: typeof AudioContext = (window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)
+      audioCtx = new Ctor()
+      const source = audioCtx.createMediaElementSource(audioEl)
+      const dest = audioCtx.createMediaStreamDestination()
+      source.connect(dest)
+      // Also connect to speakers? No — keep render headless/silent for the user.
+
+      const tracks = [...videoStream.getVideoTracks(), ...dest.stream.getAudioTracks()]
+      outStream = new MediaStream(tracks)
+    } catch (err) {
+      // If audio setup fails, fall back to video-only.
+      audioEl = null
+      audioCtx = null
+      outStream = videoStream
+      console.warn('[mergeVideoUrls] soundtrack disabled:', err)
+    }
+  }
+
+  const recorder = new MediaRecorder(outStream, { mimeType: pickMimeType(Boolean(audioEl)) })
   const chunks: Blob[] = []
   recorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) chunks.push(e.data)
@@ -94,6 +154,21 @@ export async function mergeVideoUrls(
     recorder.onstop = () => resolve()
   })
   recorder.start(250)
+
+  // Start the soundtrack at the same moment recording begins. Loop within the
+  // selected window: when currentTime passes endSec, jump back to startSec.
+  if (audioEl && audio) {
+    const winStart = Math.max(0, audio.startSec)
+    const winEnd = Math.max(winStart + 0.05, audio.endSec)
+    const onTime = () => {
+      if (!audioEl) return
+      if (audioEl.currentTime >= winEnd) {
+        audioEl.currentTime = winStart
+      }
+    }
+    audioEl.addEventListener('timeupdate', onTime)
+    try { await audioEl.play() } catch { /* ignore autoplay reject */ }
+  }
 
   let rafId = 0
   const loopPaint = (video: HTMLVideoElement) => {
@@ -139,6 +214,16 @@ export async function mergeVideoUrls(
   await new Promise((r) => setTimeout(r, 250))
   recorder.stop()
   await stopped
+
+  // Tear down audio resources.
+  if (audioStopTimer !== null) window.clearTimeout(audioStopTimer)
+  if (audioEl) {
+    try { audioEl.pause() } catch { /* ignore */ }
+    audioEl.src = ''
+  }
+  if (audioCtx) {
+    try { await audioCtx.close() } catch { /* ignore */ }
+  }
 
   return new Blob(chunks, { type: 'video/webm' })
 }

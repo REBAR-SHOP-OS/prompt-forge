@@ -1,34 +1,60 @@
 ## Goal
 
-اضافه کردن یک آیکون مستقل و واضح در هدر بالای صفحه، که با کلیک روی آن، تمام کارت‌های ویدیویی کامل‌شده (به ترتیب زمانی) به‌هم‌چسبانده شده و نتیجه به‌عنوان یک فیلم واحد در پنجره‌ی پیش‌نمایش وسط صفحه نمایش داده شود.
+اضافه کردن قابلیت موزیک پس‌زمینه: کاربر یک فایل صوتی آپلود می‌کند، یک بازه‌ی دلخواه از آن را انتخاب می‌کند، و هنگام ساخت «فیلم نهایی»، آن بازه روی کل ویدیوی ادغام‌شده اعمال می‌شود؛ صدای خود کلیپ‌ها قطع می‌شود.
 
 ## Current State
 
-- منطق ادغام کامل ویدیوها از قبل در `handleMergeAllVideos` (DashboardPage.tsx، خط ~1035) پیاده شده است: همه‌ی ویدیوهای کامل‌شده را با `mergeVideoUrls` به یک فایل `.webm` تبدیل می‌کند، در باکت `merged-videos` آپلود می‌کند، یک کارت merged می‌سازد، آن را preview می‌کند و دانلود می‌دهد.
-- این تابع امروز فقط از طریق یک دکمه‌ی کوچک با آیکون `Combine` در گوشه‌ی پنل History (راست) قابل دسترسی است — کاربر آن را پیدا نمی‌کند.
+- `mergeVideoUrls` (در `src/modules/generator-ui/lib/mergeVideos.ts`) فقط تصویر را از طریق canvas/MediaRecorder ضبط می‌کند و **هیچ صدایی** در خروجی نیست (در حال حاضر کلیپ‌ها هم بدون صدا روی هم می‌چسبند).
+- دکمه‌ی «Final film» در هدر بالای صفحه قرار دارد و `handleMergeAllVideos` را صدا می‌زند.
+- منطق ادغام درون مرورگر اجرا می‌شود؛ اضافه کردن track صوتی از `<audio>` به stream خروجی از طریق `AudioContext` + `MediaStreamAudioDestinationNode` کاملاً امکان‌پذیر است.
 
-## Change
+## UX
 
-یک دکمه‌ی آیکونی جدید در نوار بالای صفحه، **کنار دکمه‌ی «Start over»** (وسط بالا)، اضافه می‌شود:
+در هدر بالای صفحه، یک دکمه‌ی آیکونی جدید کنار دکمه‌ی «Final film» اضافه می‌شود:
 
-- آیکون: `Film` (از lucide-react که از قبل ایمپورت شده) — نمادی واضح برای «فیلم نهایی»
-- استایل: همانند دکمه‌ی Start over (همان ارتفاع، همان حاشیه و رنگ، تا با ظاهر فعلی هماهنگ بماند — هیچ تغییر طراحی دیگری انجام نمی‌شود)
-- موقعیت: درست سمت چپ یا راست دکمه‌ی Start over، با کمی فاصله
-- رفتار:
-  - در حالت عادی: آیکون Film
-  - در حال ادغام: آیکون `LoaderCircle` چرخان + درصد پیشرفت (`mergeProgress%`)
-  - غیرفعال وقتی: `isMerging` باشد یا کمتر از ۲ ویدیوی کامل برای ادغام موجود باشد
-  - tooltip فارسی/انگلیسی توضیحی: «ساخت فیلم نهایی از همه‌ی کارت‌ها»
-- کلیک → فراخوانی همان `handleMergeAllVideos` موجود → نتیجه‌ی merged به‌طور خودکار در preview وسط صفحه نمایش داده می‌شود (این رفتار از قبل توسط `setPreviewVideoId(mergedId)` در تابع موجود انجام می‌شود).
+- آیکون: `Music` از lucide-react (هم‌استایل با Final film و Start over)
+- وضعیت‌ها:
+  - بدون موزیک → آیکون Music ساده، با کلیک یک file picker (`audio/*`) باز می‌شود
+  - با موزیک بارگذاری‌شده → آیکون به `Music2` تغییر می‌کند + نام کوتاه فایل + یک ضربدر کوچک برای حذف
+- پس از انتخاب فایل، یک popover/dialog کوچک باز می‌شود حاوی:
+  - یک پخش‌کنندهٔ صوتی استاندارد برای پیش‌گوش‌دادن
+  - یک **range slider دو سر** (start/end) برای انتخاب بازه (نمایش mm:ss)
+  - دکمه‌های Preview (پخش بازه‌ی انتخابی) و Save
+- وقتی موزیک تنظیم شده باشد، tooltip دکمه‌ی Final film می‌گوید: «Final film with music (00:12 – 00:34)»
 
-دکمه‌ی قدیمی `Combine` در پنل History هم برای سازگاری حفظ می‌شود (بدون تغییر).
+## Behavior
+
+هنگام کلیک روی Final film:
+
+1. اگر موزیک تنظیم شده باشد → `mergeVideoUrls` با پارامتر `audio: { file, startSec, endSec }` فراخوانی می‌شود.
+2. درون merger:
+   - کلیپ‌های ویدیو با `muted = true` پخش می‌شوند (مثل قبل) → صدای کلیپ‌ها حذف
+   - یک `HTMLAudioElement` با src موزیک ساخته می‌شود، `currentTime = startSec`، و درون `AudioContext` به یک `MediaStreamAudioDestinationNode` متصل می‌شود
+   - track صوتی این destination به stream خروجی canvas اضافه می‌شود (`new MediaStream([videoTrack, audioTrack])`)
+   - موزیک هم‌زمان با شروع ضبط play می‌شود؛ اگر طول بازه‌ی موزیک از طول کل ویدیو کوتاه‌تر بود، loop می‌شود؛ اگر طولانی‌تر بود، در `endSec` متوقف می‌شود
+   - MediaRecorder با codec ‏`video/webm;codecs=vp9,opus` (یا fallback‏ vp8,opus) ضبط می‌کند
+3. خروجی webm حاوی ویدیو + موزیک است؛ مانند قبل به باکت `merged-videos` آپلود و در preview نمایش داده می‌شود.
+4. اگر موزیک تنظیم نشده باشد، رفتار دقیقاً مانند امروز باقی می‌ماند (بدون صدا).
+
+موزیک فقط روی **فیلم ادغام‌شده‌ی نهایی** اعمال می‌شود؛ کارت‌های جداگانه‌ی History دست‌نخورده می‌مانند.
+
+## State & Persistence
+
+- state موزیک (فایل به‌صورت object URL در حافظه + start/end ثانیه + نام فایل) در DashboardPage نگه‌داری می‌شود.
+- چون فایل صوتی Blob محلی است و قابل serialize شدن مفید در localStorage نیست، با refresh صفحه پاک می‌شود (مانند آپلود فریم‌ها). فقط نام آخرین فایل برای راحتی نمایش داده می‌شود.
 
 ## Files Touched
 
-- `src/modules/generator-ui/pages/DashboardPage.tsx` — فقط افزودن دکمه‌ی جدید در ناحیه‌ی هدر بالا (نزدیک خط 1219). هیچ منطق جدیدی اضافه نمی‌شود؛ فقط فراخوانی `handleMergeAllVideos`.
+- `src/modules/generator-ui/lib/mergeVideos.ts` — افزودن پارامتر اختیاری `audio?: { src: string; startSec: number; endSec: number }` به `mergeVideoUrls`؛ ساخت AudioContext، اضافه کردن audio track به stream، مدیریت loop/stop در محدوده‌ی بازه. حفظ سازگاری کامل با signature قبلی.
+- `src/modules/generator-ui/pages/DashboardPage.tsx`:
+  - state جدید: `musicFile`, `musicObjectUrl`, `musicDurationSec`, `musicStartSec`, `musicEndSec`, `isMusicDialogOpen`
+  - دکمه‌ی Music در هدر بالا (کنار Final film)
+  - یک `<Dialog>` ساده با `<audio controls>` و دو slider (یا یک range dual-handle با دو `<input type="range">` برای start/end)
+  - عبور تنظیمات موزیک به `handleMergeAllVideos` → `mergeVideoUrls`
 
 ## Out of Scope
 
-- بدون تغییر در منطق ادغام، آپلود، ذخیره‌سازی، یا مدل داده.
-- بدون تغییر در ساختار UI سایر بخش‌ها.
-- بدون افزودن کتابخانه یا آیکون جدید.
+- بدون افزودن کتابخانه‌ی جدید (از `Slider` موجود در `@/components/ui/slider` و `Dialog` موجود استفاده می‌شود).
+- بدون mux کردن سرور-ساید با ffmpeg؛ همه‌چیز سمت کلاینت.
+- بدون trim/fade پیشرفته؛ فقط cut ساده در `startSec` و `endSec` + loop در صورت کوتاه بودن.
+- بدون اعمال موزیک روی تک‌کارت‌های جداگانه (فقط روی Final film).

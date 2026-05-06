@@ -1,4 +1,4 @@
-import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type ChangeEvent, type FormEvent, type SyntheticEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowRight,
   BookmarkCheck,
@@ -16,6 +16,8 @@ import {
   Library,
   LoaderCircle,
   LogOut,
+  Music,
+  Music2,
   Paperclip,
   Pencil,
   Plus,
@@ -44,6 +46,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Slider } from '@/components/ui/slider'
+import { Button } from '@/components/ui/button'
 
 import { ApiError } from '@/core/api/client'
 import { useAuth } from '@/core/auth/AuthProvider'
@@ -293,6 +305,14 @@ export default function DashboardPage() {
   const [mergedEntries, setMergedEntries] = useState<JobDetail[]>([])
   const [isMerging, setIsMerging] = useState(false)
   const [mergeProgress, setMergeProgress] = useState<number>(0)
+  // --- Background music for the Final Film ---
+  const [musicName, setMusicName] = useState<string | null>(null)
+  const [musicUrl, setMusicUrl] = useState<string | null>(null)
+  const [musicDuration, setMusicDuration] = useState<number>(0)
+  const [musicRange, setMusicRange] = useState<[number, number]>([0, 0])
+  const [isMusicDialogOpen, setIsMusicDialogOpen] = useState(false)
+  const musicFileInputRef = useRef<HTMLInputElement | null>(null)
+  const musicPreviewAudioRef = useRef<HTMLAudioElement | null>(null)
   const [pendingEndAppends, setPendingEndAppends] = useState<Record<string, string>>({})
   const [pendingStartPrepends, setPendingStartPrepends] = useState<Record<string, string>>({})
   const processingEndAppendRef = useRef<Set<string>>(new Set())
@@ -1032,6 +1052,65 @@ export default function DashboardPage() {
     })
   }
 
+  function formatTimeMS(s: number): string {
+    if (!Number.isFinite(s) || s < 0) s = 0
+    const m = Math.floor(s / 60)
+    const ss = Math.floor(s % 60)
+    return `${m}:${ss.toString().padStart(2, '0')}`
+  }
+
+  function handleMusicButtonClick() {
+    if (musicUrl) {
+      setIsMusicDialogOpen(true)
+    } else {
+      musicFileInputRef.current?.click()
+    }
+  }
+
+  function handleMusicFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (musicUrl) {
+      try { URL.revokeObjectURL(musicUrl) } catch { /* ignore */ }
+    }
+    const url = URL.createObjectURL(file)
+    setMusicName(file.name)
+    setMusicUrl(url)
+    setMusicDuration(0)
+    setMusicRange([0, 0])
+    setIsMusicDialogOpen(true)
+  }
+
+  function handleMusicLoadedMetadata(e: SyntheticEvent<HTMLAudioElement>) {
+    const dur = e.currentTarget.duration
+    if (Number.isFinite(dur) && dur > 0) {
+      setMusicDuration(dur)
+      setMusicRange(([s, eEnd]) => {
+        if (eEnd > s) return [s, Math.min(eEnd, dur)]
+        return [0, dur]
+      })
+    }
+  }
+
+  function handleClearMusic() {
+    if (musicUrl) {
+      try { URL.revokeObjectURL(musicUrl) } catch { /* ignore */ }
+    }
+    setMusicName(null)
+    setMusicUrl(null)
+    setMusicDuration(0)
+    setMusicRange([0, 0])
+    setIsMusicDialogOpen(false)
+  }
+
+  function handlePreviewMusicRange() {
+    const audio = musicPreviewAudioRef.current
+    if (!audio) return
+    audio.currentTime = musicRange[0]
+    void audio.play()
+  }
+
   async function handleMergeAllVideos() {
     if (isMerging) return
     if (completedSourceVideos.length < 2) {
@@ -1052,7 +1131,14 @@ export default function DashboardPage() {
         .map((v) => v.video!.storage_path)
       const urls = await Promise.all(rawUrls.map((u) => proxiedVideoUrl(u)))
 
-      const blob = await mergeVideoUrls(urls, (p) => setMergeProgress(Math.round(p.ratio * 100)))
+      const audioOpt = musicUrl && musicRange[1] > musicRange[0]
+        ? { src: musicUrl, startSec: musicRange[0], endSec: musicRange[1] }
+        : undefined
+      const blob = await mergeVideoUrls(
+        urls,
+        (p) => setMergeProgress(Math.round(p.ratio * 100)),
+        audioOpt,
+      )
 
       const filename = `merged-${Date.now()}.webm`
       const storagePath = `${userId}/${filename}`
@@ -1225,7 +1311,9 @@ export default function DashboardPage() {
         title={
           completedSourceVideos.length < 2
             ? 'Need at least 2 finished videos'
-            : 'Merge all cards into one final film'
+            : musicUrl
+              ? `Final film with music (${formatTimeMS(musicRange[0])} – ${formatTimeMS(musicRange[1])})`
+              : 'Merge all cards into one final film'
         }
       >
         {isMerging ? (
@@ -1240,6 +1328,122 @@ export default function DashboardPage() {
           </>
         )}
       </button>
+
+      {/* Background music: pick an audio file + select a window. Applied as
+          the soundtrack of the Final Film (clip audio is muted). */}
+      <input
+        ref={musicFileInputRef}
+        type="file"
+        accept="audio/*"
+        className="hidden"
+        onChange={handleMusicFileChange}
+      />
+      <button
+        type="button"
+        onClick={handleMusicButtonClick}
+        className="fixed left-1/2 top-4 z-50 ml-[260px] flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-amber-300/30 hover:bg-amber-300/[0.06] hover:text-amber-100 sm:top-5"
+        aria-label={musicUrl ? 'Edit soundtrack' : 'Add soundtrack'}
+        title={musicUrl ? 'Edit soundtrack' : 'Add a music file as soundtrack for the Final Film'}
+      >
+        {musicUrl ? (
+          <>
+            <Music2 className="h-[14px] w-[14px]" aria-hidden="true" />
+            <span className="truncate normal-case tracking-normal">
+              {musicName ?? 'Soundtrack'}
+            </span>
+            <span
+              role="button"
+              tabIndex={0}
+              aria-label="Remove soundtrack"
+              onClick={(ev) => { ev.stopPropagation(); handleClearMusic() }}
+              onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ev.stopPropagation(); handleClearMusic() } }}
+              className="-mr-1 grid h-5 w-5 cursor-pointer place-items-center rounded-full text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+            >
+              <X className="h-3 w-3" aria-hidden="true" />
+            </span>
+          </>
+        ) : (
+          <>
+            <Music className="h-[14px] w-[14px]" aria-hidden="true" />
+            <span>Music</span>
+          </>
+        )}
+      </button>
+
+      <Dialog open={isMusicDialogOpen} onOpenChange={setIsMusicDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Soundtrack for Final Film</DialogTitle>
+            <DialogDescription>
+              Pick a section of the audio. It will replace the audio of every clip
+              in the merged Final Film.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="rounded-md border border-white/10 bg-black/40 px-3 py-2 text-xs text-zinc-300">
+              <div className="truncate font-medium">{musicName ?? '—'}</div>
+              <div className="mt-0.5 text-zinc-500">
+                Duration: {formatTimeMS(musicDuration)}
+              </div>
+            </div>
+
+            {musicUrl ? (
+              <audio
+                ref={musicPreviewAudioRef}
+                src={musicUrl}
+                controls
+                onLoadedMetadata={handleMusicLoadedMetadata}
+                className="w-full"
+              />
+            ) : null}
+
+            {musicDuration > 0 ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-zinc-400">
+                  <span>Selection</span>
+                  <span className="tabular-nums text-zinc-200">
+                    {formatTimeMS(musicRange[0])} – {formatTimeMS(musicRange[1])}
+                  </span>
+                </div>
+                <Slider
+                  min={0}
+                  max={Math.max(0.1, musicDuration)}
+                  step={0.1}
+                  value={musicRange}
+                  onValueChange={(v) => {
+                    if (v.length === 2) {
+                      const [a, b] = v
+                      if (b > a) setMusicRange([a, b])
+                    }
+                  }}
+                />
+              </div>
+            ) : (
+              <p className="text-xs text-zinc-500">Loading audio…</p>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:justify-between">
+            <Button type="button" variant="ghost" onClick={handleClearMusic}>
+              Remove
+            </Button>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handlePreviewMusicRange}
+                disabled={musicDuration <= 0}
+              >
+                Preview
+              </Button>
+              <Button type="button" onClick={() => setIsMusicDialogOpen(false)}>
+                Done
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog>
         <AlertDialogTrigger asChild>
