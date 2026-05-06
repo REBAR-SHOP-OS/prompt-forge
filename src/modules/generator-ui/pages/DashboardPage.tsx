@@ -1192,10 +1192,7 @@ export default function DashboardPage() {
   }
 
   function handlePreviewMusicRange() {
-    const audio = musicPreviewAudioRef.current
-    if (!audio) return
-    audio.currentTime = musicRange[0]
-    void audio.play()
+    musicWaveformRef.current?.playRange(musicRange[0], musicRange[1])
   }
 
   async function handleMergeAllVideos() {
