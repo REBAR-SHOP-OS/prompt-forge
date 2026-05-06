@@ -2028,8 +2028,8 @@ export default function DashboardPage() {
                       </span>
                     </div>
 
-                    <div className="mt-3 flex items-start justify-between gap-3">
-                      <p className="max-h-12 overflow-hidden text-sm font-medium leading-6 text-zinc-200">
+                    <div className="mt-3 flex items-start justify-between gap-2">
+                      <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
                         {video.input_prompt}
                       </p>
                       <div className="flex shrink-0 items-center gap-1.5">
