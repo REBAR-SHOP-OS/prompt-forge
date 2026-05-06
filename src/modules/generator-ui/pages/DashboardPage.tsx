@@ -1767,6 +1767,7 @@ export default function DashboardPage() {
       const next = new Set(current)
       for (const v of generatedVideos) next.add(v.id)
       for (const e of mergedEntries) next.add(e.id)
+      for (const i of userImages) next.add(i.id)
       if (deletedStorageKey) {
         try { window.localStorage.setItem(deletedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
       }
