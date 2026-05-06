@@ -255,6 +255,7 @@ export default function DashboardPage() {
   const [generatedVideos, setGeneratedVideos] = useState<JobDetail[]>([])
   const [isLibraryLoading, setIsLibraryLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false)
   const [videoColumnMessage, setVideoColumnMessage] = useState<string | null>(null)
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
@@ -600,6 +601,36 @@ export default function DashboardPage() {
     return null
   }, [isSubmitting, hasUploadingFiles, readyStartFrame, readyEndFrame, promptText, isTextToVideo])
   const [composerError, setComposerError] = useState<string | null>(null)
+
+  const handleEnhancePrompt = async () => {
+    const current = promptText.trim()
+    if (!current || isEnhancingPrompt || isSubmitting) return
+    setIsEnhancingPrompt(true)
+    setComposerError(null)
+    try {
+      const { data, error } = await supabase.functions.invoke('enhance-prompt', {
+        body: { prompt: current },
+      })
+      if (error) {
+        const ctx = (error as unknown as { context?: { status?: number } })?.context
+        const status = ctx?.status
+        if (status === 429) setComposerError('Rate limit reached. Try again in a moment.')
+        else if (status === 402) setComposerError('AI credits exhausted. Add credits to continue.')
+        else setComposerError('Could not enhance prompt. Please try again.')
+        return
+      }
+      const enhanced = (data as { enhancedPrompt?: string } | null)?.enhancedPrompt?.trim()
+      if (!enhanced) {
+        setComposerError('Could not enhance prompt. Please try again.')
+        return
+      }
+      setPromptText(enhanced)
+    } catch {
+      setComposerError('Could not enhance prompt. Please try again.')
+    } finally {
+      setIsEnhancingPrompt(false)
+    }
+  }
   const startUploadCount = uploadedFiles.filter((file) => file.target === 'Start').length
   const endUploadCount = uploadedFiles.filter((file) => file.target === 'End').length
   const visibleVideos = useMemo(() => {
@@ -2450,14 +2481,25 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center justify-between gap-2 sm:justify-end">
-            <span className="inline-flex h-10 min-w-32 items-center justify-center rounded-full border border-[#2a2d32] bg-black/20 px-4 text-sm font-semibold text-zinc-200/80">
+            <button
+              type="button"
+              onClick={handleEnhancePrompt}
+              disabled={promptText.trim().length === 0 || isEnhancingPrompt || isSubmitting}
+              aria-label="Enhance prompt with AI"
+              className="inline-flex h-10 min-w-32 items-center justify-center gap-2 rounded-full border border-[#2a2d32] bg-black/20 px-4 text-sm font-semibold text-zinc-200/80 transition hover:border-amber-300/60 hover:bg-white/[0.05] hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#2a2d32] disabled:hover:bg-black/20 disabled:hover:text-zinc-200/80"
+            >
+              {isEnhancingPrompt ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Sparkles className="h-4 w-4" aria-hidden="true" />
+              )}
               Prompt
-            </span>
+            </button>
 
             <button
               className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-zinc-100 text-zinc-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
               type="submit"
-              disabled={isSubmitting || hasUploadingFiles}
+              disabled={isSubmitting || hasUploadingFiles || isEnhancingPrompt}
               aria-label="Generate video"
             >
               {isSubmitting ? (
