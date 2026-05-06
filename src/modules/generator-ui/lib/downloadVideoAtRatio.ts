@@ -120,7 +120,7 @@ export async function downloadVideoAtRatio(
   let stop = false
   const tick = () => {
     if (stop) return
-    drawCover()
+    drawContain()
     requestAnimationFrame(tick)
   }
 
