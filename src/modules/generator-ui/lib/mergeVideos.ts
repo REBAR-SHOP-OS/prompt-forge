@@ -1,16 +1,13 @@
-// In-browser video concatenation via canvas + MediaRecorder.
-// Sequentially plays each source URL into a hidden <video>, paints frames
-// onto a shared <canvas>, and captures the canvas stream into one webm blob.
+// In-browser video concatenation using ffmpeg.wasm.
+// Produces a real MP4 (H.264 + AAC) with audio preserved from each clip.
 //
-// Audio is preserved by routing each clip's <video> element through a shared
-// WebAudio graph (MediaElementAudioSourceNode → MediaStreamAudioDestinationNode)
-// and merging that audio track with the canvas video track into a single
-// MediaStream that feeds the MediaRecorder.
-//
-// Notes:
-//  - All sources are normalized to the dimensions of the FIRST clip; later
-//    clips are letterboxed (object-fit: contain) onto that canvas.
-//  - Clips without an audio track simply produce silence for their duration.
+// Why ffmpeg.wasm instead of MediaRecorder/canvas:
+//  - MediaRecorder cannot produce MP4 in most browsers (only webm).
+//  - canvas.captureStream drops audio tracks.
+// ffmpeg.wasm gives us a deterministic, real MP4 with audio every time.
+
+import { FFmpeg } from '@ffmpeg/ffmpeg'
+import { fetchFile, toBlobURL } from '@ffmpeg/util'
 
 export interface MergeProgress {
   /** 0..1 overall progress estimate. */
@@ -22,179 +19,123 @@ export interface MergeProgress {
 
 export type MergeProgressCallback = (p: MergeProgress) => void
 
-function pickMimeType(): string {
-  const candidates = [
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8,opus',
-    'video/webm;codecs=vp9',
-    'video/webm;codecs=vp8',
-    'video/webm',
-  ]
-  for (const mt of candidates) {
-    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(mt)) {
-      return mt
-    }
-  }
-  return 'video/webm'
+let ffmpegInstance: FFmpeg | null = null
+let ffmpegLoadPromise: Promise<FFmpeg> | null = null
+
+async function getFFmpeg(): Promise<FFmpeg> {
+  if (ffmpegInstance) return ffmpegInstance
+  if (ffmpegLoadPromise) return ffmpegLoadPromise
+
+  ffmpegLoadPromise = (async () => {
+    const ff = new FFmpeg()
+    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd'
+    await ff.load({
+      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+    })
+    ffmpegInstance = ff
+    return ff
+  })()
+  return ffmpegLoadPromise
 }
 
-interface LoadedVideo {
-  el: HTMLVideoElement
-  source: MediaElementAudioSourceNode | null
+function extFromUrl(url: string): string {
+  try {
+    const u = new URL(url, window.location.href)
+    const m = u.pathname.match(/\.([a-zA-Z0-9]{2,5})(?:$|\?)/)
+    if (m) return m[1].toLowerCase()
+  } catch { /* ignore */ }
+  return 'mp4'
 }
 
-async function loadVideo(
-  url: string,
-  audioCtx: AudioContext,
-  audioDest: MediaStreamAudioDestinationNode,
-): Promise<LoadedVideo> {
-  return await new Promise((resolve, reject) => {
-    const v = document.createElement('video')
-    v.crossOrigin = 'anonymous'
-    v.preload = 'auto'
-    // Keep element muted so it doesn't double-play through the speakers;
-    // WebAudio's MediaElementSource still receives the audio buffer in all
-    // major browsers even when the element is muted.
-    v.muted = true
-    v.playsInline = true
-    v.src = url
-    v.onloadedmetadata = () => {
-      let source: MediaElementAudioSourceNode | null = null
-      try {
-        source = audioCtx.createMediaElementSource(v)
-        source.connect(audioDest)
-      } catch {
-        // Element may not have audio, or source already created — ignore.
-        source = null
-      }
-      resolve({ el: v, source })
-    }
-    v.onerror = () => reject(new Error(`Failed to load video: ${url}`))
-  })
-}
-
-function drawContain(
-  ctx: CanvasRenderingContext2D,
-  video: HTMLVideoElement,
-  cw: number,
-  ch: number,
-) {
-  ctx.fillStyle = '#000'
-  ctx.fillRect(0, 0, cw, ch)
-  const vw = video.videoWidth
-  const vh = video.videoHeight
-  if (!vw || !vh) return
-  const scale = Math.min(cw / vw, ch / vh)
-  const dw = vw * scale
-  const dh = vh * scale
-  const dx = (cw - dw) / 2
-  const dy = (ch - dh) / 2
-  ctx.drawImage(video, dx, dy, dw, dh)
-}
-
+/**
+ * Merge multiple video URLs into a single MP4 blob (H.264 + AAC, with audio).
+ */
 export async function mergeVideoUrls(
   urls: string[],
   onProgress?: MergeProgressCallback,
 ): Promise<Blob> {
   if (urls.length === 0) throw new Error('No videos to merge')
 
-  const AudioCtxCtor: typeof AudioContext =
-    (window as unknown as { AudioContext: typeof AudioContext; webkitAudioContext?: typeof AudioContext }).AudioContext ||
-    (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-  const audioCtx = new AudioCtxCtor()
-  if (audioCtx.state === 'suspended') {
-    try { await audioCtx.resume() } catch { /* ignore */ }
-  }
-  const audioDest = audioCtx.createMediaStreamDestination()
+  const ff = await getFFmpeg()
 
-  const first = await loadVideo(urls[0], audioCtx, audioDest)
-  const width = Math.max(640, Math.floor(first.el.videoWidth || 1280))
-  const height = Math.max(360, Math.floor(first.el.videoHeight || 720))
+  // Stage 1: download + transcode each clip to a normalized intermediate MP4
+  // (same codec, fps, sample rate, audio layout). Concat demuxer requires
+  // matching streams across inputs.
+  const intermediateNames: string[] = []
+  for (let i = 0; i < urls.length; i++) {
+    const url = urls[i]
+    const inputName = `in_${i}.${extFromUrl(url)}`
+    const outName = `seg_${i}.mp4`
 
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('Canvas 2D not supported')
+    const data = await fetchFile(url)
+    await ff.writeFile(inputName, data)
 
-  // Initial paint so the stream has a frame
-  ctx.fillStyle = '#000'
-  ctx.fillRect(0, 0, width, height)
-
-  const fps = 30
-  const videoStream = canvas.captureStream(fps)
-  // Combine canvas video track with mixed audio track from WebAudio.
-  const combined = new MediaStream()
-  videoStream.getVideoTracks().forEach((t) => combined.addTrack(t))
-  audioDest.stream.getAudioTracks().forEach((t) => combined.addTrack(t))
-
-  const recorder = new MediaRecorder(combined, { mimeType: pickMimeType() })
-  const chunks: Blob[] = []
-  recorder.ondataavailable = (e) => {
-    if (e.data && e.data.size > 0) chunks.push(e.data)
-  }
-  const stopped = new Promise<void>((resolve) => {
-    recorder.onstop = () => resolve()
-  })
-  recorder.start(250)
-
-  let rafId = 0
-  const loopPaint = (video: HTMLVideoElement) => {
-    const tick = () => {
-      drawContain(ctx, video, width, height)
-      rafId = requestAnimationFrame(tick)
+    // Normalize: H.264 video at even dims, 30fps; AAC stereo 48kHz audio.
+    // For clips that have no audio track, generate silence with anullsrc and
+    // use it instead. We try the "with real audio" path first; on failure
+    // (e.g. no audio stream), fall back to silent audio.
+    try {
+      await ff.exec([
+        '-i', inputName,
+        '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=30',
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac', '-ar', '48000', '-ac', '2', '-b:a', '128k',
+        '-movflags', '+faststart',
+        outName,
+      ])
+    } catch {
+      // Fallback: no audio in source — synthesize silent stereo track.
+      await ff.exec([
+        '-i', inputName,
+        '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000',
+        '-shortest',
+        '-map', '0:v:0', '-map', '1:a:0',
+        '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=30',
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac', '-ar', '48000', '-ac', '2', '-b:a', '128k',
+        '-movflags', '+faststart',
+        outName,
+      ])
     }
-    tick()
-  }
 
-  // Pre-load all clips so we know total duration AND so each element gets its
-  // MediaElementSource attached before playback starts.
-  const loaded: LoadedVideo[] = [first]
-  for (let i = 1; i < urls.length; i++) {
-    loaded.push(await loadVideo(urls[i], audioCtx, audioDest))
-  }
-  let totalDuration = 0
-  for (const v of loaded) {
-    totalDuration += Number.isFinite(v.el.duration) ? v.el.duration : 0
-  }
+    try { await ff.deleteFile(inputName) } catch { /* ignore */ }
+    intermediateNames.push(outName)
 
-  let elapsedDuration = 0
-  for (let i = 0; i < loaded.length; i++) {
-    const { el: video } = loaded[i]
-    const dur = Number.isFinite(video.duration) ? video.duration : 0
-
-    await video.play().catch(() => {/* autoplay policy: muted should be fine */})
-    loopPaint(video)
-
-    await new Promise<void>((resolve) => {
-      const onEnded = () => {
-        video.removeEventListener('ended', onEnded)
-        cancelAnimationFrame(rafId)
-        resolve()
-      }
-      video.addEventListener('ended', onEnded)
-    })
-
-    elapsedDuration += dur
     onProgress?.({
-      ratio: totalDuration > 0 ? Math.min(1, elapsedDuration / totalDuration) : (i + 1) / urls.length,
+      ratio: ((i + 1) / urls.length) * 0.85, // reserve 15% for final concat
       clipIndex: i + 1,
       totalClips: urls.length,
     })
   }
 
-  // Give recorder a beat to flush the last frames/audio samples.
-  await new Promise((r) => setTimeout(r, 300))
-  recorder.stop()
-  await stopped
+  // Stage 2: concat with the demuxer (lossless container join, no re-encode).
+  const concatList = intermediateNames.map((n) => `file '${n}'`).join('\n')
+  await ff.writeFile('concat.txt', new TextEncoder().encode(concatList))
 
-  // Cleanup audio graph.
-  try {
-    for (const v of loaded) {
-      try { v.source?.disconnect() } catch { /* ignore */ }
-    }
-    await audioCtx.close()
-  } catch { /* ignore */ }
+  await ff.exec([
+    '-f', 'concat', '-safe', '0',
+    '-i', 'concat.txt',
+    '-c', 'copy',
+    '-movflags', '+faststart',
+    'final.mp4',
+  ])
 
-  return new Blob(chunks, { type: 'video/webm' })
+  const out = await ff.readFile('final.mp4')
+
+  // Cleanup intermediate files.
+  for (const n of intermediateNames) {
+    try { await ff.deleteFile(n) } catch { /* ignore */ }
+  }
+  try { await ff.deleteFile('concat.txt') } catch { /* ignore */ }
+  try { await ff.deleteFile('final.mp4') } catch { /* ignore */ }
+
+  onProgress?.({ ratio: 1, clipIndex: urls.length, totalClips: urls.length })
+
+  const src = out instanceof Uint8Array ? out : new Uint8Array(out as unknown as ArrayBufferLike)
+  // Copy into a fresh ArrayBuffer-backed Uint8Array so Blob's typing is happy
+  // even when ffmpeg.wasm returns SharedArrayBuffer-backed memory.
+  const arr = new Uint8Array(src.byteLength)
+  arr.set(src)
+  return new Blob([arr.buffer], { type: 'video/mp4' })
 }
