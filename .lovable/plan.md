@@ -1,26 +1,21 @@
 ## Problem
 
-In the **Soundtrack for Final Film** dialog, the controls under the waveform (the round play/pause button and the green "Play selection" pill) appear as empty/blank shapes — the icon and text inside are invisible. This is what's circled in the screenshot.
-
-## Root cause
-
-`src/modules/generator-ui/components/SoundtrackWaveform.tsx` was styled assuming a dark surface, but the dialog actually has a **light/white** background. The button classes use light-on-light colors that disappear on white:
-
-- Round play/pause button: `bg-white/10`, `text-zinc-50`, `border-white/25` → white icon on white background.
-- "Play selection" pill: `text-emerald-100` on `bg-emerald-500/15` → very pale text on a pale green wash.
-- Time display: `text-zinc-200`. Helper text: `text-zinc-400` — both too light for a white dialog.
+When the user clicks **START OVER**, the app should fully reset: the preview area must go blank, the **FINAL FILM** tab and the soundtrack chip in the top tab bar must disappear, and no leftover state should remain. Today, only the composer + history cards are cleared — the merged Final Film, the loaded soundtrack, transitions, manual order, and approved selections all stay in place, so the preview keeps showing the old video.
 
 ## Fix
 
-Edit only `src/modules/generator-ui/components/SoundtrackWaveform.tsx` (the toolbar block under the waveform, ~lines 203–234). Replace the dark-surface classes with light-surface equivalents that have proper contrast on the white dialog:
+Edit only `src/modules/generator-ui/pages/DashboardPage.tsx`, function `handleStartOver` (currently lines 1443–1466). Extend it to wipe every piece of session state that contributes to the preview / top tabs:
 
-- Round play/pause button → `border-zinc-300 bg-white text-zinc-800` (hover: `border-zinc-400 bg-zinc-50`). The play/pause Lucide icon will now render dark on white.
-- "Play selection" pill → keep the green theme but make the text legible: `border-emerald-600/40 bg-emerald-500/15 text-emerald-700` (hover: `border-emerald-600/60 bg-emerald-500/25`).
-- Time readout `0:00 / 0:00` → `text-zinc-600`.
-- Helper paragraph "Drag the edges…" → `text-zinc-500`.
+1. **Hide merged Final Films too**: add every `mergedEntries[i].id` to `deletedIds` (in addition to `generatedVideos`).
+2. **Empty the merged list**: `setMergedEntries([])` and `persistMerged([])` so the FINAL FILM tab disappears and localStorage is cleared.
+3. **Clear approved selections, transitions, and manual order**: `setApprovedIds(new Set())` (+ persist `[]`), `setTransitions({})`, `setManualOrder(null)`.
+4. **Clear pending Start/End append maps** (state + their localStorage keys `pendingEndAppendsKey`, `pendingStartPrependsKey`).
+5. **Tear down the soundtrack**: revoke `musicUrl` object URL, then `setMusicName(null)`, `setMusicUrl(null)`, `setMusicDuration(0)`, `setMusicRange([0, 0])`, `setIsMusicDialogOpen(false)` — this removes the audio chip from the top tab bar.
+6. **Reset merge progress**: `setIsMerging(false)`, `setMergeProgress(0)`.
+7. Keep all existing resets (composer text, uploads, mode, ratio lock, preview id, etc.).
 
-No changes to layout, sizes, behavior, or any other file. The waveform itself and the rest of the dialog stay exactly as they are.
+No UI changes, no other files touched.
 
 ## Acceptance check
 
-Open the Soundtrack dialog: the round play button shows a clearly visible play/pause icon, the green "Play selection" pill shows readable green text with the play icon, and the timer / helper text are easily readable on the white dialog background.
+Click **START OVER** → confirm. Result: the preview area is empty (no video, no controls), the **FINAL FILM** tab and the audio chip beside it are gone, the History panel shows "No renders yet", and the composer is reset to its initial state. Refreshing the page keeps it empty (because the persisted localStorage entries were cleared too).
