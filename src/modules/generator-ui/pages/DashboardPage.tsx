@@ -1134,17 +1134,17 @@ export default function DashboardPage() {
       const audioOpt = musicUrl && musicRange[1] > musicRange[0]
         ? { src: musicUrl, startSec: musicRange[0], endSec: musicRange[1] }
         : undefined
-      const blob = await mergeVideoUrls(
+      const mergeRes = await mergeVideoUrls(
         urls,
         (p) => setMergeProgress(Math.round(p.ratio * 100)),
         audioOpt,
       )
 
-      const filename = `merged-${Date.now()}.webm`
+      const filename = `merged-${Date.now()}.${mergeRes.extension}`
       const storagePath = `${userId}/${filename}`
       const { error: upErr } = await supabase.storage
         .from(MERGED_BUCKET)
-        .upload(storagePath, blob, { contentType: 'video/webm', upsert: false })
+        .upload(storagePath, mergeRes.blob, { contentType: mergeRes.mimeType, upsert: false })
       if (upErr) throw new Error(upErr.message)
       const { data } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(storagePath)
       const publicUrl = data.publicUrl
@@ -1184,7 +1184,7 @@ export default function DashboardPage() {
       setPreviewVideoId(mergedId)
 
       // Trigger download.
-      const blobUrl = URL.createObjectURL(blob)
+      const blobUrl = URL.createObjectURL(mergeRes.blob)
       const a = document.createElement('a')
       a.href = blobUrl
       a.download = filename
