@@ -115,7 +115,14 @@ type UserImageItem = {
   id: string
   storage_path: string
   created_at: string
+  still_duration_seconds: number
+  width?: number | null
+  height?: number | null
 }
+
+type UnifiedClip =
+  | { kind: 'video'; id: string; createdAt: string; job: JobDetail }
+  | { kind: 'image'; id: string; createdAt: string; image: UserImageItem }
 
 const VIDEO_POLL_INTERVAL_MS = 4_000
 const FRAMES_BUCKET = 'wan-frames'
