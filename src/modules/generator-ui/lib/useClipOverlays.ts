@@ -148,7 +148,8 @@ export function useClipOverlays(userId: string | null | undefined) {
         if (k === 'id' || k === 'user_id' || k === 'created_at') continue
         dbPatch[k] = patch[k] as unknown
       }
-      await supabase.from('generator_clip_overlays').update(dbPatch).eq('id', id)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await supabase.from('generator_clip_overlays').update(dbPatch as any).eq('id', id)
     }, 300)
     debounceRef.current.set(id, t)
   }, [])
