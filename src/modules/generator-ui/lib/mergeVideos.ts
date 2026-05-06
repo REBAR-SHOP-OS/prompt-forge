@@ -2,8 +2,12 @@
 // Sequentially plays each source URL into a hidden <video>, paints frames
 // onto a shared <canvas>, and captures the canvas stream into one webm blob.
 //
+// Audio: each clip's audio track is routed through a shared AudioContext
+// MediaStreamDestination and muxed into the recorded MediaStream alongside
+// the canvas video track. Clips without audio (e.g. still-image clips)
+// produce silence for their duration, which is the desired behavior.
+//
 // Notes:
-//  - Audio is dropped in v1 (canvas/MediaRecorder audio mux is fragile).
 //  - All sources are normalized to the dimensions of the FIRST clip; later
 //    clips are letterboxed (object-fit: contain) onto that canvas.
 
@@ -19,6 +23,8 @@ export type MergeProgressCallback = (p: MergeProgress) => void
 
 function pickMimeType(): string {
   const candidates = [
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
     'video/webm;codecs=vp9',
     'video/webm;codecs=vp8',
     'video/webm',
@@ -36,6 +42,8 @@ async function loadVideo(url: string): Promise<HTMLVideoElement> {
     const v = document.createElement('video')
     v.crossOrigin = 'anonymous'
     v.preload = 'auto'
+    // Keep playback silent for the user, but the audio track is captured
+    // through AudioContext (independent of element playback gain).
     v.muted = true
     v.playsInline = true
     v.src = url
@@ -84,8 +92,26 @@ export async function mergeVideoUrls(
   ctx.fillRect(0, 0, width, height)
 
   const fps = 30
-  const stream = canvas.captureStream(fps)
-  const recorder = new MediaRecorder(stream, { mimeType: pickMimeType() })
+  const canvasStream = canvas.captureStream(fps)
+
+  // Shared audio graph: one AudioContext + one MediaStreamDestination feeds
+  // the recorder. For each clip we attach a MediaElementAudioSourceNode for
+  // that clip's <video> element. createMediaElementSource can only be called
+  // once per element, but each clip uses a fresh element so this is fine.
+  const AudioCtor: typeof AudioContext | undefined =
+    (window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext }).AudioContext ??
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  const audioCtx = AudioCtor ? new AudioCtor() : null
+  const audioDest = audioCtx ? audioCtx.createMediaStreamDestination() : null
+
+  // Combined output stream: canvas video track + (optional) shared audio track.
+  const combined = new MediaStream()
+  for (const t of canvasStream.getVideoTracks()) combined.addTrack(t)
+  if (audioDest) {
+    for (const t of audioDest.stream.getAudioTracks()) combined.addTrack(t)
+  }
+
+  const recorder = new MediaRecorder(combined, { mimeType: pickMimeType() })
   const chunks: Blob[] = []
   recorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) chunks.push(e.data)
@@ -115,6 +141,22 @@ export async function mergeVideoUrls(
     const video = i === 0 ? first : await loadVideo(urls[i])
     const dur = Number.isFinite(video.duration) ? video.duration : 0
 
+    // Wire this clip's audio (if any) into the shared destination. Wrap in
+    // try/catch because some clips (still-image webms) have no audio track,
+    // and createMediaElementSource can throw on cross-origin without CORS.
+    let srcNode: MediaElementAudioSourceNode | null = null
+    if (audioCtx && audioDest) {
+      try {
+        srcNode = audioCtx.createMediaElementSource(video)
+        srcNode.connect(audioDest)
+        if (audioCtx.state === 'suspended') {
+          await audioCtx.resume().catch(() => {/* ignore */})
+        }
+      } catch {
+        srcNode = null
+      }
+    }
+
     await video.play().catch(() => {/* autoplay policy: muted should be fine */})
     loopPaint(video)
 
@@ -126,6 +168,11 @@ export async function mergeVideoUrls(
       }
       video.addEventListener('ended', onEnded)
     })
+
+    // Disconnect this clip's audio so it doesn't leak into the next clip's window.
+    if (srcNode) {
+      try { srcNode.disconnect() } catch { /* ignore */ }
+    }
 
     elapsedDuration += dur
     onProgress?.({
@@ -139,6 +186,10 @@ export async function mergeVideoUrls(
   await new Promise((r) => setTimeout(r, 250))
   recorder.stop()
   await stopped
+
+  if (audioCtx) {
+    try { await audioCtx.close() } catch { /* ignore */ }
+  }
 
   return new Blob(chunks, { type: 'video/webm' })
 }
