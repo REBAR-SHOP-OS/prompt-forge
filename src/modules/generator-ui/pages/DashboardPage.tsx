@@ -2201,7 +2201,7 @@ export default function DashboardPage() {
                   return (
                     <article
                       key={video.id}
-                      className={`cursor-pointer rounded-2xl border p-3 transition hover:border-white/20 hover:bg-white/[0.055] ${
+                      className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-2.5 transition hover:border-white/20 hover:bg-white/[0.055] ${
                         isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : 'border-white/10 bg-white/[0.035]'
                       }`}
                       role="button"
@@ -2219,17 +2219,12 @@ export default function DashboardPage() {
                         }
                       }}
                     >
-                      <div
-                        className="w-full overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
-                        style={{ aspectRatio: ratioToCss(getRatioFor(video)) }}
-                        onClick={(event) => event.stopPropagation()}
-                      >
+                      <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
                         {video.video?.storage_path ? (
                           <video
-                            className="h-full w-full bg-black object-contain"
+                            className="h-full w-full bg-black object-cover"
                             src={video.video.storage_path}
                             poster={video.video.thumbnail_url ?? undefined}
-                            controls
                             muted
                             playsInline
                             preload="auto"
@@ -2240,47 +2235,49 @@ export default function DashboardPage() {
                           />
                         ) : (
                           <div className="grid h-full w-full place-items-center text-zinc-500">
-                            <Clapperboard className="h-8 w-8" aria-hidden="true" />
+                            <Clapperboard className="h-6 w-6" aria-hidden="true" />
                           </div>
                         )}
                       </div>
-                      <div className="mt-3 flex items-start justify-between gap-3">
-                        <p className="max-h-12 overflow-hidden text-sm font-medium leading-6 text-zinc-200">
-                          {video.input_prompt}
-                        </p>
-                        <div className="flex shrink-0 items-center gap-1.5">
-                          {video.video?.storage_path ? (
-                            <a
-                              href={video.video.storage_path}
-                              download
-                              onClick={(event) => event.stopPropagation()}
-                              aria-label="Download video"
-                              title="Download video"
-                              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="line-clamp-2 min-w-0 flex-1 text-xs font-medium leading-5 text-zinc-200">
+                            {video.input_prompt}
+                          </p>
+                          <div className="flex shrink-0 items-center gap-1">
+                            {video.video?.storage_path ? (
+                              <a
+                                href={video.video.storage_path}
+                                download
+                                onClick={(event) => event.stopPropagation()}
+                                aria-label="Download video"
+                                title="Download video"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                              >
+                                <Download className="h-3 w-3" aria-hidden="true" />
+                              </a>
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                deleteCard(video.id)
+                              }}
+                              aria-label="Delete card"
+                              title="Delete card"
+                              className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
                             >
-                              <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                            </a>
-                          ) : null}
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              deleteCard(video.id)
-                            }}
-                            aria-label="Delete card"
-                            title="Delete card"
-                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                          </button>
+                              <Trash2 className="h-3 w-3" aria-hidden="true" />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                      <div className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500">
-                        <span className="inline-flex items-center gap-2">
-                          <BookmarkCheck className="h-3.5 w-3.5 text-emerald-300" aria-hidden="true" />
-                          Saved
-                        </span>
-                        <span>{formatCreatedAt(video.created_at)}</span>
+                        <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
+                          <span className="inline-flex items-center gap-1.5">
+                            <BookmarkCheck className="h-3 w-3 text-emerald-300" aria-hidden="true" />
+                            Saved
+                          </span>
+                          <span className="tabular-nums">{formatCreatedAt(video.created_at)}</span>
+                        </div>
                       </div>
                     </article>
                   )
