@@ -411,7 +411,7 @@ export default function DashboardPage() {
   // not to override the user's per-clip selection.
   const userId = session?.user?.id ?? null
   const overlaysApi = useClipOverlays(userId)
-  const [overlayEditingClipId, setOverlayEditingClipId] = useState<string | null>(null)
+  // (overlay editing context tracked via selectedOverlayId only)
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null)
   const approvedStorageKey = userId ? `approved-videos:${userId}` : null
   const [approvedIds, setApprovedIds] = useState<Set<string>>(() => new Set())
