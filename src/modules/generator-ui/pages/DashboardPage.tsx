@@ -19,6 +19,8 @@ import {
   LoaderCircle,
   Lock,
   LogOut,
+  Mic,
+  MicOff,
   Music,
   Music2,
   SlidersHorizontal,
@@ -58,6 +60,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import { Slider } from '@/components/ui/slider'
 import { Button } from '@/components/ui/button'
 
@@ -643,10 +650,23 @@ export default function DashboardPage() {
     return null
   }, [isSubmitting, hasUploadingFiles, readyStartFrame, readyEndFrame, promptText, isTextToVideo])
   const [composerError, setComposerError] = useState<string | null>(null)
+  const [isPromptMenuOpen, setIsPromptMenuOpen] = useState(false)
+  const [narratorMode, setNarratorMode] = useState<'idle' | 'input'>('idle')
+  const [narratorScript, setNarratorScript] = useState('')
 
-  const handleEnhancePrompt = async () => {
+  const runEnhancePrompt = async (
+    options: { mode: 'silent' | 'narrated'; narratorScript?: string },
+  ) => {
+    if (isEnhancingPrompt || isSubmitting) return
     const current = promptText.trim()
-    if (!current || isEnhancingPrompt || isSubmitting) return
+    if (options.mode === 'silent' && !current) {
+      setComposerError('Type a short idea first, then choose No narrator.')
+      return
+    }
+    if (options.mode === 'narrated' && !(options.narratorScript ?? '').trim()) {
+      setComposerError('Please write the narrator script.')
+      return
+    }
     setIsEnhancingPrompt(true)
     setComposerError(null)
     try {
@@ -654,7 +674,12 @@ export default function DashboardPage() {
         (u): u is string => typeof u === 'string' && u.length > 0,
       )
       const { data, error } = await supabase.functions.invoke('enhance-prompt', {
-        body: { prompt: current, imageUrls },
+        body: {
+          prompt: current,
+          imageUrls,
+          mode: options.mode,
+          narratorScript: options.narratorScript ?? '',
+        },
       })
       if (error) {
         const ctx = (error as unknown as { context?: { status?: number } })?.context
@@ -670,6 +695,9 @@ export default function DashboardPage() {
         return
       }
       setPromptText(enhanced)
+      setIsPromptMenuOpen(false)
+      setNarratorMode('idle')
+      setNarratorScript('')
     } catch {
       setComposerError('Could not enhance prompt. Please try again.')
     } finally {
@@ -2765,20 +2793,106 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center justify-between gap-2 sm:justify-end">
-            <button
-              type="button"
-              onClick={handleEnhancePrompt}
-              disabled={promptText.trim().length === 0 || isEnhancingPrompt || isSubmitting}
-              aria-label="Enhance prompt with AI"
-              className="inline-flex h-10 min-w-32 items-center justify-center gap-2 rounded-full border border-[#2a2d32] bg-black/20 px-4 text-sm font-semibold text-zinc-200/80 transition hover:border-amber-300/60 hover:bg-white/[0.05] hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#2a2d32] disabled:hover:bg-black/20 disabled:hover:text-zinc-200/80"
+            <Popover
+              open={isPromptMenuOpen}
+              onOpenChange={(open) => {
+                setIsPromptMenuOpen(open)
+                if (!open) {
+                  setNarratorMode('idle')
+                  setNarratorScript('')
+                }
+              }}
             >
-              {isEnhancingPrompt ? (
-                <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <Sparkles className="h-4 w-4" aria-hidden="true" />
-              )}
-              Prompt
-            </button>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  disabled={isEnhancingPrompt || isSubmitting}
+                  aria-label="Enhance prompt with AI"
+                  className="inline-flex h-10 min-w-32 items-center justify-center gap-2 rounded-full border border-[#2a2d32] bg-black/20 px-4 text-sm font-semibold text-zinc-200/80 transition hover:border-amber-300/60 hover:bg-white/[0.05] hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#2a2d32] disabled:hover:bg-black/20 disabled:hover:text-zinc-200/80"
+                >
+                  {isEnhancingPrompt ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  Prompt
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                side="top"
+                align="end"
+                className="w-80 border-white/10 bg-[#0b0c0e]/95 p-2 text-zinc-200 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl"
+              >
+                <button
+                  type="button"
+                  onClick={() => runEnhancePrompt({ mode: 'silent' })}
+                  disabled={isEnhancingPrompt || promptText.trim().length === 0}
+                  className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-zinc-300">
+                    <MicOff className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-zinc-100">No narrator</span>
+                    <span className="block text-xs leading-5 text-zinc-500">
+                      Enhance the prompt so the video has no voice-over, dialogue, or talking.
+                    </span>
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setNarratorMode('input')}
+                  disabled={isEnhancingPrompt}
+                  className={`mt-1 flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40 ${
+                    narratorMode === 'input' ? 'bg-white/[0.04]' : ''
+                  }`}
+                >
+                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-amber-300/30 bg-amber-300/10 text-amber-200">
+                    <Mic className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-zinc-100">With narrator</span>
+                    <span className="block text-xs leading-5 text-zinc-500">
+                      Provide the script — the prompt will be built around the narrator's words.
+                    </span>
+                  </span>
+                </button>
+
+                {narratorMode === 'input' ? (
+                  <div className="mt-2 space-y-2 border-t border-white/10 px-1 pt-3">
+                    <label htmlFor="narrator-script" className="block text-xs font-medium text-zinc-400">
+                      Narrator script
+                    </label>
+                    <textarea
+                      id="narrator-script"
+                      value={narratorScript}
+                      onChange={(e) => setNarratorScript(e.target.value)}
+                      rows={4}
+                      maxLength={1500}
+                      placeholder="Type the exact words the narrator should say…"
+                      className="w-full rounded-md border border-white/10 bg-black/40 px-3 py-2 text-sm leading-5 text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-amber-300/40"
+                    />
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] text-zinc-600">{narratorScript.length}/1500</span>
+                      <button
+                        type="button"
+                        onClick={() => runEnhancePrompt({ mode: 'narrated', narratorScript })}
+                        disabled={isEnhancingPrompt || narratorScript.trim().length === 0}
+                        className="inline-flex h-8 items-center gap-2 rounded-full bg-amber-300 px-3 text-xs font-semibold text-zinc-950 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {isEnhancingPrompt ? (
+                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                        )}
+                        Apply
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </PopoverContent>
+            </Popover>
 
             <button
               className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-zinc-100 text-zinc-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-40"

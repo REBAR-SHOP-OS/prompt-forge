@@ -6,7 +6,7 @@
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 
-const SYSTEM_PROMPT = [
+const BASE_SYSTEM_PROMPT = [
   "You are an expert prompt engineer for AI video generation models",
   "(image-to-video and text-to-video).",
   "If one or more images are attached, FIRST silently analyze each image",
@@ -19,9 +19,34 @@ const SYSTEM_PROMPT = [
   "lighting, camera motion, and mood when relevant.",
   "Preserve the user's original language exactly (Persian stays Persian,",
   "English stays English, etc.).",
-  "Keep it under ~80 words. Output ONLY the rewritten prompt — no preamble,",
+  "Output ONLY the rewritten prompt — no preamble,",
   "no quotes, no explanation, no markdown.",
 ].join(" ");
+
+const SILENT_SUFFIX = [
+  "CRITICAL CONSTRAINT: The generated video MUST contain absolutely no narrator,",
+  "no voice-over, no spoken dialogue, no character speaking on camera, and no",
+  "lip movement. Do NOT describe any speech, narration, or talking. Visual",
+  "storytelling and ambient/music sound design only. Explicitly include the",
+  "phrase 'no narration, no dialogue, no voice-over, no talking, no lip-sync'",
+  "inside the rewritten prompt. Keep it under 80 words.",
+].join(" ");
+
+function narratedSuffix(script: string): string {
+  return [
+    "The generated video MUST feature a narrator (voice-over or on-camera",
+    "speaker) reading the following script verbatim. Build the visual scene,",
+    "pacing, camera, and mood to match these exact words. Inside the rewritten",
+    "prompt, include a clear directive such as 'voice-over narration delivering",
+    "the following script:' followed by the script in its original language and",
+    "wording, kept intact between quotes. Keep the rest of the prompt vivid and",
+    "cinematic. The total output may be up to 130 words.",
+    `\n\nNARRATOR SCRIPT:\n"""${script}"""`,
+  ].join(" ");
+}
+
+const DEFAULT_SUFFIX = "Keep it under 80 words.";
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -37,6 +62,10 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
+    const mode: "silent" | "narrated" | null =
+      body?.mode === "silent" || body?.mode === "narrated" ? body.mode : null;
+    const narratorScript: string =
+      typeof body?.narratorScript === "string" ? body.narratorScript.trim() : "";
     const rawUrls: unknown = body?.imageUrls;
     const imageUrls: string[] = Array.isArray(rawUrls)
       ? rawUrls
@@ -46,7 +75,7 @@ Deno.serve(async (req) => {
           .slice(0, 4)
       : [];
 
-    if (!prompt) {
+    if (!prompt && mode !== "narrated") {
       return new Response(JSON.stringify({ error: "prompt is required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -58,6 +87,36 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    if (mode === "narrated") {
+      if (!narratorScript) {
+        return new Response(JSON.stringify({ error: "narratorScript is required when mode=narrated" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (narratorScript.length > 1500) {
+        return new Response(JSON.stringify({ error: "narratorScript too long (max 1500 chars)" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+
+    const systemPrompt = `${BASE_SYSTEM_PROMPT}\n\n${
+      mode === "silent"
+        ? SILENT_SUFFIX
+        : mode === "narrated"
+          ? narratedSuffix(narratorScript)
+          : DEFAULT_SUFFIX
+    }`;
+
+    // For narrated mode with no user prompt, seed with the script so the model
+    // has something to anchor the visual scene to.
+    const effectivePrompt = prompt || (mode === "narrated"
+      ? `Cinematic short scene built around this narrator script: "${narratorScript}"`
+      : "");
+
 
     const apiKey = Deno.env.get("LOVABLE_API_KEY");
     if (!apiKey) {
@@ -70,10 +129,10 @@ Deno.serve(async (req) => {
     // Build user message: multimodal when images are present, plain text otherwise.
     const userContent: unknown = imageUrls.length > 0
       ? [
-          { type: "text", text: prompt },
+          { type: "text", text: effectivePrompt },
           ...imageUrls.map((url) => ({ type: "image_url", image_url: { url } })),
         ]
-      : prompt;
+      : effectivePrompt;
 
     const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -85,7 +144,7 @@ Deno.serve(async (req) => {
         // gemini-2.5-flash supports vision and is fast/cheap.
         model: "google/gemini-2.5-flash",
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: systemPrompt },
           { role: "user", content: userContent },
         ],
       }),
