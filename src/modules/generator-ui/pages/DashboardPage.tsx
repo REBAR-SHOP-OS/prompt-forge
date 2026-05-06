@@ -1864,8 +1864,21 @@ export default function DashboardPage() {
             <Button type="button" variant="ghost" onClick={handleClearMusic}>
               Remove
             </Button>
-            <Button type="button" onClick={() => setIsMusicDialogOpen(false)}>
-              Done
+            <Button
+              type="button"
+              disabled={isMerging}
+              onClick={() => {
+                setIsMusicDialogOpen(false)
+                if (!isMerging && completedSourceVideos.length >= 2) {
+                  void handleMergeAllVideos()
+                }
+              }}
+            >
+              {isMerging
+                ? 'Applying…'
+                : completedSourceVideos.length >= 2
+                  ? 'Apply to Final Film'
+                  : 'Done'}
             </Button>
           </DialogFooter>
         </DialogContent>
