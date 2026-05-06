@@ -1,60 +1,72 @@
 ## Goal
 
-اضافه کردن قابلیت موزیک پس‌زمینه: کاربر یک فایل صوتی آپلود می‌کند، یک بازه‌ی دلخواه از آن را انتخاب می‌کند، و هنگام ساخت «فیلم نهایی»، آن بازه روی کل ویدیوی ادغام‌شده اعمال می‌شود؛ صدای خود کلیپ‌ها قطع می‌شود.
+ریشه‌ای حل کردن مشکل صدا در فیلم نهایی: خروجی به جای WebM به‌صورت MP4 (H.264 + AAC) ضبط شود تا در همه‌جا (QuickTime، VLC، موبایل، ادیتورها) صدا پخش شود، و صدای اصلی هر کلیپ هم در ادغام حاضر باشد (وقتی کاربر موزیک نگذاشته است).
 
-## Current State
+## Root Cause
 
-- `mergeVideoUrls` (در `src/modules/generator-ui/lib/mergeVideos.ts`) فقط تصویر را از طریق canvas/MediaRecorder ضبط می‌کند و **هیچ صدایی** در خروجی نیست (در حال حاضر کلیپ‌ها هم بدون صدا روی هم می‌چسبند).
-- دکمه‌ی «Final film» در هدر بالای صفحه قرار دارد و `handleMergeAllVideos` را صدا می‌زند.
-- منطق ادغام درون مرورگر اجرا می‌شود؛ اضافه کردن track صوتی از `<audio>` به stream خروجی از طریق `AudioContext` + `MediaStreamAudioDestinationNode` کاملاً امکان‌پذیر است.
+دو مشکل به‌هم پیوسته:
 
-## UX
+1. **Container webm**: MediaRecorder در حال حاضر `video/webm;codecs=vp9,opus` تولید می‌کند. بسیاری از پلیرها (QuickTime، Premiere، گالری بعضی موبایل‌ها) فایل webm را اصلاً پخش نمی‌کنند یا audio track آن را نمی‌شناسند → کاربر تصور می‌کند «صدا ندارد».
+2. **حذف کامل صدای کلیپ‌ها**: در منطق فعلی، عناصر `<video>` همیشه `muted = true` هستند و هیچ track صوتی‌ای از کلیپ‌ها وارد stream خروجی نمی‌شود؛ فقط وقتی کاربر موزیک می‌گذارد یک audio track اضافه می‌شود. وقتی موزیک نیست، خروجی هیچ track صوتی‌ای ندارد و این هم مشکل پخش را بدتر می‌کند.
 
-در هدر بالای صفحه، یک دکمه‌ی آیکونی جدید کنار دکمه‌ی «Final film» اضافه می‌شود:
+## Fix
 
-- آیکون: `Music` از lucide-react (هم‌استایل با Final film و Start over)
-- وضعیت‌ها:
-  - بدون موزیک → آیکون Music ساده، با کلیک یک file picker (`audio/*`) باز می‌شود
-  - با موزیک بارگذاری‌شده → آیکون به `Music2` تغییر می‌کند + نام کوتاه فایل + یک ضربدر کوچک برای حذف
-- پس از انتخاب فایل، یک popover/dialog کوچک باز می‌شود حاوی:
-  - یک پخش‌کنندهٔ صوتی استاندارد برای پیش‌گوش‌دادن
-  - یک **range slider دو سر** (start/end) برای انتخاب بازه (نمایش mm:ss)
-  - دکمه‌های Preview (پخش بازه‌ی انتخابی) و Save
-- وقتی موزیک تنظیم شده باشد، tooltip دکمه‌ی Final film می‌گوید: «Final film with music (00:12 – 00:34)»
+### ۱) ترجیح کانتینر MP4 (H.264 + AAC)
 
-## Behavior
+در `pickMimeType()` (در `src/modules/generator-ui/lib/mergeVideos.ts`)، ترتیب کاندیداها به این صورت تغییر می‌کند:
 
-هنگام کلیک روی Final film:
+```text
+video/mp4;codecs=avc1.42E01E,mp4a.40.2
+video/mp4;codecs=avc1,mp4a
+video/mp4
+video/webm;codecs=vp9,opus
+video/webm;codecs=vp8,opus
+video/webm
+```
 
-1. اگر موزیک تنظیم شده باشد → `mergeVideoUrls` با پارامتر `audio: { file, startSec, endSec }` فراخوانی می‌شود.
-2. درون merger:
-   - کلیپ‌های ویدیو با `muted = true` پخش می‌شوند (مثل قبل) → صدای کلیپ‌ها حذف
-   - یک `HTMLAudioElement` با src موزیک ساخته می‌شود، `currentTime = startSec`، و درون `AudioContext` به یک `MediaStreamAudioDestinationNode` متصل می‌شود
-   - track صوتی این destination به stream خروجی canvas اضافه می‌شود (`new MediaStream([videoTrack, audioTrack])`)
-   - موزیک هم‌زمان با شروع ضبط play می‌شود؛ اگر طول بازه‌ی موزیک از طول کل ویدیو کوتاه‌تر بود، loop می‌شود؛ اگر طولانی‌تر بود، در `endSec` متوقف می‌شود
-   - MediaRecorder با codec ‏`video/webm;codecs=vp9,opus` (یا fallback‏ vp8,opus) ضبط می‌کند
-3. خروجی webm حاوی ویدیو + موزیک است؛ مانند قبل به باکت `merged-videos` آپلود و در preview نمایش داده می‌شود.
-4. اگر موزیک تنظیم نشده باشد، رفتار دقیقاً مانند امروز باقی می‌ماند (بدون صدا).
+- Chromium ≥ 130 و Safari ≥ 14.1 از ضبط مستقیم MP4 پشتیبانی می‌کنند → برای اکثر کاربران خروجی به‌صورت `.mp4` خواهد بود.
+- اگر مرورگر MP4 را پشتیبانی نکند (Firefox، Chromium قدیمی‌تر)، به‌طور خودکار به WebM/Opus برمی‌گردد بدون شکست.
+- یک تابع کوچک `mimeTypeToExtension(mt)` اضافه می‌شود که از روی mime type انتخاب‌شده پسوند صحیح (`mp4` یا `webm`) را می‌دهد.
+- API تابع `mergeVideoUrls` به جای `Promise<Blob>` به `Promise<{ blob: Blob; extension: 'mp4' | 'webm'; mimeType: string }>` تغییر می‌کند تا فراخواننده پسوند درست را بداند.
 
-موزیک فقط روی **فیلم ادغام‌شده‌ی نهایی** اعمال می‌شود؛ کارت‌های جداگانه‌ی History دست‌نخورده می‌مانند.
+### ۲) همیشه یک audio track در stream خروجی وجود داشته باشد
 
-## State & Persistence
+برای جلوگیری از فایل‌های «بدون audio track» که مشکل‌ساز هستند:
 
-- state موزیک (فایل به‌صورت object URL در حافظه + start/end ثانیه + نام فایل) در DashboardPage نگه‌داری می‌شود.
-- چون فایل صوتی Blob محلی است و قابل serialize شدن مفید در localStorage نیست، با refresh صفحه پاک می‌شود (مانند آپلود فریم‌ها). فقط نام آخرین فایل برای راحتی نمایش داده می‌شود.
+- یک `AudioContext` همیشه ساخته می‌شود و یک `MediaStreamAudioDestinationNode` به‌عنوان خروجی صدا.
+- این destination همیشه یک audio track به stream اصلی اضافه می‌کند (حتی اگر صامت باشد).
+- اگر کاربر موزیک گذاشته باشد → عنصر `<audio>` موزیک از طریق `createMediaElementSource` به destination وصل می‌شود و کلیپ‌ها muted می‌مانند (رفتار فعلی، حفظ می‌شود).
+- اگر موزیک نگذاشته باشد → برای هر کلیپ ویدیو، عنصر `<video>` با `muted = false` ساخته می‌شود و صدای آن از طریق `createMediaElementSource` به همان destination وصل می‌شود. وقتی کلیپ تمام شد، گره صوتی آن disconnect می‌شود و گره کلیپ بعدی متصل می‌شود (در نتیجه صدای هر کلیپ در نوبت خود شنیده می‌شود).
+- توجه: `createMediaElementSource` صدا را از پخش‌کنندهٔ پیش‌فرض جدا می‌کند و فقط به destination هدایت می‌کند → کاربر هنگام render چیزی نمی‌شنود (رفتار فعلی حفظ می‌شود).
+
+### ۳) به‌روزرسانی فراخواننده (DashboardPage)
+
+در `handleMergeAllVideos`:
+
+- نتیجه‌ی `mergeVideoUrls` به‌صورت `{ blob, extension }` گرفته می‌شود.
+- نام فایل: `merged-${Date.now()}.${extension}` (به‌جای `.webm` ثابت).
+- contentType آپلود به Storage از `blob.type` استفاده می‌کند.
+- بقیه‌ی منطق (آپلود، entry, preview، دانلود) بدون تغییر.
 
 ## Files Touched
 
-- `src/modules/generator-ui/lib/mergeVideos.ts` — افزودن پارامتر اختیاری `audio?: { src: string; startSec: number; endSec: number }` به `mergeVideoUrls`؛ ساخت AudioContext، اضافه کردن audio track به stream، مدیریت loop/stop در محدوده‌ی بازه. حفظ سازگاری کامل با signature قبلی.
+- `src/modules/generator-ui/lib/mergeVideos.ts`:
+  - بازنویسی `pickMimeType` با ترجیح MP4
+  - افزودن export `mimeTypeToExtension`
+  - تضمین وجود همیشگی یک audio track در stream خروجی
+  - mux کردن صدای هر کلیپ هنگامی که موزیک وجود ندارد
+  - تغییر return type به `{ blob, extension, mimeType }`
 - `src/modules/generator-ui/pages/DashboardPage.tsx`:
-  - state جدید: `musicFile`, `musicObjectUrl`, `musicDurationSec`, `musicStartSec`, `musicEndSec`, `isMusicDialogOpen`
-  - دکمه‌ی Music در هدر بالا (کنار Final film)
-  - یک `<Dialog>` ساده با `<audio controls>` و دو slider (یا یک range dual-handle با دو `<input type="range">` برای start/end)
-  - عبور تنظیمات موزیک به `handleMergeAllVideos` → `mergeVideoUrls`
+  - به‌روزرسانی فراخوانی `mergeVideoUrls` و انتخاب پسوند فایل بر اساس `extension` برگشتی
+
+## Compatibility & Risk
+
+- مرورگرهایی که MP4 را پشتیبانی نکنند (مثل Firefox فعلی)، هم‌چنان WebM/Opus دریافت می‌کنند — اما حالا با audio track معتبر، که خود مشکل «بدون صدا» را در پلیرهای WebM-aware (Chrome, VLC) حل می‌کند.
+- `createMediaElementSource` فقط یک‌بار قابل ساخت برای هر media element است؛ چون برای هر کلیپ یک عنصر `<video>` تازه می‌سازیم، مشکلی نیست.
+- اگر مرورگر CORS کلیپ‌ها را به‌درستی نگذارد، `createMediaElementSource` خطا می‌دهد و در آن صورت کلیپ بدون صدا اما ویدیویش render می‌شود (graceful fallback).
+- بدون تغییر در سرویس آپلود، DB، یا منطق UI/طراحی.
 
 ## Out of Scope
 
-- بدون افزودن کتابخانه‌ی جدید (از `Slider` موجود در `@/components/ui/slider` و `Dialog` موجود استفاده می‌شود).
-- بدون mux کردن سرور-ساید با ffmpeg؛ همه‌چیز سمت کلاینت.
-- بدون trim/fade پیشرفته؛ فقط cut ساده در `startSec` و `endSec` + loop در صورت کوتاه بودن.
-- بدون اعمال موزیک روی تک‌کارت‌های جداگانه (فقط روی Final film).
+- بدون افزودن ffmpeg.wasm یا transcoding سمت سرور.
+- بدون تغییر در رفتار موزیک (slider, dialog, …).

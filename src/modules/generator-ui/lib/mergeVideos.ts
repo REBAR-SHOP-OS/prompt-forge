@@ -1,11 +1,14 @@
 // In-browser video concatenation via canvas + MediaRecorder.
-// Sequentially plays each source URL into a hidden <video>, paints frames
-// onto a shared <canvas>, and captures the canvas stream into one webm blob.
 //
-// Notes:
-//  - Audio is dropped in v1 (canvas/MediaRecorder audio mux is fragile).
-//  - All sources are normalized to the dimensions of the FIRST clip; later
-//    clips are letterboxed (object-fit: contain) onto that canvas.
+// - Sequentially plays each source URL into a hidden <video>, paints frames
+//   onto a shared <canvas>, and captures the canvas stream.
+// - Always emits a real audio track in the recorded MediaStream:
+//     * If a soundtrack is provided, the recorded audio = the soundtrack
+//       (clip audio is muted).
+//     * Otherwise, the recorded audio = each clip's own audio in turn.
+// - Prefers MP4 (H.264 + AAC) when the browser's MediaRecorder supports it,
+//   so the downloaded file plays in QuickTime / VLC / mobile players /
+//   editors. Falls back to WebM/Opus on browsers that can only record WebM.
 
 export interface MergeProgress {
   /** 0..1 overall progress estimate. */
@@ -17,27 +20,6 @@ export interface MergeProgress {
 
 export type MergeProgressCallback = (p: MergeProgress) => void
 
-function pickMimeType(withAudio: boolean): string {
-  const candidates = withAudio
-    ? [
-        'video/webm;codecs=vp9,opus',
-        'video/webm;codecs=vp8,opus',
-        'video/webm;codecs=opus',
-        'video/webm',
-      ]
-    : [
-        'video/webm;codecs=vp9',
-        'video/webm;codecs=vp8',
-        'video/webm',
-      ]
-  for (const mt of candidates) {
-    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(mt)) {
-      return mt
-    }
-  }
-  return 'video/webm'
-}
-
 export interface MergeAudioOptions {
   /** Object URL or remote URL of the audio file to use as soundtrack. */
   src: string
@@ -47,12 +29,45 @@ export interface MergeAudioOptions {
   endSec: number
 }
 
-async function loadVideo(url: string): Promise<HTMLVideoElement> {
+export interface MergeResult {
+  blob: Blob
+  mimeType: string
+  extension: 'mp4' | 'webm'
+}
+
+function pickMimeType(): string {
+  // Prefer MP4 (H.264 + AAC) so the downloaded file plays everywhere.
+  // Recent Chromium (>=130) and Safari (>=14.1) support recording MP4 directly.
+  // Fall back to WebM (VP9/VP8 + Opus) on browsers that don't.
+  const candidates = [
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+    'video/mp4;codecs=avc1,mp4a',
+    'video/mp4',
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm;codecs=opus',
+    'video/webm',
+  ]
+  for (const mt of candidates) {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(mt)) {
+      return mt
+    }
+  }
+  return 'video/webm'
+}
+
+export function mimeTypeToExtension(mimeType: string): 'mp4' | 'webm' {
+  return mimeType.startsWith('video/mp4') ? 'mp4' : 'webm'
+}
+
+async function loadVideo(url: string, withAudio: boolean): Promise<HTMLVideoElement> {
   return await new Promise((resolve, reject) => {
     const v = document.createElement('video')
     v.crossOrigin = 'anonymous'
     v.preload = 'auto'
-    v.muted = true
+    // When audio is being captured via Web Audio, the element MUST not be
+    // muted (muted hides the audio from createMediaElementSource too).
+    v.muted = !withAudio
     v.playsInline = true
     v.src = url
     v.onloadedmetadata = () => resolve(v)
@@ -83,10 +98,14 @@ export async function mergeVideoUrls(
   urls: string[],
   onProgress?: MergeProgressCallback,
   audio?: MergeAudioOptions,
-): Promise<Blob> {
+): Promise<MergeResult> {
   if (urls.length === 0) throw new Error('No videos to merge')
 
-  const first = await loadVideo(urls[0])
+  const useSoundtrack = Boolean(audio && audio.endSec > audio.startSec)
+  // When a soundtrack is set, clip audio is intentionally muted.
+  const captureClipAudio = !useSoundtrack
+
+  const first = await loadVideo(urls[0], captureClipAudio)
   const width = Math.max(640, Math.floor(first.videoWidth || 1280))
   const height = Math.max(360, Math.floor(first.videoHeight || 720))
 
@@ -103,49 +122,55 @@ export async function mergeVideoUrls(
   const fps = 30
   const videoStream = canvas.captureStream(fps)
 
-  // --- Optional soundtrack: route an <audio> element through Web Audio so its
-  // track can be added to the recorded MediaStream. Video clip audio is muted
-  // (the source <video> elements are muted), so the soundtrack is the only
-  // audio in the output.
+  // --- Audio routing -------------------------------------------------------
+  // Always create an AudioContext + destination so the recorded MediaStream
+  // always carries a real audio track. This avoids "no audio track" files
+  // that some players (and the user) interpret as broken audio.
+  const Ctor: typeof AudioContext = (window.AudioContext
+    ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)
   let audioCtx: AudioContext | null = null
-  let audioEl: HTMLAudioElement | null = null
-  let audioStopTimer: number | null = null
+  let audioDest: MediaStreamAudioDestinationNode | null = null
   let outStream: MediaStream = videoStream
 
-  if (audio && audio.endSec > audio.startSec) {
+  try {
+    audioCtx = new Ctor()
+    audioDest = audioCtx.createMediaStreamDestination()
+    const tracks = [...videoStream.getVideoTracks(), ...audioDest.stream.getAudioTracks()]
+    outStream = new MediaStream(tracks)
+  } catch (err) {
+    console.warn('[mergeVideoUrls] AudioContext unavailable, recording video-only:', err)
+    audioCtx = null
+    audioDest = null
+    outStream = videoStream
+  }
+
+  // --- Optional soundtrack: connect a single <audio> to the destination.
+  let soundtrackEl: HTMLAudioElement | null = null
+  let soundtrackTimeListener: (() => void) | null = null
+  if (useSoundtrack && audio && audioCtx && audioDest) {
     try {
-      audioEl = document.createElement('audio')
-      audioEl.crossOrigin = 'anonymous'
-      audioEl.src = audio.src
-      audioEl.preload = 'auto'
-      audioEl.loop = true
+      soundtrackEl = document.createElement('audio')
+      soundtrackEl.crossOrigin = 'anonymous'
+      soundtrackEl.src = audio.src
+      soundtrackEl.preload = 'auto'
+      soundtrackEl.loop = true
       await new Promise<void>((resolve, reject) => {
-        const onReady = () => { audioEl!.removeEventListener('loadedmetadata', onReady); resolve() }
-        const onErr = () => { audioEl!.removeEventListener('error', onErr); reject(new Error('Failed to load soundtrack')) }
-        audioEl!.addEventListener('loadedmetadata', onReady)
-        audioEl!.addEventListener('error', onErr)
+        const onReady = () => { soundtrackEl!.removeEventListener('loadedmetadata', onReady); resolve() }
+        const onErr = () => { soundtrackEl!.removeEventListener('error', onErr); reject(new Error('Failed to load soundtrack')) }
+        soundtrackEl!.addEventListener('loadedmetadata', onReady)
+        soundtrackEl!.addEventListener('error', onErr)
       })
-      audioEl.currentTime = Math.max(0, audio.startSec)
-
-      const Ctor: typeof AudioContext = (window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)
-      audioCtx = new Ctor()
-      const source = audioCtx.createMediaElementSource(audioEl)
-      const dest = audioCtx.createMediaStreamDestination()
-      source.connect(dest)
-      // Also connect to speakers? No — keep render headless/silent for the user.
-
-      const tracks = [...videoStream.getVideoTracks(), ...dest.stream.getAudioTracks()]
-      outStream = new MediaStream(tracks)
+      soundtrackEl.currentTime = Math.max(0, audio.startSec)
+      const source = audioCtx.createMediaElementSource(soundtrackEl)
+      source.connect(audioDest)
     } catch (err) {
-      // If audio setup fails, fall back to video-only.
-      audioEl = null
-      audioCtx = null
-      outStream = videoStream
       console.warn('[mergeVideoUrls] soundtrack disabled:', err)
+      soundtrackEl = null
     }
   }
 
-  const recorder = new MediaRecorder(outStream, { mimeType: pickMimeType(Boolean(audioEl)) })
+  const chosenMime = pickMimeType()
+  const recorder = new MediaRecorder(outStream, { mimeType: chosenMime })
   const chunks: Blob[] = []
   recorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) chunks.push(e.data)
@@ -157,17 +182,17 @@ export async function mergeVideoUrls(
 
   // Start the soundtrack at the same moment recording begins. Loop within the
   // selected window: when currentTime passes endSec, jump back to startSec.
-  if (audioEl && audio) {
+  if (soundtrackEl && audio) {
     const winStart = Math.max(0, audio.startSec)
     const winEnd = Math.max(winStart + 0.05, audio.endSec)
-    const onTime = () => {
-      if (!audioEl) return
-      if (audioEl.currentTime >= winEnd) {
-        audioEl.currentTime = winStart
+    soundtrackTimeListener = () => {
+      if (!soundtrackEl) return
+      if (soundtrackEl.currentTime >= winEnd) {
+        soundtrackEl.currentTime = winStart
       }
     }
-    audioEl.addEventListener('timeupdate', onTime)
-    try { await audioEl.play() } catch { /* ignore autoplay reject */ }
+    soundtrackEl.addEventListener('timeupdate', soundtrackTimeListener)
+    try { await soundtrackEl.play() } catch { /* ignore autoplay reject */ }
   }
 
   let rafId = 0
@@ -181,16 +206,31 @@ export async function mergeVideoUrls(
 
   let totalDuration = 0
   for (const u of urls) {
-    const v = await loadVideo(u)
+    const v = await loadVideo(u, false)
     totalDuration += Number.isFinite(v.duration) ? v.duration : 0
   }
 
   let elapsedDuration = 0
   for (let i = 0; i < urls.length; i++) {
-    const video = i === 0 ? first : await loadVideo(urls[i])
+    const video = i === 0 ? first : await loadVideo(urls[i], captureClipAudio)
     const dur = Number.isFinite(video.duration) ? video.duration : 0
 
-    await video.play().catch(() => {/* autoplay policy: muted should be fine */})
+    // Wire this clip's audio into the shared destination, unless a soundtrack
+    // is active. createMediaElementSource detaches the element from the
+    // default speakers so the user hears nothing during render.
+    let clipNode: MediaElementAudioSourceNode | null = null
+    if (captureClipAudio && audioCtx && audioDest) {
+      try {
+        clipNode = audioCtx.createMediaElementSource(video)
+        clipNode.connect(audioDest)
+      } catch (err) {
+        // Most often a CORS issue — render the clip without audio rather than fail.
+        console.warn('[mergeVideoUrls] clip audio skipped:', err)
+        clipNode = null
+      }
+    }
+
+    await video.play().catch(() => {/* autoplay policy */})
     loopPaint(video)
 
     await new Promise<void>((resolve) => {
@@ -201,6 +241,10 @@ export async function mergeVideoUrls(
       }
       video.addEventListener('ended', onEnded)
     })
+
+    if (clipNode) {
+      try { clipNode.disconnect() } catch { /* ignore */ }
+    }
 
     elapsedDuration += dur
     onProgress?.({
@@ -216,14 +260,15 @@ export async function mergeVideoUrls(
   await stopped
 
   // Tear down audio resources.
-  if (audioStopTimer !== null) window.clearTimeout(audioStopTimer)
-  if (audioEl) {
-    try { audioEl.pause() } catch { /* ignore */ }
-    audioEl.src = ''
+  if (soundtrackEl) {
+    if (soundtrackTimeListener) soundtrackEl.removeEventListener('timeupdate', soundtrackTimeListener)
+    try { soundtrackEl.pause() } catch { /* ignore */ }
+    soundtrackEl.src = ''
   }
   if (audioCtx) {
     try { await audioCtx.close() } catch { /* ignore */ }
   }
 
-  return new Blob(chunks, { type: 'video/webm' })
+  const blob = new Blob(chunks, { type: chosenMime })
+  return { blob, mimeType: chosenMime, extension: mimeTypeToExtension(chosenMime) }
 }
