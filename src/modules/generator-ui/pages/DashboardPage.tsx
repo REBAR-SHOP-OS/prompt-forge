@@ -624,11 +624,11 @@ export default function DashboardPage() {
           if (stillErr) throw new Error(stillErr.message)
           const stillPublic = supabase.storage.from(MERGED_BUCKET).getPublicUrl(stillPath).data.publicUrl
 
-          const mergedBlob = await mergeVideoUrls([proxiedSrc, stillPublic])
-          const mergedPath = `${userId}/with-end-${Date.now()}-${crypto.randomUUID()}.webm`
+          const mergeRes = await mergeVideoUrls([proxiedSrc, stillPublic])
+          const mergedPath = `${userId}/with-end-${Date.now()}-${crypto.randomUUID()}.${mergeRes.extension}`
           const { error: upErr } = await supabase.storage
             .from(MERGED_BUCKET)
-            .upload(mergedPath, mergedBlob, { contentType: 'video/webm', upsert: false })
+            .upload(mergedPath, mergeRes.blob, { contentType: mergeRes.mimeType, upsert: false })
           if (upErr) throw new Error(upErr.message)
           const mergedPublic = supabase.storage.from(MERGED_BUCKET).getPublicUrl(mergedPath).data.publicUrl
 
