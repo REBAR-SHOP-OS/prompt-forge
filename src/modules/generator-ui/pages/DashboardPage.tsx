@@ -320,6 +320,15 @@ export default function DashboardPage() {
     if (r === '1:1') return 'min(82vh, calc(100vw - 26rem))'
     return 'min(82vh, calc((100vw - 26rem) * 9 / 16))'
   }
+  // Width of the preview stage = height * (w/h). Used to hard-cap the outer
+  // preview card so its footer (long prompt text + status pill) can never
+  // stretch the card wider than the actual video frame, which would create
+  // an empty band beside the video on narrow ratios (9:16, 1:1).
+  const ratioToWidth = (r: Ratio): string => {
+    if (r === '9:16') return 'min(calc(100vw - 26rem), calc(82vh * 9 / 16))'
+    if (r === '1:1') return 'min(calc(100vw - 26rem), 82vh)'
+    return 'min(calc(100vw - 26rem), calc(82vh * 16 / 9))'
+  }
   // Project-level ratio lock: once the first clip of a project is created,
   // every subsequent clip in the same project must use the same aspect ratio.
   // Cleared by Start Over.
