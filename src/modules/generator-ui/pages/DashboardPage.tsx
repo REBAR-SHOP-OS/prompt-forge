@@ -104,9 +104,16 @@ type UploadedFile = {
   error: string | null
 }
 
+type UserImageItem = {
+  id: string
+  storage_path: string
+  created_at: string
+}
+
 const VIDEO_POLL_INTERVAL_MS = 4_000
 const FRAMES_BUCKET = 'wan-frames'
 const MERGED_BUCKET = 'merged-videos'
+const USER_IMAGES_BUCKET = 'user-images'
 
 function isTerminalStatus(status: string) {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
