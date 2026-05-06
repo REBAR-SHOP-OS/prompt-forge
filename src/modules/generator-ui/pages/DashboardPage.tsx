@@ -638,8 +638,11 @@ export default function DashboardPage() {
     setIsEnhancingPrompt(true)
     setComposerError(null)
     try {
+      const imageUrls = [readyStartFrame?.url, readyEndFrame?.url].filter(
+        (u): u is string => typeof u === 'string' && u.length > 0,
+      )
       const { data, error } = await supabase.functions.invoke('enhance-prompt', {
-        body: { prompt: current },
+        body: { prompt: current, imageUrls },
       })
       if (error) {
         const ctx = (error as unknown as { context?: { status?: number } })?.context
