@@ -1,41 +1,32 @@
 ## Problem
-On narrow aspect ratios (9:16, 1:1) the rendering preview shows an empty black band to the right of the video stage inside the bordered card.
+
+In the soundtrack dialog, the user picks a green selection (e.g. 0:05–0:26) and clicks **Done**. The Preview button correctly plays only that window, but the rendered Final Film does NOT strictly respect this window — the soundtrack often starts from the beginning of the file or overshoots past the selected end before looping. The user's request: the audio applied to the merged film must come **exactly** from the selected segment, nothing before, nothing after.
 
 ## Root cause
-The outer preview card uses `width: 'max-content'`, hoping to shrink-wrap the video stage. But the card has two children stacked vertically:
 
-1. The video stage (correct width — driven by `aspectRatio` + `height`)
-2. A footer row with the long prompt text + status pill
+In `src/modules/generator-ui/lib/mergeVideos.ts` the soundtrack playback uses:
 
-The footer uses `sm:flex-row sm:justify-between` and the prompt `<p>` has no `flex-1`/no width cap, so on long Persian prompts the footer becomes wider than the video stage. `max-content` then expands the card to the footer's width, leaving an empty band beside the (correctly-sized) video frame.
+1. `soundtrackEl.loop = true` — when the audio reaches the file's natural end, the browser jumps to `0` (not to `winStart`), so the un-selected intro of the file plays until the next `timeupdate` correction.
+2. A `timeupdate` listener to clamp playback inside `[winStart, winEnd]`. But `timeupdate` only fires roughly every 200–250 ms, so playback can overshoot `winEnd` audibly before the listener resets `currentTime`.
+3. There is a long async gap between setting `soundtrackEl.currentTime = winStart` (line 283) and the actual `play()` (line 353) — preloading clips and starting the recorder happen in between. Some browsers reset `currentTime` of an unplayed `<audio>` element when its readyState changes, so the playhead is no longer guaranteed to be at `winStart` when playback finally begins.
 
-The previous `width: max-content` workaround only happened to look fine when prompts were short. It is not a structural fix.
+## Fix
 
-## Root-cause fix
-Hard-cap the outer card's width to **exactly** the video stage's computed width. The footer is then forced to wrap inside that width and can never expand the card.
+Edit `src/modules/generator-ui/lib/mergeVideos.ts`:
 
-Edits to `src/modules/generator-ui/pages/DashboardPage.tsx`:
+1. **Disable native loop**: set `soundtrackEl.loop = false`. We will handle looping manually so it always wraps to `winStart`, never to `0`.
+2. **Re-seek immediately before `play()`**: set `soundtrackEl.currentTime = winStart` again right before `await soundtrackEl.play()` (in addition to the early seek), to defeat any browser-side reset and guarantee the first sample heard is exactly at `winStart`.
+3. **Use a `requestAnimationFrame` clamp loop instead of `timeupdate`**: poll `currentTime` at frame rate and, the moment it crosses `winEnd`, snap back to `winStart`. This eliminates the up-to-250 ms overshoot. Also handle the `ended` event (fires at file end if `loop = false`) by snapping back to `winStart` and resuming `play()`.
+4. **Stop the soundtrack precisely when video recording finishes**: cancel the rAF clamp loop and pause the audio in the existing teardown block (around lines 471–474) so no extra audio is captured after the last clip.
+5. Keep the existing `audio.startSec / audio.endSec` plumbing from `DashboardPage.tsx` — that part is already correct (`musicRange[0]` / `musicRange[1]` are passed straight through).
 
-1. Add a `ratioToWidth(r)` helper next to `ratioToHeight` that mirrors the same `min(...)` math but returns the stage **width** in CSS:
-   - `9:16` → `min(calc(100vw - 26rem), calc(82vh * 9 / 16))`
-   - `1:1`  → `min(calc(100vw - 26rem), 82vh)`
-   - `16:9` → `min(calc(100vw - 26rem), calc(82vh * 16 / 9))`
+No UI changes, no contract changes, no other files touched.
 
-2. On the outer preview card (around line 1704–1709), replace:
-   ```
-   style={{ width: 'max-content', maxWidth: 'calc(100vw - 26rem)' }}
-   ```
-   with:
-   ```
-   style={{ width: ratioToWidth(getRatioFor(previewVideo)), maxWidth: 'calc(100vw - 26rem)' }}
-   ```
+## Acceptance check
 
-3. Tighten the footer (line 1794) so the prompt text wraps cleanly inside that fixed width:
-   - Make the `<p>` `flex-1 min-w-0` so it shrinks instead of pushing.
-   - Allow it to wrap (`whitespace-normal break-words`) so long Persian/English prompts wrap onto a second line rather than overflow.
+- Pick a soundtrack, drag the green selection to `0:05 – 0:20`, click Preview → the green selection plays (already works).
+- Click Done, render the Final Film → playing the produced video, the audio heard begins exactly at the file's 0:05 mark and never plays content from before 0:05 or after 0:20. If the video is longer than the selection, the audio loops back to 0:05 (not to 0:00).
 
-## Result
-The bordered card is now exactly the same width as the video frame for every aspect ratio, regardless of prompt length, status, or future footer additions. The empty band on the right of 9:16 / 1:1 previews is structurally impossible.
+## Files to change
 
-## Files
-- `src/modules/generator-ui/pages/DashboardPage.tsx`
+- `src/modules/generator-ui/lib/mergeVideos.ts` (soundtrack setup + tear-down block only)
