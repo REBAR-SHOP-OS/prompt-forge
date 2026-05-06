@@ -13,6 +13,7 @@ import {
   GripVertical,
   Hammer,
   History,
+  ImagePlus,
   LayoutGrid,
   Library,
   LoaderCircle,
