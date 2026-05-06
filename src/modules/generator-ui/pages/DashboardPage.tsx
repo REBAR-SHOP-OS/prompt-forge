@@ -691,11 +691,11 @@ export default function DashboardPage() {
           const stillPublic = supabase.storage.from(MERGED_BUCKET).getPublicUrl(stillPath).data.publicUrl
 
           // Prepend: still clip first, then the generated video.
-          const mergedBlob = await mergeVideoUrls([stillPublic, proxiedSrc])
-          const mergedPath = `${userId}/with-start-${Date.now()}-${crypto.randomUUID()}.webm`
+          const mergeRes = await mergeVideoUrls([stillPublic, proxiedSrc])
+          const mergedPath = `${userId}/with-start-${Date.now()}-${crypto.randomUUID()}.${mergeRes.extension}`
           const { error: upErr } = await supabase.storage
             .from(MERGED_BUCKET)
-            .upload(mergedPath, mergedBlob, { contentType: 'video/webm', upsert: false })
+            .upload(mergedPath, mergeRes.blob, { contentType: mergeRes.mimeType, upsert: false })
           if (upErr) throw new Error(upErr.message)
           const mergedPublic = supabase.storage.from(MERGED_BUCKET).getPublicUrl(mergedPath).data.publicUrl
 
