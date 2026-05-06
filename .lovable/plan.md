@@ -1,42 +1,34 @@
-## Goal
-Make the right "Clips/History" column wider so each card (thumbnail + prompt + 5 action icons) is fully visible on medium+ screens, without breaking the preview area or chat composer that currently reserve space using `26rem`.
+## مشکل
+در تصویر، پنل History سمت راست از لبه راست صفحه بیرون زده و دکمه‌ها/متن کارت‌ها بریده می‌شوند. علت ساختاری: متن prompt در ردیف `flex` کارت بدون `min-w-0` است، پس کلمات طولانی (مثل نام فایل پیوست) عرض پنل را به‌زور باز می‌کنند و کل ردیف از کادر بیرون می‌زند. این مستقل از نسبت تصویر (1:1، 9:16، ...) است؛ کاربر می‌خواهد در همین عرض فعلی، محتوای کارت کامل دیده شود.
 
-## Changes (all in `src/modules/generator-ui/pages/DashboardPage.tsx`)
+## تغییر
+فقط در `src/modules/generator-ui/pages/DashboardPage.tsx`، خطوط 2031–2034 (ردیف عنوان کارت در پنل راست):
 
-### 1. Widen the right History panel
-Current (line 1920):
+پیش:
+```tsx
+<div className="mt-3 flex items-start justify-between gap-3">
+  <p className="max-h-12 overflow-hidden text-sm font-medium leading-6 text-zinc-200">
+    {video.input_prompt}
+  </p>
 ```
-sm:w-80 lg:w-72 xl:w-80   // 320 / 288 / 320 px
+پس:
+```tsx
+<div className="mt-3 flex items-start justify-between gap-2">
+  <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
+    {video.input_prompt}
+  </p>
 ```
-New: scale up on larger screens so card actions don't crowd the prompt.
-```
-sm:w-80 lg:w-80 xl:w-96 2xl:w-[26rem]
-// 320 / 320 / 384 / 416 px
-```
 
-### 2. Keep the left Library panel symmetric
-Line 2190 — apply the same width ramp so left/right panels stay visually balanced and the preview stays centered.
+تغییرات:
+- `min-w-0 flex-1` → اجازه می‌دهد متن داخل ردیف flex کوچک شود به جای فشار آوردن به کارت.
+- `whitespace-normal break-words` → کلمات طولانی (filename فارسی/انگلیسی) درون کارت می‌شکنند و سرریز نمی‌کنند.
+- `gap-3 → gap-2` → فاصله کمی کمتر، تا 4 آیکن کنار متن راحت‌تر جا شوند.
 
-### 3. Update reserved width for the preview & soundtrack dialog
-Replace the hard‑coded `26rem` (which assumes 2 × 13rem panels) with a value matching the new max panel width plus margin. Affected lines:
-- 354–356, 359–361 (`ratioToHeight` / `ratioToWidth`)
-- 1804, 1813 (soundtrack dialog max widths)
+## چرا امن است
+- فقط CSS است؛ هیچ منطق، state یا API تغییر نمی‌کند.
+- markup کارت، نسبت ویدیو (`aspectRatio`)، و عرض پنل (که در پیام قبلی تنظیم شد) دست‌نخورده می‌مانند.
+- در همه نسبت‌ها (1:1, 9:16, 16:9) و همه breakpoints اعمال می‌شود چون مشکل ساختاری است نه ابعادی.
 
-New reservation:
-```
-calc(100vw - 56rem)   // ~28rem per side at 2xl, leaving room for gutters
-```
-With a sensible floor on small screens via the existing `min(...)` wrappers (already in place).
-
-### 4. Update the chat composer max width
-Line 2338 currently uses `calc(100vw - 26rem)` for the composer; bump to `calc(100vw - 56rem)` so it does not slide under the wider right panel on large screens.
-
-## Why this is safe
-- All changes are CSS class / inline‑style tweaks — no logic, no data, no API.
-- The dynamic preview height system (ResizeObserver tied to `composerRef`) keeps preview from going under the chat box; only the horizontal reservation changes.
-- Smaller breakpoints (`sm`, default) are untouched, so mobile/tablet layout is preserved.
-- Card markup itself is unchanged; the additional column width simply gives the existing `flex` row breathing room so `Pencil`, `Trash2`, `Bookmark`, drag handle, and prompt no longer compete for space.
-
-## Out of scope
-- No changes to card internals, colors, fonts, or icon set.
-- No changes to backend / data fetching.
+## خارج از scope
+- تغییر آیکن‌ها، رنگ‌ها، یا ساختار دکمه‌ها.
+- تغییر مجدد عرض ستون.
