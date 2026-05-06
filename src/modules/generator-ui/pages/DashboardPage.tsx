@@ -1736,26 +1736,52 @@ export default function DashboardPage() {
                       return (
                         <div className="w-full max-w-sm">
                           {isRendering ? (
-                            <LoaderCircle className="mx-auto h-10 w-10 animate-spin text-amber-300" aria-hidden="true" />
+                            (() => {
+                              const radius = 52
+                              const circumference = 2 * Math.PI * radius
+                              const dash = (Math.max(0, Math.min(100, pct)) / 100) * circumference
+                              return (
+                                <div
+                                  className="relative mx-auto h-32 w-32"
+                                  role="progressbar"
+                                  aria-valuemin={0}
+                                  aria-valuemax={100}
+                                  aria-valuenow={pct}
+                                >
+                                  <svg className="h-full w-full -rotate-90" viewBox="0 0 120 120">
+                                    <circle
+                                      cx="60" cy="60" r={radius}
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="8"
+                                      className="text-white/10"
+                                    />
+                                    <circle
+                                      cx="60" cy="60" r={radius}
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="8"
+                                      strokeLinecap="round"
+                                      strokeDasharray={`${dash} ${circumference}`}
+                                      className="text-amber-300 transition-[stroke-dasharray] duration-500"
+                                    />
+                                  </svg>
+                                  <div className="absolute inset-0 grid place-items-center">
+                                    <span className="text-2xl font-semibold tabular-nums text-zinc-100">{pct}%</span>
+                                  </div>
+                                </div>
+                              )
+                            })()
                           ) : (
                             <Clapperboard className="mx-auto h-10 w-10 text-zinc-600" aria-hidden="true" />
                           )}
                           <p className="mt-4 text-sm font-semibold text-zinc-300">{formatStatusLabel(previewVideo.status)}</p>
                           {isRendering ? (
-                            <>
-                              <p className="mt-1 text-3xl font-semibold tabular-nums text-zinc-100">{pct}%</p>
-                              <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                                <div
-                                  className="h-full rounded-full bg-amber-300 transition-all duration-500"
-                                  style={{ width: `${pct}%` }}
-                                />
-                              </div>
-                              <p className="mt-2 text-xs leading-5 text-zinc-500">
-                                {longRender
-                                  ? 'Still rendering — provider is taking longer than usual.'
-                                  : `About ${Math.max(0, 100 - pct)}% remaining`}
-                              </p>
-                            </>
+                            <p className="mt-2 text-xs leading-5 text-zinc-500">
+                              {longRender
+                                ? 'Still rendering — provider is taking longer than usual.'
+                                : `About ${Math.max(0, 100 - pct)}% remaining`}
+                            </p>
                           ) : (
                             <p className="mt-2 text-xs leading-5 text-zinc-600">Waiting for render output.</p>
                           )}
