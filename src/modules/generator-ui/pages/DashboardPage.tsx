@@ -601,6 +601,36 @@ export default function DashboardPage() {
     return null
   }, [isSubmitting, hasUploadingFiles, readyStartFrame, readyEndFrame, promptText, isTextToVideo])
   const [composerError, setComposerError] = useState<string | null>(null)
+
+  const handleEnhancePrompt = async () => {
+    const current = promptText.trim()
+    if (!current || isEnhancingPrompt || isSubmitting) return
+    setIsEnhancingPrompt(true)
+    setComposerError(null)
+    try {
+      const { data, error } = await supabase.functions.invoke('enhance-prompt', {
+        body: { prompt: current },
+      })
+      if (error) {
+        const ctx = (error as unknown as { context?: { status?: number } })?.context
+        const status = ctx?.status
+        if (status === 429) setComposerError('Rate limit reached. Try again in a moment.')
+        else if (status === 402) setComposerError('AI credits exhausted. Add credits to continue.')
+        else setComposerError('Could not enhance prompt. Please try again.')
+        return
+      }
+      const enhanced = (data as { enhancedPrompt?: string } | null)?.enhancedPrompt?.trim()
+      if (!enhanced) {
+        setComposerError('Could not enhance prompt. Please try again.')
+        return
+      }
+      setPromptText(enhanced)
+    } catch {
+      setComposerError('Could not enhance prompt. Please try again.')
+    } finally {
+      setIsEnhancingPrompt(false)
+    }
+  }
   const startUploadCount = uploadedFiles.filter((file) => file.target === 'Start').length
   const endUploadCount = uploadedFiles.filter((file) => file.target === 'End').length
   const visibleVideos = useMemo(() => {
