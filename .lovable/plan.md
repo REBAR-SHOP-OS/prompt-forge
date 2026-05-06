@@ -1,33 +1,30 @@
-# Make soundtrack playback + section selection obvious
+## Goal
 
-## Current behavior
-
-The "Soundtrack for Final Film" dialog already has the requested capabilities, but they're hard to see:
-
-- The **Play / Pause button** for the uploaded music exists, but it's a tiny, very dim circle in the bottom-left of the waveform — easy to miss against the dark background.
-- The **green region on the waveform IS the selection** that gets applied to the entire Final Film. Dragging the edges of that green box changes the start/end. The merge pipeline already uses `musicRange` as `audioOpt = { src, startSec, endSec }` and loops that exact section across all clips.
-- A **Preview** button in the footer plays only the selected range.
-
-So the feature works — the user just can't tell. The fix is to make playback and selection visible and self-explanatory inside the dialog.
+In the "Soundtrack for Final Film" dialog, when the user clicks or drags the waveform's playback line (cursor) to a new position, music should immediately start playing from that point — not just move the cursor silently.
 
 ## Changes
 
-Edit only `src/modules/generator-ui/components/SoundtrackWaveform.tsx`:
+**File:** `src/modules/generator-ui/components/SoundtrackWaveform.tsx`
 
-1. **Make the Play / Pause button clearly visible**: bigger (h-8 w-8), brighter border (`white/25`) and background (`white/10`), white icon.
-2. **Add a "Play selection" button** right next to it (emerald-tinted to match the green region) that plays only the chosen section and stops at the end. This duplicates the footer "Preview" inline so it's discoverable.
-3. **Brighten the time counter** (`text-zinc-200` instead of `text-zinc-400`) so `0:00 / 2:33` is readable.
-4. **Add a one-line hint** under the controls: "Drag the edges of the green box to choose the section. That section will play across the entire Final Film." — explains in plain words that the selection drives the final film soundtrack.
+1. Add a WaveSurfer `interaction` event handler (fires on user click/drag on the waveform timeline) that:
+   - Clears `stopAtRef` (so the prior selection-stop boundary doesn't immediately pause).
+   - Calls `ws.play()` to start playback from the clicked position.
+2. Keep current `seeking` handler for updating `currentTime` UI.
+3. The drag-to-resize on the green selection region should NOT trigger this — only clicks on the waveform body itself. WaveSurfer's `interaction` event fires only for waveform clicks (not region drags), so the behavior is naturally scoped.
+4. Update the play/pause icon state correctly via existing `play`/`pause` events (already handled).
 
-No changes to the dialog footer, the merge pipeline, the `musicRange` state, or the contract — the selection and looping behavior already work end-to-end.
+## Technical detail
 
-## Files
+```ts
+const handleInteraction = () => {
+  setCurrentTime(ws.getCurrentTime())
+  stopAtRef.current = null
+  void ws.play()
+}
+ws.on('interaction', handleInteraction)
+// remove the duplicate ws.on('interaction', handleSeek)
+```
 
-- `src/modules/generator-ui/components/SoundtrackWaveform.tsx` (controls + hint only)
+## Outcome
 
-## Acceptance
-
-- The play / pause button is clearly visible and plays the full uploaded track.
-- A visible "Play selection" button plays only the highlighted green region and stops at its end.
-- Dragging the edges of the green region updates the selection and the time read-out.
-- The selected range is what the Final Film uses (unchanged behavior).
+Clicking or scrubbing the waveform line forward/backward instantly starts playing from that point. Selection region drag and the existing Play / Play selection buttons continue to work as before.

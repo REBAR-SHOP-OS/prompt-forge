@@ -107,6 +107,13 @@ export const SoundtrackWaveform = forwardRef<SoundtrackWaveformHandle, Props>(
         }
       }
       const handleSeek = () => setCurrentTime(ws.getCurrentTime())
+      const handleInteraction = () => {
+        setCurrentTime(ws.getCurrentTime())
+        // User clicked/scrubbed the waveform — clear any selection-stop boundary
+        // and start playing from the new position.
+        stopAtRef.current = null
+        void ws.play()
+      }
       const handlePlay = () => setIsPlaying(true)
       const handlePause = () => setIsPlaying(false)
       const handleFinish = () => {
@@ -117,7 +124,7 @@ export const SoundtrackWaveform = forwardRef<SoundtrackWaveformHandle, Props>(
       ws.on('ready', handleReady)
       ws.on('audioprocess', handleAudioProcess)
       ws.on('seeking', handleSeek)
-      ws.on('interaction', handleSeek)
+      ws.on('interaction', handleInteraction)
       ws.on('play', handlePlay)
       ws.on('pause', handlePause)
       ws.on('finish', handleFinish)
