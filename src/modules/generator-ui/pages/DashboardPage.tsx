@@ -2322,16 +2322,34 @@ export default function DashboardPage() {
                 <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
                   {previewItem.job.input_prompt}
                 </p>
-                <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
-                  <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(previewItem.job.status)}`} />
-                  {formatStatusLabel(previewItem.job.status)}
-                  {(() => {
-                    const status = normalizeStatus(previewItem.job.status)
-                    if (status !== 'processing' && status !== 'pending') return null
-                    const pct = getJobProgressPercent(previewItem.job)
-                    return pct !== null ? <span className="tabular-nums text-amber-300">{pct}%</span> : null
-                  })()}
-                </span>
+                <div className="flex items-center gap-2">
+                  <OverlayEditorPopover
+                    overlays={overlaysApi.getForClip(previewItem.job.id)}
+                    selectedId={selectedOverlayId}
+                    onSelect={setSelectedOverlayId}
+                    onAddText={async () => {
+                      const id = await overlaysApi.addText('video', previewItem.job.id)
+                      if (id) setSelectedOverlayId(id)
+                    }}
+                    onAddImage={async (file) => {
+                      const id = await overlaysApi.addImage('video', previewItem.job.id, file)
+                      if (id) setSelectedOverlayId(id)
+                    }}
+                    onUpdate={(id, patch) => overlaysApi.update(id, patch)}
+                    onDelete={(id) => { overlaysApi.remove(id); if (selectedOverlayId === id) setSelectedOverlayId(null) }}
+                    triggerClassName="inline-flex h-8 items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-zinc-300 hover:bg-white/10"
+                  />
+                  <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
+                    <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(previewItem.job.status)}`} />
+                    {formatStatusLabel(previewItem.job.status)}
+                    {(() => {
+                      const status = normalizeStatus(previewItem.job.status)
+                      if (status !== 'processing' && status !== 'pending') return null
+                      const pct = getJobProgressPercent(previewItem.job)
+                      return pct !== null ? <span className="tabular-nums text-amber-300">{pct}%</span> : null
+                    })()}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
