@@ -62,6 +62,7 @@ import { ApiError } from '@/core/api/client'
 import { useAuth } from '@/core/auth/AuthProvider'
 import { supabase } from '@/integrations/supabase/client'
 import WelcomeVideoOverlay from '@/modules/generator-ui/components/WelcomeVideoOverlay'
+import { SoundtrackWaveform, type SoundtrackWaveformHandle } from '@/modules/generator-ui/components/SoundtrackWaveform'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { mergeVideoUrls, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
@@ -346,6 +347,7 @@ export default function DashboardPage() {
   const [isMusicDialogOpen, setIsMusicDialogOpen] = useState(false)
   const musicFileInputRef = useRef<HTMLInputElement | null>(null)
   const musicPreviewAudioRef = useRef<HTMLAudioElement | null>(null)
+  const musicWaveformRef = useRef<SoundtrackWaveformHandle | null>(null)
   const [pendingEndAppends, setPendingEndAppends] = useState<Record<string, string>>({})
   const [pendingStartPrepends, setPendingStartPrepends] = useState<Record<string, string>>({})
   const processingEndAppendRef = useRef<Set<string>>(new Set())
@@ -1190,10 +1192,7 @@ export default function DashboardPage() {
   }
 
   function handlePreviewMusicRange() {
-    const audio = musicPreviewAudioRef.current
-    if (!audio) return
-    audio.currentTime = musicRange[0]
-    void audio.play()
+    musicWaveformRef.current?.playRange(musicRange[0], musicRange[1])
   }
 
   async function handleMergeAllVideos() {
@@ -1476,39 +1475,32 @@ export default function DashboardPage() {
             </div>
 
             {musicUrl ? (
-              <audio
-                ref={musicPreviewAudioRef}
-                src={musicUrl}
-                controls
-                onLoadedMetadata={handleMusicLoadedMetadata}
-                className="w-full"
+              <SoundtrackWaveform
+                ref={musicWaveformRef}
+                url={musicUrl}
+                range={musicRange[1] > musicRange[0] ? musicRange : [0, Math.max(0.1, musicDuration)]}
+                onReady={(d) => {
+                  setMusicDuration(d)
+                  if (musicRange[1] <= musicRange[0]) {
+                    setMusicRange([0, d])
+                  }
+                }}
+                onRangeChange={(r) => {
+                  if (r[1] > r[0]) setMusicRange([r[0], r[1]])
+                }}
               />
-            ) : null}
-
-            {musicDuration > 0 ? (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs text-zinc-400">
-                  <span>Selection</span>
-                  <span className="tabular-nums text-zinc-200">
-                    {formatTimeMS(musicRange[0])} – {formatTimeMS(musicRange[1])}
-                  </span>
-                </div>
-                <Slider
-                  min={0}
-                  max={Math.max(0.1, musicDuration)}
-                  step={0.1}
-                  value={musicRange}
-                  onValueChange={(v) => {
-                    if (v.length === 2) {
-                      const [a, b] = v
-                      if (b > a) setMusicRange([a, b])
-                    }
-                  }}
-                />
-              </div>
             ) : (
               <p className="text-xs text-zinc-500">Loading audio…</p>
             )}
+
+            {musicDuration > 0 ? (
+              <div className="flex items-center justify-between text-xs text-zinc-400">
+                <span>Selection</span>
+                <span className="tabular-nums text-zinc-200">
+                  {formatTimeMS(musicRange[0])} – {formatTimeMS(musicRange[1])}
+                </span>
+              </div>
+            ) : null}
           </div>
 
           <DialogFooter className="gap-2 sm:justify-between">

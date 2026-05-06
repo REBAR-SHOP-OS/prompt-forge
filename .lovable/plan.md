@@ -1,63 +1,57 @@
-# Aspect ratio selector (9:16 / 1:1 / 16:9) for video generation
+## Goal
 
-Add a ratio picker to the bottom prompt bar so the user can choose the output aspect ratio for each generated clip:
+Upgrade the "Soundtrack for Final Film" modal so the audio is presented as an interactive **Waveform** with a proper **Seek Bar** and **Scrubbing**, replacing the current basic `<audio controls>` element + plain range slider.
 
-- **9:16** — Reels / Shorts (vertical)
-- **1:1** — Post (square)
-- **16:9** — YouTube (landscape, default)
+## Current State
 
-The chosen ratio is sent end-to-end into the WAN provider call and stored on the job.
+In `src/modules/generator-ui/pages/DashboardPage.tsx` (lines ~1460–1533), the modal shows:
+- A native `<audio controls>` player
+- A two-thumb `Slider` for selecting the start/end of the soundtrack region
+- Preview / Done / Remove buttons
 
-## UI — `src/modules/generator-ui/pages/DashboardPage.tsx`
+There is no visual waveform, no playhead indicator on the slider, and no click-to-seek/drag scrubbing on a timeline.
 
-In the bottom prompt form (around lines 2047–2091, where Text/Image-to-Video and 5s/10s pills live), add a third pill group right after the duration group:
+## Plan
 
-- New state: `const [aspectRatio, setAspectRatio] = useState<'9:16' | '1:1' | '16:9'>('16:9')`.
-- Render a `radiogroup` with three small pills, each showing the ratio and a tiny caption:
-  - `9:16` (Reels)
-  - `1:1` (Post)
-  - `16:9` (YouTube) — default
-- Same visual style as the existing duration pills (rounded-full bg-zinc-100/text-zinc-950 when active).
-- Persist the last choice to `localStorage` key `generator:aspectRatio` so it survives reloads.
+### 1. Add a waveform library
+Use **`wavesurfer.js`** (lightweight, no React wrapper required, works with any audio URL/blob). Install via `bun add wavesurfer.js`.
 
-In `handleSubmit` (lines 887–946), pass `aspectRatio` into every `jobOrchestratorGateway.createJob({ ... })` call alongside `durationSeconds`.
+### 2. New component `SoundtrackWaveform.tsx`
+Location: `src/modules/generator-ui/components/SoundtrackWaveform.tsx`
 
-## Frontend contract — `src/modules/job-orchestrator/contract.ts`
+Responsibilities:
+- Render a canvas-based waveform of `musicUrl` using WaveSurfer
+- Show a moving **playhead** (seek bar) synced with playback
+- Support **scrubbing**: click anywhere on the waveform to seek; drag the playhead to scrub
+- Render the **selection region** (start/end) as a translucent overlay using WaveSurfer's `regions` plugin, with two draggable handles
+- Emit callbacks: `onReady(duration)`, `onRangeChange([start, end])`, `onTimeUpdate(currentTime)`
+- Expose imperative methods via `ref`: `play()`, `pause()`, `seekTo(seconds)`, `playRange(start, end)`
 
-Extend `CreateJobInput`:
-```ts
-export type AspectRatio = '9:16' | '1:1' | '16:9'
-export interface CreateJobInput {
-  // ... existing fields
-  aspectRatio?: AspectRatio
-}
-```
+Visual style: matches existing dark theme (waveform in `zinc-400`, progress in white, region overlay in `emerald-400/20`).
 
-## Edge function contract & validation — `supabase/functions/_shared/modules/job-orchestrator/gateway.ts`
+### 3. Replace modal internals
+In `DashboardPage.tsx` modal body (lines 1478–1511):
+- Remove the native `<audio>` element and the standalone `Slider`
+- Insert `<SoundtrackWaveform>` taking the full width, ~96px tall
+- Below it keep the time readout: `currentTime / duration` on the left, `selection start – end` on the right
+- Add a small Play/Pause button beside the time readout (since native controls are gone)
 
-- Extend `CreateJobSchema` with `aspectRatio: z.enum(['9:16', '1:1', '16:9']).optional()`.
-- Pass `aspectRatio: parsed.data.aspectRatio ?? '16:9'` into `aiGateway.startGeneration(...)` alongside `durationSeconds`.
+### 4. Wire up state
+- Replace `musicPreviewAudioRef` usage with a ref to the new waveform component
+- `handlePreviewMusicRange` calls `waveformRef.current?.playRange(musicRange[0], musicRange[1])`
+- `handleMusicLoadedMetadata` is replaced by the component's `onReady` callback
+- `musicRange` is updated via `onRangeChange` from region drag
 
-## Provider input — `supabase/functions/_shared/modules/external-api-adapter/contract.ts`
+### 5. Cleanup
+Destroy the WaveSurfer instance on unmount / when `musicUrl` changes to avoid memory leaks.
 
-Add `aspectRatio?: '9:16' | '1:1' | '16:9' | null` to `GenerationStartInput`.
+## Technical Notes
 
-## WAN provider call — `supabase/functions/_shared/modules/external-api-adapter/service.ts`
+- WaveSurfer v7 (ESM) is the version to install; uses Web Audio API + Canvas.
+- Regions plugin: `import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js'`.
+- For long tracks, enable `normalize: true` and a reasonable `barWidth: 2, barGap: 1` for a clean look.
+- No backend / DB changes required — purely a UI enhancement of the existing soundtrack picker. The selected `musicRange` continues to flow into `mergeVideos` as before.
 
-- **Text-to-video (`startWanT2V`)**: replace the hard-coded `ratio: "16:9"` parameter with the user-supplied `input.aspectRatio ?? "16:9"`. WAN T2V already accepts this `ratio` parameter directly.
-- **Image-to-video (`startWanI2V`)**: WAN i2v derives output aspect from the source image, so we don't fight the provider here. We still forward the parameter (when WAN starts honoring it), but we do **not** crop the user's image. The job is recorded with the user-chosen ratio so the UI badge is consistent.
-- After scheduling, write the chosen `aspectRatio` onto the `generator_generation_jobs` row so the gateway's `getJob` response can echo it back. Use a tiny update right after `markProcessing`:
-  - `await svc.from('generator_generation_jobs').update({ aspect_ratio: chosenRatio, updated_at: new Date().toISOString() }).eq('id', jobId)`
-  - This requires a column `aspect_ratio text` on `generator_generation_jobs`. **Add it via a migration**: `alter table generator_generation_jobs add column if not exists aspect_ratio text;` (no default, nullable).
-
-## Where the ratio surfaces in the UI later
-
-`previewVideo.video?.aspect_ratio` (already on the type) keeps showing the provider-reported ratio for completed videos. The user-chosen ratio is what we used at request time and is stored on the job row for traceability. Card thumbnails keep using `aspect-video` for layout — that's a CSS box, not the actual file ratio.
-
-## Files touched
-- `src/modules/generator-ui/pages/DashboardPage.tsx` (selector UI + submit wiring + persistence)
-- `src/modules/job-orchestrator/contract.ts` (CreateJobInput field)
-- `supabase/functions/_shared/modules/job-orchestrator/gateway.ts` (zod schema + pass-through)
-- `supabase/functions/_shared/modules/external-api-adapter/contract.ts` (GenerationStartInput field)
-- `supabase/functions/_shared/modules/external-api-adapter/service.ts` (use the ratio in T2V body, accept it in I2V signature)
-- New migration: add `aspect_ratio` column on `generator_generation_jobs`
+## Out of Scope
+- No changes to merge logic or audio processing pipeline.
+- No changes to the prompt bar Music button or upload flow.
