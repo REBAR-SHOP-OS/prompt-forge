@@ -1620,8 +1620,12 @@ export default function DashboardPage() {
 
   async function handleMergeAllVideos() {
     if (isMerging) return
-    if (completedSourceVideos.length < 2) {
-      setVideoColumnMessage('Need at least 2 finished videos to merge.')
+    const completedVideoIds = new Set(completedSourceVideos.map((v) => v.id))
+    const eligibleClips = displayedClips.filter((c) =>
+      c.kind === 'image' ? true : completedVideoIds.has(c.id) && c.job.video?.storage_path,
+    )
+    if (eligibleClips.length < 2) {
+      setVideoColumnMessage('Need at least 2 finished items (videos or images) to merge.')
       return
     }
     if (!userId) {
@@ -1632,16 +1636,49 @@ export default function DashboardPage() {
     setMergeProgress(0)
     setVideoColumnMessage(null)
     try {
-      // Use the right-panel display order (top → bottom) so "what you see is what gets merged"
-      const completedIds = new Set(completedSourceVideos.map((v) => v.id))
-      const orderedClips = displayedVideos.filter(
-        (v) => completedIds.has(v.id) && v.video?.storage_path,
-      )
-      const rawUrls = orderedClips.map((v) => v.video!.storage_path)
-      const urls = await Promise.all(rawUrls.map((u) => proxiedVideoUrl(u)))
+      // Determine target dimensions from the first video clip (mergeVideos.ts uses
+      // the first clip's intrinsic size). If no video, fall back to a 1080p frame.
+      const firstVideo = eligibleClips.find((c) => c.kind === 'video') as Extract<UnifiedClip, { kind: 'video' }> | undefined
+      let targetSize: { width: number; height: number } | undefined
+      if (firstVideo?.job.video?.storage_path) {
+        try {
+          const probeUrl = await proxiedVideoUrl(firstVideo.job.video.storage_path)
+          targetSize = await new Promise((resolve) => {
+            const v = document.createElement('video')
+            v.crossOrigin = 'anonymous'
+            v.muted = true
+            v.preload = 'metadata'
+            v.onloadedmetadata = () => resolve({ width: v.videoWidth || 1280, height: v.videoHeight || 720 })
+            v.onerror = () => resolve({ width: 1280, height: 720 })
+            v.src = probeUrl
+          })
+        } catch { targetSize = { width: 1280, height: 720 } }
+      } else {
+        const r = aspectRatio
+        targetSize = r === '9:16' ? { width: 1080, height: 1920 } : r === '1:1' ? { width: 1080, height: 1080 } : { width: 1920, height: 1080 }
+      }
+
+      // Build the merge URL list in display order, converting image clips to
+      // short still-frame webm clips uploaded to the merged-videos bucket.
+      const urls: string[] = []
+      for (const clip of eligibleClips) {
+        if (clip.kind === 'video') {
+          urls.push(await proxiedVideoUrl(clip.job.video!.storage_path as string))
+        } else {
+          const seconds = Math.max(1, Math.min(15, clip.image.still_duration_seconds || 3))
+          const blob = await imageUrlToClip(clip.image.storage_path, seconds, targetSize)
+          const stillPath = `${userId}/still-${clip.image.id}-${Date.now()}.webm`
+          const up = await supabase.storage
+            .from(MERGED_BUCKET)
+            .upload(stillPath, blob, { contentType: 'video/webm', upsert: false })
+          if (up.error) throw new Error(up.error.message)
+          const { data: pub } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(stillPath)
+          urls.push(await proxiedVideoUrl(pub.publicUrl))
+        }
+      }
 
       // Build per-gap transition specs (one entry per gap = clips - 1).
-      const transitionsForMerge: TransitionSpec[] = orderedClips
+      const transitionsForMerge: TransitionSpec[] = eligibleClips
         .slice(0, -1)
         .map((clip) => {
           const id = transitions[clip.id] ?? 'cut'
