@@ -320,6 +320,15 @@ export default function DashboardPage() {
     if (r === '1:1') return 'min(82vh, calc(100vw - 26rem))'
     return 'min(82vh, calc((100vw - 26rem) * 9 / 16))'
   }
+  // Width of the preview stage = height * (w/h). Used to hard-cap the outer
+  // preview card so its footer (long prompt text + status pill) can never
+  // stretch the card wider than the actual video frame, which would create
+  // an empty band beside the video on narrow ratios (9:16, 1:1).
+  const ratioToWidth = (r: Ratio): string => {
+    if (r === '9:16') return 'min(calc(100vw - 26rem), calc(82vh * 9 / 16))'
+    if (r === '1:1') return 'min(calc(100vw - 26rem), 82vh)'
+    return 'min(calc(100vw - 26rem), calc(82vh * 16 / 9))'
+  }
   // Project-level ratio lock: once the first clip of a project is created,
   // every subsequent clip in the same project must use the same aspect ratio.
   // Cleared by Start Over.
@@ -1704,7 +1713,7 @@ export default function DashboardPage() {
             <div
               className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
               style={{
-                width: 'max-content',
+                width: ratioToWidth(getRatioFor(previewVideo)),
                 maxWidth: 'calc(100vw - 26rem)',
               }}
             >
@@ -1792,7 +1801,7 @@ export default function DashboardPage() {
                 )}
               </div>
               <div className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="max-h-12 min-w-0 overflow-hidden text-sm font-medium leading-6 text-zinc-200">
+                <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
                   {previewVideo.input_prompt}
                 </p>
                 <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
