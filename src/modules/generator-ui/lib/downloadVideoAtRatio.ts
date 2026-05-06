@@ -72,11 +72,13 @@ export async function downloadVideoAtRatio(
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Canvas 2D not supported')
 
-  // object-cover: scale so the source fully covers the target, then center-crop
-  const drawCover = () => {
+  // object-contain: fit fully inside the target, preserve aspect ratio,
+  // letterbox/pillarbox with black. Matches the in-app <video> which uses
+  // object-contain, so the downloaded file looks exactly like what the user sees.
+  const drawContain = () => {
     const sw = video.videoWidth || w
     const sh = video.videoHeight || h
-    const scale = Math.max(w / sw, h / sh)
+    const scale = Math.min(w / sw, h / sh)
     const dw = sw * scale
     const dh = sh * scale
     const dx = (w - dw) / 2
