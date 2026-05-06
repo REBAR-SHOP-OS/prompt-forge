@@ -1841,14 +1841,40 @@ export default function DashboardPage() {
                 }}
               >
                 {previewVideo.video?.storage_path ? (
-                  <video
-                    key={previewVideo.id}
-                    className="h-full w-full bg-black object-contain"
-                    src={previewVideo.video.storage_path}
-                    controls
-                    playsInline
-                    preload="metadata"
-                  />
+                  <>
+                    <video
+                      key={previewVideo.id}
+                      className="h-full w-full bg-black object-contain"
+                      src={previewVideo.video.storage_path}
+                      controls
+                      controlsList="nodownload noremoteplayback"
+                      disablePictureInPicture
+                      playsInline
+                      preload="metadata"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleDownloadAtRatio(
+                          previewVideo.id,
+                          previewVideo.video?.storage_path,
+                          getRatioFor(previewVideo),
+                          previewVideo.input_prompt,
+                        )
+                      }
+                      disabled={downloadingId === previewVideo.id}
+                      title={`Download as ${getRatioFor(previewVideo)}`}
+                      aria-label={`Download as ${getRatioFor(previewVideo)}`}
+                      className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/60 px-3 py-1.5 text-xs font-semibold text-zinc-100 backdrop-blur transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:cursor-wait disabled:opacity-60"
+                    >
+                      {downloadingId === previewVideo.id ? (
+                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                      )}
+                      <span>{getRatioFor(previewVideo)}</span>
+                    </button>
+                  </>
                 ) : (
                   <div className="grid h-full place-items-center px-6 text-center">
                     {(() => {
