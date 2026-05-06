@@ -377,12 +377,9 @@ export default function DashboardPage() {
       else window.localStorage.removeItem('generator:lockedProjectRatio')
     } catch { /* ignore */ }
   }
-  // Keep the selector in sync when a lock is active.
-  useEffect(() => {
-    if (lockedProjectRatio && aspectRatio !== lockedProjectRatio) {
-      setAspectRatio(lockedProjectRatio)
-    }
-  }, [lockedProjectRatio, aspectRatio])
+  // NOTE: Aspect ratio selector is always free for the user to change.
+  // `lockedProjectRatio` is kept only for Final Film merge/preview consistency,
+  // not to override the user's per-clip selection.
   const userId = session?.user?.id ?? null
   const approvedStorageKey = userId ? `approved-videos:${userId}` : null
   const [approvedIds, setApprovedIds] = useState<Set<string>>(() => new Set())
