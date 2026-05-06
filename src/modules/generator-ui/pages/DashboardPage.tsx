@@ -1872,27 +1872,6 @@ export default function DashboardPage() {
               {generatedVideos.filter((v) => !deletedIds.has(v.id)).length}
             </span>
           </div>
-          <button
-            type="button"
-            onClick={handleMergeAllVideos}
-            disabled={isMerging || completedSourceVideos.length < 2}
-            className="grid h-8 min-w-8 place-items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-2 text-xs font-semibold text-zinc-300 transition hover:border-emerald-300/30 hover:text-emerald-200 disabled:cursor-not-allowed disabled:opacity-40"
-            title={
-              completedSourceVideos.length < 2
-                ? 'Need at least 2 finished videos'
-                : 'Merge all videos into one final clip'
-            }
-            aria-label="Merge all videos"
-          >
-            {isMerging ? (
-              <>
-                <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                <span className="tabular-nums">{mergeProgress}%</span>
-              </>
-            ) : (
-              <Combine className="h-4 w-4" aria-hidden="true" />
-            )}
-          </button>
         </div>
 
         <div className="mt-4 flex items-center justify-between">
