@@ -62,6 +62,10 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
+    const mode: "silent" | "narrated" | null =
+      body?.mode === "silent" || body?.mode === "narrated" ? body.mode : null;
+    const narratorScript: string =
+      typeof body?.narratorScript === "string" ? body.narratorScript.trim() : "";
     const rawUrls: unknown = body?.imageUrls;
     const imageUrls: string[] = Array.isArray(rawUrls)
       ? rawUrls
@@ -70,6 +74,34 @@ Deno.serve(async (req) => {
           .filter((u) => /^https?:\/\//i.test(u))
           .slice(0, 4)
       : [];
+
+    if (!prompt && mode !== "narrated") {
+      return new Response(JSON.stringify({ error: "prompt is required" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (prompt.length > 4000) {
+      return new Response(JSON.stringify({ error: "prompt too long" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (mode === "narrated") {
+      if (!narratorScript) {
+        return new Response(JSON.stringify({ error: "narratorScript is required when mode=narrated" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (narratorScript.length > 1500) {
+        return new Response(JSON.stringify({ error: "narratorScript too long (max 1500 chars)" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
 
     if (!prompt) {
       return new Response(JSON.stringify({ error: "prompt is required" }), {
