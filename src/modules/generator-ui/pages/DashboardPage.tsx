@@ -2038,19 +2038,20 @@ export default function DashboardPage() {
                       }}
                     >
                       <div
-                        className="overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
+                        className="w-full overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
+                        style={{ aspectRatio: ratioToCss(getRatioFor(video)) }}
                         onClick={(event) => event.stopPropagation()}
                       >
                         {video.video?.storage_path ? (
                           <video
-                            className="aspect-video h-full w-full bg-black object-contain"
+                            className="h-full w-full bg-black object-contain"
                             src={video.video.storage_path}
                             controls
                             playsInline
                             preload="metadata"
                           />
                         ) : (
-                          <div className="grid aspect-video place-items-center text-zinc-500">
+                          <div className="grid h-full w-full place-items-center text-zinc-500">
                             <Clapperboard className="h-8 w-8" aria-hidden="true" />
                           </div>
                         )}
