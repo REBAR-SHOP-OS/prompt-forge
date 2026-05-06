@@ -16,6 +16,7 @@ import {
   LayoutGrid,
   Library,
   LoaderCircle,
+  Lock,
   LogOut,
   Music,
   Music2,
