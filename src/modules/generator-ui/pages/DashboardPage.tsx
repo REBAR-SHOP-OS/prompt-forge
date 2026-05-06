@@ -1780,10 +1780,13 @@ export default function DashboardPage() {
                       }
                     }}
                   >
-                    <div className="relative overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
+                    <div
+                      className="relative w-full overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
+                      style={{ aspectRatio: ratioToCss(getRatioFor(video)) }}
+                    >
                       {video.video?.storage_path ? (
                         <video
-                          className="aspect-video h-full w-full bg-black object-cover"
+                          className="h-full w-full bg-black object-cover"
                           src={video.video.storage_path}
                           controls
                           muted
@@ -1791,7 +1794,7 @@ export default function DashboardPage() {
                           preload="metadata"
                         />
                       ) : (
-                        <div className="grid aspect-video place-items-center text-zinc-500">
+                        <div className="grid h-full w-full place-items-center text-zinc-500">
                           <Clapperboard className="h-8 w-8" aria-hidden="true" />
                         </div>
                       )}
