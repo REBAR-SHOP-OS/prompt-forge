@@ -989,13 +989,16 @@ export default function DashboardPage() {
       let pendingEndAppendUrl: string | null = null
       let pendingStartPrependUrl: string | null = null
 
+      // Effective ratio: a project-locked ratio (set by the first clip) wins.
+      const effectiveRatio: Ratio = lockedProjectRatio ?? aspectRatio
+
       if (isTextToVideo) {
         createdJob = await jobOrchestratorGateway.createJob({
           providerKey: 'wan',
           requestedModel: 'wan2.7-t2v-2026-04-25',
           prompt: nextPrompt,
           durationSeconds,
-          aspectRatio,
+          aspectRatio: effectiveRatio,
         })
       } else if (readyStartFrame?.url && readyEndFrame?.url) {
         // Both frames provided — standard image-to-video.
@@ -1005,7 +1008,7 @@ export default function DashboardPage() {
           firstFrameUrl: readyStartFrame.url,
           lastFrameUrl: readyEndFrame.url,
           durationSeconds,
-          aspectRatio,
+          aspectRatio: effectiveRatio,
         })
         seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
       } else if (readyStartFrame?.url) {
@@ -1016,7 +1019,7 @@ export default function DashboardPage() {
           prompt: nextPrompt,
           firstFrameUrl: readyStartFrame.url,
           durationSeconds,
-          aspectRatio,
+          aspectRatio: effectiveRatio,
         })
         seedFrames = { firstFrameUrl: readyStartFrame.url }
       } else if (readyEndFrame?.url) {
@@ -1026,7 +1029,7 @@ export default function DashboardPage() {
           prompt: nextPrompt,
           lastFrameUrl: readyEndFrame.url,
           durationSeconds,
-          aspectRatio,
+          aspectRatio: effectiveRatio,
         })
         seedFrames = { lastFrameUrl: readyEndFrame.url }
       } else {
@@ -1035,7 +1038,12 @@ export default function DashboardPage() {
       }
 
       const seededJob = buildSeededJob(nextPrompt, createdJob, seedFrames)
-      rememberClipRatio(seededJob.id, aspectRatio)
+      rememberClipRatio(seededJob.id, effectiveRatio)
+      // First clip in this project locks the ratio for the rest of the project.
+      if (!lockedProjectRatio) {
+        setLockedProjectRatio(effectiveRatio)
+        persistLockedRatio(effectiveRatio)
+      }
 
       if (pendingEndAppendUrl) {
         setPendingEndAppends((current) => {
