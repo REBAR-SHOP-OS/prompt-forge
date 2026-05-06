@@ -220,7 +220,7 @@ async function startWanT2V(
     input: { prompt: input.prompt },
     parameters: {
       resolution: "720P",
-      ratio: "16:9",
+      ratio: input.aspectRatio ?? "16:9",
       duration: input.durationSeconds ?? 5,
       prompt_extend: true,
       watermark: false,
