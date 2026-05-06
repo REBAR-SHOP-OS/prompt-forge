@@ -487,7 +487,8 @@ export async function mergeVideoUrls(
   await stopped
 
   if (soundtrackEl) {
-    if (soundtrackTimeListener) soundtrackEl.removeEventListener('timeupdate', soundtrackTimeListener)
+    if (soundtrackClampRaf) cancelAnimationFrame(soundtrackClampRaf)
+    if (soundtrackEndedHandler) soundtrackEl.removeEventListener('ended', soundtrackEndedHandler)
     try { soundtrackEl.pause() } catch { /* ignore */ }
     soundtrackEl.src = ''
   }
