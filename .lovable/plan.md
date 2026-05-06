@@ -1,29 +1,40 @@
-## Goal
+## دلیل سفید شدن صفحه
 
-Currently the video preview stretches tall enough to slide *underneath* the fixed chat composer at the bottom (visible in the screenshot — the bottom of the video is hidden behind the prompt box). Fix: cap the preview's vertical size so it always sits fully above the composer, regardless of aspect ratio (9:16, 1:1, 16:9).
+بعد از بررسی، صفحه واقعاً «خراب» نشده و خطای جاوا اسکریپت یا خطای بیلد وجود ندارد. اتفاقی که افتاده این است:
 
-## Root cause
+1. سشن کاربر در پیش‌نمایش منقضی شده، پس به‌جای داشبورد، **صفحه ورود (LoginPage)** نمایش داده می‌شود.
+2. `LoginPage` (در `src/pages/auth/LoginPage.tsx`) از توکن‌های تم استفاده می‌کند (`bg-background`, `text-foreground`)، و چون پروژه حالت پیش‌فرض **light** دارد و کلاس `dark` هیچ‌جا به `<html>` افزوده نشده، پس‌زمینه کاملاً سفید می‌شود.
+3. در مقابل، `DashboardPage` رنگ‌های تیره را به‌صورت inline استفاده می‌کند، برای همین وقتی لاگین هستید همه‌چیز تیره و درست به‌نظر می‌رسد.
 
-In `src/modules/generator-ui/pages/DashboardPage.tsx`, the preview stage size helpers `ratioToHeight` and `ratioToWidth` (lines 316–332) cap the preview at **`82vh`**. The composer is `position: fixed` at the bottom (line 2311) and occupies roughly the bottom ~13rem of the screen (composer card + its `bottom-[clamp(1rem,4.8vh,3.4rem)]` offset + the helper text "Describe the motion for the frame(s)" rendered below). 82vh leaves only ~18vh for everything else — on common viewports (e.g. the user's 1354px tall window) the video extends well into the composer's footprint, producing the overlap shown in the screenshot.
+تأیید: اسکرین‌شات من از پیش‌نمایش، فرم «Welcome back / Sign in» را روی پس‌زمینه‌ی سفید نشان می‌دهد — یعنی اپلیکیشن سالم رندر شده، فقط تم آن با بقیه‌ی محصول هم‌خوان نیست.
 
-## Fix
+## راه‌حل
 
-Replace the `82vh` cap with a viewport-relative budget that explicitly subtracts the composer's height:
+اعمال حالت تیره به سراسر اپ به شکل دائمی، تا صفحه‌ی ورود هم با داشبورد یکدست شود.
 
-- New constant: `PREVIEW_MAX_HEIGHT = 'calc(100vh - 17rem)'`
-  - ~3rem reserved for the top header strip (Start Over / Final Film / Music tabs)
-  - ~14rem reserved for the composer (its bottom offset + padding + textarea + helper line)
-- Use this constant in both `ratioToHeight` (height term) and `ratioToWidth` (the height-derived width term), keeping the existing horizontal `calc(100vw - 26rem)` cap untouched.
+### تغییرات
 
-Result: on any viewport, the preview card scales down so its bottom edge stays above the composer. The horizontal cap and aspect-ratio math are preserved, so 9:16 / 1:1 / 16:9 clips still render at their correct shape and never produce empty bands beside the video.
+**`index.html`** — افزودن کلاس `dark` به تگ `<html>`:
+```html
+<html lang="en" class="dark">
+```
+این کار همه‌ی توکن‌های `--background`, `--foreground`, `--card` و... را به مقادیر تیره‌ی موجود در `src/index.css` (بلوک `.dark`) سوییچ می‌کند، بدون نیاز به تغییر هیچ کامپوننتی.
 
-## Files touched
+**`src/pages/auth/LoginPage.tsx`** — یک پولیش کوچک بصری تا با هویت Prompt Forge هماهنگ باشد (پس‌زمینه‌ی gradient ملایم به‌جای رنگ تخت). اختیاری ولی توصیه‌شده.
 
-- **Edited only**: `src/modules/generator-ui/pages/DashboardPage.tsx` — `ratioToCss` / `ratioToHeight` / `ratioToWidth` block (lines 316–332). No other code, no new state, no new components, no new packages.
+### چرا این روش
 
-## Acceptance check
+- بدون لمس منطق احراز هویت، صرفاً یک خط HTML.
+- تمام صفحات و دیالوگ‌های shadcn به‌صورت خودکار تیره می‌شوند.
+- سازگار با ظاهر فعلی داشبورد.
 
-1. Open a 9:16 (REELS) preview at the current viewport — the entire video, including its footer (prompt + status pill), is fully visible above the composer; nothing is hidden behind it.
-2. Same for 1:1 and 16:9.
-3. Resize the window taller / shorter — the preview always shrinks to leave the composer fully visible; it never overlaps.
-4. The right HISTORY sidebar and left rail are unaffected.
+## فایل‌های ویرایش‌شده
+
+- `index.html` — افزودن `class="dark"` به `<html>`.
+- `src/pages/auth/LoginPage.tsx` — به‌روزرسانی پس‌زمینه برای ظاهر بهتر (اختیاری).
+
+## بررسی پذیرش
+
+1. در حالت لاگ‌اوت، صفحه‌ی ورود با پس‌زمینه‌ی تیره نمایش داده می‌شود (نه سفید).
+2. پس از ورود، داشبورد دقیقاً مثل قبل کار می‌کند.
+3. هیچ خطایی در کنسول و هیچ تغییری در منطق احراز هویت/Cloud رخ نمی‌دهد.
