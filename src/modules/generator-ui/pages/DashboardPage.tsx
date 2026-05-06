@@ -2102,12 +2102,49 @@ export default function DashboardPage() {
         aria-live="polite"
         style={{ minHeight: `${previewMaxHeightPx + 56}px`, paddingTop: '56px' }}
       >
-        {previewVideo ? (
+        {previewItem ? (
+          previewItem.kind === 'image' ? (
+            <div className="flex w-full justify-center">
+              <div
+                className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
+                style={{
+                  width: ratioToWidth(aspectRatio),
+                  maxWidth: 'calc(100vw - 56rem)',
+                  maxHeight: `${previewMaxHeightPx}px`,
+                }}
+              >
+                <div
+                  className="relative overflow-hidden bg-black"
+                  style={{
+                    aspectRatio: ratioToCss(aspectRatio),
+                    height: ratioToHeight(aspectRatio),
+                    maxWidth: 'calc(100vw - 56rem)',
+                  }}
+                >
+                  <img
+                    key={previewItem.image.id}
+                    src={previewItem.image.storage_path}
+                    alt="Uploaded reference"
+                    className="h-full w-full bg-black object-contain"
+                  />
+                </div>
+                <div className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
+                    Uploaded image · {previewItem.image.still_duration_seconds}s in Final Film
+                  </p>
+                  <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                    Image
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : (
           <div className="flex w-full justify-center">
             <div
               className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
               style={{
-                width: ratioToWidth(getRatioFor(previewVideo)),
+                width: ratioToWidth(getRatioFor(previewItem.job)),
                 maxWidth: 'calc(100vw - 56rem)',
                 maxHeight: `${previewMaxHeightPx}px`,
               }}
@@ -2115,16 +2152,16 @@ export default function DashboardPage() {
               <div
                 className="relative overflow-hidden bg-black"
                 style={{
-                  aspectRatio: ratioToCss(getRatioFor(previewVideo)),
-                  height: ratioToHeight(getRatioFor(previewVideo)),
+                  aspectRatio: ratioToCss(getRatioFor(previewItem.job)),
+                  height: ratioToHeight(getRatioFor(previewItem.job)),
                   maxWidth: 'calc(100vw - 56rem)',
                 }}
               >
-                {previewVideo.video?.storage_path ? (
+                {previewItem.job.video?.storage_path ? (
                   <video
-                    key={previewVideo.id}
+                    key={previewItem.job.id}
                     className="h-full w-full bg-black object-contain"
-                    src={previewVideo.video.storage_path}
+                    src={previewItem.job.video.storage_path}
                     controls
                     playsInline
                     preload="metadata"
@@ -2132,10 +2169,10 @@ export default function DashboardPage() {
                 ) : (
                   <div className="grid h-full place-items-center px-6 text-center">
                     {(() => {
-                      const status = normalizeStatus(previewVideo.status)
+                      const status = normalizeStatus(previewItem.job.status)
                       const isRendering = status === 'processing' || status === 'pending'
-                      const pct = isRendering ? getJobProgressPercent(previewVideo) ?? 0 : 0
-                      const startedAt = Date.parse(previewVideo.created_at)
+                      const pct = isRendering ? getJobProgressPercent(previewItem.job) ?? 0 : 0
+                      const startedAt = Date.parse(previewItem.job.created_at)
                       const longRender = Number.isFinite(startedAt) && Date.now() - startedAt > 240_000
                       return (
                         <div className="w-full max-w-sm">
@@ -2179,7 +2216,7 @@ export default function DashboardPage() {
                           ) : (
                             <Clapperboard className="mx-auto h-10 w-10 text-zinc-600" aria-hidden="true" />
                           )}
-                          <p className="mt-4 text-sm font-semibold text-zinc-300">{formatStatusLabel(previewVideo.status)}</p>
+                          <p className="mt-4 text-sm font-semibold text-zinc-300">{formatStatusLabel(previewItem.job.status)}</p>
                           {isRendering ? (
                             <p className="mt-2 text-xs leading-5 text-zinc-500">
                               {longRender
@@ -2197,21 +2234,22 @@ export default function DashboardPage() {
               </div>
               <div className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
-                  {previewVideo.input_prompt}
+                  {previewItem.job.input_prompt}
                 </p>
                 <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
-                  <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(previewVideo.status)}`} />
-                  {formatStatusLabel(previewVideo.status)}
+                  <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(previewItem.job.status)}`} />
+                  {formatStatusLabel(previewItem.job.status)}
                   {(() => {
-                    const status = normalizeStatus(previewVideo.status)
+                    const status = normalizeStatus(previewItem.job.status)
                     if (status !== 'processing' && status !== 'pending') return null
-                    const pct = getJobProgressPercent(previewVideo)
+                    const pct = getJobProgressPercent(previewItem.job)
                     return pct !== null ? <span className="tabular-nums text-amber-300">{pct}%</span> : null
                   })()}
                 </span>
               </div>
             </div>
           </div>
+          )
         ) : (
           <div className="-translate-y-10 text-center sm:-translate-y-8">
             <div className="relative mx-auto mb-4 grid h-14 w-14 place-items-center text-zinc-100" aria-hidden="true">
