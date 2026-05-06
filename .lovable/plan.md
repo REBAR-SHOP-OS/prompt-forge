@@ -1,49 +1,47 @@
 ## Goal
 
-Currently both duration pickers are hard-locked to `5s / 10s / 15s`:
+Two improvements to the overlay text editor (Popover):
 
-1. The bottom composer bar — sets the default duration for newly generated video clips.
-2. Each uploaded image card — sets how long that still appears in Final Film.
+1. **Many more fonts** — expand the font dropdown from 5 presets to a rich library covering Sans, Serif, Display, Mono, Script/Handwriting, Decorative, and Arabic/Persian.
+2. **Show font names in their own typeface** — each `<option>` in the Font dropdown should be rendered using its actual font, so the user can see what it looks like before picking.
 
-The user wants to type any duration they want, not be limited to those three numbers.
+## Changes
 
-## What changes
+### 1. `index.html` — load all the new fonts from Google Fonts
 
-### A. Bottom composer "Clip duration" picker (DashboardPage.tsx ~line 3024)
+Replace the single Google Fonts `<link>` with one that includes all families below. Single combined request, `display=swap`.
 
-Keep the three quick presets (5 / 10 / 15) and add:
+### 2. `src/modules/generator-ui/lib/overlays.ts` — expand `OVERLAY_FONT_PRESETS`
 
-- A small `Custom` chip next to them.
-- Clicking it reveals an inline number input (`<input type="number">`) with a tiny "s" suffix.
-- The user can type any integer between **1 and 10** seconds (Wan 2.7 model cap, see comment at line 223 of the file). Values outside the range get clamped on blur, with a small hint shown beneath the input on clamp.
-- The active state correctly highlights either a preset chip or the Custom chip when its value is in use.
+Group fonts by category (added as a `category` field used only for the optgroup label):
 
-Type widening: change `useState<5 | 10 | 15>(5)` to `useState<number>(5)` so any integer in [1,10] is accepted by the existing `createJob({ durationSeconds })` calls (lines 1292 / 1302 / 1313 / 1323) without any other changes.
+- **Sans**: Inter, Roboto, Open Sans, Lato, Montserrat, Poppins, Raleway, Work Sans, Nunito, Rubik
+- **Display**: Oswald, Bebas Neue, Anton, Archivo Black, Righteous, Russo One, Black Ops One, Bangers, Creepster
+- **Serif**: Playfair Display, Merriweather, Lora, PT Serif, Cormorant Garamond, EB Garamond
+- **Mono**: Roboto Mono, JetBrains Mono, Fira Code, Space Mono
+- **Script / Handwriting**: Pacifico, Dancing Script, Caveat, Great Vibes, Sacramento, Lobster, Permanent Marker, Shadows Into Light, Indie Flower
+- **Pixel**: Press Start 2P
+- **Arabic / Persian (فارسی/عربی)**: Vazirmatn, Noto Naskh Arabic, Amiri, Tajawal
 
-### B. Per-image "Duration" picker on uploaded image cards (DashboardPage.tsx ~line 2536)
+Shape: `{ id: 'Roboto', label: 'Roboto', category: 'Sans' }`.
 
-Same pattern:
+### 3. `src/modules/generator-ui/components/OverlayEditorPopover.tsx` — preview each font in the dropdown
 
-- Keep 5 / 10 / 15 presets.
-- Add a `Custom` chip → inline number input (1–60 seconds — stills are not constrained by the video model, only by the existing `updateImageDuration` clamp which we'll widen from 15 → 60).
-- Update `updateImageDuration` (line 1000) clamp: `Math.max(1, Math.min(60, …))`.
-- Persist as today via the existing Supabase update on `generator_user_images.still_duration_seconds`.
+Replace the flat `<option>` mapping with `<optgroup label={category}>` blocks, and on each `<option>` add `style={{ fontFamily: \`"\${f.id}", sans-serif\` }}` so the option text is rendered in its own font. The trigger `<select>` itself also uses `style={{ fontFamily: selected.font_family }}` so the picked font name is visible in its actual face once selected.
 
-### C. UX details
+Keep all other popover controls untouched.
 
-- Number input is compact (~3ch wide), right-aligned, with the same pill styling as the preset chips so the row stays visually consistent.
-- `Enter` / blur commits the value; `Esc` cancels and reverts.
-- Empty input on blur falls back to the previous value (no NaN sent to DB or API).
-- All RTL/Persian text and existing styling is preserved.
+### 4. Burn-in compatibility
 
-## Out of scope
-
-- No DB schema change — column already accepts any integer.
-- No edge-function or merge-pipeline change — `mergeVideos.ts` and `imageToClip.ts` already read `still_duration_seconds` as a number.
-- Wan 2.7 hard-cap (10s) is preserved for generated video clips; only stills can go higher.
+`paintOverlays` and `ensureFontsLoaded` already use `o.font_family` as a string — no changes needed; they will pick up any new family loaded by the new Google Fonts `<link>`.
 
 ## Files touched
 
-- `src/modules/generator-ui/pages/DashboardPage.tsx` — both pickers, `durationSeconds` state type, `updateImageDuration` clamp.
+- `index.html`
+- `src/modules/generator-ui/lib/overlays.ts`
+- `src/modules/generator-ui/components/OverlayEditorPopover.tsx`
 
-That's the entire change.
+## Notes
+
+- All fonts ship via one Google Fonts request with `display=swap`, so initial paint is unblocked.
+- Native `<select>` in most browsers honors per-`<option>` `font-family`, which gives the desired font preview without a heavy custom dropdown.
