@@ -27,12 +27,66 @@ export interface ClipOverlay {
   created_at: string
 }
 
-export const OVERLAY_FONT_PRESETS = [
-  { id: 'Inter', label: 'Inter (Sans)' },
-  { id: 'Vazirmatn', label: 'Vazirmatn (فارسی)' },
-  { id: 'Playfair Display', label: 'Playfair (Serif)' },
-  { id: 'Roboto Mono', label: 'Roboto Mono' },
-  { id: 'Bebas Neue', label: 'Bebas Neue' },
+export type OverlayFontCategory =
+  | 'Sans'
+  | 'Display'
+  | 'Serif'
+  | 'Mono'
+  | 'Script'
+  | 'Pixel'
+  | 'Arabic / فارسی'
+
+export const OVERLAY_FONT_PRESETS: ReadonlyArray<{ id: string; label: string; category: OverlayFontCategory }> = [
+  // Sans
+  { id: 'Inter', label: 'Inter', category: 'Sans' },
+  { id: 'Roboto', label: 'Roboto', category: 'Sans' },
+  { id: 'Open Sans', label: 'Open Sans', category: 'Sans' },
+  { id: 'Lato', label: 'Lato', category: 'Sans' },
+  { id: 'Montserrat', label: 'Montserrat', category: 'Sans' },
+  { id: 'Poppins', label: 'Poppins', category: 'Sans' },
+  { id: 'Raleway', label: 'Raleway', category: 'Sans' },
+  { id: 'Work Sans', label: 'Work Sans', category: 'Sans' },
+  { id: 'Nunito', label: 'Nunito', category: 'Sans' },
+  { id: 'Rubik', label: 'Rubik', category: 'Sans' },
+  // Display
+  { id: 'Oswald', label: 'Oswald', category: 'Display' },
+  { id: 'Bebas Neue', label: 'Bebas Neue', category: 'Display' },
+  { id: 'Anton', label: 'Anton', category: 'Display' },
+  { id: 'Archivo Black', label: 'Archivo Black', category: 'Display' },
+  { id: 'Righteous', label: 'Righteous', category: 'Display' },
+  { id: 'Russo One', label: 'Russo One', category: 'Display' },
+  { id: 'Black Ops One', label: 'Black Ops One', category: 'Display' },
+  { id: 'Bangers', label: 'Bangers', category: 'Display' },
+  { id: 'Creepster', label: 'Creepster', category: 'Display' },
+  // Serif
+  { id: 'Playfair Display', label: 'Playfair Display', category: 'Serif' },
+  { id: 'Merriweather', label: 'Merriweather', category: 'Serif' },
+  { id: 'Lora', label: 'Lora', category: 'Serif' },
+  { id: 'PT Serif', label: 'PT Serif', category: 'Serif' },
+  { id: 'Cormorant Garamond', label: 'Cormorant Garamond', category: 'Serif' },
+  { id: 'EB Garamond', label: 'EB Garamond', category: 'Serif' },
+  // Mono
+  { id: 'Roboto Mono', label: 'Roboto Mono', category: 'Mono' },
+  { id: 'JetBrains Mono', label: 'JetBrains Mono', category: 'Mono' },
+  { id: 'Fira Code', label: 'Fira Code', category: 'Mono' },
+  { id: 'Space Mono', label: 'Space Mono', category: 'Mono' },
+  // Script / Handwriting
+  { id: 'Pacifico', label: 'Pacifico', category: 'Script' },
+  { id: 'Dancing Script', label: 'Dancing Script', category: 'Script' },
+  { id: 'Caveat', label: 'Caveat', category: 'Script' },
+  { id: 'Great Vibes', label: 'Great Vibes', category: 'Script' },
+  { id: 'Sacramento', label: 'Sacramento', category: 'Script' },
+  { id: 'Lobster', label: 'Lobster', category: 'Script' },
+  { id: 'Permanent Marker', label: 'Permanent Marker', category: 'Script' },
+  { id: 'Shadows Into Light', label: 'Shadows Into Light', category: 'Script' },
+  { id: 'Indie Flower', label: 'Indie Flower', category: 'Script' },
+  // Pixel
+  { id: 'Press Start 2P', label: 'Press Start 2P', category: 'Pixel' },
+  // Arabic / Persian
+  { id: 'Vazirmatn', label: 'Vazirmatn', category: 'Arabic / فارسی' },
+  { id: 'Noto Naskh Arabic', label: 'Noto Naskh Arabic', category: 'Arabic / فارسی' },
+  { id: 'Amiri', label: 'Amiri', category: 'Arabic / فارسی' },
+  { id: 'Tajawal', label: 'Tajawal', category: 'Arabic / فارسی' },
 ] as const
 
 export const OVERLAY_WEIGHT_PRESETS = [
