@@ -266,14 +266,16 @@ export async function mergeVideoUrls(
   }
 
   let soundtrackEl: HTMLAudioElement | null = null
-  let soundtrackTimeListener: (() => void) | null = null
+  let soundtrackEndedHandler: (() => void) | null = null
+  let soundtrackClampRaf = 0
   if (useSoundtrack && audio && audioCtx && audioDest) {
     try {
       soundtrackEl = document.createElement('audio')
       soundtrackEl.crossOrigin = 'anonymous'
       soundtrackEl.src = audio.src
       soundtrackEl.preload = 'auto'
-      soundtrackEl.loop = true
+      // We handle looping manually so we always wrap to winStart, never to 0.
+      soundtrackEl.loop = false
       await new Promise<void>((resolve, reject) => {
         const onReady = () => { soundtrackEl!.removeEventListener('loadedmetadata', onReady); resolve() }
         const onErr = () => { soundtrackEl!.removeEventListener('error', onErr); reject(new Error('Failed to load soundtrack')) }
