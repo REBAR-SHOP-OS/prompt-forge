@@ -303,6 +303,8 @@ export default function DashboardPage() {
   const pendingEndAppendsKey = userId ? `pending-end-appends:${userId}` : null
   const pendingStartPrependsKey = userId ? `pending-start-prepends:${userId}` : null
   const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set())
+  const [manualOrder, setManualOrder] = useState<string[] | null>(null)
+  const [draggingId, setDraggingId] = useState<string | null>(null)
   const [mergedEntries, setMergedEntries] = useState<JobDetail[]>([])
   const [isMerging, setIsMerging] = useState(false)
   const [mergeProgress, setMergeProgress] = useState<number>(0)
