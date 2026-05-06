@@ -1732,7 +1732,7 @@ export default function DashboardPage() {
       </button>
 
       <Dialog open={isMusicDialogOpen} onOpenChange={setIsMusicDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="border-white/10 bg-black text-zinc-100 sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Soundtrack for Final Film</DialogTitle>
             <DialogDescription>
