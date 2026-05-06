@@ -132,6 +132,10 @@ export async function mergeVideoUrls(
 
   onProgress?.({ ratio: 1, clipIndex: urls.length, totalClips: urls.length })
 
-  const arr = out instanceof Uint8Array ? out : new Uint8Array(out as ArrayBuffer)
-  return new Blob([arr], { type: 'video/mp4' })
+  const src = out instanceof Uint8Array ? out : new Uint8Array(out as unknown as ArrayBufferLike)
+  // Copy into a fresh ArrayBuffer-backed Uint8Array so Blob's typing is happy
+  // even when ffmpeg.wasm returns SharedArrayBuffer-backed memory.
+  const arr = new Uint8Array(src.byteLength)
+  arr.set(src)
+  return new Blob([arr.buffer], { type: 'video/mp4' })
 }
