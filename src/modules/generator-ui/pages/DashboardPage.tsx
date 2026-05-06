@@ -1216,6 +1216,31 @@ export default function DashboardPage() {
         </DropdownMenuContent>
       </DropdownMenu>
 
+      <button
+        type="button"
+        onClick={handleMergeAllVideos}
+        disabled={isMerging || completedSourceVideos.length < 2}
+        className="fixed left-1/2 top-4 z-50 ml-[120px] flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-emerald-300/30 hover:bg-emerald-300/[0.06] hover:text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40 sm:top-5"
+        aria-label="Merge all cards into one final film"
+        title={
+          completedSourceVideos.length < 2
+            ? 'Need at least 2 finished videos'
+            : 'Merge all cards into one final film'
+        }
+      >
+        {isMerging ? (
+          <>
+            <LoaderCircle className="h-[14px] w-[14px] animate-spin" aria-hidden="true" />
+            <span className="tabular-nums">{mergeProgress}%</span>
+          </>
+        ) : (
+          <>
+            <Film className="h-[14px] w-[14px]" aria-hidden="true" />
+            <span>Final film</span>
+          </>
+        )}
+      </button>
+
       <AlertDialog>
         <AlertDialogTrigger asChild>
           <button
