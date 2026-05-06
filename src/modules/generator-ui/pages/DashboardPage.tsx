@@ -1072,7 +1072,14 @@ export default function DashboardPage() {
         .map((v) => v.video!.storage_path)
       const urls = await Promise.all(rawUrls.map((u) => proxiedVideoUrl(u)))
 
-      const blob = await mergeVideoUrls(urls, (p) => setMergeProgress(Math.round(p.ratio * 100)))
+      const audioOpt = musicUrl && musicRange[1] > musicRange[0]
+        ? { src: musicUrl, startSec: musicRange[0], endSec: musicRange[1] }
+        : undefined
+      const blob = await mergeVideoUrls(
+        urls,
+        (p) => setMergeProgress(Math.round(p.ratio * 100)),
+        audioOpt,
+      )
 
       const filename = `merged-${Date.now()}.webm`
       const storagePath = `${userId}/${filename}`
