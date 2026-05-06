@@ -256,6 +256,38 @@ export default function DashboardPage() {
   const [isLibraryLoading, setIsLibraryLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false)
+  // Live-measured vertical budget for the preview stage. The composer is
+  // position:fixed at the bottom and its height changes (textarea rows, error
+  // line, ratio chips wrapping). We observe its top edge and reserve that
+  // much room for the preview so the video card never slides under the chat.
+  const composerRef = useRef<HTMLFormElement | null>(null)
+  const [previewMaxHeightPx, setPreviewMaxHeightPx] = useState<number>(() => {
+    if (typeof window === 'undefined') return 600
+    return Math.max(240, window.innerHeight - 320)
+  })
+  useEffect(() => {
+    const SAFE_GAP = 24 // breathing room between preview card and composer
+    const TOP_RESERVE = 56 // top header strip (Start Over / Final Film / Music)
+    const recompute = () => {
+      const el = composerRef.current
+      const vh = window.innerHeight
+      if (!el) {
+        setPreviewMaxHeightPx(Math.max(240, vh - 320))
+        return
+      }
+      const top = el.getBoundingClientRect().top
+      const budget = Math.max(240, top - TOP_RESERVE - SAFE_GAP)
+      setPreviewMaxHeightPx(budget)
+    }
+    recompute()
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(recompute) : null
+    if (ro && composerRef.current) ro.observe(composerRef.current)
+    window.addEventListener('resize', recompute)
+    return () => {
+      window.removeEventListener('resize', recompute)
+      if (ro) ro.disconnect()
+    }
+  }, [])
   const [videoColumnMessage, setVideoColumnMessage] = useState<string | null>(null)
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
