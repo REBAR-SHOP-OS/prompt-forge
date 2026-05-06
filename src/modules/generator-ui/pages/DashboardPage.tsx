@@ -1961,7 +1961,7 @@ export default function DashboardPage() {
               </div>
             </div>
           ) : displayedVideos.length > 0 ? (
-            <div className="grid gap-3">
+            <div className="grid min-w-0 gap-3">
               {displayedVideos.map((video, index) => {
                 const status = normalizeStatus(video.status)
                 const isPreviewSelected = previewVideo?.id === video.id
