@@ -384,6 +384,32 @@ export default function DashboardPage() {
   const approvedStorageKey = userId ? `approved-videos:${userId}` : null
   const [approvedIds, setApprovedIds] = useState<Set<string>>(() => new Set())
   const [showWelcome, setShowWelcome] = useState(false)
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+
+  const handleDownloadAtRatio = async (
+    id: string,
+    src: string | null | undefined,
+    ratio: '9:16' | '1:1' | '16:9',
+    promptForName?: string,
+  ) => {
+    if (!src) return
+    if (downloadingId) return
+    setDownloadingId(id)
+    try {
+      const safe = (promptForName ?? 'clip')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 40) || 'clip'
+      await downloadVideoAtRatio(src, ratio, `${safe}-${ratio.replace(':', 'x')}.webm`)
+    } catch (err) {
+      console.error('downloadVideoAtRatio failed', err)
+      // eslint-disable-next-line no-alert
+      window.alert('Download failed. Please try again.')
+    } finally {
+      setDownloadingId(null)
+    }
+  }
 
   useEffect(() => {
     if (!userId) return
