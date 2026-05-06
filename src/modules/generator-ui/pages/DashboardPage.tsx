@@ -2543,27 +2543,25 @@ export default function DashboardPage() {
                                 min={1}
                                 max={600}
                                 step={1}
-                                defaultValue={img.still_duration_seconds || 3}
-                                key={`dur-${img.id}-${img.still_duration_seconds}`}
+                                defaultValue=""
+                                placeholder="—"
+                                key={`dur-${img.id}`}
                                 aria-label="Image duration in seconds"
-                                className="w-10 bg-transparent text-right outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                className="w-12 bg-transparent text-right outline-none placeholder:text-zinc-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                 onClick={(e) => e.stopPropagation()}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur()
                                   if (e.key === 'Escape') {
-                                    ;(e.currentTarget as HTMLInputElement).value = String(img.still_duration_seconds || 3)
+                                    ;(e.currentTarget as HTMLInputElement).value = ''
                                     ;(e.currentTarget as HTMLInputElement).blur()
                                   }
                                 }}
                                 onBlur={(e) => {
                                   const raw = e.currentTarget.value.trim()
-                                  if (!raw) {
-                                    e.currentTarget.value = String(img.still_duration_seconds || 3)
-                                    return
-                                  }
+                                  if (!raw) return
                                   const n = Number(raw)
                                   if (!Number.isFinite(n)) {
-                                    e.currentTarget.value = String(img.still_duration_seconds || 3)
+                                    e.currentTarget.value = ''
                                     return
                                   }
                                   updateImageDuration(img.id, n)
