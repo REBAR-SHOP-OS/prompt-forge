@@ -351,14 +351,14 @@ export default function DashboardPage() {
   // and width helpers so every aspect ratio respects the same hard ceiling.
   const PREVIEW_MAX_HEIGHT = `${previewMaxHeightPx}px`
   const ratioToHeight = (r: Ratio): string => {
-    if (r === '9:16') return `min(${PREVIEW_MAX_HEIGHT}, calc((100vw - 26rem) * 16 / 9))`
-    if (r === '1:1') return `min(${PREVIEW_MAX_HEIGHT}, calc(100vw - 26rem))`
-    return `min(${PREVIEW_MAX_HEIGHT}, calc((100vw - 26rem) * 9 / 16))`
+    if (r === '9:16') return `min(${PREVIEW_MAX_HEIGHT}, calc((100vw - 56rem) * 16 / 9))`
+    if (r === '1:1') return `min(${PREVIEW_MAX_HEIGHT}, calc(100vw - 56rem))`
+    return `min(${PREVIEW_MAX_HEIGHT}, calc((100vw - 56rem) * 9 / 16))`
   }
   const ratioToWidth = (r: Ratio): string => {
-    if (r === '9:16') return `min(calc(100vw - 26rem), calc(${PREVIEW_MAX_HEIGHT} * 9 / 16))`
-    if (r === '1:1') return `min(calc(100vw - 26rem), ${PREVIEW_MAX_HEIGHT})`
-    return `min(calc(100vw - 26rem), calc(${PREVIEW_MAX_HEIGHT} * 16 / 9))`
+    if (r === '9:16') return `min(calc(100vw - 56rem), calc(${PREVIEW_MAX_HEIGHT} * 9 / 16))`
+    if (r === '1:1') return `min(calc(100vw - 56rem), ${PREVIEW_MAX_HEIGHT})`
+    return `min(calc(100vw - 56rem), calc(${PREVIEW_MAX_HEIGHT} * 16 / 9))`
   }
   // Project-level ratio lock: once the first clip of a project is created,
   // every subsequent clip in the same project must use the same aspect ratio.
