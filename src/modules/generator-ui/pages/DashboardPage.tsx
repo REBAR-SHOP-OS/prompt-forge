@@ -1311,7 +1311,9 @@ export default function DashboardPage() {
         title={
           completedSourceVideos.length < 2
             ? 'Need at least 2 finished videos'
-            : 'Merge all cards into one final film'
+            : musicUrl
+              ? `Final film with music (${formatTimeMS(musicRange[0])} – ${formatTimeMS(musicRange[1])})`
+              : 'Merge all cards into one final film'
         }
       >
         {isMerging ? (
