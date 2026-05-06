@@ -292,7 +292,10 @@ export async function mergeVideoUrls(
       })
       soundtrackEl.currentTime = Math.max(0, audio.startSec)
       const source = audioCtx.createMediaElementSource(soundtrackEl)
-      source.connect(audioDest)
+      const gain = audioCtx.createGain()
+      gain.gain.value = musicVolume
+      source.connect(gain)
+      gain.connect(audioDest)
     } catch (err) {
       console.warn('[mergeVideoUrls] soundtrack disabled:', err)
       soundtrackEl = null
