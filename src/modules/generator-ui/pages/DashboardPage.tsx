@@ -16,6 +16,7 @@ import {
   LayoutGrid,
   Library,
   LoaderCircle,
+  Lock,
   LogOut,
   Music,
   Music2,
@@ -312,6 +313,36 @@ export default function DashboardPage() {
     return fromAsset ?? '16:9'
   }
   const ratioToCss = (r: Ratio): string => (r === '9:16' ? '9 / 16' : r === '1:1' ? '1 / 1' : '16 / 9')
+  const ratioToHeight = (r: Ratio): string => {
+    // Available width between left rail and right history sidebar ≈ calc(100vw - 26rem).
+    // Height = width * (h/w), capped at 82vh so very tall screens don't overflow.
+    if (r === '9:16') return 'min(82vh, calc((100vw - 26rem) * 16 / 9))'
+    if (r === '1:1') return 'min(82vh, calc(100vw - 26rem))'
+    return 'min(82vh, calc((100vw - 26rem) * 9 / 16))'
+  }
+  // Project-level ratio lock: once the first clip of a project is created,
+  // every subsequent clip in the same project must use the same aspect ratio.
+  // Cleared by Start Over.
+  const [lockedProjectRatio, setLockedProjectRatio] = useState<Ratio | null>(() => {
+    if (typeof window === 'undefined') return null
+    try {
+      const v = window.localStorage.getItem('generator:lockedProjectRatio')
+      if (v === '9:16' || v === '1:1' || v === '16:9') return v
+    } catch { /* ignore */ }
+    return null
+  })
+  const persistLockedRatio = (r: Ratio | null) => {
+    try {
+      if (r) window.localStorage.setItem('generator:lockedProjectRatio', r)
+      else window.localStorage.removeItem('generator:lockedProjectRatio')
+    } catch { /* ignore */ }
+  }
+  // Keep the selector in sync when a lock is active.
+  useEffect(() => {
+    if (lockedProjectRatio && aspectRatio !== lockedProjectRatio) {
+      setAspectRatio(lockedProjectRatio)
+    }
+  }, [lockedProjectRatio, aspectRatio])
   const userId = session?.user?.id ?? null
   const approvedStorageKey = userId ? `approved-videos:${userId}` : null
   const [approvedIds, setApprovedIds] = useState<Set<string>>(() => new Set())
@@ -958,13 +989,16 @@ export default function DashboardPage() {
       let pendingEndAppendUrl: string | null = null
       let pendingStartPrependUrl: string | null = null
 
+      // Effective ratio: a project-locked ratio (set by the first clip) wins.
+      const effectiveRatio: Ratio = lockedProjectRatio ?? aspectRatio
+
       if (isTextToVideo) {
         createdJob = await jobOrchestratorGateway.createJob({
           providerKey: 'wan',
           requestedModel: 'wan2.7-t2v-2026-04-25',
           prompt: nextPrompt,
           durationSeconds,
-          aspectRatio,
+          aspectRatio: effectiveRatio,
         })
       } else if (readyStartFrame?.url && readyEndFrame?.url) {
         // Both frames provided — standard image-to-video.
@@ -974,7 +1008,7 @@ export default function DashboardPage() {
           firstFrameUrl: readyStartFrame.url,
           lastFrameUrl: readyEndFrame.url,
           durationSeconds,
-          aspectRatio,
+          aspectRatio: effectiveRatio,
         })
         seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
       } else if (readyStartFrame?.url) {
@@ -985,7 +1019,7 @@ export default function DashboardPage() {
           prompt: nextPrompt,
           firstFrameUrl: readyStartFrame.url,
           durationSeconds,
-          aspectRatio,
+          aspectRatio: effectiveRatio,
         })
         seedFrames = { firstFrameUrl: readyStartFrame.url }
       } else if (readyEndFrame?.url) {
@@ -995,7 +1029,7 @@ export default function DashboardPage() {
           prompt: nextPrompt,
           lastFrameUrl: readyEndFrame.url,
           durationSeconds,
-          aspectRatio,
+          aspectRatio: effectiveRatio,
         })
         seedFrames = { lastFrameUrl: readyEndFrame.url }
       } else {
@@ -1004,7 +1038,12 @@ export default function DashboardPage() {
       }
 
       const seededJob = buildSeededJob(nextPrompt, createdJob, seedFrames)
-      rememberClipRatio(seededJob.id, aspectRatio)
+      rememberClipRatio(seededJob.id, effectiveRatio)
+      // First clip in this project locks the ratio for the rest of the project.
+      if (!lockedProjectRatio) {
+        setLockedProjectRatio(effectiveRatio)
+        persistLockedRatio(effectiveRatio)
+      }
 
       if (pendingEndAppendUrl) {
         setPendingEndAppends((current) => {
@@ -1356,6 +1395,9 @@ export default function DashboardPage() {
     setGenerationMode('image-to-video')
     setDurationSeconds(5)
     setPreviewVideoId(null)
+    // Releasing the project lock so the user can pick a different ratio.
+    setLockedProjectRatio(null)
+    persistLockedRatio(null)
   }
 
   return (
@@ -1606,7 +1648,7 @@ export default function DashboardPage() {
                 className="relative overflow-hidden bg-black"
                 style={{
                   aspectRatio: ratioToCss(getRatioFor(previewVideo)),
-                  height: 'min(82vh, calc((100vw - 26rem) * 9 / 16))',
+                  height: ratioToHeight(getRatioFor(previewVideo)),
                   maxWidth: 'calc(100vw - 26rem)',
                 }}
               >
@@ -2155,25 +2197,44 @@ export default function DashboardPage() {
               )
             })}
           </div>
-          <div role="radiogroup" aria-label="Aspect ratio" className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
+          <div role="radiogroup" aria-label="Aspect ratio" className="inline-flex items-center rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
             {([
               { value: '9:16', label: '9:16', hint: 'Reels' },
               { value: '1:1', label: '1:1', hint: 'Post' },
               { value: '16:9', label: '16:9', hint: 'YouTube' },
             ] as const).map((opt) => {
               const active = aspectRatio === opt.value
+              const isLocked = lockedProjectRatio !== null
+              const disabled = isLocked && !active
               return (
                 <button
                   key={opt.value}
                   type="button"
                   role="radio"
                   aria-checked={active}
-                  onClick={() => setAspectRatio(opt.value)}
-                  title={`${opt.label} — ${opt.hint}`}
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition ${active ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+                  aria-disabled={disabled}
+                  disabled={disabled}
+                  onClick={() => { if (!disabled) setAspectRatio(opt.value) }}
+                  title={
+                    isLocked
+                      ? (active
+                          ? `${opt.label} — locked for this project. Use Start Over to change.`
+                          : 'Locked to project ratio. Use Start Over to change.')
+                      : `${opt.label} — ${opt.hint}`
+                  }
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition ${
+                    active
+                      ? 'bg-zinc-100 text-zinc-950'
+                      : disabled
+                        ? 'cursor-not-allowed text-zinc-600'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
                 >
                   <span>{opt.label}</span>
                   <span className={`text-[10px] uppercase tracking-wide ${active ? 'text-zinc-500' : 'text-zinc-500'}`}>{opt.hint}</span>
+                  {active && isLocked ? (
+                    <Lock className="h-3 w-3 text-zinc-500" aria-hidden="true" />
+                  ) : null}
                 </button>
               )
             })}
