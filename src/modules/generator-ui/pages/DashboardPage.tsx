@@ -1329,6 +1329,122 @@ export default function DashboardPage() {
         )}
       </button>
 
+      {/* Background music: pick an audio file + select a window. Applied as
+          the soundtrack of the Final Film (clip audio is muted). */}
+      <input
+        ref={musicFileInputRef}
+        type="file"
+        accept="audio/*"
+        className="hidden"
+        onChange={handleMusicFileChange}
+      />
+      <button
+        type="button"
+        onClick={handleMusicButtonClick}
+        className="fixed left-1/2 top-4 z-50 ml-[260px] flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-amber-300/30 hover:bg-amber-300/[0.06] hover:text-amber-100 sm:top-5"
+        aria-label={musicUrl ? 'Edit soundtrack' : 'Add soundtrack'}
+        title={musicUrl ? 'Edit soundtrack' : 'Add a music file as soundtrack for the Final Film'}
+      >
+        {musicUrl ? (
+          <>
+            <Music2 className="h-[14px] w-[14px]" aria-hidden="true" />
+            <span className="truncate normal-case tracking-normal">
+              {musicName ?? 'Soundtrack'}
+            </span>
+            <span
+              role="button"
+              tabIndex={0}
+              aria-label="Remove soundtrack"
+              onClick={(ev) => { ev.stopPropagation(); handleClearMusic() }}
+              onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ev.stopPropagation(); handleClearMusic() } }}
+              className="-mr-1 grid h-5 w-5 cursor-pointer place-items-center rounded-full text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+            >
+              <X className="h-3 w-3" aria-hidden="true" />
+            </span>
+          </>
+        ) : (
+          <>
+            <Music className="h-[14px] w-[14px]" aria-hidden="true" />
+            <span>Music</span>
+          </>
+        )}
+      </button>
+
+      <Dialog open={isMusicDialogOpen} onOpenChange={setIsMusicDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Soundtrack for Final Film</DialogTitle>
+            <DialogDescription>
+              Pick a section of the audio. It will replace the audio of every clip
+              in the merged Final Film.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="rounded-md border border-white/10 bg-black/40 px-3 py-2 text-xs text-zinc-300">
+              <div className="truncate font-medium">{musicName ?? '—'}</div>
+              <div className="mt-0.5 text-zinc-500">
+                Duration: {formatTimeMS(musicDuration)}
+              </div>
+            </div>
+
+            {musicUrl ? (
+              <audio
+                ref={musicPreviewAudioRef}
+                src={musicUrl}
+                controls
+                onLoadedMetadata={handleMusicLoadedMetadata}
+                className="w-full"
+              />
+            ) : null}
+
+            {musicDuration > 0 ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-zinc-400">
+                  <span>Selection</span>
+                  <span className="tabular-nums text-zinc-200">
+                    {formatTimeMS(musicRange[0])} – {formatTimeMS(musicRange[1])}
+                  </span>
+                </div>
+                <Slider
+                  min={0}
+                  max={Math.max(0.1, musicDuration)}
+                  step={0.1}
+                  value={musicRange}
+                  onValueChange={(v) => {
+                    if (v.length === 2) {
+                      const [a, b] = v
+                      if (b > a) setMusicRange([a, b])
+                    }
+                  }}
+                />
+              </div>
+            ) : (
+              <p className="text-xs text-zinc-500">Loading audio…</p>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:justify-between">
+            <Button type="button" variant="ghost" onClick={handleClearMusic}>
+              Remove
+            </Button>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handlePreviewMusicRange}
+                disabled={musicDuration <= 0}
+              >
+                Preview
+              </Button>
+              <Button type="button" onClick={() => setIsMusicDialogOpen(false)}>
+                Done
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <AlertDialog>
         <AlertDialogTrigger asChild>
           <button
