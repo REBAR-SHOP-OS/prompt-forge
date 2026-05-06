@@ -1,57 +1,44 @@
 ## Goal
 
-Upgrade the "Soundtrack for Final Film" modal so the audio is presented as an interactive **Waveform** with a proper **Seek Bar** and **Scrubbing**, replacing the current basic `<audio controls>` element + plain range slider.
+Add a small **animated visual preview** next to each transition option in the "Transition" dropdown (Cut, Fade, Crossfade, Slide ←, Slide →, Wipe, Zoom) so users can see what each effect looks like before picking one. Also show a tiny preview thumbnail next to the selected transition label on the inline pill button.
 
 ## Current State
 
-In `src/modules/generator-ui/pages/DashboardPage.tsx` (lines ~1460–1533), the modal shows:
-- A native `<audio controls>` player
-- A two-thumb `Slider` for selecting the start/end of the soundtrack region
-- Preview / Done / Remove buttons
-
-There is no visual waveform, no playhead indicator on the slider, and no click-to-seek/drag scrubbing on a timeline.
+In `src/modules/generator-ui/pages/DashboardPage.tsx` (lines ~1855–1882), the transition dropdown lists each option as plain text only. Users have to guess what each effect does. Reference image shows the current text-only menu (Transition / Fade / Crossfade / Slide ← / Slide → / Wipe / Zoom).
 
 ## Plan
 
-### 1. Add a waveform library
-Use **`wavesurfer.js`** (lightweight, no React wrapper required, works with any audio URL/blob). Install via `bun add wavesurfer.js`.
+### 1. New component: `TransitionPreview.tsx`
+Location: `src/modules/generator-ui/components/TransitionPreview.tsx`
 
-### 2. New component `SoundtrackWaveform.tsx`
-Location: `src/modules/generator-ui/components/SoundtrackWaveform.tsx`
+A small (~32×20 px) self-contained animated thumbnail that depicts each transition between two colored "A" and "B" panels. It uses `requestAnimationFrame` to loop a 0→1 progress value with a short hold at start/end, then renders the two panels using transform/opacity/clip-path:
 
-Responsibilities:
-- Render a canvas-based waveform of `musicUrl` using WaveSurfer
-- Show a moving **playhead** (seek bar) synced with playback
-- Support **scrubbing**: click anywhere on the waveform to seek; drag the playhead to scrub
-- Render the **selection region** (start/end) as a translucent overlay using WaveSurfer's `regions` plugin, with two draggable handles
-- Emit callbacks: `onReady(duration)`, `onRangeChange([start, end])`, `onTimeUpdate(currentTime)`
-- Expose imperative methods via `ref`: `play()`, `pause()`, `seekTo(seconds)`, `playRange(start, end)`
+- **Cut** — instant swap at the midpoint
+- **Fade** — A fades to black, then B fades in
+- **Crossfade** — A opacity 1→0 while B opacity 0→1 simultaneously
+- **Slide ←** — A slides out left while B slides in from right
+- **Slide →** — A slides out right while B slides in from left
+- **Wipe** — vertical wipe from left to right via `clip-path`
+- **Zoom** — A scales up + fades out while B scales up + fades in
 
-Visual style: matches existing dark theme (waveform in `zinc-400`, progress in white, region overlay in `emerald-400/20`).
+Props: `id: TransitionId`, `size?: number`, `loop?: boolean` (default true).
 
-### 3. Replace modal internals
-In `DashboardPage.tsx` modal body (lines 1478–1511):
-- Remove the native `<audio>` element and the standalone `Slider`
-- Insert `<SoundtrackWaveform>` taking the full width, ~96px tall
-- Below it keep the time readout: `currentTime / duration` on the left, `selection start – end` on the right
-- Add a small Play/Pause button beside the time readout (since native controls are gone)
+The animation runs continuously while the dropdown is open (and on the inline pill — see step 3). Cleanup cancels the RAF on unmount.
 
-### 4. Wire up state
-- Replace `musicPreviewAudioRef` usage with a ref to the new waveform component
-- `handlePreviewMusicRange` calls `waveformRef.current?.playRange(musicRange[0], musicRange[1])`
-- `handleMusicLoadedMetadata` is replaced by the component's `onReady` callback
-- `musicRange` is updated via `onRangeChange` from region drag
+### 2. Update the transition dropdown
+In `DashboardPage.tsx` (lines 1870–1880):
+- Render each `DropdownMenuItem` with a flex layout: `<TransitionPreview id={opt.id} />` on the left, label on the right.
+- Slightly widen the menu (`min-w-[12rem]`) to accommodate the thumbnails.
 
-### 5. Cleanup
-Destroy the WaveSurfer instance on unmount / when `musicUrl` changes to avoid memory leaks.
+### 3. Update the inline pill trigger
+In `DashboardPage.tsx` (lines 1856–1866):
+- Replace the `Sparkles` icon with `<TransitionPreview id={transitionId} size={22} />` so the user sees a live mini-preview of the currently selected transition right on the timeline.
+- Keep the text label next to it.
 
-## Technical Notes
-
-- WaveSurfer v7 (ESM) is the version to install; uses Web Audio API + Canvas.
-- Regions plugin: `import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js'`.
-- For long tracks, enable `normalize: true` and a reasonable `barWidth: 2, barGap: 1` for a clean look.
-- No backend / DB changes required — purely a UI enhancement of the existing soundtrack picker. The selected `musicRange` continues to flow into `mergeVideos` as before.
+### 4. Styling
+- Use semantic-friendly inline colors for the A/B panels (a blue and an amber tone) so the motion is clearly visible against the dark UI.
+- Rounded corners (3 px) and a subtle `border-white/15` to match existing pill/menu chrome.
 
 ## Out of Scope
-- No changes to merge logic or audio processing pipeline.
-- No changes to the prompt bar Music button or upload flow.
+- No changes to the actual `mergeVideos` rendering logic — previews are illustrative only and live entirely in the UI layer.
+- No new dependencies.
