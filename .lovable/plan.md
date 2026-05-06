@@ -1,67 +1,50 @@
-## هدف
+# اجرای پرامت روی همان عکس آپلودشده
 
-پاکسازی فایل‌های مرده/شیم در ریپو **بدون هیچ تغییر رفتاری**. وضعیت فعلی پروژه (Dashboard، منطق Start-only/End-only/both، احراز هویت، شماره‌گذاری کارت‌ها) به‌عنوان baseline ثابت می‌ماند و نقاط ورود فعلی (`src/main.tsx` → `src/App.tsx` → `AuthProvider` + `LoginPage`/`DashboardPage`) دست‌نخورده باقی می‌مانند.
+## مشکل فعلی
 
-## فایل‌هایی که حذف می‌شوند
+وقتی کاربر فقط یک عکس (Start یا End) آپلود می‌کند و پرامت می‌نویسد:
+- سیستم درخواست را به مدل **text-to-video** (`wan2.7-t2v`) می‌فرستد — یعنی پرامت فقط روی متن اجرا می‌شود، نه روی عکس.
+- سپس عکس آپلودشده را به‌عنوان یک کلیپ ثابت ۲ ثانیه‌ای به ابتدا یا انتهای ویدیو *می‌چسباند*.
+- نتیجه: ویدیو هیچ ربطی به محتوای عکس ندارد — عکس فقط یک «بنر» چسبیده است.
 
-پس از بررسی ارجاعات (هیچ مصرف‌کننده‌ی فعالی ندارند):
+خواسته کاربر: «پرامت دقیقاً روی همان عکس اجرا شود» = حالت **image-to-video واقعی** با همان یک فریم.
 
-**شیم‌های قدیمی (re-export فقط):**
-- `src/context/AuthProvider.tsx` — شیم به `@/core/auth/AuthProvider`، صفر مصرف‌کننده.
-- `src/components/system/LoadingScreen.tsx` — شیم به `@/core/ui/LoadingScreen`، صفر مصرف‌کننده.
-- `src/components/system/UserBadge.tsx` — شیم به `@/core/ui/UserBadge`، صفر مصرف‌کننده.
-- `src/routes/ProtectedRoute.tsx` — شیم، صفر مصرف‌کننده.
-- `src/routes/AdminRoute.tsx` — شیم، صفر مصرف‌کننده.
-- `src/pages/admin/AdminPage.tsx` — شیم، صفر مصرف‌کننده.
-- `src/pages/app/DashboardPage.tsx` — شیم، صفر مصرف‌کننده (App.tsx مستقیم از ماژول import می‌کند).
+## راه‌حل
 
-**صفحات/کامپوننت‌های یتیم:**
-- `src/pages/auth/SignupPage.tsx` — هیچ مسیری به آن وصل نیست.
-- `src/pages/auth/LoginPage.tsx` — استفاده می‌شود توسط App.tsx، **نگه داشته می‌شود** (اصلاح: import داخلی به AuthForm حذف می‌شود فقط اگر AuthForm حذف شود — جزئیات پایین).
-- `src/pages/Index.tsx` — placeholder بدون router مصرف‌کننده.
-- `src/pages/NotFound.tsx` — هیچ router فعالی، صفر مصرف‌کننده.
-- `src/pages/system/UnauthorizedPage.tsx` — صفر مصرف‌کننده.
-- `src/layouts/AppShell.tsx` — صفر مصرف‌کننده.
-- `src/components/NavLink.tsx` — صفر مصرف‌کننده.
-- `src/core/migration/cutover.ts` — فقط داخل خودش استفاده می‌شود، صفر مصرف‌کننده‌ی خارجی.
+از مسیر Wan i2v واقعی استفاده کنیم، اما با یک فریم. DashScope در پروتکل `media[]` اجازه می‌دهد فقط `first_frame` (یا فقط `last_frame`) ارسال شود — مدل i2v آن را به‌عنوان فریم لنگر می‌گیرد و کل ویدیو را بر اساس پرامت از روی همان عکس می‌سازد.
 
-**کامپوننت‌های ماژول بلااستفاده:**
-- `src/modules/generator-ui/components/GenerateVideoCard.tsx` — صفر مصرف‌کننده (DashboardPage از آن استفاده نمی‌کند).
-- `src/modules/generator-ui/components/RoutePreviewCard.tsx` — صفر مصرف‌کننده.
+## تغییرات (بدون تغییر ظاهری)
 
-**نکته درباره `AuthForm` و `LoginPage/SignupPage`:**
-- `LoginPage` در App.tsx استفاده می‌شود → نگه داشته می‌شود.
-- `SignupPage` بلااستفاده است → حذف می‌شود.
-- `AuthForm` فقط توسط `LoginPage` و `SignupPage` استفاده می‌شود؛ پس از حذف SignupPage، `AuthForm` همچنان توسط LoginPage مصرف می‌شود → **نگه داشته می‌شود**.
+### ۱. `supabase/functions/_shared/modules/external-api-adapter/service.ts`
+در `startWanI2V`:
+- شرط اجباری «هر دو فریم» حذف شود.
+- حداقل یکی از `firstFrameUrl` یا `lastFrameUrl` لازم باشد.
+- آرایه `media` به‌صورت پویا فقط شامل فریم‌های موجود ساخته شود (یک یا دو ورودی).
 
-**نکته درباره `src/lib/api.ts`:**
-- شیم با ۱۷ ارجاع (احتمالاً غیرمستقیم در ماژول‌های backend). با توجه به ریسک، **نگه داشته می‌شود** در این پاکسازی.
+### ۲. `supabase/functions/_shared/modules/job-orchestrator/gateway.ts` (خط ۲۱۰–۲۱۵)
+- بلوک `MISSING_FRAMES` که حالت تک‌فریم را رد می‌کرد، حذف شود.
+- اعتبارسنجی URL هر فریم (که جداگانه است) دست‌نخورده باقی بماند.
 
-## فایل‌هایی که دست‌نخورده می‌مانند
+### ۳. `src/modules/generator-ui/pages/DashboardPage.tsx` (خط ~۸۳۴–۸۵۹)
+شاخه‌های «فقط Start» و «فقط End» بازنویسی شوند:
+- به‌جای فراخوانی t2v + چسباندن کلیپ ثابت، مستقیماً i2v واقعی فراخوانی شود:
+  - فقط Start → `createJob({ providerKey:'wan', firstFrameUrl: readyStartFrame.url, prompt, durationSeconds })`
+  - فقط End → `createJob({ providerKey:'wan', lastFrameUrl: readyEndFrame.url, prompt, durationSeconds })`
+- متغیرهای `pendingStartPrependUrl` و `pendingEndAppendUrl` و کل منطق چسباندن (merge) برای حالت تک‌فریم حذف شوند تا ویدیو خروجی همان i2v خام باشد.
+- `seedFrames` همان فریم موجود را نگه دارد تا کارت تاریخچه درست نمایش داده شود.
 
-- `src/App.tsx`, `src/main.tsx`
-- `src/core/**` (به جز `migration/cutover.ts`)
-- `src/modules/generator-ui/pages/DashboardPage.tsx` و libهای آن (`mergeVideos`, `imageToClip`, `proxiedVideoUrl`, `WelcomeVideoOverlay`)
-- `src/modules/job-orchestrator/**`
-- `src/integrations/supabase/**`
-- تمام `src/components/ui/**` (shadcn)
-- تمام edge functions در `supabase/functions/**`
-- `supabase/config.toml`
-- ماژول‌های backend دیگر (`admin-monitor`, `credit-management`, `video-library`, `external-api-adapter`) — حتی اگر در UI فعلی استفاده نمی‌شوند، بک‌اند آن‌ها فعال است؛ طبق پاسخ شما (صفر تغییر رفتاری) دست‌نخورده می‌مانند.
+## رفتار پس از تغییر
 
-## مراحل اجرا
+| ورودی کاربر | رفتار |
+|---|---|
+| فقط پرامت | text-to-video (بدون تغییر) |
+| فقط Start + پرامت | **i2v واقعی روی Start** ← پرامت روی همان عکس اجرا می‌شود |
+| فقط End + پرامت | i2v واقعی با لنگر End |
+| Start + End + پرامت | i2v دو فریمه (بدون تغییر) |
 
-1. حذف ۱۵ فایل مرده‌ی فهرست‌شده‌ی بالا با `rm`.
-2. اجرای جستجوی نهایی برای اطمینان از عدم وجود import شکسته (`rg "context/AuthProvider|components/system|routes/Protected|routes/Admin|pages/admin/AdminPage|pages/app/DashboardPage|pages/Index|pages/NotFound|pages/system/Unauthorized|layouts/AppShell|components/NavLink|migration/cutover|GenerateVideoCard|RoutePreviewCard|pages/auth/SignupPage" src/`).
-3. اگر هر import شکسته‌ای پیدا شد، فایل را برمی‌گردانیم (rollback ایمن).
-4. هیچ تغییری در فایل‌های باقیمانده اعمال نمی‌شود.
+## بدون تغییر ظاهری
+هیچ تغییری در UI، چیدمان، رنگ، دکمه‌ها یا متن‌ها نیست. فقط منطق پشت دکمه «Prompt» اصلاح می‌شود.
 
-## ریسک و ایمنی
-
-- **ریسک رفتاری: صفر** — تمام فایل‌های حذف‌شده هیچ مصرف‌کننده‌ی فعالی ندارند (تأیید شده با `rg`).
-- **ریسک build: صفر** — TypeScript بعد از حذف خطایی نخواهد داد چون چیزی به این فایل‌ها import نمی‌کند.
-- اگر لازم شد بازگرداندن، از History پروژه استفاده می‌شود.
-
-## خروجی نهایی
-
-ریپوی تمیزتر با ~۱۵ فایل کمتر، رفتار اپ ۱۰۰٪ یکسان با وضعیت فعلی baseline.
+## ریسک‌ها
+- در صورتی که DashScope در یک نسخه از مدل، `last_frame` تنها را قبول نکند، خطای provider بازگردانده می‌شود (ایمن — کردیت refund می‌شود از طریق `failJob`).
+- هیچ migration یا تغییر schema لازم نیست.
