@@ -2179,6 +2179,13 @@ export default function DashboardPage() {
                     alt="Uploaded reference"
                     className="h-full w-full bg-black object-contain"
                   />
+                  <ClipOverlayLayer
+                    overlays={overlaysApi.getForClip(previewItem.image.id)}
+                    editable
+                    selectedId={selectedOverlayId}
+                    onSelect={setSelectedOverlayId}
+                    onChange={(id, patch) => overlaysApi.update(id, patch)}
+                  />
                 </div>
                 <div className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
