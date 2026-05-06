@@ -1696,32 +1696,7 @@ export default function DashboardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <button
-            className="fixed left-1/2 top-4 z-50 flex h-9 -translate-x-1/2 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100 sm:top-5"
-            type="button"
-            aria-label="Start over"
-          >
-            <RotateCcw className="h-[14px] w-[14px]" aria-hidden="true" />
-            <span>Start over</span>
-          </button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Start over?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This clears every card in History and resets the prompt, frames, mode, and duration.
-              Saved videos in Your library are kept.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleStartOver}>Start over</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      </div>
 
       <main className="grid min-h-screen place-items-center px-4 pb-40" aria-live="polite">
         {previewVideo ? (
