@@ -2328,46 +2328,148 @@ export default function DashboardPage() {
                 <p className="mt-2 text-xs leading-5 text-zinc-600">Recent outputs will appear here.</p>
               </div>
             </div>
-          ) : displayedVideos.length > 0 || userImages.length > 0 ? (
+          ) : displayedClips.length > 0 ? (
             <div className="grid min-w-0 gap-3">
-              {userImages.map((img) => (
-                <article
-                  key={`img-${img.id}`}
-                  className="w-full min-w-0 rounded-2xl border border-white/10 bg-white/[0.035] p-3 transition hover:border-white/20 hover:bg-white/[0.055]"
-                >
-                  <div
-                    className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
-                    style={{ aspectRatio: '1 / 1' }}
-                  >
-                    <img
-                      src={img.storage_path}
-                      alt="Uploaded reference"
-                      className="h-full w-full object-cover"
-                      loading="lazy"
-                    />
-                  </div>
-                  <div className="mt-3 flex items-center justify-between gap-2">
-                    <p className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-400">
-                      Uploaded image
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteUserImage(img.id)}
-                      aria-label="Delete image"
-                      title="Delete image"
-                      className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                    </button>
-                  </div>
-                </article>
-              ))}
-              {displayedVideos.map((video, index) => {
+              {displayedClips.map((clip, index) => {
+                const isLast = index === displayedClips.length - 1
+                const isDragging = draggingId === clip.id
+
+                if (clip.kind === 'image') {
+                  const img = clip.image
+                  const isPreviewSelected = previewVideoId === clip.id
+                  const transitionId: TransitionId = transitions[clip.id] ?? 'cut'
+                  return (
+                    <Fragment key={`img-${img.id}`}>
+                      <article
+                        draggable
+                        onDragStart={handleCardDragStart(clip.id)}
+                        onDragOver={handleCardDragOver}
+                        onDrop={handleCardDrop(clip.id)}
+                        onDragEnd={handleCardDragEnd}
+                        className={`w-full min-w-0 cursor-pointer rounded-2xl border p-3 transition hover:border-white/20 hover:bg-white/[0.055] ${
+                          isPreviewSelected ? 'border-white/20 bg-white/[0.06]' : 'border-white/10 bg-white/[0.035]'
+                        } ${isDragging ? 'opacity-50' : ''}`}
+                        role="button"
+                        tabIndex={0}
+                        aria-label="Preview uploaded image"
+                        onClick={() => setPreviewVideoId(clip.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            setPreviewVideoId(clip.id)
+                          }
+                        }}
+                      >
+                        <div
+                          className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
+                          style={{ aspectRatio: '1 / 1' }}
+                        >
+                          <img
+                            src={img.storage_path}
+                            alt="Uploaded reference"
+                            className="h-full w-full object-cover"
+                            loading="lazy"
+                          />
+                          <span
+                            className="pointer-events-none absolute left-2 top-2 grid h-6 min-w-6 place-items-center rounded-full bg-black/70 px-1.5 text-xs font-semibold tabular-nums text-white shadow-md ring-1 ring-white/15"
+                            aria-label={`Card ${index + 1}`}
+                          >
+                            {index + 1}
+                          </span>
+                        </div>
+                        <div className="mt-3 flex items-start justify-between gap-2">
+                          <p className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-200">
+                            Uploaded image
+                          </p>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <span
+                              onClick={(event) => event.stopPropagation()}
+                              className="grid h-7 w-5 shrink-0 cursor-grab place-items-center text-zinc-500 transition hover:text-zinc-200 active:cursor-grabbing"
+                              title="Drag to reorder"
+                              aria-label="Drag to reorder"
+                            >
+                              <GripVertical className="h-4 w-4" aria-hidden="true" />
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                handleDeleteUserImage(img.id)
+                              }}
+                              aria-label="Delete image"
+                              title="Delete image"
+                              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                            </button>
+                          </div>
+                        </div>
+                        <div
+                          className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <label className="inline-flex items-center gap-2">
+                            <span>Duration</span>
+                            <input
+                              type="number"
+                              min={1}
+                              max={15}
+                              step={1}
+                              value={img.still_duration_seconds}
+                              onChange={(e) => updateImageDuration(img.id, Number(e.target.value))}
+                              className="h-7 w-14 rounded-md border border-white/10 bg-white/[0.04] px-2 text-center text-xs text-zinc-100 outline-none focus:border-white/30"
+                              aria-label="Image duration in Final Film (seconds)"
+                            />
+                            <span>s</span>
+                          </label>
+                          <span>{formatCreatedAt(img.created_at)}</span>
+                        </div>
+                      </article>
+                      {!isLast ? (
+                        <div
+                          className="flex items-center gap-2 px-1 text-xs text-zinc-500"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-white/25 hover:text-zinc-100"
+                                title="Transition between these clips"
+                                aria-label={`Transition: ${TRANSITION_LABEL[transitionId]}`}
+                              >
+                                <TransitionPreview id={transitionId} size={22} />
+                                <span>{TRANSITION_LABEL[transitionId]}</span>
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="center" className="min-w-[12rem]">
+                              <DropdownMenuLabel>Transition</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              {TRANSITION_OPTIONS.map((opt) => (
+                                <DropdownMenuItem
+                                  key={opt.id}
+                                  onSelect={() => {
+                                    setTransitions((current) => ({ ...current, [clip.id]: opt.id }))
+                                  }}
+                                  className={`flex items-center gap-2 ${transitionId === opt.id ? 'bg-white/[0.06] text-zinc-100' : ''}`}
+                                >
+                                  <TransitionPreview id={opt.id} size={32} />
+                                  <span>{opt.label}</span>
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                          <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
+                        </div>
+                      ) : null}
+                    </Fragment>
+                  )
+                }
+
+                const video = clip.job
                 const status = normalizeStatus(video.status)
                 const isPreviewSelected = previewVideo?.id === video.id
-                const isDragging = draggingId === video.id
-
-                const isLast = index === displayedVideos.length - 1
                 const transitionId: TransitionId = transitions[video.id] ?? 'cut'
 
                 return (
