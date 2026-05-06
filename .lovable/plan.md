@@ -1,82 +1,39 @@
 ## Goal
 
-In the Soundtrack modal, replace the current implicit behavior with **two clear icon buttons**:
+When the user clicks **Done** in the Soundtrack dialog, the chosen audio settings (Music only / Mix with volumes) must be applied to the Final Film immediately — not just saved silently.
 
-1. **Music Only** (🎵) — Plays only the soundtrack on the Final Film; the original clip audio is fully muted.
-2. **Mix / Edit Audio** (🎚) — Opens volume controls so the user can independently adjust:
-   - Clip audio volume (0–100%)
-   - Music volume (0–100%)
-   Both are then mixed together over the Final Film.
+Currently `Done` only closes the dialog. The merge runs only when the user separately clicks the Final Film button. So changing audio settings after a film exists has no visible effect.
 
-The chosen mode + volumes are applied during the merge.
+## Change
 
-## UI Changes — `DashboardPage.tsx` (Soundtrack Dialog, ~line 1734–1790)
+In `src/modules/generator-ui/pages/DashboardPage.tsx` (Done button, ~line 1867):
 
-Add a mode selector row above "Selection":
+- Rename the action from "Done" to **"Apply to Final Film"** when there are ≥ 2 completed clips (otherwise keep "Done").
+- On click:
+  1. Close the dialog.
+  2. If not already merging and there are ≥ 2 finished source clips, trigger `handleMergeAllVideos()` so a new Final Film is rendered with the new audio settings.
+- Disable the button while `isMerging` is true and show "Applying…" label.
 
-```text
-[ 🎵 Music only ]   [ 🎚 Mix audio ]
-```
-
-- The two buttons are mutually exclusive (toggle group). Active one is highlighted (emerald, matching existing waveform accent).
-- When **Mix** is selected, reveal two sliders below:
-  - "Clip audio" slider (0–100, default 100)
-  - "Music" slider (0–100, default 100)
-- When **Music only** is selected, hide sliders. (Internally: clipVolume = 0, musicVolume = 1.)
-- "Done" persists mode + volumes into state; "Remove" clears soundtrack as today.
-
-New state in `DashboardPage`:
-```ts
-const [soundtrackMode, setSoundtrackMode] = useState<'music-only' | 'mix'>('music-only')
-const [clipVolume, setClipVolume] = useState(1)   // 0..1
-const [musicVolume, setMusicVolume] = useState(1) // 0..1
-```
-
-## Merge Pipeline — `mergeVideos.ts`
-
-Extend `MergeAudioOptions`:
-```ts
-export interface MergeAudioOptions {
-  src: string
-  startSec: number
-  endSec: number
-  musicVolume?: number   // 0..1, default 1
-  clipVolume?: number    // 0..1, default 0 (music-only legacy behavior)
-}
-```
-
-Replace the current `useSoundtrack ? mute clips : capture clips` logic with a true mixer:
-
-- Always create the `AudioContext` + `MediaStreamAudioDestinationNode`.
-- For the **soundtrack** element: route through a `GainNode` set to `musicVolume`, then to destination.
-- For each **clip video**: 
-  - If `clipVolume > 0`, create `MediaElementAudioSourceNode` → `GainNode(clipVolume)` → destination, and set `video.muted = false`.
-  - If `clipVolume === 0`, mute the element (current behavior) and skip routing.
-- The existing soundtrack rAF clamp loop (winStart/winEnd) is preserved.
-
-This lets both audio sources play simultaneously, each at user-defined volume.
-
-## Call Site — `DashboardPage.tsx` (~line 1435)
-
-```ts
-const audioOpt = musicUrl && musicRange[1] > musicRange[0]
-  ? {
-      src: musicUrl,
-      startSec: musicRange[0],
-      endSec: musicRange[1],
-      musicVolume,
-      clipVolume: soundtrackMode === 'music-only' ? 0 : clipVolume,
+```tsx
+<Button
+  type="button"
+  disabled={isMerging}
+  onClick={() => {
+    setIsMusicDialogOpen(false)
+    if (!isMerging && completedSourceVideos.length >= 2) {
+      void handleMergeAllVideos()
     }
-  : undefined
+  }}
+>
+  {isMerging
+    ? 'Applying…'
+    : completedSourceVideos.length >= 2
+      ? 'Apply to Final Film'
+      : 'Done'}
+</Button>
 ```
-
-## Files Edited
-
-- `src/modules/generator-ui/pages/DashboardPage.tsx` — add mode state, two icon buttons + sliders inside Soundtrack dialog, pass volumes to merge.
-- `src/modules/generator-ui/lib/mergeVideos.ts` — extend `MergeAudioOptions` and add per-source `GainNode` mixing.
 
 ## Out of Scope
 
-- Per-clip volume (only global clip volume).
-- Live preview of the mix before generation (mix is rendered at merge time, like today).
-- Fade-in/out envelopes on the soundtrack.
+- No change to the merge pipeline itself (volumes are already wired through `handleMergeAllVideos` → `mergeVideoUrls`).
+- No automatic re-merge on every slider change — only on explicit Apply click.
