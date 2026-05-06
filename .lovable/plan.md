@@ -1,33 +1,21 @@
 ## مشکل
-در پایین پنل History یک نوار اسکرول افقی ظاهر شده. علت: عنصر `<video controls>` در داخل کارت‌ها یک حداقل عرض ذاتی (intrinsic min‑width) برای نوار کنترل اعمال می‌کند که از عرض پنل بزرگ‌تر می‌شود؛ container قابل‌اسکرول `overflow-y-auto` هم به‌صورت پیش‌فرض اجازه اسکرول افقی می‌دهد.
+در تصویر، کارت دوم (نسبت 1:1) از عرض پنل History بیرون زده. علت: `<article>` فاقد `min-w-0` است، و `<video>` داخل آن intrinsic width خودش (عرض ویدیوی منبع) را تحمیل می‌کند که بزرگ‌تر از عرض ستون grid است. `aspect-ratio` روی wrapper جلوی این رفتار را نمی‌گیرد چون wrapper هم می‌تواند گشاد شود.
 
 ## تغییر (در `src/modules/generator-ui/pages/DashboardPage.tsx`)
 
-1) خط 1954 — جلوگیری از اسکرول افقی در ستون History:
+1) خط 1981 — اضافه‌کردن `min-w-0 w-full` به article تا فرزند grid اجازه shrink داشته باشد:
 ```tsx
-// از:
-<div className="mt-3 flex-1 overflow-y-auto pr-1">
-// به:
-<div className="mt-3 flex-1 overflow-y-auto overflow-x-hidden pr-1">
+className={`w-full min-w-0 cursor-pointer rounded-2xl border p-3 transition hover:border-white/20 hover:bg-white/[0.055] ${
 ```
 
-2) خط 1964 — اضافه‌کردن `min-w-0` به grid کارت‌ها تا فرزندان flex/grid اجازه shrink بگیرند:
+2) خطوط 2000–2017 — اضافه‌کردن `max-w-full` به تگ `<video>` تا هرگز از container بزرگ‌تر نشود:
 ```tsx
-// از:
-<div className="grid gap-3">
-// به:
-<div className="grid min-w-0 gap-3">
-```
-
-3) خطوط 1995–1997 — اضافه‌کردن `min-w-0` به wrapper ویدیو تا `<video controls>` نتواند کارت را گشاد کند:
-```tsx
-<div
-  className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
-  style={{ aspectRatio: ratioToCss(getRatioFor(video)) }}
->
+<video
+  className="h-full w-full max-w-full bg-black object-cover"
+  ...
 ```
 
 ## چرا امن است
-- صرفاً CSS است؛ هیچ منطق، state یا API تغییر نمی‌کند.
-- ابعاد عمودی، نسبت تصویر، عرض پنل و markup کارت دست‌نخورده می‌مانند.
-- اسکرول عمودی (که برای پیمایش لیست لازم است) حفظ می‌شود.
+- فقط CSS است؛ منطق، state، یا API تغییری نمی‌کند.
+- `aspect-ratio` و سایر استایل‌ها حفظ می‌شود.
+- اسکرول عمودی، انتخاب کارت، drag، و دکمه‌ها دست‌نخورده می‌مانند.
