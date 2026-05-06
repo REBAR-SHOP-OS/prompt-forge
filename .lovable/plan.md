@@ -1,50 +1,30 @@
-# اجرای پرامت روی همان عکس آپلودشده
+# مشکل
+وقتی روی آیکون «اتصال کارت‌ها» (merge) می‌زنی و ویدیوی نهایی ادغام‌شده دانلود می‌شه، **بدون صدا** است. اما دانلود تک‌تک کارت‌ها صدا داره.
 
-## مشکل فعلی
+## ریشه مشکل
+فایل `src/modules/generator-ui/lib/mergeVideos.ts` ادغام رو با `canvas.captureStream()` + `MediaRecorder` انجام می‌ده. این روش فقط فریم‌های تصویری canvas رو ضبط می‌کنه و audio track ویدیوها کلاً حذف می‌شه. در کامنت بالای فایل هم صریح نوشته شده:
+> "Audio is dropped in v1 (canvas/MediaRecorder audio mux is fragile)."
 
-وقتی کاربر فقط یک عکس (Start یا End) آپلود می‌کند و پرامت می‌نویسد:
-- سیستم درخواست را به مدل **text-to-video** (`wan2.7-t2v`) می‌فرستد — یعنی پرامت فقط روی متن اجرا می‌شود، نه روی عکس.
-- سپس عکس آپلودشده را به‌عنوان یک کلیپ ثابت ۲ ثانیه‌ای به ابتدا یا انتهای ویدیو *می‌چسباند*.
-- نتیجه: ویدیو هیچ ربطی به محتوای عکس ندارد — عکس فقط یک «بنر» چسبیده است.
+# راه‌حل
+بازنویسی `mergeVideos.ts` با ترکیب stream تصویری canvas و stream صوتی هر کلیپ از طریق `WebAudio API`:
 
-خواسته کاربر: «پرامت دقیقاً روی همان عکس اجرا شود» = حالت **image-to-video واقعی** با همان یک فریم.
+1. ساخت یک `AudioContext` و `MediaStreamAudioDestinationNode` مشترک
+2. برای هر ویدیو: گرفتن `MediaElementAudioSourceNode` از `<video>` و وصل کردن به destination مشترک (به جای خروجی speaker)
+3. ترکیب `canvas.captureStream()` (ویدیو) + `destination.stream` (صوت) در یک `MediaStream` واحد
+4. دادن این stream ترکیبی به `MediaRecorder` با `mimeType: 'video/webm;codecs=vp9,opus'` (یا fallback به vp8/opus)
+5. حذف `muted=true` از تگ video (لازمه برای autoplay اما باید صدا از طریق WebAudio routing بره — استفاده از `video.muted=true` همراه با `MediaElementSource` در WebAudio کار نمی‌کنه چون در بعضی مرورگرها سورس صامت می‌شه؛ راه‌حل: `muted=false` + `volume=0` روی خود element تا از speaker پخش نشه ولی WebAudio صدا رو بگیره). در عمل بهترین روش: نگه داشتن `muted=true` روی element و استفاده از `AudioContext.createMediaElementSource` که در اکثر مرورگرها صدا رو حتی با element.muted=true به graph می‌فرسته — اگر مشکل ساز شد، fallback به `volume=0`.
+6. بسته شدن AudioContext در پایان برای آزادسازی منابع
 
-## راه‌حل
+## نکات فنی
+- `MediaElementAudioSourceNode` فقط یک‌بار در طول عمر element قابل ساخته شدن است؛ پس برای هر ویدیو که load می‌کنیم، فوراً source بسازیم و نگه داریم
+- اگر کلیپی audio track نداشت، چیزی به graph اضافه نمی‌شه (silent gap طبیعیه)
+- mimeType جدید: اول `video/webm;codecs=vp9,opus`، بعد `video/webm;codecs=vp8,opus`، در نهایت `video/webm`
+- خروجی همچنان `.webm` باقی می‌مونه (بدون تغییر در نام/پسوند فایل)
 
-از مسیر Wan i2v واقعی استفاده کنیم، اما با یک فریم. DashScope در پروتکل `media[]` اجازه می‌دهد فقط `first_frame` (یا فقط `last_frame`) ارسال شود — مدل i2v آن را به‌عنوان فریم لنگر می‌گیرد و کل ویدیو را بر اساس پرامت از روی همان عکس می‌سازد.
+## فایل‌های تحت تأثیر
+- `src/modules/generator-ui/lib/mergeVideos.ts` — تنها فایل ویرایش‌شده
 
-## تغییرات (بدون تغییر ظاهری)
-
-### ۱. `supabase/functions/_shared/modules/external-api-adapter/service.ts`
-در `startWanI2V`:
-- شرط اجباری «هر دو فریم» حذف شود.
-- حداقل یکی از `firstFrameUrl` یا `lastFrameUrl` لازم باشد.
-- آرایه `media` به‌صورت پویا فقط شامل فریم‌های موجود ساخته شود (یک یا دو ورودی).
-
-### ۲. `supabase/functions/_shared/modules/job-orchestrator/gateway.ts` (خط ۲۱۰–۲۱۵)
-- بلوک `MISSING_FRAMES` که حالت تک‌فریم را رد می‌کرد، حذف شود.
-- اعتبارسنجی URL هر فریم (که جداگانه است) دست‌نخورده باقی بماند.
-
-### ۳. `src/modules/generator-ui/pages/DashboardPage.tsx` (خط ~۸۳۴–۸۵۹)
-شاخه‌های «فقط Start» و «فقط End» بازنویسی شوند:
-- به‌جای فراخوانی t2v + چسباندن کلیپ ثابت، مستقیماً i2v واقعی فراخوانی شود:
-  - فقط Start → `createJob({ providerKey:'wan', firstFrameUrl: readyStartFrame.url, prompt, durationSeconds })`
-  - فقط End → `createJob({ providerKey:'wan', lastFrameUrl: readyEndFrame.url, prompt, durationSeconds })`
-- متغیرهای `pendingStartPrependUrl` و `pendingEndAppendUrl` و کل منطق چسباندن (merge) برای حالت تک‌فریم حذف شوند تا ویدیو خروجی همان i2v خام باشد.
-- `seedFrames` همان فریم موجود را نگه دارد تا کارت تاریخچه درست نمایش داده شود.
-
-## رفتار پس از تغییر
-
-| ورودی کاربر | رفتار |
-|---|---|
-| فقط پرامت | text-to-video (بدون تغییر) |
-| فقط Start + پرامت | **i2v واقعی روی Start** ← پرامت روی همان عکس اجرا می‌شود |
-| فقط End + پرامت | i2v واقعی با لنگر End |
-| Start + End + پرامت | i2v دو فریمه (بدون تغییر) |
-
-## بدون تغییر ظاهری
-هیچ تغییری در UI، چیدمان، رنگ، دکمه‌ها یا متن‌ها نیست. فقط منطق پشت دکمه «Prompt» اصلاح می‌شود.
-
-## ریسک‌ها
-- در صورتی که DashScope در یک نسخه از مدل، `last_frame` تنها را قبول نکند، خطای provider بازگردانده می‌شود (ایمن — کردیت refund می‌شود از طریق `failJob`).
-- هیچ migration یا تغییر schema لازم نیست.
+## تضمین رفتار
+- ظاهر UI و آیکون merge هیچ تغییری نمی‌کنه
+- نام فایل دانلودی، فرمت webm، و progress callback همگی یکسان باقی می‌مونن
+- فقط track صوتی به خروجی اضافه می‌شه
