@@ -1,39 +1,61 @@
 ## Goal
 
-When the user clicks **Done** in the Soundtrack dialog, the chosen audio settings (Music only / Mix with volumes) must be applied to the Final Film immediately — not just saved silently.
+When the user has at least one generated clip in the current chain, the aspect ratio of all subsequent clips must match the **first clip's aspect ratio**. The other two ratio buttons should be visibly locked (disabled) so the user can only continue the chain in the same dimensions (e.g., if the first card is 9:16, only 9:16 stays selectable; 1:1 and 16:9 are locked).
 
-Currently `Done` only closes the dialog. The merge runs only when the user separately clicks the Final Film button. So changing audio settings after a film exists has no visible effect.
+This applies symmetrically: if the first clip is 1:1, only 1:1 is allowed; if 16:9, only 16:9.
 
-## Change
+The lock releases automatically when the chain is cleared (Start Over) or when no completed/active clips remain.
 
-In `src/modules/generator-ui/pages/DashboardPage.tsx` (Done button, ~line 1867):
+## Behavior
 
-- Rename the action from "Done" to **"Apply to Final Film"** when there are ≥ 2 completed clips (otherwise keep "Done").
-- On click:
-  1. Close the dialog.
-  2. If not already merging and there are ≥ 2 finished source clips, trigger `handleMergeAllVideos()` so a new Final Film is rendered with the new audio settings.
-- Disable the button while `isMerging` is true and show "Applying…" label.
+1. Compute a `lockedRatio` from the existing chain:
+   - Look at `generatedVideos` (excluding deleted), pick the **oldest non-deleted** entry, and read its aspect ratio via the existing `getRatioFor(...)` helper (which already falls back to the asset's `aspect_ratio`, then to the current selector).
+   - If there are zero clips in the chain → `lockedRatio = null` (user is free to choose).
+   - If there is one or more → `lockedRatio = ratio of the first clip`.
 
-```tsx
-<Button
-  type="button"
-  disabled={isMerging}
-  onClick={() => {
-    setIsMusicDialogOpen(false)
-    if (!isMerging && completedSourceVideos.length >= 2) {
-      void handleMergeAllVideos()
-    }
-  }}
->
-  {isMerging
-    ? 'Applying…'
-    : completedSourceVideos.length >= 2
-      ? 'Apply to Final Film'
-      : 'Done'}
-</Button>
-```
+2. When `lockedRatio` is set:
+   - Force `aspectRatio` state to `lockedRatio` (sync via effect so persisted localStorage value can't override).
+   - In the ratio radio group (lines 2480–2506), the two non-matching buttons render as **disabled**: greyed out, `cursor-not-allowed`, `aria-disabled="true"`, and a small lock icon appears next to the label. Clicking does nothing.
+   - The active (locked) button gets a subtle lock icon too, with a tooltip: "Locked to match the first clip in this chain (9:16). Start Over to change."
 
-## Out of Scope
+3. Start Over already calls `setPreviewVideoId(null)` and clears the chain — once the chain is empty the lock auto-releases and all three ratios become selectable again.
 
-- No change to the merge pipeline itself (volumes are already wired through `handleMergeAllVideos` → `mergeVideoUrls`).
-- No automatic re-merge on every slider change — only on explicit Apply click.
+4. The continuation seed flow (`editAndReuseJob`, auto-seed in line ~1197) does not need to change — generation already uses the current `aspectRatio` which will now equal the locked ratio.
+
+## Technical changes
+
+**File:** `src/modules/generator-ui/pages/DashboardPage.tsx`
+
+1. Add a `lockedRatio` memo near the existing `completedSourceVideos` memo (~line 674):
+   ```ts
+   const lockedRatio = useMemo<Ratio | null>(() => {
+     const chain = visibleVideos.filter(v => !deletedIds.has(v.id))
+     if (chain.length === 0) return null
+     // oldest first — visibleVideos is newest-first, so take the last
+     const first = chain[chain.length - 1]
+     return getRatioFor(first)
+   }, [visibleVideos, deletedIds])
+   ```
+
+2. Add an effect to force-sync the selector when locked:
+   ```ts
+   useEffect(() => {
+     if (lockedRatio && aspectRatio !== lockedRatio) {
+       setAspectRatio(lockedRatio)
+     }
+   }, [lockedRatio, aspectRatio])
+   ```
+
+3. In the ratio radio group (lines 2480–2506), per-option:
+   - `const isLocked = lockedRatio !== null && opt.value !== lockedRatio`
+   - Add `disabled={isLocked}`, `aria-disabled={isLocked}`.
+   - Skip `setAspectRatio` when `isLocked`.
+   - Apply muted classes when locked: `opacity-40 cursor-not-allowed pointer-events-none`.
+   - Render a small `Lock` icon (from `lucide-react`) next to the label when `isLocked`, and on the active locked button (different tooltip).
+   - Update `title` to explain the lock.
+
+## Out of scope
+
+- No DB / migration changes.
+- No change to merge logic — `mergedRatio` already reads from the first clip.
+- No change to backend.
