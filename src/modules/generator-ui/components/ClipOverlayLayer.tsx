@@ -127,7 +127,7 @@ export function ClipOverlayLayer({
         }
 
         return (
-          <img
+          <SignedImg
             key={o.id}
             src={o.image_url ?? ''}
             alt=""
