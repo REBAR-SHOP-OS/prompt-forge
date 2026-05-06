@@ -206,7 +206,7 @@ export const SoundtrackWaveform = forwardRef<SoundtrackWaveformHandle, Props>(
               type="button"
               onClick={togglePlay}
               disabled={!isReady}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/25 bg-white/10 text-zinc-50 shadow-sm transition hover:border-white/40 hover:bg-white/20 disabled:opacity-40"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-800 shadow-sm transition hover:border-zinc-400 hover:bg-zinc-50 disabled:opacity-40"
               aria-label={isPlaying ? 'Pause' : 'Play full track'}
               title={isPlaying ? 'Pause' : 'Play full track'}
             >
@@ -216,7 +216,7 @@ export const SoundtrackWaveform = forwardRef<SoundtrackWaveformHandle, Props>(
               type="button"
               onClick={playSelection}
               disabled={!isReady}
-              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-emerald-400/40 bg-emerald-500/15 px-3 text-[11px] font-medium uppercase tracking-wider text-emerald-100 transition hover:border-emerald-300/60 hover:bg-emerald-500/25 disabled:opacity-40"
+              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-emerald-600/40 bg-emerald-500/15 px-3 text-[11px] font-medium uppercase tracking-wider text-emerald-700 transition hover:border-emerald-600/60 hover:bg-emerald-500/25 disabled:opacity-40"
               aria-label="Play selected section"
               title="Play only the green selection"
             >
@@ -224,11 +224,11 @@ export const SoundtrackWaveform = forwardRef<SoundtrackWaveformHandle, Props>(
               <span>Play selection</span>
             </button>
           </div>
-          <span className="tabular-nums text-zinc-200">
+          <span className="tabular-nums text-zinc-600">
             {fmt(currentTime)} / {fmt(duration)}
           </span>
         </div>
-        <p className="text-[11px] leading-relaxed text-zinc-400">
+        <p className="text-[11px] leading-relaxed text-zinc-500">
           Drag the edges of the green box to choose the section. That section will play
           across the entire Final Film.
         </p>
