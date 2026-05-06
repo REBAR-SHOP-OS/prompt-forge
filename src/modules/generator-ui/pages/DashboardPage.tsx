@@ -77,6 +77,10 @@ import { TransitionPreview } from '@/modules/generator-ui/components/TransitionP
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { mergeVideoUrls, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
+import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
+import { useClipOverlays } from '@/modules/generator-ui/lib/useClipOverlays'
+import { ClipOverlayLayer } from '@/modules/generator-ui/components/ClipOverlayLayer'
+import { OverlayEditorPopover } from '@/modules/generator-ui/components/OverlayEditorPopover'
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
