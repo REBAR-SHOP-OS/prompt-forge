@@ -19,6 +19,8 @@ import {
   LoaderCircle,
   Lock,
   LogOut,
+  Mic,
+  MicOff,
   Music,
   Music2,
   SlidersHorizontal,
