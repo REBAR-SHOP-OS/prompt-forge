@@ -81,6 +81,7 @@ import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { useClipOverlays } from '@/modules/generator-ui/lib/useClipOverlays'
 import { ClipOverlayLayer } from '@/modules/generator-ui/components/ClipOverlayLayer'
 import { OverlayEditorPopover } from '@/modules/generator-ui/components/OverlayEditorPopover'
+import { SignedImg } from '@/modules/generator-ui/components/SignedImg'
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
