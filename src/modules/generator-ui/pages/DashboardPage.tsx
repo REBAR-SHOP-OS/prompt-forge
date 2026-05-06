@@ -2189,8 +2189,40 @@ export default function DashboardPage() {
                 <p className="mt-2 text-xs leading-5 text-zinc-600">Recent outputs will appear here.</p>
               </div>
             </div>
-          ) : displayedVideos.length > 0 ? (
+          ) : displayedVideos.length > 0 || userImages.length > 0 ? (
             <div className="grid min-w-0 gap-3">
+              {userImages.map((img) => (
+                <article
+                  key={`img-${img.id}`}
+                  className="w-full min-w-0 rounded-2xl border border-white/10 bg-white/[0.035] p-3 transition hover:border-white/20 hover:bg-white/[0.055]"
+                >
+                  <div
+                    className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
+                    style={{ aspectRatio: '1 / 1' }}
+                  >
+                    <img
+                      src={img.storage_path}
+                      alt="Uploaded reference"
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <p className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-400">
+                      Uploaded image
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteUserImage(img.id)}
+                      aria-label="Delete image"
+                      title="Delete image"
+                      className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                  </div>
+                </article>
+              ))}
               {displayedVideos.map((video, index) => {
                 const status = normalizeStatus(video.status)
                 const isPreviewSelected = previewVideo?.id === video.id
