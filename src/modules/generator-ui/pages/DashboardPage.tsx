@@ -351,14 +351,14 @@ export default function DashboardPage() {
   // and width helpers so every aspect ratio respects the same hard ceiling.
   const PREVIEW_MAX_HEIGHT = `${previewMaxHeightPx}px`
   const ratioToHeight = (r: Ratio): string => {
-    if (r === '9:16') return `min(${PREVIEW_MAX_HEIGHT}, calc((100vw - 26rem) * 16 / 9))`
-    if (r === '1:1') return `min(${PREVIEW_MAX_HEIGHT}, calc(100vw - 26rem))`
-    return `min(${PREVIEW_MAX_HEIGHT}, calc((100vw - 26rem) * 9 / 16))`
+    if (r === '9:16') return `min(${PREVIEW_MAX_HEIGHT}, calc((100vw - 56rem) * 16 / 9))`
+    if (r === '1:1') return `min(${PREVIEW_MAX_HEIGHT}, calc(100vw - 56rem))`
+    return `min(${PREVIEW_MAX_HEIGHT}, calc((100vw - 56rem) * 9 / 16))`
   }
   const ratioToWidth = (r: Ratio): string => {
-    if (r === '9:16') return `min(calc(100vw - 26rem), calc(${PREVIEW_MAX_HEIGHT} * 9 / 16))`
-    if (r === '1:1') return `min(calc(100vw - 26rem), ${PREVIEW_MAX_HEIGHT})`
-    return `min(calc(100vw - 26rem), calc(${PREVIEW_MAX_HEIGHT} * 16 / 9))`
+    if (r === '9:16') return `min(calc(100vw - 56rem), calc(${PREVIEW_MAX_HEIGHT} * 9 / 16))`
+    if (r === '1:1') return `min(calc(100vw - 56rem), ${PREVIEW_MAX_HEIGHT})`
+    return `min(calc(100vw - 56rem), calc(${PREVIEW_MAX_HEIGHT} * 16 / 9))`
   }
   // Project-level ratio lock: once the first clip of a project is created,
   // every subsequent clip in the same project must use the same aspect ratio.
@@ -1801,7 +1801,7 @@ export default function DashboardPage() {
               className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
               style={{
                 width: ratioToWidth(getRatioFor(previewVideo)),
-                maxWidth: 'calc(100vw - 26rem)',
+                maxWidth: 'calc(100vw - 56rem)',
                 maxHeight: `${previewMaxHeightPx}px`,
               }}
             >
@@ -1810,7 +1810,7 @@ export default function DashboardPage() {
                 style={{
                   aspectRatio: ratioToCss(getRatioFor(previewVideo)),
                   height: ratioToHeight(getRatioFor(previewVideo)),
-                  maxWidth: 'calc(100vw - 26rem)',
+                  maxWidth: 'calc(100vw - 56rem)',
                 }}
               >
                 {previewVideo.video?.storage_path ? (
@@ -1917,7 +1917,7 @@ export default function DashboardPage() {
       </main>
 
       <aside
-        className="fixed bottom-3 right-3 top-3 z-30 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/90 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.36)] backdrop-blur-xl sm:bottom-5 sm:right-4 sm:top-5 sm:w-80 lg:w-72 xl:right-5 xl:w-80"
+        className="fixed bottom-3 right-3 top-3 z-30 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/90 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.36)] backdrop-blur-xl sm:bottom-5 sm:right-4 sm:top-5 sm:w-80 lg:w-80 xl:right-5 xl:w-96 2xl:w-[26rem]"
         aria-label="Recent outputs"
       >
         <div className="flex items-center justify-between border-b border-white/10 pb-3">
@@ -2187,7 +2187,7 @@ export default function DashboardPage() {
       />
 
       <aside
-        className={`fixed bottom-3 left-3 top-3 z-40 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.4)] backdrop-blur-xl transition duration-300 sm:bottom-5 sm:left-16 sm:top-5 sm:w-80 lg:w-72 xl:w-80 ${
+        className={`fixed bottom-3 left-3 top-3 z-40 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.4)] backdrop-blur-xl transition duration-300 sm:bottom-5 sm:left-16 sm:top-5 sm:w-80 lg:w-80 xl:w-96 2xl:w-[26rem] ${
           isApprovedPanelOpen
             ? 'pointer-events-auto visible translate-x-0 opacity-100'
             : 'pointer-events-none invisible -translate-x-[calc(100%+1.25rem)] opacity-0'
@@ -2335,7 +2335,7 @@ export default function DashboardPage() {
 
       <form
         ref={composerRef}
-        className="fixed bottom-4 left-1/2 z-30 grid w-[min(96rem,calc(100vw-2rem))] -translate-x-1/2 gap-3 rounded-[22px] border border-white/10 bg-[#111214]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(96rem,calc(100vw-26rem))] sm:p-4"
+        className="fixed bottom-4 left-1/2 z-30 grid w-[min(96rem,calc(100vw-2rem))] -translate-x-1/2 gap-3 rounded-[22px] border border-white/10 bg-[#111214]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(96rem,calc(100vw-56rem))] sm:p-4"
         onSubmit={handleSubmit}
       >
         <div className="flex flex-wrap items-center gap-2" aria-label="Generation mode">
