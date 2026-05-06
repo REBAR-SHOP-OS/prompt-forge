@@ -1082,7 +1082,7 @@ export default function DashboardPage() {
     setIsMusicDialogOpen(true)
   }
 
-  function handleMusicLoadedMetadata(e: React.SyntheticEvent<HTMLAudioElement>) {
+  function handleMusicLoadedMetadata(e: SyntheticEvent<HTMLAudioElement>) {
     const dur = e.currentTarget.duration
     if (Number.isFinite(dur) && dur > 0) {
       setMusicDuration(dur)
