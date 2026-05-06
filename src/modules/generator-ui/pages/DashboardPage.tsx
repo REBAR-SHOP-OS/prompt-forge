@@ -650,10 +650,23 @@ export default function DashboardPage() {
     return null
   }, [isSubmitting, hasUploadingFiles, readyStartFrame, readyEndFrame, promptText, isTextToVideo])
   const [composerError, setComposerError] = useState<string | null>(null)
+  const [isPromptMenuOpen, setIsPromptMenuOpen] = useState(false)
+  const [narratorMode, setNarratorMode] = useState<'idle' | 'input'>('idle')
+  const [narratorScript, setNarratorScript] = useState('')
 
-  const handleEnhancePrompt = async () => {
+  const runEnhancePrompt = async (
+    options: { mode: 'silent' | 'narrated'; narratorScript?: string },
+  ) => {
+    if (isEnhancingPrompt || isSubmitting) return
     const current = promptText.trim()
-    if (!current || isEnhancingPrompt || isSubmitting) return
+    if (options.mode === 'silent' && !current) {
+      setComposerError('Type a short idea first, then choose No narrator.')
+      return
+    }
+    if (options.mode === 'narrated' && !(options.narratorScript ?? '').trim()) {
+      setComposerError('Please write the narrator script.')
+      return
+    }
     setIsEnhancingPrompt(true)
     setComposerError(null)
     try {
@@ -661,7 +674,12 @@ export default function DashboardPage() {
         (u): u is string => typeof u === 'string' && u.length > 0,
       )
       const { data, error } = await supabase.functions.invoke('enhance-prompt', {
-        body: { prompt: current, imageUrls },
+        body: {
+          prompt: current,
+          imageUrls,
+          mode: options.mode,
+          narratorScript: options.narratorScript ?? '',
+        },
       })
       if (error) {
         const ctx = (error as unknown as { context?: { status?: number } })?.context
@@ -677,6 +695,9 @@ export default function DashboardPage() {
         return
       }
       setPromptText(enhanced)
+      setIsPromptMenuOpen(false)
+      setNarratorMode('idle')
+      setNarratorScript('')
     } catch {
       setComposerError('Could not enhance prompt. Please try again.')
     } finally {
