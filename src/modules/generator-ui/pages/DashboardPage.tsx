@@ -1052,6 +1052,65 @@ export default function DashboardPage() {
     })
   }
 
+  function formatTimeMS(s: number): string {
+    if (!Number.isFinite(s) || s < 0) s = 0
+    const m = Math.floor(s / 60)
+    const ss = Math.floor(s % 60)
+    return `${m}:${ss.toString().padStart(2, '0')}`
+  }
+
+  function handleMusicButtonClick() {
+    if (musicUrl) {
+      setIsMusicDialogOpen(true)
+    } else {
+      musicFileInputRef.current?.click()
+    }
+  }
+
+  function handleMusicFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (musicUrl) {
+      try { URL.revokeObjectURL(musicUrl) } catch { /* ignore */ }
+    }
+    const url = URL.createObjectURL(file)
+    setMusicName(file.name)
+    setMusicUrl(url)
+    setMusicDuration(0)
+    setMusicRange([0, 0])
+    setIsMusicDialogOpen(true)
+  }
+
+  function handleMusicLoadedMetadata(e: React.SyntheticEvent<HTMLAudioElement>) {
+    const dur = e.currentTarget.duration
+    if (Number.isFinite(dur) && dur > 0) {
+      setMusicDuration(dur)
+      setMusicRange(([s, eEnd]) => {
+        if (eEnd > s) return [s, Math.min(eEnd, dur)]
+        return [0, dur]
+      })
+    }
+  }
+
+  function handleClearMusic() {
+    if (musicUrl) {
+      try { URL.revokeObjectURL(musicUrl) } catch { /* ignore */ }
+    }
+    setMusicName(null)
+    setMusicUrl(null)
+    setMusicDuration(0)
+    setMusicRange([0, 0])
+    setIsMusicDialogOpen(false)
+  }
+
+  function handlePreviewMusicRange() {
+    const audio = musicPreviewAudioRef.current
+    if (!audio) return
+    audio.currentTime = musicRange[0]
+    void audio.play()
+  }
+
   async function handleMergeAllVideos() {
     if (isMerging) return
     if (completedSourceVideos.length < 2) {
