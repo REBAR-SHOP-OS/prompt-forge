@@ -141,9 +141,27 @@ export function OverlayEditorPopover(props: OverlayEditorPopoverProps) {
                   value={selected.font_family ?? 'Inter'}
                   onChange={(e) => onUpdate(selected.id, { font_family: e.target.value })}
                   className="h-7 rounded-md border border-white/10 bg-white/[0.04] px-1 text-xs text-zinc-100"
+                  style={{ fontFamily: `"${selected.font_family ?? 'Inter'}", sans-serif` }}
                 >
-                  {OVERLAY_FONT_PRESETS.map((f) => (
-                    <option key={f.id} value={f.id}>{f.label}</option>
+                  {Array.from(
+                    OVERLAY_FONT_PRESETS.reduce((acc, f) => {
+                      const list = acc.get(f.category) ?? []
+                      list.push(f)
+                      acc.set(f.category, list)
+                      return acc
+                    }, new Map<string, { id: string; label: string; category: string }[]>())
+                  ).map(([category, fonts]) => (
+                    <optgroup key={category} label={category}>
+                      {fonts.map((f) => (
+                        <option
+                          key={f.id}
+                          value={f.id}
+                          style={{ fontFamily: `"${f.id}", sans-serif`, color: '#111' }}
+                        >
+                          {f.label}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </label>
