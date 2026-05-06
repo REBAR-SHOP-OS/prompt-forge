@@ -1437,7 +1437,13 @@ export default function DashboardPage() {
         })
 
       const audioOpt = musicUrl && musicRange[1] > musicRange[0]
-        ? { src: musicUrl, startSec: musicRange[0], endSec: musicRange[1] }
+        ? {
+            src: musicUrl,
+            startSec: musicRange[0],
+            endSec: musicRange[1],
+            musicVolume,
+            clipVolume: soundtrackMode === 'music-only' ? 0 : clipVolume,
+          }
         : undefined
       const mergeRes = await mergeVideoUrls(
         urls,
