@@ -1998,7 +1998,7 @@ export default function DashboardPage() {
                     >
                       {video.video?.storage_path ? (
                         <video
-                          className="h-full w-full bg-black object-cover"
+                          className="h-full w-full max-w-full bg-black object-cover"
                           src={video.video.storage_path}
                           poster={video.video.thumbnail_url ?? undefined}
                           controls
