@@ -256,6 +256,38 @@ export default function DashboardPage() {
   const [isLibraryLoading, setIsLibraryLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false)
+  // Live-measured vertical budget for the preview stage. The composer is
+  // position:fixed at the bottom and its height changes (textarea rows, error
+  // line, ratio chips wrapping). We observe its top edge and reserve that
+  // much room for the preview so the video card never slides under the chat.
+  const composerRef = useRef<HTMLFormElement | null>(null)
+  const [previewMaxHeightPx, setPreviewMaxHeightPx] = useState<number>(() => {
+    if (typeof window === 'undefined') return 600
+    return Math.max(240, window.innerHeight - 320)
+  })
+  useEffect(() => {
+    const SAFE_GAP = 24 // breathing room between preview card and composer
+    const TOP_RESERVE = 56 // top header strip (Start Over / Final Film / Music)
+    const recompute = () => {
+      const el = composerRef.current
+      const vh = window.innerHeight
+      if (!el) {
+        setPreviewMaxHeightPx(Math.max(240, vh - 320))
+        return
+      }
+      const top = el.getBoundingClientRect().top
+      const budget = Math.max(240, top - TOP_RESERVE - SAFE_GAP)
+      setPreviewMaxHeightPx(budget)
+    }
+    recompute()
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(recompute) : null
+    if (ro && composerRef.current) ro.observe(composerRef.current)
+    window.addEventListener('resize', recompute)
+    return () => {
+      window.removeEventListener('resize', recompute)
+      if (ro) ro.disconnect()
+    }
+  }, [])
   const [videoColumnMessage, setVideoColumnMessage] = useState<string | null>(null)
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
@@ -314,26 +346,19 @@ export default function DashboardPage() {
     return fromAsset ?? '16:9'
   }
   const ratioToCss = (r: Ratio): string => (r === '9:16' ? '9 / 16' : r === '1:1' ? '1 / 1' : '16 / 9')
-  // Vertical budget for the preview stage: full viewport minus the top header
-  // strip (~3rem) and minus the fixed composer at the bottom (~14rem incl.
-  // its bottom offset and the helper text under it). This guarantees the
-  // preview never slides under the chat box.
-  const PREVIEW_MAX_HEIGHT = 'calc(100vh - 17rem)'
+  // Vertical budget is live-measured from the composer's top edge (see
+  // previewMaxHeightPx above). We pass it as a px value into both the height
+  // and width helpers so every aspect ratio respects the same hard ceiling.
+  const PREVIEW_MAX_HEIGHT = `${previewMaxHeightPx}px`
   const ratioToHeight = (r: Ratio): string => {
-    // Available width between left rail and right history sidebar ≈ calc(100vw - 26rem).
-    // Height = width * (h/w), capped so the preview always sits above the composer.
     if (r === '9:16') return `min(${PREVIEW_MAX_HEIGHT}, calc((100vw - 26rem) * 16 / 9))`
     if (r === '1:1') return `min(${PREVIEW_MAX_HEIGHT}, calc(100vw - 26rem))`
     return `min(${PREVIEW_MAX_HEIGHT}, calc((100vw - 26rem) * 9 / 16))`
   }
-  // Width of the preview stage = height * (w/h). Used to hard-cap the outer
-  // preview card so its footer (long prompt text + status pill) can never
-  // stretch the card wider than the actual video frame, which would create
-  // an empty band beside the video on narrow ratios (9:16, 1:1).
   const ratioToWidth = (r: Ratio): string => {
-    if (r === '9:16') return 'min(calc(100vw - 26rem), calc((100vh - 17rem) * 9 / 16))'
-    if (r === '1:1') return 'min(calc(100vw - 26rem), calc(100vh - 17rem))'
-    return 'min(calc(100vw - 26rem), calc((100vh - 17rem) * 16 / 9))'
+    if (r === '9:16') return `min(calc(100vw - 26rem), calc(${PREVIEW_MAX_HEIGHT} * 9 / 16))`
+    if (r === '1:1') return `min(calc(100vw - 26rem), ${PREVIEW_MAX_HEIGHT})`
+    return `min(calc(100vw - 26rem), calc(${PREVIEW_MAX_HEIGHT} * 16 / 9))`
   }
   // Project-level ratio lock: once the first clip of a project is created,
   // every subsequent clip in the same project must use the same aspect ratio.
@@ -1775,14 +1800,19 @@ export default function DashboardPage() {
       </Dialog>
       </div>
 
-      <main className="grid min-h-screen place-items-center px-4 pb-40" aria-live="polite">
+      <main
+        className="grid place-items-center px-4"
+        aria-live="polite"
+        style={{ minHeight: `${previewMaxHeightPx + 56}px`, paddingTop: '56px' }}
+      >
         {previewVideo ? (
-          <div className="-translate-y-6 sm:-translate-y-4 flex w-full justify-center">
+          <div className="flex w-full justify-center">
             <div
               className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
               style={{
                 width: ratioToWidth(getRatioFor(previewVideo)),
                 maxWidth: 'calc(100vw - 26rem)',
+                maxHeight: `${previewMaxHeightPx}px`,
               }}
             >
               <div
@@ -2314,6 +2344,7 @@ export default function DashboardPage() {
       </aside>
 
       <form
+        ref={composerRef}
         className="fixed bottom-4 left-1/2 z-30 grid w-[min(96rem,calc(100vw-2rem))] -translate-x-1/2 gap-3 rounded-[22px] border border-white/10 bg-[#111214]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(96rem,calc(100vw-26rem))] sm:p-4"
         onSubmit={handleSubmit}
       >
