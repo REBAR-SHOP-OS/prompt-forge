@@ -1,37 +1,17 @@
-# Post-login fullscreen intro video with Skip
+# Make the central preview area much larger
 
-After a user successfully signs in, show the uploaded "Logo becomes camera shape" video in fullscreen as a one-time intro before the dashboard appears. Provide a clearly visible **Skip** button so the user can jump straight to the app at any time.
+The video preview in the middle of the dashboard currently caps at `w-[min(50rem,...)]` (~800px) and `max-h-[52vh]`, which makes it look small on wide screens. Enlarge it so it uses most of the available space between the side panels and most of the vertical space above the prompt bar.
 
-## Behavior
+## Change
 
-- Trigger: shown right after a session becomes active (sign-in or sign-up that returns a session). Not shown on auto-restored sessions from previous days — only when the user just signed in this session.
-- Layout: fullscreen black background, video centered and contained (`object-contain`) so nothing is cropped.
-- Audio: video plays muted by default (browser autoplay rules) with a small unmute toggle in the corner.
-- Skip control: top-right button labeled "Skip ▸" (and keyboard: pressing `Esc` or `Enter` also skips).
-- Auto-advance: when the video ends, the dashboard is shown automatically.
-- Don't show again in the same browser session — uses `sessionStorage` flag `intro_played`. (Each new sign-in clears the flag so the next login plays it again.)
+In `src/modules/generator-ui/pages/DashboardPage.tsx` (around lines 1548–1550), replace the preview container sizing:
 
-## Files
+- Width: `w-[min(50rem,calc(100vw-2rem))]` → `w-[min(96rem,calc(100vw-26rem))]`
+  - Reserves ~26rem for the right History panel (open) and breathing room; on narrow screens the `min()` keeps it from overflowing.
+- Max height of the video frame: `max-h-[52vh]` → `max-h-[82vh]`
+- Vertical offset reduced from `-translate-y-10 / sm:-translate-y-8` to `-translate-y-6 / sm:-translate-y-4` so the bigger frame stays centered and doesn't collide with the top toolbar.
 
-1. **Add asset** — copy `Logo_becomes_camera_shape_202605061012.mp4` into `src/assets/intro/login-intro.mp4`.
-
-2. **New component** `src/components/intro/LoginIntro.tsx`
-   - Props: `onFinish: () => void`.
-   - Renders a fixed fullscreen overlay with the `<video>` (autoplay, muted, playsInline), a Skip button, and a mute toggle.
-   - Calls `onFinish` on video end, on Skip click, on `Escape`/`Enter` keydown.
-
-3. **Wire it into the gate** `src/App.tsx`
-   - Add state `showIntro` in `Gate`.
-   - When `session` becomes truthy AND `sessionStorage.getItem('intro_played') !== '1'`, set `showIntro = true`.
-   - In `AuthForm` (sign-in / sign-up success path), set `sessionStorage.removeItem('intro_played')` right before navigating, so a fresh login always replays the intro.
-   - Render order in `Gate`:
-     - `loading` → LoadingScreen
-     - `session && showIntro` → `<LoginIntro onFinish={() => { sessionStorage.setItem('intro_played','1'); setShowIntro(false) }} />`
-     - `session` → `<DashboardPage />`
-     - otherwise → `<LoginPage />`
+The `aspect-video` ratio is preserved, so the frame scales proportionally and still leaves room for the prompt bar at the bottom.
 
 ## Files touched
-- `src/assets/intro/login-intro.mp4` (new, copied from upload)
-- `src/components/intro/LoginIntro.tsx` (new)
-- `src/App.tsx` (gate logic)
-- `src/components/auth/AuthForm.tsx` (clear `intro_played` on successful sign-in/up)
+- `src/modules/generator-ui/pages/DashboardPage.tsx` (sizing tweak in the preview block)
