@@ -1356,7 +1356,14 @@ export default function DashboardPage() {
       setPromptText('')
       setUploadedFiles([])
     } catch (error) {
-      const message = error instanceof ApiError ? `${error.code}: ${error.message}` : 'Could not start video generation.'
+      let message = 'Could not start video generation.'
+      if (error instanceof ApiError) {
+        if (error.code === 'INSUFFICIENT_CREDITS' || error.status === 402) {
+          message = "You don't have enough credits to start this generation. Please top up your credits and try again."
+        } else {
+          message = `${error.code}: ${error.message}`
+        }
+      }
       setComposerError(message)
       setVideoColumnMessage(message)
     } finally {
