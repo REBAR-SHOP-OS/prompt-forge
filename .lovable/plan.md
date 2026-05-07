@@ -1,44 +1,40 @@
-## مشکل واقعی
+نتیجه مورد انتظار: وقتی کاربر چند کارت عکس را تایید می‌کند و روی FINAL FILM می‌زند، یک ویدئوی نهایی واقعی ساخته شود، در History اضافه شود، در preview پخش شود، و همه کارت‌ها با ترتیب فعلی و ویرایش‌ها/overlayهایشان داخل خروجی باشند.
 
-وقتی همهٔ کارت‌ها تصویر آپلودی هستند و کاربر FINAL FILM را می‌زند، `handleMergeAllVideos` این مسیر را طی می‌کند:
+فرضیه جدید ریشه مشکل: ساخت فایل انجام شده و آپلود هم موفق است، اما بعد از خصوصی شدن bucket `merged-videos`، کد هنوز URL عمومی را داخل تگ‌های `<video>` و لینک دانلود استفاده می‌کند؛ بنابراین فایل ساخته‌شده در preview قابل بارگذاری نیست و کاربر آن را به‌صورت ویدئوی ساخته‌نشده/صفحه سیاه می‌بیند.
 
-1. هر تصویر را با `imageUrlToClip` به یک فایل **webm** کوتاه (با MediaRecorder + canvas) تبدیل می‌کند.
-2. این webmها را در باکت `merged-videos` آپلود می‌کند.
-3. به `mergeVideoUrls` می‌دهد تا آن‌ها را به ترتیب در `<video>` باز کند، روی canvas بکشد و ضبط کند.
+شواهدی که بررسی شد:
+- درخواست‌های شبکه نشان می‌دهد آپلود Final Film به `merged-videos/.../merged-*.mp4` با status 200 موفق شده است.
+- در `DashboardPage.tsx` بعد از آپلود، کد هنوز `getPublicUrl()` را ذخیره می‌کند و همان مقدار را مستقیماً در `<video src=...>` استفاده می‌کند.
+- کامپوننت `SignedImg` و helper `resolveSignedUrl()` برای عکس‌ها اضافه شده‌اند، اما معادل آن برای `<video>` استفاده نشده است.
+- bucket `merged-videos` در migration قبلی private شده و باید با signed URL خوانده شود.
 
-ریشهٔ مشکل: فایل‌های webm که `MediaRecorder` از `canvas.captureStream` می‌سازد **متادیتای duration ندارند** (`video.duration === Infinity`). در `mergeVideoUrls` هر کلیپ منتظر event `ended` می‌ماند که هرگز fire نمی‌شود → فرآیند برای همیشه منتظر می‌ماند، progress روی 0٪ گیر می‌کند، preview سیاه است، یا چند ثانیه بعد timeout/خطا می‌گیرد.
+برنامه اصلاح:
 
-(کلیپ‌های ویدیویی واقعی این مشکل را ندارند چون duration معتبر دارند، به همین دلیل قبلاً با ویدیو کار می‌کرد.)
+1. اضافه کردن wrapper امن برای ویدئو
+- یک کامپوننت کوچک مثل `SignedVideo` بسازم که مثل `SignedImg`، مقدار `storage_path` را با `useSignedUrl()` به signed URL تازه تبدیل کند.
+- این کامپوننت تمام props استاندارد `<video>` را نگه می‌دارد و فقط `src` را resolve می‌کند.
 
-## راه‌حل
+2. اصلاح preview اصلی و کارت‌های History
+- در `DashboardPage.tsx` همه جاهایی که ویدئو از storage خصوصی/merged نمایش داده می‌شود را از `<video src={...storage_path}>` به `SignedVideo` تبدیل کنم.
+- شامل preview بزرگ، thumbnail کارت‌های History، و آیتم‌های پنل approved/library.
+- برای ویدئوهای خارجی generated provider هم مشکلی ایجاد نشود، چون `useSignedUrl()` فقط bucketهای خصوصی شناخته‌شده را امضا می‌کند و بقیه URLها را unchanged برمی‌گرداند.
 
-به‌جای دور زدن از طریق فایل webm میانی، تصاویر را **مستقیماً داخل خود `mergeVideoUrls` به‌عنوان «still segment» با مدت زمان مشخص** نقاشی کنیم. این کار:
-- مرحلهٔ آپلود stillها را حذف می‌کند (سریع‌تر)
-- مشکل Infinity duration را به‌طور کامل از بین می‌برد
-- ترتیب کارت‌ها، transitionها و overlayها را دست‌نخورده نگه می‌دارد
+3. اصلاح لینک دانلود Final Film
+- لینک دانلودی که الان مستقیماً `href={video.video.storage_path}` می‌گیرد، برای فایل‌های bucket خصوصی با signed URL کار کند.
+- ساده‌ترین مسیر امن: یک `SignedDownloadLink` یا استفاده از همان hook در یک کامپوننت کوچک برای لینک دانلود، تا کاربر بتواند ویدئوی ساخته‌شده را دانلود کند.
 
-## تغییرات کد
+4. بهبود ذخیره مسیر فایل ساخته‌شده
+- بعد از upload، به‌جای تکیه بر public URL خام، مسیر ذخیره‌شده همچنان با فرمت قابل parse توسط helper باشد تا `resolveSignedUrl()` بتواند آن را sign کند.
+- اگر کم‌ریسک‌تر باشد، همان public-style URL فعلی را نگه می‌دارم چون helper آن را parse می‌کند؛ اما نمایش و پخش همیشه از signed URL انجام می‌شود.
 
-### 1. `src/modules/generator-ui/lib/mergeVideos.ts`
-- نوع جدید `MergeClip = { kind: 'video', url: string } | { kind: 'image', url: string, durationSec: number }` اضافه شود.
-- امضای `mergeVideoUrls` به `mergeClips(clips: MergeClip[], ...)` گسترش پیدا کند (یا یک تابع جدید `mergeClips` در کنارش اضافه شود تا مسیر «End frame append» موجود نشکند).
-- در حلقهٔ اصلی:
-  - برای کلیپ `video`: همان رفتار فعلی (load، play، paint با rAF، انتظار `ended`).
-  - برای کلیپ `image`: تصویر را با `Image()` لود کن، روی canvas با `drawContain` بکش، overlayها را paint کن، با rAF مدام بکش، و دقیقاً بعد از `durationSec * 1000` میلی‌ثانیه با `setTimeout` به مرحلهٔ بعدی برو. هیچ `<video>` و `MediaRecorder` میانی لازم نیست.
-- پشتیبانی transition (fade/slide/wipe/...) بین یک تصویر و کلیپ بعدی هم با snapshot گرفتن از آخرین فریم نقاشی‌شده روی canvas کار می‌کند (لازم نیست بدانیم منبع ویدیو بود یا تصویر).
+5. پیام خطا را دقیق‌تر کنم
+- اگر merge/upload واقعاً fail شد، پیام فعلی «Could not load source video» برای image-only گمراه‌کننده است.
+- پیام را عمومی‌تر و دقیق‌تر می‌کنم: ساخت/بارگذاری Final Film انجام نشد و متن خطای واقعی هم نمایش داده شود.
 
-### 2. `src/modules/generator-ui/pages/DashboardPage.tsx` (`handleMergeAllVideos`)
-- حذف کامل بلاک تبدیل تصویر→webm→آپلود (خطوط ~۱۶۷۰–۱۶۹۲).
-- به‌جای ساخت `urls: string[]`، ساخت `clips: MergeClip[]`:
-  - برای کلیپ ویدیو: `{ kind: 'video', url: await proxiedVideoUrl(...) }`
-  - برای کلیپ تصویر: `{ kind: 'image', url: await resolveSignedUrl(image.storage_path), durationSec: image.still_duration_seconds || 3 }`
-- overlayها همچنان طبق `overlaysApi.getForClip(clip.id)` به‌ازای هر کلیپ پاس داده می‌شوند (هم برای ویدیو و هم برای تصویر؛ دیگر «burn-in» قبلی لازم نیست چون مستقیم در زمان merge نقاشی می‌شوند).
-- `targetSize` همچنان از اولین کلیپ ویدیویی محاسبه می‌شود؛ اگر هیچ ویدیویی نبود از `aspectRatio` انتخاب‌شده fallback شود (همان رفتار فعلی).
-- باقی منطق (آپلود نهایی به `merged-videos`، ساخت `mergedEntry`، اضافه به Library، تنظیم `previewVideoId`) دست‌نخورده می‌ماند.
+6. اعتبارسنجی بعد از پیاده‌سازی
+- مسیرهای کد را با جستجوی `src={...storage_path}` و `href={...storage_path}` بررسی می‌کنم تا استفاده مستقیم از private storage باقی نماند.
+- با ابزارهای preview/network بررسی می‌کنم که بعد از ساخت Final Film، درخواست signed URL برای `merged-videos` انجام شود و تگ ویدئو دیگر URL عمومی private bucket را مستقیم مصرف نکند.
 
-### 3. مسیر «append End frame» در `imageUrlToClip`
-- این تابع و فراخوانی‌های آن در خطوط ~۱۰۷۴ و ۱۱۴۱ (start/end-frame append به یک ویدیو) دست‌نخورده می‌ماند چون آن‌جا فقط ۲ کلیپ هستند و یکی از آن‌ها ویدیوی واقعی است (مشکل Infinity duration رخ نمی‌دهد). تغییری در `imageToClip.ts` لازم نیست.
-
-## نتیجه
-
-پس از این تغییر، کاربر می‌تواند چند تصویر آپلود کند، روی هر کارت overlay/متن اضافه کند، تأیید کند، و با زدن FINAL FILM یک ویدیوی واحد به ترتیب صحیح کارت‌ها — با تمام ویرایش‌ها و transitionها — در preview ببیند و در Library ذخیره شود.
+ریسک‌ها و محدودیت‌ها:
+- تغییر فقط در لایه نمایش/دسترسی URL است و منطق merge canvas قبلی را دست نمی‌زنم، پس ترتیب کارت‌ها و overlayها نباید تحت تاثیر قرار بگیرند.
+- این اصلاح با مدل امنیتی جدید private bucket سازگار است و bucketها را عمومی نمی‌کند.

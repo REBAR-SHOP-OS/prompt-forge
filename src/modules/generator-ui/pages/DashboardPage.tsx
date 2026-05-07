@@ -83,6 +83,7 @@ import { useClipOverlays } from '@/modules/generator-ui/lib/useClipOverlays'
 import { ClipOverlayLayer } from '@/modules/generator-ui/components/ClipOverlayLayer'
 import { OverlayEditorPopover } from '@/modules/generator-ui/components/OverlayEditorPopover'
 import { SignedImg } from '@/modules/generator-ui/components/SignedImg'
+import { SignedVideo, SignedDownloadLink } from '@/modules/generator-ui/components/SignedVideo'
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
@@ -1749,7 +1750,7 @@ export default function DashboardPage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Merge failed'
       console.error('[merge] failed', err)
-      setVideoColumnMessage(`Could not load source video for merge — please try again in a moment. (${msg})`)
+      setVideoColumnMessage(`Final film could not be created — please try again. (${msg})`)
     } finally {
       setIsMerging(false)
       setMergeProgress(0)
@@ -2218,7 +2219,7 @@ export default function DashboardPage() {
               >
                 {previewItem.job.video?.storage_path ? (
                   <>
-                    <video
+                    <SignedVideo
                       key={previewItem.job.id}
                       className="h-full w-full bg-black object-contain"
                       src={previewItem.job.video.storage_path}
@@ -2629,7 +2630,7 @@ export default function DashboardPage() {
                       style={{ aspectRatio: ratioToCss(getRatioFor(video)) }}
                     >
                       {video.video?.storage_path ? (
-                        <video
+                        <SignedVideo
                           className="h-full w-full max-w-full bg-black object-contain"
                           src={video.video.storage_path}
                           poster={video.video.thumbnail_url ?? undefined}
@@ -2913,7 +2914,7 @@ export default function DashboardPage() {
                     >
                       <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
                         {video.video?.storage_path ? (
-                          <video
+                          <SignedVideo
                             className="h-full w-full bg-black object-cover"
                             src={video.video.storage_path}
                             poster={video.video.thumbnail_url ?? undefined}
@@ -2943,7 +2944,7 @@ export default function DashboardPage() {
                           </p>
                           <div className="flex shrink-0 items-center gap-1">
                             {video.video?.storage_path ? (
-                              <a
+                              <SignedDownloadLink
                                 href={video.video.storage_path}
                                 download
                                 onClick={(event) => event.stopPropagation()}
@@ -2952,7 +2953,7 @@ export default function DashboardPage() {
                                 className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
                               >
                                 <Download className="h-3 w-3" aria-hidden="true" />
-                              </a>
+                              </SignedDownloadLink>
                             ) : null}
                             <button
                               type="button"
