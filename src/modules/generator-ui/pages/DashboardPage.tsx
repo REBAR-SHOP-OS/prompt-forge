@@ -5,7 +5,7 @@ import {
   BookmarkPlus,
   ChevronsRight,
   Clapperboard,
-  Coins,
+  
   Combine,
   Download,
   FileUp,
