@@ -1750,7 +1750,7 @@ export default function DashboardPage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Merge failed'
       console.error('[merge] failed', err)
-      setVideoColumnMessage(`Could not load source video for merge — please try again in a moment. (${msg})`)
+      setVideoColumnMessage(`Final film could not be created — please try again. (${msg})`)
     } finally {
       setIsMerging(false)
       setMergeProgress(0)
