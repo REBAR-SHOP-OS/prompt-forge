@@ -77,6 +77,7 @@ import { TransitionPreview } from '@/modules/generator-ui/components/TransitionP
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { mergeVideoUrls, mergeClips, type MergeClip, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
+import { buildImageSlideshow } from '@/modules/generator-ui/lib/slideshowFromImages'
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { resolveSignedUrl } from '@/modules/generator-ui/lib/signedStorageUrl'
 import { useClipOverlays } from '@/modules/generator-ui/lib/useClipOverlays'
