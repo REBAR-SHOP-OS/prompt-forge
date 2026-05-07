@@ -10,8 +10,6 @@ export default function UserBadge() {
       <Badge variant={profile.role === "admin" ? "default" : "secondary"}>
         {profile.role}
       </Badge>
-      <span className="text-muted-foreground">·</span>
-      <span className="text-muted-foreground">{profile.credits_balance} credits</span>
     </div>
   );
 }
