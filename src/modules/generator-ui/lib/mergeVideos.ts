@@ -450,7 +450,14 @@ export async function mergeVideoUrls(
 
         // Begin playing the incoming clip muted-of-RAF; we paint the blended frame manually.
         cancelAnimationFrame(rafId)
-        try { await video.play() } catch { /* autoplay */ }
+        // IMPORTANT: register the `ended` listener BEFORE play() so we never
+        // miss the event if it fires during/just after the transition.
+        const endedPromise = whenEnded(video)
+        try {
+          await video.play()
+        } catch (err) {
+          console.warn('[mergeVideoUrls] play() rejected for clip', i, err)
+        }
 
         const start = performance.now()
         await new Promise<void>((resolve) => {
@@ -458,7 +465,8 @@ export async function mergeVideoUrls(
             const now = performance.now()
             const t = Math.min(1, (now - start) / spec.durationMs)
             paintTransitionFrame(ctx, width, height, snapshot, video, spec, t)
-            if (t >= 1) {
+            // Stop early if the incoming clip has already ended (very short clip).
+            if (t >= 1 || video.ended) {
               resolve()
               return
             }
@@ -475,44 +483,32 @@ export async function mergeVideoUrls(
 
         // Continue painting the incoming clip from now on.
         loopPaint(video)
-
-        await new Promise<void>((resolve) => {
-          const onEnded = () => {
-            video.removeEventListener('ended', onEnded)
-            cancelAnimationFrame(rafId)
-            resolve()
-          }
-          video.addEventListener('ended', onEnded)
-        })
+        await endedPromise
       } else {
         // Cut: behave like before.
         if (prevClipNode) {
           try { prevClipNode.disconnect() } catch { /* ignore */ }
           prevClipNode = null
         }
-        await video.play().catch(() => {/* autoplay */})
+        const endedPromise = whenEnded(video)
+        try {
+          await video.play()
+        } catch (err) {
+          console.warn('[mergeVideoUrls] play() rejected for clip', i, err)
+        }
         loopPaint(video)
-        await new Promise<void>((resolve) => {
-          const onEnded = () => {
-            video.removeEventListener('ended', onEnded)
-            cancelAnimationFrame(rafId)
-            resolve()
-          }
-          video.addEventListener('ended', onEnded)
-        })
+        await endedPromise
       }
     } else {
       // First clip — no transition in.
-      await video.play().catch(() => {/* autoplay */})
+      const endedPromise = whenEnded(video)
+      try {
+        await video.play()
+      } catch (err) {
+        console.warn('[mergeVideoUrls] play() rejected for first clip', err)
+      }
       loopPaint(video)
-      await new Promise<void>((resolve) => {
-        const onEnded = () => {
-          video.removeEventListener('ended', onEnded)
-          cancelAnimationFrame(rafId)
-          resolve()
-        }
-        video.addEventListener('ended', onEnded)
-      })
+      await endedPromise
     }
 
     elapsedDuration += dur
