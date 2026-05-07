@@ -1644,27 +1644,9 @@ export default function DashboardPage() {
     setMergeProgress(0)
     setVideoColumnMessage(null)
     try {
-      // Determine target dimensions from the first video clip (mergeVideos.ts uses
-      // the first clip's intrinsic size). If no video, fall back to a 1080p frame.
-      const firstVideo = eligibleClips.find((c) => c.kind === 'video') as Extract<UnifiedClip, { kind: 'video' }> | undefined
-      let targetSize: { width: number; height: number } | undefined
-      if (firstVideo?.job.video?.storage_path) {
-        try {
-          const probeUrl = await proxiedVideoUrl(firstVideo.job.video.storage_path)
-          targetSize = await new Promise((resolve) => {
-            const v = document.createElement('video')
-            v.crossOrigin = 'anonymous'
-            v.muted = true
-            v.preload = 'metadata'
-            v.onloadedmetadata = () => resolve({ width: v.videoWidth || 1280, height: v.videoHeight || 720 })
-            v.onerror = () => resolve({ width: 1280, height: 720 })
-            v.src = probeUrl
-          })
-        } catch { targetSize = { width: 1280, height: 720 } }
-      } else {
-        const r = aspectRatio
-        targetSize = r === '9:16' ? { width: 1080, height: 1920 } : r === '1:1' ? { width: 1080, height: 1080 } : { width: 1920, height: 1080 }
-      }
+      // mergeClips() picks output dimensions from the first video clip
+      // (or first image) automatically — no need to pre-probe here.
+
 
       // Build the merge clip list in display order. Images are passed
       // natively as still segments (no intermediate webm upload) so their
