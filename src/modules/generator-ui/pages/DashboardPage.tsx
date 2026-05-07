@@ -83,6 +83,7 @@ import { useClipOverlays } from '@/modules/generator-ui/lib/useClipOverlays'
 import { ClipOverlayLayer } from '@/modules/generator-ui/components/ClipOverlayLayer'
 import { OverlayEditorPopover } from '@/modules/generator-ui/components/OverlayEditorPopover'
 import { SignedImg } from '@/modules/generator-ui/components/SignedImg'
+import { SignedVideo, SignedDownloadLink } from '@/modules/generator-ui/components/SignedVideo'
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
