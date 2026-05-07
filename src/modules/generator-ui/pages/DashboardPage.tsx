@@ -945,40 +945,46 @@ export default function DashboardPage() {
   }
 
   const handleImageSelected = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
+    const files = Array.from(event.target.files ?? [])
     event.target.value = ''
-    if (!file || !userId) return
-    if (!file.type.startsWith('image/')) {
+    if (files.length === 0 || !userId) return
+    const invalidFile = files.find((file) => !file.type.startsWith('image/'))
+    if (invalidFile) {
       setVideoColumnMessage('Please choose an image file.')
       return
     }
-    if (file.size > 10 * 1024 * 1024) {
+    const oversizedFile = files.find((file) => file.size > 10 * 1024 * 1024)
+    if (oversizedFile) {
       setVideoColumnMessage('Image must be smaller than 10 MB.')
       return
     }
     setIsUploadingImage(true)
     setVideoColumnMessage(null)
     try {
-      const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png'
-      const path = `${userId}/${crypto.randomUUID()}.${ext}`
-      const up = await supabase.storage
-        .from(USER_IMAGES_BUCKET)
-        .upload(path, file, { contentType: file.type, upsert: false })
-      if (up.error) throw up.error
-      const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
-      const publicUrl = pub.publicUrl
-      const { data: row, error: insErr } = await supabase
-        .from('generator_user_images')
-        .insert({
-          user_id: userId,
-          storage_path: publicUrl,
-          size_bytes: file.size,
-          mime_type: file.type,
-        })
-        .select('id, storage_path, created_at, still_duration_seconds, width, height')
-        .single()
-      if (insErr) throw insErr
-      setUserImages((prev) => [row as UserImageItem, ...prev])
+      const rows: UserImageItem[] = []
+      for (const file of files) {
+        const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png'
+        const path = `${userId}/${crypto.randomUUID()}.${ext}`
+        const up = await supabase.storage
+          .from(USER_IMAGES_BUCKET)
+          .upload(path, file, { contentType: file.type, upsert: false })
+        if (up.error) throw up.error
+        const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
+        const publicUrl = pub.publicUrl
+        const { data: row, error: insErr } = await supabase
+          .from('generator_user_images')
+          .insert({
+            user_id: userId,
+            storage_path: publicUrl,
+            size_bytes: file.size,
+            mime_type: file.type,
+          })
+          .select('id, storage_path, created_at, still_duration_seconds, width, height')
+          .single()
+        if (insErr) throw insErr
+        rows.push(row as UserImageItem)
+      }
+      setUserImages((prev) => [...rows].reverse().concat(prev))
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Upload failed.'
       setVideoColumnMessage(`Image upload failed: ${msg}`)
