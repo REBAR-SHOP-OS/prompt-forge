@@ -1733,7 +1733,7 @@ export default function DashboardPage() {
       const entry: JobDetail = {
         id: mergedId,
         status: 'completed',
-        input_prompt: `Final merged video — ${urls.length} clips`,
+        input_prompt: `Final merged video — ${mergeInputs.length} clips`,
         provider_key: 'merged',
         model_key: 'browser-canvas',
         created_at: new Date().toISOString(),
