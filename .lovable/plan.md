@@ -1,63 +1,57 @@
-فرضیه‌ی جدید: مشکل اصلی دیگر «نمایش signed URL» نیست؛ مسیر فعلی Final Film هنوز با موتور merge عمومی و خروجی MP4/MediaRecorder کار می‌کند که برای کارت‌های عکسِ ثابت با متن/لایه‌ها شکننده است و ممکن است خروجی خراب، سیاه، کوتاه یا بدون ترتیب درست بسازد.
+## Goal
 
-نتیجه‌ی مورد انتظار
-- وقتی چند عکس به‌صورت کارت در History آپلود می‌شوند، کاربر روی هر کارت متن/تصویر اضافه یا جابه‌جا می‌کند، سپس Final Film را می‌زند، یک ویدئوی نهایی ساخته شود که:
-  - کارت‌ها را دقیقاً به ترتیب شماره‌های داخل پنل History نمایش دهد.
-  - متن‌ها و تغییرات هر کارت داخل همان فریم ویدئو burn-in شوند.
-  - هر کارت به اندازه Duration خودش نمایش داده شود.
-  - خروجی قابل پخش و قابل دانلود باشد.
+روی کارت‌های تصویر آپلودی در ستون Recent outputs، به‌جای فیلد عددی Duration یک سه‌گزینه‌ای **5s / 10s / 15s** قرار دهیم — دقیقاً همان استایلِ پیل‌های انتخاب مدت‌زمان ویدئو در کامپوزر پایین صفحه. هر تصویر همچنان مدت اختصاصی خودش را در DB نگه می‌دارد (`still_duration_seconds`) و در ساخت Final Film از همان مقدار استفاده می‌شود.
 
-قیود و ریسک‌ها
-- نباید بخش تولید ویدئوی AI یا تاریخچه‌ی ویدئوهای قبلی خراب شود.
-- نباید فایل‌های قبلی کاربر حذف شوند.
-- باید از مسیر امن فعلی storage و signed URL استفاده شود.
-- چون مشکل چند بار با اصلاحات سطحی برگشته، تغییر باید مسیر image-card را جدا و قابل اعتبارسنجی کند، نه فقط یک patch کوچک روی نمایش.
+## Changes
 
-برنامه‌ی اجرا بعد از تأیید
+### `src/modules/generator-ui/pages/DashboardPage.tsx`
 
-1. جداسازی مسیر مخصوص کارت‌های عکس
-- در `handleMergeAllVideos` اگر کارت‌های آپلودی وجود دارند، Final Film را از ترتیب `displayedClips` ولی فقط برای کارت‌های تصویر بسازم، تا ویدئوهای قدیمی/نامرتبط وارد خروجی عکس‌ها نشوند.
-- ترتیب دقیق همان شماره‌هایی باشد که در History نمایش داده می‌شود.
-- برای حالت mixed/video فعلی، مسیر قبلی را نگه می‌دارم تا workflow ویدئوهای AI نشکند.
+**جایگزینی UI انتخاب مدت در کارت تصویر (حدود خط 2445–2464):**
 
-2. ساخت compositor پایدار برای image-only final film
-- به جای اتکا به مسیر عمومی merge و MP4، یک مسیر پایدار برای slideshow کارت‌ها اضافه می‌کنم:
-  - هر تصویر با signed URL لود شود.
-  - تصویر روی canvas با همان نسبت درست کشیده شود.
-  - overlayهای متن/تصویر همان کارت روی canvas نقاشی شوند.
-  - برای مدت کارت، فریم‌ها به‌صورت پیوسته request شوند.
-  - خروجی ترجیحاً WebM پایدار ساخته شود، چون برای canvas + image-only قابل اعتمادتر از MP4 مرورگر است.
+به‌جای `<input type="number">` فعلی، یک گروه پیل با همان ظاهر گروه پیل‌های مدت ویدئو در کامپوزر (خطوط 2908–2924) قرار می‌گیرد:
 
-3. اطمینان از اعمال آخرین تغییرات متن قبل از render
-- قبل از شروع Final Film، pending overlay updates را flush/await می‌کنم یا حداقل آخرین state محلی overlayها را snapshot می‌گیرم تا اگر کاربر بلافاصله بعد از تایپ Final Film را زد، متن نهایی داخل ویدئو بیاید.
+```tsx
+<div
+  className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500"
+  onClick={(event) => event.stopPropagation()}
+>
+  <div className="inline-flex items-center gap-2">
+    <span>Duration</span>
+    <div role="radiogroup" aria-label="Image duration in Final Film"
+         className="inline-flex rounded-full border border-white/10 bg-black/20 p-0.5 text-[11px] font-semibold">
+      {([5, 10, 15] as const).map((sec) => {
+        const active = (img.still_duration_seconds || 3) === sec
+        return (
+          <button
+            key={sec}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => updateImageDuration(img.id, sec)}
+            className={`rounded-full px-2.5 py-1 transition ${active ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+          >
+            {sec}s
+          </button>
+        )
+      })}
+    </div>
+  </div>
+  <span>{formatCreatedAt(img.created_at)}</span>
+</div>
+```
 
-4. اعتبارسنجی خروجی قبل از upload
-- بعد از ساخت Blob، آن را در مرورگر با یک video موقت load می‌کنم.
-- چک می‌کنم:
-  - حجم فایل صفر یا خیلی کوچک نباشد.
-  - duration قابل خواندن باشد.
-  - duration تقریباً برابر مجموع Duration کارت‌ها باشد.
-- اگر خروجی خراب بود، پیام خطای دقیق نشان داده شود و فایل خراب به عنوان Final Film ذخیره نشود.
+**نکات پیاده‌سازی:**
+- از تابع موجود `updateImageDuration(imageId, seconds)` (خط 994) بدون تغییر استفاده می‌شود — همان منطق به‌روزرسانی state + DB.
+- مقدار پیش‌فرض رکوردهای قبلی (`3`) به این معنی است که هیچ‌کدام از سه پیل فعال نخواهد بود تا کاربر یکی را انتخاب کند. این رفتار قابل قبول است چون کاربر می‌تواند فوراً یکی را برگزیند؛ پس از انتخاب، مقدار جدید ذخیره می‌شود.
+- `onClick={(event) => event.stopPropagation()}` روی container حفظ می‌شود تا کلیک روی پیل‌ها preview مرکزی را تغییر ندهد.
 
-5. ذخیره و نمایش درست فایل نهایی
-- فایل نهایی در bucket فعلی `merged-videos` ذخیره شود، اما مقدار ذخیره‌شده در UI به شکل canonical path باشد تا `SignedVideo` بدون خطا آن را sign کند.
-- لینک دانلود هم از همان signed URL استفاده کند.
-- کارت Final Film جدید در preview/library قابل پخش باشد.
+### بدون تغییر
 
-6. اصلاح کوچک UI برای Duration
-- ورودی Duration کارت‌ها مقدار فعلی مثل `3s` را نشان دهد، نه placeholder خالی `—s`، تا کاربر بداند هر کارت چند ثانیه در فیلم نهایی می‌ماند.
+- منطق Final Film: `handleMergeAllVideos` (خط 1668) همچنان از `clip.image.still_duration_seconds` و clamp بین 1 تا 15 استفاده می‌کند — مقادیر 5/10/15 کاملاً سازگارند.
+- اسکیمای دیتابیس بدون تغییر (`still_duration_seconds integer DEFAULT 3`).
+- بقیه‌ی کارت تصویر (drag handle، شماره، trash، انتخاب preview) دست‌نخورده باقی می‌ماند.
 
-7. تست و تأیید
-- با ابزارهای preview، سناریوی اصلی را تست می‌کنم: چند عکس آپلودی + متن روی کارت‌ها + Final Film.
-- بررسی می‌کنم که خروجی ساخته‌شده قابل پخش است، سیاه نیست، کوتاه نیست، و ترتیب کارت‌ها مطابق شماره‌هاست.
-- جستجو می‌کنم که هیچ `<video>` یا لینک دانلودی مستقیم از private storage استفاده نکند.
+## Out of scope
 
-SAFE MODE
-- تغییرات محدود به ماژول generator-ui خواهد بود.
-- هیچ migration یا حذف فایل لازم نیست.
-- خروجی‌های قبلی پاک نمی‌شوند.
-- قبل از اعلام موفقیت، مسیر ساخت و پخش Final Film را واقعاً در preview اعتبارسنجی می‌کنم.
-
-<lov-actions>
-<lov-link url="https://docs.lovable.dev/tips-tricks/troubleshooting">Troubleshooting docs</lov-link>
-</lov-actions>
+- تغییر مقادیر قابل‌انتخاب (مثلاً افزودن 20s/30s)؛ فقط همان سه گزینه‌ی استاندارد ویدئو.
+- تغییر مقدار پیش‌فرض رکوردهای موجود در DB.

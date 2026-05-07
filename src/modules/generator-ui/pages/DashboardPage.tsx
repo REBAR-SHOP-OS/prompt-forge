@@ -76,15 +76,7 @@ import { SoundtrackWaveform, type SoundtrackWaveformHandle } from '@/modules/gen
 import { TransitionPreview } from '@/modules/generator-ui/components/TransitionPreview'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
-import { mergeVideoUrls, mergeClips, type MergeClip, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
-import { buildImageSlideshow } from '@/modules/generator-ui/lib/slideshowFromImages'
-import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
-import { resolveSignedUrl } from '@/modules/generator-ui/lib/signedStorageUrl'
-import { useClipOverlays } from '@/modules/generator-ui/lib/useClipOverlays'
-import { ClipOverlayLayer } from '@/modules/generator-ui/components/ClipOverlayLayer'
-import { OverlayEditorPopover } from '@/modules/generator-ui/components/OverlayEditorPopover'
-import { SignedImg } from '@/modules/generator-ui/components/SignedImg'
-import { SignedVideo, SignedDownloadLink } from '@/modules/generator-ui/components/SignedVideo'
+import { mergeVideoUrls, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
@@ -103,6 +95,7 @@ const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.red
   (acc, o) => { acc[o.id] = o.durationMs; return acc },
   {} as Record<TransitionId, number>,
 )
+import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 
 type VideoJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
@@ -414,9 +407,6 @@ export default function DashboardPage() {
   // `lockedProjectRatio` is kept only for Final Film merge/preview consistency,
   // not to override the user's per-clip selection.
   const userId = session?.user?.id ?? null
-  const overlaysApi = useClipOverlays(userId)
-  // (overlay editing context tracked via selectedOverlayId only)
-  const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null)
   const approvedStorageKey = userId ? `approved-videos:${userId}` : null
   const [approvedIds, setApprovedIds] = useState<Set<string>>(() => new Set())
   const [showWelcome, setShowWelcome] = useState(false)
@@ -946,46 +936,40 @@ export default function DashboardPage() {
   }
 
   const handleImageSelected = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? [])
+    const file = event.target.files?.[0]
     event.target.value = ''
-    if (files.length === 0 || !userId) return
-    const invalidFile = files.find((file) => !file.type.startsWith('image/'))
-    if (invalidFile) {
+    if (!file || !userId) return
+    if (!file.type.startsWith('image/')) {
       setVideoColumnMessage('Please choose an image file.')
       return
     }
-    const oversizedFile = files.find((file) => file.size > 10 * 1024 * 1024)
-    if (oversizedFile) {
+    if (file.size > 10 * 1024 * 1024) {
       setVideoColumnMessage('Image must be smaller than 10 MB.')
       return
     }
     setIsUploadingImage(true)
     setVideoColumnMessage(null)
     try {
-      const rows: UserImageItem[] = []
-      for (const file of files) {
-        const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png'
-        const path = `${userId}/${crypto.randomUUID()}.${ext}`
-        const up = await supabase.storage
-          .from(USER_IMAGES_BUCKET)
-          .upload(path, file, { contentType: file.type, upsert: false })
-        if (up.error) throw up.error
-        const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
-        const publicUrl = pub.publicUrl
-        const { data: row, error: insErr } = await supabase
-          .from('generator_user_images')
-          .insert({
-            user_id: userId,
-            storage_path: publicUrl,
-            size_bytes: file.size,
-            mime_type: file.type,
-          })
-          .select('id, storage_path, created_at, still_duration_seconds, width, height')
-          .single()
-        if (insErr) throw insErr
-        rows.push(row as UserImageItem)
-      }
-      setUserImages((prev) => [...rows].reverse().concat(prev))
+      const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png'
+      const path = `${userId}/${crypto.randomUUID()}.${ext}`
+      const up = await supabase.storage
+        .from(USER_IMAGES_BUCKET)
+        .upload(path, file, { contentType: file.type, upsert: false })
+      if (up.error) throw up.error
+      const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
+      const publicUrl = pub.publicUrl
+      const { data: row, error: insErr } = await supabase
+        .from('generator_user_images')
+        .insert({
+          user_id: userId,
+          storage_path: publicUrl,
+          size_bytes: file.size,
+          mime_type: file.type,
+        })
+        .select('id, storage_path, created_at, still_duration_seconds, width, height')
+        .single()
+      if (insErr) throw insErr
+      setUserImages((prev) => [row as UserImageItem, ...prev])
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Upload failed.'
       setVideoColumnMessage(`Image upload failed: ${msg}`)
@@ -1008,7 +992,7 @@ export default function DashboardPage() {
   }
 
   const updateImageDuration = (imageId: string, secondsRaw: number) => {
-    const seconds = Math.max(1, Math.min(600, Math.round(secondsRaw) || 1))
+    const seconds = Math.max(1, Math.min(15, Math.round(secondsRaw) || 1))
     setUserImages((curr) => curr.map((i) => (i.id === imageId ? { ...i, still_duration_seconds: seconds } : i)))
     void supabase
       .from('generator_user_images')
@@ -1652,89 +1636,76 @@ export default function DashboardPage() {
     setMergeProgress(0)
     setVideoColumnMessage(null)
     try {
-      const allImages = eligibleClips.every((c) => c.kind === 'image')
-
-      let mergeBlob: Blob
-      let mergeMime: string
-      let mergeExt: 'mp4' | 'webm'
-
-      if (allImages) {
-        // Image-only Final Film: use the dedicated slideshow compositor so
-        // the output is a clean WebM with proper duration + burned-in
-        // overlays in the exact card order.
-        const slides = await Promise.all(
-          eligibleClips.map(async (clip) => {
-            if (clip.kind !== 'image') throw new Error('expected image clip')
-            const seconds = Math.max(1, Math.min(600, clip.image.still_duration_seconds || 3))
-            return {
-              url: await resolveSignedUrl(clip.image.storage_path),
-              durationSec: seconds,
-              overlays: overlaysApi.getForClip(clip.id),
-            }
-          }),
-        )
-        const res = await buildImageSlideshow(slides, (p) =>
-          setMergeProgress(Math.round(p.ratio * 100)),
-        )
-        mergeBlob = res.blob
-        mergeMime = res.mimeType
-        mergeExt = res.extension
-      } else {
-        // Mixed (or video-only) sequence: keep the existing merge engine.
-        const mergeInputs: MergeClip[] = []
-        const overlaysPerClip: (import('@/modules/generator-ui/lib/overlays').ClipOverlay[] | undefined)[] = []
-        for (const clip of eligibleClips) {
-          const ov = overlaysApi.getForClip(clip.id)
-          if (clip.kind === 'video') {
-            mergeInputs.push({
-              kind: 'video',
-              url: await proxiedVideoUrl(clip.job.video!.storage_path as string),
-            })
-            overlaysPerClip.push(ov)
-          } else {
-            const seconds = Math.max(1, Math.min(600, clip.image.still_duration_seconds || 3))
-            mergeInputs.push({
-              kind: 'image',
-              url: await resolveSignedUrl(clip.image.storage_path),
-              durationSec: seconds,
-            })
-            overlaysPerClip.push(ov)
-          }
-        }
-
-        const transitionsForMerge: TransitionSpec[] = eligibleClips
-          .slice(0, -1)
-          .map((clip) => {
-            const id = transitions[clip.id] ?? 'cut'
-            return { id, durationMs: TRANSITION_DURATION[id] ?? 0 }
+      // Determine target dimensions from the first video clip (mergeVideos.ts uses
+      // the first clip's intrinsic size). If no video, fall back to a 1080p frame.
+      const firstVideo = eligibleClips.find((c) => c.kind === 'video') as Extract<UnifiedClip, { kind: 'video' }> | undefined
+      let targetSize: { width: number; height: number } | undefined
+      if (firstVideo?.job.video?.storage_path) {
+        try {
+          const probeUrl = await proxiedVideoUrl(firstVideo.job.video.storage_path)
+          targetSize = await new Promise((resolve) => {
+            const v = document.createElement('video')
+            v.crossOrigin = 'anonymous'
+            v.muted = true
+            v.preload = 'metadata'
+            v.onloadedmetadata = () => resolve({ width: v.videoWidth || 1280, height: v.videoHeight || 720 })
+            v.onerror = () => resolve({ width: 1280, height: 720 })
+            v.src = probeUrl
           })
-
-        const audioOpt = musicUrl && musicRange[1] > musicRange[0]
-          ? {
-              src: musicUrl,
-              startSec: musicRange[0],
-              endSec: musicRange[1],
-              musicVolume,
-              clipVolume: soundtrackMode === 'music-only' ? 0 : clipVolume,
-            }
-          : undefined
-        const mergeRes = await mergeClips(
-          mergeInputs,
-          (p) => setMergeProgress(Math.round(p.ratio * 100)),
-          audioOpt,
-          transitionsForMerge,
-          overlaysPerClip,
-        )
-        mergeBlob = mergeRes.blob
-        mergeMime = mergeRes.mimeType
-        mergeExt = mergeRes.extension
+        } catch { targetSize = { width: 1280, height: 720 } }
+      } else {
+        const r = aspectRatio
+        targetSize = r === '9:16' ? { width: 1080, height: 1920 } : r === '1:1' ? { width: 1080, height: 1080 } : { width: 1920, height: 1080 }
       }
 
-      const filename = `merged-${Date.now()}.${mergeExt}`
+      // Build the merge URL list in display order, converting image clips to
+      // short still-frame webm clips uploaded to the merged-videos bucket.
+      const urls: string[] = []
+      for (const clip of eligibleClips) {
+        if (clip.kind === 'video') {
+          urls.push(await proxiedVideoUrl(clip.job.video!.storage_path as string))
+        } else {
+          const seconds = Math.max(1, Math.min(15, clip.image.still_duration_seconds || 3))
+          const blob = await imageUrlToClip(clip.image.storage_path, seconds, targetSize)
+          const stillPath = `${userId}/still-${clip.image.id}-${Date.now()}.webm`
+          const up = await supabase.storage
+            .from(MERGED_BUCKET)
+            .upload(stillPath, blob, { contentType: 'video/webm', upsert: false })
+          if (up.error) throw new Error(up.error.message)
+          const { data: pub } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(stillPath)
+          urls.push(await proxiedVideoUrl(pub.publicUrl))
+        }
+      }
+
+      // Build per-gap transition specs (one entry per gap = clips - 1).
+      const transitionsForMerge: TransitionSpec[] = eligibleClips
+        .slice(0, -1)
+        .map((clip) => {
+          const id = transitions[clip.id] ?? 'cut'
+          return { id, durationMs: TRANSITION_DURATION[id] ?? 0 }
+        })
+
+      const audioOpt = musicUrl && musicRange[1] > musicRange[0]
+        ? {
+            src: musicUrl,
+            startSec: musicRange[0],
+            endSec: musicRange[1],
+            musicVolume,
+            clipVolume: soundtrackMode === 'music-only' ? 0 : clipVolume,
+          }
+        : undefined
+      const mergeRes = await mergeVideoUrls(
+        urls,
+        (p) => setMergeProgress(Math.round(p.ratio * 100)),
+        audioOpt,
+        transitionsForMerge,
+      )
+
+      const filename = `merged-${Date.now()}.${mergeRes.extension}`
       const storagePath = `${userId}/${filename}`
       const { error: upErr } = await supabase.storage
         .from(MERGED_BUCKET)
-        .upload(storagePath, mergeBlob, { contentType: mergeMime, upsert: false })
+        .upload(storagePath, mergeRes.blob, { contentType: mergeRes.mimeType, upsert: false })
       if (upErr) throw new Error(upErr.message)
       const { data } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(storagePath)
       const publicUrl = data.publicUrl
@@ -1748,7 +1719,7 @@ export default function DashboardPage() {
       const entry: JobDetail = {
         id: mergedId,
         status: 'completed',
-        input_prompt: `Final merged video — ${eligibleClips.length} clips`,
+        input_prompt: `Final merged video — ${urls.length} clips`,
         provider_key: 'merged',
         model_key: 'browser-canvas',
         created_at: new Date().toISOString(),
@@ -1782,7 +1753,7 @@ export default function DashboardPage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Merge failed'
       console.error('[merge] failed', err)
-      setVideoColumnMessage(`Final film could not be created — please try again. (${msg})`)
+      setVideoColumnMessage(`Could not load source video for merge — please try again in a moment. (${msg})`)
     } finally {
       setIsMerging(false)
       setMergeProgress(0)
@@ -2188,46 +2159,21 @@ export default function DashboardPage() {
                     maxWidth: 'calc(100vw - 56rem)',
                   }}
                 >
-                  <SignedImg
+                  <img
                     key={previewItem.image.id}
                     src={previewItem.image.storage_path}
                     alt="Uploaded reference"
                     className="h-full w-full bg-black object-contain"
-                  />
-                  <ClipOverlayLayer
-                    overlays={overlaysApi.getForClip(previewItem.image.id)}
-                    editable
-                    selectedId={selectedOverlayId}
-                    onSelect={setSelectedOverlayId}
-                    onChange={(id, patch) => overlaysApi.update(id, patch)}
                   />
                 </div>
                 <div className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
                     Uploaded image · {previewItem.image.still_duration_seconds}s in Final Film
                   </p>
-                  <div className="flex items-center gap-2">
-                    <OverlayEditorPopover
-                      overlays={overlaysApi.getForClip(previewItem.image.id)}
-                      selectedId={selectedOverlayId}
-                      onSelect={setSelectedOverlayId}
-                      onAddText={async () => {
-                        const id = await overlaysApi.addText('image', previewItem.image.id)
-                        if (id) setSelectedOverlayId(id)
-                      }}
-                      onAddImage={async (file) => {
-                        const id = await overlaysApi.addImage('image', previewItem.image.id, file)
-                        if (id) setSelectedOverlayId(id)
-                      }}
-                      onUpdate={(id, patch) => overlaysApi.update(id, patch)}
-                      onDelete={(id) => { overlaysApi.remove(id); if (selectedOverlayId === id) setSelectedOverlayId(null) }}
-                      triggerClassName="inline-flex h-8 items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-zinc-300 hover:bg-white/10"
-                    />
-                    <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
-                      <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
-                      Image
-                    </span>
-                  </div>
+                  <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                    Image
+                  </span>
                 </div>
               </div>
             </div>
@@ -2250,23 +2196,14 @@ export default function DashboardPage() {
                 }}
               >
                 {previewItem.job.video?.storage_path ? (
-                  <>
-                    <SignedVideo
-                      key={previewItem.job.id}
-                      className="h-full w-full bg-black object-contain"
-                      src={previewItem.job.video.storage_path}
-                      controls
-                      playsInline
-                      preload="metadata"
-                    />
-                    <ClipOverlayLayer
-                      overlays={overlaysApi.getForClip(previewItem.job.id)}
-                      editable
-                      selectedId={selectedOverlayId}
-                      onSelect={setSelectedOverlayId}
-                      onChange={(id, patch) => overlaysApi.update(id, patch)}
-                    />
-                  </>
+                  <video
+                    key={previewItem.job.id}
+                    className="h-full w-full bg-black object-contain"
+                    src={previewItem.job.video.storage_path}
+                    controls
+                    playsInline
+                    preload="metadata"
+                  />
                 ) : (
                   <div className="grid h-full place-items-center px-6 text-center">
                     {(() => {
@@ -2337,34 +2274,16 @@ export default function DashboardPage() {
                 <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
                   {previewItem.job.input_prompt}
                 </p>
-                <div className="flex items-center gap-2">
-                  <OverlayEditorPopover
-                    overlays={overlaysApi.getForClip(previewItem.job.id)}
-                    selectedId={selectedOverlayId}
-                    onSelect={setSelectedOverlayId}
-                    onAddText={async () => {
-                      const id = await overlaysApi.addText('video', previewItem.job.id)
-                      if (id) setSelectedOverlayId(id)
-                    }}
-                    onAddImage={async (file) => {
-                      const id = await overlaysApi.addImage('video', previewItem.job.id, file)
-                      if (id) setSelectedOverlayId(id)
-                    }}
-                    onUpdate={(id, patch) => overlaysApi.update(id, patch)}
-                    onDelete={(id) => { overlaysApi.remove(id); if (selectedOverlayId === id) setSelectedOverlayId(null) }}
-                    triggerClassName="inline-flex h-8 items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-zinc-300 hover:bg-white/10"
-                  />
-                  <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
-                    <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(previewItem.job.status)}`} />
-                    {formatStatusLabel(previewItem.job.status)}
-                    {(() => {
-                      const status = normalizeStatus(previewItem.job.status)
-                      if (status !== 'processing' && status !== 'pending') return null
-                      const pct = getJobProgressPercent(previewItem.job)
-                      return pct !== null ? <span className="tabular-nums text-amber-300">{pct}%</span> : null
-                    })()}
-                  </span>
-                </div>
+                <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
+                  <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(previewItem.job.status)}`} />
+                  {formatStatusLabel(previewItem.job.status)}
+                  {(() => {
+                    const status = normalizeStatus(previewItem.job.status)
+                    if (status !== 'processing' && status !== 'pending') return null
+                    const pct = getJobProgressPercent(previewItem.job)
+                    return pct !== null ? <span className="tabular-nums text-amber-300">{pct}%</span> : null
+                  })()}
+                </span>
               </div>
             </div>
           </div>
@@ -2403,7 +2322,6 @@ export default function DashboardPage() {
             <input
               ref={imageUploadInputRef}
               type="file"
-              multiple
               accept="image/*"
               className="hidden"
               onChange={handleImageSelected}
@@ -2484,13 +2402,12 @@ export default function DashboardPage() {
                           className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
                           style={{ aspectRatio: '1 / 1' }}
                         >
-                          <SignedImg
+                          <img
                             src={img.storage_path}
                             alt="Uploaded reference"
                             className="h-full w-full object-cover"
                             loading="lazy"
                           />
-                          <ClipOverlayLayer overlays={overlaysApi.getForClip(clip.id)} />
                           <span
                             className="pointer-events-none absolute left-2 top-2 grid h-6 min-w-6 place-items-center rounded-full bg-black/70 px-1.5 text-xs font-semibold tabular-nums text-white shadow-md ring-1 ring-white/15"
                             aria-label={`Card ${index + 1}`}
@@ -2503,25 +2420,6 @@ export default function DashboardPage() {
                             Uploaded image
                           </p>
                           <div className="flex shrink-0 items-center gap-1.5">
-                            <span onClick={(event) => event.stopPropagation()}>
-                              <OverlayEditorPopover
-                                overlays={overlaysApi.getForClip(clip.id)}
-                                selectedId={selectedOverlayId}
-                                onSelect={(id) => { setSelectedOverlayId(id); setPreviewVideoId(clip.id) }}
-                                onAddText={async () => {
-                                  setPreviewVideoId(clip.id)
-                                  const id = await overlaysApi.addText('image', clip.id)
-                                  if (id) setSelectedOverlayId(id)
-                                }}
-                                onAddImage={async (file) => {
-                                  setPreviewVideoId(clip.id)
-                                  const id = await overlaysApi.addImage('image', clip.id, file)
-                                  if (id) setSelectedOverlayId(id)
-                                }}
-                                onUpdate={(id, patch) => overlaysApi.update(id, patch)}
-                                onDelete={(id) => { overlaysApi.remove(id); if (selectedOverlayId === id) setSelectedOverlayId(null) }}
-                              />
-                            </span>
                             <span
                               onClick={(event) => event.stopPropagation()}
                               className="grid h-7 w-5 shrink-0 cursor-grab place-items-center text-zinc-500 transition hover:text-zinc-200 active:cursor-grabbing"
@@ -2551,39 +2449,25 @@ export default function DashboardPage() {
                           <div className="inline-flex items-center gap-2">
                             <span>Duration</span>
                             <div
-                              className="inline-flex items-center rounded-full border border-white/10 bg-zinc-100 px-1.5 py-0.5 text-[11px] font-semibold text-zinc-950"
-                              title="Duration in seconds (1–600)"
+                              role="radiogroup"
+                              aria-label="Image duration in Final Film"
+                              className="inline-flex rounded-full border border-white/10 bg-black/20 p-0.5 text-[11px] font-semibold"
                             >
-                              <input
-                                type="number"
-                                min={1}
-                                max={600}
-                                step={1}
-                                defaultValue={img.still_duration_seconds || 3}
-                                placeholder="3"
-                                key={`dur-${img.id}-${img.still_duration_seconds}`}
-                                aria-label="Image duration in seconds"
-                                className="w-12 bg-transparent text-right outline-none placeholder:text-zinc-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                                onClick={(e) => e.stopPropagation()}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur()
-                                  if (e.key === 'Escape') {
-                                    ;(e.currentTarget as HTMLInputElement).value = ''
-                                    ;(e.currentTarget as HTMLInputElement).blur()
-                                  }
-                                }}
-                                onBlur={(e) => {
-                                  const raw = e.currentTarget.value.trim()
-                                  if (!raw) return
-                                  const n = Number(raw)
-                                  if (!Number.isFinite(n)) {
-                                    e.currentTarget.value = ''
-                                    return
-                                  }
-                                  updateImageDuration(img.id, n)
-                                }}
-                              />
-                              <span className="pl-0.5 pr-1">s</span>
+                              {([5, 10, 15] as const).map((sec) => {
+                                const active = (img.still_duration_seconds || 3) === sec
+                                return (
+                                  <button
+                                    key={sec}
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={active}
+                                    onClick={() => updateImageDuration(img.id, sec)}
+                                    className={`rounded-full px-2.5 py-1 transition ${active ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+                                  >
+                                    {sec}s
+                                  </button>
+                                )
+                              })}
                             </div>
                           </div>
                           <span>{formatCreatedAt(img.created_at)}</span>
@@ -2663,7 +2547,7 @@ export default function DashboardPage() {
                       style={{ aspectRatio: ratioToCss(getRatioFor(video)) }}
                     >
                       {video.video?.storage_path ? (
-                        <SignedVideo
+                        <video
                           className="h-full w-full max-w-full bg-black object-contain"
                           src={video.video.storage_path}
                           poster={video.video.thumbnail_url ?? undefined}
@@ -2686,7 +2570,6 @@ export default function DashboardPage() {
                           <Clapperboard className="h-8 w-8" aria-hidden="true" />
                         </div>
                       )}
-                      <ClipOverlayLayer overlays={overlaysApi.getForClip(video.id)} />
                       <span
                         className="pointer-events-none absolute left-2 top-2 grid h-6 min-w-6 place-items-center rounded-full bg-black/70 px-1.5 text-xs font-semibold tabular-nums text-white shadow-md ring-1 ring-white/15"
                         aria-label={`Card ${index + 1}`}
@@ -2700,25 +2583,6 @@ export default function DashboardPage() {
                         {video.input_prompt}
                       </p>
                       <div className="flex shrink-0 items-center gap-1.5">
-                        <span onClick={(event) => event.stopPropagation()}>
-                          <OverlayEditorPopover
-                            overlays={overlaysApi.getForClip(video.id)}
-                            selectedId={selectedOverlayId}
-                            onSelect={(id) => { setSelectedOverlayId(id); setPreviewVideoId(video.id) }}
-                            onAddText={async () => {
-                              setPreviewVideoId(video.id)
-                              const id = await overlaysApi.addText('video', video.id)
-                              if (id) setSelectedOverlayId(id)
-                            }}
-                            onAddImage={async (file) => {
-                              setPreviewVideoId(video.id)
-                              const id = await overlaysApi.addImage('video', video.id, file)
-                              if (id) setSelectedOverlayId(id)
-                            }}
-                            onUpdate={(id, patch) => overlaysApi.update(id, patch)}
-                            onDelete={(id) => { overlaysApi.remove(id); if (selectedOverlayId === id) setSelectedOverlayId(null) }}
-                          />
-                        </span>
                         <span
                           onClick={(event) => event.stopPropagation()}
                           className="grid h-7 w-5 shrink-0 cursor-grab place-items-center text-zinc-500 transition hover:text-zinc-200 active:cursor-grabbing"
@@ -2947,7 +2811,7 @@ export default function DashboardPage() {
                     >
                       <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
                         {video.video?.storage_path ? (
-                          <SignedVideo
+                          <video
                             className="h-full w-full bg-black object-cover"
                             src={video.video.storage_path}
                             poster={video.video.thumbnail_url ?? undefined}
@@ -2977,7 +2841,7 @@ export default function DashboardPage() {
                           </p>
                           <div className="flex shrink-0 items-center gap-1">
                             {video.video?.storage_path ? (
-                              <SignedDownloadLink
+                              <a
                                 href={video.video.storage_path}
                                 download
                                 onClick={(event) => event.stopPropagation()}
@@ -2986,7 +2850,7 @@ export default function DashboardPage() {
                                 className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
                               >
                                 <Download className="h-3 w-3" aria-hidden="true" />
-                              </SignedDownloadLink>
+                              </a>
                             ) : null}
                             <button
                               type="button"
