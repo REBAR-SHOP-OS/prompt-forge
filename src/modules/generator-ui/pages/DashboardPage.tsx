@@ -919,6 +919,7 @@ export default function DashboardPage() {
       const { data, error } = await supabase
         .from('generator_user_images')
         .select('id, storage_path, created_at, still_duration_seconds, width, height')
+        .is('deleted_at', null)
         .order('created_at', { ascending: false })
       if (cancelled) return
       if (error) {
@@ -979,12 +980,15 @@ export default function DashboardPage() {
   }
 
   const handleDeleteUserImage = async (imageId: string) => {
+    if (!userId) return
     const prev = userImages
     setUserImages((curr) => curr.filter((i) => i.id !== imageId))
     const { error } = await supabase
       .from('generator_user_images')
       .update({ deleted_at: new Date().toISOString() })
       .eq('id', imageId)
+      .eq('user_id', userId)
+      .select('id')
     if (error) {
       setUserImages(prev)
       setVideoColumnMessage(`Could not delete image: ${error.message}`)
