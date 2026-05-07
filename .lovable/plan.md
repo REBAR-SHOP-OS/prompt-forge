@@ -1,33 +1,44 @@
-## Goal
+## مشکل واقعی
 
-On each uploaded image card, the Duration field must show **no number at all** by default. The user should see only an empty box (with a faint placeholder), and the value appears only after they type it themselves.
+وقتی همهٔ کارت‌ها تصویر آپلودی هستند و کاربر FINAL FILM را می‌زند، `handleMergeAllVideos` این مسیر را طی می‌کند:
 
-## Current behavior
+1. هر تصویر را با `imageUrlToClip` به یک فایل **webm** کوتاه (با MediaRecorder + canvas) تبدیل می‌کند.
+2. این webmها را در باکت `merged-videos` آپلود می‌کند.
+3. به `mergeVideoUrls` می‌دهد تا آن‌ها را به ترتیب در `<video>` باز کند، روی canvas بکشد و ضبط کند.
 
-The input shows `3` (or whatever default came from the DB) pre-filled. The user wants no pre-filled value visible.
+ریشهٔ مشکل: فایل‌های webm که `MediaRecorder` از `canvas.captureStream` می‌سازد **متادیتای duration ندارند** (`video.duration === Infinity`). در `mergeVideoUrls` هر کلیپ منتظر event `ended` می‌ماند که هرگز fire نمی‌شود → فرآیند برای همیشه منتظر می‌ماند، progress روی 0٪ گیر می‌کند، preview سیاه است، یا چند ثانیه بعد timeout/خطا می‌گیرد.
 
-## Change
+(کلیپ‌های ویدیویی واقعی این مشکل را ندارند چون duration معتبر دارند، به همین دلیل قبلاً با ویدیو کار می‌کرد.)
 
-Single file: `src/modules/generator-ui/pages/DashboardPage.tsx` (image-card duration input, ~line 2541).
+## راه‌حل
 
-1. Replace `defaultValue={img.still_duration_seconds || 3}` with `defaultValue=""` so the field renders empty on mount.
-2. Add `placeholder=" "` (a thin dot or empty) so nothing numeric is visible.
-3. Widen the input slightly (`w-12`) so a placeholder doesn't get clipped.
-4. On `Escape` / empty `onBlur`, **do not** repopulate with `3` — leave the field empty (just don't trigger an update).
-5. Keep the existing commit logic: when the user types a number and blurs/presses Enter, call `updateImageDuration` (which already clamps 1–600).
-6. Keep the stable `key` so the field resets to empty when the image changes, but no longer displays the stored seconds.
+به‌جای دور زدن از طریق فایل webm میانی، تصاویر را **مستقیماً داخل خود `mergeVideoUrls` به‌عنوان «still segment» با مدت زمان مشخص** نقاشی کنیم. این کار:
+- مرحلهٔ آپلود stillها را حذف می‌کند (سریع‌تر)
+- مشکل Infinity duration را به‌طور کامل از بین می‌برد
+- ترتیب کارت‌ها، transitionها و overlayها را دست‌نخورده نگه می‌دارد
 
-### Important — preserve film rendering
+## تغییرات کد
 
-`still_duration_seconds` is still used downstream (line 1677 and 2192) when building the final film. The DB column already has a value (existing rows default to 3s), and `updateImageDuration` only fires when the user types a real number. So:
+### 1. `src/modules/generator-ui/lib/mergeVideos.ts`
+- نوع جدید `MergeClip = { kind: 'video', url: string } | { kind: 'image', url: string, durationSec: number }` اضافه شود.
+- امضای `mergeVideoUrls` به `mergeClips(clips: MergeClip[], ...)` گسترش پیدا کند (یا یک تابع جدید `mergeClips` در کنارش اضافه شود تا مسیر «End frame append» موجود نشکند).
+- در حلقهٔ اصلی:
+  - برای کلیپ `video`: همان رفتار فعلی (load، play، paint با rAF، انتظار `ended`).
+  - برای کلیپ `image`: تصویر را با `Image()` لود کن، روی canvas با `drawContain` بکش، overlayها را paint کن، با rAF مدام بکش، و دقیقاً بعد از `durationSec * 1000` میلی‌ثانیه با `setTimeout` به مرحلهٔ بعدی برو. هیچ `<video>` و `MediaRecorder` میانی لازم نیست.
+- پشتیبانی transition (fade/slide/wipe/...) بین یک تصویر و کلیپ بعدی هم با snapshot گرفتن از آخرین فریم نقاشی‌شده روی canvas کار می‌کند (لازم نیست بدانیم منبع ویدیو بود یا تصویر).
 
-- Visually: the input is always empty until the user types.
-- Functionally: the stored duration on the row is unchanged unless the user enters a new value.
+### 2. `src/modules/generator-ui/pages/DashboardPage.tsx` (`handleMergeAllVideos`)
+- حذف کامل بلاک تبدیل تصویر→webm→آپلود (خطوط ~۱۶۷۰–۱۶۹۲).
+- به‌جای ساخت `urls: string[]`، ساخت `clips: MergeClip[]`:
+  - برای کلیپ ویدیو: `{ kind: 'video', url: await proxiedVideoUrl(...) }`
+  - برای کلیپ تصویر: `{ kind: 'image', url: await resolveSignedUrl(image.storage_path), durationSec: image.still_duration_seconds || 3 }`
+- overlayها همچنان طبق `overlaysApi.getForClip(clip.id)` به‌ازای هر کلیپ پاس داده می‌شوند (هم برای ویدیو و هم برای تصویر؛ دیگر «burn-in» قبلی لازم نیست چون مستقیم در زمان merge نقاشی می‌شوند).
+- `targetSize` همچنان از اولین کلیپ ویدیویی محاسبه می‌شود؛ اگر هیچ ویدیویی نبود از `aspectRatio` انتخاب‌شده fallback شود (همان رفتار فعلی).
+- باقی منطق (آپلود نهایی به `merged-videos`، ساخت `mergedEntry`، اضافه به Library، تنظیم `previewVideoId`) دست‌نخورده می‌ماند.
 
-This satisfies "no number shown — only what the user types" without breaking film generation for images where the user never sets a duration.
+### 3. مسیر «append End frame» در `imageUrlToClip`
+- این تابع و فراخوانی‌های آن در خطوط ~۱۰۷۴ و ۱۱۴۱ (start/end-frame append به یک ویدیو) دست‌نخورده می‌ماند چون آن‌جا فقط ۲ کلیپ هستند و یکی از آن‌ها ویدیوی واقعی است (مشکل Infinity duration رخ نمی‌دهد). تغییری در `imageToClip.ts` لازم نیست.
 
-## Files touched
+## نتیجه
 
-- `src/modules/generator-ui/pages/DashboardPage.tsx` (one input block, ~30 lines)
-
-The bottom video-generation composer (5/10/15s presets for the Wan model) remains unchanged.
+پس از این تغییر، کاربر می‌تواند چند تصویر آپلود کند، روی هر کارت overlay/متن اضافه کند، تأیید کند، و با زدن FINAL FILM یک ویدیوی واحد به ترتیب صحیح کارت‌ها — با تمام ویرایش‌ها و transitionها — در preview ببیند و در Library ذخیره شود.

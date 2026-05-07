@@ -76,8 +76,9 @@ import { SoundtrackWaveform, type SoundtrackWaveformHandle } from '@/modules/gen
 import { TransitionPreview } from '@/modules/generator-ui/components/TransitionPreview'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
-import { mergeVideoUrls, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
+import { mergeVideoUrls, mergeClips, type MergeClip, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
+import { resolveSignedUrl } from '@/modules/generator-ui/lib/signedStorageUrl'
 import { useClipOverlays } from '@/modules/generator-ui/lib/useClipOverlays'
 import { ClipOverlayLayer } from '@/modules/generator-ui/components/ClipOverlayLayer'
 import { OverlayEditorPopover } from '@/modules/generator-ui/components/OverlayEditorPopover'
@@ -1643,51 +1644,31 @@ export default function DashboardPage() {
     setMergeProgress(0)
     setVideoColumnMessage(null)
     try {
-      // Determine target dimensions from the first video clip (mergeVideos.ts uses
-      // the first clip's intrinsic size). If no video, fall back to a 1080p frame.
-      const firstVideo = eligibleClips.find((c) => c.kind === 'video') as Extract<UnifiedClip, { kind: 'video' }> | undefined
-      let targetSize: { width: number; height: number } | undefined
-      if (firstVideo?.job.video?.storage_path) {
-        try {
-          const probeUrl = await proxiedVideoUrl(firstVideo.job.video.storage_path)
-          targetSize = await new Promise((resolve) => {
-            const v = document.createElement('video')
-            v.crossOrigin = 'anonymous'
-            v.muted = true
-            v.preload = 'metadata'
-            v.onloadedmetadata = () => resolve({ width: v.videoWidth || 1280, height: v.videoHeight || 720 })
-            v.onerror = () => resolve({ width: 1280, height: 720 })
-            v.src = probeUrl
-          })
-        } catch { targetSize = { width: 1280, height: 720 } }
-      } else {
-        const r = aspectRatio
-        targetSize = r === '9:16' ? { width: 1080, height: 1920 } : r === '1:1' ? { width: 1080, height: 1080 } : { width: 1920, height: 1080 }
-      }
+      // mergeClips() picks output dimensions from the first video clip
+      // (or first image) automatically — no need to pre-probe here.
 
-      // Build the merge URL list in display order, converting image clips to
-      // short still-frame webm clips uploaded to the merged-videos bucket.
-      const urls: string[] = []
+
+      // Build the merge clip list in display order. Images are passed
+      // natively as still segments (no intermediate webm upload) so their
+      // duration is exact and overlays paint live during the merge.
+      const mergeInputs: MergeClip[] = []
       const overlaysPerClip: (import('@/modules/generator-ui/lib/overlays').ClipOverlay[] | undefined)[] = []
       for (const clip of eligibleClips) {
         const ov = overlaysApi.getForClip(clip.id)
         if (clip.kind === 'video') {
-          urls.push(await proxiedVideoUrl(clip.job.video!.storage_path as string))
+          mergeInputs.push({
+            kind: 'video',
+            url: await proxiedVideoUrl(clip.job.video!.storage_path as string),
+          })
           overlaysPerClip.push(ov)
         } else {
           const seconds = Math.max(1, Math.min(15, clip.image.still_duration_seconds || 3))
-          // Burn overlays into the still clip itself so the recorded webm
-          // already contains them (no extra paint needed at merge time).
-          const blob = await imageUrlToClip(clip.image.storage_path, seconds, targetSize, ov)
-          const stillPath = `${userId}/still-${clip.image.id}-${Date.now()}.webm`
-          const up = await supabase.storage
-            .from(MERGED_BUCKET)
-            .upload(stillPath, blob, { contentType: 'video/webm', upsert: false })
-          if (up.error) throw new Error(up.error.message)
-          const { data: pub } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(stillPath)
-          urls.push(await proxiedVideoUrl(pub.publicUrl))
-          // Already burned into the still — don't paint again during merge.
-          overlaysPerClip.push(undefined)
+          mergeInputs.push({
+            kind: 'image',
+            url: await resolveSignedUrl(clip.image.storage_path),
+            durationSec: seconds,
+          })
+          overlaysPerClip.push(ov)
         }
       }
 
@@ -1708,8 +1689,8 @@ export default function DashboardPage() {
             clipVolume: soundtrackMode === 'music-only' ? 0 : clipVolume,
           }
         : undefined
-      const mergeRes = await mergeVideoUrls(
-        urls,
+      const mergeRes = await mergeClips(
+        mergeInputs,
         (p) => setMergeProgress(Math.round(p.ratio * 100)),
         audioOpt,
         transitionsForMerge,
@@ -1734,7 +1715,7 @@ export default function DashboardPage() {
       const entry: JobDetail = {
         id: mergedId,
         status: 'completed',
-        input_prompt: `Final merged video — ${urls.length} clips`,
+        input_prompt: `Final merged video — ${mergeInputs.length} clips`,
         provider_key: 'merged',
         model_key: 'browser-canvas',
         created_at: new Date().toISOString(),
