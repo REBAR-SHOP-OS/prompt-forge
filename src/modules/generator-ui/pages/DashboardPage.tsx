@@ -2630,7 +2630,7 @@ export default function DashboardPage() {
                       style={{ aspectRatio: ratioToCss(getRatioFor(video)) }}
                     >
                       {video.video?.storage_path ? (
-                        <video
+                        <SignedVideo
                           className="h-full w-full max-w-full bg-black object-contain"
                           src={video.video.storage_path}
                           poster={video.video.thumbnail_url ?? undefined}
