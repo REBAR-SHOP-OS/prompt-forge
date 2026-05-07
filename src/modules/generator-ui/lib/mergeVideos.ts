@@ -311,6 +311,41 @@ export async function mergeVideoUrls(
     tick()
   }
 
+  /**
+   * Resolve when the given video reaches the end. Attaches the listener
+   * synchronously and short-circuits if `ended` is already true (avoids the
+   * race where the event fired before this listener could be attached).
+   * Also includes a safety timeout based on remaining duration so a missed
+   * `ended` event can never hang the merge loop forever.
+   */
+  function whenEnded(video: HTMLVideoElement): Promise<void> {
+    return new Promise<void>((resolve) => {
+      let done = false
+      const finish = () => {
+        if (done) return
+        done = true
+        video.removeEventListener('ended', onEnded)
+        if (timer) clearTimeout(timer)
+        cancelAnimationFrame(rafId)
+        resolve()
+      }
+      const onEnded = () => finish()
+      if (video.ended) { finish(); return }
+      video.addEventListener('ended', onEnded)
+      const dur = Number.isFinite(video.duration) ? video.duration : 0
+      const remaining = Math.max(0, dur - (video.currentTime || 0))
+      // +1500ms slack for decode/event dispatch latency. Minimum 3s so very
+      // short clips still get a real chance to fire `ended`.
+      const timeoutMs = Math.max(3000, Math.ceil(remaining * 1000) + 1500)
+      const timer = setTimeout(() => {
+        if (!done) {
+          console.warn('[mergeVideoUrls] ended event missed; advancing via timeout')
+          finish()
+        }
+      }, timeoutMs)
+    })
+  }
+
   // Pre-load ALL clips before starting the recorder. This avoids capturing
   // black frames at the start while videos are still being fetched/decoded,
   // and removes inter-clip loading gaps.
