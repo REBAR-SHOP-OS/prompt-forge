@@ -2377,6 +2377,7 @@ export default function DashboardPage() {
             <input
               ref={imageUploadInputRef}
               type="file"
+              multiple
               accept="image/*"
               className="hidden"
               onChange={handleImageSelected}
