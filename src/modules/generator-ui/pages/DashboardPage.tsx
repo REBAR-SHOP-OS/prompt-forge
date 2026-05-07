@@ -2219,7 +2219,7 @@ export default function DashboardPage() {
               >
                 {previewItem.job.video?.storage_path ? (
                   <>
-                    <video
+                    <SignedVideo
                       key={previewItem.job.id}
                       className="h-full w-full bg-black object-contain"
                       src={previewItem.job.video.storage_path}
