@@ -113,13 +113,12 @@ function paintTransitionFrame(
   width: number,
   height: number,
   outgoing: HTMLCanvasElement,
-  incoming: HTMLVideoElement,
+  drawIncoming: () => void,
   spec: TransitionSpec,
   t: number,
 ) {
   const e = easeInOut(t)
 
-  const drawIncoming = () => drawContain(ctx, incoming, width, height)
   const drawOutgoing = () => {
     ctx.drawImage(outgoing, 0, 0, width, height)
   }
