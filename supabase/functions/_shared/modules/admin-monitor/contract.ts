@@ -1,12 +1,8 @@
 // Admin Monitor — contract.
-import type { CutoverPhase, DomainKey } from "../../core/cutover.ts";
-
+// Public health probe — intentionally minimal to avoid leaking internal details.
 export interface HealthSummary {
   status: "ok";
-  version: string;
   timestamp: string;
-  /** Optional: current cutover phase per domain. Additive — old clients ignore. */
-  cutover?: Record<DomainKey, CutoverPhase>;
 }
 
 export interface AdminMonitor {
