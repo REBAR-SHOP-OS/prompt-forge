@@ -223,6 +223,39 @@ import {
   type LoadedOverlayImages,
 } from './overlays'
 
+export type MergeClip =
+  | { kind: 'video'; url: string }
+  | { kind: 'image'; url: string; durationSec: number }
+
+async function loadImage(url: string): Promise<HTMLImageElement> {
+  return await new Promise((resolve, reject) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error(`Failed to load image: ${url}`))
+    img.src = url
+  })
+}
+
+function drawImageContain(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  cw: number,
+  ch: number,
+) {
+  ctx.fillStyle = '#000'
+  ctx.fillRect(0, 0, cw, ch)
+  const iw = img.naturalWidth
+  const ih = img.naturalHeight
+  if (!iw || !ih) return
+  const scale = Math.min(cw / iw, ch / ih)
+  const dw = iw * scale
+  const dh = ih * scale
+  const dx = (cw - dw) / 2
+  const dy = (ch - dh) / 2
+  ctx.drawImage(img, dx, dy, dw, dh)
+}
+
 export async function mergeVideoUrls(
   urls: string[],
   onProgress?: MergeProgressCallback,
@@ -230,7 +263,23 @@ export async function mergeVideoUrls(
   transitions?: TransitionSpec[],
   overlaysPerClip?: (ClipOverlay[] | undefined)[],
 ): Promise<MergeResult> {
-  if (urls.length === 0) throw new Error('No videos to merge')
+  return mergeClips(
+    urls.map((url) => ({ kind: 'video' as const, url })),
+    onProgress,
+    audio,
+    transitions,
+    overlaysPerClip,
+  )
+}
+
+export async function mergeClips(
+  clips: MergeClip[],
+  onProgress?: MergeProgressCallback,
+  audio?: MergeAudioOptions,
+  transitions?: TransitionSpec[],
+  overlaysPerClip?: (ClipOverlay[] | undefined)[],
+): Promise<MergeResult> {
+  if (clips.length === 0) throw new Error('No clips to merge')
 
   // Preload overlay images and fonts up front so paint is synchronous.
   const allOverlays: ClipOverlay[] = []
@@ -242,17 +291,38 @@ export async function mergeVideoUrls(
     : new Map()
   if (allOverlays.length > 0) await ensureFontsLoaded(allOverlays)
 
-
   const useSoundtrack = Boolean(audio && audio.endSec > audio.startSec)
   const musicVolume = Math.max(0, Math.min(1, audio?.musicVolume ?? 1))
-  // When no soundtrack is used, default to capturing full clip audio.
-  // When soundtrack is used, default to 0 (music-only) unless caller opts in.
   const clipVolume = Math.max(0, Math.min(1, audio?.clipVolume ?? (useSoundtrack ? 0 : 1)))
   const captureClipAudio = clipVolume > 0
 
-  const first = await loadVideo(urls[0], captureClipAudio)
-  const width = Math.max(640, Math.floor(first.videoWidth || 1280))
-  const height = Math.max(360, Math.floor(first.videoHeight || 720))
+  // Pre-load every clip up front so paint+record is gap-free.
+  type LoadedClip =
+    | { kind: 'video'; video: HTMLVideoElement; durationSec: number }
+    | { kind: 'image'; img: HTMLImageElement; durationSec: number }
+  const loaded: LoadedClip[] = []
+  for (const c of clips) {
+    if (c.kind === 'video') {
+      const v = await loadVideo(c.url, captureClipAudio)
+      loaded.push({ kind: 'video', video: v, durationSec: Number.isFinite(v.duration) ? v.duration : 0 })
+    } else {
+      const img = await loadImage(c.url)
+      loaded.push({ kind: 'image', img, durationSec: Math.max(0.5, c.durationSec) })
+    }
+  }
+
+  // Determine canvas size from first video clip; fall back to first image,
+  // then to 1280x720.
+  let width = 1280
+  let height = 720
+  const firstVideo = loaded.find((l): l is Extract<LoadedClip, { kind: 'video' }> => l.kind === 'video')
+  if (firstVideo) {
+    width = Math.max(640, Math.floor(firstVideo.video.videoWidth || 1280))
+    height = Math.max(360, Math.floor(firstVideo.video.videoHeight || 720))
+  } else if (loaded[0]?.kind === 'image') {
+    width = Math.max(640, Math.floor(loaded[0].img.naturalWidth || 1280))
+    height = Math.max(360, Math.floor(loaded[0].img.naturalHeight || 720))
+  }
 
   const canvas = document.createElement('canvas')
   canvas.width = width
@@ -263,7 +333,6 @@ export async function mergeVideoUrls(
   ctx.fillStyle = '#000'
   ctx.fillRect(0, 0, width, height)
 
-  // Offscreen canvas used to snapshot the last frame of each outgoing clip.
   const snapshot = document.createElement('canvas')
   snapshot.width = width
   snapshot.height = height
@@ -286,7 +355,7 @@ export async function mergeVideoUrls(
     const tracks = [...videoStream.getVideoTracks(), ...audioDest.stream.getAudioTracks()]
     outStream = new MediaStream(tracks)
   } catch (err) {
-    console.warn('[mergeVideoUrls] AudioContext unavailable, recording video-only:', err)
+    console.warn('[mergeClips] AudioContext unavailable, recording video-only:', err)
     audioCtx = null
     audioDest = null
     outStream = videoStream
@@ -301,7 +370,6 @@ export async function mergeVideoUrls(
       soundtrackEl.crossOrigin = 'anonymous'
       soundtrackEl.src = audio.src
       soundtrackEl.preload = 'auto'
-      // We handle looping manually so we always wrap to winStart, never to 0.
       soundtrackEl.loop = false
       await new Promise<void>((resolve, reject) => {
         const onReady = () => { soundtrackEl!.removeEventListener('loadedmetadata', onReady); resolve() }
@@ -316,13 +384,15 @@ export async function mergeVideoUrls(
       source.connect(gain)
       gain.connect(audioDest)
     } catch (err) {
-      console.warn('[mergeVideoUrls] soundtrack disabled:', err)
+      console.warn('[mergeClips] soundtrack disabled:', err)
       soundtrackEl = null
     }
   }
 
   let rafId = 0
-  const loopPaint = (video: HTMLVideoElement, overlays?: ClipOverlay[]) => {
+  const stopPaint = () => { if (rafId) { cancelAnimationFrame(rafId); rafId = 0 } }
+
+  const loopPaintVideo = (video: HTMLVideoElement, overlays?: ClipOverlay[]) => {
     const tick = () => {
       drawContain(ctx, video, width, height)
       if (overlays && overlays.length > 0) paintOverlays(ctx, width, height, overlays, loadedOverlayImages)
@@ -330,37 +400,39 @@ export async function mergeVideoUrls(
     }
     tick()
   }
-
-  // Pre-load ALL clips before starting the recorder. This avoids capturing
-  // black frames at the start while videos are still being fetched/decoded,
-  // and removes inter-clip loading gaps.
-  const preloaded: HTMLVideoElement[] = [first]
-  for (let i = 1; i < urls.length; i++) {
-    preloaded.push(await loadVideo(urls[i], captureClipAudio))
+  const loopPaintImage = (img: HTMLImageElement, overlays?: ClipOverlay[]) => {
+    const tick = () => {
+      drawImageContain(ctx, img, width, height)
+      if (overlays && overlays.length > 0) paintOverlays(ctx, width, height, overlays, loadedOverlayImages)
+      rafId = requestAnimationFrame(tick)
+    }
+    tick()
   }
+
+  // Total duration for progress reporting.
   let totalDuration = 0
-  for (const v of preloaded) {
-    totalDuration += Number.isFinite(v.duration) ? v.duration : 0
-  }
+  for (const l of loaded) totalDuration += l.durationSec
 
-  // Paint the very first frame onto the canvas BEFORE the recorder starts so
-  // the captured stream begins on real content (not a black fill).
-  await new Promise<void>((resolve) => {
-    const onSeeked = () => {
-      first.removeEventListener('seeked', onSeeked)
-      drawContain(ctx, first, width, height)
-      resolve()
-    }
-    first.addEventListener('seeked', onSeeked)
-    try {
-      first.currentTime = 0
-    } catch {
-      // Some browsers throw if currentTime is set before metadata; fall back.
-      first.removeEventListener('seeked', onSeeked)
-      drawContain(ctx, first, width, height)
-      resolve()
-    }
-  })
+  // Paint the very first frame BEFORE the recorder starts.
+  const firstClip = loaded[0]
+  if (firstClip.kind === 'video') {
+    await new Promise<void>((resolve) => {
+      const v = firstClip.video
+      const onSeeked = () => {
+        v.removeEventListener('seeked', onSeeked)
+        drawContain(ctx, v, width, height)
+        resolve()
+      }
+      v.addEventListener('seeked', onSeeked)
+      try { v.currentTime = 0 } catch {
+        v.removeEventListener('seeked', onSeeked)
+        drawContain(ctx, v, width, height)
+        resolve()
+      }
+    })
+  } else {
+    drawImageContain(ctx, firstClip.img, width, height)
+  }
 
   const chosenMime = pickMimeType()
   const recorder = new MediaRecorder(outStream, { mimeType: chosenMime })
@@ -376,13 +448,7 @@ export async function mergeVideoUrls(
   if (soundtrackEl && audio) {
     const winStart = Math.max(0, audio.startSec)
     const winEnd = Math.max(winStart + 0.05, audio.endSec)
-    // Re-seek immediately before play() — some browsers reset currentTime
-    // while the element is idle, which would otherwise leak the unselected
-    // intro of the file into the recording.
     try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
-    // rAF clamp loop: snap back to winStart the instant currentTime crosses
-    // winEnd. This is much tighter than 'timeupdate' (~250ms granularity)
-    // and guarantees nothing past winEnd is captured.
     const clampTick = () => {
       if (!soundtrackEl) return
       if (soundtrackEl.currentTime >= winEnd) {
@@ -391,8 +457,6 @@ export async function mergeVideoUrls(
       soundtrackClampRaf = requestAnimationFrame(clampTick)
     }
     soundtrackClampRaf = requestAnimationFrame(clampTick)
-    // If the file's natural end is reached before winEnd (shouldn't happen
-    // given the clamp above, but defensive), wrap to winStart and resume.
     soundtrackEndedHandler = () => {
       if (!soundtrackEl) return
       try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
@@ -403,127 +467,125 @@ export async function mergeVideoUrls(
   }
 
   let elapsedDuration = 0
-  let prevVideo: HTMLVideoElement | null = null
   let prevClipNode: MediaElementAudioSourceNode | null = null
 
-  for (let i = 0; i < urls.length; i++) {
-    const video = preloaded[i]
-    const dur = Number.isFinite(video.duration) ? video.duration : 0
+  // Snapshot the canvas AFTER finishing the previous clip's paint, so it
+  // captures the actual last visible frame (works for both image and video).
+  function snapshotCurrent() {
+    snapCtx.fillStyle = '#000'
+    snapCtx.fillRect(0, 0, width, height)
+    snapCtx.drawImage(canvas, 0, 0, width, height)
+  }
+
+  // Play a single clip end-to-end (after any optional intro transition has
+  // already been resolved by the caller). Resolves when its full duration is up.
+  async function playClipBody(l: LoadedClip, overlays: ClipOverlay[] | undefined) {
+    if (l.kind === 'video') {
+      try { await l.video.play() } catch { /* autoplay */ }
+      loopPaintVideo(l.video, overlays)
+      await new Promise<void>((resolve) => {
+        const onEnded = () => {
+          l.video.removeEventListener('ended', onEnded)
+          stopPaint()
+          resolve()
+        }
+        l.video.addEventListener('ended', onEnded)
+      })
+    } else {
+      loopPaintImage(l.img, overlays)
+      await new Promise<void>((resolve) => setTimeout(resolve, l.durationSec * 1000))
+      stopPaint()
+    }
+  }
+
+  for (let i = 0; i < loaded.length; i++) {
+    const l = loaded[i]
     const clipOverlays = overlaysPerClip?.[i]
 
+    // Hook clip audio (videos only).
     let clipNode: MediaElementAudioSourceNode | null = null
-    if (captureClipAudio && audioCtx && audioDest) {
+    if (l.kind === 'video' && captureClipAudio && audioCtx && audioDest) {
       try {
-        clipNode = audioCtx.createMediaElementSource(video)
+        clipNode = audioCtx.createMediaElementSource(l.video)
         const gain = audioCtx.createGain()
         gain.gain.value = clipVolume
         clipNode.connect(gain)
         gain.connect(audioDest)
       } catch (err) {
-        console.warn('[mergeVideoUrls] clip audio skipped:', err)
+        console.warn('[mergeClips] clip audio skipped:', err)
         clipNode = null
       }
     }
 
     // Transition INTO this clip from the previous one.
-    if (i > 0 && prevVideo) {
+    if (i > 0) {
       const spec = transitions?.[i - 1] ?? { id: 'cut' as TransitionId, durationMs: 0 }
       if (spec.id !== 'cut' && spec.durationMs > 0) {
-        // Snapshot the last frame of the outgoing clip (with prev overlays).
-        snapCtx.fillStyle = '#000'
-        snapCtx.fillRect(0, 0, width, height)
-        drawContain(snapCtx, prevVideo, width, height)
-        const prevOverlays = overlaysPerClip?.[i - 1]
-        if (prevOverlays && prevOverlays.length > 0) {
-          paintOverlays(snapCtx, width, height, prevOverlays, loadedOverlayImages)
+        // Snapshot whatever is currently on the main canvas (last frame of
+        // the outgoing clip + its overlays were just painted).
+        snapshotCurrent()
+
+        stopPaint()
+
+        // For video, we want the incoming clip to be playing during the
+        // transition so motion is visible. For image, we just draw the still.
+        if (l.kind === 'video') {
+          try { await l.video.play() } catch { /* autoplay */ }
         }
 
-        // Begin playing the incoming clip muted-of-RAF; we paint the blended frame manually.
-        cancelAnimationFrame(rafId)
-        try { await video.play() } catch { /* autoplay */ }
+        const drawIncoming = l.kind === 'video'
+          ? () => drawContain(ctx, l.video, width, height)
+          : () => drawImageContain(ctx, l.img, width, height)
 
         const start = performance.now()
         await new Promise<void>((resolve) => {
           const tick = () => {
             const now = performance.now()
             const t = Math.min(1, (now - start) / spec.durationMs)
-            paintTransitionFrame(ctx, width, height, snapshot, video, spec, t)
-            // Fade incoming overlays in alongside the transition's progress.
+            paintTransitionFrame(ctx, width, height, snapshot, drawIncoming, spec, t)
             if (clipOverlays && clipOverlays.length > 0) {
               ctx.save()
               ctx.globalAlpha = t
               paintOverlays(ctx, width, height, clipOverlays, loadedOverlayImages)
               ctx.restore()
             }
-            if (t >= 1) {
-              resolve()
-              return
-            }
+            if (t >= 1) { resolve(); return }
             rafId = requestAnimationFrame(tick)
           }
           rafId = requestAnimationFrame(tick)
         })
 
-        // Disconnect previous clip's audio now that the transition is over.
         if (prevClipNode) {
           try { prevClipNode.disconnect() } catch { /* ignore */ }
           prevClipNode = null
         }
 
-        // Continue painting the incoming clip from now on.
-        loopPaint(video, clipOverlays)
-
-        await new Promise<void>((resolve) => {
-          const onEnded = () => {
-            video.removeEventListener('ended', onEnded)
-            cancelAnimationFrame(rafId)
-            resolve()
-          }
-          video.addEventListener('ended', onEnded)
-        })
+        // Continue painting the incoming clip from now on. For an image clip
+        // we'll simply hold the still frame for its full duration; the
+        // transition time is in addition (matches video behavior).
+        await playClipBody(l, clipOverlays)
       } else {
-        // Cut: behave like before.
         if (prevClipNode) {
           try { prevClipNode.disconnect() } catch { /* ignore */ }
           prevClipNode = null
         }
-        await video.play().catch(() => {/* autoplay */})
-        loopPaint(video, clipOverlays)
-        await new Promise<void>((resolve) => {
-          const onEnded = () => {
-            video.removeEventListener('ended', onEnded)
-            cancelAnimationFrame(rafId)
-            resolve()
-          }
-          video.addEventListener('ended', onEnded)
-        })
+        await playClipBody(l, clipOverlays)
       }
     } else {
       // First clip — no transition in.
-      await video.play().catch(() => {/* autoplay */})
-      loopPaint(video, clipOverlays)
-      await new Promise<void>((resolve) => {
-        const onEnded = () => {
-          video.removeEventListener('ended', onEnded)
-          cancelAnimationFrame(rafId)
-          resolve()
-        }
-        video.addEventListener('ended', onEnded)
-      })
+      await playClipBody(l, clipOverlays)
     }
 
-    elapsedDuration += dur
+    elapsedDuration += l.durationSec
     onProgress?.({
-      ratio: totalDuration > 0 ? Math.min(1, elapsedDuration / totalDuration) : (i + 1) / urls.length,
+      ratio: totalDuration > 0 ? Math.min(1, elapsedDuration / totalDuration) : (i + 1) / loaded.length,
       clipIndex: i + 1,
-      totalClips: urls.length,
+      totalClips: loaded.length,
     })
 
-    prevVideo = video
     prevClipNode = clipNode
   }
 
-  // Cleanup tail
   if (prevClipNode) {
     try { prevClipNode.disconnect() } catch { /* ignore */ }
   }
