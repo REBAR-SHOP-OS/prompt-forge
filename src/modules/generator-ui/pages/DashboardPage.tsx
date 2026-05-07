@@ -2944,7 +2944,7 @@ export default function DashboardPage() {
                           </p>
                           <div className="flex shrink-0 items-center gap-1">
                             {video.video?.storage_path ? (
-                              <a
+                              <SignedDownloadLink
                                 href={video.video.storage_path}
                                 download
                                 onClick={(event) => event.stopPropagation()}
@@ -2953,7 +2953,7 @@ export default function DashboardPage() {
                                 className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
                               >
                                 <Download className="h-3 w-3" aria-hidden="true" />
-                              </a>
+                              </SignedDownloadLink>
                             ) : null}
                             <button
                               type="button"
