@@ -28,7 +28,7 @@ export const jobOrchestratorGateway = {
       method: "POST",
       body: JSON.stringify(input),
     });
-    if (result?.error?.code === "INSUFFICIENT_CREDITS") {
+    if ("error" in result && result.error?.code === "INSUFFICIENT_CREDITS") {
       throw new ApiError(result.statusCode ?? 402, "INSUFFICIENT_CREDITS", result.error.message ?? "insufficient credits", result.requestId);
     }
     return result as CreateJobResult;
