@@ -2559,9 +2559,9 @@ export default function DashboardPage() {
                                 min={1}
                                 max={600}
                                 step={1}
-                                defaultValue=""
-                                placeholder="—"
-                                key={`dur-${img.id}`}
+                                defaultValue={img.still_duration_seconds || 3}
+                                placeholder="3"
+                                key={`dur-${img.id}-${img.still_duration_seconds}`}
                                 aria-label="Image duration in seconds"
                                 className="w-12 bg-transparent text-right outline-none placeholder:text-zinc-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                 onClick={(e) => e.stopPropagation()}
