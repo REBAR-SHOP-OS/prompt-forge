@@ -5,7 +5,7 @@ import {
   BookmarkPlus,
   ChevronsRight,
   Clapperboard,
-  Coins,
+  
   Combine,
   Download,
   FileUp,
@@ -1358,11 +1358,7 @@ export default function DashboardPage() {
     } catch (error) {
       let message = 'Could not start video generation.'
       if (error instanceof ApiError) {
-        if (error.code === 'INSUFFICIENT_CREDITS' || error.status === 402) {
-          message = "You don't have enough credits to start this generation. Please top up your credits and try again."
-        } else {
-          message = `${error.code}: ${error.message}`
-        }
+        message = `${error.code}: ${error.message}`
       }
       setComposerError(message)
       setVideoColumnMessage(message)
@@ -1892,14 +1888,6 @@ export default function DashboardPage() {
               {approvedIds.size}
             </span>
           </DropdownMenuItem>
-          <DropdownMenuItem disabled className="opacity-100 focus:bg-transparent">
-            <Coins className="mr-2 h-4 w-4 text-amber-300/80" aria-hidden="true" />
-            <span>Credits</span>
-            <span className="ml-auto text-xs font-medium tabular-nums text-zinc-100">
-              {profile?.credits_balance ?? '—'}
-            </span>
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => { void signOut() }} className="text-red-400 focus:text-red-300">
             <LogOut className="mr-2 h-4 w-4" aria-hidden="true" />
             <span>Sign out</span>

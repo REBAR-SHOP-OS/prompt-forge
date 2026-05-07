@@ -232,13 +232,8 @@ export const jobOrchestratorGateway = {
             });
           } catch (e) {
             const msg = (e as Error).message;
-            const code = msg.includes("insufficient credits") ? "INSUFFICIENT_CREDITS" : "JOB_START_FAILED";
-            const status = code === "INSUFFICIENT_CREDITS" ? 402 : 500;
-            await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: status, latencyMs: Date.now() - ctx.startedAt, errorCode: code });
-            if (code === "INSUFFICIENT_CREDITS") {
-              return jsonResponse({ error: { code, message: msg }, requestId: ctx.requestId, statusCode: status });
-            }
-            return errorResponse(code, msg, status, ctx.requestId);
+            await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 500, latencyMs: Date.now() - ctx.startedAt, errorCode: "JOB_START_FAILED" });
+            return errorResponse("JOB_START_FAILED", msg, 500, ctx.requestId);
           }
 
           // Trigger generation through the adapter contract.

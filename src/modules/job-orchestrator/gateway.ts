@@ -4,14 +4,8 @@
 //   - listMyJobs() -> JobSummary[]
 //   - createJob(input) -> CreateJobResult
 //   - getJob(jobId)    -> JobDetail
-import { ApiError, request } from "@/core/api/client";
+import { request } from "@/core/api/client";
 import type { CreateJobInput, CreateJobResult, JobDetail, JobSummary } from "./contract";
-
-type SoftCreateJobError = {
-  error?: { code?: string; message?: string };
-  requestId?: string;
-  statusCode?: number;
-};
 
 export const JOB_ORCHESTRATOR_CONTRACT_VERSION = "v1" as const;
 
@@ -23,16 +17,11 @@ export const jobOrchestratorGateway = {
     return r.items ?? [];
   },
 
-  createJob: async (input: CreateJobInput) => {
-    const result = await request<CreateJobResult | SoftCreateJobError>("/jobs-create", {
+  createJob: (input: CreateJobInput) =>
+    request<CreateJobResult>("/jobs-create", {
       method: "POST",
       body: JSON.stringify(input),
-    });
-    if ("error" in result && result.error?.code === "INSUFFICIENT_CREDITS") {
-      throw new ApiError(result.statusCode ?? 402, "INSUFFICIENT_CREDITS", result.error.message ?? "insufficient credits", result.requestId);
-    }
-    return result as CreateJobResult;
-  },
+    }),
 
   getJob: (jobId: string) =>
     request<JobDetail>(`/jobs-get?jobId=${encodeURIComponent(jobId)}`),
