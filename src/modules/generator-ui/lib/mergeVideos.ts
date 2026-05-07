@@ -340,7 +340,18 @@ export async function mergeClips(
   if (!snapCtx) throw new Error('Canvas 2D not supported (snapshot)')
 
   const fps = 30
-  const videoStream = canvas.captureStream(fps)
+  let requestCanvasFrame = () => {}
+  let videoStream = canvas.captureStream(fps)
+  try {
+    const manualStream = canvas.captureStream(0)
+    const manualTrack = manualStream.getVideoTracks()[0] as (MediaStreamTrack & { requestFrame?: () => void }) | undefined
+    if (manualTrack && typeof manualTrack.requestFrame === 'function') {
+      videoStream = manualStream
+      requestCanvasFrame = () => manualTrack.requestFrame?.()
+    }
+  } catch {
+    videoStream = canvas.captureStream(fps)
+  }
 
   // --- Audio routing -------------------------------------------------------
   const Ctor: typeof AudioContext = (window.AudioContext
@@ -396,6 +407,7 @@ export async function mergeClips(
     const tick = () => {
       drawContain(ctx, video, width, height)
       if (overlays && overlays.length > 0) paintOverlays(ctx, width, height, overlays, loadedOverlayImages)
+      requestCanvasFrame()
       rafId = requestAnimationFrame(tick)
     }
     tick()
@@ -404,6 +416,7 @@ export async function mergeClips(
     const tick = () => {
       drawImageContain(ctx, img, width, height)
       if (overlays && overlays.length > 0) paintOverlays(ctx, width, height, overlays, loadedOverlayImages)
+      requestCanvasFrame()
       rafId = requestAnimationFrame(tick)
     }
     tick()
@@ -421,17 +434,20 @@ export async function mergeClips(
       const onSeeked = () => {
         v.removeEventListener('seeked', onSeeked)
         drawContain(ctx, v, width, height)
+        requestCanvasFrame()
         resolve()
       }
       v.addEventListener('seeked', onSeeked)
       try { v.currentTime = 0 } catch {
         v.removeEventListener('seeked', onSeeked)
         drawContain(ctx, v, width, height)
+        requestCanvasFrame()
         resolve()
       }
     })
   } else {
     drawImageContain(ctx, firstClip.img, width, height)
+    requestCanvasFrame()
   }
 
   const chosenMime = pickMimeType()
