@@ -565,6 +565,7 @@ export async function mergeClips(
               paintOverlays(ctx, width, height, clipOverlays, loadedOverlayImages)
               ctx.restore()
             }
+            requestCanvasFrame()
             if (t >= 1) { resolve(); return }
             rafId = requestAnimationFrame(tick)
           }
