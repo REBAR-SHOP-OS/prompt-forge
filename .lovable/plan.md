@@ -1,38 +1,50 @@
-فرضیه جدید ریشه‌ای: مشکل دیگر از عکس‌ها نیست؛ کلیپ‌های ثابتِ ساخته‌شده از عکس با موفقیت در باکت `merged-videos` آپلود می‌شوند، اما باکت در دیتابیس فعلی private است و کد همچنان از URL عمومی `/object/public/merged-videos/...` برای پخش در مرورگر استفاده می‌کند؛ به همین دلیل `<video>` در مرحله Final Film نمی‌تواند فایل تازه آپلودشده را load کند.
+# Fix: Final Film merge progress stuck at 33%
 
-شواهدی که بررسی شد:
-- درخواست آپلود still clip به `merged-videos/...webm` با status 200 موفق بوده است.
-- خطای کنسول دقیقاً روی load همین فایل تازه آپلودشده رخ داده: `Failed to load video: .../object/public/merged-videos/...still-....webm`.
-- وضعیت زنده دیتابیس نشان می‌دهد `merged-videos` برابر `public=false` است، در حالی که کد از `getPublicUrl()` استفاده می‌کند.
-- `user-images` اکنون public است و thumbnails کار می‌کنند؛ بنابراین این خطای جدید مربوط به مرحله بعدی یعنی still-video های میانی در `merged-videos` است.
+## Root cause
 
-برنامه رفع ریشه‌ای:
+In `src/modules/generator-ui/lib/mergeVideos.ts`, the per-clip loop has this sequence when a transition is configured between clip A and clip B:
 
-1. اصلاح قطعی دسترسی `merged-videos`
-   - یک migration اضافه می‌کنم که `merged-videos` را دوباره و به‌صورت idempotent public کند:
-     - `UPDATE storage.buckets SET public = true WHERE id = 'merged-videos';`
-   - policy خواندن عمومی `merged-videos` را هم با `DROP POLICY IF EXISTS` و `CREATE POLICY` پایدار می‌کنم تا URLهای عمومی که اپلیکیشن تولید می‌کند واقعاً قابل پخش باشند.
-   - policyهای upload/update/delete مالک‌محور باقی می‌مانند تا فقط کاربر بتواند در فولدر خودش فایل بسازد یا حذف کند.
+```text
+1. snapshot last frame of A
+2. video.play()  ← B starts playing here
+3. await transition paint loop (durationMs of the transition)
+4. loopPaint(B)
+5. video.addEventListener('ended', ...)  ← listener attached LATE
+6. await ended
+```
 
-2. مقاوم‌سازی کد در برابر تغییر public/private باکت
-   - در `src/modules/generator-ui/lib/proxiedVideoUrl.ts` منطق فعلی که URLهای storage خود پروژه را بدون proxy برمی‌گرداند اصلاح می‌شود.
-   - برای URLهای storage مربوط به `merged-videos`، خروجی همیشه از `video-proxy` عبور داده می‌شود، حتی اگر host مربوط به storage خود پروژه باشد.
-   - این باعث می‌شود اگر در آینده باکت دوباره private شد یا CORS/metadata مشکل داشت، Final Film همچنان از مسیر احراز هویت‌شده و CORS-safe استفاده کند.
+The `ended` listener is attached **after** the transition awaits. If clip B is short (or the transition is long, e.g. 1500ms on a 5s clip combined with already-elapsed playback), the `ended` event can fire **before** step 5, and the loop awaits forever — exactly what the user sees: progress freezes after the first transition.
 
-3. اصلاح تمام نقاطی که still clip آپلود می‌کنند
-   - در `DashboardPage.tsx`، بعد از آپلود still clipهای ساخته‌شده از عکس در Final Film، URL استفاده‌شده برای merge از helper امن عبور داده می‌شود.
-   - همین الگو برای Start/End append/prepend هم بررسی و هماهنگ می‌شود تا همه مسیرهای merge یک رفتار واحد داشته باشند.
+With 3 clips of ~5s each, finishing the first clip reports ~33%; the second clip then plays through and ends silently while we're still in the transition await, so we never advance. That matches the "stuck at 33%" symptom.
 
-4. پیام خطای دقیق‌تر برای خطاهای آینده
-   - اگر load ویدیو شکست بخورد، پیام داخلی شامل نوع منبع مشکل‌دار می‌شود تا دیگر خطای مبهم «try again» نمایش داده نشود.
-   - پیام کاربر همچنان ساده می‌ماند، اما لاگ‌ها برای تشخیص ریشه‌ای بعدی دقیق‌تر خواهند بود.
+The same race exists in the "cut" branch and the "first clip" branch (less likely to trigger, but still wrong).
 
-5. اعتبارسنجی پس از اعمال
-   - وضعیت باکت `merged-videos` را دوباره از دیتابیس می‌خوانم و public بودن آن را تایید می‌کنم.
-   - کد مسیر Final Film را بررسی می‌کنم تا مطمئن شوم URLهای `merged-videos` دیگر مستقیم و شکننده استفاده نمی‌شوند.
-   - تست دستی سناریو مورد نظر: عکس‌های آپلودشده → Final Film → ساخته‌شدن کلیپ‌های still → merge بدون خطای load.
+## Fix
 
-فایل‌های مورد انتظار برای تغییر:
-- `supabase/migrations/...sql`
-- `src/modules/generator-ui/lib/proxiedVideoUrl.ts`
-- `src/modules/generator-ui/pages/DashboardPage.tsx`
+Edit `src/modules/generator-ui/lib/mergeVideos.ts`:
+
+1. **Attach the `ended` listener BEFORE `play()`** in all three branches (first clip, cut transition, animated transition). Wrap in a single helper:
+   ```ts
+   function whenEnded(video: HTMLVideoElement): Promise<void> {
+     return new Promise((resolve) => {
+       if (video.ended) { resolve(); return }
+       const onEnded = () => { video.removeEventListener('ended', onEnded); resolve() }
+       video.addEventListener('ended', onEnded)
+     })
+   }
+   ```
+   Create the promise first, then `await video.play()`, then run the transition paint loop, then `await endedPromise`.
+
+2. **Guard the transition paint loop** so it stops early if the video ends mid-transition (`video.ended` true): break out of the rAF loop and proceed.
+
+3. **Safety timeout**: if `ended` doesn't fire within `(duration - currentTime + 500ms)` after play, resolve anyway and continue. Prevents indefinite hangs from any future regression.
+
+4. **Defensive `play()` handling**: log and continue if `play()` rejects (autoplay policy / decode error) instead of silently leaving the video paused.
+
+No other files change. The progress reporting itself is correct; the bug is that the loop never advances past clip 2.
+
+## Verification
+
+- 3-clip Final Film with a Fade transition between clip 1↔2 and 2↔3 should progress 0 → 33 → 66 → 100 → upload.
+- Cut-only merges still work.
+- Single-image still clips (already converted to short webm) finish via `ended` correctly.
