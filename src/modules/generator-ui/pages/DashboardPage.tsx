@@ -1666,29 +1666,27 @@ export default function DashboardPage() {
         targetSize = r === '9:16' ? { width: 1080, height: 1920 } : r === '1:1' ? { width: 1080, height: 1080 } : { width: 1920, height: 1080 }
       }
 
-      // Build the merge URL list in display order, converting image clips to
-      // short still-frame webm clips uploaded to the merged-videos bucket.
-      const urls: string[] = []
+      // Build the merge clip list in display order. Images are passed
+      // natively as still segments (no intermediate webm upload) so their
+      // duration is exact and overlays paint live during the merge.
+      const mergeInputs: MergeClip[] = []
       const overlaysPerClip: (import('@/modules/generator-ui/lib/overlays').ClipOverlay[] | undefined)[] = []
       for (const clip of eligibleClips) {
         const ov = overlaysApi.getForClip(clip.id)
         if (clip.kind === 'video') {
-          urls.push(await proxiedVideoUrl(clip.job.video!.storage_path as string))
+          mergeInputs.push({
+            kind: 'video',
+            url: await proxiedVideoUrl(clip.job.video!.storage_path as string),
+          })
           overlaysPerClip.push(ov)
         } else {
           const seconds = Math.max(1, Math.min(15, clip.image.still_duration_seconds || 3))
-          // Burn overlays into the still clip itself so the recorded webm
-          // already contains them (no extra paint needed at merge time).
-          const blob = await imageUrlToClip(clip.image.storage_path, seconds, targetSize, ov)
-          const stillPath = `${userId}/still-${clip.image.id}-${Date.now()}.webm`
-          const up = await supabase.storage
-            .from(MERGED_BUCKET)
-            .upload(stillPath, blob, { contentType: 'video/webm', upsert: false })
-          if (up.error) throw new Error(up.error.message)
-          const { data: pub } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(stillPath)
-          urls.push(await proxiedVideoUrl(pub.publicUrl))
-          // Already burned into the still — don't paint again during merge.
-          overlaysPerClip.push(undefined)
+          mergeInputs.push({
+            kind: 'image',
+            url: await resolveSignedUrl(clip.image.storage_path),
+            durationSec: seconds,
+          })
+          overlaysPerClip.push(ov)
         }
       }
 
@@ -1709,8 +1707,8 @@ export default function DashboardPage() {
             clipVolume: soundtrackMode === 'music-only' ? 0 : clipVolume,
           }
         : undefined
-      const mergeRes = await mergeVideoUrls(
-        urls,
+      const mergeRes = await mergeClips(
+        mergeInputs,
         (p) => setMergeProgress(Math.round(p.ratio * 100)),
         audioOpt,
         transitionsForMerge,
