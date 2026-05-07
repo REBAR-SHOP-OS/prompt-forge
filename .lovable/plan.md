@@ -1,57 +1,45 @@
-## Goal
+نتیجه‌ی مورد انتظار: عکس‌های آپلودشده مثل کارت‌های ویدئو بدون تصویر شکسته نمایش داده شوند، با کلیک در preview باز شوند، در Final Film قابل استفاده باشند، و حذف/تنظیم زمانشان بدون خطای RLS انجام شود.
 
-روی کارت‌های تصویر آپلودی در ستون Recent outputs، به‌جای فیلد عددی Duration یک سه‌گزینه‌ای **5s / 10s / 15s** قرار دهیم — دقیقاً همان استایلِ پیل‌های انتخاب مدت‌زمان ویدئو در کامپوزر پایین صفحه. هر تصویر همچنان مدت اختصاصی خودش را در DB نگه می‌دارد (`still_duration_seconds`) و در ساخت Final Film از همان مقدار استفاده می‌شود.
+فرضیه‌ی ریشه‌ای جدید: تلاش قبلی فقط بخشی از مشکل را دید؛ در دیتابیس واقعی bucket `user-images` هنوز private است و علاوه بر آن `storage_path` اشتباهاً به‌صورت public URL ذخیره می‌شود، در حالی که سیاست‌های ذخیره‌سازی فقط path داخل فولدر کاربر را قبول می‌کنند. همین دوگانگی باعث شده نمایش عکس، preview، Final Film و حذف/آپدیت همگی شکننده شوند.
 
-## Changes
+شواهدی که بررسی شد:
+- در شبکه، حذف عکس با `PATCH generator_user_images` خطای 403 و پیام `new row violates row-level security policy` می‌دهد.
+- در دیتابیس واقعی، `user-images` برابر `public=false` است، پس URLهای `/object/public/user-images/...` برای نمایش عکس معتبر نیستند.
+- رکوردهای `generator_user_images.storage_path` در حال حاضر URL کامل public ذخیره کرده‌اند، نه path واقعی فایل مثل `userId/file.webp`.
+- کد فعلی در `DashboardPage.tsx` بعد از upload از `getPublicUrl()` استفاده می‌کند و همان URL را در جدول ذخیره و برای `<img src>` و Final Film مصرف می‌کند.
 
-### `src/modules/generator-ui/pages/DashboardPage.tsx`
+طرح اصلاح ریشه‌ای و کم‌ریسک:
 
-**جایگزینی UI انتخاب مدت در کارت تصویر (حدود خط 2445–2464):**
+1. اصلاح لایه‌ی داده/ذخیره‌سازی
+   - یک migration اضافه می‌کنم که bucket `user-images` را public کند تا URLهای فعلی هم بلافاصله قابل نمایش شوند.
+   - یک migration اضافه می‌کنم برای اصلاح سیاست UPDATE جدول `generator_user_images` تا soft delete و تغییر duration برای مالک رکورد درست کار کند؛ در صورت نیاز شرط `WITH CHECK` را طوری بازتعریف می‌کنم که رکورد مالکیت خود کاربر را بعد از آپدیت معتبر نگه دارد.
+   - یک تابع کمکی دیتابیس/یا migration داده‌ای ایمن اضافه می‌شود تا رکوردهای موجودی که URL کامل دارند، به path نسبی استاندارد تبدیل شوند؛ یا اگر تبدیل مستقیم ریسک داشته باشد، کد را طوری سازگار می‌کنم که هر دو فرمت قدیمی و جدید را بخواند.
 
-به‌جای `<input type="number">` فعلی، یک گروه پیل با همان ظاهر گروه پیل‌های مدت ویدئو در کامپوزر (خطوط 2908–2924) قرار می‌گیرد:
+2. اصلاح کد آپلود و نمایش عکس
+   - در upload دیگر public URL را به عنوان `storage_path` ذخیره نمی‌کنم؛ فقط path واقعی فایل مثل `${userId}/${uuid}.${ext}` ذخیره می‌شود.
+   - یک helper در `DashboardPage.tsx` اضافه می‌کنم که از `storage_path`، URL قابل نمایش بسازد:
+     - اگر مقدار قدیمی URL کامل بود، آن را به path نسبی نرمال می‌کند.
+     - سپس URL نهایی را از bucket می‌سازد.
+   - همه‌ی جاهایی که عکس نمایش داده می‌شود، preview، thumbnail و Final Film، از این helper استفاده می‌کنند نه از مقدار خام دیتابیس.
 
-```tsx
-<div
-  className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500"
-  onClick={(event) => event.stopPropagation()}
->
-  <div className="inline-flex items-center gap-2">
-    <span>Duration</span>
-    <div role="radiogroup" aria-label="Image duration in Final Film"
-         className="inline-flex rounded-full border border-white/10 bg-black/20 p-0.5 text-[11px] font-semibold">
-      {([5, 10, 15] as const).map((sec) => {
-        const active = (img.still_duration_seconds || 3) === sec
-        return (
-          <button
-            key={sec}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            onClick={() => updateImageDuration(img.id, sec)}
-            className={`rounded-full px-2.5 py-1 transition ${active ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
-          >
-            {sec}s
-          </button>
-        )
-      })}
-    </div>
-  </div>
-  <span>{formatCreatedAt(img.created_at)}</span>
-</div>
-```
+3. اصلاح حذف و خطاها
+   - حذف عکس را از نظر UI ایمن‌تر می‌کنم: اول optimistic حذف انجام می‌شود، ولی اگر خطای مجوز/شبکه برگشت، کارت برمی‌گردد و پیام واضح نشان داده می‌شود.
+   - query حذف را به مالک فعلی محدود می‌کنم (`eq('user_id', userId)`) تا با RLS هم‌راستا باشد.
+   - اگر فایل داخل storage هم قابل حذف بود، حذف فایل را جداگانه و بدون شکستن حذف رکورد انجام می‌دهم؛ اصل نمایش Recent outputs با `deleted_at` کنترل می‌شود.
 
-**نکات پیاده‌سازی:**
-- از تابع موجود `updateImageDuration(imageId, seconds)` (خط 994) بدون تغییر استفاده می‌شود — همان منطق به‌روزرسانی state + DB.
-- مقدار پیش‌فرض رکوردهای قبلی (`3`) به این معنی است که هیچ‌کدام از سه پیل فعال نخواهد بود تا کاربر یکی را انتخاب کند. این رفتار قابل قبول است چون کاربر می‌تواند فوراً یکی را برگزیند؛ پس از انتخاب، مقدار جدید ذخیره می‌شود.
-- `onClick={(event) => event.stopPropagation()}` روی container حفظ می‌شود تا کلیک روی پیل‌ها preview مرکزی را تغییر ندهد.
+4. اصلاح Final Film برای عکس‌ها
+   - `handleMergeAllVideos` و مسیر ساخت still clip برای عکس‌ها را به helper جدید وصل می‌کنم تا همیشه URL قابل load شدن دریافت کند.
+   - ترتیب کارت‌ها همان ترتیب فعلی/آپلود باقی می‌ماند و drag reorder دست‌نخورده می‌ماند.
 
-### بدون تغییر
+5. اعتبارسنجی پس از اعمال
+   - با query دیتابیس بررسی می‌کنم bucket `user-images` public شده و policyهای جدول/ذخیره‌سازی درست هستند.
+   - با بررسی کد مطمئن می‌شوم هیچ مصرف مستقیمی از `img.storage_path` برای `<img src>` یا Final Film باقی نمانده، مگر از helper جدید عبور کند.
+   - با network/session replay یا preview بررسی می‌کنم خطای RLS حذف و تصویر شکسته از بین رفته باشد.
 
-- منطق Final Film: `handleMergeAllVideos` (خط 1668) همچنان از `clip.image.still_duration_seconds` و clamp بین 1 تا 15 استفاده می‌کند — مقادیر 5/10/15 کاملاً سازگارند.
-- اسکیمای دیتابیس بدون تغییر (`still_duration_seconds integer DEFAULT 3`).
-- بقیه‌ی کارت تصویر (drag handle، شماره، trash، انتخاب preview) دست‌نخورده باقی می‌ماند.
+محدوده‌ی تغییرات:
+- `src/modules/generator-ui/pages/DashboardPage.tsx`
+- migration جدید در `supabase/migrations/...sql`
 
-## Out of scope
-
-- تغییر مقادیر قابل‌انتخاب (مثلاً افزودن 20s/30s)؛ فقط همان سه گزینه‌ی استاندارد ویدئو.
-- تغییر مقدار پیش‌فرض رکوردهای موجود در DB.
+چیزهایی که نباید خراب شود:
+- کارت‌های ویدئو، ترتیب‌چینی، Cut بین کارت‌ها، تنظیم duration عکس‌ها، و Final Film موجود نباید تغییر رفتاری ناخواسته پیدا کنند.
+- دسترسی نوشتن/حذف همچنان فقط برای فایل‌ها و رکوردهای مالک همان کاربر باقی می‌ماند.
