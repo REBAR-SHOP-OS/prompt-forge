@@ -1652,64 +1652,89 @@ export default function DashboardPage() {
     setMergeProgress(0)
     setVideoColumnMessage(null)
     try {
-      // mergeClips() picks output dimensions from the first video clip
-      // (or first image) automatically — no need to pre-probe here.
+      const allImages = eligibleClips.every((c) => c.kind === 'image')
 
+      let mergeBlob: Blob
+      let mergeMime: string
+      let mergeExt: 'mp4' | 'webm'
 
-      // Build the merge clip list in display order. Images are passed
-      // natively as still segments (no intermediate webm upload) so their
-      // duration is exact and overlays paint live during the merge.
-      const mergeInputs: MergeClip[] = []
-      const overlaysPerClip: (import('@/modules/generator-ui/lib/overlays').ClipOverlay[] | undefined)[] = []
-      for (const clip of eligibleClips) {
-        const ov = overlaysApi.getForClip(clip.id)
-        if (clip.kind === 'video') {
-          mergeInputs.push({
-            kind: 'video',
-            url: await proxiedVideoUrl(clip.job.video!.storage_path as string),
-          })
-          overlaysPerClip.push(ov)
-        } else {
-          const seconds = Math.max(1, Math.min(15, clip.image.still_duration_seconds || 3))
-          mergeInputs.push({
-            kind: 'image',
-            url: await resolveSignedUrl(clip.image.storage_path),
-            durationSec: seconds,
-          })
-          overlaysPerClip.push(ov)
+      if (allImages) {
+        // Image-only Final Film: use the dedicated slideshow compositor so
+        // the output is a clean WebM with proper duration + burned-in
+        // overlays in the exact card order.
+        const slides = await Promise.all(
+          eligibleClips.map(async (clip) => {
+            if (clip.kind !== 'image') throw new Error('expected image clip')
+            const seconds = Math.max(1, Math.min(600, clip.image.still_duration_seconds || 3))
+            return {
+              url: await resolveSignedUrl(clip.image.storage_path),
+              durationSec: seconds,
+              overlays: overlaysApi.getForClip(clip.id),
+            }
+          }),
+        )
+        const res = await buildImageSlideshow(slides, (p) =>
+          setMergeProgress(Math.round(p.ratio * 100)),
+        )
+        mergeBlob = res.blob
+        mergeMime = res.mimeType
+        mergeExt = res.extension
+      } else {
+        // Mixed (or video-only) sequence: keep the existing merge engine.
+        const mergeInputs: MergeClip[] = []
+        const overlaysPerClip: (import('@/modules/generator-ui/lib/overlays').ClipOverlay[] | undefined)[] = []
+        for (const clip of eligibleClips) {
+          const ov = overlaysApi.getForClip(clip.id)
+          if (clip.kind === 'video') {
+            mergeInputs.push({
+              kind: 'video',
+              url: await proxiedVideoUrl(clip.job.video!.storage_path as string),
+            })
+            overlaysPerClip.push(ov)
+          } else {
+            const seconds = Math.max(1, Math.min(600, clip.image.still_duration_seconds || 3))
+            mergeInputs.push({
+              kind: 'image',
+              url: await resolveSignedUrl(clip.image.storage_path),
+              durationSec: seconds,
+            })
+            overlaysPerClip.push(ov)
+          }
         }
+
+        const transitionsForMerge: TransitionSpec[] = eligibleClips
+          .slice(0, -1)
+          .map((clip) => {
+            const id = transitions[clip.id] ?? 'cut'
+            return { id, durationMs: TRANSITION_DURATION[id] ?? 0 }
+          })
+
+        const audioOpt = musicUrl && musicRange[1] > musicRange[0]
+          ? {
+              src: musicUrl,
+              startSec: musicRange[0],
+              endSec: musicRange[1],
+              musicVolume,
+              clipVolume: soundtrackMode === 'music-only' ? 0 : clipVolume,
+            }
+          : undefined
+        const mergeRes = await mergeClips(
+          mergeInputs,
+          (p) => setMergeProgress(Math.round(p.ratio * 100)),
+          audioOpt,
+          transitionsForMerge,
+          overlaysPerClip,
+        )
+        mergeBlob = mergeRes.blob
+        mergeMime = mergeRes.mimeType
+        mergeExt = mergeRes.extension
       }
 
-      // Build per-gap transition specs (one entry per gap = clips - 1).
-      const transitionsForMerge: TransitionSpec[] = eligibleClips
-        .slice(0, -1)
-        .map((clip) => {
-          const id = transitions[clip.id] ?? 'cut'
-          return { id, durationMs: TRANSITION_DURATION[id] ?? 0 }
-        })
-
-      const audioOpt = musicUrl && musicRange[1] > musicRange[0]
-        ? {
-            src: musicUrl,
-            startSec: musicRange[0],
-            endSec: musicRange[1],
-            musicVolume,
-            clipVolume: soundtrackMode === 'music-only' ? 0 : clipVolume,
-          }
-        : undefined
-      const mergeRes = await mergeClips(
-        mergeInputs,
-        (p) => setMergeProgress(Math.round(p.ratio * 100)),
-        audioOpt,
-        transitionsForMerge,
-        overlaysPerClip,
-      )
-
-      const filename = `merged-${Date.now()}.${mergeRes.extension}`
+      const filename = `merged-${Date.now()}.${mergeExt}`
       const storagePath = `${userId}/${filename}`
       const { error: upErr } = await supabase.storage
         .from(MERGED_BUCKET)
-        .upload(storagePath, mergeRes.blob, { contentType: mergeRes.mimeType, upsert: false })
+        .upload(storagePath, mergeBlob, { contentType: mergeMime, upsert: false })
       if (upErr) throw new Error(upErr.message)
       const { data } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(storagePath)
       const publicUrl = data.publicUrl
