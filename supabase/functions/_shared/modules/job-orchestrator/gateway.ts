@@ -235,6 +235,9 @@ export const jobOrchestratorGateway = {
             const code = msg.includes("insufficient credits") ? "INSUFFICIENT_CREDITS" : "JOB_START_FAILED";
             const status = code === "INSUFFICIENT_CREDITS" ? 402 : 500;
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: status, latencyMs: Date.now() - ctx.startedAt, errorCode: code });
+            if (code === "INSUFFICIENT_CREDITS") {
+              return jsonResponse({ error: { code, message: msg }, requestId: ctx.requestId, status });
+            }
             return errorResponse(code, msg, status, ctx.requestId);
           }
 
