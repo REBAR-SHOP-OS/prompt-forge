@@ -621,14 +621,11 @@ export default function DashboardPage() {
 
     const isMerged = jobId.startsWith('merged-')
     const mergedEntry = isMerged ? mergedEntries.find((e) => e.id === jobId) : null
+    const prevGenerated = generatedVideos
+    const prevMerged = mergedEntries
 
-    // Optimistic UI removal
-    setDeletedIds((current) => {
-      const next = new Set(current)
-      next.add(jobId)
-      persistDeleted(next)
-      return next
-    })
+    // Optimistic UI removal — remove from in-memory list immediately.
+    setGeneratedVideos((current) => current.filter((v) => v.id !== jobId))
     setApprovedIds((current) => {
       if (!current.has(jobId)) return current
       const next = new Set(current)
@@ -658,19 +655,13 @@ export default function DashboardPage() {
           }
         }
       } else {
-        // Real job: backend delete (DB rows + Storage files).
+        // Real job: backend delete (DB rows + Storage files, server-side).
         await jobOrchestratorGateway.deleteJob(jobId)
       }
-      // Drop from in-memory list as well so the card never reappears on re-render.
-      setGeneratedVideos((current) => current.filter((v) => v.id !== jobId))
     } catch (err) {
-      // Roll back the hide so the user sees the card again.
-      setDeletedIds((current) => {
-        const next = new Set(current)
-        next.delete(jobId)
-        persistDeleted(next)
-        return next
-      })
+      // Roll back the optimistic removal on failure.
+      setGeneratedVideos(prevGenerated)
+      if (isMerged) setMergedEntries(prevMerged)
       const msg = err instanceof ApiError ? err.message : (err as Error).message
       if (typeof window !== 'undefined') window.alert(`Delete failed: ${msg}`)
     }
