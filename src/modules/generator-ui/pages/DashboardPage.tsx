@@ -1879,6 +1879,21 @@ export default function DashboardPage() {
       }}
     >
       {showWelcome && <WelcomeVideoOverlay onClose={dismissWelcome} />}
+      {(() => {
+        if (!trimmingJobId) return null
+        const job = videos.find((v) => v.id === trimmingJobId)
+        const src = job?.video?.storage_path
+        if (!src) return null
+        return (
+          <ClipTrimmerDialog
+            open
+            onOpenChange={(o) => { if (!o) setTrimmingJobId(null) }}
+            videoUrl={editedClips[trimmingJobId]?.url ?? src}
+            title={job?.input_prompt ?? undefined}
+            onApply={applyTrimToCard(trimmingJobId)}
+          />
+        )
+      })()}
       <div
         className={`pointer-events-none absolute inset-0 border transition duration-200 ${
           isDragging ? 'border-amber-300/40 bg-amber-300/[0.045]' : 'border-transparent'
