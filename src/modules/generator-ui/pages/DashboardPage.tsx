@@ -467,11 +467,10 @@ export default function DashboardPage() {
     })
   }
 
-  const deletedStorageKey = userId ? `deleted-videos:${userId}` : null
+  const legacyDeletedKey = userId ? `deleted-videos:${userId}` : null
   const mergedStorageKey = userId ? `merged-videos:${userId}` : null
   const pendingEndAppendsKey = userId ? `pending-end-appends:${userId}` : null
   const pendingStartPrependsKey = userId ? `pending-start-prepends:${userId}` : null
-  const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set())
   const [manualOrder, setManualOrder] = useState<string[] | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [trimmingJobId, setTrimmingJobId] = useState<string | null>(null)
