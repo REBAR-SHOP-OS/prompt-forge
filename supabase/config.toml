@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.health]
 verify_jwt = false
+
+[functions.tts-generate]
+verify_jwt = false
