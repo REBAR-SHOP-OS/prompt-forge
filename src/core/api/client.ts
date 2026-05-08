@@ -4,6 +4,9 @@ import { supabase } from "@/integrations/supabase/client";
 
 const PROJECT_ID = "sacxoanuyetjfrfllkzx";
 export const FUNCTIONS_BASE = `https://${PROJECT_ID}.supabase.co/functions/v1`;
+const PUBLIC_FUNCTIONS = new Set(["/health"]);
+
+let sessionRecoveryPromise: Promise<string | null> | null = null;
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public requestId?: string) {
@@ -11,16 +14,44 @@ export class ApiError extends Error {
   }
 }
 
-async function authHeader(): Promise<Record<string, string>> {
+async function validAccessToken(): Promise<string | null> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  if (!token) return null;
+
+  const { error } = await supabase.auth.getUser(token);
+  if (!error) return token;
+
+  if (!sessionRecoveryPromise) {
+    sessionRecoveryPromise = (async () => {
+      const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+      const refreshedToken = refreshed.session?.access_token;
+      if (!refreshError && refreshedToken) {
+        const { error: verifyError } = await supabase.auth.getUser(refreshedToken);
+        if (!verifyError) return refreshedToken;
+      }
+
+      try { await supabase.auth.signOut({ scope: "local" }); } catch { /* noop */ }
+      return null;
+    })().finally(() => {
+      sessionRecoveryPromise = null;
+    });
+  }
+
+  return sessionRecoveryPromise;
+}
+
+async function authHeader(path: string): Promise<Record<string, string>> {
+  const token = await validAccessToken();
+  if (token) return { Authorization: `Bearer ${token}` };
+  if (PUBLIC_FUNCTIONS.has(path)) return {};
+  throw new ApiError(401, "SESSION_EXPIRED", "Please sign in again.");
 }
 
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const buildHeaders = async (): Promise<Record<string, string>> => ({
     "Content-Type": "application/json",
-    ...(await authHeader()),
+    ...(await authHeader(path)),
     ...((init.headers as Record<string, string>) ?? {}),
   });
 
