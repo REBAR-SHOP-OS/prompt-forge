@@ -2085,28 +2085,7 @@ export default function DashboardPage() {
     setLockedProjectRatio(null)
     persistLockedRatio(null)
 
-    // Server-side, permanent cleanup. Run in parallel; tolerate per-item
-    // failures and surface a single summary error if anything didn't delete.
-    const tasks: Promise<unknown>[] = []
-    for (const e of mergedToDelete) {
-      const url = e.video?.storage_path
-      if (url && userId) {
-        const m = url.match(/\/storage\/v1\/object\/(?:public\/)?merged-videos\/(.+)$/)
-        if (m) {
-          const path = decodeURIComponent(m[1])
-          tasks.push(supabase.storage.from(MERGED_BUCKET).remove([path]))
-        }
-      }
-    }
-    if (tasks.length === 0) return
-
-    const results = await Promise.allSettled(tasks)
-    const failed = results.filter((r) => r.status === 'rejected').length
-    if (failed > 0) {
-      setVideoColumnMessage(
-        `Cleared the workspace, but ${failed} item${failed === 1 ? '' : 's'} could not be permanently deleted on the server. Try again to retry.`,
-      )
-    }
+    // No server-side cleanup: Library files in `merged-videos` are kept.
   }
 
   return (
