@@ -720,6 +720,19 @@ export default function DashboardPage() {
       persistMerged(next)
       return next
     })
+    setEditedJobIds((current) => {
+      if (!current.has(jobId)) return current
+      const next = new Set(current)
+      next.delete(jobId)
+      persistEditedJobIds(next)
+      return next
+    })
+    setEditedClips((prev) => {
+      if (!prev[jobId]) return prev
+      try { URL.revokeObjectURL(prev[jobId].url) } catch { /* noop */ }
+      const { [jobId]: _, ...rest } = prev
+      return rest
+    })
     if (previewVideoId === jobId) setPreviewVideoId(null)
 
     try {
