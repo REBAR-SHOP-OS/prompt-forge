@@ -1,6 +1,8 @@
 // Gemini TTS edge function
 // Calls Google AI Studio (Gemini 2.5 Flash Preview TTS) and returns base64 WAV.
 
+import { authenticate } from '../_shared/core/auth.ts'
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers':
@@ -118,6 +120,14 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const auth = await authenticate(req)
+    if (!auth) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     const apiKey = Deno.env.get('GEMINI_API_KEY')
     if (!apiKey) {
       return new Response(
@@ -183,10 +193,7 @@ Deno.serve(async (req) => {
       console.error('Gemini TTS error', geminiResp.status, errText)
       const status = geminiResp.status === 429 ? 429 : 502
       return new Response(
-        JSON.stringify({
-          error: `TTS provider error (${geminiResp.status})`,
-          details: errText.slice(0, 800),
-        }),
+        JSON.stringify({ error: `TTS provider error (${status})` }),
         {
           status,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -229,7 +236,7 @@ Deno.serve(async (req) => {
   } catch (e) {
     console.error('tts-generate error:', e)
     return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : 'Unknown error' }),
+      JSON.stringify({ error: 'Internal error' }),
       {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -237,3 +244,4 @@ Deno.serve(async (req) => {
     )
   }
 })
+
