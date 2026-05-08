@@ -1804,23 +1804,20 @@ export default function DashboardPage() {
     }
   }
 
-  function handleStartOver() {
-    // Hide every History card by adding their IDs to the "deleted" set
-    // (same mechanism the per-card delete uses; DB rows are kept).
-    setDeletedIds((current) => {
-      const next = new Set(current)
-      for (const v of generatedVideos) next.add(v.id)
-      for (const e of mergedEntries) next.add(e.id)
-      for (const i of userImages) next.add(i.id)
-      if (deletedStorageKey) {
-        try { window.localStorage.setItem(deletedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
-      }
-      return next
-    })
+  async function handleStartOver() {
+    // Snapshot the items we're about to delete so the network calls don't
+    // race against state updates.
+    const videosToDelete = generatedVideos.filter((v) => !v.id.startsWith('merged-'))
+    const mergedToDelete = mergedEntries
+    const imagesToDelete = userImages
+
     // Wipe the merged Final Film(s) entirely so the preview goes blank
     // and the FINAL FILM tab disappears.
     setMergedEntries([])
     persistMerged([])
+    // Optimistically clear the History list so the UI feels instant.
+    setGeneratedVideos([])
+    setUserImages([])
     // Clear approved selections + per-clip transitions + manual ordering.
     setApprovedIds(new Set())
     if (approvedStorageKey) {
@@ -1860,6 +1857,35 @@ export default function DashboardPage() {
     // Releasing the project lock so the user can pick a different ratio.
     setLockedProjectRatio(null)
     persistLockedRatio(null)
+
+    // Server-side, permanent cleanup. Run in parallel; tolerate per-item
+    // failures and surface a single summary error if anything didn't delete.
+    const tasks: Promise<unknown>[] = []
+    for (const v of videosToDelete) {
+      tasks.push(jobOrchestratorGateway.deleteJob(v.id))
+    }
+    for (const e of mergedToDelete) {
+      const url = e.video?.storage_path
+      if (url && userId) {
+        const m = url.match(/\/storage\/v1\/object\/(?:public\/)?merged-videos\/(.+)$/)
+        if (m) {
+          const path = decodeURIComponent(m[1])
+          tasks.push(supabase.storage.from(MERGED_BUCKET).remove([path]))
+        }
+      }
+    }
+    for (const i of imagesToDelete) {
+      tasks.push(generatorUiGateway.deleteUserImage(i.id))
+    }
+    if (tasks.length === 0) return
+
+    const results = await Promise.allSettled(tasks)
+    const failed = results.filter((r) => r.status === 'rejected').length
+    if (failed > 0) {
+      setVideoColumnMessage(
+        `Cleared the workspace, but ${failed} item${failed === 1 ? '' : 's'} could not be permanently deleted on the server. Try again to retry.`,
+      )
+    }
   }
 
   return (
