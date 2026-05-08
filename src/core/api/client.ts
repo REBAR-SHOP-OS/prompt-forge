@@ -18,12 +18,29 @@ async function authHeader(): Promise<Record<string, string>> {
 }
 
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers: Record<string, string> = {
+  const buildHeaders = async (): Promise<Record<string, string>> => ({
     "Content-Type": "application/json",
     ...(await authHeader()),
     ...((init.headers as Record<string, string>) ?? {}),
-  };
-  const res = await fetch(`${FUNCTIONS_BASE}${path}`, { ...init, headers });
+  });
+
+  const doFetch = async () =>
+    fetch(`${FUNCTIONS_BASE}${path}`, { ...init, headers: await buildHeaders() });
+
+  let res = await doFetch();
+
+  // On 401, try refreshing the session once and retry; if still 401, sign out locally.
+  if (res.status === 401) {
+    const { data: refreshed } = await supabase.auth.refreshSession();
+    if (refreshed?.session?.access_token) {
+      res = await doFetch();
+    }
+    if (res.status === 401) {
+      // Local-only signOut avoids the 403 round-trip when the server session is already gone.
+      try { await supabase.auth.signOut({ scope: 'local' }); } catch { /* noop */ }
+    }
+  }
+
   const text = await res.text();
   // deno-lint-ignore no-explicit-any
   let body: any = null;
@@ -32,10 +49,6 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   if (!res.ok) {
     const code = body?.error?.code ?? `HTTP_${res.status}`;
     const msg = body?.error?.message ?? res.statusText ?? "Request failed";
-    if (res.status === 401) {
-      // Session likely expired — sign out so guards redirect to login.
-      await supabase.auth.signOut();
-    }
     throw new ApiError(res.status, code, msg, body?.requestId);
   }
   return body as T;
