@@ -2707,7 +2707,7 @@ export default function DashboardPage() {
                       <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
                         {video.input_prompt}
                       </p>
-                      <div className="flex shrink-0 items-center gap-1.5">
+                      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
                         <span
                           onClick={(event) => event.stopPropagation()}
                           className="grid h-7 w-5 shrink-0 cursor-grab place-items-center text-zinc-500 transition hover:text-zinc-200 active:cursor-grabbing"

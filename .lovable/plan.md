@@ -1,62 +1,41 @@
+## مشکل
+دکمه‌ی قیچی (Trim) فقط روی کارت‌های 9:16 دیده می‌شود. کد فعلی یک مسیر رندر مشترک برای همه‌ی کارت‌ها دارد و شرط نمایش دکمه فقط `video.video?.storage_path` است — پس از نظر منطقی باید روی هر سه نسبت ظاهر شود. یعنی علت در runtime/CSS است، نه در شرط.
 
-# قاعده‌ی اصلی برنامه
+## فرضیه‌های محتمل
+1. کارت‌های 1:1 / 16:9 به جای مسیر اصلی، مسیر «merged/linked clips» یا یک شاخه‌ی دیگر را می‌گیرند که در آن دکمه اضافه نشده.
+2. مقدار `video.video?.storage_path` برای جاب‌های غیر 9:16 خالی است (مثلاً ستون `aspect_ratio` در asset پر نمی‌شود و کوئری/مَپینگ سمت کلاینت کارت را به‌صورت «بدون storage» می‌سازد ولی پلیر همچنان از فیلد دیگری ویدیو را پخش می‌کند).
+3. دکمه به‌خاطر z-index یا overflow پنهان شده ولی فقط روی نسبت‌های پهن.
 
-**History = workspace موقت. Library = ذخیره‌گاه دائمی.**
+## برنامه‌ی اجرا
 
-ویدیوهای generate شده و عکس‌های آپلودی فقط برای ساختن Final Film وجود دارند. به محض اینکه Final Film با موفقیت ساخته شد، همه‌ی منابع History (jobها، video assets، عکس‌های آپلودی) به‌طور **دائمی** از سرور پاک می‌شوند و فقط فیلم merged در Library باقی می‌ماند.
+### گام ۱ — تشخیص دقیق
+- در `DashboardPage.tsx` کنار رندر دکمه‌ها، یک `console.debug` موقت اضافه شود که برای هر کارت چاپ کند: `id`, `ratio`, `hasStoragePath`, `kind`. این مشخص می‌کند مسیر رندر و شرط واقعی برای کارت‌های 1:1/16:9 چیست.
+- بررسی شود آیا برای جاب‌های 1:1/16:9 رکورد `generator_video_assets` ساخته شده و `storage_path` دارد (خواندن از Backend).
 
-# آیا الان این اتفاق می‌افتد؟
+### گام ۲ — اصلاح بر اساس یافته
+بر اساس نتیجه گام ۱، یکی از این اصلاحات اعمال می‌شود:
 
-**خیر.** الان:
-- وقتی ویدیو generate می‌شود → در `generator_generation_jobs` + `generator_video_assets` + storage ذخیره می‌شود (دائمی)
-- وقتی عکس آپلود می‌شود → در `generator_user_images` + bucket `user-images` ذخیره می‌شود (دائمی)
-- وقتی Final Film زده می‌شود → فقط فیلم merged به `merged-videos` آپلود می‌شود، اما **هیچ‌کدام از منابع پاک نمی‌شوند**
+- **اگر شرط فعلی روی همه‌ی کارت‌ها true است ولی دکمه دیده نمی‌شود (CSS):**
+  ردیف اکشن‌ها در خط 2710 از حالت تک‌سطری به wrap قابل‌انعطاف تبدیل شود (`flex-wrap` + کاهش gap) تا روی کارت‌های پهن هم همه‌ی پنج دکمه بدون قطع‌شدن دیده شوند.
 
-نتیجه: همه‌ی ویدیوها و عکس‌های قبلی روی سرور باقی می‌مانند و در device دیگر دوباره ظاهر می‌شوند — دقیقاً همان باگ.
+- **اگر مسیر رندر دیگری برای 1:1/16:9 وجود دارد:**
+  همان بلاک دکمه‌های اکشن (Bookmark, Pencil, Scissors, Trash) به آن مسیر هم اضافه شود تا یکنواخت باشد.
 
-# پلن اصلاح
+- **اگر `storage_path` در دیتای کلاینت برای آن نسبت‌ها خالی است:**
+  شرط نمایش دکمه از `video.video?.storage_path` به یک شرط ساده‌تر تغییر کند: «هر زمان `status === 'completed'` و یک URL پخش‌پذیر داشته باشیم» — و `videoUrl` ارسالی به دیالوگ از همان منبعی که پلیر کارت استفاده می‌کند گرفته شود (همان `getCardVideoSrc(...)`).
 
-## ۱. Server-side purge بعد از Final Film موفق
+### گام ۳ — یکنواختی روی preview بزرگ (پیشنهادی)
+برای دسترسی سریع‌تر، یک دکمه‌ی Scissors هم زیر پلیر بزرگِ پیش‌نمایش (خط ~2398) اضافه شود که `setTrimmingJobId(previewItem.job.id)` را صدا می‌زند. این کار مستقل از حالت کارت‌های کوچک، تجربه‌ی Trim را روی هر نسبت ضمانت می‌کند.
 
-در تابع `handleMergeAllVideos` در `DashboardPage.tsx`، بعد از اینکه فیلم merged با موفقیت آپلود و در Library ثبت شد، یک مرحله‌ی purge اضافه می‌شود:
+### گام ۴ — اعتبارسنجی
+- در preview با هر سه نسبت 9:16، 1:1، 16:9 یک کارت کامل‌شده تست شود.
+- باز شدن دیالوگ، کشیدن بازه، Apply، و جایگزینی ویدیو در کارت بررسی شود.
+- لاگ‌های موقت گام ۱ حذف شوند.
 
-```text
-Merge succeeds
-   ↓
-Upload merged.mp4 to merged-videos bucket
-   ↓
-Add to Library (approvedIds + mergedEntries)
-   ↓
-[NEW] Purge all source jobs from server   →  jobs-delete edge function
-[NEW] Purge all uploaded images from server → images-delete edge function
-   ↓
-Clear generatedVideos + userImages from UI
-```
+## فایل‌های متأثر
+- `src/modules/generator-ui/pages/DashboardPage.tsx` (شرط/استایل دکمه‌ها، احتمالاً افزودن دکمه به preview بزرگ)
+- بدون تغییر در `ClipTrimmerDialog.tsx` (مستقل از نسبت کار می‌کند)
 
-استفاده از `Promise.allSettled` تا اگر یکی fail شد بقیه ادامه دهند. فایل‌های storage مرتبط با jobها و عکس‌ها هم پاک می‌شوند (همان مسیر `jobs-delete` و `images-delete` که قبلاً ساختیم).
-
-## ۲. حفاظت‌های لازم
-
-- **Atomic از دید کاربر**: Purge فقط بعد از تأیید آپلود موفق merged.mp4 اجرا شود. اگر merge fail شد، هیچ چیزی پاک نمی‌شود.
-- **Library امن**: فیلم‌های قبلی Library (در `merged-videos` bucket) دست نخورده می‌مانند — فقط منابع History پاک می‌شوند.
-- **Frame URLs**: اگر job ای از first/last frame استفاده می‌کرد، آن فریم‌ها در `wan-frames` bucket هستند — بررسی شود که آیا `jobs-delete` آن‌ها را هم پاک می‌کند یا نه.
-- **In-flight jobs**: اگر jobای هنوز `processing` است و کاربر Final Film می‌زند، آن job purge نشود (یا کلاً Final Film تا تکمیل همه‌ی jobها disable باشد — که الان همین‌طور است).
-
-## ۳. تغییرات کد
-
-| فایل | تغییر |
-|------|------|
-| `src/modules/generator-ui/pages/DashboardPage.tsx` | افزودن مرحله‌ی purge در انتهای موفقیت‌آمیز `handleMergeAllVideos`؛ optimistic clear کردن `generatedVideos` و `userImages` بعد از purge |
-| `supabase/functions/jobs-delete/index.ts` (در صورت نیاز) | اطمینان از پاک شدن first/last frame URLs از `wan-frames` bucket |
-
-## ۴. خارج از اسکوپ این پلن (اما توصیه می‌شود بعداً)
-
-- **Library فعلاً local-only است** (`merged-videos:<userId>` در localStorage). یعنی فیلم‌های Library هم در device دیگر دیده نمی‌شوند. این یک مسئله‌ی جداست. اگر می‌خواهید Library واقعاً cross-device باشد، باید یک جدول `library_films` ساخته شود. در پلن جدا.
-
-# نتیجه
-
-بعد از این تغییر:
-- History کاملاً ephemeral است — فقط تا لحظه‌ی Final Film عمر دارد
-- Final Film تنها مسیر «ذخیره» است
-- هیچ ویدیو یا عکسی روی سرور باقی نمی‌ماند مگر اینکه بخشی از یک Library film شده باشد
-- در device دیگر فقط Library films دیده می‌شوند، نه منابع History
+## بدون ریسک
+- تغییرات صرفاً UI/شرط رندر هستند؛ هیچ migration یا تغییر بک‌اندی نیاز نیست.
+- منطق ذخیره‌سازی موقت (editedClips با blob URL) دست‌نخورده می‌ماند.
