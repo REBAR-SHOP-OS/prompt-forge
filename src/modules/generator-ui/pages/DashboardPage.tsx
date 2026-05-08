@@ -1947,6 +1947,14 @@ export default function DashboardPage() {
     }
     setTransitions({})
     setManualOrder(null)
+    // Reset the "applied edits" workspace marker so Final Film starts fresh.
+    // (We do NOT delete the trimmed files in storage — cards are preserved.)
+    for (const e of Object.values(editedClips)) {
+      try { URL.revokeObjectURL(e.url) } catch { /* noop */ }
+    }
+    setEditedClips({})
+    setEditedJobIds(new Set())
+    persistEditedJobIds(new Set())
     setPendingEndAppends({})
     setPendingStartPrepends({})
     if (pendingEndAppendsKey) {
