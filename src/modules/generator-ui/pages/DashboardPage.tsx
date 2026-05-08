@@ -589,18 +589,12 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  // Legacy local "hide" set is no longer used — deletes are now real and
+  // server-authoritative. Purge any leftover key from previous versions.
   useEffect(() => {
-    if (!deletedStorageKey) {
-      setDeletedIds(new Set())
-      return
-    }
-    try {
-      const raw = window.localStorage.getItem(deletedStorageKey)
-      setDeletedIds(raw ? new Set(JSON.parse(raw) as string[]) : new Set())
-    } catch {
-      setDeletedIds(new Set())
-    }
-  }, [deletedStorageKey])
+    if (!legacyDeletedKey) return
+    try { window.localStorage.removeItem(legacyDeletedKey) } catch { /* ignore */ }
+  }, [legacyDeletedKey])
 
   useEffect(() => {
     if (!mergedStorageKey) {
@@ -614,13 +608,6 @@ export default function DashboardPage() {
       setMergedEntries([])
     }
   }, [mergedStorageKey])
-
-  function persistDeleted(next: Set<string>) {
-    if (!deletedStorageKey) return
-    try {
-      window.localStorage.setItem(deletedStorageKey, JSON.stringify(Array.from(next)))
-    } catch { /* ignore */ }
-  }
 
   function persistMerged(next: JobDetail[]) {
     if (!mergedStorageKey) return
