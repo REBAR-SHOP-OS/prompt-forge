@@ -8,7 +8,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { FUNCTIONS_BASE } from "@/core/api/client";
 
-const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID as string;
+const PROJECT_ID = "sacxoanuyetjfrfllkzx";
 const OWN_SUPABASE_HOST = `${PROJECT_ID}.supabase.co`;
 
 export async function proxiedVideoUrl(url: string): Promise<string> {
