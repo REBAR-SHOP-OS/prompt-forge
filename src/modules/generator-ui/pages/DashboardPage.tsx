@@ -2074,6 +2074,23 @@ export default function DashboardPage() {
         )}
       </button>
 
+      <button
+        type="button"
+        onClick={() => setIsVoiceoverOpen(true)}
+        className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-violet-300/30 hover:bg-violet-300/[0.06] hover:text-violet-100"
+        aria-label="Generate AI voiceover"
+        title="Generate an AI voiceover from text (Gemini)"
+      >
+        <Mic className="h-[14px] w-[14px]" aria-hidden="true" />
+        <span>Voiceover</span>
+      </button>
+
+      <VoiceoverDialog
+        open={isVoiceoverOpen}
+        onOpenChange={setIsVoiceoverOpen}
+        onUseAsSoundtrack={handleVoiceoverAsSoundtrack}
+      />
+
       <Dialog open={isMusicDialogOpen} onOpenChange={setIsMusicDialogOpen}>
         <DialogContent className="border-white/10 bg-black text-zinc-100 sm:max-w-md">
           <DialogHeader>
