@@ -193,10 +193,7 @@ Deno.serve(async (req) => {
       console.error('Gemini TTS error', geminiResp.status, errText)
       const status = geminiResp.status === 429 ? 429 : 502
       return new Response(
-        JSON.stringify({
-          error: `TTS provider error (${geminiResp.status})`,
-          details: errText.slice(0, 800),
-        }),
+        JSON.stringify({ error: `TTS provider error (${status})` }),
         {
           status,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
