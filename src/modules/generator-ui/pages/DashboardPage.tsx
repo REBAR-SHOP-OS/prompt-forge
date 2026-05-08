@@ -2577,7 +2577,7 @@ export default function DashboardPage() {
                       {video.video?.storage_path ? (
                         <video
                           className="h-full w-full max-w-full bg-black object-contain"
-                          src={video.video.storage_path}
+                          src={getCardVideoSrc(video.id, video.video.storage_path)}
                           poster={video.video.thumbnail_url ?? undefined}
                           controls
                           muted
@@ -2661,6 +2661,20 @@ export default function DashboardPage() {
                         >
                           <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
+                        {video.video?.storage_path ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setTrimmingJobId(video.id)
+                            }}
+                            aria-label="Trim clip"
+                            title="Trim clip"
+                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-200"
+                          >
+                            <Scissors className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={(event) => {
@@ -2841,7 +2855,7 @@ export default function DashboardPage() {
                         {video.video?.storage_path ? (
                           <video
                             className="h-full w-full bg-black object-cover"
-                            src={video.video.storage_path}
+                            src={getCardVideoSrc(video.id, video.video.storage_path)}
                             poster={video.video.thumbnail_url ?? undefined}
                             muted
                             playsInline
