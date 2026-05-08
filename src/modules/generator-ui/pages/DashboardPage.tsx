@@ -885,6 +885,7 @@ export default function DashboardPage() {
           : { kind: 'image', image: found.image }
       }
     }
+    if (previewDismissed) return null
     if (visibleVideos.length > 0) {
       const v =
         visibleVideos.find((video) => video.video?.storage_path) ??
@@ -894,7 +895,7 @@ export default function DashboardPage() {
     const firstImage = displayedClips.find((c) => c.kind === 'image')
     if (firstImage && firstImage.kind === 'image') return { kind: 'image', image: firstImage.image }
     return null
-  }, [displayedClips, previewVideoId, visibleVideos])
+  }, [displayedClips, previewVideoId, previewDismissed, visibleVideos])
 
   // Backwards-compat alias used by existing card highlight + start-frame code paths
   const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
