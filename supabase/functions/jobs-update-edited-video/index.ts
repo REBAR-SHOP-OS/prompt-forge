@@ -69,7 +69,10 @@ Deno.serve(async (req) => {
       .eq("job_id", jobId)
       .eq("user_id", auth.userId)
       .is("deleted_at", null);
-    if (delErr) throw new Error(`asset soft-delete failed: ${delErr.message}`);
+    if (delErr) {
+      console.error(JSON.stringify({ level: "error", msg: "asset soft-delete failed", error: delErr.message, jobId, requestId }));
+      throw new Error("asset soft-delete failed");
+    }
 
     // Insert the edited asset.
     const { error: insErr } = await svc
@@ -82,7 +85,10 @@ Deno.serve(async (req) => {
         aspect_ratio: aspectRatio ?? null,
         duration: durationSeconds ?? null,
       });
-    if (insErr) throw new Error(`asset insert failed: ${insErr.message}`);
+    if (insErr) {
+      console.error(JSON.stringify({ level: "error", msg: "asset insert failed", error: insErr.message, jobId, requestId }));
+      throw new Error("asset insert failed");
+    }
 
     // Make sure the job is marked completed (in case it wasn't).
     await svc
@@ -95,7 +101,7 @@ Deno.serve(async (req) => {
     if (!detail) return errorResponse("NOT_FOUND", "Job not found after update", 500, requestId);
     return jsonResponse({ ...detail, progress_percent: 100, requestId });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "unknown error";
-    return errorResponse("INTERNAL_ERROR", message, 500, requestId);
+    console.error(JSON.stringify({ level: "error", msg: "jobs-update-edited-video failed", error: (err as Error)?.message, requestId }));
+    return errorResponse("INTERNAL_ERROR", "Could not update edited video. Please try again.", 500, requestId);
   }
 });

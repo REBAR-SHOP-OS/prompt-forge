@@ -232,8 +232,9 @@ export const jobOrchestratorGateway = {
             });
           } catch (e) {
             const msg = (e as Error).message;
+            logError("createJob failed", { error: msg });
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 500, latencyMs: Date.now() - ctx.startedAt, errorCode: "JOB_START_FAILED" });
-            return errorResponse("JOB_START_FAILED", msg, 500, ctx.requestId);
+            return errorResponse("JOB_START_FAILED", "Could not start the job. Please try again.", 500, ctx.requestId);
           }
 
           // Trigger generation through the adapter contract.
@@ -255,7 +256,7 @@ export const jobOrchestratorGateway = {
                 .eq("id", jobId).eq("user_id", auth.userId);
             } catch (_) { /* best-effort */ }
             logError("startGeneration failed", { error: (e as Error).message, jobId });
-            return errorResponse("PROVIDER_ERROR", `Provider failed to start generation: ${(e as Error).message}`, 502, ctx.requestId);
+            return errorResponse("PROVIDER_ERROR", "The video provider could not start generation. Please try again.", 502, ctx.requestId);
           }
 
           try {
@@ -342,9 +343,12 @@ export const jobOrchestratorGateway = {
             storagePaths = await jobService.deleteJob(svc, auth.userId, parsed.data.jobId);
           } catch (e) {
             const msg = (e as Error).message;
-            const code = msg.includes("not found") ? "NOT_FOUND" : "DELETE_FAILED";
-            const status = code === "NOT_FOUND" ? 404 : 500;
-            return errorResponse(code, msg, status, ctx.requestId);
+            logError("deleteJob failed", { error: msg, jobId: parsed.data.jobId });
+            const isNotFound = msg.toLowerCase().includes("not found");
+            const code = isNotFound ? "NOT_FOUND" : "DELETE_FAILED";
+            const status = isNotFound ? 404 : 500;
+            const safe = isNotFound ? "Job not found" : "Could not delete job. Please try again.";
+            return errorResponse(code, safe, status, ctx.requestId);
           }
 
           // Best-effort: purge files from Storage. Group by bucket.
