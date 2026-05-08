@@ -2038,20 +2038,10 @@ export default function DashboardPage() {
   }
 
   async function handleStartOver() {
-    // Snapshot the merged Final Film artifacts so storage cleanup doesn't
-    // race against state updates. Library/history cards and uploaded images
-    // are intentionally preserved — Start Over only resets the workspace.
-    const mergedToDelete = mergedEntries
-
-    // Wipe the merged Final Film(s) entirely so the preview goes blank
-    // and the FINAL FILM tab disappears.
-    setMergedEntries([])
-    persistMerged([])
-    // Clear approved selections + per-clip transitions + manual ordering.
-    setApprovedIds(new Set())
-    if (approvedStorageKey) {
-      try { window.localStorage.setItem(approvedStorageKey, JSON.stringify([])) } catch { /* ignore */ }
-    }
+    // Library cards (Final Film outputs in mergedEntries + approvedIds) are
+    // the user's permanent saved outputs — Start Over MUST NOT touch them
+    // or their files in storage. Only the working composer/history workspace
+    // is reset here.
     setTransitions({})
     setManualOrder(null)
     // Reset the "applied edits" workspace marker so Final Film starts fresh.
@@ -2095,28 +2085,7 @@ export default function DashboardPage() {
     setLockedProjectRatio(null)
     persistLockedRatio(null)
 
-    // Server-side, permanent cleanup. Run in parallel; tolerate per-item
-    // failures and surface a single summary error if anything didn't delete.
-    const tasks: Promise<unknown>[] = []
-    for (const e of mergedToDelete) {
-      const url = e.video?.storage_path
-      if (url && userId) {
-        const m = url.match(/\/storage\/v1\/object\/(?:public\/)?merged-videos\/(.+)$/)
-        if (m) {
-          const path = decodeURIComponent(m[1])
-          tasks.push(supabase.storage.from(MERGED_BUCKET).remove([path]))
-        }
-      }
-    }
-    if (tasks.length === 0) return
-
-    const results = await Promise.allSettled(tasks)
-    const failed = results.filter((r) => r.status === 'rejected').length
-    if (failed > 0) {
-      setVideoColumnMessage(
-        `Cleared the workspace, but ${failed} item${failed === 1 ? '' : 's'} could not be permanently deleted on the server. Try again to retry.`,
-      )
-    }
+    // No server-side cleanup: Library files in `merged-videos` are kept.
   }
 
   return (
