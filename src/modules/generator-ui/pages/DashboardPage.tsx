@@ -79,6 +79,7 @@ import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orche
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { mergeVideoUrls, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
+import { VoiceoverDialog } from '@/modules/generator-ui/components/VoiceoverDialog'
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
@@ -539,6 +540,7 @@ export default function DashboardPage() {
   const [clipVolume, setClipVolume] = useState<number>(1)
   const [musicVolume, setMusicVolume] = useState<number>(1)
   const [isMusicDialogOpen, setIsMusicDialogOpen] = useState(false)
+  const [isVoiceoverOpen, setIsVoiceoverOpen] = useState(false)
   const musicFileInputRef = useRef<HTMLInputElement | null>(null)
   const musicPreviewAudioRef = useRef<HTMLAudioElement | null>(null)
   const musicWaveformRef = useRef<SoundtrackWaveformHandle | null>(null)
@@ -1677,6 +1679,17 @@ export default function DashboardPage() {
     setIsMusicDialogOpen(false)
   }
 
+  function handleVoiceoverAsSoundtrack(url: string, name: string) {
+    if (musicUrl) {
+      try { URL.revokeObjectURL(musicUrl) } catch { /* ignore */ }
+    }
+    setMusicName(name)
+    setMusicUrl(url)
+    setMusicDuration(0)
+    setMusicRange([0, 0])
+    setIsMusicDialogOpen(true)
+  }
+
   function handlePreviewMusicRange() {
     musicWaveformRef.current?.playRange(musicRange[0], musicRange[1])
   }
@@ -2060,6 +2073,23 @@ export default function DashboardPage() {
           </>
         )}
       </button>
+
+      <button
+        type="button"
+        onClick={() => setIsVoiceoverOpen(true)}
+        className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-violet-300/30 hover:bg-violet-300/[0.06] hover:text-violet-100"
+        aria-label="Generate AI voiceover"
+        title="Generate an AI voiceover from text (Gemini)"
+      >
+        <Mic className="h-[14px] w-[14px]" aria-hidden="true" />
+        <span>Voiceover</span>
+      </button>
+
+      <VoiceoverDialog
+        open={isVoiceoverOpen}
+        onOpenChange={setIsVoiceoverOpen}
+        onUseAsSoundtrack={handleVoiceoverAsSoundtrack}
+      />
 
       <Dialog open={isMusicDialogOpen} onOpenChange={setIsMusicDialogOpen}>
         <DialogContent className="border-white/10 bg-black text-zinc-100 sm:max-w-md">

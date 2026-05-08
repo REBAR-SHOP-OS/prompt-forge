@@ -1,0 +1,269 @@
+import { useEffect, useRef, useState } from 'react'
+import { Download, LoaderCircle, Mic, Music2, Sparkles } from 'lucide-react'
+import { supabase } from '@/integrations/supabase/client'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { toast } from 'sonner'
+
+type Gender = 'female' | 'male'
+type Tone =
+  | 'advertising'
+  | 'excited'
+  | 'calm'
+  | 'narrative'
+  | 'friendly'
+  | 'serious'
+
+const TONE_LABELS: { value: Tone; label: string }[] = [
+  { value: 'advertising', label: 'Advertising' },
+  { value: 'excited', label: 'Excited' },
+  { value: 'calm', label: 'Calm' },
+  { value: 'narrative', label: 'Narrative' },
+  { value: 'friendly', label: 'Friendly' },
+  { value: 'serious', label: 'Serious' },
+]
+
+interface VoiceoverDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onUseAsSoundtrack?: (url: string, name: string) => void
+}
+
+function base64ToBlob(b64: string, mime: string): Blob {
+  const bin = atob(b64)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  return new Blob([bytes], { type: mime })
+}
+
+export function VoiceoverDialog({
+  open,
+  onOpenChange,
+  onUseAsSoundtrack,
+}: VoiceoverDialogProps) {
+  const [text, setText] = useState('')
+  const [gender, setGender] = useState<Gender>('female')
+  const [tone, setTone] = useState<Tone>('advertising')
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const lastUrlRef = useRef<string | null>(null)
+
+  // Cleanup blob URLs we created (not the one handed off to the parent).
+  useEffect(() => {
+    return () => {
+      if (lastUrlRef.current) {
+        try { URL.revokeObjectURL(lastUrlRef.current) } catch { /* ignore */ }
+      }
+    }
+  }, [])
+
+  // Reset when closed
+  useEffect(() => {
+    if (!open) {
+      setIsGenerating(false)
+    }
+  }, [open])
+
+  async function handleGenerate() {
+    const trimmed = text.trim()
+    if (!trimmed) {
+      toast.error('Please write some text first')
+      return
+    }
+    setIsGenerating(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('tts-generate', {
+        body: { text: trimmed, gender, tone },
+      })
+      if (error) throw error
+      const payload = data as { audioBase64?: string; mimeType?: string; error?: string } | null
+      if (!payload?.audioBase64) {
+        throw new Error(payload?.error || 'No audio returned')
+      }
+      const blob = base64ToBlob(payload.audioBase64, payload.mimeType || 'audio/wav')
+      // Revoke previous local URL
+      if (lastUrlRef.current) {
+        try { URL.revokeObjectURL(lastUrlRef.current) } catch { /* ignore */ }
+      }
+      const url = URL.createObjectURL(blob)
+      lastUrlRef.current = url
+      setAudioUrl(url)
+    } catch (err) {
+      console.error('Voiceover generation failed', err)
+      toast.error(
+        err instanceof Error
+          ? `Voiceover failed: ${err.message}`
+          : 'Voiceover failed',
+      )
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
+  function handleDownload() {
+    if (!audioUrl) return
+    const a = document.createElement('a')
+    a.href = audioUrl
+    a.download = `voiceover-${Date.now()}.wav`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  }
+
+  function handleUseAsSoundtrack() {
+    if (!audioUrl) return
+    const name = `Voiceover (${gender}, ${tone}).wav`
+    onUseAsSoundtrack?.(audioUrl, name)
+    // Hand off ownership so we don't revoke it.
+    lastUrlRef.current = null
+    setAudioUrl(null)
+    setText('')
+    onOpenChange(false)
+    toast.success('Voiceover set as soundtrack')
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="border-white/10 bg-black text-zinc-100 sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Mic className="h-4 w-4" aria-hidden="true" />
+            Voiceover
+          </DialogTitle>
+          <DialogDescription>
+            Type your text, choose a voice and tone, then generate a spoken
+            voiceover with AI Studio (Gemini).
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="vo-text" className="text-xs uppercase tracking-wider text-zinc-400">
+              Text
+            </Label>
+            <Textarea
+              id="vo-text"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="What should the voice say?"
+              rows={5}
+              maxLength={5000}
+              className="resize-none border-white/10 bg-white/[0.04] text-zinc-100 placeholder:text-zinc-500"
+            />
+            <div className="text-right text-[10px] uppercase tracking-wider text-zinc-500">
+              {text.length}/5000
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label className="text-xs uppercase tracking-wider text-zinc-400">
+                Gender
+              </Label>
+              <Select value={gender} onValueChange={(v) => setGender(v as Gender)}>
+                <SelectTrigger className="border-white/10 bg-white/[0.04] text-zinc-100">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="female">Female</SelectItem>
+                  <SelectItem value="male">Male</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs uppercase tracking-wider text-zinc-400">
+                Tone
+              </Label>
+              <Select value={tone} onValueChange={(v) => setTone(v as Tone)}>
+                <SelectTrigger className="border-white/10 bg-white/[0.04] text-zinc-100">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TONE_LABELS.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            onClick={handleGenerate}
+            disabled={isGenerating || !text.trim()}
+            className="w-full"
+          >
+            {isGenerating ? (
+              <>
+                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+                Generating…
+              </>
+            ) : (
+              <>
+                <Sparkles className="mr-2 h-4 w-4" />
+                Generate voiceover
+              </>
+            )}
+          </Button>
+
+          {audioUrl ? (
+            <div className="space-y-3 rounded-md border border-white/10 bg-white/[0.03] p-3">
+              <audio
+                key={audioUrl}
+                src={audioUrl}
+                controls
+                className="w-full"
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleDownload}
+                >
+                  <Download className="mr-2 h-3.5 w-3.5" />
+                  Download
+                </Button>
+                {onUseAsSoundtrack ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleUseAsSoundtrack}
+                  >
+                    <Music2 className="mr-2 h-3.5 w-3.5" />
+                    Use as soundtrack
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
