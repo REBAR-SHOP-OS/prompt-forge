@@ -472,6 +472,33 @@ export default function DashboardPage() {
   const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set())
   const [manualOrder, setManualOrder] = useState<string[] | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [trimmingJobId, setTrimmingJobId] = useState<string | null>(null)
+  const [editedClips, setEditedClips] = useState<Record<string, { url: string; duration: number }>>({})
+
+  // Revoke object URLs on unmount.
+  useEffect(() => {
+    return () => {
+      for (const e of Object.values(editedClips)) {
+        try { URL.revokeObjectURL(e.url) } catch { /* noop */ }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const getCardVideoSrc = (id: string, fallback: string | null | undefined): string | undefined => {
+    const edited = editedClips[id]?.url
+    return edited ?? fallback ?? undefined
+  }
+
+  const applyTrimToCard = (jobId: string) => async (blob: Blob, newDuration: number) => {
+    setEditedClips((prev) => {
+      const old = prev[jobId]
+      if (old) {
+        try { URL.revokeObjectURL(old.url) } catch { /* noop */ }
+      }
+      return { ...prev, [jobId]: { url: URL.createObjectURL(blob), duration: newDuration } }
+    })
+  }
   const [transitions, setTransitions] = useState<Record<string, TransitionId>>({})
   const [mergedEntries, setMergedEntries] = useState<JobDetail[]>([])
   const [isMerging, setIsMerging] = useState(false)
