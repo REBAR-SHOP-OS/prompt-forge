@@ -539,6 +539,7 @@ export default function DashboardPage() {
   const [clipVolume, setClipVolume] = useState<number>(1)
   const [musicVolume, setMusicVolume] = useState<number>(1)
   const [isMusicDialogOpen, setIsMusicDialogOpen] = useState(false)
+  const [isVoiceoverOpen, setIsVoiceoverOpen] = useState(false)
   const musicFileInputRef = useRef<HTMLInputElement | null>(null)
   const musicPreviewAudioRef = useRef<HTMLAudioElement | null>(null)
   const musicWaveformRef = useRef<SoundtrackWaveformHandle | null>(null)
