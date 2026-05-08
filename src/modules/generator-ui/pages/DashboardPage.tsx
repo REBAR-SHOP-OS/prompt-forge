@@ -473,6 +473,7 @@ export default function DashboardPage() {
   const [manualOrder, setManualOrder] = useState<string[] | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [trimmingJobId, setTrimmingJobId] = useState<string | null>(null)
+  const [trimSrc, setTrimSrc] = useState<string | null>(null)
   const [editedClips, setEditedClips] = useState<Record<string, { url: string; duration: number }>>({})
 
   // Revoke object URLs on unmount.
@@ -489,6 +490,32 @@ export default function DashboardPage() {
     const edited = editedClips[id]?.url
     return edited ?? fallback ?? undefined
   }
+
+  // Resolve a CORS-safe URL for the trim dialog whenever it opens.
+  useEffect(() => {
+    let cancelled = false
+    if (!trimmingJobId) {
+      setTrimSrc(null)
+      return
+    }
+    const edited = editedClips[trimmingJobId]?.url
+    if (edited) {
+      setTrimSrc(edited)
+      return
+    }
+    const job = visibleVideos.find((v) => v.id === trimmingJobId)
+    const raw = job?.video?.storage_path
+    if (!raw) {
+      setTrimSrc(null)
+      return
+    }
+    setTrimSrc(null)
+    proxiedVideoUrl(raw)
+      .then((u) => { if (!cancelled) setTrimSrc(u) })
+      .catch(() => { if (!cancelled) setTrimSrc(raw) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trimmingJobId])
 
   const applyTrimToCard = (jobId: string) => async (blob: Blob, newDuration: number) => {
     setEditedClips((prev) => {
@@ -1882,13 +1909,13 @@ export default function DashboardPage() {
       {(() => {
         if (!trimmingJobId) return null
         const job = visibleVideos.find((v) => v.id === trimmingJobId)
-        const src = job?.video?.storage_path
-        if (!src) return null
+        if (!job?.video?.storage_path) return null
+        if (!trimSrc) return null
         return (
           <ClipTrimmerDialog
             open
-            onOpenChange={(o) => { if (!o) setTrimmingJobId(null) }}
-            videoUrl={editedClips[trimmingJobId]?.url ?? src}
+            onOpenChange={(o) => { if (!o) { setTrimmingJobId(null); setTrimSrc(null) } }}
+            videoUrl={trimSrc}
             title={job?.input_prompt ?? undefined}
             onApply={applyTrimToCard(trimmingJobId)}
           />

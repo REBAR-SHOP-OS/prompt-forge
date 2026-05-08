@@ -1,71 +1,30 @@
-# ویرایشگر برش روی هر کارت ویدیو
+## مشکل
 
-## هدف
-روی هر کارت History یک دکمه «✂ Edit» اضافه شود. با کلیک، یک مودال باز شود که:
-- کل ویدیو را با یک Progress Bar بزرگ و قابل اسکراب نمایش دهد
-- کاربر بتواند چند **بازه از وسط** را به‌عنوان «حذف‌شدنی» علامت بزند
-- با Apply، نسخه جدید ویدیو در مرورگر ساخته شود و **جایگزین همان کارت** شود
+هنگام Apply changes خطای «Failed to load video: https://dashscope-463t.oss-…aliyuncs.com/…» نمایش داده می‌شود.
 
-## رفتار UI
+دلیل: در `DashboardPage.tsx` (خط ۱۸۹۱) آدرس ویدیو **مستقیماً** از `job.video.storage_path` (یک URL امضاشده‌ی Aliyun OSS متعلق به ارائه‌دهنده‌ی خارجی) به `ClipTrimmerDialog` پاس داده می‌شود. در `trimVideo.ts` این URL با `crossOrigin = "anonymous"` در یک `<video>` لود می‌شود تا فریم‌ها روی canvas کشیده شوند، اما سرور Aliyun هدر `Access-Control-Allow-Origin` نمی‌فرستد → مرورگر لود را قطع می‌کند → پیام «Failed to load video».
 
-### 1) دکمه روی کارت
-کنار دکمه Delete موجود (در `DashboardPage.tsx` خط ۲۶۳۹ و ۲۸۵۸)، یک دکمه‌ی کوچک با آیکن قیچی اضافه می‌شود — `aria-label="Edit clip"`.
+بقیه‌ی جاهای پروژه (مثل merger و last-frame extractor در خطوط ۱۰۸۹، ۱۱۵۶، ۱۴۶۸، ۱۵۳۵، …) دقیقاً به همین دلیل قبل از مصرف، URL را از `proxiedVideoUrl()` رد می‌کنند تا از طریق edge function `video-proxy` با هدرهای CORS صحیح بازگردد. مسیر Edit این مرحله را جا انداخته است.
 
-### 2) مودال ویرایشگر (`ClipTrimmerDialog`)
-لایه‌بندی:
-```text
-┌──────────────────────────────────────────┐
-│  <video preview — همان کارت>            │
-│                                          │
-│  ▶  00:02 / 00:05                       │
-│  ├──█████──░░░──████████──┤   ← Timeline│
-│         ↑ بازه حذف‌شده (قرمز)            │
-│                                          │
-│  [+ Mark cut from here] [Clear all]     │
-│  بازه‌های حذف:                            │
-│   • 0:01.2 → 0:02.0   [×]               │
-│   • 0:03.5 → 0:04.1   [×]               │
-│                                          │
-│  [Cancel]            [Apply changes]    │
-└──────────────────────────────────────────┘
-```
+## راه‌حل (فقط فرانت‌اند، بدون تغییر بک‌اند)
 
-تعامل تایم‌لاین:
-- کلیک روی نوار = جابه‌جایی playhead
-- دکمه «Mark cut from here» نقطه فعلی playhead را شروع یک بازه حذف می‌کند؛ کلیک دوم پایان آن را تعیین می‌کند
-- هر بازه روی تایم‌لاین به رنگ قرمز نمایش داده می‌شود و دستگیره‌های چپ/راست برای جابه‌جایی دارد
-- در حین Preview، playhead وقتی به ابتدای بازهٔ حذف می‌رسد به‌صورت خودکار به انتهای آن بازه می‌پرد (پیش‌نمایش زنده‌ی نتیجه بدون نیاز به render)
+URL ارسالی به مودال Trim را قبل از باز کردن، از همان `proxiedVideoUrl` عبور بدهیم.
 
-### 3) اعمال تغییرات
-با Apply:
-1. ویدیو در یک `<video>` مخفی پخش می‌شود و فقط فریم‌های خارج از بازه‌های حذف‌شده روی یک `<canvas>` کشیده می‌شوند
-2. صدا از طریق `MediaElementAudioSourceNode` با همان بازه‌ها قطع/وصل می‌شود
-3. خروجی با `MediaRecorder` ضبط می‌شود (MP4 اگر پشتیبانی شد، وگرنه WebM)
-4. Blob نتیجه به‌عنوان `objectURL` در همان کارت می‌نشیند (state محلی) و یک نشانگر کوچک «Edited» روی کارت ظاهر می‌شود
-5. مدت‌زمان کارت به مدت جدید آپدیت می‌شود
+### تغییرات
 
-این دقیقاً همان تکنیک قبلی پروژه در `src/modules/generator-ui/lib/mergeVideos.ts` (canvas + MediaRecorder) است — هیچ کتابخانه‌ی جدیدی اضافه نمی‌شود.
+**`src/modules/generator-ui/pages/DashboardPage.tsx`**
+1. یک state جدید: `const [trimSrc, setTrimSrc] = useState<string | null>(null)`.
+2. یک effect: وقتی `trimmingJobId` ست می‌شود، اگر `editedClips[id]?.url` موجود است همان (Blob URL، CORS ندارد) را در `trimSrc` بگذار؛ در غیر این صورت `await proxiedVideoUrl(job.video.storage_path)` را صدا بزن و نتیجه را در `trimSrc` بگذار. در پاکسازی `setTrimSrc(null)`.
+3. در رندر مودال (خطوط ۱۸۸۲-۱۸۹۶):
+   - تا زمانی که `trimSrc` آماده نشده، یک placeholder ساده (مثلاً همان Dialog با اسپینر یا اصلاً رندر نکن) نشان بده.
+   - `videoUrl={trimSrc}` به جای مقدار فعلی.
+4. در closing مودال (`onOpenChange`) علاوه بر `setTrimmingJobId(null)`، `setTrimSrc(null)` هم انجام شود.
 
-## جزئیات فنی
-
-### فایل‌های جدید
-- `src/modules/generator-ui/lib/trimVideo.ts` — تابع `trimVideoLocally(srcUrl, cuts: Array<{start:number,end:number}>) → Promise<Blob>` بر اساس همان الگوی `mergeVideos.ts`
-- `src/modules/generator-ui/components/ClipTrimmerDialog.tsx` — مودال shadcn `Dialog` با تایم‌لاین SVG/div + لیست بازه‌ها + پیش‌نمایش
-- `src/modules/generator-ui/components/Timeline.tsx` — کامپوننت کوچک نوار زمان با هندل‌های قابل درگ
-
-### فایل‌های ویرایش‌شونده
-- `src/modules/generator-ui/pages/DashboardPage.tsx`
-  - افزودن state `editedClips: Record<jobId, {url:string, duration:number}>`
-  - افزودن دکمه Edit در دو نقطه‌ای که Delete رندر می‌شود (خط ۲۶۳۹ و ۲۸۵۸)
-  - تابع `applyTrim(jobId, blob, newDuration)` — `URL.createObjectURL` + ست در map + revoke قبلی
-  - جایی که `<video src={...}>` کارت رندر می‌شود، اگر `editedClips[id]` بود از آن استفاده شود
-
-### نکات مهم
-- **محدوده‌ی این feature صرفاً client-side است**: هیچ تماسی با backend، هیچ تغییری در DB، storage یا edge functions انجام نمی‌شود. نسخهٔ ویرایش‌شده فقط در sessionStorage/حافظه می‌ماند تا در صفحه فعلی دیده شود
-- اگر کاربر صفحه را رفرش کند، نسخه اصلی برمی‌گردد (در این مرحله ذخیره دائمی نیست — اگر بعداً خواست، آپلود به storage را در فاز بعد اضافه می‌کنیم)
-- هیچ تغییری روی credit/job system داده نمی‌شود
+### چرا این کافی است
+- `video-proxy` همان host پروژه است → CORS ندارد، `crossOrigin="anonymous"` کار می‌کند، canvas tainted نمی‌شود و `MediaRecorder` خروجی معتبر می‌دهد.
+- Blob URLهای `editedClips` (نتیجه ترِیم قبلی) ذاتاً same-origin هستند، پس بدون تغییر مستقیم پاس می‌شوند.
+- در `trimVideo.ts` و `ClipTrimmerDialog.tsx` هیچ تغییری لازم نیست.
 
 ## خارج از scope
-- ذخیرهٔ نسخه برش‌خورده در دیتابیس یا storage
-- برش بیش‌از‌حد دقیق در حد فریم (دقت ~۰.۰۳ ثانیه کافی است)
-- Undo بعد از Apply (می‌توان دکمه «Revert to original» اضافه کرد — در پایان فاز اول اضافه می‌کنم)
+- ذخیره‌ی نسخه‌ی ترِیم‌شده در storage یا DB.
+- تغییر در edge function `video-proxy` (در حال حاضر کار می‌کند و سایر مسیرها از آن استفاده می‌کنند).
