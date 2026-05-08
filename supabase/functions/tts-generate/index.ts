@@ -1,6 +1,8 @@
 // Gemini TTS edge function
 // Calls Google AI Studio (Gemini 2.5 Flash Preview TTS) and returns base64 WAV.
 
+import { authenticate } from '../_shared/core/auth.ts'
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers':
