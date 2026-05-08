@@ -1679,7 +1679,17 @@ export default function DashboardPage() {
     setIsMusicDialogOpen(false)
   }
 
-  function handlePreviewMusicRange() {
+  function handleVoiceoverAsSoundtrack(url: string, name: string) {
+    if (musicUrl) {
+      try { URL.revokeObjectURL(musicUrl) } catch { /* ignore */ }
+    }
+    setMusicName(name)
+    setMusicUrl(url)
+    setMusicDuration(0)
+    setMusicRange([0, 0])
+    setIsMusicDialogOpen(true)
+  }
+
     musicWaveformRef.current?.playRange(musicRange[0], musicRange[1])
   }
 
