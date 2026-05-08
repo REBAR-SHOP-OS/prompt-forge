@@ -47,4 +47,19 @@ export const jobOrchestratorGateway = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+
+  /**
+   * Replace the video asset of an existing job (e.g. after Apply Changes
+   * in the trim dialog). Returns the fresh JobDetail.
+   */
+  updateEditedVideo: (input: {
+    jobId: string;
+    storagePath: string;
+    durationSeconds?: number;
+    aspectRatio?: string;
+  }) =>
+    request<JobDetail>("/jobs-update-edited-video", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
 };
