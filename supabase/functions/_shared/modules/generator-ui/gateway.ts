@@ -6,17 +6,33 @@
 // Note: routePreview is owned by external-api-adapter; the dashboard reaches
 // it via that domain's gateway, not through this one.
 
-import { errorResponse, jsonResponse, startRequest } from "../../core/http.ts";
+import { z } from "https://esm.sh/zod@3.23.8";
+import { errorResponse, jsonResponse, readJsonBody, startRequest } from "../../core/http.ts";
 import { authenticate } from "../../core/auth.ts";
 import { getServiceClient, getUserScopedClient } from "../../core/supabase.ts";
 import { logError, writeApiRequestLog } from "../../core/observability.ts";
+import { writeAuditLog } from "../../core/audit.ts";
+import { rateLimit } from "../../core/ratelimit.ts";
 import type { DomainContractMeta } from "../_gateway/types.ts";
 
 export const GENERATOR_UI_CONTRACT: DomainContractMeta = {
   domain: "generator-ui",
   version: "v1",
-  operations: ["getMe"],
+  operations: ["getMe", "deleteUserImage"],
 } as const;
+
+const DeleteImageSchema = z.object({ imageId: z.string().uuid() });
+const USER_IMAGES_BUCKET = "user-images";
+
+function extractBucketPath(raw: string, bucket: string): string | null {
+  if (!raw) return null;
+  if (/^https?:\/\//i.test(raw)) {
+    const m = raw.match(new RegExp(`/storage/v1/object/(?:public/)?${bucket}/(.+)$`));
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+  if (raw.startsWith(`${bucket}/`)) return raw.slice(bucket.length + 1);
+  return raw; // assume already a path inside the bucket
+}
 
 export const generatorUiGateway = {
   contract: GENERATOR_UI_CONTRACT,
