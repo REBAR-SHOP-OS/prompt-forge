@@ -67,13 +67,36 @@ Deno.serve(async (req) => {
     const narratorScript: string =
       typeof body?.narratorScript === "string" ? body.narratorScript.trim() : "";
     const rawUrls: unknown = body?.imageUrls;
+    // SSRF protection: only allow https URLs from our own Supabase storage host
+    // (user-images, wan-frames, merged-videos buckets) and known public CDNs.
+    const supabaseHost = (() => {
+      try { return new URL(Deno.env.get("SUPABASE_URL") ?? "").hostname; } catch { return ""; }
+    })();
+    const ALLOWED_IMG_HOST_SUFFIXES = [
+      supabaseHost,
+      ".supabase.co",
+      ".supabase.in",
+    ].filter(Boolean);
+    const isAllowedImageUrl = (u: string): boolean => {
+      try {
+        const p = new URL(u);
+        if (p.protocol !== "https:") return false;
+        const h = p.hostname.toLowerCase();
+        return ALLOWED_IMG_HOST_SUFFIXES.some((s) =>
+          s.startsWith(".") ? h.endsWith(s) : h === s
+        );
+      } catch {
+        return false;
+      }
+    };
     const imageUrls: string[] = Array.isArray(rawUrls)
       ? rawUrls
           .filter((u): u is string => typeof u === "string")
           .map((u) => u.trim())
-          .filter((u) => /^https?:\/\//i.test(u))
+          .filter(isAllowedImageUrl)
           .slice(0, 4)
       : [];
+
 
     if (!prompt && mode !== "narrated") {
       return new Response(JSON.stringify({ error: "prompt is required" }), {
