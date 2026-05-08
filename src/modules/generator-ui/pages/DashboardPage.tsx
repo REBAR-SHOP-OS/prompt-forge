@@ -2228,6 +2228,37 @@ export default function DashboardPage() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Upload an existing video file as a real History card. The card uses the
+          same backend pipeline as generated videos so it inherits every feature
+          (trim/Apply, delete, drag, transitions, Final Film, persistence). */}
+      <input
+        ref={uploadVideoInputRef}
+        type="file"
+        accept="video/*"
+        className="hidden"
+        onChange={handleUploadVideoFile}
+      />
+      <button
+        type="button"
+        onClick={() => uploadVideoInputRef.current?.click()}
+        disabled={isUploadingVideo}
+        className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-sky-300/30 hover:bg-sky-300/[0.06] hover:text-sky-100 disabled:cursor-not-allowed disabled:opacity-40"
+        aria-label="Upload a video file as a new card"
+        title="Upload a video file (mp4, webm, mov…) as a new History card"
+      >
+        {isUploadingVideo ? (
+          <>
+            <LoaderCircle className="h-[14px] w-[14px] animate-spin" aria-hidden="true" />
+            <span>Uploading…</span>
+          </>
+        ) : (
+          <>
+            <Upload className="h-[14px] w-[14px]" aria-hidden="true" />
+            <span>Upload</span>
+          </>
+        )}
+      </button>
+
       <button
         type="button"
         onClick={handleMergeAllVideos}
