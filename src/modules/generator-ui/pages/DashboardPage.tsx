@@ -473,6 +473,7 @@ export default function DashboardPage() {
   const [manualOrder, setManualOrder] = useState<string[] | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [trimmingJobId, setTrimmingJobId] = useState<string | null>(null)
+  const [trimSrc, setTrimSrc] = useState<string | null>(null)
   const [editedClips, setEditedClips] = useState<Record<string, { url: string; duration: number }>>({})
 
   // Revoke object URLs on unmount.
