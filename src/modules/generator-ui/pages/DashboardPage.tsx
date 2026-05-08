@@ -515,6 +515,33 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  // Job ids hidden from the right-side HISTORY panel after Start Over.
+  // Persisted per-user so refresh keeps the workspace clean. Library is NOT
+  // affected — it reads from `visibleVideos` directly so approved/final-film
+  // cards stay visible there.
+  const [workspaceHiddenJobIds, setWorkspaceHiddenJobIds] = useState<Set<string>>(new Set())
+  const workspaceHiddenJobIdsKey = userId ? `workspace-hidden-jobs:${userId}` : null
+
+  useEffect(() => {
+    if (!workspaceHiddenJobIdsKey) {
+      setWorkspaceHiddenJobIds(new Set())
+      return
+    }
+    try {
+      const raw = window.localStorage.getItem(workspaceHiddenJobIdsKey)
+      setWorkspaceHiddenJobIds(raw ? new Set(JSON.parse(raw) as string[]) : new Set())
+    } catch {
+      setWorkspaceHiddenJobIds(new Set())
+    }
+  }, [workspaceHiddenJobIdsKey])
+
+  function persistWorkspaceHiddenJobIds(next: Set<string>) {
+    if (!workspaceHiddenJobIdsKey) return
+    try {
+      window.localStorage.setItem(workspaceHiddenJobIdsKey, JSON.stringify(Array.from(next)))
+    } catch { /* ignore */ }
+  }
+
   // Revoke object URLs on unmount.
   useEffect(() => {
     return () => {
@@ -878,9 +905,11 @@ export default function DashboardPage() {
 
   // Right-panel display order: oldest first (chronological ASC), with manual drag-and-drop overrides.
   const displayedVideos = useMemo(() => {
-    const chronoAsc = [...generatedVideos].sort(
-      (l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime()
-    )
+    const chronoAsc = [...generatedVideos]
+      .filter((v) => !workspaceHiddenJobIds.has(v.id))
+      .sort(
+        (l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime()
+      )
     if (!manualOrder) return chronoAsc
     const byId = new Map(chronoAsc.map((v) => [v.id, v]))
     const ordered: typeof chronoAsc = []
@@ -895,7 +924,7 @@ export default function DashboardPage() {
       if (byId.has(v.id)) ordered.push(v)
     }
     return ordered
-  }, [generatedVideos, manualOrder])
+  }, [generatedVideos, manualOrder, workspaceHiddenJobIds])
 
   const handleCardDragStart = (id: string) => (event: React.DragEvent) => {
     setDraggingId(id)
@@ -2081,6 +2110,18 @@ export default function DashboardPage() {
     setGenerationMode('image-to-video')
     setDurationSeconds(5)
     setPreviewVideoId(null)
+    // Force the empty "Start forging a prompt" state instead of falling back to
+    // the most recent visibleVideos entry.
+    setPreviewDismissed(true)
+    // Hide all current generated jobs from the HISTORY panel so the workspace
+    // looks fresh for the next project. We do NOT delete them on the server —
+    // Library still reads from visibleVideos and keeps approved/Final Film cards.
+    {
+      const nextHidden = new Set(workspaceHiddenJobIds)
+      for (const j of generatedVideos) nextHidden.add(j.id)
+      setWorkspaceHiddenJobIds(nextHidden)
+      persistWorkspaceHiddenJobIds(nextHidden)
+    }
     // Releasing the project lock so the user can pick a different ratio.
     setLockedProjectRatio(null)
     persistLockedRatio(null)
@@ -2667,7 +2708,7 @@ export default function DashboardPage() {
             <History className="h-4 w-4 text-amber-300" aria-hidden="true" />
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">History</p>
             <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
-              {generatedVideos.length}
+              {displayedVideos.length}
             </span>
           </div>
         </div>
