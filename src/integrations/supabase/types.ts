@@ -480,6 +480,10 @@ export type Database = {
           storage_path: string
         }[]
       }
+      generator_delete_user_image: {
+        Args: { _image_id: string; _user_id: string }
+        Returns: string
+      }
       generator_mark_job_processing: {
         Args: { _job_id: string; _provider_job_id: string; _user_id: string }
         Returns: undefined
