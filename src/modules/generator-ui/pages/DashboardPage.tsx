@@ -489,6 +489,30 @@ export default function DashboardPage() {
   const [trimmingJobId, setTrimmingJobId] = useState<string | null>(null)
   const [trimSrc, setTrimSrc] = useState<string | null>(null)
   const [editedClips, setEditedClips] = useState<Record<string, { url: string; duration: number }>>({})
+  // Set of job ids the user has explicitly applied edits to. Persisted so that
+  // Final Film can know which cards to merge after a refresh.
+  const [editedJobIds, setEditedJobIds] = useState<Set<string>>(new Set())
+  const editedJobIdsKey = userId ? `edited-clips:${userId}` : null
+
+  useEffect(() => {
+    if (!editedJobIdsKey) {
+      setEditedJobIds(new Set())
+      return
+    }
+    try {
+      const raw = window.localStorage.getItem(editedJobIdsKey)
+      setEditedJobIds(raw ? new Set(JSON.parse(raw) as string[]) : new Set())
+    } catch {
+      setEditedJobIds(new Set())
+    }
+  }, [editedJobIdsKey])
+
+  function persistEditedJobIds(next: Set<string>) {
+    if (!editedJobIdsKey) return
+    try {
+      window.localStorage.setItem(editedJobIdsKey, JSON.stringify(Array.from(next)))
+    } catch { /* ignore */ }
+  }
 
   // Revoke object URLs on unmount.
   useEffect(() => {
@@ -531,13 +555,55 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trimmingJobId])
 
-  const applyTrimToCard = (jobId: string) => async (blob: Blob, newDuration: number) => {
+  const applyTrimToCard = (jobId: string) => async (
+    blob: Blob,
+    newDuration: number,
+    ext: 'mp4' | 'webm' = 'mp4',
+  ) => {
+    // 1) Show the trimmed result instantly via a local blob URL.
+    const localUrl = URL.createObjectURL(blob)
     setEditedClips((prev) => {
       const old = prev[jobId]
       if (old) {
         try { URL.revokeObjectURL(old.url) } catch { /* noop */ }
       }
-      return { ...prev, [jobId]: { url: URL.createObjectURL(blob), duration: newDuration } }
+      return { ...prev, [jobId]: { url: localUrl, duration: newDuration } }
+    })
+
+    // 2) Persist the trimmed file so the card actually changes (survives refresh).
+    if (userId) {
+      try {
+        const contentType = ext === 'webm' ? 'video/webm' : 'video/mp4'
+        const path = `${userId}/edited-${jobId}-${Date.now()}.${ext}`
+        const up = await supabase.storage
+          .from(MERGED_BUCKET)
+          .upload(path, blob, { contentType, upsert: false })
+        if (up.error) throw new Error(up.error.message)
+        const { data } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(path)
+        const publicUrl = data.publicUrl
+
+        // Replace the card's video source + duration with the edited one.
+        setGeneratedVideos((current) =>
+          current.map((j) =>
+            j.id === jobId && j.video
+              ? { ...j, video: { ...j.video, storage_path: publicUrl, duration: Math.round(newDuration) } }
+              : j,
+          ),
+        )
+      } catch (err) {
+        console.error('[applyTrimToCard] upload failed', err)
+        // We still keep the local blob URL so the user sees their edit applied
+        // in this session, even if persistence failed.
+      }
+    }
+
+    // 3) Mark this card as "applied" so Final Film knows to use it.
+    setEditedJobIds((prev) => {
+      if (prev.has(jobId)) return prev
+      const next = new Set(prev)
+      next.add(jobId)
+      persistEditedJobIds(next)
+      return next
     })
   }
   const [transitions, setTransitions] = useState<Record<string, TransitionId>>({})
@@ -653,6 +719,19 @@ export default function DashboardPage() {
       const next = current.filter((e) => e.id !== jobId)
       persistMerged(next)
       return next
+    })
+    setEditedJobIds((current) => {
+      if (!current.has(jobId)) return current
+      const next = new Set(current)
+      next.delete(jobId)
+      persistEditedJobIds(next)
+      return next
+    })
+    setEditedClips((prev) => {
+      if (!prev[jobId]) return prev
+      try { URL.revokeObjectURL(prev[jobId].url) } catch { /* noop */ }
+      const { [jobId]: _, ...rest } = prev
+      return rest
     })
     if (previewVideoId === jobId) setPreviewVideoId(null)
 
@@ -1681,9 +1760,16 @@ export default function DashboardPage() {
   async function handleMergeAllVideos() {
     if (isMerging) return
     const completedVideoIds = new Set(completedSourceVideos.map((v) => v.id))
-    const eligibleClips = displayedClips.filter((c) =>
+    const baseClips = displayedClips.filter((c) =>
       c.kind === 'image' ? true : completedVideoIds.has(c.id) && c.job.video?.storage_path,
     )
+    // If the user has explicitly applied edits to 2+ video cards, Final Film
+    // only stitches together those edited cards (images stay included as
+    // optional connective tissue). Otherwise fall back to all eligible clips.
+    const editedVideoCount = baseClips.filter((c) => c.kind === 'video' && editedJobIds.has(c.id)).length
+    const eligibleClips = editedVideoCount >= 2
+      ? baseClips.filter((c) => c.kind === 'image' || editedJobIds.has(c.id))
+      : baseClips
     if (eligibleClips.length < 2) {
       setVideoColumnMessage('Need at least 2 finished items (videos or images) to merge.')
       return
@@ -1723,7 +1809,11 @@ export default function DashboardPage() {
       const urls: string[] = []
       for (const clip of eligibleClips) {
         if (clip.kind === 'video') {
-          urls.push(await proxiedVideoUrl(clip.job.video!.storage_path as string))
+          // Prefer the locally-edited blob URL when available so Final Film
+          // really stitches the user's Apply-Changes output, not the original.
+          const editedUrl = editedClips[clip.id]?.url
+          const src = editedUrl ?? (await proxiedVideoUrl(clip.job.video!.storage_path as string))
+          urls.push(src)
         } else {
           const seconds = Math.max(1, Math.min(15, clip.image.still_duration_seconds || 3))
           const blob = await imageUrlToClip(clip.image.storage_path, seconds, targetSize)
@@ -1870,6 +1960,14 @@ export default function DashboardPage() {
     }
     setTransitions({})
     setManualOrder(null)
+    // Reset the "applied edits" workspace marker so Final Film starts fresh.
+    // (We do NOT delete the trimmed files in storage — cards are preserved.)
+    for (const e of Object.values(editedClips)) {
+      try { URL.revokeObjectURL(e.url) } catch { /* noop */ }
+    }
+    setEditedClips({})
+    setEditedJobIds(new Set())
+    persistEditedJobIds(new Set())
     setPendingEndAppends({})
     setPendingStartPrepends({})
     if (pendingEndAppendsKey) {

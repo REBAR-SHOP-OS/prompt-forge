@@ -1,31 +1,72 @@
-## Goal
+## مشکل فعلی
 
-Make the **Start Over** button stop deleting the user's library/history videos (the cards in the "Recent outputs / History" panel). Start Over should reset the *workspace* (composer, selections, merged final film, soundtrack, uploads) but leave the rendered video cards intact — both on screen and on the server.
+دو ایراد در فایل `src/modules/generator-ui/pages/DashboardPage.tsx`:
 
-## Scope
+### 1) Apply Changes واقعاً روی کارت اعمال نمی‌شود
+تابع `applyTrimToCard` (خط ۵۳۴) فقط یک blob URL محلی در state `editedClips` ذخیره می‌کند:
+- ویدیوی اصلیِ کارت در History (همان `job.video.storage_path`) عوض نمی‌شود.
+- thumbnail و مدت‌زمان نمایش‌داده‌شده در کارت بروزرسانی نمی‌شود.
+- بعد از refresh صفحه، تغییرات از بین می‌رود (در DB ذخیره نمی‌شود).
 
-Single file: `src/modules/generator-ui/pages/DashboardPage.tsx`, function `handleStartOver` (around lines 1856–1938). No backend changes.
+### 2) Final Film کارت‌های ادیت‌شده را نادیده می‌گیرد
+در `handleMergeAllVideos` (خط ۱۷۲۶):
+```ts
+urls.push(await proxiedVideoUrl(clip.job.video!.storage_path as string))
+```
+از `storage_path` اصلی استفاده می‌کند و `editedClips[id]` را اصلاً نگاه نمی‌کند. همچنین لیست `eligibleClips` همهٔ کلیپ‌های قابل‌نمایش را شامل می‌شود، نه فقط کارت‌هایی که ادیت شده‌اند.
 
-## Changes to `handleStartOver`
+---
 
-Keep doing:
-- Clear merged Final Film (`setMergedEntries([])` + `persistMerged([])`) and remove the merged storage objects (those are derived artifacts, not library cards).
-- Clear approved selection set + persisted approvedStorageKey.
-- Clear transitions, manual ordering, pending start/end appends (+ their localStorage keys).
-- Tear down soundtrack (revoke URL, reset music state, close dialog).
-- Reset merge progress flags.
-- Reset composer: prompt text, uploaded files, composer error, video column message, upload target, generation mode, duration, preview id.
-- Release `lockedProjectRatio` (+ persist null).
+## برنامهٔ اصلاح
 
-Stop doing:
-- Do **not** call `setGeneratedVideos([])` — keep the History list as-is.
-- Do **not** call `setUserImages([])` — keep uploaded reference images.
-- Remove the loop `for (const v of videosToDelete) tasks.push(jobOrchestratorGateway.deleteJob(v.id))`.
-- Remove the loop `for (const i of imagesToDelete) tasks.push(generatorUiGateway.deleteUserImage(i.id))`.
-- Drop the now-unused `videosToDelete` / `imagesToDelete` snapshot variables.
+تنها فایل تغییریافته: `src/modules/generator-ui/pages/DashboardPage.tsx`
 
-The merged-videos storage cleanup loop stays (Final Film is a workspace artifact, not a library card).
+### الف) واقعاً اعمال‌کردن Apply Changes روی کارت
+بازنویسی `applyTrimToCard(jobId)`:
+1. blob خروجی trim را در باکت `merged-videos` آپلود کن (مسیر: `${userId}/edited-${jobId}-${Date.now()}.${ext}`).
+2. `publicUrl` نتیجه را بگیر.
+3. `setGeneratedVideos` را به‌روزرسانی کن: برای جابِ مربوطه، `video.storage_path` را با URL جدید و `video.duration` را با `newDuration` جایگزین کن (با استفاده از pattern موجود `mergeJob`).
+4. `editedClips[jobId]` همچنان نگه داشته شود (برای پخش فوری بدون نیاز به دانلود مجدد) و علاوه بر آن یک Set جدید `editedJobIds` (پایدار در localStorage با کلید `edited-clips:${userId}`) اضافه شود تا بدانیم کدام کارت‌ها «اعمال‌شده» هستند.
+5. اگر فایل قبلیِ ادیت در باکت متعلق به ما بود، قبل از آپلود جدید پاک شود (cleanup).
 
-## Result
+نتیجه: کارت History واقعاً ویدیوی trim‌شده را نشان می‌دهد، duration درست است، و پس از refresh هم باقی می‌ماند.
 
-Clicking **Start Over** returns the editor to a blank prompting state and removes the Final Film, but every previously generated clip remains in the History panel and on the server, ready to be reused.
+### ب) Final Film فقط کارت‌های ادیت‌شده را به‌هم وصل کند
+در `handleMergeAllVideos`:
+1. اگر `editedJobIds.size >= 2`، آن‌گاه `eligibleClips` را به کلیپ‌هایی محدود کن که `editedJobIds.has(c.id)` است (با حفظ ترتیب نمایش فعلی).
+2. اگر هیچ کارتی Apply نشده بود، رفتار قبلی حفظ شود (یا پیغام راهنمایی نشان داده شود — باید با کاربر مشخص شود؛ پیش‌فرض پیشنهادی: همان رفتار قبلی fallback).
+3. هنگام ساخت `urls`، ابتدا `editedClips[clip.id]?.url` را ترجیح بده، سپس `proxiedVideoUrl(clip.job.video!.storage_path)` (چون storage_path هم بعد از مرحلهٔ الف بروز شده، این یک fallback ایمن است).
+
+### ج) پاکسازی
+- در `handleStartOver` (طبق قاعدهٔ قبلی، حذف نمی‌کند) فقط `editedClips` و `editedJobIds` را reset کن (چون workspace state است)، اما فایل‌های آپلودشده در باکت دست نخورند.
+- در `deleteCard`، اگر کارت در `editedJobIds` بود، آن را حذف کن.
+
+---
+
+## جزئیات فنی کلیدی
+
+```text
+applyTrimToCard(jobId)(blob, duration, ext):
+  path = `${userId}/edited-${jobId}-${ts}.${ext}`
+  upload(path, blob, contentType)
+  url = getPublicUrl(path)
+  setGeneratedVideos(prev => prev.map(j =>
+    j.id === jobId
+      ? { ...j, video: { ...j.video, storage_path: url, duration } }
+      : j
+  ))
+  setEditedClips(prev => ({ ...prev, [jobId]: { url: blobUrl, duration } }))
+  setEditedJobIds(prev => new Set(prev).add(jobId))  // + persist
+```
+
+```text
+handleMergeAllVideos:
+  base = displayedClips.filter(...)
+  eligibleClips = editedJobIds.size >= 2
+    ? base.filter(c => c.kind === 'image' || editedJobIds.has(c.id))
+    : base
+  for clip in eligibleClips:
+    src = editedClips[clip.id]?.url ?? await proxiedVideoUrl(clip.job.video.storage_path)
+```
+
+با این دو تغییر، Apply Changes واقعاً ماندگار و قابل‌مشاهده می‌شود و Final Film فقط کارت‌های اعمال‌شده را به ترتیب به یکدیگر وصل می‌کند.
