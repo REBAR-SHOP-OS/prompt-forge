@@ -77,6 +77,7 @@ import { SoundtrackWaveform, type SoundtrackWaveformHandle } from '@/modules/gen
 import { TransitionPreview } from '@/modules/generator-ui/components/TransitionPreview'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
+import { generatorUiGateway } from '@/modules/generator-ui/gateway'
 import { mergeVideoUrls, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
 import { VoiceoverDialog } from '@/modules/generator-ui/components/VoiceoverDialog'
@@ -466,11 +467,10 @@ export default function DashboardPage() {
     })
   }
 
-  const deletedStorageKey = userId ? `deleted-videos:${userId}` : null
+  const legacyDeletedKey = userId ? `deleted-videos:${userId}` : null
   const mergedStorageKey = userId ? `merged-videos:${userId}` : null
   const pendingEndAppendsKey = userId ? `pending-end-appends:${userId}` : null
   const pendingStartPrependsKey = userId ? `pending-start-prepends:${userId}` : null
-  const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set())
   const [manualOrder, setManualOrder] = useState<string[] | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [trimmingJobId, setTrimmingJobId] = useState<string | null>(null)
@@ -589,18 +589,12 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  // Legacy local "hide" set is no longer used — deletes are now real and
+  // server-authoritative. Purge any leftover key from previous versions.
   useEffect(() => {
-    if (!deletedStorageKey) {
-      setDeletedIds(new Set())
-      return
-    }
-    try {
-      const raw = window.localStorage.getItem(deletedStorageKey)
-      setDeletedIds(raw ? new Set(JSON.parse(raw) as string[]) : new Set())
-    } catch {
-      setDeletedIds(new Set())
-    }
-  }, [deletedStorageKey])
+    if (!legacyDeletedKey) return
+    try { window.localStorage.removeItem(legacyDeletedKey) } catch { /* ignore */ }
+  }, [legacyDeletedKey])
 
   useEffect(() => {
     if (!mergedStorageKey) {
@@ -615,13 +609,6 @@ export default function DashboardPage() {
     }
   }, [mergedStorageKey])
 
-  function persistDeleted(next: Set<string>) {
-    if (!deletedStorageKey) return
-    try {
-      window.localStorage.setItem(deletedStorageKey, JSON.stringify(Array.from(next)))
-    } catch { /* ignore */ }
-  }
-
   function persistMerged(next: JobDetail[]) {
     if (!mergedStorageKey) return
     try {
@@ -634,14 +621,11 @@ export default function DashboardPage() {
 
     const isMerged = jobId.startsWith('merged-')
     const mergedEntry = isMerged ? mergedEntries.find((e) => e.id === jobId) : null
+    const prevGenerated = generatedVideos
+    const prevMerged = mergedEntries
 
-    // Optimistic UI removal
-    setDeletedIds((current) => {
-      const next = new Set(current)
-      next.add(jobId)
-      persistDeleted(next)
-      return next
-    })
+    // Optimistic UI removal — remove from in-memory list immediately.
+    setGeneratedVideos((current) => current.filter((v) => v.id !== jobId))
     setApprovedIds((current) => {
       if (!current.has(jobId)) return current
       const next = new Set(current)
@@ -671,19 +655,13 @@ export default function DashboardPage() {
           }
         }
       } else {
-        // Real job: backend delete (DB rows + Storage files).
+        // Real job: backend delete (DB rows + Storage files, server-side).
         await jobOrchestratorGateway.deleteJob(jobId)
       }
-      // Drop from in-memory list as well so the card never reappears on re-render.
-      setGeneratedVideos((current) => current.filter((v) => v.id !== jobId))
     } catch (err) {
-      // Roll back the hide so the user sees the card again.
-      setDeletedIds((current) => {
-        const next = new Set(current)
-        next.delete(jobId)
-        persistDeleted(next)
-        return next
-      })
+      // Roll back the optimistic removal on failure.
+      setGeneratedVideos(prevGenerated)
+      if (isMerged) setMergedEntries(prevMerged)
       const msg = err instanceof ApiError ? err.message : (err as Error).message
       if (typeof window !== 'undefined') window.alert(`Delete failed: ${msg}`)
     }
@@ -772,30 +750,26 @@ export default function DashboardPage() {
   const startUploadCount = uploadedFiles.filter((file) => file.target === 'Start').length
   const endUploadCount = uploadedFiles.filter((file) => file.target === 'End').length
   const visibleVideos = useMemo(() => {
-    const all = [...mergedEntries, ...generatedVideos]
-    return all.filter((v) => !deletedIds.has(v.id))
-  }, [generatedVideos, mergedEntries, deletedIds])
+    return [...mergedEntries, ...generatedVideos]
+  }, [generatedVideos, mergedEntries])
 
   const completedSourceVideos = useMemo(
     () => generatedVideos.filter(
-      (v) => !deletedIds.has(v.id)
-        && normalizeStatus(v.status) === 'completed'
-        && v.video?.storage_path
+      (v) => normalizeStatus(v.status) === 'completed' && v.video?.storage_path
     ),
-    [generatedVideos, deletedIds]
+    [generatedVideos]
   )
 
   // Aspect-ratio chain lock: once the user has any clip in the current chain,
   // every subsequent clip must match the FIRST clip's aspect ratio. The lock
   // releases automatically when the chain is empty (e.g. after Start Over).
   const lockedRatio = useMemo<Ratio | null>(() => {
-    const chain = generatedVideos.filter((v) => !deletedIds.has(v.id))
-    if (chain.length === 0) return null
+    if (generatedVideos.length === 0) return null
     // generatedVideos is newest-first; the oldest (first in chain) is last.
-    const first = chain[chain.length - 1]
+    const first = generatedVideos[generatedVideos.length - 1]
     return getRatioFor(first)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [generatedVideos, deletedIds])
+  }, [generatedVideos])
 
   useEffect(() => {
     if (lockedRatio && aspectRatio !== lockedRatio) {
@@ -805,8 +779,7 @@ export default function DashboardPage() {
 
   // Right-panel display order: oldest first (chronological ASC), with manual drag-and-drop overrides.
   const displayedVideos = useMemo(() => {
-    const filtered = generatedVideos.filter((v) => !deletedIds.has(v.id))
-    const chronoAsc = [...filtered].sort(
+    const chronoAsc = [...generatedVideos].sort(
       (l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime()
     )
     if (!manualOrder) return chronoAsc
@@ -823,7 +796,7 @@ export default function DashboardPage() {
       if (byId.has(v.id)) ordered.push(v)
     }
     return ordered
-  }, [generatedVideos, deletedIds, manualOrder])
+  }, [generatedVideos, manualOrder])
 
   const handleCardDragStart = (id: string) => (event: React.DragEvent) => {
     setDraggingId(id)
@@ -854,10 +827,7 @@ export default function DashboardPage() {
   // Unified clip list (videos + uploaded images), ordered by created_at ASC,
   // with manual drag-and-drop overrides. Both kinds share the same numbering,
   // ordering, drag handlers, and Final Film merge sequence.
-  const visibleUserImages = useMemo(
-    () => userImages.filter((i) => !deletedIds.has(i.id)),
-    [userImages, deletedIds],
-  )
+  const visibleUserImages = userImages
 
   const displayedClips = useMemo<UnifiedClip[]>(() => {
     const items: UnifiedClip[] = [
@@ -1041,15 +1011,13 @@ export default function DashboardPage() {
     if (!userId) return
     const prev = userImages
     setUserImages((curr) => curr.filter((i) => i.id !== imageId))
-    const { error } = await supabase
-      .from('generator_user_images')
-      .update({ deleted_at: new Date().toISOString() })
-      .eq('id', imageId)
-      .eq('user_id', userId)
-      .select('id')
-    if (error) {
+    try {
+      // Server-side, permanent delete (DB row + storage file).
+      await generatorUiGateway.deleteUserImage(imageId)
+    } catch (err) {
       setUserImages(prev)
-      setVideoColumnMessage(`Could not delete image: ${error.message}`)
+      const msg = err instanceof ApiError ? err.message : (err as Error).message
+      setVideoColumnMessage(`Could not delete image: ${msg}`)
     }
   }
 
@@ -1474,9 +1442,7 @@ export default function DashboardPage() {
     // Continuity rule: each new card must continue the previous render.
     // Auto-seed the previous video's last frame as the Start frame.
     const prev = generatedVideos.find(
-      (v) => !deletedIds.has(v.id)
-        && normalizeStatus(v.status) === 'completed'
-        && v.video?.storage_path,
+      (v) => normalizeStatus(v.status) === 'completed' && v.video?.storage_path,
     )
 
     if (prev?.video?.storage_path && userId) {
@@ -1836,23 +1802,20 @@ export default function DashboardPage() {
     }
   }
 
-  function handleStartOver() {
-    // Hide every History card by adding their IDs to the "deleted" set
-    // (same mechanism the per-card delete uses; DB rows are kept).
-    setDeletedIds((current) => {
-      const next = new Set(current)
-      for (const v of generatedVideos) next.add(v.id)
-      for (const e of mergedEntries) next.add(e.id)
-      for (const i of userImages) next.add(i.id)
-      if (deletedStorageKey) {
-        try { window.localStorage.setItem(deletedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
-      }
-      return next
-    })
+  async function handleStartOver() {
+    // Snapshot the items we're about to delete so the network calls don't
+    // race against state updates.
+    const videosToDelete = generatedVideos.filter((v) => !v.id.startsWith('merged-'))
+    const mergedToDelete = mergedEntries
+    const imagesToDelete = userImages
+
     // Wipe the merged Final Film(s) entirely so the preview goes blank
     // and the FINAL FILM tab disappears.
     setMergedEntries([])
     persistMerged([])
+    // Optimistically clear the History list so the UI feels instant.
+    setGeneratedVideos([])
+    setUserImages([])
     // Clear approved selections + per-clip transitions + manual ordering.
     setApprovedIds(new Set())
     if (approvedStorageKey) {
@@ -1892,6 +1855,35 @@ export default function DashboardPage() {
     // Releasing the project lock so the user can pick a different ratio.
     setLockedProjectRatio(null)
     persistLockedRatio(null)
+
+    // Server-side, permanent cleanup. Run in parallel; tolerate per-item
+    // failures and surface a single summary error if anything didn't delete.
+    const tasks: Promise<unknown>[] = []
+    for (const v of videosToDelete) {
+      tasks.push(jobOrchestratorGateway.deleteJob(v.id))
+    }
+    for (const e of mergedToDelete) {
+      const url = e.video?.storage_path
+      if (url && userId) {
+        const m = url.match(/\/storage\/v1\/object\/(?:public\/)?merged-videos\/(.+)$/)
+        if (m) {
+          const path = decodeURIComponent(m[1])
+          tasks.push(supabase.storage.from(MERGED_BUCKET).remove([path]))
+        }
+      }
+    }
+    for (const i of imagesToDelete) {
+      tasks.push(generatorUiGateway.deleteUserImage(i.id))
+    }
+    if (tasks.length === 0) return
+
+    const results = await Promise.allSettled(tasks)
+    const failed = results.filter((r) => r.status === 'rejected').length
+    if (failed > 0) {
+      setVideoColumnMessage(
+        `Cleared the workspace, but ${failed} item${failed === 1 ? '' : 's'} could not be permanently deleted on the server. Try again to retry.`,
+      )
+    }
   }
 
   return (
@@ -2408,7 +2400,7 @@ export default function DashboardPage() {
             <History className="h-4 w-4 text-amber-300" aria-hidden="true" />
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">History</p>
             <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
-              {generatedVideos.filter((v) => !deletedIds.has(v.id)).length}
+              {generatedVideos.length}
             </span>
           </div>
         </div>

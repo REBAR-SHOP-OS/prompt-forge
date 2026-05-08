@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.generator_delete_user_image(uuid, uuid) FROM PUBLIC, anon, authenticated;
