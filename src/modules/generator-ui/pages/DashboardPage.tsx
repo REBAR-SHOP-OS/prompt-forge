@@ -214,17 +214,21 @@ function buildPromptWithUploadedFiles(prompt: string, files: UploadedFile[]) {
 }
 
 function getJobProgressPercent(job: { status: string; progress_percent?: number | null; created_at: string }): number | null {
-  if (typeof job.progress_percent === 'number') return Math.max(0, Math.min(100, Math.round(job.progress_percent)))
   const status = normalizeStatus(job.status)
   if (status === 'completed') return 100
   if (status === 'failed' || status === 'cancelled') return null
   const startedAt = Date.parse(job.created_at)
-  if (!Number.isFinite(startedAt)) return status === 'pending' ? 8 : 25
-  const elapsed = Date.now() - startedAt
+  const elapsed = Number.isFinite(startedAt) ? Date.now() - startedAt : 0
   // Wan 2.7 typically takes ~30-40s of real time per 1s of output. Use 35s/s heuristic, capped to 10s clips.
   const expectedMs = 10 * 35_000
-  const ratio = elapsed / expectedMs
-  return Math.max(status === 'pending' ? 8 : 18, Math.min(95, Math.round(18 + ratio * 77)))
+  const ratio = expectedMs > 0 ? elapsed / expectedMs : 0
+  const timeBased = Math.max(status === 'pending' ? 8 : 18, Math.min(95, Math.round(18 + ratio * 77)))
+  const backend = typeof job.progress_percent === 'number'
+    ? Math.max(0, Math.min(100, Math.round(job.progress_percent)))
+    : null
+  // Use whichever is higher so the bar always advances (1% per ~4.5s by time)
+  // even if the backend reports a stale value.
+  return backend !== null ? Math.max(backend, timeBased) : timeBased
 }
 
 function mergeJob(currentJobs: JobDetail[], nextJob: JobDetail) {
@@ -899,6 +903,10 @@ export default function DashboardPage() {
 
   // Backwards-compat alias used by existing card highlight + start-frame code paths
   const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
+
+  // Live progress tick is handled by the global setProgressTick effect below
+  // (re-renders once per second while any job is active), so the preview's
+  // time-based pct advances naturally between API polls.
 
   const emptyStateLabel = useMemo(() => {
     if (isDragging) {
