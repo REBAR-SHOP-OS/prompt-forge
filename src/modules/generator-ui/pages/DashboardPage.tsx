@@ -2110,6 +2110,18 @@ export default function DashboardPage() {
     setGenerationMode('image-to-video')
     setDurationSeconds(5)
     setPreviewVideoId(null)
+    // Force the empty "Start forging a prompt" state instead of falling back to
+    // the most recent visibleVideos entry.
+    setPreviewDismissed(true)
+    // Hide all current generated jobs from the HISTORY panel so the workspace
+    // looks fresh for the next project. We do NOT delete them on the server —
+    // Library still reads from visibleVideos and keeps approved/Final Film cards.
+    {
+      const nextHidden = new Set(workspaceHiddenJobIds)
+      for (const j of generatedVideos) nextHidden.add(j.id)
+      setWorkspaceHiddenJobIds(nextHidden)
+      persistWorkspaceHiddenJobIds(nextHidden)
+    }
     // Releasing the project lock so the user can pick a different ratio.
     setLockedProjectRatio(null)
     persistLockedRatio(null)
