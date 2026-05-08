@@ -1,29 +1,42 @@
-## هدف
-وقتی کاربر روی **Start Over** کلیک می‌کند، کارت‌های پنل **Library** (که خروجی‌های نهایی Final Film هستند) تحت هیچ شرایطی نباید حذف شوند. فقط workspace کاری (composer، history کارت‌های در حال ساخت، transitions، ادیت‌ها، music، تب FINAL FILM فعلی در preview) ریست شود.
+# هدف
+وقتی روی **Start Over** کلیک می‌شود، صفحه باید کاملاً برای یک پروژه جدید ریست شود و دقیقاً مثل اسکرین‌شات دوم نمایش داده شود:
+- وسط صفحه: empty state «Start forging a prompt» (بدون ویدئو در preview)
+- پنل راست **HISTORY**: عدد `0` و پیام «No renders yet»
+- composer پایین: prompt خالی، Start/End خالی، transitions/music/ویرایش‌ها همه پاک
+- بعد از رفرش هم همین وضعیت بماند (پایدار باشد)
 
-## وضعیت فعلی (رفتار اشتباه)
-در `handleStartOver` این کارها انجام می‌شود:
-- `setMergedEntries([])` — تب Final Film خالی می‌شود (این بخش OK است برای preview، اما همین entries منبع کارت‌های Library هم هستند)
-- `setApprovedIds(new Set())` — Library عملاً خالی می‌شود
-- پاک‌کردن فایل‌های `merged-videos` از storage — فایل‌های فیلم نهایی برای همیشه نابود می‌شوند
+در عین حال طبق قانون قبلی:
+- کارت‌های پنل **Library** (مرگ‌شده‌های Final Film + کلیپ‌های Approve‌شده) نباید حذف شوند
+- فایل‌های روی استوریج (`merged-videos`) دست‌نخورده باقی بمانند
+- هیچ jobی روی سرور پاک نشود
 
-نتیجه: Library صفر می‌شود و فایل‌های Final Film از سرور حذف می‌شوند، که خلاف خواسته است.
+## مشکل فعلی
+الان `handleStartOver`:
+- preview را به `null` ست می‌کند، اما `previewItem` به‌صورت fallback اولین ویدئوی `visibleVideos` را نمایش می‌دهد، پس باز همان ویدئو دیده می‌شود
+- لیست `generatedVideos` (پنل HISTORY) دست‌نخورده می‌ماند، در حالی که اسکرین‌شات دوم HISTORY=0 می‌خواهد
 
-## برنامهٔ اصلاح
-1. **حفظ کامل Library در Start Over**
-   - `setApprovedIds` و کلید `localStorage` مربوط به آن دست‌نخورده باقی بماند.
-   - `mergedEntries` و persisted JSON آن دست‌نخورده باقی بماند، تا کارت‌های Final Film همچنان در Library و در تب FINAL FILM موجود باشند.
-   - مرحلهٔ پاک‌سازی فایل‌های `merged-videos` از storage کاملاً حذف شود.
+## برنامه
 
-2. **بازنشانی فقط workspace کاری**
-   - composer، prompt، uploadedFiles، transitions، manualOrder، editedClips، editedJobIds، pendingEnd/StartAppends، music، mergeProgress، lockedProjectRatio، previewVideoId مثل قبل ریست شوند.
-   - اگر `previewVideoId` به یکی از mergedEntries اشاره دارد همان بماند تا کاربر روی فیلم نهایی نماند ولی Library را از دست ندهد (انتخاب: ریست به null برای تجربهٔ «شروع تازه»).
+1. **مخفی‌کردن پایدار کارت‌های قدیمی از پنل HISTORY (بدون حذف از سرور)**
+   - معرفی یک Set جدید `workspaceHiddenJobIds` که در `localStorage` نگه داشته می‌شود (per-user key مشابه `pendingEndAppendsKey`).
+   - در `displayedVideos` (و هرجای دیگری که فقط History را می‌سازد) قبل از سورت، job هایی که id آن‌ها در `workspaceHiddenJobIds` است فیلتر شوند.
+   - **مهم:** `visibleVideos` که پایهٔ Library (`approvedIds.has(...)`) و mergedEntries است این فیلتر را اعمال **نمی‌کند**، تا کلیپ‌های Approve‌شده و Final Film ها در Library بمانند.
 
-3. **تأیید سایر مسیرهای حذف**
-   - تنها مسیر حذف کارت Library باید دکمهٔ Delete صریح روی همان کارت باشد، نه Start Over.
+2. **به‌روزرسانی `handleStartOver`**
+   - id همهٔ `generatedVideos` فعلی را به `workspaceHiddenJobIds` اضافه کن و در localStorage ذخیره کن.
+   - `setPreviewVideoId(null)` + `setPreviewDismissed(true)` تا fallback preview غیرفعال شود و empty state «Start forging a prompt» نشان داده شود.
+   - بقیهٔ ریست‌های فعلی (transitions, manualOrder, editedClips, editedJobIds, pending appends/prepends, music, mergeProgress, prompt, uploadedFiles, uploadTarget, generationMode, durationSeconds, lockedProjectRatio) دست‌نخورده باقی می‌ماند.
+   - هیچ فراخوانی حذف به سرور یا storage اضافه نمی‌شود.
+
+3. **هم‌خوانی شمارنده‌ها و UI**
+   - شمارندهٔ HISTORY روی `displayedVideos.length` (پس از فیلتر) قرار گیرد به‌جای `generatedVideos.length` تا با لیست واقعی هم‌خوان شود → نمایش `0`.
+   - empty state موجود (`Film` + "No renders yet" + "New video generations will collect here.") به‌طور خودکار رندر می‌شود چون `displayedClips` خالی خواهد بود.
+
+4. **هیدراسیون اولیه**
+   - در همان effect که `generatedVideos` از سرور بارگذاری می‌شود، `workspaceHiddenJobIds` را از localStorage بخوان و state را با آن مقداردهی کن، تا بعد از F5 هم History خالی باقی بماند.
 
 ## فایل‌های درگیر
-- `src/modules/generator-ui/pages/DashboardPage.tsx` — فقط داخل `handleStartOver`
+- `src/modules/generator-ui/pages/DashboardPage.tsx` — اضافه‌کردن state + persist key، فیلتر در `displayedVideos`، تغییر شمارنده HISTORY، به‌روزرسانی `handleStartOver`.
 
 ## نتیجهٔ مورد انتظار
-بعد از Start Over: composer و History پاک می‌شود، اما Library و فایل‌های فیلم نهایی روی سرور دست‌نخورده باقی می‌مانند.
+بعد از Start Over صفحه دقیقاً مثل اسکرین‌شات دوم: preview خالی، HISTORY=0، composer تازه — اما باز کردن پنل Library همچنان همهٔ Final Film ها و کلیپ‌های Approve‌شده را نشان می‌دهد و فایل‌های سرور حفظ شده‌اند. رفرش هم وضعیت تازه را نگه می‌دارد.
