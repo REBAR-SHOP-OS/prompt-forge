@@ -571,41 +571,45 @@ export default function DashboardPage() {
       return { ...prev, [jobId]: { url: localUrl, duration: newDuration } }
     })
 
-    // 2) Persist the trimmed file so the card actually changes (survives refresh).
-    if (userId) {
-      try {
-        const contentType = ext === 'webm' ? 'video/webm' : 'video/mp4'
-        const path = `${userId}/edited-${jobId}-${Date.now()}.${ext}`
-        const up = await supabase.storage
-          .from(MERGED_BUCKET)
-          .upload(path, blob, { contentType, upsert: false })
-        if (up.error) throw new Error(up.error.message)
-        const { data } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(path)
-        const publicUrl = data.publicUrl
+    // 2) Persist the trimmed file AND make it the card's real asset
+    //    server-side so Final Film stitches the edited file, not the original.
+    if (!userId) return
+    try {
+      const contentType = ext === 'webm' ? 'video/webm' : 'video/mp4'
+      const path = `${userId}/edited-${jobId}-${Date.now()}.${ext}`
+      const up = await supabase.storage
+        .from(MERGED_BUCKET)
+        .upload(path, blob, { contentType, upsert: false })
+      if (up.error) throw new Error(up.error.message)
+      const { data } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(path)
+      const publicUrl = data.publicUrl
 
-        // Replace the card's video source + duration with the edited one.
-        setGeneratedVideos((current) =>
-          current.map((j) =>
-            j.id === jobId && j.video
-              ? { ...j, video: { ...j.video, storage_path: publicUrl, duration: Math.round(newDuration) } }
-              : j,
-          ),
-        )
-      } catch (err) {
-        console.error('[applyTrimToCard] upload failed', err)
-        // We still keep the local blob URL so the user sees their edit applied
-        // in this session, even if persistence failed.
-      }
+      // Replace the asset row in the backend so the card's storage_path is
+      // the edited file. After this, every consumer (Final Film, refresh,
+      // etc.) sees the edited video as the card's source of truth.
+      const job = generatedVideos.find((j) => j.id === jobId)
+      const aspect = job?.video?.aspect_ratio ?? undefined
+      const updated = await jobOrchestratorGateway.updateEditedVideo({
+        jobId,
+        storagePath: publicUrl,
+        durationSeconds: Math.round(newDuration),
+        aspectRatio: aspect,
+      })
+      setGeneratedVideos((current) => mergeJob(current, updated))
+
+      // Mark this card as "applied" so Final Film uses it.
+      setEditedJobIds((prev) => {
+        if (prev.has(jobId)) return prev
+        const next = new Set(prev)
+        next.add(jobId)
+        persistEditedJobIds(next)
+        return next
+      })
+    } catch (err) {
+      console.error('[applyTrimToCard] persist failed', err)
+      const msg = err instanceof Error ? err.message : 'Apply changes failed'
+      setVideoColumnMessage(`Could not apply changes: ${msg}`)
     }
-
-    // 3) Mark this card as "applied" so Final Film knows to use it.
-    setEditedJobIds((prev) => {
-      if (prev.has(jobId)) return prev
-      const next = new Set(prev)
-      next.add(jobId)
-      persistEditedJobIds(next)
-      return next
-    })
   }
   const [transitions, setTransitions] = useState<Record<string, TransitionId>>({})
   const [mergedEntries, setMergedEntries] = useState<JobDetail[]>([])
