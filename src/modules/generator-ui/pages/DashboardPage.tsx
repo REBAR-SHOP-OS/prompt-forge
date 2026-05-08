@@ -489,6 +489,30 @@ export default function DashboardPage() {
   const [trimmingJobId, setTrimmingJobId] = useState<string | null>(null)
   const [trimSrc, setTrimSrc] = useState<string | null>(null)
   const [editedClips, setEditedClips] = useState<Record<string, { url: string; duration: number }>>({})
+  // Set of job ids the user has explicitly applied edits to. Persisted so that
+  // Final Film can know which cards to merge after a refresh.
+  const [editedJobIds, setEditedJobIds] = useState<Set<string>>(new Set())
+  const editedJobIdsKey = userId ? `edited-clips:${userId}` : null
+
+  useEffect(() => {
+    if (!editedJobIdsKey) {
+      setEditedJobIds(new Set())
+      return
+    }
+    try {
+      const raw = window.localStorage.getItem(editedJobIdsKey)
+      setEditedJobIds(raw ? new Set(JSON.parse(raw) as string[]) : new Set())
+    } catch {
+      setEditedJobIds(new Set())
+    }
+  }, [editedJobIdsKey])
+
+  function persistEditedJobIds(next: Set<string>) {
+    if (!editedJobIdsKey) return
+    try {
+      window.localStorage.setItem(editedJobIdsKey, JSON.stringify(Array.from(next)))
+    } catch { /* ignore */ }
+  }
 
   // Revoke object URLs on unmount.
   useEffect(() => {
