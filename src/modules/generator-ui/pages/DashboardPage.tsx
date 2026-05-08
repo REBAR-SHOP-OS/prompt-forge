@@ -2758,7 +2758,7 @@ export default function DashboardPage() {
                         >
                           <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
-                        {video.video?.storage_path ? (
+                        {(video.video?.storage_path || editedClips[video.id]?.url) ? (
                           <button
                             type="button"
                             onClick={(event) => {
