@@ -2348,16 +2348,19 @@ export default function DashboardPage() {
                 >
                   <X className="h-4 w-4" aria-hidden="true" />
                 </button>
-                {previewItem.job.video?.storage_path ? (
-                  <video
-                    key={previewItem.job.id}
-                    className="h-full w-full bg-black object-contain"
-                    src={previewItem.job.video.storage_path}
-                    controls
-                    playsInline
-                    preload="metadata"
-                  />
-                ) : (
+                {previewItem.job.video?.storage_path ? (() => {
+                  const src = getCardVideoSrc(previewItem.job.id, previewItem.job.video.storage_path) ?? previewItem.job.video.storage_path
+                  return (
+                    <video
+                      key={`${previewItem.job.id}:${src}`}
+                      className="h-full w-full bg-black object-contain"
+                      src={src}
+                      controls
+                      playsInline
+                      preload="metadata"
+                    />
+                  )
+                })() : (
                   <div className="grid h-full place-items-center px-6 text-center">
                     {(() => {
                       const status = normalizeStatus(previewItem.job.status)
