@@ -1690,6 +1690,7 @@ export default function DashboardPage() {
     setIsMusicDialogOpen(true)
   }
 
+  function handlePreviewMusicRange() {
     musicWaveformRef.current?.playRange(musicRange[0], musicRange[1])
   }
 
