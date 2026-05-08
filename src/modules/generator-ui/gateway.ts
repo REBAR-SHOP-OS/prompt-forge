@@ -18,4 +18,9 @@ export const generatorUiGateway = {
   getMe: () => request<Me>("/me"),
   routePreview: (input: RoutePreviewInput): Promise<RoutePreviewResult> =>
     externalApiAdapterGateway.routePreview(input),
+  deleteUserImage: (imageId: string) =>
+    request<{ ok: true; imageId: string; requestId?: string }>("/images-delete", {
+      method: "POST",
+      body: JSON.stringify({ imageId }),
+    }),
 };
