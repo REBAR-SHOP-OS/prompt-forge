@@ -1881,7 +1881,7 @@ export default function DashboardPage() {
       {showWelcome && <WelcomeVideoOverlay onClose={dismissWelcome} />}
       {(() => {
         if (!trimmingJobId) return null
-        const job = videos.find((v) => v.id === trimmingJobId)
+        const job = visibleVideos.find((v) => v.id === trimmingJobId)
         const src = job?.video?.storage_path
         if (!src) return null
         return (
