@@ -2,7 +2,7 @@
 // Module-specific calls live in src/modules/<domain>/api.ts and use this client.
 import { supabase } from "@/integrations/supabase/client";
 
-const PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID as string;
+const PROJECT_ID = "sacxoanuyetjfrfllkzx";
 export const FUNCTIONS_BASE = `https://${PROJECT_ID}.supabase.co/functions/v1`;
 
 export class ApiError extends Error {

@@ -1,49 +1,41 @@
-## هدف
-افزودن یک آیکون جدید در نوار بالای داشبورد (کنار START OVER / FINAL FILM / MUSIC) برای تبدیل متن به گفتار با استفاده از Google AI Studio (Gemini TTS).
+## مشکل
 
-## رفتار کاربر
-1. کاربر روی آیکون جدید «Voiceover» کلیک می‌کند.
-2. یک دیالوگ باز می‌شود شامل:
-   - فیلد متن (Textarea) برای نوشتن متن دلخواه
-   - انتخاب جنسیت: «Female» / «Male»
-   - انتخاب لحن: Advertising / Excited / Calm / Narrative / Friendly / Serious
-   - دکمه «Generate»
-3. پس از تولید، پلیر صوتی نمایش داده می‌شود + دکمه‌های:
-   - **Download** (دانلود فایل MP3/WAV)
-   - **Use as soundtrack** (تنظیم به‌عنوان موزیک پس‌زمینه‌ی Final Film — همان جریان `musicUrl` موجود)
+نسخه منتشرشده در `aura-clip-studio.lovable.app` کاملاً سیاه است. در کنسول مرورگر این خطا رخ می‌دهد:
 
-## معماری فنی
+```
+Uncaught Error: Missing Supabase environment variables.
+Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY before starting the app.
+```
 
-### Backend (Edge Function جدید)
-`supabase/functions/tts-generate/index.ts`
-- ورودی: `{ text, gender, tone }`
-- نگاشت gender + tone → `voiceName` و `style instruction` برای Gemini TTS
-  - مثلاً Female + Excited → voice `Kore` با prompt: `"Say excitedly and energetically: ..."`
-  - Male + Advertising → voice `Puck` با prompt: `"Say in an upbeat advertising voice: ..."`
-- فراخوانی Google AI Studio (مدل `gemini-2.5-flash-preview-tts`) با `GEMINI_API_KEY`
-- خروجی PCM بازگشتی را به WAV تبدیل کرده و به‌صورت base64 برمی‌گرداند
-- CORS کامل + هندل خطاهای 429/402
+این خطا در زمان **بارگذاری ماژول** پرتاب می‌شود (در `src/integrations/supabase/client.ts`) و چون قبل از رندر شدن React اتفاق می‌افتد، کل برنامه crash می‌کند و فقط `<body>` خالی با پس‌زمینه تیره باقی می‌ماند.
 
-### Secret مورد نیاز
-- `GEMINI_API_KEY` (کلید Google AI Studio) — قبل از پیاده‌سازی از کاربر درخواست می‌شود.
+## ریشه‌ی فنی
 
-### Frontend
-- یک کامپوننت جدید: `src/modules/generator-ui/components/VoiceoverDialog.tsx`
-  - state: text, gender, tone, isGenerating, audioUrl
-  - فراخوانی `supabase.functions.invoke('tts-generate', ...)`
-  - پلیر `<audio controls>` + دکمه‌های Download و Use as soundtrack
-- در `DashboardPage.tsx`:
-  - افزودن state `isVoiceoverOpen`
-  - افزودن یک دکمه نوار بالا با آیکون `Mic` (lucide) دقیقاً با همان استایل دکمه‌های Final Film/Music، بعد از دکمه Music
-  - رندر کامپوننت `VoiceoverDialog`
-  - callback `onUseAsSoundtrack(blobUrl, name)` → ست کردن همان state موزیکی که الان وجود دارد (`musicUrl`, `musicName`, `musicRange`) تا در Final Film استفاده شود
+فایل `src/integrations/supabase/client.ts` که باید **به‌صورت خودکار با مقادیر هاردکد شده** تولید شود، به نسخه‌ای تغییر داده شده که مقادیر را از `import.meta.env.VITE_SUPABASE_URL` و `VITE_SUPABASE_PUBLISHABLE_KEY` می‌خواند.
 
-## فایل‌های تغییر یافته/ایجاد شده
-- ایجاد `supabase/functions/tts-generate/index.ts`
-- ایجاد `src/modules/generator-ui/components/VoiceoverDialog.tsx`
-- ویرایش `src/modules/generator-ui/pages/DashboardPage.tsx` (افزودن دکمه نوار بالا + state + اتصال به سیستم music موجود)
+- در محیط Sandbox پیش‌نمایش، فایل `.env` وجود دارد و مقادیر در دسترس‌اند → کار می‌کند.
+- در زمان **بیلد production برای Publish**، آن `.env` همراه نیست؛ Vite مقادیر را به‌جای متغیرها `undefined` می‌گذارد → `throw` می‌کند → صفحه سفید/سیاه.
 
-## خارج از محدوده
-- ذخیره دائمی صداهای تولید شده در دیتابیس
-- صداگذاری روی هر کلیپ به‌صورت جداگانه (فعلاً فقط به‌عنوان soundtrack کلی Final Film)
-- Voice cloning یا آپلود نمونه‌ی صوتی
+علاوه بر آن، `src/core/api/client.ts` و `src/modules/generator-ui/lib/proxiedVideoUrl.ts` نیز برای ساخت URL توابع از `VITE_SUPABASE_PROJECT_ID` استفاده می‌کنند که در production می‌شود `undefined` و باعث می‌شود همه فراخوانی‌های edge function به آدرس `https://undefined.supabase.co/...` بروند.
+
+## راه‌حل اصولی
+
+تمام مقادیر اتصال Supabase باید به صورت ثابت در سورس قرار گیرند (دقیقاً همان‌طور که قالب رسمی Lovable Cloud انجام می‌دهد). مقادیر anon key/URL از نظر امنیتی publishable هستند و قرار دادن‌شان در سورس استاندارد است.
+
+### تغییرات
+
+1. **`src/integrations/supabase/client.ts`** — بازگرداندن به فرم خودکار با مقادیر هاردکد (URL پروژه و anon key از تنظیمات Lovable Cloud). حذف بلاک `throw`.
+
+2. **`src/core/api/client.ts`** — جایگزینی `import.meta.env.VITE_SUPABASE_PROJECT_ID` با مقدار ثابت `sacxoanuyetjfrfllkzx` تا مسیر `FUNCTIONS_BASE` همیشه معتبر باشد.
+
+3. **`src/modules/generator-ui/lib/proxiedVideoUrl.ts`** — همان جایگزینی برای `PROJECT_ID` و `OWN_SUPABASE_HOST`.
+
+### اعتبارسنجی
+
+- اطمینان از اینکه پس از تغییر، فایل `client.ts` دیگر throw نمی‌کند.
+- بررسی این که در نسخه پیش‌نمایش هم همچنان لاگین/داشبورد کار کند.
+- پیشنهاد به کاربر برای زدن دکمه **Publish → Update** تا بیلد جدید جایگزین نسخه شکسته شود.
+
+## محدوده
+
+تغییرات فقط در سه فایل بالا انجام می‌شود؛ هیچ تغییری در منطق بیزنس، schema، یا edge functions اعمال نمی‌شود.
