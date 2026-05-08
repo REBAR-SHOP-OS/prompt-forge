@@ -322,6 +322,15 @@ export default function DashboardPage() {
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
+  const [previewDismissed, setPreviewDismissed] = useState(false)
+  // Re-open preview whenever a card is explicitly selected.
+  useEffect(() => {
+    if (previewVideoId) setPreviewDismissed(false)
+  }, [previewVideoId])
+  const closePreview = () => {
+    setPreviewVideoId(null)
+    setPreviewDismissed(true)
+  }
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
   const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15>(5)
