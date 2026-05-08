@@ -1,67 +1,62 @@
-# رفع باگ History — حذف واقعی و امن
 
-## ریشه باگ
+# قاعده‌ی اصلی برنامه
 
-در `src/modules/generator-ui/pages/DashboardPage.tsx` یک مجموعهٔ محلی به نام `deletedIds` در `localStorage` با کلید `deleted-videos:<userId>` نگهداری می‌شود. دکمهٔ **Start Over** (خط ۱۸۳۹) و بخشی از مسیرهای پاکسازی، فقط آیتم‌ها را به این مجموعه اضافه می‌کنند و **هیچ تماسی با سرور نمی‌گیرند**. در نتیجه:
+**History = workspace موقت. Library = ذخیره‌گاه دائمی.**
 
-- روی همان مرورگر، آیتم‌ها مخفی می‌مانند.
-- اما ردیف‌های `generator_generation_jobs`، `generator_video_assets` و `generator_user_images` و فایل‌های Storage همگی روی سرور **سالم باقی می‌مانند**.
-- وقتی کاربر از مرورگر/دستگاه دیگری وارد می‌شود (یا کش پاک می‌شود، یا نسخهٔ Published را باز می‌کند)، API همه را بازمی‌گرداند و کارت‌ها دوباره ظاهر می‌شوند.
+ویدیوهای generate شده و عکس‌های آپلودی فقط برای ساختن Final Film وجود دارند. به محض اینکه Final Film با موفقیت ساخته شد، همه‌ی منابع History (jobها، video assets، عکس‌های آپلودی) به‌طور **دائمی** از سرور پاک می‌شوند و فقط فیلم merged در Library باقی می‌ماند.
 
-حذف تکی ویدیو از قبل سرور را صدا می‌زند (`jobOrchestratorGateway.deleteJob`)، اما حذف تکی تصویر فقط `deleted_at` را در DB ست می‌کند و **فایل Storage باقی می‌ماند**. Start Over هم هیچ‌کدام را پاک نمی‌کند.
+# آیا الان این اتفاق می‌افتد؟
 
-## هدف
+**خیر.** الان:
+- وقتی ویدیو generate می‌شود → در `generator_generation_jobs` + `generator_video_assets` + storage ذخیره می‌شود (دائمی)
+- وقتی عکس آپلود می‌شود → در `generator_user_images` + bucket `user-images` ذخیره می‌شود (دائمی)
+- وقتی Final Film زده می‌شود → فقط فیلم merged به `merged-videos` آپلود می‌شود، اما **هیچ‌کدام از منابع پاک نمی‌شوند**
 
-«Delete» در هر کارت و «Start Over» باید حذف واقعی، per-user و امن انجام دهند: هم ردیف DB (یا soft-delete با `deleted_at`) و هم فایل Storage. هیچ مخفی‌سازی صرفاً محلی باقی نماند.
+نتیجه: همه‌ی ویدیوها و عکس‌های قبلی روی سرور باقی می‌مانند و در device دیگر دوباره ظاهر می‌شوند — دقیقاً همان باگ.
 
-## تغییرات
+# پلن اصلاح
 
-### ۱) Backend — حذف واقعی تصاویر کاربر
+## ۱. Server-side purge بعد از Final Film موفق
 
-ایجاد RPC جدید `generator_delete_user_image(_user_id uuid, _image_id uuid) RETURNS text` که:
-- مالکیت را چک می‌کند، وگرنه exception.
-- `deleted_at = now()` ست می‌کند.
-- مقدار `storage_path` را برمی‌گرداند تا edge function فایل را از باکت `user-images` حذف کند.
+در تابع `handleMergeAllVideos` در `DashboardPage.tsx`، بعد از اینکه فیلم merged با موفقیت آپلود و در Library ثبت شد، یک مرحله‌ی purge اضافه می‌شود:
 
-ایجاد edge function `images-delete` (با verify_jwt در کد، الگوی `jobs-delete`):
-- ورودی: `{ imageId: uuid }`.
-- JWT را authenticate می‌کند.
-- RPC بالا را با service-role می‌زند، سپس فایل برگشتی را با service client از `user-images` حذف می‌کند.
-- بازگشت: `{ ok: true, requestId }`.
+```text
+Merge succeeds
+   ↓
+Upload merged.mp4 to merged-videos bucket
+   ↓
+Add to Library (approvedIds + mergedEntries)
+   ↓
+[NEW] Purge all source jobs from server   →  jobs-delete edge function
+[NEW] Purge all uploaded images from server → images-delete edge function
+   ↓
+Clear generatedVideos + userImages from UI
+```
 
-افزودن متد `deleteUserImage(imageId)` به `src/modules/generator-ui/gateway.ts` (یا یک ماژول مناسب) که این endpoint را صدا می‌زند.
+استفاده از `Promise.allSettled` تا اگر یکی fail شد بقیه ادامه دهند. فایل‌های storage مرتبط با jobها و عکس‌ها هم پاک می‌شوند (همان مسیر `jobs-delete` و `images-delete` که قبلاً ساختیم).
 
-### ۲) Backend — تقویت `generator_delete_job` و `jobs-delete`
+## ۲. حفاظت‌های لازم
 
-تابع DB از قبل soft-delete می‌کند و مسیرهای Storage را برمی‌گرداند؛ مطمئن می‌شویم edge function `jobs-delete` فایل‌ها را از باکت‌های مربوطه حذف می‌کند (در صورت کمبود، اضافه می‌شود). تغییر سطح schema لازم نیست.
+- **Atomic از دید کاربر**: Purge فقط بعد از تأیید آپلود موفق merged.mp4 اجرا شود. اگر merge fail شد، هیچ چیزی پاک نمی‌شود.
+- **Library امن**: فیلم‌های قبلی Library (در `merged-videos` bucket) دست نخورده می‌مانند — فقط منابع History پاک می‌شوند.
+- **Frame URLs**: اگر job ای از first/last frame استفاده می‌کرد، آن فریم‌ها در `wan-frames` bucket هستند — بررسی شود که آیا `jobs-delete` آن‌ها را هم پاک می‌کند یا نه.
+- **In-flight jobs**: اگر jobای هنوز `processing` است و کاربر Final Film می‌زند، آن job purge نشود (یا کلاً Final Film تا تکمیل همه‌ی jobها disable باشد — که الان همین‌طور است).
 
-### ۳) Frontend — `DashboardPage.tsx`
+## ۳. تغییرات کد
 
-- حذف کامل سیستم `deletedIds` + `deletedStorageKey` + `persistDeleted` و همهٔ فیلترهای `!deletedIds.has(...)`. منبع حقیقت برای نمایش، نتیجهٔ سرور است که از قبل با `deleted_at IS NULL` فیلتر می‌شود.
-- `handleDeleteVideo`: همان مسیر فعلی سرور (`jobOrchestratorGateway.deleteJob`)؛ فقط بدون افزودن به `deletedIds` — بلکه آیتم را پس از موفقیت از state جاری حذف می‌کند و در صورت خطا rollback می‌کند.
-- `handleDeleteUserImage`: به‌جای آپدیت مستقیم Supabase، edge function جدید `images-delete` صدا زده شود تا هم DB و هم Storage پاک شوند؛ optimistic update با rollback روی خطا.
-- `handleStartOver`:
-  - دیالوگ تأیید فعلی حفظ شود (متن به‌روز شود: «این عمل دائمی است و قابل بازگشت نیست»).
-  - برای هر `generatedVideo` غیر-merged → `deleteJob(id)` به‌صورت موازی با `Promise.allSettled`.
-  - برای هر `mergedEntry` → حذف فایل از باکت `merged-videos` (مسیر فعلی).
-  - برای هر `userImage` → `deleteUserImage(id)` با `Promise.allSettled`.
-  - پس از پایان: `setGeneratedVideos([])`, `setUserImages([])`, `setMergedEntries([])`, `setApprovedIds(new Set())`, `setTransitions({})`, `setManualOrder(null)` و پاک‌سازی کلیدهای localStorage مرتبط (approved, merged, transitions, pendingEnd/Start, deleted).
-  - در صورت خطای جزئی، پیام خلاصه به کاربر نشان داده شود اما رفرش لیست از سرور هم اجرا شود تا UI با وضعیت واقعی هم‌سو شود.
-- پاک‌سازی کلید `deleted-videos:<userId>` از localStorage در mount (مهاجرت یک‌بارهٔ کاربران فعلی).
+| فایل | تغییر |
+|------|------|
+| `src/modules/generator-ui/pages/DashboardPage.tsx` | افزودن مرحله‌ی purge در انتهای موفقیت‌آمیز `handleMergeAllVideos`؛ optimistic clear کردن `generatedVideos` و `userImages` بعد از purge |
+| `supabase/functions/jobs-delete/index.ts` (در صورت نیاز) | اطمینان از پاک شدن first/last frame URLs از `wan-frames` bucket |
 
-### ۴) امنیت
+## ۴. خارج از اسکوپ این پلن (اما توصیه می‌شود بعداً)
 
-- همهٔ مسیرهای حذف از طریق RPC با `SECURITY DEFINER` و چک `user_id = auth.uid()` (یا چک صریح در RPC) انجام می‌شود.
-- حذف Storage فقط در edge function با service-role و پس از اعتبارسنجی مالکیت و JWT.
-- RLS موجود (`videos: deny client delete`, `jobs: deny client delete`) دست‌نخورده می‌ماند؛ کلاینت هرگز مستقیم حذف نمی‌کند.
-- ورودی‌ها با Zod اعتبارسنجی می‌شوند.
+- **Library فعلاً local-only است** (`merged-videos:<userId>` در localStorage). یعنی فیلم‌های Library هم در device دیگر دیده نمی‌شوند. این یک مسئله‌ی جداست. اگر می‌خواهید Library واقعاً cross-device باشد، باید یک جدول `library_films` ساخته شود. در پلن جدا.
 
-## خارج از دامنه
+# نتیجه
 
-- بدون تغییر در schema جداول (فقط افزودن یک تابع DB جدید).
-- بدون تغییر در policy‌های RLS.
-- بدون تغییر در صفحات auth یا بخش‌های دیگر اپ.
-
-## بعد از پیاده‌سازی
-
-کاربر باید **Publish → Update** را بزند تا نسخهٔ منتشر شده هم به‌روز شود. پس از آن، Delete و Start Over روی همهٔ دستگاه‌ها دائمی و امن خواهند بود.
+بعد از این تغییر:
+- History کاملاً ephemeral است — فقط تا لحظه‌ی Final Film عمر دارد
+- Final Film تنها مسیر «ذخیره» است
+- هیچ ویدیو یا عکسی روی سرور باقی نمی‌ماند مگر اینکه بخشی از یک Library film شده باشد
+- در device دیگر فقط Library films دیده می‌شوند، نه منابع History
