@@ -491,6 +491,32 @@ export default function DashboardPage() {
     return edited ?? fallback ?? undefined
   }
 
+  // Resolve a CORS-safe URL for the trim dialog whenever it opens.
+  useEffect(() => {
+    let cancelled = false
+    if (!trimmingJobId) {
+      setTrimSrc(null)
+      return
+    }
+    const edited = editedClips[trimmingJobId]?.url
+    if (edited) {
+      setTrimSrc(edited)
+      return
+    }
+    const job = visibleVideos.find((v) => v.id === trimmingJobId)
+    const raw = job?.video?.storage_path
+    if (!raw) {
+      setTrimSrc(null)
+      return
+    }
+    setTrimSrc(null)
+    proxiedVideoUrl(raw)
+      .then((u) => { if (!cancelled) setTrimSrc(u) })
+      .catch(() => { if (!cancelled) setTrimSrc(raw) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trimmingJobId])
+
   const applyTrimToCard = (jobId: string) => async (blob: Blob, newDuration: number) => {
     setEditedClips((prev) => {
       const old = prev[jobId]
