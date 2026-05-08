@@ -322,6 +322,15 @@ export default function DashboardPage() {
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
+  const [previewDismissed, setPreviewDismissed] = useState(false)
+  // Re-open preview whenever a card is explicitly selected.
+  useEffect(() => {
+    if (previewVideoId) setPreviewDismissed(false)
+  }, [previewVideoId])
+  const closePreview = () => {
+    setPreviewVideoId(null)
+    setPreviewDismissed(true)
+  }
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
   const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15>(5)
@@ -876,6 +885,7 @@ export default function DashboardPage() {
           : { kind: 'image', image: found.image }
       }
     }
+    if (previewDismissed) return null
     if (visibleVideos.length > 0) {
       const v =
         visibleVideos.find((video) => video.video?.storage_path) ??
@@ -885,7 +895,7 @@ export default function DashboardPage() {
     const firstImage = displayedClips.find((c) => c.kind === 'image')
     if (firstImage && firstImage.kind === 'image') return { kind: 'image', image: firstImage.image }
     return null
-  }, [displayedClips, previewVideoId, visibleVideos])
+  }, [displayedClips, previewVideoId, previewDismissed, visibleVideos])
 
   // Backwards-compat alias used by existing card highlight + start-frame code paths
   const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
@@ -2292,7 +2302,7 @@ export default function DashboardPage() {
                   />
                   <button
                     type="button"
-                    onClick={() => setPreviewVideoId(null)}
+                    onClick={closePreview}
                     aria-label="Close preview"
                     title="Close preview"
                     className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
@@ -2331,7 +2341,7 @@ export default function DashboardPage() {
               >
                 <button
                   type="button"
-                  onClick={() => setPreviewVideoId(null)}
+                  onClick={closePreview}
                   aria-label="Close preview"
                   title="Close preview"
                   className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
