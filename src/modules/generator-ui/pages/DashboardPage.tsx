@@ -28,6 +28,7 @@ import {
   Pencil,
   Plus,
   RotateCcw,
+  Scissors,
   Sparkles,
   Trash2,
   UserRound,
@@ -77,6 +78,7 @@ import { TransitionPreview } from '@/modules/generator-ui/components/TransitionP
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { mergeVideoUrls, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
+import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
@@ -470,6 +472,33 @@ export default function DashboardPage() {
   const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set())
   const [manualOrder, setManualOrder] = useState<string[] | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [trimmingJobId, setTrimmingJobId] = useState<string | null>(null)
+  const [editedClips, setEditedClips] = useState<Record<string, { url: string; duration: number }>>({})
+
+  // Revoke object URLs on unmount.
+  useEffect(() => {
+    return () => {
+      for (const e of Object.values(editedClips)) {
+        try { URL.revokeObjectURL(e.url) } catch { /* noop */ }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const getCardVideoSrc = (id: string, fallback: string | null | undefined): string | undefined => {
+    const edited = editedClips[id]?.url
+    return edited ?? fallback ?? undefined
+  }
+
+  const applyTrimToCard = (jobId: string) => async (blob: Blob, newDuration: number) => {
+    setEditedClips((prev) => {
+      const old = prev[jobId]
+      if (old) {
+        try { URL.revokeObjectURL(old.url) } catch { /* noop */ }
+      }
+      return { ...prev, [jobId]: { url: URL.createObjectURL(blob), duration: newDuration } }
+    })
+  }
   const [transitions, setTransitions] = useState<Record<string, TransitionId>>({})
   const [mergedEntries, setMergedEntries] = useState<JobDetail[]>([])
   const [isMerging, setIsMerging] = useState(false)
@@ -1850,6 +1879,21 @@ export default function DashboardPage() {
       }}
     >
       {showWelcome && <WelcomeVideoOverlay onClose={dismissWelcome} />}
+      {(() => {
+        if (!trimmingJobId) return null
+        const job = visibleVideos.find((v) => v.id === trimmingJobId)
+        const src = job?.video?.storage_path
+        if (!src) return null
+        return (
+          <ClipTrimmerDialog
+            open
+            onOpenChange={(o) => { if (!o) setTrimmingJobId(null) }}
+            videoUrl={editedClips[trimmingJobId]?.url ?? src}
+            title={job?.input_prompt ?? undefined}
+            onApply={applyTrimToCard(trimmingJobId)}
+          />
+        )
+      })()}
       <div
         className={`pointer-events-none absolute inset-0 border transition duration-200 ${
           isDragging ? 'border-amber-300/40 bg-amber-300/[0.045]' : 'border-transparent'
@@ -2548,7 +2592,7 @@ export default function DashboardPage() {
                       {video.video?.storage_path ? (
                         <video
                           className="h-full w-full max-w-full bg-black object-contain"
-                          src={video.video.storage_path}
+                          src={getCardVideoSrc(video.id, video.video.storage_path)}
                           poster={video.video.thumbnail_url ?? undefined}
                           controls
                           muted
@@ -2632,6 +2676,20 @@ export default function DashboardPage() {
                         >
                           <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
+                        {video.video?.storage_path ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setTrimmingJobId(video.id)
+                            }}
+                            aria-label="Trim clip"
+                            title="Trim clip"
+                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-200"
+                          >
+                            <Scissors className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={(event) => {
@@ -2812,7 +2870,7 @@ export default function DashboardPage() {
                         {video.video?.storage_path ? (
                           <video
                             className="h-full w-full bg-black object-cover"
-                            src={video.video.storage_path}
+                            src={getCardVideoSrc(video.id, video.video.storage_path)}
                             poster={video.video.thumbnail_url ?? undefined}
                             muted
                             playsInline
