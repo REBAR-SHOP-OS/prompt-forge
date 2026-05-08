@@ -2290,6 +2290,15 @@ export default function DashboardPage() {
                     alt="Uploaded reference"
                     className="h-full w-full bg-black object-contain"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setPreviewVideoId(null)}
+                    aria-label="Close preview"
+                    title="Close preview"
+                    className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+                  >
+                    <X className="h-4 w-4" aria-hidden="true" />
+                  </button>
                 </div>
                 <div className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
