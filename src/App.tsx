@@ -5,6 +5,7 @@ import DashboardPage from './modules/generator-ui/pages/DashboardPage'
 import LoginPage from './pages/auth/LoginPage'
 import LoadingScreen from '@/core/ui/LoadingScreen'
 import LoginIntro from '@/components/intro/LoginIntro'
+import RootErrorBoundary from '@/core/ui/RootErrorBoundary'
 
 function Gate() {
   const { session, loading } = useAuth()
@@ -13,6 +14,7 @@ function Gate() {
   useEffect(() => {
     if (!session) return
     try {
+      if (localStorage.getItem('intro_disabled') === '1') return
       if (sessionStorage.getItem('intro_played') !== '1') {
         setShowIntro(true)
       }
@@ -29,6 +31,13 @@ function Gate() {
           try { sessionStorage.setItem('intro_played', '1') } catch { /* ignore */ }
           setShowIntro(false)
         }}
+        onDisableForever={() => {
+          try {
+            localStorage.setItem('intro_disabled', '1')
+            sessionStorage.setItem('intro_played', '1')
+          } catch { /* ignore */ }
+          setShowIntro(false)
+        }}
       />
     )
   }
@@ -37,11 +46,13 @@ function Gate() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <Gate />
-      </AuthProvider>
-    </BrowserRouter>
+    <RootErrorBoundary>
+      <BrowserRouter>
+        <AuthProvider>
+          <Gate />
+        </AuthProvider>
+      </BrowserRouter>
+    </RootErrorBoundary>
   )
 }
 

@@ -4,9 +4,10 @@ import introSrc from '@/assets/intro/login-intro.mp4'
 
 type LoginIntroProps = {
   onFinish: () => void
+  onDisableForever?: () => void
 }
 
-export default function LoginIntro({ onFinish }: LoginIntroProps) {
+export default function LoginIntro({ onFinish, onDisableForever }: LoginIntroProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [muted, setMuted] = useState(true)
 
