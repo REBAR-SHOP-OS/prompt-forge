@@ -1796,7 +1796,11 @@ export default function DashboardPage() {
       const urls: string[] = []
       for (const clip of eligibleClips) {
         if (clip.kind === 'video') {
-          urls.push(await proxiedVideoUrl(clip.job.video!.storage_path as string))
+          // Prefer the locally-edited blob URL when available so Final Film
+          // really stitches the user's Apply-Changes output, not the original.
+          const editedUrl = editedClips[clip.id]?.url
+          const src = editedUrl ?? (await proxiedVideoUrl(clip.job.video!.storage_path as string))
+          urls.push(src)
         } else {
           const seconds = Math.max(1, Math.min(15, clip.image.still_duration_seconds || 3))
           const blob = await imageUrlToClip(clip.image.storage_path, seconds, targetSize)
