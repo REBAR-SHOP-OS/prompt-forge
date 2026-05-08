@@ -91,7 +91,7 @@ Deno.serve(async (req) => {
 
     return jsonResponse({ ...detail, progress_percent: 100, requestId });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "unknown error";
-    return errorResponse("INTERNAL_ERROR", message, 500, requestId);
+    console.error(JSON.stringify({ level: "error", msg: "jobs-create-from-upload failed", error: (err as Error)?.message, requestId }));
+    return errorResponse("INTERNAL_ERROR", "Could not save uploaded video. Please try again.", 500, requestId);
   }
 });

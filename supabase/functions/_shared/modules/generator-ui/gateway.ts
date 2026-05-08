@@ -93,7 +93,7 @@ export const generatorUiGateway = {
           });
           if (rpcErr) {
             logError("delete user image rpc failed", { error: rpcErr.message });
-            return errorResponse("DELETE_FAILED", rpcErr.message, 500, ctx.requestId);
+            return errorResponse("DELETE_FAILED", "Could not delete image. Please try again.", 500, ctx.requestId);
           }
           if (typeof rawPath === "string" && rawPath.length > 0) {
             const path = extractBucketPath(rawPath, USER_IMAGES_BUCKET);
