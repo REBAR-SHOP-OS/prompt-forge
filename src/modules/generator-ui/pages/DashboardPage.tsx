@@ -2038,20 +2038,10 @@ export default function DashboardPage() {
   }
 
   async function handleStartOver() {
-    // Snapshot the merged Final Film artifacts so storage cleanup doesn't
-    // race against state updates. Library/history cards and uploaded images
-    // are intentionally preserved — Start Over only resets the workspace.
-    const mergedToDelete = mergedEntries
-
-    // Wipe the merged Final Film(s) entirely so the preview goes blank
-    // and the FINAL FILM tab disappears.
-    setMergedEntries([])
-    persistMerged([])
-    // Clear approved selections + per-clip transitions + manual ordering.
-    setApprovedIds(new Set())
-    if (approvedStorageKey) {
-      try { window.localStorage.setItem(approvedStorageKey, JSON.stringify([])) } catch { /* ignore */ }
-    }
+    // Library cards (Final Film outputs in mergedEntries + approvedIds) are
+    // the user's permanent saved outputs — Start Over MUST NOT touch them
+    // or their files in storage. Only the working composer/history workspace
+    // is reset here.
     setTransitions({})
     setManualOrder(null)
     // Reset the "applied edits" workspace marker so Final Film starts fresh.
