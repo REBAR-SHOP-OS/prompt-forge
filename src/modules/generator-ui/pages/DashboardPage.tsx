@@ -31,6 +31,7 @@ import {
   Scissors,
   Sparkles,
   Trash2,
+  Upload,
   UserRound,
   X
 } from 'lucide-react'
@@ -623,6 +624,8 @@ export default function DashboardPage() {
   const musicFileInputRef = useRef<HTMLInputElement | null>(null)
   const musicPreviewAudioRef = useRef<HTMLAudioElement | null>(null)
   const musicWaveformRef = useRef<SoundtrackWaveformHandle | null>(null)
+  const uploadVideoInputRef = useRef<HTMLInputElement | null>(null)
+  const [isUploadingVideo, setIsUploadingVideo] = useState(false)
   const [pendingEndAppends, setPendingEndAppends] = useState<Record<string, string>>({})
   const [pendingStartPrepends, setPendingStartPrepends] = useState<Record<string, string>>({})
   const processingEndAppendRef = useRef<Set<string>>(new Set())
@@ -1125,6 +1128,94 @@ export default function DashboardPage() {
       .from('generator_user_images')
       .update({ still_duration_seconds: seconds })
       .eq('id', imageId)
+  }
+
+  // ----- Upload an existing video file as a real History card -----
+  // Mirrors the Generated-video pipeline so the resulting card supports
+  // every existing feature (trim/Apply, delete, drag, transitions, Final
+  // Film, persistence across refresh).
+  async function handleUploadVideoFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!userId) {
+      setVideoColumnMessage('Sign in to upload a video.')
+      return
+    }
+    if (!file.type.startsWith('video/')) {
+      setVideoColumnMessage('Please choose a video file (mp4, webm, mov…).')
+      return
+    }
+    const MAX_BYTES = 200 * 1024 * 1024
+    if (file.size > MAX_BYTES) {
+      setVideoColumnMessage('Video is larger than 200MB. Please choose a smaller file.')
+      return
+    }
+
+    setIsUploadingVideo(true)
+    setVideoColumnMessage(null)
+
+    // Probe duration + intrinsic size from the file in-browser.
+    const probe = await new Promise<{ duration: number; width: number; height: number } | null>((resolve) => {
+      const url = URL.createObjectURL(file)
+      const v = document.createElement('video')
+      v.preload = 'metadata'
+      v.muted = true
+      v.onloadedmetadata = () => {
+        const result = {
+          duration: Number.isFinite(v.duration) ? v.duration : 0,
+          width: v.videoWidth || 0,
+          height: v.videoHeight || 0,
+        }
+        URL.revokeObjectURL(url)
+        resolve(result)
+      }
+      v.onerror = () => { URL.revokeObjectURL(url); resolve(null) }
+      v.src = url
+    })
+
+    let pickedRatio: '16:9' | '1:1' | '9:16' | undefined
+    if (probe && probe.width > 0 && probe.height > 0) {
+      const r = probe.width / probe.height
+      pickedRatio = r > 1.2 ? '16:9' : r < 0.85 ? '9:16' : '1:1'
+    }
+    const durationSeconds = probe && probe.duration > 0 ? Math.round(probe.duration) : undefined
+
+    // Upload to the user-videos bucket inside the user's own folder.
+    const extGuess = (file.name.split('.').pop() || 'mp4').toLowerCase()
+    const ext = /^[a-z0-9]{2,5}$/.test(extGuess) ? extGuess : 'mp4'
+    const path = `${userId}/upload-${Date.now()}-${crypto.randomUUID()}.${ext}`
+    let uploadedPath: string | null = null
+    try {
+      const up = await supabase.storage
+        .from('user-videos')
+        .upload(path, file, { contentType: file.type || 'video/mp4', upsert: false })
+      if (up.error) throw new Error(up.error.message)
+      uploadedPath = path
+      const { data } = supabase.storage.from('user-videos').getPublicUrl(path)
+      const publicUrl = data.publicUrl
+
+      // Persist a real job + asset row server-side so the card shows up
+      // through the same listMyJobs/getJob pipeline as generated videos.
+      const detail = await jobOrchestratorGateway.createUploadedVideoJob({
+        storagePath: publicUrl,
+        durationSeconds,
+        aspectRatio: pickedRatio,
+        prompt: file.name,
+      })
+
+      // Drop into state immediately so the card appears without a refresh.
+      setGeneratedVideos((current) => mergeJob(current, detail))
+    } catch (err) {
+      // Roll back the storage upload if the DB step failed.
+      if (uploadedPath) {
+        try { await supabase.storage.from('user-videos').remove([uploadedPath]) } catch { /* ignore */ }
+      }
+      const msg = err instanceof Error ? err.message : 'Upload failed'
+      setVideoColumnMessage(`Could not upload video: ${msg}`)
+    } finally {
+      setIsUploadingVideo(false)
+    }
   }
 
 
@@ -2136,6 +2227,37 @@ export default function DashboardPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Upload an existing video file as a real History card. The card uses the
+          same backend pipeline as generated videos so it inherits every feature
+          (trim/Apply, delete, drag, transitions, Final Film, persistence). */}
+      <input
+        ref={uploadVideoInputRef}
+        type="file"
+        accept="video/*"
+        className="hidden"
+        onChange={handleUploadVideoFile}
+      />
+      <button
+        type="button"
+        onClick={() => uploadVideoInputRef.current?.click()}
+        disabled={isUploadingVideo}
+        className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-sky-300/30 hover:bg-sky-300/[0.06] hover:text-sky-100 disabled:cursor-not-allowed disabled:opacity-40"
+        aria-label="Upload a video file as a new card"
+        title="Upload a video file (mp4, webm, mov…) as a new History card"
+      >
+        {isUploadingVideo ? (
+          <>
+            <LoaderCircle className="h-[14px] w-[14px] animate-spin" aria-hidden="true" />
+            <span>Uploading…</span>
+          </>
+        ) : (
+          <>
+            <Upload className="h-[14px] w-[14px]" aria-hidden="true" />
+            <span>Upload</span>
+          </>
+        )}
+      </button>
 
       <button
         type="button"
