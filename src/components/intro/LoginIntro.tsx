@@ -81,6 +81,16 @@ export default function LoginIntro({ onFinish, onDisableForever }: LoginIntroPro
         <span>Skip</span>
         <SkipForward className="h-3.5 w-3.5" aria-hidden="true" />
       </button>
+
+      {onDisableForever && (
+        <button
+          type="button"
+          onClick={onDisableForever}
+          className="absolute bottom-6 right-6 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.2em] text-white/60 backdrop-blur transition hover:border-white/30 hover:text-white/90"
+        >
+          Don't show again
+        </button>
+      )}
     </div>
   )
 }
