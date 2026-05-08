@@ -1909,13 +1909,13 @@ export default function DashboardPage() {
       {(() => {
         if (!trimmingJobId) return null
         const job = visibleVideos.find((v) => v.id === trimmingJobId)
-        const src = job?.video?.storage_path
-        if (!src) return null
+        if (!job?.video?.storage_path) return null
+        if (!trimSrc) return null
         return (
           <ClipTrimmerDialog
             open
-            onOpenChange={(o) => { if (!o) setTrimmingJobId(null) }}
-            videoUrl={editedClips[trimmingJobId]?.url ?? src}
+            onOpenChange={(o) => { if (!o) { setTrimmingJobId(null); setTrimSrc(null) } }}
+            videoUrl={trimSrc}
             title={job?.input_prompt ?? undefined}
             onApply={applyTrimToCard(trimmingJobId)}
           />
