@@ -1,41 +1,67 @@
-## مشکل
+# رفع باگ History — حذف واقعی و امن
 
-نسخه منتشرشده در `aura-clip-studio.lovable.app` کاملاً سیاه است. در کنسول مرورگر این خطا رخ می‌دهد:
+## ریشه باگ
 
-```
-Uncaught Error: Missing Supabase environment variables.
-Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY before starting the app.
-```
+در `src/modules/generator-ui/pages/DashboardPage.tsx` یک مجموعهٔ محلی به نام `deletedIds` در `localStorage` با کلید `deleted-videos:<userId>` نگهداری می‌شود. دکمهٔ **Start Over** (خط ۱۸۳۹) و بخشی از مسیرهای پاکسازی، فقط آیتم‌ها را به این مجموعه اضافه می‌کنند و **هیچ تماسی با سرور نمی‌گیرند**. در نتیجه:
 
-این خطا در زمان **بارگذاری ماژول** پرتاب می‌شود (در `src/integrations/supabase/client.ts`) و چون قبل از رندر شدن React اتفاق می‌افتد، کل برنامه crash می‌کند و فقط `<body>` خالی با پس‌زمینه تیره باقی می‌ماند.
+- روی همان مرورگر، آیتم‌ها مخفی می‌مانند.
+- اما ردیف‌های `generator_generation_jobs`، `generator_video_assets` و `generator_user_images` و فایل‌های Storage همگی روی سرور **سالم باقی می‌مانند**.
+- وقتی کاربر از مرورگر/دستگاه دیگری وارد می‌شود (یا کش پاک می‌شود، یا نسخهٔ Published را باز می‌کند)، API همه را بازمی‌گرداند و کارت‌ها دوباره ظاهر می‌شوند.
 
-## ریشه‌ی فنی
+حذف تکی ویدیو از قبل سرور را صدا می‌زند (`jobOrchestratorGateway.deleteJob`)، اما حذف تکی تصویر فقط `deleted_at` را در DB ست می‌کند و **فایل Storage باقی می‌ماند**. Start Over هم هیچ‌کدام را پاک نمی‌کند.
 
-فایل `src/integrations/supabase/client.ts` که باید **به‌صورت خودکار با مقادیر هاردکد شده** تولید شود، به نسخه‌ای تغییر داده شده که مقادیر را از `import.meta.env.VITE_SUPABASE_URL` و `VITE_SUPABASE_PUBLISHABLE_KEY` می‌خواند.
+## هدف
 
-- در محیط Sandbox پیش‌نمایش، فایل `.env` وجود دارد و مقادیر در دسترس‌اند → کار می‌کند.
-- در زمان **بیلد production برای Publish**، آن `.env` همراه نیست؛ Vite مقادیر را به‌جای متغیرها `undefined` می‌گذارد → `throw` می‌کند → صفحه سفید/سیاه.
+«Delete» در هر کارت و «Start Over» باید حذف واقعی، per-user و امن انجام دهند: هم ردیف DB (یا soft-delete با `deleted_at`) و هم فایل Storage. هیچ مخفی‌سازی صرفاً محلی باقی نماند.
 
-علاوه بر آن، `src/core/api/client.ts` و `src/modules/generator-ui/lib/proxiedVideoUrl.ts` نیز برای ساخت URL توابع از `VITE_SUPABASE_PROJECT_ID` استفاده می‌کنند که در production می‌شود `undefined` و باعث می‌شود همه فراخوانی‌های edge function به آدرس `https://undefined.supabase.co/...` بروند.
+## تغییرات
 
-## راه‌حل اصولی
+### ۱) Backend — حذف واقعی تصاویر کاربر
 
-تمام مقادیر اتصال Supabase باید به صورت ثابت در سورس قرار گیرند (دقیقاً همان‌طور که قالب رسمی Lovable Cloud انجام می‌دهد). مقادیر anon key/URL از نظر امنیتی publishable هستند و قرار دادن‌شان در سورس استاندارد است.
+ایجاد RPC جدید `generator_delete_user_image(_user_id uuid, _image_id uuid) RETURNS text` که:
+- مالکیت را چک می‌کند، وگرنه exception.
+- `deleted_at = now()` ست می‌کند.
+- مقدار `storage_path` را برمی‌گرداند تا edge function فایل را از باکت `user-images` حذف کند.
 
-### تغییرات
+ایجاد edge function `images-delete` (با verify_jwt در کد، الگوی `jobs-delete`):
+- ورودی: `{ imageId: uuid }`.
+- JWT را authenticate می‌کند.
+- RPC بالا را با service-role می‌زند، سپس فایل برگشتی را با service client از `user-images` حذف می‌کند.
+- بازگشت: `{ ok: true, requestId }`.
 
-1. **`src/integrations/supabase/client.ts`** — بازگرداندن به فرم خودکار با مقادیر هاردکد (URL پروژه و anon key از تنظیمات Lovable Cloud). حذف بلاک `throw`.
+افزودن متد `deleteUserImage(imageId)` به `src/modules/generator-ui/gateway.ts` (یا یک ماژول مناسب) که این endpoint را صدا می‌زند.
 
-2. **`src/core/api/client.ts`** — جایگزینی `import.meta.env.VITE_SUPABASE_PROJECT_ID` با مقدار ثابت `sacxoanuyetjfrfllkzx` تا مسیر `FUNCTIONS_BASE` همیشه معتبر باشد.
+### ۲) Backend — تقویت `generator_delete_job` و `jobs-delete`
 
-3. **`src/modules/generator-ui/lib/proxiedVideoUrl.ts`** — همان جایگزینی برای `PROJECT_ID` و `OWN_SUPABASE_HOST`.
+تابع DB از قبل soft-delete می‌کند و مسیرهای Storage را برمی‌گرداند؛ مطمئن می‌شویم edge function `jobs-delete` فایل‌ها را از باکت‌های مربوطه حذف می‌کند (در صورت کمبود، اضافه می‌شود). تغییر سطح schema لازم نیست.
 
-### اعتبارسنجی
+### ۳) Frontend — `DashboardPage.tsx`
 
-- اطمینان از اینکه پس از تغییر، فایل `client.ts` دیگر throw نمی‌کند.
-- بررسی این که در نسخه پیش‌نمایش هم همچنان لاگین/داشبورد کار کند.
-- پیشنهاد به کاربر برای زدن دکمه **Publish → Update** تا بیلد جدید جایگزین نسخه شکسته شود.
+- حذف کامل سیستم `deletedIds` + `deletedStorageKey` + `persistDeleted` و همهٔ فیلترهای `!deletedIds.has(...)`. منبع حقیقت برای نمایش، نتیجهٔ سرور است که از قبل با `deleted_at IS NULL` فیلتر می‌شود.
+- `handleDeleteVideo`: همان مسیر فعلی سرور (`jobOrchestratorGateway.deleteJob`)؛ فقط بدون افزودن به `deletedIds` — بلکه آیتم را پس از موفقیت از state جاری حذف می‌کند و در صورت خطا rollback می‌کند.
+- `handleDeleteUserImage`: به‌جای آپدیت مستقیم Supabase، edge function جدید `images-delete` صدا زده شود تا هم DB و هم Storage پاک شوند؛ optimistic update با rollback روی خطا.
+- `handleStartOver`:
+  - دیالوگ تأیید فعلی حفظ شود (متن به‌روز شود: «این عمل دائمی است و قابل بازگشت نیست»).
+  - برای هر `generatedVideo` غیر-merged → `deleteJob(id)` به‌صورت موازی با `Promise.allSettled`.
+  - برای هر `mergedEntry` → حذف فایل از باکت `merged-videos` (مسیر فعلی).
+  - برای هر `userImage` → `deleteUserImage(id)` با `Promise.allSettled`.
+  - پس از پایان: `setGeneratedVideos([])`, `setUserImages([])`, `setMergedEntries([])`, `setApprovedIds(new Set())`, `setTransitions({})`, `setManualOrder(null)` و پاک‌سازی کلیدهای localStorage مرتبط (approved, merged, transitions, pendingEnd/Start, deleted).
+  - در صورت خطای جزئی، پیام خلاصه به کاربر نشان داده شود اما رفرش لیست از سرور هم اجرا شود تا UI با وضعیت واقعی هم‌سو شود.
+- پاک‌سازی کلید `deleted-videos:<userId>` از localStorage در mount (مهاجرت یک‌بارهٔ کاربران فعلی).
 
-## محدوده
+### ۴) امنیت
 
-تغییرات فقط در سه فایل بالا انجام می‌شود؛ هیچ تغییری در منطق بیزنس، schema، یا edge functions اعمال نمی‌شود.
+- همهٔ مسیرهای حذف از طریق RPC با `SECURITY DEFINER` و چک `user_id = auth.uid()` (یا چک صریح در RPC) انجام می‌شود.
+- حذف Storage فقط در edge function با service-role و پس از اعتبارسنجی مالکیت و JWT.
+- RLS موجود (`videos: deny client delete`, `jobs: deny client delete`) دست‌نخورده می‌ماند؛ کلاینت هرگز مستقیم حذف نمی‌کند.
+- ورودی‌ها با Zod اعتبارسنجی می‌شوند.
+
+## خارج از دامنه
+
+- بدون تغییر در schema جداول (فقط افزودن یک تابع DB جدید).
+- بدون تغییر در policy‌های RLS.
+- بدون تغییر در صفحات auth یا بخش‌های دیگر اپ.
+
+## بعد از پیاده‌سازی
+
+کاربر باید **Publish → Update** را بزند تا نسخهٔ منتشر شده هم به‌روز شود. پس از آن، Delete و Start Over روی همهٔ دستگاه‌ها دائمی و امن خواهند بود.
