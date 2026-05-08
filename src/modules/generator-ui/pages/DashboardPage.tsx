@@ -900,6 +900,22 @@ export default function DashboardPage() {
   // Backwards-compat alias used by existing card highlight + start-frame code paths
   const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
 
+  // Live-tick the preview progress so the percentage advances ~1% at a time
+  // while the job is still rendering. The pct value is recomputed from elapsed
+  // time inside getJobProgressPercent on each re-render.
+  const [, setProgressTick] = useState(0)
+  const previewRenderingJobId =
+    previewItem?.kind === 'video' &&
+    (normalizeStatus(previewItem.job.status) === 'pending' ||
+      normalizeStatus(previewItem.job.status) === 'processing')
+      ? previewItem.job.id
+      : null
+  useEffect(() => {
+    if (!previewRenderingJobId) return
+    const id = window.setInterval(() => setProgressTick((n) => n + 1), 1500)
+    return () => window.clearInterval(id)
+  }, [previewRenderingJobId])
+
   const emptyStateLabel = useMemo(() => {
     if (isDragging) {
       return 'Drop context into the forge'
