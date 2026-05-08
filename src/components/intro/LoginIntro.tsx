@@ -21,6 +21,23 @@ export default function LoginIntro({ onFinish }: LoginIntroProps) {
     return () => window.removeEventListener('keydown', onKey)
   }, [onFinish])
 
+  // Safety net: if the video never starts (autoplay blocked, missing/broken file,
+  // slow network), don't trap the user on a black screen — auto-skip after 6s.
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v) return
+    let started = false
+    const onPlaying = () => { started = true }
+    v.addEventListener('playing', onPlaying)
+    const timeoutId = window.setTimeout(() => {
+      if (!started) onFinish()
+    }, 6000)
+    return () => {
+      v.removeEventListener('playing', onPlaying)
+      window.clearTimeout(timeoutId)
+    }
+  }, [onFinish])
+
   function toggleMute() {
     const v = videoRef.current
     if (!v) return
@@ -40,6 +57,7 @@ export default function LoginIntro({ onFinish }: LoginIntroProps) {
         muted
         playsInline
         onEnded={onFinish}
+        onError={onFinish}
         className="h-full w-full object-contain"
       />
 

@@ -1,83 +1,46 @@
+## مشکل
 
-## هدف
+گاهی صفحه اپ خالی/سیاه باقی می‌ماند و لود نمی‌شود. بعد از بررسی کد و کنسول مرورگر، صفحه واقعاً crash نمی‌کند (هیچ خطای error در console نیست — فقط warning های postMessage مربوط به ادیتور لاوبل که بی‌خطرند). یعنی این مشکل به لاوبل ربطی ندارد و در منطق خود اپ است.
 
-حذف کامل سیستم اعتبار (credit) از اپلیکیشن چون استفاده داخلی شرکت است و نیازی به محدود کردن کاربران نیست.
+سه نقطه‌ی محتمل برای «گیر کردن» پیدا شد:
 
-## رویکرد
+### ۱. `LoadingScreen` بی‌نهایت در `AuthProvider`
+در `src/core/auth/AuthProvider.tsx`، مقدار `loading` فقط وقتی `false` می‌شود که `supabase.auth.getSession()` یا `refreshProfile()` (که `/me` را صدا می‌زند) برگردد. اگر شبکه کند باشد، edge function `me` کند پاسخ دهد، یا اصلاً پاسخ ندهد، صفحه برای همیشه روی LoadingScreen گیر می‌کند. هیچ timeout یا fallback ای وجود ندارد.
 
-به جای حذف فیزیکی جداول (که ریسک شکستن کد دارد)، از روش **«غیرفعال‌سازی منطقی»** استفاده می‌کنیم:
-- بررسی موجودی credit در دیتابیس **حذف می‌شود**
-- نمایش credit در UI **حذف می‌شود**
-- جداول credit **باقی می‌مانند** (برای صورت نیاز در آینده، و جلوگیری از شکستن لاگ‌های قدیمی)
+### ۲. `LoginIntro` گیر کننده
+در `src/components/intro/LoginIntro.tsx`، اگر ویدیوی اینترو (`@/assets/intro/login-intro.mp4`) بارگذاری نشود، autoplay توسط مرورگر بلاک شود، یا فایل خراب باشد، event `onEnded` هرگز اجرا نمی‌شود → صفحه‌ی سیاه کامل می‌بیند کاربر. دکمه Skip هست اما کاربر فکر می‌کند صفحه لود نشده.
 
-این کم‌ریسک‌ترین و قابل بازگشت‌ترین راه است.
+علاوه بر این، چون فلگ `intro_played` در `sessionStorage` ذخیره می‌شود (نه `localStorage`)، در هر تب جدید یا بعد از بستن مرورگر، اینترو دوباره پخش می‌شود — این هم می‌تواند حس «هر بار باید صبر کنم» را به کاربر بدهد.
+
+### ۳. درخواست همزمان دوبل به `/me`
+هم `onAuthStateChange` و هم `getSession().then` هنگام لود اولیه `refreshProfile()` را صدا می‌زنند → دو بار /me فراخوانی می‌شود. باعث crash نیست، ولی غیرضروری است.
 
 ---
 
-## تغییرات
+## تغییرات پیشنهادی
 
-### ۱. دیتابیس (Migration)
+### الف) `src/core/auth/AuthProvider.tsx` — اضافه کردن timeout به loading
+- یک `setTimeout` ۸ ثانیه‌ای کنار `getSession()` بگذاریم: اگر تا ۸ ثانیه پاسخ نیامد، `setLoading(false)` کنیم تا حداقل LoginPage یا UI نمایان شود به جای صفحه‌ی سیاه.
+- جلوگیری از فراخوانی همزمان `refreshProfile` با یک flag ساده.
 
-**الف) تغییر تابع `generator_start_job`:**
-- حذف بررسی `IF _balance < _debit THEN RAISE 'insufficient credits'`
-- حذف کسر `credits_balance`
-- حذف ثبت `billing_credit_transactions`
-- فقط job را ایجاد می‌کند
+### ب) `src/components/intro/LoginIntro.tsx` — مقاوم‌سازی
+- اضافه کردن `onError` روی تگ `<video>` که اگر ویدیو لود نشد، `onFinish()` صدا زده شود.
+- اضافه کردن `onCanPlay` با fallback: اگر تا ۲ ثانیه ویدیو شروع به پخش نکرد (autoplay block)، `onFinish()` صدا زده شود.
+- اختیاری: تغییر `sessionStorage` به `localStorage` تا اینترو فقط یک بار در عمر مرورگر پخش شود (اگر کاربر تأیید کند).
 
-**ب) تغییر تابع `generator_fail_job` (اگر هست):**
-- حذف منطق refund
-
-### ۲. Backend (Edge Functions)
-
-**`supabase/functions/_shared/modules/job-orchestrator/gateway.ts`:**
-- حذف منطق `INSUFFICIENT_CREDITS` (دیگر هرگز رخ نمی‌دهد)
-- حذف پارامتر `estimatedCost`
-
-**`supabase/functions/_shared/modules/job-orchestrator/service.ts`:**
-- حذف فیلد `estimatedCost` از `createJob`
-
-**`supabase/functions/_shared/modules/external-api-adapter/service.ts`:**
-- حذف محاسبه `estimatedCost` از `resolveRoute` (یا برگرداندن صفر)
-
-### ۳. Frontend
-
-**`src/modules/job-orchestrator/gateway.ts`:**
-- حذف منطق `SoftCreateJobError` و چک `INSUFFICIENT_CREDITS`
-
-**`src/modules/generator-ui/pages/DashboardPage.tsx`:**
-- حذف پیام خطای credit
-- حذف هر نمایش موجودی credit در dashboard
-
-**`src/core/ui/UserBadge.tsx`:**
-- حذف نمایش `{profile.credits_balance} credits`
-
-**`src/core/api/types.ts`:**
-- حذف فیلد `credits_balance` از type `Me` (اختیاری، می‌توان نگه داشت)
-
-**`src/modules/credit-management/`:**
-- این ماژول می‌تواند کامل حذف شود یا غیرفعال بماند
+### ج) (اختیاری) نمایش پیام در LoadingScreen بعد از ۵ ثانیه
+- اگر لودینگ بیش از ۵ ثانیه طول کشید، یک متن مثل «در حال اتصال به سرور…» با دکمه Retry نشان داده شود.
 
 ---
 
 ## آنچه دست نخورده می‌ماند
 
-- جداول `core_user_profiles.credits_balance`، `billing_credit_transactions` (تاریخچه حفظ می‌شود)
-- ساختار auth، roles، storage، و سایر بخش‌های اپ
-- ادمین همچنان می‌تواند در آینده credit بدهد اگر خواست
+- منطق احراز هویت، RLS، edge function ها
+- جریان login/logout
+- استایل‌ها و ظاهر کلی
 
 ---
 
-## نتیجه
+## سؤال قبل از اجرا
 
-پس از این تغییرات:
-- هر کاربر می‌تواند **بی‌نهایت فیلم** بسازد
-- هیچ خطای 402 یا "insufficient credits" دیگر رخ نمی‌دهد
-- UI تمیزتر می‌شود (بدون credit badge)
-- هزینه‌های واقعی Alibaba DashScope مستقیم از API key شما کسر می‌شود (که الان هم همینطور است)
-
----
-
-## یادآوری مهم
-
-⚠️ چون فیلم‌سازی هزینه واقعی روی **Alibaba DashScope** دارد، با حذف credit، هیچ محدودیتی در سمت اپ نیست. اگر کاربری زیاد فیلم بسازد، هزینه آن از حساب DashScope شما کسر می‌شود. چون اپ داخلی شرکت است این مشکلی ندارد، فقط آگاه باشید.
-
+آیا تمایل دارید فلگ `intro_played` را به `localStorage` تغییر دهیم تا اینترو فقط یک بار در عمر مرورگر پخش شود؟ یا همان `sessionStorage` بماند و فقط مقاوم‌سازی شود؟
