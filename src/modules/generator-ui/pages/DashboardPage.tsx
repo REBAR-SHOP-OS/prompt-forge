@@ -515,6 +515,33 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  // Job ids hidden from the right-side HISTORY panel after Start Over.
+  // Persisted per-user so refresh keeps the workspace clean. Library is NOT
+  // affected — it reads from `visibleVideos` directly so approved/final-film
+  // cards stay visible there.
+  const [workspaceHiddenJobIds, setWorkspaceHiddenJobIds] = useState<Set<string>>(new Set())
+  const workspaceHiddenJobIdsKey = userId ? `workspace-hidden-jobs:${userId}` : null
+
+  useEffect(() => {
+    if (!workspaceHiddenJobIdsKey) {
+      setWorkspaceHiddenJobIds(new Set())
+      return
+    }
+    try {
+      const raw = window.localStorage.getItem(workspaceHiddenJobIdsKey)
+      setWorkspaceHiddenJobIds(raw ? new Set(JSON.parse(raw) as string[]) : new Set())
+    } catch {
+      setWorkspaceHiddenJobIds(new Set())
+    }
+  }, [workspaceHiddenJobIdsKey])
+
+  function persistWorkspaceHiddenJobIds(next: Set<string>) {
+    if (!workspaceHiddenJobIdsKey) return
+    try {
+      window.localStorage.setItem(workspaceHiddenJobIdsKey, JSON.stringify(Array.from(next)))
+    } catch { /* ignore */ }
+  }
+
   // Revoke object URLs on unmount.
   useEffect(() => {
     return () => {
