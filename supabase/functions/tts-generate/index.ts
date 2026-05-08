@@ -1,0 +1,239 @@
+// Gemini TTS edge function
+// Calls Google AI Studio (Gemini 2.5 Flash Preview TTS) and returns base64 WAV.
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type',
+}
+
+type Gender = 'female' | 'male'
+type Tone =
+  | 'advertising'
+  | 'excited'
+  | 'calm'
+  | 'narrative'
+  | 'friendly'
+  | 'serious'
+
+// Prebuilt Gemini voices. See: https://ai.google.dev/gemini-api/docs/speech-generation
+const VOICE_MAP: Record<Gender, Record<Tone, string>> = {
+  female: {
+    advertising: 'Leda',
+    excited: 'Kore',
+    calm: 'Aoede',
+    narrative: 'Callirrhoe',
+    friendly: 'Autonoe',
+    serious: 'Despina',
+  },
+  male: {
+    advertising: 'Puck',
+    excited: 'Fenrir',
+    calm: 'Charon',
+    narrative: 'Algieba',
+    friendly: 'Achird',
+    serious: 'Orus',
+  },
+}
+
+const STYLE_INSTRUCTION: Record<Tone, string> = {
+  advertising:
+    'Say the following in an upbeat, persuasive advertising voice with energy and excitement',
+  excited: 'Say the following enthusiastically and with high energy',
+  calm: 'Say the following in a calm, soothing and relaxed tone',
+  narrative: 'Say the following as a clear, engaging narrator',
+  friendly: 'Say the following in a warm, friendly, conversational tone',
+  serious: 'Say the following in a serious, authoritative tone',
+}
+
+function isGender(v: unknown): v is Gender {
+  return v === 'female' || v === 'male'
+}
+function isTone(v: unknown): v is Tone {
+  return (
+    v === 'advertising' ||
+    v === 'excited' ||
+    v === 'calm' ||
+    v === 'narrative' ||
+    v === 'friendly' ||
+    v === 'serious'
+  )
+}
+
+// Build a WAV file (PCM 16-bit) from raw PCM bytes.
+function pcmToWav(pcm: Uint8Array, sampleRate = 24000, channels = 1): Uint8Array {
+  const bitsPerSample = 16
+  const byteRate = (sampleRate * channels * bitsPerSample) / 8
+  const blockAlign = (channels * bitsPerSample) / 8
+  const dataSize = pcm.byteLength
+  const buffer = new ArrayBuffer(44 + dataSize)
+  const view = new DataView(buffer)
+  const writeStr = (off: number, s: string) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i))
+  }
+  writeStr(0, 'RIFF')
+  view.setUint32(4, 36 + dataSize, true)
+  writeStr(8, 'WAVE')
+  writeStr(12, 'fmt ')
+  view.setUint32(16, 16, true)
+  view.setUint16(20, 1, true) // PCM
+  view.setUint16(22, channels, true)
+  view.setUint32(24, sampleRate, true)
+  view.setUint32(28, byteRate, true)
+  view.setUint16(32, blockAlign, true)
+  view.setUint16(34, bitsPerSample, true)
+  writeStr(36, 'data')
+  view.setUint32(40, dataSize, true)
+  new Uint8Array(buffer, 44).set(pcm)
+  return new Uint8Array(buffer)
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64)
+  const out = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+  return out
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + chunk))
+  }
+  return btoa(bin)
+}
+
+// Try to parse a sample rate hint from a mimeType like
+// "audio/L16;codec=pcm;rate=24000".
+function parseRateFromMime(mime: string | undefined): number {
+  if (!mime) return 24000
+  const m = /rate=(\d+)/i.exec(mime)
+  return m ? parseInt(m[1], 10) || 24000 : 24000
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders })
+  }
+
+  try {
+    const apiKey = Deno.env.get('GEMINI_API_KEY')
+    if (!apiKey) {
+      return new Response(
+        JSON.stringify({ error: 'GEMINI_API_KEY is not configured' }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
+    const body = await req.json().catch(() => null) as
+      | { text?: string; gender?: string; tone?: string }
+      | null
+    if (!body) {
+      return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const text = (body.text || '').trim()
+    const gender: Gender = isGender(body.gender) ? body.gender : 'female'
+    const tone: Tone = isTone(body.tone) ? body.tone : 'narrative'
+
+    if (!text) {
+      return new Response(JSON.stringify({ error: 'text is required' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+    if (text.length > 5000) {
+      return new Response(JSON.stringify({ error: 'text too long (max 5000 chars)' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const voiceName = VOICE_MAP[gender][tone]
+    const styledPrompt = `${STYLE_INSTRUCTION[tone]}: ${text}`
+
+    const url =
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${encodeURIComponent(apiKey)}`
+
+    const geminiResp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: styledPrompt }] }],
+        generationConfig: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName },
+            },
+          },
+        },
+      }),
+    })
+
+    if (!geminiResp.ok) {
+      const errText = await geminiResp.text()
+      console.error('Gemini TTS error', geminiResp.status, errText)
+      const status = geminiResp.status === 429 ? 429 : 502
+      return new Response(
+        JSON.stringify({
+          error: `TTS provider error (${geminiResp.status})`,
+          details: errText.slice(0, 800),
+        }),
+        {
+          status,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
+    const json = await geminiResp.json()
+    const part = json?.candidates?.[0]?.content?.parts?.find(
+      (p: { inlineData?: { data?: string; mimeType?: string } }) => p?.inlineData?.data,
+    )
+    const inline = part?.inlineData
+    if (!inline?.data) {
+      console.error('No audio in response', JSON.stringify(json).slice(0, 500))
+      return new Response(JSON.stringify({ error: 'No audio returned by provider' }), {
+        status: 502,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const pcm = base64ToBytes(inline.data)
+    const sampleRate = parseRateFromMime(inline.mimeType)
+    const wav = pcmToWav(pcm, sampleRate, 1)
+    const wavBase64 = bytesToBase64(wav)
+
+    return new Response(
+      JSON.stringify({
+        audioBase64: wavBase64,
+        mimeType: 'audio/wav',
+        sampleRate,
+        voiceName,
+        gender,
+        tone,
+      }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      },
+    )
+  } catch (e) {
+    console.error('tts-generate error:', e)
+    return new Response(
+      JSON.stringify({ error: e instanceof Error ? e.message : 'Unknown error' }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      },
+    )
+  }
+})
