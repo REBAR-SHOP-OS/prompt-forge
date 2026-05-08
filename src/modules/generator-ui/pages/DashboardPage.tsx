@@ -2696,7 +2696,7 @@ export default function DashboardPage() {
             <History className="h-4 w-4 text-amber-300" aria-hidden="true" />
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">History</p>
             <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
-              {generatedVideos.length}
+              {displayedVideos.length}
             </span>
           </div>
         </div>
