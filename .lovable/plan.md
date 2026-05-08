@@ -1,16 +1,17 @@
-## هدف
-افزودن یک دکمه‌ی ضربدر (X) روی پیش‌نمایش بزرگ مرکزی تا کاربر بتواند پیش‌نمایش فعلی را ببندد و به حالت خالی (empty state با Hammer/Sparkles) برگردد. این دکمه باید روی هر سه نسبت 9:16، 1:1، 16:9 و هم برای پیش‌نمایش ویدیو و هم برای پیش‌نمایش تصویر آپلودی نمایش داده شود.
+## مشکل
+کلیک روی X واقعاً preview را نمی‌بندد چون `previewItem` (خط 870) وقتی `previewVideoId` خالی است به‌صورت fallback اولین ویدیوی موجود را برمی‌گرداند. پس `setPreviewVideoId(null)` فقط انتخاب کارت را پاک می‌کند و بلافاصله fallback نمایش داده می‌شود.
 
-## محل قرارگیری
-گوشه‌ی بالا-راست داخل کادر پیش‌نمایش بزرگ (روی ویدیو/تصویر، absolute positioned)، با پس‌زمینه‌ی نیمه‌شفاف مشکی + حاشیه‌ی سفید کم‌رنگ تا روی هر محتوایی خوانا بماند. اندازه ~32px، آیکن `X` از lucide-react.
+## راه‌حل
+افزودن یک state صریح برای «بسته‌بودن» پیش‌نمایش:
 
-## رفتار
-- کلیک → `setPreviewVideoId(null)` تا preview بسته شود.
-- `aria-label="Close preview"` و `title="Close preview"`.
-- روی هر دو شاخه‌ی رندر (image preview در خط ~2270 و video preview در خط ~2306) اضافه شود.
+1. `const [previewDismissed, setPreviewDismissed] = useState(false)` کنار `previewVideoId`.
+2. در `previewItem` useMemo، در ابتدای تابع: اگر `previewDismissed && !previewVideoId` بود → `return null` (هم fallback ویدیو و هم fallback تصویر را skip می‌کند و empty state نمایش داده می‌شود).
+3. دکمه‌ی X (هر دو محل image/video preview): `setPreviewVideoId(null); setPreviewDismissed(true)`.
+4. هر جا کاربر کارت تاریخچه را انتخاب می‌کند (`setPreviewVideoId(...)` با id واقعی)، همزمان `setPreviewDismissed(false)` صدا زده شود تا preview دوباره باز شود. به‌جای پراکنده‌کردن، می‌توان یک هلپر کوچک `openPreview(id)` تعریف کرد که هر دو را یکجا انجام دهد و در همه‌ی onClick/onKeyDown کارت‌ها استفاده شود.
 
-## فایل‌های متأثر
-- `src/modules/generator-ui/pages/DashboardPage.tsx` — افزودن دکمه در دو محل کادر پیش‌نمایش بزرگ.
+## فایل
+- `src/modules/generator-ui/pages/DashboardPage.tsx`
 
 ## بدون ریسک
-صرفاً افزودن UI؛ منطق state موجود (`previewVideoId`) دست‌نخورده می‌ماند.
+- صرفاً افزودن یک flag و چند فراخوانی setter؛ منطق داده دست‌نخورده.
+- empty state موجود (Hammer/Sparkles) خودش وقتی `previewItem` null باشد رندر می‌شود.
