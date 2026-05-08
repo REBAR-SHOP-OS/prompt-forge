@@ -1747,9 +1747,16 @@ export default function DashboardPage() {
   async function handleMergeAllVideos() {
     if (isMerging) return
     const completedVideoIds = new Set(completedSourceVideos.map((v) => v.id))
-    const eligibleClips = displayedClips.filter((c) =>
+    const baseClips = displayedClips.filter((c) =>
       c.kind === 'image' ? true : completedVideoIds.has(c.id) && c.job.video?.storage_path,
     )
+    // If the user has explicitly applied edits to 2+ video cards, Final Film
+    // only stitches together those edited cards (images stay included as
+    // optional connective tissue). Otherwise fall back to all eligible clips.
+    const editedVideoCount = baseClips.filter((c) => c.kind === 'video' && editedJobIds.has(c.id)).length
+    const eligibleClips = editedVideoCount >= 2
+      ? baseClips.filter((c) => c.kind === 'image' || editedJobIds.has(c.id))
+      : baseClips
     if (eligibleClips.length < 2) {
       setVideoColumnMessage('Need at least 2 finished items (videos or images) to merge.')
       return
