@@ -1,17 +1,11 @@
 ## مشکل
-کلیک روی X واقعاً preview را نمی‌بندد چون `previewItem` (خط 870) وقتی `previewVideoId` خالی است به‌صورت fallback اولین ویدیوی موجود را برمی‌گرداند. پس `setPreviewVideoId(null)` فقط انتخاب کارت را پاک می‌کند و بلافاصله fallback نمایش داده می‌شود.
+بعد از Apply کردن تغییرات Trim، کارت تاریخچه نسخه‌ی برش‌خورده را پخش می‌کند (چون از `getCardVideoSrc(id, storage_path)` استفاده می‌کند که `editedClips[id]?.url` را اولویت می‌دهد). اما پیش‌نمایش بزرگ مرکزی هنوز از `previewItem.job.video.storage_path` خام استفاده می‌کند، پس نسخه‌ی اصلی را نشان می‌دهد.
 
 ## راه‌حل
-افزودن یک state صریح برای «بسته‌بودن» پیش‌نمایش:
-
-1. `const [previewDismissed, setPreviewDismissed] = useState(false)` کنار `previewVideoId`.
-2. در `previewItem` useMemo، در ابتدای تابع: اگر `previewDismissed && !previewVideoId` بود → `return null` (هم fallback ویدیو و هم fallback تصویر را skip می‌کند و empty state نمایش داده می‌شود).
-3. دکمه‌ی X (هر دو محل image/video preview): `setPreviewVideoId(null); setPreviewDismissed(true)`.
-4. هر جا کاربر کارت تاریخچه را انتخاب می‌کند (`setPreviewVideoId(...)` با id واقعی)، همزمان `setPreviewDismissed(false)` صدا زده شود تا preview دوباره باز شود. به‌جای پراکنده‌کردن، می‌توان یک هلپر کوچک `openPreview(id)` تعریف کرد که هر دو را یکجا انجام دهد و در همه‌ی onClick/onKeyDown کارت‌ها استفاده شود.
+در تگ `<video>` پیش‌نمایش بزرگ، src به `getCardVideoSrc(previewItem.job.id, previewItem.job.video.storage_path)` تغییر کند تا اگر بلاب ادیت‌شده برای آن جاب وجود دارد، همان پخش شود. همچنین `key` به مقدار src وابسته شود تا با اعمال تغییرات، عنصر video دوباره mount شده و فریم اول از نسخه‌ی جدید لود شود.
 
 ## فایل
-- `src/modules/generator-ui/pages/DashboardPage.tsx`
+- `src/modules/generator-ui/pages/DashboardPage.tsx` (تگ video داخل پیش‌نمایش بزرگ، حدود خط 2343-2349)
 
 ## بدون ریسک
-- صرفاً افزودن یک flag و چند فراخوانی setter؛ منطق داده دست‌نخورده.
-- empty state موجود (Hammer/Sparkles) خودش وقتی `previewItem` null باشد رندر می‌شود.
+صرفاً تغییر منبع src؛ منطق edit/apply موجود دست‌نخورده.
