@@ -1854,19 +1854,15 @@ export default function DashboardPage() {
   }
 
   async function handleStartOver() {
-    // Snapshot the items we're about to delete so the network calls don't
-    // race against state updates.
-    const videosToDelete = generatedVideos.filter((v) => !v.id.startsWith('merged-'))
+    // Snapshot the merged Final Film artifacts so storage cleanup doesn't
+    // race against state updates. Library/history cards and uploaded images
+    // are intentionally preserved — Start Over only resets the workspace.
     const mergedToDelete = mergedEntries
-    const imagesToDelete = userImages
 
     // Wipe the merged Final Film(s) entirely so the preview goes blank
     // and the FINAL FILM tab disappears.
     setMergedEntries([])
     persistMerged([])
-    // Optimistically clear the History list so the UI feels instant.
-    setGeneratedVideos([])
-    setUserImages([])
     // Clear approved selections + per-clip transitions + manual ordering.
     setApprovedIds(new Set())
     if (approvedStorageKey) {
@@ -1910,9 +1906,6 @@ export default function DashboardPage() {
     // Server-side, permanent cleanup. Run in parallel; tolerate per-item
     // failures and surface a single summary error if anything didn't delete.
     const tasks: Promise<unknown>[] = []
-    for (const v of videosToDelete) {
-      tasks.push(jobOrchestratorGateway.deleteJob(v.id))
-    }
     for (const e of mergedToDelete) {
       const url = e.video?.storage_path
       if (url && userId) {
@@ -1922,9 +1915,6 @@ export default function DashboardPage() {
           tasks.push(supabase.storage.from(MERGED_BUCKET).remove([path]))
         }
       }
-    }
-    for (const i of imagesToDelete) {
-      tasks.push(generatorUiGateway.deleteUserImage(i.id))
     }
     if (tasks.length === 0) return
 

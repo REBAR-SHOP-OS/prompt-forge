@@ -1,21 +1,31 @@
-## هدف
-نمایش زنده درصد رندر در پیش‌نمایش بزرگ، به صورت افزایش 1٪ به 1٪.
+## Goal
 
-## مشکل فعلی
-تابع `getJobProgressPercent` مقدار درصد را بر اساس زمان سپری‌شده محاسبه می‌کند، اما کامپوننت پیش‌نمایش فقط زمانی که جاب پُل (poll) می‌شود رندر مجدد می‌شود — به همین دلیل عدد روی مثلاً «18%» ثابت می‌ماند تا پُل بعدی.
+Make the **Start Over** button stop deleting the user's library/history videos (the cards in the "Recent outputs / History" panel). Start Over should reset the *workspace* (composer, selections, merged final film, soundtrack, uploads) but leave the rendered video cards intact — both on screen and on the server.
 
-## تغییرات (فقط UI، فقط در `DashboardPage.tsx`)
+## Scope
 
-1. افزودن یک state «tick» داخلی به مودال پیش‌نمایش (مثلاً `const [, setTick] = useState(0)`).
-2. افزودن `useEffect` که فقط زمانی فعال می‌شود که:
-   - مودال پیش‌نمایش باز است
-   - وضعیت جاب `pending` یا `processing` است
-   هر ~۳ ثانیه `setTick(n => n + 1)` صدا زده شود تا کامپوننت رندر مجدد و درصد دوباره از روی زمان محاسبه شود (به‌طور طبیعی هر بار ~۱٪ بالا می‌رود چون فرمول heuristic روی ~۲۷۰ ثانیه ۷۷ نقطه می‌دهد ≈ ۳.۵s/٪).
-3. افزودن transition نرم برای متن درصد (`tabular-nums` + `transition-all duration-500`) که از قبل برای دایره موجود است؛ فقط برای متن هم اضافه شود تا تغییر روان به نظر برسد.
-4. وقتی مودال بسته می‌شود یا جاب کامل/شکست می‌خورد، interval پاک شود (cleanup در useEffect).
+Single file: `src/modules/generator-ui/pages/DashboardPage.tsx`, function `handleStartOver` (around lines 1856–1938). No backend changes.
 
-## فایل‌های تحت تأثیر
-- `src/modules/generator-ui/pages/DashboardPage.tsx` (فقط)
+## Changes to `handleStartOver`
 
-## بدون تغییر
-- منطق بک‌اند، edge functions و فرمول `getJobProgressPercent` دست نمی‌خورد.
+Keep doing:
+- Clear merged Final Film (`setMergedEntries([])` + `persistMerged([])`) and remove the merged storage objects (those are derived artifacts, not library cards).
+- Clear approved selection set + persisted approvedStorageKey.
+- Clear transitions, manual ordering, pending start/end appends (+ their localStorage keys).
+- Tear down soundtrack (revoke URL, reset music state, close dialog).
+- Reset merge progress flags.
+- Reset composer: prompt text, uploaded files, composer error, video column message, upload target, generation mode, duration, preview id.
+- Release `lockedProjectRatio` (+ persist null).
+
+Stop doing:
+- Do **not** call `setGeneratedVideos([])` — keep the History list as-is.
+- Do **not** call `setUserImages([])` — keep uploaded reference images.
+- Remove the loop `for (const v of videosToDelete) tasks.push(jobOrchestratorGateway.deleteJob(v.id))`.
+- Remove the loop `for (const i of imagesToDelete) tasks.push(generatorUiGateway.deleteUserImage(i.id))`.
+- Drop the now-unused `videosToDelete` / `imagesToDelete` snapshot variables.
+
+The merged-videos storage cleanup loop stays (Final Film is a workspace artifact, not a library card).
+
+## Result
+
+Clicking **Start Over** returns the editor to a blank prompting state and removes the Final Film, but every previously generated clip remains in the History panel and on the server, ready to be reused.
