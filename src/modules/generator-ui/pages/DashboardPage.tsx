@@ -750,30 +750,26 @@ export default function DashboardPage() {
   const startUploadCount = uploadedFiles.filter((file) => file.target === 'Start').length
   const endUploadCount = uploadedFiles.filter((file) => file.target === 'End').length
   const visibleVideos = useMemo(() => {
-    const all = [...mergedEntries, ...generatedVideos]
-    return all.filter((v) => !deletedIds.has(v.id))
-  }, [generatedVideos, mergedEntries, deletedIds])
+    return [...mergedEntries, ...generatedVideos]
+  }, [generatedVideos, mergedEntries])
 
   const completedSourceVideos = useMemo(
     () => generatedVideos.filter(
-      (v) => !deletedIds.has(v.id)
-        && normalizeStatus(v.status) === 'completed'
-        && v.video?.storage_path
+      (v) => normalizeStatus(v.status) === 'completed' && v.video?.storage_path
     ),
-    [generatedVideos, deletedIds]
+    [generatedVideos]
   )
 
   // Aspect-ratio chain lock: once the user has any clip in the current chain,
   // every subsequent clip must match the FIRST clip's aspect ratio. The lock
   // releases automatically when the chain is empty (e.g. after Start Over).
   const lockedRatio = useMemo<Ratio | null>(() => {
-    const chain = generatedVideos.filter((v) => !deletedIds.has(v.id))
-    if (chain.length === 0) return null
+    if (generatedVideos.length === 0) return null
     // generatedVideos is newest-first; the oldest (first in chain) is last.
-    const first = chain[chain.length - 1]
+    const first = generatedVideos[generatedVideos.length - 1]
     return getRatioFor(first)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [generatedVideos, deletedIds])
+  }, [generatedVideos])
 
   useEffect(() => {
     if (lockedRatio && aspectRatio !== lockedRatio) {
@@ -783,8 +779,7 @@ export default function DashboardPage() {
 
   // Right-panel display order: oldest first (chronological ASC), with manual drag-and-drop overrides.
   const displayedVideos = useMemo(() => {
-    const filtered = generatedVideos.filter((v) => !deletedIds.has(v.id))
-    const chronoAsc = [...filtered].sort(
+    const chronoAsc = [...generatedVideos].sort(
       (l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime()
     )
     if (!manualOrder) return chronoAsc
@@ -801,7 +796,7 @@ export default function DashboardPage() {
       if (byId.has(v.id)) ordered.push(v)
     }
     return ordered
-  }, [generatedVideos, deletedIds, manualOrder])
+  }, [generatedVideos, manualOrder])
 
   const handleCardDragStart = (id: string) => (event: React.DragEvent) => {
     setDraggingId(id)
@@ -832,10 +827,7 @@ export default function DashboardPage() {
   // Unified clip list (videos + uploaded images), ordered by created_at ASC,
   // with manual drag-and-drop overrides. Both kinds share the same numbering,
   // ordering, drag handlers, and Final Film merge sequence.
-  const visibleUserImages = useMemo(
-    () => userImages.filter((i) => !deletedIds.has(i.id)),
-    [userImages, deletedIds],
-  )
+  const visibleUserImages = userImages
 
   const displayedClips = useMemo<UnifiedClip[]>(() => {
     const items: UnifiedClip[] = [
