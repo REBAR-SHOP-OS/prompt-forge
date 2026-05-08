@@ -1011,15 +1011,13 @@ export default function DashboardPage() {
     if (!userId) return
     const prev = userImages
     setUserImages((curr) => curr.filter((i) => i.id !== imageId))
-    const { error } = await supabase
-      .from('generator_user_images')
-      .update({ deleted_at: new Date().toISOString() })
-      .eq('id', imageId)
-      .eq('user_id', userId)
-      .select('id')
-    if (error) {
+    try {
+      // Server-side, permanent delete (DB row + storage file).
+      await generatorUiGateway.deleteUserImage(imageId)
+    } catch (err) {
       setUserImages(prev)
-      setVideoColumnMessage(`Could not delete image: ${error.message}`)
+      const msg = err instanceof ApiError ? err.message : (err as Error).message
+      setVideoColumnMessage(`Could not delete image: ${msg}`)
     }
   }
 
