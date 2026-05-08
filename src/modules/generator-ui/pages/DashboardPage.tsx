@@ -905,9 +905,11 @@ export default function DashboardPage() {
 
   // Right-panel display order: oldest first (chronological ASC), with manual drag-and-drop overrides.
   const displayedVideos = useMemo(() => {
-    const chronoAsc = [...generatedVideos].sort(
-      (l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime()
-    )
+    const chronoAsc = [...generatedVideos]
+      .filter((v) => !workspaceHiddenJobIds.has(v.id))
+      .sort(
+        (l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime()
+      )
     if (!manualOrder) return chronoAsc
     const byId = new Map(chronoAsc.map((v) => [v.id, v]))
     const ordered: typeof chronoAsc = []
@@ -922,7 +924,7 @@ export default function DashboardPage() {
       if (byId.has(v.id)) ordered.push(v)
     }
     return ordered
-  }, [generatedVideos, manualOrder])
+  }, [generatedVideos, manualOrder, workspaceHiddenJobIds])
 
   const handleCardDragStart = (id: string) => (event: React.DragEvent) => {
     setDraggingId(id)
