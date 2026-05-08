@@ -1906,9 +1906,6 @@ export default function DashboardPage() {
     // Server-side, permanent cleanup. Run in parallel; tolerate per-item
     // failures and surface a single summary error if anything didn't delete.
     const tasks: Promise<unknown>[] = []
-    for (const v of videosToDelete) {
-      tasks.push(jobOrchestratorGateway.deleteJob(v.id))
-    }
     for (const e of mergedToDelete) {
       const url = e.video?.storage_path
       if (url && userId) {
@@ -1918,9 +1915,6 @@ export default function DashboardPage() {
           tasks.push(supabase.storage.from(MERGED_BUCKET).remove([path]))
         }
       }
-    }
-    for (const i of imagesToDelete) {
-      tasks.push(generatorUiGateway.deleteUserImage(i.id))
     }
     if (tasks.length === 0) return
 
