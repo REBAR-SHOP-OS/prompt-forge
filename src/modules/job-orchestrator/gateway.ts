@@ -31,4 +31,20 @@ export const jobOrchestratorGateway = {
       method: "POST",
       body: JSON.stringify({ jobId }),
     }),
+
+  /**
+   * Create a real, server-persisted video card from a file the user uploaded
+   * directly (no provider call). Mirrors the shape returned by getJob so the
+   * caller can drop the result straight into the History list.
+   */
+  createUploadedVideoJob: (input: {
+    storagePath: string;
+    durationSeconds?: number;
+    aspectRatio?: "16:9" | "1:1" | "9:16";
+    prompt?: string;
+  }) =>
+    request<JobDetail>("/jobs-create-from-upload", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
 };
