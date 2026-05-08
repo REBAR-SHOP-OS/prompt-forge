@@ -31,6 +31,7 @@ import {
   Scissors,
   Sparkles,
   Trash2,
+  Upload,
   UserRound,
   X
 } from 'lucide-react'
