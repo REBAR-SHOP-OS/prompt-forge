@@ -28,6 +28,7 @@ import {
   Pencil,
   Plus,
   RotateCcw,
+  Scissors,
   Sparkles,
   Trash2,
   UserRound,
@@ -77,6 +78,7 @@ import { TransitionPreview } from '@/modules/generator-ui/components/TransitionP
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { mergeVideoUrls, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
+import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
