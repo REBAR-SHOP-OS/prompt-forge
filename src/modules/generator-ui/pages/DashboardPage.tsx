@@ -1407,6 +1407,25 @@ export default function DashboardPage() {
     fileInputRef.current?.click()
   }
 
+  function handleReframeAsStart(url: string, ratio: Ratio) {
+    setGenerationMode('image-to-video')
+    if (!lockedRatio) setAspectRatio(ratio)
+    setUploadedFiles((cur) => [
+      ...cur,
+      {
+        id: Date.now(),
+        name: `reframed-${ratio.replace(':', 'x')}.png`,
+        size: 0,
+        target: 'Start',
+        type: 'image/png',
+        status: 'ready',
+        url,
+        error: null,
+      },
+    ])
+    setIsReframeOpen(false)
+  }
+
   async function uploadFrameFile(file: File, target: UploadTarget, fileId: number) {
     const userId = session?.user?.id
     if (!userId) {
@@ -2448,6 +2467,7 @@ export default function DashboardPage() {
       <ImageReframeDialog
         open={isReframeOpen}
         onOpenChange={setIsReframeOpen}
+        onUseAsStartFrame={handleReframeAsStart}
       />
 
       <Dialog open={isMusicDialogOpen} onOpenChange={setIsMusicDialogOpen}>
