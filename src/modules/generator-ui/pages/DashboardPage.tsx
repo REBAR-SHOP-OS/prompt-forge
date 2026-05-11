@@ -674,16 +674,7 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
-    if (!pendingStartPrependsKey) {
-      setPendingStartPrepends({})
-      return
-    }
-    try {
-      const raw = window.localStorage.getItem(pendingStartPrependsKey)
-      setPendingStartPrepends(raw ? (JSON.parse(raw) as Record<string, string>) : {})
-    } catch {
-      setPendingStartPrepends({})
-    }
+    setPendingStartPrepends({})
   }, [pendingStartPrependsKey])
 
   function persistPendingStartPrepends(next: Record<string, string>) {
