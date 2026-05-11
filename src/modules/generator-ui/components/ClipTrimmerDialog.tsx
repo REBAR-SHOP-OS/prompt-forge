@@ -59,8 +59,15 @@ export default function ClipTrimmerDialog({
       setBusy(false)
       setError(null)
       setCurrentTime(0)
+      setMuteAudio(false)
     }
   }, [open])
+
+  // Keep preview <video> in sync with the mute toggle.
+  useEffect(() => {
+    const v = videoRef.current
+    if (v) v.muted = muteAudio
+  }, [muteAudio, open])
 
   // Skip cut ranges during preview playback (live preview of the result).
   useEffect(() => {
