@@ -1,25 +1,22 @@
-# افزودن دکمه Mute به دیالوگ Trim clip
+# رفع مشکل پخش‌نشدن ویدیو در دیالوگ Trim
 
-یک آیکون قطع/وصل صدا (Volume2 / VolumeX) کنار دکمه‌های «Mark cut start» در `ClipTrimmerDialog` اضافه می‌شود تا کاربر بتواند صدای ویدئوی نهایی را کاملاً حذف کند.
+با کلیک روی آیکون قیچی، دیالوگ باز می‌شود و مدت زمان ویدیو نمایش داده می‌شود (مثلاً `0:10`)، اما ناحیه پخش کاملاً سیاه است و فریم اول رندر نمی‌شود.
 
-## رفتار
+## علت
 
-- یک state جدید `muteAudio` (پیش‌فرض false) در `ClipTrimmerDialog`.
-- دکمه toggle با آیکون `Volume2` (روشن) یا `VolumeX` (خاموش) از `lucide-react`.
-- وقتی فعال است:
-  - پیش‌نمایش: `videoRef.current.muted = true` (فقط برای پیش‌نمایش داخل دیالوگ).
-  - خروجی نهایی: به `trimVideoLocally` پارامتر `muteAudio: true` پاس داده می‌شود.
+تگ `<video>` در `ClipTrimmerDialog.tsx`:
+- `preload` تنظیم نشده — مرورگر فقط متادیتا می‌گیرد، نه فریم
+- روی `onLoadedMetadata` به جلو seek نمی‌شود — تا کاربر دکمه play را نزند، هیچ فریمی روی canvas مرورگر نقاشی نشده و کادر سیاه می‌ماند
 
-## تغییرات کد
+دقیقاً همان الگویی که در کارت‌های HISTORY (داشبورد) استفاده شده تا thumbnail اول نمایش داده شود، در دیالوگ trim موجود نیست.
 
-**`src/modules/generator-ui/lib/trimVideo.ts`**
-- افزودن آپشن سوم اختیاری به امضا: `trimVideoLocally(srcUrl, cuts, options?)` که `options.muteAudio?: boolean` و `options.onProgress?` را می‌پذیرد (سازگار با عقب).
-- اگر `muteAudio === true`: از مسیر صوتی `AudioContext` صرف‌نظر شود و فقط `videoStream` ضبط شود (خروجی بدون track صوتی).
+## تغییر
 
-**`src/modules/generator-ui/components/ClipTrimmerDialog.tsx`**
-- state `muteAudio` + دکمه آیکونی toggle در نوار کنترل (کنار «Mark cut start»).
-- sync با `videoRef.current.muted` در یک `useEffect`.
-- در `apply()`: ارسال `{ muteAudio }` به `trimVideoLocally`.
-- ریست در زمان بستن دیالوگ.
+**`src/modules/generator-ui/components/ClipTrimmerDialog.tsx`** — تگ `<video>` پیش‌نمایش:
 
-بدون تغییر در backend یا سایر فایل‌ها.
+- اضافه کردن `preload="auto"`
+- در `onLoadedMetadata`:
+  - مدت زمان را ست کن (مثل قبل)
+  - اگر `currentTime === 0`، یک seek کوچک به `Math.min(0.05, duration - 0.05)` انجام بده تا فریم اول رندر شود
+
+این تغییر، اولین فریم ویدیو را داخل دیالوگ نمایش می‌دهد و کاربر مرز برش را دیده و می‌تواند کار کند. بدون تغییر در سایر فایل‌ها یا backend.
