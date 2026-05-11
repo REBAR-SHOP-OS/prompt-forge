@@ -71,7 +71,8 @@ export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoD
         <DialogHeader className="border-b border-white/10 px-6 py-4">
           <DialogTitle className="flex items-center gap-2 text-base font-medium">
             <CalendarDays className="h-4 w-4 text-amber-300" />
-            Day Information
+            <span>Marketing Calendar</span>
+            <span className="text-zinc-400" dir="rtl">/ تقویم تبلیغاتی</span>
           </DialogTitle>
         </DialogHeader>
         <div className="grid gap-0 md:grid-cols-[auto,1fr]">
@@ -91,19 +92,24 @@ export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoD
               {loading && (
                 <div className="flex items-center gap-2 text-sm text-zinc-400">
                   <LoaderCircle className="h-4 w-4 animate-spin" />
-                  Loading information…
+                  Loading marketing occasions… / در حال بارگذاری…
                 </div>
               )}
               {!loading && error && (
                 <div className="text-sm text-rose-300">{error}</div>
               )}
               {!loading && !error && info && (
-                <div className="prose prose-sm prose-invert max-w-none prose-headings:mt-4 prose-headings:mb-2 prose-p:my-2 prose-li:my-0.5">
+                <div
+                  dir="auto"
+                  className="prose prose-sm prose-invert max-w-none prose-headings:mt-4 prose-headings:mb-2 prose-p:my-2 prose-li:my-0.5 prose-em:not-italic prose-em:font-normal prose-em:text-zinc-300/90 [&_em]:block"
+                >
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{info}</ReactMarkdown>
                 </div>
               )}
               {!loading && !error && !info && (
-                <div className="text-sm text-zinc-400">Pick a date to see its information.</div>
+                <div className="text-sm text-zinc-400">
+                  Pick a date to see marketing occasions. / یک تاریخ انتخاب کنید تا مناسبت‌های تبلیغاتی را ببینید.
+                </div>
               )}
             </div>
           </div>
