@@ -16,14 +16,53 @@ export interface MergeProgress {
 
 export type MergeProgressCallback = (p: MergeProgress) => void
 
-export interface MergeAudioOptions {
+export interface MergeMusicTrack {
   src: string
   startSec: number
   endSec: number
   /** 0..1, default 1 */
   musicVolume?: number
-  /** 0..1, default 0 (music-only). Set >0 to mix clip audio in. */
+}
+
+export interface MergeVoiceoverTrack {
+  src: string
+  /** 0..1, default 1 */
+  volume?: number
+}
+
+export interface MergeAudioOptions {
+  /** Looping background music with a selected window. */
+  music?: MergeMusicTrack
+  /** Voiceover playing once from t=0. */
+  voiceover?: MergeVoiceoverTrack
+  /** 0..1. Defaults to 0 when music or voiceover is present, 1 otherwise. */
   clipVolume?: number
+  // --- Back-compat: older callers passed a flat MergeMusicTrack shape. ---
+  src?: string
+  startSec?: number
+  endSec?: number
+  musicVolume?: number
+}
+
+function normalizeAudioOptions(audio?: MergeAudioOptions): {
+  music?: MergeMusicTrack
+  voiceover?: MergeVoiceoverTrack
+  clipVolume?: number
+} | undefined {
+  if (!audio) return undefined
+  // Legacy flat shape -> wrap as music.
+  if (typeof audio.src === 'string' && !audio.music && !audio.voiceover) {
+    return {
+      music: {
+        src: audio.src,
+        startSec: audio.startSec ?? 0,
+        endSec: audio.endSec ?? 0,
+        musicVolume: audio.musicVolume,
+      },
+      clipVolume: audio.clipVolume,
+    }
+  }
+  return { music: audio.music, voiceover: audio.voiceover, clipVolume: audio.clipVolume }
 }
 
 export type TransitionId =
@@ -224,11 +263,13 @@ export async function mergeVideoUrls(
 ): Promise<MergeResult> {
   if (urls.length === 0) throw new Error('No videos to merge')
 
-  const useSoundtrack = Boolean(audio && audio.endSec > audio.startSec)
-  const musicVolume = Math.max(0, Math.min(1, audio?.musicVolume ?? 1))
-  // When no soundtrack is used, default to capturing full clip audio.
-  // When soundtrack is used, default to 0 (music-only) unless caller opts in.
-  const clipVolume = Math.max(0, Math.min(1, audio?.clipVolume ?? (useSoundtrack ? 0 : 1)))
+  const norm = normalizeAudioOptions(audio)
+  const musicTrack = norm?.music && norm.music.endSec > norm.music.startSec ? norm.music : undefined
+  const voiceoverTrack = norm?.voiceover ?? undefined
+  const useSoundtrack = Boolean(musicTrack || voiceoverTrack)
+  const musicVolume = Math.max(0, Math.min(1, musicTrack?.musicVolume ?? 1))
+  const voiceoverVolume = Math.max(0, Math.min(1, voiceoverTrack?.volume ?? 1))
+  const clipVolume = Math.max(0, Math.min(1, norm?.clipVolume ?? (useSoundtrack ? 0 : 1)))
   const captureClipAudio = clipVolume > 0
 
   const first = await loadVideo(urls[0], captureClipAudio)
@@ -276,11 +317,11 @@ export async function mergeVideoUrls(
   let soundtrackEl: HTMLAudioElement | null = null
   let soundtrackEndedHandler: (() => void) | null = null
   let soundtrackClampRaf = 0
-  if (useSoundtrack && audio && audioCtx && audioDest) {
+  if (musicTrack && audioCtx && audioDest) {
     try {
       soundtrackEl = document.createElement('audio')
       soundtrackEl.crossOrigin = 'anonymous'
-      soundtrackEl.src = audio.src
+      soundtrackEl.src = musicTrack.src
       soundtrackEl.preload = 'auto'
       // We handle looping manually so we always wrap to winStart, never to 0.
       soundtrackEl.loop = false
@@ -290,7 +331,7 @@ export async function mergeVideoUrls(
         soundtrackEl!.addEventListener('loadedmetadata', onReady)
         soundtrackEl!.addEventListener('error', onErr)
       })
-      soundtrackEl.currentTime = Math.max(0, audio.startSec)
+      soundtrackEl.currentTime = Math.max(0, musicTrack.startSec)
       const source = audioCtx.createMediaElementSource(soundtrackEl)
       const gain = audioCtx.createGain()
       gain.gain.value = musicVolume
@@ -299,6 +340,33 @@ export async function mergeVideoUrls(
     } catch (err) {
       console.warn('[mergeVideoUrls] soundtrack disabled:', err)
       soundtrackEl = null
+    }
+  }
+
+  // Voiceover: plays once from t=0, mixed alongside music + clip audio.
+  let voiceoverEl: HTMLAudioElement | null = null
+  if (voiceoverTrack && audioCtx && audioDest) {
+    try {
+      voiceoverEl = document.createElement('audio')
+      voiceoverEl.crossOrigin = 'anonymous'
+      voiceoverEl.src = voiceoverTrack.src
+      voiceoverEl.preload = 'auto'
+      voiceoverEl.loop = false
+      await new Promise<void>((resolve, reject) => {
+        const onReady = () => { voiceoverEl!.removeEventListener('loadedmetadata', onReady); resolve() }
+        const onErr = () => { voiceoverEl!.removeEventListener('error', onErr); reject(new Error('Failed to load voiceover')) }
+        voiceoverEl!.addEventListener('loadedmetadata', onReady)
+        voiceoverEl!.addEventListener('error', onErr)
+      })
+      voiceoverEl.currentTime = 0
+      const vSource = audioCtx.createMediaElementSource(voiceoverEl)
+      const vGain = audioCtx.createGain()
+      vGain.gain.value = voiceoverVolume
+      vSource.connect(vGain)
+      vGain.connect(audioDest)
+    } catch (err) {
+      console.warn('[mergeVideoUrls] voiceover disabled:', err)
+      voiceoverEl = null
     }
   }
 
@@ -388,9 +456,9 @@ export async function mergeVideoUrls(
   })
   recorder.start(250)
 
-  if (soundtrackEl && audio) {
-    const winStart = Math.max(0, audio.startSec)
-    const winEnd = Math.max(winStart + 0.05, audio.endSec)
+  if (soundtrackEl && musicTrack) {
+    const winStart = Math.max(0, musicTrack.startSec)
+    const winEnd = Math.max(winStart + 0.05, musicTrack.endSec)
     // Re-seek immediately before play() — some browsers reset currentTime
     // while the element is idle, which would otherwise leak the unselected
     // intro of the file into the recording.
@@ -415,6 +483,11 @@ export async function mergeVideoUrls(
     }
     soundtrackEl.addEventListener('ended', soundtrackEndedHandler)
     try { await soundtrackEl.play() } catch { /* ignore autoplay reject */ }
+  }
+
+  if (voiceoverEl) {
+    try { voiceoverEl.currentTime = 0 } catch { /* ignore */ }
+    try { await voiceoverEl.play() } catch { /* ignore autoplay reject */ }
   }
 
   let elapsedDuration = 0
@@ -535,7 +608,10 @@ export async function mergeVideoUrls(
     if (soundtrackClampRaf) cancelAnimationFrame(soundtrackClampRaf)
     if (soundtrackEndedHandler) soundtrackEl.removeEventListener('ended', soundtrackEndedHandler)
     try { soundtrackEl.pause() } catch { /* ignore */ }
-    soundtrackEl.src = ''
+  }
+  if (voiceoverEl) {
+    try { voiceoverEl.pause() } catch { /* ignore */ }
+    voiceoverEl.src = ''
   }
   if (audioCtx) {
     try { await audioCtx.close() } catch { /* ignore */ }
