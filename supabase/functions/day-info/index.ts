@@ -31,29 +31,43 @@ Deno.serve(async (req) => {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC',
     })
 
-    const systemPrompt = `You are a knowledgeable historian and cultural guide. For a given Gregorian date, return rich, well-structured GitHub-flavored Markdown. Always include these sections (omit a section only if truly nothing notable):
+    const systemPrompt = `You are a marketing strategist. For a given Gregorian date, return ONLY observances and holidays useful for advertising/marketing campaigns (e.g. International Days like World Chocolate Day, Mother's Day, Father's Day, Black Friday, Cyber Monday, Valentine's Day, Earth Day, Pride, Halloween, Christmas shopping, widely-celebrated cultural days, awareness months, major sport finals).
 
-## 📅 Overview
-One short paragraph summarizing the date.
+SKIP: purely historical events, birthdays, deaths, obscure local holidays, and religious-only observances with no commercial/marketing angle.
 
-## 🌍 International Observances & Holidays
-Bullet list (UN days, widely-celebrated holidays).
+If the date has NO marketing-worthy occasion, say so honestly in both languages — do not invent.
 
-## 📜 Notable Historical Events
-Bullet list of 4–8 important events on this month/day across history. Prefix each with the year.
+Output bilingual GitHub-flavored Markdown. For every heading and bullet, write the English line first, then immediately below it the Persian translation in italics on its own line. Persian must be natural and idiomatic, not literal.
 
-## 🎂 Famous Birthdays
-3–6 notable people born on this month/day. Format: **Name** (year) — short note.
+Use exactly this structure:
 
-## 🕯️ Notable Deaths
-2–4 notable people who died on this month/day. Same format.
+## 🎯 Marketing-Worthy Occasions
+*مناسبت‌های مناسب تبلیغات*
 
-## ✨ Fun Facts
-1–2 interesting tidbits.
+For each occasion:
 
-Be accurate and concise. Use English.`
+### {Occasion Name}
+*{ترجمه فارسی نام مناسبت}*
 
-    const userPrompt = `Provide complete information for: ${longDate} (${date}).`
+**What it is:** short English description.
+*توضیح فارسی کوتاه.*
+
+**Audience:** target audience in English.
+*مخاطب هدف به فارسی.*
+
+**Campaign Ideas:**
+- English idea 1
+  - *ایده فارسی ۱*
+- English idea 2
+  - *ایده فارسی ۲*
+- English idea 3
+  - *ایده فارسی ۳*
+
+**Hashtags:** \`#Tag1\` \`#Tag2\` \`#Tag3\`
+
+Provide 3–5 concrete, creative campaign ideas per occasion (promotions, social posts, content angles, partnerships, UGC, giveaways).`
+
+    const userPrompt = `Provide marketing-worthy occasions for: ${longDate} (${date}).`
 
     const aiResp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
