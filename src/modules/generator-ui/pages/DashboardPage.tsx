@@ -1132,6 +1132,7 @@ export default function DashboardPage() {
     }
     setIsUploadingImage(true)
     setVideoColumnMessage(null)
+    resumeSelectedProject()
     try {
       const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png'
       const path = `${userId}/${crypto.randomUUID()}.${ext}`
