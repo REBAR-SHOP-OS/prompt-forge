@@ -2006,7 +2006,13 @@ export default function DashboardPage() {
       // here so the preview chrome matches what's actually in the file.
       const firstClipId = eligibleClips[0]?.id
       const mergedRatio: Ratio = (firstClipId ? clipAspectRatios[firstClipId] : undefined) ?? aspectRatio
-      const entry: JobDetail = {
+      // Track the source video job IDs that went into this Final Film, so the
+      // Library card can later restore them in HISTORY (clips are no longer
+      // deleted from the server on merge).
+      const sourceJobIds = eligibleClips
+        .filter((c) => c.kind === 'video' && !c.id.startsWith('merged-'))
+        .map((c) => c.id)
+      const entry: JobDetail & { sourceJobIds?: string[] } = {
         id: mergedId,
         status: 'completed',
         input_prompt: `Final merged video — ${urls.length} clips`,
@@ -2021,6 +2027,7 @@ export default function DashboardPage() {
           aspect_ratio: mergedRatio,
           duration: null,
         },
+        sourceJobIds,
       }
       rememberClipRatio(mergedId, mergedRatio)
 
@@ -2040,32 +2047,22 @@ export default function DashboardPage() {
       })
       setPreviewVideoId(mergedId)
 
-      // ===== Purge History sources from the server =====
-      // Per product rule: History is an ephemeral workspace. Once Final Film
-      // is produced and saved to Library, every source job (+ video asset +
-      // storage file) and every uploaded image used during this session is
-      // permanently removed from the server. Only the merged film survives.
-      const sourceJobsToPurge = generatedVideos.filter((v) => !v.id.startsWith('merged-'))
-      const imagesToPurge = userImages
-      try {
-        const tasks: Promise<unknown>[] = []
-        for (const v of sourceJobsToPurge) tasks.push(jobOrchestratorGateway.deleteJob(v.id))
-        for (const i of imagesToPurge) tasks.push(generatorUiGateway.deleteUserImage(i.id))
-        const results = await Promise.allSettled(tasks)
-        const failed = results.filter((r) => r.status === 'rejected').length
-        if (failed > 0) {
-          console.warn(`[merge] purge: ${failed}/${tasks.length} server deletions failed`)
-        }
-      } catch (purgeErr) {
-        console.error('[merge] purge step failed', purgeErr)
+      // ===== Hide History sources from the workspace (do NOT delete) =====
+      // Source clips remain on the server so the user can later click the
+      // Library card to restore them in HISTORY. We only hide them from the
+      // current workspace view via workspaceHiddenJobIds.
+      const sourceIdsToHide = generatedVideos
+        .filter((v) => !v.id.startsWith('merged-'))
+        .map((v) => v.id)
+      if (sourceIdsToHide.length > 0) {
+        setWorkspaceHiddenJobIds((current) => {
+          const next = new Set(current)
+          for (const id of sourceIdsToHide) next.add(id)
+          persistWorkspaceHiddenJobIds(next)
+          return next
+        })
       }
-      // Clear History from the UI regardless of individual failures — server
-      // is the source of truth on next reload, and a partial purge still
-      // matches the rule (anything that survived will be cleaned by Start
-      // Over or the next Final Film).
-      setGeneratedVideos((current) => current.filter((v) => v.id.startsWith('merged-')))
-      setUserImages([])
-      // Reset per-clip ephemeral state tied to purged sources.
+      // Reset per-clip ephemeral composer state for a clean workspace.
       setManualOrder(null)
       setPendingEndAppends({})
       setPendingStartPrepends({})
@@ -3219,6 +3216,20 @@ export default function DashboardPage() {
               <div className="grid gap-3">
                 {approvedVideos.map((video) => {
                   const isPreviewSelected = previewVideo?.id === video.id
+                  const mergedEntry = mergedEntries.find((e) => e.id === video.id) as
+                    | (JobDetail & { sourceJobIds?: string[] })
+                    | undefined
+                  const restoreSourceClips = () => {
+                    const ids = mergedEntry?.sourceJobIds ?? []
+                    if (ids.length === 0) return
+                    setWorkspaceHiddenJobIds((current) => {
+                      const next = new Set(current)
+                      for (const id of ids) next.delete(id)
+                      persistWorkspaceHiddenJobIds(next)
+                      return next
+                    })
+                    setPreviewDismissed(false)
+                  }
                   return (
                     <article
                       key={video.id}
@@ -3229,12 +3240,14 @@ export default function DashboardPage() {
                       tabIndex={0}
                       aria-label={`Preview ${video.input_prompt}`}
                       onClick={() => {
+                        restoreSourceClips()
                         setPreviewVideoId(video.id)
                         setIsApprovedPanelOpen(false)
                       }}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault()
+                          restoreSourceClips()
                           setPreviewVideoId(video.id)
                           setIsApprovedPanelOpen(false)
                         }
