@@ -489,16 +489,8 @@ export default function DashboardPage() {
   const editedJobIdsKey = userId ? `edited-clips:${userId}` : null
 
   useEffect(() => {
-    if (!editedJobIdsKey) {
-      setEditedJobIds(new Set())
-      return
-    }
-    try {
-      const raw = window.localStorage.getItem(editedJobIdsKey)
-      setEditedJobIds(raw ? new Set(JSON.parse(raw) as string[]) : new Set())
-    } catch {
-      setEditedJobIds(new Set())
-    }
+    // Always start empty on mount — see note in approvedIds effect above.
+    setEditedJobIds(new Set())
   }, [editedJobIdsKey])
 
   function persistEditedJobIds(next: Set<string>) {
