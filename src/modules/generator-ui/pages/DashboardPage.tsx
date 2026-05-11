@@ -1560,6 +1560,7 @@ export default function DashboardPage() {
     setIsSubmitting(true)
     setComposerError(null)
     setVideoColumnMessage(null)
+    resumeSelectedProject()
 
     try {
       let createdJob
