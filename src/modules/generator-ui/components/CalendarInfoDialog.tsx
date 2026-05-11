@@ -307,7 +307,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt }
                       <li key={i} className="rounded-md border border-white/5 bg-white/[0.02]">
                         <button
                           type="button"
-                          onClick={() => setExpandedIndex(isOpen ? null : i)}
+                          onClick={() => { setExpandedIndex(isOpen ? null : i); pickOccasion(occ) }}
                           className={cn(
                             'flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-white/[0.04]',
                             isOpen && 'bg-white/[0.04]',
