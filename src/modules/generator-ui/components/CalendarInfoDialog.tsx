@@ -15,9 +15,7 @@ interface CalendarInfoDialogProps {
 interface Occasion {
   title: string
   whatItIs: string
-  audience: string
-  ideas: string[]
-  hashtags: string[]
+  history: string
 }
 
 const fmt = (d: Date) => {
