@@ -3216,6 +3216,20 @@ export default function DashboardPage() {
               <div className="grid gap-3">
                 {approvedVideos.map((video) => {
                   const isPreviewSelected = previewVideo?.id === video.id
+                  const mergedEntry = mergedEntries.find((e) => e.id === video.id) as
+                    | (JobDetail & { sourceJobIds?: string[] })
+                    | undefined
+                  const restoreSourceClips = () => {
+                    const ids = mergedEntry?.sourceJobIds ?? []
+                    if (ids.length === 0) return
+                    setWorkspaceHiddenJobIds((current) => {
+                      const next = new Set(current)
+                      for (const id of ids) next.delete(id)
+                      persistWorkspaceHiddenJobIds(next)
+                      return next
+                    })
+                    setPreviewDismissed(false)
+                  }
                   return (
                     <article
                       key={video.id}
