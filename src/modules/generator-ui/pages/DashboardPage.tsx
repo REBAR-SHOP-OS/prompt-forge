@@ -935,6 +935,19 @@ export default function DashboardPage() {
 
   // Right-panel display order: oldest first (chronological ASC), with manual drag-and-drop overrides.
   const displayedVideos = useMemo(() => {
+    // Selected-project mode: HISTORY shows the snapshot of source clips that
+    // produced that Final Film, regardless of workspace-hidden state.
+    if (selectedProjectId) {
+      const snapshot = projectSourceJobs[selectedProjectId] ?? []
+      // Merge snapshot with any live generatedVideos entries of the same ids
+      // (live entries are richer; snapshot is the fallback when the live job
+      // is gone or was hidden).
+      const liveById = new Map(generatedVideos.map((v) => [v.id, v]))
+      const merged = snapshot.map((s) => liveById.get(s.id) ?? s)
+      return [...merged].sort(
+        (l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime()
+      )
+    }
     const chronoAsc = [...generatedVideos]
       .filter((v) => !workspaceHiddenJobIds.has(v.id))
       .sort(
@@ -954,7 +967,7 @@ export default function DashboardPage() {
       if (byId.has(v.id)) ordered.push(v)
     }
     return ordered
-  }, [generatedVideos, manualOrder, workspaceHiddenJobIds])
+  }, [generatedVideos, manualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs])
 
   const handleCardDragStart = (id: string) => (event: React.DragEvent) => {
     setDraggingId(id)
