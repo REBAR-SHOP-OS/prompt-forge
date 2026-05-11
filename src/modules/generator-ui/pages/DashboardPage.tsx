@@ -2251,7 +2251,15 @@ export default function DashboardPage() {
         <CalendarDays className="h-[18px] w-[18px]" aria-hidden="true" />
       </button>
 
-      <CalendarInfoDialog open={isCalendarOpen} onOpenChange={setIsCalendarOpen} />
+      <CalendarInfoDialog
+        open={isCalendarOpen}
+        onOpenChange={setIsCalendarOpen}
+        onApplyPrompt={(p) => {
+          setPromptText(p)
+          setDurationSeconds(10)
+          setIsCalendarOpen(false)
+        }}
+      />
 
       <div className="fixed left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-2 sm:top-5">
       <AlertDialog>
