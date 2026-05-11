@@ -398,7 +398,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt }
                       <li key={`${occ.date}-${i}`}>
                         <button
                           type="button"
-                          onClick={() => handleMonthOccasionClick(occ.date)}
+                          onClick={() => { handleMonthOccasionClick(occ.date); pickOccasion(occ) }}
                           className={cn(
                             'flex w-full items-start gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-white/[0.04]',
                             isSelected && 'bg-white/[0.04]',
