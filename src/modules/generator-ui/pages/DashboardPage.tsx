@@ -3240,12 +3240,14 @@ export default function DashboardPage() {
                       tabIndex={0}
                       aria-label={`Preview ${video.input_prompt}`}
                       onClick={() => {
+                        restoreSourceClips()
                         setPreviewVideoId(video.id)
                         setIsApprovedPanelOpen(false)
                       }}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault()
+                          restoreSourceClips()
                           setPreviewVideoId(video.id)
                           setIsApprovedPanelOpen(false)
                         }
