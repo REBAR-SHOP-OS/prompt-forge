@@ -1,63 +1,37 @@
 ## هدف
 
-دیالوگ Day Information به‌جای اطلاعات تاریخی عمومی، فقط **مناسبت‌های قابل استفاده برای تبلیغات** را نمایش می‌دهد، همراه با **ایده‌های کمپین** برای هر مناسبت، و ترجمه فارسی به‌صورت پیش‌فرض زیر متن انگلیسی نشان داده می‌شود.
+1. حذف متن «/ تقویم تبلیغاتی» از عنوان دیالوگ — فقط `Marketing Calendar` بماند.
+2. اضافه کردن یک آیکون **Languages** (lucide-react) در کنار تاریخ بالای پنل راست. با کلیک روی آن، محتوای پنل پایین بین **English** و **فارسی** toggle شود.
+3. (اصلاح جانبی) محتوای دیالوگ در اسکرین‌شات هنوز قالب قدیمی (Overview/Historical/Birthdays) را نشان می‌دهد چون در state کش شده. این به‌خاطر تغییر پرامپت backend است؛ نیاز به re-deploy edge function تا محتوای جدید (مناسبت‌های تبلیغاتی) دریافت شود.
 
-## تغییرات Backend — `supabase/functions/day-info/index.ts`
+## تغییرات Backend
 
-بازنویسی پرامپت‌ها (بدون تغییر امضای ورودی/خروجی):
+### `supabase/functions/day-info/index.ts`
+- پذیرش پارامتر اختیاری `lang: 'en' | 'fa'` در body (پیش‌فرض `'en'`).
+- اگر `lang === 'fa'`: همان system prompt مناسبت‌های تبلیغاتی، اما خروجی **به‌طور کامل به زبان فارسی روان** (بدون متن انگلیسی، بدون italic). ساختار همان (Occasion / What it is / Audience / Campaign Ideas / Hashtags) ولی برچسب‌ها فارسی: «معرفی»، «مخاطب»، «ایده‌های کمپین»، «هشتگ‌ها». هشتگ‌ها به فارسی یا انگلیسی هرکدام مرسوم‌تر است.
+- اگر `lang === 'en'`: خروجی فقط انگلیسی، تک‌زبانه (نسخه دو زبانه قبلی حذف می‌شود تا toggle معنی‌دار باشد).
+- نیاز به deploy مجدد edge function.
 
-- **System prompt** جدید:
-  > "You are a marketing strategist. For a given Gregorian date, return only the observances and holidays that are useful for advertising/marketing campaigns (e.g. International Days like World Chocolate Day, Mother's Day, Black Friday, Valentine's Day, Earth Day, shopping events, widely-celebrated cultural days). Skip purely historical events, birthdays, deaths, religious-only observances with no commercial angle, and obscure local holidays. If a date has no marketing-worthy occasion, say so honestly.
-  >
-  > Output bilingual GitHub-flavored Markdown. For every section heading and every bullet, write the English line first, then immediately below it the Persian translation in italics on its own line. Use this structure:
-  >
-  > `## 🎯 Marketing-Worthy Occasions / *مناسبت‌های مناسب تبلیغات*`
-  >
-  > For each occasion, render:
-  > ```
-  > ### {Occasion Name} / *{ترجمه فارسی نام مناسبت}*
-  > **What it is:** short English description.
-  > *توضیح فارسی کوتاه.*
-  >
-  > **Audience:** who to target in English.
-  > *مخاطب هدف به فارسی.*
-  >
-  > **Campaign Ideas:**
-  > - English idea 1
-  >   - *ایده فارسی ۱*
-  > - English idea 2
-  >   - *ایده فارسی ۲*
-  > - English idea 3
-  >   - *ایده فارسی ۳*
-  >
-  > **Hashtags:** `#Tag1` `#Tag2` `#Tag3`
-  > ```
-  >
-  > Provide 3–5 concrete campaign ideas per occasion. Keep Persian translations natural and idiomatic, not literal."
+## تغییرات Frontend
 
-- **User prompt:** `Provide marketing-worthy occasions for: ${longDate} (${date}).`
-
-- مدل و سایر تنظیمات بدون تغییر (`google/gemini-3-flash-preview`، مدیریت 429/402).
-
-## تغییرات Frontend — `src/modules/generator-ui/components/CalendarInfoDialog.tsx`
-
-تغییرات کوچک نمایشی فقط:
-
-1. عنوان دیالوگ از `Day Information` به `Marketing Calendar / تقویم تبلیغاتی` تغییر می‌کند.
-2. متن fallback (`Pick a date to see…`) دو زبانه می‌شود: `Pick a date to see marketing occasions. / یک تاریخ انتخاب کنید…`.
-3. کلاس‌های prose تنظیم شوند تا متن italic (که ترجمه فارسی است) با وزن نرمال و رنگ کمی روشن‌تر (`prose-em:not-italic prose-em:text-zinc-300/90 prose-em:font-normal`) و راست‌چین خوانده شود — برای راست‌چین کردن خطوط فارسی از CSS rule ساده روی `<em>` با `dir="auto"` استفاده می‌کنیم: کل بلوک Markdown داخل `<div dir="auto">` رندر می‌شود تا مرورگر هر خط را به‌صورت خودکار راست‌چین/چپ‌چین کند.
-4. هیچ state، cache، یا منطق fetch تغییر نمی‌کند.
+### `src/modules/generator-ui/components/CalendarInfoDialog.tsx`
+- حذف `<span dir="rtl">/ تقویم تبلیغاتی</span>` از `DialogTitle`.
+- state جدید: `const [lang, setLang] = useState<'en' | 'fa'>('en')`.
+- تغییر کلید cache از `dateKey` به ``${dateKey}:${lang}`` تا هر زبان جداگانه ذخیره شود.
+- اضافه کردن دکمه آیکون `Languages` (lucide-react) در نوار تاریخ بالای پنل راست (سمت چپ آیکون close فعلی نه — همان نوار `longLabel`). دکمه:
+  - `aria-label="Toggle Persian translation"`
+  - متن کوچک کنار آیکون: `EN` یا `فا` بسته به zaban فعلی (نه، فقط آیکون با tooltip ساده تا تمیز بماند). آیکون رنگ amber اگر فارسی فعال باشد.
+- با کلیک: `setLang(l => l === 'en' ? 'fa' : 'en')`. useEffect موجود به‌خاطر تغییر کلید cache مجدداً fetch می‌کند.
+- در render محتوا، `dir="auto"` نگه داشته می‌شود تا فارسی راست‌چین شود.
+- حذف کلاس‌های `prose-em:*` و `[&_em]:block` (دیگر نیازی به italic block برای ترجمه inline نیست).
 
 ## خارج از scope
-
-- بدون آیکون toggle جداگانه (طبق انتخاب کاربر، ترجمه پیش‌فرض همراه انگلیسی است).
-- بدون دسته‌بندی صنعتی.
-- بدون تغییر در آیکون تقویم، state، یا edge function deployment workflow.
-- بدون cache invalidation — کلیدهای cache همان `YYYY-MM-DD` می‌مانند.
+- بدون تغییر آیکون اصلی تقویم در DashboardPage.
+- بدون پاک کردن cache قدیمی به‌صورت دستی — کلید جدید (`:en`/`:fa`) به‌طور طبیعی کش قدیمی را دور می‌زند.
+- بدون تغییر در منطق fetch، error handling، یا 429/402.
 
 ## تأیید
-
-- باز کردن دیالوگ روی هر تاریخ → فقط مناسبت‌های تبلیغاتی نمایش داده شود (نه رویدادهای تاریخی، نه تولدها).
-- هر مناسبت شامل: نام دو زبانه، توضیح، مخاطب، ۳–۵ ایده کمپین دو زبانه، و هشتگ.
-- خطوط فارسی به‌صورت italic و راست‌چین (به لطف `dir="auto"`) نمایش داده شوند.
-- اگر تاریخی مناسبت تبلیغاتی نداشت، پیام صادقانه (به دو زبان) برمی‌گردد.
+- عنوان دیالوگ فقط `Marketing Calendar`.
+- آیکون زبان در نوار تاریخ دیده می‌شود.
+- کلیک روی آیکون → محتوای پنل بین انگلیسی و فارسی روان جابجا می‌شود (با loader هنگام fetch زبان جدید).
+- محتوای انگلیسی شامل بخش‌های قدیمی (Overview / Historical / Birthdays) نباشد — فقط مناسبت‌های تبلیغاتی + ایده کمپین.

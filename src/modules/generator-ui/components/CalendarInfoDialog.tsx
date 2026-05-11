@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { CalendarDays, LoaderCircle } from 'lucide-react'
+import { CalendarDays, Languages, LoaderCircle } from 'lucide-react'
 import { Calendar } from '@/components/ui/calendar'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 import { supabase } from '@/integrations/supabase/client'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
@@ -22,30 +23,32 @@ const fmt = (d: Date) => {
 
 export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoDialogProps) {
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date())
+  const [lang, setLang] = useState<'en' | 'fa'>('en')
   const [cache, setCache] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { toast } = useToast()
 
   const dateKey = useMemo(() => fmt(selectedDate), [selectedDate])
-  const info = cache[dateKey] ?? null
+  const cacheKey = `${dateKey}:${lang}`
+  const info = cache[cacheKey] ?? null
 
   useEffect(() => {
     if (!open) return
-    if (cache[dateKey]) return
+    if (cache[cacheKey]) return
     let cancelled = false
     setLoading(true)
     setError(null)
     ;(async () => {
       try {
         const { data, error: fnError } = await supabase.functions.invoke('day-info', {
-          body: { date: dateKey },
+          body: { date: dateKey, lang },
         })
         if (cancelled) return
         if (fnError) throw fnError
         const markdown: string = (data as { markdown?: string })?.markdown ?? ''
         if (!markdown) throw new Error('No content returned.')
-        setCache((c) => ({ ...c, [dateKey]: markdown }))
+        setCache((c) => ({ ...c, [cacheKey]: markdown }))
       } catch (err) {
         if (cancelled) return
         const msg = err instanceof Error ? err.message : 'Failed to load day info'
@@ -56,13 +59,13 @@ export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoD
       }
     })()
     return () => { cancelled = true }
-  }, [open, dateKey, cache, toast])
+  }, [open, dateKey, lang, cacheKey, cache, toast])
 
   const longLabel = useMemo(
-    () => selectedDate.toLocaleDateString('en-US', {
+    () => selectedDate.toLocaleDateString(lang === 'fa' ? 'fa-IR' : 'en-US', {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     }),
-    [selectedDate],
+    [selectedDate, lang],
   )
 
   return (
@@ -72,7 +75,6 @@ export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoD
           <DialogTitle className="flex items-center gap-2 text-base font-medium">
             <CalendarDays className="h-4 w-4 text-amber-300" />
             <span>Marketing Calendar</span>
-            <span className="text-zinc-400" dir="rtl">/ تقویم تبلیغاتی</span>
           </DialogTitle>
         </DialogHeader>
         <div className="grid gap-0 md:grid-cols-[auto,1fr]">
@@ -85,14 +87,28 @@ export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoD
             />
           </div>
           <div className="flex max-h-[70vh] min-h-[420px] flex-col">
-            <div className="border-b border-white/10 px-5 py-3 text-sm font-medium text-zinc-200">
-              {longLabel}
+            <div className="flex items-center justify-between gap-2 border-b border-white/10 px-5 py-2">
+              <div className="text-sm font-medium text-zinc-200" dir="auto">{longLabel}</div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setLang((l) => (l === 'en' ? 'fa' : 'en'))}
+                className={cn(
+                  'h-8 gap-1.5 px-2 text-xs',
+                  lang === 'fa' ? 'text-amber-300 hover:text-amber-200' : 'text-zinc-400 hover:text-zinc-200',
+                )}
+                aria-label="Toggle Persian translation"
+                title={lang === 'en' ? 'نمایش به فارسی' : 'Show in English'}
+              >
+                <Languages className="h-4 w-4" />
+                {lang === 'en' ? 'EN' : 'فا'}
+              </Button>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-4">
               {loading && (
                 <div className="flex items-center gap-2 text-sm text-zinc-400">
                   <LoaderCircle className="h-4 w-4 animate-spin" />
-                  Loading marketing occasions… / در حال بارگذاری…
+                  {lang === 'fa' ? 'در حال بارگذاری…' : 'Loading marketing occasions…'}
                 </div>
               )}
               {!loading && error && (
@@ -101,14 +117,16 @@ export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoD
               {!loading && !error && info && (
                 <div
                   dir="auto"
-                  className="prose prose-sm prose-invert max-w-none prose-headings:mt-4 prose-headings:mb-2 prose-p:my-2 prose-li:my-0.5 prose-em:not-italic prose-em:font-normal prose-em:text-zinc-300/90 [&_em]:block"
+                  className="prose prose-sm prose-invert max-w-none prose-headings:mt-4 prose-headings:mb-2 prose-p:my-2 prose-li:my-0.5"
                 >
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{info}</ReactMarkdown>
                 </div>
               )}
               {!loading && !error && !info && (
                 <div className="text-sm text-zinc-400">
-                  Pick a date to see marketing occasions. / یک تاریخ انتخاب کنید تا مناسبت‌های تبلیغاتی را ببینید.
+                  {lang === 'fa'
+                    ? 'یک تاریخ انتخاب کنید تا مناسبت‌های تبلیغاتی را ببینید.'
+                    : 'Pick a date to see marketing occasions.'}
                 </div>
               )}
             </div>
