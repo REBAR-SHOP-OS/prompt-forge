@@ -1106,24 +1106,11 @@ export default function DashboardPage() {
     setVideoColumnMessage(null)
   }, [authLoading, session])
 
-  // Hydrate user-uploaded images from Lovable Cloud
+  // Per user request: start with no images loaded. Uploads in this session
+  // still populate the list normally; existing rows in the DB are preserved.
   useEffect(() => {
     if (authLoading || !userId) return
-    let cancelled = false
-    ;(async () => {
-      const { data, error } = await supabase
-        .from('generator_user_images')
-        .select('id, storage_path, created_at, still_duration_seconds, width, height')
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false })
-      if (cancelled) return
-      if (error) {
-        setVideoColumnMessage(`Could not load images: ${error.message}`)
-        return
-      }
-      setUserImages((data ?? []) as UserImageItem[])
-    })()
-    return () => { cancelled = true }
+    setUserImages([])
   }, [authLoading, userId])
 
   const handlePickImage = () => {
