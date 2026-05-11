@@ -1913,6 +1913,17 @@ export default function DashboardPage() {
       setVideoColumnMessage('Sign in to merge videos.')
       return
     }
+    // Single-card guard: requires either audio (music/voiceover) or an applied edit,
+    // otherwise the "merge" would just re-encode the same clip with no change.
+    if (eligibleClips.length === 1) {
+      const hasAudio = Boolean(musicUrl && musicRange[1] > musicRange[0]) || Boolean(voiceoverUrl)
+      const onlyClip = eligibleClips[0]
+      const hasEdit = onlyClip.kind === 'video' && editedJobIds.has(onlyClip.id)
+      if (!hasAudio && !hasEdit) {
+        setVideoColumnMessage('Add music/voiceover or edit the card before finalizing.')
+        return
+      }
+    }
     setIsMerging(true)
     setMergeProgress(0)
     setVideoColumnMessage(null)
@@ -2012,7 +2023,7 @@ export default function DashboardPage() {
       const entry: JobDetail = {
         id: mergedId,
         status: 'completed',
-        input_prompt: `Final merged video — ${urls.length} clips`,
+        input_prompt: urls.length === 1 ? 'Final clip — soundtrack applied' : `Final merged video — ${urls.length} clips`,
         provider_key: 'merged',
         model_key: 'browser-canvas',
         created_at: new Date().toISOString(),
@@ -2327,13 +2338,17 @@ export default function DashboardPage() {
         disabled={isMerging || (Math.max(completedSourceVideos.length, selectedProjectId ? (projectSourceJobs[selectedProjectId]?.length ?? 0) : 0) + visibleUserImages.length) < 1}
         className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-emerald-300/30 hover:bg-emerald-300/[0.06] hover:text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
         aria-label="Save cards as a final film"
-        title={
-          (completedSourceVideos.length + visibleUserImages.length) < 1
-            ? 'Need at least 1 finished item (video or image)'
-            : musicUrl
-              ? `Final film with music (${formatTimeMS(musicRange[0])} – ${formatTimeMS(musicRange[1])})`
-              : 'Save cards as a final film'
-        }
+        title={(() => {
+          const totalCards = completedSourceVideos.length + visibleUserImages.length
+          if (totalCards < 1) return 'Need at least 1 finished item (video or image)'
+          const hasAudio = Boolean(musicUrl) || Boolean(voiceoverUrl)
+          if (totalCards === 1) {
+            return hasAudio ? 'Apply soundtrack and save to Library' : 'Save this clip as a Final Film'
+          }
+          return musicUrl
+            ? `Final film with music (${formatTimeMS(musicRange[0])} – ${formatTimeMS(musicRange[1])})`
+            : 'Save cards as a final film'
+        })()}
       >
         {isMerging ? (
           <>
