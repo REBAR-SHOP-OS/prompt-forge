@@ -43,6 +43,13 @@ const labels = {
     monthTitle: 'This month',
     monthEmpty: 'No major occasions this month.',
     canada: 'Canada', international: 'International', religious: 'Religious',
+    scenarioTitle: 'Scenario',
+    pickOccasion: 'Click an occasion to generate a 10-second cinematic scenario.',
+    generating: 'Writing scenario…',
+    regenerate: 'Regenerate',
+    useInPrompt: 'Use in prompt',
+    badge10s: '10s',
+    scenarioError: 'Could not generate scenario.',
   },
   fa: {
     whatItIs: 'معرفی', history: 'تاریخچه',
@@ -52,6 +59,13 @@ const labels = {
     monthTitle: 'این ماه',
     monthEmpty: 'مناسبت مهمی در این ماه نیست.',
     canada: 'کانادا', international: 'بین‌المللی', religious: 'دینی',
+    scenarioTitle: 'سناریو',
+    pickOccasion: 'روی یک مناسبت کلیک کنید تا سناریوی سینمایی ۱۰ ثانیه‌ای ساخته شود.',
+    generating: 'در حال نوشتن سناریو…',
+    regenerate: 'تولید دوباره',
+    useInPrompt: 'استفاده در پرامت',
+    badge10s: '۱۰ ثانیه',
+    scenarioError: 'ساخت سناریو ممکن نشد.',
   },
 }
 
