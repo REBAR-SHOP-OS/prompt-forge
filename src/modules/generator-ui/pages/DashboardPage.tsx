@@ -832,6 +832,8 @@ export default function DashboardPage() {
       // Roll back the optimistic removal on failure.
       setGeneratedVideos(prevGenerated)
       if (isMerged) setMergedEntries(prevMerged)
+      setProjectSourceJobs(prevProjectSourceJobs)
+      persistProjectSourceJobs(prevProjectSourceJobs)
       const msg = err instanceof ApiError ? err.message : (err as Error).message
       if (typeof window !== 'undefined') window.alert(`Delete failed: ${msg}`)
     }
