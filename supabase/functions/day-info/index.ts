@@ -1,4 +1,4 @@
-// Edge function: returns rich Markdown info about a Gregorian date using Lovable AI.
+// Edge function: returns structured marketing-worthy occasions for a Gregorian date.
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
@@ -36,56 +36,58 @@ Deno.serve(async (req) => {
 
 SKIP: purely historical events, birthdays, deaths, obscure local holidays, and religious-only observances with no commercial/marketing angle.
 
-If the date has NO marketing-worthy occasion, say so honestly — do not invent.
+If the date has NO marketing-worthy occasion, return an empty occasions array — do not invent.
 
 Provide 3–5 concrete, creative campaign ideas per occasion (promotions, social posts, content angles, partnerships, UGC, giveaways).`
 
-    const enPrompt = `${baseRules}
+    const langInstruction = lang === 'fa'
+      ? `همه فیلدها (title, whatItIs, audience, ideas, hashtags) را به زبان فارسی روان و طبیعی (نه تحت‌اللفظی) بنویس. در title نام بین‌المللی را در پرانتز انگلیسی بیاور (مثل: روز جهانی شکلات (World Chocolate Day)). هشتگ‌ها بدون کاراکتر # و می‌توانند فارسی یا انگلیسی باشند.`
+      : `Write all fields (title, whatItIs, audience, ideas, hashtags) in English. Hashtags without the # character.`
 
-Output GitHub-flavored Markdown in English only. Use exactly this structure:
-
-## 🎯 Marketing-Worthy Occasions
-
-For each occasion:
-
-### {Occasion Name}
-**What it is:** short description.
-
-**Audience:** target audience.
-
-**Campaign Ideas:**
-- Idea 1
-- Idea 2
-- Idea 3
-
-**Hashtags:** \`#Tag1\` \`#Tag2\` \`#Tag3\``
-
-    const faPrompt = `${baseRules}
-
-خروجی را به‌صورت کامل به زبان فارسی روان و طبیعی (نه ترجمه تحت‌اللفظی) بنویس. از Markdown سازگار با GitHub استفاده کن. دقیقاً این ساختار را رعایت کن:
-
-## 🎯 مناسبت‌های مناسب تبلیغات
-
-برای هر مناسبت:
-
-### {نام مناسبت به فارسی}
-**معرفی:** توضیح کوتاه.
-
-**مخاطب:** مخاطب هدف.
-
-**ایده‌های کمپین:**
-- ایده ۱
-- ایده ۲
-- ایده ۳
-
-**هشتگ‌ها:** \`#تگ۱\` \`#تگ۲\` \`#تگ۳\`
-
-نام‌های بین‌المللی مناسبت را در پرانتز انگلیسی هم بیاور (مثلاً: روز جهانی شکلات (World Chocolate Day)).`
-
-    const systemPrompt = lang === 'fa' ? faPrompt : enPrompt
+    const systemPrompt = `${baseRules}\n\n${langInstruction}\n\nYou MUST respond by calling the return_occasions function.`
     const userPrompt = lang === 'fa'
       ? `مناسبت‌های تبلیغاتی این تاریخ را بده: ${longDate} (${date}).`
       : `Provide marketing-worthy occasions for: ${longDate} (${date}).`
+
+    const tools = [
+      {
+        type: 'function',
+        function: {
+          name: 'return_occasions',
+          description: 'Return a list of marketing-worthy occasions for the date.',
+          parameters: {
+            type: 'object',
+            properties: {
+              occasions: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    title: { type: 'string', description: 'Occasion name' },
+                    whatItIs: { type: 'string', description: 'Short description of what the occasion is' },
+                    audience: { type: 'string', description: 'Target audience for marketing' },
+                    ideas: {
+                      type: 'array',
+                      items: { type: 'string' },
+                      description: '3-5 concrete campaign ideas',
+                    },
+                    hashtags: {
+                      type: 'array',
+                      items: { type: 'string' },
+                      description: '3-5 hashtags without # character',
+                    },
+                  },
+                  required: ['title', 'whatItIs', 'audience', 'ideas', 'hashtags'],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ['occasions'],
+            additionalProperties: false,
+          },
+        },
+      },
+    ]
 
     const aiResp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
@@ -99,6 +101,8 @@ For each occasion:
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
+        tools,
+        tool_choice: { type: 'function', function: { name: 'return_occasions' } },
       }),
     })
 
@@ -121,8 +125,17 @@ For each occasion:
     }
 
     const data = await aiResp.json()
-    const markdown: string = data?.choices?.[0]?.message?.content ?? ''
-    return new Response(JSON.stringify({ markdown }), {
+    const toolCall = data?.choices?.[0]?.message?.tool_calls?.[0]
+    let occasions: unknown[] = []
+    try {
+      const args = toolCall?.function?.arguments
+      const parsed = typeof args === 'string' ? JSON.parse(args) : args
+      occasions = Array.isArray(parsed?.occasions) ? parsed.occasions : []
+    } catch (err) {
+      console.error('Failed to parse tool call:', err)
+    }
+
+    return new Response(JSON.stringify({ occasions, lang }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (e) {
