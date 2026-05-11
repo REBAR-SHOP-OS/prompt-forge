@@ -1099,17 +1099,26 @@ export default function DashboardPage() {
   // Per user request: each session starts with an empty workspace.
   // Past renders remain in the database but are not loaded on entry.
   // New jobs created in this session still appear in History as usual.
+  // IMPORTANT: only reset when the logged-in user identity actually changes
+  // (login / logout / account switch). Token refreshes (e.g. when Chrome
+  // refocuses a backgrounded tab) must NOT wipe the workspace.
+  const lastWorkspaceUserIdRef = useRef<string | null | undefined>(undefined)
   useEffect(() => {
     if (authLoading) return
+    if (lastWorkspaceUserIdRef.current === userId) return
+    lastWorkspaceUserIdRef.current = userId
     setGeneratedVideos([])
     setIsLibraryLoading(false)
     setVideoColumnMessage(null)
-  }, [authLoading, session])
+  }, [authLoading, userId])
 
   // Per user request: start with no images loaded. Uploads in this session
   // still populate the list normally; existing rows in the DB are preserved.
+  const lastImagesUserIdRef = useRef<string | null | undefined>(undefined)
   useEffect(() => {
     if (authLoading || !userId) return
+    if (lastImagesUserIdRef.current === userId) return
+    lastImagesUserIdRef.current = userId
     setUserImages([])
   }, [authLoading, userId])
 

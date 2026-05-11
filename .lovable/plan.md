@@ -1,50 +1,46 @@
-## هدف
-افزودن **ستون سوم** به دیالوگ تقویم که همهٔ مناسبت‌های ماه جاری را به‌صورت تیتر سبز فهرست کند، به‌علاوهٔ نوار **آیکون‌های فیلتر** برای ۳ دستهٔ اصلی (کانادا / بین‌المللی / دینی).
+## Problem
 
-## تغییرات
+When you switch away from the Chrome tab and come back, the dashboard returns to the empty "Start forging a prompt" state and your loaded clips/images disappear.
 
-### 1) Edge Function: `supabase/functions/day-info/index.ts`
-- پشتیبانی از حالت ماهانه: اگر body به‌جای `date` شامل `month` (`YYYY-MM`) باشد، prompt درخواست کند برای **هر روز ماه** که مناسبت دارد، آیتم برگرداند.
-- افزودن فیلد `category` به schema با enum: `"canada" | "international" | "religious"`.
-- افزودن فیلد `date` (`YYYY-MM-DD`) به هر آیتم در حالت ماهانه (در حالت روزانه نیازی نیست).
-- در حالت ماهانه: ساختار خروجی `{ occasions: [{ date, title, category, whatItIs, history }] }`. برای کاهش هزینه/توکن، در حالت ماهانه می‌توان `whatItIs`/`history` را اختیاری/کوتاه‌تر کرد، ولی برای سادگی همان شِما حفظ می‌شود (کاربر روی روز کلیک می‌کند تا full detail در کش‌شده ماهانه استفاده شود).
-- در حالت روزانه نیز فیلد `category` اضافه شود (برای سازگاری UI).
-- قواعد whitelist/blacklist موجود حفظ می‌شود.
+## Root cause
 
-### 2) `src/modules/generator-ui/components/CalendarInfoDialog.tsx`
-- **چیدمان grid**: از `md:grid-cols-[auto,1fr]` به `md:grid-cols-[auto,1fr,1fr]` (سه ستون: تقویم | جزئیات روز | لیست ماه).
-- **State جدید**:
-  - `monthCache: Record<string, MonthOccasion[]>` با کلید `v1:${YYYY-MM}:${lang}`.
-  - `activeFilters: Set<'canada'|'international'|'religious'>` با پیش‌فرض هر سه روشن.
-- **Fetch ماهانه**: هنگام تغییر ماه نمایش‌داده‌شده (`onMonthChange` از DayPicker) یا باز شدن دیالوگ، edge function با `{ month: 'YYYY-MM', lang }` فراخوانی شود.
-- **ستون سوم (Month column)**:
-  - هدر: نام ماه + ردیف ۳ آیکون فیلتر toggle:
-    - 🍁 `Maple` (lucide `Leaf`) برای کانادا
-    - 🌍 `Globe` برای بین‌المللی
-    - ✝️ `Church` (یا `Sparkles`) برای دینی
-    - هر آیکون با تیتلتیپ نام دسته (en/fa). کلیک = toggle. وقتی خاموش است opacity کم + خط روی آیکون.
-  - بدنه: لیست scrollable از مناسبت‌های ماه که با `activeFilters` فیلتر شده‌اند، گروه‌بندی بر اساس روز:
-    ```
-    May 5
-      ▸ Cinco de Mayo (سبز)
-    May 11
-      ▸ National Day for Truth... (سبز)
-    ```
-  - تیتر مناسبت با کلاس `text-emerald-400 hover:text-emerald-300 font-medium` (سبز در هر دو تم).
-  - کلیک روی هر تیتر → `setSelectedDate(parsedDate)` → ستون وسط آن روز را نمایش می‌دهد (با cache روزانهٔ موجود).
-- **حالت‌ها**: loading/error/empty مشابه ستون وسط.
-- **i18n**: لیبل‌های فیلتر به `labels` اضافه شوند:
-  - en: `{ canada: 'Canada', international: 'International', religious: 'Religious', monthTitle: 'This month' }`
-  - fa: `{ canada: 'کانادا', international: 'بین‌المللی', religious: 'دینی', monthTitle: 'این ماه' }`
-- **پاسخ‌گویی**: در صفحات کوچک‌تر، ستون سوم زیر بقیه برود (`grid-cols-1 md:grid-cols-[auto,1fr,1fr]`)، و `max-w-4xl` دیالوگ به `max-w-6xl` افزایش یابد.
+Chrome aggressively backgrounds inactive tabs. When the tab regains focus, the Supabase auth client auto-refreshes the access token and fires a `TOKEN_REFRESHED` / `SIGNED_IN` event. `AuthProvider` (`src/core/auth/AuthProvider.tsx`) calls `setSession(sess)` with a brand-new session object every time, so the `session` reference in context changes.
 
-## فنی (technical notes)
-- پارس تاریخ ماه: از `selectedDate.getFullYear()` و `getMonth()`.
-- DayPicker prop: `onMonthChange={(m) => setVisibleMonth(m)}` تا fetch ماهانه با اسکرول ماه‌ها هماهنگ شود.
-- درخواست ماهانه ممکن است کندتر باشد؛ نشانگر loading جداگانه برای ستون ماه.
-- در صورت رسیدن آیتم بدون `category` از مدل (fallback)، آن را در دستهٔ `international` قرار بده.
+`DashboardPage.tsx` has two effects whose dependency arrays include the whole `session` object:
 
-## خارج از scope
-- پیش‌نشان کردن (dot/badge) روی روزهای دارای مناسبت در خود grid تقویم.
-- ذخیرهٔ persistent مناسبت‌ها در دیتابیس.
-- تفکیک ادیان (طبق پاسخ کاربر همه در یک دستهٔ «دینی» جمع می‌شوند).
+```text
+useEffect(() => {                         // line 1102
+  if (authLoading) return
+  setGeneratedVideos([])
+  setIsLibraryLoading(false)
+  setVideoColumnMessage(null)
+}, [authLoading, session])
+
+useEffect(() => {                         // line 1111
+  if (authLoading || !userId) return
+  setUserImages([])
+}, [authLoading, userId])
+```
+
+Because `session` is a new reference after every token refresh, the first effect re-runs and wipes `generatedVideos` (and resets the column message), which is exactly the empty state seen in the screenshot. The second one already keys off `userId` so it's safe, but the first one is the culprit.
+
+## Fix (frontend only, presentation layer)
+
+Convert both "reset on session start" effects to run only when the **identity of the logged-in user actually changes** (login / logout / account switch), not on every token refresh.
+
+Implementation in `src/modules/generator-ui/pages/DashboardPage.tsx`:
+
+1. Replace the `[authLoading, session]` dependency with `[authLoading, userId]` for the workspace-reset effect.
+2. Track the last user id we initialized for in a `useRef<string | null>(null)`. Only run the reset block when `userId` transitions to a different non-null value (or to `null` on sign-out). This guarantees that:
+   - First load after login → workspace resets once (existing behavior).
+   - Token refresh on tab refocus → no-op (bug fixed).
+   - Switching accounts → workspace resets.
+3. Apply the same `ref`-guarded pattern to the user-images reset effect for consistency, so a future change to its deps can't reintroduce the same bug.
+
+No changes to `AuthProvider`, no backend changes, no behavior change for actual login/logout.
+
+## Verification
+
+- Open the app, load some content, switch to another Chrome tab for ~1 minute, switch back → workspace and images remain intact.
+- Sign out and sign back in → workspace resets to empty as before.
+- Console shows no auth errors and no extra renders beyond the auth state change itself.
