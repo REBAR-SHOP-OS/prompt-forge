@@ -608,7 +608,10 @@ export async function mergeVideoUrls(
     if (soundtrackClampRaf) cancelAnimationFrame(soundtrackClampRaf)
     if (soundtrackEndedHandler) soundtrackEl.removeEventListener('ended', soundtrackEndedHandler)
     try { soundtrackEl.pause() } catch { /* ignore */ }
-    soundtrackEl.src = ''
+  }
+  if (voiceoverEl) {
+    try { voiceoverEl.pause() } catch { /* ignore */ }
+    voiceoverEl.src = ''
   }
   if (audioCtx) {
     try { await audioCtx.close() } catch { /* ignore */ }
