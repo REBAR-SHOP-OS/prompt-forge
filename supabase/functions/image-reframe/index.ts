@@ -7,7 +7,7 @@ import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 import { getServiceClient } from "../_shared/core/supabase.ts";
 // deno-lint-ignore-file no-explicit-any
-import { Image, decode } from "https://esm.sh/imagescript@1.3.0";
+import { Image, decode } from "https://deno.land/x/imagescript@1.2.17/mod.ts";
 
 const ALLOWED_RATIOS: Record<string, [number, number]> = {
   "9:16": [9, 16],
