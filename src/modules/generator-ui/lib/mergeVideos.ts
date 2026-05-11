@@ -456,9 +456,9 @@ export async function mergeVideoUrls(
   })
   recorder.start(250)
 
-  if (soundtrackEl && audio) {
-    const winStart = Math.max(0, audio.startSec)
-    const winEnd = Math.max(winStart + 0.05, audio.endSec)
+  if (soundtrackEl && musicTrack) {
+    const winStart = Math.max(0, musicTrack.startSec)
+    const winEnd = Math.max(winStart + 0.05, musicTrack.endSec)
     // Re-seek immediately before play() — some browsers reset currentTime
     // while the element is idle, which would otherwise leak the unselected
     // intro of the file into the recording.
