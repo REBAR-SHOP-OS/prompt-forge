@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 interface CalendarInfoDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  onApplyPrompt?: (prompt: string) => void
 }
 
 type Category = 'canada' | 'international' | 'religious'
