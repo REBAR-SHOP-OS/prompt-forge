@@ -1526,6 +1526,27 @@ export default function DashboardPage() {
     setUploadedFiles((currentFiles) => currentFiles.filter((file) => file.id !== fileId))
   }
 
+  // When the user is viewing a finalized project (selectedProjectId set) and
+  // wants to extend it — add a new card or run Final Film again — restore the
+  // project's source clips into the live workspace so they appear in HISTORY
+  // alongside the new card, then exit project-snapshot mode.
+  function resumeSelectedProject() {
+    if (!selectedProjectId) return
+    const snapshot = projectSourceJobs[selectedProjectId] ?? []
+    if (snapshot.length > 0) {
+      setGeneratedVideos((current) => snapshot.reduce((acc, j) => mergeJob(acc, j), current))
+      setWorkspaceHiddenJobIds((curr) => {
+        const next = new Set(curr)
+        for (const j of snapshot) next.delete(j.id)
+        persistWorkspaceHiddenJobIds(next)
+        return next
+      })
+    }
+    setSelectedProjectId(null)
+    setPreviewVideoId(null)
+    setPreviewDismissed(true)
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
