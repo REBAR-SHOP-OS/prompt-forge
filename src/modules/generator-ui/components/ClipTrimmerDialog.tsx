@@ -156,8 +156,20 @@ export default function ClipTrimmerDialog({
               src={videoUrl}
               controls
               playsInline
+              preload="auto"
               className="mx-auto block max-h-[50vh] w-full bg-black"
-              onLoadedMetadata={(e) => setDuration(Number.isFinite(e.currentTarget.duration) ? e.currentTarget.duration : 0)}
+              onLoadedMetadata={(e) => {
+                const el = e.currentTarget
+                const dur = Number.isFinite(el.duration) ? el.duration : 0
+                setDuration(dur)
+                // Force the first frame to paint so the preview isn't blank
+                // until the user hits play.
+                try {
+                  if (el.currentTime === 0 && dur > 0) {
+                    el.currentTime = Math.min(0.05, Math.max(0, dur - 0.05))
+                  }
+                } catch { /* noop */ }
+              }}
             />
           </div>
 
