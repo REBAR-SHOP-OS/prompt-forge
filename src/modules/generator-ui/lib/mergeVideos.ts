@@ -16,14 +16,53 @@ export interface MergeProgress {
 
 export type MergeProgressCallback = (p: MergeProgress) => void
 
-export interface MergeAudioOptions {
+export interface MergeMusicTrack {
   src: string
   startSec: number
   endSec: number
   /** 0..1, default 1 */
   musicVolume?: number
-  /** 0..1, default 0 (music-only). Set >0 to mix clip audio in. */
+}
+
+export interface MergeVoiceoverTrack {
+  src: string
+  /** 0..1, default 1 */
+  volume?: number
+}
+
+export interface MergeAudioOptions {
+  /** Looping background music with a selected window. */
+  music?: MergeMusicTrack
+  /** Voiceover playing once from t=0. */
+  voiceover?: MergeVoiceoverTrack
+  /** 0..1. Defaults to 0 when music or voiceover is present, 1 otherwise. */
   clipVolume?: number
+  // --- Back-compat: older callers passed a flat MergeMusicTrack shape. ---
+  src?: string
+  startSec?: number
+  endSec?: number
+  musicVolume?: number
+}
+
+function normalizeAudioOptions(audio?: MergeAudioOptions): {
+  music?: MergeMusicTrack
+  voiceover?: MergeVoiceoverTrack
+  clipVolume?: number
+} | undefined {
+  if (!audio) return undefined
+  // Legacy flat shape -> wrap as music.
+  if (typeof audio.src === 'string' && !audio.music && !audio.voiceover) {
+    return {
+      music: {
+        src: audio.src,
+        startSec: audio.startSec ?? 0,
+        endSec: audio.endSec ?? 0,
+        musicVolume: audio.musicVolume,
+      },
+      clipVolume: audio.clipVolume,
+    }
+  }
+  return { music: audio.music, voiceover: audio.voiceover, clipVolume: audio.clipVolume }
 }
 
 export type TransitionId =
