@@ -1050,23 +1050,6 @@ export default function DashboardPage() {
         }
 
         setGeneratedVideos(hydratedJobs)
-
-        // Fresh login → present the empty "Start forging a prompt" workspace.
-        // We hide existing jobs from HISTORY (Library is unaffected) and
-        // disable the preview fallback. No server-side data is deleted.
-        try {
-          if (typeof window !== 'undefined' && window.sessionStorage.getItem('workspace-fresh-login') === '1') {
-            const nextHidden = new Set(workspaceHiddenJobIds)
-            for (const j of hydratedJobs) nextHidden.add(j.id)
-            setWorkspaceHiddenJobIds(nextHidden)
-            persistWorkspaceHiddenJobIds(nextHidden)
-            setPreviewVideoId(null)
-            setPreviewDismissed(true)
-            setLockedProjectRatio(null)
-            persistLockedRatio(null)
-            window.sessionStorage.removeItem('workspace-fresh-login')
-          }
-        } catch { /* ignore */ }
       } catch (error) {
         if (!isActive) {
           return
