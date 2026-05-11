@@ -71,7 +71,7 @@ const labels = {
 
 const ALL_CATEGORIES: Category[] = ['canada', 'international', 'religious']
 
-export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoDialogProps) {
+export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt }: CalendarInfoDialogProps) {
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date())
   const [visibleMonth, setVisibleMonth] = useState<Date>(() => new Date())
   const [lang, setLang] = useState<'en' | 'fa'>('en')
@@ -83,6 +83,10 @@ export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoD
   const [monthError, setMonthError] = useState<string | null>(null)
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null)
   const [activeFilters, setActiveFilters] = useState<Set<Category>>(() => new Set(ALL_CATEGORIES))
+  const [selectedOccasion, setSelectedOccasion] = useState<Occasion | null>(null)
+  const [scenarioCache, setScenarioCache] = useState<Record<string, string>>({})
+  const [scenarioLoading, setScenarioLoading] = useState(false)
+  const [scenarioError, setScenarioError] = useState<string | null>(null)
   const { toast } = useToast()
 
   const dateKey = useMemo(() => fmt(selectedDate), [selectedDate])
