@@ -26,8 +26,8 @@ const fmt = (d: Date) => {
 }
 
 const labels = {
-  en: { whatItIs: 'About', history: 'History', empty: 'No notable occasion found for this day.', loading: 'Loading occasions…', pick: 'Pick a date to see occasions.' },
-  fa: { whatItIs: 'معرفی', history: 'تاریخچه', empty: 'مناسبتی برای این روز یافت نشد.', loading: 'در حال بارگذاری…', pick: 'یک تاریخ انتخاب کنید تا مناسبت‌ها را ببینید.' },
+  en: { whatItIs: 'About', history: 'History', empty: 'No major holiday on this day.', loading: 'Loading occasions…', pick: 'Pick a date to see occasions.' },
+  fa: { whatItIs: 'معرفی', history: 'تاریخچه', empty: 'مناسبت مهمی برای این روز ثبت نشده است.', loading: 'در حال بارگذاری…', pick: 'یک تاریخ انتخاب کنید تا مناسبت‌ها را ببینید.' },
 }
 
 export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoDialogProps) {
