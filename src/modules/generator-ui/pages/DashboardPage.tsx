@@ -542,6 +542,36 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  // Per-project snapshot of the source clips that produced each Final Film
+  // (Library item). Lets us re-show the source cards in HISTORY when the user
+  // clicks the project card in Library. Persisted per-user across refreshes.
+  const [projectSourceJobs, setProjectSourceJobs] = useState<Record<string, JobDetail[]>>({})
+  const projectSourceJobsKey = userId ? `project-source-jobs:${userId}` : null
+
+  useEffect(() => {
+    if (!projectSourceJobsKey) {
+      setProjectSourceJobs({})
+      return
+    }
+    try {
+      const raw = window.localStorage.getItem(projectSourceJobsKey)
+      setProjectSourceJobs(raw ? (JSON.parse(raw) as Record<string, JobDetail[]>) : {})
+    } catch {
+      setProjectSourceJobs({})
+    }
+  }, [projectSourceJobsKey])
+
+  function persistProjectSourceJobs(next: Record<string, JobDetail[]>) {
+    if (!projectSourceJobsKey) return
+    try {
+      window.localStorage.setItem(projectSourceJobsKey, JSON.stringify(next))
+    } catch { /* ignore */ }
+  }
+
+  // When set, HISTORY is filtered to show only the source clips of this
+  // Library project. Cleared by Start Over or by the inline "Clear" button.
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+
   // Revoke object URLs on unmount.
   useEffect(() => {
     return () => {
@@ -905,6 +935,19 @@ export default function DashboardPage() {
 
   // Right-panel display order: oldest first (chronological ASC), with manual drag-and-drop overrides.
   const displayedVideos = useMemo(() => {
+    // Selected-project mode: HISTORY shows the snapshot of source clips that
+    // produced that Final Film, regardless of workspace-hidden state.
+    if (selectedProjectId) {
+      const snapshot = projectSourceJobs[selectedProjectId] ?? []
+      // Merge snapshot with any live generatedVideos entries of the same ids
+      // (live entries are richer; snapshot is the fallback when the live job
+      // is gone or was hidden).
+      const liveById = new Map(generatedVideos.map((v) => [v.id, v]))
+      const merged = snapshot.map((s) => liveById.get(s.id) ?? s)
+      return [...merged].sort(
+        (l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime()
+      )
+    }
     const chronoAsc = [...generatedVideos]
       .filter((v) => !workspaceHiddenJobIds.has(v.id))
       .sort(
@@ -924,7 +967,7 @@ export default function DashboardPage() {
       if (byId.has(v.id)) ordered.push(v)
     }
     return ordered
-  }, [generatedVideos, manualOrder, workspaceHiddenJobIds])
+  }, [generatedVideos, manualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs])
 
   const handleCardDragStart = (id: string) => (event: React.DragEvent) => {
     setDraggingId(id)
@@ -2023,32 +2066,27 @@ export default function DashboardPage() {
       })
       setPreviewVideoId(mergedId)
 
-      // ===== Purge History sources from the server =====
-      // Per product rule: History is an ephemeral workspace. Once Final Film
-      // is produced and saved to Library, every source job (+ video asset +
-      // storage file) and every uploaded image used during this session is
-      // permanently removed from the server. Only the merged film survives.
-      const sourceJobsToPurge = generatedVideos.filter((v) => !v.id.startsWith('merged-'))
-      const imagesToPurge = userImages
-      try {
-        const tasks: Promise<unknown>[] = []
-        for (const v of sourceJobsToPurge) tasks.push(jobOrchestratorGateway.deleteJob(v.id))
-        for (const i of imagesToPurge) tasks.push(generatorUiGateway.deleteUserImage(i.id))
-        const results = await Promise.allSettled(tasks)
-        const failed = results.filter((r) => r.status === 'rejected').length
-        if (failed > 0) {
-          console.warn(`[merge] purge: ${failed}/${tasks.length} server deletions failed`)
-        }
-      } catch (purgeErr) {
-        console.error('[merge] purge step failed', purgeErr)
+      // ===== Snapshot source clips for this project =====
+      // We keep source jobs on the server so the user can re-open the project
+      // from Library and inspect its source clips in HISTORY. We also save a
+      // snapshot here as a defensive fallback in case a source job is later
+      // removed for any reason.
+      const sourceJobs = generatedVideos.filter((v) => !v.id.startsWith('merged-'))
+      {
+        const nextMap = { ...projectSourceJobs, [mergedId]: sourceJobs }
+        setProjectSourceJobs(nextMap)
+        persistProjectSourceJobs(nextMap)
       }
-      // Clear History from the UI regardless of individual failures — server
-      // is the source of truth on next reload, and a partial purge still
-      // matches the rule (anything that survived will be cleaned by Start
-      // Over or the next Final Film).
-      setGeneratedVideos((current) => current.filter((v) => v.id.startsWith('merged-')))
-      setUserImages([])
-      // Reset per-clip ephemeral state tied to purged sources.
+      // Hide the source jobs from the default HISTORY view so the workspace
+      // looks fresh after Final Film, but keep them on the server. Clicking
+      // the Library card re-shows them via selectedProjectId.
+      {
+        const nextHidden = new Set(workspaceHiddenJobIds)
+        for (const v of sourceJobs) nextHidden.add(v.id)
+        setWorkspaceHiddenJobIds(nextHidden)
+        persistWorkspaceHiddenJobIds(nextHidden)
+      }
+      // Reset per-clip ephemeral state tied to the closing chain.
       setManualOrder(null)
       setPendingEndAppends({})
       setPendingStartPrepends({})
@@ -2122,6 +2160,8 @@ export default function DashboardPage() {
       setWorkspaceHiddenJobIds(nextHidden)
       persistWorkspaceHiddenJobIds(nextHidden)
     }
+    // Exit "selected project" mode so HISTORY shows the (now empty) workspace.
+    setSelectedProjectId(null)
     // Releasing the project lock so the user can pick a different ratio.
     setLockedProjectRatio(null)
     persistLockedRatio(null)
@@ -2713,6 +2753,26 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {selectedProjectId ? (
+          <div className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-emerald-300/20 bg-emerald-300/[0.05] px-3 py-2">
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-emerald-200/70">Showing project</p>
+              <p className="truncate text-xs font-medium text-zinc-100">
+                {visibleVideos.find((v) => v.id === selectedProjectId)?.input_prompt ?? 'Project'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedProjectId(null)}
+              className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-300 transition hover:border-white/30 hover:bg-white/[0.08]"
+              aria-label="Clear project filter"
+              title="Clear project filter"
+            >
+              <X className="h-3 w-3" aria-hidden="true" />
+            </button>
+          </div>
+        ) : null}
+
         <div className="mt-4 flex items-center justify-between">
           <div>
             <p className="text-xs font-medium text-zinc-500">Video renders</p>
@@ -3214,12 +3274,17 @@ export default function DashboardPage() {
                       onClick={() => {
                         setPreviewVideoId(video.id)
                         setIsApprovedPanelOpen(false)
+                        // Show this project's source clips in HISTORY.
+                        setSelectedProjectId(video.id.startsWith('merged-') ? video.id : null)
+                        setPreviewDismissed(false)
                       }}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault()
                           setPreviewVideoId(video.id)
                           setIsApprovedPanelOpen(false)
+                          setSelectedProjectId(video.id.startsWith('merged-') ? video.id : null)
+                          setPreviewDismissed(false)
                         }
                       }}
                     >
