@@ -2160,6 +2160,8 @@ export default function DashboardPage() {
       setWorkspaceHiddenJobIds(nextHidden)
       persistWorkspaceHiddenJobIds(nextHidden)
     }
+    // Exit "selected project" mode so HISTORY shows the (now empty) workspace.
+    setSelectedProjectId(null)
     // Releasing the project lock so the user can pick a different ratio.
     setLockedProjectRatio(null)
     persistLockedRatio(null)
