@@ -2467,6 +2467,7 @@ export default function DashboardPage() {
       <ImageReframeDialog
         open={isReframeOpen}
         onOpenChange={setIsReframeOpen}
+        onUseAsStartFrame={handleReframeAsStart}
       />
 
       <Dialog open={isMusicDialogOpen} onOpenChange={setIsMusicDialogOpen}>
