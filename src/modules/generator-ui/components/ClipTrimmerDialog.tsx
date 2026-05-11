@@ -124,7 +124,7 @@ export default function ClipTrimmerDialog({
       if (norm.length === 0) {
         throw new Error('No ranges to remove. Mark at least one cut first.')
       }
-      const result = await trimVideoLocally(videoUrl, norm)
+      const result = await trimVideoLocally(videoUrl, norm, { muteAudio })
       await onApply(result.blob, result.duration, result.extension)
       onOpenChange(false)
     } catch (e) {
