@@ -163,34 +163,9 @@ export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoD
                               <p className="leading-relaxed">{occ.whatItIs}</p>
                             </div>
                             <div>
-                              <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.audience}</div>
-                              <p className="leading-relaxed">{occ.audience}</p>
+                              <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.history}</div>
+                              <p className="leading-relaxed">{occ.history}</p>
                             </div>
-                            {occ.ideas?.length > 0 && (
-                              <div>
-                                <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.ideas}</div>
-                                <ul className="list-disc space-y-1 ps-5 leading-relaxed marker:text-amber-300/60">
-                                  {occ.ideas.map((idea, j) => (
-                                    <li key={j}>{idea}</li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                            {occ.hashtags?.length > 0 && (
-                              <div>
-                                <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.hashtags}</div>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {occ.hashtags.map((tag, j) => (
-                                    <span
-                                      key={j}
-                                      className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-200"
-                                    >
-                                      #{tag.replace(/^#/, '')}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
                           </div>
                         )}
                       </li>
