@@ -1,51 +1,27 @@
-## هدف
+## Problem
 
-با کلیک روی هر کارت در پنل **Library** (هر "پروژه" / Final Film)، پنل **HISTORY** باید کارت‌های منبع همان پروژه (کلیپ‌هایی که برای ساختن آن فاینال فیلم استفاده شده‌اند) را نمایش دهد.
+When the trash icon is clicked on a card in HISTORY while a project is selected (selected-project mode), the card sometimes does not disappear. Reason: `displayedVideos` in that mode is computed from the `projectSourceJobs` snapshot (localStorage), not from `generatedVideos`. `deleteCard` only removes the job from `generatedVideos` / `mergedEntries`, so the snapshot still resurfaces it.
 
-## وضعیت فعلی (مشکل)
+Additionally, deleting a Final Film card (`merged-…`) leaves its snapshot orphaned in `projectSourceJobs`.
 
-در `handleMerge` (خطوط ۲۰۲۶–۲۰۴۹ در `DashboardPage.tsx`) بعد از ساخت Final Film، تمام جاب‌های منبع از سرور **به‌طور دائمی حذف** می‌شوند (`jobOrchestratorGateway.deleteJob`) و از state هم پاک می‌شوند. به همین دلیل بعد از merge هیچ راهی برای بازگرداندن کلیپ‌های منبع به History وجود ندارد. این با نیاز کاربر در تضاد مستقیم است.
+## Fix (frontend only, single file)
 
-## تغییرات پیشنهادی (فقط فرانت‌اند)
+Edit `src/modules/generator-ui/pages/DashboardPage.tsx`, function `deleteCard` (≈ line 762):
 
-### ۱) ذخیره‌ی نگاشت پروژه → کلیپ‌های منبع
-- یک state جدید: `projectSourceJobs: Record<mergedId, JobDetail[]>` که برای هر مدخل Library، یک snapshot کامل از کارت‌های منبع (همان `JobDetail` با `id`, `video.storage_path`, `input_prompt`, `created_at`, ...) را نگه می‌دارد.
-- این map در `localStorage` با کلید `project-source-jobs:${userId}` ذخیره می‌شود تا بعد از refresh هم پایدار باشد.
-- در زمان merge، قبل از هر گونه پاکسازی، snapshot کلیپ‌های واجد شرایط در این map ذخیره می‌شود.
+1. After the existing optimistic state updates, also prune the deleted `jobId` from every entry of `projectSourceJobs`:
+   - Build `nextMap` by mapping each `[mergedId, clips]` to `[mergedId, clips.filter(c => c.id !== jobId)]`.
+   - Call `setProjectSourceJobs(nextMap)` and `persistProjectSourceJobs(nextMap)`.
 
-### ۲) توقف حذف سروری منابع در `handleMerge`
-- بلاک "Purge History sources from the server" حذف می‌شود (خطوط ۲۰۲۶–۲۰۵۰):
-  - دیگر `jobOrchestratorGateway.deleteJob` برای منابع صدا زده نمی‌شود.
-  - دیگر `generatorUiGateway.deleteUserImage` به‌صورت دسته‌جمعی صدا زده نمی‌شود.
-- به‌جای پاکسازی، منابع به `workspaceHiddenJobIds` اضافه می‌شوند تا HISTORY در حالت عادی (وقتی هیچ پروژه‌ای انتخاب نشده) خالی بماند — دقیقاً همان رفتار "Start Over" که قبلاً پیاده شد.
-- نتیجه: کلیپ‌های منبع هم در سرور و هم در state باقی می‌مانند ولی به‌صورت پیش‌فرض در HISTORY مخفی هستند.
+2. If `isMerged` (deleting a Final Film card):
+   - Remove `projectSourceJobs[jobId]` from the map before persisting.
+   - If `selectedProjectId === jobId`, call `setSelectedProjectId(null)` so HISTORY exits selected-project mode.
 
-### ۳) حالت "Selected Project" برای پنل HISTORY
-- یک state جدید: `selectedProjectId: string | null`.
-- وقتی کاربر روی یک کارت Library کلیک می‌کند (خط ~۳۲۱۴):
-  - اگر آن کارت یک `merged-*` است → `selectedProjectId = video.id` و علاوه بر `setPreviewVideoId`، پنل HISTORY هم به‌حالت "filtered" می‌رود.
-  - رفتار فعلی (تنظیم preview و بستن پنل) حفظ می‌شود.
-- محاسبه‌ی `displayedVideos` (خطوط ۸۸۰–۹۲۷) به‌روزرسانی می‌شود:
-  - اگر `selectedProjectId` ست شده باشد → فقط جاب‌هایی که `projectSourceJobs[selectedProjectId]` شامل آن‌هاست برگردانده شوند (بدون اعمال `workspaceHiddenJobIds`).
-  - در غیر این‌صورت → رفتار فعلی (فیلتر با `workspaceHiddenJobIds`).
-- شمارنده‌ی HISTORY هم همین `displayedVideos.length` را نشان می‌دهد (که از قبل اصلاح شده).
+3. Rollback path: on backend failure, restore the previous `projectSourceJobs` map (capture `prevProjectSourceJobs` alongside `prevGenerated` / `prevMerged` before mutation) and re-persist it.
 
-### ۴) UI پنل HISTORY در حالت Project Selected
-- یک هدر کوچک بالای لیست HISTORY اضافه می‌شود که می‌گوید "Showing clips of: {project name}" به‌همراه یک دکمه‌ی **Clear** (آیکون ×) که `selectedProjectId = null` می‌کند و به نمای پیش‌فرض برمی‌گردد.
-- وقتی کاربر **Start Over** می‌زند، `selectedProjectId` هم null می‌شود.
-- وقتی کاربر روی کارت Library که `merged-*` نیست کلیک می‌کند (در حال حاضر چنین چیزی وجود ندارد ولی برای امنیت)، `selectedProjectId = null`.
+No backend, gateway, RLS, or schema changes — server-side delete (`jobOrchestratorGateway.deleteJob` / storage `remove`) is already correct. This is purely closing the local-state gap so the trash icon truly removes the clip from view in every mode.
 
-### ۵) Hydration اولیه
-- موقع mount، `projectSourceJobs` از localStorage خوانده می‌شود.
-- کارت‌های مربوط به پروژه‌های قدیمی که قبل از این تغییر merge شدند، snapshot ندارند → برای آن‌ها کلیک روی Library فقط preview را عوض می‌کند (مثل قبل) و یک پیام کوچک "No source clips recorded for this older project" در HISTORY نشان داده می‌شود.
+## Verification
 
-## نکات
-
-- هیچ بک‌اند یا migration نیاز نیست؛ همه‌چیز در فرانت‌اند + localStorage است.
-- کارت‌های Library هرگز حذف نمی‌شوند (طبق الزام قبلی کاربر).
-- سورس فایل‌های ویدیویی در سرور باقی می‌مانند تا بازپخش در HISTORY در حالت Selected Project کار کند. این یک trade-off فضای ذخیره‌سازی برای حفظ تاریخچه‌ی پروژه است.
-
-## فایل‌های تحت تأثیر
-
-- `src/modules/generator-ui/pages/DashboardPage.tsx` (تنها فایل تغییریافته)
-
+- Click a Library project → HISTORY shows snapshot clips. Click trash on one → card disappears immediately and stays gone after refresh.
+- Click trash on a Final Film card in Library → card disappears, snapshot for it is purged, and if it was the selected project, HISTORY returns to default mode.
+- Simulate a backend failure (offline) → card reappears and snapshot is restored.
