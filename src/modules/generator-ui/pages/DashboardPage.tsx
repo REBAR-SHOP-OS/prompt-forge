@@ -2753,6 +2753,26 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {selectedProjectId ? (
+          <div className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-emerald-300/20 bg-emerald-300/[0.05] px-3 py-2">
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-emerald-200/70">Showing project</p>
+              <p className="truncate text-xs font-medium text-zinc-100">
+                {visibleVideos.find((v) => v.id === selectedProjectId)?.input_prompt ?? 'Project'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedProjectId(null)}
+              className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-300 transition hover:border-white/30 hover:bg-white/[0.08]"
+              aria-label="Clear project filter"
+              title="Clear project filter"
+            >
+              <X className="h-3 w-3" aria-hidden="true" />
+            </button>
+          </div>
+        ) : null}
+
         <div className="mt-4 flex items-center justify-between">
           <div>
             <p className="text-xs font-medium text-zinc-500">Video renders</p>
