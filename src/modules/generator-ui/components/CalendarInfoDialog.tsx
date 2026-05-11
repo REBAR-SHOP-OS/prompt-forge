@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarDays, ChevronDown, Church, Globe2, Languages, Leaf, LoaderCircle } from 'lucide-react'
+import { CalendarDays, ChevronDown, Church, Clapperboard, Globe2, Languages, Leaf, LoaderCircle, RefreshCw, Wand2 } from 'lucide-react'
 import { Calendar } from '@/components/ui/calendar'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 interface CalendarInfoDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  onApplyPrompt?: (prompt: string) => void
 }
 
 type Category = 'canada' | 'international' | 'religious'
@@ -42,6 +43,13 @@ const labels = {
     monthTitle: 'This month',
     monthEmpty: 'No major occasions this month.',
     canada: 'Canada', international: 'International', religious: 'Religious',
+    scenarioTitle: 'Scenario',
+    pickOccasion: 'Click an occasion to generate a 10-second cinematic scenario.',
+    generating: 'Writing scenario…',
+    regenerate: 'Regenerate',
+    useInPrompt: 'Use in prompt',
+    badge10s: '10s',
+    scenarioError: 'Could not generate scenario.',
   },
   fa: {
     whatItIs: 'معرفی', history: 'تاریخچه',
@@ -51,12 +59,19 @@ const labels = {
     monthTitle: 'این ماه',
     monthEmpty: 'مناسبت مهمی در این ماه نیست.',
     canada: 'کانادا', international: 'بین‌المللی', religious: 'دینی',
+    scenarioTitle: 'سناریو',
+    pickOccasion: 'روی یک مناسبت کلیک کنید تا سناریوی سینمایی ۱۰ ثانیه‌ای ساخته شود.',
+    generating: 'در حال نوشتن سناریو…',
+    regenerate: 'تولید دوباره',
+    useInPrompt: 'استفاده در پرامت',
+    badge10s: '۱۰ ثانیه',
+    scenarioError: 'ساخت سناریو ممکن نشد.',
   },
 }
 
 const ALL_CATEGORIES: Category[] = ['canada', 'international', 'religious']
 
-export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoDialogProps) {
+export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt }: CalendarInfoDialogProps) {
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date())
   const [visibleMonth, setVisibleMonth] = useState<Date>(() => new Date())
   const [lang, setLang] = useState<'en' | 'fa'>('en')
@@ -68,6 +83,10 @@ export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoD
   const [monthError, setMonthError] = useState<string | null>(null)
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null)
   const [activeFilters, setActiveFilters] = useState<Set<Category>>(() => new Set(ALL_CATEGORIES))
+  const [selectedOccasion, setSelectedOccasion] = useState<Occasion | null>(null)
+  const [scenarioCache, setScenarioCache] = useState<Record<string, string>>({})
+  const [scenarioLoading, setScenarioLoading] = useState(false)
+  const [scenarioError, setScenarioError] = useState<string | null>(null)
   const { toast } = useToast()
 
   const dateKey = useMemo(() => fmt(selectedDate), [selectedDate])
@@ -187,16 +206,55 @@ export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoD
     setSelectedDate(dt)
   }
 
+  const scenarioCacheKey = selectedOccasion ? `${selectedOccasion.title}::${lang}` : ''
+  const currentScenario = scenarioCacheKey ? scenarioCache[scenarioCacheKey] ?? null : null
+
+  const generateScenario = async (occ: Occasion, force = false) => {
+    const key = `${occ.title}::${lang}`
+    if (!force && scenarioCache[key]) return
+    setScenarioLoading(true)
+    setScenarioError(null)
+    try {
+      const seed = lang === 'fa'
+        ? `یک صحنه سینمایی ۱۰ ثانیه‌ای درباره «${occ.title}». ${occ.whatItIs}`
+        : `A cinematic 10-second scene about "${occ.title}". ${occ.whatItIs}`
+      const { data, error: fnError } = await supabase.functions.invoke('enhance-prompt', {
+        body: { prompt: seed, mode: 'silent' },
+      })
+      if (fnError) throw fnError
+      const text = (data as { enhancedPrompt?: string })?.enhancedPrompt?.trim() ?? ''
+      if (!text) throw new Error('Empty response')
+      setScenarioCache((c) => ({ ...c, [key]: text }))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to generate scenario'
+      setScenarioError(msg)
+      toast({ title: t.scenarioError, description: msg, variant: 'destructive' })
+    } finally {
+      setScenarioLoading(false)
+    }
+  }
+
+  const pickOccasion = (occ: Occasion) => {
+    setSelectedOccasion(occ)
+    void generateScenario(occ)
+  }
+
+  const applyScenario = () => {
+    if (!currentScenario || !onApplyPrompt) return
+    onApplyPrompt(currentScenario)
+    onOpenChange(false)
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl border-white/10 bg-[#0b0c0e]/95 p-0 text-zinc-100">
+      <DialogContent className="max-w-7xl border-white/10 bg-[#0b0c0e]/95 p-0 text-zinc-100">
         <DialogHeader className="border-b border-white/10 px-6 py-4">
           <DialogTitle className="flex items-center gap-2 text-base font-medium">
             <CalendarDays className="h-4 w-4 text-amber-300" />
             <span>Calendar</span>
           </DialogTitle>
         </DialogHeader>
-        <div className="grid gap-0 md:grid-cols-[auto,1fr,1fr]">
+        <div className="grid gap-0 md:grid-cols-[auto,1fr,1fr,1fr]">
           {/* Column 1: calendar */}
           <div className="border-white/10 p-4 md:border-r">
             <Calendar
@@ -249,7 +307,7 @@ export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoD
                       <li key={i} className="rounded-md border border-white/5 bg-white/[0.02]">
                         <button
                           type="button"
-                          onClick={() => setExpandedIndex(isOpen ? null : i)}
+                          onClick={() => { setExpandedIndex(isOpen ? null : i); pickOccasion(occ) }}
                           className={cn(
                             'flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-white/[0.04]',
                             isOpen && 'bg-white/[0.04]',
@@ -340,7 +398,7 @@ export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoD
                       <li key={`${occ.date}-${i}`}>
                         <button
                           type="button"
-                          onClick={() => handleMonthOccasionClick(occ.date)}
+                          onClick={() => { handleMonthOccasionClick(occ.date); pickOccasion(occ) }}
                           className={cn(
                             'flex w-full items-start gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-white/[0.04]',
                             isSelected && 'bg-white/[0.04]',
@@ -360,6 +418,66 @@ export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoD
                 </ul>
               )}
             </div>
+          </div>
+
+          {/* Column 4: AI scenario */}
+          <div className="flex max-h-[70vh] min-h-[420px] flex-col md:border-l border-white/10">
+            <div className="flex items-center justify-between gap-2 border-b border-white/10 px-5 py-2">
+              <div className="flex items-center gap-2">
+                <Clapperboard className="h-4 w-4 text-amber-300" />
+                <div className="text-sm font-medium text-zinc-200">{t.scenarioTitle}</div>
+              </div>
+              <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+                {t.badge10s}
+              </span>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-3">
+              {!selectedOccasion && (
+                <div className="px-1 text-sm text-zinc-400" dir="auto">{t.pickOccasion}</div>
+              )}
+              {selectedOccasion && (
+                <div className="space-y-3">
+                  <div className="text-sm font-medium text-amber-300" dir="auto">{selectedOccasion.title}</div>
+                  {scenarioLoading && (
+                    <div className="flex items-center gap-2 text-sm text-zinc-400">
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                      {t.generating}
+                    </div>
+                  )}
+                  {!scenarioLoading && scenarioError && !currentScenario && (
+                    <div className="text-sm text-rose-300">{scenarioError}</div>
+                  )}
+                  {!scenarioLoading && currentScenario && (
+                    <p className="whitespace-pre-wrap rounded-md border border-white/5 bg-white/[0.02] p-3 text-sm leading-relaxed text-zinc-100" dir="auto">
+                      {currentScenario}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+            {selectedOccasion && (
+              <div className="flex items-center justify-end gap-2 border-t border-white/10 px-4 py-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => generateScenario(selectedOccasion, true)}
+                  disabled={scenarioLoading}
+                  className="h-8 gap-1.5 text-xs text-zinc-300 hover:text-zinc-100"
+                >
+                  <RefreshCw className={cn('h-3.5 w-3.5', scenarioLoading && 'animate-spin')} />
+                  {t.regenerate}
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={applyScenario}
+                  disabled={!currentScenario || scenarioLoading}
+                  className="h-8 gap-1.5 bg-amber-300 text-xs font-semibold text-black hover:bg-amber-200"
+                >
+                  <Wand2 className="h-3.5 w-3.5" />
+                  {t.useInPrompt}
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       </DialogContent>
