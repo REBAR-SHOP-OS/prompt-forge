@@ -525,16 +525,7 @@ export default function DashboardPage() {
   const projectSourceJobsKey = userId ? `project-source-jobs:${userId}` : null
 
   useEffect(() => {
-    if (!projectSourceJobsKey) {
-      setProjectSourceJobs({})
-      return
-    }
-    try {
-      const raw = window.localStorage.getItem(projectSourceJobsKey)
-      setProjectSourceJobs(raw ? (JSON.parse(raw) as Record<string, JobDetail[]>) : {})
-    } catch {
-      setProjectSourceJobs({})
-    }
+    setProjectSourceJobs({})
   }, [projectSourceJobsKey])
 
   function persistProjectSourceJobs(next: Record<string, JobDetail[]>) {
