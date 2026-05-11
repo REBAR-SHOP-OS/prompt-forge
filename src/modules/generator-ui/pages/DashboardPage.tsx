@@ -2026,12 +2026,21 @@ export default function DashboardPage() {
           return { id, durationMs: TRANSITION_DURATION[id] ?? 0 }
         })
 
-      const audioOpt = musicUrl && musicRange[1] > musicRange[0]
+      const hasMusic = Boolean(musicUrl && musicRange[1] > musicRange[0])
+      const hasVoiceover = Boolean(voiceoverUrl)
+      const audioOpt = hasMusic || hasVoiceover
         ? {
-            src: musicUrl,
-            startSec: musicRange[0],
-            endSec: musicRange[1],
-            musicVolume,
+            music: hasMusic
+              ? {
+                  src: musicUrl as string,
+                  startSec: musicRange[0],
+                  endSec: musicRange[1],
+                  musicVolume,
+                }
+              : undefined,
+            voiceover: hasVoiceover
+              ? { src: voiceoverUrl as string, volume: voiceoverVolume }
+              : undefined,
             clipVolume: soundtrackMode === 'music-only' ? 0 : clipVolume,
           }
         : undefined
