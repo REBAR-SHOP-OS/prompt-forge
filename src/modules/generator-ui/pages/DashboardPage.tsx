@@ -8,6 +8,7 @@ import {
   Clapperboard,
   
   Combine,
+  Crop,
   Download,
   FileUp,
   Film,
