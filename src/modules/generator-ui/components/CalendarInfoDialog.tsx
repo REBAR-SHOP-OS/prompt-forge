@@ -90,7 +90,7 @@ export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoD
         <DialogHeader className="border-b border-white/10 px-6 py-4">
           <DialogTitle className="flex items-center gap-2 text-base font-medium">
             <CalendarDays className="h-4 w-4 text-amber-300" />
-            <span>Marketing Calendar</span>
+            <span>Calendar</span>
           </DialogTitle>
         </DialogHeader>
         <div className="grid gap-0 md:grid-cols-[auto,1fr]">
