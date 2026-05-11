@@ -1929,14 +1929,20 @@ export default function DashboardPage() {
   }
 
   function handleVoiceoverAsSoundtrack(url: string, name: string) {
-    if (musicUrl) {
-      try { URL.revokeObjectURL(musicUrl) } catch { /* ignore */ }
+    if (voiceoverUrl) {
+      try { URL.revokeObjectURL(voiceoverUrl) } catch { /* ignore */ }
     }
-    setMusicName(name)
-    setMusicUrl(url)
-    setMusicDuration(0)
-    setMusicRange([0, 0])
-    setIsMusicDialogOpen(true)
+    setVoiceoverUrl(url)
+    setVoiceoverName(name)
+    setIsVoiceoverOpen(false)
+  }
+
+  function handleClearVoiceover() {
+    if (voiceoverUrl) {
+      try { URL.revokeObjectURL(voiceoverUrl) } catch { /* ignore */ }
+    }
+    setVoiceoverUrl(null)
+    setVoiceoverName(null)
   }
 
   function handlePreviewMusicRange() {
