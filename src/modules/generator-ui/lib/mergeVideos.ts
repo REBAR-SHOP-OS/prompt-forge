@@ -485,7 +485,10 @@ export async function mergeVideoUrls(
     try { await soundtrackEl.play() } catch { /* ignore autoplay reject */ }
   }
 
-  let elapsedDuration = 0
+  if (voiceoverEl) {
+    try { voiceoverEl.currentTime = 0 } catch { /* ignore */ }
+    try { await voiceoverEl.play() } catch { /* ignore autoplay reject */ }
+  }
   let prevVideo: HTMLVideoElement | null = null
   let prevClipNode: MediaElementAudioSourceNode | null = null
 
