@@ -1900,11 +1900,13 @@ export default function DashboardPage() {
     // only stitches together those edited cards (images stay included as
     // optional connective tissue). Otherwise fall back to all eligible clips.
     const editedVideoCount = baseClips.filter((c) => c.kind === 'video' && editedJobIds.has(c.id)).length
-    const eligibleClips = editedVideoCount >= 2
-      ? baseClips.filter((c) => c.kind === 'image' || editedJobIds.has(c.id))
+    const eligibleClips = editedVideoCount >= 1
+      ? (baseClips.some((c) => c.kind === 'image' || editedJobIds.has(c.id))
+          ? baseClips.filter((c) => c.kind === 'image' || editedJobIds.has(c.id))
+          : baseClips)
       : baseClips
-    if (eligibleClips.length < 2) {
-      setVideoColumnMessage('Need at least 2 finished items (videos or images) to merge.')
+    if (eligibleClips.length < 1) {
+      setVideoColumnMessage('Need at least 1 finished item (video or image) to finalize.')
       return
     }
     if (!userId) {
@@ -2322,15 +2324,15 @@ export default function DashboardPage() {
       <button
         type="button"
         onClick={handleMergeAllVideos}
-        disabled={isMerging || (Math.max(completedSourceVideos.length, selectedProjectId ? (projectSourceJobs[selectedProjectId]?.length ?? 0) : 0) + visibleUserImages.length) < 2}
+        disabled={isMerging || (Math.max(completedSourceVideos.length, selectedProjectId ? (projectSourceJobs[selectedProjectId]?.length ?? 0) : 0) + visibleUserImages.length) < 1}
         className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-emerald-300/30 hover:bg-emerald-300/[0.06] hover:text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
-        aria-label="Merge all cards into one final film"
+        aria-label="Save cards as a final film"
         title={
-          (completedSourceVideos.length + visibleUserImages.length) < 2
-            ? 'Need at least 2 finished items (videos or images)'
+          (completedSourceVideos.length + visibleUserImages.length) < 1
+            ? 'Need at least 1 finished item (video or image)'
             : musicUrl
               ? `Final film with music (${formatTimeMS(musicRange[0])} – ${formatTimeMS(musicRange[1])})`
-              : 'Merge all cards into one final film'
+              : 'Save cards as a final film'
         }
       >
         {isMerging ? (
