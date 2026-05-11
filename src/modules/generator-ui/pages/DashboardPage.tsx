@@ -692,16 +692,7 @@ export default function DashboardPage() {
   }, [legacyDeletedKey])
 
   useEffect(() => {
-    if (!mergedStorageKey) {
-      setMergedEntries([])
-      return
-    }
-    try {
-      const raw = window.localStorage.getItem(mergedStorageKey)
-      setMergedEntries(raw ? (JSON.parse(raw) as JobDetail[]) : [])
-    } catch {
-      setMergedEntries([])
-    }
+    setMergedEntries([])
   }, [mergedStorageKey])
 
   function persistMerged(next: JobDetail[]) {
