@@ -1934,6 +1934,7 @@ export default function DashboardPage() {
 
   async function handleMergeAllVideos() {
     if (isMerging) return
+    resumeSelectedProject()
     const completedVideoIds = new Set(completedSourceVideos.map((v) => v.id))
     const baseClips = displayedClips.filter((c) =>
       c.kind === 'image' ? true : completedVideoIds.has(c.id) && c.job.video?.storage_path,
