@@ -121,8 +121,8 @@ export default function ClipTrimmerDialog({
     setError(null)
     setBusy(true)
     try {
-      if (norm.length === 0) {
-        throw new Error('No ranges to remove. Mark at least one cut first.')
+      if (norm.length === 0 && !muteAudio) {
+        throw new Error('No changes to apply. Mark a cut or mute the audio first.')
       }
       const result = await trimVideoLocally(videoUrl, norm, { muteAudio })
       await onApply(result.blob, result.duration, result.extension)
@@ -283,7 +283,7 @@ export default function ClipTrimmerDialog({
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
-          <Button onClick={apply} disabled={busy || norm.length === 0}>
+          <Button onClick={apply} disabled={busy || (norm.length === 0 && !muteAudio)}>
             {busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Rendering…</> : 'Apply changes'}
           </Button>
         </DialogFooter>

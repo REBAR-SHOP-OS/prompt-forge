@@ -1,39 +1,23 @@
-# همیشه ورود به /app با وضعیت کاملاً خالی
+## Goal
+وقتی کاربر روی «Mute audio» کلیک می‌کند، دکمه «Apply changes» باید فعال شود (حتی بدون اینکه هیچ بازه‌ای cut شده باشد) و با زدن آن، صدای ویدئوی کارت کاملاً حذف شود.
 
-با ورود/رفرش روی `/app`، تقریباً همه‌چیز در صفحه پاک باشد و حالت اولیه «Start forging a prompt» نمایش داده شود (مثل تصویر اول کاربر) — بدون وابستگی به اینکه کاربر قبلاً چه چیزی ساخته یا در localStorage ذخیره شده.
+## رفتار فعلی
+- دکمه Apply فقط زمانی فعال است که `norm.length > 0` (حداقل یک بازه‌ی برش وجود داشته باشد).
+- اگر فقط mute بزنیم، Apply غیرفعال می‌ماند → نمی‌توان فقط صدا را حذف کرد.
 
-## رفتار
+## تغییرات
 
-- HISTORY راست → خالی (No renders yet)
-- ناحیه مرکزی → پیام Start forging a prompt
-- Composer پایین → بدون آپلود Start/End، بدون متن
-- Music/Voiceover → ریست
-- ترنزیشن‌ها، editedClips، pendingEndAppends/Prepends → خالی
-- جاب‌های جدیدی که در همین session ساخته شوند طبق روال در HISTORY ظاهر می‌شوند
+### ۱) `src/modules/generator-ui/components/ClipTrimmerDialog.tsx`
+- شرط `disabled` دکمه Apply را عوض کن:
+  - از: `disabled={busy || norm.length === 0}`
+  - به: `disabled={busy || (norm.length === 0 && !muteAudio)}`
+- در تابع `apply`:
+  - شرط «No ranges to remove» را فقط زمانی throw کن که `muteAudio` هم false باشد. در غیر این صورت، اجازه بده با `cuts=[]` برود به `trimVideoLocally` که خروجی همان ویدئو ولی بدون صدا تولید کند.
 
-داده‌های persist‌شده در localStorage پاک نمی‌شوند (امن باقی می‌مانند) — فقط در زمان mount لود نمی‌شوند.
+### ۲) `src/modules/generator-ui/lib/trimVideo.ts`
+- `normalizeCuts` با آرایه‌ی خالی → `[]` برمی‌گرداند، که باعث می‌شود `totalKeptDuration` = duration کامل و حلقه‌ی tick هیچ seek/pause نکند → نتیجه: کل ویدئو re-encode می‌شود بدون صدا (چون audio capture skip شده).
+- بررسی کن که با `norm = []` و `muteAudio=true` مسیر کار کند (به نظر بدون تغییر کد کار می‌کند، فقط verify).
 
-## تغییرات کد (همه در `src/modules/generator-ui/pages/DashboardPage.tsx`)
-
-1. **افکت ریست workspace** (~خط 1099):
-   - حذف گارد `lastWorkspaceUserIdRef.current === userId`
-   - تبدیل به افکت یک‌بار-روی-مونت پس از آماده‌شدن auth: روی هر mount جدید صفحه، `setGeneratedVideos([])` اجرا شود
-   - همان منطق برای `lastImagesUserIdRef`
-
-2. **افکت لود `mergedEntries` از localStorage** (~خط 748):
-   - حذف خواندن از `localStorage`؛ همیشه `setMergedEntries([])` در mount
-   - تابع `persistMerged` نگه داشته می‌شود تا اگر داخل session یک Final Film ساخته شد همان session نشانش بدهد، ولی در ورود بعدی لود نشود
-
-3. **سایر state های session که از localStorage هیدریت می‌شوند** را روی mount خالی مقداردهی کن (بدون پاک‌کردن localStorage):
-   - `pendingEndAppends`, `pendingStartPrepends` → `{}`
-   - `editedJobIds` → خالی
-   - `workspaceHiddenJobIds` → خالی
-   - `projectSourceJobs` → خالی
-   - `transitions` → `{}`
-   - `editedClips` → `{}`
-   - `uploadedFiles` → `[]`
-   - `musicName/Url/Range/Duration`, `voiceoverUrl/Name`, `previewVideoId`, `selectedProjectId`, `promptText` → null/خالی
-
-   روش: یک افکت تک‌بار `useEffect(() => { /* reset all */ }, [])` بعد از تعریف state ها، که این مقادیر را به حالت خالی برگرداند. خواندن‌های localStorage موجود به همان شکل می‌مانند ولی نتیجه‌شان توسط ریست overwrite می‌شود — برای جلوگیری از ترتیب اشتباه افکت‌ها، خواندن‌های مربوط به این state ها را حذف می‌کنیم (no-op) تا منبع حقیقت همان «خالی روی mount» باشد.
-
-نتیجه: هر بار صفحه باز شود، UI دقیقاً مثل تصویر اول دیده می‌شود.
+## نتیجه
+- کلیک روی Mute → دکمه Apply روشن می‌شود.
+- Apply → خروجی mp4/webm بدون track صوتی تولید و در همان onApply روی کارت جایگزین می‌شود (همان مسیر فعلی، بدون تغییر در منطق کارت).
