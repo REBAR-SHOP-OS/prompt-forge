@@ -106,11 +106,22 @@ async function loadVideo(url: string): Promise<HTMLVideoElement> {
   })
 }
 
+export interface TrimOptions {
+  onProgress?: (p: TrimProgress) => void
+  /** When true, omit the audio track from the output. */
+  muteAudio?: boolean
+}
+
 export async function trimVideoLocally(
   srcUrl: string,
   cuts: CutRange[],
-  onProgress?: (p: TrimProgress) => void,
+  optionsOrProgress?: TrimOptions | ((p: TrimProgress) => void),
 ): Promise<TrimResult> {
+  const options: TrimOptions = typeof optionsOrProgress === 'function'
+    ? { onProgress: optionsOrProgress }
+    : (optionsOrProgress ?? {})
+  const onProgress = options.onProgress
+  const muteAudio = options.muteAudio === true
   const video = await loadVideo(srcUrl)
   const duration = Number.isFinite(video.duration) ? video.duration : 0
   if (duration <= 0) throw new Error('Invalid video duration')
