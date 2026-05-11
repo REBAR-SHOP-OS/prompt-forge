@@ -224,9 +224,20 @@ export default function ClipTrimmerDialog({
                 Clear all
               </Button>
             ) : null}
+            <Button
+              type="button"
+              size="sm"
+              variant={muteAudio ? 'destructive' : 'ghost'}
+              onClick={() => setMuteAudio((m) => !m)}
+              disabled={busy}
+              className="ml-auto"
+              aria-pressed={muteAudio}
+              title={muteAudio ? 'Audio will be removed from the output' : 'Mute audio in output'}
+            >
+              {muteAudio ? <VolumeX className="mr-1 h-4 w-4" /> : <Volume2 className="mr-1 h-4 w-4" />}
+              {muteAudio ? 'Audio muted' : 'Mute audio'}
+            </Button>
           </div>
-
-          {norm.length > 0 ? (
             <ul className="max-h-32 space-y-1 overflow-auto rounded-md border border-white/10 bg-white/[0.02] p-2 text-xs">
               {norm.map((c, i) => (
                 <li key={i} className="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-white/5">
