@@ -1,4 +1,3 @@
-import { Deno } from 'https://deno.land/std@0.224.0/node/process.ts'
 // deno-lint-ignore-file no-explicit-any
 
 const corsHeaders = {
