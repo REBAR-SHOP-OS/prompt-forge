@@ -1,43 +1,48 @@
 ## مشکل
 
-با کلیک روی آیکون سطل آشغال:
-- در پنل **History**: `deleteJob` صدا زده می‌شود ولی RPC پشت آن (`generator_delete_job`) فقط `deleted_at = now()` ست می‌کند (soft delete). علاوه بر آن، در gateway فقط باکت‌های `merged-videos` و `wan-frames` از Storage پاک می‌شوند؛ باکت اصلی ویدیوهای تولیدشده (`user-videos`) اصلاً پاک نمی‌شود → فایل روی سرور باقی می‌ماند.
-- در پنل **Library** (Saved videos): همان `deleteCard` صدا زده می‌شود؛ برای آیتم‌های merged فقط فایل از باکت پاک می‌شود اما برای job واقعی همان مشکل soft-delete + باکت گم‌شده وجود دارد.
+پس از Final Film، کاربر اگر بعداً روی همان پروژه از Library کلیک کند، `selectedProjectId` ست می‌شود و:
+- HISTORY فقط snapshot منجمد source-clipهای آن پروژه را نشان می‌دهد.
+- اگر کاربر کارت جدید (تولید/آپلود ویدیو/تصویر) اضافه کند، چون در حالت `selectedProjectId` هستیم، کارت جدید در `displayedVideos` فیلتر می‌شود و دیده **نمی‌شود**.
+- دکمه Final Film هم بر اساس `completedSourceVideos` از `generatedVideos` فعلی (که خالی است) کار می‌کند، پس غیرفعال است (مثل اسکرین‌شات).
 
-نتیجه: فایل ویدیو روی Storage و رکورد در DB واقعاً حذف نمی‌شوند.
+نتیجه: کاربر نمی‌تواند پروژه قبلی را گسترش دهد یا یک Final Film دوم بسازد.
 
 ## هدف
 
-با کلیک trash، ویدیو **به‌طور دائمی** هم از دیتابیس و هم از Storage حذف شود.
+وقتی کاربر در حالت «Showing project» قرار دارد و می‌خواهد کارت جدید اضافه کند یا Final Film را دوباره بزند، workspace باید زنده شود: source-clipهای پروژه به workspace بازگردند، خروج از project-snapshot mode انجام شود، و ادامه کار طبیعی باشد.
 
-## تغییرات
+## تغییرات — فقط Frontend (`DashboardPage.tsx`)
 
-### 1) Migration دیتابیس — تبدیل soft-delete به hard-delete برای jobs
+### 1) تابع `resumeSelectedProject()`
+یک helper که این کارها را انجام می‌دهد:
+- اگر `selectedProjectId` set است:
+  - source-clipهای snapshot (`projectSourceJobs[selectedProjectId]`) را در `generatedVideos` ادغام کند (همان `mergeJob` موجود) تا کارت‌های قدیمی به workspace برگردند.
+  - این idها را از `workspaceHiddenJobIds` حذف کند تا قابل دیدن شوند.
+  - `setSelectedProjectId(null)` تا از حالت snapshot خارج شویم.
+  - `setPreviewDismissed(true)` و `setPreviewVideoId(null)` تا preview merged video بسته شود.
 
-تابع `public.generator_delete_job(_user_id uuid, _job_id uuid)` بازنویسی شود تا:
-- ابتدا `storage_path` تمام `generator_video_assets` متعلق به آن job را برگرداند.
-- سپس ردیف‌های `generator_video_assets` و `generator_generation_jobs` متعلق به آن کاربر/job را با `DELETE` واقعی پاک کند (نه `UPDATE deleted_at`).
-- خروجی همان `RETURNS TABLE(storage_path text)` باقی بماند تا قرارداد با gateway تغییر نکند.
-- اگر job متعلق به کاربر نباشد، `RAISE EXCEPTION 'job not found for user'` (بدون تغییر).
+### 2) فراخوانی خودکار هنگام افزودن کارت جدید
+نقاطی که کارت جدید به HISTORY اضافه می‌شود → قبل از insert، `resumeSelectedProject()` صدا زده شود:
+- `handleSubmit` (تولید جدید، خط ~1529) — قبل از ست‌کردن `seededJob`.
+- `handleUploadVideoFile` (آپلود ویدیو به‌عنوان کارت).
+- `handleImageSelected` (آپلود تصویر).
 
-نکته: trigger `guard_generation_job_updates` فقط روی UPDATE است؛ DELETE تحت تأثیر آن نیست. RLS `jobs: deny client delete` هم مهم نیست چون RPC با `SECURITY DEFINER` اجرا می‌شود.
+### 3) دکمه Final Film در حالت پروژه
+Final Film باید قابل کلیک باشد حتی وقتی پروژه باز است:
+- محاسبه `completedSourceVideos` و `visibleUserImages` از `displayedVideos` (که در حالت پروژه برابر snapshot است) صورت گیرد یا، ساده‌تر:
+- در `handleMergeAllVideos`، اگر `selectedProjectId` set است، اول `resumeSelectedProject()` صدا زده شود (snapshot به workspace بازگردد)، سپس merge ادامه یابد. شرط `disabled` دکمه هم آپدیت شود تا تعداد کارت‌های قابل ادغام را در حالت پروژه از روی snapshot+تصاویر بشمارد.
 
-### 2) Backend — افزودن باکت `user-videos` به لیست پاک‌سازی Storage
-
-`supabase/functions/_shared/modules/job-orchestrator/gateway.ts` (case `deleteJob`):
-- آرایه `KNOWN_BUCKETS` از `["merged-videos", "wan-frames"]` به `["merged-videos", "wan-frames", "user-videos"]` گسترش یابد تا فایل ویدیوی اصلی هم از Storage پاک شود.
-
-### 3) بدون تغییر در Frontend
-
-`deleteCard` در `DashboardPage.tsx` همین الان optimistic remove + فراخوانی `jobOrchestratorGateway.deleteJob` انجام می‌دهد. با تغییرات بالا، نتیجه دائمی خواهد شد. هیچ تغییری لازم نیست.
+### 4) Showing-project banner
+دکمه «X» بستن banner همچنان `setSelectedProjectId(null)` ساده می‌ماند (بدون restore، چون کاربر فقط قصد بستن دارد). اما اگر در حالت پروژه روی کارتی در HISTORY کلیک شود برای ویرایش (trim/cut)، رفتار فعلی دست‌نخورده می‌ماند.
 
 ## خارج از scope
 
-- حذف دائمی تصاویر کاربر (`generator_delete_user_image`) — کاربر فقط روی فیلم تأکید کرد.
-- تغییر در آیتم‌های merged محلی — همین الان فایل را از باکت پاک می‌کنند و در state نگهداری می‌شوند.
-- تغییر RLS، contract، یا frontend gateway.
+- بدون تغییر در backend، RPCها، یا migration.
+- بدون تغییر در ذخیره‌سازی snapshot یا ساختار merged-videos.
+- بدون تغییر در soundtrack/voiceover persistence.
 
 ## تأیید
 
-- ساخت یک ویدیو → کلیک trash در History → رفرش صفحه: ویدیو دیگر در دیتابیس نیست (`SELECT * FROM generator_generation_jobs WHERE id = ...` خالی) و فایل از باکت `user-videos` حذف شده.
-- کلیک trash در Library روی یک «Final merged video»: فایل از باکت `merged-videos` پاک می‌شود (بدون تغییر، همین الان کار می‌کند).
+- ورود → کلیک روی Library → پروژه قدیمی نشان داده می‌شود.
+- یک ویدیو/تصویر جدید تولید/آپلود می‌شود → workspace به حالت زنده برمی‌گردد، همه source-clips قبلی + کارت جدید کنار هم در HISTORY دیده می‌شوند، Final Film فعال می‌شود.
+- کلیک Final Film → یک merged video جدید ساخته می‌شود (پروژه جدید) و در Library به‌عنوان آیتم جداگانه ذخیره می‌شود. آیتم اولیه دست‌نخورده باقی می‌ماند.
