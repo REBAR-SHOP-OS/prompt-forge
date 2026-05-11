@@ -2023,7 +2023,7 @@ export default function DashboardPage() {
       const entry: JobDetail = {
         id: mergedId,
         status: 'completed',
-        input_prompt: `Final merged video — ${urls.length} clips`,
+        input_prompt: urls.length === 1 ? 'Final clip — soundtrack applied' : `Final merged video — ${urls.length} clips`,
         provider_key: 'merged',
         model_key: 'browser-canvas',
         created_at: new Date().toISOString(),
