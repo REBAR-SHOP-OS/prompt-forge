@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, Plus, Scissors, Trash2 } from 'lucide-react'
+import { Loader2, Plus, Scissors, Trash2, Volume2, VolumeX } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
