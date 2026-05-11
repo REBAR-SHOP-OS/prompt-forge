@@ -1809,6 +1809,67 @@ export default function DashboardPage() {
     })
   }
 
+  async function regenerateCard(video: JobDetail) {
+    if (!video.id) return
+    const prompt = (video.input_prompt ?? '').trim()
+    if (!prompt) {
+      setComposerError('This card has no prompt to regenerate.')
+      return
+    }
+    if (regeneratingIds.has(video.id)) return
+    setRegeneratingIds((curr) => {
+      const next = new Set(curr); next.add(video.id); return next
+    })
+    setComposerError(null)
+    setVideoColumnMessage(null)
+    try {
+      const ratio: Ratio = clipAspectRatios[video.id] ?? aspectRatio
+      const firstUrl = video.first_frame_url ?? undefined
+      const lastUrl = video.last_frame_url ?? undefined
+      const hasFrames = Boolean(firstUrl || lastUrl)
+      let createdJob: CreateJobResult
+      if (!hasFrames) {
+        createdJob = await jobOrchestratorGateway.createJob({
+          providerKey: 'wan',
+          requestedModel: 'wan2.7-t2v-2026-04-25',
+          prompt,
+          durationSeconds,
+          aspectRatio: ratio,
+        })
+      } else {
+        createdJob = await jobOrchestratorGateway.createJob({
+          providerKey: 'wan',
+          prompt,
+          firstFrameUrl: firstUrl,
+          lastFrameUrl: lastUrl,
+          durationSeconds,
+          aspectRatio: ratio,
+        })
+      }
+      const seededJob = buildSeededJob(prompt, createdJob, {
+        firstFrameUrl: firstUrl, lastFrameUrl: lastUrl,
+      })
+      rememberClipRatio(seededJob.id, ratio)
+      setGeneratedVideos((curr) => mergeJob(curr, seededJob))
+      setPreviewVideoId(seededJob.id)
+      // Now permanently remove the previous card + its video.
+      try {
+        await deleteCard(video.id)
+      } catch (cleanupErr) {
+        console.warn('regenerateCard: cleanup of previous card failed', cleanupErr)
+      }
+    } catch (error) {
+      let message = 'Could not regenerate this card.'
+      if (error instanceof ApiError) message = `${error.code}: ${error.message}`
+      setComposerError(message)
+      setVideoColumnMessage(message)
+    } finally {
+      setRegeneratingIds((curr) => {
+        const next = new Set(curr); next.delete(video.id); return next
+      })
+    }
+  }
+
   function formatTimeMS(s: number): string {
     if (!Number.isFinite(s) || s < 0) s = 0
     const m = Math.floor(s / 60)
