@@ -263,11 +263,13 @@ export async function mergeVideoUrls(
 ): Promise<MergeResult> {
   if (urls.length === 0) throw new Error('No videos to merge')
 
-  const useSoundtrack = Boolean(audio && audio.endSec > audio.startSec)
-  const musicVolume = Math.max(0, Math.min(1, audio?.musicVolume ?? 1))
-  // When no soundtrack is used, default to capturing full clip audio.
-  // When soundtrack is used, default to 0 (music-only) unless caller opts in.
-  const clipVolume = Math.max(0, Math.min(1, audio?.clipVolume ?? (useSoundtrack ? 0 : 1)))
+  const norm = normalizeAudioOptions(audio)
+  const musicTrack = norm?.music && norm.music.endSec > norm.music.startSec ? norm.music : undefined
+  const voiceoverTrack = norm?.voiceover ?? undefined
+  const useSoundtrack = Boolean(musicTrack || voiceoverTrack)
+  const musicVolume = Math.max(0, Math.min(1, musicTrack?.musicVolume ?? 1))
+  const voiceoverVolume = Math.max(0, Math.min(1, voiceoverTrack?.volume ?? 1))
+  const clipVolume = Math.max(0, Math.min(1, norm?.clipVolume ?? (useSoundtrack ? 0 : 1)))
   const captureClipAudio = clipVolume > 0
 
   const first = await loadVideo(urls[0], captureClipAudio)
@@ -315,11 +317,11 @@ export async function mergeVideoUrls(
   let soundtrackEl: HTMLAudioElement | null = null
   let soundtrackEndedHandler: (() => void) | null = null
   let soundtrackClampRaf = 0
-  if (useSoundtrack && audio && audioCtx && audioDest) {
+  if (musicTrack && audioCtx && audioDest) {
     try {
       soundtrackEl = document.createElement('audio')
       soundtrackEl.crossOrigin = 'anonymous'
-      soundtrackEl.src = audio.src
+      soundtrackEl.src = musicTrack.src
       soundtrackEl.preload = 'auto'
       // We handle looping manually so we always wrap to winStart, never to 0.
       soundtrackEl.loop = false
@@ -329,7 +331,7 @@ export async function mergeVideoUrls(
         soundtrackEl!.addEventListener('loadedmetadata', onReady)
         soundtrackEl!.addEventListener('error', onErr)
       })
-      soundtrackEl.currentTime = Math.max(0, audio.startSec)
+      soundtrackEl.currentTime = Math.max(0, musicTrack.startSec)
       const source = audioCtx.createMediaElementSource(soundtrackEl)
       const gain = audioCtx.createGain()
       gain.gain.value = musicVolume
@@ -338,6 +340,33 @@ export async function mergeVideoUrls(
     } catch (err) {
       console.warn('[mergeVideoUrls] soundtrack disabled:', err)
       soundtrackEl = null
+    }
+  }
+
+  // Voiceover: plays once from t=0, mixed alongside music + clip audio.
+  let voiceoverEl: HTMLAudioElement | null = null
+  if (voiceoverTrack && audioCtx && audioDest) {
+    try {
+      voiceoverEl = document.createElement('audio')
+      voiceoverEl.crossOrigin = 'anonymous'
+      voiceoverEl.src = voiceoverTrack.src
+      voiceoverEl.preload = 'auto'
+      voiceoverEl.loop = false
+      await new Promise<void>((resolve, reject) => {
+        const onReady = () => { voiceoverEl!.removeEventListener('loadedmetadata', onReady); resolve() }
+        const onErr = () => { voiceoverEl!.removeEventListener('error', onErr); reject(new Error('Failed to load voiceover')) }
+        voiceoverEl!.addEventListener('loadedmetadata', onReady)
+        voiceoverEl!.addEventListener('error', onErr)
+      })
+      voiceoverEl.currentTime = 0
+      const vSource = audioCtx.createMediaElementSource(voiceoverEl)
+      const vGain = audioCtx.createGain()
+      vGain.gain.value = voiceoverVolume
+      vSource.connect(vGain)
+      vGain.connect(audioDest)
+    } catch (err) {
+      console.warn('[mergeVideoUrls] voiceover disabled:', err)
+      voiceoverEl = null
     }
   }
 
