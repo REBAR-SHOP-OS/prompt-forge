@@ -2417,12 +2417,33 @@ export default function DashboardPage() {
       <button
         type="button"
         onClick={() => setIsVoiceoverOpen(true)}
-        className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-violet-300/30 hover:bg-violet-300/[0.06] hover:text-violet-100"
-        aria-label="Generate AI voiceover"
-        title="Generate an AI voiceover from text (Gemini)"
+        className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-violet-300/30 hover:bg-violet-300/[0.06] hover:text-violet-100"
+        aria-label={voiceoverUrl ? 'Replace voiceover' : 'Generate AI voiceover'}
+        title={voiceoverUrl ? 'Replace AI voiceover' : 'Generate an AI voiceover from text (Gemini)'}
       >
-        <Mic className="h-[14px] w-[14px]" aria-hidden="true" />
-        <span>Voiceover</span>
+        {voiceoverUrl ? (
+          <>
+            <Mic className="h-[14px] w-[14px]" aria-hidden="true" />
+            <span className="truncate normal-case tracking-normal">
+              {voiceoverName ?? 'Voiceover'}
+            </span>
+            <span
+              role="button"
+              tabIndex={0}
+              aria-label="Remove voiceover"
+              onClick={(ev) => { ev.stopPropagation(); handleClearVoiceover() }}
+              onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ev.stopPropagation(); handleClearVoiceover() } }}
+              className="-mr-1 grid h-5 w-5 cursor-pointer place-items-center rounded-full text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+            >
+              <X className="h-3 w-3" aria-hidden="true" />
+            </span>
+          </>
+        ) : (
+          <>
+            <Mic className="h-[14px] w-[14px]" aria-hidden="true" />
+            <span>Voiceover</span>
+          </>
+        )}
       </button>
 
       <VoiceoverDialog
