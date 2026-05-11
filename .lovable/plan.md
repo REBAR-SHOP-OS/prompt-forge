@@ -1,34 +1,18 @@
-## Problem
+هدف نهایی: دکمه Convert با فایل‌های WebP هم مثل PNG/JPG کار کند و دیگر خطای `Could not process image` ندهد.
 
-The Reframe result crops/offsets the subject instead of outpainting around it. In the screenshot, the original 1:1 poster ends up pushed to the right of the 9:16 frame with the left side cut off, instead of sitting centered with extended background above and below.
+مشکل دقیق:
+- لاگ backend نشان می‌دهد تابع `image-reframe` با خطای `Unsupported image type` شکست می‌خورد.
+- تصویر آپلودشده `.webp` است.
+- کتابخانه فعلی `imagescript` در تابع، WebP را decode نمی‌کند؛ بنابراین پردازش قبل از ارسال به Nano Banana متوقف می‌شود.
 
-Root cause: we send the raw image + a text instruction to `google/gemini-2.5-flash-image` and hope it composes a new canvas. Nano Banana does not reliably resize/recompose; it tends to return the input near-original or shifted, so the visible "9:16 result" is mostly the dialog's CSS frame, not a true reframe.
+برنامه اجرا:
+1. در `supabase/functions/image-reframe/index.ts` وابستگی decode سمت سرور را حذف/تغییر می‌دهم تا تابع دیگر مجبور به decode کردن WebP با `imagescript` نباشد.
+2. به‌جای ساخت canvas سمت backend، همان تصویر ورودی را مستقیماً به Lovable AI می‌فرستم و prompt را طوری تنظیم می‌کنم که خروجی را به نسبت انتخاب‌شده (`9:16`, `1:1`, `16:9`) با outpaint/expand تولید کند، بدون crop کردن سوژه.
+3. پیام خطا را دقیق‌تر می‌کنم تا اگر مشکل واقعی از AI، اعتبار، یا فرمت تصویر بود، کاربر علت واضح‌تری ببیند.
+4. تابع `image-reframe` را deploy و با همان مسیر edge function تست می‌کنم.
+5. لاگ‌ها را دوباره بررسی می‌کنم تا مطمئن شویم خطای `Unsupported image type` رفع شده است.
 
-## Fix
-
-Pre-compose a canvas at the exact target aspect ratio in the edge function before calling the model, with the original image centered on a neutral/transparent background, then ask Nano Banana to *fill the empty areas* (true outpainting). This gives the model a deterministic canvas to extend, so the subject stays centered and untouched.
-
-### Edge function changes (`supabase/functions/image-reframe/index.ts`)
-
-1. Fetch the input `imageUrl` as bytes server-side.
-2. Decode dimensions (use a lightweight Deno image lib, e.g. `imagescript` via esm.sh) and compute a target canvas:
-   - For `9:16`, `1:1`, `16:9`, pick canvas dims so the original fits fully inside (contain), centered, with transparent (or mid‑gray) padding on the sides that need extending.
-   - Cap longest side at ~1536 px to keep model latency/cost sane.
-3. Encode that padded canvas as PNG and pass it as the `image_url` (data URL) to Nano Banana.
-4. Tighten the instruction: "The image already has the correct ${ratio} canvas. The subject is centered. Only fill the empty/transparent padded regions by naturally extending the existing background, lighting, and texture. Do not move, scale, recolor, or alter the subject in any way. Return the full canvas at the same dimensions."
-5. Keep current upload-to-`user-images` + public URL response.
-
-### Frontend changes (`src/modules/generator-ui/components/ImageReframeDialog.tsx`)
-
-- Change the result preview from `object-cover` to `object-contain` so we never visually crop the model output (current `object-cover` hides real failures).
-- Minor: show the actual returned image dimensions under the preview for quick QA.
-
-## Out of scope
-
-- No changes to Final Film, Voiceover, Soundtrack, Start/End frame wiring, jobs, or RLS.
-- Model stays `google/gemini-2.5-flash-image` (Nano Banana). No new secrets.
-
-## Validation
-
-- Re-run the same `rebar_stirrups_small_content.webp` at 9:16 and 16:9; subject must remain centered and uncropped, with only background extended.
-- Check edge function logs for the new request shape and image size.
+ریسک و کنترل:
+- تغییر محدود به تابع reframe و پیام‌های مرتبط است؛ جریان اصلی تولید ویدیو/چت دست نمی‌خورد.
+- این راه‌حل پایدارتر است چون دیگر به decode محلی WebP وابسته نیست.
+- خروجی همچنان توسط Nano Banana ساخته می‌شود و در همان bucket فعلی ذخیره می‌شود.
