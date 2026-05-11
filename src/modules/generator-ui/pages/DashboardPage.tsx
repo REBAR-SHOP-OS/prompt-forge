@@ -1096,45 +1096,14 @@ export default function DashboardPage() {
     return hasComposerInput ? 'Shape the next version' : 'Start forging a prompt'
   }, [hasComposerInput, isDragging])
 
+  // Per user request: each session starts with an empty workspace.
+  // Past renders remain in the database but are not loaded on entry.
+  // New jobs created in this session still appear in History as usual.
   useEffect(() => {
     if (authLoading) return
-    if (!session) {
-      setIsLibraryLoading(false)
-      return
-    }
-    let isActive = true
-
-    async function loadVideoJobs() {
-      try {
-        setVideoColumnMessage(null)
-        const jobs = await jobOrchestratorGateway.listMyJobs()
-        const hydratedJobs = await hydrateJobs(jobs)
-
-        if (!isActive) {
-          return
-        }
-
-        setGeneratedVideos(hydratedJobs)
-      } catch (error) {
-        if (!isActive) {
-          return
-        }
-
-        setVideoColumnMessage(
-          error instanceof ApiError ? `${error.code}: ${error.message}` : 'Could not load render history.'
-        )
-      } finally {
-        if (isActive) {
-          setIsLibraryLoading(false)
-        }
-      }
-    }
-
-    loadVideoJobs()
-
-    return () => {
-      isActive = false
-    }
+    setGeneratedVideos([])
+    setIsLibraryLoading(false)
+    setVideoColumnMessage(null)
   }, [authLoading, session])
 
   // Hydrate user-uploaded images from Lovable Cloud
