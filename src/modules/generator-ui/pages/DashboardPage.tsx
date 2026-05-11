@@ -82,6 +82,7 @@ import { generatorUiGateway } from '@/modules/generator-ui/gateway'
 import { mergeVideoUrls, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
 import { VoiceoverDialog } from '@/modules/generator-ui/components/VoiceoverDialog'
+import { CalendarPopover } from '@/modules/generator-ui/components/CalendarPopover'
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
@@ -2271,6 +2272,8 @@ export default function DashboardPage() {
       </DropdownMenu>
 
       <div className="fixed left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-2 sm:top-5">
+      <CalendarPopover />
+
       <AlertDialog>
         <AlertDialogTrigger asChild>
           <button
