@@ -26,8 +26,8 @@ const fmt = (d: Date) => {
 }
 
 const labels = {
-  en: { whatItIs: 'About', history: 'History', empty: 'No notable occasion found for this day.', loading: 'Loading occasions…', pick: 'Pick a date to see occasions.' },
-  fa: { whatItIs: 'معرفی', history: 'تاریخچه', empty: 'مناسبتی برای این روز یافت نشد.', loading: 'در حال بارگذاری…', pick: 'یک تاریخ انتخاب کنید تا مناسبت‌ها را ببینید.' },
+  en: { whatItIs: 'About', history: 'History', empty: 'No major holiday on this day.', loading: 'Loading occasions…', pick: 'Pick a date to see occasions.' },
+  fa: { whatItIs: 'معرفی', history: 'تاریخچه', empty: 'مناسبت مهمی برای این روز ثبت نشده است.', loading: 'در حال بارگذاری…', pick: 'یک تاریخ انتخاب کنید تا مناسبت‌ها را ببینید.' },
 }
 
 export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoDialogProps) {
@@ -40,7 +40,7 @@ export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoD
   const { toast } = useToast()
 
   const dateKey = useMemo(() => fmt(selectedDate), [selectedDate])
-  const cacheKey = `${dateKey}:${lang}`
+  const cacheKey = `v2:${dateKey}:${lang}`
   const occasions = cache[cacheKey] ?? null
   const t = labels[lang]
 
@@ -90,7 +90,7 @@ export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoD
         <DialogHeader className="border-b border-white/10 px-6 py-4">
           <DialogTitle className="flex items-center gap-2 text-base font-medium">
             <CalendarDays className="h-4 w-4 text-amber-300" />
-            <span>Marketing Calendar</span>
+            <span>Calendar</span>
           </DialogTitle>
         </DialogHeader>
         <div className="grid gap-0 md:grid-cols-[auto,1fr]">

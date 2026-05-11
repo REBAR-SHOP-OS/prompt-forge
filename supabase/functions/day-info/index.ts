@@ -33,11 +33,21 @@ Deno.serve(async (req) => {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC',
     })
 
-    const baseRules = `You are a knowledgeable calendar assistant. For a given Gregorian date, return notable observances, international days, widely-celebrated holidays, and well-known awareness days for that date (e.g. International Nurses Day, World Chocolate Day, Mother's Day, Earth Day, Valentine's Day, Halloween, Christmas, Pride, etc.).
+    const baseRules = `You are a strict calendar assistant. For a given Gregorian date, return ONLY occasions that fall into one of these three allowed categories:
 
-Include any occasion that has broad cultural, social, professional, or international recognition. Skip purely local/obscure events and pure birthdays/deaths unless the day itself is officially named after them.
+1) CANADIAN HOLIDAYS — Canadian federal statutory holidays and widely-recognized provincial holidays (e.g. Canada Day, Victoria Day, Canadian Thanksgiving, Remembrance Day, Labour Day, Family Day, Civic Holiday, National Day for Truth and Reconciliation, Saint-Jean-Baptiste Day, etc.).
 
-If the date has NO notable occasion, return an empty occasions array — do not invent.
+2) MAJOR INTERNATIONAL DAYS — Officially proclaimed UN / UNESCO / WHO international days, plus globally recognized observances (e.g. New Year's Day, International Women's Day, Earth Day, World Health Day, World Environment Day, Human Rights Day, International Day of Peace, Mother's Day, Father's Day, Valentine's Day, Halloween).
+
+3) MAJOR RELIGIOUS HOLIDAYS — Important holy days of the world's major religions: Christianity (Christmas, Easter, Good Friday, Ash Wednesday, Pentecost, Epiphany, All Saints' Day…), Islam (Eid al-Fitr, Eid al-Adha, start of Ramadan, Ashura, Mawlid…), Judaism (Rosh Hashanah, Yom Kippur, Hanukkah, Passover, Sukkot, Purim…), Hinduism (Diwali, Holi, Navaratri…), Buddhism (Vesak/Buddha Day…), Sikhism (Vaisakhi, Guru Nanak Gurpurab…). For movable dates, use the actual Gregorian date for the given year.
+
+STRICTLY EXCLUDE (do NOT return these):
+- "National ___ Day" novelty/food/fun days (e.g. National Eat What You Want Day, National Pizza Day, National Donut Day).
+- National holidays of other countries (USA, UK, etc.) UNLESS they are also internationally observed.
+- Local, commercial, brand-driven, or minor awareness days.
+- Birthdays/deaths of individuals, unless the day is officially named after them AND fits categories 1–3.
+
+If the date has NO occasion fitting these three categories, return an empty occasions array — do NOT invent or stretch the rules.
 
 For EACH occasion provide:
 - "whatItIs": one short paragraph (2-3 sentences) introducing what the occasion is and how it is observed today.
@@ -66,7 +76,7 @@ For EACH occasion provide:
                 items: {
                   type: 'object',
                   properties: {
-                    title: { type: 'string', description: 'Occasion name' },
+                    title: { type: 'string', description: 'Official occasion name as recognized by its source (UN, government of Canada, religious tradition, etc.).' },
                     whatItIs: { type: 'string', description: 'Short description of what the occasion is and how it is observed today (2-3 sentences).' },
                     history: { type: 'string', description: 'Origin and history paragraph: when/where it started, who founded it, the year, original purpose, and how it evolved (3-5 sentences).' },
                   },
