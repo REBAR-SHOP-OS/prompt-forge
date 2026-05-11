@@ -3254,12 +3254,17 @@ export default function DashboardPage() {
                       onClick={() => {
                         setPreviewVideoId(video.id)
                         setIsApprovedPanelOpen(false)
+                        // Show this project's source clips in HISTORY.
+                        setSelectedProjectId(video.id.startsWith('merged-') ? video.id : null)
+                        setPreviewDismissed(false)
                       }}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault()
                           setPreviewVideoId(video.id)
                           setIsApprovedPanelOpen(false)
+                          setSelectedProjectId(video.id.startsWith('merged-') ? video.id : null)
+                          setPreviewDismissed(false)
                         }
                       }}
                     >
