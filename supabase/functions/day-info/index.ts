@@ -10,6 +10,7 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}))
     const date = String(body?.date ?? '')
+    const lang: 'en' | 'fa' = body?.lang === 'fa' ? 'fa' : 'en'
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return new Response(JSON.stringify({ error: 'Invalid date. Expected YYYY-MM-DD.' }), {
         status: 400,
@@ -31,43 +32,60 @@ Deno.serve(async (req) => {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC',
     })
 
-    const systemPrompt = `You are a marketing strategist. For a given Gregorian date, return ONLY observances and holidays useful for advertising/marketing campaigns (e.g. International Days like World Chocolate Day, Mother's Day, Father's Day, Black Friday, Cyber Monday, Valentine's Day, Earth Day, Pride, Halloween, Christmas shopping, widely-celebrated cultural days, awareness months, major sport finals).
+    const baseRules = `You are a marketing strategist. For a given Gregorian date, return ONLY observances and holidays useful for advertising/marketing campaigns (e.g. International Days like World Chocolate Day, Mother's Day, Father's Day, Black Friday, Cyber Monday, Valentine's Day, Earth Day, Pride, Halloween, Christmas shopping, widely-celebrated cultural days, awareness months, major sport finals).
 
 SKIP: purely historical events, birthdays, deaths, obscure local holidays, and religious-only observances with no commercial/marketing angle.
 
-If the date has NO marketing-worthy occasion, say so honestly in both languages — do not invent.
+If the date has NO marketing-worthy occasion, say so honestly — do not invent.
 
-Output bilingual GitHub-flavored Markdown. For every heading and bullet, write the English line first, then immediately below it the Persian translation in italics on its own line. Persian must be natural and idiomatic, not literal.
+Provide 3–5 concrete, creative campaign ideas per occasion (promotions, social posts, content angles, partnerships, UGC, giveaways).`
 
-Use exactly this structure:
+    const enPrompt = `${baseRules}
+
+Output GitHub-flavored Markdown in English only. Use exactly this structure:
 
 ## 🎯 Marketing-Worthy Occasions
-*مناسبت‌های مناسب تبلیغات*
 
 For each occasion:
 
 ### {Occasion Name}
-*{ترجمه فارسی نام مناسبت}*
+**What it is:** short description.
 
-**What it is:** short English description.
-*توضیح فارسی کوتاه.*
-
-**Audience:** target audience in English.
-*مخاطب هدف به فارسی.*
+**Audience:** target audience.
 
 **Campaign Ideas:**
-- English idea 1
-  - *ایده فارسی ۱*
-- English idea 2
-  - *ایده فارسی ۲*
-- English idea 3
-  - *ایده فارسی ۳*
+- Idea 1
+- Idea 2
+- Idea 3
 
-**Hashtags:** \`#Tag1\` \`#Tag2\` \`#Tag3\`
+**Hashtags:** \`#Tag1\` \`#Tag2\` \`#Tag3\``
 
-Provide 3–5 concrete, creative campaign ideas per occasion (promotions, social posts, content angles, partnerships, UGC, giveaways).`
+    const faPrompt = `${baseRules}
 
-    const userPrompt = `Provide marketing-worthy occasions for: ${longDate} (${date}).`
+خروجی را به‌صورت کامل به زبان فارسی روان و طبیعی (نه ترجمه تحت‌اللفظی) بنویس. از Markdown سازگار با GitHub استفاده کن. دقیقاً این ساختار را رعایت کن:
+
+## 🎯 مناسبت‌های مناسب تبلیغات
+
+برای هر مناسبت:
+
+### {نام مناسبت به فارسی}
+**معرفی:** توضیح کوتاه.
+
+**مخاطب:** مخاطب هدف.
+
+**ایده‌های کمپین:**
+- ایده ۱
+- ایده ۲
+- ایده ۳
+
+**هشتگ‌ها:** \`#تگ۱\` \`#تگ۲\` \`#تگ۳\`
+
+نام‌های بین‌المللی مناسبت را در پرانتز انگلیسی هم بیاور (مثلاً: روز جهانی شکلات (World Chocolate Day)).`
+
+    const systemPrompt = lang === 'fa' ? faPrompt : enPrompt
+    const userPrompt = lang === 'fa'
+      ? `مناسبت‌های تبلیغاتی این تاریخ را بده: ${longDate} (${date}).`
+      : `Provide marketing-worthy occasions for: ${longDate} (${date}).`
 
     const aiResp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
