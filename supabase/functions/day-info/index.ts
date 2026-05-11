@@ -50,8 +50,8 @@ STRICTLY EXCLUDE:
 If nothing fits, return an empty occasions array — do NOT invent.`
 
     const langInstruction = lang === 'fa'
-      ? `همه فیلدهای متنی (title, whatItIs, history) را به فارسی روان بنویس. در title نام بین‌المللی را در پرانتز انگلیسی بیاور.`
-      : `Write all text fields (title, whatItIs, history) in clear English.`
+      ? `همه فیلدهای متنی (title, whatItIs, history, movieScenario) را به فارسی روان بنویس. در title نام بین‌المللی را در پرانتز انگلیسی بیاور.`
+      : `Write all text fields (title, whatItIs, history, movieScenario) in clear English.`
 
     let userPrompt: string
     let detailInstruction: string
@@ -66,10 +66,11 @@ If nothing fits, return an empty occasions array — do NOT invent.`
 - "category": one of "canada" | "international" | "religious".
 - "date": "${date}" (the same date).
 - "whatItIs": short paragraph (2-3 sentences).
-- "history": paragraph (3-5 sentences) about origin, year founded, evolution.`
+- "history": paragraph (3-5 sentences) about origin, year founded, evolution.
+- "movieScenario": a vivid, cinematic AI video generation prompt (max 60 words) that captures the essence/spirit of this occasion for a 10-second film.`
       userPrompt = lang === 'fa'
-        ? `مناسبت‌های این تاریخ را با تاریخچه‌شان بده: ${longDate} (${date}).`
-        : `Provide notable occasions and their history for: ${longDate} (${date}).`
+        ? `مناسبت‌های این تاریخ را با تاریخچه‌شان و یک سناریوی کوتاه فیلمسازی بده: ${longDate} (${date}).`
+        : `Provide notable occasions, their history, and a short filmmaking scenario for: ${longDate} (${date}).`
     } else {
       const [y, m] = month.split('-').map(Number)
       const monthName = MONTH_NAMES[m - 1]
@@ -79,6 +80,7 @@ If nothing fits, return an empty occasions array — do NOT invent.`
 - "title": official name.
 - "whatItIs": ONE concise sentence (max ~25 words).
 - "history": ONE concise sentence (max ~30 words) — origin/year only.
+- "movieScenario": a vivid, cinematic AI video generation prompt (max 40 words) that captures the essence of this occasion for a 10-second film.
 
 Be exhaustive but strict — include every qualifying observance in the month, but nothing outside the three categories.`
       userPrompt = lang === 'fa'
@@ -93,8 +95,9 @@ Be exhaustive but strict — include every qualifying observance in the month, b
       category: { type: 'string', enum: ['canada', 'international', 'religious'], description: 'Which of the three allowed categories.' },
       whatItIs: { type: 'string' },
       history: { type: 'string' },
+      movieScenario: { type: 'string', description: 'A cinematic AI video prompt for this occasion.' },
     }
-    const requiredFields = ['title', 'category', 'whatItIs', 'history']
+    const requiredFields = ['title', 'category', 'whatItIs', 'history', 'movieScenario']
     if (isMonthMode) {
       itemProperties.date = { type: 'string', description: 'Gregorian date YYYY-MM-DD within the requested month.' }
       requiredFields.push('date')
