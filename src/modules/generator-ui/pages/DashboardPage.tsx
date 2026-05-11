@@ -2445,6 +2445,11 @@ export default function DashboardPage() {
         onUseAsSoundtrack={handleVoiceoverAsSoundtrack}
       />
 
+      <ImageReframeDialog
+        open={isReframeOpen}
+        onOpenChange={setIsReframeOpen}
+      />
+
       <Dialog open={isMusicDialogOpen} onOpenChange={setIsMusicDialogOpen}>
         <DialogContent className="border-white/10 bg-black text-zinc-100 sm:max-w-md">
           <DialogHeader>
