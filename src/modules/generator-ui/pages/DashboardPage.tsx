@@ -2066,32 +2066,27 @@ export default function DashboardPage() {
       })
       setPreviewVideoId(mergedId)
 
-      // ===== Purge History sources from the server =====
-      // Per product rule: History is an ephemeral workspace. Once Final Film
-      // is produced and saved to Library, every source job (+ video asset +
-      // storage file) and every uploaded image used during this session is
-      // permanently removed from the server. Only the merged film survives.
-      const sourceJobsToPurge = generatedVideos.filter((v) => !v.id.startsWith('merged-'))
-      const imagesToPurge = userImages
-      try {
-        const tasks: Promise<unknown>[] = []
-        for (const v of sourceJobsToPurge) tasks.push(jobOrchestratorGateway.deleteJob(v.id))
-        for (const i of imagesToPurge) tasks.push(generatorUiGateway.deleteUserImage(i.id))
-        const results = await Promise.allSettled(tasks)
-        const failed = results.filter((r) => r.status === 'rejected').length
-        if (failed > 0) {
-          console.warn(`[merge] purge: ${failed}/${tasks.length} server deletions failed`)
-        }
-      } catch (purgeErr) {
-        console.error('[merge] purge step failed', purgeErr)
+      // ===== Snapshot source clips for this project =====
+      // We keep source jobs on the server so the user can re-open the project
+      // from Library and inspect its source clips in HISTORY. We also save a
+      // snapshot here as a defensive fallback in case a source job is later
+      // removed for any reason.
+      const sourceJobs = generatedVideos.filter((v) => !v.id.startsWith('merged-'))
+      {
+        const nextMap = { ...projectSourceJobs, [mergedId]: sourceJobs }
+        setProjectSourceJobs(nextMap)
+        persistProjectSourceJobs(nextMap)
       }
-      // Clear History from the UI regardless of individual failures — server
-      // is the source of truth on next reload, and a partial purge still
-      // matches the rule (anything that survived will be cleaned by Start
-      // Over or the next Final Film).
-      setGeneratedVideos((current) => current.filter((v) => v.id.startsWith('merged-')))
-      setUserImages([])
-      // Reset per-clip ephemeral state tied to purged sources.
+      // Hide the source jobs from the default HISTORY view so the workspace
+      // looks fresh after Final Film, but keep them on the server. Clicking
+      // the Library card re-shows them via selectedProjectId.
+      {
+        const nextHidden = new Set(workspaceHiddenJobIds)
+        for (const v of sourceJobs) nextHidden.add(v.id)
+        setWorkspaceHiddenJobIds(nextHidden)
+        persistWorkspaceHiddenJobIds(nextHidden)
+      }
+      // Reset per-clip ephemeral state tied to the closing chain.
       setManualOrder(null)
       setPendingEndAppends({})
       setPendingStartPrepends({})
