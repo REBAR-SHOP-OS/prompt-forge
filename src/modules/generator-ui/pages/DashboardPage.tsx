@@ -2006,7 +2006,13 @@ export default function DashboardPage() {
       // here so the preview chrome matches what's actually in the file.
       const firstClipId = eligibleClips[0]?.id
       const mergedRatio: Ratio = (firstClipId ? clipAspectRatios[firstClipId] : undefined) ?? aspectRatio
-      const entry: JobDetail = {
+      // Track the source video job IDs that went into this Final Film, so the
+      // Library card can later restore them in HISTORY (clips are no longer
+      // deleted from the server on merge).
+      const sourceJobIds = eligibleClips
+        .filter((c) => c.kind === 'video' && !c.id.startsWith('merged-'))
+        .map((c) => c.id)
+      const entry: JobDetail & { sourceJobIds?: string[] } = {
         id: mergedId,
         status: 'completed',
         input_prompt: `Final merged video — ${urls.length} clips`,
@@ -2021,6 +2027,7 @@ export default function DashboardPage() {
           aspect_ratio: mergedRatio,
           duration: null,
         },
+        sourceJobIds,
       }
       rememberClipRatio(mergedId, mergedRatio)
 
