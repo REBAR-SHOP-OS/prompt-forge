@@ -542,6 +542,36 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  // Per-project snapshot of the source clips that produced each Final Film
+  // (Library item). Lets us re-show the source cards in HISTORY when the user
+  // clicks the project card in Library. Persisted per-user across refreshes.
+  const [projectSourceJobs, setProjectSourceJobs] = useState<Record<string, JobDetail[]>>({})
+  const projectSourceJobsKey = userId ? `project-source-jobs:${userId}` : null
+
+  useEffect(() => {
+    if (!projectSourceJobsKey) {
+      setProjectSourceJobs({})
+      return
+    }
+    try {
+      const raw = window.localStorage.getItem(projectSourceJobsKey)
+      setProjectSourceJobs(raw ? (JSON.parse(raw) as Record<string, JobDetail[]>) : {})
+    } catch {
+      setProjectSourceJobs({})
+    }
+  }, [projectSourceJobsKey])
+
+  function persistProjectSourceJobs(next: Record<string, JobDetail[]>) {
+    if (!projectSourceJobsKey) return
+    try {
+      window.localStorage.setItem(projectSourceJobsKey, JSON.stringify(next))
+    } catch { /* ignore */ }
+  }
+
+  // When set, HISTORY is filtered to show only the source clips of this
+  // Library project. Cleared by Start Over or by the inline "Clear" button.
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+
   // Revoke object URLs on unmount.
   useEffect(() => {
     return () => {
