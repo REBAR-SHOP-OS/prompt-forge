@@ -342,7 +342,6 @@ export default function DashboardPage() {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
   const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15>(5)
-  const [regeneratingIds, setRegeneratingIds] = useState<Set<string>>(() => new Set())
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '1:1' | '16:9'>(() => {
     if (typeof window === 'undefined') return '16:9'
     try {
@@ -1810,67 +1809,6 @@ export default function DashboardPage() {
     })
   }
 
-  async function regenerateCard(video: JobDetail) {
-    if (!video.id) return
-    const prompt = (video.input_prompt ?? '').trim()
-    if (!prompt) {
-      setComposerError('This card has no prompt to regenerate.')
-      return
-    }
-    if (regeneratingIds.has(video.id)) return
-    setRegeneratingIds((curr) => {
-      const next = new Set(curr); next.add(video.id); return next
-    })
-    setComposerError(null)
-    setVideoColumnMessage(null)
-    try {
-      const ratio: Ratio = clipAspectRatios[video.id] ?? aspectRatio
-      const firstUrl = video.first_frame_url ?? undefined
-      const lastUrl = video.last_frame_url ?? undefined
-      const hasFrames = Boolean(firstUrl || lastUrl)
-      let createdJob: CreateJobResult
-      if (!hasFrames) {
-        createdJob = await jobOrchestratorGateway.createJob({
-          providerKey: 'wan',
-          requestedModel: 'wan2.7-t2v-2026-04-25',
-          prompt,
-          durationSeconds,
-          aspectRatio: ratio,
-        })
-      } else {
-        createdJob = await jobOrchestratorGateway.createJob({
-          providerKey: 'wan',
-          prompt,
-          firstFrameUrl: firstUrl,
-          lastFrameUrl: lastUrl,
-          durationSeconds,
-          aspectRatio: ratio,
-        })
-      }
-      const seededJob = buildSeededJob(prompt, createdJob, {
-        firstFrameUrl: firstUrl, lastFrameUrl: lastUrl,
-      })
-      rememberClipRatio(seededJob.id, ratio)
-      setGeneratedVideos((curr) => mergeJob(curr, seededJob))
-      setPreviewVideoId(seededJob.id)
-      // Now permanently remove the previous card + its video.
-      try {
-        await deleteCard(video.id)
-      } catch (cleanupErr) {
-        console.warn('regenerateCard: cleanup of previous card failed', cleanupErr)
-      }
-    } catch (error) {
-      let message = 'Could not regenerate this card.'
-      if (error instanceof ApiError) message = `${error.code}: ${error.message}`
-      setComposerError(message)
-      setVideoColumnMessage(message)
-    } finally {
-      setRegeneratingIds((curr) => {
-        const next = new Set(curr); next.delete(video.id); return next
-      })
-    }
-  }
-
   function formatTimeMS(s: number): string {
     if (!Number.isFinite(s) || s < 0) s = 0
     const m = Math.floor(s / 60)
@@ -3189,25 +3127,6 @@ export default function DashboardPage() {
                             <Scissors className="h-3.5 w-3.5" aria-hidden="true" />
                           </button>
                         ) : null}
-                        {(() => {
-                          const isRegen = regeneratingIds.has(video.id)
-                          const busy = status === 'pending' || status === 'processing'
-                          return (
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                regenerateCard(video)
-                              }}
-                              disabled={isRegen || busy}
-                              aria-label="Regenerate (replaces this card)"
-                              title="Regenerate — re-runs the prompt and deletes this card"
-                              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <RotateCcw className={`h-3.5 w-3.5 ${isRegen ? 'animate-spin' : ''}`} aria-hidden="true" />
-                            </button>
-                          )
-                        })()}
                         <button
                           type="button"
                           onClick={(event) => {
