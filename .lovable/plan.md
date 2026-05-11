@@ -1,52 +1,33 @@
 ## هدف
 
-به‌جای نمایش یک متن طولانی Markdown، فقط **تیترهای رنگی مناسبت‌ها** به‌صورت لیست نشان داده شود. با کلیک روی هر تیتر، جزئیات آن مناسبت (معرفی، مخاطب، ایده‌های کمپین، هشتگ‌ها) باز/بسته شود.
+هر بار که کاربر وارد `/app` می‌شود، صفحه باید کاملاً خالی باشد (مثل اسکرین‌شات سوم: «No renders yet»، بدون preview، بدون کارت). داده‌های قبلی در دیتابیس **حفظ** می‌شوند و فقط از نمایش اولیه کنار گذاشته می‌شوند.
 
-## تغییرات Backend — `supabase/functions/day-info/index.ts`
+## رفتار جدید
 
-تغییر خروجی از Markdown آزاد به **JSON ساخت‌یافته** با استفاده از tool calling:
+- ورود اولیه → ستون History خالی، Preview خالی، composer ریست (مثل اسکرین‌شات ۳).
+- رندرها/آپلودهای ساخته‌شده در همین session، طبق روال در History ظاهر می‌شوند.
+- بستن tab یا logout/login مجدد → دوباره صفحه خالی (چون فقط in-session نمایش داده می‌شوند).
+- داده‌ها در `generator_generation_jobs`، `generator_video_assets`، `generator_user_images` دست‌نخورده باقی می‌مانند.
 
-- پرامپت‌های فعلی حفظ می‌شوند ولی به‌جای دستور Markdown، AI ملزم به فراخوانی tool زیر می‌شود:
-  ```
-  return_occasions({
-    occasions: [
-      {
-        title: string,            // نام مناسبت (به زبان درخواست‌شده)
-        whatItIs: string,         // توضیح کوتاه
-        audience: string,         // مخاطب هدف
-        ideas: string[],          // 3-5 ایده کمپین
-        hashtags: string[]        // 3-5 هشتگ بدون #
-      }
-    ]
-  })
-  ```
-- `tool_choice` روی همان tool اجباری شود.
-- پاسخ edge function: `{ occasions: Occasion[], lang: 'en'|'fa' }`. فیلد `markdown` حذف می‌شود.
-- مدیریت 429/402 و دو زبان (en/fa) دست‌نخورده.
-- اگر هیچ مناسبت تبلیغاتی وجود نداشت، آرایه خالی بازگردانده شود.
+## تغییرات کد — فقط Frontend
 
-## تغییرات Frontend — `src/modules/generator-ui/components/CalendarInfoDialog.tsx`
+**`src/modules/generator-ui/pages/DashboardPage.tsx`**
 
-- type جدید `Occasion` و `cache: Record<string, Occasion[]>` (به‌جای string).
-- حذف `ReactMarkdown` و `remark-gfm` از این کامپوننت.
-- رندر:
-  - برای هر مناسبت یک ردیف کلیک‌پذیر:
-    - تیتر با رنگ amber (`text-amber-300`)، فونت medium، آیکون chevron در سمت راست (یا چپ بسته به dir).
-    - hover state ملایم.
-  - state داخلی `expandedIndex: number | null` — کلیک روی همان آیتم باز/بسته‌اش می‌کند (accordion یک‌حالته).
-  - وقتی باز است، جزئیات با همان طراحی فعلی (label پررنگ + متن، لیست ایده‌ها، چیپ‌های هشتگ) نمایش داده می‌شود. هشتگ‌ها به‌صورت چیپ کوچک با پس‌زمینه `bg-amber-500/10 text-amber-200`.
-- اگر آرایه خالی بود، پیام «مناسبت تبلیغاتی برای این روز یافت نشد» (دو زبانه بسته به `lang`).
-- وقتی زبان عوض می‌شود، `expandedIndex` ریست شود.
-- `dir="auto"` برای هر متن.
+1. در `useEffect` بارگذاری اولیه (خط ~1099–1138) که `jobOrchestratorGateway.listMyJobs()` را صدا می‌زند:
+   - فراخوانی API حذف شود (یا فقط زمانی اجرا شود که کاربر صراحتاً «refresh» بزند).
+   - به‌جای آن `setGeneratedVideos([])` و `setIsLibraryLoading(false)` ست شود.
+2. مشابه برای hydration تصاویر کاربر (خط ~1140 «Hydrate user-uploaded images»): فراخوانی اولیه حذف شود و state تصاویر خالی شروع شود.
+3. State مربوط به preview/active job/visible videos که از روی داده‌های لود شده مقداردهی می‌شوند، چون آرایه خالی است، طبیعتاً به حالت empty می‌روند → بدون تغییر اضافی، صفحه دقیقاً مثل اسکرین‌شات ۳ می‌شود.
+4. منطق ساخت/آپلود فعلی دست‌نخورده می‌ماند، پس آیتم‌های جدید همان‌طور که الان به History اضافه می‌شوند، اضافه خواهند شد.
 
 ## خارج از scope
 
-- بدون تغییر در آیکون toggle زبان، آیکون تقویم در Dashboard، یا منطق fetch.
-- بدون cache invalidation دستی — کلید همان `${date}:${lang}` می‌ماند ولی نوع داده عوض شده، پس کش قبلی به‌طور طبیعی override می‌شود (cache در state است و با reload صفحه پاک می‌شود).
+- بدون تغییر در backend، RLS، RPC ها، یا edge functions.
+- بدون حذف داده‌های دیتابیس یا storage.
+- بدون تغییر در auth / intro video / dialogها.
 
 ## تأیید
 
-- باز کردن دیالوگ → فقط لیست تیترهای رنگی مناسبت‌ها دیده شود (نه متن کامل).
-- کلیک روی هر تیتر → جزئیات آن باز شود؛ کلیک دوباره → بسته شود.
-- toggle زبان → تیترها و جزئیات به زبان جدید (با fetch جدید) نمایش داده شود.
-- هشتگ‌ها به‌صورت چیپ نمایش داده شوند.
+- Login → صفحه دقیقاً مثل اسکرین‌شات ۳ (History: «No renders yet»، preview: «Start forging a prompt»).
+- ساخت یک ویدیو جدید → کارت در History ظاهر می‌شود.
+- Refresh صفحه یا logout/login → دوباره خالی، اما داده‌ها در دیتابیس باقی هستند (با کوئری مستقیم قابل تأیید).

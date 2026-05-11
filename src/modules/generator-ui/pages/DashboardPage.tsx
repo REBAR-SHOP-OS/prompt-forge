@@ -1096,65 +1096,21 @@ export default function DashboardPage() {
     return hasComposerInput ? 'Shape the next version' : 'Start forging a prompt'
   }, [hasComposerInput, isDragging])
 
+  // Per user request: each session starts with an empty workspace.
+  // Past renders remain in the database but are not loaded on entry.
+  // New jobs created in this session still appear in History as usual.
   useEffect(() => {
     if (authLoading) return
-    if (!session) {
-      setIsLibraryLoading(false)
-      return
-    }
-    let isActive = true
-
-    async function loadVideoJobs() {
-      try {
-        setVideoColumnMessage(null)
-        const jobs = await jobOrchestratorGateway.listMyJobs()
-        const hydratedJobs = await hydrateJobs(jobs)
-
-        if (!isActive) {
-          return
-        }
-
-        setGeneratedVideos(hydratedJobs)
-      } catch (error) {
-        if (!isActive) {
-          return
-        }
-
-        setVideoColumnMessage(
-          error instanceof ApiError ? `${error.code}: ${error.message}` : 'Could not load render history.'
-        )
-      } finally {
-        if (isActive) {
-          setIsLibraryLoading(false)
-        }
-      }
-    }
-
-    loadVideoJobs()
-
-    return () => {
-      isActive = false
-    }
+    setGeneratedVideos([])
+    setIsLibraryLoading(false)
+    setVideoColumnMessage(null)
   }, [authLoading, session])
 
-  // Hydrate user-uploaded images from Lovable Cloud
+  // Per user request: start with no images loaded. Uploads in this session
+  // still populate the list normally; existing rows in the DB are preserved.
   useEffect(() => {
     if (authLoading || !userId) return
-    let cancelled = false
-    ;(async () => {
-      const { data, error } = await supabase
-        .from('generator_user_images')
-        .select('id, storage_path, created_at, still_duration_seconds, width, height')
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false })
-      if (cancelled) return
-      if (error) {
-        setVideoColumnMessage(`Could not load images: ${error.message}`)
-        return
-      }
-      setUserImages((data ?? []) as UserImageItem[])
-    })()
-    return () => { cancelled = true }
+    setUserImages([])
   }, [authLoading, userId])
 
   const handlePickImage = () => {
