@@ -15,9 +15,7 @@ interface CalendarInfoDialogProps {
 interface Occasion {
   title: string
   whatItIs: string
-  audience: string
-  ideas: string[]
-  hashtags: string[]
+  history: string
 }
 
 const fmt = (d: Date) => {
@@ -28,8 +26,8 @@ const fmt = (d: Date) => {
 }
 
 const labels = {
-  en: { whatItIs: 'What it is', audience: 'Audience', ideas: 'Campaign Ideas', hashtags: 'Hashtags', empty: 'No marketing-worthy occasion found for this day.', loading: 'Loading marketing occasions…', pick: 'Pick a date to see marketing occasions.' },
-  fa: { whatItIs: 'معرفی', audience: 'مخاطب', ideas: 'ایده‌های کمپین', hashtags: 'هشتگ‌ها', empty: 'مناسبت تبلیغاتی برای این روز یافت نشد.', loading: 'در حال بارگذاری…', pick: 'یک تاریخ انتخاب کنید تا مناسبت‌های تبلیغاتی را ببینید.' },
+  en: { whatItIs: 'About', history: 'History', empty: 'No notable occasion found for this day.', loading: 'Loading occasions…', pick: 'Pick a date to see occasions.' },
+  fa: { whatItIs: 'معرفی', history: 'تاریخچه', empty: 'مناسبتی برای این روز یافت نشد.', loading: 'در حال بارگذاری…', pick: 'یک تاریخ انتخاب کنید تا مناسبت‌ها را ببینید.' },
 }
 
 export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoDialogProps) {
@@ -165,34 +163,9 @@ export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoD
                               <p className="leading-relaxed">{occ.whatItIs}</p>
                             </div>
                             <div>
-                              <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.audience}</div>
-                              <p className="leading-relaxed">{occ.audience}</p>
+                              <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.history}</div>
+                              <p className="leading-relaxed">{occ.history}</p>
                             </div>
-                            {occ.ideas?.length > 0 && (
-                              <div>
-                                <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.ideas}</div>
-                                <ul className="list-disc space-y-1 ps-5 leading-relaxed marker:text-amber-300/60">
-                                  {occ.ideas.map((idea, j) => (
-                                    <li key={j}>{idea}</li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                            {occ.hashtags?.length > 0 && (
-                              <div>
-                                <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.hashtags}</div>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {occ.hashtags.map((tag, j) => (
-                                    <span
-                                      key={j}
-                                      className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-200"
-                                    >
-                                      #{tag.replace(/^#/, '')}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
                           </div>
                         )}
                       </li>

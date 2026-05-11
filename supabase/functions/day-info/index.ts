@@ -1,4 +1,5 @@
-// Edge function: returns structured marketing-worthy occasions for a Gregorian date.
+// Edge function: returns notable observances/holidays for a Gregorian date,
+// each with a short description and a history paragraph.
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
@@ -32,29 +33,31 @@ Deno.serve(async (req) => {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC',
     })
 
-    const baseRules = `You are a marketing strategist. For a given Gregorian date, return ONLY observances and holidays useful for advertising/marketing campaigns (e.g. International Days like World Chocolate Day, Mother's Day, Father's Day, Black Friday, Cyber Monday, Valentine's Day, Earth Day, Pride, Halloween, Christmas shopping, widely-celebrated cultural days, awareness months, major sport finals).
+    const baseRules = `You are a knowledgeable calendar assistant. For a given Gregorian date, return notable observances, international days, widely-celebrated holidays, and well-known awareness days for that date (e.g. International Nurses Day, World Chocolate Day, Mother's Day, Earth Day, Valentine's Day, Halloween, Christmas, Pride, etc.).
 
-SKIP: purely historical events, birthdays, deaths, obscure local holidays, and religious-only observances with no commercial/marketing angle.
+Include any occasion that has broad cultural, social, professional, or international recognition. Skip purely local/obscure events and pure birthdays/deaths unless the day itself is officially named after them.
 
-If the date has NO marketing-worthy occasion, return an empty occasions array — do not invent.
+If the date has NO notable occasion, return an empty occasions array — do not invent.
 
-Provide 3–5 concrete, creative campaign ideas per occasion (promotions, social posts, content angles, partnerships, UGC, giveaways).`
+For EACH occasion provide:
+- "whatItIs": one short paragraph (2-3 sentences) introducing what the occasion is and how it is observed today.
+- "history": one paragraph (3-5 sentences) about its origin: when and where it started, who founded/proclaimed it, the year it began, the original purpose, and how it evolved over time. Be concrete with years and names where possible.`
 
     const langInstruction = lang === 'fa'
-      ? `همه فیلدها (title, whatItIs, audience, ideas, hashtags) را به زبان فارسی روان و طبیعی (نه تحت‌اللفظی) بنویس. در title نام بین‌المللی را در پرانتز انگلیسی بیاور (مثل: روز جهانی شکلات (World Chocolate Day)). هشتگ‌ها بدون کاراکتر # و می‌توانند فارسی یا انگلیسی باشند.`
-      : `Write all fields (title, whatItIs, audience, ideas, hashtags) in English. Hashtags without the # character.`
+      ? `همه فیلدها (title, whatItIs, history) را به زبان فارسی روان و طبیعی (نه تحت‌اللفظی) بنویس. در title نام بین‌المللی را در پرانتز انگلیسی بیاور (مثل: روز جهانی پرستار (International Nurses Day)).`
+      : `Write all fields (title, whatItIs, history) in clear English.`
 
     const systemPrompt = `${baseRules}\n\n${langInstruction}\n\nYou MUST respond by calling the return_occasions function.`
     const userPrompt = lang === 'fa'
-      ? `مناسبت‌های تبلیغاتی این تاریخ را بده: ${longDate} (${date}).`
-      : `Provide marketing-worthy occasions for: ${longDate} (${date}).`
+      ? `مناسبت‌های این تاریخ را همراه با تاریخچه‌شان بده: ${longDate} (${date}).`
+      : `Provide notable occasions and their history for: ${longDate} (${date}).`
 
     const tools = [
       {
         type: 'function',
         function: {
           name: 'return_occasions',
-          description: 'Return a list of marketing-worthy occasions for the date.',
+          description: 'Return a list of notable occasions for the date with description and history.',
           parameters: {
             type: 'object',
             properties: {
@@ -64,20 +67,10 @@ Provide 3–5 concrete, creative campaign ideas per occasion (promotions, social
                   type: 'object',
                   properties: {
                     title: { type: 'string', description: 'Occasion name' },
-                    whatItIs: { type: 'string', description: 'Short description of what the occasion is' },
-                    audience: { type: 'string', description: 'Target audience for marketing' },
-                    ideas: {
-                      type: 'array',
-                      items: { type: 'string' },
-                      description: '3-5 concrete campaign ideas',
-                    },
-                    hashtags: {
-                      type: 'array',
-                      items: { type: 'string' },
-                      description: '3-5 hashtags without # character',
-                    },
+                    whatItIs: { type: 'string', description: 'Short description of what the occasion is and how it is observed today (2-3 sentences).' },
+                    history: { type: 'string', description: 'Origin and history paragraph: when/where it started, who founded it, the year, original purpose, and how it evolved (3-5 sentences).' },
                   },
-                  required: ['title', 'whatItIs', 'audience', 'ideas', 'hashtags'],
+                  required: ['title', 'whatItIs', 'history'],
                   additionalProperties: false,
                 },
               },
