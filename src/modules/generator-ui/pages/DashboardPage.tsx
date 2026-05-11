@@ -766,6 +766,20 @@ export default function DashboardPage() {
     const mergedEntry = isMerged ? mergedEntries.find((e) => e.id === jobId) : null
     const prevGenerated = generatedVideos
     const prevMerged = mergedEntries
+    const prevProjectSourceJobs = projectSourceJobs
+
+    // Prune projectSourceJobs snapshots so HISTORY in selected-project mode
+    // also drops the deleted clip / project.
+    {
+      const nextMap: Record<string, JobDetail[]> = {}
+      for (const [mid, clips] of Object.entries(projectSourceJobs)) {
+        if (isMerged && mid === jobId) continue
+        nextMap[mid] = clips.filter((c) => c.id !== jobId)
+      }
+      setProjectSourceJobs(nextMap)
+      persistProjectSourceJobs(nextMap)
+    }
+    if (isMerged && selectedProjectId === jobId) setSelectedProjectId(null)
 
     // Optimistic UI removal — remove from in-memory list immediately.
     setGeneratedVideos((current) => current.filter((v) => v.id !== jobId))
@@ -818,6 +832,8 @@ export default function DashboardPage() {
       // Roll back the optimistic removal on failure.
       setGeneratedVideos(prevGenerated)
       if (isMerged) setMergedEntries(prevMerged)
+      setProjectSourceJobs(prevProjectSourceJobs)
+      persistProjectSourceJobs(prevProjectSourceJobs)
       const msg = err instanceof ApiError ? err.message : (err as Error).message
       if (typeof window !== 'undefined') window.alert(`Delete failed: ${msg}`)
     }
