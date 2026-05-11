@@ -1209,6 +1209,7 @@ export default function DashboardPage() {
 
     setIsUploadingVideo(true)
     setVideoColumnMessage(null)
+    resumeSelectedProject()
 
     // Probe duration + intrinsic size from the file in-browser.
     const probe = await new Promise<{ duration: number; width: number; height: number } | null>((resolve) => {
