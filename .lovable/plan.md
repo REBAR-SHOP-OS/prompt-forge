@@ -1,44 +1,74 @@
-# Calendar / Occasions Feature
+## Goal
 
-Add a calendar icon button to the dashboard's top-left rail (right under the existing `LayoutGrid` icon, where the user marked the orange circle). Clicking it opens a full-screen dialog where the user can browse a Gregorian calendar, see which days have international occasions, and read full details about any selected day.
+Music **and** AI Voiceover should coexist as two independent chips in the top tabs area. When the user clicks **Final Film**, the renderer mixes the soundtrack music + the voiceover + (optionally) clip audio together onto the merged video. Today, generating a voiceover overwrites `musicUrl`, so only one of the two ever survives.
 
-## UX
+## Frontend changes — `src/modules/generator-ui/pages/DashboardPage.tsx`
 
-- New fixed icon button at `left-4 top-16` (just below the LayoutGrid at `top-4`), same neutral hover styling as the existing rail icon. Uses `CalendarDays` from `lucide-react`.
-- Click → opens `OccasionsDialog` (full-screen `Dialog` with `max-w-6xl`, dark theme matching the dashboard).
-- Dialog layout (two columns):
-  - **Left (≈55%)**: Month calendar grid (built on `react-day-picker` via existing `@/components/ui/calendar`). Days that have at least one occasion get a small colored dot underneath the date number. Month/year navigation in header. Defaults to today, today is highlighted.
-  - **Right (≈45%)**: Details panel for the selected day:
-    - Big date heading (e.g. "May 11, 2026 — Monday")
-    - List of occasions for that day from the static dataset, each with: name, category badge (International / UN / Awareness / Cultural), short one-line description.
-    - "Get full details" button → calls Lovable AI and streams a richer write-up (history, significance, how it's observed, suggested content angles for video creators). Result is rendered as markdown below the list. Cached per-date in component state for the session.
-    - If the day has no static occasions, show "No notable international occasion. Ask AI for context →" button which calls the same edge function with an "any-notable-event" prompt.
+1. **Add independent voiceover state** alongside the existing music state:
+   - `voiceoverUrl: string | null`
+   - `voiceoverName: string | null`
+   - `voiceoverVolume: number` (default `1`)
+   Persist `voiceoverVolume` in the same workspace settings localStorage key already used for music settings; the URL itself stays in-memory (object URL) like music does.
 
-## Data sources (hybrid)
+2. **Stop overwriting music in `handleVoiceoverAsSoundtrack(url, name)`** (≈ line 1928). New behaviour:
+   - Revoke any previous `voiceoverUrl` blob URL.
+   - Set `voiceoverUrl = url`, `voiceoverName = name`. Do NOT touch `musicUrl` / `musicRange` / `soundtrackMode`.
+   - Close the voiceover dialog (no auto Final Film — same rule as music).
 
-1. **Static dataset** — `src/modules/generator-ui/data/occasions.ts` exports `OCCASIONS: Record<"MM-DD", Occasion[]>` covering ~120 well-known international/UN/awareness days (e.g. 01-01 New Year, 03-08 International Women's Day, 04-22 Earth Day, 06-05 World Environment Day, 12-10 Human Rights Day, full UN International Days list, etc.). No external API, instant lookup.
-2. **Lovable AI** — new edge function `occasion-details` calls the Lovable AI Gateway (`google/gemini-2.5-flash`) with the date + known occasion names, returning a structured detailed write-up. Auth-required, rate-limited via existing `core/ratelimit.ts` pattern.
+3. **Add a second chip** next to the existing music chip in the top tabs row (the same row that today shows `Voiceover (female, excited) ✕`). Render only when `voiceoverUrl` is set. Style it identically to the music chip (use the same component / classes), with:
+   - Mic icon + truncated `voiceoverName`
+   - `✕` button calling new `handleClearVoiceover()` which revokes the blob URL and clears voiceover state.
+   The music chip already exists and keeps its current behaviour.
 
-## Files to add
+4. **Build a combined `audioOpt` in `handleMergeAllVideos`** (≈ line 2020). Pass both tracks to the merger:
+   ```ts
+   const audioOpt = (musicUrl && musicRange[1] > musicRange[0]) || voiceoverUrl
+     ? {
+         music: musicUrl && musicRange[1] > musicRange[0]
+           ? { src: musicUrl, startSec: musicRange[0], endSec: musicRange[1], musicVolume }
+           : undefined,
+         voiceover: voiceoverUrl
+           ? { src: voiceoverUrl, volume: voiceoverVolume }
+           : undefined,
+         clipVolume: soundtrackMode === 'music-only' ? 0 : clipVolume,
+       }
+     : undefined
+   ```
 
-- `src/modules/generator-ui/data/occasions.ts` — static dataset + `getOccasionsFor(date)` helper.
-- `src/modules/generator-ui/components/OccasionsDialog.tsx` — the full-screen dialog (calendar + details panel + AI fetch).
-- `supabase/functions/occasion-details/index.ts` — edge function that calls `LOVABLE_API_KEY` gateway and returns `{ markdown }`.
+5. **Reset voiceover** in `handleStartOver` and after a successful merge cleanup path (mirroring how `musicUrl` is currently torn down at line 2147 — keep voiceover too, or keep both; simplest: clear voiceover at Start Over only, leave it attached after merge so the user can re-render).
 
-## Files to edit
+## Library change — `src/modules/generator-ui/lib/mergeVideos.ts`
 
-- `src/modules/generator-ui/pages/DashboardPage.tsx` — import `CalendarDays`, add the new fixed button under the LayoutGrid icon, wire `isOccasionsOpen` state, mount `<OccasionsDialog open={...} onOpenChange={...} />`.
+Extend `MergeAudioOptions` to a richer shape:
 
-## Technical notes
+```ts
+export interface MergeAudioOptions {
+  music?: { src: string; startSec: number; endSec: number; musicVolume?: number }
+  voiceover?: { src: string; volume?: number }
+  /** 0..1, default 0 when music or voiceover is present, else 1 */
+  clipVolume?: number
+}
+```
 
-- Calendar dot indicator: pass a custom `DayContent` to `react-day-picker` that renders the dot when `getOccasionsFor(date).length > 0`.
-- AI call uses `supabase.functions.invoke("occasion-details", { body: { isoDate, knownOccasions } })`. Edge function uses `LOVABLE_API_KEY` (already configured for Lovable AI), no new secret needed.
-- Edge function added to `supabase/config.toml` is automatic; `verify_jwt` stays default (true) so only signed-in users can call.
-- All colors via design tokens (`bg-background`, `border-border`, `text-foreground`, `bg-primary`); no hardcoded hex.
-- Markdown rendering: lightweight — split paragraphs and render headings/bullets manually (no new dependency) to keep bundle small.
+Inside `mergeVideoUrls` (lines 219–303):
+- `useSoundtrack = Boolean(audio?.music?.endSec > audio?.music?.startSec || audio?.voiceover)`.
+- Keep the existing music `<audio>` + gain pipeline, gated on `audio.music`.
+- Add a parallel pipeline for voiceover: create a second hidden `<audio>` element with `audio.voiceover.src`, `loop = false`, `currentTime = 0`, hook through `audioCtx.createMediaElementSource` → gain (`audio.voiceover.volume ?? 1`) → `audioDest`. Start it at the same moment the merge starts playing the first clip; let it end naturally — no clamping/looping needed.
+- Tear it down in the same cleanup block as the existing soundtrack element (line 540 area): pause, detach, allow GC.
+
+Backwards-compat shim for any older caller still passing the flat `{ src, startSec, endSec, musicVolume, clipVolume }` shape: detect `audio.src` and translate to `{ music: { src, startSec, endSec, musicVolume }, clipVolume }` before running. (Keeps the contract one-way safe.)
 
 ## Out of scope
 
-- No Persian/Hijri calendar conversion (user chose international Gregorian only).
-- No persistence of viewed occasions to the database.
-- No notifications or reminders.
+- No backend / edge function / RLS / DB changes.
+- No change to the existing "Done" button behaviour added in the previous turn — Final Film is still triggered only by the explicit Forge / Final Film button.
+- No new dialog: the AI Voiceover dialog already returns `(url, name)`; we just route it to its own slot instead of the music slot.
+
+## Verification
+
+- Generate a voiceover → confirm → chip appears next to the music chip; the music chip (if present) is untouched.
+- Upload music → adjust range → Done → both chips visible simultaneously.
+- Click Final Film → rendered MP4 contains music (within the chosen range, looping handled as today) **and** the voiceover playing once from t=0, mixed together. If `soundtrackMode === 'mix'`, clip audio is also audible underneath.
+- Click ✕ on the voiceover chip → only voiceover is removed; subsequent Final Film has music only.
+- Click ✕ on the music chip → only music is removed; Final Film has voiceover only.
+- Start Over → both chips clear.
