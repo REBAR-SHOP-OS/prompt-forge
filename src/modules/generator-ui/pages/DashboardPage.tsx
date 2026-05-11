@@ -2085,7 +2085,15 @@ export default function DashboardPage() {
       // from Library and inspect its source clips in HISTORY. We also save a
       // snapshot here as a defensive fallback in case a source job is later
       // removed for any reason.
-      const sourceJobs = generatedVideos.filter((v) => !v.id.startsWith('merged-'))
+      // Include both the live workspace jobs AND any snapshot jobs from the
+      // project the user is extending (selectedProjectId), so re-running Final
+      // Film on a previously finalized project preserves its original clips.
+      const liveSourceJobs = generatedVideos.filter((v) => !v.id.startsWith('merged-'))
+      const snapshotJobs = selectedProjectId ? (projectSourceJobs[selectedProjectId] ?? []) : []
+      const sourceJobsMap = new Map<string, JobDetail>()
+      for (const j of snapshotJobs) sourceJobsMap.set(j.id, j)
+      for (const j of liveSourceJobs) sourceJobsMap.set(j.id, j)
+      const sourceJobs = Array.from(sourceJobsMap.values())
       {
         const nextMap = { ...projectSourceJobs, [mergedId]: sourceJobs }
         setProjectSourceJobs(nextMap)
