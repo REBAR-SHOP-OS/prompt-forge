@@ -1,46 +1,25 @@
-## Problem
+# افزودن دکمه Mute به دیالوگ Trim clip
 
-When you switch away from the Chrome tab and come back, the dashboard returns to the empty "Start forging a prompt" state and your loaded clips/images disappear.
+یک آیکون قطع/وصل صدا (Volume2 / VolumeX) کنار دکمه‌های «Mark cut start» در `ClipTrimmerDialog` اضافه می‌شود تا کاربر بتواند صدای ویدئوی نهایی را کاملاً حذف کند.
 
-## Root cause
+## رفتار
 
-Chrome aggressively backgrounds inactive tabs. When the tab regains focus, the Supabase auth client auto-refreshes the access token and fires a `TOKEN_REFRESHED` / `SIGNED_IN` event. `AuthProvider` (`src/core/auth/AuthProvider.tsx`) calls `setSession(sess)` with a brand-new session object every time, so the `session` reference in context changes.
+- یک state جدید `muteAudio` (پیش‌فرض false) در `ClipTrimmerDialog`.
+- دکمه toggle با آیکون `Volume2` (روشن) یا `VolumeX` (خاموش) از `lucide-react`.
+- وقتی فعال است:
+  - پیش‌نمایش: `videoRef.current.muted = true` (فقط برای پیش‌نمایش داخل دیالوگ).
+  - خروجی نهایی: به `trimVideoLocally` پارامتر `muteAudio: true` پاس داده می‌شود.
 
-`DashboardPage.tsx` has two effects whose dependency arrays include the whole `session` object:
+## تغییرات کد
 
-```text
-useEffect(() => {                         // line 1102
-  if (authLoading) return
-  setGeneratedVideos([])
-  setIsLibraryLoading(false)
-  setVideoColumnMessage(null)
-}, [authLoading, session])
+**`src/modules/generator-ui/lib/trimVideo.ts`**
+- افزودن آپشن سوم اختیاری به امضا: `trimVideoLocally(srcUrl, cuts, options?)` که `options.muteAudio?: boolean` و `options.onProgress?` را می‌پذیرد (سازگار با عقب).
+- اگر `muteAudio === true`: از مسیر صوتی `AudioContext` صرف‌نظر شود و فقط `videoStream` ضبط شود (خروجی بدون track صوتی).
 
-useEffect(() => {                         // line 1111
-  if (authLoading || !userId) return
-  setUserImages([])
-}, [authLoading, userId])
-```
+**`src/modules/generator-ui/components/ClipTrimmerDialog.tsx`**
+- state `muteAudio` + دکمه آیکونی toggle در نوار کنترل (کنار «Mark cut start»).
+- sync با `videoRef.current.muted` در یک `useEffect`.
+- در `apply()`: ارسال `{ muteAudio }` به `trimVideoLocally`.
+- ریست در زمان بستن دیالوگ.
 
-Because `session` is a new reference after every token refresh, the first effect re-runs and wipes `generatedVideos` (and resets the column message), which is exactly the empty state seen in the screenshot. The second one already keys off `userId` so it's safe, but the first one is the culprit.
-
-## Fix (frontend only, presentation layer)
-
-Convert both "reset on session start" effects to run only when the **identity of the logged-in user actually changes** (login / logout / account switch), not on every token refresh.
-
-Implementation in `src/modules/generator-ui/pages/DashboardPage.tsx`:
-
-1. Replace the `[authLoading, session]` dependency with `[authLoading, userId]` for the workspace-reset effect.
-2. Track the last user id we initialized for in a `useRef<string | null>(null)`. Only run the reset block when `userId` transitions to a different non-null value (or to `null` on sign-out). This guarantees that:
-   - First load after login → workspace resets once (existing behavior).
-   - Token refresh on tab refocus → no-op (bug fixed).
-   - Switching accounts → workspace resets.
-3. Apply the same `ref`-guarded pattern to the user-images reset effect for consistency, so a future change to its deps can't reintroduce the same bug.
-
-No changes to `AuthProvider`, no backend changes, no behavior change for actual login/logout.
-
-## Verification
-
-- Open the app, load some content, switch to another Chrome tab for ~1 minute, switch back → workspace and images remain intact.
-- Sign out and sign back in → workspace resets to empty as before.
-- Console shows no auth errors and no extra renders beyond the auth state change itself.
+بدون تغییر در backend یا سایر فایل‌ها.

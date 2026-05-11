@@ -106,11 +106,22 @@ async function loadVideo(url: string): Promise<HTMLVideoElement> {
   })
 }
 
+export interface TrimOptions {
+  onProgress?: (p: TrimProgress) => void
+  /** When true, omit the audio track from the output. */
+  muteAudio?: boolean
+}
+
 export async function trimVideoLocally(
   srcUrl: string,
   cuts: CutRange[],
-  onProgress?: (p: TrimProgress) => void,
+  optionsOrProgress?: TrimOptions | ((p: TrimProgress) => void),
 ): Promise<TrimResult> {
+  const options: TrimOptions = typeof optionsOrProgress === 'function'
+    ? { onProgress: optionsOrProgress }
+    : (optionsOrProgress ?? {})
+  const onProgress = options.onProgress
+  const muteAudio = options.muteAudio === true
   const video = await loadVideo(srcUrl)
   const duration = Number.isFinite(video.duration) ? video.duration : 0
   if (duration <= 0) throw new Error('Invalid video duration')
@@ -137,20 +148,26 @@ export async function trimVideoLocally(
   let audioCtx: AudioContext | null = null
   let audioDest: MediaStreamAudioDestinationNode | null = null
   let outStream: MediaStream = videoStream
-  try {
-    audioCtx = new Ctor()
-    audioDest = audioCtx.createMediaStreamDestination()
-    const src = audioCtx.createMediaElementSource(video)
-    src.connect(audioDest)
-    // Do NOT connect to audioCtx.destination — keeps the page silent during
-    // background recording.
-    outStream = new MediaStream([
-      ...videoStream.getVideoTracks(),
-      ...audioDest.stream.getAudioTracks(),
-    ])
-  } catch (err) {
-    console.warn('[trimVideoLocally] audio capture unavailable:', err)
+  if (muteAudio) {
+    // Skip audio capture entirely — output will have no audio track.
+    try { video.muted = true } catch { /* noop */ }
     outStream = videoStream
+  } else {
+    try {
+      audioCtx = new Ctor()
+      audioDest = audioCtx.createMediaStreamDestination()
+      const src = audioCtx.createMediaElementSource(video)
+      src.connect(audioDest)
+      // Do NOT connect to audioCtx.destination — keeps the page silent during
+      // background recording.
+      outStream = new MediaStream([
+        ...videoStream.getVideoTracks(),
+        ...audioDest.stream.getAudioTracks(),
+      ])
+    } catch (err) {
+      console.warn('[trimVideoLocally] audio capture unavailable:', err)
+      outStream = videoStream
+    }
   }
 
   const mimeType = pickMimeType()

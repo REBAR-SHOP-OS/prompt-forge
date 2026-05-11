@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2, Plus, Scissors, Trash2 } from 'lucide-react'
+import { Loader2, Plus, Scissors, Trash2, Volume2, VolumeX } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -49,6 +49,7 @@ export default function ClipTrimmerDialog({
   const [pendingStart, setPendingStart] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [muteAudio, setMuteAudio] = useState(false)
 
   // Reset on open.
   useEffect(() => {
@@ -58,8 +59,15 @@ export default function ClipTrimmerDialog({
       setBusy(false)
       setError(null)
       setCurrentTime(0)
+      setMuteAudio(false)
     }
   }, [open])
+
+  // Keep preview <video> in sync with the mute toggle.
+  useEffect(() => {
+    const v = videoRef.current
+    if (v) v.muted = muteAudio
+  }, [muteAudio, open])
 
   // Skip cut ranges during preview playback (live preview of the result).
   useEffect(() => {
@@ -116,7 +124,7 @@ export default function ClipTrimmerDialog({
       if (norm.length === 0) {
         throw new Error('No ranges to remove. Mark at least one cut first.')
       }
-      const result = await trimVideoLocally(videoUrl, norm)
+      const result = await trimVideoLocally(videoUrl, norm, { muteAudio })
       await onApply(result.blob, result.duration, result.extension)
       onOpenChange(false)
     } catch (e) {
@@ -216,6 +224,19 @@ export default function ClipTrimmerDialog({
                 Clear all
               </Button>
             ) : null}
+            <Button
+              type="button"
+              size="sm"
+              variant={muteAudio ? 'destructive' : 'ghost'}
+              onClick={() => setMuteAudio((m) => !m)}
+              disabled={busy}
+              className="ml-auto"
+              aria-pressed={muteAudio}
+              title={muteAudio ? 'Audio will be removed from the output' : 'Mute audio in output'}
+            >
+              {muteAudio ? <VolumeX className="mr-1 h-4 w-4" /> : <Volume2 className="mr-1 h-4 w-4" />}
+              {muteAudio ? 'Audio muted' : 'Mute audio'}
+            </Button>
           </div>
 
           {norm.length > 0 ? (
