@@ -1033,31 +1033,17 @@ export default function DashboardPage() {
     return hasComposerInput ? 'Shape the next version' : 'Start forging a prompt'
   }, [hasComposerInput, isDragging])
 
-  // Per user request: each session starts with an empty workspace.
-  // Past renders remain in the database but are not loaded on entry.
-  // New jobs created in this session still appear in History as usual.
-  // IMPORTANT: only reset when the logged-in user identity actually changes
-  // (login / logout / account switch). Token refreshes (e.g. when Chrome
-  // refocuses a backgrounded tab) must NOT wipe the workspace.
-  const lastWorkspaceUserIdRef = useRef<string | null | undefined>(undefined)
+  // Per user request: every page entry (mount) starts with a fully empty
+  // workspace, regardless of what's in the DB or localStorage. New jobs
+  // created in this session still appear in HISTORY as usual.
+  // Mount-once — does NOT fire on token refresh (component stays mounted).
   useEffect(() => {
-    if (authLoading) return
-    if (lastWorkspaceUserIdRef.current === userId) return
-    lastWorkspaceUserIdRef.current = userId
     setGeneratedVideos([])
     setIsLibraryLoading(false)
     setVideoColumnMessage(null)
-  }, [authLoading, userId])
-
-  // Per user request: start with no images loaded. Uploads in this session
-  // still populate the list normally; existing rows in the DB are preserved.
-  const lastImagesUserIdRef = useRef<string | null | undefined>(undefined)
-  useEffect(() => {
-    if (authLoading || !userId) return
-    if (lastImagesUserIdRef.current === userId) return
-    lastImagesUserIdRef.current = userId
     setUserImages([])
-  }, [authLoading, userId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handlePickImage = () => {
     if (isUploadingImage) return
