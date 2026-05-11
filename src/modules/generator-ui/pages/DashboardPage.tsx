@@ -663,16 +663,7 @@ export default function DashboardPage() {
   const processingStartPrependRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
-    if (!pendingEndAppendsKey) {
-      setPendingEndAppends({})
-      return
-    }
-    try {
-      const raw = window.localStorage.getItem(pendingEndAppendsKey)
-      setPendingEndAppends(raw ? (JSON.parse(raw) as Record<string, string>) : {})
-    } catch {
-      setPendingEndAppends({})
-    }
+    setPendingEndAppends({})
   }, [pendingEndAppendsKey])
 
   function persistPendingEndAppends(next: Record<string, string>) {
