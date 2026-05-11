@@ -354,7 +354,7 @@ export const jobOrchestratorGateway = {
           // Best-effort: purge files from Storage. Group by bucket.
           // storage_path may be a full URL (external provider) or a
           // "<bucket>/<path>" string. We only delete from our own buckets.
-          const KNOWN_BUCKETS = ["merged-videos", "wan-frames"];
+          const KNOWN_BUCKETS = ["merged-videos", "wan-frames", "user-videos"];
           const byBucket: Record<string, string[]> = {};
           for (const raw of storagePaths) {
             if (!raw || /^https?:\/\//i.test(raw)) {
