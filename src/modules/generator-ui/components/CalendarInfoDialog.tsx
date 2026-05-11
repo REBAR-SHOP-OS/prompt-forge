@@ -40,7 +40,7 @@ export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoD
   const { toast } = useToast()
 
   const dateKey = useMemo(() => fmt(selectedDate), [selectedDate])
-  const cacheKey = `${dateKey}:${lang}`
+  const cacheKey = `v2:${dateKey}:${lang}`
   const occasions = cache[cacheKey] ?? null
   const t = labels[lang]
 
