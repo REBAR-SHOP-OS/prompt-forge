@@ -198,7 +198,7 @@ export default function ImageReframeDialog({ open, onOpenChange, onUseAsStartFra
                 {loading ? (
                   <LoaderCircle className="h-6 w-6 animate-spin text-zinc-400" />
                 ) : resultUrl ? (
-                  <img src={resultUrl} alt="Reframed" className="h-full w-full object-cover" />
+                  <img src={resultUrl} alt="Reframed" className="max-h-full max-w-full object-contain" />
                 ) : (
                   <span className="text-xs text-zinc-600">Click Convert to generate</span>
                 )}
