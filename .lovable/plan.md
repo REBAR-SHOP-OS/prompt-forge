@@ -1,42 +1,51 @@
-# هدف
-وقتی روی **Start Over** کلیک می‌شود، صفحه باید کاملاً برای یک پروژه جدید ریست شود و دقیقاً مثل اسکرین‌شات دوم نمایش داده شود:
-- وسط صفحه: empty state «Start forging a prompt» (بدون ویدئو در preview)
-- پنل راست **HISTORY**: عدد `0` و پیام «No renders yet»
-- composer پایین: prompt خالی، Start/End خالی، transitions/music/ویرایش‌ها همه پاک
-- بعد از رفرش هم همین وضعیت بماند (پایدار باشد)
+## هدف
 
-در عین حال طبق قانون قبلی:
-- کارت‌های پنل **Library** (مرگ‌شده‌های Final Film + کلیپ‌های Approve‌شده) نباید حذف شوند
-- فایل‌های روی استوریج (`merged-videos`) دست‌نخورده باقی بمانند
-- هیچ jobی روی سرور پاک نشود
+با کلیک روی هر کارت در پنل **Library** (هر "پروژه" / Final Film)، پنل **HISTORY** باید کارت‌های منبع همان پروژه (کلیپ‌هایی که برای ساختن آن فاینال فیلم استفاده شده‌اند) را نمایش دهد.
 
-## مشکل فعلی
-الان `handleStartOver`:
-- preview را به `null` ست می‌کند، اما `previewItem` به‌صورت fallback اولین ویدئوی `visibleVideos` را نمایش می‌دهد، پس باز همان ویدئو دیده می‌شود
-- لیست `generatedVideos` (پنل HISTORY) دست‌نخورده می‌ماند، در حالی که اسکرین‌شات دوم HISTORY=0 می‌خواهد
+## وضعیت فعلی (مشکل)
 
-## برنامه
+در `handleMerge` (خطوط ۲۰۲۶–۲۰۴۹ در `DashboardPage.tsx`) بعد از ساخت Final Film، تمام جاب‌های منبع از سرور **به‌طور دائمی حذف** می‌شوند (`jobOrchestratorGateway.deleteJob`) و از state هم پاک می‌شوند. به همین دلیل بعد از merge هیچ راهی برای بازگرداندن کلیپ‌های منبع به History وجود ندارد. این با نیاز کاربر در تضاد مستقیم است.
 
-1. **مخفی‌کردن پایدار کارت‌های قدیمی از پنل HISTORY (بدون حذف از سرور)**
-   - معرفی یک Set جدید `workspaceHiddenJobIds` که در `localStorage` نگه داشته می‌شود (per-user key مشابه `pendingEndAppendsKey`).
-   - در `displayedVideos` (و هرجای دیگری که فقط History را می‌سازد) قبل از سورت، job هایی که id آن‌ها در `workspaceHiddenJobIds` است فیلتر شوند.
-   - **مهم:** `visibleVideos` که پایهٔ Library (`approvedIds.has(...)`) و mergedEntries است این فیلتر را اعمال **نمی‌کند**، تا کلیپ‌های Approve‌شده و Final Film ها در Library بمانند.
+## تغییرات پیشنهادی (فقط فرانت‌اند)
 
-2. **به‌روزرسانی `handleStartOver`**
-   - id همهٔ `generatedVideos` فعلی را به `workspaceHiddenJobIds` اضافه کن و در localStorage ذخیره کن.
-   - `setPreviewVideoId(null)` + `setPreviewDismissed(true)` تا fallback preview غیرفعال شود و empty state «Start forging a prompt» نشان داده شود.
-   - بقیهٔ ریست‌های فعلی (transitions, manualOrder, editedClips, editedJobIds, pending appends/prepends, music, mergeProgress, prompt, uploadedFiles, uploadTarget, generationMode, durationSeconds, lockedProjectRatio) دست‌نخورده باقی می‌ماند.
-   - هیچ فراخوانی حذف به سرور یا storage اضافه نمی‌شود.
+### ۱) ذخیره‌ی نگاشت پروژه → کلیپ‌های منبع
+- یک state جدید: `projectSourceJobs: Record<mergedId, JobDetail[]>` که برای هر مدخل Library، یک snapshot کامل از کارت‌های منبع (همان `JobDetail` با `id`, `video.storage_path`, `input_prompt`, `created_at`, ...) را نگه می‌دارد.
+- این map در `localStorage` با کلید `project-source-jobs:${userId}` ذخیره می‌شود تا بعد از refresh هم پایدار باشد.
+- در زمان merge، قبل از هر گونه پاکسازی، snapshot کلیپ‌های واجد شرایط در این map ذخیره می‌شود.
 
-3. **هم‌خوانی شمارنده‌ها و UI**
-   - شمارندهٔ HISTORY روی `displayedVideos.length` (پس از فیلتر) قرار گیرد به‌جای `generatedVideos.length` تا با لیست واقعی هم‌خوان شود → نمایش `0`.
-   - empty state موجود (`Film` + "No renders yet" + "New video generations will collect here.") به‌طور خودکار رندر می‌شود چون `displayedClips` خالی خواهد بود.
+### ۲) توقف حذف سروری منابع در `handleMerge`
+- بلاک "Purge History sources from the server" حذف می‌شود (خطوط ۲۰۲۶–۲۰۵۰):
+  - دیگر `jobOrchestratorGateway.deleteJob` برای منابع صدا زده نمی‌شود.
+  - دیگر `generatorUiGateway.deleteUserImage` به‌صورت دسته‌جمعی صدا زده نمی‌شود.
+- به‌جای پاکسازی، منابع به `workspaceHiddenJobIds` اضافه می‌شوند تا HISTORY در حالت عادی (وقتی هیچ پروژه‌ای انتخاب نشده) خالی بماند — دقیقاً همان رفتار "Start Over" که قبلاً پیاده شد.
+- نتیجه: کلیپ‌های منبع هم در سرور و هم در state باقی می‌مانند ولی به‌صورت پیش‌فرض در HISTORY مخفی هستند.
 
-4. **هیدراسیون اولیه**
-   - در همان effect که `generatedVideos` از سرور بارگذاری می‌شود، `workspaceHiddenJobIds` را از localStorage بخوان و state را با آن مقداردهی کن، تا بعد از F5 هم History خالی باقی بماند.
+### ۳) حالت "Selected Project" برای پنل HISTORY
+- یک state جدید: `selectedProjectId: string | null`.
+- وقتی کاربر روی یک کارت Library کلیک می‌کند (خط ~۳۲۱۴):
+  - اگر آن کارت یک `merged-*` است → `selectedProjectId = video.id` و علاوه بر `setPreviewVideoId`، پنل HISTORY هم به‌حالت "filtered" می‌رود.
+  - رفتار فعلی (تنظیم preview و بستن پنل) حفظ می‌شود.
+- محاسبه‌ی `displayedVideos` (خطوط ۸۸۰–۹۲۷) به‌روزرسانی می‌شود:
+  - اگر `selectedProjectId` ست شده باشد → فقط جاب‌هایی که `projectSourceJobs[selectedProjectId]` شامل آن‌هاست برگردانده شوند (بدون اعمال `workspaceHiddenJobIds`).
+  - در غیر این‌صورت → رفتار فعلی (فیلتر با `workspaceHiddenJobIds`).
+- شمارنده‌ی HISTORY هم همین `displayedVideos.length` را نشان می‌دهد (که از قبل اصلاح شده).
 
-## فایل‌های درگیر
-- `src/modules/generator-ui/pages/DashboardPage.tsx` — اضافه‌کردن state + persist key، فیلتر در `displayedVideos`، تغییر شمارنده HISTORY، به‌روزرسانی `handleStartOver`.
+### ۴) UI پنل HISTORY در حالت Project Selected
+- یک هدر کوچک بالای لیست HISTORY اضافه می‌شود که می‌گوید "Showing clips of: {project name}" به‌همراه یک دکمه‌ی **Clear** (آیکون ×) که `selectedProjectId = null` می‌کند و به نمای پیش‌فرض برمی‌گردد.
+- وقتی کاربر **Start Over** می‌زند، `selectedProjectId` هم null می‌شود.
+- وقتی کاربر روی کارت Library که `merged-*` نیست کلیک می‌کند (در حال حاضر چنین چیزی وجود ندارد ولی برای امنیت)، `selectedProjectId = null`.
 
-## نتیجهٔ مورد انتظار
-بعد از Start Over صفحه دقیقاً مثل اسکرین‌شات دوم: preview خالی، HISTORY=0، composer تازه — اما باز کردن پنل Library همچنان همهٔ Final Film ها و کلیپ‌های Approve‌شده را نشان می‌دهد و فایل‌های سرور حفظ شده‌اند. رفرش هم وضعیت تازه را نگه می‌دارد.
+### ۵) Hydration اولیه
+- موقع mount، `projectSourceJobs` از localStorage خوانده می‌شود.
+- کارت‌های مربوط به پروژه‌های قدیمی که قبل از این تغییر merge شدند، snapshot ندارند → برای آن‌ها کلیک روی Library فقط preview را عوض می‌کند (مثل قبل) و یک پیام کوچک "No source clips recorded for this older project" در HISTORY نشان داده می‌شود.
+
+## نکات
+
+- هیچ بک‌اند یا migration نیاز نیست؛ همه‌چیز در فرانت‌اند + localStorage است.
+- کارت‌های Library هرگز حذف نمی‌شوند (طبق الزام قبلی کاربر).
+- سورس فایل‌های ویدیویی در سرور باقی می‌مانند تا بازپخش در HISTORY در حالت Selected Project کار کند. این یک trade-off فضای ذخیره‌سازی برای حفظ تاریخچه‌ی پروژه است.
+
+## فایل‌های تحت تأثیر
+
+- `src/modules/generator-ui/pages/DashboardPage.tsx` (تنها فایل تغییریافته)
+
