@@ -206,16 +206,55 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt }
     setSelectedDate(dt)
   }
 
+  const scenarioCacheKey = selectedOccasion ? `${selectedOccasion.title}::${lang}` : ''
+  const currentScenario = scenarioCacheKey ? scenarioCache[scenarioCacheKey] ?? null : null
+
+  const generateScenario = async (occ: Occasion, force = false) => {
+    const key = `${occ.title}::${lang}`
+    if (!force && scenarioCache[key]) return
+    setScenarioLoading(true)
+    setScenarioError(null)
+    try {
+      const seed = lang === 'fa'
+        ? `یک صحنه سینمایی ۱۰ ثانیه‌ای درباره «${occ.title}». ${occ.whatItIs}`
+        : `A cinematic 10-second scene about "${occ.title}". ${occ.whatItIs}`
+      const { data, error: fnError } = await supabase.functions.invoke('enhance-prompt', {
+        body: { prompt: seed, mode: 'silent' },
+      })
+      if (fnError) throw fnError
+      const text = (data as { enhancedPrompt?: string })?.enhancedPrompt?.trim() ?? ''
+      if (!text) throw new Error('Empty response')
+      setScenarioCache((c) => ({ ...c, [key]: text }))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to generate scenario'
+      setScenarioError(msg)
+      toast({ title: t.scenarioError, description: msg, variant: 'destructive' })
+    } finally {
+      setScenarioLoading(false)
+    }
+  }
+
+  const pickOccasion = (occ: Occasion) => {
+    setSelectedOccasion(occ)
+    void generateScenario(occ)
+  }
+
+  const applyScenario = () => {
+    if (!currentScenario || !onApplyPrompt) return
+    onApplyPrompt(currentScenario)
+    onOpenChange(false)
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl border-white/10 bg-[#0b0c0e]/95 p-0 text-zinc-100">
+      <DialogContent className="max-w-7xl border-white/10 bg-[#0b0c0e]/95 p-0 text-zinc-100">
         <DialogHeader className="border-b border-white/10 px-6 py-4">
           <DialogTitle className="flex items-center gap-2 text-base font-medium">
             <CalendarDays className="h-4 w-4 text-amber-300" />
             <span>Calendar</span>
           </DialogTitle>
         </DialogHeader>
-        <div className="grid gap-0 md:grid-cols-[auto,1fr,1fr]">
+        <div className="grid gap-0 md:grid-cols-[auto,1fr,1fr,1fr]">
           {/* Column 1: calendar */}
           <div className="border-white/10 p-4 md:border-r">
             <Calendar
