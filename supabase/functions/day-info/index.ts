@@ -76,7 +76,7 @@ For EACH occasion provide:
                 items: {
                   type: 'object',
                   properties: {
-                    title: { type: 'string', description: 'Occasion name' },
+                    title: { type: 'string', description: 'Official occasion name as recognized by its source (UN, government of Canada, religious tradition, etc.).' },
                     whatItIs: { type: 'string', description: 'Short description of what the occasion is and how it is observed today (2-3 sentences).' },
                     history: { type: 'string', description: 'Origin and history paragraph: when/where it started, who founded it, the year, original purpose, and how it evolved (3-5 sentences).' },
                   },
