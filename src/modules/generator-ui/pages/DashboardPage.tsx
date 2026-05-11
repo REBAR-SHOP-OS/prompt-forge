@@ -8,6 +8,7 @@ import {
   Clapperboard,
   
   Combine,
+  Crop,
   Download,
   FileUp,
   Film,
@@ -84,6 +85,7 @@ import { mergeVideoUrls, type TransitionId, type TransitionSpec } from '@/module
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
 import { VoiceoverDialog } from '@/modules/generator-ui/components/VoiceoverDialog'
 import CalendarInfoDialog from '@/modules/generator-ui/components/CalendarInfoDialog'
+import ImageReframeDialog from '@/modules/generator-ui/components/ImageReframeDialog'
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
@@ -661,6 +663,7 @@ export default function DashboardPage() {
   const [musicVolume, setMusicVolume] = useState<number>(1)
   const [isMusicDialogOpen, setIsMusicDialogOpen] = useState(false)
   const [isVoiceoverOpen, setIsVoiceoverOpen] = useState(false)
+  const [isReframeOpen, setIsReframeOpen] = useState(false)
   const [voiceoverUrl, setVoiceoverUrl] = useState<string | null>(null)
   const [voiceoverName, setVoiceoverName] = useState<string | null>(null)
   const [voiceoverVolume] = useState<number>(1)
@@ -2442,6 +2445,11 @@ export default function DashboardPage() {
         onUseAsSoundtrack={handleVoiceoverAsSoundtrack}
       />
 
+      <ImageReframeDialog
+        open={isReframeOpen}
+        onOpenChange={setIsReframeOpen}
+      />
+
       <Dialog open={isMusicDialogOpen} onOpenChange={setIsMusicDialogOpen}>
         <DialogContent className="border-white/10 bg-black text-zinc-100 sm:max-w-md">
           <DialogHeader>
@@ -3485,6 +3493,15 @@ export default function DashboardPage() {
               )
             })}
           </div>
+          <button
+            type="button"
+            onClick={() => setIsReframeOpen(true)}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/20 text-zinc-300 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100"
+            aria-label="Reframe an image to a target aspect ratio"
+            title="Reframe an image (9:16 / 1:1 / 16:9) with Nano Banana"
+          >
+            <Crop className="h-4 w-4" aria-hidden="true" />
+          </button>
         </div>
 
         {!isTextToVideo ? (
