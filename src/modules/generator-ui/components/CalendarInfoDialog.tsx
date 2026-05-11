@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import { CalendarDays, Languages, LoaderCircle } from 'lucide-react'
+import { CalendarDays, ChevronDown, Languages, LoaderCircle } from 'lucide-react'
 import { Calendar } from '@/components/ui/calendar'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -14,6 +12,14 @@ interface CalendarInfoDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
+interface Occasion {
+  title: string
+  whatItIs: string
+  audience: string
+  ideas: string[]
+  hashtags: string[]
+}
+
 const fmt = (d: Date) => {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -21,17 +27,28 @@ const fmt = (d: Date) => {
   return `${y}-${m}-${day}`
 }
 
+const labels = {
+  en: { whatItIs: 'What it is', audience: 'Audience', ideas: 'Campaign Ideas', hashtags: 'Hashtags', empty: 'No marketing-worthy occasion found for this day.', loading: 'Loading marketing occasions…', pick: 'Pick a date to see marketing occasions.' },
+  fa: { whatItIs: 'معرفی', audience: 'مخاطب', ideas: 'ایده‌های کمپین', hashtags: 'هشتگ‌ها', empty: 'مناسبت تبلیغاتی برای این روز یافت نشد.', loading: 'در حال بارگذاری…', pick: 'یک تاریخ انتخاب کنید تا مناسبت‌های تبلیغاتی را ببینید.' },
+}
+
 export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoDialogProps) {
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date())
   const [lang, setLang] = useState<'en' | 'fa'>('en')
-  const [cache, setCache] = useState<Record<string, string>>({})
+  const [cache, setCache] = useState<Record<string, Occasion[]>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null)
   const { toast } = useToast()
 
   const dateKey = useMemo(() => fmt(selectedDate), [selectedDate])
   const cacheKey = `${dateKey}:${lang}`
-  const info = cache[cacheKey] ?? null
+  const occasions = cache[cacheKey] ?? null
+  const t = labels[lang]
+
+  useEffect(() => {
+    setExpandedIndex(null)
+  }, [cacheKey])
 
   useEffect(() => {
     if (!open) return
@@ -46,9 +63,10 @@ export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoD
         })
         if (cancelled) return
         if (fnError) throw fnError
-        const markdown: string = (data as { markdown?: string })?.markdown ?? ''
-        if (!markdown) throw new Error('No content returned.')
-        setCache((c) => ({ ...c, [cacheKey]: markdown }))
+        const list: Occasion[] = Array.isArray((data as { occasions?: Occasion[] })?.occasions)
+          ? (data as { occasions: Occasion[] }).occasions
+          : []
+        setCache((c) => ({ ...c, [cacheKey]: list }))
       } catch (err) {
         if (cancelled) return
         const msg = err instanceof Error ? err.message : 'Failed to load day info'
@@ -104,30 +122,86 @@ export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoD
                 {lang === 'en' ? 'EN' : 'فا'}
               </Button>
             </div>
-            <div className="flex-1 overflow-y-auto px-5 py-4">
+            <div className="flex-1 overflow-y-auto px-3 py-3">
               {loading && (
-                <div className="flex items-center gap-2 text-sm text-zinc-400">
+                <div className="flex items-center gap-2 px-2 text-sm text-zinc-400">
                   <LoaderCircle className="h-4 w-4 animate-spin" />
-                  {lang === 'fa' ? 'در حال بارگذاری…' : 'Loading marketing occasions…'}
+                  {t.loading}
                 </div>
               )}
               {!loading && error && (
-                <div className="text-sm text-rose-300">{error}</div>
+                <div className="px-2 text-sm text-rose-300">{error}</div>
               )}
-              {!loading && !error && info && (
-                <div
-                  dir="auto"
-                  className="prose prose-sm prose-invert max-w-none prose-headings:mt-4 prose-headings:mb-2 prose-p:my-2 prose-li:my-0.5"
-                >
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{info}</ReactMarkdown>
-                </div>
+              {!loading && !error && occasions && occasions.length === 0 && (
+                <div className="px-2 text-sm text-zinc-400" dir="auto">{t.empty}</div>
               )}
-              {!loading && !error && !info && (
-                <div className="text-sm text-zinc-400">
-                  {lang === 'fa'
-                    ? 'یک تاریخ انتخاب کنید تا مناسبت‌های تبلیغاتی را ببینید.'
-                    : 'Pick a date to see marketing occasions.'}
-                </div>
+              {!loading && !error && occasions && occasions.length > 0 && (
+                <ul className="flex flex-col gap-1.5">
+                  {occasions.map((occ, i) => {
+                    const isOpen = expandedIndex === i
+                    return (
+                      <li key={i} className="rounded-md border border-white/5 bg-white/[0.02]">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedIndex(isOpen ? null : i)}
+                          className={cn(
+                            'flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-white/[0.04]',
+                            isOpen && 'bg-white/[0.04]',
+                          )}
+                          dir="auto"
+                        >
+                          <span className="text-sm font-medium text-amber-300">{occ.title}</span>
+                          <ChevronDown
+                            className={cn(
+                              'h-4 w-4 shrink-0 text-zinc-500 transition-transform',
+                              isOpen && 'rotate-180',
+                            )}
+                          />
+                        </button>
+                        {isOpen && (
+                          <div className="space-y-3 border-t border-white/5 px-3 py-3 text-sm text-zinc-200" dir="auto">
+                            <div>
+                              <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.whatItIs}</div>
+                              <p className="leading-relaxed">{occ.whatItIs}</p>
+                            </div>
+                            <div>
+                              <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.audience}</div>
+                              <p className="leading-relaxed">{occ.audience}</p>
+                            </div>
+                            {occ.ideas?.length > 0 && (
+                              <div>
+                                <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.ideas}</div>
+                                <ul className="list-disc space-y-1 ps-5 leading-relaxed marker:text-amber-300/60">
+                                  {occ.ideas.map((idea, j) => (
+                                    <li key={j}>{idea}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {occ.hashtags?.length > 0 && (
+                              <div>
+                                <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.hashtags}</div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {occ.hashtags.map((tag, j) => (
+                                    <span
+                                      key={j}
+                                      className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-200"
+                                    >
+                                      #{tag.replace(/^#/, '')}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+              {!loading && !error && !occasions && (
+                <div className="px-2 text-sm text-zinc-400" dir="auto">{t.pick}</div>
               )}
             </div>
           </div>
