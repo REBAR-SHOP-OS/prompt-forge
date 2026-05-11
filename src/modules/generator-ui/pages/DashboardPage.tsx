@@ -1900,11 +1900,13 @@ export default function DashboardPage() {
     // only stitches together those edited cards (images stay included as
     // optional connective tissue). Otherwise fall back to all eligible clips.
     const editedVideoCount = baseClips.filter((c) => c.kind === 'video' && editedJobIds.has(c.id)).length
-    const eligibleClips = editedVideoCount >= 2
-      ? baseClips.filter((c) => c.kind === 'image' || editedJobIds.has(c.id))
+    const eligibleClips = editedVideoCount >= 1
+      ? (baseClips.some((c) => c.kind === 'image' || editedJobIds.has(c.id))
+          ? baseClips.filter((c) => c.kind === 'image' || editedJobIds.has(c.id))
+          : baseClips)
       : baseClips
-    if (eligibleClips.length < 2) {
-      setVideoColumnMessage('Need at least 2 finished items (videos or images) to merge.')
+    if (eligibleClips.length < 1) {
+      setVideoColumnMessage('Need at least 1 finished item (video or image) to finalize.')
       return
     }
     if (!userId) {
