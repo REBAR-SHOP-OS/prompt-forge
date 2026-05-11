@@ -663,6 +663,7 @@ export default function DashboardPage() {
   const [musicVolume, setMusicVolume] = useState<number>(1)
   const [isMusicDialogOpen, setIsMusicDialogOpen] = useState(false)
   const [isVoiceoverOpen, setIsVoiceoverOpen] = useState(false)
+  const [isReframeOpen, setIsReframeOpen] = useState(false)
   const [voiceoverUrl, setVoiceoverUrl] = useState<string | null>(null)
   const [voiceoverName, setVoiceoverName] = useState<string | null>(null)
   const [voiceoverVolume] = useState<number>(1)
