@@ -238,6 +238,8 @@ export default function ClipTrimmerDialog({
               {muteAudio ? 'Audio muted' : 'Mute audio'}
             </Button>
           </div>
+
+          {norm.length > 0 ? (
             <ul className="max-h-32 space-y-1 overflow-auto rounded-md border border-white/10 bg-white/[0.02] p-2 text-xs">
               {norm.map((c, i) => (
                 <li key={i} className="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-white/5">
