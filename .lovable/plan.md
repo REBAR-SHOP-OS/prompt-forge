@@ -1,22 +1,39 @@
-# رفع مشکل پخش‌نشدن ویدیو در دیالوگ Trim
+# همیشه ورود به /app با وضعیت کاملاً خالی
 
-با کلیک روی آیکون قیچی، دیالوگ باز می‌شود و مدت زمان ویدیو نمایش داده می‌شود (مثلاً `0:10`)، اما ناحیه پخش کاملاً سیاه است و فریم اول رندر نمی‌شود.
+با ورود/رفرش روی `/app`، تقریباً همه‌چیز در صفحه پاک باشد و حالت اولیه «Start forging a prompt» نمایش داده شود (مثل تصویر اول کاربر) — بدون وابستگی به اینکه کاربر قبلاً چه چیزی ساخته یا در localStorage ذخیره شده.
 
-## علت
+## رفتار
 
-تگ `<video>` در `ClipTrimmerDialog.tsx`:
-- `preload` تنظیم نشده — مرورگر فقط متادیتا می‌گیرد، نه فریم
-- روی `onLoadedMetadata` به جلو seek نمی‌شود — تا کاربر دکمه play را نزند، هیچ فریمی روی canvas مرورگر نقاشی نشده و کادر سیاه می‌ماند
+- HISTORY راست → خالی (No renders yet)
+- ناحیه مرکزی → پیام Start forging a prompt
+- Composer پایین → بدون آپلود Start/End، بدون متن
+- Music/Voiceover → ریست
+- ترنزیشن‌ها، editedClips، pendingEndAppends/Prepends → خالی
+- جاب‌های جدیدی که در همین session ساخته شوند طبق روال در HISTORY ظاهر می‌شوند
 
-دقیقاً همان الگویی که در کارت‌های HISTORY (داشبورد) استفاده شده تا thumbnail اول نمایش داده شود، در دیالوگ trim موجود نیست.
+داده‌های persist‌شده در localStorage پاک نمی‌شوند (امن باقی می‌مانند) — فقط در زمان mount لود نمی‌شوند.
 
-## تغییر
+## تغییرات کد (همه در `src/modules/generator-ui/pages/DashboardPage.tsx`)
 
-**`src/modules/generator-ui/components/ClipTrimmerDialog.tsx`** — تگ `<video>` پیش‌نمایش:
+1. **افکت ریست workspace** (~خط 1099):
+   - حذف گارد `lastWorkspaceUserIdRef.current === userId`
+   - تبدیل به افکت یک‌بار-روی-مونت پس از آماده‌شدن auth: روی هر mount جدید صفحه، `setGeneratedVideos([])` اجرا شود
+   - همان منطق برای `lastImagesUserIdRef`
 
-- اضافه کردن `preload="auto"`
-- در `onLoadedMetadata`:
-  - مدت زمان را ست کن (مثل قبل)
-  - اگر `currentTime === 0`، یک seek کوچک به `Math.min(0.05, duration - 0.05)` انجام بده تا فریم اول رندر شود
+2. **افکت لود `mergedEntries` از localStorage** (~خط 748):
+   - حذف خواندن از `localStorage`؛ همیشه `setMergedEntries([])` در mount
+   - تابع `persistMerged` نگه داشته می‌شود تا اگر داخل session یک Final Film ساخته شد همان session نشانش بدهد، ولی در ورود بعدی لود نشود
 
-این تغییر، اولین فریم ویدیو را داخل دیالوگ نمایش می‌دهد و کاربر مرز برش را دیده و می‌تواند کار کند. بدون تغییر در سایر فایل‌ها یا backend.
+3. **سایر state های session که از localStorage هیدریت می‌شوند** را روی mount خالی مقداردهی کن (بدون پاک‌کردن localStorage):
+   - `pendingEndAppends`, `pendingStartPrepends` → `{}`
+   - `editedJobIds` → خالی
+   - `workspaceHiddenJobIds` → خالی
+   - `projectSourceJobs` → خالی
+   - `transitions` → `{}`
+   - `editedClips` → `{}`
+   - `uploadedFiles` → `[]`
+   - `musicName/Url/Range/Duration`, `voiceoverUrl/Name`, `previewVideoId`, `selectedProjectId`, `promptText` → null/خالی
+
+   روش: یک افکت تک‌بار `useEffect(() => { /* reset all */ }, [])` بعد از تعریف state ها، که این مقادیر را به حالت خالی برگرداند. خواندن‌های localStorage موجود به همان شکل می‌مانند ولی نتیجه‌شان توسط ریست overwrite می‌شود — برای جلوگیری از ترتیب اشتباه افکت‌ها، خواندن‌های مربوط به این state ها را حذف می‌کنیم (no-op) تا منبع حقیقت همان «خالی روی mount» باشد.
+
+نتیجه: هر بار صفحه باز شود، UI دقیقاً مثل تصویر اول دیده می‌شود.

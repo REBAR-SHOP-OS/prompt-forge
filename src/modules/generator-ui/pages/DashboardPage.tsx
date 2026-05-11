@@ -448,21 +448,11 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
-    if (!approvedStorageKey) {
-      setApprovedIds(new Set())
-      return
-    }
-    try {
-      const raw = window.localStorage.getItem(approvedStorageKey)
-      if (raw) {
-        const parsed = JSON.parse(raw) as string[]
-        setApprovedIds(new Set(parsed))
-      } else {
-        setApprovedIds(new Set())
-      }
-    } catch {
-      setApprovedIds(new Set())
-    }
+    // Per user request: every page entry starts with a fully empty workspace.
+    // We intentionally ignore any persisted approved/library set on mount.
+    // Within-session writes still persist (so toggles work mid-session), but
+    // the next entry/refresh re-opens with a blank slate.
+    setApprovedIds(new Set())
   }, [approvedStorageKey])
 
   function toggleApproved(jobId: string) {
@@ -499,16 +489,8 @@ export default function DashboardPage() {
   const editedJobIdsKey = userId ? `edited-clips:${userId}` : null
 
   useEffect(() => {
-    if (!editedJobIdsKey) {
-      setEditedJobIds(new Set())
-      return
-    }
-    try {
-      const raw = window.localStorage.getItem(editedJobIdsKey)
-      setEditedJobIds(raw ? new Set(JSON.parse(raw) as string[]) : new Set())
-    } catch {
-      setEditedJobIds(new Set())
-    }
+    // Always start empty on mount — see note in approvedIds effect above.
+    setEditedJobIds(new Set())
   }, [editedJobIdsKey])
 
   function persistEditedJobIds(next: Set<string>) {
@@ -526,16 +508,7 @@ export default function DashboardPage() {
   const workspaceHiddenJobIdsKey = userId ? `workspace-hidden-jobs:${userId}` : null
 
   useEffect(() => {
-    if (!workspaceHiddenJobIdsKey) {
-      setWorkspaceHiddenJobIds(new Set())
-      return
-    }
-    try {
-      const raw = window.localStorage.getItem(workspaceHiddenJobIdsKey)
-      setWorkspaceHiddenJobIds(raw ? new Set(JSON.parse(raw) as string[]) : new Set())
-    } catch {
-      setWorkspaceHiddenJobIds(new Set())
-    }
+    setWorkspaceHiddenJobIds(new Set())
   }, [workspaceHiddenJobIdsKey])
 
   function persistWorkspaceHiddenJobIds(next: Set<string>) {
@@ -552,16 +525,7 @@ export default function DashboardPage() {
   const projectSourceJobsKey = userId ? `project-source-jobs:${userId}` : null
 
   useEffect(() => {
-    if (!projectSourceJobsKey) {
-      setProjectSourceJobs({})
-      return
-    }
-    try {
-      const raw = window.localStorage.getItem(projectSourceJobsKey)
-      setProjectSourceJobs(raw ? (JSON.parse(raw) as Record<string, JobDetail[]>) : {})
-    } catch {
-      setProjectSourceJobs({})
-    }
+    setProjectSourceJobs({})
   }, [projectSourceJobsKey])
 
   function persistProjectSourceJobs(next: Record<string, JobDetail[]>) {
@@ -699,16 +663,7 @@ export default function DashboardPage() {
   const processingStartPrependRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
-    if (!pendingEndAppendsKey) {
-      setPendingEndAppends({})
-      return
-    }
-    try {
-      const raw = window.localStorage.getItem(pendingEndAppendsKey)
-      setPendingEndAppends(raw ? (JSON.parse(raw) as Record<string, string>) : {})
-    } catch {
-      setPendingEndAppends({})
-    }
+    setPendingEndAppends({})
   }, [pendingEndAppendsKey])
 
   function persistPendingEndAppends(next: Record<string, string>) {
@@ -719,16 +674,7 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
-    if (!pendingStartPrependsKey) {
-      setPendingStartPrepends({})
-      return
-    }
-    try {
-      const raw = window.localStorage.getItem(pendingStartPrependsKey)
-      setPendingStartPrepends(raw ? (JSON.parse(raw) as Record<string, string>) : {})
-    } catch {
-      setPendingStartPrepends({})
-    }
+    setPendingStartPrepends({})
   }, [pendingStartPrependsKey])
 
   function persistPendingStartPrepends(next: Record<string, string>) {
@@ -746,16 +692,7 @@ export default function DashboardPage() {
   }, [legacyDeletedKey])
 
   useEffect(() => {
-    if (!mergedStorageKey) {
-      setMergedEntries([])
-      return
-    }
-    try {
-      const raw = window.localStorage.getItem(mergedStorageKey)
-      setMergedEntries(raw ? (JSON.parse(raw) as JobDetail[]) : [])
-    } catch {
-      setMergedEntries([])
-    }
+    setMergedEntries([])
   }, [mergedStorageKey])
 
   function persistMerged(next: JobDetail[]) {
@@ -1096,31 +1033,17 @@ export default function DashboardPage() {
     return hasComposerInput ? 'Shape the next version' : 'Start forging a prompt'
   }, [hasComposerInput, isDragging])
 
-  // Per user request: each session starts with an empty workspace.
-  // Past renders remain in the database but are not loaded on entry.
-  // New jobs created in this session still appear in History as usual.
-  // IMPORTANT: only reset when the logged-in user identity actually changes
-  // (login / logout / account switch). Token refreshes (e.g. when Chrome
-  // refocuses a backgrounded tab) must NOT wipe the workspace.
-  const lastWorkspaceUserIdRef = useRef<string | null | undefined>(undefined)
+  // Per user request: every page entry (mount) starts with a fully empty
+  // workspace, regardless of what's in the DB or localStorage. New jobs
+  // created in this session still appear in HISTORY as usual.
+  // Mount-once — does NOT fire on token refresh (component stays mounted).
   useEffect(() => {
-    if (authLoading) return
-    if (lastWorkspaceUserIdRef.current === userId) return
-    lastWorkspaceUserIdRef.current = userId
     setGeneratedVideos([])
     setIsLibraryLoading(false)
     setVideoColumnMessage(null)
-  }, [authLoading, userId])
-
-  // Per user request: start with no images loaded. Uploads in this session
-  // still populate the list normally; existing rows in the DB are preserved.
-  const lastImagesUserIdRef = useRef<string | null | undefined>(undefined)
-  useEffect(() => {
-    if (authLoading || !userId) return
-    if (lastImagesUserIdRef.current === userId) return
-    lastImagesUserIdRef.current = userId
     setUserImages([])
-  }, [authLoading, userId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handlePickImage = () => {
     if (isUploadingImage) return
