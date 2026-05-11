@@ -26,8 +26,8 @@ const fmt = (d: Date) => {
 }
 
 const labels = {
-  en: { whatItIs: 'What it is', audience: 'Audience', ideas: 'Campaign Ideas', hashtags: 'Hashtags', empty: 'No marketing-worthy occasion found for this day.', loading: 'Loading marketing occasions…', pick: 'Pick a date to see marketing occasions.' },
-  fa: { whatItIs: 'معرفی', audience: 'مخاطب', ideas: 'ایده‌های کمپین', hashtags: 'هشتگ‌ها', empty: 'مناسبت تبلیغاتی برای این روز یافت نشد.', loading: 'در حال بارگذاری…', pick: 'یک تاریخ انتخاب کنید تا مناسبت‌های تبلیغاتی را ببینید.' },
+  en: { whatItIs: 'About', history: 'History', empty: 'No notable occasion found for this day.', loading: 'Loading occasions…', pick: 'Pick a date to see occasions.' },
+  fa: { whatItIs: 'معرفی', history: 'تاریخچه', empty: 'مناسبتی برای این روز یافت نشد.', loading: 'در حال بارگذاری…', pick: 'یک تاریخ انتخاب کنید تا مناسبت‌ها را ببینید.' },
 }
 
 export default function CalendarInfoDialog({ open, onOpenChange }: CalendarInfoDialogProps) {
