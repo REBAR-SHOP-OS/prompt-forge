@@ -1,23 +1,41 @@
-## Goal
-وقتی کاربر روی «Mute audio» کلیک می‌کند، دکمه «Apply changes» باید فعال شود (حتی بدون اینکه هیچ بازه‌ای cut شده باشد) و با زدن آن، صدای ویدئوی کارت کاملاً حذف شود.
+## هدف
+کارت‌هایی که در «Library / Your library» (ویدیوهای Approved و Final Film) ذخیره شده‌اند نباید با ورود/رفرش صفحه پاک شوند. فقط با کلیک روی آیکن سطل‌آشغال هر کارت (که از قبل وجود دارد و `deleteCard` را صدا می‌زند) باید برای همیشه حذف شوند.
 
-## رفتار فعلی
-- دکمه Apply فقط زمانی فعال است که `norm.length > 0` (حداقل یک بازه‌ی برش وجود داشته باشد).
-- اگر فقط mute بزنیم، Apply غیرفعال می‌ماند → نمی‌توان فقط صدا را حذف کرد.
+## مشکل فعلی
+در تغییر قبلی، برای اینکه workspace در هر ورود خالی باز شود، state های زیر هم در `useEffect` با مقدار خالی reset می‌شدند و دیگر از localStorage hydrate نمی‌شدند:
 
-## تغییرات
+- `approvedIds` (آیدی کارت‌های ذخیره‌شده در Library)
+- `mergedEntries` (کارت‌های Final Film که با merge ساخته شده‌اند)
+- `projectSourceJobs` (snapshot کلیپ‌های منبع هر Final Film برای نمایش در HISTORY)
+- `editedJobIds` (لیست کلیپ‌هایی که edit شده‌اند، برای merge بعد از refresh)
 
-### ۱) `src/modules/generator-ui/components/ClipTrimmerDialog.tsx`
-- شرط `disabled` دکمه Apply را عوض کن:
-  - از: `disabled={busy || norm.length === 0}`
-  - به: `disabled={busy || (norm.length === 0 && !muteAudio)}`
-- در تابع `apply`:
-  - شرط «No ranges to remove» را فقط زمانی throw کن که `muteAudio` هم false باشد. در غیر این صورت، اجازه بده با `cuts=[]` برود به `trimVideoLocally` که خروجی همان ویدئو ولی بدون صدا تولید کند.
+نتیجه: Library همیشه خالی نشان داده می‌شود — حتی اگر در localStorage داده وجود داشته باشد.
 
-### ۲) `src/modules/generator-ui/lib/trimVideo.ts`
-- `normalizeCuts` با آرایه‌ی خالی → `[]` برمی‌گرداند، که باعث می‌شود `totalKeptDuration` = duration کامل و حلقه‌ی tick هیچ seek/pause نکند → نتیجه: کل ویدئو re-encode می‌شود بدون صدا (چون audio capture skip شده).
-- بررسی کن که با `norm = []` و `muteAudio=true` مسیر کار کند (به نظر بدون تغییر کد کار می‌کند، فقط verify).
+این چهار state دقیقاً همان چیزی هستند که Library را تشکیل می‌دهند. باید برای آن‌ها hydration از localStorage برگردد.
+
+## تغییرات (همگی در `src/modules/generator-ui/pages/DashboardPage.tsx`)
+
+### ۱) hydrate کردن `approvedIds` از localStorage (حدود خط ۴۵۰)
+به‌جای همیشه `setApprovedIds(new Set())`، اگر `approvedStorageKey` ست باشد JSON را بخوان و Set بساز. در صورت خطا یا نبود کلید، Set خالی.
+
+### ۲) hydrate کردن `mergedEntries` از localStorage (حدود خط ۶۹۴)
+به‌جای همیشه `setMergedEntries([])`، اگر `mergedStorageKey` ست باشد JSON را parse کن و `setMergedEntries(parsed)` کن. در صورت خطا، آرایه خالی.
+
+### ۳) hydrate کردن `projectSourceJobs` از localStorage (حدود خط ۵۲۷)
+لازم تا وقتی کاربر روی کارت Library کلیک می‌کند، کلیپ‌های منبع آن پروژه در HISTORY نمایش داده شوند.
+
+### ۴) hydrate کردن `editedJobIds` از localStorage (حدود خط ۴۹۱)
+لازم برای اینکه Final Film پس از refresh بداند کدام کلیپ‌ها edit شده‌اند.
+
+### آنچه تغییر نمی‌کند (workspace همچنان خالی شروع می‌شود)
+- `workspaceHiddenJobIds` → خالی روی mount (workspace cleanup)
+- `pendingEndAppends` / `pendingStartPrepends` → خالی روی mount
+- `generatedVideos`, `userImages`, `previewVideoId`, `selectedProjectId`, `promptText`, music/voiceover state → بدون تغییر (همان رفتار خالی فعلی)
+
+### تأیید رفتار حذف
+`deleteCard` از قبل در همان فایل کارت را از `mergedEntries`، `approvedIds`، `projectSourceJobs` و در صورت لزوم سرور پاک می‌کند و در localStorage هم persist می‌کند. پس کلیک روی سطل‌آشغال = حذف دائمی. هیچ تغییری در آن لازم نیست.
 
 ## نتیجه
-- کلیک روی Mute → دکمه Apply روشن می‌شود.
-- Apply → خروجی mp4/webm بدون track صوتی تولید و در همان onApply روی کارت جایگزین می‌شود (همان مسیر فعلی، بدون تغییر در منطق کارت).
+- ورود به `/app` → workspace خالی و آماده کار (بدون تغییر نسبت به الان).
+- باز کردن Library → همه کارت‌های قبلاً ذخیره/Final Film شده پابرجا.
+- تنها راه حذف: آیکن سطل‌آشغال روی هر کارت.

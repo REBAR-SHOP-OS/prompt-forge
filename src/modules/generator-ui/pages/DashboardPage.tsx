@@ -448,11 +448,13 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
-    // Per user request: every page entry starts with a fully empty workspace.
-    // We intentionally ignore any persisted approved/library set on mount.
-    // Within-session writes still persist (so toggles work mid-session), but
-    // the next entry/refresh re-opens with a blank slate.
-    setApprovedIds(new Set())
+    // Library must persist across reloads — hydrate approved set from storage.
+    if (!approvedStorageKey) { setApprovedIds(new Set()); return }
+    try {
+      const raw = window.localStorage.getItem(approvedStorageKey)
+      const arr = raw ? (JSON.parse(raw) as string[]) : []
+      setApprovedIds(new Set(Array.isArray(arr) ? arr : []))
+    } catch { setApprovedIds(new Set()) }
   }, [approvedStorageKey])
 
   function toggleApproved(jobId: string) {
@@ -489,8 +491,13 @@ export default function DashboardPage() {
   const editedJobIdsKey = userId ? `edited-clips:${userId}` : null
 
   useEffect(() => {
-    // Always start empty on mount — see note in approvedIds effect above.
-    setEditedJobIds(new Set())
+    // Library-related state must persist across reloads.
+    if (!editedJobIdsKey) { setEditedJobIds(new Set()); return }
+    try {
+      const raw = window.localStorage.getItem(editedJobIdsKey)
+      const arr = raw ? (JSON.parse(raw) as string[]) : []
+      setEditedJobIds(new Set(Array.isArray(arr) ? arr : []))
+    } catch { setEditedJobIds(new Set()) }
   }, [editedJobIdsKey])
 
   function persistEditedJobIds(next: Set<string>) {
@@ -525,7 +532,12 @@ export default function DashboardPage() {
   const projectSourceJobsKey = userId ? `project-source-jobs:${userId}` : null
 
   useEffect(() => {
-    setProjectSourceJobs({})
+    if (!projectSourceJobsKey) { setProjectSourceJobs({}); return }
+    try {
+      const raw = window.localStorage.getItem(projectSourceJobsKey)
+      const obj = raw ? (JSON.parse(raw) as Record<string, JobDetail[]>) : {}
+      setProjectSourceJobs(obj && typeof obj === 'object' ? obj : {})
+    } catch { setProjectSourceJobs({}) }
   }, [projectSourceJobsKey])
 
   function persistProjectSourceJobs(next: Record<string, JobDetail[]>) {
@@ -692,7 +704,13 @@ export default function DashboardPage() {
   }, [legacyDeletedKey])
 
   useEffect(() => {
-    setMergedEntries([])
+    // Library Final Film entries must persist across reloads.
+    if (!mergedStorageKey) { setMergedEntries([]); return }
+    try {
+      const raw = window.localStorage.getItem(mergedStorageKey)
+      const arr = raw ? (JSON.parse(raw) as JobDetail[]) : []
+      setMergedEntries(Array.isArray(arr) ? arr : [])
+    } catch { setMergedEntries([]) }
   }, [mergedStorageKey])
 
   function persistMerged(next: JobDetail[]) {
