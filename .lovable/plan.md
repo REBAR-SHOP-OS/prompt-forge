@@ -1,47 +1,63 @@
 ## هدف
 
-افزودن یک آیکون تقویم در گوشه بالا سمت چپ `DashboardPage` (کنار آیکون گرید). با کلیک، یک Popover/Dialog باز می‌شود که شامل تقویم میلادی است؛ با انتخاب هر تاریخ، اطلاعات کامل آن روز (مناسبت‌ها، رویدادهای تاریخی، شخصیت‌های متولد/درگذشته، حقایق جالب) توسط Lovable AI تولید و نمایش داده می‌شود.
+دیالوگ Day Information به‌جای اطلاعات تاریخی عمومی، فقط **مناسبت‌های قابل استفاده برای تبلیغات** را نمایش می‌دهد، همراه با **ایده‌های کمپین** برای هر مناسبت، و ترجمه فارسی به‌صورت پیش‌فرض زیر متن انگلیسی نشان داده می‌شود.
 
-## تغییرات Frontend
+## تغییرات Backend — `supabase/functions/day-info/index.ts`
 
-### 1. کامپوننت جدید: `src/modules/generator-ui/components/CalendarInfoDialog.tsx`
-- یک `Dialog` با دو ستون:
-  - چپ: `Calendar` (shadcn) به صورت `mode="single"` با `pointer-events-auto`
-  - راست: ناحیه نمایش اطلاعات روز انتخاب‌شده
-- State:
-  - `selectedDate: Date` (پیش‌فرض: امروز)
-  - `info: string | null`
-  - `loading: boolean`
-  - `error: string | null`
-  - `cache: Record<string, string>` (کلید: `MM-DD` تا برای سال‌های مختلف ثابت بماند، یا `YYYY-MM-DD` اگر شامل رویدادهای تاریخی سال‌محور باشد — انتخاب: `YYYY-MM-DD` چون شامل اطلاعات تاریخی است)
-- وقتی `selectedDate` تغییر کرد: اگر در cache بود نمایش بده، وگرنه `supabase.functions.invoke('day-info', { body: { date: 'YYYY-MM-DD' } })` صدا بزن.
-- نمایش با `react-markdown` (در پروژه موجود است؛ اگر نه، از `<div className="prose prose-invert whitespace-pre-wrap">` ساده استفاده کن).
-- مدیریت خطاهای 429/402 با toast.
+بازنویسی پرامپت‌ها (بدون تغییر امضای ورودی/خروجی):
 
-### 2. تغییر در `src/modules/generator-ui/pages/DashboardPage.tsx`
-- import آیکون `CalendarDays` از `lucide-react` و کامپوننت جدید.
-- در ناحیه بالا سمت چپ (همان ردیفی که آیکون گرید + لوگوی پرتقالی هست) یک دکمه‌ی آیکونی اضافه کن، دقیقاً با همان استایل دکمه گرید موجود (همان اندازه/padding/hover).
-- state محلی `isCalendarOpen` و رندر `<CalendarInfoDialog open={isCalendarOpen} onOpenChange={setIsCalendarOpen} />`.
+- **System prompt** جدید:
+  > "You are a marketing strategist. For a given Gregorian date, return only the observances and holidays that are useful for advertising/marketing campaigns (e.g. International Days like World Chocolate Day, Mother's Day, Black Friday, Valentine's Day, Earth Day, shopping events, widely-celebrated cultural days). Skip purely historical events, birthdays, deaths, religious-only observances with no commercial angle, and obscure local holidays. If a date has no marketing-worthy occasion, say so honestly.
+  >
+  > Output bilingual GitHub-flavored Markdown. For every section heading and every bullet, write the English line first, then immediately below it the Persian translation in italics on its own line. Use this structure:
+  >
+  > `## 🎯 Marketing-Worthy Occasions / *مناسبت‌های مناسب تبلیغات*`
+  >
+  > For each occasion, render:
+  > ```
+  > ### {Occasion Name} / *{ترجمه فارسی نام مناسبت}*
+  > **What it is:** short English description.
+  > *توضیح فارسی کوتاه.*
+  >
+  > **Audience:** who to target in English.
+  > *مخاطب هدف به فارسی.*
+  >
+  > **Campaign Ideas:**
+  > - English idea 1
+  >   - *ایده فارسی ۱*
+  > - English idea 2
+  >   - *ایده فارسی ۲*
+  > - English idea 3
+  >   - *ایده فارسی ۳*
+  >
+  > **Hashtags:** `#Tag1` `#Tag2` `#Tag3`
+  > ```
+  >
+  > Provide 3–5 concrete campaign ideas per occasion. Keep Persian translations natural and idiomatic, not literal."
 
-## تغییرات Backend
+- **User prompt:** `Provide marketing-worthy occasions for: ${longDate} (${date}).`
 
-### Edge Function جدید: `supabase/functions/day-info/index.ts`
-- ورودی: `{ date: 'YYYY-MM-DD' }` با اعتبارسنجی Zod (یا regex ساده).
-- بدون نیاز به auth (فقط info عمومی)؛ `verify_jwt = false` پیش‌فرض.
-- CORS استاندارد.
-- فراخوانی Lovable AI Gateway با مدل `google/gemini-3-flash-preview`:
-  - System prompt: "You are a knowledgeable historian and cultural guide. For any given Gregorian date, return rich, well-structured Markdown including: notable historical events on this day, famous birthdays, deaths, international observances/holidays, and 1-2 fun facts. Be accurate and concise."
-  - User prompt: "Provide complete information about this date: {date} (month/day). Use Markdown with headings."
-- مدیریت 429/402 و بازگرداندن خطاهای واضح.
-- پاسخ: `{ markdown: string }`.
+- مدل و سایر تنظیمات بدون تغییر (`google/gemini-3-flash-preview`، مدیریت 429/402).
+
+## تغییرات Frontend — `src/modules/generator-ui/components/CalendarInfoDialog.tsx`
+
+تغییرات کوچک نمایشی فقط:
+
+1. عنوان دیالوگ از `Day Information` به `Marketing Calendar / تقویم تبلیغاتی` تغییر می‌کند.
+2. متن fallback (`Pick a date to see…`) دو زبانه می‌شود: `Pick a date to see marketing occasions. / یک تاریخ انتخاب کنید…`.
+3. کلاس‌های prose تنظیم شوند تا متن italic (که ترجمه فارسی است) با وزن نرمال و رنگ کمی روشن‌تر (`prose-em:not-italic prose-em:text-zinc-300/90 prose-em:font-normal`) و راست‌چین خوانده شود — برای راست‌چین کردن خطوط فارسی از CSS rule ساده روی `<em>` با `dir="auto"` استفاده می‌کنیم: کل بلوک Markdown داخل `<div dir="auto">` رندر می‌شود تا مرورگر هر خط را به‌صورت خودکار راست‌چین/چپ‌چین کند.
+4. هیچ state، cache، یا منطق fetch تغییر نمی‌کند.
 
 ## خارج از scope
-- بدون ذخیره‌سازی در دیتابیس (cache فقط در حافظه‌ی session).
-- بدون تغییر در music/voiceover/Final Film.
-- بدون تقویم شمسی/قمری (طبق انتخاب کاربر).
+
+- بدون آیکون toggle جداگانه (طبق انتخاب کاربر، ترجمه پیش‌فرض همراه انگلیسی است).
+- بدون دسته‌بندی صنعتی.
+- بدون تغییر در آیکون تقویم، state، یا edge function deployment workflow.
+- بدون cache invalidation — کلیدهای cache همان `YYYY-MM-DD` می‌مانند.
 
 ## تأیید
-- روی آیکون تقویم کنار گرید کلیک شود → Dialog باز شود، تاریخ امروز به‌صورت پیش‌فرض انتخاب باشد و اطلاعات load شود.
-- انتخاب تاریخ دیگر → loading نمایش داده شود سپس Markdown اطلاعات.
-- انتخاب همان تاریخ دوباره → از cache فوراً نمایش داده شود.
-- Final Film و سایر بخش‌ها بدون تغییر کار کنند.
+
+- باز کردن دیالوگ روی هر تاریخ → فقط مناسبت‌های تبلیغاتی نمایش داده شود (نه رویدادهای تاریخی، نه تولدها).
+- هر مناسبت شامل: نام دو زبانه، توضیح، مخاطب، ۳–۵ ایده کمپین دو زبانه، و هشتگ.
+- خطوط فارسی به‌صورت italic و راست‌چین (به لطف `dir="auto"`) نمایش داده شوند.
+- اگر تاریخی مناسبت تبلیغاتی نداشت، پیام صادقانه (به دو زبان) برمی‌گردد.
