@@ -448,21 +448,11 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
-    if (!approvedStorageKey) {
-      setApprovedIds(new Set())
-      return
-    }
-    try {
-      const raw = window.localStorage.getItem(approvedStorageKey)
-      if (raw) {
-        const parsed = JSON.parse(raw) as string[]
-        setApprovedIds(new Set(parsed))
-      } else {
-        setApprovedIds(new Set())
-      }
-    } catch {
-      setApprovedIds(new Set())
-    }
+    // Per user request: every page entry starts with a fully empty workspace.
+    // We intentionally ignore any persisted approved/library set on mount.
+    // Within-session writes still persist (so toggles work mid-session), but
+    // the next entry/refresh re-opens with a blank slate.
+    setApprovedIds(new Set())
   }, [approvedStorageKey])
 
   function toggleApproved(jobId: string) {
