@@ -1,41 +1,49 @@
-## هدف
-کارت‌هایی که در «Library / Your library» (ویدیوهای Approved و Final Film) ذخیره شده‌اند نباید با ورود/رفرش صفحه پاک شوند. فقط با کلیک روی آیکن سطل‌آشغال هر کارت (که از قبل وجود دارد و `deleteCard` را صدا می‌زند) باید برای همیشه حذف شوند.
+## Goal
 
-## مشکل فعلی
-در تغییر قبلی، برای اینکه workspace در هر ورود خالی باز شود، state های زیر هم در `useEffect` با مقدار خالی reset می‌شدند و دیگر از localStorage hydrate نمی‌شدند:
+In the Calendar dialog, when the user clicks any occasion (in the day list or the month list), a new right-hand column generates an AI film-scenario prompt for that specific occasion. The user reviews it, presses "Use in prompt", and the scenario is inserted into the main chat box (`promptText`) and the clip duration is forced to 10 seconds. The Calendar dialog then closes.
 
-- `approvedIds` (آیدی کارت‌های ذخیره‌شده در Library)
-- `mergedEntries` (کارت‌های Final Film که با merge ساخته شده‌اند)
-- `projectSourceJobs` (snapshot کلیپ‌های منبع هر Final Film برای نمایش در HISTORY)
-- `editedJobIds` (لیست کلیپ‌هایی که edit شده‌اند، برای merge بعد از refresh)
+## UX
 
-نتیجه: Library همیشه خالی نشان داده می‌شود — حتی اگر در localStorage داده وجود داشته باشد.
+Calendar dialog grid changes from 3 columns to 4 columns:
+1. Calendar (unchanged)
+2. Day details (unchanged) — clicking an occasion title here also selects it for the new column
+3. This-month list (unchanged) — clicking an occasion here also selects it for the new column
+4. **NEW: "Scenario" column** showing:
+   - Selected occasion title (or empty placeholder "Pick an occasion to generate a 10s film scenario")
+   - Loading spinner while AI generates
+   - Generated scenario text (read-only, scrollable, language follows current `lang` toggle)
+   - Two buttons: **Regenerate** and **Use in prompt** (primary)
+   - Small "10s" badge to signal the duration the scenario targets
 
-این چهار state دقیقاً همان چیزی هستند که Library را تشکیل می‌دهند. باید برای آن‌ها hydration از localStorage برگردد.
+## Behavior
 
-## تغییرات (همگی در `src/modules/generator-ui/pages/DashboardPage.tsx`)
+- Clicking any occasion (day or month) sets a `selectedOccasion` state and triggers generation.
+- Generation reuses the existing `enhance-prompt` edge function with:
+  - `prompt`: a seed like `"Cinematic 10-second scene about: <title>. <whatItIs>"` (Persian seed when `lang==='fa'`)
+  - `mode`: `"silent"` (no narration) — keeps it visual-only and ≤ ~80 words, which fits a 10s clip
+- Cache results by `occasion.title + lang` to avoid re-calling the API.
+- "Use in prompt" calls a new prop `onApplyPrompt(scenario: string)` and closes the dialog.
+- DashboardPage handler:
+  - `setPromptText(scenario)`
+  - `setDurationSeconds(10)`
+  - `setIsCalendarOpen(false)`
 
-### ۱) hydrate کردن `approvedIds` از localStorage (حدود خط ۴۵۰)
-به‌جای همیشه `setApprovedIds(new Set())`، اگر `approvedStorageKey` ست باشد JSON را بخوان و Set بساز. در صورت خطا یا نبود کلید، Set خالی.
+## Files to change
 
-### ۲) hydrate کردن `mergedEntries` از localStorage (حدود خط ۶۹۴)
-به‌جای همیشه `setMergedEntries([])`، اگر `mergedStorageKey` ست باشد JSON را parse کن و `setMergedEntries(parsed)` کن. در صورت خطا، آرایه خالی.
+- `src/modules/generator-ui/components/CalendarInfoDialog.tsx`
+  - Add `onApplyPrompt?: (prompt: string) => void` to props
+  - Add state: `selectedOccasion`, `scenarioCache`, `scenarioLoading`, `scenarioError`
+  - Change grid to `md:grid-cols-[auto,1fr,1fr,1fr]`
+  - Render the new Scenario column
+  - Make occasion buttons in columns 2 & 3 also call `setSelectedOccasion`
+  - Add `generateScenario()` using `supabase.functions.invoke('enhance-prompt', { body: { prompt: seed, mode: 'silent' } })`
+  - Add labels in `labels.en` / `labels.fa` for: scenarioTitle, pickOccasion, regenerate, useInPrompt, generating, badge10s
 
-### ۳) hydrate کردن `projectSourceJobs` از localStorage (حدود خط ۵۲۷)
-لازم تا وقتی کاربر روی کارت Library کلیک می‌کند، کلیپ‌های منبع آن پروژه در HISTORY نمایش داده شوند.
+- `src/modules/generator-ui/pages/DashboardPage.tsx`
+  - Pass `onApplyPrompt={(p) => { setPromptText(p); setDurationSeconds(10); setIsCalendarOpen(false); }}` to `<CalendarInfoDialog />`
 
-### ۴) hydrate کردن `editedJobIds` از localStorage (حدود خط ۴۹۱)
-لازم برای اینکه Final Film پس از refresh بداند کدام کلیپ‌ها edit شده‌اند.
+## Out of scope
 
-### آنچه تغییر نمی‌کند (workspace همچنان خالی شروع می‌شود)
-- `workspaceHiddenJobIds` → خالی روی mount (workspace cleanup)
-- `pendingEndAppends` / `pendingStartPrepends` → خالی روی mount
-- `generatedVideos`, `userImages`, `previewVideoId`, `selectedProjectId`, `promptText`, music/voiceover state → بدون تغییر (همان رفتار خالی فعلی)
-
-### تأیید رفتار حذف
-`deleteCard` از قبل در همان فایل کارت را از `mergedEntries`، `approvedIds`، `projectSourceJobs` و در صورت لزوم سرور پاک می‌کند و در localStorage هم persist می‌کند. پس کلیک روی سطل‌آشغال = حذف دائمی. هیچ تغییری در آن لازم نیست.
-
-## نتیجه
-- ورود به `/app` → workspace خالی و آماده کار (بدون تغییر نسبت به الان).
-- باز کردن Library → همه کارت‌های قبلاً ذخیره/Final Film شده پابرجا.
-- تنها راه حذف: آیکن سطل‌آشغال روی هر کارت.
+- No backend / edge function changes (reuses `enhance-prompt`).
+- No change to chat submit flow — user still presses the existing send button after the prompt is filled in.
+- No change to Final Film, Library, or other dashboard state.

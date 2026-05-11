@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarDays, ChevronDown, Church, Globe2, Languages, Leaf, LoaderCircle } from 'lucide-react'
+import { CalendarDays, ChevronDown, Church, Clapperboard, Globe2, Languages, Leaf, LoaderCircle, RefreshCw, Wand2 } from 'lucide-react'
 import { Calendar } from '@/components/ui/calendar'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
