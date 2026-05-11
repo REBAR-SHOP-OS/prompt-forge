@@ -1,12 +1,21 @@
 // Image Reframe edge function: takes an image URL + a target aspect ratio
-// (9:16, 1:1, 16:9) and uses Nano Banana (google/gemini-2.5-flash-image)
-// to outpaint/extend the image to that aspect ratio. The result is uploaded
-// to the user-images bucket and a public URL is returned.
+// (9:16, 1:1, 16:9), pre-composes a padded canvas at the exact target ratio
+// with the original centered, and asks Nano Banana to outpaint only the
+// padded regions. The result is uploaded to user-images and a public URL
+// is returned.
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 import { getServiceClient } from "../_shared/core/supabase.ts";
+// deno-lint-ignore-file no-explicit-any
+import { Image, decode } from "https://esm.sh/imagescript@1.3.0";
 
-const ALLOWED_RATIOS = new Set(["9:16", "1:1", "16:9"]);
+const ALLOWED_RATIOS: Record<string, [number, number]> = {
+  "9:16": [9, 16],
+  "1:1": [1, 1],
+  "16:9": [16, 9],
+};
+
+const MAX_LONG_SIDE = 1536;
 
 function isAllowedImageUrl(u: string): boolean {
   try {
@@ -28,6 +37,62 @@ function decodeBase64(b64: string): Uint8Array {
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let s = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    s += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(s);
+}
+
+/**
+ * Compose a canvas at the target aspect ratio with the original image
+ * fitted (contain) and centered. Padding is filled with mid-gray so
+ * Nano Banana clearly sees what to extend.
+ */
+async function composePaddedCanvas(
+  inputBytes: Uint8Array,
+  targetRatio: [number, number],
+): Promise<{ png: Uint8Array; width: number; height: number }> {
+  const decoded: any = await decode(inputBytes);
+  // imagescript may return a GIF; take first frame.
+  const src: any = decoded?.frames?.[0] ?? decoded;
+  const sw = src.width as number;
+  const sh = src.height as number;
+
+  const [rw, rh] = targetRatio;
+  // Target canvas large enough to contain the original at native size.
+  let cw = Math.max(sw, Math.round((sh * rw) / rh));
+  let ch = Math.max(sh, Math.round((cw * rh) / rw));
+  // Recompute width to keep exact ratio in case ch was bumped.
+  cw = Math.round((ch * rw) / rh);
+
+  // Clamp longest side.
+  const longest = Math.max(cw, ch);
+  if (longest > MAX_LONG_SIDE) {
+    const k = MAX_LONG_SIDE / longest;
+    cw = Math.round(cw * k);
+    ch = Math.round(ch * k);
+  }
+
+  // Fit the original inside the canvas (contain).
+  const scale = Math.min(cw / sw, ch / sh);
+  const dw = Math.max(1, Math.round(sw * scale));
+  const dh = Math.max(1, Math.round(sh * scale));
+
+  const resized = scale === 1 ? src : src.clone().resize(dw, dh);
+  // Mid-gray background — clearly distinguishable from real content.
+  const bgColor = 0x7f7f7fff;
+  const canvas = new Image(cw, ch).fill(bgColor);
+  const dx = Math.floor((cw - dw) / 2);
+  const dy = Math.floor((ch - dh) / 2);
+  canvas.composite(resized, dx, dy);
+
+  const png = await canvas.encode();
+  return { png, width: cw, height: ch };
 }
 
 Deno.serve(async (req) => {
@@ -52,7 +117,7 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    if (!ALLOWED_RATIOS.has(aspectRatio)) {
+    if (!ALLOWED_RATIOS[aspectRatio]) {
       return new Response(JSON.stringify({ error: "aspectRatio must be one of 9:16, 1:1, 16:9" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -67,13 +132,38 @@ Deno.serve(async (req) => {
       });
     }
 
+    // 1) Fetch original image bytes.
+    const srcResp = await fetch(imageUrl);
+    if (!srcResp.ok) {
+      return new Response(JSON.stringify({ error: "Could not fetch source image" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const srcBytes = new Uint8Array(await srcResp.arrayBuffer());
+
+    // 2) Compose padded canvas at the exact target ratio.
+    let composed: { png: Uint8Array; width: number; height: number };
+    try {
+      composed = await composePaddedCanvas(srcBytes, ALLOWED_RATIOS[aspectRatio]);
+    } catch (e) {
+      console.error("image-reframe compose failed", (e as Error).message);
+      return new Response(JSON.stringify({ error: "Could not process image" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const dataUrlIn = `data:image/png;base64,${bytesToBase64(composed.png)}`;
+
+    // 3) Ask Nano Banana to fill only the gray padded regions.
     const instruction = [
-      `Reframe the attached image to a strict ${aspectRatio} aspect ratio.`,
-      `Outpaint and extend the background naturally to fill the new canvas.`,
-      `Do NOT crop, distort, or move the main subject — keep it intact and well-composed within the new frame.`,
-      `Preserve the original style, lighting, color palette, and texture.`,
-      `No letterboxing, no black bars, no borders, no added text or watermarks.`,
-      `Output only the final reframed image.`,
+      `The attached image already has the correct ${aspectRatio} canvas (${composed.width}x${composed.height}).`,
+      `The original subject is centered. The mid-gray (#7f7f7f) padded regions are EMPTY space that must be filled.`,
+      `Outpaint ONLY the gray padded areas by naturally extending the existing background, lighting, gradients, particles, and texture from the centered subject.`,
+      `Do NOT move, scale, recolor, crop, or alter the centered subject in any way — leave every non-gray pixel exactly as it is.`,
+      `Match the original art style seamlessly. No letterboxing, no borders, no added text or watermarks.`,
+      `Return the full canvas at the same ${composed.width}x${composed.height} dimensions.`,
     ].join(" ");
 
     const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -90,7 +180,7 @@ Deno.serve(async (req) => {
             role: "user",
             content: [
               { type: "text", text: instruction },
-              { type: "image_url", image_url: { url: imageUrl } },
+              { type: "image_url", image_url: { url: dataUrlIn } },
             ],
           },
         ],
@@ -147,10 +237,16 @@ Deno.serve(async (req) => {
     }
     const { data: pub } = svc.storage.from("user-images").getPublicUrl(path);
 
-    return new Response(JSON.stringify({ publicUrl: pub.publicUrl, path, aspectRatio }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        publicUrl: pub.publicUrl,
+        path,
+        aspectRatio,
+        width: composed.width,
+        height: composed.height,
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   } catch (e) {
     console.error("image-reframe unhandled error", e);
     return new Response(JSON.stringify({ error: "Internal error" }), {
