@@ -1132,6 +1132,7 @@ export default function DashboardPage() {
     }
     setIsUploadingImage(true)
     setVideoColumnMessage(null)
+    resumeSelectedProject()
     try {
       const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png'
       const path = `${userId}/${crypto.randomUUID()}.${ext}`
@@ -1208,6 +1209,7 @@ export default function DashboardPage() {
 
     setIsUploadingVideo(true)
     setVideoColumnMessage(null)
+    resumeSelectedProject()
 
     // Probe duration + intrinsic size from the file in-browser.
     const probe = await new Promise<{ duration: number; width: number; height: number } | null>((resolve) => {
@@ -1526,6 +1528,27 @@ export default function DashboardPage() {
     setUploadedFiles((currentFiles) => currentFiles.filter((file) => file.id !== fileId))
   }
 
+  // When the user is viewing a finalized project (selectedProjectId set) and
+  // wants to extend it — add a new card or run Final Film again — restore the
+  // project's source clips into the live workspace so they appear in HISTORY
+  // alongside the new card, then exit project-snapshot mode.
+  function resumeSelectedProject() {
+    if (!selectedProjectId) return
+    const snapshot = projectSourceJobs[selectedProjectId] ?? []
+    if (snapshot.length > 0) {
+      setGeneratedVideos((current) => snapshot.reduce((acc, j) => mergeJob(acc, j), current))
+      setWorkspaceHiddenJobIds((curr) => {
+        const next = new Set(curr)
+        for (const j of snapshot) next.delete(j.id)
+        persistWorkspaceHiddenJobIds(next)
+        return next
+      })
+    }
+    setSelectedProjectId(null)
+    setPreviewVideoId(null)
+    setPreviewDismissed(true)
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
@@ -1539,6 +1562,7 @@ export default function DashboardPage() {
     setIsSubmitting(true)
     setComposerError(null)
     setVideoColumnMessage(null)
+    resumeSelectedProject()
 
     try {
       let createdJob
@@ -1910,7 +1934,15 @@ export default function DashboardPage() {
 
   async function handleMergeAllVideos() {
     if (isMerging) return
+    // Capture snapshot before resume (resume's setState won't reflect synchronously).
+    const snapshotForMerge = selectedProjectId ? (projectSourceJobs[selectedProjectId] ?? []) : []
+    resumeSelectedProject()
     const completedVideoIds = new Set(completedSourceVideos.map((v) => v.id))
+    for (const j of snapshotForMerge) {
+      if (normalizeStatus(j.status) === 'completed' && j.video?.storage_path) {
+        completedVideoIds.add(j.id)
+      }
+    }
     const baseClips = displayedClips.filter((c) =>
       c.kind === 'image' ? true : completedVideoIds.has(c.id) && c.job.video?.storage_path,
     )
@@ -2064,7 +2096,15 @@ export default function DashboardPage() {
       // from Library and inspect its source clips in HISTORY. We also save a
       // snapshot here as a defensive fallback in case a source job is later
       // removed for any reason.
-      const sourceJobs = generatedVideos.filter((v) => !v.id.startsWith('merged-'))
+      // Include both the live workspace jobs AND any snapshot jobs from the
+      // project the user is extending (selectedProjectId), so re-running Final
+      // Film on a previously finalized project preserves its original clips.
+      const liveSourceJobs = generatedVideos.filter((v) => !v.id.startsWith('merged-'))
+      const snapshotJobs = selectedProjectId ? (projectSourceJobs[selectedProjectId] ?? []) : []
+      const sourceJobsMap = new Map<string, JobDetail>()
+      for (const j of snapshotJobs) sourceJobsMap.set(j.id, j)
+      for (const j of liveSourceJobs) sourceJobsMap.set(j.id, j)
+      const sourceJobs = Array.from(sourceJobsMap.values())
       {
         const nextMap = { ...projectSourceJobs, [mergedId]: sourceJobs }
         setProjectSourceJobs(nextMap)
@@ -2324,7 +2364,7 @@ export default function DashboardPage() {
       <button
         type="button"
         onClick={handleMergeAllVideos}
-        disabled={isMerging || (completedSourceVideos.length + visibleUserImages.length) < 2}
+        disabled={isMerging || (Math.max(completedSourceVideos.length, selectedProjectId ? (projectSourceJobs[selectedProjectId]?.length ?? 0) : 0) + visibleUserImages.length) < 2}
         className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-emerald-300/30 hover:bg-emerald-300/[0.06] hover:text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
         aria-label="Merge all cards into one final film"
         title={
