@@ -1934,8 +1934,15 @@ export default function DashboardPage() {
 
   async function handleMergeAllVideos() {
     if (isMerging) return
+    // Capture snapshot before resume (resume's setState won't reflect synchronously).
+    const snapshotForMerge = selectedProjectId ? (projectSourceJobs[selectedProjectId] ?? []) : []
     resumeSelectedProject()
     const completedVideoIds = new Set(completedSourceVideos.map((v) => v.id))
+    for (const j of snapshotForMerge) {
+      if (normalizeStatus(j.status) === 'completed' && j.video?.storage_path) {
+        completedVideoIds.add(j.id)
+      }
+    }
     const baseClips = displayedClips.filter((c) =>
       c.kind === 'image' ? true : completedVideoIds.has(c.id) && c.job.video?.storage_path,
     )
