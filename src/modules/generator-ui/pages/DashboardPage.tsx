@@ -3189,6 +3189,25 @@ export default function DashboardPage() {
                             <Scissors className="h-3.5 w-3.5" aria-hidden="true" />
                           </button>
                         ) : null}
+                        {(() => {
+                          const isRegen = regeneratingIds.has(video.id)
+                          const busy = status === 'pending' || status === 'processing'
+                          return (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                regenerateCard(video)
+                              }}
+                              disabled={isRegen || busy}
+                              aria-label="Regenerate (replaces this card)"
+                              title="Regenerate — re-runs the prompt and deletes this card"
+                              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <RotateCcw className={`h-3.5 w-3.5 ${isRegen ? 'animate-spin' : ''}`} aria-hidden="true" />
+                            </button>
+                          )
+                        })()}
                         <button
                           type="button"
                           onClick={(event) => {
