@@ -3,7 +3,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Crop, LoaderCircle, UploadCloud, Wand2, Download } from 'lucide-react'
+import { Crop, LoaderCircle, UploadCloud, Wand2, Download, RefreshCw } from 'lucide-react'
 import { supabase } from '@/integrations/supabase/client'
 import { useAuth } from '@/core/auth/AuthProvider'
 import { useToast } from '@/hooks/use-toast'
@@ -193,7 +193,21 @@ export default function ImageReframeDialog({ open, onOpenChange, onUseAsStartFra
               </div>
             </div>
             <div>
-              <div className="mb-1 text-xs text-zinc-500">Reframed ({ratio})</div>
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-xs text-zinc-500">Reframed ({ratio})</span>
+                {file ? (
+                  <button
+                    type="button"
+                    onClick={handleConvert}
+                    disabled={loading}
+                    title="Regenerate"
+                    aria-label="Regenerate"
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-md text-zinc-400 transition hover:bg-white/10 hover:text-zinc-100 disabled:opacity-50"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+                  </button>
+                ) : null}
+              </div>
               <div className={`flex items-center justify-center overflow-hidden rounded-md border border-white/10 bg-black/40 ${RATIOS.find((r) => r.value === ratio)?.cls}`}>
                 {loading ? (
                   <LoaderCircle className="h-6 w-6 animate-spin text-zinc-400" />
