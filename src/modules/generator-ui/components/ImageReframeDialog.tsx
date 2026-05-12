@@ -3,7 +3,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Crop, LoaderCircle, UploadCloud, Wand2, Download } from 'lucide-react'
+import { Crop, LoaderCircle, UploadCloud, Wand2, Download, RefreshCw } from 'lucide-react'
 import { supabase } from '@/integrations/supabase/client'
 import { useAuth } from '@/core/auth/AuthProvider'
 import { useToast } from '@/hooks/use-toast'
