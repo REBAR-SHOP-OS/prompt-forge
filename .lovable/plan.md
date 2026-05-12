@@ -1,52 +1,52 @@
-# Fix: Final Film must connect ALL history cards
+# Fix: Final Film fails with "Need at least 1 finished item" after a previous finalize
 
-## Problem
+## What you saw
 
-When you click "Final Film", sometimes some cards from the History panel are missing from the merged output. Reproduces reliably whenever you've edited (trim / Apply Changes) at least one video card — the others get silently dropped.
+You added music + voiceover, the **Final Film** button was clickable, but clicking it returned `Need at least 1 finished item (video or image) to finalize.` The History panel on the right was empty ("0").
 
 ## Root cause
 
-In `src/modules/generator-ui/pages/DashboardPage.tsx`, inside `handleMergeAllVideos` (around lines 1918–1929):
+In `DashboardPage.tsx`:
 
-```ts
-const baseClips = displayedClips.filter(...)        // all eligible clips
-const editedVideoCount = baseClips.filter(c => c.kind === 'video' && editedJobIds.has(c.id)).length
-const eligibleClips = editedVideoCount >= 1
-  ? (baseClips.some(c => c.kind === 'image' || editedJobIds.has(c.id))
-      ? baseClips.filter(c => c.kind === 'image' || editedJobIds.has(c.id))   // <-- drops non-edited videos
-      : baseClips)
-  : baseClips
-```
+- The **button's enabled state** (line 2355) counts `completedSourceVideos.length + visibleUserImages.length`. `completedSourceVideos` is derived from the raw `generatedVideos` and **does NOT** filter out `workspaceHiddenJobIds`. So as long as any completed job exists in memory, the button is enabled.
+- The **merge handler** (line 1922) builds `eligibleClips` from `displayedClips`. `displayedClips` is built on top of `displayedVideos`, which **does** filter out `workspaceHiddenJobIds` (line 932).
 
-As soon as **one** video card is marked "edited" (any trim/Apply), the merge silently filters out every other video card that has not been edited. Images are kept, but plain unedited video cards from History disappear from the Final Film. That is exactly the symptom — "some cards are not connected".
+After every Final Film, all source jobs are added to `workspaceHiddenJobIds` (lines 2097–2100) so the History column looks fresh. From that moment:
 
-There is no product reason for this behavior; an edit on one card should not exclude other finished cards. After server-side Apply Changes, the unedited cards still point at perfectly valid storage paths.
+- Button enabled (counts hidden jobs) ✅
+- `displayedClips` empty (hides them) ❌
+- → `eligibleClips.length < 1` → error
+
+`resumeSelectedProject()` is called at the top of `handleMergeAllVideos`, but it only restores jobs when `selectedProjectId` is set. If the user is just continuing in the same workspace (no project re-opened from Library), the hidden source jobs are never restored and the merge silently has nothing to stitch.
 
 ## Fix
 
-Remove the edited-only branch entirely. Final Film always merges every clip currently shown in the History column, in display order:
+One small file: `src/modules/generator-ui/pages/DashboardPage.tsx`. Inside `handleMergeAllVideos`:
 
-```ts
-const eligibleClips = displayedClips.filter((c) =>
-  c.kind === 'image' ? true : completedVideoIds.has(c.id) && c.job.video?.storage_path,
-)
-```
+1. **Stop relying on `displayedClips`.** Build `eligibleClips` directly from the authoritative live data — the same data the button uses to decide whether to enable itself — so the two can never disagree:
 
-That is the same set the user sees and can drag-reorder in the right column, so the merged output matches the visible timeline 1:1.
+   - all `completedSourceVideos` (videos with `status === completed` and a `video.storage_path`),
+   - plus `visibleUserImages`,
+   - plus, when `selectedProjectId` is set, any snapshot jobs not already present (already handled today).
 
-Also drop the now-obsolete single-card guard branch that referenced `editedJobIds` (`hasEdit`). The single-card path keeps the existing rule "needs music/voiceover" — without that, a single-clip "merge" is just a re-encode.
+2. Sort with the existing rule: `manualOrder` first, then chronological ASC. This matches `displayedClips`' own ordering, so the merged film still respects user drag-reorder.
+
+3. As a side-effect of merging, **unhide** the source jobs that participated, so the History column reflects what was just stitched (mirrors what `resumeSelectedProject` already does for project-snapshot mode). This also fixes the visual confusion of "I just finalized N clips but History shows 0".
+
+4. Keep the existing single-card guard (audio OR edit required) and the existing target-size / image-to-clip pipeline untouched.
+
+The button-enable expression on line 2355 stays as-is — it's already permissive in the right direction; the bug was that the handler was *more* restrictive than the button.
 
 ## Out of scope
 
-- No backend / DB / storage / RLS changes.
-- `editedJobIds` is still used elsewhere (preview labels, Apply state) — leave it alone.
-- Drag-reorder, transitions, soundtrack, image-still conversion, project snapshots: unchanged.
-- One file touched: `src/modules/generator-ui/pages/DashboardPage.tsx` — about 10 lines inside `handleMergeAllVideos`.
+- No backend, RLS, storage, edge-function, or DB changes.
+- `editedJobIds`, transitions, soundtrack range, image still-duration, project snapshots, drag-reorder: unchanged.
+- The right-panel History UI logic is untouched. The only visible change is that after clicking Final Film, source cards become visible again (which is the correct behavior — they were just stitched).
 
 ## Verification
 
-1. Generate 3 video cards, do not edit any → Final Film → all 3 appear, in order.
-2. Generate 3 video cards, edit only card #2 → Final Film → all 3 appear, with #2 using its edited file (server already replaced storage_path on Apply).
-3. Mix videos + images → all stitched in display order.
-4. Single card with music → still works.
-5. Single card without music or edit → blocked with the existing helper message.
+1. Generate 2 videos → Final Film with music → produces output, History now shows the 2 sources.
+2. Without reloading, generate 1 more video → Final Film again → all 3 sources stitched, no error.
+3. Upload 1 image, no videos, add music → Final Film → image still-clip + soundtrack, no error.
+4. Re-open a previous project from Library (selectedProjectId set), add music, Final Film → snapshot clips re-stitched with new soundtrack (current path, still works).
+5. Empty workspace (no completed clips, no images) → button disabled, no way to trigger the error.
