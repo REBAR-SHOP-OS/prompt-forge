@@ -1,49 +1,52 @@
-# Fix: reframed image rejected as Start frame
+# Fix: Final Film must connect ALL history cards
+
+## Problem
+
+When you click "Final Film", sometimes some cards from the History panel are missing from the merged output. Reproduces reliably whenever you've edited (trim / Apply Changes) at least one video card — the others get silently dropped.
 
 ## Root cause
 
-The video job validator (`supabase/functions/_shared/modules/job-orchestrator/gateway.ts`) only accepts `firstFrameUrl` / `lastFrameUrl` that point to `…/storage/v1/object/public/wan-frames/{userId}/…`.
+In `src/modules/generator-ui/pages/DashboardPage.tsx`, inside `handleMergeAllVideos` (around lines 1918–1929):
 
-Currently the `image-reframe` edge function uploads its output to a different bucket:
-
-```
-path = `${auth.userId}/reframed-${Date.now()}-${aspectRatio.replace(":", "x")}.${ext}`
-svc.storage.from("user-images").upload(path, …)
-```
-
-When the user clicks **Use as Start frame**, that `user-images` URL is attached to the upload list and sent to `jobs-create`, which rightfully rejects it with:
-
-```
-INVALID_FIRST_FRAME_URL: firstFrameUrl must point to your own public wan-frames upload
+```ts
+const baseClips = displayedClips.filter(...)        // all eligible clips
+const editedVideoCount = baseClips.filter(c => c.kind === 'video' && editedJobIds.has(c.id)).length
+const eligibleClips = editedVideoCount >= 1
+  ? (baseClips.some(c => c.kind === 'image' || editedJobIds.has(c.id))
+      ? baseClips.filter(c => c.kind === 'image' || editedJobIds.has(c.id))   // <-- drops non-edited videos
+      : baseClips)
+  : baseClips
 ```
 
-So the reframed image is valid, but it lives in the wrong bucket.
+As soon as **one** video card is marked "edited" (any trim/Apply), the merge silently filters out every other video card that has not been edited. Images are kept, but plain unedited video cards from History disappear from the Final Film. That is exactly the symptom — "some cards are not connected".
+
+There is no product reason for this behavior; an edit on one card should not exclude other finished cards. After server-side Apply Changes, the unedited cards still point at perfectly valid storage paths.
 
 ## Fix
 
-Make the reframe pipeline write its result into the same bucket the video pipeline expects, using the same per-user prefix convention as regular frame uploads (`{userId}/...`).
+Remove the edited-only branch entirely. Final Film always merges every clip currently shown in the History column, in display order:
 
-### Change
+```ts
+const eligibleClips = displayedClips.filter((c) =>
+  c.kind === 'image' ? true : completedVideoIds.has(c.id) && c.job.video?.storage_path,
+)
+```
 
-File: `supabase/functions/image-reframe/index.ts`
+That is the same set the user sees and can drag-reorder in the right column, so the merged output matches the visible timeline 1:1.
 
-- Replace the upload target bucket from `"user-images"` to `"wan-frames"`.
-- Keep the path shape `{userId}/reframed-{timestamp}-{ratio}.{ext}` — it already matches the `wan-frames/{userId}/` prefix the validator requires.
-- Return the resulting `wan-frames` public URL as `publicUrl` (no client-side change needed).
-
-No other files need to change:
-- `ImageReframeDialog.tsx` already forwards whatever `publicUrl` the function returns to `onUseAsStartFrame`.
-- `handleReframeAsStart` in `DashboardPage.tsx` injects the URL into `uploadedFiles` with `status: 'ready'`, which then flows into `jobs-create` exactly like a normal frame upload.
-- `wan-frames` bucket is already public and writable via the service role key the edge function uses, so RLS is not an issue.
-
-## Why this is the right fix
-
-- Single source of truth: any image meant to seed a video lives in `wan-frames/{userId}/`.
-- No weakening of the security validator (we keep the strict `wan-frames` allow-list).
-- No duplicate copy step on the client; the file is written to the correct bucket on first upload.
-- Backwards compatible: `Download` button still works (it just downloads from the new URL), and the reframed preview in the dialog still renders.
+Also drop the now-obsolete single-card guard branch that referenced `editedJobIds` (`hasEdit`). The single-card path keeps the existing rule "needs music/voiceover" — without that, a single-clip "merge" is just a re-encode.
 
 ## Out of scope
 
-- The previously-uploaded `user-images/...reframed...` files are left as-is; they are unused going forward.
-- No DB migration, no auth change, no UI change.
+- No backend / DB / storage / RLS changes.
+- `editedJobIds` is still used elsewhere (preview labels, Apply state) — leave it alone.
+- Drag-reorder, transitions, soundtrack, image-still conversion, project snapshots: unchanged.
+- One file touched: `src/modules/generator-ui/pages/DashboardPage.tsx` — about 10 lines inside `handleMergeAllVideos`.
+
+## Verification
+
+1. Generate 3 video cards, do not edit any → Final Film → all 3 appear, in order.
+2. Generate 3 video cards, edit only card #2 → Final Film → all 3 appear, with #2 using its edited file (server already replaced storage_path on Apply).
+3. Mix videos + images → all stitched in display order.
+4. Single card with music → still works.
+5. Single card without music or edit → blocked with the existing helper message.
