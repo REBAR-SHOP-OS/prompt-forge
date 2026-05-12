@@ -1915,18 +1915,13 @@ export default function DashboardPage() {
         completedVideoIds.add(j.id)
       }
     }
-    const baseClips = displayedClips.filter((c) =>
+    // Final Film always stitches every clip currently visible in the History
+    // column, in display order. Editing one card must NOT silently exclude
+    // other unedited cards (Apply Changes already replaces the storage_path
+    // server-side, so unedited cards still point at valid files).
+    const eligibleClips = displayedClips.filter((c) =>
       c.kind === 'image' ? true : completedVideoIds.has(c.id) && c.job.video?.storage_path,
     )
-    // If the user has explicitly applied edits to 2+ video cards, Final Film
-    // only stitches together those edited cards (images stay included as
-    // optional connective tissue). Otherwise fall back to all eligible clips.
-    const editedVideoCount = baseClips.filter((c) => c.kind === 'video' && editedJobIds.has(c.id)).length
-    const eligibleClips = editedVideoCount >= 1
-      ? (baseClips.some((c) => c.kind === 'image' || editedJobIds.has(c.id))
-          ? baseClips.filter((c) => c.kind === 'image' || editedJobIds.has(c.id))
-          : baseClips)
-      : baseClips
     if (eligibleClips.length < 1) {
       setVideoColumnMessage('Need at least 1 finished item (video or image) to finalize.')
       return
