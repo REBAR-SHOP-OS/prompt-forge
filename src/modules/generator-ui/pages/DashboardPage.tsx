@@ -1909,19 +1909,58 @@ export default function DashboardPage() {
     // Capture snapshot before resume (resume's setState won't reflect synchronously).
     const snapshotForMerge = selectedProjectId ? (projectSourceJobs[selectedProjectId] ?? []) : []
     resumeSelectedProject()
-    const completedVideoIds = new Set(completedSourceVideos.map((v) => v.id))
+
+    // Build the merge set from AUTHORITATIVE live data, not from `displayedClips`.
+    // `displayedClips` filters out workspaceHiddenJobIds, which are the source
+    // clips a previous Final Film already hid from History. Those clips are
+    // still valid completed sources — using them lets the user re-finalize
+    // (e.g. add music after the fact) without first re-opening a project.
+    const videoJobsById = new Map<string, JobDetail>()
+    for (const v of completedSourceVideos) videoJobsById.set(v.id, v)
     for (const j of snapshotForMerge) {
-      if (normalizeStatus(j.status) === 'completed' && j.video?.storage_path) {
-        completedVideoIds.add(j.id)
+      if (
+        !videoJobsById.has(j.id) &&
+        normalizeStatus(j.status) === 'completed' &&
+        j.video?.storage_path
+      ) {
+        videoJobsById.set(j.id, j)
       }
     }
-    // Final Film always stitches every clip currently visible in the History
-    // column, in display order. Editing one card must NOT silently exclude
-    // other unedited cards (Apply Changes already replaces the storage_path
-    // server-side, so unedited cards still point at valid files).
-    const eligibleClips = displayedClips.filter((c) =>
-      c.kind === 'image' ? true : completedVideoIds.has(c.id) && c.job.video?.storage_path,
+
+    const baseClips: UnifiedClip[] = [
+      ...Array.from(videoJobsById.values()).map((job) => ({
+        kind: 'video' as const,
+        id: job.id,
+        createdAt: job.created_at,
+        job,
+      })),
+      ...visibleUserImages.map((image) => ({
+        kind: 'image' as const,
+        id: image.id,
+        createdAt: image.created_at,
+        image,
+      })),
+    ]
+    // Apply the same ordering rule as displayedClips: manualOrder first,
+    // then chronological ASC for anything not in the manual list.
+    const chronoAsc = [...baseClips].sort(
+      (l, r) => new Date(l.createdAt).getTime() - new Date(r.createdAt).getTime(),
     )
+    let eligibleClips: UnifiedClip[] = chronoAsc
+    if (manualOrder) {
+      const byId = new Map(chronoAsc.map((c) => [c.id, c]))
+      const ordered: UnifiedClip[] = []
+      for (const id of manualOrder) {
+        const c = byId.get(id)
+        if (c) {
+          ordered.push(c)
+          byId.delete(id)
+        }
+      }
+      for (const c of chronoAsc) if (byId.has(c.id)) ordered.push(c)
+      eligibleClips = ordered
+    }
+
     if (eligibleClips.length < 1) {
       setVideoColumnMessage('Need at least 1 finished item (video or image) to finalize.')
       return
