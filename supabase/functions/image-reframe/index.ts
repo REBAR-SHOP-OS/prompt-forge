@@ -287,11 +287,8 @@ Deno.serve(async (req) => {
     if (!/^image\/(png|jpe?g|webp)$/i.test(srcMime)) srcMime = "image/png";
     const srcDataUrl = `data:${srcMime};base64,${bytesToBase64(srcBytes)}`;
 
-    // 2) Aspect-ratio reference image (last → model adopts this ratio)
-    const refPng = makeRefPng(target.w, target.h);
-    const refDataUrl = `data:image/png;base64,${bytesToBase64(refPng)}`;
-
-    // 3) Call Nano Banana, with one retry if the returned ratio is wrong.
+    // 2) Call Nano Banana 2 with explicit aspect ratio in responseFormat,
+    //    with one retry if the returned image's pixel ratio is wrong.
     const tolerance = 0.06;
     const targetRatio = target.w / target.h;
     let lastDataUrl = "";
@@ -299,7 +296,7 @@ Deno.serve(async (req) => {
     let lastMime = "image/png";
 
     for (let attempt = 0; attempt < 2; attempt++) {
-      const resp = await callNanoBanana(apiKey, srcDataUrl, refDataUrl, target, aspectRatio, attempt === 1);
+      const resp = await callNanoBanana(apiKey, srcDataUrl, target, aspectRatio, attempt === 1);
       if (resp.status === 429) {
         return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
