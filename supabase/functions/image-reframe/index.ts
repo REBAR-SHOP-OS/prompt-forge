@@ -350,8 +350,10 @@ Deno.serve(async (req) => {
 
     const ext = lastMime.split("/")[1]?.replace("jpeg", "jpg") ?? "png";
     const svc = getServiceClient();
+    // Upload into wan-frames so the resulting URL is accepted by the
+    // jobs-create validator (which only allows public wan-frames/{userId}/...).
     const path = `${auth.userId}/reframed-${Date.now()}-${aspectRatio.replace(":", "x")}.${ext}`;
-    const { error: upErr } = await svc.storage.from("user-images").upload(path, lastBytes, {
+    const { error: upErr } = await svc.storage.from("wan-frames").upload(path, lastBytes, {
       contentType: lastMime, upsert: false,
     });
     if (upErr) {
@@ -360,7 +362,7 @@ Deno.serve(async (req) => {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const { data: pub } = svc.storage.from("user-images").getPublicUrl(path);
+    const { data: pub } = svc.storage.from("wan-frames").getPublicUrl(path);
 
     return new Response(
       JSON.stringify({ publicUrl: pub.publicUrl, path, aspectRatio }),
