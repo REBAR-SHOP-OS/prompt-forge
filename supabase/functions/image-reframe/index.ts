@@ -195,31 +195,44 @@ function readImageDims(bytes: Uint8Array): { w: number; h: number } | null {
   return null;
 }
 
-async function callNanoBanana(apiKey: string, srcDataUrl: string, refDataUrl: string, target: { label: string; w: number; h: number }, ratio: string, strict: boolean) {
+async function callNanoBanana(apiKey: string, srcDataUrl: string, target: { label: string; w: number; h: number }, ratio: string, strict: boolean) {
   const instruction = [
-    `You are given TWO images.`,
-    `IMAGE 1 is the SOURCE: this is the visual content that must be preserved completely. Do NOT crop it. Do NOT remove any part of it. Keep the full subject visible.`,
-    `IMAGE 2 is the ASPECT-RATIO REFERENCE only: it has no visual meaning. Use ONLY its width:height ratio (${ratio}, ${target.w}x${target.h}).`,
-    `Task: reframe IMAGE 1 to match the ${target.label} aspect ratio of IMAGE 2 by OUTPAINTING — extending the background, lighting, gradients, particles, and texture naturally so the entire original subject is fully visible inside the new ${ratio} canvas.`,
-    `Do NOT add letterboxing, black bars, borders, frames, watermarks, or new text.`,
+    `Reframe the provided image to a ${target.label} canvas (${target.w}x${target.h}, exact ${ratio} aspect ratio).`,
+    `Preserve the ENTIRE original image content — every subject, logo, text, button, and graphic element must remain fully visible, uncropped, undistorted, and at the same proportions.`,
+    `Fill the newly added space by OUTPAINTING the existing background — extend the same colors, gradients, lighting, particles, textures, and surroundings so the result looks like one cohesive ${ratio} composition.`,
+    `Do NOT add letterboxing, black bars, borders, frames, watermarks, captions, or any new text.`,
+    `Do NOT crop, zoom, recompose, or move the original subject. Keep it centered horizontally and vertically inside the new canvas.`,
     strict
-      ? `Critical: the returned image MUST have a true ${ratio} pixel ratio (e.g. ${target.w}x${target.h}). Do not return the source unchanged. Do not return a square. Return a single image.`
-      : `Return a single image at exactly ${ratio} aspect ratio.`,
+      ? `CRITICAL: the output image MUST have true ${ratio} pixel dimensions (target ${target.w}x${target.h}). Do NOT return the source aspect ratio. Return exactly one image.`
+      : `Return one image at exactly ${ratio} aspect ratio.`,
   ].join(" ");
 
   const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "google/gemini-2.5-flash-image",
+      model: "google/gemini-3.1-flash-image-preview",
       modalities: ["image", "text"],
+      // Gemini-native image config (passed through by the AI gateway).
+      responseFormat: {
+        image: {
+          aspectRatio: ratio,
+          imageSize: "1K",
+        },
+      },
+      // OpenAI-compatible alias, just in case the gateway prefers snake_case.
+      response_format: {
+        image: {
+          aspect_ratio: ratio,
+          image_size: "1K",
+        },
+      },
       messages: [
         {
           role: "user",
           content: [
             { type: "text", text: instruction },
             { type: "image_url", image_url: { url: srcDataUrl } },
-            { type: "image_url", image_url: { url: refDataUrl } },
           ],
         },
       ],
@@ -274,11 +287,8 @@ Deno.serve(async (req) => {
     if (!/^image\/(png|jpe?g|webp)$/i.test(srcMime)) srcMime = "image/png";
     const srcDataUrl = `data:${srcMime};base64,${bytesToBase64(srcBytes)}`;
 
-    // 2) Aspect-ratio reference image (last → model adopts this ratio)
-    const refPng = makeRefPng(target.w, target.h);
-    const refDataUrl = `data:image/png;base64,${bytesToBase64(refPng)}`;
-
-    // 3) Call Nano Banana, with one retry if the returned ratio is wrong.
+    // 2) Call Nano Banana 2 with explicit aspect ratio in responseFormat,
+    //    with one retry if the returned image's pixel ratio is wrong.
     const tolerance = 0.06;
     const targetRatio = target.w / target.h;
     let lastDataUrl = "";
@@ -286,7 +296,7 @@ Deno.serve(async (req) => {
     let lastMime = "image/png";
 
     for (let attempt = 0; attempt < 2; attempt++) {
-      const resp = await callNanoBanana(apiKey, srcDataUrl, refDataUrl, target, aspectRatio, attempt === 1);
+      const resp = await callNanoBanana(apiKey, srcDataUrl, target, aspectRatio, attempt === 1);
       if (resp.status === 429) {
         return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
