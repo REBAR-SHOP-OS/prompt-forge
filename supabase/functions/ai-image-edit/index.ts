@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
             role: "user",
             content: maskUrl
               ? [
-                  { type: "text", text: `You will receive two images. Image 1 is the ORIGINAL. Image 2 is a MASK (transparent background, opaque/white pixels mark the region to edit). Modify ONLY the pixels of the original where the mask is opaque. Keep every pixel outside the mask absolutely identical (same composition, colors, lighting, subject, pose, background). Apply this change inside the masked region only: ${prompt}.${aspectRatio ? ` Output MUST keep a strict ${aspectRatio} aspect ratio.` : ""}` },
+                  { type: "text", text: `You will receive two images. Image 1 is the ORIGINAL. Image 2 is a strict edit MASK (transparent background; opaque/white pixels mark the editable region). Only the white/opaque pixels of the mask define the editable region — DO NOT alter pixels where the mask is transparent. Keep every pixel outside the mask absolutely identical (same composition, colors, lighting, subject, pose, background). The user instruction (which may be in any language, including Persian/Farsi/Arabic) describes what to put inside the masked region: ${prompt}.${aspectRatio ? ` Output MUST keep a strict ${aspectRatio} aspect ratio.` : ""}` },
                   { type: "image_url", image_url: { url: imageUrl } },
                   { type: "image_url", image_url: { url: maskUrl } },
                 ]

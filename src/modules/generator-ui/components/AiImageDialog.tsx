@@ -70,7 +70,7 @@ export default function AiImageDialog({
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const imgRef = useRef<HTMLImageElement | null>(null)
   const isDrawingRef = useRef(false)
-  const lastImageSourceRef = useRef<'generate' | 'refine' | null>(null)
+  
 
   useEffect(() => {
     if (open) {
@@ -86,10 +86,9 @@ export default function AiImageDialog({
     }
   }, [open, defaultAspect])
 
-  // Reset mask only when a brand-new image is generated. Refines preserve the mask
-  // so the user can iterate on the same painted region.
+  // Reset mask whenever a new image is shown (generate or refine) so the painted
+  // overlay never hides the latest result and never misaligns with new dimensions.
   useEffect(() => {
-    if (lastImageSourceRef.current === 'refine') return
     setHasMask(false)
     setIsMaskMode(false)
     const c = maskCanvasRef.current
@@ -234,7 +233,6 @@ export default function AiImageDialog({
       const url = (data as { dataUrl?: string } | null)?.dataUrl
       if (!url) throw new Error('No image returned.')
       const normalized = await normalizeImageAspect(url, aspect)
-      lastImageSourceRef.current = 'generate'
       setImageDataUrl(normalized)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to generate image.')
@@ -259,9 +257,11 @@ export default function AiImageDialog({
       const normalizedEdit = await normalizeImageAspect(url, aspect)
       // If the user painted a mask, locally composite so pixels outside the mask are unchanged.
       const finalUrl = maskUrl ? await compositeWithMask(originalUrl, normalizedEdit) : normalizedEdit
-      lastImageSourceRef.current = 'refine'
       setImageDataUrl(finalUrl)
       setEditPrompt('')
+      // Clear the visible mask after a successful edit so the result is not hidden by the red overlay.
+      handleClearMask()
+      setIsMaskMode(false)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to edit image.')
     } finally {
@@ -400,6 +400,8 @@ export default function AiImageDialog({
                 style={{ mixBlendMode: 'normal' }}
                 onPointerDown={(e) => {
                   if (!isMaskMode) return
+                  const img = imgRef.current
+                  if (!img || !img.naturalWidth) return
                   ;(e.target as HTMLCanvasElement).setPointerCapture(e.pointerId)
                   isDrawingRef.current = true
                   syncCanvasSize()
@@ -427,7 +429,7 @@ export default function AiImageDialog({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => { setIsMaskMode((m) => !m); setTimeout(syncCanvasSize, 0) }}
+                    onClick={() => { setIsMaskMode((m) => !m); requestAnimationFrame(() => syncCanvasSize()) }}
                     className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
                       isMaskMode
                         ? 'border-rose-300/50 bg-rose-400/15 text-rose-100'
