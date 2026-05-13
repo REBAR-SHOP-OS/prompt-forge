@@ -75,33 +75,41 @@ Deno.serve(async (req) => {
       });
     }
 
-    const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3.1-flash-image-preview",
-        messages: [
-          {
-            role: "user",
-            content: maskUrl
-              ? [
-                  { type: "text", text: `You will receive two images. Image 1 is the ORIGINAL. Image 2 is a strict edit MASK (transparent background; opaque/white pixels mark the editable region). Only the white/opaque pixels of the mask define the editable region — DO NOT alter pixels where the mask is transparent. Keep every pixel outside the mask absolutely identical (same composition, colors, lighting, subject, pose, background). The user instruction (which may be in any language, including Persian/Farsi/Arabic) describes what to put inside the masked region: ${prompt}.${aspectRatio ? ` Output MUST keep a strict ${aspectRatio} aspect ratio.` : ""}` },
-                  { type: "image_url", image_url: { url: imageUrl } },
-                  { type: "image_url", image_url: { url: maskUrl } },
-                ]
-              : [
-                  { type: "text", text: `Edit the provided image as follows: ${prompt}.${aspectRatio ? ` The output image MUST keep a strict ${aspectRatio} aspect ratio.` : " Preserve the overall composition and aspect ratio of the original image unless the instruction explicitly requires otherwise."}` },
-                  { type: "image_url", image_url: { url: imageUrl } },
-                ],
-          },
-        ],
-        modalities: ["image", "text"],
-        ...(aspectRatio ? { image_config: { aspect_ratio: aspectRatio } } : {}),
-      }),
-    });
+    const messageContent = maskUrl
+      ? [
+          { type: "text", text: `You will receive two images. Image 1 is the ORIGINAL. Image 2 is a strict edit MASK (transparent background; opaque/white pixels mark the editable region). Only the white/opaque pixels of the mask define the editable region — DO NOT alter pixels where the mask is transparent. Keep every pixel outside the mask absolutely identical (same composition, colors, lighting, subject, pose, background). The user instruction (which may be in any language, including Persian/Farsi/Arabic) describes what to put inside the masked region: ${prompt}.${aspectRatio ? ` Output MUST keep a strict ${aspectRatio} aspect ratio.` : ""} Respond with ONLY the edited image — no text.` },
+          { type: "image_url", image_url: { url: imageUrl } },
+          { type: "image_url", image_url: { url: maskUrl } },
+        ]
+      : [
+          { type: "text", text: `Edit the provided image as follows: ${prompt}.${aspectRatio ? ` The output image MUST keep a strict ${aspectRatio} aspect ratio.` : " Preserve the overall composition and aspect ratio of the original image unless the instruction explicitly requires otherwise."} Respond with ONLY the edited image — no text, captions, or explanations.` },
+          { type: "image_url", image_url: { url: imageUrl } },
+        ];
+
+    const callModel = async (model: string) => {
+      return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: messageContent }],
+          modalities: ["image", "text"],
+          ...(aspectRatio ? { image_config: { aspect_ratio: aspectRatio } } : {}),
+        }),
+      });
+    };
+
+    // deno-lint-ignore no-explicit-any
+    const extractImage = (data: any): string | undefined =>
+      data?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+
+    const PRIMARY = "google/gemini-3.1-flash-image-preview";
+    const FALLBACK = "google/gemini-2.5-flash-image";
+
+    let resp = await callModel(PRIMARY);
 
     if (resp.status === 429) {
       return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
@@ -121,12 +129,27 @@ Deno.serve(async (req) => {
       });
     }
 
-    const data = await resp.json();
-    const dataUrl: string | undefined = data?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+    let data = await resp.json();
+    let dataUrl = extractImage(data);
+
     if (!dataUrl) {
-      console.error("ai-image-edit empty image", JSON.stringify(data).slice(0, 500));
-      return new Response(JSON.stringify({ error: "No image returned" }), {
-        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      console.warn("ai-image-edit primary returned no image, retrying with fallback model");
+      resp = await callModel(FALLBACK);
+      if (resp.ok) {
+        data = await resp.json();
+        dataUrl = extractImage(data);
+      } else {
+        const text = await resp.text().catch(() => "");
+        console.error("ai-image-edit fallback gateway error", resp.status, text);
+      }
+    }
+
+    if (!dataUrl) {
+      console.error("ai-image-edit empty image after fallback", JSON.stringify(data).slice(0, 500));
+      return new Response(JSON.stringify({
+        error: "The AI returned text instead of an edited image. Try a more visual instruction.",
+      }), {
+        status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
