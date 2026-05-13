@@ -1018,6 +1018,7 @@ export default function DashboardPage() {
   type PreviewItem =
     | { kind: 'video'; job: JobDetail }
     | { kind: 'image'; image: UserImageItem }
+    | { kind: 'project'; clips: UnifiedClip[] }
 
   const previewItem = useMemo<PreviewItem | null>(() => {
     if (previewVideoId) {
@@ -1029,6 +1030,14 @@ export default function DashboardPage() {
       }
     }
     if (previewDismissed) return null
+    // Default preview = the whole project stitched together, so the user sees
+    // the full Final Film (including current music/voiceover) before committing.
+    const playable = displayedClips.filter((c) =>
+      c.kind === 'image' ? true : Boolean(c.job.video?.storage_path),
+    )
+    if (playable.length >= 1) {
+      return { kind: 'project', clips: playable }
+    }
     if (visibleVideos.length > 0) {
       const v =
         visibleVideos.find((video) => video.video?.storage_path) ??
