@@ -1,58 +1,39 @@
-## مشکل
+## هدف
+اضافه کردن یک منوی انتخاب مدل (لیست تخت) کنار دکمه **Prompt** در پایین کامپوزر، تا کاربر بتواند مدل تولید ویدیو را انتخاب کند. Provider به‌طور خودکار از روی مدل استنتاج می‌شود.
 
-در پنل History پیام «Could not refresh render status» ظاهر می‌شود در حالی‌ که render هنوز در حال انجام است (۹۵٪). با بررسی کد سه ریشهٔ واقعی پیدا شد، نه یک باگ سطحی:
+## مدل‌های قابل انتخاب
+بر اساس رجیستری فعلی (`core_ai_provider_registry`) و کدهای Wan/Flow پشتیبان:
+- **Wan 2.7 — Image to Video** → `wan` / `wan2.7-i2v-2026-04-25`
+- **Wan 2.7 — Text to Video** → `wan` / `wan2.7-t2v-2026-04-25`
+- **Flow Video v1** → `flow` / `flow-video-1`
 
-### ریشهٔ ۱ — Polling شکننده با `Promise.all`
-در `src/modules/generator-ui/pages/DashboardPage.tsx` (خطوط ۱۲۶۵–۱۲۷۶):
-```ts
-const refreshedJobs = await Promise.all(
-  activeJobs.map((job) => jobOrchestratorGateway.getJob(job.id))
-)
-```
-اگر **فقط یک** درخواست `getJob` به دلیل گذرا (cold-start ادج‌فانکشن، تایم‌اوت شبکه، ۴۰۱ ناشی از رفرش توکن، rate-limit) شکست بخورد، کل `Promise.all` reject می‌شود و پیام خطا ست می‌گردد، حتی اگر بقیهٔ jobها موفق بوده باشند.
+(t2v فقط در حالت Text-to-Video و i2v فقط وقتی فریم Start/End موجود است در دسترس خواهد بود؛ Flow در هر دو حالت قابل انتخاب است.)
 
-### ریشهٔ ۲ — پیام خطا هرگز پاک نمی‌شود
-`setVideoColumnMessage('Could not refresh render status.')` ست می‌شود ولی در poll‌های بعدیِ موفق هیچ‌جا `setVideoColumnMessage(null)` فراخوانی نمی‌شود. یک اشکال گذرا یک‌بار رخ می‌دهد و پیام تا بسته شدن صفحه باقی می‌ماند.
+## تغییرات UI (فقط فرانت‌اند)
+فایل: `src/modules/generator-ui/pages/DashboardPage.tsx`
 
-### ریشهٔ ۳ — درصد فقط زمان‌محور است (Math.min(95, …))
-در تابع `getJobProgressPercent` (خط ۲۲۴) درصد بر اساس زمان سپری‌شده محاسبه و در سقف ۹۵٪ کلَمپ می‌شود. backend مقدار `progress_percent` واقعی برنمی‌گرداند و سرور هیچ‌وقت وضعیت provider (fal.ai) را poll نمی‌کند. در نتیجه برای job طولانی، نوار روی ۹۵٪ گیر می‌افتد و کاربر فکر می‌کند چیزی خراب شده — هر هیک‌آپ شبکه‌ای در همین لحظه هم پیام خطا را ظاهر می‌کند.
+1. **State جدید**:
+   ```ts
+   type ModelChoice = { id: string; label: string; providerKey: 'wan'|'flow'; model: string; supports: ('t2v'|'i2v')[] }
+   const [selectedModelId, setSelectedModelId] = useState<string>('wan-i2v')
+   ```
+   مقدار اولیه با حالت فعلی (`isTextToVideo` → `wan-t2v`، در غیر این صورت `wan-i2v`) همگام می‌شود.
 
----
+2. **منوی Popover**: یک دکمه کوچک کنار دکمه `Prompt` (همان ردیف، سمت چپ آن) با همان استایل دکمه‌های دور؛ متن آن نام مدل انتخابی فعلی است (مثلاً `Wan 2.7 i2v`). با کلیک، PopoverContent یک لیست تخت از همهٔ مدل‌های مجاز را نمایش می‌دهد.
 
-## راه‌حل اصولی (فقط فرانت‌اند، بدون تغییر backend)
+3. **فیلتر هوشمند**: گزینه‌هایی که با حالت فعلی همخوانی ندارند (مثلاً `wan-i2v` وقتی هیچ Start/End نیست و `isTextToVideo=true`) به‌صورت غیرفعال (با توضیح) نمایش داده می‌شوند تا کاربر سردرگم نشود.
 
-### تغییرات در `src/modules/generator-ui/pages/DashboardPage.tsx`
+4. **ارسال به Backend**: در بلوک `handleGenerateClip` (خطوط ۱۶۱۸–۱۶۶۰)، به‌جای hardcode کردن `providerKey: 'wan'` و مدل ثابت، از `selectedModel.providerKey` و `selectedModel.model` استفاده می‌شود. منطق فعلی (i2v vs t2v بر اساس وجود فریم) حفظ می‌شود اما provider/model از انتخاب کاربر می‌آید.
 
-**۱. Polling را به `Promise.allSettled` تبدیل کن**
-فقط نتایج fulfilled مرج شوند؛ rejectedها نادیده گرفته شوند. هر job مستقل از بقیه آپدیت می‌شود.
+5. **Persistence سبک**: انتخاب کاربر در `localStorage` تحت کلید `ui:preferred-model` ذخیره می‌شود و در mount بعدی بازیابی می‌گردد.
 
-**۲. شمارندهٔ خطای پیاپی + threshold**
-یک `pollFailureCountRef = useRef(0)` اضافه شود.
-- در هر poll، اگر **همهٔ** درخواست‌ها rejected شدند → counter++؛ در غیر این صورت → counter = 0 و `setVideoColumnMessage(null)` اگر پیام فعلی همان متن خطا بود.
-- فقط وقتی `counter >= 3` (حدود ۱۲ ثانیه پشت سر هم خطا) پیام «Could not refresh render status.» نمایش داده شود.
-- این نکته باعث می‌شود یک hiccup گذرا هرگز نویز ایجاد نکند.
+## خارج از محدوده
+- بک‌اند، رجیستری دیتابیس، و edge functions تغییری نمی‌کنند (`flow` در حال حاضر در `service.ts` پیاده‌سازی واقعی ندارد و در صورت انتخاب، اگر `FLOW_API_KEY` تنظیم نباشد خطای «provider API key missing» از بک‌اند برمی‌گردد — همان رفتار فعلی برای provider بدون کلید).
+- تغییری در ظاهر باقی دکمه‌ها داده نمی‌شود.
 
-**۳. Backoff تطبیقی برای jobهای طولانی**
-به‌جای ثابت ۴ ثانیه:
-```ts
-const interval = Math.min(20_000, 4_000 + Math.floor(elapsedMs / 30_000) * 2_000)
-```
-بعد از ۳۰ ثانیه ۶s، بعد ۸s و … تا سقف ۲۰s. این هم بار سرور را کم می‌کند، هم احتمال شکست را پایین می‌آورد.
-
-**۴. پاک‌سازی پیام در هر تغییر فاز موفق**
-وقتی `refreshedJobs.length > 0`، اگر `videoColumnMessage` با متن خطای poll برابر بود، `setVideoColumnMessage(null)`.
-
-**۵. (تنظیم کوچک UX) سقف درصد زمان‌محور**
-در `getJobProgressPercent`، وقتی `elapsed > expectedMs` نوار «نفس‌زدن» (مثلاً نوسان ۹۲–۹۵٪) به‌جای کلَمپ سفت ۹۵٪، تا کاربر بداند فرایند هنوز زنده است. اختیاری ولی مؤثر.
-
-### بدون تغییر در:
-- `supabase/functions/jobs-get/*` — لاگ‌ها هیچ خطایی نشان نمی‌دهند، این edge function سالم است.
-- backend service لایهٔ orchestrator — provider-status polling یک تغییر بزرگ‌تر است و خارج از این درخواست.
-
----
-
-## تأیید پس از پیاده‌سازی
-- تست‌سناریوی شکست گذرا: یک‌بار شبکه را در DevTools روی Offline بگذار، پس از یک poll دوباره Online کن — نباید پیام خطا ظاهر شود (counter ریست می‌شود).
-- ۳ poll پیاپی Offline → پیام «Could not refresh render status.» ظاهر می‌شود.
-- وقتی اتصال برمی‌گردد → پیام به‌طور خودکار حذف می‌شود.
-- نوار رندر: حتی اگر خطای موقت رخ دهد، روند ادامه دارد و وقتی job واقعاً تمام شود به ۱۰۰٪ می‌پرد.
+## تأیید
+- کلیک روی منو → سه گزینه نمایش داده می‌شود.
+- انتخاب Wan t2v → بدون فریم، job با `wan2.7-t2v-2026-04-25` ساخته می‌شود.
+- انتخاب Wan i2v + فریم Start → job با `wan2.7-i2v-2026-04-25` ساخته می‌شود.
+- انتخاب Flow → request با `providerKey:'flow'` ارسال می‌شود (اگر کلید نباشد، toast خطای backend نمایش داده می‌شود — انتظار طبیعی).
+- پس از Reload، آخرین مدل انتخابی حفظ می‌شود.
