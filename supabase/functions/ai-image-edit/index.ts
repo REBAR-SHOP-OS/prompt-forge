@@ -86,10 +86,16 @@ Deno.serve(async (req) => {
         messages: [
           {
             role: "user",
-            content: [
-              { type: "text", text: `Edit the provided image as follows: ${prompt}.${aspectRatio ? ` The output image MUST keep a strict ${aspectRatio} aspect ratio.` : " Preserve the overall composition and aspect ratio of the original image unless the instruction explicitly requires otherwise."}` },
-              { type: "image_url", image_url: { url: imageUrl } },
-            ],
+            content: maskUrl
+              ? [
+                  { type: "text", text: `You will receive two images. Image 1 is the ORIGINAL. Image 2 is a MASK (transparent background, opaque/white pixels mark the region to edit). Modify ONLY the pixels of the original where the mask is opaque. Keep every pixel outside the mask absolutely identical (same composition, colors, lighting, subject, pose, background). Apply this change inside the masked region only: ${prompt}.${aspectRatio ? ` Output MUST keep a strict ${aspectRatio} aspect ratio.` : ""}` },
+                  { type: "image_url", image_url: { url: imageUrl } },
+                  { type: "image_url", image_url: { url: maskUrl } },
+                ]
+              : [
+                  { type: "text", text: `Edit the provided image as follows: ${prompt}.${aspectRatio ? ` The output image MUST keep a strict ${aspectRatio} aspect ratio.` : " Preserve the overall composition and aspect ratio of the original image unless the instruction explicitly requires otherwise."}` },
+                  { type: "image_url", image_url: { url: imageUrl } },
+                ],
           },
         ],
         modalities: ["image", "text"],
