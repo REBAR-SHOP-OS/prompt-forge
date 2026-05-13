@@ -2039,6 +2039,9 @@ export default function DashboardPage() {
 
       const hasMusic = Boolean(musicUrl && musicRange[1] > musicRange[0])
       const hasVoiceover = Boolean(voiceoverUrl)
+      const mixedClipVolume = hasMusic
+        ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
+        : (hasVoiceover ? voiceoverClipVolume : 1)
       const audioOpt = hasMusic || hasVoiceover
         ? {
             music: hasMusic
@@ -2052,7 +2055,7 @@ export default function DashboardPage() {
             voiceover: hasVoiceover
               ? { src: voiceoverUrl as string, volume: voiceoverVolume }
               : undefined,
-            clipVolume: soundtrackMode === 'music-only' ? 0 : clipVolume,
+            clipVolume: mixedClipVolume,
           }
         : undefined
       const mergeRes = await mergeVideoUrls(
