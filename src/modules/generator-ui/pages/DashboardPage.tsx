@@ -3956,6 +3956,53 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center justify-between gap-2 sm:justify-end">
+            <Popover open={isModelMenuOpen} onOpenChange={setIsModelMenuOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Choose video model"
+                  title={`Model: ${selectedModel.label}`}
+                  className="inline-flex h-10 max-w-[14rem] items-center justify-center gap-2 truncate rounded-full border border-[#2a2d32] bg-black/20 px-3 text-xs font-semibold text-zinc-200/80 transition hover:border-amber-300/60 hover:bg-white/[0.05] hover:text-amber-200"
+                >
+                  <Cpu className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span className="truncate">{selectedModel.label}</span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                side="top"
+                align="end"
+                className="w-72 border-white/10 bg-[#0b0c0e]/95 p-2 text-zinc-200 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl"
+              >
+                {MODEL_CHOICES.map((choice) => {
+                  const needed: 't2v' | 'i2v' = isTextToVideo ? 't2v' : 'i2v'
+                  const compatible = choice.supports.includes(needed)
+                  const isActive = choice.id === selectedModel.id
+                  return (
+                    <button
+                      key={choice.id}
+                      type="button"
+                      disabled={!compatible}
+                      onClick={() => {
+                        setSelectedModelId(choice.id)
+                        setIsModelMenuOpen(false)
+                      }}
+                      className={`flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40 ${isActive ? 'bg-white/[0.05]' : ''}`}
+                    >
+                      <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-zinc-300">
+                        {isActive ? <Check className="h-4 w-4" aria-hidden="true" /> : <Cpu className="h-4 w-4" aria-hidden="true" />}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-semibold text-zinc-100">{choice.label}</span>
+                        <span className="block text-xs leading-5 text-zinc-500">
+                          {compatible ? choice.description : `Not available in ${isTextToVideo ? 'Text to Video' : 'Image to Video'} mode.`}
+                        </span>
+                      </span>
+                    </button>
+                  )
+                })}
+              </PopoverContent>
+            </Popover>
+
             <Popover
               open={isPromptMenuOpen}
               onOpenChange={(open) => {
