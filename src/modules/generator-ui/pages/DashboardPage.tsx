@@ -843,8 +843,14 @@ export default function DashboardPage() {
   }, [isSubmitting, hasUploadingFiles, readyStartFrame, readyEndFrame, promptText, isTextToVideo])
   const [composerError, setComposerError] = useState<string | null>(null)
   const [isPromptMenuOpen, setIsPromptMenuOpen] = useState(false)
+  const [isModelMenuOpen, setIsModelMenuOpen] = useState(false)
+  const [selectedModelId, setSelectedModelId] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'wan-i2v'
+    return window.localStorage.getItem('ui:preferred-model') ?? 'wan-i2v'
+  })
   const [narratorMode, setNarratorMode] = useState<'idle' | 'input'>('idle')
   const [narratorScript, setNarratorScript] = useState('')
+
 
   const runEnhancePrompt = async (
     options: { mode: 'silent' | 'narrated'; narratorScript?: string },
