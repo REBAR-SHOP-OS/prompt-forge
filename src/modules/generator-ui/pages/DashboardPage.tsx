@@ -288,6 +288,7 @@ export default function DashboardPage() {
   const { session, profile, signOut, loading: authLoading } = useAuth()
   const [promptText, setPromptText] = useState('')
   const [isDragging, setIsDragging] = useState(false)
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
   const [startContext] = useState('Start')
   const [endGoal] = useState('End')
   const [generatedVideos, setGeneratedVideos] = useState<JobDetail[]>([])
