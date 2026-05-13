@@ -1018,6 +1018,17 @@ export default function DashboardPage() {
   type PreviewItem =
     | { kind: 'video'; job: JobDetail }
     | { kind: 'image'; image: UserImageItem }
+    | { kind: 'sequence'; clips: UnifiedClip[] }
+
+  // A clip is "playable" in the live sequential preview if it's a ready video
+  // (completed + has a storage_path) or an uploaded image.
+  const playableSequenceClips = useMemo<UnifiedClip[]>(() => {
+    return displayedClips.filter((c) => {
+      if (c.kind === 'image') return true
+      const status = normalizeStatus(c.job.status)
+      return status === 'completed' && !!c.job.video?.storage_path
+    })
+  }, [displayedClips])
 
   const previewItem = useMemo<PreviewItem | null>(() => {
     if (previewVideoId) {
@@ -1029,6 +1040,12 @@ export default function DashboardPage() {
       }
     }
     if (previewDismissed) return null
+    // When 2+ playable clips exist, default to the live auto-stitched
+    // sequential preview so the user always sees the full project — not just
+    // the most-recent clip — without paying to render Final Film.
+    if (playableSequenceClips.length >= 2) {
+      return { kind: 'sequence', clips: playableSequenceClips }
+    }
     if (visibleVideos.length > 0) {
       const v =
         visibleVideos.find((video) => video.video?.storage_path) ??
@@ -1038,7 +1055,7 @@ export default function DashboardPage() {
     const firstImage = displayedClips.find((c) => c.kind === 'image')
     if (firstImage && firstImage.kind === 'image') return { kind: 'image', image: firstImage.image }
     return null
-  }, [displayedClips, previewVideoId, previewDismissed, visibleVideos])
+  }, [displayedClips, previewVideoId, previewDismissed, visibleVideos, playableSequenceClips])
 
   // Backwards-compat alias used by existing card highlight + start-frame code paths
   const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
