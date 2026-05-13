@@ -2585,7 +2585,24 @@ export default function DashboardPage() {
         onOpenChange={setIsAiImageDialogOpen}
         userId={userId}
         defaultAspect={lockedProjectRatio ?? aspectRatio}
-        onSaved={(row) => setUserImages((prev) => [row as UserImageItem, ...prev])}
+        onSaved={(row) => {
+          setUserImages((prev) => [row as UserImageItem, ...prev])
+          setGenerationMode('image-to-video')
+          setUploadTarget('Start')
+          setUploadedFiles((cur) => [
+            ...cur.filter((f) => f.target !== 'Start' || f.status !== 'ready'),
+            {
+              id: Date.now(),
+              name: `ai-${row.id.slice(0, 6)}.png`,
+              size: 0,
+              target: 'Start',
+              type: 'image/png',
+              status: 'ready',
+              url: row.storage_path,
+              error: null,
+            },
+          ])
+        }}
       />
 
       <Dialog open={isMusicDialogOpen} onOpenChange={setIsMusicDialogOpen}>
