@@ -1,27 +1,73 @@
-# Fix: "Upload film" button does nothing
+# Auto-apply music + voiceover to the single-video preview
 
-## Findings
-- The icon button at the History header (`aria-label="Upload film"`, around `DashboardPage.tsx:3062`) calls `uploadVideoInputRef.current?.click()` on a sibling `<input type="file" className="hidden">`.
-- In the browser sandbox the click is dispatched on the button (verified via `browser--act`), so the React handler runs, but the OS file-picker does not open reliably in this layout — the `<input>` is rendered as a *sibling next to the button* inside a `flex` row that includes other interactive icons. Clicks on hidden file inputs triggered programmatically can be swallowed by the user-gesture chain when the surrounding element re-renders during an active render/poll cycle (the History panel re-renders every poll tick while a Final Film render is in progress, which matches the user's screenshot).
-- `handleUploadVideoFile` itself is fine; the problem is that the picker never opens, so the handler never fires.
+## Problem
+When a single video card is opened in the center preview, the soundtrack (music) and AI voiceover the user has attached are NOT played alongside the video. Only the Final Film/sequence preview (`SequentialClipPlayer`) currently mixes them. The user expects: hit Play on the preview → video + music + voiceover play together automatically.
 
-## Fix (frontend only — `src/modules/generator-ui/pages/DashboardPage.tsx`)
+## Fix (frontend only)
 
-Replace the ref+`.click()` pattern with a bullet-proof `<label htmlFor>` pattern that does not depend on a programmatic click within a re-rendering subtree:
+### 1) New component — `src/modules/generator-ui/components/VideoWithSoundtrack.tsx`
+A drop-in replacement for the bare `<video>` used in the single-clip preview. It renders the `<video>` plus hidden `<audio>` elements for music and voiceover, and synchronizes them with the video element's playback state.
 
-1. Give the file input a stable `id="upload-film-input"` and keep `ref={uploadVideoInputRef}` (still used elsewhere if needed).
-2. Replace the `<button onClick={…}>` with a `<label htmlFor="upload-film-input">` styled identically to the existing icon buttons (`grid h-8 w-8 place-items-center rounded-full …`), with `role="button"`, `aria-label="Upload film"`, `title="Upload film"`, and `aria-disabled={isUploadingVideo}`.
-3. When `isUploadingVideo` is true, add `pointer-events-none opacity-60` to the label and disable the input via `disabled` so re-clicks during upload are ignored.
-4. Keep the `<input>` mounted at the top of the icon row (not conditionally rendered) so the label always has a target.
-5. Move the `<input>` *out of the flex row visually* using `className="sr-only"` (still focusable / picker-triggerable, more reliable than `display:none`'s `hidden`).
-6. Keep `handleUploadVideoFile` unchanged.
+Props:
+- `src: string`
+- `videoKey?: string` (used as `key` to force reload on src change)
+- `clipVolume: number` (video element's own volume; 0 mutes clip audio)
+- `musicUrl?: string | null`
+- `musicRange?: [number, number]` (start/end seconds of music window; loops within window)
+- `musicVolume?: number`
+- `voiceoverUrl?: string | null`
+- `voiceoverVolume?: number`
+- standard `<video>` styling props (`className`, `style`)
+
+Behavior (mirrors `SequentialClipPlayer` audio logic):
+- `videoRef.current.volume = clipVolume`; `muted = clipVolume <= 0`.
+- On video `play`: start music (seek to `musicRange[0]` if outside window) and voiceover.
+- On video `pause`/`ended`: pause both audios.
+- On video `seeked`: re-clamp music to range; reset voiceover to 0 if user scrubs back to 0.
+- On music `timeupdate`: if `currentTime >= musicRange[1]`, loop back to `musicRange[0]`.
+- When `voiceoverUrl` exists, voiceover plays from 0 once per video play; restarts if video restarts from 0.
+- Volume changes apply live via effects on the corresponding refs.
+- Cleanup pauses both audio elements on unmount or when their URL becomes null.
+
+### 2) Use it in `DashboardPage.tsx` single-video preview
+At lines ~2874–2885, replace the bare `<video>` with `<VideoWithSoundtrack>`, passing:
+```tsx
+<VideoWithSoundtrack
+  videoKey={`${previewItem.job.id}:${src}`}
+  src={src}
+  className="h-full w-full bg-black object-contain"
+  controls
+  playsInline
+  preload="metadata"
+  clipVolume={
+    musicUrl && musicRange[1] > musicRange[0]
+      ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
+      : (voiceoverUrl ? voiceoverClipVolume : 1)
+  }
+  musicUrl={musicUrl}
+  musicRange={musicRange}
+  musicVolume={musicVolume}
+  voiceoverUrl={voiceoverUrl}
+  voiceoverVolume={voiceoverVolume}
+/>
+```
+This reuses the same precedence already used for the sequence player so that:
+- If music is set: clip audio is muted in `music-only` mode, mixed in `mix` mode.
+- If only voiceover is set: clip audio uses `voiceoverClipVolume`.
+- Otherwise: clip plays at full volume.
+
+### 3) No changes to
+- `SequentialClipPlayer` (already correct for Final Film preview).
+- Music/voiceover state, upload, or rendering pipeline.
+- Final Film export (server-side merge already includes both tracks).
 
 ## Verification
-- Click the new Upload film label → OS file picker opens immediately, even while a Final Film render progress dialog is on screen.
-- Pick a small `.mp4` → spinner appears in the icon, then a new History card is added.
-- During upload the icon shows the spinner and further clicks are ignored.
-- No regressions to the image-upload icon or the `+` add-card icon next to it.
+- Open a single video card with music + voiceover both attached → click ▶ on the preview → video plays with music looping in its window and voiceover playing once, exactly like Final Film preview.
+- Switch `music-only` ↔ `mix` → clip audio mutes/unmutes live without restarting.
+- Adjust music or voiceover volume sliders → audible change in real time.
+- Pause/seek/scrub on the video → audios pause/resume correctly; music loops back to its start when reaching its end marker.
+- Remove music or voiceover → preview keeps working, no orphan audio playback.
 
 ## Out of scope
-- No changes to `handleUploadVideoFile` upload logic, storage, or job pipeline.
-- No layout changes outside the History header icon row.
+- No changes to the Final Film server merge pipeline.
+- No new UI controls; everything is automatic from existing state.
