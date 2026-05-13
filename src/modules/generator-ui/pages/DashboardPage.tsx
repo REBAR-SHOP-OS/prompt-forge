@@ -520,6 +520,29 @@ export default function DashboardPage() {
     setWorkspaceHiddenJobIds(new Set())
   }, [workspaceHiddenJobIdsKey])
 
+  // Per-session "fresh workspace" watermark: anything created BEFORE the user
+  // entered the app this session is hidden from the HISTORY panel and the
+  // central workspace, so each entry shows a clean dashboard. Library is not
+  // affected (it reads from `visibleVideos`), and clicking a project in
+  // Library still restores its source cards via `selectedProjectId`.
+  const [sessionFreshMark, setSessionFreshMark] = useState<number | null>(null)
+  useEffect(() => {
+    if (!userId) { setSessionFreshMark(null); return }
+    const key = `workspace-fresh-mark:${userId}`
+    try {
+      const raw = window.sessionStorage.getItem(key)
+      if (raw) {
+        const n = Number(raw)
+        if (Number.isFinite(n)) { setSessionFreshMark(n); return }
+      }
+      const now = Date.now()
+      window.sessionStorage.setItem(key, String(now))
+      setSessionFreshMark(now)
+    } catch {
+      setSessionFreshMark(Date.now())
+    }
+  }, [userId])
+
   function persistWorkspaceHiddenJobIds(next: Set<string>) {
     if (!workspaceHiddenJobIdsKey) return
     try {
@@ -931,6 +954,7 @@ export default function DashboardPage() {
     }
     const chronoAsc = [...generatedVideos]
       .filter((v) => !workspaceHiddenJobIds.has(v.id))
+      .filter((v) => sessionFreshMark == null || new Date(v.created_at).getTime() >= sessionFreshMark)
       .sort(
         (l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime()
       )
@@ -948,7 +972,7 @@ export default function DashboardPage() {
       if (byId.has(v.id)) ordered.push(v)
     }
     return ordered
-  }, [generatedVideos, manualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs])
+  }, [generatedVideos, manualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs, sessionFreshMark])
 
   const handleCardDragStart = (id: string) => (event: React.DragEvent) => {
     setDraggingId(id)
@@ -979,7 +1003,10 @@ export default function DashboardPage() {
   // Unified clip list (videos + uploaded images), ordered by created_at ASC,
   // with manual drag-and-drop overrides. Both kinds share the same numbering,
   // ordering, drag handlers, and Final Film merge sequence.
-  const visibleUserImages = userImages
+  const visibleUserImages = useMemo(
+    () => userImages.filter((img) => sessionFreshMark == null || new Date(img.created_at).getTime() >= sessionFreshMark),
+    [userImages, sessionFreshMark],
+  )
 
   const displayedClips = useMemo<UnifiedClip[]>(() => {
     const items: UnifiedClip[] = [

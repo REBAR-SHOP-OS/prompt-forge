@@ -1,42 +1,36 @@
 ## هدف
-وقتی کاربر Voiceover روی Final Film می‌گذارد، بتواند مستقل از موسیقی، **حجم صدای اصلی ویدئو** و **حجم Voiceover** را تنظیم کند.
+هر بار که کاربر وارد برنامه می‌شود، صفحهٔ اصلی به‌صورت پیش‌فرض **خام و خالی** باشد (مطابق اسکرین‌شات): پیش‌نمایش مرکزی «Start forging a prompt»، پنل HISTORY با شمارندهٔ `0` و «No renders yet». پروژه‌ها و رندرهای قبلی در **Library** دست‌نخورده باقی بمانند و کاربر هر زمان بخواهد می‌تواند با کلیک روی یک پروژه در Library، کارت‌های آن را دوباره به HISTORY بیاورد (رفتار فعلی).
 
 ## وضعیت فعلی
-- بک‌اند `mergeVideos.ts` از قبل سه ولوم مستقل را پشتیبانی می‌کند: `clipVolume`, `musicVolume`, `voiceover.volume`.
-- در UI فقط برای **موسیقی** اسلایدر وجود دارد (داخل دیالوگ Soundtrack، در حالت Mix).
-- برای **Voiceover** هیچ کنترلی نیست؛ `voiceoverVolume` در `DashboardPage.tsx` به‌صورت ثابت `1` تعریف شده و وقتی Voiceover بدون موسیقی فعال باشد، صدای کلیپ به‌طور خودکار صفر می‌شود (پیش‌فرض backend).
+- در `DashboardPage.tsx`، `workspaceHiddenJobIds` در `localStorage` با کلید `workspace-hidden-jobs:{userId}` ذخیره می‌شود و بین رفرش‌ها/سشن‌ها باقی می‌ماند.
+- در نتیجه اگر کاربر قبلاً Start Over نزده باشد، با ورود مجدد، تمام جاب‌های قبلی در HISTORY ظاهر می‌شوند.
+- هدف کاربر این است که این پاکسازی **به‌صورت خودکار در هر ورود** انجام شود، بدون اینکه نیاز به Start Over دستی باشد.
 
-## تغییرات (فقط UI، بدون تغییر بک‌اند یا قراردادها)
+## تغییرات (فقط فرانت‌اند، بدون تغییر بک‌اند)
 
-### 1) State در `DashboardPage.tsx`
-- `voiceoverVolume` را به `useState<number>(1)` با setter تبدیل کن.
-- یک state جدید `voiceoverClipVolume` با پیش‌فرض `0.3` اضافه کن (وقتی Voiceover هست ولی موسیقی نیست، این مقدار به‌جای صفر ارسال می‌شود تا کاربر صدای اصلی را هم بشنود).
+### 1) رفتار جدید در `DashboardPage.tsx`
+به‌جای بازخوانی `workspaceHiddenJobIds` از `localStorage`، در زمان mount دشبورد برای هر یوزر:
+- یک «watermark» جدید ذخیره کنیم: کلید `workspace-fresh-mark:{userId}` با مقدار `Date.now()` در `sessionStorage` (نه localStorage) ست شود اگر هنوز ست نشده.
+- وقتی لیست جاب‌ها (`generatedVideos` + `projectSourceJobs[selectedProjectId]`) لود شد، **همهٔ jobIdهایی که `created_at` آن‌ها قبل از این watermark است** به `workspaceHiddenJobIds` اضافه شوند (در state و در localStorage موجود).
+- نتیجه: در شروع هر سشن مرورگر، همهٔ جاب‌های قبلی از HISTORY مخفی می‌شوند. جاب‌هایی که در همان سشن ساخته می‌شوند طبیعتاً نمایش داده می‌شوند.
 
-### 2) منطق ارسال در `handleMergeAllVideos`
-در ساخت `audioOpt`:
-- اگر `hasVoiceover && !hasMusic` → `clipVolume = voiceoverClipVolume`.
-- اگر `hasMusic` → همان `soundtrackMode`/`clipVolume` فعلی (بدون تغییر).
-- `voiceover.volume` از state جدید `voiceoverVolume` خوانده شود.
+### 2) باقی رفتارها بدون تغییر
+- Library کماکان از `visibleVideos` می‌خواند، پس پروژه‌ها و رندرهای قبلی آن‌جا دیده می‌شوند.
+- کلیک روی پروژه در Library همچنان از طریق `projectSourceJobs[selectedProjectId]` کارت‌ها را به HISTORY باز می‌گرداند (همان منطق فعلی unhide که در merge-handler و کلیک پروژه وجود دارد، دست نمی‌خورد).
+- Final Film و دکمه‌های Start Over و … بدون تغییر.
 
-### 3) UI — پنل تنظیم صدای Voiceover
-کنار چیپ Voiceover (همان جایی که اکنون نام voiceover و دکمهٔ X نمایش داده می‌شود) یک Popover کوچک با آیکون `SlidersHorizontal` اضافه کن که فقط وقتی `voiceoverUrl` فعال است نمایش داده شود. داخل آن دو اسلایدر هم‌سبک با اسلایدرهای موجود در دیالوگ موسیقی:
-
-```
-Original clip audio   [—————o———]  30%
-Voiceover             [————————o]  100%
-```
-
-- بازه: 0–100، گام 1، تبدیل به 0..1 برای state.
-- اگر موسیقی هم همزمان فعال باشد، اسلایدر «Original clip audio» در این پنل غیرفعال شود و یک هینت کوتاه نمایش دهد: «Clip audio is controlled from the Soundtrack dialog» (تا منبع حقیقت یکی بماند).
-
-### 4) Reset
-در `handleClearVoiceover` و در محل ریست بعد از Final Film، `voiceoverVolume` و `voiceoverClipVolume` را به مقدار پیش‌فرض برگردان.
+### 3) منطق ریست بین لاگین‌ها
+- چون از `sessionStorage` استفاده می‌شود، هر sign-out / بستن تب / ورود مجدد یعنی watermark تازه و دوباره workspace خام.
+- با رفرش در همان سشن، watermark حفظ می‌شود و جاب‌های ساخته‌شده در همان سشن نمایش داده می‌شوند (مطلوب).
 
 ## خارج از محدوده
-- بدون تغییر در `mergeVideos.ts`، edge functionها، schema، یا VoiceoverDialog.
-- بدون تغییر روی منطق موسیقی موجود.
+- بدون تغییر در RLS/بک‌اند/edge functions.
+- بدون حذف یا تغییر داده در Library یا دیتابیس.
+- بدون تغییر روی منطق Voiceover/Soundtrack اخیر.
 
 ## تأیید
-1. فقط Voiceover بدون موسیقی → پنل ولوم باز شود؛ هر دو اسلایدر فعال؛ Final Film هر دو صدا را با نسبت تنظیم‌شده پخش کند.
-2. Voiceover + موسیقی همزمان → اسلایدر clip در پنل voiceover غیرفعال؛ کنترل از دیالوگ Soundtrack.
-3. حذف Voiceover → ولوم‌ها به پیش‌فرض ریست شوند.
+1. لاگین تازه → HISTORY با شمارندهٔ `0` و پیام «No renders yet»؛ مرکز صفحه «Start forging a prompt».
+2. ساخت یک کلیپ جدید در همان سشن → در HISTORY ظاهر شود.
+3. رفرش صفحه در همان سشن → کلیپ سشن جاری همچنان دیده شود، کلیپ‌های سشن‌های قبل دیده نشوند.
+4. ورود مجدد در یک تب جدید → دوباره workspace خام.
+5. Library همچنان همهٔ پروژه‌های قبلی را نشان دهد و کلیک روی هر پروژه کارت‌های آن را به HISTORY بازگرداند.
