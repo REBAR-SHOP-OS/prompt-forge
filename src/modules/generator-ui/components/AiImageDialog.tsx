@@ -86,10 +86,9 @@ export default function AiImageDialog({
     }
   }, [open, defaultAspect])
 
-  // Reset mask only when a brand-new image is generated. Refines preserve the mask
-  // so the user can iterate on the same painted region.
+  // Reset mask whenever a new image is shown (generate or refine) so the painted
+  // overlay never hides the latest result and never misaligns with new dimensions.
   useEffect(() => {
-    if (lastImageSourceRef.current === 'refine') return
     setHasMask(false)
     setIsMaskMode(false)
     const c = maskCanvasRef.current
