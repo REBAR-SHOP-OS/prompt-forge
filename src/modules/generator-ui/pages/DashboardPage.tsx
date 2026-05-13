@@ -5,6 +5,8 @@ import {
   BookmarkPlus,
   CalendarDays,
   ChevronsRight,
+  Check,
+  Cpu,
   Clapperboard,
   
   Combine,
