@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { supabase } from '@/integrations/supabase/client'
+import { normalizeImageAspect } from '@/modules/generator-ui/lib/normalizeImageAspect'
 
 const USER_IMAGES_BUCKET = 'user-images'
 
@@ -85,7 +86,8 @@ export default function AiImageDialog({
       if (fnErr) throw fnErr
       const url = (data as { dataUrl?: string } | null)?.dataUrl
       if (!url) throw new Error('No image returned.')
-      setImageDataUrl(url)
+      const normalized = await normalizeImageAspect(url, aspect)
+      setImageDataUrl(normalized)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to generate image.')
     } finally {
@@ -99,12 +101,13 @@ export default function AiImageDialog({
     setError(null)
     try {
       const { data, error: fnErr } = await supabase.functions.invoke('ai-image-edit', {
-        body: { prompt: editPrompt.trim(), imageUrl: imageDataUrl },
+        body: { prompt: editPrompt.trim(), imageUrl: imageDataUrl, aspectRatio: aspect },
       })
       if (fnErr) throw fnErr
       const url = (data as { dataUrl?: string } | null)?.dataUrl
       if (!url) throw new Error('No image returned.')
-      setImageDataUrl(url)
+      const normalized = await normalizeImageAspect(url, aspect)
+      setImageDataUrl(normalized)
       setEditPrompt('')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to edit image.')

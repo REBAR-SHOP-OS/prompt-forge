@@ -16,6 +16,9 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
     const imageUrl = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
+    const aspectRatio = typeof body?.aspectRatio === "string" && ["1:1","9:16","16:9"].includes(body.aspectRatio)
+      ? body.aspectRatio as "1:1" | "9:16" | "16:9"
+      : null;
 
     if (!prompt) {
       return new Response(JSON.stringify({ error: "prompt is required" }), {
@@ -66,17 +69,18 @@ Deno.serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash-image",
+        model: "google/gemini-3.1-flash-image-preview",
         messages: [
           {
             role: "user",
             content: [
-              { type: "text", text: `Edit the provided image as follows: ${prompt}. Preserve the overall composition and aspect ratio of the original image unless the instruction explicitly requires otherwise.` },
+              { type: "text", text: `Edit the provided image as follows: ${prompt}.${aspectRatio ? ` The output image MUST keep a strict ${aspectRatio} aspect ratio.` : " Preserve the overall composition and aspect ratio of the original image unless the instruction explicitly requires otherwise."}` },
               { type: "image_url", image_url: { url: imageUrl } },
             ],
           },
         ],
         modalities: ["image", "text"],
+        ...(aspectRatio ? { image_config: { aspect_ratio: aspectRatio } } : {}),
       }),
     });
 
