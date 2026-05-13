@@ -16,6 +16,9 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
     const imageUrl = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
+    const aspectRatio = typeof body?.aspectRatio === "string" && ["1:1","9:16","16:9"].includes(body.aspectRatio)
+      ? body.aspectRatio as "1:1" | "9:16" | "16:9"
+      : null;
 
     if (!prompt) {
       return new Response(JSON.stringify({ error: "prompt is required" }), {
