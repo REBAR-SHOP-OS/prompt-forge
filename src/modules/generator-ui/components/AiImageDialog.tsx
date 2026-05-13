@@ -276,7 +276,10 @@ export default function AiImageDialog({
       const { data, error: fnErr } = await supabase.functions.invoke('ai-image-edit', {
         body: { prompt: editPrompt.trim(), imageUrl: originalUrl, aspectRatio: aspect, ...(maskUrl ? { maskUrl } : {}) },
       })
-      if (fnErr) throw fnErr
+      if (fnErr) {
+        const msg = await extractFnError(fnErr, 'Failed to edit image.')
+        throw new Error(msg)
+      }
       const url = (data as { dataUrl?: string } | null)?.dataUrl
       if (!url) throw new Error('No image returned.')
       const normalizedEdit = await normalizeImageAspect(url, aspect)
