@@ -87,6 +87,7 @@ import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDial
 import { VoiceoverDialog } from '@/modules/generator-ui/components/VoiceoverDialog'
 import CalendarInfoDialog from '@/modules/generator-ui/components/CalendarInfoDialog'
 import ImageReframeDialog from '@/modules/generator-ui/components/ImageReframeDialog'
+import AiImageDialog from '@/modules/generator-ui/components/AiImageDialog'
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
@@ -329,6 +330,7 @@ export default function DashboardPage() {
   const [userImages, setUserImages] = useState<UserImageItem[]>([])
   const [isUploadingImage, setIsUploadingImage] = useState(false)
   const imageUploadInputRef = useRef<HTMLInputElement | null>(null)
+  const [isAiImageDialogOpen, setIsAiImageDialogOpen] = useState(false)
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
@@ -2578,6 +2580,14 @@ export default function DashboardPage() {
         onUseAsStartFrame={handleReframeAsStart}
       />
 
+      <AiImageDialog
+        open={isAiImageDialogOpen}
+        onOpenChange={setIsAiImageDialogOpen}
+        userId={userId}
+        defaultAspect={lockedProjectRatio ?? aspectRatio}
+        onSaved={(row) => setUserImages((prev) => [row as UserImageItem, ...prev])}
+      />
+
       <Dialog open={isMusicDialogOpen} onOpenChange={setIsMusicDialogOpen}>
         <DialogContent className="border-white/10 bg-black text-zinc-100 sm:max-w-md">
           <DialogHeader>
@@ -2999,6 +3009,15 @@ export default function DashboardPage() {
               ) : (
                 <ImagePlus className="h-4 w-4" aria-hidden="true" />
               )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsAiImageDialogOpen(true)}
+              className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100"
+              aria-label="Generate image with AI"
+              title="Generate image with AI"
+            >
+              <Sparkles className="h-4 w-4" aria-hidden="true" />
             </button>
             <button
               type="button"
