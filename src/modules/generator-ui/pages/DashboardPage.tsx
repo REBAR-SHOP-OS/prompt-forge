@@ -888,6 +888,18 @@ export default function DashboardPage() {
   const [narratorMode, setNarratorMode] = useState<'idle' | 'input'>('idle')
   const [narratorScript, setNarratorScript] = useState('')
 
+  const selectedModel = useMemo<ModelChoice>(() => {
+    const needed: 't2v' | 'i2v' = isTextToVideo ? 't2v' : 'i2v'
+    const chosen = MODEL_CHOICES.find((m) => m.id === selectedModelId)
+    if (chosen && chosen.supports.includes(needed)) return chosen
+    return MODEL_CHOICES.find((m) => m.supports.includes(needed)) ?? MODEL_CHOICES[0]
+  }, [selectedModelId, isTextToVideo])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('ui:preferred-model', selectedModelId)
+  }, [selectedModelId])
+
 
   const runEnhancePrompt = async (
     options: { mode: 'silent' | 'narrated'; narratorScript?: string },
