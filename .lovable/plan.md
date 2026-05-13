@@ -1,42 +1,55 @@
-## هدف
-وقتی کاربر Voiceover روی Final Film می‌گذارد، بتواند مستقل از موسیقی، **حجم صدای اصلی ویدئو** و **حجم Voiceover** را تنظیم کند.
+# پیش‌نمایش زنجیره‌ای زنده
 
-## وضعیت فعلی
-- بک‌اند `mergeVideos.ts` از قبل سه ولوم مستقل را پشتیبانی می‌کند: `clipVolume`, `musicVolume`, `voiceover.volume`.
-- در UI فقط برای **موسیقی** اسلایدر وجود دارد (داخل دیالوگ Soundtrack، در حالت Mix).
-- برای **Voiceover** هیچ کنترلی نیست؛ `voiceoverVolume` در `DashboardPage.tsx` به‌صورت ثابت `1` تعریف شده و وقتی Voiceover بدون موسیقی فعال باشد، صدای کلیپ به‌طور خودکار صفر می‌شود (پیش‌فرض backend).
+هدف: قسمت پیش‌نمایش بالای داشبورد همیشه همه‌ی کارت‌های `HISTORY` (ویدئو + تصویر) را به ترتیب فعلی پشت‌سرهم پخش کند، بدون رندر و بدون مصرف کردیت. وقتی Final Film هم موجود باشد، کاربر می‌تواند بین «Live preview» و «Final Film» سوییچ کند.
 
-## تغییرات (فقط UI، بدون تغییر بک‌اند یا قراردادها)
+## رفتار کاربری
 
-### 1) State در `DashboardPage.tsx`
-- `voiceoverVolume` را به `useState<number>(1)` با setter تبدیل کن.
-- یک state جدید `voiceoverClipVolume` با پیش‌فرض `0.3` اضافه کن (وقتی Voiceover هست ولی موسیقی نیست، این مقدار به‌جای صفر ارسال می‌شود تا کاربر صدای اصلی را هم بشنود).
+- وقتی هیچ کارتی روی پیش‌نمایش پین نشده باشد، به‌جای نمایش یک کلیپ تنها، یک پلیر زنجیره‌ای نمایش داده شود که همه‌ی کارت‌های قابل‌پخش را با همان ترتیب `displayedClips` پشت‌سرهم پخش کند.
+- ترتیب دقیقاً همان ترتیبی است که در گرید HISTORY و در Final Film استفاده می‌شود (همان `manualOrder` + chronological).
+- تصویرها به‌مدت `still_duration_seconds` (یا پیش‌فرض موجود) به‌صورت ثابت نشان داده می‌شوند، سپس به کلیپ بعدی می‌رود.
+- ویدئوها از مسیر تریم‌شده‌شان پخش می‌شوند (همان `getCardVideoSrc` فعلی) تا با Final Film هم‌خوان باشد.
+- کنترل‌ها: Play / Pause، نوار پیشرفت کلی، شماره‌ی کارت فعلی (مثلاً «۲ از ۴»)، دکمه‌ی Next/Prev بین کلیپ‌ها.
+- اگر کاربر روی یک کارت در گرید کلیک کند → مثل قبل پلیر تک‌کلیپ آن کارت نمایش داده می‌شود؛ با بستن (X) دوباره به حالت زنجیره‌ای برمی‌گردد.
+- اگر Final Film موجود باشد، یک سوییچ کوچک در بالای پیش‌نمایش بین `Live preview (auto-stitched)` و `Final Film` اضافه می‌شود. پیش‌فرض روی Final Film می‌ماند تا تجربه‌ی فعلی نشکند.
+- صدا در پلیر زنجیره‌ای: صدای اصلی هر کلیپ پخش می‌شود؛ Voiceover و Music در این مرحله در پیش‌نمایش زنده پخش نمی‌شوند (فقط در Final Film شنیده می‌شوند). یک هینت کوچک «Voice/Music فقط در Final Film پخش می‌شود» نمایش داده می‌شود.
 
-### 2) منطق ارسال در `handleMergeAllVideos`
-در ساخت `audioOpt`:
-- اگر `hasVoiceover && !hasMusic` → `clipVolume = voiceoverClipVolume`.
-- اگر `hasMusic` → همان `soundtrackMode`/`clipVolume` فعلی (بدون تغییر).
-- `voiceover.volume` از state جدید `voiceoverVolume` خوانده شود.
+## پیاده‌سازی فنی
 
-### 3) UI — پنل تنظیم صدای Voiceover
-کنار چیپ Voiceover (همان جایی که اکنون نام voiceover و دکمهٔ X نمایش داده می‌شود) یک Popover کوچک با آیکون `SlidersHorizontal` اضافه کن که فقط وقتی `voiceoverUrl` فعال است نمایش داده شود. داخل آن دو اسلایدر هم‌سبک با اسلایدرهای موجود در دیالوگ موسیقی:
+فایل اصلی: `src/modules/generator-ui/pages/DashboardPage.tsx`
 
-```
-Original clip audio   [—————o———]  30%
-Voiceover             [————————o]  100%
-```
+1. کامپوننت جدید `SequentialClipPlayer` (در همان فایل یا فایل جدید کنار `TransitionPreview`):
+   - props: `clips: UnifiedClip[]`, `getVideoSrc(jobId, fallback) => string`, `getRatio(job) => Ratio`, `imageStillSeconds(image) => number`, `onClose?()`.
+   - state داخلی: `currentIndex`, `isPlaying`.
+   - یک `<video>` و یک `<img>` در DOM نگه می‌داریم و بسته به `kind` کلیپ فعلی نمایش می‌دهیم (`hidden` برای دیگری).
+   - برای ویدئو: روی `onEnded` → `currentIndex + 1`. برای تصویر: `setTimeout(duration*1000)` که با pause/clear پاک شود.
+   - وقتی به انتهای آخرین کلیپ می‌رسد، به ابتدا برمی‌گردد و pause می‌کند (یا loop اختیاری).
+   - تغییر `clips` (افزودن/حذف/مرتب‌سازی) → اگر index از طول بیشتر شد، برگرد به ۰؛ تا حد ممکن کلیپ فعلی را حفظ کن.
 
-- بازه: 0–100، گام 1، تبدیل به 0..1 برای state.
-- اگر موسیقی هم همزمان فعال باشد، اسلایدر «Original clip audio» در این پنل غیرفعال شود و یک هینت کوتاه نمایش دهد: «Clip audio is controlled from the Soundtrack dialog» (تا منبع حقیقت یکی بماند).
+2. در `previewItem` فعلی (حدود خط ۱۰۲۲):
+   - یک حالت جدید `kind: 'sequence'` اضافه می‌شود.
+   - منطق: اگر `previewVideoId` تنظیم شده باشد → همان رفتار فعلی (تک‌کارت). در غیر این صورت، اگر Final Film فعال انتخاب شده → Final Film. در غیر این صورت → `{ kind: 'sequence', clips: displayedClips.filter(playable) }`.
+   - یک state کوچک `previewMode: 'sequence' | 'final'` با پیش‌فرض `'final'` وقتی Final موجود است، وگرنه `'sequence'`.
 
-### 4) Reset
-در `handleClearVoiceover` و در محل ریست بعد از Final Film، `voiceoverVolume` و `voiceoverClipVolume` را به مقدار پیش‌فرض برگردان.
+3. در JSX پیش‌نمایش (حدود ۲۷۰۰–۲۹۰۰):
+   - شاخه‌ی جدید `previewItem.kind === 'sequence'` که `SequentialClipPlayer` را با همان قاب/aspect ratio پروژه (`lockedProjectRatio` یا `aspectRatio`) رندر می‌کند.
+   - بالای پلیر: سوییچ دو‌حالته‌ی `Live | Final` (در صورت وجود Final) و شمارنده‌ی «n / total».
 
-## خارج از محدوده
-- بدون تغییر در `mergeVideos.ts`، edge functionها، schema، یا VoiceoverDialog.
-- بدون تغییر روی منطق موسیقی موجود.
+4. هیچ تغییری در:
+   - `mergeVideos.ts`، edge functions، DB، یا منطق Final Film.
+   - Voiceover/Music dialog ها و state های صدا.
+   - منطق `handleMergeAllVideos` (همان مسیر امن و درست فعلی).
 
-## تأیید
-1. فقط Voiceover بدون موسیقی → پنل ولوم باز شود؛ هر دو اسلایدر فعال؛ Final Film هر دو صدا را با نسبت تنظیم‌شده پخش کند.
-2. Voiceover + موسیقی همزمان → اسلایدر clip در پنل voiceover غیرفعال؛ کنترل از دیالوگ Soundtrack.
-3. حذف Voiceover → ولوم‌ها به پیش‌فرض ریست شوند.
+## ریسک و سازگاری
+
+- چون فقط در سمت کلاینت `<video>`/`<img>` سویچ می‌شوند، هیچ هزینه‌ی رندر یا API ندارد.
+- ترتیب پخش دقیقاً همان `displayedClips` است که از همان منبع authoritative ساخته می‌شود؛ پس با Final Film هم‌خوان است.
+- اگر تعداد زیاد باشد، فقط یک `<video>` فعال است؛ بار شبکه برابر پخش تک‌کلیپی است (هر بار src بعدی لود می‌شود).
+- در صورت در حال رندر بودن یک کلیپ (`status !== completed`)، آن کارت در زنجیره skip می‌شود تا پخش متوقف نشود.
+
+## معیار پذیرش
+
+- باز کردن داشبورد با چند کارت آماده → پیش‌نمایش به‌صورت خودکار همه را پشت‌سرهم پخش می‌کند.
+- افزودن/حذف/جابجا کردن کارت → زنجیره‌ی پیش‌نمایش بلافاصله بازتاب می‌دهد.
+- کلیک روی کارت در HISTORY → پلیر تک‌کارت؛ بستن X → برگشت به زنجیره.
+- Final Film ساخته شده → سوییچ Live/Final در بالای پلیر؛ Final پیش‌فرض.
+- بدون مصرف کردیت و بدون درخواست شبکه‌ی جدید برای پخش زنجیره‌ای.
