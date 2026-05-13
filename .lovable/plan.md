@@ -1,55 +1,64 @@
-# پیش‌نمایش زنجیره‌ای زنده
+# تولید عکس با AI (Nano Banana) از داشبورد
 
-هدف: قسمت پیش‌نمایش بالای داشبورد همیشه همه‌ی کارت‌های `HISTORY` (ویدئو + تصویر) را به ترتیب فعلی پشت‌سرهم پخش کند، بدون رندر و بدون مصرف کردیت. وقتی Final Film هم موجود باشد، کاربر می‌تواند بین «Live preview» و «Final Film» سوییچ کند.
+افزودن یک آیکون «Generate image with AI» در نوار ابزار HISTORY (کنار آیکون آپلود تصویر) که یک دیالوگ باز می‌کند برای تولید عکس با پرامت در سه نسبت (1:1، 9:16، 16:9) و سپس ویرایش تکرارشونده‌ی همان عکس با Nano Banana.
 
 ## رفتار کاربری
 
-- وقتی هیچ کارتی روی پیش‌نمایش پین نشده باشد، به‌جای نمایش یک کلیپ تنها، یک پلیر زنجیره‌ای نمایش داده شود که همه‌ی کارت‌های قابل‌پخش را با همان ترتیب `displayedClips` پشت‌سرهم پخش کند.
-- ترتیب دقیقاً همان ترتیبی است که در گرید HISTORY و در Final Film استفاده می‌شود (همان `manualOrder` + chronological).
-- تصویرها به‌مدت `still_duration_seconds` (یا پیش‌فرض موجود) به‌صورت ثابت نشان داده می‌شوند، سپس به کلیپ بعدی می‌رود.
-- ویدئوها از مسیر تریم‌شده‌شان پخش می‌شوند (همان `getCardVideoSrc` فعلی) تا با Final Film هم‌خوان باشد.
-- کنترل‌ها: Play / Pause، نوار پیشرفت کلی، شماره‌ی کارت فعلی (مثلاً «۲ از ۴»)، دکمه‌ی Next/Prev بین کلیپ‌ها.
-- اگر کاربر روی یک کارت در گرید کلیک کند → مثل قبل پلیر تک‌کلیپ آن کارت نمایش داده می‌شود؛ با بستن (X) دوباره به حالت زنجیره‌ای برمی‌گردد.
-- اگر Final Film موجود باشد، یک سوییچ کوچک در بالای پیش‌نمایش بین `Live preview (auto-stitched)` و `Final Film` اضافه می‌شود. پیش‌فرض روی Final Film می‌ماند تا تجربه‌ی فعلی نشکند.
-- صدا در پلیر زنجیره‌ای: صدای اصلی هر کلیپ پخش می‌شود؛ Voiceover و Music در این مرحله در پیش‌نمایش زنده پخش نمی‌شوند (فقط در Final Film شنیده می‌شوند). یک هینت کوچک «Voice/Music فقط در Final Film پخش می‌شود» نمایش داده می‌شود.
+1. **آیکون جدید** (Sparkles) در همان ردیفی که `ImagePlus` و `+` هست، با tooltip «Generate image with AI».
+2. کلیک → دیالوگ `AiImageDialog` باز می‌شود با مراحل زیر:
+   - **انتخاب نسبت ابعاد**: سه دکمه‌ی بزرگ `1:1` / `9:16 (Reels)` / `16:9 (YouTube)` — پیش‌فرض = نسبت قفل‌شده‌ی پروژه (`lockedProjectRatio`) یا `aspectRatio` فعلی.
+   - **پرامت**: یک `Textarea` چندخطی با placeholder انگلیسی.
+   - دکمه‌ی **Generate** → صدا زدن edge function `ai-image-generate`، لودینگ، و نمایش تصویر در یک قاب با همان نسبت.
+3. وقتی عکس آماده شد:
+   - دکمه‌ی **Use this image** → عکس را در `USER_IMAGES_BUCKET` آپلود می‌کند، یک ردیف در `generator_user_images` اضافه می‌کند، و در گرید HISTORY مثل بقیه‌ی تصاویر آپلودی نمایش می‌دهد. دیالوگ بسته می‌شود.
+   - دکمه‌ی **Refine with AI** → یک ورودی پرامت ویرایش زیر تصویر باز می‌کند («Make the sky purple…»). با ارسال، edge function `ai-image-edit` فراخوانی می‌شود، تصویر فعلی به‌عنوان مرجع داده می‌شود، و تصویر جایگزین می‌شود. این مرحله را می‌توان چند بار تکرار کرد.
+   - دکمه‌ی **Regenerate** → تولید دوباره با همان پرامت/نسبت.
+   - دکمه‌ی **Discard** → پاک کردن نتیجه و برگشت به فرم پرامت.
+4. خطاها (429 / 402 / network) با toast/متن قرمز داخل دیالوگ نمایش داده می‌شوند بدون افشای کلید.
 
 ## پیاده‌سازی فنی
 
-فایل اصلی: `src/modules/generator-ui/pages/DashboardPage.tsx`
+### Backend — دو edge function جدید
 
-1. کامپوننت جدید `SequentialClipPlayer` (در همان فایل یا فایل جدید کنار `TransitionPreview`):
-   - props: `clips: UnifiedClip[]`, `getVideoSrc(jobId, fallback) => string`, `getRatio(job) => Ratio`, `imageStillSeconds(image) => number`, `onClose?()`.
-   - state داخلی: `currentIndex`, `isPlaying`.
-   - یک `<video>` و یک `<img>` در DOM نگه می‌داریم و بسته به `kind` کلیپ فعلی نمایش می‌دهیم (`hidden` برای دیگری).
-   - برای ویدئو: روی `onEnded` → `currentIndex + 1`. برای تصویر: `setTimeout(duration*1000)` که با pause/clear پاک شود.
-   - وقتی به انتهای آخرین کلیپ می‌رسد، به ابتدا برمی‌گردد و pause می‌کند (یا loop اختیاری).
-   - تغییر `clips` (افزودن/حذف/مرتب‌سازی) → اگر index از طول بیشتر شد، برگرد به ۰؛ تا حد ممکن کلیپ فعلی را حفظ کن.
+- `supabase/functions/ai-image-generate/index.ts`
+  - ورودی: `{ prompt: string, aspectRatio: '1:1'|'9:16'|'16:9' }`
+  - احراز هویت با `authenticate(req)` (همان الگوی بقیه‌ی توابع).
+  - فراخوانی `https://ai.gateway.lovable.dev/v1/chat/completions` با `model: 'google/gemini-2.5-flash-image'` و `modalities: ['image','text']`. نسبت ابعاد به‌صورت متنی در پرامت اضافه می‌شود (مثلاً «Output exactly in 9:16 portrait aspect ratio»).
+  - استخراج base64 از `choices[0].message.images[0].image_url.url`.
+  - خروجی: `{ dataUrl: string }` (همان data URL، تا کلاینت نمایش دهد و در صورت Use this image آپلود کند).
+  - مدیریت خطاهای 429 و 402 مطابق راهنما.
+- `supabase/functions/ai-image-edit/index.ts`
+  - ورودی: `{ prompt: string, imageDataUrl: string }`.
+  - همان مدل `google/gemini-2.5-flash-image` با `image_url` در content.
+  - خروجی: `{ dataUrl: string }`.
+- هر دو در `supabase/config.toml` با `verify_jwt = true` (پیش‌فرض پروژه) اضافه می‌شوند تا فقط کاربران لاگین‌شده دسترسی داشته باشند.
 
-2. در `previewItem` فعلی (حدود خط ۱۰۲۲):
-   - یک حالت جدید `kind: 'sequence'` اضافه می‌شود.
-   - منطق: اگر `previewVideoId` تنظیم شده باشد → همان رفتار فعلی (تک‌کارت). در غیر این صورت، اگر Final Film فعال انتخاب شده → Final Film. در غیر این صورت → `{ kind: 'sequence', clips: displayedClips.filter(playable) }`.
-   - یک state کوچک `previewMode: 'sequence' | 'final'` با پیش‌فرض `'final'` وقتی Final موجود است، وگرنه `'sequence'`.
+### Frontend
 
-3. در JSX پیش‌نمایش (حدود ۲۷۰۰–۲۹۰۰):
-   - شاخه‌ی جدید `previewItem.kind === 'sequence'` که `SequentialClipPlayer` را با همان قاب/aspect ratio پروژه (`lockedProjectRatio` یا `aspectRatio`) رندر می‌کند.
-   - بالای پلیر: سوییچ دو‌حالته‌ی `Live | Final` (در صورت وجود Final) و شمارنده‌ی «n / total».
+- فایل جدید `src/modules/generator-ui/components/AiImageDialog.tsx`:
+  - state: `step: 'compose' | 'result'`, `aspect`, `prompt`, `editPrompt`, `imageDataUrl`, `isLoading`, `error`.
+  - فراخوانی توابع از طریق `supabase.functions.invoke('ai-image-generate', { body })` و `'ai-image-edit'`.
+  - دکمه‌ی Use this image: data URL → `Blob` → آپلود به `USER_IMAGES_BUCKET` (مسیر `${userId}/ai-${crypto.randomUUID()}.png`) → insert در `generator_user_images` → `onSaved(row)` تا والد به `userImages` اضافه کند.
+- در `DashboardPage.tsx`:
+  - state جدید `isAiImageDialogOpen`.
+  - یک دکمه‌ی جدید `Sparkles` در toolbar HISTORY بین `ImagePlus` و `+`.
+  - رندر `<AiImageDialog open={isAiImageDialogOpen} onOpenChange={setIsAiImageDialogOpen} userId={userId} defaultAspect={lockedProjectRatio ?? aspectRatio} onSaved={(row) => setUserImages((p) => [row, ...p])} />`.
 
-4. هیچ تغییری در:
-   - `mergeVideos.ts`، edge functions، DB، یا منطق Final Film.
-   - Voiceover/Music dialog ها و state های صدا.
-   - منطق `handleMergeAllVideos` (همان مسیر امن و درست فعلی).
+### بدون تغییر در
 
-## ریسک و سازگاری
+- `mergeVideos.ts`، Final Film، Voiceover/Music، DB schema (از همان جدول `generator_user_images` استفاده می‌شود).
+- منطق پلیر زنجیره‌ای (تصاویر تولیدشده دقیقاً مثل تصاویر آپلودی در پیش‌نمایش زنجیره‌ای ظاهر می‌شوند).
 
-- چون فقط در سمت کلاینت `<video>`/`<img>` سویچ می‌شوند، هیچ هزینه‌ی رندر یا API ندارد.
-- ترتیب پخش دقیقاً همان `displayedClips` است که از همان منبع authoritative ساخته می‌شود؛ پس با Final Film هم‌خوان است.
-- اگر تعداد زیاد باشد، فقط یک `<video>` فعال است؛ بار شبکه برابر پخش تک‌کلیپی است (هر بار src بعدی لود می‌شود).
-- در صورت در حال رندر بودن یک کلیپ (`status !== completed`)، آن کارت در زنجیره skip می‌شود تا پخش متوقف نشود.
+## ملاحظات
+
+- نسبت ابعاد نهایی توسط مدل تضمین قطعی نمی‌شود؛ ما در پرامت قید می‌کنیم و در سمت کلاینت قاب نمایش را به همان نسبت می‌بریم. در صورت نیاز در آینده می‌توان از `image-reframe` موجود برای crop دقیق استفاده کرد.
+- هزینه: هر Generate/Refine یک فراخوانی Lovable AI Gateway مصرف می‌کند (نه کردیت ویدئو).
+- امنیت: کلید `LOVABLE_API_KEY` فقط در edge function استفاده می‌شود.
 
 ## معیار پذیرش
 
-- باز کردن داشبورد با چند کارت آماده → پیش‌نمایش به‌صورت خودکار همه را پشت‌سرهم پخش می‌کند.
-- افزودن/حذف/جابجا کردن کارت → زنجیره‌ی پیش‌نمایش بلافاصله بازتاب می‌دهد.
-- کلیک روی کارت در HISTORY → پلیر تک‌کارت؛ بستن X → برگشت به زنجیره.
-- Final Film ساخته شده → سوییچ Live/Final در بالای پلیر؛ Final پیش‌فرض.
-- بدون مصرف کردیت و بدون درخواست شبکه‌ی جدید برای پخش زنجیره‌ای.
+- آیکون Sparkles در toolbar HISTORY دیده شود.
+- باز کردن دیالوگ → انتخاب نسبت → نوشتن پرامت → کلیک Generate → عکس در همان قاب با نسبت درست نمایش داده شود.
+- Refine with AI با پرامت دوم → عکس به‌روزرسانی شود، تاریخچه‌ی نسخه‌ی قبل لازم نیست.
+- Use this image → عکس بلافاصله در گرید HISTORY ظاهر شود و در پلیر زنجیره‌ای پخش شود.
+- خطاهای 429/402 با پیام انسانی به کاربر نشان داده شوند.
