@@ -1003,7 +1003,10 @@ export default function DashboardPage() {
   // Unified clip list (videos + uploaded images), ordered by created_at ASC,
   // with manual drag-and-drop overrides. Both kinds share the same numbering,
   // ordering, drag handlers, and Final Film merge sequence.
-  const visibleUserImages = userImages
+  const visibleUserImages = useMemo(
+    () => userImages.filter((img) => sessionFreshMark == null || new Date(img.created_at).getTime() >= sessionFreshMark),
+    [userImages, sessionFreshMark],
+  )
 
   const displayedClips = useMemo<UnifiedClip[]>(() => {
     const items: UnifiedClip[] = [
