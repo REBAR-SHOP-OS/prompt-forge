@@ -2199,6 +2199,8 @@ export default function DashboardPage() {
     }
     setVoiceoverUrl(null)
     setVoiceoverName(null)
+    setVoiceoverVolume(1)
+    setVoiceoverClipVolume(0.3)
     // Reset any in-flight merge progress UI.
     setIsMerging(false)
     setMergeProgress(0)
