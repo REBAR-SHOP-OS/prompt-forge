@@ -288,6 +288,7 @@ export default function DashboardPage() {
   const { session, profile, signOut, loading: authLoading } = useAuth()
   const [promptText, setPromptText] = useState('')
   const [isDragging, setIsDragging] = useState(false)
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
   const [startContext] = useState('Start')
   const [endGoal] = useState('End')
   const [generatedVideos, setGeneratedVideos] = useState<JobDetail[]>([])
@@ -3758,25 +3759,36 @@ export default function DashboardPage() {
 
             {uploadedFiles.length > 0 ? (
               <div className="flex flex-wrap gap-2">
-                {uploadedFiles.map((file) => (
-                  <span
-                    key={file.id}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs text-zinc-300"
-                  >
-                    <Paperclip className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
-                    <span className="max-w-[12rem] truncate">{file.name}</span>
-                    <span className="text-zinc-500">{file.status === 'uploading' ? 'Uploading' : file.target}</span>
-                    {file.status === 'failed' ? <span className="text-rose-200">{file.error}</span> : null}
-                    <button
-                      type="button"
-                      className="grid h-4 w-4 place-items-center rounded-full text-zinc-500 transition hover:text-zinc-100"
-                      aria-label={`Remove ${file.name}`}
-                      onClick={() => removeUploadedFile(file.id)}
+                {uploadedFiles.map((file) => {
+                  const canPreview = file.status === 'ready' && Boolean(file.url)
+                  return (
+                    <span
+                      key={file.id}
+                      className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs text-zinc-300"
                     >
-                      <X className="h-3 w-3" aria-hidden="true" />
-                    </button>
-                  </span>
-                ))}
+                      <button
+                        type="button"
+                        onClick={() => { if (canPreview && file.url) setPreviewImageUrl(file.url) }}
+                        disabled={!canPreview}
+                        className={`inline-flex items-center gap-2 ${canPreview ? 'cursor-zoom-in hover:text-zinc-100' : 'cursor-default'}`}
+                        title={canPreview ? 'Preview image' : undefined}
+                      >
+                        <Paperclip className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
+                        <span className="max-w-[12rem] truncate">{file.name}</span>
+                      </button>
+                      <span className="text-zinc-500">{file.status === 'uploading' ? 'Uploading' : file.target}</span>
+                      {file.status === 'failed' ? <span className="text-rose-200">{file.error}</span> : null}
+                      <button
+                        type="button"
+                        className="grid h-4 w-4 place-items-center rounded-full text-zinc-500 transition hover:text-zinc-100"
+                        aria-label={`Remove ${file.name}`}
+                        onClick={() => removeUploadedFile(file.id)}
+                      >
+                        <X className="h-3 w-3" aria-hidden="true" />
+                      </button>
+                    </span>
+                  )
+                })}
               </div>
             ) : null}
 
@@ -3904,6 +3916,21 @@ export default function DashboardPage() {
           </div>
         </div>
       </form>
+
+      <Dialog open={!!previewImageUrl} onOpenChange={(o) => { if (!o) setPreviewImageUrl(null) }}>
+        <DialogContent className="max-w-3xl border-white/10 bg-black/90 p-3">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Image preview</DialogTitle>
+          </DialogHeader>
+          {previewImageUrl ? (
+            <img
+              src={previewImageUrl}
+              alt="Attachment preview"
+              className="mx-auto max-h-[80vh] w-auto object-contain"
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }
