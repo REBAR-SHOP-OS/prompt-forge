@@ -230,7 +230,13 @@ function getJobProgressPercent(job: { status: string; progress_percent?: number 
   // Wan 2.7 typically takes ~30-40s of real time per 1s of output. Use 35s/s heuristic, capped to 10s clips.
   const expectedMs = 10 * 35_000
   const ratio = expectedMs > 0 ? elapsed / expectedMs : 0
-  const timeBased = Math.max(status === 'pending' ? 8 : 18, Math.min(95, Math.round(18 + ratio * 77)))
+  let timeBased = Math.max(status === 'pending' ? 8 : 18, Math.min(95, Math.round(18 + ratio * 77)))
+  // Once we've exceeded the expected window, gently "breathe" between 92-95%
+  // so the bar doesn't look frozen while the provider is still working.
+  if (elapsed > expectedMs) {
+    const phase = (elapsed - expectedMs) / 2_000 // ~2s per cycle
+    timeBased = 93 + Math.round(Math.sin(phase) + 1) // 92..95
+  }
   const backend = typeof job.progress_percent === 'number'
     ? Math.max(0, Math.min(100, Math.round(job.progress_percent)))
     : null
