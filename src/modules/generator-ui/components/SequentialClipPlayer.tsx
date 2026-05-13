@@ -326,6 +326,13 @@ export function SequentialClipPlayer({
               </button>
             </div>
             <div className="flex items-center gap-2 text-xs font-semibold text-zinc-200">
+              <span
+                title="Total film duration"
+                className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/60 px-2 py-0.5 tabular-nums"
+              >
+                <Clock className="h-3 w-3" aria-hidden="true" />
+                {formatDuration(totalDuration)}
+              </span>
               <span className="rounded-full border border-white/15 bg-black/60 px-2 py-0.5 tabular-nums">
                 {index + 1} / {clips.length}
               </span>
