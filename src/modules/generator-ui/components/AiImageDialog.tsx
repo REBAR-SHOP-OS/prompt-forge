@@ -429,7 +429,7 @@ export default function AiImageDialog({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => { setIsMaskMode((m) => !m); setTimeout(syncCanvasSize, 0) }}
+                    onClick={() => { setIsMaskMode((m) => !m); requestAnimationFrame(() => syncCanvasSize()) }}
                     className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
                       isMaskMode
                         ? 'border-rose-300/50 bg-rose-400/15 text-rose-100'
