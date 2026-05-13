@@ -16,6 +16,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
     const imageUrl = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
+    const maskUrl = typeof body?.maskUrl === "string" ? body.maskUrl.trim() : "";
     const aspectRatio = typeof body?.aspectRatio === "string" && ["1:1","9:16","16:9"].includes(body.aspectRatio)
       ? body.aspectRatio as "1:1" | "9:16" | "16:9"
       : null;
@@ -54,6 +55,18 @@ Deno.serve(async (req) => {
         status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    if (maskUrl) {
+      if (!maskUrl.startsWith("data:image/")) {
+        return new Response(JSON.stringify({ error: "maskUrl must be a data:image/* URL" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (maskUrl.length > 15_000_000) {
+        return new Response(JSON.stringify({ error: "maskUrl too large" }), {
+          status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     const apiKey = Deno.env.get("LOVABLE_API_KEY");
     if (!apiKey) {
@@ -73,10 +86,16 @@ Deno.serve(async (req) => {
         messages: [
           {
             role: "user",
-            content: [
-              { type: "text", text: `Edit the provided image as follows: ${prompt}.${aspectRatio ? ` The output image MUST keep a strict ${aspectRatio} aspect ratio.` : " Preserve the overall composition and aspect ratio of the original image unless the instruction explicitly requires otherwise."}` },
-              { type: "image_url", image_url: { url: imageUrl } },
-            ],
+            content: maskUrl
+              ? [
+                  { type: "text", text: `You will receive two images. Image 1 is the ORIGINAL. Image 2 is a MASK (transparent background, opaque/white pixels mark the region to edit). Modify ONLY the pixels of the original where the mask is opaque. Keep every pixel outside the mask absolutely identical (same composition, colors, lighting, subject, pose, background). Apply this change inside the masked region only: ${prompt}.${aspectRatio ? ` Output MUST keep a strict ${aspectRatio} aspect ratio.` : ""}` },
+                  { type: "image_url", image_url: { url: imageUrl } },
+                  { type: "image_url", image_url: { url: maskUrl } },
+                ]
+              : [
+                  { type: "text", text: `Edit the provided image as follows: ${prompt}.${aspectRatio ? ` The output image MUST keep a strict ${aspectRatio} aspect ratio.` : " Preserve the overall composition and aspect ratio of the original image unless the instruction explicitly requires otherwise."}` },
+                  { type: "image_url", image_url: { url: imageUrl } },
+                ],
           },
         ],
         modalities: ["image", "text"],

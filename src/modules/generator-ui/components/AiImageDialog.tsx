@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { LoaderCircle, Sparkles, Wand2, RefreshCw, Check, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { LoaderCircle, Sparkles, Wand2, RefreshCw, Check, X, Brush, Eraser } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -63,6 +63,14 @@ export default function AiImageDialog({
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Mask-paint state
+  const [isMaskMode, setIsMaskMode] = useState(false)
+  const [brushSize, setBrushSize] = useState(36)
+  const [hasMask, setHasMask] = useState(false)
+  const maskCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const imgRef = useRef<HTMLImageElement | null>(null)
+  const isDrawingRef = useRef(false)
+
   useEffect(() => {
     if (open) {
       setAspect(defaultAspect)
@@ -72,8 +80,92 @@ export default function AiImageDialog({
       setError(null)
       setIsLoading(false)
       setIsSaving(false)
+      setIsMaskMode(false)
+      setHasMask(false)
     }
   }, [open, defaultAspect])
+
+  // Reset mask whenever a new image is shown.
+  useEffect(() => {
+    setHasMask(false)
+    setIsMaskMode(false)
+    const c = maskCanvasRef.current
+    if (c) c.getContext('2d')?.clearRect(0, 0, c.width, c.height)
+  }, [imageDataUrl])
+
+  function syncCanvasSize() {
+    const c = maskCanvasRef.current
+    const img = imgRef.current
+    if (!c || !img) return
+    const w = img.naturalWidth || img.clientWidth
+    const h = img.naturalHeight || img.clientHeight
+    if (c.width !== w || c.height !== h) {
+      // Preserve any existing strokes by saving the bitmap before resizing.
+      const ctx = c.getContext('2d')
+      const prev = ctx && c.width > 0 && c.height > 0
+        ? ctx.getImageData(0, 0, c.width, c.height)
+        : null
+      c.width = w
+      c.height = h
+      if (prev && ctx) ctx.putImageData(prev, 0, 0)
+    }
+  }
+
+  function pointerToCanvas(e: React.PointerEvent<HTMLCanvasElement>) {
+    const c = maskCanvasRef.current
+    if (!c) return null
+    const rect = c.getBoundingClientRect()
+    const sx = c.width / rect.width
+    const sy = c.height / rect.height
+    return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy, scale: sx }
+  }
+
+  function paintAt(e: React.PointerEvent<HTMLCanvasElement>) {
+    const c = maskCanvasRef.current
+    const ctx = c?.getContext('2d')
+    if (!c || !ctx) return
+    const p = pointerToCanvas(e)
+    if (!p) return
+    ctx.fillStyle = 'rgba(244, 63, 94, 0.85)' // visible pink; alpha mask is read separately on export
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, (brushSize * p.scale) / 2, 0, Math.PI * 2)
+    ctx.fill()
+    setHasMask(true)
+  }
+
+  function handleClearMask() {
+    const c = maskCanvasRef.current
+    if (!c) return
+    c.getContext('2d')?.clearRect(0, 0, c.width, c.height)
+    setHasMask(false)
+  }
+
+  // Convert the visible mask canvas into a strict white-on-transparent PNG for the model.
+  function exportMaskDataUrl(): string | null {
+    const c = maskCanvasRef.current
+    if (!c || !hasMask) return null
+    const out = document.createElement('canvas')
+    out.width = c.width
+    out.height = c.height
+    const octx = out.getContext('2d')
+    const ictx = c.getContext('2d')
+    if (!octx || !ictx) return null
+    const src = ictx.getImageData(0, 0, c.width, c.height)
+    const dst = octx.createImageData(c.width, c.height)
+    for (let i = 0; i < src.data.length; i += 4) {
+      const a = src.data[i + 3]
+      if (a > 0) {
+        dst.data[i] = 255
+        dst.data[i + 1] = 255
+        dst.data[i + 2] = 255
+        dst.data[i + 3] = 255
+      } else {
+        dst.data[i + 3] = 0
+      }
+    }
+    octx.putImageData(dst, 0, 0)
+    return out.toDataURL('image/png')
+  }
 
   const handleGenerate = async () => {
     if (!prompt.trim() || isLoading) return
@@ -100,8 +192,9 @@ export default function AiImageDialog({
     setIsLoading(true)
     setError(null)
     try {
+      const maskUrl = exportMaskDataUrl()
       const { data, error: fnErr } = await supabase.functions.invoke('ai-image-edit', {
-        body: { prompt: editPrompt.trim(), imageUrl: imageDataUrl, aspectRatio: aspect },
+        body: { prompt: editPrompt.trim(), imageUrl: imageDataUrl, aspectRatio: aspect, ...(maskUrl ? { maskUrl } : {}) },
       })
       if (fnErr) throw fnErr
       const url = (data as { dataUrl?: string } | null)?.dataUrl
@@ -234,7 +327,31 @@ export default function AiImageDialog({
                 aspect,
               )}`}
             >
-              <img src={imageDataUrl} alt="Generated" className="absolute inset-0 h-full w-full object-contain" />
+              <img
+                ref={imgRef}
+                src={imageDataUrl}
+                alt="Generated"
+                className="absolute inset-0 h-full w-full object-contain"
+                onLoad={syncCanvasSize}
+              />
+              <canvas
+                ref={maskCanvasRef}
+                className={`absolute inset-0 h-full w-full ${isMaskMode ? 'cursor-crosshair touch-none' : 'pointer-events-none'}`}
+                style={{ mixBlendMode: 'normal' }}
+                onPointerDown={(e) => {
+                  if (!isMaskMode) return
+                  ;(e.target as HTMLCanvasElement).setPointerCapture(e.pointerId)
+                  isDrawingRef.current = true
+                  syncCanvasSize()
+                  paintAt(e)
+                }}
+                onPointerMove={(e) => {
+                  if (!isMaskMode || !isDrawingRef.current) return
+                  paintAt(e)
+                }}
+                onPointerUp={() => { isDrawingRef.current = false }}
+                onPointerLeave={() => { isDrawingRef.current = false }}
+              />
               {isLoading ? (
                 <div className="absolute inset-0 grid place-items-center bg-black/60 backdrop-blur-sm">
                   <LoaderCircle className="h-8 w-8 animate-spin text-white" />
@@ -243,17 +360,63 @@ export default function AiImageDialog({
             </div>
 
             <div>
-              <div className="mb-2 text-xs uppercase tracking-wide text-zinc-400">
-                Refine with AI (Nano Banana edit)
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="text-xs uppercase tracking-wide text-zinc-400">
+                  Refine with AI (Nano Banana edit)
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setIsMaskMode((m) => !m); setTimeout(syncCanvasSize, 0) }}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                      isMaskMode
+                        ? 'border-rose-300/50 bg-rose-400/15 text-rose-100'
+                        : 'border-white/10 bg-white/[0.04] text-zinc-300 hover:border-white/20 hover:bg-white/[0.08]'
+                    }`}
+                    title={isMaskMode ? 'Exit edit-area mode' : 'Mark an area to edit'}
+                  >
+                    <Brush className="h-3.5 w-3.5" />
+                    {isMaskMode ? 'Editing area' : 'Edit area'}
+                  </button>
+                  {isMaskMode ? (
+                    <>
+                      <label className="flex items-center gap-1 text-[11px] text-zinc-400">
+                        Size
+                        <input
+                          type="range"
+                          min={8}
+                          max={80}
+                          step={2}
+                          value={brushSize}
+                          onChange={(e) => setBrushSize(Number(e.target.value))}
+                          className="h-1 w-20 accent-rose-400"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleClearMask}
+                        disabled={!hasMask}
+                        className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] disabled:opacity-40"
+                        title="Clear mask"
+                      >
+                        <Eraser className="h-3.5 w-3.5" />
+                        Clear
+                      </button>
+                    </>
+                  ) : null}
+                </div>
               </div>
               <Textarea
                 value={editPrompt}
                 onChange={(e) => setEditPrompt(e.target.value)}
-                placeholder="Make the lighting warmer, add subtle dust particles…"
+                placeholder={hasMask ? 'Describe the change for the masked area…' : 'Make the lighting warmer, add subtle dust particles…'}
                 rows={3}
                 disabled={isLoading || isSaving}
               />
-              <div className="mt-2 flex justify-end">
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <span className="text-[11px] text-zinc-500">
+                  {hasMask ? 'Edit applied only inside the painted area.' : 'Tip: paint an area to edit only that region.'}
+                </span>
                 <Button
                   size="sm"
                   variant="secondary"

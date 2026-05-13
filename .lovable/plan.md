@@ -1,38 +1,41 @@
-# Force generated images to match the chosen aspect ratio
+# Mask-based local edits (paint an area, edit with prompt)
 
-## Problem
-مدل `google/gemini-2.5-flash-image` (Nano Banana) معمولاً به دستورالعمل متنیِ aspect ratio پایبند نیست و عکس را در ابعاد دلخواه خود (اغلب مربعی) برمی‌گرداند. در نتیجه با وجود انتخاب 9:16 یا 16:9، خروجی اشتباه است.
+## Goal
+کاربر بتواند روی عکس تولیدشده یک ناحیه را با قلم رنگ بزند و سپس با پرامت، فقط همان ناحیه را با AI تغییر دهد. بقیه‌ی تصویر دست‌نخورده بماند.
 
-## Root-cause fix (دو لایه‌ای)
+## UX (داخل `AiImageDialog`)
+- دکمه‌ی جدید آیکونی **Brush/Edit area** کنار «Apply edit» (همان جایی که در اسکرین‌شات با سبز مشخص شده).
+- وقتی فعال است:
+  - یک overlay canvas روی تصویر فعال می‌شود؛ با موس/لمس قلم می‌کشد (حالت preview بدون نقاشی غیرفعال).
+  - کنترل‌های کوچک: **Brush size** (slider 8–80px)، **Clear mask** (دکمه)، خروج از حالت Edit area.
+  - رنگ ماسک نیمه‌شفاف صورتی برای دیده شدن.
+- وقتی mask وجود دارد و کاربر «Apply edit» می‌زند، درخواست با ماسک ارسال می‌شود؛ در غیر این صورت مثل قبل (ویرایش کلی) عمل می‌کند.
+- اگر کاربر mask نکشید ولی Edit area روشن است → پرامت روی کل تصویر اعمال می‌شود (fallback).
 
-### Layer 1 — Backend: درخواست aspect ratio به‌صورت پارامتر مدل
-`supabase/functions/ai-image-generate/index.ts` و `ai-image-edit/index.ts`:
-- ارتقای مدل پیش‌فرض به `google/gemini-3.1-flash-image-preview` (Nano Banana 2) که نسبت‌ ابعاد را بهتر رعایت می‌کند.
-- ارسال `image_config: { aspect_ratio: aspectRatio }` در body درخواست (پارامتر رسمی Gemini image generation برای کنترل ابعاد).
-- نگه داشتن guidance متنی به‌عنوان پشتیبان.
-- در `ai-image-edit` نیز در صورت دریافت `aspectRatio`، همین پارامتر ارسال شود تا ویرایش‌ها هم ابعاد را نشکنند.
+## Frontend changes
+- `src/modules/generator-ui/components/AiImageDialog.tsx`
+  - state: `isMaskMode`, `brushSize`, `maskDataUrl` (PNG شفاف با ناحیه‌ی پر شده).
+  - یک کامپوننت داخلی `MaskCanvas` (بدون فایل جدید — همانجا) که روی `<img>` لایه می‌گذارد، رویدادهای pointer (down/move/up) را برای کشیدن سفید مات روی canvas مخفی، و یک canvas نمایشی روی تصویر می‌گیرد.
+  - وقتی mask تغییر کرد، `maskDataUrl` به‌روز می‌شود.
+  - در `handleRefine`: اگر `maskDataUrl` موجود است → `body: { prompt, imageUrl, maskUrl, aspectRatio }`؛ در نهایت پس از موفقیت، ماسک پاک شود و حالت Edit area بسته شود.
+  - بعد از Generate/Regenerate و Refine موفق، ماسک ریست می‌شود.
 
-### Layer 2 — Client: نرمال‌سازی قطعی روی Canvas
-حتی اگر مدل بی‌توجه باشد، خروجی روی کلاینت به نسبت دقیق هدف برش/پد می‌شود تا ۱۰۰٪ تضمین شود.
-
-افزودن یک util کوچک:
-- `src/modules/generator-ui/lib/normalizeImageAspect.ts`
-  - ورودی: `dataUrl: string`, `aspect: '1:1'|'9:16'|'16:9'`
-  - خروجی: `dataUrl` جدید با ابعاد دقیقاً مطابق نسبت هدف.
-  - الگوریتم: بارگذاری تصویر در `Image`، محاسبه‌ی نسبت فعلی، اگر نزدیک به هدف بود (tolerance < 0.5%) همان را برگرداند؛ در غیر این صورت روی Canvas با حالت **cover (center crop)** برش زده شود تا نسبت دقیق شود (بدون نوار سیاه/کشیدگی). خروجی PNG.
-
-به‌کارگیری در `AiImageDialog.tsx`:
-- پس از موفقیت `handleGenerate` و `handleRefine`، قبل از `setImageDataUrl`، `dataUrl` را از `normalizeImageAspect(url, aspect)` عبور دهیم.
-- در `handleRefine` همان `aspect` فعلی استفاده می‌شود، پس ویرایش‌ها هم نسبت را حفظ می‌کنند.
-- در `handleUse` همان فایل نرمال‌شده آپلود می‌شود (تغییری لازم نیست چون state از قبل نرمال شده است).
+## Backend changes
+- `supabase/functions/ai-image-edit/index.ts`
+  - پذیرش اختیاری `maskUrl: string` (data:image/png;base64).
+  - وقتی mask هست:
+    - مدل: همان `google/gemini-3.1-flash-image-preview`.
+    - پیام شامل دو تصویر: original و mask، با متنی شفاف:
+      > Use the second image as a mask. Only modify pixels in the original image where the mask is opaque/white. Keep everything outside the mask pixel-identical (composition, colors, lighting, subject pose). Apply the following change inside the masked area only: <prompt>.
+    - حفظ `image_config: { aspect_ratio }` در صورت ارسال.
+  - اعتبارسنجی mask مثل imageUrl (data:image/* یا https://supabase host)، حداکثر اندازه.
 
 ## Out of scope
-- بدون تغییر در منطق Final Film، Sequential Player، DB، یا Storage RLS.
-- بدون تغییر UI (دیالوگ، دکمه‌ها، چینش).
+- بدون تغییر در جریان Generate اولیه، Final Film، DB، RLS، یا منطق aspect-normalize.
+- بدون undo/redo حرفه‌ای — فقط Clear mask کافی است.
 
 ## Verification
-1. انتخاب 9:16 → پرامپت تستی → عکس برگشتی دقیقاً 9:16 (مثلاً 1024×1820 یا برش‌خورده تا نسبت برابر شود).
-2. انتخاب 16:9 → عکس دقیقاً 16:9.
-3. انتخاب 1:1 → عکس مربعی دقیق.
-4. Refine روی عکس 9:16 → خروجی همچنان 9:16 می‌ماند.
-5. Use this image → فایل آپلودشده در bucket همان نسبت را دارد و در پیش‌نمایش بدون distortion قاب می‌گیرد.
+1. تولید یک عکس → روشن کردن Edit area → کشیدن ماسک روی صورت → پرامت «change to short curly hair» → فقط همان ناحیه تغییر می‌کند، بقیه دست‌نخورده.
+2. بدون mask، Apply edit مثل قبل کل تصویر را ویرایش می‌کند.
+3. Clear mask و خروج از حالت Edit area سالم کار می‌کند.
+4. Aspect ratio نهایی همچنان دقیقاً برابر انتخاب کاربر می‌ماند.
