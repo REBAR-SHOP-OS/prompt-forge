@@ -1,64 +1,50 @@
-# تولید عکس با AI (Nano Banana) از داشبورد
+# Live audio in preview (music + voiceover)
 
-افزودن یک آیکون «Generate image with AI» در نوار ابزار HISTORY (کنار آیکون آپلود تصویر) که یک دیالوگ باز می‌کند برای تولید عکس با پرامت در سه نسبت (1:1، 9:16، 16:9) و سپس ویرایش تکرارشونده‌ی همان عکس با Nano Banana.
+## Goal
+وقتی یوزر موزیک آپلود می‌کند یا یک Voiceover می‌سازد و "Use as soundtrack" می‌زند، صدا بلافاصله روی پیش‌نمایش زنده‌ی کارت‌ها (SequentialClipPlayer) پخش شود. Final Film فقط زمانی ساخته/سیو می‌شود که خود کاربر روی Final Film کلیک کند — رفتار فعلی Final Film و ذخیره در Library تغییری نمی‌کند.
 
-## رفتار کاربری
+## Scope
+- فقط فرانت‌اند: `SequentialClipPlayer.tsx` و بخش رندر پیش‌نمایش در `DashboardPage.tsx`.
+- بدون تغییر در `mergeVideos.ts`، edge functions، DB، یا منطق Final Film.
 
-1. **آیکون جدید** (Sparkles) در همان ردیفی که `ImagePlus` و `+` هست، با tooltip «Generate image with AI».
-2. کلیک → دیالوگ `AiImageDialog` باز می‌شود با مراحل زیر:
-   - **انتخاب نسبت ابعاد**: سه دکمه‌ی بزرگ `1:1` / `9:16 (Reels)` / `16:9 (YouTube)` — پیش‌فرض = نسبت قفل‌شده‌ی پروژه (`lockedProjectRatio`) یا `aspectRatio` فعلی.
-   - **پرامت**: یک `Textarea` چندخطی با placeholder انگلیسی.
-   - دکمه‌ی **Generate** → صدا زدن edge function `ai-image-generate`، لودینگ، و نمایش تصویر در یک قاب با همان نسبت.
-3. وقتی عکس آماده شد:
-   - دکمه‌ی **Use this image** → عکس را در `USER_IMAGES_BUCKET` آپلود می‌کند، یک ردیف در `generator_user_images` اضافه می‌کند، و در گرید HISTORY مثل بقیه‌ی تصاویر آپلودی نمایش می‌دهد. دیالوگ بسته می‌شود.
-   - دکمه‌ی **Refine with AI** → یک ورودی پرامت ویرایش زیر تصویر باز می‌کند («Make the sky purple…»). با ارسال، edge function `ai-image-edit` فراخوانی می‌شود، تصویر فعلی به‌عنوان مرجع داده می‌شود، و تصویر جایگزین می‌شود. این مرحله را می‌توان چند بار تکرار کرد.
-   - دکمه‌ی **Regenerate** → تولید دوباره با همان پرامت/نسبت.
-   - دکمه‌ی **Discard** → پاک کردن نتیجه و برگشت به فرم پرامت.
-4. خطاها (429 / 402 / network) با toast/متن قرمز داخل دیالوگ نمایش داده می‌شوند بدون افشای کلید.
+## Changes
 
-## پیاده‌سازی فنی
+### 1) `SequentialClipPlayer.tsx`
+افزودن props اختیاری برای صدای پیش‌نمایش:
+- `musicUrl?: string | null`
+- `musicRange?: [number, number]` (اگر مشخص باشد، در شروع `currentTime = start` و در رسیدن به `end` لوپ شود)
+- `musicVolume?: number` (0..1)
+- `voiceoverUrl?: string | null`
+- `voiceoverVolume?: number`
+- `clipVolume?: number` (برای میوت/کم‌کردن صدای ویدیو در حین پخش music/voice — مطابق منطق فعلی داشبورد)
 
-### Backend — دو edge function جدید
+رفتار:
+- دو `<audio>` مخفی داخل کامپوننت (music و voiceover).
+- وقتی `isPlaying` فعال است، هر دو play می‌شوند؛ با Pause متوقف می‌شوند؛ با Prev/Next ادامه می‌دهند (قطع نمی‌شوند — تجربه‌ی "soundtrack مداوم").
+- music در محدوده‌ی `musicRange` لوپ می‌کند تا کل دنباله را پر کند.
+- voiceover یک‌بار از ابتدا پخش می‌شود (وقتی تمام شد، صرفاً ساکت می‌ماند).
+- volume ویدیوی کارت با `clipVolume` تنظیم می‌شود (وقتی music هست → 0 یا soundtrackMode، وقتی فقط voiceover → `voiceoverClipVolume`).
+- پاکسازی با unmount/تغییر url.
 
-- `supabase/functions/ai-image-generate/index.ts`
-  - ورودی: `{ prompt: string, aspectRatio: '1:1'|'9:16'|'16:9' }`
-  - احراز هویت با `authenticate(req)` (همان الگوی بقیه‌ی توابع).
-  - فراخوانی `https://ai.gateway.lovable.dev/v1/chat/completions` با `model: 'google/gemini-2.5-flash-image'` و `modalities: ['image','text']`. نسبت ابعاد به‌صورت متنی در پرامت اضافه می‌شود (مثلاً «Output exactly in 9:16 portrait aspect ratio»).
-  - استخراج base64 از `choices[0].message.images[0].image_url.url`.
-  - خروجی: `{ dataUrl: string }` (همان data URL، تا کلاینت نمایش دهد و در صورت Use this image آپلود کند).
-  - مدیریت خطاهای 429 و 402 مطابق راهنما.
-- `supabase/functions/ai-image-edit/index.ts`
-  - ورودی: `{ prompt: string, imageDataUrl: string }`.
-  - همان مدل `google/gemini-2.5-flash-image` با `image_url` در content.
-  - خروجی: `{ dataUrl: string }`.
-- هر دو در `supabase/config.toml` با `verify_jwt = true` (پیش‌فرض پروژه) اضافه می‌شوند تا فقط کاربران لاگین‌شده دسترسی داشته باشند.
+### 2) `DashboardPage.tsx`
+در محل رندر فعلی `SequentialClipPlayer` (شاخه‌ی `previewItem.kind === 'sequence'`)، props جدید را از state موجود تغذیه کنیم:
+- `musicUrl`, `musicRange`, `musicVolume`, `soundtrackMode`
+- `voiceoverUrl`, `voiceoverVolume`, `voiceoverClipVolume`
+- `clipVolume` با همان منطق محاسبه‌ای که در ساخت Final Film استفاده می‌شود (music-only → 0، mix → `clipVolume`، فقط voiceover → `voiceoverClipVolume`، هیچ‌کدام → 1).
 
-### Frontend
+حذف یا تغییر متن فوتر: «Voice & music are heard only in Final Film.» → «Live preview includes your music & voiceover. Final Film saves to Library.»
 
-- فایل جدید `src/modules/generator-ui/components/AiImageDialog.tsx`:
-  - state: `step: 'compose' | 'result'`, `aspect`, `prompt`, `editPrompt`, `imageDataUrl`, `isLoading`, `error`.
-  - فراخوانی توابع از طریق `supabase.functions.invoke('ai-image-generate', { body })` و `'ai-image-edit'`.
-  - دکمه‌ی Use this image: data URL → `Blob` → آپلود به `USER_IMAGES_BUCKET` (مسیر `${userId}/ai-${crypto.randomUUID()}.png`) → insert در `generator_user_images` → `onSaved(row)` تا والد به `userImages` اضافه کند.
-- در `DashboardPage.tsx`:
-  - state جدید `isAiImageDialogOpen`.
-  - یک دکمه‌ی جدید `Sparkles` در toolbar HISTORY بین `ImagePlus` و `+`.
-  - رندر `<AiImageDialog open={isAiImageDialogOpen} onOpenChange={setIsAiImageDialogOpen} userId={userId} defaultAspect={lockedProjectRatio ?? aspectRatio} onSaved={(row) => setUserImages((p) => [row, ...p])} />`.
+### 3) Single-clip preview
+در شاخه‌های `previewItem.kind === 'video' | 'image'` (تک‌کارتی) هم همان audio overlay قابل اعمال است؛ برای ساده نگه داشتن کار، یک کامپوننت کوچک بدون UI به نام `PreviewAudioLayer` (یا inline در SequentialClipPlayer که در حالت تک‌کلیپ هم مصرف شود) اضافه می‌شود تا music/voiceover روی پیش‌نمایش تکی هم پخش شود. اگر کاربر فقط رفتار سکانس را بخواهد، این بخش حذف‌پذیر است.
 
-### بدون تغییر در
+## What does NOT change
+- Final Film فقط با کلیک خود کاربر روی دکمه‌ی Final Film ساخته می‌شود و در Library سیو می‌شود (منطق فعلی).
+- پایپ‌لاین `mergeVideos`، انتخاب soundtrackMode، ذخیره‌سازی و RLS بدون تغییر.
+- بدون تغییر در Backend/DB.
 
-- `mergeVideos.ts`، Final Film، Voiceover/Music، DB schema (از همان جدول `generator_user_images` استفاده می‌شود).
-- منطق پلیر زنجیره‌ای (تصاویر تولیدشده دقیقاً مثل تصاویر آپلودی در پیش‌نمایش زنجیره‌ای ظاهر می‌شوند).
-
-## ملاحظات
-
-- نسبت ابعاد نهایی توسط مدل تضمین قطعی نمی‌شود؛ ما در پرامت قید می‌کنیم و در سمت کلاینت قاب نمایش را به همان نسبت می‌بریم. در صورت نیاز در آینده می‌توان از `image-reframe` موجود برای crop دقیق استفاده کرد.
-- هزینه: هر Generate/Refine یک فراخوانی Lovable AI Gateway مصرف می‌کند (نه کردیت ویدئو).
-- امنیت: کلید `LOVABLE_API_KEY` فقط در edge function استفاده می‌شود.
-
-## معیار پذیرش
-
-- آیکون Sparkles در toolbar HISTORY دیده شود.
-- باز کردن دیالوگ → انتخاب نسبت → نوشتن پرامت → کلیک Generate → عکس در همان قاب با نسبت درست نمایش داده شود.
-- Refine with AI با پرامت دوم → عکس به‌روزرسانی شود، تاریخچه‌ی نسخه‌ی قبل لازم نیست.
-- Use this image → عکس بلافاصله در گرید HISTORY ظاهر شود و در پلیر زنجیره‌ای پخش شود.
-- خطاهای 429/402 با پیام انسانی به کاربر نشان داده شوند.
+## Verification
+1. Upload یک فایل music → بلافاصله روی پیش‌نمایش سکانس صدا می‌آید؛ هیچ jobی برای Final Film ساخته نمی‌شود.
+2. ساخت Voiceover و زدن Use as soundtrack → روی پیش‌نمایش پخش می‌شود؛ Final Film ساخته نمی‌شود.
+3. کلیک روی Final Film → مانند قبل، merge انجام و در Library ذخیره می‌شود.
+4. حذف music/voiceover → پخش پیش‌نمایش متوقف می‌شود.
+5. Pause/Play/Prev/Next عملکرد درست با ادامه‌ی پخش soundtrack.

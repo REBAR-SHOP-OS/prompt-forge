@@ -2756,6 +2756,16 @@ export default function DashboardPage() {
               maxHeightPx={previewMaxHeightPx}
               onClose={closePreview}
               onActiveClipChange={(id) => { /* highlight handled by HISTORY via previewVideoId on click */ void id }}
+              musicUrl={musicUrl}
+              musicRange={musicRange}
+              musicVolume={musicVolume}
+              voiceoverUrl={voiceoverUrl}
+              voiceoverVolume={voiceoverVolume}
+              clipVolume={
+                musicUrl && musicRange[1] > musicRange[0]
+                  ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
+                  : (voiceoverUrl ? voiceoverClipVolume : 1)
+              }
             />
           ) : previewItem.kind === 'image' ? (
             <div className="flex w-full justify-center">

@@ -28,6 +28,14 @@ type Props = {
   onClose?: () => void
   /** Called when a clip becomes active so the parent can highlight a card. */
   onActiveClipChange?: (clipId: string) => void
+  /** Live preview audio overlays (do NOT affect Final Film generation). */
+  musicUrl?: string | null
+  musicRange?: [number, number]
+  musicVolume?: number
+  voiceoverUrl?: string | null
+  voiceoverVolume?: number
+  /** Volume of the clip's own audio track in preview (0..1). */
+  clipVolume?: number
 }
 
 export function SequentialClipPlayer({
@@ -38,10 +46,18 @@ export function SequentialClipPlayer({
   maxHeightPx,
   onClose,
   onActiveClipChange,
+  musicUrl,
+  musicRange,
+  musicVolume = 1,
+  voiceoverUrl,
+  voiceoverVolume = 1,
+  clipVolume = 1,
 }: Props) {
   const [index, setIndex] = useState(0)
   const [isPlaying, setIsPlaying] = useState(true)
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const musicRef = useRef<HTMLAudioElement | null>(null)
+  const voiceRef = useRef<HTMLAudioElement | null>(null)
   const imageTimerRef = useRef<number | null>(null)
 
   // Keep index inside bounds when clips change.
@@ -94,6 +110,59 @@ export function SequentialClipPlayer({
       v.pause()
     }
   }, [current?.id, current?.kind, isPlaying])
+
+  // Apply clip volume to the active video element.
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v) return
+    v.volume = Math.max(0, Math.min(1, clipVolume))
+    v.muted = clipVolume <= 0
+  }, [current?.id, clipVolume])
+
+  // Music: play/pause + loop within range; restarts when src changes.
+  useEffect(() => {
+    const a = musicRef.current
+    if (!a) return
+    a.volume = Math.max(0, Math.min(1, musicVolume))
+    if (!musicUrl) {
+      a.pause()
+      return
+    }
+    const start = musicRange?.[0] ?? 0
+    const end = musicRange?.[1] ?? 0
+    const onTime = () => {
+      if (end > start && a.currentTime >= end) {
+        a.currentTime = start
+      }
+    }
+    a.addEventListener('timeupdate', onTime)
+    if (isPlaying) {
+      // Only seek to start if we're outside the window.
+      if (end > start && (a.currentTime < start || a.currentTime >= end)) {
+        a.currentTime = start
+      }
+      a.play().catch(() => { /* ignore autoplay block */ })
+    } else {
+      a.pause()
+    }
+    return () => { a.removeEventListener('timeupdate', onTime) }
+  }, [musicUrl, musicRange?.[0], musicRange?.[1], musicVolume, isPlaying])
+
+  // Voiceover: plays once per session; restart when src changes or user toggles play.
+  useEffect(() => {
+    const a = voiceRef.current
+    if (!a) return
+    a.volume = Math.max(0, Math.min(1, voiceoverVolume))
+    if (!voiceoverUrl) {
+      a.pause()
+      return
+    }
+    if (isPlaying) {
+      a.play().catch(() => { /* ignore */ })
+    } else {
+      a.pause()
+    }
+  }, [voiceoverUrl, voiceoverVolume, isPlaying])
 
   function goNext() {
     if (clips.length === 0) return
@@ -225,9 +294,17 @@ export function SequentialClipPlayer({
             {current.label ?? (current.kind === 'video' ? 'Clip' : 'Image')}
           </p>
           <p className="text-[11px] leading-5 text-zinc-500">
-            All cards are auto-stitched in this preview. Voice & music are heard only in Final Film.
+            Live preview includes your music & voiceover. Final Film saves to Library.
           </p>
         </div>
+
+        {/* Hidden audio overlays for live preview only — not part of Final Film. */}
+        {musicUrl ? (
+          <audio ref={musicRef} src={musicUrl} preload="auto" loop={!musicRange || musicRange[1] <= musicRange[0]} />
+        ) : null}
+        {voiceoverUrl ? (
+          <audio ref={voiceRef} src={voiceoverUrl} preload="auto" />
+        ) : null}
       </div>
     </div>
   )
