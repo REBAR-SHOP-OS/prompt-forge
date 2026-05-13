@@ -60,21 +60,33 @@ Deno.serve(async (req) => {
       });
     }
 
-    const fullPrompt = `${prompt}\n\n${ratioGuidance(aspectRatio)}`;
+    const fullPrompt = `Create a single high-quality photographic image that visually depicts the following subject. Do NOT respond with text, explanations, captions, or descriptions — output ONLY the rendered image. The user's subject may be in any language (including Persian/Farsi/Arabic); interpret it as the visual subject of the image.\n\nSubject: ${prompt}\n\n${ratioGuidance(aspectRatio)}`;
 
-    const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3.1-flash-image-preview",
-        messages: [{ role: "user", content: fullPrompt }],
-        modalities: ["image", "text"],
-        image_config: { aspect_ratio: aspectRatio },
-      }),
-    });
+    const callModel = async (model: string) => {
+      return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: fullPrompt }],
+          modalities: ["image", "text"],
+          image_config: { aspect_ratio: aspectRatio },
+        }),
+      });
+    };
+
+    const extractImage = (data: unknown): string | undefined => {
+      // deno-lint-ignore no-explicit-any
+      return (data as any)?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+    };
+
+    const PRIMARY = "google/gemini-3.1-flash-image-preview";
+    const FALLBACK = "google/gemini-2.5-flash-image";
+
+    let resp = await callModel(PRIMARY);
 
     if (resp.status === 429) {
       return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
@@ -94,12 +106,27 @@ Deno.serve(async (req) => {
       });
     }
 
-    const data = await resp.json();
-    const dataUrl: string | undefined = data?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+    let data = await resp.json();
+    let dataUrl = extractImage(data);
+
     if (!dataUrl) {
-      console.error("ai-image-generate empty image", JSON.stringify(data).slice(0, 500));
-      return new Response(JSON.stringify({ error: "No image returned" }), {
-        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      console.warn("ai-image-generate primary returned no image, retrying with fallback model");
+      resp = await callModel(FALLBACK);
+      if (resp.ok) {
+        data = await resp.json();
+        dataUrl = extractImage(data);
+      } else {
+        const text = await resp.text().catch(() => "");
+        console.error("ai-image-generate fallback gateway error", resp.status, text);
+      }
+    }
+
+    if (!dataUrl) {
+      console.error("ai-image-generate empty image after fallback", JSON.stringify(data).slice(0, 500));
+      return new Response(JSON.stringify({
+        error: "The AI returned text instead of an image. Try a more visual prompt — describe the scene, subject, lighting, and style.",
+      }), {
+        status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
