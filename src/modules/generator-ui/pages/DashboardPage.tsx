@@ -2267,6 +2267,7 @@ export default function DashboardPage() {
     freshStartAppliedRef.current = true
     handleStartOver()
     try { window.localStorage.removeItem(`pending-fresh-start:${userId}`) } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, generatedVideos.length])
 
   return (
