@@ -2255,6 +2255,21 @@ export default function DashboardPage() {
     // No server-side cleanup: Library files in `merged-videos` are kept.
   }
 
+  // After a fresh sign-in (flag set by AuthProvider on SIGNED_IN event),
+  // reset the workspace once jobs have loaded so the dashboard looks empty
+  // — equivalent to the user pressing Start Over. Refresh keeps state intact.
+  const freshStartAppliedRef = useRef(false)
+  useEffect(() => {
+    if (!userId || freshStartAppliedRef.current) return
+    let pending = false
+    try { pending = window.localStorage.getItem(`pending-fresh-start:${userId}`) === '1' } catch { /* ignore */ }
+    if (!pending) return
+    freshStartAppliedRef.current = true
+    handleStartOver()
+    try { window.localStorage.removeItem(`pending-fresh-start:${userId}`) } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, generatedVideos.length])
+
   return (
     <section
       className="relative min-h-screen overflow-hidden bg-black text-zinc-100"
