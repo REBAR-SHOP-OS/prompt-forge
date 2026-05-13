@@ -1,42 +1,57 @@
 ## هدف
-وقتی کاربر Voiceover روی Final Film می‌گذارد، بتواند مستقل از موسیقی، **حجم صدای اصلی ویدئو** و **حجم Voiceover** را تنظیم کند.
 
-## وضعیت فعلی
-- بک‌اند `mergeVideos.ts` از قبل سه ولوم مستقل را پشتیبانی می‌کند: `clipVolume`, `musicVolume`, `voiceover.volume`.
-- در UI فقط برای **موسیقی** اسلایدر وجود دارد (داخل دیالوگ Soundtrack، در حالت Mix).
-- برای **Voiceover** هیچ کنترلی نیست؛ `voiceoverVolume` در `DashboardPage.tsx` به‌صورت ثابت `1` تعریف شده و وقتی Voiceover بدون موسیقی فعال باشد، صدای کلیپ به‌طور خودکار صفر می‌شود (پیش‌فرض backend).
+1. هر بار کاربر **Music** یا **Voiceover** اضافه/تغییر/حذف می‌کند، همان لحظه روی **پری‌ویو** قابل شنیدن باشد (بدون نیاز به Final Film).
+2. پری‌ویو پیش‌فرض در حالت «Project» باید **همهٔ کارت‌های هیستوری را پشت‌سرهم پخش کند** (تصاویر و ویدیوها به ترتیب `displayedClips`)، طوری‌که کاربر فیلم کامل را قبل از Final Film ببیند.
+3. **Final Film** فقط ثبت نهایی در Library می‌شود (همان رفتار فعلی) — پری‌ویو از قبل همان چیزی را نشان می‌دهد که Final Film خواهد ساخت.
 
-## تغییرات (فقط UI، بدون تغییر بک‌اند یا قراردادها)
+تغییرات فقط در فرانت‌اند (UI/پلیر) و بدون دست‌زدن به `mergeVideos.ts`، edge functionها یا schema.
 
-### 1) State در `DashboardPage.tsx`
-- `voiceoverVolume` را به `useState<number>(1)` با setter تبدیل کن.
-- یک state جدید `voiceoverClipVolume` با پیش‌فرض `0.3` اضافه کن (وقتی Voiceover هست ولی موسیقی نیست، این مقدار به‌جای صفر ارسال می‌شود تا کاربر صدای اصلی را هم بشنود).
+## تغییرات در `src/modules/generator-ui/pages/DashboardPage.tsx`
 
-### 2) منطق ارسال در `handleMergeAllVideos`
-در ساخت `audioOpt`:
-- اگر `hasVoiceover && !hasMusic` → `clipVolume = voiceoverClipVolume`.
-- اگر `hasMusic` → همان `soundtrackMode`/`clipVolume` فعلی (بدون تغییر).
-- `voiceover.volume` از state جدید `voiceoverVolume` خوانده شود.
+### 1) حالت پری‌ویوی جدید: `project`
+- یک `PreviewItem` سوم اضافه می‌شود: `{ kind: 'project', clips: UnifiedClip[] }`.
+- منطق `previewItem`:
+  - اگر کاربر صراحتاً روی یک کارت کلیک کرده (`previewVideoId` ست شده) → همان رفتار فعلی (single).
+  - در غیر این صورت و اگر `displayedClips.length > 0` → `kind: 'project'` با کل لیست به ترتیب `displayedClips`.
+- یک کنترل کوچک «Preview: Project / Single» نزدیک پری‌ویو نمایش داده می‌شود تا کاربر بتواند بین حالت پروژه و کارت تکی سوییچ کند.
 
-### 3) UI — پنل تنظیم صدای Voiceover
-کنار چیپ Voiceover (همان جایی که اکنون نام voiceover و دکمهٔ X نمایش داده می‌شود) یک Popover کوچک با آیکون `SlidersHorizontal` اضافه کن که فقط وقتی `voiceoverUrl` فعال است نمایش داده شود. داخل آن دو اسلایدر هم‌سبک با اسلایدرهای موجود در دیالوگ موسیقی:
+### 2) کامپوننت جدید `ProjectPreviewPlayer` (in-file یا فایل کوچک کنار `TransitionPreview`)
+پلیر کلاینتی که زنجیرهٔ کلیپ‌ها + audio overlay را هم‌زمان پخش می‌کند:
 
-```
-Original clip audio   [—————o———]  30%
-Voiceover             [————————o]  100%
-```
+- ورودی‌ها: `clips` (مرتب)، `aspectRatio`، `musicUrl?`, `musicRange`, `voiceoverUrl?`, `clipVolume`, `musicVolume`, `voiceoverClipVolume`, `voiceoverVolume`, `soundtrackMode`, `imageStillSeconds` (برای کلیپ‌های image).
+- ساختار:
+  - یک `<video>` که منبعش به‌ترتیب `clips` تعویض می‌شود (با `onEnded` به سراغ بعدی می‌رود).
+  - برای کلیپ‌های `image`: یک `<img>` فول‌فریم به‌جای video، با تایمر برابر `still_duration_seconds`.
+  - دو `<audio>` مخفی برای music و voiceover که هم‌زمان با Play/Pause/Seek پلیر هماهنگ می‌شوند.
+- منطق volume mixing دقیقاً مطابق همان فرمولی که در `handleMergeAllVideos` ساخته می‌شود:
+  - `hasMusic && soundtrackMode==='music-only'` → `videoEl.muted = true`.
+  - `hasMusic && soundtrackMode==='mix'` → `videoEl.volume = clipVolume`، `musicEl.volume = musicVolume`.
+  - `!hasMusic && hasVoiceover` → `videoEl.volume = voiceoverClipVolume`، `voiceoverEl.volume = voiceoverVolume`.
+  - بدون music/voiceover → `videoEl.volume = 1`.
+- موقعیت زمانی music: `musicEl.currentTime = musicRange[0] + elapsedAcrossPlaylist`؛ اگر از `musicRange[1]` گذشت تا انتها mute.
+- voiceover: از ابتدا پخش می‌شود و وقتی به انتها رسید قطع — همان رفتار backend (که voiceover روی کل تایم‌لاین overlay می‌شود).
+- Play/Pause از روی state داخلی پلیر کنترل می‌شود؛ کاربر می‌تواند با کلیک روی هر کارت پری‌ویوی تکی را باز کند.
 
-- بازه: 0–100، گام 1، تبدیل به 0..1 برای state.
-- اگر موسیقی هم همزمان فعال باشد، اسلایدر «Original clip audio» در این پنل غیرفعال شود و یک هینت کوتاه نمایش دهد: «Clip audio is controlled from the Soundtrack dialog» (تا منبع حقیقت یکی بماند).
+### 3) واکنش زنده به تغییر music/voiceover
+- چون پلیر این prop ها را می‌گیرد و در `useEffect` ولوم/منبع را هماهنگ می‌کند، هر تغییر در `musicUrl/musicRange/musicVolume/clipVolume/soundtrackMode/voiceoverUrl/voiceoverVolume/voiceoverClipVolume` بلافاصله روی پری‌ویو اعمال می‌شود.
+- پاپ‌آپ‌های موجود (Soundtrack dialog و Voiceover volume popover) هیچ تغییری نمی‌کنند؛ صرفاً مقادیرشان به این پلیر هم می‌رسد.
 
-### 4) Reset
-در `handleClearVoiceover` و در محل ریست بعد از Final Film، `voiceoverVolume` و `voiceoverClipVolume` را به مقدار پیش‌فرض برگردان.
-
-## خارج از محدوده
-- بدون تغییر در `mergeVideos.ts`، edge functionها، schema، یا VoiceoverDialog.
-- بدون تغییر روی منطق موسیقی موجود.
+### 4) رفتار Final Film
+- بدون تغییر منطق: `handleMergeAllVideos` همان merge سرور را با همان مقادیر volume می‌سازد و در Library ثبت می‌کند.
+- تنها تغییر: بعد از Final Film موفق، پری‌ویو روی همان مرج خروجی سوییچ می‌شود (که الان هم همین کار انجام می‌شود).
 
 ## تأیید
-1. فقط Voiceover بدون موسیقی → پنل ولوم باز شود؛ هر دو اسلایدر فعال؛ Final Film هر دو صدا را با نسبت تنظیم‌شده پخش کند.
-2. Voiceover + موسیقی همزمان → اسلایدر clip در پنل voiceover غیرفعال؛ کنترل از دیالوگ Soundtrack.
-3. حذف Voiceover → ولوم‌ها به پیش‌فرض ریست شوند.
+
+```text
+1) چند کارت در هیستوری → پری‌ویو به‌صورت پیش‌فرض «Project» شده و همهٔ کلیپ‌ها پشت‌سرهم پخش می‌شوند.
+2) افزودن Music → بلافاصله روی همان پری‌ویوی زنجیره‌ای شنیده می‌شود.
+3) افزودن Voiceover (با/بدون music) → بلافاصله شنیده می‌شود؛ ولوم‌ها مطابق popoverها.
+4) تغییر musicRange / musicVolume / voiceoverVolume / soundtrackMode → بدون reload روی پری‌ویو اعمال می‌شود.
+5) کلیک روی یک کارت → پری‌ویوی تکی همان کارت (رفتار قبلی).
+6) Final Film → دقیقاً همان چیزی که در پری‌ویو پخش می‌شد در Library ذخیره می‌شود.
+```
+
+## خارج از محدوده
+- بدون تغییر در `mergeVideos.ts`، edge functionها، schema یا قراردادها.
+- بدون تغییر در منطق ولوم/voiceover/music که قبلاً پیاده‌سازی شده.
+- بدون merge سمت سرور برای پری‌ویو (هزینه‌ای ایجاد نمی‌شود).
