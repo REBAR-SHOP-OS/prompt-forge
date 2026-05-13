@@ -79,6 +79,7 @@ import WelcomeVideoOverlay from '@/modules/generator-ui/components/WelcomeVideoO
 import { SoundtrackWaveform, type SoundtrackWaveformHandle } from '@/modules/generator-ui/components/SoundtrackWaveform'
 import { TransitionPreview } from '@/modules/generator-ui/components/TransitionPreview'
 import { SequentialClipPlayer } from '@/modules/generator-ui/components/SequentialClipPlayer'
+import { VideoWithSoundtrack } from '@/modules/generator-ui/components/VideoWithSoundtrack'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { generatorUiGateway } from '@/modules/generator-ui/gateway'
@@ -2874,13 +2875,23 @@ export default function DashboardPage() {
                 {previewItem.job.video?.storage_path ? (() => {
                   const src = getCardVideoSrc(previewItem.job.id, previewItem.job.video.storage_path) ?? previewItem.job.video.storage_path
                   return (
-                    <video
-                      key={`${previewItem.job.id}:${src}`}
+                    <VideoWithSoundtrack
+                      videoKey={`${previewItem.job.id}:${src}`}
                       className="h-full w-full bg-black object-contain"
                       src={src}
                       controls
                       playsInline
                       preload="metadata"
+                      clipVolume={
+                        musicUrl && musicRange[1] > musicRange[0]
+                          ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
+                          : (voiceoverUrl ? voiceoverClipVolume : 1)
+                      }
+                      musicUrl={musicUrl}
+                      musicRange={musicRange}
+                      musicVolume={musicVolume}
+                      voiceoverUrl={voiceoverUrl}
+                      voiceoverVolume={voiceoverVolume}
                     />
                   )
                 })() : (
