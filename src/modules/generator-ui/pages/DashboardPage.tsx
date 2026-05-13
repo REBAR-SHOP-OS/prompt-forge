@@ -1314,6 +1314,104 @@ export default function DashboardPage() {
     }
   }
 
+  async function regenerateJob(job: JobDetail) {
+    const prompt = (job.input_prompt ?? '').trim()
+    if (!prompt) {
+      if (typeof window !== 'undefined') window.alert('This clip has no prompt to regenerate from.')
+      return
+    }
+    if (typeof window !== 'undefined' && !window.confirm('Replace this clip with a new render from the same prompt?')) {
+      return
+    }
+
+    const oldId = job.id
+    const firstFrameUrl = job.first_frame_url ?? undefined
+    const lastFrameUrl = job.last_frame_url ?? undefined
+    const providerKey = (job.provider_key === 'flow' ? 'flow' : 'wan') as 'wan' | 'flow'
+    const requestedModel = job.model_key ?? undefined
+    const effectiveRatio: Ratio = clipAspectRatios[oldId] ?? lockedProjectRatio ?? aspectRatio
+
+    // Snapshot for rollback + same-position insert.
+    const prevGenerated = generatedVideos
+    const prevProjectSourceJobs = projectSourceJobs
+    const oldIndex = generatedVideos.findIndex((v) => v.id === oldId)
+
+    setComposerError(null)
+    setVideoColumnMessage(null)
+
+    try {
+      // 1) Server-side delete of the old job (purges DB rows + storage).
+      await jobOrchestratorGateway.deleteJob(oldId)
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : (err as Error).message
+      if (typeof window !== 'undefined') window.alert(`Regenerate failed (delete step): ${msg}`)
+      return
+    }
+
+    // 2) Optimistic UI removal of the old card.
+    setGeneratedVideos((current) => current.filter((v) => v.id !== oldId))
+    setApprovedIds((current) => {
+      if (!current.has(oldId)) return current
+      const next = new Set(current)
+      next.delete(oldId)
+      if (approvedStorageKey) {
+        try { window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
+      }
+      return next
+    })
+    setEditedJobIds((current) => {
+      if (!current.has(oldId)) return current
+      const next = new Set(current)
+      next.delete(oldId)
+      persistEditedJobIds(next)
+      return next
+    })
+    setEditedClips((prev) => {
+      if (!prev[oldId]) return prev
+      try { URL.revokeObjectURL(prev[oldId].url) } catch { /* noop */ }
+      const { [oldId]: _, ...rest } = prev
+      return rest
+    })
+    {
+      const nextMap: Record<string, JobDetail[]> = {}
+      for (const [mid, clips] of Object.entries(projectSourceJobs)) {
+        nextMap[mid] = clips.filter((c) => c.id !== oldId)
+      }
+      setProjectSourceJobs(nextMap)
+      persistProjectSourceJobs(nextMap)
+    }
+    if (previewVideoId === oldId) setPreviewVideoId(null)
+
+    // 3) Create the new job with the same parameters.
+    try {
+      const created = await jobOrchestratorGateway.createJob({
+        providerKey,
+        requestedModel,
+        prompt,
+        firstFrameUrl,
+        lastFrameUrl,
+        durationSeconds,
+        aspectRatio: effectiveRatio,
+      })
+      const seeded = buildSeededJob(prompt, created, { firstFrameUrl, lastFrameUrl })
+      rememberClipRatio(seeded.id, effectiveRatio)
+      setGeneratedVideos((current) => {
+        const next = current.filter((v) => v.id !== seeded.id)
+        if (oldIndex >= 0 && oldIndex <= next.length) {
+          next.splice(oldIndex, 0, seeded)
+          return next
+        }
+        return [seeded, ...next]
+      })
+    } catch (err) {
+      // Rollback the optimistic delete view if creation failed (server row is already gone).
+      const msg = err instanceof ApiError ? err.message : (err as Error).message
+      setGeneratedVideos(prevGenerated.filter((v) => v.id !== oldId))
+      setProjectSourceJobs(prevProjectSourceJobs)
+      persistProjectSourceJobs(prevProjectSourceJobs)
+      if (typeof window !== 'undefined') window.alert(`Regenerate failed (create step): ${msg}`)
+    }
+  }
 
   useEffect(() => {
     const activeJobs = generatedVideos.filter((job) => !isTerminalStatus(job.status))
@@ -3481,6 +3579,20 @@ export default function DashboardPage() {
                         >
                           <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
+                        {video.input_prompt && normalizeStatus(video.status) !== 'processing' ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              regenerateJob(video)
+                            }}
+                            aria-label="Regenerate clip from same prompt"
+                            title="Regenerate from same prompt"
+                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        ) : null}
                         {(video.video?.storage_path || editedClips[video.id]?.url) ? (
                           <button
                             type="button"
@@ -3718,6 +3830,20 @@ export default function DashboardPage() {
                               >
                                 <Download className="h-3 w-3" aria-hidden="true" />
                               </a>
+                            ) : null}
+                            {video.input_prompt && normalizeStatus(video.status) !== 'processing' ? (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  regenerateJob(video)
+                                }}
+                                aria-label="Regenerate clip from same prompt"
+                                title="Regenerate from same prompt"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200"
+                              >
+                                <RotateCcw className="h-3 w-3" aria-hidden="true" />
+                              </button>
                             ) : null}
                             <button
                               type="button"
