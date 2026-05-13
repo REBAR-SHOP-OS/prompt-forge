@@ -1,5 +1,52 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Pause, Play, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clock, Pause, Play, X } from 'lucide-react'
+
+function formatDuration(sec: number): string {
+  if (!Number.isFinite(sec) || sec <= 0) return '--:--'
+  const total = Math.round(sec)
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+function useTotalDuration(clips: SeqClip[]): number {
+  const cacheRef = useRef<Map<string, number>>(new Map())
+  const [, force] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    const cache = cacheRef.current
+    const videos = clips.filter((c): c is SeqVideoClip => c.kind === 'video')
+    const missing = videos.filter((v) => !cache.has(v.src))
+    if (missing.length === 0) return
+    let pending = missing.length
+    missing.forEach((v) => {
+      const el = document.createElement('video')
+      el.preload = 'metadata'
+      el.muted = true
+      el.src = v.src
+      const done = (dur: number) => {
+        if (cancelled) return
+        cache.set(v.src, Number.isFinite(dur) && dur > 0 ? dur : 0)
+        pending -= 1
+        if (pending <= 0) force((n) => n + 1)
+      }
+      el.addEventListener('loadedmetadata', () => done(el.duration), { once: true })
+      el.addEventListener('error', () => done(0), { once: true })
+    })
+    return () => { cancelled = true }
+  }, [clips.map((c) => `${c.kind}:${c.id}:${c.src}`).join('|')])
+
+  return useMemo(() => {
+    let total = 0
+    for (const c of clips) {
+      if (c.kind === 'image') total += Math.max(0, c.durationSec || 0)
+      else total += cacheRef.current.get(c.src) ?? 0
+    }
+    return total
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clips, cacheRef.current.size])
+}
 
 // Lightweight type aliases (kept compatible with DashboardPage's UnifiedClip).
 type SeqVideoClip = {
@@ -54,6 +101,7 @@ export function SequentialClipPlayer({
   clipVolume = 1,
 }: Props) {
   const [index, setIndex] = useState(0)
+  const totalDuration = useTotalDuration(clips)
   const [isPlaying, setIsPlaying] = useState(true)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const musicRef = useRef<HTMLAudioElement | null>(null)
@@ -279,6 +327,13 @@ export function SequentialClipPlayer({
               </button>
             </div>
             <div className="flex items-center gap-2 text-xs font-semibold text-zinc-200">
+              <span
+                title="Total film duration"
+                className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/60 px-2 py-0.5 tabular-nums"
+              >
+                <Clock className="h-3 w-3" aria-hidden="true" />
+                {formatDuration(totalDuration)}
+              </span>
               <span className="rounded-full border border-white/15 bg-black/60 px-2 py-0.5 tabular-nums">
                 {index + 1} / {clips.length}
               </span>
