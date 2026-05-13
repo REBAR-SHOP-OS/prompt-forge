@@ -48,6 +48,28 @@ async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
   return await res.blob()
 }
 
+// Extract a useful error message from a supabase.functions.invoke error.
+// The Edge Function's JSON `error` field is buried in fnErr.context.
+async function extractFnError(fnErr: unknown, fallback: string): Promise<string> {
+  try {
+    const ctx = (fnErr as { context?: { json?: () => Promise<unknown>; text?: () => Promise<string> } })?.context
+    if (ctx && typeof ctx.json === 'function') {
+      const body = await ctx.json() as { error?: string } | null
+      if (body?.error) return String(body.error)
+    }
+    if (ctx && typeof ctx.text === 'function') {
+      const txt = await ctx.text()
+      try {
+        const parsed = JSON.parse(txt) as { error?: string }
+        if (parsed?.error) return String(parsed.error)
+      } catch { /* not json */ }
+      if (txt) return txt
+    }
+  } catch { /* ignore */ }
+  if (fnErr instanceof Error && fnErr.message) return fnErr.message
+  return fallback
+}
+
 export default function AiImageDialog({
   open,
   onOpenChange,
