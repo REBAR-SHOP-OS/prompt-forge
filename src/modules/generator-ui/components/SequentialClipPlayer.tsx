@@ -294,9 +294,17 @@ export function SequentialClipPlayer({
             {current.label ?? (current.kind === 'video' ? 'Clip' : 'Image')}
           </p>
           <p className="text-[11px] leading-5 text-zinc-500">
-            All cards are auto-stitched in this preview. Voice & music are heard only in Final Film.
+            Live preview includes your music & voiceover. Final Film saves to Library.
           </p>
         </div>
+
+        {/* Hidden audio overlays for live preview only — not part of Final Film. */}
+        {musicUrl ? (
+          <audio ref={musicRef} src={musicUrl} preload="auto" loop={!musicRange || musicRange[1] <= musicRange[0]} />
+        ) : null}
+        {voiceoverUrl ? (
+          <audio ref={voiceRef} src={voiceoverUrl} preload="auto" />
+        ) : null}
       </div>
     </div>
   )
