@@ -520,6 +520,29 @@ export default function DashboardPage() {
     setWorkspaceHiddenJobIds(new Set())
   }, [workspaceHiddenJobIdsKey])
 
+  // Per-session "fresh workspace" watermark: anything created BEFORE the user
+  // entered the app this session is hidden from the HISTORY panel and the
+  // central workspace, so each entry shows a clean dashboard. Library is not
+  // affected (it reads from `visibleVideos`), and clicking a project in
+  // Library still restores its source cards via `selectedProjectId`.
+  const [sessionFreshMark, setSessionFreshMark] = useState<number | null>(null)
+  useEffect(() => {
+    if (!userId) { setSessionFreshMark(null); return }
+    const key = `workspace-fresh-mark:${userId}`
+    try {
+      const raw = window.sessionStorage.getItem(key)
+      if (raw) {
+        const n = Number(raw)
+        if (Number.isFinite(n)) { setSessionFreshMark(n); return }
+      }
+      const now = Date.now()
+      window.sessionStorage.setItem(key, String(now))
+      setSessionFreshMark(now)
+    } catch {
+      setSessionFreshMark(Date.now())
+    }
+  }, [userId])
+
   function persistWorkspaceHiddenJobIds(next: Set<string>) {
     if (!workspaceHiddenJobIdsKey) return
     try {
