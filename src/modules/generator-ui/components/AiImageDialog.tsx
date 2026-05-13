@@ -63,6 +63,14 @@ export default function AiImageDialog({
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Mask-paint state
+  const [isMaskMode, setIsMaskMode] = useState(false)
+  const [brushSize, setBrushSize] = useState(36)
+  const [hasMask, setHasMask] = useState(false)
+  const maskCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const imgRef = useRef<HTMLImageElement | null>(null)
+  const isDrawingRef = useRef(false)
+
   useEffect(() => {
     if (open) {
       setAspect(defaultAspect)
@@ -72,8 +80,92 @@ export default function AiImageDialog({
       setError(null)
       setIsLoading(false)
       setIsSaving(false)
+      setIsMaskMode(false)
+      setHasMask(false)
     }
   }, [open, defaultAspect])
+
+  // Reset mask whenever a new image is shown.
+  useEffect(() => {
+    setHasMask(false)
+    setIsMaskMode(false)
+    const c = maskCanvasRef.current
+    if (c) c.getContext('2d')?.clearRect(0, 0, c.width, c.height)
+  }, [imageDataUrl])
+
+  function syncCanvasSize() {
+    const c = maskCanvasRef.current
+    const img = imgRef.current
+    if (!c || !img) return
+    const w = img.naturalWidth || img.clientWidth
+    const h = img.naturalHeight || img.clientHeight
+    if (c.width !== w || c.height !== h) {
+      // Preserve any existing strokes by saving the bitmap before resizing.
+      const ctx = c.getContext('2d')
+      const prev = ctx && c.width > 0 && c.height > 0
+        ? ctx.getImageData(0, 0, c.width, c.height)
+        : null
+      c.width = w
+      c.height = h
+      if (prev && ctx) ctx.putImageData(prev, 0, 0)
+    }
+  }
+
+  function pointerToCanvas(e: React.PointerEvent<HTMLCanvasElement>) {
+    const c = maskCanvasRef.current
+    if (!c) return null
+    const rect = c.getBoundingClientRect()
+    const sx = c.width / rect.width
+    const sy = c.height / rect.height
+    return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy, scale: sx }
+  }
+
+  function paintAt(e: React.PointerEvent<HTMLCanvasElement>) {
+    const c = maskCanvasRef.current
+    const ctx = c?.getContext('2d')
+    if (!c || !ctx) return
+    const p = pointerToCanvas(e)
+    if (!p) return
+    ctx.fillStyle = 'rgba(244, 63, 94, 0.85)' // visible pink; alpha mask is read separately on export
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, (brushSize * p.scale) / 2, 0, Math.PI * 2)
+    ctx.fill()
+    setHasMask(true)
+  }
+
+  function handleClearMask() {
+    const c = maskCanvasRef.current
+    if (!c) return
+    c.getContext('2d')?.clearRect(0, 0, c.width, c.height)
+    setHasMask(false)
+  }
+
+  // Convert the visible mask canvas into a strict white-on-transparent PNG for the model.
+  function exportMaskDataUrl(): string | null {
+    const c = maskCanvasRef.current
+    if (!c || !hasMask) return null
+    const out = document.createElement('canvas')
+    out.width = c.width
+    out.height = c.height
+    const octx = out.getContext('2d')
+    const ictx = c.getContext('2d')
+    if (!octx || !ictx) return null
+    const src = ictx.getImageData(0, 0, c.width, c.height)
+    const dst = octx.createImageData(c.width, c.height)
+    for (let i = 0; i < src.data.length; i += 4) {
+      const a = src.data[i + 3]
+      if (a > 0) {
+        dst.data[i] = 255
+        dst.data[i + 1] = 255
+        dst.data[i + 2] = 255
+        dst.data[i + 3] = 255
+      } else {
+        dst.data[i + 3] = 0
+      }
+    }
+    octx.putImageData(dst, 0, 0)
+    return out.toDataURL('image/png')
+  }
 
   const handleGenerate = async () => {
     if (!prompt.trim() || isLoading) return
