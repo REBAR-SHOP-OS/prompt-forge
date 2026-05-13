@@ -3012,6 +3012,15 @@ export default function DashboardPage() {
             </button>
             <button
               type="button"
+              onClick={() => setIsAiImageDialogOpen(true)}
+              className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100"
+              aria-label="Generate image with AI"
+              title="Generate image with AI"
+            >
+              <Sparkles className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
               onClick={handleAddVideoCard}
               className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100"
               aria-label="Add new video card"
