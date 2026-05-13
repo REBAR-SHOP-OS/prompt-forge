@@ -101,6 +101,7 @@ export function SequentialClipPlayer({
   clipVolume = 1,
 }: Props) {
   const [index, setIndex] = useState(0)
+  const totalDuration = useTotalDuration(clips)
   const [isPlaying, setIsPlaying] = useState(true)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const musicRef = useRef<HTMLAudioElement | null>(null)
