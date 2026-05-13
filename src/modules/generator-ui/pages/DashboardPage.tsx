@@ -78,6 +78,7 @@ import { supabase } from '@/integrations/supabase/client'
 import WelcomeVideoOverlay from '@/modules/generator-ui/components/WelcomeVideoOverlay'
 import { SoundtrackWaveform, type SoundtrackWaveformHandle } from '@/modules/generator-ui/components/SoundtrackWaveform'
 import { TransitionPreview } from '@/modules/generator-ui/components/TransitionPreview'
+import { SequentialClipPlayer } from '@/modules/generator-ui/components/SequentialClipPlayer'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { generatorUiGateway } from '@/modules/generator-ui/gateway'
@@ -1018,6 +1019,17 @@ export default function DashboardPage() {
   type PreviewItem =
     | { kind: 'video'; job: JobDetail }
     | { kind: 'image'; image: UserImageItem }
+    | { kind: 'sequence'; clips: UnifiedClip[] }
+
+  // A clip is "playable" in the live sequential preview if it's a ready video
+  // (completed + has a storage_path) or an uploaded image.
+  const playableSequenceClips = useMemo<UnifiedClip[]>(() => {
+    return displayedClips.filter((c) => {
+      if (c.kind === 'image') return true
+      const status = normalizeStatus(c.job.status)
+      return status === 'completed' && !!c.job.video?.storage_path
+    })
+  }, [displayedClips])
 
   const previewItem = useMemo<PreviewItem | null>(() => {
     if (previewVideoId) {
@@ -1029,6 +1041,12 @@ export default function DashboardPage() {
       }
     }
     if (previewDismissed) return null
+    // When 2+ playable clips exist, default to the live auto-stitched
+    // sequential preview so the user always sees the full project — not just
+    // the most-recent clip — without paying to render Final Film.
+    if (playableSequenceClips.length >= 2) {
+      return { kind: 'sequence', clips: playableSequenceClips }
+    }
     if (visibleVideos.length > 0) {
       const v =
         visibleVideos.find((video) => video.video?.storage_path) ??
@@ -1038,7 +1056,7 @@ export default function DashboardPage() {
     const firstImage = displayedClips.find((c) => c.kind === 'image')
     if (firstImage && firstImage.kind === 'image') return { kind: 'image', image: firstImage.image }
     return null
-  }, [displayedClips, previewVideoId, previewDismissed, visibleVideos])
+  }, [displayedClips, previewVideoId, previewDismissed, visibleVideos, playableSequenceClips])
 
   // Backwards-compat alias used by existing card highlight + start-frame code paths
   const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
@@ -2700,7 +2718,36 @@ export default function DashboardPage() {
         style={{ minHeight: `${previewMaxHeightPx + 56}px`, paddingTop: '56px' }}
       >
         {previewItem ? (
-          previewItem.kind === 'image' ? (
+          previewItem.kind === 'sequence' ? (
+            <SequentialClipPlayer
+              clips={previewItem.clips.map((c) => {
+                if (c.kind === 'image') {
+                  return {
+                    kind: 'image' as const,
+                    id: c.id,
+                    src: c.image.storage_path,
+                    ratio: lockedProjectRatio ?? aspectRatio,
+                    durationSec: Math.max(1, c.image.still_duration_seconds || 3),
+                    label: 'Uploaded image',
+                  }
+                }
+                const src = getCardVideoSrc(c.job.id, c.job.video?.storage_path) ?? c.job.video?.storage_path ?? ''
+                return {
+                  kind: 'video' as const,
+                  id: c.id,
+                  src,
+                  ratio: getRatioFor(c.job),
+                  label: c.job.input_prompt,
+                }
+              })}
+              ratioToCss={ratioToCss}
+              ratioToHeight={ratioToHeight}
+              ratioToWidth={ratioToWidth}
+              maxHeightPx={previewMaxHeightPx}
+              onClose={closePreview}
+              onActiveClipChange={(id) => { /* highlight handled by HISTORY via previewVideoId on click */ void id }}
+            />
+          ) : previewItem.kind === 'image' ? (
             <div className="flex w-full justify-center">
               <div
                 className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
