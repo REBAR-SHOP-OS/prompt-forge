@@ -810,6 +810,7 @@ export default function DashboardPage() {
   }
 
   const pollTimerRef = useRef<number | null>(null)
+  const pollFailureCountRef = useRef(0)
   const promptInputRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
