@@ -2580,6 +2580,14 @@ export default function DashboardPage() {
         onUseAsStartFrame={handleReframeAsStart}
       />
 
+      <AiImageDialog
+        open={isAiImageDialogOpen}
+        onOpenChange={setIsAiImageDialogOpen}
+        userId={userId}
+        defaultAspect={lockedProjectRatio ?? aspectRatio}
+        onSaved={(row) => setUserImages((prev) => [row as UserImageItem, ...prev])}
+      />
+
       <Dialog open={isMusicDialogOpen} onOpenChange={setIsMusicDialogOpen}>
         <DialogContent className="border-white/10 bg-black text-zinc-100 sm:max-w-md">
           <DialogHeader>
