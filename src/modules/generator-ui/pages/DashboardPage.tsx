@@ -3809,33 +3809,29 @@ export default function DashboardPage() {
                   return (
                     <span
                       key={file.id}
-                      className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs text-zinc-300"
+                      className="relative inline-block"
+                      title={file.status === 'failed' ? file.error ?? undefined : file.name}
                     >
                       <button
                         type="button"
                         onClick={() => { if (canPreview && file.url) setPreviewImageUrl(file.url) }}
                         disabled={!canPreview}
-                        className={`inline-flex items-center gap-2 ${canPreview ? 'cursor-zoom-in hover:text-zinc-100' : 'cursor-default'}`}
-                        title={canPreview ? 'Preview image' : undefined}
+                        aria-label={canPreview ? `Preview ${file.name}` : file.name}
+                        className={`grid h-12 w-12 place-items-center overflow-hidden rounded-md border bg-white/[0.04] ${
+                          file.status === 'failed' ? 'border-rose-400/40' : 'border-white/10'
+                        } ${canPreview ? 'cursor-zoom-in hover:border-white/30' : 'cursor-default'}`}
                       >
                         {file.status === 'ready' && file.url ? (
-                          <img
-                            src={file.url}
-                            alt=""
-                            className="h-6 w-6 rounded-md border border-white/10 bg-black object-cover"
-                          />
+                          <img src={file.url} alt="" className="h-full w-full object-cover" />
                         ) : file.status === 'uploading' ? (
-                          <LoaderCircle className="h-3.5 w-3.5 animate-spin text-zinc-400" aria-hidden="true" />
+                          <LoaderCircle className="h-4 w-4 animate-spin text-zinc-400" aria-hidden="true" />
                         ) : (
-                          <Paperclip className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
+                          <Paperclip className="h-4 w-4 text-zinc-500" aria-hidden="true" />
                         )}
-                        <span className="max-w-[12rem] truncate">{file.name}</span>
                       </button>
-                      <span className="text-zinc-500">{file.status === 'uploading' ? 'Uploading' : file.target}</span>
-                      {file.status === 'failed' ? <span className="text-rose-200">{file.error}</span> : null}
                       <button
                         type="button"
-                        className="grid h-4 w-4 place-items-center rounded-full text-zinc-500 transition hover:text-zinc-100"
+                        className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full border border-white/15 bg-black/80 text-zinc-300 shadow transition hover:text-zinc-100"
                         aria-label={`Remove ${file.name}`}
                         onClick={() => removeUploadedFile(file.id)}
                       >
