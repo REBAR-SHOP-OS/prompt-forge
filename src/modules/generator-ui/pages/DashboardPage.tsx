@@ -1672,16 +1672,16 @@ export default function DashboardPage() {
 
       if (isTextToVideo) {
         createdJob = await jobOrchestratorGateway.createJob({
-          providerKey: 'wan',
-          requestedModel: 'wan2.7-t2v-2026-04-25',
+          providerKey: selectedModel.providerKey,
+          requestedModel: selectedModel.model,
           prompt: nextPrompt,
           durationSeconds,
           aspectRatio: effectiveRatio,
         })
       } else if (readyStartFrame?.url && readyEndFrame?.url) {
-        // Both frames provided — standard image-to-video.
         createdJob = await jobOrchestratorGateway.createJob({
-          providerKey: 'wan',
+          providerKey: selectedModel.providerKey,
+          requestedModel: selectedModel.model,
           prompt: nextPrompt,
           firstFrameUrl: readyStartFrame.url,
           lastFrameUrl: readyEndFrame.url,
@@ -1690,10 +1690,9 @@ export default function DashboardPage() {
         })
         seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
       } else if (readyStartFrame?.url) {
-        // Only Start: real image-to-video anchored on the Start frame so the
-        // prompt is executed directly on the uploaded image.
         createdJob = await jobOrchestratorGateway.createJob({
-          providerKey: 'wan',
+          providerKey: selectedModel.providerKey,
+          requestedModel: selectedModel.model,
           prompt: nextPrompt,
           firstFrameUrl: readyStartFrame.url,
           durationSeconds,
@@ -1701,9 +1700,9 @@ export default function DashboardPage() {
         })
         seedFrames = { firstFrameUrl: readyStartFrame.url }
       } else if (readyEndFrame?.url) {
-        // Only End: real image-to-video anchored on the End frame.
         createdJob = await jobOrchestratorGateway.createJob({
-          providerKey: 'wan',
+          providerKey: selectedModel.providerKey,
+          requestedModel: selectedModel.model,
           prompt: nextPrompt,
           lastFrameUrl: readyEndFrame.url,
           durationSeconds,
