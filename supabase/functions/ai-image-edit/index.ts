@@ -55,6 +55,18 @@ Deno.serve(async (req) => {
         status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    if (maskUrl) {
+      if (!maskUrl.startsWith("data:image/")) {
+        return new Response(JSON.stringify({ error: "maskUrl must be a data:image/* URL" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (maskUrl.length > 15_000_000) {
+        return new Response(JSON.stringify({ error: "maskUrl too large" }), {
+          status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     const apiKey = Deno.env.get("LOVABLE_API_KEY");
     if (!apiKey) {
