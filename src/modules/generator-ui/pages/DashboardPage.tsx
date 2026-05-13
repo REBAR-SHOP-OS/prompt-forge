@@ -87,6 +87,7 @@ import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDial
 import { VoiceoverDialog } from '@/modules/generator-ui/components/VoiceoverDialog'
 import CalendarInfoDialog from '@/modules/generator-ui/components/CalendarInfoDialog'
 import ImageReframeDialog from '@/modules/generator-ui/components/ImageReframeDialog'
+import AiImageDialog from '@/modules/generator-ui/components/AiImageDialog'
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
