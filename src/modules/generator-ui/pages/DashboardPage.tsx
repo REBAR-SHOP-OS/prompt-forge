@@ -954,6 +954,7 @@ export default function DashboardPage() {
     }
     const chronoAsc = [...generatedVideos]
       .filter((v) => !workspaceHiddenJobIds.has(v.id))
+      .filter((v) => sessionFreshMark == null || new Date(v.created_at).getTime() >= sessionFreshMark)
       .sort(
         (l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime()
       )
@@ -971,7 +972,7 @@ export default function DashboardPage() {
       if (byId.has(v.id)) ordered.push(v)
     }
     return ordered
-  }, [generatedVideos, manualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs])
+  }, [generatedVideos, manualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs, sessionFreshMark])
 
   const handleCardDragStart = (id: string) => (event: React.DragEvent) => {
     setDraggingId(id)
