@@ -1,39 +1,40 @@
 ## هدف
-اضافه کردن یک منوی انتخاب مدل (لیست تخت) کنار دکمه **Prompt** در پایین کامپوزر، تا کاربر بتواند مدل تولید ویدیو را انتخاب کند. Provider به‌طور خودکار از روی مدل استنتاج می‌شود.
+افزودن دکمهٔ **Regenerate** (ری‌جنریت) به هر کارت کلیپ. با کلیک روی آن:
+1. ویدیوی فعلی همان کارت پاک می‌شود (هم در سرور و هم در UI)
+2. یک job جدید با همان پرامت، همان provider/model، همان فریم‌های Start/End، همان aspect ratio و همان duration ساخته می‌شود
+3. کارت جدید به‌جای کارت قدیمی در همان موقعیت ظاهر می‌شود و progress آن polling می‌شود
 
-## مدل‌های قابل انتخاب
-بر اساس رجیستری فعلی (`core_ai_provider_registry`) و کدهای Wan/Flow پشتیبان:
-- **Wan 2.7 — Image to Video** → `wan` / `wan2.7-i2v-2026-04-25`
-- **Wan 2.7 — Text to Video** → `wan` / `wan2.7-t2v-2026-04-25`
-- **Flow Video v1** → `flow` / `flow-video-1`
-
-(t2v فقط در حالت Text-to-Video و i2v فقط وقتی فریم Start/End موجود است در دسترس خواهد بود؛ Flow در هر دو حالت قابل انتخاب است.)
-
-## تغییرات UI (فقط فرانت‌اند)
+## تغییرات (فقط فرانت‌اند)
 فایل: `src/modules/generator-ui/pages/DashboardPage.tsx`
 
-1. **State جدید**:
-   ```ts
-   type ModelChoice = { id: string; label: string; providerKey: 'wan'|'flow'; model: string; supports: ('t2v'|'i2v')[] }
-   const [selectedModelId, setSelectedModelId] = useState<string>('wan-i2v')
-   ```
-   مقدار اولیه با حالت فعلی (`isTextToVideo` → `wan-t2v`، در غیر این صورت `wan-i2v`) همگام می‌شود.
+### 1) تابع جدید `regenerateJob(job: JobDetail)`
+- در ابتدا با `window.confirm('Replace this clip with a new render from the same prompt?')` تأیید می‌گیرد.
+- پارامترهای ورودی برای ساخت job جدید:
+  - `prompt = job.input_prompt`
+  - `providerKey = (job.provider_key as 'wan'|'flow') ?? 'wan'`
+  - `requestedModel = job.model_key ?? undefined`
+  - `firstFrameUrl = job.first_frame_url ?? undefined`
+  - `lastFrameUrl = job.last_frame_url ?? undefined`
+  - `aspectRatio = clipRatios[job.id] ?? lockedProjectRatio ?? aspectRatio` (همان نسبت تصویری ثبت‌شدهٔ کارت قدیمی)
+  - `durationSeconds = durationSeconds` (ثابت در سطح کامپوزر)
+- اگر هیچ فریمی نبود و provider/model پشتیبان t2v بود → text-to-video، در غیر این صورت i2v.
+- مراحل:
+  1. `await videoLibraryGateway.deleteJob(job.id)` (یا فراخوانی همان مسیری که `deleteCard` استفاده می‌کند)؛ سپس از `generatedVideos` و `projectSourceJobs` و `approvedIds` حذف می‌شود (همان منطق `deleteCard` ولی بدون confirm جدا).
+  2. `jobOrchestratorGateway.createJob({...})` فراخوانی می‌شود.
+  3. job جدید با `buildSeededJob` به ابتدای لیست افزوده می‌شود — یا اگر بخواهیم در همان موقعیت قبلی قرار گیرد، index کارت قدیمی را قبل از حذف ذخیره و job جدید را در همان index درج می‌کنیم.
+  4. `rememberClipRatio(newJob.id, effectiveRatio)` صدا زده می‌شود.
+  5. polling فعلی (`pollFailureCountRef`/`Promise.allSettled`) خودکار آن را پوشش می‌دهد.
+- خطاها در `composerError`/`videoColumnMessage` نمایش داده می‌شوند.
 
-2. **منوی Popover**: یک دکمه کوچک کنار دکمه `Prompt` (همان ردیف، سمت چپ آن) با همان استایل دکمه‌های دور؛ متن آن نام مدل انتخابی فعلی است (مثلاً `Wan 2.7 i2v`). با کلیک، PopoverContent یک لیست تخت از همهٔ مدل‌های مجاز را نمایش می‌دهد.
+### 2) UI — دکمهٔ Regenerate در هر کارت
+دو مکانی که اکشن‌های کارت قرار دارند (خطوط ~۳۴۷۲ و ~۳۷۲۶) به‌روزرسانی می‌شود: یک دکمهٔ گرد جدید با آیکون `RotateCcw` (که از قبل در imports هست)، بین «Edit» و «Trim»، با کلاس‌های مشابه باقی دکمه‌ها (hover به رنگ amber/sky)، `aria-label="Regenerate clip"` و `title="Regenerate from same prompt"`.
+دکمه فقط وقتی نمایش داده می‌شود که job دارای `input_prompt` باشد و `status` در حالت `processing` نباشد (در حین رندر، غیرفعال یا مخفی).
 
-3. **فیلتر هوشمند**: گزینه‌هایی که با حالت فعلی همخوانی ندارند (مثلاً `wan-i2v` وقتی هیچ Start/End نیست و `isTextToVideo=true`) به‌صورت غیرفعال (با توضیح) نمایش داده می‌شوند تا کاربر سردرگم نشود.
-
-4. **ارسال به Backend**: در بلوک `handleGenerateClip` (خطوط ۱۶۱۸–۱۶۶۰)، به‌جای hardcode کردن `providerKey: 'wan'` و مدل ثابت، از `selectedModel.providerKey` و `selectedModel.model` استفاده می‌شود. منطق فعلی (i2v vs t2v بر اساس وجود فریم) حفظ می‌شود اما provider/model از انتخاب کاربر می‌آید.
-
-5. **Persistence سبک**: انتخاب کاربر در `localStorage` تحت کلید `ui:preferred-model` ذخیره می‌شود و در mount بعدی بازیابی می‌گردد.
-
-## خارج از محدوده
-- بک‌اند، رجیستری دیتابیس، و edge functions تغییری نمی‌کنند (`flow` در حال حاضر در `service.ts` پیاده‌سازی واقعی ندارد و در صورت انتخاب، اگر `FLOW_API_KEY` تنظیم نباشد خطای «provider API key missing» از بک‌اند برمی‌گردد — همان رفتار فعلی برای provider بدون کلید).
-- تغییری در ظاهر باقی دکمه‌ها داده نمی‌شود.
+### 3) خارج از محدوده
+- بک‌اند، edge functions و contractها تغییری نمی‌کنند.
+- منطق `editAndReuseJob` (Pencil) دست‌نخورده می‌ماند — Regenerate یک مسیر مستقل و سریع است.
 
 ## تأیید
-- کلیک روی منو → سه گزینه نمایش داده می‌شود.
-- انتخاب Wan t2v → بدون فریم، job با `wan2.7-t2v-2026-04-25` ساخته می‌شود.
-- انتخاب Wan i2v + فریم Start → job با `wan2.7-i2v-2026-04-25` ساخته می‌شود.
-- انتخاب Flow → request با `providerKey:'flow'` ارسال می‌شود (اگر کلید نباشد، toast خطای backend نمایش داده می‌شود — انتظار طبیعی).
-- پس از Reload، آخرین مدل انتخابی حفظ می‌شود.
+- کلیک روی Regenerate یک کارت کامل شده → confirm → کارت قدیمی محو، کارت جدید ظاهر می‌شود و progress آن می‌چرخد.
+- پس از اتمام، کلیپ جدید با همان aspect ratio و همان provider/model نمایش داده می‌شود.
+- Final Film و Library به‌درستی به کلیپ جدید رفرنس می‌دهند (چون id جدید است؛ کلیپ قدیمی از همه‌جا پاک شده).
