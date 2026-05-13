@@ -1,33 +1,58 @@
-# Show total film duration
+## مشکل
 
-The bottom overlay of `SequentialClipPlayer` currently shows only `1 / 3` and a `Live preview` badge. Add a clock icon + total film time next to them, so the user can see how long the merged film is.
+در پنل History پیام «Could not refresh render status» ظاهر می‌شود در حالی‌ که render هنوز در حال انجام است (۹۵٪). با بررسی کد سه ریشهٔ واقعی پیدا شد، نه یک باگ سطحی:
 
-## Changes
+### ریشهٔ ۱ — Polling شکننده با `Promise.all`
+در `src/modules/generator-ui/pages/DashboardPage.tsx` (خطوط ۱۲۶۵–۱۲۷۶):
+```ts
+const refreshedJobs = await Promise.all(
+  activeJobs.map((job) => jobOrchestratorGateway.getJob(job.id))
+)
+```
+اگر **فقط یک** درخواست `getJob` به دلیل گذرا (cold-start ادج‌فانکشن، تایم‌اوت شبکه، ۴۰۱ ناشی از رفرش توکن، rate-limit) شکست بخورد، کل `Promise.all` reject می‌شود و پیام خطا ست می‌گردد، حتی اگر بقیهٔ jobها موفق بوده باشند.
 
-### `src/modules/generator-ui/components/SequentialClipPlayer.tsx`
+### ریشهٔ ۲ — پیام خطا هرگز پاک نمی‌شود
+`setVideoColumnMessage('Could not refresh render status.')` ست می‌شود ولی در poll‌های بعدیِ موفق هیچ‌جا `setVideoColumnMessage(null)` فراخوانی نمی‌شود. یک اشکال گذرا یک‌بار رخ می‌دهد و پیام تا بسته شدن صفحه باقی می‌ماند.
 
-1. Import `Clock` from `lucide-react`.
-2. Add a `useTotalDuration(clips)` hook inside the component:
-   - For each `image` clip: add `durationSec`.
-   - For each `video` clip: probe duration once by creating a detached `HTMLVideoElement`, set `preload = 'metadata'`, listen for `loadedmetadata`, and cache the result in a `Map<src, number>` ref so we don't re-probe on re-renders or index changes.
-   - Re-run when the list of clip ids/srcs changes.
-   - Returns `totalSeconds` (number) — `0` while still probing.
-3. Add a `formatDuration(sec)` helper: `mm:ss` (e.g. `0:18`, `1:24`).
-4. In the bottom overlay (around line 281–288), insert a new pill **before** the `1 / N` pill:
-   ```
-   <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/60 px-2 py-0.5 tabular-nums">
-     <Clock className="h-3 w-3" aria-hidden="true" />
-     {formatDuration(totalSeconds)}
-   </span>
-   ```
-   Title attribute: `Total film duration`.
-5. While `totalSeconds === 0` (still probing), render `--:--` instead of `0:00` to avoid flicker.
+### ریشهٔ ۳ — درصد فقط زمان‌محور است (Math.min(95, …))
+در تابع `getJobProgressPercent` (خط ۲۲۴) درصد بر اساس زمان سپری‌شده محاسبه و در سقف ۹۵٪ کلَمپ می‌شود. backend مقدار `progress_percent` واقعی برنمی‌گرداند و سرور هیچ‌وقت وضعیت provider (fal.ai) را poll نمی‌کند. در نتیجه برای job طولانی، نوار روی ۹۵٪ گیر می‌افتد و کاربر فکر می‌کند چیزی خراب شده — هر هیک‌آپ شبکه‌ای در همین لحظه هم پیام خطا را ظاهر می‌کند.
 
-No backend, no business-logic changes. Final Film generation is untouched.
+---
 
-## Verification
+## راه‌حل اصولی (فقط فرانت‌اند، بدون تغییر backend)
 
-- Open Final Film preview with mixed image + video clips → pill shows the sum of all clip durations (e.g. `0:24`).
-- Single-clip preview path (`VideoWithSoundtrack`) is **out of scope** — request specifically targets the modal in the screenshot. If the user wants it there too, add it in a follow-up.
-- Switching clips via prev/next does not change the total.
-- Adding/removing a clip updates the total.
+### تغییرات در `src/modules/generator-ui/pages/DashboardPage.tsx`
+
+**۱. Polling را به `Promise.allSettled` تبدیل کن**
+فقط نتایج fulfilled مرج شوند؛ rejectedها نادیده گرفته شوند. هر job مستقل از بقیه آپدیت می‌شود.
+
+**۲. شمارندهٔ خطای پیاپی + threshold**
+یک `pollFailureCountRef = useRef(0)` اضافه شود.
+- در هر poll، اگر **همهٔ** درخواست‌ها rejected شدند → counter++؛ در غیر این صورت → counter = 0 و `setVideoColumnMessage(null)` اگر پیام فعلی همان متن خطا بود.
+- فقط وقتی `counter >= 3` (حدود ۱۲ ثانیه پشت سر هم خطا) پیام «Could not refresh render status.» نمایش داده شود.
+- این نکته باعث می‌شود یک hiccup گذرا هرگز نویز ایجاد نکند.
+
+**۳. Backoff تطبیقی برای jobهای طولانی**
+به‌جای ثابت ۴ ثانیه:
+```ts
+const interval = Math.min(20_000, 4_000 + Math.floor(elapsedMs / 30_000) * 2_000)
+```
+بعد از ۳۰ ثانیه ۶s، بعد ۸s و … تا سقف ۲۰s. این هم بار سرور را کم می‌کند، هم احتمال شکست را پایین می‌آورد.
+
+**۴. پاک‌سازی پیام در هر تغییر فاز موفق**
+وقتی `refreshedJobs.length > 0`، اگر `videoColumnMessage` با متن خطای poll برابر بود، `setVideoColumnMessage(null)`.
+
+**۵. (تنظیم کوچک UX) سقف درصد زمان‌محور**
+در `getJobProgressPercent`، وقتی `elapsed > expectedMs` نوار «نفس‌زدن» (مثلاً نوسان ۹۲–۹۵٪) به‌جای کلَمپ سفت ۹۵٪، تا کاربر بداند فرایند هنوز زنده است. اختیاری ولی مؤثر.
+
+### بدون تغییر در:
+- `supabase/functions/jobs-get/*` — لاگ‌ها هیچ خطایی نشان نمی‌دهند، این edge function سالم است.
+- backend service لایهٔ orchestrator — provider-status polling یک تغییر بزرگ‌تر است و خارج از این درخواست.
+
+---
+
+## تأیید پس از پیاده‌سازی
+- تست‌سناریوی شکست گذرا: یک‌بار شبکه را در DevTools روی Offline بگذار، پس از یک poll دوباره Online کن — نباید پیام خطا ظاهر شود (counter ریست می‌شود).
+- ۳ poll پیاپی Offline → پیام «Could not refresh render status.» ظاهر می‌شود.
+- وقتی اتصال برمی‌گردد → پیام به‌طور خودکار حذف می‌شود.
+- نوار رندر: حتی اگر خطای موقت رخ دهد، روند ادامه دارد و وقتی job واقعاً تمام شود به ۱۰۰٪ می‌پرد.

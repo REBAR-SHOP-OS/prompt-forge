@@ -136,7 +136,7 @@ type UnifiedClip =
   | { kind: 'video'; id: string; createdAt: string; job: JobDetail }
   | { kind: 'image'; id: string; createdAt: string; image: UserImageItem }
 
-const VIDEO_POLL_INTERVAL_MS = 4_000
+
 const FRAMES_BUCKET = 'wan-frames'
 const MERGED_BUCKET = 'merged-videos'
 const USER_IMAGES_BUCKET = 'user-images'
@@ -230,7 +230,13 @@ function getJobProgressPercent(job: { status: string; progress_percent?: number 
   // Wan 2.7 typically takes ~30-40s of real time per 1s of output. Use 35s/s heuristic, capped to 10s clips.
   const expectedMs = 10 * 35_000
   const ratio = expectedMs > 0 ? elapsed / expectedMs : 0
-  const timeBased = Math.max(status === 'pending' ? 8 : 18, Math.min(95, Math.round(18 + ratio * 77)))
+  let timeBased = Math.max(status === 'pending' ? 8 : 18, Math.min(95, Math.round(18 + ratio * 77)))
+  // Once we've exceeded the expected window, gently "breathe" between 92-95%
+  // so the bar doesn't look frozen while the provider is still working.
+  if (elapsed > expectedMs) {
+    const phase = (elapsed - expectedMs) / 2_000 // ~2s per cycle
+    timeBased = 93 + Math.round(Math.sin(phase) + 1) // 92..95
+  }
   const backend = typeof job.progress_percent === 'number'
     ? Math.max(0, Math.min(100, Math.round(job.progress_percent)))
     : null
@@ -810,6 +816,7 @@ export default function DashboardPage() {
   }
 
   const pollTimerRef = useRef<number | null>(null)
+  const pollFailureCountRef = useRef(0)
   const promptInputRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -1259,21 +1266,60 @@ export default function DashboardPage() {
         window.clearTimeout(pollTimerRef.current)
         pollTimerRef.current = null
       }
+      pollFailureCountRef.current = 0
       return
     }
 
+    // Adaptive backoff: longer-running jobs poll less frequently to reduce load
+    // and transient-failure surface. 4s baseline, +2s per 30s elapsed, max 20s.
+    const oldestStartMs = Math.min(
+      ...activeJobs.map((j) => {
+        const t = Date.parse(j.created_at)
+        return Number.isFinite(t) ? t : Date.now()
+      }),
+    )
+    const elapsedMs = Math.max(0, Date.now() - oldestStartMs)
+    const interval = Math.min(20_000, 4_000 + Math.floor(elapsedMs / 30_000) * 2_000)
+
+    const POLL_ERROR_MSG = 'Could not refresh render status.'
+    const FAILURE_THRESHOLD = 3
+
     pollTimerRef.current = window.setTimeout(async () => {
-      try {
-        const refreshedJobs = await Promise.all(activeJobs.map((job) => jobOrchestratorGateway.getJob(job.id)))
+      // Independent per-job requests: one transient failure must not poison the
+      // whole batch. Surface a banner only after several consecutive total-failures.
+      const settled = await Promise.allSettled(
+        activeJobs.map((job) => jobOrchestratorGateway.getJob(job.id)),
+      )
+      const fulfilled = settled
+        .filter((r): r is PromiseFulfilledResult<JobDetail> => r.status === 'fulfilled')
+        .map((r) => r.value)
+      const allFailed = fulfilled.length === 0 && settled.length > 0
+
+      if (fulfilled.length > 0) {
         setGeneratedVideos((currentJobs) =>
-          refreshedJobs.reduce((jobs, refreshedJob) => mergeJob(jobs, refreshedJob), currentJobs)
-        )
-      } catch (error) {
-        setVideoColumnMessage(
-          error instanceof ApiError ? `${error.code}: ${error.message}` : 'Could not refresh render status.'
+          fulfilled.reduce((jobs, refreshedJob) => mergeJob(jobs, refreshedJob), currentJobs),
         )
       }
-    }, VIDEO_POLL_INTERVAL_MS)
+
+      if (allFailed) {
+        pollFailureCountRef.current += 1
+        if (pollFailureCountRef.current >= FAILURE_THRESHOLD) {
+          const lastErr = settled.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined
+          const reason = lastErr?.reason
+          setVideoColumnMessage(
+            reason instanceof ApiError ? `${reason.code}: ${reason.message}` : POLL_ERROR_MSG,
+          )
+        }
+      } else {
+        pollFailureCountRef.current = 0
+        // Auto-clear stale poll-error banner once we recover.
+        setVideoColumnMessage((current) => {
+          if (!current) return current
+          if (current === POLL_ERROR_MSG || current.endsWith(POLL_ERROR_MSG)) return null
+          return current
+        })
+      }
+    }, interval)
 
     return () => {
       if (pollTimerRef.current) {
