@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { supabase } from '@/integrations/supabase/client'
+import { normalizeImageAspect } from '@/modules/generator-ui/lib/normalizeImageAspect'
 
 const USER_IMAGES_BUCKET = 'user-images'
 
