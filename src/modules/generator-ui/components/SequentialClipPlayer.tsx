@@ -46,10 +46,18 @@ export function SequentialClipPlayer({
   maxHeightPx,
   onClose,
   onActiveClipChange,
+  musicUrl,
+  musicRange,
+  musicVolume = 1,
+  voiceoverUrl,
+  voiceoverVolume = 1,
+  clipVolume = 1,
 }: Props) {
   const [index, setIndex] = useState(0)
   const [isPlaying, setIsPlaying] = useState(true)
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const musicRef = useRef<HTMLAudioElement | null>(null)
+  const voiceRef = useRef<HTMLAudioElement | null>(null)
   const imageTimerRef = useRef<number | null>(null)
 
   // Keep index inside bounds when clips change.
