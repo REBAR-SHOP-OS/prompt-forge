@@ -3916,6 +3916,21 @@ export default function DashboardPage() {
           </div>
         </div>
       </form>
+
+      <Dialog open={!!previewImageUrl} onOpenChange={(o) => { if (!o) setPreviewImageUrl(null) }}>
+        <DialogContent className="max-w-3xl border-white/10 bg-black/90 p-3">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Image preview</DialogTitle>
+          </DialogHeader>
+          {previewImageUrl ? (
+            <img
+              src={previewImageUrl}
+              alt="Attachment preview"
+              className="mx-auto max-h-[80vh] w-auto object-contain"
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }
