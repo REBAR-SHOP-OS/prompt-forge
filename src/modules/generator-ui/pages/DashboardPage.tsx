@@ -330,6 +330,7 @@ export default function DashboardPage() {
   const [userImages, setUserImages] = useState<UserImageItem[]>([])
   const [isUploadingImage, setIsUploadingImage] = useState(false)
   const imageUploadInputRef = useRef<HTMLInputElement | null>(null)
+  const [isAiImageDialogOpen, setIsAiImageDialogOpen] = useState(false)
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
