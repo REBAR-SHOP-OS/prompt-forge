@@ -2586,23 +2586,53 @@ export default function DashboardPage() {
         onOpenChange={setIsAiImageDialogOpen}
         userId={userId}
         defaultAspect={lockedProjectRatio ?? aspectRatio}
-        onSaved={(row) => {
+        onSaved={async (row) => {
           setUserImages((prev) => [row as UserImageItem, ...prev])
           setGenerationMode('image-to-video')
           setUploadTarget('Start')
+          const seedId = Date.now()
+          const placeholder: UploadedFile = {
+            id: seedId,
+            name: `ai-${row.id.slice(0, 6)}.png`,
+            size: 0,
+            target: 'Start',
+            type: 'image/png',
+            status: 'uploading',
+            url: null,
+            error: null,
+          }
           setUploadedFiles((cur) => [
             ...cur.filter((f) => f.target !== 'Start' || f.status !== 'ready'),
-            {
-              id: Date.now(),
-              name: `ai-${row.id.slice(0, 6)}.png`,
-              size: 0,
-              target: 'Start',
-              type: 'image/png',
-              status: 'ready',
-              url: row.storage_path,
-              error: null,
-            },
+            placeholder,
           ])
+          try {
+            if (!userId) throw new Error('Not signed in')
+            // Re-stage the AI image into the wan-frames bucket so the jobs-create
+            // validator (which only accepts wan-frames/{userId}/...) accepts it.
+            const res = await fetch(row.storage_path)
+            if (!res.ok) throw new Error(`Could not read AI image (HTTP ${res.status})`)
+            const blob = await res.blob()
+            const storagePath = `${userId}/start-ai-${Date.now()}-${crypto.randomUUID()}.png`
+            const { error: upErr } = await supabase.storage
+              .from(FRAMES_BUCKET)
+              .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false })
+            if (upErr) throw new Error(upErr.message)
+            const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+            setUploadedFiles((current) =>
+              current.map((f) =>
+                f.id === seedId
+                  ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size, error: null }
+                  : f,
+              ),
+            )
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Could not stage image as frame'
+            setUploadedFiles((current) =>
+              current.map((f) =>
+                f.id === seedId ? { ...f, status: 'failed', error: msg } : f,
+              ),
+            )
+          }
         }}
       />
 
