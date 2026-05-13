@@ -192,8 +192,9 @@ export default function AiImageDialog({
     setIsLoading(true)
     setError(null)
     try {
+      const maskUrl = exportMaskDataUrl()
       const { data, error: fnErr } = await supabase.functions.invoke('ai-image-edit', {
-        body: { prompt: editPrompt.trim(), imageUrl: imageDataUrl, aspectRatio: aspect },
+        body: { prompt: editPrompt.trim(), imageUrl: imageDataUrl, aspectRatio: aspect, ...(maskUrl ? { maskUrl } : {}) },
       })
       if (fnErr) throw fnErr
       const url = (data as { dataUrl?: string } | null)?.dataUrl
