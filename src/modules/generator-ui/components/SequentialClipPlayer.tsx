@@ -28,6 +28,14 @@ type Props = {
   onClose?: () => void
   /** Called when a clip becomes active so the parent can highlight a card. */
   onActiveClipChange?: (clipId: string) => void
+  /** Live preview audio overlays (do NOT affect Final Film generation). */
+  musicUrl?: string | null
+  musicRange?: [number, number]
+  musicVolume?: number
+  voiceoverUrl?: string | null
+  voiceoverVolume?: number
+  /** Volume of the clip's own audio track in preview (0..1). */
+  clipVolume?: number
 }
 
 export function SequentialClipPlayer({
