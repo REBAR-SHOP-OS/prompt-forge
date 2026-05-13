@@ -400,6 +400,8 @@ export default function AiImageDialog({
                 style={{ mixBlendMode: 'normal' }}
                 onPointerDown={(e) => {
                   if (!isMaskMode) return
+                  const img = imgRef.current
+                  if (!img || !img.naturalWidth) return
                   ;(e.target as HTMLCanvasElement).setPointerCapture(e.pointerId)
                   isDrawingRef.current = true
                   syncCanvasSize()
