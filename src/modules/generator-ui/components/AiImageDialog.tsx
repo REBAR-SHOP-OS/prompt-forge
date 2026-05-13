@@ -258,9 +258,11 @@ export default function AiImageDialog({
       const normalizedEdit = await normalizeImageAspect(url, aspect)
       // If the user painted a mask, locally composite so pixels outside the mask are unchanged.
       const finalUrl = maskUrl ? await compositeWithMask(originalUrl, normalizedEdit) : normalizedEdit
-      lastImageSourceRef.current = 'refine'
       setImageDataUrl(finalUrl)
       setEditPrompt('')
+      // Clear the visible mask after a successful edit so the result is not hidden by the red overlay.
+      handleClearMask()
+      setIsMaskMode(false)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to edit image.')
     } finally {
