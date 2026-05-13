@@ -1,52 +1,42 @@
-# Fix: Final Film fails with "Need at least 1 finished item" after a previous finalize
+## هدف
+وقتی کاربر Voiceover روی Final Film می‌گذارد، بتواند مستقل از موسیقی، **حجم صدای اصلی ویدئو** و **حجم Voiceover** را تنظیم کند.
 
-## What you saw
+## وضعیت فعلی
+- بک‌اند `mergeVideos.ts` از قبل سه ولوم مستقل را پشتیبانی می‌کند: `clipVolume`, `musicVolume`, `voiceover.volume`.
+- در UI فقط برای **موسیقی** اسلایدر وجود دارد (داخل دیالوگ Soundtrack، در حالت Mix).
+- برای **Voiceover** هیچ کنترلی نیست؛ `voiceoverVolume` در `DashboardPage.tsx` به‌صورت ثابت `1` تعریف شده و وقتی Voiceover بدون موسیقی فعال باشد، صدای کلیپ به‌طور خودکار صفر می‌شود (پیش‌فرض backend).
 
-You added music + voiceover, the **Final Film** button was clickable, but clicking it returned `Need at least 1 finished item (video or image) to finalize.` The History panel on the right was empty ("0").
+## تغییرات (فقط UI، بدون تغییر بک‌اند یا قراردادها)
 
-## Root cause
+### 1) State در `DashboardPage.tsx`
+- `voiceoverVolume` را به `useState<number>(1)` با setter تبدیل کن.
+- یک state جدید `voiceoverClipVolume` با پیش‌فرض `0.3` اضافه کن (وقتی Voiceover هست ولی موسیقی نیست، این مقدار به‌جای صفر ارسال می‌شود تا کاربر صدای اصلی را هم بشنود).
 
-In `DashboardPage.tsx`:
+### 2) منطق ارسال در `handleMergeAllVideos`
+در ساخت `audioOpt`:
+- اگر `hasVoiceover && !hasMusic` → `clipVolume = voiceoverClipVolume`.
+- اگر `hasMusic` → همان `soundtrackMode`/`clipVolume` فعلی (بدون تغییر).
+- `voiceover.volume` از state جدید `voiceoverVolume` خوانده شود.
 
-- The **button's enabled state** (line 2355) counts `completedSourceVideos.length + visibleUserImages.length`. `completedSourceVideos` is derived from the raw `generatedVideos` and **does NOT** filter out `workspaceHiddenJobIds`. So as long as any completed job exists in memory, the button is enabled.
-- The **merge handler** (line 1922) builds `eligibleClips` from `displayedClips`. `displayedClips` is built on top of `displayedVideos`, which **does** filter out `workspaceHiddenJobIds` (line 932).
+### 3) UI — پنل تنظیم صدای Voiceover
+کنار چیپ Voiceover (همان جایی که اکنون نام voiceover و دکمهٔ X نمایش داده می‌شود) یک Popover کوچک با آیکون `SlidersHorizontal` اضافه کن که فقط وقتی `voiceoverUrl` فعال است نمایش داده شود. داخل آن دو اسلایدر هم‌سبک با اسلایدرهای موجود در دیالوگ موسیقی:
 
-After every Final Film, all source jobs are added to `workspaceHiddenJobIds` (lines 2097–2100) so the History column looks fresh. From that moment:
+```
+Original clip audio   [—————o———]  30%
+Voiceover             [————————o]  100%
+```
 
-- Button enabled (counts hidden jobs) ✅
-- `displayedClips` empty (hides them) ❌
-- → `eligibleClips.length < 1` → error
+- بازه: 0–100، گام 1، تبدیل به 0..1 برای state.
+- اگر موسیقی هم همزمان فعال باشد، اسلایدر «Original clip audio» در این پنل غیرفعال شود و یک هینت کوتاه نمایش دهد: «Clip audio is controlled from the Soundtrack dialog» (تا منبع حقیقت یکی بماند).
 
-`resumeSelectedProject()` is called at the top of `handleMergeAllVideos`, but it only restores jobs when `selectedProjectId` is set. If the user is just continuing in the same workspace (no project re-opened from Library), the hidden source jobs are never restored and the merge silently has nothing to stitch.
+### 4) Reset
+در `handleClearVoiceover` و در محل ریست بعد از Final Film، `voiceoverVolume` و `voiceoverClipVolume` را به مقدار پیش‌فرض برگردان.
 
-## Fix
+## خارج از محدوده
+- بدون تغییر در `mergeVideos.ts`، edge functionها، schema، یا VoiceoverDialog.
+- بدون تغییر روی منطق موسیقی موجود.
 
-One small file: `src/modules/generator-ui/pages/DashboardPage.tsx`. Inside `handleMergeAllVideos`:
-
-1. **Stop relying on `displayedClips`.** Build `eligibleClips` directly from the authoritative live data — the same data the button uses to decide whether to enable itself — so the two can never disagree:
-
-   - all `completedSourceVideos` (videos with `status === completed` and a `video.storage_path`),
-   - plus `visibleUserImages`,
-   - plus, when `selectedProjectId` is set, any snapshot jobs not already present (already handled today).
-
-2. Sort with the existing rule: `manualOrder` first, then chronological ASC. This matches `displayedClips`' own ordering, so the merged film still respects user drag-reorder.
-
-3. As a side-effect of merging, **unhide** the source jobs that participated, so the History column reflects what was just stitched (mirrors what `resumeSelectedProject` already does for project-snapshot mode). This also fixes the visual confusion of "I just finalized N clips but History shows 0".
-
-4. Keep the existing single-card guard (audio OR edit required) and the existing target-size / image-to-clip pipeline untouched.
-
-The button-enable expression on line 2355 stays as-is — it's already permissive in the right direction; the bug was that the handler was *more* restrictive than the button.
-
-## Out of scope
-
-- No backend, RLS, storage, edge-function, or DB changes.
-- `editedJobIds`, transitions, soundtrack range, image still-duration, project snapshots, drag-reorder: unchanged.
-- The right-panel History UI logic is untouched. The only visible change is that after clicking Final Film, source cards become visible again (which is the correct behavior — they were just stitched).
-
-## Verification
-
-1. Generate 2 videos → Final Film with music → produces output, History now shows the 2 sources.
-2. Without reloading, generate 1 more video → Final Film again → all 3 sources stitched, no error.
-3. Upload 1 image, no videos, add music → Final Film → image still-clip + soundtrack, no error.
-4. Re-open a previous project from Library (selectedProjectId set), add music, Final Film → snapshot clips re-stitched with new soundtrack (current path, still works).
-5. Empty workspace (no completed clips, no images) → button disabled, no way to trigger the error.
+## تأیید
+1. فقط Voiceover بدون موسیقی → پنل ولوم باز شود؛ هر دو اسلایدر فعال؛ Final Film هر دو صدا را با نسبت تنظیم‌شده پخش کند.
+2. Voiceover + موسیقی همزمان → اسلایدر clip در پنل voiceover غیرفعال؛ کنترل از دیالوگ Soundtrack.
+3. حذف Voiceover → ولوم‌ها به پیش‌فرض ریست شوند.

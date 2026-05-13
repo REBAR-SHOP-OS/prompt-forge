@@ -666,7 +666,8 @@ export default function DashboardPage() {
   const [isReframeOpen, setIsReframeOpen] = useState(false)
   const [voiceoverUrl, setVoiceoverUrl] = useState<string | null>(null)
   const [voiceoverName, setVoiceoverName] = useState<string | null>(null)
-  const [voiceoverVolume] = useState<number>(1)
+  const [voiceoverVolume, setVoiceoverVolume] = useState<number>(1)
+  const [voiceoverClipVolume, setVoiceoverClipVolume] = useState<number>(0.3)
   const musicFileInputRef = useRef<HTMLInputElement | null>(null)
   const musicPreviewAudioRef = useRef<HTMLAudioElement | null>(null)
   const musicWaveformRef = useRef<SoundtrackWaveformHandle | null>(null)
@@ -1898,6 +1899,8 @@ export default function DashboardPage() {
     }
     setVoiceoverUrl(null)
     setVoiceoverName(null)
+    setVoiceoverVolume(1)
+    setVoiceoverClipVolume(0.3)
   }
 
   function handlePreviewMusicRange() {
@@ -2038,6 +2041,9 @@ export default function DashboardPage() {
 
       const hasMusic = Boolean(musicUrl && musicRange[1] > musicRange[0])
       const hasVoiceover = Boolean(voiceoverUrl)
+      const mixedClipVolume = hasMusic
+        ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
+        : (hasVoiceover ? voiceoverClipVolume : 1)
       const audioOpt = hasMusic || hasVoiceover
         ? {
             music: hasMusic
@@ -2051,7 +2057,7 @@ export default function DashboardPage() {
             voiceover: hasVoiceover
               ? { src: voiceoverUrl as string, volume: voiceoverVolume }
               : undefined,
-            clipVolume: soundtrackMode === 'music-only' ? 0 : clipVolume,
+            clipVolume: mixedClipVolume,
           }
         : undefined
       const mergeRes = await mergeVideoUrls(
@@ -2193,6 +2199,8 @@ export default function DashboardPage() {
     }
     setVoiceoverUrl(null)
     setVoiceoverName(null)
+    setVoiceoverVolume(1)
+    setVoiceoverClipVolume(0.3)
     // Reset any in-flight merge progress UI.
     setIsMerging(false)
     setMergeProgress(0)
@@ -2492,6 +2500,54 @@ export default function DashboardPage() {
         )}
       </button>
 
+      {voiceoverUrl ? (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-2.5 text-xs text-zinc-200/80 transition hover:border-violet-300/30 hover:bg-violet-300/[0.06] hover:text-violet-100"
+              aria-label="Adjust voiceover and clip volume"
+              title="Adjust original clip audio and voiceover volume"
+            >
+              <SlidersHorizontal className="h-[14px] w-[14px]" aria-hidden="true" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-72 space-y-4 border-white/10 bg-zinc-950 text-zinc-100" align="end">
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                <span>Original clip audio</span>
+                <span className="tabular-nums text-zinc-200">{Math.round(voiceoverClipVolume * 100)}%</span>
+              </div>
+              <Slider
+                value={[Math.round(voiceoverClipVolume * 100)]}
+                min={0}
+                max={100}
+                step={1}
+                disabled={Boolean(musicUrl && musicRange[1] > musicRange[0])}
+                onValueChange={(v) => setVoiceoverClipVolume((v[0] ?? 0) / 100)}
+              />
+              {musicUrl && musicRange[1] > musicRange[0] ? (
+                <p className="text-[10px] leading-relaxed text-zinc-500">
+                  Clip audio is controlled from the Soundtrack dialog while music is active.
+                </p>
+              ) : null}
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                <span>Voiceover</span>
+                <span className="tabular-nums text-zinc-200">{Math.round(voiceoverVolume * 100)}%</span>
+              </div>
+              <Slider
+                value={[Math.round(voiceoverVolume * 100)]}
+                min={0}
+                max={100}
+                step={1}
+                onValueChange={(v) => setVoiceoverVolume((v[0] ?? 0) / 100)}
+              />
+            </div>
+          </PopoverContent>
+        </Popover>
+      ) : null}
       <VoiceoverDialog
         open={isVoiceoverOpen}
         onOpenChange={setIsVoiceoverOpen}
