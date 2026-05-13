@@ -70,6 +70,7 @@ export default function AiImageDialog({
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const imgRef = useRef<HTMLImageElement | null>(null)
   const isDrawingRef = useRef(false)
+  const lastImageSourceRef = useRef<'generate' | 'refine' | null>(null)
 
   useEffect(() => {
     if (open) {
@@ -85,8 +86,10 @@ export default function AiImageDialog({
     }
   }, [open, defaultAspect])
 
-  // Reset mask whenever a new image is shown.
+  // Reset mask only when a brand-new image is generated. Refines preserve the mask
+  // so the user can iterate on the same painted region.
   useEffect(() => {
+    if (lastImageSourceRef.current === 'refine') return
     setHasMask(false)
     setIsMaskMode(false)
     const c = maskCanvasRef.current
@@ -167,6 +170,58 @@ export default function AiImageDialog({
     return out.toDataURL('image/png')
   }
 
+  // Load an image (data: or https) into an HTMLImageElement.
+  function loadImage(src: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => resolve(img)
+      img.onerror = reject
+      img.src = src
+    })
+  }
+
+  // Composite the model output with the original image so that ONLY pixels inside
+  // the painted (feathered) mask come from the edit; everything else is byte-identical
+  // to the original. This guarantees the user's intent regardless of model behavior.
+  async function compositeWithMask(originalUrl: string, editedUrl: string): Promise<string> {
+    const maskC = maskCanvasRef.current
+    if (!maskC || !hasMask) return editedUrl
+
+    const [orig, edit] = await Promise.all([loadImage(originalUrl), loadImage(editedUrl)])
+    const W = Math.max(orig.naturalWidth, edit.naturalWidth)
+    const H = Math.max(orig.naturalHeight, edit.naturalHeight)
+
+    // 1) Feathered alpha mask scaled to W x H.
+    const featherPx = Math.max(2, Math.round(W * 0.012))
+    const maskScaled = document.createElement('canvas')
+    maskScaled.width = W
+    maskScaled.height = H
+    const mctx = maskScaled.getContext('2d')!
+    mctx.filter = `blur(${featherPx}px)`
+    mctx.drawImage(maskC, 0, 0, W, H)
+    mctx.filter = 'none'
+
+    // 2) Build "edited inside the mask" by intersecting edited with mask alpha.
+    const editLayer = document.createElement('canvas')
+    editLayer.width = W
+    editLayer.height = H
+    const ectx = editLayer.getContext('2d')!
+    ectx.drawImage(edit, 0, 0, W, H)
+    ectx.globalCompositeOperation = 'destination-in'
+    ectx.drawImage(maskScaled, 0, 0)
+    ectx.globalCompositeOperation = 'source-over'
+
+    // 3) Final = original, then edited layer painted on top (only its non-transparent pixels remain).
+    const out = document.createElement('canvas')
+    out.width = W
+    out.height = H
+    const octx = out.getContext('2d')!
+    octx.drawImage(orig, 0, 0, W, H)
+    octx.drawImage(editLayer, 0, 0)
+    return out.toDataURL('image/png')
+  }
+
   const handleGenerate = async () => {
     if (!prompt.trim() || isLoading) return
     setIsLoading(true)
@@ -179,6 +234,7 @@ export default function AiImageDialog({
       const url = (data as { dataUrl?: string } | null)?.dataUrl
       if (!url) throw new Error('No image returned.')
       const normalized = await normalizeImageAspect(url, aspect)
+      lastImageSourceRef.current = 'generate'
       setImageDataUrl(normalized)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to generate image.')
@@ -192,15 +248,19 @@ export default function AiImageDialog({
     setIsLoading(true)
     setError(null)
     try {
+      const originalUrl = imageDataUrl
       const maskUrl = exportMaskDataUrl()
       const { data, error: fnErr } = await supabase.functions.invoke('ai-image-edit', {
-        body: { prompt: editPrompt.trim(), imageUrl: imageDataUrl, aspectRatio: aspect, ...(maskUrl ? { maskUrl } : {}) },
+        body: { prompt: editPrompt.trim(), imageUrl: originalUrl, aspectRatio: aspect, ...(maskUrl ? { maskUrl } : {}) },
       })
       if (fnErr) throw fnErr
       const url = (data as { dataUrl?: string } | null)?.dataUrl
       if (!url) throw new Error('No image returned.')
-      const normalized = await normalizeImageAspect(url, aspect)
-      setImageDataUrl(normalized)
+      const normalizedEdit = await normalizeImageAspect(url, aspect)
+      // If the user painted a mask, locally composite so pixels outside the mask are unchanged.
+      const finalUrl = maskUrl ? await compositeWithMask(originalUrl, normalizedEdit) : normalizedEdit
+      lastImageSourceRef.current = 'refine'
+      setImageDataUrl(finalUrl)
       setEditPrompt('')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to edit image.')
