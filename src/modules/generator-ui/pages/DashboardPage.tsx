@@ -2717,7 +2717,36 @@ export default function DashboardPage() {
         style={{ minHeight: `${previewMaxHeightPx + 56}px`, paddingTop: '56px' }}
       >
         {previewItem ? (
-          previewItem.kind === 'image' ? (
+          previewItem.kind === 'sequence' ? (
+            <SequentialClipPlayer
+              clips={previewItem.clips.map((c) => {
+                if (c.kind === 'image') {
+                  return {
+                    kind: 'image' as const,
+                    id: c.id,
+                    src: c.image.storage_path,
+                    ratio: lockedProjectRatio ?? aspectRatio,
+                    durationSec: Math.max(1, c.image.still_duration_seconds || 3),
+                    label: 'Uploaded image',
+                  }
+                }
+                const src = getCardVideoSrc(c.job.id, c.job.video?.storage_path) ?? c.job.video?.storage_path ?? ''
+                return {
+                  kind: 'video' as const,
+                  id: c.id,
+                  src,
+                  ratio: getRatioFor(c.job),
+                  label: c.job.input_prompt,
+                }
+              })}
+              ratioToCss={ratioToCss}
+              ratioToHeight={ratioToHeight}
+              ratioToWidth={ratioToWidth}
+              maxHeightPx={previewMaxHeightPx}
+              onClose={closePreview}
+              onActiveClipChange={(id) => { /* highlight handled by HISTORY via previewVideoId on click */ void id }}
+            />
+          ) : previewItem.kind === 'image' ? (
             <div className="flex w-full justify-center">
               <div
                 className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
