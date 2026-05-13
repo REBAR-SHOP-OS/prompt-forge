@@ -1,40 +1,36 @@
-## Problem
+## What's wrong
 
-When the user toggles **Edit area**, paints a region, writes a prompt, and clicks **Apply edit**, the result currently changes pixels outside the painted region too.
+Looking at the screenshot, after **Apply edit** the painted red mask is still drawn over the image, so the user cannot tell whether the edit actually landed inside the painted region. The composite logic from the previous turn is correct (pixels outside the mask are byte-identical to the original), but the persistent red overlay visually hides the result and makes it look like "nothing happened in the marked area".
 
-Root cause: the Gemini Nano Banana edit model does *not* perform true inpainting. Even when we send the original + a mask + a strict instruction, the model regenerates the whole frame, and any pixel can drift (composition, lighting, faces, background). A text instruction alone cannot guarantee "only these pixels change".
+There is also a smaller robustness issue: when a refine produces a new image with different natural dimensions, the existing `syncCanvasSize` preserves the mask bitmap via `putImageData(0,0)`, which leaves it misaligned at the top-left instead of rescaled to the new size.
 
-The only deterministic fix is to **composite the result locally**: keep the original everywhere outside the mask, and only paste the model's output inside the mask.
+## Fix (frontend only — `AiImageDialog.tsx`)
 
-## Fix (frontend only)
+1. **Clear the visible mask after a successful Apply edit** so the user immediately sees the result inside the painted region.
+   - In `handleRefine`, after `setImageDataUrl(finalUrl)`, call `handleClearMask()` and `setIsMaskMode(false)`.
+   - Drop the `lastImageSourceRef` "preserve mask on refine" behavior added in the previous turn — revert the `useEffect([imageDataUrl])` to always reset the mask. (User can repaint to iterate; this matches standard inpainting UX and removes the misalignment risk on dimension change.)
 
-File: `src/modules/generator-ui/components/AiImageDialog.tsx`
+2. **Guarantee the mask canvas is sized to the image before the first stroke.**
+   - In the `Edit area` toggle handler, after enabling mask mode, wait for the next animation frame (`requestAnimationFrame`) and then call `syncCanvasSize`, so we read the actually-laid-out image size (not the previous one).
+   - On `pointerDown`, if `imgRef.current.naturalWidth === 0`, return early and show the toast/state instead of painting into a 300×150 default canvas.
 
-1. In `handleRefine`, after we receive the model's `dataUrl` and normalize it, do a local canvas composite **before** calling `setImageDataUrl`:
-   - Load the **original** image (`imageDataUrl` at the time of the click) and the **edited** image at the same pixel size as the displayed image (use the larger of the two natural sizes; both will already match the chosen aspect after `normalizeImageAspect`).
-   - Resize the painted mask canvas to that same pixel size with `drawImage` (nearest match is fine; we will feather next).
-   - Build a feathered alpha mask: copy the painted alpha to an offscreen canvas, run a small `ctx.filter = 'blur(<~1.5% of width>px)'` redraw so the mask edge is soft (avoids visible seams).
-   - Composite: draw original → set `globalCompositeOperation = 'destination-out'` with the feathered mask to punch a hole → set `'destination-over'` and draw the edited image to fill only the hole. (Equivalently: draw edited, mask it via `destination-in`, then draw original behind via `destination-over`.)
-   - Export the composite as a PNG data URL and pass it to `normalizeImageAspect` (no-op if already correct) → `setImageDataUrl`.
-2. Keep sending `maskUrl` to the edge function as a hint — it still helps the model focus its changes inside the region, which improves blend quality. No backend change required.
-3. Preserve the painted mask after a refine so the user can iterate ("Apply edit" again with a new prompt on the same area). Today the mask is cleared by the `useEffect` on `imageDataUrl`; change that effect to only clear when a brand-new `handleGenerate` produces an image, not when `handleRefine` updates it. Implementation: track the last source (`'generate' | 'refine'`) in a ref and skip the reset on `'refine'`. **Clear** button still works.
-4. Edge case: if `hasMask` is false at refine time, behave exactly as today (full-image edit, no compositing).
+3. **Stronger backend hint** (`supabase/functions/ai-image-edit/index.ts`) — small prompt tweak so the model also tries to respect the masked region (the local composite is the guarantee; this just improves the in-region content quality):
+   - Prepend an explicit clause in English even when the user's prompt is non-English: `"Treat the second image as a strict edit mask. Only the white/opaque pixels of the mask define the editable region. Do not alter pixels where the mask is transparent. The user instruction (which may be in any language) describes what to put inside the masked region: <prompt>"`. Keep current 2-image message structure.
 
-## Why this is safe
+## Why this resolves the user's complaint
 
-- Pure presentation change inside one component; no API, schema, or business-logic changes.
-- The composite is deterministic: pixels outside the painted (feathered) region are byte-identical to the original.
-- Aspect ratio is preserved because both images already pass through `normalizeImageAspect(aspect)`.
+- After Apply edit, the red overlay disappears and the user can directly see the change inside the painted area.
+- The local composite already guarantees outside-the-mask pixels are unchanged.
+- The improved prompt makes the in-region change closer to the user's intent (e.g. "erase the marked parts" → model fills the region with plausible background).
 
 ## Verification
 
-- Open AI image dialog → Generate → toggle **Edit area** → paint over the chalkboard text in the reference screenshot → prompt "replace text with: Happy Birthday Dad" → **Apply edit**.
-  - Expected: only the chalkboard region changes; faces, plants, rug, sweater, lighting are pixel-identical to the previous frame.
-- Without painting (no mask) → Apply edit → behaves like before (full-frame edit).
-- Paint → Apply edit → Apply edit again with a different prompt → mask is still active; second edit also only touches the painted area.
-- **Clear** removes the mask; subsequent edits affect the whole frame.
-- **Use this image** still saves the composited result and loads it as the Start frame.
+- Generate image → toggle **Edit area** → paint a region → type "erase the marked parts" / "remove this" → **Apply edit**.
+  - Expected: red overlay is gone, the painted region shows the model's edit, everything else is pixel-identical to the previous frame.
+- Repeat: paint a different region, apply another edit. Each apply uses a fresh mask, no leftover paint.
+- Without painting → Apply edit → behaves as full-image edit (unchanged from today).
+- Switch aspect, regenerate, paint, apply → mask aligns correctly with the new image dimensions.
 
 ## Out of scope
 
-- No change to `ai-image-edit` edge function, no change to `ai-image-generate`, no DB or storage changes.
+No DB, storage, or API surface changes. No change to `ai-image-generate`, `Use this image`, or the Start-frame wiring.
