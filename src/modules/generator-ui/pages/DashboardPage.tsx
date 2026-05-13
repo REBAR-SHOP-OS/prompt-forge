@@ -79,6 +79,7 @@ import WelcomeVideoOverlay from '@/modules/generator-ui/components/WelcomeVideoO
 import { SoundtrackWaveform, type SoundtrackWaveformHandle } from '@/modules/generator-ui/components/SoundtrackWaveform'
 import { TransitionPreview } from '@/modules/generator-ui/components/TransitionPreview'
 import { SequentialClipPlayer } from '@/modules/generator-ui/components/SequentialClipPlayer'
+import { VideoWithSoundtrack } from '@/modules/generator-ui/components/VideoWithSoundtrack'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { generatorUiGateway } from '@/modules/generator-ui/gateway'
