@@ -2755,6 +2755,76 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
+          ) : previewItem.kind === 'project' ? (
+            (() => {
+              const projRatio: Ratio = lockedProjectRatio ?? aspectRatio
+              const previewClips: PreviewClip[] = previewItem.clips
+                .map((c): PreviewClip | null => {
+                  if (c.kind === 'image') {
+                    return {
+                      kind: 'image',
+                      id: c.id,
+                      src: c.image.storage_path,
+                      durationSeconds: Math.max(1, Math.min(15, c.image.still_duration_seconds || 3)),
+                    }
+                  }
+                  const path = c.job.video?.storage_path
+                  if (!path) return null
+                  const src = getCardVideoSrc(c.job.id, path) ?? path
+                  return {
+                    kind: 'video',
+                    id: c.job.id,
+                    src,
+                    duration: c.job.video?.duration ?? null,
+                  }
+                })
+                .filter((c): c is PreviewClip => c !== null)
+              return (
+                <div className="flex w-full justify-center">
+                  <div
+                    className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
+                    style={{
+                      width: ratioToWidth(projRatio),
+                      maxWidth: 'calc(100vw - 56rem)',
+                      maxHeight: `${previewMaxHeightPx}px`,
+                    }}
+                  >
+                    <div
+                      className="relative overflow-hidden bg-black"
+                      style={{
+                        aspectRatio: ratioToCss(projRatio),
+                        height: ratioToHeight(projRatio),
+                        maxWidth: 'calc(100vw - 56rem)',
+                      }}
+                    >
+                      <ProjectPreviewPlayer
+                        clips={previewClips}
+                        musicUrl={musicUrl}
+                        musicRange={musicRange}
+                        musicVolume={musicVolume}
+                        soundtrackMode={soundtrackMode}
+                        clipVolume={clipVolume}
+                        voiceoverUrl={voiceoverUrl}
+                        voiceoverVolume={voiceoverVolume}
+                        voiceoverClipVolume={voiceoverClipVolume}
+                        onClose={closePreview}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
+                        Project preview · {previewClips.length} {previewClips.length === 1 ? 'clip' : 'clips'} stitched
+                        {musicUrl ? ' · music' : ''}
+                        {voiceoverUrl ? ' · voiceover' : ''}
+                      </p>
+                      <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                        Live preview
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()
           ) : (
           <div className="flex w-full justify-center">
             <div
