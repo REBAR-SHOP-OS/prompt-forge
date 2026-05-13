@@ -1,36 +1,23 @@
-## What's wrong
+## Goal
+وقتی کاربر روی چیپ فایل پیوست‌شده در composer (مثل `ai-0c493c.png Start`) کلیک می‌کند، عکس آن فایل در یک پیش‌نمایش بزرگ به او نشان داده شود. دکمه × و حذف فایل بدون تغییر باقی می‌ماند.
 
-Looking at the screenshot, after **Apply edit** the painted red mask is still drawn over the image, so the user cannot tell whether the edit actually landed inside the painted region. The composite logic from the previous turn is correct (pixels outside the mask are byte-identical to the original), but the persistent red overlay visually hides the result and makes it look like "nothing happened in the marked area".
+## Changes (frontend only — `src/modules/generator-ui/pages/DashboardPage.tsx`)
 
-There is also a smaller robustness issue: when a refine produces a new image with different natural dimensions, the existing `syncCanvasSize` preserves the mask bitmap via `putImageData(0,0)`, which leaves it misaligned at the top-left instead of rescaled to the new size.
+1. **State جدید برای preview**
+   - `const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)`
 
-## Fix (frontend only — `AiImageDialog.tsx`)
+2. **چیپ قابل‌کلیک کردن** (خط ~3761-3779)
+   - تبدیل `<span>` بیرونی به `<span>` معمولی، اما نام فایل + آیکن Paperclip را داخل یک `<button type="button">` قرار می‌دهیم که فقط وقتی `file.status === 'ready'` و `file.url` وجود دارد فعال است.
+   - `onClick` آن: `setPreviewImageUrl(file.url)`.
+   - دکمه حذف (X) جدا از این button می‌ماند تا کلیک روی آن پیش‌نمایش باز نکند (`stopPropagation` لازم نیست چون sibling است).
+   - اگر فایل در حال آپلود یا failed است، کلیک غیرفعال (`disabled` + cursor عادی).
 
-1. **Clear the visible mask after a successful Apply edit** so the user immediately sees the result inside the painted region.
-   - In `handleRefine`, after `setImageDataUrl(finalUrl)`, call `handleClearMask()` and `setIsMaskMode(false)`.
-   - Drop the `lastImageSourceRef` "preserve mask on refine" behavior added in the previous turn — revert the `useEffect([imageDataUrl])` to always reset the mask. (User can repaint to iterate; this matches standard inpainting UX and removes the misalignment risk on dimension change.)
-
-2. **Guarantee the mask canvas is sized to the image before the first stroke.**
-   - In the `Edit area` toggle handler, after enabling mask mode, wait for the next animation frame (`requestAnimationFrame`) and then call `syncCanvasSize`, so we read the actually-laid-out image size (not the previous one).
-   - On `pointerDown`, if `imgRef.current.naturalWidth === 0`, return early and show the toast/state instead of painting into a 300×150 default canvas.
-
-3. **Stronger backend hint** (`supabase/functions/ai-image-edit/index.ts`) — small prompt tweak so the model also tries to respect the masked region (the local composite is the guarantee; this just improves the in-region content quality):
-   - Prepend an explicit clause in English even when the user's prompt is non-English: `"Treat the second image as a strict edit mask. Only the white/opaque pixels of the mask define the editable region. Do not alter pixels where the mask is transparent. The user instruction (which may be in any language) describes what to put inside the masked region: <prompt>"`. Keep current 2-image message structure.
-
-## Why this resolves the user's complaint
-
-- After Apply edit, the red overlay disappears and the user can directly see the change inside the painted area.
-- The local composite already guarantees outside-the-mask pixels are unchanged.
-- The improved prompt makes the in-region change closer to the user's intent (e.g. "erase the marked parts" → model fills the region with plausible background).
-
-## Verification
-
-- Generate image → toggle **Edit area** → paint a region → type "erase the marked parts" / "remove this" → **Apply edit**.
-  - Expected: red overlay is gone, the painted region shows the model's edit, everything else is pixel-identical to the previous frame.
-- Repeat: paint a different region, apply another edit. Each apply uses a fresh mask, no leftover paint.
-- Without painting → Apply edit → behaves as full-image edit (unchanged from today).
-- Switch aspect, regenerate, paint, apply → mask aligns correctly with the new image dimensions.
+3. **Dialog پیش‌نمایش** (انتهای JSX کنار سایر dialogها)
+   - استفاده از `Dialog` موجود از `@/components/ui/dialog`.
+   - `<Dialog open={!!previewImageUrl} onOpenChange={(o) => !o && setPreviewImageUrl(null)}>`
+   - `DialogContent` با `max-w-3xl bg-black/90` شامل یک `<img>` با `max-h-[80vh] w-auto mx-auto object-contain`.
+   - `DialogTitle` به‌صورت sr-only برای accessibility.
 
 ## Out of scope
-
-No DB, storage, or API surface changes. No change to `ai-image-generate`, `Use this image`, or the Start-frame wiring.
+- بدون تغییر در منطق آپلود/حذف، state آپلودها، edge functions، یا DB.
+- بدون تغییر روی پنل HISTORY (آنجا قبلاً preview هست).
