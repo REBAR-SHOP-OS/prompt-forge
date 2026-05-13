@@ -1,23 +1,42 @@
+# Move Upload to History column, rename to "Upload film"
+
 ## Goal
-چیپ فایل پیوست‌شده در composer فقط یک تامبنیل مربعی بزرگ‌تر باشد، بدون نام فایل و بدون لیبل target. دکمه × کنارش بماند.
+Move the existing top-bar `UPLOAD` action into the History panel header (right-side column), in the icon row next to the image-upload and `+` buttons, styled as a small round icon button. Rename label/tooltip to "Upload film". Keep all upload behavior identical.
 
-## Change (frontend only — `src/modules/generator-ui/pages/DashboardPage.tsx`، رندر چیپ‌ها در ~خط ۳۸۰۵–۳۸۴۵)
+## Changes (frontend only — `src/modules/generator-ui/pages/DashboardPage.tsx`)
 
-- حذف `<span>{file.name}</span>` و `<span>{file.target}</span>` و متن error داخلی.
-- بزرگ کردن تامبنیل از `h-6 w-6` به `h-12 w-12` (تقریباً ۴۸×۴۸).
-- `padding` چیپ بیرونی کاهش یابد (مثلاً `p-1` به‌جای `px-3 py-1.5`) تا فقط دور تامبنیل یک قاب نازک بماند.
-- دکمه `<button>` preview همان حالت `cursor-zoom-in` را حفظ کند.
-- در حالت `uploading` → اسپینر داخل یک placeholder مربعی هم‌اندازه (`h-12 w-12 grid place-items-center`).
-- در حالت `failed` → آیکن `AlertTriangle` کوچک یا `Paperclip` در همان box مربعی، با حاشیه‌ی `border-rose-400/40`؛ متن خطا حذف می‌شود ولی `title={file.error}` روی چیپ ست شود تا با hover دیده شود.
-- دکمه `×` به یک overlay گوشه‌ی بالا-راست تامبنیل تبدیل شود (`absolute -top-1 -right-1`) با پس‌زمینه‌ی تیره گرد، تا چیپ جمع‌وجور بماند.
-- چیپ بیرونی به `relative inline-block` تغییر کند.
-- `aria-label` دکمه‌ی preview = `Preview ${file.name}` و دکمه‌ی حذف = `Remove ${file.name}` تا accessibility حفظ شود.
+1. **Remove** the top-bar Upload button block at lines ~2404–2433 (the `<input ref={uploadVideoInputRef}>` + `<button>` pair). Keep `uploadVideoInputRef` and `handleUploadVideoFile` — they get reused below.
+
+2. **Add** in the History header icon row (lines ~3064–3094), inserted between the image-upload button and the `+` button:
+   ```tsx
+   <input
+     ref={uploadVideoInputRef}
+     type="file"
+     accept="video/*"
+     className="hidden"
+     onChange={handleUploadVideoFile}
+   />
+   <button
+     type="button"
+     onClick={() => uploadVideoInputRef.current?.click()}
+     disabled={isUploadingVideo}
+     className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-sky-300/30 hover:bg-sky-300/[0.08] hover:text-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
+     aria-label="Upload film"
+     title="Upload film"
+   >
+     {isUploadingVideo ? (
+       <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+     ) : (
+       <Upload className="h-4 w-4" aria-hidden="true" />
+     )}
+   </button>
+   ```
 
 ## Out of scope
-- بدون تغییر در منطق آپلود/حذف، Dialog پیش‌نمایش بزرگ، یا state.
+- No changes to upload logic, storage, or job pipeline.
+- Top-bar layout otherwise unchanged (Start over and Final film stay).
 
 ## Verification
-- آپلود عکس → فقط مربع ۴۸×۴۸ از تامبنیل عکس + × کوچک گوشه.
-- بدون نام فایل، بدون «Start»/«End» متنی.
-- کلیک روی تامبنیل → preview بزرگ.
-- × روی گوشه → حذف.
+- Top bar no longer shows UPLOAD.
+- History header shows three round icons: image-plus, upload (film), plus.
+- Hover tooltip reads "Upload film"; clicking opens video picker; while uploading, spinner replaces icon and button is disabled.

@@ -3083,6 +3083,27 @@ export default function DashboardPage() {
                 <ImagePlus className="h-4 w-4" aria-hidden="true" />
               )}
             </button>
+            <input
+              ref={uploadVideoInputRef}
+              type="file"
+              accept="video/*"
+              className="hidden"
+              onChange={handleUploadVideoFile}
+            />
+            <button
+              type="button"
+              onClick={() => uploadVideoInputRef.current?.click()}
+              disabled={isUploadingVideo}
+              className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-sky-300/30 hover:bg-sky-300/[0.08] hover:text-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
+              aria-label="Upload film"
+              title="Upload film"
+            >
+              {isUploadingVideo ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Upload className="h-4 w-4" aria-hidden="true" />
+              )}
+            </button>
             <button
               type="button"
               onClick={handleAddVideoCard}
