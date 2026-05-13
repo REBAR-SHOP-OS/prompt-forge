@@ -327,7 +327,31 @@ export default function AiImageDialog({
                 aspect,
               )}`}
             >
-              <img src={imageDataUrl} alt="Generated" className="absolute inset-0 h-full w-full object-contain" />
+              <img
+                ref={imgRef}
+                src={imageDataUrl}
+                alt="Generated"
+                className="absolute inset-0 h-full w-full object-contain"
+                onLoad={syncCanvasSize}
+              />
+              <canvas
+                ref={maskCanvasRef}
+                className={`absolute inset-0 h-full w-full ${isMaskMode ? 'cursor-crosshair touch-none' : 'pointer-events-none'}`}
+                style={{ mixBlendMode: 'normal' }}
+                onPointerDown={(e) => {
+                  if (!isMaskMode) return
+                  ;(e.target as HTMLCanvasElement).setPointerCapture(e.pointerId)
+                  isDrawingRef.current = true
+                  syncCanvasSize()
+                  paintAt(e)
+                }}
+                onPointerMove={(e) => {
+                  if (!isMaskMode || !isDrawingRef.current) return
+                  paintAt(e)
+                }}
+                onPointerUp={() => { isDrawingRef.current = false }}
+                onPointerLeave={() => { isDrawingRef.current = false }}
+              />
               {isLoading ? (
                 <div className="absolute inset-0 grid place-items-center bg-black/60 backdrop-blur-sm">
                   <LoaderCircle className="h-8 w-8 animate-spin text-white" />
@@ -336,17 +360,63 @@ export default function AiImageDialog({
             </div>
 
             <div>
-              <div className="mb-2 text-xs uppercase tracking-wide text-zinc-400">
-                Refine with AI (Nano Banana edit)
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="text-xs uppercase tracking-wide text-zinc-400">
+                  Refine with AI (Nano Banana edit)
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setIsMaskMode((m) => !m); setTimeout(syncCanvasSize, 0) }}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                      isMaskMode
+                        ? 'border-rose-300/50 bg-rose-400/15 text-rose-100'
+                        : 'border-white/10 bg-white/[0.04] text-zinc-300 hover:border-white/20 hover:bg-white/[0.08]'
+                    }`}
+                    title={isMaskMode ? 'Exit edit-area mode' : 'Mark an area to edit'}
+                  >
+                    <Brush className="h-3.5 w-3.5" />
+                    {isMaskMode ? 'Editing area' : 'Edit area'}
+                  </button>
+                  {isMaskMode ? (
+                    <>
+                      <label className="flex items-center gap-1 text-[11px] text-zinc-400">
+                        Size
+                        <input
+                          type="range"
+                          min={8}
+                          max={80}
+                          step={2}
+                          value={brushSize}
+                          onChange={(e) => setBrushSize(Number(e.target.value))}
+                          className="h-1 w-20 accent-rose-400"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleClearMask}
+                        disabled={!hasMask}
+                        className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] disabled:opacity-40"
+                        title="Clear mask"
+                      >
+                        <Eraser className="h-3.5 w-3.5" />
+                        Clear
+                      </button>
+                    </>
+                  ) : null}
+                </div>
               </div>
               <Textarea
                 value={editPrompt}
                 onChange={(e) => setEditPrompt(e.target.value)}
-                placeholder="Make the lighting warmer, add subtle dust particles…"
+                placeholder={hasMask ? 'Describe the change for the masked area…' : 'Make the lighting warmer, add subtle dust particles…'}
                 rows={3}
                 disabled={isLoading || isSaving}
               />
-              <div className="mt-2 flex justify-end">
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <span className="text-[11px] text-zinc-500">
+                  {hasMask ? 'Edit applied only inside the painted area.' : 'Tip: paint an area to edit only that region.'}
+                </span>
                 <Button
                   size="sm"
                   variant="secondary"
