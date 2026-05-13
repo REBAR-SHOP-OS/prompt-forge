@@ -1,23 +1,31 @@
-## Goal
-وقتی کاربر روی چیپ فایل پیوست‌شده در composer (مثل `ai-0c493c.png Start`) کلیک می‌کند، عکس آن فایل در یک پیش‌نمایش بزرگ به او نشان داده شود. دکمه × و حذف فایل بدون تغییر باقی می‌ماند.
+## Root cause
+`jobs-create` فقط آدرس‌هایی را برای `firstFrameUrl`/`lastFrameUrl` می‌پذیرد که از باکت عمومی `wan-frames/{userId}/...` باشند (در `supabase/functions/_shared/modules/job-orchestrator/gateway.ts` خط ۶۵).
 
-## Changes (frontend only — `src/modules/generator-ui/pages/DashboardPage.tsx`)
+عکس‌های تولیدشده با AI در `AiImageDialog` در باکت `user-images` آپلود می‌شوند (برای کتابخانه و جدول `generator_user_images`)، و سپس در `DashboardPage` (خط ۲۵۸۹–۲۶۰۶) همین `row.storage_path` (که آدرس `user-images` است) به‌عنوان Start frame ست می‌شود. در نتیجه validator با `INVALID_FIRST_FRAME_URL: firstFrameUrl must point to your own public wan-frames upload` رد می‌کند.
 
-1. **State جدید برای preview**
-   - `const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)`
+همین مشکل برای «Use this image» از کتابخانه (history روی پنل سمت راست) و reuse عکس‌های قبلی هم می‌تواند رخ بدهد، چون آن‌ها هم در `user-images` هستند.
 
-2. **چیپ قابل‌کلیک کردن** (خط ~3761-3779)
-   - تبدیل `<span>` بیرونی به `<span>` معمولی، اما نام فایل + آیکن Paperclip را داخل یک `<button type="button">` قرار می‌دهیم که فقط وقتی `file.status === 'ready'` و `file.url` وجود دارد فعال است.
-   - `onClick` آن: `setPreviewImageUrl(file.url)`.
-   - دکمه حذف (X) جدا از این button می‌ماند تا کلیک روی آن پیش‌نمایش باز نکند (`stopPropagation` لازم نیست چون sibling است).
-   - اگر فایل در حال آپلود یا failed است، کلیک غیرفعال (`disabled` + cursor عادی).
+## Fix (frontend only — minimal & non-destructive)
 
-3. **Dialog پیش‌نمایش** (انتهای JSX کنار سایر dialogها)
-   - استفاده از `Dialog` موجود از `@/components/ui/dialog`.
-   - `<Dialog open={!!previewImageUrl} onOpenChange={(o) => !o && setPreviewImageUrl(null)}>`
-   - `DialogContent` با `max-w-3xl bg-black/90` شامل یک `<img>` با `max-h-[80vh] w-auto mx-auto object-contain`.
-   - `DialogTitle` به‌صورت sr-only برای accessibility.
+تابعی در `DashboardPage.tsx` به نام `materializeAsFrame(publicUrl: string, target: 'Start'|'End'): Promise<string>`:
+
+1. اگر `publicUrl` قبلاً به مسیر `/storage/v1/object/public/wan-frames/{userId}/` اشاره می‌کند → بدون تغییر برگردد.
+2. در غیر این صورت:
+   - `fetch(publicUrl)` → `blob()` (همان عکس را می‌خوانیم؛ باکت `user-images` عمومی است).
+   - آپلود به `wan-frames/{userId}/{target}-ai-{Date.now()}-{uuid}.png` با `supabase.storage.from('wan-frames').upload(...)`.
+   - گرفتن `getPublicUrl` و برگرداندن آن.
+   - در صورت خطا، خطا را پروپاگیت کن تا چیپ مربوطه به وضعیت `failed` با پیام «Could not stage image as frame» برود.
+
+### نقاط فراخوانی
+1. **`AiImageDialog.onSaved`** (~خط ۲۵۸۹): چیپ را با `status: 'uploading'` اضافه کن، سپس `materializeAsFrame(row.storage_path, 'Start')` را صدا بزن، و در نهایت `url` چیپ را با URL برگشتی به‌روزرسانی کن (`status: 'ready'`).
+2. **هر جای دیگری که از کتابخانه‌ی `user-images` به Start/End ست می‌شود** (مثلاً `Use as Start` از history یا reuse عکس کاربر) — همان تابع را اعمال کن. (یک گذر سریع روی موارد `setUploadedFiles({ target: 'Start'/'End', url: <user-images url> })` و `addUserImageAsStart` و مشابه‌ها انجام شود.)
 
 ## Out of scope
-- بدون تغییر در منطق آپلود/حذف، state آپلودها، edge functions، یا DB.
-- بدون تغییر روی پنل HISTORY (آنجا قبلاً preview هست).
+- بدون تغییر در باکت‌ها، migrationها، RLS، edge functions، یا validator. (تغییر whitelist برای پذیرش `user-images` اشتباه است: `user-images` غیرعمومی/با scope متفاوت می‌تواند باشد و سمت provider خارجی نیاز به URL پایدار `wan-frames` داریم.)
+- بدون تغییر در `generator_user_images` یا کتابخانه؛ ردیف کتابخانه همچنان به `user-images` اشاره می‌کند تا کتابخانه دست‌نخورده بماند.
+
+## Verification
+1. تولید عکس AI → Use this image → Apply → ساخت ویدیو ⇒ بدون خطای `INVALID_FIRST_FRAME_URL`.
+2. عکس از history (که قبلاً در `user-images` ذخیره شده) → Use as Start ⇒ ساخت ویدیو موفق.
+3. آپلود مستقیم عکس کاربر (مسیر معمولی wan-frames) ⇒ بدون regression.
+4. End frame هم با همان مسیر تست شود.
