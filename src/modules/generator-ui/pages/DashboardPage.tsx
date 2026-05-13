@@ -1899,6 +1899,8 @@ export default function DashboardPage() {
     }
     setVoiceoverUrl(null)
     setVoiceoverName(null)
+    setVoiceoverVolume(1)
+    setVoiceoverClipVolume(0.3)
   }
 
   function handlePreviewMusicRange() {
