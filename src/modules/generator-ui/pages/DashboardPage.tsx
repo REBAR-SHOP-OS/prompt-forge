@@ -141,6 +141,43 @@ const FRAMES_BUCKET = 'wan-frames'
 const MERGED_BUCKET = 'merged-videos'
 const USER_IMAGES_BUCKET = 'user-images'
 
+type ModelChoice = {
+  id: string
+  label: string
+  description: string
+  providerKey: 'wan' | 'flow'
+  model: string
+  supports: Array<'t2v' | 'i2v'>
+}
+
+const MODEL_CHOICES: ModelChoice[] = [
+  {
+    id: 'wan-i2v',
+    label: 'Wan 2.7 — Image to Video',
+    description: 'Animate a Start and/or End frame.',
+    providerKey: 'wan',
+    model: 'wan2.7-i2v-2026-04-25',
+    supports: ['i2v'],
+  },
+  {
+    id: 'wan-t2v',
+    label: 'Wan 2.7 — Text to Video',
+    description: 'Generate a clip purely from a prompt.',
+    providerKey: 'wan',
+    model: 'wan2.7-t2v-2026-04-25',
+    supports: ['t2v'],
+  },
+  {
+    id: 'flow-v1',
+    label: 'Flow Video v1',
+    description: 'Alternative provider (text or image).',
+    providerKey: 'flow',
+    model: 'flow-video-1',
+    supports: ['t2v', 'i2v'],
+  },
+]
+
+
 function isTerminalStatus(status: string) {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
 }
