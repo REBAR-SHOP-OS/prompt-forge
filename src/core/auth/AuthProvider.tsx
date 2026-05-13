@@ -42,10 +42,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Safety: never let the loading screen hang forever (slow network / cold edge).
     const timeoutId = window.setTimeout(() => setLoading(false), LOADING_TIMEOUT_MS);
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, sess) => {
       setSession(sess);
       setUser(sess?.user ?? null);
       if (sess?.user) {
+        if (event === 'SIGNED_IN') {
+          try { window.localStorage.setItem(`pending-fresh-start:${sess.user.id}`, '1'); } catch { /* ignore */ }
+        }
         setTimeout(() => { refreshProfile(); }, 0);
       } else {
         setProfile(null);
