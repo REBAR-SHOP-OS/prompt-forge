@@ -30,7 +30,7 @@ export interface JobDetail extends JobSummary {
 export type AspectRatio = "9:16" | "1:1" | "16:9";
 
 export interface CreateJobInput {
-  providerKey: "wan";
+  providerKey: "wan" | "flow";
   requestedModel?: string;
   prompt: string;
   firstFrameUrl?: string;

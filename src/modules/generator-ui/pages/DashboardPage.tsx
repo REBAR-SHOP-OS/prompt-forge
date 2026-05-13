@@ -5,6 +5,8 @@ import {
   BookmarkPlus,
   CalendarDays,
   ChevronsRight,
+  Check,
+  Cpu,
   Clapperboard,
   
   Combine,
@@ -140,6 +142,43 @@ type UnifiedClip =
 const FRAMES_BUCKET = 'wan-frames'
 const MERGED_BUCKET = 'merged-videos'
 const USER_IMAGES_BUCKET = 'user-images'
+
+type ModelChoice = {
+  id: string
+  label: string
+  description: string
+  providerKey: 'wan' | 'flow'
+  model: string
+  supports: Array<'t2v' | 'i2v'>
+}
+
+const MODEL_CHOICES: ModelChoice[] = [
+  {
+    id: 'wan-i2v',
+    label: 'Wan 2.7 — Image to Video',
+    description: 'Animate a Start and/or End frame.',
+    providerKey: 'wan',
+    model: 'wan2.7-i2v-2026-04-25',
+    supports: ['i2v'],
+  },
+  {
+    id: 'wan-t2v',
+    label: 'Wan 2.7 — Text to Video',
+    description: 'Generate a clip purely from a prompt.',
+    providerKey: 'wan',
+    model: 'wan2.7-t2v-2026-04-25',
+    supports: ['t2v'],
+  },
+  {
+    id: 'flow-v1',
+    label: 'Flow Video v1',
+    description: 'Alternative provider (text or image).',
+    providerKey: 'flow',
+    model: 'flow-video-1',
+    supports: ['t2v', 'i2v'],
+  },
+]
+
 
 function isTerminalStatus(status: string) {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
@@ -843,8 +882,26 @@ export default function DashboardPage() {
   }, [isSubmitting, hasUploadingFiles, readyStartFrame, readyEndFrame, promptText, isTextToVideo])
   const [composerError, setComposerError] = useState<string | null>(null)
   const [isPromptMenuOpen, setIsPromptMenuOpen] = useState(false)
+  const [isModelMenuOpen, setIsModelMenuOpen] = useState(false)
+  const [selectedModelId, setSelectedModelId] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'wan-i2v'
+    return window.localStorage.getItem('ui:preferred-model') ?? 'wan-i2v'
+  })
   const [narratorMode, setNarratorMode] = useState<'idle' | 'input'>('idle')
   const [narratorScript, setNarratorScript] = useState('')
+
+  const selectedModel = useMemo<ModelChoice>(() => {
+    const needed: 't2v' | 'i2v' = isTextToVideo ? 't2v' : 'i2v'
+    const chosen = MODEL_CHOICES.find((m) => m.id === selectedModelId)
+    if (chosen && chosen.supports.includes(needed)) return chosen
+    return MODEL_CHOICES.find((m) => m.supports.includes(needed)) ?? MODEL_CHOICES[0]
+  }, [selectedModelId, isTextToVideo])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('ui:preferred-model', selectedModelId)
+  }, [selectedModelId])
+
 
   const runEnhancePrompt = async (
     options: { mode: 'silent' | 'narrated'; narratorScript?: string },
@@ -1617,16 +1674,16 @@ export default function DashboardPage() {
 
       if (isTextToVideo) {
         createdJob = await jobOrchestratorGateway.createJob({
-          providerKey: 'wan',
-          requestedModel: 'wan2.7-t2v-2026-04-25',
+          providerKey: selectedModel.providerKey,
+          requestedModel: selectedModel.model,
           prompt: nextPrompt,
           durationSeconds,
           aspectRatio: effectiveRatio,
         })
       } else if (readyStartFrame?.url && readyEndFrame?.url) {
-        // Both frames provided — standard image-to-video.
         createdJob = await jobOrchestratorGateway.createJob({
-          providerKey: 'wan',
+          providerKey: selectedModel.providerKey,
+          requestedModel: selectedModel.model,
           prompt: nextPrompt,
           firstFrameUrl: readyStartFrame.url,
           lastFrameUrl: readyEndFrame.url,
@@ -1635,10 +1692,9 @@ export default function DashboardPage() {
         })
         seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
       } else if (readyStartFrame?.url) {
-        // Only Start: real image-to-video anchored on the Start frame so the
-        // prompt is executed directly on the uploaded image.
         createdJob = await jobOrchestratorGateway.createJob({
-          providerKey: 'wan',
+          providerKey: selectedModel.providerKey,
+          requestedModel: selectedModel.model,
           prompt: nextPrompt,
           firstFrameUrl: readyStartFrame.url,
           durationSeconds,
@@ -1646,9 +1702,9 @@ export default function DashboardPage() {
         })
         seedFrames = { firstFrameUrl: readyStartFrame.url }
       } else if (readyEndFrame?.url) {
-        // Only End: real image-to-video anchored on the End frame.
         createdJob = await jobOrchestratorGateway.createJob({
-          providerKey: 'wan',
+          providerKey: selectedModel.providerKey,
+          requestedModel: selectedModel.model,
           prompt: nextPrompt,
           lastFrameUrl: readyEndFrame.url,
           durationSeconds,
@@ -3900,6 +3956,53 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center justify-between gap-2 sm:justify-end">
+            <Popover open={isModelMenuOpen} onOpenChange={setIsModelMenuOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Choose video model"
+                  title={`Model: ${selectedModel.label}`}
+                  className="inline-flex h-10 max-w-[14rem] items-center justify-center gap-2 truncate rounded-full border border-[#2a2d32] bg-black/20 px-3 text-xs font-semibold text-zinc-200/80 transition hover:border-amber-300/60 hover:bg-white/[0.05] hover:text-amber-200"
+                >
+                  <Cpu className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span className="truncate">{selectedModel.label}</span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                side="top"
+                align="end"
+                className="w-72 border-white/10 bg-[#0b0c0e]/95 p-2 text-zinc-200 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl"
+              >
+                {MODEL_CHOICES.map((choice) => {
+                  const needed: 't2v' | 'i2v' = isTextToVideo ? 't2v' : 'i2v'
+                  const compatible = choice.supports.includes(needed)
+                  const isActive = choice.id === selectedModel.id
+                  return (
+                    <button
+                      key={choice.id}
+                      type="button"
+                      disabled={!compatible}
+                      onClick={() => {
+                        setSelectedModelId(choice.id)
+                        setIsModelMenuOpen(false)
+                      }}
+                      className={`flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40 ${isActive ? 'bg-white/[0.05]' : ''}`}
+                    >
+                      <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-zinc-300">
+                        {isActive ? <Check className="h-4 w-4" aria-hidden="true" /> : <Cpu className="h-4 w-4" aria-hidden="true" />}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-semibold text-zinc-100">{choice.label}</span>
+                        <span className="block text-xs leading-5 text-zinc-500">
+                          {compatible ? choice.description : `Not available in ${isTextToVideo ? 'Text to Video' : 'Image to Video'} mode.`}
+                        </span>
+                      </span>
+                    </button>
+                  )
+                })}
+              </PopoverContent>
+            </Popover>
+
             <Popover
               open={isPromptMenuOpen}
               onOpenChange={(open) => {
