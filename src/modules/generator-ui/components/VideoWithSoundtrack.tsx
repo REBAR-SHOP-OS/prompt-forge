@@ -136,14 +136,21 @@ export function VideoWithSoundtrack({
     }
   }, [])
 
+  const { className: videoClassName, style: videoStyle, ...restVideoProps } = videoProps
+
   return (
-    <>
+    <div className="relative inline-block h-full w-full">
       <video
-        {...videoProps}
+        {...restVideoProps}
         key={videoKey}
         ref={videoRef}
         src={src}
+        className={videoClassName}
+        style={videoStyle}
       />
+      <span className="pointer-events-none absolute bottom-2 right-2 z-10 rounded-full border border-emerald-300/30 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-200 backdrop-blur">
+        Live preview
+      </span>
       {musicUrl ? (
         <audio
           ref={musicRef}
@@ -155,7 +162,7 @@ export function VideoWithSoundtrack({
       {voiceoverUrl ? (
         <audio ref={voiceRef} src={voiceoverUrl} preload="auto" />
       ) : null}
-    </>
+    </div>
   )
 }
 

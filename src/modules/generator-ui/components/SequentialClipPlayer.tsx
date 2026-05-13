@@ -282,7 +282,7 @@ export function SequentialClipPlayer({
               <span className="rounded-full border border-white/15 bg-black/60 px-2 py-0.5 tabular-nums">
                 {index + 1} / {clips.length}
               </span>
-              <span className="hidden rounded-full border border-emerald-300/30 bg-emerald-400/10 px-2 py-0.5 text-emerald-200 sm:inline">
+              <span className="inline rounded-full border border-emerald-300/30 bg-emerald-400/10 px-2 py-0.5 text-emerald-200">
                 Live preview
               </span>
             </div>
