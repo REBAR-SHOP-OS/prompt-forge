@@ -3818,7 +3818,17 @@ export default function DashboardPage() {
                         className={`inline-flex items-center gap-2 ${canPreview ? 'cursor-zoom-in hover:text-zinc-100' : 'cursor-default'}`}
                         title={canPreview ? 'Preview image' : undefined}
                       >
-                        <Paperclip className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
+                        {file.status === 'ready' && file.url ? (
+                          <img
+                            src={file.url}
+                            alt=""
+                            className="h-6 w-6 rounded-md border border-white/10 bg-black object-cover"
+                          />
+                        ) : file.status === 'uploading' ? (
+                          <LoaderCircle className="h-3.5 w-3.5 animate-spin text-zinc-400" aria-hidden="true" />
+                        ) : (
+                          <Paperclip className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
+                        )}
                         <span className="max-w-[12rem] truncate">{file.name}</span>
                       </button>
                       <span className="text-zinc-500">{file.status === 'uploading' ? 'Uploading' : file.target}</span>
