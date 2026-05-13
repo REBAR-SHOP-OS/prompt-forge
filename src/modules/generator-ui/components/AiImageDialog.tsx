@@ -233,7 +233,6 @@ export default function AiImageDialog({
       const url = (data as { dataUrl?: string } | null)?.dataUrl
       if (!url) throw new Error('No image returned.')
       const normalized = await normalizeImageAspect(url, aspect)
-      lastImageSourceRef.current = 'generate'
       setImageDataUrl(normalized)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to generate image.')
