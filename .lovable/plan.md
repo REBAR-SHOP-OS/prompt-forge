@@ -1,36 +1,24 @@
-## خروجی مورد انتظار
-- خطای `PROVIDER_ERROR: The video provider could not start generation` هنگام پرامپت فارسی رفع شود.
-- ساخت ویدئو با انتخاب‌های ۵، ۱۰ و ۱۵ ثانیه در Google Veo/Flow دوباره شروع شود.
-- برای ۱۰ و ۱۵ ثانیه، state زنجیره extension به‌صورت durable و امن در `provider_job_id` ذخیره شود تا بعد از restart بک‌اند هم ادامه‌پذیر باشد.
-- تغییرات محدود به مسیر تولید ویدئو باشد و جریان‌های history، upload، delete و final film دست‌نخورده بمانند.
+## Problem
+The download icon on each Library card is an `<a href={storage_path} download>`. Because the file is served from a cross-origin Supabase storage URL, the browser ignores the `download` attribute and either opens the video in a new tab or just navigates — the file is not saved.
 
-## ریشه مشکل
-در لاگ `jobs-create` خطای زیر دیده شد:
+## Fix
+Replace the `<a download>` with a button that fetches the merged final video as a blob and triggers a real download (the established cross-origin download pattern).
 
-```text
-Cannot encode string: string contains characters outside of the Latin1 range
-```
+### Changes — `src/modules/generator-ui/pages/DashboardPage.tsx` only
 
-این خطا از `encodeVeoState` در `supabase/functions/_shared/modules/external-api-adapter/service.ts` می‌آید. state مربوط به Veo شامل `prompt` است؛ وقتی prompt فارسی باشد، `btoa(JSON.stringify(state))` شکست می‌خورد چون `btoa` فقط Latin1 را قبول می‌کند. چون برای ۱۰/۱۵ ثانیه state زنجیره extension داخل `provider_job_id` ذخیره می‌شود، این شکست باعث می‌شود generation اصلاً شروع نشود.
+1. Add a small helper `downloadFinalFilm(url, filename)` that:
+   - `await fetch(url)` → `response.blob()`
+   - Creates an object URL, a temporary `<a download={filename}>`, clicks it, then revokes the URL.
+   - On failure, falls back to `window.open(url, '_blank')`.
+   - Shows a toast on error.
 
-## برنامه اجرا
-1. در adapter بک‌اند، encoding/decoding state Veo را از `btoa/atob` مستقیم به UTF-8-safe base64url تغییر می‌دهم:
-   - `TextEncoder` برای تبدیل JSON Unicode به bytes
-   - base64url روی bytes
-   - `TextDecoder` برای decode برگشتی
-2. backward compatibility را حفظ می‌کنم:
-   - providerJobIdهای جدید با فرمت `veo:v1:<base64url-json>` درست decode می‌شوند.
-   - اگر decode fail شود، fallback فعلی به raw operation name همچنان باقی می‌ماند تا jobهای قدیمی نشکنند.
-3. منطق duration را دقیق می‌کنم:
-   - درخواست ۵ ثانیه برای Veo همچنان با کلیپ پایه ۸ ثانیه provider ساخته می‌شود، اما duration ثبت‌شده مطابق رفتار فعلی provider باقی می‌ماند مگر خروجی قابل برش/extension جداگانه لازم باشد.
-   - درخواست‌های ۱۰ و ۱۵ ثانیه دیگر هنگام start fail نمی‌شوند و وارد زنجیره extension می‌شوند.
-4. تست deterministic اضافه/اجرا می‌کنم برای adapter:
-   - encode/decode state با prompt فارسی
-   - حفظ مقدارهای `targetDuration`, `currentOp`, `prompt`
-   - اطمینان از اینکه providerJobId فقط شامل base64url-safe characters است.
-5. تابع `jobs-create` را deploy و با یک درخواست کوچک از مسیر edge تست می‌کنم که دیگر خطای Latin1 در لاگ نیاید.
+2. In the Library card (around line 3844), replace the `<a href ... download>` with a `<button>` that calls `downloadFinalFilm(video.video.storage_path, derivedName)` where `derivedName` is `final-film-<shortId>.mp4` (e.g. `final-film-${video.id.slice(0,8)}.mp4`).
 
-## اعتبارسنجی
-- لاگ `jobs-create` بعد از اصلاح نباید خطای Latin1 داشته باشد.
-- ایجاد job با prompt فارسی و durationهای ۱۰/۱۵ باید حداقل به status `processing` برسد و `provider_job_id` داشته باشد.
-- کد surrounding workflows تغییر نمی‌کند تا Final Film و Start Over تحت تأثیر قرار نگیرند.
+3. Keep `event.stopPropagation()` so clicking the icon does not also open/select the project card. Keep styling, aria-label, and title unchanged.
+
+### Out of scope
+No backend, contract, or storage changes. No edits to other download buttons unless the user asks. Only the Library final-film download icon is touched.
+
+### Verification
+- Click the download icon on a Library item → browser saves `final-film-xxxxxxxx.mp4` directly without opening a new tab.
+- Card click behavior, delete button, and preview behavior unchanged.
