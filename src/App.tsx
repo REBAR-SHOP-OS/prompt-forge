@@ -1,4 +1,4 @@
-import { BrowserRouter } from 'react-router-dom'
+import { HashRouter } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/core/auth/AuthProvider'
 import DashboardPage from './modules/generator-ui/pages/DashboardPage'
 import LoginPage from './pages/auth/LoginPage'
@@ -15,11 +15,11 @@ function Gate() {
 function App() {
   return (
     <RootErrorBoundary>
-      <BrowserRouter>
+      <HashRouter>
         <AuthProvider>
           <Gate />
         </AuthProvider>
-      </BrowserRouter>
+      </HashRouter>
     </RootErrorBoundary>
   )
 }
