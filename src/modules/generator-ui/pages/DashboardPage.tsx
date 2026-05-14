@@ -3637,15 +3637,7 @@ export default function DashboardPage() {
         ) : null}
 
         <div className="mt-3 flex-1 overflow-y-auto overflow-x-hidden pr-1">
-          {isLibraryLoading ? (
-            <div className="grid h-full place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
-              <div>
-                <LoaderCircle className="mx-auto h-8 w-8 animate-spin text-zinc-500" aria-hidden="true" />
-                <p className="mt-3 text-sm font-medium text-zinc-300">Syncing render history</p>
-                <p className="mt-2 text-xs leading-5 text-zinc-600">Recent outputs will appear here.</p>
-              </div>
-            </div>
-          ) : displayedClips.length > 0 ? (
+          {displayedClips.length > 0 ? (
             <div className="grid min-w-0 gap-3">
               {displayedClips.map((clip, index) => {
                 const isLast = index === displayedClips.length - 1
