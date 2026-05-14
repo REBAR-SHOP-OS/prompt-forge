@@ -1,37 +1,62 @@
 ## Problem
-AI-generated and uploaded image cards leak across every Library project. When the user opens a different project from Library, the workspace shows the project's video clips correctly (filtered via `projectSourceJobs[selectedProjectId]`), but `visibleUserImages` is just `userImages` with no project scoping — so every image ever created appears inside every project.
 
-The same goes for the "fresh workspace" view: `workspaceHiddenJobIds` hides past video clips after Final Film / Start Over, but there's no equivalent for images, so old images keep showing too.
+After refresh or Start Over, the workspace HISTORY suddenly shows every video and image card from every project — even cards that were merged into Library projects, and even cards the user previously deleted. The user wants those cards permanently out of the default workspace and (for deleted ones) gone for good.
 
-## Fix (frontend only — `src/modules/generator-ui/pages/DashboardPage.tsx`)
+## Root cause
 
-Mirror the existing job-side scoping for images:
+In `src/modules/generator-ui/pages/DashboardPage.tsx`, the `workspaceHiddenJobIds` hydration effect is broken:
 
-1. **Add `projectSourceImages`** — `Record<string, UserImageItem[]>`, persisted in localStorage under `project-source-images:${userId}`. Same load/save pattern as `projectSourceJobs`.
+```ts
+// lines 604-609
+const [workspaceHiddenJobIds, setWorkspaceHiddenJobIds] = useState<Set<string>>(new Set())
+const workspaceHiddenJobIdsKey = userId ? `workspace-hidden-jobs:${userId}` : null
 
-2. **Add `workspaceHiddenImageIds`** — `Set<string>`, persisted under `workspace-hidden-images:${userId}`. Same pattern as `workspaceHiddenJobIds`.
+useEffect(() => {
+  setWorkspaceHiddenJobIds(new Set())   // ← always resets to empty, never reads localStorage
+}, [workspaceHiddenJobIdsKey])
+```
 
-3. **Filter `visibleUserImages`** (≈ line 1199):
-   - If `selectedProjectId` set → return `projectSourceImages[selectedProjectId] ?? []` (with live entries from `userImages` preferred when ids match, fallback to snapshot).
-   - Else → `userImages.filter(i => !workspaceHiddenImageIds.has(i.id))`.
+So on every refresh the hidden-jobs set is cleared, and `displayedVideos` (line 1201) filters against an empty set → every job returned by `listMyJobs()` (including ones merged into Final Films and ones the user "deleted" via Start Over) reappears in the workspace.
 
-4. **Snapshot images at merge time** (in the merge handler, alongside the existing `sourceJobs` snapshot ≈ line 2436):
-   - Walk `eligibleClips`, collect ones with `kind === 'image'` (in film order), look them up in `userImages` (fallback to `projectSourceImages[selectedProjectId]` for re-merge, then to `clip.image`).
-   - Write into `projectSourceImages[mergedId]` (state + persist).
-   - Add their ids to `workspaceHiddenImageIds` so they disappear from the fresh workspace, parallel to the existing job-hide block.
+The image equivalent (`workspaceHiddenImageIds`, line 664) does load correctly, so images only leak when the parallel job-side leak drags the project's clips back. The same effect also wipes the per-project film order on every render of the key.
 
-5. **Start Over (`resetWorkspace`)** — Add a block parallel to the `workspaceHiddenJobIds` one that adds every current `userImages` id to `workspaceHiddenImageIds` and persists. This keeps existing behavior (images stay in their project but vanish from the fresh workspace).
+A second issue: when the user "deletes" a card from the workspace via Start Over, the row is only hidden client-side. The user explicitly says these should never have been saved and should be permanently deleted. Today the row stays in `generator_generation_jobs` / `generator_user_images` forever, so any future client (or a wiped localStorage) shows them again.
 
-6. **Delete project (`deleteCard` for merged ids)** — Drop the entry from `projectSourceImages` so deleted projects don't leave dangling image snapshots. Also, when deleting an individual image (existing handler at line 1385), prune it from every `projectSourceImages` entry.
+## Fix — frontend only, `DashboardPage.tsx`
 
-7. **Hydration on mount** — load both new keys from localStorage when `userId` becomes known, same as the existing pattern.
+1. **Hydrate `workspaceHiddenJobIds` from localStorage** (mirror the image-side effect at line 664):
+   ```ts
+   useEffect(() => {
+     if (!workspaceHiddenJobIdsKey) { setWorkspaceHiddenJobIds(new Set()); return }
+     try {
+       const raw = window.localStorage.getItem(workspaceHiddenJobIdsKey)
+       const arr = raw ? (JSON.parse(raw) as string[]) : []
+       setWorkspaceHiddenJobIds(new Set(Array.isArray(arr) ? arr : []))
+     } catch { setWorkspaceHiddenJobIds(new Set()) }
+   }, [workspaceHiddenJobIdsKey])
+   ```
 
-### Out of scope
-- No backend, schema, or `generator_user_images` changes — this is purely a client-side scoping fix.
-- No change to videos / Library / merge logic / Start Over behavior beyond mirroring images.
+2. **Audit the parallel hydration blocks** for `projectSourceJobs`, `projectSourceImages`, `workspaceHiddenImageIds`, `selectedProjectId`, `previewState`, `manualOrder` — confirm each one reads localStorage on key change (not just resets). Fix any other reset-only effects found.
+
+3. **Backstop the workspace filter so merged-project sources never leak**: in `displayedVideos` (line 1200) and `visibleUserImages` (line 1256), when `selectedProjectId` is null also exclude any id that appears in any value of `projectSourceJobs` / `projectSourceImages`. This guarantees that even if `workspaceHiddenJobIds` is somehow empty (first-time user on a new device, cleared storage, etc.), clips that already belong to a Library project never show up loose in the workspace.
+
+4. **Permanent delete on Start Over**: change `resetWorkspace({ keepPreview: false })` (line 2566 / called at 2648) so that, in addition to adding ids to the hidden sets, it calls the existing delete pipeline for every workspace card that is *not* part of any project snapshot:
+   - For each loose `JobDetail` → `jobOrchestratorGateway.deleteJob(id)` (same call used by the per-card trash button; backend RPC `generator_delete_job` already removes the row + storage).
+   - For each loose `UserImageItem` → `generatorUiGateway.deleteUserImage(id)` (same call as the per-image trash button).
+   - Run them with `Promise.allSettled` so one failure doesn't block the others; surface a single toast on partial failure.
+   - After success, also drop the ids from local state (`setGeneratedVideos` / `setUserImages`) so the UI is clean immediately.
+   - Project snapshots (`projectSourceJobs`/`Images` values) are preserved — those clips stay alive for their Library project.
+
+5. **Confirmation prompt** before the destructive Start Over: a small confirm dialog ("Delete N clips and M images permanently? This cannot be undone.") so the user understands these are now real deletes, not just hides. Skip the prompt when there is nothing loose to delete.
 
 ## Verification
-- Generate an AI image in project A → merge into Final Film → start a new project → the AI image is gone from the workspace.
-- Open project A from Library → its AI image and clips reappear; project B (different one) shows only its own cards.
-- Delete a merged project → its image snapshot is gone, no orphans.
-- Refresh the page → snapshots and hidden sets persist, projects still show only their own cards.
+
+- Refresh the page with several merged projects in Library → workspace HISTORY is empty (no leaks). Open a project from Library → only that project's clips/images appear.
+- Generate a fresh clip, click Start Over, confirm → clip is removed from the workspace AND from the database (verify via Library / network → `jobs-list` no longer returns it). Refresh → still gone.
+- Existing Library projects are untouched after Start Over (their merged Final Film and snapshot clips remain).
+- Per-card trash button still works exactly as before.
+
+## Out of scope
+
+- No backend, RPC, or schema changes — `generator_delete_job` and `generator_delete_user_image` already exist.
+- No change to Library, merge, or per-card delete behavior beyond what is listed.
