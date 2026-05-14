@@ -1,62 +1,54 @@
-# Veo Provider — Two Root-Cause Fixes
+# Veo: Support End Frame Like Wan
 
-## Diagnosis (from edge function logs)
+## Diagnosis
 
-The current image-to-video failure is **not** a network/transient issue. Veo returned:
+Today our Veo integration uses `veo-3.0-fast-generate-001`, which **does not support a last frame**. Our code in `startVeo` (service.ts) explicitly logs and discards `lastFrameUrl`:
 
+```ts
+if (input.lastFrameUrl) {
+  logError("veo last_frame ignored", { reason: "Veo 3 does not support a last frame" });
+}
 ```
-400 INVALID_ARGUMENT: "allow_all for personGeneration is currently not supported."
+
+So even when the user attaches a Start and an End image, only the Start image reaches Veo and the End image is silently dropped.
+
+Google now ships **Veo 3.1**, which adds first+last frame interpolation through the same `predictLongRunning` REST endpoint. The body shape is:
+
+```json
+{
+  "instances": [{
+    "prompt": "...",
+    "image":     { "inlineData": { "mimeType": "image/png", "data": "<base64 first>" } },
+    "lastFrame": { "inlineData": { "mimeType": "image/png", "data": "<base64 last>"  } }
+  }]
+}
 ```
 
-Our code in `supabase/functions/_shared/modules/external-api-adapter/service.ts` (`startVeo`) hardcodes `personGeneration: "allow_all"`, which Google deprecated. Every Veo call therefore fails immediately with `PROVIDER_ERROR`, regardless of duration or image input.
+This is exactly what Wan already does and what the user wants.
 
-The 10s/15s failure has the **same root cause** plus a second, real constraint: Veo 3 only renders a single clip of fixed length (8s for `veo-3.0-fast-generate-001`). Even after the personGeneration fix, asking Veo for 10s or 15s in one call is impossible — we must generate multiple clips and chain them.
+## Fix
 
-## Fix 1 — Remove the unsupported parameter (unblocks all Veo calls)
+Edit `supabase/functions/_shared/modules/external-api-adapter/service.ts` only. No DB / UI / orchestrator changes needed.
 
-In `startVeo` (service.ts), drop `personGeneration: "allow_all"`. Default Veo behavior is acceptable; if we ever need person controls later, the supported value is `"allow_adult"` (not `"allow_all"`). Single-line change.
-
-## Fix 2 — Make 10s and 15s actually work for Veo
-
-Veo 3 fast renders fixed 8s clips and does not accept a `lastFrame`. To deliver a 10s or 15s output, the orchestrator must:
-
-1. Generate clip 1 (8s) with the user's first frame.
-2. After clip 1 completes, extract its **last frame** (server-side, via the existing video tooling already used for thumbnailing / `mergeVideos`) and feed it as the `firstFrameUrl` of clip 2.
-3. Generate clip 2 with the remaining target length. Since Veo only outputs 8s clips, clip 2 will also be 8s; trim to the target on the merger step:
-   - 10s → 8s + trim(2s)
-   - 15s → 8s + trim(7s)
-4. Stitch the two clips into one job output using the existing merge pipeline so the user sees a single 10s/15s video in the History card.
-
-To keep scope small and deterministic, this Fix 2 is implemented as an **adapter-level chain inside `startVeo` / `pollVeo`**:
-
-- `startVeo` records the requested `targetDurationSeconds` (10 or 15) in the in-memory state alongside `veoStartedAt`.
-- `pollVeo`, on completion of clip 1, kicks off clip 2 instead of returning `completed`, keeping `status: "processing"` and updating progress to ~50%.
-- On clip 2 completion, it downloads both mp4s, concatenates them with the existing ffmpeg-less merger we already use for Wan multi-clip output (or falls back to returning two source URLs the merger handles), trims to target, uploads to `merged-videos`, and returns `completed`.
-
-If the chaining infrastructure turns out to require frontend merger involvement (which it does in this codebase — merging happens client-side in `mergeVideos.ts`), then the simpler safe variant is:
-
-- Treat a 10s/15s Veo request as **two sequential jobs** at the orchestrator layer: when `providerKey === "flow"` and `durationSeconds > 8`, split into 2 child jobs in `jobs-create`, return both job IDs, and let the existing Final-Film/merge path stitch them. This keeps all video composition on the proven client merger and avoids new server-side ffmpeg.
+1. **Switch model** so Veo accepts `lastFrame`:
+   - In `resolveVeoModel`, map `flow-video-1` → `veo-3.1-generate-preview` (was `veo-3.0-fast-generate-001`).
+   - Update `COST_MAP` to include `veo-3.1-generate-preview` with the same per-1k-char placeholder cost as before.
+2. **Send the last frame** in `startVeo`:
+   - Remove the "veo last_frame ignored" branch.
+   - When `input.lastFrameUrl` is set, fetch it via the existing `fetchAsBase64` helper and add `instance.lastFrame = { inlineData: { ... } }`.
+   - Keep the existing `instance.image = ...` for the first frame.
+3. **Keep everything else** identical: aspect ratio mapping, polling, mp4 re-upload to `merged-videos`, progress estimation, error handling.
 
 ## Out of scope
 
-- No change to Wan provider.
-- No DB migration.
-- No UI change beyond what's needed to surface the two child jobs (only if we go with the orchestrator-split variant).
+- No change to Wan, no change to the 8-second clamp (Veo 3.1 still maxes around 8s; the existing `VEO_DURATION_UNSUPPORTED` gate stays).
+- No frontend changes — `Start` and `End` slots already exist and already send both URLs to the backend; today they're just being ignored on the Veo side.
+- No new secrets — uses the same `GEMINI_API_KEY`.
 
 ## Verification
 
-1. Image-to-video, 5s, Veo → succeeds (validates Fix 1).
-2. Text-to-video, 5s, Veo → succeeds.
-3. Image-to-video, 10s, Veo → produces a 10s clip (or 2 chained 8s clips merged to 10s).
-4. Image-to-video, 15s, Veo → produces a 15s clip.
+1. Image-to-video, only Start frame, Veo → still works.
+2. Image-to-video, Start + End frames, Veo → output interpolates from Start to End (matches Wan behavior).
+3. Image-to-video, only End frame, Veo → works (Veo 3.1 accepts lastFrame without firstFrame? — fall back to "Start required" if the API rejects it; we'll keep current "at least one frame" semantics and let Veo error surface naturally).
+4. No `"veo last_frame ignored"` entries in edge function logs anymore.
 5. Wan provider unaffected.
-6. Edge function logs no longer show `allow_all for personGeneration`.
-
-## Decision needed
-
-For Fix 2, which variant do you prefer?
-
-- **A. Adapter-level chaining** (single job ID, server stitches). More invasive, needs server-side video concat.
-- **B. Orchestrator split into 2 jobs** (reuses existing client merger). Simpler, safer, but the History panel will briefly show 2 cards before merge.
-
-Fix 1 ships either way and immediately unblocks 5s/8s Veo generations.
