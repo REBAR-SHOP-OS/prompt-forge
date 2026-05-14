@@ -569,6 +569,7 @@ async function startGeneration(
 async function pollGeneration(
   providerKey: ProviderKey,
   providerJobId: string,
+  ctx?: { client: SupabaseClient; userId: string },
 ): Promise<GenerationPollResult> {
   const apiKey = getProviderApiKey(providerKey);
 
@@ -586,6 +587,10 @@ async function pollGeneration(
 
   if (providerKey === "wan" && apiKey) {
     return await pollWanI2V(providerJobId, apiKey);
+  }
+
+  if (providerKey === "flow" && apiKey) {
+    return await pollVeo(providerJobId, apiKey, ctx);
   }
 
   // Unknown provider / no key — treat as still processing rather than failing.
