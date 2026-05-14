@@ -171,8 +171,8 @@ const MODEL_CHOICES: ModelChoice[] = [
   },
   {
     id: 'flow-v1',
-    label: 'Flow Video v1',
-    description: 'Alternative provider (text or image).',
+    label: 'Google Veo 3 (Flow)',
+    description: '8s clips, 16:9 or 9:16, text or image to video.',
     providerKey: 'flow',
     model: 'flow-video-1',
     supports: ['t2v', 'i2v'],
