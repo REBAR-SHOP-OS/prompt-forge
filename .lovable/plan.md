@@ -1,40 +1,64 @@
-## هدف
-افزودن دکمهٔ **Regenerate** (ری‌جنریت) به هر کارت کلیپ. با کلیک روی آن:
-1. ویدیوی فعلی همان کارت پاک می‌شود (هم در سرور و هم در UI)
-2. یک job جدید با همان پرامت، همان provider/model، همان فریم‌های Start/End، همان aspect ratio و همان duration ساخته می‌شود
-3. کارت جدید به‌جای کارت قدیمی در همان موقعیت ظاهر می‌شود و progress آن polling می‌شود
+# Stabilize the Library panel
 
-## تغییرات (فقط فرانت‌اند)
-فایل: `src/modules/generator-ui/pages/DashboardPage.tsx`
+## Problem
+Cards in the left **Library** panel sometimes disappear after a page reload, after Start Over, or after a Regenerate — and occasionally a card plays a different video than the one its prompt suggests. The user sees the Library shrink or change without taking any action.
 
-### 1) تابع جدید `regenerateJob(job: JobDetail)`
-- در ابتدا با `window.confirm('Replace this clip with a new render from the same prompt?')` تأیید می‌گیرد.
-- پارامترهای ورودی برای ساخت job جدید:
-  - `prompt = job.input_prompt`
-  - `providerKey = (job.provider_key as 'wan'|'flow') ?? 'wan'`
-  - `requestedModel = job.model_key ?? undefined`
-  - `firstFrameUrl = job.first_frame_url ?? undefined`
-  - `lastFrameUrl = job.last_frame_url ?? undefined`
-  - `aspectRatio = clipRatios[job.id] ?? lockedProjectRatio ?? aspectRatio` (همان نسبت تصویری ثبت‌شدهٔ کارت قدیمی)
-  - `durationSeconds = durationSeconds` (ثابت در سطح کامپوزر)
-- اگر هیچ فریمی نبود و provider/model پشتیبان t2v بود → text-to-video، در غیر این صورت i2v.
-- مراحل:
-  1. `await videoLibraryGateway.deleteJob(job.id)` (یا فراخوانی همان مسیری که `deleteCard` استفاده می‌کند)؛ سپس از `generatedVideos` و `projectSourceJobs` و `approvedIds` حذف می‌شود (همان منطق `deleteCard` ولی بدون confirm جدا).
-  2. `jobOrchestratorGateway.createJob({...})` فراخوانی می‌شود.
-  3. job جدید با `buildSeededJob` به ابتدای لیست افزوده می‌شود — یا اگر بخواهیم در همان موقعیت قبلی قرار گیرد، index کارت قدیمی را قبل از حذف ذخیره و job جدید را در همان index درج می‌کنیم.
-  4. `rememberClipRatio(newJob.id, effectiveRatio)` صدا زده می‌شود.
-  5. polling فعلی (`pollFailureCountRef`/`Promise.allSettled`) خودکار آن را پوشش می‌دهد.
-- خطاها در `composerError`/`videoColumnMessage` نمایش داده می‌شوند.
+## Root causes (in `src/modules/generator-ui/pages/DashboardPage.tsx`)
 
-### 2) UI — دکمهٔ Regenerate در هر کارت
-دو مکانی که اکشن‌های کارت قرار دارند (خطوط ~۳۴۷۲ و ~۳۷۲۶) به‌روزرسانی می‌شود: یک دکمهٔ گرد جدید با آیکون `RotateCcw` (که از قبل در imports هست)، بین «Edit» و «Trim»، با کلاس‌های مشابه باقی دکمه‌ها (hover به رنگ amber/sky)، `aria-label="Regenerate clip"` و `title="Regenerate from same prompt"`.
-دکمه فقط وقتی نمایش داده می‌شود که job دارای `input_prompt` باشد و `status` در حالت `processing` نباشد (در حین رندر، غیرفعال یا مخفی).
+1. **Library data depends on `generatedVideos`, but `generatedVideos` is wiped on every mount** (line 1149: `setGeneratedVideos([])`). The Library reads from `visibleVideos = [...mergedEntries, ...generatedVideos]` filtered by `approvedIds`. The `approvedIds` set is persisted in localStorage, but the underlying job objects are not — so any approved single‑clip card vanishes after a reload. Only Final Film entries (`merged-*`, persisted in `mergedEntries`) survive, which matches what the user reports seeing.
 
-### 3) خارج از محدوده
-- بک‌اند، edge functions و contractها تغییری نمی‌کنند.
-- منطق `editAndReuseJob` (Pencil) دست‌نخورده می‌ماند — Regenerate یک مسیر مستقل و سریع است.
+2. **`approvedIds` keeps stale ids** for jobs that were deleted server‑side (Regenerate, Delete card, server retention). The count badge and panel become out of sync with reality.
 
-## تأیید
-- کلیک روی Regenerate یک کارت کامل شده → confirm → کارت قدیمی محو، کارت جدید ظاهر می‌شود و progress آن می‌چرخد.
-- پس از اتمام، کلیپ جدید با همان aspect ratio و همان provider/model نمایش داده می‌شود.
-- Final Film و Library به‌درستی به کلیپ جدید رفرنس می‌دهند (چون id جدید است؛ کلیپ قدیمی از همه‌جا پاک شده).
+3. **Regenerate silently un‑approves the clip** (lines 1353‑1361 remove the old id from `approvedIds`, and the new id is never re‑added). A saved clip therefore disappears from Library the moment the user regenerates it.
+
+4. **`mergedEntries` is persisted as a JSON snapshot** with whatever URL was current at save time. If the source URL was a time‑limited signed URL, the Library card later plays a stale/wrong/blank video — explaining the “shows different videos” case.
+
+## Fix (UI / state only — no backend changes)
+
+### 1. Persist a self‑contained Library snapshot
+Add a new persisted slice `librarySavedJobs: Record<string, JobDetail>` (key `library-saved-jobs:${userId}`) that stores a **frozen snapshot of every approved single‑clip job** (id, prompt, provider/model, durable `storage_path`, `thumbnail_url`, `created_at`, ratio).
+
+- Write to it inside `toggleApproved` whenever a clip is approved; remove the entry when un‑approved.
+- Also write to it whenever Final Film auto‑approves a `merged-*` id (keep that path going through `mergedEntries`, no change there).
+
+### 2. Render Library from the snapshot, not from `generatedVideos`
+Change the Library panel (around lines 3727 and 3747) and the count badge to read from:
+```
+const libraryItems = [...mergedEntries, ...Object.values(librarySavedJobs)]
+   .filter(j => approvedIds.has(j.id))
+   .sort(by created_at desc)
+```
+This makes Library independent of the workspace lifecycle (mount reset, Start Over, HISTORY hiding).
+
+### 3. Prune dangling ids on hydrate
+On mount, after hydrating `approvedIds`, `mergedEntries`, and `librarySavedJobs`:
+- Drop any id from `approvedIds` that has no backing entry in either map.
+- Persist the pruned set back to localStorage.
+This stops ghost counts and stale entries from reappearing.
+
+### 4. Keep approval across Regenerate
+In `regenerateJob` (lines 1317‑1414):
+- Capture `wasApproved = approvedIds.has(oldId)` and the saved snapshot before deleting.
+- After the new job is created successfully, if `wasApproved`, add the **new** id to `approvedIds` and write a fresh `librarySavedJobs` entry for it (using the seeded job + same ratio). Remove the old id and old snapshot only after the swap.
+- On failure, roll back so the original id stays approved (the server delete already happened, but the snapshot in `librarySavedJobs` keeps the card visible until the user re‑renders or removes it).
+
+### 5. Refresh playable URLs on hydrate
+For both `mergedEntries` and `librarySavedJobs`, on mount run a one‑time pass that:
+- If `storage_path` looks like a Supabase Storage path, re‑resolve it via `supabase.storage.from(bucket).getPublicUrl(...)` to a fresh URL before rendering.
+- Skips entries whose URL is already a durable public URL.
+This eliminates the “card plays a different / blank video” symptom caused by stale signed URLs.
+
+### 6. Keep `deleteCard` consistent
+When `deleteCard` removes a Library item, also remove it from `librarySavedJobs` and persist. (No change to server behavior.)
+
+## Out of scope
+- No backend, edge function, RLS, or schema changes.
+- No changes to Final Film generation, HISTORY panel logic, model selector, or Regenerate semantics other than preserving the approved flag.
+- Existing `mergedEntries` and `approvedIds` storage keys stay where they are (backwards compatible).
+
+## Verification
+- Approve a clip → reload page → clip is still in Library and plays correctly.
+- Approve a clip → Regenerate it → Library still shows one card with the new video, same prompt.
+- Approve a clip → Start Over → Library is unchanged.
+- Manually corrupt `approvedIds` with a fake id in localStorage → reload → count and list are clean.
+- Final Film cards (`merged-*`) keep working exactly as today.
