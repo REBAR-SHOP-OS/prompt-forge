@@ -22,13 +22,17 @@ const COST_MAP: Record<string, ModelCostConfig> = {
   "flow-video-1": { costPer1kChars: 0.04 },
   "veo-3.0-fast-generate-001": { costPer1kChars: 0.04 },
   "veo-3.0-generate-001": { costPer1kChars: 0.08 },
+  "veo-3.1-generate-preview": { costPer1kChars: 0.08 },
   "wan-video-1": { costPer1kChars: 0.03 },
   "wan2.7-i2v-2026-04-25": { costPer1kChars: 0.05 },
   "wan2.7-t2v-2026-04-25": { costPer1kChars: 0.05 },
 };
 
 function resolveVeoModel(model: string): string {
-  if (model === "flow-video-1") return "veo-3.0-fast-generate-001";
+  // Veo 3.1 supports first+last frame interpolation. Older 3.0 models do not,
+  // so we route the generic "flow-video-1" alias to 3.1.
+  if (model === "flow-video-1") return "veo-3.1-generate-preview";
+  if (model === "veo-3.0-fast-generate-001") return "veo-3.1-generate-preview";
   return model;
 }
 
