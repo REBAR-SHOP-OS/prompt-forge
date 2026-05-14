@@ -1461,35 +1461,20 @@ export default function DashboardPage() {
     setIsLibraryLoading(true)
     setVideoColumnMessage(null)
 
-    const protectedJobIds = new Set<string>([
-      ...activeJobIds,
-      ...Object.keys(librarySavedJobs),
-      ...mergedEntries.map((m) => m.id),
-    ])
-    for (const clips of Object.values(projectSourceJobs)) {
-      for (const c of clips) protectedJobIds.add(c.id)
-    }
-    const protectedImageIds = new Set<string>([...activeImageIds])
-    for (const imgs of Object.values(projectSourceImages)) {
-      for (const i of imgs) protectedImageIds.add(i.id)
-    }
-
+    // RULE: Refresh must preserve the workspace exactly as the user left it.
+    // We do NOT delete anything on hydrate. Permanent deletion only happens
+    // via explicit Start Over (handleStartOver) or via Final Film moving
+    // sources into a Library project snapshot. Items hidden from the loose
+    // workspace are filtered at the display layer (workspaceHiddenJobIds /
+    // workspaceHiddenImageIds + project-claim sets), not by deleting rows.
     ;(async () => {
       try {
         const summaries = await jobOrchestratorGateway.listMyJobs()
         const hydrated = await hydrateJobs(summaries)
         if (cancelled) return
+        setGeneratedVideos(hydrated)
 
-        // Partition: keep protected, delete the rest permanently.
-        const keep: JobDetail[] = []
-        const orphans: string[] = []
-        for (const job of hydrated) {
-          if (protectedJobIds.has(job.id)) keep.push(job)
-          else orphans.push(job.id)
-        }
-        setGeneratedVideos(keep)
-
-        // Hydrate user images from backend with the same rule.
+        // Hydrate user images from backend without deleting anything.
         try {
           const { data: imgRows } = await supabase
             .from('generator_user_images')
@@ -1498,31 +1483,11 @@ export default function DashboardPage() {
             .is('deleted_at', null)
             .order('created_at', { ascending: false })
           if (!cancelled && imgRows) {
-            const keepImgs: UserImageItem[] = []
-            const orphanImgs: string[] = []
-            for (const row of imgRows as UserImageItem[]) {
-              if (protectedImageIds.has(row.id)) keepImgs.push(row)
-              else orphanImgs.push(row.id)
-            }
-            setUserImages(keepImgs)
-            if (orphanImgs.length > 0) {
-              void Promise.allSettled(
-                orphanImgs.map((id) => generatorUiGateway.deleteUserImage(id)),
-              )
-            }
+            setUserImages(imgRows as UserImageItem[])
           }
         } catch (e) {
           console.error('Failed to hydrate user images', e)
           if (!cancelled) setUserImages([])
-        }
-
-        // Permanently delete orphan jobs server-side. Best-effort, in the
-        // background — failures don't block the UI because they are no
-        // longer in workspace state anyway.
-        if (orphans.length > 0) {
-          void Promise.allSettled(
-            orphans.map((id) => jobOrchestratorGateway.deleteJob(id)),
-          )
         }
       } catch (err) {
         if (!cancelled) {
