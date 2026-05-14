@@ -1217,24 +1217,28 @@ export default function DashboardPage() {
           ? { kind: 'video', job: found.job }
           : { kind: 'image', image: found.image }
       }
+      // Allow explicit Library/Final-Film selection to be previewed even if
+      // the item isn't in the current History view.
+      const fromMerged = mergedEntries.find((m) => m.id === previewVideoId)
+      if (fromMerged) return { kind: 'video', job: fromMerged }
+      const fromSaved = librarySavedJobs[previewVideoId]
+      if (fromSaved) return { kind: 'video', job: fromSaved }
     }
     if (previewDismissed) return null
-    // When 2+ playable clips exist, default to the live auto-stitched
-    // sequential preview so the user always sees the full project — not just
-    // the most-recent clip — without paying to render Final Film.
+    // Fallback only uses the CURRENT workspace clips (displayedClips), never
+    // mergedEntries / librarySavedJobs — those are archive surfaces and must
+    // not be auto-shown in the preview.
     if (playableSequenceClips.length >= 2) {
       return { kind: 'sequence', clips: playableSequenceClips }
     }
-    if (visibleVideos.length > 0) {
-      const v =
-        visibleVideos.find((video) => video.video?.storage_path) ??
-        visibleVideos[0]
-      return { kind: 'video', job: v }
-    }
+    const firstWorkspaceVideo = displayedClips.find(
+      (c): c is Extract<UnifiedClip, { kind: 'video' }> => c.kind === 'video',
+    )
+    if (firstWorkspaceVideo) return { kind: 'video', job: firstWorkspaceVideo.job }
     const firstImage = displayedClips.find((c) => c.kind === 'image')
     if (firstImage && firstImage.kind === 'image') return { kind: 'image', image: firstImage.image }
     return null
-  }, [displayedClips, previewVideoId, previewDismissed, visibleVideos, playableSequenceClips])
+  }, [displayedClips, previewVideoId, previewDismissed, playableSequenceClips, mergedEntries, librarySavedJobs])
 
   // Backwards-compat alias used by existing card highlight + start-frame code paths
   const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
