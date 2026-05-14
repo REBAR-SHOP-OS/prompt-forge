@@ -71,5 +71,6 @@ export interface AiGateway {
   pollGeneration(
     providerKey: ProviderKey,
     providerJobId: string,
+    ctx?: { client: SupabaseClient; userId: string },
   ): Promise<GenerationPollResult>;
 }
