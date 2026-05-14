@@ -497,21 +497,25 @@ async function startVeo(
   const opName = (json as { name?: string }).name;
   if (!opName) throw new Error("Veo returned no operation name");
 
+  const targetDuration = willExtend ? VEO_EXTENDED_DURATION_SECONDS : VEO_BASE_DURATION_SECONDS;
+  const state: VeoState = {
+    initialOp: opName,
+    currentOp: opName,
+    targetDuration,
+    model: veoModel,
+    aspectRatio,
+    prompt: input.prompt,
+    extensionStarted: false,
+    phaseStartedAt: Date.now(),
+  };
   veoStartedAt.set(opName, Date.now());
-  if (willExtend) {
-    // Cap the deliverable at what the extension actually produces (15s).
-    veoTargetDuration.set(opName, VEO_EXTENDED_DURATION_SECONDS);
-    veoPromptCache.set(opName, input.prompt);
-    veoAspectCache.set(opName, aspectRatio);
-    veoModelCache.set(opName, veoModel);
-  }
 
   return {
-    providerJobId: opName,
+    providerJobId: encodeVeoState(state),
     videoUrl: null,
     thumbnailUrl: null,
     aspectRatio,
-    duration: willExtend ? VEO_EXTENDED_DURATION_SECONDS : VEO_BASE_DURATION_SECONDS,
+    duration: targetDuration,
     isComplete: false,
   };
 }
