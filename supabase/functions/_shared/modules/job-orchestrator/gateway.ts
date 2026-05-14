@@ -212,6 +212,28 @@ export const jobOrchestratorGateway = {
           // Image-to-video accepts one or both frames; text-to-video provides
           // neither. No additional cross-frame validation needed here.
 
+          // Veo (flow) only renders fixed 8s clips. Reject 10s/15s up-front
+          // so we don't burn credits on a request the provider will refuse.
+          // Wan supports 5/10/15s — users can switch provider for longer clips.
+          if (
+            providerKey === "flow" &&
+            parsed.data.durationSeconds != null &&
+            parsed.data.durationSeconds > 8
+          ) {
+            await writeApiRequestLog(svc, {
+              ...ctx,
+              userId: auth.userId,
+              statusCode: 400,
+              latencyMs: Date.now() - ctx.startedAt,
+              errorCode: "VEO_DURATION_UNSUPPORTED",
+            });
+            return errorResponse(
+              "VEO_DURATION_UNSUPPORTED",
+              "Google Veo only supports clips up to 8 seconds. For 10s or 15s, please switch the provider to Wan.",
+              400,
+              ctx.requestId,
+            );
+          }
 
           // Cross-domain call via external-api-adapter contract.
           const route = await aiGateway.resolveRoute(svc, providerKey, parsed.data.requestedModel, prompt);
