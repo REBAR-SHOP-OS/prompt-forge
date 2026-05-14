@@ -1022,6 +1022,7 @@ export default function DashboardPage() {
 
     // Optimistic UI removal — remove from in-memory list immediately.
     setGeneratedVideos((current) => current.filter((v) => v.id !== jobId))
+    unmarkActiveJobs([jobId])
     setApprovedIds((current) => {
       if (!current.has(jobId)) return current
       const next = new Set(current)
