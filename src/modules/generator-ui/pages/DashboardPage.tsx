@@ -641,6 +641,46 @@ export default function DashboardPage() {
   // Library project. Cleared by Start Over or by the inline "Clear" button.
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
 
+  // Persist selectedProjectId + preview state per-user across refreshes so
+  // a hard reload re-opens the same Final Film the user was viewing.
+  const selectedProjectKey = userId ? `selected-project:${userId}` : null
+  const previewStateKey = userId ? `preview-state:${userId}` : null
+  useEffect(() => {
+    if (!selectedProjectKey) return
+    try {
+      const raw = window.localStorage.getItem(selectedProjectKey)
+      if (raw) setSelectedProjectId(raw)
+    } catch { /* ignore */ }
+  }, [selectedProjectKey])
+  useEffect(() => {
+    if (!selectedProjectKey) return
+    try {
+      if (selectedProjectId) window.localStorage.setItem(selectedProjectKey, selectedProjectId)
+      else window.localStorage.removeItem(selectedProjectKey)
+    } catch { /* ignore */ }
+  }, [selectedProjectKey, selectedProjectId])
+  useEffect(() => {
+    if (!previewStateKey) return
+    try {
+      const raw = window.localStorage.getItem(previewStateKey)
+      if (!raw) return
+      const parsed = JSON.parse(raw) as { id?: string | null; dismissed?: boolean }
+      if (parsed && typeof parsed === 'object') {
+        if (typeof parsed.id === 'string') setPreviewVideoId(parsed.id)
+        if (typeof parsed.dismissed === 'boolean') setPreviewDismissed(parsed.dismissed)
+      }
+    } catch { /* ignore */ }
+  }, [previewStateKey])
+  useEffect(() => {
+    if (!previewStateKey) return
+    try {
+      window.localStorage.setItem(
+        previewStateKey,
+        JSON.stringify({ id: previewVideoId, dismissed: previewDismissed }),
+      )
+    } catch { /* ignore */ }
+  }, [previewStateKey, previewVideoId, previewDismissed])
+
   // Revoke object URLs on unmount.
   useEffect(() => {
     return () => {
