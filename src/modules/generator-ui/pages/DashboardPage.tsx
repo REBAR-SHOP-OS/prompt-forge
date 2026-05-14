@@ -184,24 +184,6 @@ function isTerminalStatus(status: string) {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
 }
 
-/**
- * Returns true when the job was produced by a real generation provider that we
- * can re-invoke (Wan or Flow/Veo). Final-film merges (id `merged-*`,
- * provider `merged`, model `browser-canvas`) and user uploads
- * (provider `upload`, model `user-upload`) cannot be regenerated — the
- * provider can't reproduce them from a prompt.
- */
-function canRegenerateJob(job: { id?: string; provider_key?: string | null; model_key?: string | null; input_prompt?: string | null; status?: string }) {
-  if (!job?.id || job.id.startsWith('merged-')) return false
-  if (!job.input_prompt || !job.input_prompt.trim()) return false
-  if (job.status && normalizeStatus(job.status) === 'processing') return false
-  const provider = (job.provider_key ?? '').toLowerCase()
-  if (provider !== 'wan' && provider !== 'flow') return false
-  const model = (job.model_key ?? '').toLowerCase()
-  if (model === 'user-upload' || model === 'browser-canvas') return false
-  return true
-}
-
 function normalizeStatus(status: string): VideoJobStatus {
   if (status === 'completed' || status === 'failed' || status === 'cancelled' || status === 'processing') {
     return status
@@ -1217,28 +1199,24 @@ export default function DashboardPage() {
           ? { kind: 'video', job: found.job }
           : { kind: 'image', image: found.image }
       }
-      // Allow explicit Library/Final-Film selection to be previewed even if
-      // the item isn't in the current History view.
-      const fromMerged = mergedEntries.find((m) => m.id === previewVideoId)
-      if (fromMerged) return { kind: 'video', job: fromMerged }
-      const fromSaved = librarySavedJobs[previewVideoId]
-      if (fromSaved) return { kind: 'video', job: fromSaved }
     }
     if (previewDismissed) return null
-    // Fallback only uses the CURRENT workspace clips (displayedClips), never
-    // mergedEntries / librarySavedJobs — those are archive surfaces and must
-    // not be auto-shown in the preview.
+    // When 2+ playable clips exist, default to the live auto-stitched
+    // sequential preview so the user always sees the full project — not just
+    // the most-recent clip — without paying to render Final Film.
     if (playableSequenceClips.length >= 2) {
       return { kind: 'sequence', clips: playableSequenceClips }
     }
-    const firstWorkspaceVideo = displayedClips.find(
-      (c): c is Extract<UnifiedClip, { kind: 'video' }> => c.kind === 'video',
-    )
-    if (firstWorkspaceVideo) return { kind: 'video', job: firstWorkspaceVideo.job }
+    if (visibleVideos.length > 0) {
+      const v =
+        visibleVideos.find((video) => video.video?.storage_path) ??
+        visibleVideos[0]
+      return { kind: 'video', job: v }
+    }
     const firstImage = displayedClips.find((c) => c.kind === 'image')
     if (firstImage && firstImage.kind === 'image') return { kind: 'image', image: firstImage.image }
     return null
-  }, [displayedClips, previewVideoId, previewDismissed, playableSequenceClips, mergedEntries, librarySavedJobs])
+  }, [displayedClips, previewVideoId, previewDismissed, visibleVideos, playableSequenceClips])
 
   // Backwards-compat alias used by existing card highlight + start-frame code paths
   const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
@@ -1429,71 +1407,46 @@ export default function DashboardPage() {
   }
 
   async function regenerateJob(job: JobDetail) {
-    // Hard guard: only real provider jobs with a prompt can be regenerated.
-    if (!canRegenerateJob(job)) {
-      setComposerError('This card cannot be regenerated.')
+    const prompt = (job.input_prompt ?? '').trim()
+    if (!prompt) {
+      if (typeof window !== 'undefined') window.alert('This clip has no prompt to regenerate from.')
       return
     }
-    const prompt = (job.input_prompt ?? '').trim()
+    if (typeof window !== 'undefined' && !window.confirm('Replace this clip with a new render from the same prompt?')) {
+      return
+    }
+
     const oldId = job.id
     const firstFrameUrl = job.first_frame_url ?? undefined
     const lastFrameUrl = job.last_frame_url ?? undefined
     const providerKey = (job.provider_key === 'flow' ? 'flow' : 'wan') as 'wan' | 'flow'
     const requestedModel = job.model_key ?? undefined
+    const effectiveRatio: Ratio = clipAspectRatios[oldId] ?? lockedProjectRatio ?? aspectRatio
 
-    // Reuse the ORIGINAL job's ratio/duration so regenerate reproduces the
-    // same kind of clip — not whatever the composer happens to be set to.
-    const fromJobRatio = normalizeRatio(job.requested_aspect_ratio ?? job.video?.aspect_ratio ?? null)
-    const effectiveRatio: Ratio =
-      fromJobRatio ?? clipAspectRatios[oldId] ?? lockedProjectRatio ?? aspectRatio
-    const jobDuration = job.requested_duration
-    const safeDuration: 5 | 10 | 15 =
-      jobDuration === 5 || jobDuration === 10 || jobDuration === 15
-        ? jobDuration
-        : (durationSeconds === 10 || durationSeconds === 15 ? durationSeconds : 5)
-
+    // Snapshot for rollback + same-position insert.
+    const prevGenerated = generatedVideos
+    const prevProjectSourceJobs = projectSourceJobs
+    const prevApprovedIds = approvedIds
+    const prevLibrarySavedJobs = librarySavedJobs
     const oldIndex = generatedVideos.findIndex((v) => v.id === oldId)
     const wasApproved = approvedIds.has(oldId)
 
     setComposerError(null)
     setVideoColumnMessage(null)
 
-    // Strategy: create FIRST. If creation fails, the old card stays untouched.
-    let created: CreateJobResult
     try {
-      created = await jobOrchestratorGateway.createJob({
-        providerKey,
-        requestedModel,
-        prompt,
-        firstFrameUrl,
-        lastFrameUrl,
-        durationSeconds: safeDuration,
-        aspectRatio: effectiveRatio,
-      })
+      // 1) Server-side delete of the old job (purges DB rows + storage).
+      await jobOrchestratorGateway.deleteJob(oldId)
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : (err as Error).message
-      console.error('regenerate: createJob failed', err)
-      setComposerError(`Regenerate failed: ${msg}`)
-      setVideoColumnMessage(`Regenerate failed: ${msg}`)
+      if (typeof window !== 'undefined') window.alert(`Regenerate failed (delete step): ${msg}`)
       return
     }
 
-    const seeded = buildSeededJob(prompt, created, { firstFrameUrl, lastFrameUrl })
-    rememberClipRatio(seeded.id, effectiveRatio)
-
-    // Atomic UI swap: replace old card with new one at the same position.
-    setGeneratedVideos((current) => {
-      const without = current.filter((v) => v.id !== oldId && v.id !== seeded.id)
-      const insertAt = oldIndex >= 0 && oldIndex <= without.length ? oldIndex : 0
-      without.splice(insertAt, 0, seeded)
-      return without
-    })
-
-    // Move preview focus to the new card BEFORE deleting the old one so the
-    // preview never falls back to library/final-film entries during the swap.
-    setPreviewVideoId(seeded.id)
-    setPreviewDismissed(false)
-
+    // 2) Optimistic UI removal of the old card. Note: we intentionally keep
+    // `approvedIds` and `librarySavedJobs` as-is for now and swap them after
+    // the new job is created so the Library card never blinks out.
+    setGeneratedVideos((current) => current.filter((v) => v.id !== oldId))
     setEditedJobIds((current) => {
       if (!current.has(oldId)) return current
       const next = new Set(current)
@@ -1515,39 +1468,70 @@ export default function DashboardPage() {
       setProjectSourceJobs(nextMap)
       persistProjectSourceJobs(nextMap)
     }
+    if (previewVideoId === oldId) setPreviewVideoId(null)
 
-    // Transfer approval flag + Library snapshot from old → new id.
-    if (wasApproved) {
-      setApprovedIds((current) => {
-        const next = new Set(current)
-        next.delete(oldId)
-        next.add(seeded.id)
-        if (approvedStorageKey) {
-          try { window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
-        }
-        return next
-      })
-      setLibrarySavedJobs((prev) => {
-        const { [oldId]: _drop, ...rest } = prev
-        const nextMap = { ...rest, [seeded.id]: seeded }
-        persistLibrarySavedJobs(nextMap)
-        return nextMap
-      })
-    } else {
-      setLibrarySavedJobs((prev) => {
-        if (!(oldId in prev)) return prev
-        const { [oldId]: _drop, ...rest } = prev
-        persistLibrarySavedJobs(rest)
-        return rest
-      })
-    }
-
-    // Best-effort delete of the old job (purges DB rows + storage). Run AFTER
-    // UI swap so a slow/failing delete never leaves the workspace empty.
+    // 3) Create the new job with the same parameters.
     try {
-      await jobOrchestratorGateway.deleteJob(oldId)
+      const created = await jobOrchestratorGateway.createJob({
+        providerKey,
+        requestedModel,
+        prompt,
+        firstFrameUrl,
+        lastFrameUrl,
+        durationSeconds,
+        aspectRatio: effectiveRatio,
+      })
+      const seeded = buildSeededJob(prompt, created, { firstFrameUrl, lastFrameUrl })
+      rememberClipRatio(seeded.id, effectiveRatio)
+      setGeneratedVideos((current) => {
+        const next = current.filter((v) => v.id !== seeded.id)
+        if (oldIndex >= 0 && oldIndex <= next.length) {
+          next.splice(oldIndex, 0, seeded)
+          return next
+        }
+        return [seeded, ...next]
+      })
+      // Swap the approval flag and the Library snapshot from old → new id so
+      // the saved card stays in the Library across a Regenerate.
+      if (wasApproved) {
+        setApprovedIds((current) => {
+          const next = new Set(current)
+          next.delete(oldId)
+          next.add(seeded.id)
+          if (approvedStorageKey) {
+            try { window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
+          }
+          return next
+        })
+        setLibrarySavedJobs((prev) => {
+          const { [oldId]: _drop, ...rest } = prev
+          const nextMap = { ...rest, [seeded.id]: seeded }
+          persistLibrarySavedJobs(nextMap)
+          return nextMap
+        })
+      } else {
+        // Even if it wasn't approved, drop any stale snapshot for the old id.
+        setLibrarySavedJobs((prev) => {
+          if (!(oldId in prev)) return prev
+          const { [oldId]: _drop, ...rest } = prev
+          persistLibrarySavedJobs(rest)
+          return rest
+        })
+      }
     } catch (err) {
-      console.error('regenerate: deleteJob failed (continuing)', err)
+      // Rollback the optimistic delete view if creation failed (server row is already gone).
+      const msg = err instanceof ApiError ? err.message : (err as Error).message
+      setGeneratedVideos(prevGenerated.filter((v) => v.id !== oldId))
+      setProjectSourceJobs(prevProjectSourceJobs)
+      persistProjectSourceJobs(prevProjectSourceJobs)
+      // Restore approval/snapshot exactly as they were before the attempt.
+      setApprovedIds(prevApprovedIds)
+      if (approvedStorageKey) {
+        try { window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(prevApprovedIds))) } catch { /* ignore */ }
+      }
+      setLibrarySavedJobs(prevLibrarySavedJobs)
+      persistLibrarySavedJobs(prevLibrarySavedJobs)
+      if (typeof window !== 'undefined') window.alert(`Regenerate failed (create step): ${msg}`)
     }
   }
 
@@ -3717,7 +3701,7 @@ export default function DashboardPage() {
                         >
                           <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
-                        {canRegenerateJob(video) ? (
+                        {video.input_prompt && normalizeStatus(video.status) !== 'processing' ? (
                           <button
                             type="button"
                             onClick={(event) => {
@@ -3969,7 +3953,7 @@ export default function DashboardPage() {
                                 <Download className="h-3 w-3" aria-hidden="true" />
                               </a>
                             ) : null}
-                            {canRegenerateJob(video) ? (
+                            {video.input_prompt && normalizeStatus(video.status) !== 'processing' ? (
                               <button
                                 type="button"
                                 onClick={(event) => {

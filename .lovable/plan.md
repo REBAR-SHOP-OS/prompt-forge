@@ -1,46 +1,63 @@
-## نتیجه مورد انتظار
-- آیکون Regenerate همیشه یک ویدیوی جدید با همان prompt کارت قبلی می‌سازد.
-- کارت قبلی فقط بعد از ساخت موفق job جدید حذف/جایگزین می‌شود؛ اگر ساخت fail شود کارت قبلی از بین نمی‌رود.
-- Preview دیگر خودکار آخرین ویدیوی Library یا Final Film را نشان نمی‌دهد؛ فقط کارت فعال/کارت‌های workspace فعلی را نشان می‌دهد.
-- Library به عنوان آرشیو باقی می‌ماند و نباید به Preview یا History workspace نشت کند مگر وقتی کاربر صریحاً یک آیتم Library را انتخاب کند.
+# Wire "Flow Video v1" to Google Veo (via Gemini API)
 
-## ریشه‌های محتمل مشکل در کد فعلی
-1. `regenerateJob` برای بعضی کارت‌ها از `model_key`/`provider_key` نامعتبر مثل `browser-canvas`, `user-upload`, `merged`, `upload` استفاده می‌کند؛ این‌ها مسیر واقعی ساخت ویدیو نیستند و createJob می‌تواند fail شود، در حالی که UI شبیه حذف کارت دیده می‌شود.
-2. نسبت تصویر و duration ریجنریت از state فعلی composer گرفته می‌شود، نه از job اصلی؛ بنابراین بازسازی دقیق همان کارت نیست.
-3. منطق `previewItem` وقتی `previewVideoId` پیدا نشود یا خالی شود، از `visibleVideos` استفاده می‌کند. `visibleVideos = mergedEntries + generatedVideos` است، یعنی Final Film/Library هم وارد fallback preview می‌شود؛ همین باعث نمایش ناگهانی آخرین کلیپ Library در پیش‌نمایش می‌شود.
-4. ریجنریت از Library هم فعال است، در حالی که Library ممکن است شامل Final Film یا ویدیوی upload شده باشد که «با همان prompt» قابل تولید دوباره توسط provider نیست.
+## Goal
+The provider currently labelled **Flow Video v1** in the model picker will actually generate videos with **Google Veo 3** through the Gemini API (`generativelanguage.googleapis.com`), reusing the existing `GEMINI_API_KEY` secret. No new keys required.
 
-## برنامه اجرا
-1. **قرارداد داده job را کامل‌تر کنم**
-   - در contract فرانت‌اند و service backend فیلدهای `requested_duration` و `requested_aspect_ratio` را به `JobSummary/JobDetail` اضافه کنم.
-   - `listMyJobs/getMyJob` این فیلدها را select کنند تا ریجنریت دقیقاً با تنظیمات کارت اصلی انجام شود.
+## Provider summary
+- Endpoint: `POST https://generativelanguage.googleapis.com/v1beta/models/{veo_model}:predictLongRunning?key=GEMINI_API_KEY`
+- Default model: `veo-3.0-fast-generate-001` (fast, includes audio). Optional upgrade: `veo-3.0-generate-001` for higher quality.
+- Body for **text-to-video**:
+  ```json
+  { "instances": [{ "prompt": "..." }],
+    "parameters": { "aspectRatio": "16:9", "durationSeconds": 8, "personGeneration": "allow_all" } }
+  ```
+- Body for **image-to-video** adds `instances[0].image = { bytesBase64Encoded, mimeType }` (we fetch the first-frame URL server-side and inline as base64). Veo supports a single start image; `lastFrameUrl` is ignored (with a server log).
+- Returns an LRO `{ "name": "models/.../operations/..." }` — that name becomes our `providerJobId`.
+- Poll: `GET https://generativelanguage.googleapis.com/v1beta/{name}?key=...` → when `done: true`, video URI is in `response.generateVideoResponse.generatedSamples[0].video.uri`. The URI requires the API key to download.
 
-2. **Regenerate را فقط برای کارت‌های قابل تولید فعال کنم**
-   - یک helper بسازم مثل `canRegenerateJob(job)` که فقط providerهای واقعی `wan` و `flow` و modelهای مجاز را قبول کند.
-   - دکمه Regenerate برای `merged-*`, `upload`, `browser-canvas`, `user-upload` و کارت‌های بدون prompt/درحال processing نمایش داده نشود.
-   - در خود `regenerateJob` هم guard بگذارم تا حتی اگر handler از جای دیگری صدا زده شد، کارت حذف نشود و پیام خطای واضح بدهد.
+## Constraints to handle
+- **Duration**: Veo 3 currently supports only **8s clips**. Map UI durations (5/10/15) → 8 and store the real duration we got back. Surface a one-line note in the failure path if the user explicitly relied on 10/15.
+- **Aspect ratio**: Veo 3 supports `16:9` and `9:16`. Map `1:1` → `16:9` and log a note (no failure).
+- **Storage**: The Veo download URL leaks the API key, so we must fetch the bytes server-side and re-upload to Supabase Storage (`merged-videos` bucket, public) under `${userId}/veo-${jobId}.mp4`, then return that public URL as `videoUrl`. This matches what the rest of the app expects.
 
-3. **Regenerate را اتمیک و پایدار کنم**
-   - ابتدا job جدید ساخته و seed شود.
-   - بلافاصله کارت جدید با status pending/processing در همان جای کارت قبلی در `generatedVideos` وارد شود و `previewVideoId` روی کارت جدید تنظیم شود.
-   - سپس حذف کارت قبلی به‌صورت best-effort اجرا شود.
-   - اگر createJob شکست خورد، هیچ state مربوط به کارت قبلی تغییر نکند.
-   - approval/library snapshot کارت قبلی به کارت جدید منتقل نشود مگر برای کارت single-clip واقعی؛ برای Library/Final Film regenerate اصلاً فعال نمی‌شود.
+## Code changes (backend only)
 
-4. **Preview fallback را از Library جدا کنم**
-   - fallback preview به جای `visibleVideos` فقط از `displayedClips` یا `generatedVideos` غیر-hidden استفاده کند.
-   - اگر `previewVideoId` مربوط به Library/Final Film بود و کاربر آن را صریحاً انتخاب کرده، همان را نشان دهد؛ اما بعد از حذف/Start Over/Regenerate دیگر خودکار به آخرین Library برنگردد.
-   - وقتی preview آیتم انتخاب‌شده پیدا نشود، `previewVideoId` پاک شود و اگر workspace کارت playable ندارد، empty state نشان داده شود.
+### `supabase/functions/_shared/modules/external-api-adapter/service.ts`
+1. Add Veo model id resolution:
+   - `flow-video-1` → `veo-3.0-fast-generate-001` (default)
+   - Pass-through for `veo-3.0-generate-001`, `veo-3.0-fast-generate-001` if user explicitly selects.
+   - Add cost rows in `COST_MAP`.
+2. Update `getProviderApiKey('flow')` to return `Deno.env.get('GEMINI_API_KEY')` (fallback to `FLOW_API_KEY` if set, for forward-compat).
+3. Implement:
+   - `startVeo(resolvedModel, input, apiKey)` — builds the `:predictLongRunning` payload (t2v vs i2v), POSTs, returns `providerJobId = operationName`.
+   - `pollVeo(operationName, apiKey, userId?)` — GET the operation; while not done, return `processing` with a time-based progress (Veo doesn't expose %); on done, download the produced mp4, upload to `merged-videos/${userId}/veo-${uuid}.mp4`, then return `completed` with the public URL, `aspectRatio`, and the `durationSeconds` parameter we sent.
+   - For i2v: helper `fetchAsBase64(url)` that GETs the frame URL and returns `{ bytesBase64Encoded, mimeType }`.
+4. Wire them into the existing `startGeneration` / `pollGeneration` switch:
+   - `if (providerKey === 'flow' && apiKey) ...` — call `startVeo` / `pollVeo`.
+5. Keep mock fallback behaviour for when no key is set (already exists).
 
-5. **History/Library selection را تمیز کنم**
-   - انتخاب آیتم Library فقط همان آیتم را preview کند و برای Final Film فقط در صورت وجود snapshot، History را در حالت selected project نشان دهد.
-   - خروج از selected project یا Start Over نباید Preview را به آخرین Library fallback کند.
+### Storage + secrets
+- No new bucket required; reuse public `merged-videos`.
+- Need the Supabase service-role client inside `pollVeo` to upload — the orchestrator already exposes `SupabaseClient` to other callers; thread it through `pollGeneration` (small contract addition: optional `ctx?: { client: SupabaseClient; userId: string }`). Update both contract and the single caller in `job-orchestrator/gateway.ts`.
 
-6. **اعتبارسنجی بعد از تغییرات**
-   - با TypeScript/تست خودکار harness اعتبارسنجی شود.
-   - مسیرهای دستی مورد انتظار: regenerate کارت Wan/Veo واقعی، regenerate روی کارت پردازشی پنهان، انتخاب Library، Start Over، حذف کارت preview شده.
+### `supabase/functions/_shared/modules/external-api-adapter/contract.ts`
+- Add the optional `ctx` parameter to `pollGeneration` (and to the matching `AiGateway` interface).
 
-## محدوده تغییرات
-- تغییرات اصلی در `DashboardPage.tsx`، contract فرانت‌اند job orchestrator، و service/shared contract backend برای فیلدهای requested duration/aspect ratio.
-- بدون تغییر در فایل‌های auto-generated مثل Supabase client/types.
-- بدون تغییر مخرب در دیتابیس؛ ستون‌های لازم از قبل وجود دارند.
+### `supabase/functions/_shared/modules/job-orchestrator/gateway.ts`
+- Pass `{ client: svc, userId }` into `pollGeneration` so the Veo poller can upload the finished mp4.
+
+### Frontend
+- No changes required. Model picker already shows **Flow Video v1** (`providerKey: 'flow'`, `model: 'flow-video-1'`) and supports both t2v and i2v. The new backend implementation is what makes that selection actually work.
+- Update the option's helper sub-label in `MODEL_CHOICES` from "Alternative provider (text or image)" to "Google Veo 3 (8s, 16:9 / 9:16)".
+
+## Out of scope
+- No DB migrations (registry already enables `flow`).
+- No changes to Wan flow, Library, Regenerate, or any UI logic beyond the helper sub-label.
+- No new secret prompts: `GEMINI_API_KEY` is already configured.
+
+## Verification
+- Pick "Flow Video v1" + Text-to-Video, prompt-only → job goes `pending` → `processing` → `completed`, mp4 plays from a `merged-videos` public URL.
+- Pick "Flow Video v1" + Image-to-Video with a Start frame → same flow, output animates from that frame.
+- Pick 1:1 in the composer → backend logs an aspect-ratio downgrade and returns a 16:9 clip without error.
+- Pick 10s → backend clamps to 8s and the returned duration in the card reflects 8.
+- If `GEMINI_API_KEY` is removed, the call fails with the existing "provider API key missing for flow" error — no regression to Wan.
