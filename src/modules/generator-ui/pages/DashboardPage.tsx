@@ -3969,7 +3969,7 @@ export default function DashboardPage() {
                                 <Download className="h-3 w-3" aria-hidden="true" />
                               </a>
                             ) : null}
-                            {video.input_prompt && normalizeStatus(video.status) !== 'processing' ? (
+                            {canRegenerateJob(video) ? (
                               <button
                                 type="button"
                                 onClick={(event) => {
