@@ -1589,6 +1589,7 @@ export default function DashboardPage() {
   }
 
   const handleDeleteUserImage = async (imageId: string) => {
+    unmarkActiveImages([imageId])
     if (!userId) return
     const prev = userImages
     setUserImages((curr) => curr.filter((i) => i.id !== imageId))
