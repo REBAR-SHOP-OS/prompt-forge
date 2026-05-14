@@ -1078,17 +1078,33 @@ export default function DashboardPage() {
   // Right-panel display order: oldest first (chronological ASC), with manual drag-and-drop overrides.
   const displayedVideos = useMemo(() => {
     // Selected-project mode: HISTORY shows the snapshot of source clips that
-    // produced that Final Film, regardless of workspace-hidden state.
+    // produced that Final Film, regardless of workspace-hidden state. The
+    // snapshot is stored in EXACT film order — preserve it (do NOT re-sort).
     if (selectedProjectId) {
       const snapshot = projectSourceJobs[selectedProjectId] ?? []
-      // Merge snapshot with any live generatedVideos entries of the same ids
-      // (live entries are richer; snapshot is the fallback when the live job
-      // is gone or was hidden).
       const liveById = new Map(generatedVideos.map((v) => [v.id, v]))
-      const merged = snapshot.map((s) => liveById.get(s.id) ?? s)
-      return [...merged].sort(
-        (l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime()
-      )
+      if (snapshot.length > 0) {
+        return snapshot.map((s) => liveById.get(s.id) ?? s)
+      }
+      // Legacy fallback: this Library project was created before snapshots
+      // were tracked. Best-effort: show non-merged completed clips that were
+      // created at or before the merged entry, and that are not already
+      // claimed by another project's snapshot. Ordered by created_at ASC.
+      const mergedEntry = [...mergedEntries, ...generatedVideos].find((v) => v.id === selectedProjectId)
+      if (!mergedEntry) return []
+      const cutoff = new Date(mergedEntry.created_at).getTime()
+      const claimed = new Set<string>()
+      for (const [pid, clips] of Object.entries(projectSourceJobs)) {
+        if (pid === selectedProjectId) continue
+        for (const c of clips) claimed.add(c.id)
+      }
+      return [...generatedVideos]
+        .filter((v) =>
+          !v.id.startsWith('merged-') &&
+          !claimed.has(v.id) &&
+          new Date(v.created_at).getTime() <= cutoff,
+        )
+        .sort((l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime())
     }
     const chronoAsc = [...generatedVideos]
       .filter((v) => !workspaceHiddenJobIds.has(v.id))
@@ -1109,7 +1125,7 @@ export default function DashboardPage() {
       if (byId.has(v.id)) ordered.push(v)
     }
     return ordered
-  }, [generatedVideos, manualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs])
+  }, [generatedVideos, manualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs, mergedEntries])
 
   const handleCardDragStart = (id: string) => (event: React.DragEvent) => {
     setDraggingId(id)
@@ -2354,12 +2370,21 @@ export default function DashboardPage() {
       // Include both the live workspace jobs AND any snapshot jobs from the
       // project the user is extending (selectedProjectId), so re-running Final
       // Film on a previously finalized project preserves its original clips.
-      const liveSourceJobs = generatedVideos.filter((v) => !v.id.startsWith('merged-'))
-      const snapshotJobs = selectedProjectId ? (projectSourceJobs[selectedProjectId] ?? []) : []
-      const sourceJobsMap = new Map<string, JobDetail>()
-      for (const j of snapshotJobs) sourceJobsMap.set(j.id, j)
-      for (const j of liveSourceJobs) sourceJobsMap.set(j.id, j)
-      const sourceJobs = Array.from(sourceJobsMap.values())
+      // Build source-clip snapshot in the EXACT order the clips appear in the
+      // Final Film (eligibleClips), so re-opening this Library project later
+      // shows HISTORY cards in film order — not by created_at.
+      const liveSourceJobsById = new Map(
+        generatedVideos.filter((v) => !v.id.startsWith('merged-')).map((v) => [v.id, v]),
+      )
+      const snapshotJobsById = new Map(
+        (selectedProjectId ? (projectSourceJobs[selectedProjectId] ?? []) : []).map((j) => [j.id, j]),
+      )
+      const sourceJobs: JobDetail[] = []
+      for (const clip of eligibleClips) {
+        if (clip.kind !== 'video') continue
+        const job = liveSourceJobsById.get(clip.id) ?? snapshotJobsById.get(clip.id) ?? clip.job
+        sourceJobs.push(job)
+      }
       {
         const nextMap = { ...projectSourceJobs, [mergedId]: sourceJobs }
         setProjectSourceJobs(nextMap)
