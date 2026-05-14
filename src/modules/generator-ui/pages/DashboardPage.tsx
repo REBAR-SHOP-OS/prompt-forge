@@ -4110,7 +4110,7 @@ export default function DashboardPage() {
                     >
                       <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
                         {video.video?.storage_path ? (
-                          <video
+                          <PlayableVideo
                             className="h-full w-full bg-black object-cover"
                             src={getCardVideoSrc(video.id, video.video.storage_path)}
                             poster={video.video.thumbnail_url ?? undefined}
