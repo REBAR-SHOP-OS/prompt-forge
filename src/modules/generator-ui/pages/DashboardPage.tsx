@@ -1442,31 +1442,100 @@ export default function DashboardPage() {
     return hasComposerInput ? 'Shape the next version' : 'Start forging a prompt'
   }, [hasComposerInput, isDragging])
 
-  // Hydrate HISTORY from the backend on mount / when the user becomes known so
-  // a hard refresh keeps the renders the user just made instead of going blank.
+  // Hydrate HISTORY from the backend on mount / when the user becomes known.
+  // RULE (mandatory): the workspace only contains items that belong to the
+  // active project (active manifest) or to a Library project's source
+  // snapshot. Anything else returned by the backend is an orphan from a
+  // previous session and gets PERMANENTLY DELETED here — it must never
+  // surface in the UI again.
+  const hydrationRanRef = useRef<string | null>(null)
   useEffect(() => {
     if (!userId) return
+    // Wait for the persisted manifests / snapshots to hydrate from
+    // localStorage before we decide what is orphan vs protected.
+    if (!activeJobIdsKey || !activeImageIdsKey || !projectSourceJobsKey || !projectSourceImagesKey) return
+    if (hydrationRanRef.current === userId) return
+    hydrationRanRef.current = userId
     let cancelled = false
     setIsLibraryLoading(true)
     setVideoColumnMessage(null)
-    setUserImages([])
+
+    const protectedJobIds = new Set<string>([
+      ...activeJobIds,
+      ...Object.keys(librarySavedJobs),
+      ...mergedEntries.map((m) => m.id),
+    ])
+    for (const clips of Object.values(projectSourceJobs)) {
+      for (const c of clips) protectedJobIds.add(c.id)
+    }
+    const protectedImageIds = new Set<string>([...activeImageIds])
+    for (const imgs of Object.values(projectSourceImages)) {
+      for (const i of imgs) protectedImageIds.add(i.id)
+    }
+
     ;(async () => {
       try {
         const summaries = await jobOrchestratorGateway.listMyJobs()
         const hydrated = await hydrateJobs(summaries)
         if (cancelled) return
-        setGeneratedVideos(hydrated)
+
+        // Partition: keep protected, delete the rest permanently.
+        const keep: JobDetail[] = []
+        const orphans: string[] = []
+        for (const job of hydrated) {
+          if (protectedJobIds.has(job.id)) keep.push(job)
+          else orphans.push(job.id)
+        }
+        setGeneratedVideos(keep)
+
+        // Hydrate user images from backend with the same rule.
+        try {
+          const { data: imgRows } = await supabase
+            .from('generator_user_images')
+            .select('id, storage_path, created_at, still_duration_seconds, width, height')
+            .eq('user_id', userId)
+            .is('deleted_at', null)
+            .order('created_at', { ascending: false })
+          if (!cancelled && imgRows) {
+            const keepImgs: UserImageItem[] = []
+            const orphanImgs: string[] = []
+            for (const row of imgRows as UserImageItem[]) {
+              if (protectedImageIds.has(row.id)) keepImgs.push(row)
+              else orphanImgs.push(row.id)
+            }
+            setUserImages(keepImgs)
+            if (orphanImgs.length > 0) {
+              void Promise.allSettled(
+                orphanImgs.map((id) => generatorUiGateway.deleteUserImage(id)),
+              )
+            }
+          }
+        } catch (e) {
+          console.error('Failed to hydrate user images', e)
+          if (!cancelled) setUserImages([])
+        }
+
+        // Permanently delete orphan jobs server-side. Best-effort, in the
+        // background — failures don't block the UI because they are no
+        // longer in workspace state anyway.
+        if (orphans.length > 0) {
+          void Promise.allSettled(
+            orphans.map((id) => jobOrchestratorGateway.deleteJob(id)),
+          )
+        }
       } catch (err) {
         if (!cancelled) {
           console.error('Failed to hydrate render history', err)
           setGeneratedVideos([])
+          setUserImages([])
         }
       } finally {
         if (!cancelled) setIsLibraryLoading(false)
       }
     })()
     return () => { cancelled = true }
-  }, [userId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, activeJobIdsKey, activeImageIdsKey, projectSourceJobsKey, projectSourceImagesKey])
 
   const handlePickImage = () => {
     if (isUploadingImage) return
