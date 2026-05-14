@@ -681,6 +681,70 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  // ---- Active workspace manifest ----
+  // The single source of truth for what belongs in the *current* loose
+  // workspace. Any job/image NOT in this manifest and NOT claimed by a
+  // Library project snapshot is considered orphan and gets permanently
+  // deleted server-side on hydrate. This is the rule the user explicitly
+  // mandated: nothing is ever stored in the workspace unless it belongs to
+  // the active project, and Final Film moves things into Library snapshots.
+  const activeJobIdsKey = userId ? `workspace-active-jobs:${userId}` : null
+  const activeImageIdsKey = userId ? `workspace-active-images:${userId}` : null
+  const [activeJobIds, setActiveJobIds] = useState<Set<string>>(new Set())
+  const [activeImageIds, setActiveImageIds] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    if (!activeJobIdsKey) { setActiveJobIds(new Set()); return }
+    try {
+      const raw = window.localStorage.getItem(activeJobIdsKey)
+      const arr = raw ? (JSON.parse(raw) as string[]) : []
+      setActiveJobIds(new Set(Array.isArray(arr) ? arr : []))
+    } catch { setActiveJobIds(new Set()) }
+  }, [activeJobIdsKey])
+  useEffect(() => {
+    if (!activeImageIdsKey) { setActiveImageIds(new Set()); return }
+    try {
+      const raw = window.localStorage.getItem(activeImageIdsKey)
+      const arr = raw ? (JSON.parse(raw) as string[]) : []
+      setActiveImageIds(new Set(Array.isArray(arr) ? arr : []))
+    } catch { setActiveImageIds(new Set()) }
+  }, [activeImageIdsKey])
+  function persistActiveJobIds(next: Set<string>) {
+    if (!activeJobIdsKey) return
+    try { window.localStorage.setItem(activeJobIdsKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
+  }
+  function persistActiveImageIds(next: Set<string>) {
+    if (!activeImageIdsKey) return
+    try { window.localStorage.setItem(activeImageIdsKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
+  }
+  function markActiveJob(id: string) {
+    setActiveJobIds((curr) => {
+      if (curr.has(id)) return curr
+      const next = new Set(curr); next.add(id); persistActiveJobIds(next); return next
+    })
+  }
+  function unmarkActiveJobs(ids: Iterable<string>) {
+    setActiveJobIds((curr) => {
+      const next = new Set(curr); let changed = false
+      for (const id of ids) { if (next.delete(id)) changed = true }
+      if (!changed) return curr
+      persistActiveJobIds(next); return next
+    })
+  }
+  function markActiveImage(id: string) {
+    setActiveImageIds((curr) => {
+      if (curr.has(id)) return curr
+      const next = new Set(curr); next.add(id); persistActiveImageIds(next); return next
+    })
+  }
+  function unmarkActiveImages(ids: Iterable<string>) {
+    setActiveImageIds((curr) => {
+      const next = new Set(curr); let changed = false
+      for (const id of ids) { if (next.delete(id)) changed = true }
+      if (!changed) return curr
+      persistActiveImageIds(next); return next
+    })
+  }
+
   // When set, HISTORY is filtered to show only the source clips of this
   // Library project. Cleared by Start Over or by the inline "Clear" button.
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
@@ -958,6 +1022,7 @@ export default function DashboardPage() {
 
     // Optimistic UI removal — remove from in-memory list immediately.
     setGeneratedVideos((current) => current.filter((v) => v.id !== jobId))
+    unmarkActiveJobs([jobId])
     setApprovedIds((current) => {
       if (!current.has(jobId)) return current
       const next = new Set(current)
@@ -1378,31 +1443,100 @@ export default function DashboardPage() {
     return hasComposerInput ? 'Shape the next version' : 'Start forging a prompt'
   }, [hasComposerInput, isDragging])
 
-  // Hydrate HISTORY from the backend on mount / when the user becomes known so
-  // a hard refresh keeps the renders the user just made instead of going blank.
+  // Hydrate HISTORY from the backend on mount / when the user becomes known.
+  // RULE (mandatory): the workspace only contains items that belong to the
+  // active project (active manifest) or to a Library project's source
+  // snapshot. Anything else returned by the backend is an orphan from a
+  // previous session and gets PERMANENTLY DELETED here — it must never
+  // surface in the UI again.
+  const hydrationRanRef = useRef<string | null>(null)
   useEffect(() => {
     if (!userId) return
+    // Wait for the persisted manifests / snapshots to hydrate from
+    // localStorage before we decide what is orphan vs protected.
+    if (!activeJobIdsKey || !activeImageIdsKey || !projectSourceJobsKey || !projectSourceImagesKey) return
+    if (hydrationRanRef.current === userId) return
+    hydrationRanRef.current = userId
     let cancelled = false
     setIsLibraryLoading(true)
     setVideoColumnMessage(null)
-    setUserImages([])
+
+    const protectedJobIds = new Set<string>([
+      ...activeJobIds,
+      ...Object.keys(librarySavedJobs),
+      ...mergedEntries.map((m) => m.id),
+    ])
+    for (const clips of Object.values(projectSourceJobs)) {
+      for (const c of clips) protectedJobIds.add(c.id)
+    }
+    const protectedImageIds = new Set<string>([...activeImageIds])
+    for (const imgs of Object.values(projectSourceImages)) {
+      for (const i of imgs) protectedImageIds.add(i.id)
+    }
+
     ;(async () => {
       try {
         const summaries = await jobOrchestratorGateway.listMyJobs()
         const hydrated = await hydrateJobs(summaries)
         if (cancelled) return
-        setGeneratedVideos(hydrated)
+
+        // Partition: keep protected, delete the rest permanently.
+        const keep: JobDetail[] = []
+        const orphans: string[] = []
+        for (const job of hydrated) {
+          if (protectedJobIds.has(job.id)) keep.push(job)
+          else orphans.push(job.id)
+        }
+        setGeneratedVideos(keep)
+
+        // Hydrate user images from backend with the same rule.
+        try {
+          const { data: imgRows } = await supabase
+            .from('generator_user_images')
+            .select('id, storage_path, created_at, still_duration_seconds, width, height')
+            .eq('user_id', userId)
+            .is('deleted_at', null)
+            .order('created_at', { ascending: false })
+          if (!cancelled && imgRows) {
+            const keepImgs: UserImageItem[] = []
+            const orphanImgs: string[] = []
+            for (const row of imgRows as UserImageItem[]) {
+              if (protectedImageIds.has(row.id)) keepImgs.push(row)
+              else orphanImgs.push(row.id)
+            }
+            setUserImages(keepImgs)
+            if (orphanImgs.length > 0) {
+              void Promise.allSettled(
+                orphanImgs.map((id) => generatorUiGateway.deleteUserImage(id)),
+              )
+            }
+          }
+        } catch (e) {
+          console.error('Failed to hydrate user images', e)
+          if (!cancelled) setUserImages([])
+        }
+
+        // Permanently delete orphan jobs server-side. Best-effort, in the
+        // background — failures don't block the UI because they are no
+        // longer in workspace state anyway.
+        if (orphans.length > 0) {
+          void Promise.allSettled(
+            orphans.map((id) => jobOrchestratorGateway.deleteJob(id)),
+          )
+        }
       } catch (err) {
         if (!cancelled) {
           console.error('Failed to hydrate render history', err)
           setGeneratedVideos([])
+          setUserImages([])
         }
       } finally {
         if (!cancelled) setIsLibraryLoading(false)
       }
     })()
     return () => { cancelled = true }
-  }, [userId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, activeJobIdsKey, activeImageIdsKey, projectSourceJobsKey, projectSourceImagesKey])
 
   const handlePickImage = () => {
     if (isUploadingImage) return
@@ -1445,6 +1579,7 @@ export default function DashboardPage() {
         .single()
       if (insErr) throw insErr
       setUserImages((prev) => [row as UserImageItem, ...prev])
+      markActiveImage((row as UserImageItem).id)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Upload failed.'
       setVideoColumnMessage(`Image upload failed: ${msg}`)
@@ -1454,6 +1589,7 @@ export default function DashboardPage() {
   }
 
   const handleDeleteUserImage = async (imageId: string) => {
+    unmarkActiveImages([imageId])
     if (!userId) return
     const prev = userImages
     setUserImages((curr) => curr.filter((i) => i.id !== imageId))
@@ -1567,6 +1703,7 @@ export default function DashboardPage() {
 
       // Drop into state immediately so the card appears without a refresh.
       setGeneratedVideos((current) => mergeJob(current, detail))
+      markActiveJob(detail.id)
     } catch (err) {
       // Roll back the storage upload if the DB step failed.
       if (uploadedPath) {
@@ -2006,6 +2143,7 @@ export default function DashboardPage() {
 
       setPreviewVideoId(seededJob.id)
       setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
+      markActiveJob(seededJob.id)
       setPromptText('')
       setUploadedFiles([])
     } catch (error) {
@@ -2540,6 +2678,9 @@ export default function DashboardPage() {
         for (const v of sourceJobs) nextHidden.add(v.id)
         setWorkspaceHiddenJobIds(nextHidden)
         persistWorkspaceHiddenJobIds(nextHidden)
+        // Remove from active manifest: they are now claimed by this Library
+        // project's source snapshot, not by the loose workspace.
+        unmarkActiveJobs(sourceJobs.map((v) => v.id))
       }
       // Same scoping for image cards: snapshot the images that went into the
       // film so reopening the project re-shows only those, and hide them from
@@ -2563,6 +2704,7 @@ export default function DashboardPage() {
         for (const i of sourceImages) nextHiddenImgs.add(i.id)
         setWorkspaceHiddenImageIds(nextHiddenImgs)
         persistWorkspaceHiddenImageIds(nextHiddenImgs)
+        unmarkActiveImages(sourceImages.map((i) => i.id))
       }
       // Auto Start-Over: reset the working composer/history so the user can
       // immediately begin the next project. Keep the preview open so they
@@ -2661,9 +2803,9 @@ export default function DashboardPage() {
   }
 
   async function handleStartOver() {
-    // Snapshot loose workspace cards (those NOT belonging to any Library
-    // project) so we can permanently delete them server-side. Cards that are
-    // part of a project's source snapshot stay alive for that project.
+    // Authoritative loose-set = active manifest minus anything claimed by a
+    // Library project snapshot (defensive guard). Cards in any project
+    // snapshot stay alive for that project.
     const claimedJobIds = new Set<string>()
     for (const clips of Object.values(projectSourceJobs)) {
       for (const c of clips) claimedJobIds.add(c.id)
@@ -2672,14 +2814,15 @@ export default function DashboardPage() {
     for (const imgs of Object.values(projectSourceImages)) {
       for (const i of imgs) claimedImageIds.add(i.id)
     }
-    const looseJobIds = generatedVideos
-      .filter((j) => !j.id.startsWith('merged-') && !claimedJobIds.has(j.id))
-      .map((j) => j.id)
-    const looseImageIds = userImages
-      .filter((i) => !claimedImageIds.has(i.id))
-      .map((i) => i.id)
+    const looseJobIds = Array.from(activeJobIds).filter((id) => !claimedJobIds.has(id))
+    const looseImageIds = Array.from(activeImageIds).filter((id) => !claimedImageIds.has(id))
 
     resetWorkspace({ keepPreview: false })
+
+    // Clear the active manifest immediately so a refresh during the network
+    // round-trip doesn't bring orphans back via the hydrate-protect path.
+    setActiveJobIds(new Set()); persistActiveJobIds(new Set())
+    setActiveImageIds(new Set()); persistActiveImageIds(new Set())
 
     if (looseJobIds.length === 0 && looseImageIds.length === 0) return
 
@@ -3014,6 +3157,7 @@ export default function DashboardPage() {
         defaultAspect={lockedProjectRatio ?? aspectRatio}
         onSaved={async (row) => {
           setUserImages((prev) => [row as UserImageItem, ...prev])
+          markActiveImage((row as UserImageItem).id)
           setGenerationMode('image-to-video')
           setUploadTarget('Start')
           const seedId = Date.now()
