@@ -1202,8 +1202,15 @@ export default function DashboardPage() {
         )
         .sort((l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime())
     }
+    // Backstop: any clip already snapshotted into a Library project must
+    // never appear loose in the default workspace, even if the hidden-set is
+    // empty (cleared storage, new device, etc.).
+    const claimedByProjects = new Set<string>()
+    for (const clips of Object.values(projectSourceJobs)) {
+      for (const c of clips) claimedByProjects.add(c.id)
+    }
     const chronoAsc = [...generatedVideos]
-      .filter((v) => !workspaceHiddenJobIds.has(v.id))
+      .filter((v) => !workspaceHiddenJobIds.has(v.id) && !claimedByProjects.has(v.id))
       .sort(
         (l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime()
       )
