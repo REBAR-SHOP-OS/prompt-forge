@@ -340,7 +340,6 @@ export default function DashboardPage() {
   const [generatedVideos, setGeneratedVideos] = useState<JobDetail[]>([])
   // Pending column never shows a "syncing history" state — it always
   // reflects only the in-memory active workspace.
-  const [isLibraryLoading, setIsLibraryLoading] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false)
   // Live-measured vertical budget for the preview stage. The composer is
