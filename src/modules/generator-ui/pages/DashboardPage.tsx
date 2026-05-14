@@ -2399,13 +2399,10 @@ export default function DashboardPage() {
         setWorkspaceHiddenJobIds(nextHidden)
         persistWorkspaceHiddenJobIds(nextHidden)
       }
-      // Reset per-clip ephemeral state tied to the closing chain.
-      setManualOrder(null)
-      setPendingEndAppends({})
-      setPendingStartPrepends({})
-      if (pendingEndAppendsKey) {
-        try { window.localStorage.setItem(pendingEndAppendsKey, JSON.stringify({})) } catch { /* ignore */ }
-      }
+      // Auto Start-Over: reset the working composer/history so the user can
+      // immediately begin the next project. Keep the preview open so they
+      // still see the freshly merged Final Film.
+      resetWorkspace({ keepPreview: true })
 
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Merge failed'
