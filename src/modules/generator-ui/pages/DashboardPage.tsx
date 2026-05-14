@@ -2702,6 +2702,7 @@ export default function DashboardPage() {
         for (const i of sourceImages) nextHiddenImgs.add(i.id)
         setWorkspaceHiddenImageIds(nextHiddenImgs)
         persistWorkspaceHiddenImageIds(nextHiddenImgs)
+        unmarkActiveImages(sourceImages.map((i) => i.id))
       }
       // Auto Start-Over: reset the working composer/history so the user can
       // immediately begin the next project. Keep the preview open so they
