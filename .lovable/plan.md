@@ -1,63 +1,42 @@
-# Wire "Flow Video v1" to Google Veo (via Gemini API)
+# Fix the Regenerate icon on History cards
 
-## Goal
-The provider currently labelled **Flow Video v1** in the model picker will actually generate videos with **Google Veo 3** through the Gemini API (`generativelanguage.googleapis.com`), reusing the existing `GEMINI_API_KEY` secret. No new keys required.
+## What the user wants
+Clicking the circular ↻ icon on a History card must:
+1. Delete that card (and its video) — already works
+2. Immediately create a NEW card using the same prompt / start frame / end frame / aspect ratio / model — currently fails (card is removed but no new card appears)
 
-## Provider summary
-- Endpoint: `POST https://generativelanguage.googleapis.com/v1beta/models/{veo_model}:predictLongRunning?key=GEMINI_API_KEY`
-- Default model: `veo-3.0-fast-generate-001` (fast, includes audio). Optional upgrade: `veo-3.0-generate-001` for higher quality.
-- Body for **text-to-video**:
-  ```json
-  { "instances": [{ "prompt": "..." }],
-    "parameters": { "aspectRatio": "16:9", "durationSeconds": 8, "personGeneration": "allow_all" } }
-  ```
-- Body for **image-to-video** adds `instances[0].image = { bytesBase64Encoded, mimeType }` (we fetch the first-frame URL server-side and inline as base64). Veo supports a single start image; `lastFrameUrl` is ignored (with a server log).
-- Returns an LRO `{ "name": "models/.../operations/..." }` — that name becomes our `providerJobId`.
-- Poll: `GET https://generativelanguage.googleapis.com/v1beta/{name}?key=...` → when `done: true`, video URI is in `response.generateVideoResponse.generatedSamples[0].video.uri`. The URI requires the API key to download.
+## Root cause investigation
+The handler `regenerateJob` in `src/modules/generator-ui/pages/DashboardPage.tsx` already does delete-then-create. The most likely reasons the new card is not appearing in the user's case:
 
-## Constraints to handle
-- **Duration**: Veo 3 currently supports only **8s clips**. Map UI durations (5/10/15) → 8 and store the real duration we got back. Surface a one-line note in the failure path if the user explicitly relied on 10/15.
-- **Aspect ratio**: Veo 3 supports `16:9` and `9:16`. Map `1:1` → `16:9` and log a note (no failure).
-- **Storage**: The Veo download URL leaks the API key, so we must fetch the bytes server-side and re-upload to Supabase Storage (`merged-videos` bucket, public) under `${userId}/veo-${jobId}.mp4`, then return that public URL as `videoUrl`. This matches what the rest of the app expects.
+- The `createJob` call throws (e.g. `VALIDATION_ERROR`, `INVALID_FIRST_FRAME_URL`, or the previous job's frame URL no longer passes `isAllowedFrameUrl` in `supabase/functions/_shared/modules/job-orchestrator/gateway.ts`).
+- The error is shown via a blocking `window.alert` and the rollback path runs, leaving no new card behind.
+- `durationSeconds` sent to the backend is the *current composer* value, not what the original job used — schema only allows `5 | 10 | 15`, but if state is somehow out-of-range the call rejects.
 
-## Code changes (backend only)
+## Fix plan (frontend-only, in `DashboardPage.tsx`)
 
-### `supabase/functions/_shared/modules/external-api-adapter/service.ts`
-1. Add Veo model id resolution:
-   - `flow-video-1` → `veo-3.0-fast-generate-001` (default)
-   - Pass-through for `veo-3.0-generate-001`, `veo-3.0-fast-generate-001` if user explicitly selects.
-   - Add cost rows in `COST_MAP`.
-2. Update `getProviderApiKey('flow')` to return `Deno.env.get('GEMINI_API_KEY')` (fallback to `FLOW_API_KEY` if set, for forward-compat).
-3. Implement:
-   - `startVeo(resolvedModel, input, apiKey)` — builds the `:predictLongRunning` payload (t2v vs i2v), POSTs, returns `providerJobId = operationName`.
-   - `pollVeo(operationName, apiKey, userId?)` — GET the operation; while not done, return `processing` with a time-based progress (Veo doesn't expose %); on done, download the produced mp4, upload to `merged-videos/${userId}/veo-${uuid}.mp4`, then return `completed` with the public URL, `aspectRatio`, and the `durationSeconds` parameter we sent.
-   - For i2v: helper `fetchAsBase64(url)` that GETs the frame URL and returns `{ bytesBase64Encoded, mimeType }`.
-4. Wire them into the existing `startGeneration` / `pollGeneration` switch:
-   - `if (providerKey === 'flow' && apiKey) ...` — call `startVeo` / `pollVeo`.
-5. Keep mock fallback behaviour for when no key is set (already exists).
+1. **Make regenerate non-blocking and observable**
+   - Remove the `window.confirm("Replace this clip…")` prompt — the icon click is itself the intent.
+   - Replace `window.alert(...)` failure paths with the existing inline error surface (`setComposerError` / `setVideoColumnMessage`) so the user actually sees what went wrong instead of a silent rollback.
+   - Log the underlying error to `console.error` for debugging.
 
-### Storage + secrets
-- No new bucket required; reuse public `merged-videos`.
-- Need the Supabase service-role client inside `pollVeo` to upload — the orchestrator already exposes `SupabaseClient` to other callers; thread it through `pollGeneration` (small contract addition: optional `ctx?: { client: SupabaseClient; userId: string }`). Update both contract and the single caller in `job-orchestrator/gateway.ts`.
+2. **Carry over the original clip's parameters faithfully**
+   - Reuse the original job's stored values where available: `firstFrameUrl`, `lastFrameUrl`, `provider_key`, `model_key`, and the per-clip ratio from `clipAspectRatios[oldId]`.
+   - Clamp `durationSeconds` to a valid `5 | 10 | 15` (default to `5` if the current state is out of range).
+   - Drop frame URLs that don't pass a quick same-origin / `wan-frames/<userId>/` check before sending — so we don't trip the backend validator and lose the card.
 
-### `supabase/functions/_shared/modules/external-api-adapter/contract.ts`
-- Add the optional `ctx` parameter to `pollGeneration` (and to the matching `AiGateway` interface).
+3. **Two-step UI: insert placeholder first, then swap on success**
+   - Insert the seeded "pending" card at the old card's index *before* awaiting the network call, so the History column never visibly empties.
+   - On `createJob` success, swap the placeholder id for the real `created.jobId`, transfer `approvedIds` / `librarySavedJobs` from old → new id (already implemented), and seed `clipAspectRatios[newId]` with `effectiveRatio`.
+   - On failure, remove the placeholder, restore the old card from the snapshot, and show the inline error.
 
-### `supabase/functions/_shared/modules/job-orchestrator/gateway.ts`
-- Pass `{ client: svc, userId }` into `pollGeneration` so the Veo poller can upload the finished mp4.
-
-### Frontend
-- No changes required. Model picker already shows **Flow Video v1** (`providerKey: 'flow'`, `model: 'flow-video-1'`) and supports both t2v and i2v. The new backend implementation is what makes that selection actually work.
-- Update the option's helper sub-label in `MODEL_CHOICES` from "Alternative provider (text or image)" to "Google Veo 3 (8s, 16:9 / 9:16)".
-
-## Out of scope
-- No DB migrations (registry already enables `flow`).
-- No changes to Wan flow, Library, Regenerate, or any UI logic beyond the helper sub-label.
-- No new secret prompts: `GEMINI_API_KEY` is already configured.
+4. **Make sure the polling loop picks up the new card**
+   - The existing effect at line 1538 watches `generatedVideos` for non-terminal jobs and polls — by inserting the seeded job before the await, the poller will already be tracking it when `createJob` resolves.
 
 ## Verification
-- Pick "Flow Video v1" + Text-to-Video, prompt-only → job goes `pending` → `processing` → `completed`, mp4 plays from a `merged-videos` public URL.
-- Pick "Flow Video v1" + Image-to-Video with a Start frame → same flow, output animates from that frame.
-- Pick 1:1 in the composer → backend logs an aspect-ratio downgrade and returns a 16:9 clip without error.
-- Pick 10s → backend clamps to 8s and the returned duration in the card reflects 8.
-- If `GEMINI_API_KEY` is removed, the call fails with the existing "provider API key missing for flow" error — no regression to Wan.
+- Click ↻ on a text-to-video card → old card disappears, a new "pending" card appears in the same position, status flips to processing, then completed.
+- Click ↻ on an image-to-video card with a Start frame → same flow, frame is reused.
+- Force a failure (e.g. invalid frame URL) → old card returns, inline error message is visible, no silent loss.
+
+## Files changed
+- `src/modules/generator-ui/pages/DashboardPage.tsx` — `regenerateJob` only.
+- No backend / schema / RLS changes.
