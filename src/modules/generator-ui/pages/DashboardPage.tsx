@@ -937,6 +937,18 @@ export default function DashboardPage() {
       setProjectSourceJobs(nextMap)
       persistProjectSourceJobs(nextMap)
     }
+    // Same prune for image snapshots: drop the deleted merged project entry.
+    if (isMerged) {
+      const nextImgMap: Record<string, UserImageItem[]> = {}
+      for (const [mid, imgs] of Object.entries(projectSourceImages)) {
+        if (mid === jobId) continue
+        nextImgMap[mid] = imgs
+      }
+      if (Object.keys(nextImgMap).length !== Object.keys(projectSourceImages).length) {
+        setProjectSourceImages(nextImgMap)
+        persistProjectSourceImages(nextImgMap)
+      }
+    }
     if (isMerged && selectedProjectId === jobId) setSelectedProjectId(null)
 
     // Optimistic UI removal — remove from in-memory list immediately.
