@@ -390,6 +390,30 @@ export default function DashboardPage() {
     setPreviewVideoId(null)
     setPreviewDismissed(true)
   }
+  // Persist preview state per-user across refreshes so the middle Final Film
+  // preview re-opens to whatever the user was last viewing.
+  const previewStorageKey = userId ? `preview-state:${userId}` : null
+  useEffect(() => {
+    if (!previewStorageKey) return
+    try {
+      const raw = window.localStorage.getItem(previewStorageKey)
+      if (!raw) return
+      const parsed = JSON.parse(raw) as { id?: string | null; dismissed?: boolean }
+      if (parsed && typeof parsed === 'object') {
+        if (typeof parsed.id === 'string') setPreviewVideoId(parsed.id)
+        if (typeof parsed.dismissed === 'boolean') setPreviewDismissed(parsed.dismissed)
+      }
+    } catch { /* ignore */ }
+  }, [previewStorageKey])
+  useEffect(() => {
+    if (!previewStorageKey) return
+    try {
+      window.localStorage.setItem(
+        previewStorageKey,
+        JSON.stringify({ id: previewVideoId, dismissed: previewDismissed }),
+      )
+    } catch { /* ignore */ }
+  }, [previewStorageKey, previewVideoId, previewDismissed])
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
