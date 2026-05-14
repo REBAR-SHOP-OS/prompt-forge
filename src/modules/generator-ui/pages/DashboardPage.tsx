@@ -2399,13 +2399,10 @@ export default function DashboardPage() {
         setWorkspaceHiddenJobIds(nextHidden)
         persistWorkspaceHiddenJobIds(nextHidden)
       }
-      // Reset per-clip ephemeral state tied to the closing chain.
-      setManualOrder(null)
-      setPendingEndAppends({})
-      setPendingStartPrepends({})
-      if (pendingEndAppendsKey) {
-        try { window.localStorage.setItem(pendingEndAppendsKey, JSON.stringify({})) } catch { /* ignore */ }
-      }
+      // Auto Start-Over: reset the working composer/history so the user can
+      // immediately begin the next project. Keep the preview open so they
+      // still see the freshly merged Final Film.
+      resetWorkspace({ keepPreview: true })
 
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Merge failed'
@@ -2417,9 +2414,9 @@ export default function DashboardPage() {
     }
   }
 
-  async function handleStartOver() {
+  function resetWorkspace({ keepPreview }: { keepPreview: boolean }) {
     // Library cards (Final Film outputs in mergedEntries + approvedIds) are
-    // the user's permanent saved outputs — Start Over MUST NOT touch them
+    // the user's permanent saved outputs — reset MUST NOT touch them
     // or their files in storage. Only the working composer/history workspace
     // is reset here.
     setTransitions({})
@@ -2467,10 +2464,12 @@ export default function DashboardPage() {
     setUploadTarget('Start')
     setGenerationMode('image-to-video')
     setDurationSeconds(5)
-    setPreviewVideoId(null)
-    // Force the empty "Start forging a prompt" state instead of falling back to
-    // the most recent visibleVideos entry.
-    setPreviewDismissed(true)
+    if (!keepPreview) {
+      setPreviewVideoId(null)
+      // Force the empty "Start forging a prompt" state instead of falling back to
+      // the most recent visibleVideos entry.
+      setPreviewDismissed(true)
+    }
     // Hide all current generated jobs from the HISTORY panel so the workspace
     // looks fresh for the next project. We do NOT delete them on the server —
     // Library still reads from visibleVideos and keeps approved/Final Film cards.
@@ -2487,6 +2486,10 @@ export default function DashboardPage() {
     persistLockedRatio(null)
 
     // No server-side cleanup: Library files in `merged-videos` are kept.
+  }
+
+  async function handleStartOver() {
+    resetWorkspace({ keepPreview: false })
   }
 
   // After a fresh sign-in (flag set by AuthProvider on SIGNED_IN event),
