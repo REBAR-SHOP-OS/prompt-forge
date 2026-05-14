@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { LoaderCircle, Sparkles, Wand2, RefreshCw, Check, X, Brush, Eraser } from 'lucide-react'
+import { LoaderCircle, Sparkles, Wand2, RefreshCw, Check, X, Brush, Eraser, ImagePlus } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -33,6 +33,11 @@ type Props = {
   onSaved: (row: AiImageSavedRow) => void
 }
 
+type AiReferenceImage = {
+  name: string
+  dataUrl: string
+}
+
 const ASPECT_OPTIONS: { value: AiImageAspect; label: string; sub: string; box: string }[] = [
   { value: '1:1', label: '1:1', sub: 'Square', box: 'aspect-square' },
   { value: '9:16', label: '9:16', sub: 'Reels', box: 'aspect-[9/16]' },
@@ -46,6 +51,21 @@ function aspectBoxClass(a: AiImageAspect) {
 async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
   const res = await fetch(dataUrl)
   return await res.blob()
+}
+
+async function fileToDataUrl(file: File): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result)
+        return
+      }
+      reject(new Error('Failed to read image.'))
+    }
+    reader.onerror = () => reject(new Error('Failed to read image.'))
+    reader.readAsDataURL(file)
+  })
 }
 
 // Extract a useful error message from a supabase.functions.invoke error.
@@ -81,6 +101,7 @@ export default function AiImageDialog({
   const [prompt, setPrompt] = useState('')
   const [editPrompt, setEditPrompt] = useState('')
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null)
+  const [referenceImage, setReferenceImage] = useState<AiReferenceImage | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -91,8 +112,8 @@ export default function AiImageDialog({
   const [hasMask, setHasMask] = useState(false)
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const imgRef = useRef<HTMLImageElement | null>(null)
+  const referenceInputRef = useRef<HTMLInputElement | null>(null)
   const isDrawingRef = useRef(false)
-  
 
   useEffect(() => {
     if (open) {
@@ -100,11 +121,15 @@ export default function AiImageDialog({
       setPrompt('')
       setEditPrompt('')
       setImageDataUrl(null)
+      setReferenceImage(null)
       setError(null)
       setIsLoading(false)
       setIsSaving(false)
       setIsMaskMode(false)
       setHasMask(false)
+      if (referenceInputRef.current) {
+        referenceInputRef.current.value = ''
+      }
     }
   }, [open, defaultAspect])
 
@@ -162,6 +187,32 @@ export default function AiImageDialog({
     if (!c) return
     c.getContext('2d')?.clearRect(0, 0, c.width, c.height)
     setHasMask(false)
+  }
+
+  function handleRemoveReference() {
+    setReferenceImage(null)
+    if (referenceInputRef.current) {
+      referenceInputRef.current.value = ''
+    }
+  }
+
+  async function handleReferenceChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setError('Please choose an image file.')
+      event.target.value = ''
+      return
+    }
+
+    setError(null)
+    try {
+      const dataUrl = await fileToDataUrl(file)
+      setReferenceImage({ name: file.name, dataUrl })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to read image.')
+      event.target.value = ''
+    }
   }
 
   // Convert the visible mask canvas into a strict white-on-transparent PNG for the model.
@@ -248,14 +299,28 @@ export default function AiImageDialog({
     setIsLoading(true)
     setError(null)
     try {
-      const { data, error: fnErr } = await supabase.functions.invoke('ai-image-generate', {
-        body: { prompt: prompt.trim(), aspectRatio: aspect },
-      })
-      if (fnErr) {
-        const msg = await extractFnError(fnErr, 'Failed to generate image.')
-        throw new Error(msg)
+      let url: string | undefined
+
+      if (referenceImage) {
+        const { data, error: fnErr } = await supabase.functions.invoke('ai-image-edit', {
+          body: { prompt: prompt.trim(), imageUrl: referenceImage.dataUrl, aspectRatio: aspect },
+        })
+        if (fnErr) {
+          const msg = await extractFnError(fnErr, 'Failed to generate image.')
+          throw new Error(msg)
+        }
+        url = (data as { dataUrl?: string } | null)?.dataUrl
+      } else {
+        const { data, error: fnErr } = await supabase.functions.invoke('ai-image-generate', {
+          body: { prompt: prompt.trim(), aspectRatio: aspect },
+        })
+        if (fnErr) {
+          const msg = await extractFnError(fnErr, 'Failed to generate image.')
+          throw new Error(msg)
+        }
+        url = (data as { dataUrl?: string } | null)?.dataUrl
       }
-      const url = (data as { dataUrl?: string } | null)?.dataUrl
+
       if (!url) throw new Error('No image returned.')
       const normalized = await normalizeImageAspect(url, aspect)
       setImageDataUrl(normalized)
@@ -376,13 +441,56 @@ export default function AiImageDialog({
             </div>
             <div>
               <div className="mb-2 text-xs uppercase tracking-wide text-zinc-400">Prompt</div>
-              <Textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="A dark industrial workshop with glowing blue rebar stirrups, cinematic lighting…"
-                rows={5}
-                disabled={isLoading}
-              />
+              <div className="relative">
+                <Textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="A dark industrial workshop with glowing blue rebar stirrups, cinematic lighting…"
+                  rows={5}
+                  disabled={isLoading}
+                  className="pb-12 pl-12"
+                />
+                <input
+                  ref={referenceInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleReferenceChange}
+                />
+                <button
+                  type="button"
+                  onClick={() => referenceInputRef.current?.click()}
+                  disabled={isLoading}
+                  className="absolute bottom-3 left-3 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/30 text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  title="Upload a reference image"
+                >
+                  <ImagePlus className="h-4 w-4" />
+                  <span className="sr-only">Upload a reference image</span>
+                </button>
+              </div>
+              {referenceImage ? (
+                <div className="mt-3 flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                  <img
+                    src={referenceImage.dataUrl}
+                    alt="Reference preview"
+                    className="h-11 w-11 rounded-lg object-cover"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm text-zinc-100">{referenceImage.name}</div>
+                    <div className="text-[11px] text-zinc-500">Using this image as a reference for generation.</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRemoveReference}
+                    disabled={isLoading}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    title="Remove reference image"
+                  >
+                    <X className="h-4 w-4" />
+                    <span className="sr-only">Remove reference image</span>
+                  </button>
+                </div>
+              ) : null}
             </div>
             {error ? (
               <div className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
