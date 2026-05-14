@@ -184,6 +184,24 @@ function isTerminalStatus(status: string) {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
 }
 
+/**
+ * Returns true when the job was produced by a real generation provider that we
+ * can re-invoke (Wan or Flow/Veo). Final-film merges (id `merged-*`,
+ * provider `merged`, model `browser-canvas`) and user uploads
+ * (provider `upload`, model `user-upload`) cannot be regenerated — the
+ * provider can't reproduce them from a prompt.
+ */
+function canRegenerateJob(job: { id?: string; provider_key?: string | null; model_key?: string | null; input_prompt?: string | null; status?: string }) {
+  if (!job?.id || job.id.startsWith('merged-')) return false
+  if (!job.input_prompt || !job.input_prompt.trim()) return false
+  if (job.status && normalizeStatus(job.status) === 'processing') return false
+  const provider = (job.provider_key ?? '').toLowerCase()
+  if (provider !== 'wan' && provider !== 'flow') return false
+  const model = (job.model_key ?? '').toLowerCase()
+  if (model === 'user-upload' || model === 'browser-canvas') return false
+  return true
+}
+
 function normalizeStatus(status: string): VideoJobStatus {
   if (status === 'completed' || status === 'failed' || status === 'cancelled' || status === 'processing') {
     return status
