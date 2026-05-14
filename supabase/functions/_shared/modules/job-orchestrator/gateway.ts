@@ -264,12 +264,14 @@ export const jobOrchestratorGateway = {
               aspectRatio: chosenAspectRatio,
             });
           } catch (e) {
-            // failJob RPC may not exist; fall back to a direct status update so
-            // we don't mask the original error with a secondary failure.
+            // Refund credits + mark failed atomically.
             try {
-              await svc.from("generator_generation_jobs")
-                .update({ status: "failed", updated_at: new Date().toISOString() })
-                .eq("id", jobId).eq("user_id", auth.userId);
+              await jobService.failJob(svc, {
+                userId: auth.userId,
+                jobId,
+                reason: (e as Error).message,
+                refundCredits: true,
+              });
             } catch (_) { /* best-effort */ }
             logError("startGeneration failed", { error: (e as Error).message, jobId });
             return errorResponse("PROVIDER_ERROR", "The video provider could not start generation. Please try again.", 502, ctx.requestId);
