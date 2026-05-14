@@ -3842,16 +3842,35 @@ export default function DashboardPage() {
                           </p>
                           <div className="flex shrink-0 items-center gap-1">
                             {video.video?.storage_path ? (
-                              <a
-                                href={video.video.storage_path}
-                                download
-                                onClick={(event) => event.stopPropagation()}
+                              <button
+                                type="button"
+                                onClick={async (event) => {
+                                  event.stopPropagation()
+                                  const url = video.video!.storage_path
+                                  const filename = `final-film-${video.id.slice(0, 8)}.mp4`
+                                  try {
+                                    const response = await fetch(url)
+                                    if (!response.ok) throw new Error('Download failed')
+                                    const blob = await response.blob()
+                                    const blobUrl = URL.createObjectURL(blob)
+                                    const a = document.createElement('a')
+                                    a.href = blobUrl
+                                    a.download = filename
+                                    document.body.appendChild(a)
+                                    a.click()
+                                    document.body.removeChild(a)
+                                    URL.revokeObjectURL(blobUrl)
+                                  } catch (err) {
+                                    console.error('Final film download failed', err)
+                                    window.open(url, '_blank')
+                                  }
+                                }}
                                 aria-label="Download video"
                                 title="Download video"
                                 className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
                               >
                                 <Download className="h-3 w-3" aria-hidden="true" />
-                              </a>
+                              </button>
                             ) : null}
                             <button
                               type="button"
