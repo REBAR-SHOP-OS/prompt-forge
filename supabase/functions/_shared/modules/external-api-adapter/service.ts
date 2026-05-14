@@ -399,11 +399,13 @@ async function startVeo(
 
   const instance: Record<string, unknown> = { prompt: input.prompt };
   if (input.firstFrameUrl) {
-    instance.image = { inlineData: await fetchAsInlineData(input.firstFrameUrl) };
+    const frame = await fetchAsInlineData(input.firstFrameUrl);
+    instance.image = { bytesBase64Encoded: frame.data, mimeType: frame.mimeType };
   }
   if (input.lastFrameUrl) {
     // Veo 3.1 supports first+last frame interpolation via the `lastFrame` field.
-    instance.lastFrame = { inlineData: await fetchAsInlineData(input.lastFrameUrl) };
+    const frame = await fetchAsInlineData(input.lastFrameUrl);
+    instance.lastFrame = { bytesBase64Encoded: frame.data, mimeType: frame.mimeType };
   }
 
   const requested = input.durationSeconds ?? VEO_BASE_DURATION_SECONDS;
@@ -484,10 +486,8 @@ async function startVeoExtension(
     instances: [{
       prompt,
       video: {
-        inlineData: {
-          mimeType: "video/mp4",
-          data: bytesToBase64(videoBytes),
-        },
+        bytesBase64Encoded: bytesToBase64(videoBytes),
+        mimeType: "video/mp4",
       },
     }],
     parameters: {
