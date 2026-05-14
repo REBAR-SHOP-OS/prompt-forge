@@ -509,13 +509,14 @@ export default function DashboardPage() {
     } catch { setApprovedIds(new Set()) }
   }, [approvedStorageKey])
 
-  function toggleApproved(jobId: string) {
+  function toggleApproved(jobId: string, job?: JobDetail) {
     setApprovedIds((current) => {
       const next = new Set(current)
-      if (next.has(jobId)) {
-        next.delete(jobId)
-      } else {
+      const adding = !next.has(jobId)
+      if (adding) {
         next.add(jobId)
+      } else {
+        next.delete(jobId)
       }
       if (approvedStorageKey) {
         try {
@@ -524,6 +525,22 @@ export default function DashboardPage() {
           /* ignore quota errors */
         }
       }
+      // Snapshot durable copy of the job into librarySavedJobs so the Library
+      // panel keeps showing it after reloads / Start Over.
+      setLibrarySavedJobs((prevMap) => {
+        if (adding) {
+          if (!job) return prevMap
+          // mergedEntries already persists final-film cards, so skip them here.
+          if (jobId.startsWith('merged-')) return prevMap
+          const nextMap = { ...prevMap, [jobId]: job }
+          persistLibrarySavedJobs(nextMap)
+          return nextMap
+        }
+        if (!(jobId in prevMap)) return prevMap
+        const { [jobId]: _drop, ...rest } = prevMap
+        persistLibrarySavedJobs(rest)
+        return rest
+      })
       return next
     })
   }
