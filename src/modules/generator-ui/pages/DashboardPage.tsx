@@ -837,6 +837,8 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [approvedStorageKey, mergedEntries, librarySavedJobs])
+
+  async function deleteCard(jobId: string) {
     if (typeof window !== 'undefined' && !window.confirm('Delete this video card permanently?')) return
 
     const isMerged = jobId.startsWith('merged-')
