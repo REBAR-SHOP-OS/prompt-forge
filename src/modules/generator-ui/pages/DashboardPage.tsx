@@ -30,6 +30,7 @@ import {
   SlidersHorizontal,
   Paperclip,
   Pencil,
+  Play,
   Plus,
   RotateCcw,
   Scissors,
