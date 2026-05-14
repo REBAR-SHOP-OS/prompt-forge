@@ -3717,7 +3717,7 @@ export default function DashboardPage() {
                         >
                           <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
-                        {video.input_prompt && normalizeStatus(video.status) !== 'processing' ? (
+                        {canRegenerateJob(video) ? (
                           <button
                             type="button"
                             onClick={(event) => {
