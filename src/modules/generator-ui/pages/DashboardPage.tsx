@@ -997,6 +997,28 @@ export default function DashboardPage() {
     return [...mergedEntries, ...generatedVideos]
   }, [generatedVideos, mergedEntries])
 
+  // Library items: union of merged final-film entries and the persisted
+  // single-clip snapshots, filtered by the approved set. Independent of
+  // workspace lifecycle so reload / Start Over / Regenerate don't shrink it.
+  const libraryItems = useMemo<JobDetail[]>(() => {
+    const map = new Map<string, JobDetail>()
+    for (const j of mergedEntries) map.set(j.id, j)
+    for (const j of Object.values(librarySavedJobs)) {
+      if (!map.has(j.id)) map.set(j.id, j)
+    }
+    // Prefer live workspace data when available (fresh status / urls).
+    for (const j of generatedVideos) {
+      if (map.has(j.id)) map.set(j.id, j)
+    }
+    return Array.from(map.values())
+      .filter((j) => approvedIds.has(j.id))
+      .sort((a, b) => {
+        const ta = new Date(a.created_at ?? 0).getTime()
+        const tb = new Date(b.created_at ?? 0).getTime()
+        return tb - ta
+      })
+  }, [mergedEntries, librarySavedJobs, generatedVideos, approvedIds])
+
   const completedSourceVideos = useMemo(
     () => generatedVideos.filter(
       (v) => normalizeStatus(v.status) === 'completed' && v.video?.storage_path
