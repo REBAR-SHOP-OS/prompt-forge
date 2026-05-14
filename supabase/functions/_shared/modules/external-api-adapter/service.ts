@@ -321,7 +321,206 @@ async function pollWanI2V(taskId: string, apiKey: string): Promise<GenerationPol
   return { status: "pending", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null, progressPercent };
 }
 
-// ----- Public adapter -------------------------------------------------------
+// ----- Google Veo (Gemini API) ---------------------------------------------
+
+const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
+// Veo 3 currently only supports 8-second clips.
+const VEO_DURATION_SECONDS = 8;
+// Veo 3 supports 16:9 and 9:16 only.
+function mapVeoAspect(ar: string | null | undefined): "16:9" | "9:16" {
+  if (ar === "9:16") return "9:16";
+  if (ar && ar !== "16:9") {
+    logError("veo aspect downgrade", { requested: ar, used: "16:9" });
+  }
+  return "16:9";
+}
+
+// Track per-operation start time so the poller can estimate progress for Veo
+// (the LRO does not expose a percentage). In-memory only; restarting the edge
+// function loses these and we fall back to a default mid-progress.
+const veoStartedAt = new Map<string, number>();
+
+async function fetchAsBase64(url: string): Promise<{ bytesBase64Encoded: string; mimeType: string }> {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`failed to fetch frame ${url}: ${r.status}`);
+  const mimeType = r.headers.get("content-type")?.split(";")[0]?.trim() || "image/png";
+  const buf = new Uint8Array(await r.arrayBuffer());
+  // Base64 in chunks to avoid call-stack overflow on large frames.
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < buf.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, Array.from(buf.subarray(i, i + chunk)));
+  }
+  return { bytesBase64Encoded: btoa(bin), mimeType };
+}
+
+async function startVeo(
+  resolvedModel: string,
+  input: GenerationStartInput,
+  apiKey: string,
+): Promise<GenerationStartResult> {
+  const veoModel = resolveVeoModel(resolvedModel);
+  const aspectRatio = mapVeoAspect(input.aspectRatio);
+
+  const instance: Record<string, unknown> = { prompt: input.prompt };
+  if (input.firstFrameUrl) {
+    instance.image = await fetchAsBase64(input.firstFrameUrl);
+  }
+  if (input.lastFrameUrl) {
+    logError("veo last_frame ignored", { reason: "Veo 3 does not support a last frame" });
+  }
+
+  const body = {
+    instances: [instance],
+    parameters: {
+      aspectRatio,
+      durationSeconds: VEO_DURATION_SECONDS,
+      personGeneration: "allow_all",
+      sampleCount: 1,
+    },
+  };
+
+  const res = await fetch(
+    `${GEMINI_BASE}/models/${encodeURIComponent(veoModel)}:predictLongRunning?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  const json = await res.json().catch(() => ({} as Record<string, unknown>));
+  if (!res.ok) {
+    logError("veo create failed", { status: res.status, body: json, model: veoModel });
+    const err = (json as { error?: { message?: string } }).error;
+    throw new Error(`Veo ${res.status} ${err?.message ?? "unknown error"}`);
+  }
+  const opName = (json as { name?: string }).name;
+  if (!opName) throw new Error("Veo returned no operation name");
+
+  veoStartedAt.set(opName, Date.now());
+
+  return {
+    providerJobId: opName,
+    videoUrl: null,
+    thumbnailUrl: null,
+    aspectRatio,
+    duration: VEO_DURATION_SECONDS,
+    isComplete: false,
+  };
+}
+
+// Veo clips of 8s typically render in ~60–120s. Bound progress 18..95.
+const VEO_EXPECTED_RENDER_MS = 90_000;
+function estimateVeoProgress(opName: string): number {
+  const startedAt = veoStartedAt.get(opName);
+  if (!startedAt) return 35;
+  const elapsed = Date.now() - startedAt;
+  const ratio = elapsed / VEO_EXPECTED_RENDER_MS;
+  return Math.max(18, Math.min(95, Math.round(18 + ratio * 77)));
+}
+
+async function pollVeo(
+  opName: string,
+  apiKey: string,
+  ctx?: { client: SupabaseClient; userId: string },
+): Promise<GenerationPollResult> {
+  const res = await fetch(
+    `${GEMINI_BASE}/${opName}?key=${encodeURIComponent(apiKey)}`,
+    { method: "GET" },
+  );
+  const json = (await res.json().catch(() => ({}))) as {
+    done?: boolean;
+    error?: { message?: string };
+    response?: {
+      generateVideoResponse?: {
+        generatedSamples?: Array<{ video?: { uri?: string } }>;
+      };
+    };
+  };
+  if (!res.ok) {
+    logError("veo poll failed", { status: res.status, body: json });
+    throw new Error(`Veo poll ${res.status} ${json.error?.message ?? "unknown error"}`);
+  }
+  if (!json.done) {
+    return {
+      status: "processing",
+      videoUrl: null,
+      thumbnailUrl: null,
+      aspectRatio: null,
+      duration: null,
+      progressPercent: estimateVeoProgress(opName),
+    };
+  }
+  if (json.error) {
+    veoStartedAt.delete(opName);
+    return {
+      status: "failed",
+      videoUrl: null,
+      thumbnailUrl: null,
+      aspectRatio: null,
+      duration: null,
+      reason: json.error.message ?? "Veo generation failed",
+      progressPercent: null,
+    };
+  }
+  const uri = json.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri;
+  if (!uri) {
+    veoStartedAt.delete(opName);
+    return {
+      status: "failed",
+      videoUrl: null,
+      thumbnailUrl: null,
+      aspectRatio: null,
+      duration: null,
+      reason: "Veo returned no video URI",
+      progressPercent: null,
+    };
+  }
+
+  // Download the generated mp4 (URL requires API key) and re-upload to our
+  // public bucket so the frontend can play it without exposing the key.
+  if (!ctx) {
+    logError("veo poll missing ctx for upload", { opName });
+    return {
+      status: "processing",
+      videoUrl: null,
+      thumbnailUrl: null,
+      aspectRatio: null,
+      duration: null,
+      progressPercent: estimateVeoProgress(opName),
+    };
+  }
+
+  const downloadUrl = uri.includes("?")
+    ? `${uri}&key=${encodeURIComponent(apiKey)}`
+    : `${uri}?key=${encodeURIComponent(apiKey)}`;
+  const dl = await fetch(downloadUrl);
+  if (!dl.ok) {
+    logError("veo download failed", { status: dl.status, uri });
+    throw new Error(`Veo download ${dl.status}`);
+  }
+  const bytes = new Uint8Array(await dl.arrayBuffer());
+
+  const path = `${ctx.userId}/veo-${crypto.randomUUID()}.mp4`;
+  const { error: upErr } = await ctx.client.storage
+    .from("merged-videos")
+    .upload(path, bytes, { contentType: "video/mp4", upsert: false });
+  if (upErr) {
+    logError("veo upload failed", { error: upErr.message, path });
+    throw new Error(`Veo upload failed: ${upErr.message}`);
+  }
+  const { data: pub } = ctx.client.storage.from("merged-videos").getPublicUrl(path);
+  veoStartedAt.delete(opName);
+
+  return {
+    status: "completed",
+    videoUrl: pub.publicUrl,
+    thumbnailUrl: null,
+    aspectRatio: null,
+    duration: VEO_DURATION_SECONDS,
+    progressPercent: 100,
+  };
+}
 
 async function startGeneration(
   providerKey: ProviderKey,
