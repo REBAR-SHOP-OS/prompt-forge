@@ -530,6 +530,27 @@ export default function DashboardPage() {
 
   const legacyDeletedKey = userId ? `deleted-videos:${userId}` : null
   const mergedStorageKey = userId ? `merged-videos:${userId}` : null
+  // Persisted snapshot of every approved single-clip JobDetail. The Library
+  // panel renders from this map (plus mergedEntries) so saved cards survive
+  // page reloads, Start Over, and other workspace resets.
+  const librarySavedJobsKey = userId ? `library-saved-jobs:${userId}` : null
+  const [librarySavedJobs, setLibrarySavedJobs] = useState<Record<string, JobDetail>>({})
+
+  useEffect(() => {
+    if (!librarySavedJobsKey) { setLibrarySavedJobs({}); return }
+    try {
+      const raw = window.localStorage.getItem(librarySavedJobsKey)
+      const obj = raw ? (JSON.parse(raw) as Record<string, JobDetail>) : {}
+      setLibrarySavedJobs(obj && typeof obj === 'object' ? obj : {})
+    } catch { setLibrarySavedJobs({}) }
+  }, [librarySavedJobsKey])
+
+  function persistLibrarySavedJobs(next: Record<string, JobDetail>) {
+    if (!librarySavedJobsKey) return
+    try {
+      window.localStorage.setItem(librarySavedJobsKey, JSON.stringify(next))
+    } catch { /* ignore */ }
+  }
   const pendingEndAppendsKey = userId ? `pending-end-appends:${userId}` : null
   const pendingStartPrependsKey = userId ? `pending-start-prepends:${userId}` : null
   const [manualOrder, setManualOrder] = useState<string[] | null>(null)
