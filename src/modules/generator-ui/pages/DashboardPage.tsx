@@ -1441,6 +1441,20 @@ export default function DashboardPage() {
     if (!userId) return
     const prev = userImages
     setUserImages((curr) => curr.filter((i) => i.id !== imageId))
+    // Also drop it from any per-project image snapshot it belonged to.
+    {
+      const nextMap: Record<string, UserImageItem[]> = {}
+      let changed = false
+      for (const [mid, imgs] of Object.entries(projectSourceImages)) {
+        const filtered = imgs.filter((i) => i.id !== imageId)
+        if (filtered.length !== imgs.length) changed = true
+        nextMap[mid] = filtered
+      }
+      if (changed) {
+        setProjectSourceImages(nextMap)
+        persistProjectSourceImages(nextMap)
+      }
+    }
     try {
       // Server-side, permanent delete (DB row + storage file).
       await generatorUiGateway.deleteUserImage(imageId)
