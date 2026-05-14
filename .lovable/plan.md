@@ -1,24 +1,35 @@
 ## Problem
-The download icon on each Library card is an `<a href={storage_path} download>`. Because the file is served from a cross-origin Supabase storage URL, the browser ignores the `download` attribute and either opens the video in a new tab or just navigates — the file is not saved.
+After a hard refresh on `/app`, the workspace looks blank: HISTORY shows 0, and the middle Final Film preview is gone, even though the user just rendered/merged a video. This happens because the mount effect at `DashboardPage.tsx:1271` intentionally wipes state and never re-hydrates from the backend, and `selectedProjectId` / `previewVideoId` aren't persisted.
 
-## Fix
-Replace the `<a download>` with a button that fetches the merged final video as a blob and triggers a real download (the established cross-origin download pattern).
+## Goal
+After refresh, the user should see exactly what they had before refresh:
+- HISTORY column repopulated with their recent renders.
+- The middle "SHOWING PROJECT — Final Film" preview reopened on the same project they were viewing.
 
-### Changes — `src/modules/generator-ui/pages/DashboardPage.tsx` only
+## Fix (frontend only — `src/modules/generator-ui/pages/DashboardPage.tsx`)
 
-1. Add a small helper `downloadFinalFilm(url, filename)` that:
-   - `await fetch(url)` → `response.blob()`
-   - Creates an object URL, a temporary `<a download={filename}>`, clicks it, then revokes the URL.
-   - On failure, falls back to `window.open(url, '_blank')`.
-   - Shows a toast on error.
+1. **Hydrate HISTORY on mount** — Replace the mount-clear effect with one that:
+   - Calls `videoLibraryGateway.listMyVideos()` is unrelated; use the existing render pipeline: fetch summaries via the same path used elsewhere (`jobOrchestratorGateway.listMyJobs` shape via `hydrateJobs`). The file already imports `JobSummary`/`hydrateJobs`. Call the existing list endpoint (jobs-list) through a small helper or via `request('/jobs-list')` already used by other gateways, then `hydrateJobs(...)` and `setGeneratedVideos(...)`.
+   - Sets `isLibraryLoading` true → false around the call.
+   - Still resets ephemeral input state (`videoColumnMessage`, `userImages`) like before.
+   - Runs only when `userId` becomes available (so authed user is known).
 
-2. In the Library card (around line 3844), replace the `<a href ... download>` with a `<button>` that calls `downloadFinalFilm(video.video.storage_path, derivedName)` where `derivedName` is `final-film-<shortId>.mp4` (e.g. `final-film-${video.id.slice(0,8)}.mp4`).
+2. **Persist `selectedProjectId`** — Add a `selected-project:${userId}` localStorage key:
+   - Hydrate on mount (after `userId` known).
+   - Update `setSelectedProjectId` callsites by writing through a small wrapper or a `useEffect([selectedProjectId, userId])` that persists/clears the value.
+   - On hydrate, only restore if a matching entry exists in `mergedEntries` or hydrated `generatedVideos`; otherwise drop it (avoids ghost project state).
 
-3. Keep `event.stopPropagation()` so clicking the icon does not also open/select the project card. Keep styling, aria-label, and title unchanged.
+3. **Persist `previewVideoId` + `previewDismissed`** — Same pattern with `preview-video:${userId}` and `preview-dismissed:${userId}` keys, hydrated/cleared per `userId`. Restore only if the id resolves to a known clip/merged entry.
 
-### Out of scope
-No backend, contract, or storage changes. No edits to other download buttons unless the user asks. Only the Library final-film download icon is touched.
+4. **Validate after hydrate** — After the initial `setGeneratedVideos(hydrated)`, run the same prune that already exists for `approvedIds` so dangling persisted ids are cleaned up.
 
-### Verification
-- Click the download icon on a Library item → browser saves `final-film-xxxxxxxx.mp4` directly without opening a new tab.
-- Card click behavior, delete button, and preview behavior unchanged.
+## Out of scope
+- No backend or schema changes.
+- No changes to Library, deletion, merge, or generation flows.
+- No change to "Start Over" — it still wipes everything (incl. the new persisted keys via existing `resetWorkspace`).
+
+## Verification
+- Render a clip → merge into Final Film → refresh page → HISTORY still shows the clip(s) and the Final Film preview re-opens on the same project.
+- Click X on the preview → refresh → preview stays dismissed.
+- Click "Start Over" → refresh → workspace empty as expected.
+- Log out / log in as another user → no leakage (keys are scoped by `userId`).
