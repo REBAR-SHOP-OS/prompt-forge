@@ -3571,8 +3571,8 @@ export default function DashboardPage() {
 
         <div className="mt-4 flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-zinc-500">Video renders</p>
-            <h2 className="text-sm font-semibold text-zinc-100">Recent outputs</h2>
+            <p className="text-xs font-medium text-zinc-500">Working clips</p>
+            <h2 className="text-sm font-semibold text-zinc-100">Pending</h2>
           </div>
           <div className="flex items-center gap-2">
             <input
