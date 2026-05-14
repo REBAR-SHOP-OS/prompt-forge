@@ -605,7 +605,12 @@ export default function DashboardPage() {
   const workspaceHiddenJobIdsKey = userId ? `workspace-hidden-jobs:${userId}` : null
 
   useEffect(() => {
-    setWorkspaceHiddenJobIds(new Set())
+    if (!workspaceHiddenJobIdsKey) { setWorkspaceHiddenJobIds(new Set()); return }
+    try {
+      const raw = window.localStorage.getItem(workspaceHiddenJobIdsKey)
+      const arr = raw ? (JSON.parse(raw) as string[]) : []
+      setWorkspaceHiddenJobIds(new Set(Array.isArray(arr) ? arr : []))
+    } catch { setWorkspaceHiddenJobIds(new Set()) }
   }, [workspaceHiddenJobIdsKey])
 
   function persistWorkspaceHiddenJobIds(next: Set<string>) {
@@ -1197,8 +1202,15 @@ export default function DashboardPage() {
         )
         .sort((l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime())
     }
+    // Backstop: any clip already snapshotted into a Library project must
+    // never appear loose in the default workspace, even if the hidden-set is
+    // empty (cleared storage, new device, etc.).
+    const claimedByProjects = new Set<string>()
+    for (const clips of Object.values(projectSourceJobs)) {
+      for (const c of clips) claimedByProjects.add(c.id)
+    }
     const chronoAsc = [...generatedVideos]
-      .filter((v) => !workspaceHiddenJobIds.has(v.id))
+      .filter((v) => !workspaceHiddenJobIds.has(v.id) && !claimedByProjects.has(v.id))
       .sort(
         (l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime()
       )
@@ -1253,7 +1265,11 @@ export default function DashboardPage() {
       const liveById = new Map(userImages.map((i) => [i.id, i]))
       return snapshot.map((s) => liveById.get(s.id) ?? s)
     }
-    return userImages.filter((i) => !workspaceHiddenImageIds.has(i.id))
+    const claimedByProjects = new Set<string>()
+    for (const imgs of Object.values(projectSourceImages)) {
+      for (const i of imgs) claimedByProjects.add(i.id)
+    }
+    return userImages.filter((i) => !workspaceHiddenImageIds.has(i.id) && !claimedByProjects.has(i.id))
   }, [userImages, selectedProjectId, projectSourceImages, workspaceHiddenImageIds])
 
   const displayedClips = useMemo<UnifiedClip[]>(() => {
@@ -2645,7 +2661,40 @@ export default function DashboardPage() {
   }
 
   async function handleStartOver() {
+    // Snapshot loose workspace cards (those NOT belonging to any Library
+    // project) so we can permanently delete them server-side. Cards that are
+    // part of a project's source snapshot stay alive for that project.
+    const claimedJobIds = new Set<string>()
+    for (const clips of Object.values(projectSourceJobs)) {
+      for (const c of clips) claimedJobIds.add(c.id)
+    }
+    const claimedImageIds = new Set<string>()
+    for (const imgs of Object.values(projectSourceImages)) {
+      for (const i of imgs) claimedImageIds.add(i.id)
+    }
+    const looseJobIds = generatedVideos
+      .filter((j) => !j.id.startsWith('merged-') && !claimedJobIds.has(j.id))
+      .map((j) => j.id)
+    const looseImageIds = userImages
+      .filter((i) => !claimedImageIds.has(i.id))
+      .map((i) => i.id)
+
     resetWorkspace({ keepPreview: false })
+
+    if (looseJobIds.length === 0 && looseImageIds.length === 0) return
+
+    const results = await Promise.allSettled([
+      ...looseJobIds.map((id) => jobOrchestratorGateway.deleteJob(id)),
+      ...looseImageIds.map((id) => generatorUiGateway.deleteUserImage(id)),
+    ])
+    const failed = results.filter((r) => r.status === 'rejected').length
+    if (failed > 0) {
+      console.error(`Start Over: ${failed} item(s) failed to delete`)
+      setVideoColumnMessage(`Could not permanently delete ${failed} item(s). They may reappear after refresh.`)
+    }
+    // Drop deleted ids from local state immediately.
+    setGeneratedVideos((curr) => curr.filter((j) => !looseJobIds.includes(j.id)))
+    setUserImages((curr) => curr.filter((i) => !looseImageIds.includes(i.id)))
   }
 
   // After a fresh sign-in (flag set by AuthProvider on SIGNED_IN event),
