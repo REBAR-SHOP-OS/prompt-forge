@@ -1445,65 +1445,54 @@ export default function DashboardPage() {
     return hasComposerInput ? 'Shape the next version' : 'Start forging a prompt'
   }, [hasComposerInput, isDragging])
 
-  // Hydrate HISTORY from the backend on mount / when the user becomes known.
-  // RULE (mandatory): the workspace only contains items that belong to the
-  // active project (active manifest) or to a Library project's source
-  // snapshot. Anything else returned by the backend is an orphan from a
-  // previous session and gets PERMANENTLY DELETED here — it must never
-  // surface in the UI again.
+  // MANDATORY RULE: the right-side "Pending" column is NOT a history view.
+  // It is only a holding area for the cards of the *current* working project
+  // (cards the user is editing before Final Film). On mount we therefore:
+  //   1) NEVER hydrate jobs/images from the backend into the UI.
+  //   2) Permanently delete any backend job/image that is NOT claimed by
+  //      the active workspace manifest, so refresh can never resurrect a
+  //      previously-pending card. Final Film outputs live only in Library.
   const hydrationRanRef = useRef<string | null>(null)
   useEffect(() => {
     if (!userId) return
-    // Wait for the persisted manifests / snapshots to hydrate from
-    // localStorage before we decide what is orphan vs protected.
-    if (!activeJobIdsKey || !activeImageIdsKey || !projectSourceJobsKey || !projectSourceImagesKey) return
+    if (!activeJobIdsKey || !activeImageIdsKey) return
     if (hydrationRanRef.current === userId) return
     hydrationRanRef.current = userId
     let cancelled = false
-    setIsLibraryLoading(true)
+    setIsLibraryLoading(false)
     setVideoColumnMessage(null)
 
-    // RULE: Refresh must preserve the workspace exactly as the user left it.
-    // We do NOT delete anything on hydrate. Permanent deletion only happens
-    // via explicit Start Over (handleStartOver) or via Final Film moving
-    // sources into a Library project snapshot. Items hidden from the loose
-    // workspace are filtered at the display layer (workspaceHiddenJobIds /
-    // workspaceHiddenImageIds + project-claim sets), not by deleting rows.
     ;(async () => {
       try {
-        const summaries = await jobOrchestratorGateway.listMyJobs()
-        const hydrated = await hydrateJobs(summaries)
-        if (cancelled) return
-        setGeneratedVideos(hydrated)
-
-        // Hydrate user images from backend without deleting anything.
-        try {
-          const { data: imgRows } = await supabase
+        const [summaries, imgRowsRes] = await Promise.all([
+          jobOrchestratorGateway.listMyJobs().catch(() => [] as JobSummary[]),
+          supabase
             .from('generator_user_images')
-            .select('id, storage_path, created_at, still_duration_seconds, width, height')
+            .select('id')
             .eq('user_id', userId)
-            .is('deleted_at', null)
-            .order('created_at', { ascending: false })
-          if (!cancelled && imgRows) {
-            setUserImages(imgRows as UserImageItem[])
-          }
-        } catch (e) {
-          console.error('Failed to hydrate user images', e)
-          if (!cancelled) setUserImages([])
-        }
+            .is('deleted_at', null),
+        ])
+        if (cancelled) return
+
+        const orphanJobIds = summaries
+          .map((s) => s.id)
+          .filter((id) => !activeJobIds.has(id))
+        const orphanImageIds = ((imgRowsRes.data ?? []) as { id: string }[])
+          .map((r) => r.id)
+          .filter((id) => !activeImageIds.has(id))
+
+        // Silent permanent cleanup — never surfaces in the UI.
+        await Promise.allSettled([
+          ...orphanJobIds.map((id) => jobOrchestratorGateway.deleteJob(id)),
+          ...orphanImageIds.map((id) => generatorUiGateway.deleteUserImage(id)),
+        ])
       } catch (err) {
-        if (!cancelled) {
-          console.error('Failed to hydrate render history', err)
-          setGeneratedVideos([])
-          setUserImages([])
-        }
-      } finally {
-        if (!cancelled) setIsLibraryLoading(false)
+        console.error('Pending cleanup failed', err)
       }
     })()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, activeJobIdsKey, activeImageIdsKey, projectSourceJobsKey, projectSourceImagesKey])
+  }, [userId, activeJobIdsKey, activeImageIdsKey])
 
   const handlePickImage = () => {
     if (isUploadingImage) return
