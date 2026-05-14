@@ -3537,14 +3537,14 @@ export default function DashboardPage() {
 
       <aside
         className="fixed bottom-3 right-3 top-3 z-30 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/90 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.36)] backdrop-blur-xl sm:bottom-5 sm:right-4 sm:top-5 sm:w-80 lg:w-80 xl:right-5 xl:w-96 2xl:w-[26rem]"
-        aria-label="Recent outputs"
+        aria-label="Pending"
       >
         <div className="flex items-center justify-between border-b border-white/10 pb-3">
           <div className="inline-flex items-center gap-2">
             <History className="h-4 w-4 text-amber-300" aria-hidden="true" />
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">History</p>
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">Pending</p>
             <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
-              {displayedVideos.length}
+              {displayedClips.length}
             </span>
           </div>
         </div>
