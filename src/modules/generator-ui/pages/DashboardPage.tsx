@@ -3825,20 +3825,6 @@ export default function DashboardPage() {
                                 <Download className="h-3 w-3" aria-hidden="true" />
                               </a>
                             ) : null}
-                            {video.input_prompt && normalizeStatus(video.status) !== 'processing' ? (
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  regenerateJob(video)
-                                }}
-                                aria-label="Regenerate clip from same prompt"
-                                title="Regenerate from same prompt"
-                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200"
-                              >
-                                <RotateCcw className="h-3 w-3" aria-hidden="true" />
-                              </button>
-                            ) : null}
                             <button
                               type="button"
                               onClick={(event) => {
