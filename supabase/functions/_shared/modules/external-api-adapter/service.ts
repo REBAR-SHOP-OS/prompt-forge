@@ -342,28 +342,85 @@ function mapVeoAspect(ar: string | null | undefined): "16:9" | "9:16" {
   return "16:9";
 }
 
-// Track per-operation start time so the poller can estimate progress for Veo
-// (the LRO does not expose a percentage). In-memory only; restarting the edge
-// function loses these and we fall back to a default mid-progress.
+// Per-operation start time for time-based progress estimation only. In-memory
+// only; safe to lose across restarts because durable state lives in the
+// encoded provider_job_id (see VeoState below).
 const veoStartedAt = new Map<string, number>();
 
-// Two-phase render state for 10s/15s requests. Keyed by the *initial* opName
-// (which is what we store in the DB as provider_job_id).
-const veoTargetDuration = new Map<string, number>(); // 10 or 15
-const veoOpRedirect = new Map<string, string>();      // initialOp -> currentOp (after extension start)
-const veoExtensionStarted = new Set<string>();        // initialOps that have already kicked off extension
-const veoPromptCache = new Map<string, string>();     // initialOp -> prompt for the extension call
-const veoAspectCache = new Map<string, "16:9" | "9:16">();
-const veoModelCache = new Map<string, string>();      // initialOp -> Veo model name
+// ----- Durable Veo state -----------------------------------------------------
+// We encode everything we need to resume a Veo job (including the optional
+// extension chain for 10s/15s outputs) inside the provider_job_id stored on
+// the job row. That way an edge-function restart between polls cannot lose
+// the extension state and silently truncate a 15s clip down to 8s.
+//
+// Wire format: "veo:v1:<base64url-json>"
+interface VeoState {
+  // The original predictLongRunning operation name (phase 1).
+  initialOp: string;
+  // The currently-active operation we should poll (phase 1 op, or phase 2 op
+  // once the extension call has been kicked off).
+  currentOp: string;
+  // 8 for single-call clips, 15 when extension chaining is required.
+  targetDuration: number;
+  // Veo model name used for the create call (also used for the extension).
+  model: string;
+  // 16:9 / 9:16 — required to re-issue the extension call.
+  aspectRatio: "16:9" | "9:16";
+  // Original prompt — required to re-issue the extension call.
+  prompt: string;
+  // Whether phase 2 (extension) has already been dispatched.
+  extensionStarted: boolean;
+  // ms since epoch when the *current* phase started; used for progress.
+  phaseStartedAt: number;
+}
 
-function clearVeoState(initialOp: string) {
-  veoStartedAt.delete(initialOp);
-  veoTargetDuration.delete(initialOp);
-  veoOpRedirect.delete(initialOp);
-  veoExtensionStarted.delete(initialOp);
-  veoPromptCache.delete(initialOp);
-  veoAspectCache.delete(initialOp);
-  veoModelCache.delete(initialOp);
+const VEO_STATE_PREFIX = "veo:v1:";
+
+function encodeVeoState(state: VeoState): string {
+  const json = JSON.stringify(state);
+  const b64 = btoa(json)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+  return `${VEO_STATE_PREFIX}${b64}`;
+}
+
+function decodeVeoState(providerJobId: string): VeoState | null {
+  if (!providerJobId.startsWith(VEO_STATE_PREFIX)) return null;
+  const b64url = providerJobId.slice(VEO_STATE_PREFIX.length);
+  const padded = b64url.replace(/-/g, "+").replace(/_/g, "/")
+    + "=".repeat((4 - (b64url.length % 4)) % 4);
+  try {
+    const json = atob(padded);
+    const parsed = JSON.parse(json) as VeoState;
+    if (typeof parsed.currentOp !== "string" || typeof parsed.initialOp !== "string") {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Veo errors that should NOT permanently fail the job — the next poll will
+ * retry the same operation. Covers Google's transient capacity / availability
+ * messages and standard 5xx-style transient codes.
+ */
+function isTransientVeoError(message: string | undefined | null): boolean {
+  if (!message) return false;
+  const m = message.toLowerCase();
+  return (
+    m.includes("high demand") ||
+    m.includes("try again later") ||
+    m.includes("temporarily unavailable") ||
+    m.includes("temporary") ||
+    m.includes("overloaded") ||
+    m.includes("unavailable") ||
+    m.includes("deadline exceeded") ||
+    m.includes("rate limit") ||
+    m.includes("quota")
+  );
 }
 
 async function fetchAsInlineData(url: string): Promise<{ mimeType: string; data: string }> {
