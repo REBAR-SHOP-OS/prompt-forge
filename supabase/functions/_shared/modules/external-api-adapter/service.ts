@@ -344,7 +344,7 @@ function mapVeoAspect(ar: string | null | undefined): "16:9" | "9:16" {
 // function loses these and we fall back to a default mid-progress.
 const veoStartedAt = new Map<string, number>();
 
-async function fetchAsBase64(url: string): Promise<{ bytesBase64Encoded: string; mimeType: string }> {
+async function fetchAsInlineData(url: string): Promise<{ mimeType: string; data: string }> {
   const r = await fetch(url);
   if (!r.ok) throw new Error(`failed to fetch frame ${url}: ${r.status}`);
   const mimeType = r.headers.get("content-type")?.split(";")[0]?.trim() || "image/png";
@@ -355,7 +355,7 @@ async function fetchAsBase64(url: string): Promise<{ bytesBase64Encoded: string;
   for (let i = 0; i < buf.length; i += chunk) {
     bin += String.fromCharCode.apply(null, Array.from(buf.subarray(i, i + chunk)));
   }
-  return { bytesBase64Encoded: btoa(bin), mimeType };
+  return { mimeType, data: btoa(bin) };
 }
 
 async function startVeo(
@@ -368,10 +368,11 @@ async function startVeo(
 
   const instance: Record<string, unknown> = { prompt: input.prompt };
   if (input.firstFrameUrl) {
-    instance.image = await fetchAsBase64(input.firstFrameUrl);
+    instance.image = { inlineData: await fetchAsInlineData(input.firstFrameUrl) };
   }
   if (input.lastFrameUrl) {
-    logError("veo last_frame ignored", { reason: "Veo 3 does not support a last frame" });
+    // Veo 3.1 supports first+last frame interpolation via the `lastFrame` field.
+    instance.lastFrame = { inlineData: await fetchAsInlineData(input.lastFrameUrl) };
   }
 
   const body = {
