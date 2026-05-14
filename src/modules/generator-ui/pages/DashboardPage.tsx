@@ -1235,7 +1235,14 @@ export default function DashboardPage() {
   // Unified clip list (videos + uploaded images), ordered by created_at ASC,
   // with manual drag-and-drop overrides. Both kinds share the same numbering,
   // ordering, drag handlers, and Final Film merge sequence.
-  const visibleUserImages = userImages
+  const visibleUserImages = useMemo<UserImageItem[]>(() => {
+    if (selectedProjectId) {
+      const snapshot = projectSourceImages[selectedProjectId] ?? []
+      const liveById = new Map(userImages.map((i) => [i.id, i]))
+      return snapshot.map((s) => liveById.get(s.id) ?? s)
+    }
+    return userImages.filter((i) => !workspaceHiddenImageIds.has(i.id))
+  }, [userImages, selectedProjectId, projectSourceImages, workspaceHiddenImageIds])
 
   const displayedClips = useMemo<UnifiedClip[]>(() => {
     const items: UnifiedClip[] = [
