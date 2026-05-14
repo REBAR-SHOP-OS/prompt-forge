@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { LoaderCircle, Sparkles, Wand2, RefreshCw, Check, X, Brush, Eraser, ImagePlus, Upload } from 'lucide-react'
+import { LoaderCircle, Sparkles, Wand2, RefreshCw, Check, X, Brush, Eraser, ImagePlus } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -424,19 +424,7 @@ export default function AiImageDialog({
               </div>
             </div>
             <div>
-              <div className="mb-2 flex items-center justify-between gap-2 text-xs uppercase tracking-wide text-zinc-400">
-                <span>Prompt</span>
-                <button
-                  type="button"
-                  onClick={() => referenceInputRef.current?.click()}
-                  disabled={isLoading}
-                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-medium tracking-normal text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                  title="Upload a reference image"
-                >
-                  <Upload className="h-3.5 w-3.5" />
-                  <span>{referenceImage ? 'Change image' : 'Upload image'}</span>
-                </button>
-              </div>
+              <div className="mb-2 text-xs uppercase tracking-wide text-zinc-400">Prompt</div>
               <div className="relative">
                 <Textarea
                   value={prompt}
