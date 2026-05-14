@@ -2661,7 +2661,40 @@ export default function DashboardPage() {
   }
 
   async function handleStartOver() {
+    // Snapshot loose workspace cards (those NOT belonging to any Library
+    // project) so we can permanently delete them server-side. Cards that are
+    // part of a project's source snapshot stay alive for that project.
+    const claimedJobIds = new Set<string>()
+    for (const clips of Object.values(projectSourceJobs)) {
+      for (const c of clips) claimedJobIds.add(c.id)
+    }
+    const claimedImageIds = new Set<string>()
+    for (const imgs of Object.values(projectSourceImages)) {
+      for (const i of imgs) claimedImageIds.add(i.id)
+    }
+    const looseJobIds = generatedVideos
+      .filter((j) => !j.id.startsWith('merged-') && !claimedJobIds.has(j.id))
+      .map((j) => j.id)
+    const looseImageIds = userImages
+      .filter((i) => !claimedImageIds.has(i.id))
+      .map((i) => i.id)
+
     resetWorkspace({ keepPreview: false })
+
+    if (looseJobIds.length === 0 && looseImageIds.length === 0) return
+
+    const results = await Promise.allSettled([
+      ...looseJobIds.map((id) => jobOrchestratorGateway.deleteJob(id)),
+      ...looseImageIds.map((id) => generatorUiGateway.deleteUserImage(id)),
+    ])
+    const failed = results.filter((r) => r.status === 'rejected').length
+    if (failed > 0) {
+      console.error(`Start Over: ${failed} item(s) failed to delete`)
+      setVideoColumnMessage(`Could not permanently delete ${failed} item(s). They may reappear after refresh.`)
+    }
+    // Drop deleted ids from local state immediately.
+    setGeneratedVideos((curr) => curr.filter((j) => !looseJobIds.includes(j.id)))
+    setUserImages((curr) => curr.filter((i) => !looseImageIds.includes(i.id)))
   }
 
   // After a fresh sign-in (flag set by AuthProvider on SIGNED_IN event),
