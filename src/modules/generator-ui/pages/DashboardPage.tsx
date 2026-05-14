@@ -2602,7 +2602,14 @@ export default function DashboardPage() {
       setWorkspaceHiddenJobIds(nextHidden)
       persistWorkspaceHiddenJobIds(nextHidden)
     }
-    // Exit "selected project" mode so HISTORY shows the (now empty) workspace.
+    // Same for image cards: keep them in their own project snapshots, but
+    // remove them from the fresh workspace strip.
+    {
+      const nextHiddenImgs = new Set(workspaceHiddenImageIds)
+      for (const i of userImages) nextHiddenImgs.add(i.id)
+      setWorkspaceHiddenImageIds(nextHiddenImgs)
+      persistWorkspaceHiddenImageIds(nextHiddenImgs)
+    }
     setSelectedProjectId(null)
     // Releasing the project lock so the user can pick a different ratio.
     setLockedProjectRatio(null)
