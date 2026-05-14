@@ -1,54 +1,66 @@
-# Veo: Support End Frame Like Wan
+# Veo 10s / 15s Support via Video Extension
 
 ## Diagnosis
 
-Today our Veo integration uses `veo-3.0-fast-generate-001`, which **does not support a last frame**. Our code in `startVeo` (service.ts) explicitly logs and discards `lastFrameUrl`:
+Veo 3.1 in a single call can only generate **4, 6, or 8 second** clips. It does not have a "10s" or "15s" parameter. That's why we currently reject those durations with `VEO_DURATION_UNSUPPORTED`.
 
-```ts
-if (input.lastFrameUrl) {
-  logError("veo last_frame ignored", { reason: "Veo 3 does not support a last frame" });
-}
-```
+However Veo 3.1 ships a separate **video extension** feature on the same `predictLongRunning` endpoint: pass a previously generated Veo video plus a new prompt, and it appends **+7 seconds** to it (up to 20 extensions, max 141s input). This lets us deliver 10s and 15s outputs without changing providers.
 
-So even when the user attaches a Start and an End image, only the Start image reaches Veo and the End image is silently dropped.
+| Target | Strategy |
+|---|---|
+| 5s | 1 call, `durationSeconds = 6` (closest valid), trim 1s on the merger. Or accept 6s output. |
+| 8s | 1 call, `durationSeconds = 8`. (already works) |
+| 10s | 1 call at 8s + 1 extension = 15s, trim 5s. |
+| 15s | 1 call at 8s + 1 extension = 15s. Exact. |
 
-Google now ships **Veo 3.1**, which adds first+last frame interpolation through the same `predictLongRunning` REST endpoint. The body shape is:
+Trim on the merger uses the existing client-side `trimVideo.ts` already used for clip trimming, so no new server tooling.
 
-```json
-{
-  "instances": [{
-    "prompt": "...",
-    "image":     { "inlineData": { "mimeType": "image/png", "data": "<base64 first>" } },
-    "lastFrame": { "inlineData": { "mimeType": "image/png", "data": "<base64 last>"  } }
-  }]
-}
-```
+## Fix (server-side only, then a small UX update)
 
-This is exactly what Wan already does and what the user wants.
+### 1. `service.ts` — add a Veo extension flow
 
-## Fix
+Inside the adapter, when the orchestrator requests a Veo job with `durationSeconds > 8`:
 
-Edit `supabase/functions/_shared/modules/external-api-adapter/service.ts` only. No DB / UI / orchestrator changes needed.
+- `startVeo` records `targetDurationSeconds` (10 or 15) in an in-memory map keyed by the operation name (next to `veoStartedAt`).
+- Generate clip 1 at `durationSeconds = 8` as today.
+- `pollVeo` detects the `targetDurationSeconds` is set: when the LRO completes, instead of finalizing, immediately POST a second `predictLongRunning` call with:
+  - `instances[0].video = { uri: <clip 1 uri> }` (the Veo-internal uri returned by the first response — Veo's extension endpoint requires this, not a re-uploaded mp4)
+  - same prompt
+  - `parameters.resolution = "720p"`
+- Track the new operation name; `pollVeo` continues to drive progress (split 0–50% for clip 1, 50–100% for extension).
+- When extension completes, download the resulting mp4 (Veo returns the **combined** 15s video in one URI), upload to `merged-videos`, and return `completed` with `duration = targetDurationSeconds`.
 
-1. **Switch model** so Veo accepts `lastFrame`:
-   - In `resolveVeoModel`, map `flow-video-1` → `veo-3.1-generate-preview` (was `veo-3.0-fast-generate-001`).
-   - Update `COST_MAP` to include `veo-3.1-generate-preview` with the same per-1k-char placeholder cost as before.
-2. **Send the last frame** in `startVeo`:
-   - Remove the "veo last_frame ignored" branch.
-   - When `input.lastFrameUrl` is set, fetch it via the existing `fetchAsBase64` helper and add `instance.lastFrame = { inlineData: { ... } }`.
-   - Keep the existing `instance.image = ...` for the first frame.
-3. **Keep everything else** identical: aspect ratio mapping, polling, mp4 re-upload to `merged-videos`, progress estimation, error handling.
+For the 10s case, we set `duration = 10` in the result and expose a flag so the existing video pipeline trims the final 5s on the client (using `trimVideo.ts`). If client-side trim integration turns out to require additional plumbing, the safe fallback is to deliver a 15s clip for both 10s and 15s requests and surface a one-line note in the UI.
+
+### 2. `gateway.ts` — remove the up-front 10s/15s rejection for Veo
+
+The `VEO_DURATION_UNSUPPORTED` gate added earlier is no longer needed. Replace it so Veo accepts 5/8/10/15. Wan path unchanged.
+
+### 3. State persistence note
+
+The `targetDurationSeconds` map is in-memory (same lifetime as `veoStartedAt`). If the edge function restarts mid-render the extension step is lost. To make this resilient we'd need to persist the chained state — out of scope for this round; if it becomes a real issue we'll move it into `generator_generation_jobs` as a small JSON column.
 
 ## Out of scope
 
-- No change to Wan, no change to the 8-second clamp (Veo 3.1 still maxes around 8s; the existing `VEO_DURATION_UNSUPPORTED` gate stays).
-- No frontend changes — `Start` and `End` slots already exist and already send both URLs to the backend; today they're just being ignored on the Veo side.
-- No new secrets — uses the same `GEMINI_API_KEY`.
+- No Wan changes.
+- No DB migration in this round (in-memory state is acceptable for the current scale; documented above).
+- No new secrets.
+- No frontend layout changes; the duration buttons keep their current behavior.
 
 ## Verification
 
-1. Image-to-video, only Start frame, Veo → still works.
-2. Image-to-video, Start + End frames, Veo → output interpolates from Start to End (matches Wan behavior).
-3. Image-to-video, only End frame, Veo → works (Veo 3.1 accepts lastFrame without firstFrame? — fall back to "Start required" if the API rejects it; we'll keep current "at least one frame" semantics and let Veo error surface naturally).
-4. No `"veo last_frame ignored"` entries in edge function logs anymore.
-5. Wan provider unaffected.
+1. Veo, 8s, Start+End → unchanged (1 call).
+2. Veo, 15s, Start only → 8s clip + extension → final 15s mp4 in History, single card, single download.
+3. Veo, 10s, Start only → 15s pipeline + 5s client trim → 10s in History.
+4. Veo, 15s, Start+End → first clip uses lastFrame interpolation, extension uses the new prompt only (lastFrame applies to the first 8s — Veo behavior). Document this nuance in the result.
+5. Wan unchanged.
+6. Edge logs: no `VEO_DURATION_UNSUPPORTED`, no `veo last_frame ignored`, two `veo create` entries per long Veo job (one per LRO).
+
+## Open question
+
+For 10s, do you want:
+
+- **A.** Accurate 10s output (trim 5s off the 15s extension result on the client). More moving parts.
+- **B.** Always deliver 15s when 10s is requested (cleanest, no trim, but the duration label won't match).
+
+I'll proceed with **A** unless you say otherwise.
