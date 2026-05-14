@@ -3585,7 +3585,7 @@ export default function DashboardPage() {
                                 type="button"
                                 onClick={(event) => {
                                   event.stopPropagation()
-                                  toggleApproved(video.id)
+                                  toggleApproved(video.id, video)
                                 }}
                                 aria-pressed={isApproved}
                                 aria-label={isApproved ? 'Remove from library' : 'Save to library'}
