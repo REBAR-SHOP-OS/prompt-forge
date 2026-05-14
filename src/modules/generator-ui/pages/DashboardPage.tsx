@@ -637,6 +637,45 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  // Per-project snapshot of the source images that were merged into each
+  // Final Film. Mirrors `projectSourceJobs` so reopening a Library project
+  // shows the exact images it was built from — and only those.
+  const [projectSourceImages, setProjectSourceImages] = useState<Record<string, UserImageItem[]>>({})
+  const projectSourceImagesKey = userId ? `project-source-images:${userId}` : null
+  useEffect(() => {
+    if (!projectSourceImagesKey) { setProjectSourceImages({}); return }
+    try {
+      const raw = window.localStorage.getItem(projectSourceImagesKey)
+      const obj = raw ? (JSON.parse(raw) as Record<string, UserImageItem[]>) : {}
+      setProjectSourceImages(obj && typeof obj === 'object' ? obj : {})
+    } catch { setProjectSourceImages({}) }
+  }, [projectSourceImagesKey])
+  function persistProjectSourceImages(next: Record<string, UserImageItem[]>) {
+    if (!projectSourceImagesKey) return
+    try {
+      window.localStorage.setItem(projectSourceImagesKey, JSON.stringify(next))
+    } catch { /* ignore */ }
+  }
+
+  // Image ids hidden from the default workspace HISTORY/clip strip after
+  // Final Film / Start Over. Parallels `workspaceHiddenJobIds` for images.
+  const [workspaceHiddenImageIds, setWorkspaceHiddenImageIds] = useState<Set<string>>(new Set())
+  const workspaceHiddenImageIdsKey = userId ? `workspace-hidden-images:${userId}` : null
+  useEffect(() => {
+    if (!workspaceHiddenImageIdsKey) { setWorkspaceHiddenImageIds(new Set()); return }
+    try {
+      const raw = window.localStorage.getItem(workspaceHiddenImageIdsKey)
+      const arr = raw ? (JSON.parse(raw) as string[]) : []
+      setWorkspaceHiddenImageIds(new Set(Array.isArray(arr) ? arr : []))
+    } catch { setWorkspaceHiddenImageIds(new Set()) }
+  }, [workspaceHiddenImageIdsKey])
+  function persistWorkspaceHiddenImageIds(next: Set<string>) {
+    if (!workspaceHiddenImageIdsKey) return
+    try {
+      window.localStorage.setItem(workspaceHiddenImageIdsKey, JSON.stringify(Array.from(next)))
+    } catch { /* ignore */ }
+  }
+
   // When set, HISTORY is filtered to show only the source clips of this
   // Library project. Cleared by Start Over or by the inline "Clear" button.
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
@@ -897,6 +936,18 @@ export default function DashboardPage() {
       }
       setProjectSourceJobs(nextMap)
       persistProjectSourceJobs(nextMap)
+    }
+    // Same prune for image snapshots: drop the deleted merged project entry.
+    if (isMerged) {
+      const nextImgMap: Record<string, UserImageItem[]> = {}
+      for (const [mid, imgs] of Object.entries(projectSourceImages)) {
+        if (mid === jobId) continue
+        nextImgMap[mid] = imgs
+      }
+      if (Object.keys(nextImgMap).length !== Object.keys(projectSourceImages).length) {
+        setProjectSourceImages(nextImgMap)
+        persistProjectSourceImages(nextImgMap)
+      }
     }
     if (isMerged && selectedProjectId === jobId) setSelectedProjectId(null)
 
@@ -1196,7 +1247,14 @@ export default function DashboardPage() {
   // Unified clip list (videos + uploaded images), ordered by created_at ASC,
   // with manual drag-and-drop overrides. Both kinds share the same numbering,
   // ordering, drag handlers, and Final Film merge sequence.
-  const visibleUserImages = userImages
+  const visibleUserImages = useMemo<UserImageItem[]>(() => {
+    if (selectedProjectId) {
+      const snapshot = projectSourceImages[selectedProjectId] ?? []
+      const liveById = new Map(userImages.map((i) => [i.id, i]))
+      return snapshot.map((s) => liveById.get(s.id) ?? s)
+    }
+    return userImages.filter((i) => !workspaceHiddenImageIds.has(i.id))
+  }, [userImages, selectedProjectId, projectSourceImages, workspaceHiddenImageIds])
 
   const displayedClips = useMemo<UnifiedClip[]>(() => {
     const items: UnifiedClip[] = [
@@ -1383,6 +1441,20 @@ export default function DashboardPage() {
     if (!userId) return
     const prev = userImages
     setUserImages((curr) => curr.filter((i) => i.id !== imageId))
+    // Also drop it from any per-project image snapshot it belonged to.
+    {
+      const nextMap: Record<string, UserImageItem[]> = {}
+      let changed = false
+      for (const [mid, imgs] of Object.entries(projectSourceImages)) {
+        const filtered = imgs.filter((i) => i.id !== imageId)
+        if (filtered.length !== imgs.length) changed = true
+        nextMap[mid] = filtered
+      }
+      if (changed) {
+        setProjectSourceImages(nextMap)
+        persistProjectSourceImages(nextMap)
+      }
+    }
     try {
       // Server-side, permanent delete (DB row + storage file).
       await generatorUiGateway.deleteUserImage(imageId)
@@ -2453,6 +2525,29 @@ export default function DashboardPage() {
         setWorkspaceHiddenJobIds(nextHidden)
         persistWorkspaceHiddenJobIds(nextHidden)
       }
+      // Same scoping for image cards: snapshot the images that went into the
+      // film so reopening the project re-shows only those, and hide them from
+      // the fresh workspace.
+      {
+        const liveImagesById = new Map(userImages.map((i) => [i.id, i]))
+        const snapshotImagesById = new Map(
+          (selectedProjectId ? (projectSourceImages[selectedProjectId] ?? []) : []).map((i) => [i.id, i]),
+        )
+        const sourceImages: UserImageItem[] = []
+        for (const clip of eligibleClips) {
+          if (clip.kind !== 'image') continue
+          const img = liveImagesById.get(clip.id) ?? snapshotImagesById.get(clip.id) ?? clip.image
+          sourceImages.push(img)
+        }
+        const nextImgMap = { ...projectSourceImages, [mergedId]: sourceImages }
+        setProjectSourceImages(nextImgMap)
+        persistProjectSourceImages(nextImgMap)
+
+        const nextHiddenImgs = new Set(workspaceHiddenImageIds)
+        for (const i of sourceImages) nextHiddenImgs.add(i.id)
+        setWorkspaceHiddenImageIds(nextHiddenImgs)
+        persistWorkspaceHiddenImageIds(nextHiddenImgs)
+      }
       // Auto Start-Over: reset the working composer/history so the user can
       // immediately begin the next project. Keep the preview open so they
       // still see the freshly merged Final Film.
@@ -2533,7 +2628,14 @@ export default function DashboardPage() {
       setWorkspaceHiddenJobIds(nextHidden)
       persistWorkspaceHiddenJobIds(nextHidden)
     }
-    // Exit "selected project" mode so HISTORY shows the (now empty) workspace.
+    // Same for image cards: keep them in their own project snapshots, but
+    // remove them from the fresh workspace strip.
+    {
+      const nextHiddenImgs = new Set(workspaceHiddenImageIds)
+      for (const i of userImages) nextHiddenImgs.add(i.id)
+      setWorkspaceHiddenImageIds(nextHiddenImgs)
+      persistWorkspaceHiddenImageIds(nextHiddenImgs)
+    }
     setSelectedProjectId(null)
     // Releasing the project lock so the user can pick a different ratio.
     setLockedProjectRatio(null)
