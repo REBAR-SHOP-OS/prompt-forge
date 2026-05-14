@@ -864,6 +864,12 @@ export default function DashboardPage() {
       const { [jobId]: _, ...rest } = prev
       return rest
     })
+    setLibrarySavedJobs((prev) => {
+      if (!(jobId in prev)) return prev
+      const { [jobId]: _drop, ...rest } = prev
+      persistLibrarySavedJobs(rest)
+      return rest
+    })
     if (previewVideoId === jobId) setPreviewVideoId(null)
 
     try {
