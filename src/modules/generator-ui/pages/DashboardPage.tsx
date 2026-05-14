@@ -1201,22 +1201,37 @@ export default function DashboardPage() {
       }
     }
     if (previewDismissed) return null
-    // When 2+ playable clips exist, default to the live auto-stitched
-    // sequential preview so the user always sees the full project — not just
-    // the most-recent clip — without paying to render Final Film.
+    // When the user is viewing a Library project, lock the preview to that
+    // exact merged project. Never substitute another Library entry.
+    if (selectedProjectId) {
+      const proj = visibleVideos.find((v) => v.id === selectedProjectId)
+      if (proj && proj.video?.storage_path) return { kind: 'video', job: proj }
+      // Fall through: if the project's merged asset isn't ready, prefer the
+      // sequence of its source clips below — but only those, not the Library.
+    }
+    // When 2+ playable clips exist in the current workspace, default to the
+    // live auto-stitched sequential preview so the user always sees the full
+    // project — not just the most-recent clip — without paying to render
+    // Final Film.
     if (playableSequenceClips.length >= 2) {
       return { kind: 'sequence', clips: playableSequenceClips }
     }
-    if (visibleVideos.length > 0) {
-      const v =
-        visibleVideos.find((video) => video.video?.storage_path) ??
-        visibleVideos[0]
-      return { kind: 'video', job: v }
+    // Restrict the single-clip fallback to clips actually present in the
+    // current workspace (displayedClips). This prevents the newest Library
+    // Final Film from leaking into the preview when the workspace is empty
+    // or has only one clip.
+    const videoClipsInWorkspace = displayedClips.filter((c) => c.kind === 'video')
+    if (videoClipsInWorkspace.length > 0) {
+      const playable = videoClipsInWorkspace.find(
+        (c) => c.kind === 'video' && c.job.video?.storage_path,
+      )
+      const pick = (playable ?? videoClipsInWorkspace[0])
+      if (pick.kind === 'video') return { kind: 'video', job: pick.job }
     }
     const firstImage = displayedClips.find((c) => c.kind === 'image')
     if (firstImage && firstImage.kind === 'image') return { kind: 'image', image: firstImage.image }
     return null
-  }, [displayedClips, previewVideoId, previewDismissed, visibleVideos, playableSequenceClips])
+  }, [displayedClips, previewVideoId, previewDismissed, selectedProjectId, visibleVideos, playableSequenceClips])
 
   // Backwards-compat alias used by existing card highlight + start-frame code paths
   const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
