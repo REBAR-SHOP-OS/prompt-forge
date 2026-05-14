@@ -1409,10 +1409,7 @@ export default function DashboardPage() {
   async function regenerateJob(job: JobDetail) {
     const prompt = (job.input_prompt ?? '').trim()
     if (!prompt) {
-      if (typeof window !== 'undefined') window.alert('This clip has no prompt to regenerate from.')
-      return
-    }
-    if (typeof window !== 'undefined' && !window.confirm('Replace this clip with a new render from the same prompt?')) {
+      setComposerError('This clip has no prompt to regenerate from.')
       return
     }
 
@@ -1422,31 +1419,56 @@ export default function DashboardPage() {
     const providerKey = (job.provider_key === 'flow' ? 'flow' : 'wan') as 'wan' | 'flow'
     const requestedModel = job.model_key ?? undefined
     const effectiveRatio: Ratio = clipAspectRatios[oldId] ?? lockedProjectRatio ?? aspectRatio
+    // Backend only accepts 5 | 10 | 15. Clamp current composer state to a safe value.
+    const safeDuration: 5 | 10 | 15 =
+      durationSeconds === 10 || durationSeconds === 15 ? durationSeconds : 5
 
-    // Snapshot for rollback + same-position insert.
-    const prevGenerated = generatedVideos
-    const prevProjectSourceJobs = projectSourceJobs
-    const prevApprovedIds = approvedIds
-    const prevLibrarySavedJobs = librarySavedJobs
     const oldIndex = generatedVideos.findIndex((v) => v.id === oldId)
     const wasApproved = approvedIds.has(oldId)
 
     setComposerError(null)
     setVideoColumnMessage(null)
 
+    // Strategy: create FIRST, then delete + swap. This guarantees the card
+    // never disappears without a replacement. If creation fails the user
+    // still sees the original card and an inline error.
+    let created: CreateJobResult
     try {
-      // 1) Server-side delete of the old job (purges DB rows + storage).
-      await jobOrchestratorGateway.deleteJob(oldId)
+      created = await jobOrchestratorGateway.createJob({
+        providerKey,
+        requestedModel,
+        prompt,
+        firstFrameUrl,
+        lastFrameUrl,
+        durationSeconds: safeDuration,
+        aspectRatio: effectiveRatio,
+      })
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : (err as Error).message
-      if (typeof window !== 'undefined') window.alert(`Regenerate failed (delete step): ${msg}`)
+      console.error('regenerate: createJob failed', err)
+      setComposerError(`Regenerate failed: ${msg}`)
       return
     }
 
-    // 2) Optimistic UI removal of the old card. Note: we intentionally keep
-    // `approvedIds` and `librarySavedJobs` as-is for now and swap them after
-    // the new job is created so the Library card never blinks out.
-    setGeneratedVideos((current) => current.filter((v) => v.id !== oldId))
+    // Best-effort delete of the old job (purges DB rows + storage).
+    // If this fails the new card is already valid; we just log and move on.
+    try {
+      await jobOrchestratorGateway.deleteJob(oldId)
+    } catch (err) {
+      console.error('regenerate: deleteJob failed (continuing)', err)
+    }
+
+    const seeded = buildSeededJob(prompt, created, { firstFrameUrl, lastFrameUrl })
+    rememberClipRatio(seeded.id, effectiveRatio)
+
+    // Atomic UI swap: replace old card with new one at the same position.
+    setGeneratedVideos((current) => {
+      const without = current.filter((v) => v.id !== oldId && v.id !== seeded.id)
+      const insertAt = oldIndex >= 0 && oldIndex <= without.length ? oldIndex : 0
+      without.splice(insertAt, 0, seeded)
+      return without
+    })
+
     setEditedJobIds((current) => {
       if (!current.has(oldId)) return current
       const next = new Set(current)
@@ -1468,70 +1490,32 @@ export default function DashboardPage() {
       setProjectSourceJobs(nextMap)
       persistProjectSourceJobs(nextMap)
     }
-    if (previewVideoId === oldId) setPreviewVideoId(null)
+    if (previewVideoId === oldId) setPreviewVideoId(seeded.id)
 
-    // 3) Create the new job with the same parameters.
-    try {
-      const created = await jobOrchestratorGateway.createJob({
-        providerKey,
-        requestedModel,
-        prompt,
-        firstFrameUrl,
-        lastFrameUrl,
-        durationSeconds,
-        aspectRatio: effectiveRatio,
-      })
-      const seeded = buildSeededJob(prompt, created, { firstFrameUrl, lastFrameUrl })
-      rememberClipRatio(seeded.id, effectiveRatio)
-      setGeneratedVideos((current) => {
-        const next = current.filter((v) => v.id !== seeded.id)
-        if (oldIndex >= 0 && oldIndex <= next.length) {
-          next.splice(oldIndex, 0, seeded)
-          return next
+    // Transfer approval flag + Library snapshot from old → new id.
+    if (wasApproved) {
+      setApprovedIds((current) => {
+        const next = new Set(current)
+        next.delete(oldId)
+        next.add(seeded.id)
+        if (approvedStorageKey) {
+          try { window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
         }
-        return [seeded, ...next]
+        return next
       })
-      // Swap the approval flag and the Library snapshot from old → new id so
-      // the saved card stays in the Library across a Regenerate.
-      if (wasApproved) {
-        setApprovedIds((current) => {
-          const next = new Set(current)
-          next.delete(oldId)
-          next.add(seeded.id)
-          if (approvedStorageKey) {
-            try { window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
-          }
-          return next
-        })
-        setLibrarySavedJobs((prev) => {
-          const { [oldId]: _drop, ...rest } = prev
-          const nextMap = { ...rest, [seeded.id]: seeded }
-          persistLibrarySavedJobs(nextMap)
-          return nextMap
-        })
-      } else {
-        // Even if it wasn't approved, drop any stale snapshot for the old id.
-        setLibrarySavedJobs((prev) => {
-          if (!(oldId in prev)) return prev
-          const { [oldId]: _drop, ...rest } = prev
-          persistLibrarySavedJobs(rest)
-          return rest
-        })
-      }
-    } catch (err) {
-      // Rollback the optimistic delete view if creation failed (server row is already gone).
-      const msg = err instanceof ApiError ? err.message : (err as Error).message
-      setGeneratedVideos(prevGenerated.filter((v) => v.id !== oldId))
-      setProjectSourceJobs(prevProjectSourceJobs)
-      persistProjectSourceJobs(prevProjectSourceJobs)
-      // Restore approval/snapshot exactly as they were before the attempt.
-      setApprovedIds(prevApprovedIds)
-      if (approvedStorageKey) {
-        try { window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(prevApprovedIds))) } catch { /* ignore */ }
-      }
-      setLibrarySavedJobs(prevLibrarySavedJobs)
-      persistLibrarySavedJobs(prevLibrarySavedJobs)
-      if (typeof window !== 'undefined') window.alert(`Regenerate failed (create step): ${msg}`)
+      setLibrarySavedJobs((prev) => {
+        const { [oldId]: _drop, ...rest } = prev
+        const nextMap = { ...rest, [seeded.id]: seeded }
+        persistLibrarySavedJobs(nextMap)
+        return nextMap
+      })
+    } else {
+      setLibrarySavedJobs((prev) => {
+        if (!(oldId in prev)) return prev
+        const { [oldId]: _drop, ...rest } = prev
+        persistLibrarySavedJobs(rest)
+        return rest
+      })
     }
   }
 
