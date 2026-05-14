@@ -637,6 +637,45 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  // Per-project snapshot of the source images that were merged into each
+  // Final Film. Mirrors `projectSourceJobs` so reopening a Library project
+  // shows the exact images it was built from — and only those.
+  const [projectSourceImages, setProjectSourceImages] = useState<Record<string, UserImageItem[]>>({})
+  const projectSourceImagesKey = userId ? `project-source-images:${userId}` : null
+  useEffect(() => {
+    if (!projectSourceImagesKey) { setProjectSourceImages({}); return }
+    try {
+      const raw = window.localStorage.getItem(projectSourceImagesKey)
+      const obj = raw ? (JSON.parse(raw) as Record<string, UserImageItem[]>) : {}
+      setProjectSourceImages(obj && typeof obj === 'object' ? obj : {})
+    } catch { setProjectSourceImages({}) }
+  }, [projectSourceImagesKey])
+  function persistProjectSourceImages(next: Record<string, UserImageItem[]>) {
+    if (!projectSourceImagesKey) return
+    try {
+      window.localStorage.setItem(projectSourceImagesKey, JSON.stringify(next))
+    } catch { /* ignore */ }
+  }
+
+  // Image ids hidden from the default workspace HISTORY/clip strip after
+  // Final Film / Start Over. Parallels `workspaceHiddenJobIds` for images.
+  const [workspaceHiddenImageIds, setWorkspaceHiddenImageIds] = useState<Set<string>>(new Set())
+  const workspaceHiddenImageIdsKey = userId ? `workspace-hidden-images:${userId}` : null
+  useEffect(() => {
+    if (!workspaceHiddenImageIdsKey) { setWorkspaceHiddenImageIds(new Set()); return }
+    try {
+      const raw = window.localStorage.getItem(workspaceHiddenImageIdsKey)
+      const arr = raw ? (JSON.parse(raw) as string[]) : []
+      setWorkspaceHiddenImageIds(new Set(Array.isArray(arr) ? arr : []))
+    } catch { setWorkspaceHiddenImageIds(new Set()) }
+  }, [workspaceHiddenImageIdsKey])
+  function persistWorkspaceHiddenImageIds(next: Set<string>) {
+    if (!workspaceHiddenImageIdsKey) return
+    try {
+      window.localStorage.setItem(workspaceHiddenImageIdsKey, JSON.stringify(Array.from(next)))
+    } catch { /* ignore */ }
+  }
+
   // When set, HISTORY is filtered to show only the source clips of this
   // Library project. Cleared by Start Over or by the inline "Clear" button.
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
