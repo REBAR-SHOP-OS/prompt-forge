@@ -536,6 +536,10 @@ async function startGeneration(
     return await startWanI2V(resolvedModel, input, apiKey);
   }
 
+  if (providerKey === "flow" && apiKey) {
+    return await startVeo(resolvedModel, input, apiKey);
+  }
+
   if (!apiKey && allowMockGeneration()) {
     return {
       providerJobId: `mock_${crypto.randomUUID()}`,
