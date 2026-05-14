@@ -1,39 +1,62 @@
-# Library → HISTORY: Always Show Source Clips in Final-Film Order
+# Veo Provider — Two Root-Cause Fixes
 
-## Two problems in the screenshot
+## Diagnosis (from edge function logs)
 
-1. **HISTORY shows "0" / "No renders yet"** when an old Library project is selected (the bottom one — created May 12). New projects do show their clips; old ones don't.
-2. **Order is wrong**: when the snapshot does exist, HISTORY re-sorts the source clips by `created_at`, not by the order they appear in the merged Final Film.
+The current image-to-video failure is **not** a network/transient issue. Veo returned:
 
-## Root cause
+```
+400 INVALID_ARGUMENT: "allow_all for personGeneration is currently not supported."
+```
 
-In `src/modules/generator-ui/pages/DashboardPage.tsx`:
+Our code in `supabase/functions/_shared/modules/external-api-adapter/service.ts` (`startVeo`) hardcodes `personGeneration: "allow_all"`, which Google deprecated. Every Veo call therefore fails immediately with `PROVIDER_ERROR`, regardless of duration or image input.
 
-- `displayedVideos` (selected-project branch, line ~1082) reads `projectSourceJobs[selectedProjectId] ?? []` and then **re-sorts by `created_at` ASC** (line 1089-1091). That destroys the merge order.
-- `projectSourceJobs[mergedId]` is built from a `Map` whose insertion order is "snapshot first, then live" (lines 2359-2362), not the actual `eligibleClips` order used to build the film.
-- For projects created before the snapshot feature shipped, `projectSourceJobs[mergedId]` is `undefined` / `[]`, so HISTORY is empty with no fallback.
+The 10s/15s failure has the **same root cause** plus a second, real constraint: Veo 3 only renders a single clip of fixed length (8s for `veo-3.0-fast-generate-001`). Even after the personGeneration fix, asking Veo for 10s or 15s in one call is impossible — we must generate multiple clips and chain them.
 
-## Fix
+## Fix 1 — Remove the unsupported parameter (unblocks all Veo calls)
 
-In `DashboardPage.tsx` only (no backend changes):
+In `startVeo` (service.ts), drop `personGeneration: "allow_all"`. Default Veo behavior is acceptable; if we ever need person controls later, the supported value is `"allow_adult"` (not `"allow_all"`). Single-line change.
 
-1. **Store source clips in film order at merge time** (~line 2349-2367): build `sourceJobs` by iterating `eligibleClips` (the exact ordered list passed to the merger), keeping only `kind === 'video'` entries. This preserves the Final Film sequence in the snapshot.
+## Fix 2 — Make 10s and 15s actually work for Veo
 
-2. **Preserve snapshot order in HISTORY** (`displayedVideos`, ~line 1079-1092): in selected-project mode, return `snapshot.map((s) => liveById.get(s.id) ?? s)` **without** the `.sort(...)` step. The snapshot itself is already in the correct order.
+Veo 3 fast renders fixed 8s clips and does not accept a `lastFrame`. To deliver a 10s or 15s output, the orchestrator must:
 
-3. **Fallback for legacy projects with no snapshot**: when `selectedProjectId` is set and `projectSourceJobs[selectedProjectId]` is empty/missing, derive the source list from `generatedVideos` by filtering completed non-merged clips whose `created_at` is `<=` the merged entry's `created_at` and that aren't part of any *other* project snapshot. Order them by `created_at` ASC. This gives users at least a best-effort History view for old Library items, instead of "No renders yet". If even that yields nothing, surface a one-line note in the History area: *"Source clips for this project aren't tracked. Newer projects keep them automatically."*
+1. Generate clip 1 (8s) with the user's first frame.
+2. After clip 1 completes, extract its **last frame** (server-side, via the existing video tooling already used for thumbnailing / `mergeVideos`) and feed it as the `firstFrameUrl` of clip 2.
+3. Generate clip 2 with the remaining target length. Since Veo only outputs 8s clips, clip 2 will also be 8s; trim to the target on the merger step:
+   - 10s → 8s + trim(2s)
+   - 15s → 8s + trim(7s)
+4. Stitch the two clips into one job output using the existing merge pipeline so the user sees a single 10s/15s video in the History card.
 
-4. **Keep the `displayedClips` merge step intact** (it appends images after videos and applies `manualOrder`), so dragging a card in HISTORY of a selected project still works.
+To keep scope small and deterministic, this Fix 2 is implemented as an **adapter-level chain inside `startVeo` / `pollVeo`**:
+
+- `startVeo` records the requested `targetDurationSeconds` (10 or 15) in the in-memory state alongside `veoStartedAt`.
+- `pollVeo`, on completion of clip 1, kicks off clip 2 instead of returning `completed`, keeping `status: "processing"` and updating progress to ~50%.
+- On clip 2 completion, it downloads both mp4s, concatenates them with the existing ffmpeg-less merger we already use for Wan multi-clip output (or falls back to returning two source URLs the merger handles), trims to target, uploads to `merged-videos`, and returns `completed`.
+
+If the chaining infrastructure turns out to require frontend merger involvement (which it does in this codebase — merging happens client-side in `mergeVideos.ts`), then the simpler safe variant is:
+
+- Treat a 10s/15s Veo request as **two sequential jobs** at the orchestrator layer: when `providerKey === "flow"` and `durationSeconds > 8`, split into 2 child jobs in `jobs-create`, return both job IDs, and let the existing Final-Film/merge path stitch them. This keeps all video composition on the proven client merger and avoids new server-side ffmpeg.
 
 ## Out of scope
 
-- No DB migration. The fallback in step 3 is heuristic-only because old merges never recorded their source IDs.
-- No change to merge/composer/preview code paths beyond the snapshot ordering line.
-- No change to the Library list itself.
+- No change to Wan provider.
+- No DB migration.
+- No UI change beyond what's needed to surface the two child jobs (only if we go with the orchestrator-split variant).
 
 ## Verification
 
-- Click a Library project created **after** this change → HISTORY shows exactly the clips in the film, in film order.
-- Click an older Library project → HISTORY shows a best-effort list (or the explanatory note if none can be inferred), never silently empty.
-- Drag-reorder a card inside a selected project → still works.
-- Final Film a fresh project → reopening it later shows clips in the same order they were merged.
+1. Image-to-video, 5s, Veo → succeeds (validates Fix 1).
+2. Text-to-video, 5s, Veo → succeeds.
+3. Image-to-video, 10s, Veo → produces a 10s clip (or 2 chained 8s clips merged to 10s).
+4. Image-to-video, 15s, Veo → produces a 15s clip.
+5. Wan provider unaffected.
+6. Edge function logs no longer show `allow_all for personGeneration`.
+
+## Decision needed
+
+For Fix 2, which variant do you prefer?
+
+- **A. Adapter-level chaining** (single job ID, server stitches). More invasive, needs server-side video concat.
+- **B. Orchestrator split into 2 jobs** (reuses existing client merger). Simpler, safer, but the History panel will briefly show 2 cards before merge.
+
+Fix 1 ships either way and immediately unblocks 5s/8s Veo generations.

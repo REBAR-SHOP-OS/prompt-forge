@@ -375,7 +375,9 @@ async function startVeo(
     parameters: {
       aspectRatio,
       durationSeconds: VEO_DURATION_SECONDS,
-      personGeneration: "allow_all",
+      // `personGeneration: "allow_all"` was deprecated by Google and now
+      // returns 400 INVALID_ARGUMENT. Omit the field to use the default
+      // policy ("allow_adult" for supported regions).
       sampleCount: 1,
     },
   };
