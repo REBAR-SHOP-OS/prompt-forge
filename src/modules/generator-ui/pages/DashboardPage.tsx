@@ -2676,6 +2676,9 @@ export default function DashboardPage() {
         for (const v of sourceJobs) nextHidden.add(v.id)
         setWorkspaceHiddenJobIds(nextHidden)
         persistWorkspaceHiddenJobIds(nextHidden)
+        // Remove from active manifest: they are now claimed by this Library
+        // project's source snapshot, not by the loose workspace.
+        unmarkActiveJobs(sourceJobs.map((v) => v.id))
       }
       // Same scoping for image cards: snapshot the images that went into the
       // film so reopening the project re-shows only those, and hide them from
