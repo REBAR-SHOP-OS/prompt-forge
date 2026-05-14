@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Clock, Pause, Play, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clock, LoaderCircle, Pause, Play, X } from 'lucide-react'
+import { usePlayableVideoUrl } from '@/modules/generator-ui/lib/usePlayableVideoUrl'
 
 function formatDuration(sec: number): string {
   if (!Number.isFinite(sec) || sec <= 0) return '--:--'
@@ -237,6 +238,10 @@ export function SequentialClipPlayer({
   // Choose the chrome ratio from the first clip so the frame stays stable.
   const frameRatio = clips[0]?.ratio ?? current?.ratio ?? '16:9'
 
+  const { url: resolvedVideoSrc, loading: srcLoading } = usePlayableVideoUrl(
+    current && current.kind === 'video' ? current.src : null,
+  )
+
   if (!current) return null
 
   return (
@@ -270,23 +275,29 @@ export function SequentialClipPlayer({
           ) : null}
 
           {current.kind === 'video' ? (
-            <video
-              ref={videoRef}
-              key={`${current.id}:${current.src}`}
-              src={current.src}
-              className="h-full w-full bg-black object-contain"
-              playsInline
-              autoPlay={isPlaying}
-              controls={false}
-              onEnded={goNext}
-              onPlay={() => setIsPlaying(true)}
-              onPause={() => {
-                // Only mirror pauses that came from the user (not from src swap).
-                if (videoRef.current && !videoRef.current.ended) {
-                  // no-op: state is driven by isPlaying button
-                }
-              }}
-            />
+            srcLoading || !resolvedVideoSrc ? (
+              <div className="grid h-full w-full place-items-center bg-black text-zinc-500">
+                <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
+              </div>
+            ) : (
+              <video
+                ref={videoRef}
+                key={`${current.id}:${resolvedVideoSrc}`}
+                src={resolvedVideoSrc}
+                className="h-full w-full bg-black object-contain"
+                playsInline
+                autoPlay={isPlaying}
+                controls={false}
+                onEnded={goNext}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => {
+                  // Only mirror pauses that came from the user (not from src swap).
+                  if (videoRef.current && !videoRef.current.ended) {
+                    // no-op: state is driven by isPlaying button
+                  }
+                }}
+              />
+            )
           ) : (
             <img
               key={current.id}

@@ -1,4 +1,6 @@
 import { useEffect, useRef, type VideoHTMLAttributes } from 'react'
+import { LoaderCircle } from 'lucide-react'
+import { usePlayableVideoUrl } from '@/modules/generator-ui/lib/usePlayableVideoUrl'
 
 type VideoBaseProps = Omit<VideoHTMLAttributes<HTMLVideoElement>, 'src' | 'muted'>
 
@@ -138,16 +140,24 @@ export function VideoWithSoundtrack({
 
   const { className: videoClassName, style: videoStyle, ...restVideoProps } = videoProps
 
+  const { url: resolvedSrc, loading: srcLoading } = usePlayableVideoUrl(src)
+
   return (
     <div className="relative inline-block h-full w-full">
-      <video
-        {...restVideoProps}
-        key={videoKey}
-        ref={videoRef}
-        src={src}
-        className={videoClassName}
-        style={videoStyle}
-      />
+      {srcLoading ? (
+        <div className={`grid h-full w-full place-items-center bg-black text-zinc-500 ${videoClassName ?? ''}`} style={videoStyle}>
+          <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
+        </div>
+      ) : (
+        <video
+          {...restVideoProps}
+          key={videoKey}
+          ref={videoRef}
+          src={resolvedSrc}
+          className={videoClassName}
+          style={videoStyle}
+        />
+      )}
       <span className="pointer-events-none absolute bottom-2 right-2 z-10 rounded-full border border-emerald-300/30 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-200 backdrop-blur">
         Live preview
       </span>

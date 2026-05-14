@@ -83,6 +83,7 @@ import { SoundtrackWaveform, type SoundtrackWaveformHandle } from '@/modules/gen
 import { TransitionPreview } from '@/modules/generator-ui/components/TransitionPreview'
 import { SequentialClipPlayer } from '@/modules/generator-ui/components/SequentialClipPlayer'
 import { VideoWithSoundtrack } from '@/modules/generator-ui/components/VideoWithSoundtrack'
+import { PlayableVideo } from '@/modules/generator-ui/components/PlayableVideo'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { generatorUiGateway } from '@/modules/generator-ui/gateway'
@@ -3826,7 +3827,7 @@ export default function DashboardPage() {
                       style={{ aspectRatio: ratioToCss(getRatioFor(video)) }}
                     >
                       {video.video?.storage_path ? (
-                        <video
+                        <PlayableVideo
                           className="h-full w-full max-w-full bg-black object-contain"
                           src={getCardVideoSrc(video.id, video.video.storage_path)}
                           poster={video.video.thumbnail_url ?? undefined}
@@ -4109,7 +4110,7 @@ export default function DashboardPage() {
                     >
                       <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
                         {video.video?.storage_path ? (
-                          <video
+                          <PlayableVideo
                             className="h-full w-full bg-black object-cover"
                             src={getCardVideoSrc(video.id, video.video.storage_path)}
                             poster={video.video.thumbnail_url ?? undefined}
