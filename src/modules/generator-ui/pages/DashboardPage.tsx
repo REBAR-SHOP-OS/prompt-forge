@@ -2801,9 +2801,9 @@ export default function DashboardPage() {
   }
 
   async function handleStartOver() {
-    // Snapshot loose workspace cards (those NOT belonging to any Library
-    // project) so we can permanently delete them server-side. Cards that are
-    // part of a project's source snapshot stay alive for that project.
+    // Authoritative loose-set = active manifest minus anything claimed by a
+    // Library project snapshot (defensive guard). Cards in any project
+    // snapshot stay alive for that project.
     const claimedJobIds = new Set<string>()
     for (const clips of Object.values(projectSourceJobs)) {
       for (const c of clips) claimedJobIds.add(c.id)
@@ -2812,14 +2812,15 @@ export default function DashboardPage() {
     for (const imgs of Object.values(projectSourceImages)) {
       for (const i of imgs) claimedImageIds.add(i.id)
     }
-    const looseJobIds = generatedVideos
-      .filter((j) => !j.id.startsWith('merged-') && !claimedJobIds.has(j.id))
-      .map((j) => j.id)
-    const looseImageIds = userImages
-      .filter((i) => !claimedImageIds.has(i.id))
-      .map((i) => i.id)
+    const looseJobIds = Array.from(activeJobIds).filter((id) => !claimedJobIds.has(id))
+    const looseImageIds = Array.from(activeImageIds).filter((id) => !claimedImageIds.has(id))
 
     resetWorkspace({ keepPreview: false })
+
+    // Clear the active manifest immediately so a refresh during the network
+    // round-trip doesn't bring orphans back via the hydrate-protect path.
+    setActiveJobIds(new Set()); persistActiveJobIds(new Set())
+    setActiveImageIds(new Set()); persistActiveImageIds(new Set())
 
     if (looseJobIds.length === 0 && looseImageIds.length === 0) return
 
