@@ -1700,6 +1700,7 @@ export default function DashboardPage() {
 
       // Drop into state immediately so the card appears without a refresh.
       setGeneratedVideos((current) => mergeJob(current, detail))
+      markActiveJob(detail.id)
     } catch (err) {
       // Roll back the storage upload if the DB step failed.
       if (uploadedPath) {
