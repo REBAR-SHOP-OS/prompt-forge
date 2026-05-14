@@ -509,13 +509,14 @@ export default function DashboardPage() {
     } catch { setApprovedIds(new Set()) }
   }, [approvedStorageKey])
 
-  function toggleApproved(jobId: string) {
+  function toggleApproved(jobId: string, job?: JobDetail) {
     setApprovedIds((current) => {
       const next = new Set(current)
-      if (next.has(jobId)) {
-        next.delete(jobId)
-      } else {
+      const adding = !next.has(jobId)
+      if (adding) {
         next.add(jobId)
+      } else {
+        next.delete(jobId)
       }
       if (approvedStorageKey) {
         try {
@@ -524,12 +525,49 @@ export default function DashboardPage() {
           /* ignore quota errors */
         }
       }
+      // Snapshot durable copy of the job into librarySavedJobs so the Library
+      // panel keeps showing it after reloads / Start Over.
+      setLibrarySavedJobs((prevMap) => {
+        if (adding) {
+          if (!job) return prevMap
+          // mergedEntries already persists final-film cards, so skip them here.
+          if (jobId.startsWith('merged-')) return prevMap
+          const nextMap = { ...prevMap, [jobId]: job }
+          persistLibrarySavedJobs(nextMap)
+          return nextMap
+        }
+        if (!(jobId in prevMap)) return prevMap
+        const { [jobId]: _drop, ...rest } = prevMap
+        persistLibrarySavedJobs(rest)
+        return rest
+      })
       return next
     })
   }
 
   const legacyDeletedKey = userId ? `deleted-videos:${userId}` : null
   const mergedStorageKey = userId ? `merged-videos:${userId}` : null
+  // Persisted snapshot of every approved single-clip JobDetail. The Library
+  // panel renders from this map (plus mergedEntries) so saved cards survive
+  // page reloads, Start Over, and other workspace resets.
+  const librarySavedJobsKey = userId ? `library-saved-jobs:${userId}` : null
+  const [librarySavedJobs, setLibrarySavedJobs] = useState<Record<string, JobDetail>>({})
+
+  useEffect(() => {
+    if (!librarySavedJobsKey) { setLibrarySavedJobs({}); return }
+    try {
+      const raw = window.localStorage.getItem(librarySavedJobsKey)
+      const obj = raw ? (JSON.parse(raw) as Record<string, JobDetail>) : {}
+      setLibrarySavedJobs(obj && typeof obj === 'object' ? obj : {})
+    } catch { setLibrarySavedJobs({}) }
+  }, [librarySavedJobsKey])
+
+  function persistLibrarySavedJobs(next: Record<string, JobDetail>) {
+    if (!librarySavedJobsKey) return
+    try {
+      window.localStorage.setItem(librarySavedJobsKey, JSON.stringify(next))
+    } catch { /* ignore */ }
+  }
   const pendingEndAppendsKey = userId ? `pending-end-appends:${userId}` : null
   const pendingStartPrependsKey = userId ? `pending-start-prepends:${userId}` : null
   const [manualOrder, setManualOrder] = useState<string[] | null>(null)
@@ -774,6 +812,32 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  // Prune dangling ids in approvedIds that have no backing entry in either
+  // mergedEntries or librarySavedJobs. Keeps the Library badge truthful and
+  // prevents ghost cards across releases.
+  useEffect(() => {
+    if (!approvedStorageKey) return
+    if (approvedIds.size === 0) return
+    const known = new Set<string>()
+    for (const j of mergedEntries) known.add(j.id)
+    for (const id of Object.keys(librarySavedJobs)) known.add(id)
+    let changed = false
+    const next = new Set<string>()
+    for (const id of approvedIds) {
+      if (known.has(id)) {
+        next.add(id)
+      } else {
+        changed = true
+      }
+    }
+    if (!changed) return
+    setApprovedIds(next)
+    try {
+      window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(next)))
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [approvedStorageKey, mergedEntries, librarySavedJobs])
+
   async function deleteCard(jobId: string) {
     if (typeof window !== 'undefined' && !window.confirm('Delete this video card permanently?')) return
 
@@ -824,6 +888,12 @@ export default function DashboardPage() {
       if (!prev[jobId]) return prev
       try { URL.revokeObjectURL(prev[jobId].url) } catch { /* noop */ }
       const { [jobId]: _, ...rest } = prev
+      return rest
+    })
+    setLibrarySavedJobs((prev) => {
+      if (!(jobId in prev)) return prev
+      const { [jobId]: _drop, ...rest } = prev
+      persistLibrarySavedJobs(rest)
       return rest
     })
     if (previewVideoId === jobId) setPreviewVideoId(null)
@@ -958,6 +1028,28 @@ export default function DashboardPage() {
   const visibleVideos = useMemo(() => {
     return [...mergedEntries, ...generatedVideos]
   }, [generatedVideos, mergedEntries])
+
+  // Library items: union of merged final-film entries and the persisted
+  // single-clip snapshots, filtered by the approved set. Independent of
+  // workspace lifecycle so reload / Start Over / Regenerate don't shrink it.
+  const libraryItems = useMemo<JobDetail[]>(() => {
+    const map = new Map<string, JobDetail>()
+    for (const j of mergedEntries) map.set(j.id, j)
+    for (const j of Object.values(librarySavedJobs)) {
+      if (!map.has(j.id)) map.set(j.id, j)
+    }
+    // Prefer live workspace data when available (fresh status / urls).
+    for (const j of generatedVideos) {
+      if (map.has(j.id)) map.set(j.id, j)
+    }
+    return Array.from(map.values())
+      .filter((j) => approvedIds.has(j.id))
+      .sort((a, b) => {
+        const ta = new Date(a.created_at ?? 0).getTime()
+        const tb = new Date(b.created_at ?? 0).getTime()
+        return tb - ta
+      })
+  }, [mergedEntries, librarySavedJobs, generatedVideos, approvedIds])
 
   const completedSourceVideos = useMemo(
     () => generatedVideos.filter(
@@ -1334,7 +1426,10 @@ export default function DashboardPage() {
     // Snapshot for rollback + same-position insert.
     const prevGenerated = generatedVideos
     const prevProjectSourceJobs = projectSourceJobs
+    const prevApprovedIds = approvedIds
+    const prevLibrarySavedJobs = librarySavedJobs
     const oldIndex = generatedVideos.findIndex((v) => v.id === oldId)
+    const wasApproved = approvedIds.has(oldId)
 
     setComposerError(null)
     setVideoColumnMessage(null)
@@ -1348,17 +1443,10 @@ export default function DashboardPage() {
       return
     }
 
-    // 2) Optimistic UI removal of the old card.
+    // 2) Optimistic UI removal of the old card. Note: we intentionally keep
+    // `approvedIds` and `librarySavedJobs` as-is for now and swap them after
+    // the new job is created so the Library card never blinks out.
     setGeneratedVideos((current) => current.filter((v) => v.id !== oldId))
-    setApprovedIds((current) => {
-      if (!current.has(oldId)) return current
-      const next = new Set(current)
-      next.delete(oldId)
-      if (approvedStorageKey) {
-        try { window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
-      }
-      return next
-    })
     setEditedJobIds((current) => {
       if (!current.has(oldId)) return current
       const next = new Set(current)
@@ -1403,12 +1491,46 @@ export default function DashboardPage() {
         }
         return [seeded, ...next]
       })
+      // Swap the approval flag and the Library snapshot from old → new id so
+      // the saved card stays in the Library across a Regenerate.
+      if (wasApproved) {
+        setApprovedIds((current) => {
+          const next = new Set(current)
+          next.delete(oldId)
+          next.add(seeded.id)
+          if (approvedStorageKey) {
+            try { window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
+          }
+          return next
+        })
+        setLibrarySavedJobs((prev) => {
+          const { [oldId]: _drop, ...rest } = prev
+          const nextMap = { ...rest, [seeded.id]: seeded }
+          persistLibrarySavedJobs(nextMap)
+          return nextMap
+        })
+      } else {
+        // Even if it wasn't approved, drop any stale snapshot for the old id.
+        setLibrarySavedJobs((prev) => {
+          if (!(oldId in prev)) return prev
+          const { [oldId]: _drop, ...rest } = prev
+          persistLibrarySavedJobs(rest)
+          return rest
+        })
+      }
     } catch (err) {
       // Rollback the optimistic delete view if creation failed (server row is already gone).
       const msg = err instanceof ApiError ? err.message : (err as Error).message
       setGeneratedVideos(prevGenerated.filter((v) => v.id !== oldId))
       setProjectSourceJobs(prevProjectSourceJobs)
       persistProjectSourceJobs(prevProjectSourceJobs)
+      // Restore approval/snapshot exactly as they were before the attempt.
+      setApprovedIds(prevApprovedIds)
+      if (approvedStorageKey) {
+        try { window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(prevApprovedIds))) } catch { /* ignore */ }
+      }
+      setLibrarySavedJobs(prevLibrarySavedJobs)
+      persistLibrarySavedJobs(prevLibrarySavedJobs)
       if (typeof window !== 'undefined') window.alert(`Regenerate failed (create step): ${msg}`)
     }
   }
@@ -3547,7 +3669,7 @@ export default function DashboardPage() {
                                 type="button"
                                 onClick={(event) => {
                                   event.stopPropagation()
-                                  toggleApproved(video.id)
+                                  toggleApproved(video.id, video)
                                 }}
                                 aria-pressed={isApproved}
                                 aria-label={isApproved ? 'Remove from library' : 'Save to library'}
@@ -3724,7 +3846,7 @@ export default function DashboardPage() {
             <Library className="h-4 w-4 text-emerald-300" aria-hidden="true" />
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">Library</p>
             <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
-              {visibleVideos.filter((v) => approvedIds.has(v.id)).length}
+              {libraryItems.length}
             </span>
           </div>
           <button
@@ -3744,7 +3866,7 @@ export default function DashboardPage() {
 
         <div className="mt-3 flex-1 overflow-y-auto pr-1">
           {(() => {
-            const approvedVideos = visibleVideos.filter((video) => approvedIds.has(video.id))
+            const approvedVideos = libraryItems
             if (approvedVideos.length === 0) {
               return (
                 <div className="grid h-full place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
