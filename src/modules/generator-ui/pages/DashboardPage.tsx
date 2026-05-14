@@ -3827,7 +3827,7 @@ export default function DashboardPage() {
                       style={{ aspectRatio: ratioToCss(getRatioFor(video)) }}
                     >
                       {video.video?.storage_path ? (
-                        <video
+                        <PlayableVideo
                           className="h-full w-full max-w-full bg-black object-contain"
                           src={getCardVideoSrc(video.id, video.video.storage_path)}
                           poster={video.video.thumbnail_url ?? undefined}
