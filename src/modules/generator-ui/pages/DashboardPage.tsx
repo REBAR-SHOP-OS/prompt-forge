@@ -1265,7 +1265,11 @@ export default function DashboardPage() {
       const liveById = new Map(userImages.map((i) => [i.id, i]))
       return snapshot.map((s) => liveById.get(s.id) ?? s)
     }
-    return userImages.filter((i) => !workspaceHiddenImageIds.has(i.id))
+    const claimedByProjects = new Set<string>()
+    for (const imgs of Object.values(projectSourceImages)) {
+      for (const i of imgs) claimedByProjects.add(i.id)
+    }
+    return userImages.filter((i) => !workspaceHiddenImageIds.has(i.id) && !claimedByProjects.has(i.id))
   }, [userImages, selectedProjectId, projectSourceImages, workspaceHiddenImageIds])
 
   const displayedClips = useMemo<UnifiedClip[]>(() => {
