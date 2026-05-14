@@ -16,6 +16,8 @@ const schema = z.object({
   password: z.string().min(8, "Min 8 characters").max(72),
 });
 
+const AUTH_REDIRECT_PATH = `${window.location.origin}/#/app`;
+
 export default function AuthForm({ mode }: Props) {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
@@ -42,7 +44,7 @@ export default function AuthForm({ mode }: Props) {
         const { data, error } = await supabase.auth.signUp({
           email: parsed.data.email,
           password: parsed.data.password,
-          options: { emailRedirectTo: `${window.location.origin}/app` },
+          options: { emailRedirectTo: AUTH_REDIRECT_PATH },
         });
         if (error) throw error;
         // If no session was returned, email confirmation is required.
@@ -87,7 +89,7 @@ export default function AuthForm({ mode }: Props) {
       const { error } = await supabase.auth.resend({
         type: "signup",
         email: parsed.data,
-        options: { emailRedirectTo: `${window.location.origin}/app` },
+        options: { emailRedirectTo: AUTH_REDIRECT_PATH },
       });
       if (error) throw error;
       setInfo(
