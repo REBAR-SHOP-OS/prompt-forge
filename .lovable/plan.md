@@ -1,62 +1,94 @@
-## Problem
+## نتیجه نهایی مورد انتظار
 
-After refresh or Start Over, the workspace HISTORY suddenly shows every video and image card from every project — even cards that were merged into Library projects, and even cards the user previously deleted. The user wants those cards permanently out of the default workspace and (for deleted ones) gone for good.
+- بعد از refresh، پنل HISTORY دیگر کل تاریخچه‌ی ساخته‌شده‌ها را sync و نمایش نمی‌دهد.
+- در workspace پیش‌فرض فقط کارت‌های پروژه‌ی فعال فعلی دیده می‌شوند؛ کارت‌های پروژه‌های Library یا کارت‌های قدیمی loose هرگز وارد workspace نمی‌شوند.
+- فقط وقتی کاربر یک Final Film را از Library باز کند، همان source cardهای همان پروژه نمایش داده می‌شوند.
+- هر ویدیو/تصویر loose که Final Film نشده و داخل پروژه‌ی Library نیست، به‌صورت دائمی حذف می‌شود؛ نه فقط hide در localStorage.
 
-## Root cause
+## قیود و چیزهایی که نباید بشکند
 
-In `src/modules/generator-ui/pages/DashboardPage.tsx`, the `workspaceHiddenJobIds` hydration effect is broken:
+- Final Filmهای ذخیره‌شده در Library و sourceهای همان پروژه نباید حذف شوند.
+- دکمه‌های حذف تکی، دانلود Final Film، ساخت Final Film، upload و Generate image with AI باید رفتار فعلی خود را حفظ کنند.
+- دیگر نباید به `listMyJobs()` به‌عنوان منبع نمایش workspace HISTORY اعتماد شود، چون همین باعث برگشت همه‌ی کارت‌های قدیمی بعد از refresh می‌شود.
+- حذف دائمی باید fail-safe باشد: اگر موردی متعلق به Library/project snapshot باشد، حذف نشود.
 
-```ts
-// lines 604-609
-const [workspaceHiddenJobIds, setWorkspaceHiddenJobIds] = useState<Set<string>>(new Set())
-const workspaceHiddenJobIdsKey = userId ? `workspace-hidden-jobs:${userId}` : null
+## حالت اجرا
 
-useEffect(() => {
-  setWorkspaceHiddenJobIds(new Set())   // ← always resets to empty, never reads localStorage
-}, [workspaceHiddenJobIdsKey])
+SAFE MODE:
+1. اول منطق candidateها را در کد محدود می‌کنم تا قبل از delete فقط موارد loose شناسایی شوند.
+2. سپس حذف واقعی فقط روی همان candidateهای محافظت‌نشده انجام می‌شود.
+3. بعد از تغییرات، مسیرهای refresh، Start Over و Final Film را با سیگنال‌های قابل مشاهده/کد اعتبارسنجی می‌کنم.
+
+## پلن پیاده‌سازی
+
+### 1. حذف منبع نشت از refresh
+
+در `DashboardPage.tsx` منطق bootstrap فعلی که بعد از refresh این کار را می‌کند:
+
+```text
+listMyJobs() -> hydrateJobs() -> setGeneratedVideos(all jobs)
 ```
 
-So on every refresh the hidden-jobs set is cleared, and `displayedVideos` (line 1201) filters against an empty set → every job returned by `listMyJobs()` (including ones merged into Final Films and ones the user "deleted" via Start Over) reappears in the workspace.
+را تغییر می‌دهم تا default workspace دیگر کل job history کاربر را وارد state نکند.
 
-The image equivalent (`workspaceHiddenImageIds`, line 664) does load correctly, so images only leak when the parallel job-side leak drags the project's clips back. The same effect also wipes the per-project film order on every render of the key.
+به‌جایش یک workspace manifest per-user نگه داشته می‌شود:
 
-A second issue: when the user "deletes" a card from the workspace via Start Over, the row is only hidden client-side. The user explicitly says these should never have been saved and should be permanently deleted. Today the row stays in `generator_generation_jobs` / `generator_user_images` forever, so any future client (or a wiped localStorage) shows them again.
+```text
+workspace-active-jobs:{userId}
+workspace-active-images:{userId}
+```
 
-## Fix — frontend only, `DashboardPage.tsx`
+فقط idهایی که واقعاً مربوط به پروژه‌ی فعال فعلی هستند hydrate می‌شوند.
 
-1. **Hydrate `workspaceHiddenJobIds` from localStorage** (mirror the image-side effect at line 664):
-   ```ts
-   useEffect(() => {
-     if (!workspaceHiddenJobIdsKey) { setWorkspaceHiddenJobIds(new Set()); return }
-     try {
-       const raw = window.localStorage.getItem(workspaceHiddenJobIdsKey)
-       const arr = raw ? (JSON.parse(raw) as string[]) : []
-       setWorkspaceHiddenJobIds(new Set(Array.isArray(arr) ? arr : []))
-     } catch { setWorkspaceHiddenJobIds(new Set()) }
-   }, [workspaceHiddenJobIdsKey])
-   ```
+### 2. ثبت فقط کارت‌های پروژه‌ی فعال
 
-2. **Audit the parallel hydration blocks** for `projectSourceJobs`, `projectSourceImages`, `workspaceHiddenImageIds`, `selectedProjectId`, `previewState`, `manualOrder` — confirm each one reads localStorage on key change (not just resets). Fix any other reset-only effects found.
+هرجا کارت تازه ساخته می‌شود، همان id وارد manifest پروژه‌ی فعال می‌شود:
 
-3. **Backstop the workspace filter so merged-project sources never leak**: in `displayedVideos` (line 1200) and `visibleUserImages` (line 1256), when `selectedProjectId` is null also exclude any id that appears in any value of `projectSourceJobs` / `projectSourceImages`. This guarantees that even if `workspaceHiddenJobIds` is somehow empty (first-time user on a new device, cleared storage, etc.), clips that already belong to a Library project never show up loose in the workspace.
+- ساخت ویدیو با AI
+- upload ویدیو
+- upload تصویر
+- Generate image with AI
 
-4. **Permanent delete on Start Over**: change `resetWorkspace({ keepPreview: false })` (line 2566 / called at 2648) so that, in addition to adding ids to the hidden sets, it calls the existing delete pipeline for every workspace card that is *not* part of any project snapshot:
-   - For each loose `JobDetail` → `jobOrchestratorGateway.deleteJob(id)` (same call used by the per-card trash button; backend RPC `generator_delete_job` already removes the row + storage).
-   - For each loose `UserImageItem` → `generatorUiGateway.deleteUserImage(id)` (same call as the per-image trash button).
-   - Run them with `Promise.allSettled` so one failure doesn't block the others; surface a single toast on partial failure.
-   - After success, also drop the ids from local state (`setGeneratedVideos` / `setUserImages`) so the UI is clean immediately.
-   - Project snapshots (`projectSourceJobs`/`Images` values) are preserved — those clips stay alive for their Library project.
+بعد از Final Film:
 
-5. **Confirmation prompt** before the destructive Start Over: a small confirm dialog ("Delete N clips and M images permanently? This cannot be undone.") so the user understands these are now real deletes, not just hides. Skip the prompt when there is nothing loose to delete.
+- sourceهای همان پروژه داخل `projectSourceJobs/projectSourceImages` ذخیره می‌شوند.
+- idها از manifest فعال پاک می‌شوند.
+- workspace خالی می‌شود.
+- sourceها فقط با باز کردن همان Library project دوباره نمایش داده می‌شوند.
 
-## Verification
+### 3. حذف دائمی looseها در Start Over
 
-- Refresh the page with several merged projects in Library → workspace HISTORY is empty (no leaks). Open a project from Library → only that project's clips/images appear.
-- Generate a fresh clip, click Start Over, confirm → clip is removed from the workspace AND from the database (verify via Library / network → `jobs-list` no longer returns it). Refresh → still gone.
-- Existing Library projects are untouched after Start Over (their merged Final Film and snapshot clips remain).
-- Per-card trash button still works exactly as before.
+`handleStartOver` را قطعی‌تر می‌کنم:
 
-## Out of scope
+- candidateهای loose = مواردی که نه در manifest پروژه‌ی فعال باید بمانند، نه در source snapshot هیچ Library project هستند.
+- برای ویدیوها: `jobOrchestratorGateway.deleteJob(id)`
+- برای تصاویر: `generatorUiGateway.deleteUserImage(id)`
+- حذف با `Promise.allSettled` انجام می‌شود تا یک خطا کل cleanup را متوقف نکند.
+- بعد از حذف، state و manifest هم پاک می‌شوند تا refresh دوباره چیزی برنگرداند.
 
-- No backend, RPC, or schema changes — `generator_delete_job` and `generator_delete_user_image` already exist.
-- No change to Library, merge, or per-card delete behavior beyond what is listed.
+### 4. cleanup بعد از refresh برای legacy leakage
+
+برای کارت‌هایی که قبلاً اشتباه ذخیره شده‌اند:
+
+- بعد از hydrate شدن `projectSourceJobs/projectSourceImages` و workspace manifest، یک cleanup محافظه‌کارانه اجرا می‌شود.
+- هر job/image که از backend برگردد ولی در هیچ Library source snapshot و در manifest فعال نباشد، دیگر نمایش داده نمی‌شود و برای حذف دائمی ارسال می‌شود.
+- sourceهای Library به‌عنوان protected id نگه داشته می‌شوند و حذف نمی‌شوند.
+
+### 5. اصلاح UI پیام Syncing
+
+پیام فعلی `Syncing render history` گمراه‌کننده است، چون دیگر نباید history کلی sync شود.
+
+آن را به حالت درست تبدیل می‌کنم:
+
+- اگر workspace فعال چیزی ندارد: `No renders yet`
+- اگر فقط پروژه‌ی انتخابی از Library در حال hydrate است: پیام loading محدود به همان پروژه، نه کل history.
+
+### 6. اعتبارسنجی
+
+بعد از اجرا بررسی می‌کنم:
+
+- refresh در workspace پیش‌فرض: هیچ کارت قدیمی از پروژه‌های دیگر نمایش داده نشود.
+- Start Over: کارت‌های loose از UI و backend حذف شوند و بعد از refresh برنگردند.
+- Final Film: sourceهای همان پروژه در Library حفظ شوند.
+- باز کردن یک Library project: فقط کارت‌های همان پروژه نمایش داده شوند.
+- حذف تکی و دانلود Final Film همچنان کار کنند.
