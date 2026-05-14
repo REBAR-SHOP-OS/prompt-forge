@@ -1264,17 +1264,31 @@ export default function DashboardPage() {
     return hasComposerInput ? 'Shape the next version' : 'Start forging a prompt'
   }, [hasComposerInput, isDragging])
 
-  // Per user request: every page entry (mount) starts with a fully empty
-  // workspace, regardless of what's in the DB or localStorage. New jobs
-  // created in this session still appear in HISTORY as usual.
-  // Mount-once — does NOT fire on token refresh (component stays mounted).
+  // Hydrate HISTORY from the backend on mount / when the user becomes known so
+  // a hard refresh keeps the renders the user just made instead of going blank.
   useEffect(() => {
-    setGeneratedVideos([])
-    setIsLibraryLoading(false)
+    if (!userId) return
+    let cancelled = false
+    setIsLibraryLoading(true)
     setVideoColumnMessage(null)
     setUserImages([])
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    ;(async () => {
+      try {
+        const summaries = await jobOrchestratorGateway.listMyJobs()
+        const hydrated = await hydrateJobs(summaries)
+        if (cancelled) return
+        setGeneratedVideos(hydrated)
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Failed to hydrate render history', err)
+          setGeneratedVideos([])
+        }
+      } finally {
+        if (!cancelled) setIsLibraryLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [userId])
 
   const handlePickImage = () => {
     if (isUploadingImage) return
