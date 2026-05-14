@@ -2796,20 +2796,12 @@ export default function DashboardPage() {
     setUserImages((curr) => curr.filter((i) => !looseImageIds.includes(i.id)))
   }
 
-  // After a fresh sign-in (flag set by AuthProvider on SIGNED_IN event),
-  // reset the workspace once jobs have loaded so the dashboard looks empty
-  // — equivalent to the user pressing Start Over. Refresh keeps state intact.
-  const freshStartAppliedRef = useRef(false)
+  // Legacy `pending-fresh-start` flag is no longer honoured — refresh must
+  // never auto-reset the workspace. Just clear the flag if it lingers.
   useEffect(() => {
-    if (!userId || freshStartAppliedRef.current) return
-    let pending = false
-    try { pending = window.localStorage.getItem(`pending-fresh-start:${userId}`) === '1' } catch { /* ignore */ }
-    if (!pending) return
-    freshStartAppliedRef.current = true
-    handleStartOver()
+    if (!userId) return
     try { window.localStorage.removeItem(`pending-fresh-start:${userId}`) } catch { /* ignore */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, generatedVideos.length])
+  }, [userId])
 
   return (
     <section
