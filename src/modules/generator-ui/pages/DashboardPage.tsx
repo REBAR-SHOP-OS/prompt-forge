@@ -641,6 +641,46 @@ export default function DashboardPage() {
   // Library project. Cleared by Start Over or by the inline "Clear" button.
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
 
+  // Persist selectedProjectId + preview state per-user across refreshes so
+  // a hard reload re-opens the same Final Film the user was viewing.
+  const selectedProjectKey = userId ? `selected-project:${userId}` : null
+  const previewStateKey = userId ? `preview-state:${userId}` : null
+  useEffect(() => {
+    if (!selectedProjectKey) return
+    try {
+      const raw = window.localStorage.getItem(selectedProjectKey)
+      if (raw) setSelectedProjectId(raw)
+    } catch { /* ignore */ }
+  }, [selectedProjectKey])
+  useEffect(() => {
+    if (!selectedProjectKey) return
+    try {
+      if (selectedProjectId) window.localStorage.setItem(selectedProjectKey, selectedProjectId)
+      else window.localStorage.removeItem(selectedProjectKey)
+    } catch { /* ignore */ }
+  }, [selectedProjectKey, selectedProjectId])
+  useEffect(() => {
+    if (!previewStateKey) return
+    try {
+      const raw = window.localStorage.getItem(previewStateKey)
+      if (!raw) return
+      const parsed = JSON.parse(raw) as { id?: string | null; dismissed?: boolean }
+      if (parsed && typeof parsed === 'object') {
+        if (typeof parsed.id === 'string') setPreviewVideoId(parsed.id)
+        if (typeof parsed.dismissed === 'boolean') setPreviewDismissed(parsed.dismissed)
+      }
+    } catch { /* ignore */ }
+  }, [previewStateKey])
+  useEffect(() => {
+    if (!previewStateKey) return
+    try {
+      window.localStorage.setItem(
+        previewStateKey,
+        JSON.stringify({ id: previewVideoId, dismissed: previewDismissed }),
+      )
+    } catch { /* ignore */ }
+  }, [previewStateKey, previewVideoId, previewDismissed])
+
   // Revoke object URLs on unmount.
   useEffect(() => {
     return () => {
@@ -1264,17 +1304,31 @@ export default function DashboardPage() {
     return hasComposerInput ? 'Shape the next version' : 'Start forging a prompt'
   }, [hasComposerInput, isDragging])
 
-  // Per user request: every page entry (mount) starts with a fully empty
-  // workspace, regardless of what's in the DB or localStorage. New jobs
-  // created in this session still appear in HISTORY as usual.
-  // Mount-once — does NOT fire on token refresh (component stays mounted).
+  // Hydrate HISTORY from the backend on mount / when the user becomes known so
+  // a hard refresh keeps the renders the user just made instead of going blank.
   useEffect(() => {
-    setGeneratedVideos([])
-    setIsLibraryLoading(false)
+    if (!userId) return
+    let cancelled = false
+    setIsLibraryLoading(true)
     setVideoColumnMessage(null)
     setUserImages([])
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    ;(async () => {
+      try {
+        const summaries = await jobOrchestratorGateway.listMyJobs()
+        const hydrated = await hydrateJobs(summaries)
+        if (cancelled) return
+        setGeneratedVideos(hydrated)
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Failed to hydrate render history', err)
+          setGeneratedVideos([])
+        }
+      } finally {
+        if (!cancelled) setIsLibraryLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [userId])
 
   const handlePickImage = () => {
     if (isUploadingImage) return
