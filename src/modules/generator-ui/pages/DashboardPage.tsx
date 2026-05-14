@@ -338,7 +338,8 @@ export default function DashboardPage() {
   const [startContext] = useState('Start')
   const [endGoal] = useState('End')
   const [generatedVideos, setGeneratedVideos] = useState<JobDetail[]>([])
-  const [isLibraryLoading, setIsLibraryLoading] = useState(true)
+  // Pending column never shows a "syncing history" state — it always
+  // reflects only the in-memory active workspace.
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false)
   // Live-measured vertical budget for the preview stage. The composer is
@@ -1443,65 +1444,53 @@ export default function DashboardPage() {
     return hasComposerInput ? 'Shape the next version' : 'Start forging a prompt'
   }, [hasComposerInput, isDragging])
 
-  // Hydrate HISTORY from the backend on mount / when the user becomes known.
-  // RULE (mandatory): the workspace only contains items that belong to the
-  // active project (active manifest) or to a Library project's source
-  // snapshot. Anything else returned by the backend is an orphan from a
-  // previous session and gets PERMANENTLY DELETED here — it must never
-  // surface in the UI again.
+  // MANDATORY RULE: the right-side "Pending" column is NOT a history view.
+  // It is only a holding area for the cards of the *current* working project
+  // (cards the user is editing before Final Film). On mount we therefore:
+  //   1) NEVER hydrate jobs/images from the backend into the UI.
+  //   2) Permanently delete any backend job/image that is NOT claimed by
+  //      the active workspace manifest, so refresh can never resurrect a
+  //      previously-pending card. Final Film outputs live only in Library.
   const hydrationRanRef = useRef<string | null>(null)
   useEffect(() => {
     if (!userId) return
-    // Wait for the persisted manifests / snapshots to hydrate from
-    // localStorage before we decide what is orphan vs protected.
-    if (!activeJobIdsKey || !activeImageIdsKey || !projectSourceJobsKey || !projectSourceImagesKey) return
+    if (!activeJobIdsKey || !activeImageIdsKey) return
     if (hydrationRanRef.current === userId) return
     hydrationRanRef.current = userId
     let cancelled = false
-    setIsLibraryLoading(true)
     setVideoColumnMessage(null)
 
-    // RULE: Refresh must preserve the workspace exactly as the user left it.
-    // We do NOT delete anything on hydrate. Permanent deletion only happens
-    // via explicit Start Over (handleStartOver) or via Final Film moving
-    // sources into a Library project snapshot. Items hidden from the loose
-    // workspace are filtered at the display layer (workspaceHiddenJobIds /
-    // workspaceHiddenImageIds + project-claim sets), not by deleting rows.
     ;(async () => {
       try {
-        const summaries = await jobOrchestratorGateway.listMyJobs()
-        const hydrated = await hydrateJobs(summaries)
-        if (cancelled) return
-        setGeneratedVideos(hydrated)
-
-        // Hydrate user images from backend without deleting anything.
-        try {
-          const { data: imgRows } = await supabase
+        const [summaries, imgRowsRes] = await Promise.all([
+          jobOrchestratorGateway.listMyJobs().catch(() => [] as JobSummary[]),
+          supabase
             .from('generator_user_images')
-            .select('id, storage_path, created_at, still_duration_seconds, width, height')
+            .select('id')
             .eq('user_id', userId)
-            .is('deleted_at', null)
-            .order('created_at', { ascending: false })
-          if (!cancelled && imgRows) {
-            setUserImages(imgRows as UserImageItem[])
-          }
-        } catch (e) {
-          console.error('Failed to hydrate user images', e)
-          if (!cancelled) setUserImages([])
-        }
+            .is('deleted_at', null),
+        ])
+        if (cancelled) return
+
+        const orphanJobIds = summaries
+          .map((s) => s.id)
+          .filter((id) => !activeJobIds.has(id))
+        const orphanImageIds = ((imgRowsRes.data ?? []) as { id: string }[])
+          .map((r) => r.id)
+          .filter((id) => !activeImageIds.has(id))
+
+        // Silent permanent cleanup — never surfaces in the UI.
+        await Promise.allSettled([
+          ...orphanJobIds.map((id) => jobOrchestratorGateway.deleteJob(id)),
+          ...orphanImageIds.map((id) => generatorUiGateway.deleteUserImage(id)),
+        ])
       } catch (err) {
-        if (!cancelled) {
-          console.error('Failed to hydrate render history', err)
-          setGeneratedVideos([])
-          setUserImages([])
-        }
-      } finally {
-        if (!cancelled) setIsLibraryLoading(false)
+        console.error('Pending cleanup failed', err)
       }
     })()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, activeJobIdsKey, activeImageIdsKey, projectSourceJobsKey, projectSourceImagesKey])
+  }, [userId, activeJobIdsKey, activeImageIdsKey])
 
   const handlePickImage = () => {
     if (isUploadingImage) return
@@ -2805,20 +2794,12 @@ export default function DashboardPage() {
     setUserImages((curr) => curr.filter((i) => !looseImageIds.includes(i.id)))
   }
 
-  // After a fresh sign-in (flag set by AuthProvider on SIGNED_IN event),
-  // reset the workspace once jobs have loaded so the dashboard looks empty
-  // — equivalent to the user pressing Start Over. Refresh keeps state intact.
-  const freshStartAppliedRef = useRef(false)
+  // Legacy `pending-fresh-start` flag is no longer honoured — refresh must
+  // never auto-reset the workspace. Just clear the flag if it lingers.
   useEffect(() => {
-    if (!userId || freshStartAppliedRef.current) return
-    let pending = false
-    try { pending = window.localStorage.getItem(`pending-fresh-start:${userId}`) === '1' } catch { /* ignore */ }
-    if (!pending) return
-    freshStartAppliedRef.current = true
-    handleStartOver()
+    if (!userId) return
     try { window.localStorage.removeItem(`pending-fresh-start:${userId}`) } catch { /* ignore */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, generatedVideos.length])
+  }, [userId])
 
   return (
     <section
@@ -3554,14 +3535,14 @@ export default function DashboardPage() {
 
       <aside
         className="fixed bottom-3 right-3 top-3 z-30 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/90 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.36)] backdrop-blur-xl sm:bottom-5 sm:right-4 sm:top-5 sm:w-80 lg:w-80 xl:right-5 xl:w-96 2xl:w-[26rem]"
-        aria-label="Recent outputs"
+        aria-label="Pending"
       >
         <div className="flex items-center justify-between border-b border-white/10 pb-3">
           <div className="inline-flex items-center gap-2">
             <History className="h-4 w-4 text-amber-300" aria-hidden="true" />
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">History</p>
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">Pending</p>
             <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
-              {displayedVideos.length}
+              {displayedClips.length}
             </span>
           </div>
         </div>
@@ -3588,8 +3569,8 @@ export default function DashboardPage() {
 
         <div className="mt-4 flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-zinc-500">Video renders</p>
-            <h2 className="text-sm font-semibold text-zinc-100">Recent outputs</h2>
+            <p className="text-xs font-medium text-zinc-500">Working clips</p>
+            <h2 className="text-sm font-semibold text-zinc-100">Pending</h2>
           </div>
           <div className="flex items-center gap-2">
             <input
@@ -3654,15 +3635,7 @@ export default function DashboardPage() {
         ) : null}
 
         <div className="mt-3 flex-1 overflow-y-auto overflow-x-hidden pr-1">
-          {isLibraryLoading ? (
-            <div className="grid h-full place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
-              <div>
-                <LoaderCircle className="mx-auto h-8 w-8 animate-spin text-zinc-500" aria-hidden="true" />
-                <p className="mt-3 text-sm font-medium text-zinc-300">Syncing render history</p>
-                <p className="mt-2 text-xs leading-5 text-zinc-600">Recent outputs will appear here.</p>
-              </div>
-            </div>
-          ) : displayedClips.length > 0 ? (
+          {displayedClips.length > 0 ? (
             <div className="grid min-w-0 gap-3">
               {displayedClips.map((clip, index) => {
                 const isLast = index === displayedClips.length - 1
