@@ -2417,9 +2417,9 @@ export default function DashboardPage() {
     }
   }
 
-  async function handleStartOver() {
+  function resetWorkspace({ keepPreview }: { keepPreview: boolean }) {
     // Library cards (Final Film outputs in mergedEntries + approvedIds) are
-    // the user's permanent saved outputs — Start Over MUST NOT touch them
+    // the user's permanent saved outputs — reset MUST NOT touch them
     // or their files in storage. Only the working composer/history workspace
     // is reset here.
     setTransitions({})
