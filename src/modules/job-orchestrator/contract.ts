@@ -12,6 +12,8 @@ export interface JobSummary {
   updated_at?: string;
   /** 0-100 estimated render progress; null when unknown/terminal-failed. */
   progress_percent?: number | null;
+  requested_duration?: number | null;
+  requested_aspect_ratio?: string | null;
 }
 
 export interface JobVideo {

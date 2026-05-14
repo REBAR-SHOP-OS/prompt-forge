@@ -1,42 +1,46 @@
-# Fix the Regenerate icon on History cards
+## نتیجه مورد انتظار
+- آیکون Regenerate همیشه یک ویدیوی جدید با همان prompt کارت قبلی می‌سازد.
+- کارت قبلی فقط بعد از ساخت موفق job جدید حذف/جایگزین می‌شود؛ اگر ساخت fail شود کارت قبلی از بین نمی‌رود.
+- Preview دیگر خودکار آخرین ویدیوی Library یا Final Film را نشان نمی‌دهد؛ فقط کارت فعال/کارت‌های workspace فعلی را نشان می‌دهد.
+- Library به عنوان آرشیو باقی می‌ماند و نباید به Preview یا History workspace نشت کند مگر وقتی کاربر صریحاً یک آیتم Library را انتخاب کند.
 
-## What the user wants
-Clicking the circular ↻ icon on a History card must:
-1. Delete that card (and its video) — already works
-2. Immediately create a NEW card using the same prompt / start frame / end frame / aspect ratio / model — currently fails (card is removed but no new card appears)
+## ریشه‌های محتمل مشکل در کد فعلی
+1. `regenerateJob` برای بعضی کارت‌ها از `model_key`/`provider_key` نامعتبر مثل `browser-canvas`, `user-upload`, `merged`, `upload` استفاده می‌کند؛ این‌ها مسیر واقعی ساخت ویدیو نیستند و createJob می‌تواند fail شود، در حالی که UI شبیه حذف کارت دیده می‌شود.
+2. نسبت تصویر و duration ریجنریت از state فعلی composer گرفته می‌شود، نه از job اصلی؛ بنابراین بازسازی دقیق همان کارت نیست.
+3. منطق `previewItem` وقتی `previewVideoId` پیدا نشود یا خالی شود، از `visibleVideos` استفاده می‌کند. `visibleVideos = mergedEntries + generatedVideos` است، یعنی Final Film/Library هم وارد fallback preview می‌شود؛ همین باعث نمایش ناگهانی آخرین کلیپ Library در پیش‌نمایش می‌شود.
+4. ریجنریت از Library هم فعال است، در حالی که Library ممکن است شامل Final Film یا ویدیوی upload شده باشد که «با همان prompt» قابل تولید دوباره توسط provider نیست.
 
-## Root cause investigation
-The handler `regenerateJob` in `src/modules/generator-ui/pages/DashboardPage.tsx` already does delete-then-create. The most likely reasons the new card is not appearing in the user's case:
+## برنامه اجرا
+1. **قرارداد داده job را کامل‌تر کنم**
+   - در contract فرانت‌اند و service backend فیلدهای `requested_duration` و `requested_aspect_ratio` را به `JobSummary/JobDetail` اضافه کنم.
+   - `listMyJobs/getMyJob` این فیلدها را select کنند تا ریجنریت دقیقاً با تنظیمات کارت اصلی انجام شود.
 
-- The `createJob` call throws (e.g. `VALIDATION_ERROR`, `INVALID_FIRST_FRAME_URL`, or the previous job's frame URL no longer passes `isAllowedFrameUrl` in `supabase/functions/_shared/modules/job-orchestrator/gateway.ts`).
-- The error is shown via a blocking `window.alert` and the rollback path runs, leaving no new card behind.
-- `durationSeconds` sent to the backend is the *current composer* value, not what the original job used — schema only allows `5 | 10 | 15`, but if state is somehow out-of-range the call rejects.
+2. **Regenerate را فقط برای کارت‌های قابل تولید فعال کنم**
+   - یک helper بسازم مثل `canRegenerateJob(job)` که فقط providerهای واقعی `wan` و `flow` و modelهای مجاز را قبول کند.
+   - دکمه Regenerate برای `merged-*`, `upload`, `browser-canvas`, `user-upload` و کارت‌های بدون prompt/درحال processing نمایش داده نشود.
+   - در خود `regenerateJob` هم guard بگذارم تا حتی اگر handler از جای دیگری صدا زده شد، کارت حذف نشود و پیام خطای واضح بدهد.
 
-## Fix plan (frontend-only, in `DashboardPage.tsx`)
+3. **Regenerate را اتمیک و پایدار کنم**
+   - ابتدا job جدید ساخته و seed شود.
+   - بلافاصله کارت جدید با status pending/processing در همان جای کارت قبلی در `generatedVideos` وارد شود و `previewVideoId` روی کارت جدید تنظیم شود.
+   - سپس حذف کارت قبلی به‌صورت best-effort اجرا شود.
+   - اگر createJob شکست خورد، هیچ state مربوط به کارت قبلی تغییر نکند.
+   - approval/library snapshot کارت قبلی به کارت جدید منتقل نشود مگر برای کارت single-clip واقعی؛ برای Library/Final Film regenerate اصلاً فعال نمی‌شود.
 
-1. **Make regenerate non-blocking and observable**
-   - Remove the `window.confirm("Replace this clip…")` prompt — the icon click is itself the intent.
-   - Replace `window.alert(...)` failure paths with the existing inline error surface (`setComposerError` / `setVideoColumnMessage`) so the user actually sees what went wrong instead of a silent rollback.
-   - Log the underlying error to `console.error` for debugging.
+4. **Preview fallback را از Library جدا کنم**
+   - fallback preview به جای `visibleVideos` فقط از `displayedClips` یا `generatedVideos` غیر-hidden استفاده کند.
+   - اگر `previewVideoId` مربوط به Library/Final Film بود و کاربر آن را صریحاً انتخاب کرده، همان را نشان دهد؛ اما بعد از حذف/Start Over/Regenerate دیگر خودکار به آخرین Library برنگردد.
+   - وقتی preview آیتم انتخاب‌شده پیدا نشود، `previewVideoId` پاک شود و اگر workspace کارت playable ندارد، empty state نشان داده شود.
 
-2. **Carry over the original clip's parameters faithfully**
-   - Reuse the original job's stored values where available: `firstFrameUrl`, `lastFrameUrl`, `provider_key`, `model_key`, and the per-clip ratio from `clipAspectRatios[oldId]`.
-   - Clamp `durationSeconds` to a valid `5 | 10 | 15` (default to `5` if the current state is out of range).
-   - Drop frame URLs that don't pass a quick same-origin / `wan-frames/<userId>/` check before sending — so we don't trip the backend validator and lose the card.
+5. **History/Library selection را تمیز کنم**
+   - انتخاب آیتم Library فقط همان آیتم را preview کند و برای Final Film فقط در صورت وجود snapshot، History را در حالت selected project نشان دهد.
+   - خروج از selected project یا Start Over نباید Preview را به آخرین Library fallback کند.
 
-3. **Two-step UI: insert placeholder first, then swap on success**
-   - Insert the seeded "pending" card at the old card's index *before* awaiting the network call, so the History column never visibly empties.
-   - On `createJob` success, swap the placeholder id for the real `created.jobId`, transfer `approvedIds` / `librarySavedJobs` from old → new id (already implemented), and seed `clipAspectRatios[newId]` with `effectiveRatio`.
-   - On failure, remove the placeholder, restore the old card from the snapshot, and show the inline error.
+6. **اعتبارسنجی بعد از تغییرات**
+   - با TypeScript/تست خودکار harness اعتبارسنجی شود.
+   - مسیرهای دستی مورد انتظار: regenerate کارت Wan/Veo واقعی، regenerate روی کارت پردازشی پنهان، انتخاب Library، Start Over، حذف کارت preview شده.
 
-4. **Make sure the polling loop picks up the new card**
-   - The existing effect at line 1538 watches `generatedVideos` for non-terminal jobs and polls — by inserting the seeded job before the await, the poller will already be tracking it when `createJob` resolves.
-
-## Verification
-- Click ↻ on a text-to-video card → old card disappears, a new "pending" card appears in the same position, status flips to processing, then completed.
-- Click ↻ on an image-to-video card with a Start frame → same flow, frame is reused.
-- Force a failure (e.g. invalid frame URL) → old card returns, inline error message is visible, no silent loss.
-
-## Files changed
-- `src/modules/generator-ui/pages/DashboardPage.tsx` — `regenerateJob` only.
-- No backend / schema / RLS changes.
+## محدوده تغییرات
+- تغییرات اصلی در `DashboardPage.tsx`، contract فرانت‌اند job orchestrator، و service/shared contract backend برای فیلدهای requested duration/aspect ratio.
+- بدون تغییر در فایل‌های auto-generated مثل Supabase client/types.
+- بدون تغییر مخرب در دیتابیس؛ ستون‌های لازم از قبل وجود دارند.
