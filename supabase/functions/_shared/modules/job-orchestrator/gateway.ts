@@ -128,6 +128,7 @@ export const jobOrchestratorGateway = {
               const poll = await aiGateway.pollGeneration(
                 detail.provider_key as ProviderKey,
                 detail.provider_job_id,
+                { client: svc, userId: auth.userId },
               );
               if (poll.status === "completed" && poll.videoUrl) {
                 await jobService.completeJob(svc, {
