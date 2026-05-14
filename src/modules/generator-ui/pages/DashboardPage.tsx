@@ -681,6 +681,70 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  // ---- Active workspace manifest ----
+  // The single source of truth for what belongs in the *current* loose
+  // workspace. Any job/image NOT in this manifest and NOT claimed by a
+  // Library project snapshot is considered orphan and gets permanently
+  // deleted server-side on hydrate. This is the rule the user explicitly
+  // mandated: nothing is ever stored in the workspace unless it belongs to
+  // the active project, and Final Film moves things into Library snapshots.
+  const activeJobIdsKey = userId ? `workspace-active-jobs:${userId}` : null
+  const activeImageIdsKey = userId ? `workspace-active-images:${userId}` : null
+  const [activeJobIds, setActiveJobIds] = useState<Set<string>>(new Set())
+  const [activeImageIds, setActiveImageIds] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    if (!activeJobIdsKey) { setActiveJobIds(new Set()); return }
+    try {
+      const raw = window.localStorage.getItem(activeJobIdsKey)
+      const arr = raw ? (JSON.parse(raw) as string[]) : []
+      setActiveJobIds(new Set(Array.isArray(arr) ? arr : []))
+    } catch { setActiveJobIds(new Set()) }
+  }, [activeJobIdsKey])
+  useEffect(() => {
+    if (!activeImageIdsKey) { setActiveImageIds(new Set()); return }
+    try {
+      const raw = window.localStorage.getItem(activeImageIdsKey)
+      const arr = raw ? (JSON.parse(raw) as string[]) : []
+      setActiveImageIds(new Set(Array.isArray(arr) ? arr : []))
+    } catch { setActiveImageIds(new Set()) }
+  }, [activeImageIdsKey])
+  function persistActiveJobIds(next: Set<string>) {
+    if (!activeJobIdsKey) return
+    try { window.localStorage.setItem(activeJobIdsKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
+  }
+  function persistActiveImageIds(next: Set<string>) {
+    if (!activeImageIdsKey) return
+    try { window.localStorage.setItem(activeImageIdsKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
+  }
+  function markActiveJob(id: string) {
+    setActiveJobIds((curr) => {
+      if (curr.has(id)) return curr
+      const next = new Set(curr); next.add(id); persistActiveJobIds(next); return next
+    })
+  }
+  function unmarkActiveJobs(ids: Iterable<string>) {
+    setActiveJobIds((curr) => {
+      const next = new Set(curr); let changed = false
+      for (const id of ids) { if (next.delete(id)) changed = true }
+      if (!changed) return curr
+      persistActiveJobIds(next); return next
+    })
+  }
+  function markActiveImage(id: string) {
+    setActiveImageIds((curr) => {
+      if (curr.has(id)) return curr
+      const next = new Set(curr); next.add(id); persistActiveImageIds(next); return next
+    })
+  }
+  function unmarkActiveImages(ids: Iterable<string>) {
+    setActiveImageIds((curr) => {
+      const next = new Set(curr); let changed = false
+      for (const id of ids) { if (next.delete(id)) changed = true }
+      if (!changed) return curr
+      persistActiveImageIds(next); return next
+    })
+  }
+
   // When set, HISTORY is filtered to show only the source clips of this
   // Library project. Cleared by Start Over or by the inline "Clear" button.
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
