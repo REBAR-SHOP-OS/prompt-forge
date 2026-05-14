@@ -1394,7 +1394,10 @@ export default function DashboardPage() {
     // Snapshot for rollback + same-position insert.
     const prevGenerated = generatedVideos
     const prevProjectSourceJobs = projectSourceJobs
+    const prevApprovedIds = approvedIds
+    const prevLibrarySavedJobs = librarySavedJobs
     const oldIndex = generatedVideos.findIndex((v) => v.id === oldId)
+    const wasApproved = approvedIds.has(oldId)
 
     setComposerError(null)
     setVideoColumnMessage(null)
@@ -1408,17 +1411,10 @@ export default function DashboardPage() {
       return
     }
 
-    // 2) Optimistic UI removal of the old card.
+    // 2) Optimistic UI removal of the old card. Note: we intentionally keep
+    // `approvedIds` and `librarySavedJobs` as-is for now and swap them after
+    // the new job is created so the Library card never blinks out.
     setGeneratedVideos((current) => current.filter((v) => v.id !== oldId))
-    setApprovedIds((current) => {
-      if (!current.has(oldId)) return current
-      const next = new Set(current)
-      next.delete(oldId)
-      if (approvedStorageKey) {
-        try { window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
-      }
-      return next
-    })
     setEditedJobIds((current) => {
       if (!current.has(oldId)) return current
       const next = new Set(current)
@@ -1463,12 +1459,46 @@ export default function DashboardPage() {
         }
         return [seeded, ...next]
       })
+      // Swap the approval flag and the Library snapshot from old → new id so
+      // the saved card stays in the Library across a Regenerate.
+      if (wasApproved) {
+        setApprovedIds((current) => {
+          const next = new Set(current)
+          next.delete(oldId)
+          next.add(seeded.id)
+          if (approvedStorageKey) {
+            try { window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
+          }
+          return next
+        })
+        setLibrarySavedJobs((prev) => {
+          const { [oldId]: _drop, ...rest } = prev
+          const nextMap = { ...rest, [seeded.id]: seeded }
+          persistLibrarySavedJobs(nextMap)
+          return nextMap
+        })
+      } else {
+        // Even if it wasn't approved, drop any stale snapshot for the old id.
+        setLibrarySavedJobs((prev) => {
+          if (!(oldId in prev)) return prev
+          const { [oldId]: _drop, ...rest } = prev
+          persistLibrarySavedJobs(rest)
+          return rest
+        })
+      }
     } catch (err) {
       // Rollback the optimistic delete view if creation failed (server row is already gone).
       const msg = err instanceof ApiError ? err.message : (err as Error).message
       setGeneratedVideos(prevGenerated.filter((v) => v.id !== oldId))
       setProjectSourceJobs(prevProjectSourceJobs)
       persistProjectSourceJobs(prevProjectSourceJobs)
+      // Restore approval/snapshot exactly as they were before the attempt.
+      setApprovedIds(prevApprovedIds)
+      if (approvedStorageKey) {
+        try { window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(prevApprovedIds))) } catch { /* ignore */ }
+      }
+      setLibrarySavedJobs(prevLibrarySavedJobs)
+      persistLibrarySavedJobs(prevLibrarySavedJobs)
       if (typeof window !== 'undefined') window.alert(`Regenerate failed (create step): ${msg}`)
     }
   }
