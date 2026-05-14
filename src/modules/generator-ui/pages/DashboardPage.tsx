@@ -3782,7 +3782,7 @@ export default function DashboardPage() {
 
         <div className="mt-3 flex-1 overflow-y-auto pr-1">
           {(() => {
-            const approvedVideos = visibleVideos.filter((video) => approvedIds.has(video.id))
+            const approvedVideos = libraryItems
             if (approvedVideos.length === 0) {
               return (
                 <div className="grid h-full place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
