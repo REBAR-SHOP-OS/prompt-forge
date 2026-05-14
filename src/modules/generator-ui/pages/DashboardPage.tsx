@@ -812,7 +812,31 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
-  async function deleteCard(jobId: string) {
+  // Prune dangling ids in approvedIds that have no backing entry in either
+  // mergedEntries or librarySavedJobs. Keeps the Library badge truthful and
+  // prevents ghost cards across releases.
+  useEffect(() => {
+    if (!approvedStorageKey) return
+    if (approvedIds.size === 0) return
+    const known = new Set<string>()
+    for (const j of mergedEntries) known.add(j.id)
+    for (const id of Object.keys(librarySavedJobs)) known.add(id)
+    let changed = false
+    const next = new Set<string>()
+    for (const id of approvedIds) {
+      if (known.has(id)) {
+        next.add(id)
+      } else {
+        changed = true
+      }
+    }
+    if (!changed) return
+    setApprovedIds(next)
+    try {
+      window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(next)))
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [approvedStorageKey, mergedEntries, librarySavedJobs])
     if (typeof window !== 'undefined' && !window.confirm('Delete this video card permanently?')) return
 
     const isMerged = jobId.startsWith('merged-')
