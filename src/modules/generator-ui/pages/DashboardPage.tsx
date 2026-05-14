@@ -2354,12 +2354,21 @@ export default function DashboardPage() {
       // Include both the live workspace jobs AND any snapshot jobs from the
       // project the user is extending (selectedProjectId), so re-running Final
       // Film on a previously finalized project preserves its original clips.
-      const liveSourceJobs = generatedVideos.filter((v) => !v.id.startsWith('merged-'))
-      const snapshotJobs = selectedProjectId ? (projectSourceJobs[selectedProjectId] ?? []) : []
-      const sourceJobsMap = new Map<string, JobDetail>()
-      for (const j of snapshotJobs) sourceJobsMap.set(j.id, j)
-      for (const j of liveSourceJobs) sourceJobsMap.set(j.id, j)
-      const sourceJobs = Array.from(sourceJobsMap.values())
+      // Build source-clip snapshot in the EXACT order the clips appear in the
+      // Final Film (eligibleClips), so re-opening this Library project later
+      // shows HISTORY cards in film order — not by created_at.
+      const liveSourceJobsById = new Map(
+        generatedVideos.filter((v) => !v.id.startsWith('merged-')).map((v) => [v.id, v]),
+      )
+      const snapshotJobsById = new Map(
+        (selectedProjectId ? (projectSourceJobs[selectedProjectId] ?? []) : []).map((j) => [j.id, j]),
+      )
+      const sourceJobs: JobDetail[] = []
+      for (const clip of eligibleClips) {
+        if (clip.kind !== 'video') continue
+        const job = liveSourceJobsById.get(clip.id) ?? snapshotJobsById.get(clip.id) ?? clip.job
+        sourceJobs.push(job)
+      }
       {
         const nextMap = { ...projectSourceJobs, [mergedId]: sourceJobs }
         setProjectSourceJobs(nextMap)
