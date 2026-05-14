@@ -1459,7 +1459,6 @@ export default function DashboardPage() {
     hydrationRanRef.current = userId
     let cancelled = false
     setVideoColumnMessage(null)
-    setVideoColumnMessage(null)
 
     ;(async () => {
       try {
