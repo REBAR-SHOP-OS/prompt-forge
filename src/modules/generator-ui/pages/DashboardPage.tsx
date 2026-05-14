@@ -3150,6 +3150,7 @@ export default function DashboardPage() {
         defaultAspect={lockedProjectRatio ?? aspectRatio}
         onSaved={async (row) => {
           setUserImages((prev) => [row as UserImageItem, ...prev])
+          markActiveImage((row as UserImageItem).id)
           setGenerationMode('image-to-video')
           setUploadTarget('Start')
           const seedId = Date.now()
