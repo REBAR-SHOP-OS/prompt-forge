@@ -142,14 +142,26 @@ export const jobOrchestratorGateway = {
                 detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
                 progressPercent = 100;
               } else if (poll.status === "failed") {
-                await svc
-                  .from("generator_generation_jobs")
-                  .update({ status: "failed", updated_at: new Date().toISOString() })
-                  .eq("id", detail.id)
-                  .eq("user_id", auth.userId);
+                await jobService.failJob(svc, {
+                  userId: auth.userId,
+                  jobId: detail.id,
+                  reason: poll.reason ?? null,
+                  refundCredits: true,
+                });
                 detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
                 progressPercent = null;
               } else {
+                // Persist updated durable provider state (e.g. Veo extension
+                // handoff) so a later poll picks up the right operation even
+                // after an edge function restart.
+                if (poll.providerJobId && poll.providerJobId !== detail.provider_job_id) {
+                  try {
+                    await jobService.markProcessing(svc, auth.userId, detail.id, poll.providerJobId);
+                    detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
+                  } catch (e) {
+                    logError("persist providerJobId failed", { error: (e as Error).message, jobId: detail.id });
+                  }
+                }
                 progressPercent = poll.progressPercent ?? estimateProgressFromJob(detail.status, detail.created_at);
               }
             } catch (e) {
@@ -252,12 +264,14 @@ export const jobOrchestratorGateway = {
               aspectRatio: chosenAspectRatio,
             });
           } catch (e) {
-            // failJob RPC may not exist; fall back to a direct status update so
-            // we don't mask the original error with a secondary failure.
+            // Refund credits + mark failed atomically.
             try {
-              await svc.from("generator_generation_jobs")
-                .update({ status: "failed", updated_at: new Date().toISOString() })
-                .eq("id", jobId).eq("user_id", auth.userId);
+              await jobService.failJob(svc, {
+                userId: auth.userId,
+                jobId,
+                reason: (e as Error).message,
+                refundCredits: true,
+              });
             } catch (_) { /* best-effort */ }
             logError("startGeneration failed", { error: (e as Error).message, jobId });
             return errorResponse("PROVIDER_ERROR", "The video provider could not start generation. Please try again.", 502, ctx.requestId);

@@ -44,6 +44,12 @@ export interface GenerationPollResult {
   reason?: string | null;
   /** 0-100 progress estimate (provider-real if available, else time-based). */
   progressPercent?: number | null;
+  /**
+   * Updated provider job id, when the adapter needs to evolve durable state
+   * across polls (e.g. Veo phase 1 → extension operation handoff).
+   * The orchestrator should persist this to the job row before returning.
+   */
+  providerJobId?: string | null;
 }
 
 export interface AiGateway {
