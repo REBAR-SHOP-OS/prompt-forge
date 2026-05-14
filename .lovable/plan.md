@@ -1,37 +1,36 @@
-# Auto Start-Over after Final Film
+## خروجی مورد انتظار
+- خطای `PROVIDER_ERROR: The video provider could not start generation` هنگام پرامپت فارسی رفع شود.
+- ساخت ویدئو با انتخاب‌های ۵، ۱۰ و ۱۵ ثانیه در Google Veo/Flow دوباره شروع شود.
+- برای ۱۰ و ۱۵ ثانیه، state زنجیره extension به‌صورت durable و امن در `provider_job_id` ذخیره شود تا بعد از restart بک‌اند هم ادامه‌پذیر باشد.
+- تغییرات محدود به مسیر تولید ویدئو باشد و جریان‌های history، upload، delete و final film دست‌نخورده بمانند.
 
-## Goal
-When the user clicks **Final Film** and the merge completes successfully, the workspace should automatically reset (same effect as pressing **Start Over**) so the user can immediately begin the next project. The Library/HISTORY panel and the just-finished Final Film preview must remain intact.
+## ریشه مشکل
+در لاگ `jobs-create` خطای زیر دیده شد:
 
-## Where
-`src/modules/generator-ui/pages/DashboardPage.tsx`
+```text
+Cannot encode string: string contains characters outside of the Latin1 range
+```
 
-- `handleMergeAllVideos` (around lines 2156–2418) — runs the Final Film merge.
-- `handleStartOver` (around lines 2420–2490) — already implements the workspace reset and explicitly preserves Library/Final Film entries (`mergedEntries` + `approvedIds`).
+این خطا از `encodeVeoState` در `supabase/functions/_shared/modules/external-api-adapter/service.ts` می‌آید. state مربوط به Veo شامل `prompt` است؛ وقتی prompt فارسی باشد، `btoa(JSON.stringify(state))` شکست می‌خورد چون `btoa` فقط Latin1 را قبول می‌کند. چون برای ۱۰/۱۵ ثانیه state زنجیره extension داخل `provider_job_id` ذخیره می‌شود، این شکست باعث می‌شود generation اصلاً شروع نشود.
 
-## Change
+## برنامه اجرا
+1. در adapter بک‌اند، encoding/decoding state Veo را از `btoa/atob` مستقیم به UTF-8-safe base64url تغییر می‌دهم:
+   - `TextEncoder` برای تبدیل JSON Unicode به bytes
+   - base64url روی bytes
+   - `TextDecoder` برای decode برگشتی
+2. backward compatibility را حفظ می‌کنم:
+   - providerJobIdهای جدید با فرمت `veo:v1:<base64url-json>` درست decode می‌شوند.
+   - اگر decode fail شود، fallback فعلی به raw operation name همچنان باقی می‌ماند تا jobهای قدیمی نشکنند.
+3. منطق duration را دقیق می‌کنم:
+   - درخواست ۵ ثانیه برای Veo همچنان با کلیپ پایه ۸ ثانیه provider ساخته می‌شود، اما duration ثبت‌شده مطابق رفتار فعلی provider باقی می‌ماند مگر خروجی قابل برش/extension جداگانه لازم باشد.
+   - درخواست‌های ۱۰ و ۱۵ ثانیه دیگر هنگام start fail نمی‌شوند و وارد زنجیره extension می‌شوند.
+4. تست deterministic اضافه/اجرا می‌کنم برای adapter:
+   - encode/decode state با prompt فارسی
+   - حفظ مقدارهای `targetDuration`, `currentOp`, `prompt`
+   - اطمینان از اینکه providerJobId فقط شامل base64url-safe characters است.
+5. تابع `jobs-create` را deploy و با یک درخواست کوچک از مسیر edge تست می‌کنم که دیگر خطای Latin1 در لاگ نیاید.
 
-After the merge succeeds (right after the source-clips snapshot block, around line 2401, before the `catch`), call a reset that performs everything `handleStartOver` does **except**:
-
-- Do NOT clear `previewVideoId` — keep the freshly merged Final Film visible in the preview dialog so the user still sees the result.
-- Do NOT set `previewDismissed = true` for the same reason.
-
-Implementation approach: extract the body of `handleStartOver` into a small helper `resetWorkspace({ keepPreview }: { keepPreview: boolean })`, then:
-- `handleStartOver()` calls `resetWorkspace({ keepPreview: false })` (current behavior, no UX change for the existing button).
-- The success path of `handleMergeAllVideos` calls `resetWorkspace({ keepPreview: true })` after `setPreviewVideoId(mergedId)` and the source-jobs snapshot.
-
-When `keepPreview` is true, skip:
-- `setPreviewVideoId(null)`
-- `setPreviewDismissed(true)`
-
-Everything else (transitions, manualOrder, edited clips, music/voiceover teardown, composer reset, hiding generated jobs from HISTORY, releasing `selectedProjectId` and `lockedProjectRatio`) runs as today.
-
-## Why this is safe
-- `handleStartOver` is already designed to preserve Library outputs (`mergedEntries`, `approvedIds`) and storage files — no destructive side-effects.
-- The merge-success path already hides source jobs from HISTORY (lines 2396–2401) and resets `manualOrder` / pending appends (lines 2403–2408) — the new helper will be a superset of that, so we can also remove those now-duplicated lines to keep behavior single-sourced.
-- Failure path is untouched: if the merge throws, no auto-reset happens and the user keeps their workspace to retry.
-- The Final Film preview stays open, the soundtrack chip in the top tabs disappears, and the composer is empty — exactly the "ready for next project" state the user asked for.
-
-## Out of scope
-- No backend / edge-function changes.
-- No changes to `handleStartOver`'s confirmation dialog (that still guards manual Start-Over clicks).
+## اعتبارسنجی
+- لاگ `jobs-create` بعد از اصلاح نباید خطای Latin1 داشته باشد.
+- ایجاد job با prompt فارسی و durationهای ۱۰/۱۵ باید حداقل به status `processing` برسد و `provider_job_id` داشته باشد.
+- کد surrounding workflows تغییر نمی‌کند تا Final Film و Start Over تحت تأثیر قرار نگیرند.

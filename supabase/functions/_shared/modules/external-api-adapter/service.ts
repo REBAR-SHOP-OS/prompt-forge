@@ -377,8 +377,12 @@ interface VeoState {
 const VEO_STATE_PREFIX = "veo:v1:";
 
 function encodeVeoState(state: VeoState): string {
+  // Use UTF-8 safe base64url so non-Latin1 prompts (e.g. Persian) don't blow
+  // up btoa() with "Cannot encode string: string contains characters outside
+  // of the Latin1 range".
   const json = JSON.stringify(state);
-  const b64 = btoa(json)
+  const bytes = new TextEncoder().encode(json);
+  const b64 = bytesToBase64(bytes)
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/g, "");
@@ -391,7 +395,10 @@ function decodeVeoState(providerJobId: string): VeoState | null {
   const padded = b64url.replace(/-/g, "+").replace(/_/g, "/")
     + "=".repeat((4 - (b64url.length % 4)) % 4);
   try {
-    const json = atob(padded);
+    const bin = atob(padded);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const json = new TextDecoder().decode(bytes);
     const parsed = JSON.parse(json) as VeoState;
     if (typeof parsed.currentOp !== "string" || typeof parsed.initialOp !== "string") {
       return null;
