@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { LoaderCircle, Sparkles, Wand2, RefreshCw, Check, X, Brush, Eraser, ImagePlus } from 'lucide-react'
+import { LoaderCircle, Sparkles, Wand2, RefreshCw, Check, X, Brush, Eraser, ImagePlus, Upload } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -68,8 +68,6 @@ async function fileToDataUrl(file: File): Promise<string> {
   })
 }
 
-// Extract a useful error message from a supabase.functions.invoke error.
-// The Edge Function's JSON `error` field is buried in fnErr.context.
 async function extractFnError(fnErr: unknown, fallback: string): Promise<string> {
   try {
     const ctx = (fnErr as { context?: { json?: () => Promise<unknown>; text?: () => Promise<string> } })?.context
@@ -82,10 +80,10 @@ async function extractFnError(fnErr: unknown, fallback: string): Promise<string>
       try {
         const parsed = JSON.parse(txt) as { error?: string }
         if (parsed?.error) return String(parsed.error)
-      } catch { /* not json */ }
+      } catch { }
       if (txt) return txt
     }
-  } catch { /* ignore */ }
+  } catch { }
   if (fnErr instanceof Error && fnErr.message) return fnErr.message
   return fallback
 }
@@ -106,7 +104,6 @@ export default function AiImageDialog({
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Mask-paint state
   const [isMaskMode, setIsMaskMode] = useState(false)
   const [brushSize, setBrushSize] = useState(36)
   const [hasMask, setHasMask] = useState(false)
@@ -133,8 +130,6 @@ export default function AiImageDialog({
     }
   }, [open, defaultAspect])
 
-  // Reset mask whenever a new image is shown (generate or refine) so the painted
-  // overlay never hides the latest result and never misaligns with new dimensions.
   useEffect(() => {
     setHasMask(false)
     setIsMaskMode(false)
@@ -149,7 +144,6 @@ export default function AiImageDialog({
     const w = img.naturalWidth || img.clientWidth
     const h = img.naturalHeight || img.clientHeight
     if (c.width !== w || c.height !== h) {
-      // Preserve any existing strokes by saving the bitmap before resizing.
       const ctx = c.getContext('2d')
       const prev = ctx && c.width > 0 && c.height > 0
         ? ctx.getImageData(0, 0, c.width, c.height)
@@ -175,7 +169,7 @@ export default function AiImageDialog({
     if (!c || !ctx) return
     const p = pointerToCanvas(e)
     if (!p) return
-    ctx.fillStyle = 'rgba(244, 63, 94, 0.85)' // visible pink; alpha mask is read separately on export
+    ctx.fillStyle = 'rgba(244, 63, 94, 0.85)'
     ctx.beginPath()
     ctx.arc(p.x, p.y, (brushSize * p.scale) / 2, 0, Math.PI * 2)
     ctx.fill()
@@ -215,7 +209,6 @@ export default function AiImageDialog({
     }
   }
 
-  // Convert the visible mask canvas into a strict white-on-transparent PNG for the model.
   function exportMaskDataUrl(): string | null {
     const c = maskCanvasRef.current
     if (!c || !hasMask) return null
@@ -242,7 +235,6 @@ export default function AiImageDialog({
     return out.toDataURL('image/png')
   }
 
-  // Load an image (data: or https) into an HTMLImageElement.
   function loadImage(src: string): Promise<HTMLImageElement> {
     return new Promise((resolve, reject) => {
       const img = new Image()
@@ -253,9 +245,6 @@ export default function AiImageDialog({
     })
   }
 
-  // Composite the model output with the original image so that ONLY pixels inside
-  // the painted (feathered) mask come from the edit; everything else is byte-identical
-  // to the original. This guarantees the user's intent regardless of model behavior.
   async function compositeWithMask(originalUrl: string, editedUrl: string): Promise<string> {
     const maskC = maskCanvasRef.current
     if (!maskC || !hasMask) return editedUrl
@@ -264,7 +253,6 @@ export default function AiImageDialog({
     const W = Math.max(orig.naturalWidth, edit.naturalWidth)
     const H = Math.max(orig.naturalHeight, edit.naturalHeight)
 
-    // 1) Feathered alpha mask scaled to W x H.
     const featherPx = Math.max(2, Math.round(W * 0.012))
     const maskScaled = document.createElement('canvas')
     maskScaled.width = W
@@ -274,7 +262,6 @@ export default function AiImageDialog({
     mctx.drawImage(maskC, 0, 0, W, H)
     mctx.filter = 'none'
 
-    // 2) Build "edited inside the mask" by intersecting edited with mask alpha.
     const editLayer = document.createElement('canvas')
     editLayer.width = W
     editLayer.height = H
@@ -284,7 +271,6 @@ export default function AiImageDialog({
     ectx.drawImage(maskScaled, 0, 0)
     ectx.globalCompositeOperation = 'source-over'
 
-    // 3) Final = original, then edited layer painted on top (only its non-transparent pixels remain).
     const out = document.createElement('canvas')
     out.width = W
     out.height = H
@@ -348,11 +334,9 @@ export default function AiImageDialog({
       const url = (data as { dataUrl?: string } | null)?.dataUrl
       if (!url) throw new Error('No image returned.')
       const normalizedEdit = await normalizeImageAspect(url, aspect)
-      // If the user painted a mask, locally composite so pixels outside the mask are unchanged.
       const finalUrl = maskUrl ? await compositeWithMask(originalUrl, normalizedEdit) : normalizedEdit
       setImageDataUrl(finalUrl)
       setEditPrompt('')
-      // Clear the visible mask after a successful edit so the result is not hidden by the red overlay.
       handleClearMask()
       setIsMaskMode(false)
     } catch (e) {
@@ -440,7 +424,19 @@ export default function AiImageDialog({
               </div>
             </div>
             <div>
-              <div className="mb-2 text-xs uppercase tracking-wide text-zinc-400">Prompt</div>
+              <div className="mb-2 flex items-center justify-between gap-2 text-xs uppercase tracking-wide text-zinc-400">
+                <span>Prompt</span>
+                <button
+                  type="button"
+                  onClick={() => referenceInputRef.current?.click()}
+                  disabled={isLoading}
+                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-medium tracking-normal text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  title="Upload a reference image"
+                >
+                  <Upload className="h-3.5 w-3.5" />
+                  <span>{referenceImage ? 'Change image' : 'Upload image'}</span>
+                </button>
+              </div>
               <div className="relative">
                 <Textarea
                   value={prompt}
@@ -448,7 +444,7 @@ export default function AiImageDialog({
                   placeholder="A dark industrial workshop with glowing blue rebar stirrups, cinematic lighting…"
                   rows={5}
                   disabled={isLoading}
-                  className="pb-12 pl-12"
+                  className="pb-14"
                 />
                 <input
                   ref={referenceInputRef}
@@ -461,11 +457,11 @@ export default function AiImageDialog({
                   type="button"
                   onClick={() => referenceInputRef.current?.click()}
                   disabled={isLoading}
-                  className="absolute bottom-3 left-3 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/30 text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  className="absolute bottom-3 left-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                   title="Upload a reference image"
                 >
                   <ImagePlus className="h-4 w-4" />
-                  <span className="sr-only">Upload a reference image</span>
+                  <span>{referenceImage ? 'Replace image' : 'Upload image'}</span>
                 </button>
               </div>
               {referenceImage ? (
@@ -490,7 +486,11 @@ export default function AiImageDialog({
                     <span className="sr-only">Remove reference image</span>
                   </button>
                 </div>
-              ) : null}
+              ) : (
+                <p className="mt-3 text-xs text-zinc-500">
+                  Add a reference image if you want the result to follow an existing shot, product, or frame.
+                </p>
+              )}
             </div>
             {error ? (
               <div className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
