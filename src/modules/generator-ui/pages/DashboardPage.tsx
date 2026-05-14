@@ -2499,6 +2499,29 @@ export default function DashboardPage() {
         setWorkspaceHiddenJobIds(nextHidden)
         persistWorkspaceHiddenJobIds(nextHidden)
       }
+      // Same scoping for image cards: snapshot the images that went into the
+      // film so reopening the project re-shows only those, and hide them from
+      // the fresh workspace.
+      {
+        const liveImagesById = new Map(userImages.map((i) => [i.id, i]))
+        const snapshotImagesById = new Map(
+          (selectedProjectId ? (projectSourceImages[selectedProjectId] ?? []) : []).map((i) => [i.id, i]),
+        )
+        const sourceImages: UserImageItem[] = []
+        for (const clip of eligibleClips) {
+          if (clip.kind !== 'image') continue
+          const img = liveImagesById.get(clip.id) ?? snapshotImagesById.get(clip.id) ?? clip.image
+          sourceImages.push(img)
+        }
+        const nextImgMap = { ...projectSourceImages, [mergedId]: sourceImages }
+        setProjectSourceImages(nextImgMap)
+        persistProjectSourceImages(nextImgMap)
+
+        const nextHiddenImgs = new Set(workspaceHiddenImageIds)
+        for (const i of sourceImages) nextHiddenImgs.add(i.id)
+        setWorkspaceHiddenImageIds(nextHiddenImgs)
+        persistWorkspaceHiddenImageIds(nextHiddenImgs)
+      }
       // Auto Start-Over: reset the working composer/history so the user can
       // immediately begin the next project. Keep the preview open so they
       // still see the freshly merged Final Film.
