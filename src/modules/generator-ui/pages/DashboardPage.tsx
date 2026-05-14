@@ -1578,6 +1578,7 @@ export default function DashboardPage() {
         .single()
       if (insErr) throw insErr
       setUserImages((prev) => [row as UserImageItem, ...prev])
+      markActiveImage((row as UserImageItem).id)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Upload failed.'
       setVideoColumnMessage(`Image upload failed: ${msg}`)
