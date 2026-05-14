@@ -605,7 +605,12 @@ export default function DashboardPage() {
   const workspaceHiddenJobIdsKey = userId ? `workspace-hidden-jobs:${userId}` : null
 
   useEffect(() => {
-    setWorkspaceHiddenJobIds(new Set())
+    if (!workspaceHiddenJobIdsKey) { setWorkspaceHiddenJobIds(new Set()); return }
+    try {
+      const raw = window.localStorage.getItem(workspaceHiddenJobIdsKey)
+      const arr = raw ? (JSON.parse(raw) as string[]) : []
+      setWorkspaceHiddenJobIds(new Set(Array.isArray(arr) ? arr : []))
+    } catch { setWorkspaceHiddenJobIds(new Set()) }
   }, [workspaceHiddenJobIdsKey])
 
   function persistWorkspaceHiddenJobIds(next: Set<string>) {
