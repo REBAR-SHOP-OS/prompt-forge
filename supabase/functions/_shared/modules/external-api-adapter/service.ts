@@ -49,7 +49,9 @@ function sanitizePrompt(p: string): string {
 }
 
 function getProviderApiKey(providerKey: ProviderKey): string | null {
-  if (providerKey === "flow") return Deno.env.get("FLOW_API_KEY") ?? null;
+  if (providerKey === "flow") {
+    return Deno.env.get("GEMINI_API_KEY") ?? Deno.env.get("FLOW_API_KEY") ?? null;
+  }
   if (providerKey === "wan") return Deno.env.get("WAN_API_KEY") ?? null;
   return null;
 }
