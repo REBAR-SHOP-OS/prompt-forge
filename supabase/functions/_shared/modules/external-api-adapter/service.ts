@@ -328,8 +328,11 @@ async function pollWanI2V(taskId: string, apiKey: string): Promise<GenerationPol
 // ----- Google Veo (Gemini API) ---------------------------------------------
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
-// Veo 3 currently only supports 8-second clips.
-const VEO_DURATION_SECONDS = 8;
+// Single-call Veo clip length. 10s/15s are delivered by chaining one
+// 8s base render + one +7s extension call (see veoTargetDuration below).
+const VEO_BASE_DURATION_SECONDS = 8;
+const VEO_EXTENDED_DURATION_SECONDS = 15; // 8 + 7 from the extension API
+
 // Veo 3 supports 16:9 and 9:16 only.
 function mapVeoAspect(ar: string | null | undefined): "16:9" | "9:16" {
   if (ar === "9:16") return "9:16";
@@ -344,6 +347,25 @@ function mapVeoAspect(ar: string | null | undefined): "16:9" | "9:16" {
 // function loses these and we fall back to a default mid-progress.
 const veoStartedAt = new Map<string, number>();
 
+// Two-phase render state for 10s/15s requests. Keyed by the *initial* opName
+// (which is what we store in the DB as provider_job_id).
+const veoTargetDuration = new Map<string, number>(); // 10 or 15
+const veoOpRedirect = new Map<string, string>();      // initialOp -> currentOp (after extension start)
+const veoExtensionStarted = new Set<string>();        // initialOps that have already kicked off extension
+const veoPromptCache = new Map<string, string>();     // initialOp -> prompt for the extension call
+const veoAspectCache = new Map<string, "16:9" | "9:16">();
+const veoModelCache = new Map<string, string>();      // initialOp -> Veo model name
+
+function clearVeoState(initialOp: string) {
+  veoStartedAt.delete(initialOp);
+  veoTargetDuration.delete(initialOp);
+  veoOpRedirect.delete(initialOp);
+  veoExtensionStarted.delete(initialOp);
+  veoPromptCache.delete(initialOp);
+  veoAspectCache.delete(initialOp);
+  veoModelCache.delete(initialOp);
+}
+
 async function fetchAsInlineData(url: string): Promise<{ mimeType: string; data: string }> {
   const r = await fetch(url);
   if (!r.ok) throw new Error(`failed to fetch frame ${url}: ${r.status}`);
@@ -356,6 +378,15 @@ async function fetchAsInlineData(url: string): Promise<{ mimeType: string; data:
     bin += String.fromCharCode.apply(null, Array.from(buf.subarray(i, i + chunk)));
   }
   return { mimeType, data: btoa(bin) };
+}
+
+function bytesToBase64(buf: Uint8Array): string {
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < buf.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, Array.from(buf.subarray(i, i + chunk)));
+  }
+  return btoa(bin);
 }
 
 async function startVeo(
@@ -375,14 +406,17 @@ async function startVeo(
     instance.lastFrame = { inlineData: await fetchAsInlineData(input.lastFrameUrl) };
   }
 
+  const requested = input.durationSeconds ?? VEO_BASE_DURATION_SECONDS;
+  // Veo's single call is capped at 8s; longer requests are served by extension.
+  const willExtend = requested > VEO_BASE_DURATION_SECONDS;
+
   const body = {
     instances: [instance],
     parameters: {
       aspectRatio,
-      durationSeconds: VEO_DURATION_SECONDS,
-      // `personGeneration: "allow_all"` was deprecated by Google and now
-      // returns 400 INVALID_ARGUMENT. Omit the field to use the default
-      // policy ("allow_adult" for supported regions).
+      durationSeconds: VEO_BASE_DURATION_SECONDS,
+      // `personGeneration: "allow_all"` was deprecated by Google for image-to-
+      // video / interpolation flows. Omit so the default ("allow_adult") applies.
       sampleCount: 1,
     },
   };
@@ -405,25 +439,81 @@ async function startVeo(
   if (!opName) throw new Error("Veo returned no operation name");
 
   veoStartedAt.set(opName, Date.now());
+  if (willExtend) {
+    // Cap the deliverable at what the extension actually produces (15s).
+    veoTargetDuration.set(opName, VEO_EXTENDED_DURATION_SECONDS);
+    veoPromptCache.set(opName, input.prompt);
+    veoAspectCache.set(opName, aspectRatio);
+    veoModelCache.set(opName, veoModel);
+  }
 
   return {
     providerJobId: opName,
     videoUrl: null,
     thumbnailUrl: null,
     aspectRatio,
-    duration: VEO_DURATION_SECONDS,
+    duration: willExtend ? VEO_EXTENDED_DURATION_SECONDS : VEO_BASE_DURATION_SECONDS,
     isComplete: false,
   };
 }
 
 // Veo clips of 8s typically render in ~60–120s. Bound progress 18..95.
 const VEO_EXPECTED_RENDER_MS = 90_000;
-function estimateVeoProgress(opName: string): number {
+function estimateVeoProgress(opName: string, hasExtension: boolean, extensionStarted: boolean): number {
   const startedAt = veoStartedAt.get(opName);
   if (!startedAt) return 35;
   const elapsed = Date.now() - startedAt;
   const ratio = elapsed / VEO_EXPECTED_RENDER_MS;
-  return Math.max(18, Math.min(95, Math.round(18 + ratio * 77)));
+  const phaseProgress = Math.max(18, Math.min(95, Math.round(18 + ratio * 77)));
+  if (!hasExtension) return phaseProgress;
+  // Two-phase: each phase is half the bar.
+  if (!extensionStarted) return Math.round(phaseProgress * 0.5);
+  return Math.min(95, 50 + Math.round(phaseProgress * 0.45));
+}
+
+async function startVeoExtension(
+  initialOp: string,
+  videoBytes: Uint8Array,
+  apiKey: string,
+): Promise<string> {
+  const prompt = veoPromptCache.get(initialOp) ?? "";
+  const veoModel = veoModelCache.get(initialOp) ?? "veo-3.1-generate-preview";
+  const aspectRatio = veoAspectCache.get(initialOp) ?? "16:9";
+
+  const body = {
+    instances: [{
+      prompt,
+      video: {
+        inlineData: {
+          mimeType: "video/mp4",
+          data: bytesToBase64(videoBytes),
+        },
+      },
+    }],
+    parameters: {
+      aspectRatio,
+      resolution: "720p",
+      sampleCount: 1,
+    },
+  };
+
+  const res = await fetch(
+    `${GEMINI_BASE}/models/${encodeURIComponent(veoModel)}:predictLongRunning?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  const json = await res.json().catch(() => ({} as Record<string, unknown>));
+  if (!res.ok) {
+    logError("veo extend failed", { status: res.status, body: json, initialOp });
+    const err = (json as { error?: { message?: string } }).error;
+    throw new Error(`Veo extend ${res.status} ${err?.message ?? "unknown error"}`);
+  }
+  const newOp = (json as { name?: string }).name;
+  if (!newOp) throw new Error("Veo extension returned no operation name");
+  return newOp;
 }
 
 async function pollVeo(
@@ -431,8 +521,16 @@ async function pollVeo(
   apiKey: string,
   ctx?: { client: SupabaseClient; userId: string },
 ): Promise<GenerationPollResult> {
+  // initialOp is what's stored in the DB; the actual op we poll may have been
+  // redirected to the extension's op once phase 1 completed.
+  const initialOp = opName;
+  const currentOp = veoOpRedirect.get(initialOp) ?? initialOp;
+  const target = veoTargetDuration.get(initialOp) ?? null;
+  const hasExtension = target !== null;
+  const extensionStarted = veoExtensionStarted.has(initialOp);
+
   const res = await fetch(
-    `${GEMINI_BASE}/${opName}?key=${encodeURIComponent(apiKey)}`,
+    `${GEMINI_BASE}/${currentOp}?key=${encodeURIComponent(apiKey)}`,
     { method: "GET" },
   );
   const json = (await res.json().catch(() => ({}))) as {
@@ -455,11 +553,11 @@ async function pollVeo(
       thumbnailUrl: null,
       aspectRatio: null,
       duration: null,
-      progressPercent: estimateVeoProgress(opName),
+      progressPercent: estimateVeoProgress(initialOp, hasExtension, extensionStarted),
     };
   }
   if (json.error) {
-    veoStartedAt.delete(opName);
+    clearVeoState(initialOp);
     return {
       status: "failed",
       videoUrl: null,
@@ -472,7 +570,7 @@ async function pollVeo(
   }
   const uri = json.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri;
   if (!uri) {
-    veoStartedAt.delete(opName);
+    clearVeoState(initialOp);
     return {
       status: "failed",
       videoUrl: null,
@@ -484,20 +582,59 @@ async function pollVeo(
     };
   }
 
-  // Download the generated mp4 (URL requires API key) and re-upload to our
-  // public bucket so the frontend can play it without exposing the key.
   if (!ctx) {
-    logError("veo poll missing ctx for upload", { opName });
+    logError("veo poll missing ctx for upload", { opName: initialOp });
     return {
       status: "processing",
       videoUrl: null,
       thumbnailUrl: null,
       aspectRatio: null,
       duration: null,
-      progressPercent: estimateVeoProgress(opName),
+      progressPercent: estimateVeoProgress(initialOp, hasExtension, extensionStarted),
     };
   }
 
+  // Phase 1 just finished and the user asked for a longer clip → kick off the
+  // extension instead of finalizing.
+  if (hasExtension && !extensionStarted) {
+    try {
+      const downloadUrl = uri.includes("?")
+        ? `${uri}&key=${encodeURIComponent(apiKey)}`
+        : `${uri}?key=${encodeURIComponent(apiKey)}`;
+      const dl = await fetch(downloadUrl);
+      if (!dl.ok) {
+        logError("veo phase1 download failed", { status: dl.status, uri });
+        throw new Error(`Veo download ${dl.status}`);
+      }
+      const bytes = new Uint8Array(await dl.arrayBuffer());
+      const newOp = await startVeoExtension(initialOp, bytes, apiKey);
+      veoOpRedirect.set(initialOp, newOp);
+      veoExtensionStarted.add(initialOp);
+      veoStartedAt.set(initialOp, Date.now()); // reset timer for phase 2 progress
+      return {
+        status: "processing",
+        videoUrl: null,
+        thumbnailUrl: null,
+        aspectRatio: null,
+        duration: null,
+        progressPercent: 50,
+      };
+    } catch (e) {
+      logError("veo extension start failed", { error: (e as Error).message, initialOp });
+      clearVeoState(initialOp);
+      return {
+        status: "failed",
+        videoUrl: null,
+        thumbnailUrl: null,
+        aspectRatio: null,
+        duration: null,
+        reason: `Veo extension failed: ${(e as Error).message}`,
+        progressPercent: null,
+      };
+    }
+  }
+
+  // Final download + re-upload to our public bucket.
   const downloadUrl = uri.includes("?")
     ? `${uri}&key=${encodeURIComponent(apiKey)}`
     : `${uri}?key=${encodeURIComponent(apiKey)}`;
@@ -517,14 +654,16 @@ async function pollVeo(
     throw new Error(`Veo upload failed: ${upErr.message}`);
   }
   const { data: pub } = ctx.client.storage.from("merged-videos").getPublicUrl(path);
-  veoStartedAt.delete(opName);
+
+  const finalDuration = target ?? VEO_BASE_DURATION_SECONDS;
+  clearVeoState(initialOp);
 
   return {
     status: "completed",
     videoUrl: pub.publicUrl,
     thumbnailUrl: null,
     aspectRatio: null,
-    duration: VEO_DURATION_SECONDS,
+    duration: finalDuration,
     progressPercent: 100,
   };
 }
