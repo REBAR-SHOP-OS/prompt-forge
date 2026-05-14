@@ -1425,21 +1425,28 @@ export default function DashboardPage() {
   }
 
   async function regenerateJob(job: JobDetail) {
-    const prompt = (job.input_prompt ?? '').trim()
-    if (!prompt) {
-      setComposerError('This clip has no prompt to regenerate from.')
+    // Hard guard: only real provider jobs with a prompt can be regenerated.
+    if (!canRegenerateJob(job)) {
+      setComposerError('This card cannot be regenerated.')
       return
     }
-
+    const prompt = (job.input_prompt ?? '').trim()
     const oldId = job.id
     const firstFrameUrl = job.first_frame_url ?? undefined
     const lastFrameUrl = job.last_frame_url ?? undefined
     const providerKey = (job.provider_key === 'flow' ? 'flow' : 'wan') as 'wan' | 'flow'
     const requestedModel = job.model_key ?? undefined
-    const effectiveRatio: Ratio = clipAspectRatios[oldId] ?? lockedProjectRatio ?? aspectRatio
-    // Backend only accepts 5 | 10 | 15. Clamp current composer state to a safe value.
+
+    // Reuse the ORIGINAL job's ratio/duration so regenerate reproduces the
+    // same kind of clip — not whatever the composer happens to be set to.
+    const fromJobRatio = normalizeRatio(job.requested_aspect_ratio ?? job.video?.aspect_ratio ?? null)
+    const effectiveRatio: Ratio =
+      fromJobRatio ?? clipAspectRatios[oldId] ?? lockedProjectRatio ?? aspectRatio
+    const jobDuration = job.requested_duration
     const safeDuration: 5 | 10 | 15 =
-      durationSeconds === 10 || durationSeconds === 15 ? durationSeconds : 5
+      jobDuration === 5 || jobDuration === 10 || jobDuration === 15
+        ? jobDuration
+        : (durationSeconds === 10 || durationSeconds === 15 ? durationSeconds : 5)
 
     const oldIndex = generatedVideos.findIndex((v) => v.id === oldId)
     const wasApproved = approvedIds.has(oldId)
@@ -1447,9 +1454,7 @@ export default function DashboardPage() {
     setComposerError(null)
     setVideoColumnMessage(null)
 
-    // Strategy: create FIRST, then delete + swap. This guarantees the card
-    // never disappears without a replacement. If creation fails the user
-    // still sees the original card and an inline error.
+    // Strategy: create FIRST. If creation fails, the old card stays untouched.
     let created: CreateJobResult
     try {
       created = await jobOrchestratorGateway.createJob({
@@ -1465,15 +1470,8 @@ export default function DashboardPage() {
       const msg = err instanceof ApiError ? err.message : (err as Error).message
       console.error('regenerate: createJob failed', err)
       setComposerError(`Regenerate failed: ${msg}`)
+      setVideoColumnMessage(`Regenerate failed: ${msg}`)
       return
-    }
-
-    // Best-effort delete of the old job (purges DB rows + storage).
-    // If this fails the new card is already valid; we just log and move on.
-    try {
-      await jobOrchestratorGateway.deleteJob(oldId)
-    } catch (err) {
-      console.error('regenerate: deleteJob failed (continuing)', err)
     }
 
     const seeded = buildSeededJob(prompt, created, { firstFrameUrl, lastFrameUrl })
@@ -1486,6 +1484,11 @@ export default function DashboardPage() {
       without.splice(insertAt, 0, seeded)
       return without
     })
+
+    // Move preview focus to the new card BEFORE deleting the old one so the
+    // preview never falls back to library/final-film entries during the swap.
+    setPreviewVideoId(seeded.id)
+    setPreviewDismissed(false)
 
     setEditedJobIds((current) => {
       if (!current.has(oldId)) return current
@@ -1508,7 +1511,6 @@ export default function DashboardPage() {
       setProjectSourceJobs(nextMap)
       persistProjectSourceJobs(nextMap)
     }
-    if (previewVideoId === oldId) setPreviewVideoId(seeded.id)
 
     // Transfer approval flag + Library snapshot from old → new id.
     if (wasApproved) {
@@ -1534,6 +1536,14 @@ export default function DashboardPage() {
         persistLibrarySavedJobs(rest)
         return rest
       })
+    }
+
+    // Best-effort delete of the old job (purges DB rows + storage). Run AFTER
+    // UI swap so a slow/failing delete never leaves the workspace empty.
+    try {
+      await jobOrchestratorGateway.deleteJob(oldId)
+    } catch (err) {
+      console.error('regenerate: deleteJob failed (continuing)', err)
     }
   }
 
