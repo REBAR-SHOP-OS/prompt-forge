@@ -295,6 +295,30 @@ function mergeJob(currentJobs: JobDetail[], nextJob: JobDetail) {
   )
 }
 
+function isMissingJobError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404 && error.code === 'NOT_FOUND'
+}
+
+function readStoredIdSet(key: string | null): Set<string> {
+  if (!key || typeof window === 'undefined') return new Set()
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) ?? '[]')
+    return new Set(Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function readStoredRecord<T>(key: string | null): Record<string, T> {
+  if (!key || typeof window === 'undefined') return {}
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) ?? '{}')
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, T> : {}
+  } catch {
+    return {}
+  }
+}
+
 async function hydrateJobs(summaries: JobSummary[]) {
   const hydratedJobs = await Promise.all(
     summaries.map(async (summary) => {
