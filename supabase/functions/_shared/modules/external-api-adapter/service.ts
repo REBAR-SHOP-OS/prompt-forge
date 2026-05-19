@@ -331,7 +331,7 @@ const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 // Single-call Veo clip length. 10s/15s are delivered by chaining one
 // 8s base render + one +7s extension call (see veoTargetDuration below).
 const VEO_BASE_DURATION_SECONDS = 8;
-const VEO_EXTENDED_DURATION_SECONDS = 15; // 8 + 7 from the extension API
+const VEO_EXTENDED_DURATION_SECONDS = 16; // 8 base + 8 extension
 
 // Veo 3 supports 16:9 and 9:16 only.
 function mapVeoAspect(ar: string | null | undefined): "16:9" | "9:16" {
