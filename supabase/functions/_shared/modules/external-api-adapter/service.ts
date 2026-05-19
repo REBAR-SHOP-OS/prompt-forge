@@ -715,16 +715,7 @@ async function pollVeo(
   // up the extension operation even after an edge restart.
   if (hasExtension && !state.extensionStarted) {
     try {
-      const downloadUrl = uri.includes("?")
-        ? `${uri}&key=${encodeURIComponent(apiKey)}`
-        : `${uri}?key=${encodeURIComponent(apiKey)}`;
-      const dl = await fetch(downloadUrl);
-      if (!dl.ok) {
-        logError("veo phase1 download failed", { status: dl.status });
-        throw new Error(`Veo download ${dl.status}`);
-      }
-      const bytes = new Uint8Array(await dl.arrayBuffer());
-      const newOp = await startVeoExtension(state, bytes, apiKey);
+      const newOp = await startVeoExtension(state, uri, apiKey);
       const nextState: VeoState = {
         ...state,
         currentOp: newOp,
