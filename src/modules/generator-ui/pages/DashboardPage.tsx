@@ -2695,6 +2695,62 @@ export default function DashboardPage() {
       setVideoColumnMessage('Sign in to merge videos.')
       return
     }
+
+    // Pre-flight: verify each video clip's source file is actually reachable.
+    // Stale snapshots in localStorage can reference Veo files that were deleted
+    // on the server; those would 404 inside mergeVideoUrls and abort the whole
+    // Final Film with an opaque "Failed to load video" error.
+    const brokenClips: { id: string; filename: string; jobId: string }[] = []
+    {
+      const checks = await Promise.all(
+        eligibleClips.map(async (clip) => {
+          if (clip.kind !== 'video') return { clip, ok: true }
+          const src = clip.job.video?.storage_path as string | undefined
+          if (!src) return { clip, ok: false }
+          try {
+            const probeUrl = await proxiedVideoUrl(src)
+            const res = await fetch(probeUrl, { method: 'HEAD', cache: 'no-store' })
+            return { clip, ok: res.ok }
+          } catch {
+            return { clip, ok: false }
+          }
+        }),
+      )
+      const goodClips: UnifiedClip[] = []
+      for (const { clip, ok } of checks) {
+        if (ok) {
+          goodClips.push(clip)
+        } else if (clip.kind === 'video') {
+          const src = (clip.job.video?.storage_path as string | undefined) ?? ''
+          const filename = src.split('/').pop() || clip.id
+          brokenClips.push({ id: clip.id, filename, jobId: clip.id })
+        }
+      }
+      eligibleClips = goodClips
+    }
+
+    if (brokenClips.length > 0) {
+      // Auto-hide broken cards from the workspace so subsequent Final Film
+      // attempts don't trip on them again.
+      setWorkspaceHiddenJobIds((curr) => {
+        const next = new Set(curr)
+        for (const b of brokenClips) next.add(b.jobId)
+        persistWorkspaceHiddenJobIds(next)
+        return next
+      })
+      unmarkActiveJobs(brokenClips.map((b) => b.jobId))
+    }
+
+    if (eligibleClips.length < 1) {
+      const names = brokenClips.map((b) => `"${b.filename}"`).join(', ')
+      setVideoColumnMessage(
+        brokenClips.length > 0
+          ? `Source file(s) missing on server: ${names}. Broken clip(s) removed from workspace — please regenerate.`
+          : 'Need at least 1 finished item (video or image) to finalize.',
+      )
+      return
+    }
+
     // Single-card guard: requires either audio (music/voiceover) or an applied edit,
     // otherwise the "merge" would just re-encode the same clip with no change.
     if (eligibleClips.length === 1) {
@@ -2709,6 +2765,10 @@ export default function DashboardPage() {
     setIsMerging(true)
     setMergeProgress(0)
     setVideoColumnMessage(null)
+    if (brokenClips.length > 0) {
+      const names = brokenClips.map((b) => `"${b.filename}"`).join(', ')
+      console.warn('[merge] skipped broken clips:', names)
+    }
     try {
       // Determine target dimensions from the first video clip (mergeVideos.ts uses
       // the first clip's intrinsic size). If no video, fall back to a 1080p frame.
@@ -2911,7 +2971,12 @@ export default function DashboardPage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Merge failed'
       console.error('[merge] failed', err)
-      setVideoColumnMessage(`Could not load source video for merge — please try again in a moment. (${msg})`)
+      const urlMatch = msg.match(/https?:\/\/\S+/)
+      const filename = urlMatch ? (urlMatch[0].split('?')[0].split('/').pop() || '') : ''
+      const friendly = filename
+        ? `Source file "${filename}" could not be loaded from the server (it may have been deleted). Remove that clip from the workspace and try again.`
+        : `Could not load source video for merge — please try again in a moment. (${msg})`
+      setVideoColumnMessage(friendly)
     } finally {
       setIsMerging(false)
       setMergeProgress(0)
