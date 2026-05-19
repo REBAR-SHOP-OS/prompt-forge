@@ -1777,7 +1777,9 @@ export default function DashboardPage() {
       if (allFailed && missingJobIds.length !== activeJobs.length) {
         pollFailureCountRef.current += 1
         if (pollFailureCountRef.current >= FAILURE_THRESHOLD) {
-          const lastErr = settled.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined
+          const lastErr = settled.find(
+            (r) => r.status === 'rejected' && !isMissingJobError(r.reason),
+          ) as PromiseRejectedResult | undefined
           const reason = lastErr?.reason
           setVideoColumnMessage(
             reason instanceof ApiError ? `${reason.code}: ${reason.message}` : POLL_ERROR_MSG,
