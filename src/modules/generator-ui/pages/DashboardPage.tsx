@@ -4314,7 +4314,17 @@ export default function DashboardPage() {
           >
             <Sparkles className="h-4 w-4" aria-hidden="true" />
           </button>
+          <button
+            type="button"
+            onClick={() => setIsScenarioDialogOpen(true)}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/20 text-zinc-300 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100"
+            aria-label="Write a scenario from your idea"
+            title="Write a scenario from your idea"
+          >
+            <Clapperboard className="h-4 w-4" aria-hidden="true" />
+          </button>
         </div>
+
 
         {!isTextToVideo ? (
           <div className="flex min-h-11 items-center gap-2 sm:min-h-12 sm:gap-3" aria-label="Prompt path">
