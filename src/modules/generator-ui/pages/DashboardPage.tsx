@@ -3166,6 +3166,7 @@ export default function DashboardPage() {
         onOpenChange={setIsScenarioDialogOpen}
         defaultDuration={durationSeconds === 45 ? 45 : (durationSeconds as 5 | 10 | 15)}
         onUseAsPrompt={(text) => setPromptText(text)}
+        onSendScenes={submitScenesAsJobs}
       />
 
 
