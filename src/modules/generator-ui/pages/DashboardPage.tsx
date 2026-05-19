@@ -4447,6 +4447,21 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center justify-between gap-2 sm:justify-end">
+            <button
+              type="button"
+              onClick={runScenarioFromStart}
+              disabled={!readyStartFrame?.url || isWritingScenario || isEnhancingPrompt || isSubmitting}
+              aria-label="Write 45-second scenario from Start image"
+              title={readyStartFrame?.url ? 'Scenario (45s) from Start image' : 'Add a Start image first'}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-[#2a2d32] bg-black/20 px-3 text-xs font-semibold text-zinc-200/80 transition hover:border-amber-300/60 hover:bg-white/[0.05] hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#2a2d32] disabled:hover:bg-black/20 disabled:hover:text-zinc-200/80"
+            >
+              {isWritingScenario ? (
+                <LoaderCircle className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
+              ) : (
+                <Clapperboard className="h-4 w-4 shrink-0" aria-hidden="true" />
+              )}
+              <span>Scenario 45s</span>
+            </button>
             <Popover open={isModelMenuOpen} onOpenChange={setIsModelMenuOpen}>
               <PopoverTrigger asChild>
                 <button
