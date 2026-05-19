@@ -39,7 +39,22 @@ function buildSystemPrompt(duration: number): string {
   ].join(" ");
 }
 
-async function callGateway(apiKey: string, duration: number, idea: string): Promise<Response> {
+async function callGateway(
+  apiKey: string,
+  duration: number,
+  idea: string,
+  imageUrl?: string,
+): Promise<Response> {
+  const userContent: unknown = imageUrl
+    ? [
+        {
+          type: "text",
+          text: `Idea: ${idea}\nBase the scenario on the attached reference image (subjects, setting, mood, props, style).`,
+        },
+        { type: "image_url", image_url: { url: imageUrl } },
+      ]
+    : `Idea: ${idea}`;
+
   return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -50,7 +65,7 @@ async function callGateway(apiKey: string, duration: number, idea: string): Prom
       model: "google/gemini-2.5-flash",
       messages: [
         { role: "system", content: buildSystemPrompt(duration) },
-        { role: "user", content: `Idea: ${idea}` },
+        { role: "user", content: userContent },
       ],
     }),
   });
@@ -96,9 +111,14 @@ Deno.serve(async (req) => {
     const idea = typeof body?.idea === "string" ? body.idea.trim() : "";
     const durationRaw = Number(body?.durationSeconds);
     const duration = [5, 10, 15, 45].includes(durationRaw) ? durationRaw : 0;
+    const imageUrlRaw = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
+    const imageUrl =
+      imageUrlRaw && /^https?:\/\//i.test(imageUrlRaw) && imageUrlRaw.length <= 2048
+        ? imageUrlRaw
+        : undefined;
 
-    if (!idea) {
-      return new Response(JSON.stringify({ error: "idea is required" }), {
+    if (!idea && !imageUrl) {
+      return new Response(JSON.stringify({ error: "idea or imageUrl is required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -124,7 +144,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    let resp = await callGateway(apiKey, duration, idea);
+    const effectiveIdea = idea || "Generate a scenario based on the attached reference image.";
+    let resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl);
 
     if (resp.status === 429) {
       return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
@@ -153,7 +174,7 @@ Deno.serve(async (req) => {
 
     // One retry for 45s if we didn't get exactly three scenes.
     if (duration === 45 && scenes.length === 0) {
-      resp = await callGateway(apiKey, duration, idea);
+      resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl);
       if (resp.ok) {
         data = await resp.json();
         raw = (data?.choices?.[0]?.message?.content ?? "").trim();

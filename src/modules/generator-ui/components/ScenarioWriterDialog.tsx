@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Clapperboard, LoaderCircle, RefreshCw, Copy, Check, Wand2, Send } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Clapperboard, LoaderCircle, RefreshCw, Copy, Check, Wand2, Send, ImagePlus, X } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -17,17 +17,20 @@ type Props = {
   open: boolean
   onOpenChange: (open: boolean) => void
   defaultDuration: ScenarioDuration
-  onUseAsPrompt: (scenario: string) => void
+  userId: string | null
+  onUseAsPrompt: (scenario: string, imageUrl?: string) => void
   onSendScenes?: (scenes: string[]) => void | Promise<void>
 }
 
 const DURATIONS: ScenarioDuration[] = [5, 10, 15, 45]
 const SCENE_RANGES = ['0–15s', '15–30s', '30–45s']
+const FRAMES_BUCKET = 'wan-frames'
 
 export default function ScenarioWriterDialog({
   open,
   onOpenChange,
   defaultDuration,
+  userId,
   onUseAsPrompt,
   onSendScenes,
 }: Props) {
@@ -38,6 +41,10 @@ export default function ScenarioWriterDialog({
   const [error, setError] = useState<string | null>(null)
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null) // -1 = "all"
   const [isSending, setIsSending] = useState(false)
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
+  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null)
+  const [isUploadingImage, setIsUploadingImage] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     if (open) {
@@ -46,14 +53,69 @@ export default function ScenarioWriterDialog({
     }
   }, [open, defaultDuration])
 
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
+    }
+  }, [imagePreviewUrl])
+
+  async function handlePickImage(file: File | undefined) {
+    if (!file) return
+    if (!userId) {
+      setError('Please sign in to attach an image.')
+      return
+    }
+    if (!file.type.startsWith('image/')) {
+      setError('Only image files are supported.')
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Image too large (max 10MB).')
+      return
+    }
+    setError(null)
+    const localUrl = URL.createObjectURL(file)
+    if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
+    setImagePreviewUrl(localUrl)
+    setUploadedImageUrl(null)
+    setIsUploadingImage(true)
+    try {
+      const ext = (file.name.split('.').pop() || 'png').toLowerCase()
+      const storagePath = `${userId}/scenario-ref-${Date.now()}-${crypto.randomUUID()}.${ext}`
+      const { error: upErr } = await supabase.storage
+        .from(FRAMES_BUCKET)
+        .upload(storagePath, file, { contentType: file.type, upsert: false })
+      if (upErr) throw new Error(upErr.message)
+      const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+      setUploadedImageUrl(data.publicUrl)
+    } catch (e) {
+      setError((e as Error).message ?? 'Image upload failed')
+      setImagePreviewUrl(null)
+      setUploadedImageUrl(null)
+    } finally {
+      setIsUploadingImage(false)
+    }
+  }
+
+  function clearImage() {
+    if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
+    setImagePreviewUrl(null)
+    setUploadedImageUrl(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
   async function generate() {
-    if (!idea.trim() || isWriting) return
+    if ((!idea.trim() && !uploadedImageUrl) || isWriting) return
     setIsWriting(true)
     setError(null)
     setScenes([])
     try {
       const { data, error: invokeErr } = await supabase.functions.invoke('scenario-write', {
-        body: { idea: idea.trim(), durationSeconds: duration },
+        body: {
+          idea: idea.trim() || 'Generate a scenario based on the attached reference image.',
+          durationSeconds: duration,
+          imageUrl: uploadedImageUrl ?? undefined,
+        },
       })
       if (invokeErr) {
         setError(invokeErr.message || 'Failed to write scenario')
@@ -87,7 +149,7 @@ export default function ScenarioWriterDialog({
 
   function handleUseAsPrompt() {
     if (scenes.length === 0) return
-    onUseAsPrompt(scenes.join('\n\n'))
+    onUseAsPrompt(scenes.join('\n\n'), uploadedImageUrl ?? undefined)
     onOpenChange(false)
   }
 
@@ -111,10 +173,12 @@ export default function ScenarioWriterDialog({
     setError(null)
     setCopiedIndex(null)
     setIsSending(false)
+    clearImage()
   }
 
   const isSplit = duration === 45 && scenes.length === 3
   const concatenated = scenes.join('\n\n')
+  const canGenerate = (idea.trim().length > 0 || Boolean(uploadedImageUrl)) && !isUploadingImage
 
   return (
     <Dialog
@@ -132,7 +196,7 @@ export default function ScenarioWriterDialog({
           </DialogTitle>
           <DialogDescription className="text-zinc-400">
             Pick a duration, describe your idea (any language), and get an English
-            cinematic scenario tuned to that length.
+            cinematic scenario tuned to that length. Optionally attach a reference image.
           </DialogDescription>
         </DialogHeader>
 
@@ -177,13 +241,60 @@ export default function ScenarioWriterDialog({
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
               Your idea
             </div>
-            <Textarea
-              value={idea}
-              onChange={(e) => setIdea(e.target.value)}
-              rows={4}
-              placeholder="Describe your idea (any language)…"
-              className="min-h-[100px] border-white/10 bg-black/30 text-zinc-100"
-            />
+            <div className="relative">
+              <Textarea
+                value={idea}
+                onChange={(e) => setIdea(e.target.value)}
+                rows={4}
+                placeholder="Describe your idea (any language)…"
+                className="min-h-[100px] border-white/10 bg-black/30 pb-12 text-zinc-100"
+              />
+              <div className="absolute bottom-2 left-2 flex items-center gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => handlePickImage(e.target.files?.[0])}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploadingImage}
+                  title="Attach a reference image"
+                  aria-label="Attach a reference image"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/40 text-zinc-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
+                >
+                  {isUploadingImage ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <ImagePlus className="h-4 w-4" aria-hidden="true" />
+                  )}
+                </button>
+                {imagePreviewUrl ? (
+                  <div className="relative">
+                    <img
+                      src={imagePreviewUrl}
+                      alt="Reference"
+                      className="h-8 w-8 rounded-md border border-white/10 object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={clearImage}
+                      aria-label="Remove image"
+                      className="absolute -right-1.5 -top-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-zinc-900 text-zinc-200 ring-1 ring-white/20 hover:bg-zinc-800"
+                    >
+                      <X className="h-3 w-3" aria-hidden="true" />
+                    </button>
+                  </div>
+                ) : null}
+                {uploadedImageUrl ? (
+                  <span className="text-[10px] uppercase tracking-wide text-emerald-300/80">
+                    Image attached
+                  </span>
+                ) : null}
+              </div>
+            </div>
           </div>
 
           {error ? (
@@ -254,7 +365,7 @@ export default function ScenarioWriterDialog({
                 variant="ghost"
                 size="sm"
                 onClick={generate}
-                disabled={isWriting || isSending || !idea.trim()}
+                disabled={isWriting || isSending || !canGenerate}
               >
                 {isWriting ? (
                   <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
@@ -280,7 +391,7 @@ export default function ScenarioWriterDialog({
               )}
             </>
           ) : (
-            <Button onClick={generate} disabled={isWriting || !idea.trim()} size="sm">
+            <Button onClick={generate} disabled={isWriting || !canGenerate} size="sm">
               {isWriting ? (
                 <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
               ) : (

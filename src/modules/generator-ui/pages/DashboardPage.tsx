@@ -3302,7 +3302,24 @@ export default function DashboardPage() {
         open={isScenarioDialogOpen}
         onOpenChange={setIsScenarioDialogOpen}
         defaultDuration={durationSeconds === 45 ? 45 : (durationSeconds as 5 | 10 | 15)}
-        onUseAsPrompt={(text) => setPromptText(text)}
+        userId={userId}
+        onUseAsPrompt={(text, imageUrl) => {
+          setPromptText(text)
+          if (imageUrl) {
+            setGenerationMode('image-to-video')
+            setUploadTarget('Start')
+            setUploadedFiles([{
+              id: Date.now(),
+              name: 'scenario-reference.png',
+              size: 0,
+              target: 'Start',
+              type: 'image/png',
+              status: 'ready',
+              url: imageUrl,
+              error: null,
+            }])
+          }
+        }}
         onSendScenes={submitScenesAsJobs}
       />
 
