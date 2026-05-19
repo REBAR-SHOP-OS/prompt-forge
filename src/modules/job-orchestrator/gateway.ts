@@ -4,7 +4,7 @@
 //   - listMyJobs() -> JobSummary[]
 //   - createJob(input) -> CreateJobResult
 //   - getJob(jobId)    -> JobDetail
-import { request } from "@/core/api/client";
+import { ApiError, request } from "@/core/api/client";
 import type { CreateJobInput, CreateJobResult, JobDetail, JobSummary } from "./contract";
 
 export const JOB_ORCHESTRATOR_CONTRACT_VERSION = "v1" as const;
