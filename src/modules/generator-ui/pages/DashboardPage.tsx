@@ -1783,6 +1783,8 @@ export default function DashboardPage() {
             reason instanceof ApiError ? `${reason.code}: ${reason.message}` : POLL_ERROR_MSG,
           )
         }
+      } else if (missingJobIds.length > 0) {
+        pollFailureCountRef.current = 0
       } else {
         pollFailureCountRef.current = 0
         // Auto-clear stale poll-error banner once we recover.
