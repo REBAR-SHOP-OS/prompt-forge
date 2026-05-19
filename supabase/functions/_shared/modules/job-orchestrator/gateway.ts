@@ -186,6 +186,31 @@ export const jobOrchestratorGateway = {
             progressPercent = estimateProgressFromJob(detail.status, detail.created_at);
           }
 
+          // Final safety net: if the job is still "processing" after the
+          // hard timeout, force-fail with refund so the UI doesn't sit on a
+          // forever-rendering card. Skips if we already flipped to terminal.
+          if (
+            !terminalFailedReason &&
+            (detail.status === "processing" || detail.status === "pending")
+          ) {
+            const startedAt = Date.parse(detail.created_at);
+            if (Number.isFinite(startedAt) && Date.now() - startedAt > JOB_STUCK_TIMEOUT_MS) {
+              terminalFailedReason = "Video provider timed out before returning a result. Please try again.";
+              try {
+                await jobService.failJob(svc, {
+                  userId: auth.userId,
+                  jobId: detail.id,
+                  reason: terminalFailedReason,
+                  refundCredits: true,
+                });
+                detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
+              } catch (e) {
+                logError("stuck-timeout fail failed", { error: (e as Error).message, jobId: detail.id });
+              }
+              progressPercent = null;
+            }
+          }
+
           const responseDetail = terminalFailedReason
             ? { ...detail, status: "failed" as const }
             : detail;
