@@ -32,6 +32,7 @@ import {
   Pencil,
   Play,
   Plus,
+  RefreshCw,
   RotateCcw,
   Scissors,
   Sparkles,
@@ -341,6 +342,10 @@ export default function DashboardPage() {
   const [startContext] = useState('Start')
   const [endGoal] = useState('End')
   const [generatedVideos, setGeneratedVideos] = useState<JobDetail[]>([])
+  // Tracks card IDs currently re-submitting a Regenerate. Used to disable the
+  // per-card regenerate button while its new Job is being created so the user
+  // can't queue duplicates with rapid clicks.
+  const [regeneratingIds, setRegeneratingIds] = useState<Set<string>>(new Set())
   // Pending column never shows a "syncing history" state — it always
   // reflects only the in-memory active workspace.
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -2381,6 +2386,78 @@ export default function DashboardPage() {
     })
   }
 
+  /**
+   * Re-run an existing card with the same prompt, model, aspect ratio, and
+   * frames. Unlike editAndReuseJob, this does not touch the composer — it
+   * creates a brand-new Job immediately and adds it to Pending.
+   */
+  async function regenerateCard(job: JobDetail) {
+    if (regeneratingIds.has(job.id)) return
+
+    const prompt = (job.input_prompt ?? '').trim()
+    if (!prompt) {
+      setVideoColumnMessage('Cannot regenerate: original prompt is empty.')
+      return
+    }
+
+    // Resolve provider/model from the card itself, falling back to the
+    // currently selected model if the card row doesn't carry one.
+    const providerKey = (job.provider_key as 'wan' | 'flow' | null) ?? selectedModel?.providerKey
+    const requestedModel = job.model_key ?? selectedModel?.model
+    if (!providerKey) {
+      setVideoColumnMessage('Cannot regenerate: provider missing on this card.')
+      return
+    }
+
+    const ratio = getRatioFor(job)
+    const firstFrameUrl = job.first_frame_url ?? undefined
+    const lastFrameUrl = job.last_frame_url ?? undefined
+    // JobSummary doesn't carry requested_duration, so default to a safe 5s
+    // single-call render. Long-form (45s) regeneration would need scenario
+    // context that isn't bound to a single card.
+    const durationSeconds: 5 | 10 | 15 = 5
+
+    setRegeneratingIds((current) => {
+      const next = new Set(current)
+      next.add(job.id)
+      return next
+    })
+    setComposerError(null)
+    setVideoColumnMessage(null)
+
+    try {
+      const createdJob = await jobOrchestratorGateway.createJob({
+        providerKey,
+        requestedModel,
+        prompt,
+        firstFrameUrl,
+        lastFrameUrl,
+        durationSeconds,
+        aspectRatio: ratio,
+      })
+      const seededJob = buildSeededJob(prompt, createdJob, {
+        firstFrameUrl,
+        lastFrameUrl,
+      })
+      rememberClipRatio(seededJob.id, ratio)
+      setPreviewVideoId(seededJob.id)
+      setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
+      markActiveJob(seededJob.id)
+    } catch (error) {
+      const message = error instanceof ApiError
+        ? `${error.code}: ${error.message}`
+        : (error instanceof Error ? error.message : 'Could not regenerate this card.')
+      setVideoColumnMessage(message)
+    } finally {
+      setRegeneratingIds((current) => {
+        if (!current.has(job.id)) return current
+        const next = new Set(current)
+        next.delete(job.id)
+        return next
+      })
+    }
+  }
+
   function formatTimeMS(s: number): string {
     if (!Number.isFinite(s) || s < 0) s = 0
     const m = Math.floor(s / 60)
@@ -3990,6 +4067,29 @@ export default function DashboardPage() {
                         >
                           <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
+                        {!video.id.startsWith('merged-') ? (
+                          (() => {
+                            const isRegenerating = regeneratingIds.has(video.id)
+                            return (
+                              <button
+                                type="button"
+                                disabled={isRegenerating}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  regenerateCard(video)
+                                }}
+                                aria-label="Regenerate this card"
+                                title="Regenerate this card"
+                                className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                <RefreshCw
+                                  className={`h-3.5 w-3.5 ${isRegenerating ? 'animate-spin' : ''}`}
+                                  aria-hidden="true"
+                                />
+                              </button>
+                            )
+                          })()
+                        ) : null}
                         {(video.video?.storage_path || editedClips[video.id]?.url) ? (
                           <button
                             type="button"
