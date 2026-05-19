@@ -2126,14 +2126,44 @@ export default function DashboardPage() {
     }
   }
 
-  async function submitScenesAsJobs(scenes: string[]) {
-    if (!scenes || scenes.length === 0) return
-    if (!isTextToVideo) {
-      const msg = 'Scenario writer (45s) currently supports Text-to-Video only.'
-      setComposerError(msg)
-      setVideoColumnMessage(msg)
-      throw new Error(msg)
+  async function waitForLastFrameUrl(prevJobId: string, sceneLabel: string): Promise<string> {
+    if (!userId) throw new Error('Sign in required to chain scenes')
+    const startedAt = Date.now()
+    const timeoutMs = 10 * 60 * 1000
+    const intervalMs = 3000
+    setVideoColumnMessage(`Waiting for ${sceneLabel} to finish before queuing the next scene…`)
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      if (Date.now() - startedAt > timeoutMs) {
+        throw new Error(`Timed out waiting for ${sceneLabel} to complete`)
+      }
+      let detail: JobDetail | null = null
+      try {
+        detail = await jobOrchestratorGateway.getJob(prevJobId)
+      } catch {
+        detail = null
+      }
+      const status = detail ? normalizeStatus(detail.status) : 'pending'
+      if (status === 'failed' || status === 'cancelled') {
+        throw new Error(`${sceneLabel} failed; cannot chain remaining scenes`)
+      }
+      if (status === 'completed' && detail?.video?.storage_path) {
+        const proxied = await proxiedVideoUrl(detail.video.storage_path)
+        const blob = await captureLastFrameAsBlob(proxied)
+        const storagePath = `${userId}/scene-chain-${Date.now()}-${crypto.randomUUID()}.png`
+        const { error } = await supabase.storage
+          .from(FRAMES_BUCKET)
+          .upload(storagePath, blob, { contentType: 'image/png', upsert: false })
+        if (error) throw new Error(error.message)
+        const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+        return data.publicUrl
+      }
+      await new Promise((r) => setTimeout(r, intervalMs))
     }
+  }
+
+  async function submitScenesAsJobs(scenes: string[], firstSceneImageUrl?: string) {
+    if (!scenes || scenes.length === 0) return
     if (!selectedModel) {
       const msg = 'Pick a model before sending scenes.'
       setComposerError(msg)
@@ -2148,18 +2178,30 @@ export default function DashboardPage() {
     const effectiveRatio: Ratio = aspectRatio
     const perClipDuration: 5 | 10 | 15 = 15
 
+    let previousJobId: string | null = null
     try {
-      for (const sceneText of scenes) {
-        const prompt = sceneText.trim()
+      for (let i = 0; i < scenes.length; i++) {
+        const prompt = scenes[i].trim()
         if (!prompt) continue
+        const sceneLabel = `Scene ${i + 1}`
+
+        let startFrameUrl: string | undefined
+        if (i === 0) {
+          startFrameUrl = firstSceneImageUrl
+        } else if (previousJobId) {
+          startFrameUrl = await waitForLastFrameUrl(previousJobId, `Scene ${i}`)
+        }
+
+        setVideoColumnMessage(`Queuing ${sceneLabel}…`)
         const createdJob = await jobOrchestratorGateway.createJob({
           providerKey: selectedModel.providerKey,
           requestedModel: selectedModel.model,
           prompt,
           durationSeconds: perClipDuration,
           aspectRatio: effectiveRatio,
+          firstFrameUrl: startFrameUrl,
         })
-        const seededJob = buildSeededJob(prompt, createdJob, {})
+        const seededJob = buildSeededJob(prompt, createdJob, startFrameUrl ? { firstFrameUrl: startFrameUrl } : {})
         rememberClipRatio(seededJob.id, effectiveRatio)
         if (!lockedProjectRatio) {
           setLockedProjectRatio(effectiveRatio)
@@ -2168,9 +2210,9 @@ export default function DashboardPage() {
         setPreviewVideoId(seededJob.id)
         setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
         markActiveJob(seededJob.id)
+        previousJobId = seededJob.id
       }
-      setPromptText('')
-      setUploadedFiles([])
+      setVideoColumnMessage(null)
     } catch (error) {
       let message = 'Could not start scenario generation.'
       if (error instanceof ApiError) {
@@ -3351,22 +3393,7 @@ export default function DashboardPage() {
           }
         }}
         onSendScenes={async (scenes, imageUrl) => {
-          setPromptText(scenes.join('\n\n'))
-          if (imageUrl) {
-            setGenerationMode('image-to-video')
-            setUploadTarget('Start')
-            setUploadedFiles([{
-              id: Date.now(),
-              name: 'scenario-reference.png',
-              size: 0,
-              target: 'Start',
-              type: 'image/png',
-              status: 'ready',
-              url: imageUrl,
-              error: null,
-            }])
-          }
-          await submitScenesAsJobs(scenes)
+          await submitScenesAsJobs(scenes, imageUrl)
         }}
       />
 
