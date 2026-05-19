@@ -1,51 +1,32 @@
-# Scenario Writer Icon (45s)
+# Add download button to AI image dialog
 
-Add a new icon button — placed where the red circle is in the screenshot, just to the left of the model picker (`Google Veo 3 (Flow)`) — that:
+The user wants a download icon in the AI image generation dialog footer — in the empty space circled in red, between **Regenerate** and **Use this image** — so they can save the generated image locally before (or instead of) using it in the project.
 
-1. Reads the currently uploaded **Start** image.
-2. Asks the AI to write a **45-second cinematic scenario** based on that image.
-3. Fills the prompt textarea with the result so the user can submit it.
+## Scope
 
-## UX
+UI-only change in `src/modules/generator-ui/components/AiImageDialog.tsx`. No backend, storage, or business-logic changes.
 
-- Icon: `Clapperboard` (lucide-react), label/tooltip: **"Scenario (45s)"** / `سناریوی ۴۵ ثانیه‌ای از تصویر استارت`.
-- States:
-  - Disabled (greyed) when there's no ready Start frame, or while another enhance/submit is in flight.
-  - Spinner (`LoaderCircle`) inside the button while generating.
-- On success → `setPromptText(scenario)` (replaces current prompt, same behavior as existing Enhance flow).
-- On error → reuses `composerError` text below the textarea (same pattern as `runEnhancePrompt`).
+## Changes
 
-## Where it goes (DashboardPage.tsx)
+**`src/modules/generator-ui/components/AiImageDialog.tsx`**
 
-Insert a new `<button>` immediately before the model `<Popover>` at ~line 4410, matching the existing pill style (`h-10 rounded-full border border-[#2a2d32] bg-black/20 ...`) for visual consistency with the model button.
-
-## Implementation
-
-- New state: `isWritingScenario: boolean`.
-- New handler `runScenarioFromStart()`:
-  - Guard: requires `readyStartFrame?.url`; otherwise set `composerError` ("Add a Start image first.").
-  - Calls existing `supabase.functions.invoke('enhance-prompt', { body })` with:
-    ```ts
-    {
-      prompt: 'Write a 45-second cinematic scenario inspired by the attached Start image. Describe scene, atmosphere, camera moves, pacing, and a clear arc that fits ~45 seconds.',
-      imageUrls: [readyStartFrame.url],
-      mode: 'silent',
-      narratorScript: '',
-    }
-    ```
-  - Same 429 / 402 / generic error handling as `runEnhancePrompt`.
-  - On success → `setPromptText(enhanced)`.
-
-No backend / edge function changes — `enhance-prompt` already accepts `imageUrls` and returns `enhancedPrompt`.
+1. Import `Download` from `lucide-react` (alongside the existing icons).
+2. Add a `handleDownload` function that:
+   - Returns early if `!imageDataUrl`.
+   - Converts the current `imageDataUrl` (data URL) to a `Blob` via the existing `dataUrlToBlob` helper.
+   - Creates an `ObjectURL`, triggers an `<a download="ai-image-{timestamp}.png">` click, then revokes the URL.
+   - Wrapped in try/catch; on failure falls back to `window.open(imageDataUrl, '_blank')`.
+3. Insert a new ghost `<Button>` with the `Download` icon + label "Download" in the footer (lines 624-658), placed between the **Regenerate** button and the **Use this image** button. Disabled when `!imageDataUrl || isLoading || isSaving`.
+4. Keep existing button styling/sizing consistent (`variant="ghost"`, `size="sm"`, `h-4 w-4 mr-2` icon).
 
 ## Out of scope
 
-- No changes to job creation, models, Pending column, Live preview, or AI Image dialog.
+- No changes to Pending/Library/History logic.
+- No changes to the live-preview `+` icon work from prior turns.
 - No new dependencies.
 
 ## Verification
 
-1. Upload an image to **Start** → new clapperboard icon enables.
-2. Click it → spinner shows, then the prompt textarea fills with a ~45s scenario based on the image.
-3. Without a Start image → button is disabled and tooltip explains why.
-4. Submit flow (arrow button) and the existing Prompt / Crop / Sparkles icons keep working unchanged.
+- Open the AI image dialog, generate an image, click **Download** → browser saves a `.png`.
+- Button is hidden/disabled when no image is generated yet.
+- Regenerate and Use this image still work unchanged.
