@@ -93,6 +93,7 @@ import { VoiceoverDialog } from '@/modules/generator-ui/components/VoiceoverDial
 import CalendarInfoDialog from '@/modules/generator-ui/components/CalendarInfoDialog'
 import ImageReframeDialog from '@/modules/generator-ui/components/ImageReframeDialog'
 import AiImageDialog from '@/modules/generator-ui/components/AiImageDialog'
+import ScenarioWriterDialog from '@/modules/generator-ui/components/ScenarioWriterDialog'
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
@@ -381,6 +382,7 @@ export default function DashboardPage() {
   const [isUploadingImage, setIsUploadingImage] = useState(false)
   const imageUploadInputRef = useRef<HTMLInputElement | null>(null)
   const [isAiImageDialogOpen, setIsAiImageDialogOpen] = useState(false)
+  const [isScenarioDialogOpen, setIsScenarioDialogOpen] = useState(false)
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
@@ -3159,6 +3161,15 @@ export default function DashboardPage() {
         }}
       />
 
+      <ScenarioWriterDialog
+        open={isScenarioDialogOpen}
+        onOpenChange={setIsScenarioDialogOpen}
+        defaultDuration={durationSeconds === 45 ? 45 : (durationSeconds as 5 | 10 | 15)}
+        onUseAsPrompt={(text) => setPromptText(text)}
+      />
+
+
+
       <Dialog open={isMusicDialogOpen} onOpenChange={setIsMusicDialogOpen}>
         <DialogContent className="border-white/10 bg-black text-zinc-100 sm:max-w-md">
           <DialogHeader>
@@ -4312,7 +4323,17 @@ export default function DashboardPage() {
           >
             <Sparkles className="h-4 w-4" aria-hidden="true" />
           </button>
+          <button
+            type="button"
+            onClick={() => setIsScenarioDialogOpen(true)}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/20 text-zinc-300 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100"
+            aria-label="Write a scenario from your idea"
+            title="Write a scenario from your idea"
+          >
+            <Clapperboard className="h-4 w-4" aria-hidden="true" />
+          </button>
         </div>
+
 
         {!isTextToVideo ? (
           <div className="flex min-h-11 items-center gap-2 sm:min-h-12 sm:gap-3" aria-label="Prompt path">

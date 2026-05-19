@@ -1,43 +1,55 @@
-# Add 45-second duration option
+# Add a "Scenario writer" AI button next to the composer
 
-## Goal
+یک آیکون جدید کنار ورودی prompt اضافه می‌شود که سناریوی ویدیویی تولید می‌کند. کاربر اول مدت زمان را انتخاب می‌کند، سپس ایده‌اش را وارد می‌کند، و AI یک سناریوی روایی انگلیسی متناسب با آن مدت زمان می‌نویسد و در همان دیالوگ نمایش می‌دهد (با دکمه‌های Copy و Use as prompt).
 
-اضافه کردن دکمه‌ی **45s** کنار 5s/10s/15s در نوار تنظیمات کلیپ. چون مدل ویدیو (Veo) در هر کلیپ حداکثر 15s را پشتیبانی می‌کند، انتخاب 45s باعث می‌شود **سه جاب 15 ثانیه‌ای پشت‌سرهم** در ستون Pending ایجاد شوند (با همان prompt و همان frame seedها). در نهایت در Final Film این سه کلیپ پشت سر هم پخش/مرج می‌شوند و نتیجه عملاً 45 ثانیه‌ای می‌شود.
+## Backend
 
-## Scope (UI + frontend orchestration only)
+**New edge function `supabase/functions/scenario-write/index.ts`**
 
-تنها فایل `src/modules/generator-ui/pages/DashboardPage.tsx`. هیچ تغییری در backend, contract types, schema، یا provider service انجام نمی‌شود. (نوع `durationSeconds` در API همچنان `5|10|15` می‌ماند — برای 45s سه فراخوانی جداگانه با مقدار 15 ارسال می‌شود.)
+- ساختار مثل `enhance-prompt`: `authenticate(req)`، خواندن JSON بدنه، فراخوانی Lovable AI Gateway مستقیم (همان pattern fetch به `ai.gateway.lovable.dev/v1/chat/completions`).
+- بدنه‌ی ورودی:
+  - `idea: string` (الزامی، 1–1500 حرف)
+  - `durationSeconds: 5 | 10 | 15 | 45` (الزامی)
+- مدل: `google/gemini-2.5-flash`.
+- System prompt (انگلیسی، خروجی همیشه انگلیسی صرف‌نظر از زبان ایده):
+  > You are a professional short-form video scenario writer. Given the user's idea, write a single cohesive scenario/treatment in **English** suitable for a `{N}`-second cinematic video. Include opening visual hook, beat-by-beat action, camera/lighting cues, and ending. Match pacing realistically to the duration: 5s = 1 beat, 10s = 2 beats, 15s = 3 beats, 45s = 5–6 beats across ~3 shots. Output prose only — no markdown headings, no bullet lists, no preamble. Keep it under `{wordCap}` words.
+  - wordCap: 5s→40, 10s→70, 15s→100, 45s→220.
+- مدیریت 429/402/500 مثل `enhance-prompt`.
+- پاسخ: `{ scenario: string }`.
 
-## Changes
+(بدون migration، بدون جدول جدید، بدون secret جدید — `LOVABLE_API_KEY` از قبل موجود است.)
 
-1. **State type** (line 399):
-   ```ts
-   const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15 | 45>(5)
-   ```
+## Frontend
 
-2. **Duration radio group** (line 4236-4252):
-   - تبدیل آرایه به `[5, 10, 15, 45] as const`.
-   - دکمه‌ی 45s با همان استایل و رفتار، لیبل `45s`.
+**`src/modules/generator-ui/pages/DashboardPage.tsx`**
 
-3. **Render submit handler** (لاین‌های ~2022–2095، همان بلوک `try { … createdJob = … }`):
-   - اگر `durationSeconds === 45`، یک حلقه‌ی 3 باره اجرا کن:
-     - برای هر iteration یک `createJob` با `durationSeconds: 15` و **همان** `prompt` + همان `firstFrameUrl`/`lastFrameUrl` ارسال کن.
-     - هر job برگشتی را با `buildSeededJob` و `rememberClipRatio` و قفل‌کردن ratio و `setPendingJobs` (همان منطق فعلی) به ستون Pending اضافه کن.
-   - در غیر این صورت همان مسیر فعلی (یک‌بار createJob با `durationSeconds`) اجرا شود.
-   - اگر یکی از 3 فراخوانی شکست خورد، خطا را در `composerError` نشان بده و از حلقه خارج شو (jobهای موفق قبلی در Pending باقی می‌مانند).
+1. آیکون جدید (Lucide `ClapperboardIcon` یا `ScrollText`) را به ردیف ابزارهای بالای textarea اضافه کن — همان stripی که دکمه‌های Crop و Sparkles (AI image) قرار دارند (لاین‌های ~4295–4315). دکمه با همان استایل (`h-8 w-8 rounded-full border border-white/10 …`)، tooltip: "Write a scenario from your idea".
+2. State جدید: `isScenarioDialogOpen`, `scenarioDuration` (پیش‌فرض = `durationSeconds` فعلی، 5/10/15/45)، `scenarioIdea`, `isWritingScenario`, `scenarioResult`, `scenarioError`.
+3. کلیک روی آیکون → `setIsScenarioDialogOpen(true)`. مقدار اولیه‌ی `scenarioDuration` با `durationSeconds` فعلی همگام می‌شود.
 
-4. **Hint/toast کوچک** زیر دکمه‌ها لازم نیست؛ تنها در `composerError` در صورت نیاز پیام: "45s renders as 3 × 15s clips".
+**New component `src/modules/generator-ui/components/ScenarioWriterDialog.tsx`** (مثل `AiImageDialog`):
+
+- `<Dialog>` با عنوان "Scenario Writer".
+- Step 1 — Duration: یک radio group افقی با گزینه‌های `5s / 10s / 15s / 45s` (همان استایل دکمه‌های duration در composer).
+- Step 2 — Idea: یک `<Textarea>` با placeholder: "Describe your idea (any language)…".
+- دکمه‌ی **Write scenario** (disabled وقتی idea خالی یا در حال loading) → فراخوانی `supabase.functions.invoke('scenario-write', { body: { idea, durationSeconds } })`.
+- بعد از موفقیت: `scenarioResult` در یک `<div class="prose">` فقط‌خواندنی نمایش داده می‌شود (انگلیسی، ltr) با دکمه‌های:
+  - **Copy** (کلیپ‌بورد).
+  - **Use as prompt** → `setPromptText(scenarioResult)` و بستن دیالوگ.
+  - **Regenerate** → فراخوانی مجدد با همان idea + duration.
+- خطا (429/402/500) به‌صورت متن قرمز در دیالوگ نشان داده شود.
 
 ## Out of scope
 
-- بدون تغییر در contract/zod schema/provider service.
-- بدون تغییر در منطق Final Film merge (همان pipeline فعلی sequential merge کلیپ‌های Ready را پشتیبانی می‌کند).
-- بدون تغییر در آیکون Live preview یا Download dialog.
-- بدون تغییر در `still_duration_seconds` تصاویر آپلودی (آن همچنان 1–15s).
+- بدون تولید خودکار jobها؛ خروجی فقط در دیالوگ.
+- بدون تغییر در composer prompt path یا duration radio بیرونی.
+- بدون تغییر در migration، schema، یا دکمه‌های دیگر.
+- بدون پشتیبانی از تصویر/فریم در ورودی سناریو.
 
 ## Verification
 
-- انتخاب 45s → submit → سه کارت در ستون Pending ظاهر می‌شوند، هر کدام 15s.
-- 5s/10s/15s دقیقاً مثل قبل کار می‌کنند (یک کارت).
-- Live preview ستون Pending هر سه را پشت سر هم پخش می‌کند.
-- Ratio lock پس از کلیپ اول روی همان اعمال می‌شود (مثل قبل).
+- کلیک روی آیکون → دیالوگ باز شود، duration پیش‌فرض = انتخاب فعلی composer.
+- وارد کردن ایده‌ی فارسی → نتیجه‌ی انگلیسی برگشت می‌خورد، طول متن متناسب با duration.
+- Copy متن را کپی می‌کند؛ Use as prompt متن را در textarea اصلی می‌گذارد و دیالوگ بسته می‌شود.
+- Regenerate خروجی جدید تولید می‌کند.
+- خطای 402 ("AI credits exhausted") در دیالوگ نمایش داده می‌شود.
