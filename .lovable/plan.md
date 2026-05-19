@@ -1,41 +1,40 @@
-# رفع مشکل هنگ کردن خروجی نهایی بعد از Apply Changes
+# Fix freezes in trimmed video output
 
-## علت ریشه‌ای
+## Why it still freezes
 
-فایل `src/modules/generator-ui/lib/trimVideo.ts` برای حذف بازه‌های Cut از این الگو استفاده می‌کند:
+In `src/modules/generator-ui/lib/trimVideo.ts` the recorder runs continuously while we seek between keep‑segments. Two things end up baked into the file:
 
-1. `recorder.pause()` صدا زده می‌شود
-2. ویدئو `seek` می‌شود تا انتهای بازه‌ی cut
-3. روی رویداد `seeked`، `recorder.resume()` انجام می‌شود
+1. **Startup freeze** — `recorder.start(250)` runs before the first `seekTo(seg.start)` resolves and before `video.play()` resolves. The canvas is still showing the initial black/first frame for hundreds of ms while the recorder is already capturing 30 fps of that static frame.
+2. **Inter‑segment freeze** — between segments we `video.pause()` → `seekTo(next.start)` → `drawContain` → `video.play()`. During the seek (often 100–400 ms in Chrome on long mp4s) the recorder keeps writing the same canvas frame, and the audio graph is connected so the small audio glitch is also encoded. Every cut produces a visible "frozen chunk".
 
-مشکل: `MediaRecorder.pause()/resume()` در Chrome وقتی ورودی آن یک `canvas.captureStream()` + `MediaElementAudioSource` است، رفتار قابل‌اعتمادی ندارد. فریم‌های canvas و سمپل‌های صوتی در حین pause همچنان به stream می‌ریزند و بعد از resume، یک قطعه‌ی «فریز» معادل مدت seek (و گاهی معادل خود بازه‌ی cut) داخل خروجی نوشته می‌شود. دقیقاً همان «بعضی جاهاش هنگ می‌کنه»ای که گزارش شد. تشخیص ورود به بازه‌ی cut هم بعد از `drawContain` انجام می‌شود، پس حداقل یک فریم از داخل بازه‌ی cut هم رسماً رکورد می‌شود.
+So the architecture is correct (single recorder, no pause/resume), but we are still feeding it dead time.
 
-علاوه بر آن، detect شدن cut «وقتی t داخل بازه است» باعث می‌شود seek دیر شروع شود و در بازه‌های پشت‌سر‌هم نیز یک‌بار pause/resume اضافه رخ دهد.
+## Fix
 
-## راهکار
+Switch to a **frame‑gated** capture so the recorder only sees frames while the video is actually playing, and mute the audio graph during seeks.
 
-بازنویسی هسته‌ی `trimVideoLocally` بر مبنای «keep segments» به‌جای «cut detection حین play»، بدون استفاده از `recorder.pause/resume`:
+### Video gating
+- Create the canvas stream with `canvas.captureStream(0)` (manual frame mode).
+- Grab the single `CanvasCaptureMediaStreamTrack` and call `track.requestFrame()` from the rAF tick — but only inside the playing loop, after `drawContain`.
+- Do not request any frames during seeks or between segments. Result: the encoder simply has no input during dead time, so the output has no frozen frames (and the timeline stays continuous because MediaRecorder timestamps by wall‑clock, but since no frames are pushed, the previous frame is not duplicated).
 
-1. از روی `normalizeCuts` لیست بازه‌های keep را بسازیم: `[[0,c1.start],[c1.end,c2.start],…,[cN.end,duration]]` (با حذف بازه‌های صفر/منفی).
-2. یک `MediaRecorder` واحد برای کل عملیات روشن می‌شود و **هرگز pause نمی‌شود**.
-3. برای هر keep segment:
-   - ابتدا `video.pause()` و `video.currentTime = seg.start`، منتظر `seeked` می‌مانیم. در این بازه‌ی seek، لوپ rAF/painting **متوقف** است و آخرین فریم سالم روی canvas باقی می‌ماند. چون این فاصله کوتاه (~50–200ms) و بدون قطع رکوردر است، چیزی به خروجی اضافه نمی‌شود که شبیه فریز بزرگ دیده شود (در عمل به‌صورت یک crossfade خیلی کوتاه بین دو سگمنت دیده می‌شود).
-   - برای حذف کامل همان میکرو-فریز هم، درست قبل از play کردن سگمنت بعدی، یک‌بار `drawContain` با فریم seek‌شده اجرا می‌شود تا canvas دقیقاً اولین فریم سگمنت بعدی را داشته باشد.
-   - سپس `video.play()` و rAF فعال می‌شود؛ در هر tick بررسی می‌کند اگر `video.currentTime >= seg.end - epsilon` بود، rAF را متوقف و به سگمنت بعدی می‌رود.
-4. بعد از آخرین سگمنت، `recorder.stop()` و Blob نهایی ساخته می‌شود.
-5. مسیر صدا بدون تغییر باقی می‌ماند (MediaElementSource → MediaStreamDestination). چون recorder pause نمی‌شود و در فاصله‌ی seek هم ویدئو pause است (پس audio source هم خاموش است)، gap صدا متناظر با gap بصری می‌شود و sync حفظ می‌شود.
-6. اگر `cuts.length === 0` (فقط Mute audio)، مسیر فعلی حفظ می‌شود؛ یک پاس play کامل بدون seek.
+### Audio gating
+- Insert a `GainNode` between `MediaElementSource` and `MediaStreamAudioDestinationNode`.
+- Set `gain.value = 0` while seeking / between segments, set to `1` immediately before `video.play()` resolves for a segment. Use `setTargetAtTime` with a 5 ms time‑constant to avoid clicks.
+- Keeps audio perfectly silent during glue moments instead of leaking the paused element's last sample.
 
-## ملاحظات
+### Recorder start timing
+- Move `recorder.start(250)` to **after** the first `seekTo(segments[0].start)` and just before the first `video.play()`. That removes the startup freeze entirely.
+- Keep `recorder.start(250)` (timeslice) so we still get incremental `dataavailable` chunks.
 
-- `normalizeCuts`, `totalKeptDuration`, امضای `TrimResult` و رابط `trimVideoLocally(srcUrl, cuts, options)` بدون تغییر می‌مانند، پس `ClipTrimmerDialog.tsx` نیازی به تغییر ندارد.
-- `onProgress` بر اساس مجموع زمان keep شده تا الان محاسبه می‌شود تا progress bar یکنواخت پیش برود.
-- روی Safari که MediaRecorder محدودیت‌های بیشتری دارد، نبودن pause/resume باعث پایداری بهتر خروجی هم می‌شود.
+### Small correctness items
+- When `cuts` is empty, keep the current single‑segment fast path but still go through the same gated start so behavior is uniform.
+- `keptSoFar` progress stays as is.
+- Clean up the `GainNode` and the captured track in `cleanup()`.
 
-## فایل‌های تغییر
+## Files to change
+- `src/modules/generator-ui/lib/trimVideo.ts` — only this file. No UI or backend changes.
 
-- `src/modules/generator-ui/lib/trimVideo.ts` — بازنویسی تابع `trimVideoLocally` با الگوی keep-segments و حذف کامل `recorder.pause()/resume()`.
-
-## اعتبارسنجی
-
-- بعد از تغییر، با همان دیالوگ Trim و یک ویدئوی نمونه با ۲–۳ بازه‌ی cut پراکنده تست شود؛ خروجی نهایی نباید بخش فریزشده‌ای نزدیک مرز cut داشته باشد و طول نهایی باید با مقدار «New length» نمایش‌داده‌شده در دیالوگ همخوان باشد.
+## Validation
+- Build passes.
+- Manual: open Trim clip dialog, mark 2–3 cuts in different positions, Apply changes, play the resulting clip — no freeze at the start, no freeze at each former cut boundary, audio stays in sync.

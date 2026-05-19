@@ -2,12 +2,15 @@
 //
 // Strategy: build the list of KEEP segments from the user's cut ranges, then
 // play through each keep segment sequentially while a single MediaRecorder
-// runs continuously (never paused). Between segments we pause the <video>
-// element and seek to the next keep-start; the recorder keeps running, but
-// since the video (and therefore the audio source) is paused, only the
-// seek-duration appears as a tiny inter-segment glue frame instead of the
-// large "frozen" chunks that MediaRecorder.pause()/resume() used to produce
-// with canvas.captureStream + MediaElementSource in Chrome.
+// runs continuously (never paused). To avoid the "frozen chunk" artefact at
+// segment boundaries we GATE the inputs to the recorder:
+//   - video: canvas.captureStream(0) + track.requestFrame() called only from
+//     the rAF loop while a segment is actively playing. No frames are pushed
+//     during seeks, so the encoder never duplicates a static frame.
+//   - audio: a GainNode sits between MediaElementSource and the stream
+//     destination. Gain is ramped to 0 during seeks and back to 1 right
+//     before each segment plays, so we never leak audio from paused/seeking
+//     state into the output.
 
 export interface CutRange {
   /** seconds, inclusive start */
@@ -144,6 +147,8 @@ export interface TrimOptions {
   muteAudio?: boolean
 }
 
+type FrameTrack = MediaStreamTrack & { requestFrame?: () => void }
+
 export async function trimVideoLocally(
   srcUrl: string,
   cuts: CutRange[],
@@ -177,14 +182,16 @@ export async function trimVideoLocally(
   ctx.fillStyle = '#000'
   ctx.fillRect(0, 0, width, height)
 
-  const fps = 30
-  const videoStream = canvas.captureStream(fps)
+  // Manual frame mode: we push frames ourselves via requestFrame().
+  const videoStream = canvas.captureStream(0)
+  const frameTrack = videoStream.getVideoTracks()[0] as FrameTrack | undefined
 
   // --- Audio routing -------------------------------------------------------
   const Ctor: typeof AudioContext = (window.AudioContext
     ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)
   let audioCtx: AudioContext | null = null
   let audioDest: MediaStreamAudioDestinationNode | null = null
+  let gainNode: GainNode | null = null
   let outStream: MediaStream = videoStream
   if (muteAudio) {
     try { video.muted = true } catch { /* noop */ }
@@ -194,7 +201,10 @@ export async function trimVideoLocally(
       audioCtx = new Ctor()
       audioDest = audioCtx.createMediaStreamDestination()
       const src = audioCtx.createMediaElementSource(video)
-      src.connect(audioDest)
+      gainNode = audioCtx.createGain()
+      gainNode.gain.value = 0
+      src.connect(gainNode)
+      gainNode.connect(audioDest)
       outStream = new MediaStream([
         ...videoStream.getVideoTracks(),
         ...audioDest.stream.getAudioTracks(),
@@ -202,6 +212,15 @@ export async function trimVideoLocally(
     } catch (err) {
       console.warn('[trimVideoLocally] audio capture unavailable:', err)
       outStream = videoStream
+    }
+  }
+
+  const setAudioGain = (target: number) => {
+    if (!gainNode || !audioCtx) return
+    try {
+      gainNode.gain.setTargetAtTime(target, audioCtx.currentTime, 0.005)
+    } catch {
+      gainNode.gain.value = target
     }
   }
 
@@ -216,6 +235,7 @@ export async function trimVideoLocally(
   const cleanup = async () => {
     cancelAnimationFrame(rafId)
     try { video.pause() } catch { /* noop */ }
+    try { frameTrack?.stop() } catch { /* noop */ }
     video.removeAttribute('src')
     video.load()
     try { await audioCtx?.close() } catch { /* noop */ }
@@ -237,42 +257,53 @@ export async function trimVideoLocally(
     }
   })
 
-  try {
-    recorder.start(250)
-  } catch (e) {
-    await cleanup()
-    throw e as Error
-  }
-
   let keptSoFar = 0
+  let recorderStarted = false
   try {
     for (let i = 0; i < segments.length; i++) {
       const seg = segments[i]
 
-      // Seek to segment start while video is paused. Recorder keeps running
-      // but no fresh frames are drawn — canvas holds the last good frame,
-      // and audio source is silent because the media element is paused.
+      // Seek to segment start while video is paused and audio is muted.
+      // No frames are pushed to the canvas track during this time.
       try { video.pause() } catch { /* noop */ }
+      setAudioGain(0)
       await seekTo(video, Math.min(duration, Math.max(0, seg.start)))
-      // Paint the first frame of this segment immediately so the inter-
-      // segment "glue" frame on the canvas is already the next segment,
-      // not the tail of the previous one.
+      // Pre-paint so the first requestFrame after play() has fresh content.
       drawContain(ctx, video, width, height)
+
+      // Start recorder exactly once, right before the first segment plays.
+      if (!recorderStarted) {
+        recorderStarted = true
+        try {
+          recorder.start(250)
+        } catch (e) {
+          await cleanup()
+          throw e as Error
+        }
+      }
 
       await new Promise<void>((resolve, reject) => {
         const segEnd = seg.end
         const segStart = seg.start
         const segDur = Math.max(0, segEnd - segStart)
         const startedAt = keptSoFar
+        let done = false
+
+        const finish = () => {
+          if (done) return
+          done = true
+          keptSoFar = startedAt + segDur
+          onProgress?.({ ratio: Math.min(1, keptSoFar / totalKept) })
+          resolve()
+        }
 
         const tick = () => {
-          if (stopped) { resolve(); return }
+          if (stopped || done) return
           drawContain(ctx, video, width, height)
+          frameTrack?.requestFrame?.()
           const t = video.currentTime
           if (t >= segEnd - 0.01) {
-            keptSoFar = startedAt + segDur
-            onProgress?.({ ratio: Math.min(1, keptSoFar / totalKept) })
-            resolve()
+            finish()
             return
           }
           const processed = Math.max(0, t - segStart)
@@ -282,15 +313,19 @@ export async function trimVideoLocally(
 
         const onEnded = () => {
           video.removeEventListener('ended', onEnded)
-          keptSoFar = startedAt + segDur
-          resolve()
+          finish()
         }
         video.addEventListener('ended', onEnded)
 
         video.play().then(() => {
+          setAudioGain(1)
           rafId = requestAnimationFrame(tick)
         }).catch((e) => reject(e as Error))
       })
+
+      // Mute audio immediately after the segment finishes so any tail
+      // samples while we pause/seek do not get encoded.
+      setAudioGain(0)
     }
   } finally {
     stopRecorder()
