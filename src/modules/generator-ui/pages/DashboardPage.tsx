@@ -264,28 +264,37 @@ function buildPromptWithUploadedFiles(prompt: string, files: UploadedFile[]) {
   return [prompt || 'Generate from uploaded context', `Attached files:\n${fileContext}`].filter(Boolean).join('\n\n')
 }
 
-function getJobProgressPercent(job: { status: string; progress_percent?: number | null; created_at: string }): number | null {
+// Monotonic per-job cache: progress shown to the user must never go down.
+// Keyed by job id; cleared implicitly when the page unmounts.
+const progressMaxRef: Map<string, number> = new Map()
+
+function getJobProgressPercent(job: { id?: string; status: string; progress_percent?: number | null; created_at: string }): number | null {
   const status = normalizeStatus(job.status)
-  if (status === 'completed') return 100
-  if (status === 'failed' || status === 'cancelled') return null
+  if (status === 'completed') {
+    if (job.id) progressMaxRef.set(job.id, 100)
+    return 100
+  }
+  if (status === 'failed' || status === 'cancelled') {
+    if (job.id) progressMaxRef.delete(job.id)
+    return null
+  }
   const startedAt = Date.parse(job.created_at)
   const elapsed = Number.isFinite(startedAt) ? Date.now() - startedAt : 0
   // Wan 2.7 typically takes ~30-40s of real time per 1s of output. Use 35s/s heuristic, capped to 10s clips.
   const expectedMs = 10 * 35_000
   const ratio = expectedMs > 0 ? elapsed / expectedMs : 0
-  let timeBased = Math.max(status === 'pending' ? 8 : 18, Math.min(95, Math.round(18 + ratio * 77)))
-  // Once we've exceeded the expected window, gently "breathe" between 92-95%
-  // so the bar doesn't look frozen while the provider is still working.
-  if (elapsed > expectedMs) {
-    const phase = (elapsed - expectedMs) / 2_000 // ~2s per cycle
-    timeBased = 93 + Math.round(Math.sin(phase) + 1) // 92..95
-  }
+  // Cap time-based estimate at 92% so we never falsely imply "almost done"
+  // while the provider is still working. Real completion jumps to 100.
+  const timeBased = Math.max(status === 'pending' ? 8 : 18, Math.min(92, Math.round(18 + ratio * 74)))
   const backend = typeof job.progress_percent === 'number'
-    ? Math.max(0, Math.min(100, Math.round(job.progress_percent)))
+    ? Math.max(0, Math.min(92, Math.round(job.progress_percent)))
     : null
-  // Use whichever is higher so the bar always advances (1% per ~4.5s by time)
-  // even if the backend reports a stale value.
-  return backend !== null ? Math.max(backend, timeBased) : timeBased
+  const next = backend !== null ? Math.max(backend, timeBased) : timeBased
+  if (!job.id) return next
+  const prev = progressMaxRef.get(job.id) ?? 0
+  const monotonic = Math.max(prev, next)
+  progressMaxRef.set(job.id, monotonic)
+  return monotonic
 }
 
 function mergeJob(currentJobs: JobDetail[], nextJob: JobDetail) {
