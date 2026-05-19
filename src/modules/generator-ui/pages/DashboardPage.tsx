@@ -396,7 +396,7 @@ export default function DashboardPage() {
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
-  const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15>(5)
+  const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15 | 45>(5)
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '1:1' | '16:9'>(() => {
     if (typeof window === 'undefined') return '16:9'
     try {
