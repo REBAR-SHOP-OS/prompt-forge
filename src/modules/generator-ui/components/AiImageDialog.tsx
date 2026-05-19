@@ -641,6 +641,30 @@ export default function AiImageDialog({
                   <RefreshCw className="mr-2 h-4 w-4" />
                   Regenerate
                 </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={async () => {
+                    if (!imageDataUrl) return
+                    try {
+                      const blob = await dataUrlToBlob(imageDataUrl)
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = `ai-image-${Date.now()}.png`
+                      document.body.appendChild(a)
+                      a.click()
+                      a.remove()
+                      URL.revokeObjectURL(url)
+                    } catch {
+                      window.open(imageDataUrl, '_blank', 'noopener,noreferrer')
+                    }
+                  }}
+                  disabled={!imageDataUrl || isLoading || isSaving}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Download
+                </Button>
               </div>
               <Button onClick={handleUse} disabled={isLoading || isSaving || !userId}>
                 {isSaving ? (
