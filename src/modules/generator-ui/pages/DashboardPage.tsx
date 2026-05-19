@@ -2221,7 +2221,10 @@ export default function DashboardPage() {
   async function waitForLastFrameUrl(prevJobId: string, sceneLabel: string): Promise<string> {
     if (!userId) throw new Error('Sign in required to chain scenes')
     const startedAt = Date.now()
-    const timeoutMs = 10 * 60 * 1000
+    // Match backend's longest dynamic stuck-timeout (45min for 15s clips) so
+    // the UI doesn't give up before the server has had a chance to either
+    // complete the job or fail it with a refund.
+    const timeoutMs = 45 * 60 * 1000
     const intervalMs = 3000
     setVideoColumnMessage(`Waiting for ${sceneLabel} to finish before queuing the next scene…`)
     // eslint-disable-next-line no-constant-condition
