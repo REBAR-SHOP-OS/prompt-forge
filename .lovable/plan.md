@@ -1,27 +1,41 @@
-## هدف
-وقتی روی آیکون Regenerate یک کارت کلیک می‌شود، به جای استفاده‌ی خودکار از پروایدر/مدل اصلی همان کارت، یک منوی انتخاب باز شود تا کاربر پروایدر/مدل دلخواه برای ساخت مجدد را انتخاب کند.
+# رفع مشکل هنگ کردن خروجی نهایی بعد از Apply Changes
 
-## تغییرات (فقط فرانت‌اند، فقط `DashboardPage.tsx`)
+## علت ریشه‌ای
 
-1. **State جدید**
-   - `regenerateTarget: JobDetail | null` — کارتی که منوی انتخاب پروایدر برایش باز است.
+فایل `src/modules/generator-ui/lib/trimVideo.ts` برای حذف بازه‌های Cut از این الگو استفاده می‌کند:
 
-2. **تغییر رفتار دکمه Regenerate (حدود خط 4277)**
-   - به‌جای فراخوانی مستقیم `regenerateCard(video)`، یک `DropdownMenu` (از `@/components/ui/dropdown-menu` که قبلاً در پروژه هست) باز شود.
-   - آیتم‌های منو از `MODEL_CHOICES` ساخته شوند و بر اساس وجود/نبود فریم (i2v vs t2v) فیلتر شوند:
-     - اگر کارت `first_frame_url` یا `last_frame_url` دارد → فقط مدل‌هایی که `supports.includes('i2v')`.
-     - در غیر این صورت → فقط `t2v`.
-   - مدل اصلی همان کارت با نشانه «(Current)» در منو علامت بخورد.
+1. `recorder.pause()` صدا زده می‌شود
+2. ویدئو `seek` می‌شود تا انتهای بازه‌ی cut
+3. روی رویداد `seeked`، `recorder.resume()` انجام می‌شود
 
-3. **تغییر امضای `regenerateCard`**
-   - پارامتر اختیاری `override?: { providerKey: 'wan'|'flow'; requestedModel: string }` اضافه شود.
-   - اگر `override` پاس شد، به‌جای `job.provider_key`/`job.model_key` از آن استفاده کند.
-   - بقیه‌ی منطق (duration، aspect ratio، frames، seededJob، replace in place، delete old) دست‌نخورده بماند.
+مشکل: `MediaRecorder.pause()/resume()` در Chrome وقتی ورودی آن یک `canvas.captureStream()` + `MediaElementAudioSource` است، رفتار قابل‌اعتمادی ندارد. فریم‌های canvas و سمپل‌های صوتی در حین pause همچنان به stream می‌ریزند و بعد از resume، یک قطعه‌ی «فریز» معادل مدت seek (و گاهی معادل خود بازه‌ی cut) داخل خروجی نوشته می‌شود. دقیقاً همان «بعضی جاهاش هنگ می‌کنه»ای که گزارش شد. تشخیص ورود به بازه‌ی cut هم بعد از `drawContain` انجام می‌شود، پس حداقل یک فریم از داخل بازه‌ی cut هم رسماً رکورد می‌شود.
 
-4. **بدون تغییر در بک‌اند**
-   - Edge functions و `jobs-create` نیاز به هیچ تغییری ندارند — همان `providerKey` و `requestedModel` که از قبل می‌پذیرند.
+علاوه بر آن، detect شدن cut «وقتی t داخل بازه است» باعث می‌شود seek دیر شروع شود و در بازه‌های پشت‌سر‌هم نیز یک‌بار pause/resume اضافه رخ دهد.
 
-## نکات
-- اگر کارت i2v باشد و کاربر مدلی انتخاب کند که i2v پشتیبانی نمی‌کند → آیتم اصلاً در منو نشان داده نمی‌شود (نیازی به پیام خطا نیست).
-- برای 45s/scenario هیچ تغییری لازم نیست؛ این فقط روی regenerate تک‌کارتی اثر می‌گذارد.
-- آیکون و tooltip دکمه ثابت بماند؛ فقط رفتار کلیک عوض می‌شود.
+## راهکار
+
+بازنویسی هسته‌ی `trimVideoLocally` بر مبنای «keep segments» به‌جای «cut detection حین play»، بدون استفاده از `recorder.pause/resume`:
+
+1. از روی `normalizeCuts` لیست بازه‌های keep را بسازیم: `[[0,c1.start],[c1.end,c2.start],…,[cN.end,duration]]` (با حذف بازه‌های صفر/منفی).
+2. یک `MediaRecorder` واحد برای کل عملیات روشن می‌شود و **هرگز pause نمی‌شود**.
+3. برای هر keep segment:
+   - ابتدا `video.pause()` و `video.currentTime = seg.start`، منتظر `seeked` می‌مانیم. در این بازه‌ی seek، لوپ rAF/painting **متوقف** است و آخرین فریم سالم روی canvas باقی می‌ماند. چون این فاصله کوتاه (~50–200ms) و بدون قطع رکوردر است، چیزی به خروجی اضافه نمی‌شود که شبیه فریز بزرگ دیده شود (در عمل به‌صورت یک crossfade خیلی کوتاه بین دو سگمنت دیده می‌شود).
+   - برای حذف کامل همان میکرو-فریز هم، درست قبل از play کردن سگمنت بعدی، یک‌بار `drawContain` با فریم seek‌شده اجرا می‌شود تا canvas دقیقاً اولین فریم سگمنت بعدی را داشته باشد.
+   - سپس `video.play()` و rAF فعال می‌شود؛ در هر tick بررسی می‌کند اگر `video.currentTime >= seg.end - epsilon` بود، rAF را متوقف و به سگمنت بعدی می‌رود.
+4. بعد از آخرین سگمنت، `recorder.stop()` و Blob نهایی ساخته می‌شود.
+5. مسیر صدا بدون تغییر باقی می‌ماند (MediaElementSource → MediaStreamDestination). چون recorder pause نمی‌شود و در فاصله‌ی seek هم ویدئو pause است (پس audio source هم خاموش است)، gap صدا متناظر با gap بصری می‌شود و sync حفظ می‌شود.
+6. اگر `cuts.length === 0` (فقط Mute audio)، مسیر فعلی حفظ می‌شود؛ یک پاس play کامل بدون seek.
+
+## ملاحظات
+
+- `normalizeCuts`, `totalKeptDuration`, امضای `TrimResult` و رابط `trimVideoLocally(srcUrl, cuts, options)` بدون تغییر می‌مانند، پس `ClipTrimmerDialog.tsx` نیازی به تغییر ندارد.
+- `onProgress` بر اساس مجموع زمان keep شده تا الان محاسبه می‌شود تا progress bar یکنواخت پیش برود.
+- روی Safari که MediaRecorder محدودیت‌های بیشتری دارد، نبودن pause/resume باعث پایداری بهتر خروجی هم می‌شود.
+
+## فایل‌های تغییر
+
+- `src/modules/generator-ui/lib/trimVideo.ts` — بازنویسی تابع `trimVideoLocally` با الگوی keep-segments و حذف کامل `recorder.pause()/resume()`.
+
+## اعتبارسنجی
+
+- بعد از تغییر، با همان دیالوگ Trim و یک ویدئوی نمونه با ۲–۳ بازه‌ی cut پراکنده تست شود؛ خروجی نهایی نباید بخش فریزشده‌ای نزدیک مرز cut داشته باشد و طول نهایی باید با مقدار «New length» نمایش‌داده‌شده در دیالوگ همخوان باشد.

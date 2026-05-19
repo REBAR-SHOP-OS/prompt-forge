@@ -1,9 +1,13 @@
 // In-browser video trimming via canvas + MediaRecorder.
 //
-// Plays the source video into a hidden <video>, paints frames onto a canvas,
-// and records the canvas + audio. When playback enters a "cut" range, the
-// recorder is paused, the video seeks past the range, and recording resumes.
-// Result: a single continuous clip with the marked ranges removed.
+// Strategy: build the list of KEEP segments from the user's cut ranges, then
+// play through each keep segment sequentially while a single MediaRecorder
+// runs continuously (never paused). Between segments we pause the <video>
+// element and seek to the next keep-start; the recorder keeps running, but
+// since the video (and therefore the audio source) is paused, only the
+// seek-duration appears as a tiny inter-segment glue frame instead of the
+// large "frozen" chunks that MediaRecorder.pause()/resume() used to produce
+// with canvas.captureStream + MediaElementSource in Chrome.
 
 export interface CutRange {
   /** seconds, inclusive start */
@@ -13,7 +17,7 @@ export interface CutRange {
 }
 
 export interface TrimProgress {
-  /** 0..1 — based on source video currentTime / duration */
+  /** 0..1 — based on kept-time processed so far */
   ratio: number
 }
 
@@ -74,6 +78,18 @@ export function totalKeptDuration(cuts: CutRange[], duration: number): number {
   return Math.max(0, duration - removed)
 }
 
+/** Build [start,end] keep segments from normalized cuts. */
+function keepSegments(cuts: CutRange[], duration: number): Array<{ start: number; end: number }> {
+  const segs: Array<{ start: number; end: number }> = []
+  let cursor = 0
+  for (const c of cuts) {
+    if (c.start > cursor + 0.02) segs.push({ start: cursor, end: c.start })
+    cursor = Math.max(cursor, c.end)
+  }
+  if (duration > cursor + 0.02) segs.push({ start: cursor, end: duration })
+  return segs
+}
+
 function drawContain(
   ctx: CanvasRenderingContext2D,
   video: HTMLVideoElement,
@@ -106,6 +122,22 @@ async function loadVideo(url: string): Promise<HTMLVideoElement> {
   })
 }
 
+function seekTo(video: HTMLVideoElement, t: number): Promise<void> {
+  return new Promise((resolve) => {
+    const onSeeked = () => {
+      video.removeEventListener('seeked', onSeeked)
+      resolve()
+    }
+    video.addEventListener('seeked', onSeeked)
+    try {
+      video.currentTime = t
+    } catch {
+      video.removeEventListener('seeked', onSeeked)
+      resolve()
+    }
+  })
+}
+
 export interface TrimOptions {
   onProgress?: (p: TrimProgress) => void
   /** When true, omit the audio track from the output. */
@@ -127,6 +159,12 @@ export async function trimVideoLocally(
   if (duration <= 0) throw new Error('Invalid video duration')
 
   const norm = normalizeCuts(cuts, duration)
+  const segments = norm.length === 0
+    ? [{ start: 0, end: duration }]
+    : keepSegments(norm, duration)
+  if (segments.length === 0) throw new Error('Nothing to keep after applying cuts.')
+
+  const totalKept = segments.reduce((s, x) => s + (x.end - x.start), 0)
 
   const width = Math.max(320, Math.floor(video.videoWidth || 720))
   const height = Math.max(320, Math.floor(video.videoHeight || 1280))
@@ -149,7 +187,6 @@ export async function trimVideoLocally(
   let audioDest: MediaStreamAudioDestinationNode | null = null
   let outStream: MediaStream = videoStream
   if (muteAudio) {
-    // Skip audio capture entirely — output will have no audio track.
     try { video.muted = true } catch { /* noop */ }
     outStream = videoStream
   } else {
@@ -158,8 +195,6 @@ export async function trimVideoLocally(
       audioDest = audioCtx.createMediaStreamDestination()
       const src = audioCtx.createMediaElementSource(video)
       src.connect(audioDest)
-      // Do NOT connect to audioCtx.destination — keeps the page silent during
-      // background recording.
       outStream = new MediaStream([
         ...videoStream.getVideoTracks(),
         ...audioDest.stream.getAudioTracks(),
@@ -177,7 +212,6 @@ export async function trimVideoLocally(
 
   let stopped = false
   let rafId = 0
-  let seeking = false
 
   const cleanup = async () => {
     cancelAnimationFrame(rafId)
@@ -187,7 +221,13 @@ export async function trimVideoLocally(
     try { await audioCtx?.close() } catch { /* noop */ }
   }
 
-  const finalBlob = await new Promise<Blob>((resolve, reject) => {
+  const stopRecorder = () => {
+    if (stopped) return
+    stopped = true
+    try { recorder.stop() } catch { /* noop */ }
+  }
+
+  const recordedBlob = new Promise<Blob>((resolve, reject) => {
     recorder.onstop = () => {
       const blob = new Blob(chunks, { type: mimeType })
       cleanup().finally(() => resolve(blob))
@@ -195,72 +235,72 @@ export async function trimVideoLocally(
     recorder.onerror = (ev) => {
       cleanup().finally(() => reject((ev as unknown as { error?: Error }).error ?? new Error('Recorder error')))
     }
-
-    const stop = () => {
-      if (stopped) return
-      stopped = true
-      try { recorder.stop() } catch { /* noop */ }
-    }
-
-    const tick = () => {
-      if (stopped) return
-      drawContain(ctx, video, width, height)
-
-      const t = video.currentTime
-      const next = norm.find((c) => t >= c.start - 0.02 && t < c.end)
-      if (next && !seeking) {
-        seeking = true
-        try { recorder.pause() } catch { /* noop */ }
-        const target = Math.min(duration, next.end + 0.001)
-        const onSeeked = () => {
-          video.removeEventListener('seeked', onSeeked)
-          seeking = false
-          try { recorder.resume() } catch { /* noop */ }
-        }
-        video.addEventListener('seeked', onSeeked)
-        try { video.currentTime = target } catch { /* noop */ }
-      }
-
-      onProgress?.({ ratio: Math.min(1, t / duration) })
-      rafId = requestAnimationFrame(tick)
-    }
-
-    video.onended = () => stop()
-
-    // Start: jump past a leading cut if present.
-    const leading = norm.find((c) => c.start <= 0.05)
-    const startAt = leading ? Math.min(duration, leading.end + 0.001) : 0
-
-    const begin = () => {
-      try {
-        recorder.start(250)
-      } catch (e) {
-        reject(e as Error)
-        return
-      }
-      video.play().then(() => {
-        rafId = requestAnimationFrame(tick)
-      }).catch((e) => {
-        cleanup().finally(() => reject(e as Error))
-      })
-    }
-
-    if (startAt > 0) {
-      const onSeeked = () => {
-        video.removeEventListener('seeked', onSeeked)
-        begin()
-      }
-      video.addEventListener('seeked', onSeeked)
-      try { video.currentTime = startAt } catch { begin() }
-    } else {
-      begin()
-    }
   })
 
+  try {
+    recorder.start(250)
+  } catch (e) {
+    await cleanup()
+    throw e as Error
+  }
+
+  let keptSoFar = 0
+  try {
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i]
+
+      // Seek to segment start while video is paused. Recorder keeps running
+      // but no fresh frames are drawn — canvas holds the last good frame,
+      // and audio source is silent because the media element is paused.
+      try { video.pause() } catch { /* noop */ }
+      await seekTo(video, Math.min(duration, Math.max(0, seg.start)))
+      // Paint the first frame of this segment immediately so the inter-
+      // segment "glue" frame on the canvas is already the next segment,
+      // not the tail of the previous one.
+      drawContain(ctx, video, width, height)
+
+      await new Promise<void>((resolve, reject) => {
+        const segEnd = seg.end
+        const segStart = seg.start
+        const segDur = Math.max(0, segEnd - segStart)
+        const startedAt = keptSoFar
+
+        const tick = () => {
+          if (stopped) { resolve(); return }
+          drawContain(ctx, video, width, height)
+          const t = video.currentTime
+          if (t >= segEnd - 0.01) {
+            keptSoFar = startedAt + segDur
+            onProgress?.({ ratio: Math.min(1, keptSoFar / totalKept) })
+            resolve()
+            return
+          }
+          const processed = Math.max(0, t - segStart)
+          onProgress?.({ ratio: Math.min(1, (startedAt + processed) / totalKept) })
+          rafId = requestAnimationFrame(tick)
+        }
+
+        const onEnded = () => {
+          video.removeEventListener('ended', onEnded)
+          keptSoFar = startedAt + segDur
+          resolve()
+        }
+        video.addEventListener('ended', onEnded)
+
+        video.play().then(() => {
+          rafId = requestAnimationFrame(tick)
+        }).catch((e) => reject(e as Error))
+      })
+    }
+  } finally {
+    stopRecorder()
+  }
+
+  const finalBlob = await recordedBlob
   return {
     blob: finalBlob,
     mimeType,
     extension: mimeTypeToExtension(mimeType),
-    duration: totalKeptDuration(norm, duration),
+    duration: totalKept,
   }
 }
