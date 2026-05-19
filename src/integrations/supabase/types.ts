@@ -484,6 +484,15 @@ export type Database = {
         Args: { _image_id: string; _user_id: string }
         Returns: string
       }
+      generator_fail_job: {
+        Args: {
+          _job_id: string
+          _reason?: string
+          _refund?: boolean
+          _user_id: string
+        }
+        Returns: undefined
+      }
       generator_mark_job_processing: {
         Args: { _job_id: string; _provider_job_id: string; _user_id: string }
         Returns: undefined

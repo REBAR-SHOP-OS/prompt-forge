@@ -541,22 +541,21 @@ function estimateVeoProgressFromState(state: VeoState): number {
 
 async function startVeoExtension(
   state: VeoState,
-  videoBytes: Uint8Array,
+  videoUri: string,
   apiKey: string,
 ): Promise<string> {
+  // Gemini Developer API for Veo 3.1 video extension accepts the previously
+  // generated clip *by URI only* (not inline bytes — that returns 400
+  // "`inlineData` isn't supported by this model"). The URI is the same
+  // generativelanguage Files resource we got back from phase 1.
   const body = {
     instances: [{
       prompt: state.prompt,
-      video: {
-        inlineData: {
-          mimeType: "video/mp4",
-          data: bytesToBase64(videoBytes),
-        },
-      },
+      video: { uri: videoUri },
     }],
     parameters: {
       numberOfVideos: 1,
-      resolution: "720p",
+      aspectRatio: state.aspectRatio,
     },
   };
 
@@ -716,16 +715,7 @@ async function pollVeo(
   // up the extension operation even after an edge restart.
   if (hasExtension && !state.extensionStarted) {
     try {
-      const downloadUrl = uri.includes("?")
-        ? `${uri}&key=${encodeURIComponent(apiKey)}`
-        : `${uri}?key=${encodeURIComponent(apiKey)}`;
-      const dl = await fetch(downloadUrl);
-      if (!dl.ok) {
-        logError("veo phase1 download failed", { status: dl.status });
-        throw new Error(`Veo download ${dl.status}`);
-      }
-      const bytes = new Uint8Array(await dl.arrayBuffer());
-      const newOp = await startVeoExtension(state, bytes, apiKey);
+      const newOp = await startVeoExtension(state, uri, apiKey);
       const nextState: VeoState = {
         ...state,
         currentOp: newOp,
