@@ -115,7 +115,8 @@ export const jobOrchestratorGateway = {
           }
           let detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient);
           if (!detail) {
-            return errorResponse("NOT_FOUND", "Job not found", 404, ctx.requestId);
+            await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt, errorCode: "NOT_FOUND" });
+            return jsonResponse({ error: { code: "NOT_FOUND", message: "Job not found" }, missing: true, requestId: ctx.requestId });
           }
 
           let progressPercent: number | null = null;
