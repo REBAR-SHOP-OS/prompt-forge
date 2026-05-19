@@ -2412,10 +2412,15 @@ export default function DashboardPage() {
     const ratio = getRatioFor(job)
     const firstFrameUrl = job.first_frame_url ?? undefined
     const lastFrameUrl = job.last_frame_url ?? undefined
-    // JobSummary doesn't carry requested_duration, so default to a safe 5s
-    // single-call render. Long-form (45s) regeneration would need scenario
-    // context that isn't bound to a single card.
-    const durationSeconds: 5 | 10 | 15 = 5
+    // Prefer the original card's duration when known; otherwise fall back to 5s.
+    const rawDur = job.video?.duration ?? null
+    const durationSeconds: 5 | 10 | 15 = (() => {
+      if (rawDur == null) return 5
+      const r = Math.round(rawDur)
+      if (r >= 13) return 15
+      if (r >= 8) return 10
+      return 5
+    })()
 
     setRegeneratingIds((current) => {
       const next = new Set(current)
@@ -2425,6 +2430,7 @@ export default function DashboardPage() {
     setComposerError(null)
     setVideoColumnMessage(null)
 
+    let newJobId: string | null = null
     try {
       const createdJob = await jobOrchestratorGateway.createJob({
         providerKey,
@@ -2439,10 +2445,32 @@ export default function DashboardPage() {
         firstFrameUrl,
         lastFrameUrl,
       })
+      newJobId = seededJob.id
       rememberClipRatio(seededJob.id, ratio)
-      setPreviewVideoId(seededJob.id)
-      setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
+      // Replace the old card in place; fall back to merge if it's gone.
+      setGeneratedVideos((curr) => {
+        const idx = curr.findIndex((j) => j.id === job.id)
+        if (idx < 0) return mergeJob(curr, seededJob)
+        const next = [...curr]
+        next.splice(idx, 1, seededJob)
+        return next
+      })
+      setPreviewVideoId((cur) => (cur === job.id ? seededJob.id : cur))
+      // Move the regenerating spinner from the old id to the new id so the
+      // same slot keeps showing a loading state until polling resolves.
+      setRegeneratingIds((current) => {
+        const next = new Set(current)
+        next.delete(job.id)
+        next.add(seededJob.id)
+        return next
+      })
       markActiveJob(seededJob.id)
+      // Fire-and-forget cleanup of the old job in the backend.
+      jobOrchestratorGateway.deleteJob(job.id).catch((err) => {
+        // Non-blocking; surface as a soft message.
+        const msg = err instanceof Error ? err.message : 'Old card cleanup failed'
+        setVideoColumnMessage(msg)
+      })
     } catch (error) {
       const message = error instanceof ApiError
         ? `${error.code}: ${error.message}`
@@ -2450,13 +2478,15 @@ export default function DashboardPage() {
       setVideoColumnMessage(message)
     } finally {
       setRegeneratingIds((current) => {
-        if (!current.has(job.id)) return current
+        const targetId = newJobId ?? job.id
+        if (!current.has(targetId)) return current
         const next = new Set(current)
-        next.delete(job.id)
+        next.delete(targetId)
         return next
       })
     }
   }
+
 
   function formatTimeMS(s: number): string {
     if (!Number.isFinite(s) || s < 0) s = 0
