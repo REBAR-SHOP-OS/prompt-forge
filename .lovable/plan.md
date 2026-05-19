@@ -1,32 +1,43 @@
-# Add download button to AI image dialog
+# Add 45-second duration option
 
-The user wants a download icon in the AI image generation dialog footer — in the empty space circled in red, between **Regenerate** and **Use this image** — so they can save the generated image locally before (or instead of) using it in the project.
+## Goal
 
-## Scope
+اضافه کردن دکمه‌ی **45s** کنار 5s/10s/15s در نوار تنظیمات کلیپ. چون مدل ویدیو (Veo) در هر کلیپ حداکثر 15s را پشتیبانی می‌کند، انتخاب 45s باعث می‌شود **سه جاب 15 ثانیه‌ای پشت‌سرهم** در ستون Pending ایجاد شوند (با همان prompt و همان frame seedها). در نهایت در Final Film این سه کلیپ پشت سر هم پخش/مرج می‌شوند و نتیجه عملاً 45 ثانیه‌ای می‌شود.
 
-UI-only change in `src/modules/generator-ui/components/AiImageDialog.tsx`. No backend, storage, or business-logic changes.
+## Scope (UI + frontend orchestration only)
+
+تنها فایل `src/modules/generator-ui/pages/DashboardPage.tsx`. هیچ تغییری در backend, contract types, schema، یا provider service انجام نمی‌شود. (نوع `durationSeconds` در API همچنان `5|10|15` می‌ماند — برای 45s سه فراخوانی جداگانه با مقدار 15 ارسال می‌شود.)
 
 ## Changes
 
-**`src/modules/generator-ui/components/AiImageDialog.tsx`**
+1. **State type** (line 399):
+   ```ts
+   const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15 | 45>(5)
+   ```
 
-1. Import `Download` from `lucide-react` (alongside the existing icons).
-2. Add a `handleDownload` function that:
-   - Returns early if `!imageDataUrl`.
-   - Converts the current `imageDataUrl` (data URL) to a `Blob` via the existing `dataUrlToBlob` helper.
-   - Creates an `ObjectURL`, triggers an `<a download="ai-image-{timestamp}.png">` click, then revokes the URL.
-   - Wrapped in try/catch; on failure falls back to `window.open(imageDataUrl, '_blank')`.
-3. Insert a new ghost `<Button>` with the `Download` icon + label "Download" in the footer (lines 624-658), placed between the **Regenerate** button and the **Use this image** button. Disabled when `!imageDataUrl || isLoading || isSaving`.
-4. Keep existing button styling/sizing consistent (`variant="ghost"`, `size="sm"`, `h-4 w-4 mr-2` icon).
+2. **Duration radio group** (line 4236-4252):
+   - تبدیل آرایه به `[5, 10, 15, 45] as const`.
+   - دکمه‌ی 45s با همان استایل و رفتار، لیبل `45s`.
+
+3. **Render submit handler** (لاین‌های ~2022–2095، همان بلوک `try { … createdJob = … }`):
+   - اگر `durationSeconds === 45`، یک حلقه‌ی 3 باره اجرا کن:
+     - برای هر iteration یک `createJob` با `durationSeconds: 15` و **همان** `prompt` + همان `firstFrameUrl`/`lastFrameUrl` ارسال کن.
+     - هر job برگشتی را با `buildSeededJob` و `rememberClipRatio` و قفل‌کردن ratio و `setPendingJobs` (همان منطق فعلی) به ستون Pending اضافه کن.
+   - در غیر این صورت همان مسیر فعلی (یک‌بار createJob با `durationSeconds`) اجرا شود.
+   - اگر یکی از 3 فراخوانی شکست خورد، خطا را در `composerError` نشان بده و از حلقه خارج شو (jobهای موفق قبلی در Pending باقی می‌مانند).
+
+4. **Hint/toast کوچک** زیر دکمه‌ها لازم نیست؛ تنها در `composerError` در صورت نیاز پیام: "45s renders as 3 × 15s clips".
 
 ## Out of scope
 
-- No changes to Pending/Library/History logic.
-- No changes to the live-preview `+` icon work from prior turns.
-- No new dependencies.
+- بدون تغییر در contract/zod schema/provider service.
+- بدون تغییر در منطق Final Film merge (همان pipeline فعلی sequential merge کلیپ‌های Ready را پشتیبانی می‌کند).
+- بدون تغییر در آیکون Live preview یا Download dialog.
+- بدون تغییر در `still_duration_seconds` تصاویر آپلودی (آن همچنان 1–15s).
 
 ## Verification
 
-- Open the AI image dialog, generate an image, click **Download** → browser saves a `.png`.
-- Button is hidden/disabled when no image is generated yet.
-- Regenerate and Use this image still work unchanged.
+- انتخاب 45s → submit → سه کارت در ستون Pending ظاهر می‌شوند، هر کدام 15s.
+- 5s/10s/15s دقیقاً مثل قبل کار می‌کنند (یک کارت).
+- Live preview ستون Pending هر سه را پشت سر هم پخش می‌کند.
+- Ratio lock پس از کلیپ اول روی همان اعمال می‌شود (مثل قبل).
