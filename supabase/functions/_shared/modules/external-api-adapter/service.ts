@@ -750,7 +750,7 @@ async function pollVeo(
         thumbnailUrl: null,
         aspectRatio: null,
         duration: null,
-        reason: `Veo extension failed: ${(e as Error).message}`,
+        reason: `Video provider could not extend clip: ${(e as Error).message}`,
         progressPercent: null,
       };
     }
