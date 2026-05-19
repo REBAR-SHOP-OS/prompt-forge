@@ -1,17 +1,31 @@
 // scenario-write edge function: turns an idea + target duration into a single
 // cohesive English video scenario/treatment via Lovable AI Gateway.
+// For 45s, returns three sequential 15s scene prompts.
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 
-const WORD_CAPS: Record<number, number> = { 5: 40, 10: 70, 15: 100, 45: 220 };
+const WORD_CAPS: Record<number, number> = { 5: 40, 10: 70, 15: 100, 45: 270 };
 const BEAT_GUIDE: Record<number, string> = {
   5: "5s = 1 beat (one decisive shot)",
   10: "10s = 2 beats",
   15: "15s = 3 beats",
-  45: "45s = 5-6 beats spread across ~3 shots",
+  45: "45s = three sequential 15s scenes",
 };
 
+const SCENE_DELIM = "===SCENE===";
+
 function buildSystemPrompt(duration: number): string {
+  if (duration === 45) {
+    return [
+      "You are a professional short-form video scenario writer.",
+      "Given the user's idea, write a CONTINUOUS narrative scenario in ENGLISH for a 45-second cinematic video,",
+      "structured as THREE sequential 15-second scenes that flow into each other.",
+      `Output EXACTLY three scene blocks separated by the literal delimiter "${SCENE_DELIM}" on its own line.`,
+      "Do not number the scenes, do not add headings or labels, no markdown, no preamble, no quotes.",
+      "Each scene must be 70-90 words and self-contained as a video prompt (include subject, action, camera move, lighting),",
+      "while clearly continuing the story from the previous scene.",
+    ].join(" ");
+  }
   const cap = WORD_CAPS[duration];
   const beat = BEAT_GUIDE[duration];
   return [
@@ -23,6 +37,47 @@ function buildSystemPrompt(duration: number): string {
     "Output prose only — no markdown headings, no bullet lists, no preamble, no quotes.",
     `Keep it under ${cap} words.`,
   ].join(" ");
+}
+
+async function callGateway(apiKey: string, duration: number, idea: string): Promise<Response> {
+  return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "google/gemini-2.5-flash",
+      messages: [
+        { role: "system", content: buildSystemPrompt(duration) },
+        { role: "user", content: `Idea: ${idea}` },
+      ],
+    }),
+  });
+}
+
+function stripQuotes(s: string): string {
+  return s.replace(/^["'`]+|["'`]+$/g, "").trim();
+}
+
+function parseScenes(raw: string, duration: number): string[] {
+  const cleaned = stripQuotes(raw);
+  if (duration !== 45) return [cleaned];
+
+  const parts = cleaned
+    .split(/\r?\n?\s*===SCENE===\s*\r?\n?/i)
+    .map((s) => stripQuotes(s))
+    .filter((s) => s.length > 0);
+  if (parts.length === 3) return parts;
+
+  // Fallback: try splitting on blank-line paragraphs.
+  const paragraphs = cleaned
+    .split(/\n\s*\n+/)
+    .map((s) => stripQuotes(s))
+    .filter((s) => s.length > 0);
+  if (paragraphs.length === 3) return paragraphs;
+
+  return []; // signal "needs retry"
 }
 
 Deno.serve(async (req) => {
@@ -69,20 +124,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: buildSystemPrompt(duration) },
-          { role: "user", content: `Idea: ${idea}` },
-        ],
-      }),
-    });
+    let resp = await callGateway(apiKey, duration, idea);
 
     if (resp.status === 429) {
       return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
@@ -105,18 +147,44 @@ Deno.serve(async (req) => {
       });
     }
 
-    const data = await resp.json();
-    const scenario: string = (data?.choices?.[0]?.message?.content ?? "").trim();
-    if (!scenario) {
+    let data = await resp.json();
+    let raw: string = (data?.choices?.[0]?.message?.content ?? "").trim();
+    let scenes = parseScenes(raw, duration);
+
+    // One retry for 45s if we didn't get exactly three scenes.
+    if (duration === 45 && scenes.length === 0) {
+      resp = await callGateway(apiKey, duration, idea);
+      if (resp.ok) {
+        data = await resp.json();
+        raw = (data?.choices?.[0]?.message?.content ?? "").trim();
+        scenes = parseScenes(raw, duration);
+      }
+    }
+
+    if (scenes.length === 0) {
+      // Final fallback: return the raw text as a single block so the UI still has something.
+      if (duration === 45) {
+        const fallback = stripQuotes(raw);
+        if (!fallback) {
+          return new Response(JSON.stringify({ error: "Empty AI response" }), {
+            status: 502,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        return new Response(
+          JSON.stringify({ scenario: fallback, scenes: [fallback], warning: "Could not split into 3 scenes" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
       return new Response(JSON.stringify({ error: "Empty AI response" }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const cleaned = scenario.replace(/^["'`]+|["'`]+$/g, "").trim();
+    const scenario = scenes.join("\n\n");
 
-    return new Response(JSON.stringify({ scenario: cleaned }), {
+    return new Response(JSON.stringify({ scenario, scenes }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
