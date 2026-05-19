@@ -1505,12 +1505,31 @@ export default function DashboardPage() {
         ])
         if (cancelled) return
 
+        const protectedJobIds = new Set(activeJobIds)
+        for (const id of readStoredIdSet(activeJobIdsKey)) protectedJobIds.add(id)
+        const storedProjectSourceJobs = readStoredRecord<JobDetail[]>(projectSourceJobsKey)
+        for (const clips of Object.values({ ...storedProjectSourceJobs, ...projectSourceJobs })) {
+          if (Array.isArray(clips)) {
+            for (const clip of clips) protectedJobIds.add(clip.id)
+          }
+        }
+        for (const id of Object.keys(readStoredRecord<JobDetail>(librarySavedJobsKey))) protectedJobIds.add(id)
+
+        const protectedImageIds = new Set(activeImageIds)
+        for (const id of readStoredIdSet(activeImageIdsKey)) protectedImageIds.add(id)
+        const storedProjectSourceImages = readStoredRecord<UserImageItem[]>(projectSourceImagesKey)
+        for (const images of Object.values({ ...storedProjectSourceImages, ...projectSourceImages })) {
+          if (Array.isArray(images)) {
+            for (const image of images) protectedImageIds.add(image.id)
+          }
+        }
+
         const orphanJobIds = summaries
           .map((s) => s.id)
-          .filter((id) => !activeJobIds.has(id))
+          .filter((id) => !protectedJobIds.has(id))
         const orphanImageIds = ((imgRowsRes.data ?? []) as { id: string }[])
           .map((r) => r.id)
-          .filter((id) => !activeImageIds.has(id))
+          .filter((id) => !protectedImageIds.has(id))
 
         // Silent permanent cleanup — never surfaces in the UI.
         await Promise.allSettled([
