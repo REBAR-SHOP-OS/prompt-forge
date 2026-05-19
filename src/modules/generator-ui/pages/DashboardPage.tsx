@@ -2458,7 +2458,10 @@ export default function DashboardPage() {
    * frames. Unlike editAndReuseJob, this does not touch the composer — it
    * creates a brand-new Job immediately and adds it to Pending.
    */
-  async function regenerateCard(job: JobDetail) {
+  async function regenerateCard(
+    job: JobDetail,
+    override?: { providerKey: 'wan' | 'flow'; requestedModel: string },
+  ) {
     if (regeneratingIds.has(job.id)) return
 
     const prompt = (job.input_prompt ?? '').trim()
@@ -2467,10 +2470,13 @@ export default function DashboardPage() {
       return
     }
 
-    // Resolve provider/model from the card itself, falling back to the
-    // currently selected model if the card row doesn't carry one.
-    const providerKey = (job.provider_key as 'wan' | 'flow' | null) ?? selectedModel?.providerKey
-    const requestedModel = job.model_key ?? selectedModel?.model
+    // Allow caller to override provider/model (e.g. user picked a different
+    // provider from the Regenerate menu). Otherwise resolve from the card,
+    // falling back to currently selected model.
+    const providerKey = override?.providerKey
+      ?? (job.provider_key as 'wan' | 'flow' | null)
+      ?? selectedModel?.providerKey
+    const requestedModel = override?.requestedModel ?? job.model_key ?? selectedModel?.model
     if (!providerKey) {
       setVideoColumnMessage('Cannot regenerate: provider missing on this card.')
       return
@@ -4268,23 +4274,60 @@ export default function DashboardPage() {
                         {!video.id.startsWith('merged-') ? (
                           (() => {
                             const isRegenerating = regeneratingIds.has(video.id)
+                            const hasFrame = Boolean(video.first_frame_url || video.last_frame_url)
+                            const mode: 't2v' | 'i2v' = hasFrame ? 'i2v' : 't2v'
+                            const choices = MODEL_CHOICES.filter((c) => c.supports.includes(mode))
+                            const currentModel = video.model_key
                             return (
-                              <button
-                                type="button"
-                                disabled={isRegenerating}
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  regenerateCard(video)
-                                }}
-                                aria-label="Regenerate this card"
-                                title="Regenerate this card"
-                                className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                <RefreshCw
-                                  className={`h-3.5 w-3.5 ${isRegenerating ? 'animate-spin' : ''}`}
-                                  aria-hidden="true"
-                                />
-                              </button>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <button
+                                    type="button"
+                                    disabled={isRegenerating}
+                                    onClick={(event) => event.stopPropagation()}
+                                    aria-label="Regenerate this card"
+                                    title="Regenerate this card — choose provider"
+                                    className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    <RefreshCw
+                                      className={`h-3.5 w-3.5 ${isRegenerating ? 'animate-spin' : ''}`}
+                                      aria-hidden="true"
+                                    />
+                                  </button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-64">
+                                  <DropdownMenuLabel>Regenerate with…</DropdownMenuLabel>
+                                  <DropdownMenuSeparator />
+                                  {choices.length === 0 ? (
+                                    <DropdownMenuItem disabled>No compatible provider</DropdownMenuItem>
+                                  ) : (
+                                    choices.map((choice) => {
+                                      const isCurrent = choice.model === currentModel
+                                      return (
+                                        <DropdownMenuItem
+                                          key={choice.id}
+                                          onClick={(event) => {
+                                            event.stopPropagation()
+                                            regenerateCard(video, {
+                                              providerKey: choice.providerKey,
+                                              requestedModel: choice.model,
+                                            })
+                                          }}
+                                          className="flex flex-col items-start gap-0.5"
+                                        >
+                                          <span className="text-sm">
+                                            {choice.label}
+                                            {isCurrent ? (
+                                              <span className="ml-1 text-[10px] text-emerald-300">(Current)</span>
+                                            ) : null}
+                                          </span>
+                                          <span className="text-[11px] text-zinc-400">{choice.description}</span>
+                                        </DropdownMenuItem>
+                                      )
+                                    })
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             )
                           })()
                         ) : null}
