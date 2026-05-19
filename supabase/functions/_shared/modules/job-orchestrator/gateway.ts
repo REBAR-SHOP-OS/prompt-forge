@@ -70,14 +70,11 @@ function isAllowedFrameUrl(url: string, userId: string): boolean {
 }
 
 // Estimate render progress when the provider hasn't reported one yet.
-// Uses status + created_at + requested clip length so the UI never shows a
-// static "Rendering" with no numeric feedback. Bounded to [18, 92] while
-// in flight — 100% is reserved for actual completion so the UI never
-// falsely implies "almost done".
+// Capped conservatively so the UI never falsely implies "almost done".
+// Real provider progress (when present) is honored as-is up to 99 — only
+// actual completion returns 100.
 function expectedRenderMsForDuration(durationSeconds: number | null | undefined): number {
-  // Wan 2.7 i2v: roughly 30s of wall-clock per 1s of output, with overhead.
   const dur = durationSeconds && durationSeconds > 0 ? durationSeconds : 5;
-  // 5s ≈ 2.5min, 10s ≈ 5min, 15s ≈ 7.5min. Keep generous to avoid premature 92.
   return Math.max(120_000, dur * 30_000);
 }
 
@@ -90,10 +87,11 @@ function estimateProgressFromJob(
   if (status === "failed" || status === "cancelled") return null;
   const startedAt = createdAt ? Date.parse(createdAt) : NaN;
   const expectedMs = expectedRenderMsForDuration(durationSeconds);
-  if (!Number.isFinite(startedAt)) return status === "pending" ? 8 : 25;
+  if (!Number.isFinite(startedAt)) return status === "pending" ? 8 : 20;
   const elapsed = Date.now() - startedAt;
   const ratio = elapsed / expectedMs;
-  return Math.max(status === "pending" ? 8 : 18, Math.min(92, Math.round(18 + ratio * 74)));
+  // Cap fallback estimate at 60 — anything higher must come from real provider data.
+  return Math.max(status === "pending" ? 8 : 15, Math.min(60, Math.round(15 + ratio * 45)));
 }
 
 // Dynamic hard-timeout: longer clips legitimately take longer; we still
