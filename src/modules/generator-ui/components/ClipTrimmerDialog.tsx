@@ -61,6 +61,7 @@ export default function ClipTrimmerDialog({
       setError(null)
       setCurrentTime(0)
       setMuteAudio(false)
+      setProgress(0)
     }
   }, [open])
 
