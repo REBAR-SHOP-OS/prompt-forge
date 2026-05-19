@@ -541,22 +541,21 @@ function estimateVeoProgressFromState(state: VeoState): number {
 
 async function startVeoExtension(
   state: VeoState,
-  videoBytes: Uint8Array,
+  videoUri: string,
   apiKey: string,
 ): Promise<string> {
+  // Gemini Developer API for Veo 3.1 video extension accepts the previously
+  // generated clip *by URI only* (not inline bytes — that returns 400
+  // "`inlineData` isn't supported by this model"). The URI is the same
+  // generativelanguage Files resource we got back from phase 1.
   const body = {
     instances: [{
       prompt: state.prompt,
-      video: {
-        inlineData: {
-          mimeType: "video/mp4",
-          data: bytesToBase64(videoBytes),
-        },
-      },
+      video: { uri: videoUri },
     }],
     parameters: {
       numberOfVideos: 1,
-      resolution: "720p",
+      aspectRatio: state.aspectRatio,
     },
   };
 
