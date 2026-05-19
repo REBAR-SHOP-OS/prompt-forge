@@ -278,19 +278,20 @@ function getJobProgressPercent(job: { id?: string; status: string; progress_perc
     if (job.id) progressMaxRef.delete(job.id)
     return null
   }
-  // Use the real requested duration when known so progress isn't artificially
-  // capped on long clips. Wan 2.7 i2v ≈ 30s wall-clock per 1s of output.
+  // Time-based estimate is a *fallback only* and is capped at 60 so the UI
+  // never falsely implies "almost done" while the provider is still working.
+  // Real backend/provider progress is honored as-is up to 99 — only true
+  // completion reaches 100.
   const dur = job.requested_duration && job.requested_duration > 0 ? job.requested_duration : 5
   const expectedMs = Math.max(120_000, dur * 30_000)
   const startedAt = Date.parse(job.created_at)
   const elapsed = Number.isFinite(startedAt) ? Date.now() - startedAt : 0
   const ratio = expectedMs > 0 ? elapsed / expectedMs : 0
-  // Cap time-based estimate at 92% so we never falsely imply "almost done"
-  // while the provider is still working. Real completion jumps to 100.
-  const timeBased = Math.max(status === 'pending' ? 8 : 18, Math.min(92, Math.round(18 + ratio * 74)))
+  const timeBased = Math.max(status === 'pending' ? 8 : 15, Math.min(60, Math.round(15 + ratio * 45)))
   const backend = typeof job.progress_percent === 'number'
-    ? Math.max(0, Math.min(92, Math.round(job.progress_percent)))
+    ? Math.max(0, Math.min(99, Math.round(job.progress_percent)))
     : null
+  // Prefer the higher of the two, but never let time-based push past 60.
   const next = backend !== null ? Math.max(backend, timeBased) : timeBased
   if (!job.id) return next
   const prev = progressMaxRef.get(job.id) ?? 0
