@@ -138,7 +138,7 @@ function estimateWanProgress(
   submitTime: string | undefined,
   providerProgress: number | null,
 ): number {
-  if (providerProgress !== null) return providerProgress;
+  if (providerProgress !== null) return Math.min(92, providerProgress);
   if (status === "SUCCEEDED") return 100;
   if (status === "FAILED" || status === "CANCELED") return 0;
   if (status === "PENDING") return 8;
@@ -147,8 +147,8 @@ function estimateWanProgress(
   if (Number.isFinite(startedAt)) {
     const elapsed = Date.now() - startedAt;
     const ratio = elapsed / WAN_EXPECTED_RENDER_MS;
-    // Map to 18..95 range so it always feels like progress.
-    return Math.max(18, Math.min(95, Math.round(18 + ratio * 77)));
+    // Map to 18..92 range; cap below 100 so "almost done" only means truly done.
+    return Math.max(18, Math.min(92, Math.round(18 + ratio * 74)));
   }
   return 25;
 }
