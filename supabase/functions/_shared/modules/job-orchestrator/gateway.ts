@@ -119,6 +119,7 @@ export const jobOrchestratorGateway = {
           }
 
           let progressPercent: number | null = null;
+          let terminalFailedReason: string | null = null;
           if (
             detail.status === "processing" &&
             detail.provider_job_id &&
@@ -142,13 +143,18 @@ export const jobOrchestratorGateway = {
                 detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
                 progressPercent = 100;
               } else if (poll.status === "failed") {
-                await jobService.failJob(svc, {
-                  userId: auth.userId,
-                  jobId: detail.id,
-                  reason: poll.reason ?? null,
-                  refundCredits: true,
-                });
-                detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
+                terminalFailedReason = poll.reason ?? "Generation failed";
+                try {
+                  await jobService.failJob(svc, {
+                    userId: auth.userId,
+                    jobId: detail.id,
+                    reason: poll.reason ?? null,
+                    refundCredits: true,
+                  });
+                  detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
+                } catch (e) {
+                  logError("failJob persist failed", { error: (e as Error).message, jobId: detail.id });
+                }
                 progressPercent = null;
               } else {
                 // Persist updated durable provider state (e.g. Veo extension
@@ -173,8 +179,12 @@ export const jobOrchestratorGateway = {
             progressPercent = estimateProgressFromJob(detail.status, detail.created_at);
           }
 
+          const responseDetail = terminalFailedReason
+            ? { ...detail, status: "failed" as const }
+            : detail;
+
           await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
-          return jsonResponse({ ...detail, progress_percent: progressPercent, requestId: ctx.requestId });
+          return jsonResponse({ ...responseDetail, progress_percent: progressPercent, requestId: ctx.requestId });
         }
 
         case "createJob": {

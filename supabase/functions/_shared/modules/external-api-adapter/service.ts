@@ -331,7 +331,7 @@ const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 // Single-call Veo clip length. 10s/15s are delivered by chaining one
 // 8s base render + one +7s extension call (see veoTargetDuration below).
 const VEO_BASE_DURATION_SECONDS = 8;
-const VEO_EXTENDED_DURATION_SECONDS = 15; // 8 + 7 from the extension API
+const VEO_EXTENDED_DURATION_SECONDS = 16; // 8 base + 8 extension
 
 // Veo 3 supports 16:9 and 9:16 only.
 function mapVeoAspect(ar: string | null | undefined): "16:9" | "9:16" {
@@ -548,14 +548,15 @@ async function startVeoExtension(
     instances: [{
       prompt: state.prompt,
       video: {
-        bytesBase64Encoded: bytesToBase64(videoBytes),
-        mimeType: "video/mp4",
+        inlineData: {
+          mimeType: "video/mp4",
+          data: bytesToBase64(videoBytes),
+        },
       },
     }],
     parameters: {
-      aspectRatio: state.aspectRatio,
+      numberOfVideos: 1,
       resolution: "720p",
-      sampleCount: 1,
     },
   };
 
@@ -749,7 +750,7 @@ async function pollVeo(
         thumbnailUrl: null,
         aspectRatio: null,
         duration: null,
-        reason: `Veo extension failed: ${(e as Error).message}`,
+        reason: `Video provider could not extend clip: ${(e as Error).message}`,
         progressPercent: null,
       };
     }
