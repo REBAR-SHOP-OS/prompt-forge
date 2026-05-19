@@ -3161,6 +3161,15 @@ export default function DashboardPage() {
         }}
       />
 
+      <ScenarioWriterDialog
+        open={isScenarioDialogOpen}
+        onOpenChange={setIsScenarioDialogOpen}
+        defaultDuration={durationSeconds === 45 ? 45 : (durationSeconds as 5 | 10 | 15)}
+        onUseAsPrompt={(text) => setPromptText(text)}
+      />
+
+
+
       <Dialog open={isMusicDialogOpen} onOpenChange={setIsMusicDialogOpen}>
         <DialogContent className="border-white/10 bg-black text-zinc-100 sm:max-w-md">
           <DialogHeader>
