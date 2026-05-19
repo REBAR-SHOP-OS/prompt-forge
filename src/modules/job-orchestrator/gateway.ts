@@ -9,6 +9,12 @@ import type { CreateJobInput, CreateJobResult, JobDetail, JobSummary } from "./c
 
 export const JOB_ORCHESTRATOR_CONTRACT_VERSION = "v1" as const;
 
+// In-flight de-dupe: if multiple callers ask for the same Job at the same
+// time (e.g. polling loop + preview re-render), share one network request.
+// This prevents the backend from running the inline DashScope poll twice
+// per tick and avoids contradictory snapshots in the UI.
+const inflightGetJob = new Map<string, Promise<JobDetail>>();
+
 export const jobOrchestratorGateway = {
   contractVersion: JOB_ORCHESTRATOR_CONTRACT_VERSION,
 
@@ -23,14 +29,22 @@ export const jobOrchestratorGateway = {
       body: JSON.stringify(input),
     }),
 
-  getJob: async (jobId: string) => {
-    const result = await request<JobDetail | { error?: { code?: string; message?: string }; missing?: boolean; requestId?: string }>(
-      `/jobs-get?jobId=${encodeURIComponent(jobId)}`,
-    );
-    if ('missing' in result && result.missing) {
-      throw new ApiError(404, result.error?.code ?? 'NOT_FOUND', result.error?.message ?? 'Job not found', result.requestId);
-    }
-    return result as JobDetail;
+  getJob: (jobId: string): Promise<JobDetail> => {
+    const existing = inflightGetJob.get(jobId);
+    if (existing) return existing;
+    const promise = (async () => {
+      const result = await request<JobDetail | { error?: { code?: string; message?: string }; missing?: boolean; requestId?: string }>(
+        `/jobs-get?jobId=${encodeURIComponent(jobId)}`,
+      );
+      if ('missing' in result && result.missing) {
+        throw new ApiError(404, result.error?.code ?? 'NOT_FOUND', result.error?.message ?? 'Job not found', result.requestId);
+      }
+      return result as JobDetail;
+    })().finally(() => {
+      inflightGetJob.delete(jobId);
+    });
+    inflightGetJob.set(jobId, promise);
+    return promise;
   },
 
   deleteJob: (jobId: string) =>

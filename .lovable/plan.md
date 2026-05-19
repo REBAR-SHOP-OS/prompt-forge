@@ -1,37 +1,63 @@
-علت اصلی این بار فقط UI نیست: Job با مدت 15 ثانیه ساخته شده و Backend هر بار فقط `progress_percent: 18` برمی‌گرداند، یعنی polling سمت provider نتیجه واقعی را پایدار ثبت نمی‌کند و فقط تخمین UI تا سقف 92٪ بالا می‌رود. همچنین timeout فعلی 15 دقیقه است، ولی برای 15s Wan طبق مستندات و شرایط صف ممکن است طولانی‌تر شود؛ در نتیجه سناریو هم زودتر پیام `Timed out waiting for Scene 1` می‌دهد و Job هنوز در حالت `processing` می‌ماند.
+نتیجه مورد انتظار: هیچ کارت رندری دیگر روی 92٪ مبهم نماند؛ هر Job فقط یکی از این وضعیت‌های قابل اتکا را نشان بدهد: در صف/در حال رندر با پیام واقعی، تکمیل‌شده، یا fail قطعی با برگشت اعتبار.
 
-برنامه اصلاح ریشه‌ای:
+تشخیص دقیق فعلی:
+- Job فعلی `95d369d8...` در دیتابیس هنوز `processing` است، نه completed/failed.
+- `jobs-get` از backend برای همین Job فقط `progress_percent: 18` برمی‌گرداند، اما UI با تخمین زمان خودش آن را تا 92٪ بالا می‌برد.
+- بنابراین مشکل فعلی «رندر واقعاً 92٪ نیست»؛ مشکل اصلی این است که frontend درصد مصنوعی 92٪ می‌سازد و حس freeze می‌دهد.
+- لاگ backend نشان می‌دهد provider هنوز `processing` است و ویدیو نداده: `pollStatus=processing`, `pollProgress=18`, `hasVideo=false`.
+- دیتابیس ستون persistent برای دلیل خطا/پیام وضعیت ندارد؛ پس بعد از refresh علت دقیق fail یا provider status پایدار ذخیره نمی‌شود.
 
-1. اصلاح قرارداد وضعیت Job
-- به خروجی `jobs-get` یک پیام وضعیت پایدار اضافه می‌کنم: `status_message`.
-- UI دیگر با درصد 92٪ حس «نزدیک پایان» نمی‌دهد؛ برای Jobهای طولانی پیام واقعی نشان می‌دهد: در صف، در حال رندر، طولانی‌تر از معمول، یا timeout نهایی.
+محدودیت‌ها و چیزهایی که نباید خراب شوند:
+- ساخت ویدیو، refund اعتبار، حذف کارت‌ها، Final Film و chain چند Scene نباید تغییر رفتار مخرب داشته باشند.
+- فایل‌های auto-generated backend client/types دستکاری نمی‌شوند.
+- تغییرات DB فقط با migration انجام می‌شود.
+- هیچ Job نباید بی‌نهایت در `processing` بماند.
 
-2. اصلاح پیشرفت بر اساس مدت واقعی کلیپ
-- `DashboardPage.tsx` دیگر همه Jobها را مثل 10 ثانیه حساب نمی‌کند.
-- `requested_duration` از Backend خوانده می‌شود و برای 5/10/15/45 ثانیه تخمین جداگانه می‌گیرد.
-- درصد نمایشی همچنان monotonic می‌ماند، اما برای Jobهایی که provider درصد واقعی نمی‌دهد روی یک سقف محافظه‌کارانه می‌ایستد و با متن دقیق توضیح داده می‌شود، نه اینکه کاربر فکر کند سیستم خراب شده.
+برنامه اصلاح:
 
-3. اصلاح timeout سمت Backend
-- timeout ثابت 15 دقیقه با timeout پویا جایگزین می‌شود:
-  - 5s: حدود 15 دقیقه
-  - 10s: حدود 25 دقیقه
-  - 15s: حدود 35 دقیقه
-- اگر از timeout واقعی عبور کند، Backend همان لحظه Job را failed می‌کند و credit را refund می‌دهد تا هیچ Jobی برای همیشه گیر نکند.
+1. حذف ریشه‌ای 92٪ مصنوعی از UI
+- `DashboardPage.tsx` دیگر برای Jobهای در حال پردازش progress را تا 92٪ time-based بالا نمی‌برد.
+- اگر provider درصد واقعی نمی‌دهد، UI به‌جای عدد نزدیک پایان، حالت مرحله‌ای نشان می‌دهد: queued / rendering / taking longer.
+- برای این حالت، progress bar به سقف محافظه‌کارانه پایین‌تر محدود می‌شود یا به حالت “active rendering” تبدیل می‌شود تا کاربر فکر نکند ویدیو 92٪ آماده است.
 
-4. اصلاح timeout سناریو/Scene chaining
-- `waitForLastFrameUrl` دیگر بعد از 10 دقیقه Scene را قطع نمی‌کند وقتی Job هنوز قانونی در حال پردازش است.
-- timeout آن با مدت Scene هماهنگ می‌شود تا `Scene 1` زودتر از Backend fail نشود.
-- اگر Backend Job را failed کرد، پیام دقیق همان خطا نمایش داده می‌شود.
+2. تفکیک progress واقعی از progress تخمینی backend
+- در backend، progress تخمینی Wan دیگر با `WAN_EXPECTED_RENDER_MS = 150s` تا 92٪ پرتاب نمی‌شود.
+- اگر DashScope درصد واقعی نداده باشد، backend فقط وضعیت provider را گزارش می‌کند، نه درصد جعلی نزدیک 100.
+- درصد 100 فقط وقتی برمی‌گردد که `video_url` واقعی دریافت و Job کامل شده باشد.
 
-5. کاهش درخواست‌های تکراری و race در polling
-- از polling هم‌زمان/تکراری که در snapshot دیده شد چند بار پشت سر هم `jobs-get` می‌زند جلوگیری می‌کنم.
-- یک guard اضافه می‌شود تا برای هر tick فقط یک درخواست فعال برای هر Job وجود داشته باشد.
+3. ذخیره وضعیت/دلیل پایدار در دیتابیس
+- یک migration اضافه می‌شود برای ذخیره پیام وضعیت و آخرین وضعیت provider روی `generator_generation_jobs`.
+- هنگام poll، backend آخرین وضعیت provider، progress واقعی اگر وجود داشت، و دلیل fail را ذخیره می‌کند.
+- اگر Job fail شود، دلیل دقیق آن بعد از refresh هم قابل نمایش می‌ماند.
 
-6. تکمیل persist داده‌های لازم
-- `requested_duration` و `requested_aspect_ratio` در `listMyJobs/getMyJob` برگردانده می‌شوند تا UI بعد از refresh هم مدت واقعی Job را بداند.
-- contractهای frontend/backend مطابق آن آپدیت می‌شوند.
+4. اصلاح timeout قطعی و deterministic
+- timeout همچنان بر اساس duration محاسبه می‌شود، اما backend در هر `jobs-get` آن را enforce می‌کند.
+- برای 15s، اگر از زمان مجاز عبور کند، Job همان‌جا `failed` می‌شود و credit refund می‌گیرد.
+- پیام fail در خود Job ذخیره می‌شود، نه فقط transaction description.
 
-7. اعتبارسنجی
-- با `jobs-get` روی همین Job فعلی تست می‌کنم که یا با پیام درست در حال پردازش دیده شود، یا اگر از timeout عبور کرده failed/refunded شود.
-- Edge function مربوط به `jobs-get` بعد از تغییر deploy/test می‌شود.
-- رفتار UI باید دیگر روی «92٪ مبهم» گیر نکند و هر Job همیشه یکی از این مسیرها را داشته باشد: completed، failed با refund، یا processing با پیام قابل فهم و timeout واقعی.
+5. جلوگیری از polling/race اضافی
+- در frontend برای هر Job فقط یک `jobs-get` هم‌زمان مجاز می‌شود.
+- اگر یک poll هنوز در جریان باشد، tick بعدی همان Job را دوباره نمی‌زند.
+- این کار فشار روی backend/provider را کم می‌کند و وضعیت‌های متناقض کمتر تولید می‌شود.
+
+6. اصلاح پیام Scene chaining
+- وقتی 45s انتخاب شده و عملاً سه کلیپ 15s پشت‌سرهم ساخته می‌شود، UI واضح نشان می‌دهد که در حال انتظار برای Scene 1 است، نه اینکه کل پروژه روی 92٪ گیر کرده.
+- اگر Scene fail شود، دلیل backend دقیقاً در پیام chain نشان داده می‌شود.
+
+7. اعتبارسنجی بعد از اجرا
+- با `jobs-get` روی همین Job بررسی می‌شود که دیگر UI/response به شکل مبهم 92٪ رفتار نکند.
+- لاگ `jobs-get` بررسی می‌شود تا provider status، progress و timeout درست گزارش شوند.
+- اگر Job از timeout عبور کرده باشد، باید به `failed` با refund تبدیل شود؛ اگر هنوز قانونی در حال پردازش باشد، باید پیام واقعی نشان دهد نه 92٪.
+
+ریسک کم و کنترل‌شده:
+- این تغییرات ساختار اصلی تولید ویدیو را عوض نمی‌کند؛ فقط وضعیت، progress، timeout و پیام‌دهی را deterministic و پایدار می‌کند.
+
+بعد از تأیید شما، اول migration امن را می‌سازم، سپس کد frontend/backend را اصلاح و با همین Job فعلی تست می‌کنم.
+
+<presentation-actions>
+  <presentation-open-history>View History</presentation-open-history>
+</presentation-actions>
+
+<presentation-actions>
+<presentation-link url="https://docs.lovable.dev/tips-tricks/troubleshooting">Troubleshooting docs</presentation-link>
+</presentation-actions>
