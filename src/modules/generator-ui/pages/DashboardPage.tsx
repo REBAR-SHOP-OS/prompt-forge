@@ -3418,7 +3418,24 @@ export default function DashboardPage() {
           }
         }}
         onSendScenes={async (scenes, imageUrl) => {
-          await submitScenesAsJobs(scenes, imageUrl)
+          const tagged = scenes
+            .map((s, i) => `=== Scene ${i + 1} ===\n${s.trim()}`)
+            .join('\n\n')
+          setPromptText(tagged)
+          if (imageUrl) {
+            setGenerationMode('image-to-video')
+            setUploadTarget('Start')
+            setUploadedFiles([{
+              id: Date.now(),
+              name: 'scenario-reference.png',
+              size: 0,
+              target: 'Start',
+              type: 'image/png',
+              status: 'ready',
+              url: imageUrl,
+              error: null,
+            }])
+          }
         }}
       />
 
