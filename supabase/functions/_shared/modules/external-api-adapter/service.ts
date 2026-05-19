@@ -372,7 +372,14 @@ interface VeoState {
   extensionStarted: boolean;
   // ms since epoch when the *current* phase started; used for progress.
   phaseStartedAt: number;
+  // Phase-1 video URI we still need to extend (set when extend was attempted
+  // but Veo wasn't ready yet — retried on subsequent polls).
+  pendingExtensionUri?: string;
+  // How many times we've tried to start the extension. Capped to avoid loops.
+  extensionAttempts?: number;
 }
+
+const MAX_EXTENSION_ATTEMPTS = 6;
 
 const VEO_STATE_PREFIX = "veo:v1:";
 
