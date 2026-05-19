@@ -2386,7 +2386,78 @@ export default function DashboardPage() {
     })
   }
 
-  function formatTimeMS(s: number): string {
+  /**
+   * Re-run an existing card with the same prompt, model, aspect ratio, and
+   * frames. Unlike editAndReuseJob, this does not touch the composer — it
+   * creates a brand-new Job immediately and adds it to Pending.
+   */
+  async function regenerateCard(job: JobDetail) {
+    if (regeneratingIds.has(job.id)) return
+
+    const prompt = (job.input_prompt ?? '').trim()
+    if (!prompt) {
+      setVideoColumnMessage('Cannot regenerate: original prompt is empty.')
+      return
+    }
+
+    // Resolve provider/model from the card itself, falling back to the
+    // currently selected model if the card row doesn't carry one.
+    const providerKey = (job.provider_key as 'wan' | 'flow' | null) ?? selectedModel?.providerKey
+    const requestedModel = job.model_key ?? selectedModel?.model
+    if (!providerKey) {
+      setVideoColumnMessage('Cannot regenerate: provider missing on this card.')
+      return
+    }
+
+    const ratio = getRatioFor(job)
+    const firstFrameUrl = job.first_frame_url ?? undefined
+    const lastFrameUrl = job.last_frame_url ?? undefined
+    // JobSummary doesn't carry requested_duration, so default to a safe 5s
+    // single-call render. Long-form (45s) regeneration would need scenario
+    // context that isn't bound to a single card.
+    const durationSeconds: 5 | 10 | 15 = 5
+
+    setRegeneratingIds((current) => {
+      const next = new Set(current)
+      next.add(job.id)
+      return next
+    })
+    setComposerError(null)
+    setVideoColumnMessage(null)
+
+    try {
+      const createdJob = await jobOrchestratorGateway.createJob({
+        providerKey,
+        requestedModel,
+        prompt,
+        firstFrameUrl,
+        lastFrameUrl,
+        durationSeconds,
+        aspectRatio: ratio,
+      })
+      const seededJob = buildSeededJob(prompt, createdJob, {
+        firstFrameUrl,
+        lastFrameUrl,
+      })
+      rememberClipRatio(seededJob.id, ratio)
+      setPreviewVideoId(seededJob.id)
+      setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
+      markActiveJob(seededJob.id)
+    } catch (error) {
+      const message = error instanceof ApiError
+        ? `${error.code}: ${error.message}`
+        : (error instanceof Error ? error.message : 'Could not regenerate this card.')
+      setVideoColumnMessage(message)
+    } finally {
+      setRegeneratingIds((current) => {
+        if (!current.has(job.id)) return current
+        const next = new Set(current)
+        next.delete(job.id)
+        return next
+      })
+    }
+  }
+
     if (!Number.isFinite(s) || s < 0) s = 0
     const m = Math.floor(s / 60)
     const ss = Math.floor(s % 60)
