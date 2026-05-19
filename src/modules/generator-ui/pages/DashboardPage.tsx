@@ -2020,86 +2020,91 @@ export default function DashboardPage() {
     resumeSelectedProject()
 
     try {
-      let createdJob
-      let seedFrames: { firstFrameUrl?: string; lastFrameUrl?: string } = {}
-      let pendingEndAppendUrl: string | null = null
-      let pendingStartPrependUrl: string | null = null
+      const iterations = durationSeconds === 45 ? 3 : 1
+      const perClipDuration: 5 | 10 | 15 = durationSeconds === 45 ? 15 : durationSeconds
 
       // The user's current selection always wins for per-clip generation.
       // (lockedProjectRatio still controls Final Film merge/preview only.)
       const effectiveRatio: Ratio = aspectRatio
 
-      if (isTextToVideo) {
-        createdJob = await jobOrchestratorGateway.createJob({
-          providerKey: selectedModel.providerKey,
-          requestedModel: selectedModel.model,
-          prompt: nextPrompt,
-          durationSeconds,
-          aspectRatio: effectiveRatio,
-        })
-      } else if (readyStartFrame?.url && readyEndFrame?.url) {
-        createdJob = await jobOrchestratorGateway.createJob({
-          providerKey: selectedModel.providerKey,
-          requestedModel: selectedModel.model,
-          prompt: nextPrompt,
-          firstFrameUrl: readyStartFrame.url,
-          lastFrameUrl: readyEndFrame.url,
-          durationSeconds,
-          aspectRatio: effectiveRatio,
-        })
-        seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
-      } else if (readyStartFrame?.url) {
-        createdJob = await jobOrchestratorGateway.createJob({
-          providerKey: selectedModel.providerKey,
-          requestedModel: selectedModel.model,
-          prompt: nextPrompt,
-          firstFrameUrl: readyStartFrame.url,
-          durationSeconds,
-          aspectRatio: effectiveRatio,
-        })
-        seedFrames = { firstFrameUrl: readyStartFrame.url }
-      } else if (readyEndFrame?.url) {
-        createdJob = await jobOrchestratorGateway.createJob({
-          providerKey: selectedModel.providerKey,
-          requestedModel: selectedModel.model,
-          prompt: nextPrompt,
-          lastFrameUrl: readyEndFrame.url,
-          durationSeconds,
-          aspectRatio: effectiveRatio,
-        })
-        seedFrames = { lastFrameUrl: readyEndFrame.url }
-      } else {
-        setComposerError('Add a Start or End image before rendering.')
-        return
-      }
+      for (let i = 0; i < iterations; i++) {
+        let createdJob
+        let seedFrames: { firstFrameUrl?: string; lastFrameUrl?: string } = {}
+        let pendingEndAppendUrl: string | null = null
+        let pendingStartPrependUrl: string | null = null
 
-      const seededJob = buildSeededJob(nextPrompt, createdJob, seedFrames)
-      rememberClipRatio(seededJob.id, effectiveRatio)
-      // First clip in this project locks the ratio for the rest of the project.
-      if (!lockedProjectRatio) {
-        setLockedProjectRatio(effectiveRatio)
-        persistLockedRatio(effectiveRatio)
-      }
+        if (isTextToVideo) {
+          createdJob = await jobOrchestratorGateway.createJob({
+            providerKey: selectedModel.providerKey,
+            requestedModel: selectedModel.model,
+            prompt: nextPrompt,
+            durationSeconds: perClipDuration,
+            aspectRatio: effectiveRatio,
+          })
+        } else if (readyStartFrame?.url && readyEndFrame?.url) {
+          createdJob = await jobOrchestratorGateway.createJob({
+            providerKey: selectedModel.providerKey,
+            requestedModel: selectedModel.model,
+            prompt: nextPrompt,
+            firstFrameUrl: readyStartFrame.url,
+            lastFrameUrl: readyEndFrame.url,
+            durationSeconds: perClipDuration,
+            aspectRatio: effectiveRatio,
+          })
+          seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
+        } else if (readyStartFrame?.url) {
+          createdJob = await jobOrchestratorGateway.createJob({
+            providerKey: selectedModel.providerKey,
+            requestedModel: selectedModel.model,
+            prompt: nextPrompt,
+            firstFrameUrl: readyStartFrame.url,
+            durationSeconds: perClipDuration,
+            aspectRatio: effectiveRatio,
+          })
+          seedFrames = { firstFrameUrl: readyStartFrame.url }
+        } else if (readyEndFrame?.url) {
+          createdJob = await jobOrchestratorGateway.createJob({
+            providerKey: selectedModel.providerKey,
+            requestedModel: selectedModel.model,
+            prompt: nextPrompt,
+            lastFrameUrl: readyEndFrame.url,
+            durationSeconds: perClipDuration,
+            aspectRatio: effectiveRatio,
+          })
+          seedFrames = { lastFrameUrl: readyEndFrame.url }
+        } else {
+          setComposerError('Add a Start or End image before rendering.')
+          return
+        }
 
-      if (pendingEndAppendUrl) {
-        setPendingEndAppends((current) => {
-          const next = { ...current, [seededJob.id]: pendingEndAppendUrl as string }
-          persistPendingEndAppends(next)
-          return next
-        })
-      }
+        const seededJob = buildSeededJob(nextPrompt, createdJob, seedFrames)
+        rememberClipRatio(seededJob.id, effectiveRatio)
+        // First clip in this project locks the ratio for the rest of the project.
+        if (!lockedProjectRatio) {
+          setLockedProjectRatio(effectiveRatio)
+          persistLockedRatio(effectiveRatio)
+        }
 
-      if (pendingStartPrependUrl) {
-        setPendingStartPrepends((current) => {
-          const next = { ...current, [seededJob.id]: pendingStartPrependUrl as string }
-          persistPendingStartPrepends(next)
-          return next
-        })
-      }
+        if (pendingEndAppendUrl) {
+          setPendingEndAppends((current) => {
+            const next = { ...current, [seededJob.id]: pendingEndAppendUrl as string }
+            persistPendingEndAppends(next)
+            return next
+          })
+        }
 
-      setPreviewVideoId(seededJob.id)
-      setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
-      markActiveJob(seededJob.id)
+        if (pendingStartPrependUrl) {
+          setPendingStartPrepends((current) => {
+            const next = { ...current, [seededJob.id]: pendingStartPrependUrl as string }
+            persistPendingStartPrepends(next)
+            return next
+          })
+        }
+
+        setPreviewVideoId(seededJob.id)
+        setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
+        markActiveJob(seededJob.id)
+      }
       setPromptText('')
       setUploadedFiles([])
     } catch (error) {
