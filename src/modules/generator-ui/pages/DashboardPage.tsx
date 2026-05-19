@@ -3909,12 +3909,15 @@ export default function DashboardPage() {
                           <p className="mt-4 text-sm font-semibold text-zinc-300">{formatStatusLabel(previewItem.job.status)}</p>
                           {isRendering ? (
                             <p className="mt-2 text-xs leading-5 text-zinc-500">
-                              {longRender
-                                ? 'Still rendering — provider is taking longer than usual.'
-                                : `About ${Math.max(0, 100 - pct)}% remaining`}
+                              {previewItem.job.status_message
+                                ?? (longRender
+                                  ? 'Still rendering — provider is taking longer than usual.'
+                                  : `About ${Math.max(0, 100 - pct)}% remaining`)}
                             </p>
                           ) : (
-                            <p className="mt-2 text-xs leading-5 text-zinc-600">Waiting for render output.</p>
+                            <p className="mt-2 text-xs leading-5 text-zinc-600">
+                              {previewItem.job.status_message ?? 'Waiting for render output.'}
+                            </p>
                           )}
                         </div>
                       )
