@@ -32,6 +32,7 @@ import {
   Pencil,
   Play,
   Plus,
+  RefreshCw,
   RotateCcw,
   Scissors,
   Sparkles,
@@ -341,6 +342,10 @@ export default function DashboardPage() {
   const [startContext] = useState('Start')
   const [endGoal] = useState('End')
   const [generatedVideos, setGeneratedVideos] = useState<JobDetail[]>([])
+  // Tracks card IDs currently re-submitting a Regenerate. Used to disable the
+  // per-card regenerate button while its new Job is being created so the user
+  // can't queue duplicates with rapid clicks.
+  const [regeneratingIds, setRegeneratingIds] = useState<Set<string>>(new Set())
   // Pending column never shows a "syncing history" state — it always
   // reflects only the in-memory active workspace.
   const [isSubmitting, setIsSubmitting] = useState(false)
