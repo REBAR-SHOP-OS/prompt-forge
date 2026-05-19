@@ -2971,7 +2971,12 @@ export default function DashboardPage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Merge failed'
       console.error('[merge] failed', err)
-      setVideoColumnMessage(`Could not load source video for merge — please try again in a moment. (${msg})`)
+      const urlMatch = msg.match(/https?:\/\/\S+/)
+      const filename = urlMatch ? (urlMatch[0].split('?')[0].split('/').pop() || '') : ''
+      const friendly = filename
+        ? `Source file "${filename}" could not be loaded from the server (it may have been deleted). Remove that clip from the workspace and try again.`
+        : `Could not load source video for merge — please try again in a moment. (${msg})`
+      setVideoColumnMessage(friendly)
     } finally {
       setIsMerging(false)
       setMergeProgress(0)
