@@ -295,6 +295,30 @@ function mergeJob(currentJobs: JobDetail[], nextJob: JobDetail) {
   )
 }
 
+function isMissingJobError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404 && error.code === 'NOT_FOUND'
+}
+
+function readStoredIdSet(key: string | null): Set<string> {
+  if (!key || typeof window === 'undefined') return new Set()
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) ?? '[]')
+    return new Set(Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function readStoredRecord<T>(key: string | null): Record<string, T> {
+  if (!key || typeof window === 'undefined') return {}
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) ?? '{}')
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, T> : {}
+  } catch {
+    return {}
+  }
+}
+
 async function hydrateJobs(summaries: JobSummary[]) {
   const hydratedJobs = await Promise.all(
     summaries.map(async (summary) => {
@@ -1481,12 +1505,31 @@ export default function DashboardPage() {
         ])
         if (cancelled) return
 
+        const protectedJobIds = new Set(activeJobIds)
+        for (const id of readStoredIdSet(activeJobIdsKey)) protectedJobIds.add(id)
+        const storedProjectSourceJobs = readStoredRecord<JobDetail[]>(projectSourceJobsKey)
+        for (const clips of Object.values({ ...storedProjectSourceJobs, ...projectSourceJobs })) {
+          if (Array.isArray(clips)) {
+            for (const clip of clips) protectedJobIds.add(clip.id)
+          }
+        }
+        for (const id of Object.keys(readStoredRecord<JobDetail>(librarySavedJobsKey))) protectedJobIds.add(id)
+
+        const protectedImageIds = new Set(activeImageIds)
+        for (const id of readStoredIdSet(activeImageIdsKey)) protectedImageIds.add(id)
+        const storedProjectSourceImages = readStoredRecord<UserImageItem[]>(projectSourceImagesKey)
+        for (const images of Object.values({ ...storedProjectSourceImages, ...projectSourceImages })) {
+          if (Array.isArray(images)) {
+            for (const image of images) protectedImageIds.add(image.id)
+          }
+        }
+
         const orphanJobIds = summaries
           .map((s) => s.id)
-          .filter((id) => !activeJobIds.has(id))
+          .filter((id) => !protectedJobIds.has(id))
         const orphanImageIds = ((imgRowsRes.data ?? []) as { id: string }[])
           .map((r) => r.id)
-          .filter((id) => !activeImageIds.has(id))
+          .filter((id) => !protectedImageIds.has(id))
 
         // Silent permanent cleanup — never surfaces in the UI.
         await Promise.allSettled([
@@ -1709,12 +1752,21 @@ export default function DashboardPage() {
       // Independent per-job requests: one transient failure must not poison the
       // whole batch. Surface a banner only after several consecutive total-failures.
       const settled = await Promise.allSettled(
-        activeJobs.map((job) => jobOrchestratorGateway.getJob(job.id)),
+        activeJobs.map(async (job) => ({ jobId: job.id, detail: await jobOrchestratorGateway.getJob(job.id) })),
       )
+      const missingJobIds = settled
+        .filter((r): r is PromiseRejectedResult => r.status === 'rejected' && isMissingJobError(r.reason))
+        .map((r) => activeJobs[settled.indexOf(r)]?.id)
+        .filter((id): id is string => Boolean(id))
       const fulfilled = settled
-        .filter((r): r is PromiseFulfilledResult<JobDetail> => r.status === 'fulfilled')
-        .map((r) => r.value)
+        .filter((r): r is PromiseFulfilledResult<{ jobId: string; detail: JobDetail }> => r.status === 'fulfilled')
+        .map((r) => r.value.detail)
       const allFailed = fulfilled.length === 0 && settled.length > 0
+
+      if (missingJobIds.length > 0) {
+        setGeneratedVideos((currentJobs) => currentJobs.filter((job) => !missingJobIds.includes(job.id)))
+        unmarkActiveJobs(missingJobIds)
+      }
 
       if (fulfilled.length > 0) {
         setGeneratedVideos((currentJobs) =>
@@ -1722,15 +1774,19 @@ export default function DashboardPage() {
         )
       }
 
-      if (allFailed) {
+      if (allFailed && missingJobIds.length !== activeJobs.length) {
         pollFailureCountRef.current += 1
         if (pollFailureCountRef.current >= FAILURE_THRESHOLD) {
-          const lastErr = settled.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined
+          const lastErr = settled.find(
+            (r) => r.status === 'rejected' && !isMissingJobError(r.reason),
+          ) as PromiseRejectedResult | undefined
           const reason = lastErr?.reason
           setVideoColumnMessage(
             reason instanceof ApiError ? `${reason.code}: ${reason.message}` : POLL_ERROR_MSG,
           )
         }
+      } else if (missingJobIds.length > 0) {
+        pollFailureCountRef.current = 0
       } else {
         pollFailureCountRef.current = 0
         // Auto-clear stale poll-error banner once we recover.
@@ -2165,7 +2221,11 @@ export default function DashboardPage() {
       let detail: JobDetail | null = null
       try {
         detail = await jobOrchestratorGateway.getJob(prevJobId)
-      } catch {
+      } catch (error) {
+        if (isMissingJobError(error)) {
+          unmarkActiveJobs([prevJobId])
+          throw new Error(`${sceneLabel} was removed before it finished; cannot chain remaining scenes`)
+        }
         detail = null
       }
       const status = detail ? normalizeStatus(detail.status) : 'pending'
