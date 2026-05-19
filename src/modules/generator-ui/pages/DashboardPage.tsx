@@ -2221,7 +2221,11 @@ export default function DashboardPage() {
       let detail: JobDetail | null = null
       try {
         detail = await jobOrchestratorGateway.getJob(prevJobId)
-      } catch {
+      } catch (error) {
+        if (isMissingJobError(error)) {
+          unmarkActiveJobs([prevJobId])
+          throw new Error(`${sceneLabel} was removed before it finished; cannot chain remaining scenes`)
+        }
         detail = null
       }
       const status = detail ? normalizeStatus(detail.status) : 'pending'
