@@ -71,7 +71,8 @@ function isAllowedFrameUrl(url: string, userId: string): boolean {
 
 // Estimate render progress when the provider hasn't reported one yet.
 // Uses status + created_at so the UI never shows a static "Rendering" with no
-// numeric feedback. Bounded to [18, 95] while in flight.
+// numeric feedback. Bounded to [18, 92] while in flight — 100% is reserved
+// for actual completion so the UI never falsely implies "almost done".
 function estimateProgressFromJob(status: string, createdAt: string | undefined): number | null {
   if (status === "completed") return 100;
   if (status === "failed" || status === "cancelled") return null;
@@ -81,8 +82,13 @@ function estimateProgressFromJob(status: string, createdAt: string | undefined):
   if (!Number.isFinite(startedAt)) return status === "pending" ? 8 : 25;
   const elapsed = Date.now() - startedAt;
   const ratio = elapsed / expectedMs;
-  return Math.max(status === "pending" ? 8 : 18, Math.min(95, Math.round(18 + ratio * 77)));
+  return Math.max(status === "pending" ? 8 : 18, Math.min(92, Math.round(18 + ratio * 74)));
 }
+
+// Hard ceiling: if a job has been "processing" longer than this, the provider
+// is effectively stuck/lost and we force-fail with a refund so the user isn't
+// trapped on a forever-rendering card.
+const JOB_STUCK_TIMEOUT_MS = 15 * 60_000; // 15 minutes
 
 export const jobOrchestratorGateway = {
   contract: JOB_ORCHESTRATOR_CONTRACT,
