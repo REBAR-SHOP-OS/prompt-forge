@@ -2,11 +2,14 @@
 import type { SupabaseClient } from "../../core/supabase.ts";
 import type { CreateJobInput, JobDetail, JobService, JobSummary } from "./contract.ts";
 
+const JOB_COLUMNS =
+  "id, status, input_prompt, provider_key, model_key, provider_job_id, first_frame_url, last_frame_url, requested_duration, requested_aspect_ratio, created_at, updated_at";
+
 export const jobService: JobService = {
   async listMyJobs(userId, client, limit = 20) {
     const { data, error } = await client
       .from("generator_generation_jobs")
-      .select("id, status, input_prompt, provider_key, model_key, provider_job_id, first_frame_url, last_frame_url, created_at, updated_at")
+      .select(JOB_COLUMNS)
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(limit);
@@ -17,7 +20,7 @@ export const jobService: JobService = {
   async getMyJob(userId, jobId, client) {
     const { data, error } = await client
       .from("generator_generation_jobs")
-      .select("id, status, input_prompt, provider_key, model_key, provider_job_id, first_frame_url, last_frame_url, created_at, updated_at")
+      .select(JOB_COLUMNS)
       .eq("user_id", userId)
       .eq("id", jobId)
       .maybeSingle();
