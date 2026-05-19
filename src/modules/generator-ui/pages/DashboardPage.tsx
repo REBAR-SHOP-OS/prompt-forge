@@ -268,7 +268,7 @@ function buildPromptWithUploadedFiles(prompt: string, files: UploadedFile[]) {
 // Keyed by job id; cleared implicitly when the page unmounts.
 const progressMaxRef: Map<string, number> = new Map()
 
-function getJobProgressPercent(job: { id?: string; status: string; progress_percent?: number | null; created_at: string }): number | null {
+function getJobProgressPercent(job: { id?: string; status: string; progress_percent?: number | null; created_at: string; requested_duration?: number | null }): number | null {
   const status = normalizeStatus(job.status)
   if (status === 'completed') {
     if (job.id) progressMaxRef.set(job.id, 100)
@@ -278,10 +278,12 @@ function getJobProgressPercent(job: { id?: string; status: string; progress_perc
     if (job.id) progressMaxRef.delete(job.id)
     return null
   }
+  // Use the real requested duration when known so progress isn't artificially
+  // capped on long clips. Wan 2.7 i2v ≈ 30s wall-clock per 1s of output.
+  const dur = job.requested_duration && job.requested_duration > 0 ? job.requested_duration : 5
+  const expectedMs = Math.max(120_000, dur * 30_000)
   const startedAt = Date.parse(job.created_at)
   const elapsed = Number.isFinite(startedAt) ? Date.now() - startedAt : 0
-  // Wan 2.7 typically takes ~30-40s of real time per 1s of output. Use 35s/s heuristic, capped to 10s clips.
-  const expectedMs = 10 * 35_000
   const ratio = expectedMs > 0 ? elapsed / expectedMs : 0
   // Cap time-based estimate at 92% so we never falsely imply "almost done"
   // while the provider is still working. Real completion jumps to 100.
