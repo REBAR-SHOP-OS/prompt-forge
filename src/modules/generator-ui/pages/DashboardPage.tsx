@@ -2458,7 +2458,10 @@ export default function DashboardPage() {
    * frames. Unlike editAndReuseJob, this does not touch the composer — it
    * creates a brand-new Job immediately and adds it to Pending.
    */
-  async function regenerateCard(job: JobDetail) {
+  async function regenerateCard(
+    job: JobDetail,
+    override?: { providerKey: 'wan' | 'flow'; requestedModel: string },
+  ) {
     if (regeneratingIds.has(job.id)) return
 
     const prompt = (job.input_prompt ?? '').trim()
@@ -2467,10 +2470,13 @@ export default function DashboardPage() {
       return
     }
 
-    // Resolve provider/model from the card itself, falling back to the
-    // currently selected model if the card row doesn't carry one.
-    const providerKey = (job.provider_key as 'wan' | 'flow' | null) ?? selectedModel?.providerKey
-    const requestedModel = job.model_key ?? selectedModel?.model
+    // Allow caller to override provider/model (e.g. user picked a different
+    // provider from the Regenerate menu). Otherwise resolve from the card,
+    // falling back to currently selected model.
+    const providerKey = override?.providerKey
+      ?? (job.provider_key as 'wan' | 'flow' | null)
+      ?? selectedModel?.providerKey
+    const requestedModel = override?.requestedModel ?? job.model_key ?? selectedModel?.model
     if (!providerKey) {
       setVideoColumnMessage('Cannot regenerate: provider missing on this card.')
       return
