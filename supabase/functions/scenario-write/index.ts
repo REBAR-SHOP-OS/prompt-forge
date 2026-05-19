@@ -39,7 +39,22 @@ function buildSystemPrompt(duration: number): string {
   ].join(" ");
 }
 
-async function callGateway(apiKey: string, duration: number, idea: string): Promise<Response> {
+async function callGateway(
+  apiKey: string,
+  duration: number,
+  idea: string,
+  imageUrl?: string,
+): Promise<Response> {
+  const userContent: unknown = imageUrl
+    ? [
+        {
+          type: "text",
+          text: `Idea: ${idea}\nBase the scenario on the attached reference image (subjects, setting, mood, props, style).`,
+        },
+        { type: "image_url", image_url: { url: imageUrl } },
+      ]
+    : `Idea: ${idea}`;
+
   return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -50,7 +65,7 @@ async function callGateway(apiKey: string, duration: number, idea: string): Prom
       model: "google/gemini-2.5-flash",
       messages: [
         { role: "system", content: buildSystemPrompt(duration) },
-        { role: "user", content: `Idea: ${idea}` },
+        { role: "user", content: userContent },
       ],
     }),
   });
