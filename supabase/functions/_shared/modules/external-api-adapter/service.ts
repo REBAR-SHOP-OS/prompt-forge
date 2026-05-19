@@ -11,7 +11,7 @@ import type {
   ResolvedRoute,
 } from "./contract.ts";
 import { getEnv } from "../../core/env.ts";
-import { logError } from "../../core/observability.ts";
+import { logError, logInfo } from "../../core/observability.ts";
 
 interface ModelCostConfig {
   // Cost per 1k prompt characters (proxy unit for preview-stage estimation).
