@@ -3320,7 +3320,24 @@ export default function DashboardPage() {
             }])
           }
         }}
-        onSendScenes={submitScenesAsJobs}
+        onSendScenes={async (scenes, imageUrl) => {
+          setPromptText(scenes.join('\n\n'))
+          if (imageUrl) {
+            setGenerationMode('image-to-video')
+            setUploadTarget('Start')
+            setUploadedFiles([{
+              id: Date.now(),
+              name: 'scenario-reference.png',
+              size: 0,
+              target: 'Start',
+              type: 'image/png',
+              status: 'ready',
+              url: imageUrl,
+              error: null,
+            }])
+          }
+          await submitScenesAsJobs(scenes)
+        }}
       />
 
 
