@@ -554,8 +554,12 @@ async function startVeoExtension(
       video: { uri: videoUri },
     }],
     parameters: {
-      numberOfVideos: 1,
+      // The raw Gemini predictLongRunning endpoint does not accept the SDK
+      // field `numberOfVideos` for Veo extension. Extension supports a very
+      // small parameter set; keep this aligned with the Developer API shape.
+      resolution: "720p",
       aspectRatio: state.aspectRatio,
+      durationSeconds: VEO_BASE_DURATION_SECONDS,
     },
   };
 
