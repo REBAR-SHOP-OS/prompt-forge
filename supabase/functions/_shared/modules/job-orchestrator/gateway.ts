@@ -283,7 +283,18 @@ export const jobOrchestratorGateway = {
                 refundCredits: true,
               });
             } catch (_) { /* best-effort */ }
-            logError("startGeneration failed", { error: (e as Error).message, jobId });
+            const errMsg = (e as Error).message || "";
+            logError("startGeneration failed", { error: errMsg, jobId });
+            const isQuota = /\b429\b|RESOURCE_EXHAUSTED|quota|rate.?limit/i.test(errMsg);
+            if (isQuota) {
+              await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 429, latencyMs: Date.now() - ctx.startedAt, errorCode: "PROVIDER_QUOTA_EXHAUSTED" });
+              return errorResponse(
+                "PROVIDER_QUOTA_EXHAUSTED",
+                "Video provider daily quota is exhausted. Your credits have been refunded — please try again later.",
+                429,
+                ctx.requestId,
+              );
+            }
             return errorResponse("PROVIDER_ERROR", "The video provider could not start generation. Please try again.", 502, ctx.requestId);
           }
 
