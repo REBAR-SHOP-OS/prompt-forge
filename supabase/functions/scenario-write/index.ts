@@ -174,7 +174,7 @@ Deno.serve(async (req) => {
 
     // One retry for 45s if we didn't get exactly three scenes.
     if (duration === 45 && scenes.length === 0) {
-      resp = await callGateway(apiKey, duration, idea);
+      resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl);
       if (resp.ok) {
         data = await resp.json();
         raw = (data?.choices?.[0]?.message?.content ?? "").trim();
