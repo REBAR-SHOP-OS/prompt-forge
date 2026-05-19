@@ -1187,6 +1187,46 @@ export default function DashboardPage() {
       setIsEnhancingPrompt(false)
     }
   }
+
+  const [isWritingScenario, setIsWritingScenario] = useState(false)
+  const runScenarioFromStart = async () => {
+    if (isWritingScenario || isEnhancingPrompt || isSubmitting) return
+    if (!readyStartFrame?.url) {
+      setComposerError('Add a Start image first.')
+      return
+    }
+    setIsWritingScenario(true)
+    setComposerError(null)
+    try {
+      const { data, error } = await supabase.functions.invoke('enhance-prompt', {
+        body: {
+          prompt:
+            'Write a 45-second cinematic scenario inspired by the attached Start image. Describe scene, atmosphere, characters/subjects, camera moves, pacing and a clear arc that fits ~45 seconds. Output a single vivid prompt suitable for an image-to-video model.',
+          imageUrls: [readyStartFrame.url],
+          mode: 'silent',
+          narratorScript: '',
+        },
+      })
+      if (error) {
+        const ctx = (error as unknown as { context?: { status?: number } })?.context
+        const status = ctx?.status
+        if (status === 429) setComposerError('Rate limit reached. Try again in a moment.')
+        else if (status === 402) setComposerError('AI credits exhausted. Add credits to continue.')
+        else setComposerError('Could not write scenario. Please try again.')
+        return
+      }
+      const enhanced = (data as { enhancedPrompt?: string } | null)?.enhancedPrompt?.trim()
+      if (!enhanced) {
+        setComposerError('Could not write scenario. Please try again.')
+        return
+      }
+      setPromptText(enhanced)
+    } catch {
+      setComposerError('Could not write scenario. Please try again.')
+    } finally {
+      setIsWritingScenario(false)
+    }
+  }
   const startUploadCount = uploadedFiles.filter((file) => file.target === 'Start').length
   const endUploadCount = uploadedFiles.filter((file) => file.target === 'End').length
   const visibleVideos = useMemo(() => {
