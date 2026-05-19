@@ -4067,6 +4067,29 @@ export default function DashboardPage() {
                         >
                           <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
+                        {!video.id.startsWith('merged-') ? (
+                          (() => {
+                            const isRegenerating = regeneratingIds.has(video.id)
+                            return (
+                              <button
+                                type="button"
+                                disabled={isRegenerating}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  regenerateCard(video)
+                                }}
+                                aria-label="Regenerate this card"
+                                title="Regenerate this card"
+                                className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                <RefreshCw
+                                  className={`h-3.5 w-3.5 ${isRegenerating ? 'animate-spin' : ''}`}
+                                  aria-hidden="true"
+                                />
+                              </button>
+                            )
+                          })()
+                        ) : null}
                         {(video.video?.storage_path || editedClips[video.id]?.url) ? (
                           <button
                             type="button"
