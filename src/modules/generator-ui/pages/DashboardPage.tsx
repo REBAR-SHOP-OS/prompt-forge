@@ -2011,8 +2011,33 @@ export default function DashboardPage() {
     setPreviewDismissed(true)
   }
 
+  function parseScenarioScenes(text: string): string[] | null {
+    if (!/===\s*Scene\s+\d+\s*===/i.test(text)) return null
+    const parts = text
+      .split(/===\s*Scene\s+\d+\s*===/i)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+    return parts.length > 0 ? parts : null
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+
+    // Scenario-writer multi-scene flow: when prompt is tagged with "=== Scene N ===",
+    // split into per-scene cards and chain them with continuity instead of a single job.
+    const parsedScenes = parseScenarioScenes(promptText)
+    if (parsedScenes && parsedScenes.length >= 2) {
+      const firstSceneImageUrl = readyStartFrame?.url ?? undefined
+      setPromptText('')
+      setUploadedFiles([])
+      setComposerError(null)
+      try {
+        await submitScenesAsJobs(parsedScenes, firstSceneImageUrl)
+      } catch {
+        /* error already surfaced via composer/videoColumnMessage */
+      }
+      return
+    }
 
     if (!canSubmit) {
       setComposerError(blockedReason ?? 'Add a prompt and Start/End frames before rendering.')
@@ -3393,7 +3418,24 @@ export default function DashboardPage() {
           }
         }}
         onSendScenes={async (scenes, imageUrl) => {
-          await submitScenesAsJobs(scenes, imageUrl)
+          const tagged = scenes
+            .map((s, i) => `=== Scene ${i + 1} ===\n${s.trim()}`)
+            .join('\n\n')
+          setPromptText(tagged)
+          if (imageUrl) {
+            setGenerationMode('image-to-video')
+            setUploadTarget('Start')
+            setUploadedFiles([{
+              id: Date.now(),
+              name: 'scenario-reference.png',
+              size: 0,
+              target: 'Start',
+              type: 'image/png',
+              status: 'ready',
+              url: imageUrl,
+              error: null,
+            }])
+          }
         }}
       />
 
