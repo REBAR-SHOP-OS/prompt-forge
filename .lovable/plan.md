@@ -1,49 +1,59 @@
-## Goal
+# برنامه: هر سکانس → یک کارت Pending مستقل با continuity
 
-Make the Regenerate (↻) button on a Pending/Ready card produce a new video **in the same card slot** (same visual position), using the original card's prompt / frames / aspect / duration. The old card disappears as soon as the replacement seed appears.
+## رفتار هدف
+وقتی کاربر در Scenario Writer (45s) روی **Send all to Pending** می‌زند:
+1. composer (chat box) و uploadedFiles **خالی** می‌مانند — هیچ متن یا تصویری در ورودی اصلی نمی‌نشیند.
+2. سه کارت Pending جدا، به ترتیب، ساخته می‌شوند:
+   - **Card 1**: prompt = Scene 1، Start frame = تصویر آپلودشده در دیالوگ (اگر نبود → text-to-video).
+   - **Card 2**: prompt = Scene 2، Start frame = آخرین فریم Card 1 (بعد از کامل شدن آن).
+   - **Card 3**: prompt = Scene 3، Start frame = آخرین فریم Card 2 (بعد از کامل شدن آن).
+3. هر کارت در UI همان سکانس خودش را به عنوان prompt نشان می‌دهد.
 
-## Approach
+## تغییرات کد
 
-Keep the existing `regenerateCard` flow (same prompt/frames/provider/model/aspect), but:
+### `src/modules/generator-ui/components/ScenarioWriterDialog.tsx`
+بدون تغییر منطقی؛ همان `onSendScenes(scenes, imageUrl)` فعلی استفاده می‌شود.
 
-1. Derive duration from the original card when available:
-   - prefer `Math.round(job.video.duration)` clamped to `5 | 10 | 15`,
-   - else fall back to `5`.
-2. After `createJob` returns and `buildSeededJob` produces the new pending job, **replace** the old job in `generatedVideos` at its current index instead of merging at the top.
-3. Move active-job tracking and `regeneratingIds` from the old id to the new id (so the spinner stays on the same slot until polling resolves).
-4. Update `previewVideoId` from old → new id if it pointed at the old card.
-5. Fire-and-forget `jobOrchestratorGateway.deleteJob(oldId)` so the old job (and its video asset, if any) is removed from the backend. Failures are logged to `videoColumnMessage` but don't block the new render.
+### `src/modules/generator-ui/pages/DashboardPage.tsx`
 
-## Files
+**۱) handler `onSendScenes` (حدود خط 3353):** پاک کردن همهٔ `setPromptText` / `setUploadedFiles` / `setGenerationMode` — فقط `await submitScenesAsJobs(scenes, imageUrl)` صدا زده شود. composer دست‌نخورده می‌ماند.
 
-### `src/modules/generator-ui/pages/DashboardPage.tsx` — `regenerateCard`
+**۲) `submitScenesAsJobs` (خط 2129) را بازنویسی کن:**
 
-- Compute `durationSeconds` from `job.video?.duration` when present (round to nearest of `5/10/15`).
-- Capture the old card's index in the current `generatedVideos` list before the async call.
-- Replace logic after `createJob` succeeds:
-  ```ts
-  setGeneratedVideos((curr) => {
-    const idx = curr.findIndex((j) => j.id === job.id)
-    if (idx < 0) return mergeJob(curr, seededJob)
-    const next = [...curr]
-    next.splice(idx, 1, seededJob)
-    return next
-  })
-  ```
-- `setPreviewVideoId((cur) => (cur === job.id ? seededJob.id : cur))`.
-- Migrate `regeneratingIds`: remove `job.id`, add `seededJob.id`. Update the `finally` cleanup to use the new id.
-- After local state swap, call `jobOrchestratorGateway.deleteJob(job.id).catch(...)`.
-- `markActiveJob(seededJob.id)` keeps polling on the new id.
+امضای جدید: `submitScenesAsJobs(scenes: string[], firstSceneImageUrl?: string)`.
 
-## Out of scope
+برای هر سکانس به ترتیب:
+- `prompt = scene.trim()`؛ خالی را skip کن.
+- `startFrameUrl` را تعیین کن:
+  - سکانس اول: `firstSceneImageUrl ?? undefined`.
+  - سکانس‌های بعدی: `await waitForLastFrameOf(previousJobId)` (پایین توضیح).
+- اگر `startFrameUrl` موجود است → `generationMode` معادل image-to-video برای این کارت؛ `createJob({ ..., firstFrameUrl: startFrameUrl })` و `buildSeededJob(prompt, createdJob, { firstFrameUrl: startFrameUrl })`.
+- اگر نه → text-to-video.
+- `mergeJob` → setPreviewVideoId → markActiveJob → `previousJobId = seededJob.id`.
+- بین کارت‌ها از خود `composer` چیزی set نشود.
 
-- No backend/SQL changes (the `non-terminal` UPDATE guard makes in-place mutation of completed jobs impossible from the client, so we create-new-then-delete-old instead — visually identical, same id is not reused).
-- No change to long-form (45s scenario) cards.
-- No UI restyling of the icon or button.
+در `finally`: `setIsSubmitting(false)`. **هیچ** `setPromptText('')` و `setUploadedFiles([])` نباشد چون اصلاً آلوده‌اش نکردیم.
 
-## Verification
+**۳) helper جدید `waitForLastFrameOf(prevJobId: string): Promise<string | undefined>`:**
+- polling روی `generatedVideos` (یا مستقیم `jobOrchestratorGateway.getJob(prevJobId)`) با interval ~3s و timeout ~10 دقیقه.
+- وقتی `normalizeStatus(job.status) === 'completed'` و `job.video?.storage_path` موجود است:
+  - `proxied = await proxiedVideoUrl(storage_path)`
+  - `blob = await captureLastFrameAsBlob(proxied)`
+  - آپلود در bucket `wan-frames` با مسیر `${userId}/scene-chain-${Date.now()}-${uuid}.png`
+  - `return publicUrl`.
+- اگر job fail شد → `throw new Error('Previous scene failed; cannot chain')` که در try/catch بالا گرفته شود و در `setVideoColumnMessage` نمایش داده شود؛ بقیهٔ سکانس‌ها ساخته نشوند.
+- اگر timeout شد → همان پیام خطا.
 
-- Click ↻ on a Ready card → that exact card slot shows the regenerating spinner, no duplicate card appears at the top.
-- When the new render completes, the new video plays in the same slot; the old card is gone from Pending and from the backend list.
-- If the original card had a Start/End frame and a non-default aspect ratio, the regenerated clip uses the same values.
-- If the original was a completed 10s or 15s clip, the regenerated clip is the same duration.
+**۴) UI feedback:** در طول `waitForLastFrameOf` یک پیام کوتاه در `setVideoColumnMessage` مثل «Waiting for Scene N to finish before queuing Scene N+1…» ست شود و بعد پاک شود.
+
+## خارج از محدوده
+- بدون تغییر backend / SQL / edge function.
+- بدون تغییر در `regenerateCard` یا `editAndReuseJob`.
+- بدون تغییر در UI کارت — کارت‌ها همان‌طور که الان prompt را نشان می‌دهند، خودبه‌خود سکانس مربوطهٔ خودشان را نشان خواهند داد چون `input_prompt` هر job دقیقاً همان سکانس است.
+
+## تست دستی
+1. در Scenario Writer، 45s، یک تصویر مرجع آپلود کن، Generate، سپس Send all to Pending.
+2. بلافاصله سه کارت Pending با ترتیب Scene 1/2/3 ظاهر می‌شوند (Card 2 و 3 در ابتدا منتظر می‌مانند).
+3. composer (textarea و آیکن آپلود) خالی باقی می‌ماند.
+4. Card 1 رندر می‌شود → خودکار Card 2 با Start = آخرین فریم Card 1 آغاز می‌شود → سپس Card 3.
+5. کلیک روی هر کارت، prompt آن دقیقاً متن همان سکانس را نشان می‌دهد.
