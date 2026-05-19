@@ -2458,6 +2458,7 @@ export default function DashboardPage() {
     }
   }
 
+  function formatTimeMS(s: number): string {
     if (!Number.isFinite(s) || s < 0) s = 0
     const m = Math.floor(s / 60)
     const ss = Math.floor(s % 60)
