@@ -2121,6 +2121,66 @@ export default function DashboardPage() {
     }
   }
 
+  async function submitScenesAsJobs(scenes: string[]) {
+    if (!scenes || scenes.length === 0) return
+    if (!isTextToVideo) {
+      const msg = 'Scenario writer (45s) currently supports Text-to-Video only.'
+      setComposerError(msg)
+      setVideoColumnMessage(msg)
+      throw new Error(msg)
+    }
+    if (!selectedModel) {
+      const msg = 'Pick a model before sending scenes.'
+      setComposerError(msg)
+      throw new Error(msg)
+    }
+
+    setIsSubmitting(true)
+    setComposerError(null)
+    setVideoColumnMessage(null)
+    resumeSelectedProject()
+
+    const effectiveRatio: Ratio = aspectRatio
+    const perClipDuration: 5 | 10 | 15 = 15
+
+    try {
+      for (const sceneText of scenes) {
+        const prompt = sceneText.trim()
+        if (!prompt) continue
+        const createdJob = await jobOrchestratorGateway.createJob({
+          providerKey: selectedModel.providerKey,
+          requestedModel: selectedModel.model,
+          prompt,
+          durationSeconds: perClipDuration,
+          aspectRatio: effectiveRatio,
+        })
+        const seededJob = buildSeededJob(prompt, createdJob, {})
+        rememberClipRatio(seededJob.id, effectiveRatio)
+        if (!lockedProjectRatio) {
+          setLockedProjectRatio(effectiveRatio)
+          persistLockedRatio(effectiveRatio)
+        }
+        setPreviewVideoId(seededJob.id)
+        setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
+        markActiveJob(seededJob.id)
+      }
+      setPromptText('')
+      setUploadedFiles([])
+    } catch (error) {
+      let message = 'Could not start scenario generation.'
+      if (error instanceof ApiError) {
+        message = `${error.code}: ${error.message}`
+      } else if (error instanceof Error) {
+        message = error.message
+      }
+      setComposerError(message)
+      setVideoColumnMessage(message)
+      throw error
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   async function captureLastFrameAsBlob(videoUrl: string): Promise<Blob> {
     return await new Promise((resolve, reject) => {
       const v = document.createElement('video')
