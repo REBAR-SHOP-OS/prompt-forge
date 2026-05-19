@@ -1,27 +1,32 @@
-علت ریشه‌ای محتمل این است که کارت‌ها با تگ `<video>` مستقیماً به آدرس فایل‌های خارجی/ذخیره‌شده وصل می‌شوند و اگر URL منقضی، CORS/Range مشکل‌دار، یا متادیتا قابل خواندن نباشد، خود کارت فقط پس‌زمینه خاکستری/خالی نشان می‌دهد. همچنین بعد از برخی تغییرات، Pending به جای داشتن یک مسیر قابل‌اعتماد برای نمایش، به `storage_path` خام وابسته مانده است.
+# Add download button to AI image dialog
 
-برنامه‌ی اصلاح:
+The user wants a download icon in the AI image generation dialog footer — in the empty space circled in red, between **Regenerate** and **Use this image** — so they can save the generated image locally before (or instead of) using it in the project.
 
-1. یک لایه‌ی واحد برای ساخت آدرس قابل‌پخش کارت‌ها اضافه می‌کنم:
-   - آدرس‌های مستقیم را به مسیر امن `proxiedVideoUrl` تبدیل می‌کند.
-   - آدرس‌های blob/local edit را دست‌نخورده نگه می‌دارد.
-   - برای هر job cache می‌کند تا هر رندر دوباره درخواست نسازد.
+## Scope
 
-2. کارت‌های Pending و Player مرکزی را از `storage_path` خام جدا می‌کنم:
-   - کارت کوچک Pending با URL resolved نمایش داده شود.
-   - Live preview تکی با همان URL resolved کار کند.
-   - Live preview ترتیبی همه‌ی کارت‌ها هم فقط از همین مسیر resolved استفاده کند.
+UI-only change in `src/modules/generator-ui/components/AiImageDialog.tsx`. No backend, storage, or business-logic changes.
 
-3. برای حالت خطا/لود واقعی UI اضافه می‌کنم، نه صفحه‌ی خاکستری:
-   - تا وقتی URL آماده نشده، کارت وضعیت Loading نشان دهد.
-   - اگر ویدئو load/error شد، پیام کوتاه خطای preview داخل همان کارت نشان داده شود.
-   - کارت‌های processing همچنان spinner خودشان را داشته باشند.
+## Changes
 
-4. منطق Pending را دست نمی‌زنم مگر در حد نمایش:
-   - چیزی از history برنمی‌گردانم.
-   - ذخیره‌سازی جدید برای history اضافه نمی‌کنم.
-   - قانون فعلی باقی می‌ماند: Pending فقط کارت‌های پروژه‌ی فعال را نشان دهد و Final Film فقط در Library ذخیره شود.
+**`src/modules/generator-ui/components/AiImageDialog.tsx`**
 
-5. اعتبارسنجی:
-   - اجرای تست/چک مرتبط یا حداقل بررسی TypeScript از مسیرهای تغییر یافته.
-   - بررسی با مرورگر که کارت خاکستری به ویدئو/Loading/Error واضح تبدیل شده و آیکون Play فقط Live preview ترتیبی را فعال می‌کند.
+1. Import `Download` from `lucide-react` (alongside the existing icons).
+2. Add a `handleDownload` function that:
+   - Returns early if `!imageDataUrl`.
+   - Converts the current `imageDataUrl` (data URL) to a `Blob` via the existing `dataUrlToBlob` helper.
+   - Creates an `ObjectURL`, triggers an `<a download="ai-image-{timestamp}.png">` click, then revokes the URL.
+   - Wrapped in try/catch; on failure falls back to `window.open(imageDataUrl, '_blank')`.
+3. Insert a new ghost `<Button>` with the `Download` icon + label "Download" in the footer (lines 624-658), placed between the **Regenerate** button and the **Use this image** button. Disabled when `!imageDataUrl || isLoading || isSaving`.
+4. Keep existing button styling/sizing consistent (`variant="ghost"`, `size="sm"`, `h-4 w-4 mr-2` icon).
+
+## Out of scope
+
+- No changes to Pending/Library/History logic.
+- No changes to the live-preview `+` icon work from prior turns.
+- No new dependencies.
+
+## Verification
+
+- Open the AI image dialog, generate an image, click **Download** → browser saves a `.png`.
+- Button is hidden/disabled when no image is generated yet.
+- Regenerate and Use this image still work unchanged.
