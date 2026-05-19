@@ -548,14 +548,15 @@ async function startVeoExtension(
     instances: [{
       prompt: state.prompt,
       video: {
-        bytesBase64Encoded: bytesToBase64(videoBytes),
-        mimeType: "video/mp4",
+        inlineData: {
+          mimeType: "video/mp4",
+          data: bytesToBase64(videoBytes),
+        },
       },
     }],
     parameters: {
-      aspectRatio: state.aspectRatio,
+      numberOfVideos: 1,
       resolution: "720p",
-      sampleCount: 1,
     },
   };
 
