@@ -50,6 +50,7 @@ export default function ClipTrimmerDialog({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [muteAudio, setMuteAudio] = useState(false)
+  const [progress, setProgress] = useState(0)
 
   // Reset on open.
   useEffect(() => {
@@ -60,6 +61,7 @@ export default function ClipTrimmerDialog({
       setError(null)
       setCurrentTime(0)
       setMuteAudio(false)
+      setProgress(0)
     }
   }, [open])
 
@@ -120,11 +122,15 @@ export default function ClipTrimmerDialog({
   const apply = async () => {
     setError(null)
     setBusy(true)
+    setProgress(0)
     try {
       if (norm.length === 0 && !muteAudio) {
         throw new Error('No changes to apply. Mark a cut or mute the audio first.')
       }
-      const result = await trimVideoLocally(videoUrl, norm, { muteAudio })
+      const result = await trimVideoLocally(videoUrl, norm, {
+        muteAudio,
+        onProgress: (p) => setProgress(p.ratio),
+      })
       await onApply(result.blob, result.duration, result.extension)
       onOpenChange(false)
     } catch (e) {
@@ -284,7 +290,9 @@ export default function ClipTrimmerDialog({
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
           <Button onClick={apply} disabled={busy || (norm.length === 0 && !muteAudio)}>
-            {busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Rendering…</> : 'Apply changes'}
+            {busy ? (
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Rendering… {Math.round(progress * 100)}%</>
+            ) : 'Apply changes'}
           </Button>
         </DialogFooter>
       </DialogContent>

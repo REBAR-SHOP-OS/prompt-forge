@@ -1,40 +1,69 @@
-# Fix freezes in trimmed video output
+## هدف نهایی
+خروجی `Apply changes` بعد از Trim هیچ فریز، تکرار فریم، کش‌آمدگی/اسلوموشن یا افت سینک صدا نداشته باشد؛ حتی وقتی چند بازه حذف می‌شود و خروجی چند Segment پشت‌سرهم ساخته می‌شود.
 
-## Why it still freezes
+## تشخیص ریشه‌ای
+کد فعلی در `src/modules/generator-ui/lib/trimVideo.ts` از `HTMLVideoElement + canvas.captureStream + MediaRecorder` استفاده می‌کند. این مسیر ذاتاً real-time و وابسته به زمان‌بندی مرورگر است، نه زمان‌بندی دقیق ویدیویی. مشکل اصلی این است:
 
-In `src/modules/generator-ui/lib/trimVideo.ts` the recorder runs continuously while we seek between keep‑segments. Two things end up baked into the file:
+- `MediaRecorder` با ساعت واقعی سیستم ضبط می‌کند، اما ویدیو با `video.play()`، `seek` و `requestAnimationFrame` پیش می‌رود.
+- اگر decode، seek، render frame یا tab/main-thread لحظه‌ای کند شود، recorder همچنان زمان را جلو می‌برد و آخرین فریم را نگه می‌دارد؛ نتیجه می‌شود فریز.
+- اگر فریم‌ها با نرخ ثابت و قابل پیش‌بینی وارد encoder نشوند، خروجی می‌تواند طولانی‌تر از مقدار واقعی شود و شبیه اسلوموشن دیده شود.
+- راه‌حل قبلی که فقط `requestFrame()` را دستی کرده هنوز به playback real-time و rAF وابسته است، بنابراین مشکل به‌صورت کامل حذف نمی‌شود.
 
-1. **Startup freeze** — `recorder.start(250)` runs before the first `seekTo(seg.start)` resolves and before `video.play()` resolves. The canvas is still showing the initial black/first frame for hundreds of ms while the recorder is already capturing 30 fps of that static frame.
-2. **Inter‑segment freeze** — between segments we `video.pause()` → `seekTo(next.start)` → `drawContain` → `video.play()`. During the seek (often 100–400 ms in Chrome on long mp4s) the recorder keeps writing the same canvas frame, and the audio graph is connected so the small audio glitch is also encoded. Every cut produces a visible "frozen chunk".
+## راه‌حل پیشنهادی
+مسیر Trim را از ضبط real-time به پردازش deterministic تبدیل می‌کنیم: زمان خروجی را خودمان کنترل می‌کنیم، هر فریم خروجی را از زمان دقیق متناظر در ویدیوی ورودی می‌گیریم، و recorder فقط فریم‌های زمان‌بندی‌شده را دریافت می‌کند.
 
-So the architecture is correct (single recorder, no pause/resume), but we are still feeding it dead time.
+### 1. بازنویسی هسته Trim به مدل timeline قطعی
+در `trimVideo.ts`:
 
-## Fix
+- از keep segments موجود استفاده می‌کنیم.
+- برای هر لحظه خروجی، زمان متناظر ورودی را با mapping زیر پیدا می‌کنیم:
 
-Switch to a **frame‑gated** capture so the recorder only sees frames while the video is actually playing, and mute the audio graph during seeks.
+```text
+output time 0.00s  -> first keep segment start
+output time 1.20s  -> exact source time inside keep segments
+output time after cut -> next kept segment, بدون ضبط زمان seek
+```
 
-### Video gating
-- Create the canvas stream with `canvas.captureStream(0)` (manual frame mode).
-- Grab the single `CanvasCaptureMediaStreamTrack` and call `track.requestFrame()` from the rAF tick — but only inside the playing loop, after `drawContain`.
-- Do not request any frames during seeks or between segments. Result: the encoder simply has no input during dead time, so the output has no frozen frames (and the timeline stays continuous because MediaRecorder timestamps by wall‑clock, but since no frames are pushed, the previous frame is not duplicated).
+- به جای `video.play()` برای کل Segment، با `seekToExact()` به timestamp فریم بعدی می‌رویم، روی canvas می‌کشیم، سپس فقط همان فریم را با `requestFrame()` وارد stream می‌کنیم.
+- خروجی با FPS ثابت مثل 30fps ساخته می‌شود تا نرخ فریم، طول خروجی و حرکت طبیعی بماند.
+- دیگر هیچ زمان seek یا pause وارد خروجی نمی‌شود؛ بنابراین فریز ناشی از مرز cut حذف می‌شود.
 
-### Audio gating
-- Insert a `GainNode` between `MediaElementSource` and `MediaStreamAudioDestinationNode`.
-- Set `gain.value = 0` while seeking / between segments, set to `1` immediately before `video.play()` resolves for a segment. Use `setTargetAtTime` with a 5 ms time‑constant to avoid clicks.
-- Keeps audio perfectly silent during glue moments instead of leaking the paused element's last sample.
+### 2. جلوگیری از اسلوموشن
+- طول خروجی را از `totalKept` محاسبه می‌کنیم.
+- تعداد فریم خروجی را `Math.round(totalKept * fps)` تعیین می‌کنیم.
+- هر فریم فقط یک بار و در timestamp درست source کشیده می‌شود.
+- recorder با cadence ثابت تغذیه می‌شود، نه با rAF وابسته به سرعت مرورگر.
 
-### Recorder start timing
-- Move `recorder.start(250)` to **after** the first `seekTo(segments[0].start)` and just before the first `video.play()`. That removes the startup freeze entirely.
-- Keep `recorder.start(250)` (timeslice) so we still get incremental `dataavailable` chunks.
+### 3. مدیریت صدا بدون خراب کردن ویدیو
+برای حالت‌های مختلف:
 
-### Small correctness items
-- When `cuts` is empty, keep the current single‑segment fast path but still go through the same gated start so behavior is uniform.
-- `keptSoFar` progress stays as is.
-- Clean up the `GainNode` and the captured track in `cleanup()`.
+- اگر `Mute audio` روشن باشد: فقط ویدیو encode می‌شود.
+- اگر صدا لازم باشد: در فاز اول، ویدیو را بدون freeze/slow motion درست می‌کنیم و مسیر صدا را طوری نگه می‌داریم که mute قابل اتکا باشد.
+- برای خروجی دارای صدا، تا جایی که API مرورگر اجازه دهد صدا با همان mapping زمانی keep segments ضبط می‌شود؛ اگر مرورگر اجازه‌ی برش دقیق صدا در MediaRecorder را ندهد، اولویت با ویدیوی بدون فریز و بدون اسلوموشن است و خطای واضح/رفتار امن اعمال می‌شود، نه خروجی خراب.
 
-## Files to change
-- `src/modules/generator-ui/lib/trimVideo.ts` — only this file. No UI or backend changes.
+### 4. اصلاح منطق پایان Segment و cleanup
+- دیگر رویدادهای `ended` و آستانه‌ی `currentTime >= end - 0.01` تعیین‌کننده خروجی نیستند.
+- رندر بر اساس شمارنده فریم و زمان محاسباتی تمام می‌شود.
+- قبل از resolve، recorder کاملاً stop و blob نهایی فقط بعد از دریافت همه chunks ساخته می‌شود.
+- object URLها و trackها/AudioContext تمیز بسته می‌شوند.
 
-## Validation
-- Build passes.
-- Manual: open Trim clip dialog, mark 2–3 cuts in different positions, Apply changes, play the resulting clip — no freeze at the start, no freeze at each former cut boundary, audio stays in sync.
+### 5. تغییر کوچک در Dialog برای نمایش پیشرفت واقعی
+در `ClipTrimmerDialog.tsx`:
+
+- `onProgress` را به `trimVideoLocally` وصل می‌کنیم.
+- متن دکمه هنگام render درصد واقعی را نشان می‌دهد تا کاربر بداند پردازش فریم‌به‌فریم در حال انجام است.
+- رفتار UI و ظاهر کلی تغییر نمی‌کند.
+
+## اعتبارسنجی
+بعد از پیاده‌سازی:
+
+- تست واحد برای `normalizeCuts`، `totalKeptDuration` و mapping خروجی به ورودی اضافه/به‌روزرسانی می‌شود.
+- سناریوی مشابه تصویر کاربر بررسی می‌شود: چند cut مثل `0:06.1–0:15.4`، `0:23.6–0:25.8`، `0:34.5–0:44.9`.
+- خروجی باید طول حدودی `0:23.1` داشته باشد، بدون مکث در ابتدای خروجی و بدون freeze روی مرزهای cut.
+
+## محدوده تغییرات
+- `src/modules/generator-ui/lib/trimVideo.ts`
+- `src/modules/generator-ui/components/ClipTrimmerDialog.tsx`
+- در صورت نیاز تست سبک برای منطق pure mapping
+
+هیچ تغییر backend، دیتابیس یا طراحی کلی انجام نمی‌شود.
