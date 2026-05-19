@@ -161,6 +161,7 @@ export const jobOrchestratorGateway = {
 
           let progressPercent: number | null = null;
           let terminalFailedReason: string | null = null;
+          const requestedDuration = (detail as { requested_duration?: number | null }).requested_duration ?? null;
           if (
             detail.status === "processing" &&
             detail.provider_job_id &&
@@ -172,6 +173,13 @@ export const jobOrchestratorGateway = {
                 detail.provider_job_id,
                 { client: svc, userId: auth.userId },
               );
+              logInfo("inline poll result", {
+                jobId: detail.id,
+                provider: detail.provider_key,
+                pollStatus: poll.status,
+                pollProgress: poll.progressPercent ?? null,
+                hasVideo: Boolean(poll.videoUrl),
+              });
               if (poll.status === "completed" && poll.videoUrl) {
                 await jobService.completeJob(svc, {
                   userId: auth.userId,
@@ -209,15 +217,20 @@ export const jobOrchestratorGateway = {
                     logError("persist providerJobId failed", { error: (e as Error).message, jobId: detail.id });
                   }
                 }
-                progressPercent = poll.progressPercent ?? estimateProgressFromJob(detail.status, detail.created_at);
+                progressPercent = poll.progressPercent ?? estimateProgressFromJob(detail.status, detail.created_at, requestedDuration);
               }
             } catch (e) {
               // Don't fail the request just because polling errored — return current state.
-              logError("inline poll failed", { error: (e as Error).message, jobId: detail.id });
-              progressPercent = estimateProgressFromJob(detail.status, detail.created_at);
+              logError("inline poll failed", {
+                error: (e as Error).message,
+                stack: (e as Error).stack,
+                jobId: detail.id,
+                provider: detail.provider_key,
+              });
+              progressPercent = estimateProgressFromJob(detail.status, detail.created_at, requestedDuration);
             }
           } else {
-            progressPercent = estimateProgressFromJob(detail.status, detail.created_at);
+            progressPercent = estimateProgressFromJob(detail.status, detail.created_at, requestedDuration);
           }
 
           // Final safety net: if the job is still "processing" after the
@@ -228,8 +241,10 @@ export const jobOrchestratorGateway = {
             (detail.status === "processing" || detail.status === "pending")
           ) {
             const startedAt = Date.parse(detail.created_at);
-            if (Number.isFinite(startedAt) && Date.now() - startedAt > JOB_STUCK_TIMEOUT_MS) {
-              terminalFailedReason = "Video provider timed out before returning a result. Please try again.";
+            const stuckTimeoutMs = stuckTimeoutMsForDuration(requestedDuration);
+            if (Number.isFinite(startedAt) && Date.now() - startedAt > stuckTimeoutMs) {
+              const minutes = Math.round(stuckTimeoutMs / 60_000);
+              terminalFailedReason = `Video provider did not return a result within ${minutes} minutes. Credits refunded — please try again.`;
               try {
                 await jobService.failJob(svc, {
                   userId: auth.userId,
@@ -245,12 +260,20 @@ export const jobOrchestratorGateway = {
             }
           }
 
+          const responseStatus = terminalFailedReason ? "failed" : detail.status;
           const responseDetail = terminalFailedReason
             ? { ...detail, status: "failed" as const }
             : detail;
+          const statusMessage = terminalFailedReason
+            ?? buildStatusMessage(responseStatus, detail.created_at, requestedDuration, false);
 
           await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
-          return jsonResponse({ ...responseDetail, progress_percent: progressPercent, requestId: ctx.requestId });
+          return jsonResponse({
+            ...responseDetail,
+            progress_percent: progressPercent,
+            status_message: statusMessage,
+            requestId: ctx.requestId,
+          });
         }
 
         case "createJob": {
