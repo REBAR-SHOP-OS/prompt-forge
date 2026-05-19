@@ -1,16 +1,25 @@
-// In-browser video trimming via canvas + MediaRecorder.
+// In-browser video trimming via HTMLVideoElement.captureStream + MediaRecorder.
 //
-// Strategy: build the list of KEEP segments from the user's cut ranges, then
-// play through each keep segment sequentially while a single MediaRecorder
-// runs continuously (never paused). To avoid the "frozen chunk" artefact at
-// segment boundaries we GATE the inputs to the recorder:
-//   - video: canvas.captureStream(0) + track.requestFrame() called only from
-//     the rAF loop while a segment is actively playing. No frames are pushed
-//     during seeks, so the encoder never duplicates a static frame.
-//   - audio: a GainNode sits between MediaElementSource and the stream
-//     destination. Gain is ramped to 0 during seeks and back to 1 right
-//     before each segment plays, so we never leak audio from paused/seeking
-//     state into the output.
+// Strategy (deterministic, no freezes, no slow-motion):
+//   1. Build the list of KEEP segments from the user's cut ranges.
+//   2. Capture a MediaStream directly from the <video> element (video + audio
+//      stay perfectly in sync because they come from the same source).
+//   3. For each segment: seek (while the recorder is PAUSED so seek dead-time
+//      is never encoded), then resume() and play() through the segment, then
+//      pause() the recorder again before the next seek.
+//
+// Why this fixes both bugs:
+//   - Freeze on cut boundaries: previously the recorder kept its wall-clock
+//     running during seeks and duplicated the last frame. Now the recorder is
+//     paused while the source seeks, so no dead-time is baked into output.
+//   - Slow-motion / wrong length: previously some segments were encoded with
+//     extra padding (seek + first-frame-paint delay). With MediaRecorder.pause
+//     the output wall-clock equals the sum of actual playback durations, so
+//     the result length matches `totalKept` and runs at natural speed.
+//
+// This avoids the captureStream(0) + requestFrame() path, which is brittle
+// because it requires the rAF loop to match wall-clock perfectly — any main-
+// thread hiccup leaves the encoder starved and freezes a frame.
 
 export interface CutRange {
   /** seconds, inclusive start */
@@ -93,25 +102,6 @@ function keepSegments(cuts: CutRange[], duration: number): Array<{ start: number
   return segs
 }
 
-function drawContain(
-  ctx: CanvasRenderingContext2D,
-  video: HTMLVideoElement,
-  cw: number,
-  ch: number,
-) {
-  ctx.fillStyle = '#000'
-  ctx.fillRect(0, 0, cw, ch)
-  const vw = video.videoWidth
-  const vh = video.videoHeight
-  if (!vw || !vh) return
-  const scale = Math.min(cw / vw, ch / vh)
-  const dw = vw * scale
-  const dh = vh * scale
-  const dx = (cw - dw) / 2
-  const dy = (ch - dh) / 2
-  ctx.drawImage(video, dx, dy, dw, dh)
-}
-
 async function loadVideo(url: string): Promise<HTMLVideoElement> {
   return await new Promise((resolve, reject) => {
     const v = document.createElement('video')
@@ -120,20 +110,31 @@ async function loadVideo(url: string): Promise<HTMLVideoElement> {
     v.muted = false
     v.playsInline = true
     v.src = url
-    v.onloadedmetadata = () => resolve(v)
+    const onReady = () => {
+      v.removeEventListener('loadedmetadata', onReady)
+      v.removeEventListener('canplay', onReady)
+      resolve(v)
+    }
+    v.addEventListener('loadedmetadata', onReady)
+    v.addEventListener('canplay', onReady)
     v.onerror = () => reject(new Error(`Failed to load video: ${url}`))
   })
 }
 
 function seekTo(video: HTMLVideoElement, t: number): Promise<void> {
   return new Promise((resolve) => {
+    const target = Math.max(0, Math.min(video.duration || t, t))
+    if (Math.abs(video.currentTime - target) < 0.005) {
+      resolve()
+      return
+    }
     const onSeeked = () => {
       video.removeEventListener('seeked', onSeeked)
       resolve()
     }
     video.addEventListener('seeked', onSeeked)
     try {
-      video.currentTime = t
+      video.currentTime = target
     } catch {
       video.removeEventListener('seeked', onSeeked)
       resolve()
@@ -141,13 +142,50 @@ function seekTo(video: HTMLVideoElement, t: number): Promise<void> {
   })
 }
 
+function waitForRecorderState(
+  recorder: MediaRecorder,
+  state: 'recording' | 'paused',
+  timeoutMs = 500,
+): Promise<void> {
+  return new Promise((resolve) => {
+    if (recorder.state === state) {
+      resolve()
+      return
+    }
+    const evt = state === 'recording' ? 'resume' : 'pause'
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      recorder.removeEventListener(evt, finish)
+      resolve()
+    }
+    recorder.addEventListener(evt, finish)
+    setTimeout(finish, timeoutMs)
+  })
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+interface CaptureCapableVideo extends HTMLVideoElement {
+  captureStream?: () => MediaStream
+  mozCaptureStream?: () => MediaStream
+}
+
+function captureStreamFromVideo(video: HTMLVideoElement): MediaStream {
+  const v = video as CaptureCapableVideo
+  if (typeof v.captureStream === 'function') return v.captureStream()
+  if (typeof v.mozCaptureStream === 'function') return v.mozCaptureStream()
+  throw new Error('Video.captureStream is not supported in this browser')
+}
+
 export interface TrimOptions {
   onProgress?: (p: TrimProgress) => void
   /** When true, omit the audio track from the output. */
   muteAudio?: boolean
 }
-
-type FrameTrack = MediaStreamTrack & { requestFrame?: () => void }
 
 export async function trimVideoLocally(
   srcUrl: string,
@@ -159,6 +197,7 @@ export async function trimVideoLocally(
     : (optionsOrProgress ?? {})
   const onProgress = options.onProgress
   const muteAudio = options.muteAudio === true
+
   const video = await loadVideo(srcUrl)
   const duration = Number.isFinite(video.duration) ? video.duration : 0
   if (duration <= 0) throw new Error('Invalid video duration')
@@ -171,162 +210,160 @@ export async function trimVideoLocally(
 
   const totalKept = segments.reduce((s, x) => s + (x.end - x.start), 0)
 
-  const width = Math.max(320, Math.floor(video.videoWidth || 720))
-  const height = Math.max(320, Math.floor(video.videoHeight || 1280))
+  // Apply mute to the source element. When muted, captureStream still emits
+  // an audio track (silent) on some browsers; we explicitly drop it below.
+  video.muted = muteAudio
+  video.volume = muteAudio ? 0 : 1
+  // Hidden render: keep the element off-DOM to avoid layout cost, but some
+  // browsers require it in DOM for captureStream to keep producing frames.
+  // We attach it invisibly to be safe.
+  video.style.position = 'fixed'
+  video.style.left = '-99999px'
+  video.style.top = '0'
+  video.style.width = '1px'
+  video.style.height = '1px'
+  video.style.opacity = '0'
+  video.style.pointerEvents = 'none'
+  document.body.appendChild(video)
 
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('Canvas 2D not supported')
-  ctx.fillStyle = '#000'
-  ctx.fillRect(0, 0, width, height)
-
-  // Manual frame mode: we push frames ourselves via requestFrame().
-  const videoStream = canvas.captureStream(0)
-  const frameTrack = videoStream.getVideoTracks()[0] as FrameTrack | undefined
-
-  // --- Audio routing -------------------------------------------------------
-  const Ctor: typeof AudioContext = (window.AudioContext
-    ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)
-  let audioCtx: AudioContext | null = null
-  let audioDest: MediaStreamAudioDestinationNode | null = null
-  let gainNode: GainNode | null = null
-  let outStream: MediaStream = videoStream
-  if (muteAudio) {
-    try { video.muted = true } catch { /* noop */ }
-    outStream = videoStream
-  } else {
-    try {
-      audioCtx = new Ctor()
-      audioDest = audioCtx.createMediaStreamDestination()
-      const src = audioCtx.createMediaElementSource(video)
-      gainNode = audioCtx.createGain()
-      gainNode.gain.value = 0
-      src.connect(gainNode)
-      gainNode.connect(audioDest)
-      outStream = new MediaStream([
-        ...videoStream.getVideoTracks(),
-        ...audioDest.stream.getAudioTracks(),
-      ])
-    } catch (err) {
-      console.warn('[trimVideoLocally] audio capture unavailable:', err)
-      outStream = videoStream
-    }
-  }
-
-  const setAudioGain = (target: number) => {
-    if (!gainNode || !audioCtx) return
-    try {
-      gainNode.gain.setTargetAtTime(target, audioCtx.currentTime, 0.005)
-    } catch {
-      gainNode.gain.value = target
-    }
-  }
+  // Source stream from the <video> element — video + audio stay in sync.
+  const sourceStream = captureStreamFromVideo(video)
+  const videoTracks = sourceStream.getVideoTracks()
+  const audioTracks = muteAudio ? [] : sourceStream.getAudioTracks()
+  const outStream = new MediaStream([...videoTracks, ...audioTracks])
 
   const mimeType = pickMimeType()
-  const recorder = new MediaRecorder(outStream, { mimeType, videoBitsPerSecond: 5_000_000 })
+  const recorder = new MediaRecorder(outStream, {
+    mimeType,
+    videoBitsPerSecond: 5_000_000,
+    audioBitsPerSecond: 128_000,
+  })
   const chunks: Blob[] = []
   recorder.ondataavailable = (ev) => { if (ev.data && ev.data.size > 0) chunks.push(ev.data) }
 
   let stopped = false
-  let rafId = 0
-
-  const cleanup = async () => {
-    cancelAnimationFrame(rafId)
-    try { video.pause() } catch { /* noop */ }
-    try { frameTrack?.stop() } catch { /* noop */ }
-    video.removeAttribute('src')
-    video.load()
-    try { await audioCtx?.close() } catch { /* noop */ }
-  }
-
   const stopRecorder = () => {
     if (stopped) return
     stopped = true
     try { recorder.stop() } catch { /* noop */ }
   }
 
+  const cleanup = () => {
+    try { video.pause() } catch { /* noop */ }
+    try {
+      for (const t of sourceStream.getTracks()) t.stop()
+    } catch { /* noop */ }
+    try { video.removeAttribute('src'); video.load() } catch { /* noop */ }
+    try { video.remove() } catch { /* noop */ }
+  }
+
   const recordedBlob = new Promise<Blob>((resolve, reject) => {
     recorder.onstop = () => {
       const blob = new Blob(chunks, { type: mimeType })
-      cleanup().finally(() => resolve(blob))
+      cleanup()
+      resolve(blob)
     }
     recorder.onerror = (ev) => {
-      cleanup().finally(() => reject((ev as unknown as { error?: Error }).error ?? new Error('Recorder error')))
+      cleanup()
+      reject((ev as unknown as { error?: Error }).error ?? new Error('Recorder error'))
     }
   })
 
+  // Wait until the source is actually playable (avoids first-segment stall).
+  if (video.readyState < 2) {
+    await new Promise<void>((resolve) => {
+      const onReady = () => {
+        video.removeEventListener('canplay', onReady)
+        resolve()
+      }
+      video.addEventListener('canplay', onReady)
+    })
+  }
+
+  // Pre-seek to the first segment BEFORE the recorder starts so the very
+  // first encoded frame is the correct one — no startup freeze.
+  await seekTo(video, segments[0].start)
+  // Let the decoder paint the frame at the seek target.
+  await delay(50)
+
   let keptSoFar = 0
-  let recorderStarted = false
   try {
+    recorder.start(250)
+    // Yield once so the recorder transitions into "recording" state.
+    await waitForRecorderState(recorder, 'recording', 250)
+
     for (let i = 0; i < segments.length; i++) {
       const seg = segments[i]
-
-      // Seek to segment start while video is paused and audio is muted.
-      // No frames are pushed to the canvas track during this time.
-      try { video.pause() } catch { /* noop */ }
-      setAudioGain(0)
-      await seekTo(video, Math.min(duration, Math.max(0, seg.start)))
-      // Pre-paint so the first requestFrame after play() has fresh content.
-      drawContain(ctx, video, width, height)
-
-      // Start recorder exactly once, right before the first segment plays.
-      if (!recorderStarted) {
-        recorderStarted = true
-        try {
-          recorder.start(250)
-        } catch (e) {
-          await cleanup()
-          throw e as Error
-        }
+      if (i > 0) {
+        // Pause the recorder, seek to the next segment, then resume. The seek
+        // dead-time is NEVER encoded, so cuts feel instant and no frame is
+        // duplicated at the boundary.
+        try { recorder.pause() } catch { /* noop */ }
+        await waitForRecorderState(recorder, 'paused', 250)
+        try { video.pause() } catch { /* noop */ }
+        await seekTo(video, seg.start)
+        // Give the decoder a tick to surface the new frame before we resume,
+        // so the first encoded frame after resume is the correct one.
+        await delay(40)
+        try { recorder.resume() } catch { /* noop */ }
+        await waitForRecorderState(recorder, 'recording', 250)
       }
 
+      // Play this segment in real-time. Recorder records exactly (seg.end -
+      // seg.start) seconds of wall-clock — no slow-motion possible.
+      const startedAt = keptSoFar
+      const segDur = Math.max(0, seg.end - seg.start)
+
       await new Promise<void>((resolve, reject) => {
-        const segEnd = seg.end
-        const segStart = seg.start
-        const segDur = Math.max(0, segEnd - segStart)
-        const startedAt = keptSoFar
         let done = false
+        let rafId = 0
 
         const finish = () => {
           if (done) return
           done = true
+          cancelAnimationFrame(rafId)
+          video.removeEventListener('ended', onEnded)
+          video.removeEventListener('error', onError)
           keptSoFar = startedAt + segDur
           onProgress?.({ ratio: Math.min(1, keptSoFar / totalKept) })
           resolve()
         }
 
         const tick = () => {
-          if (stopped || done) return
-          drawContain(ctx, video, width, height)
-          frameTrack?.requestFrame?.()
+          if (done) return
           const t = video.currentTime
-          if (t >= segEnd - 0.01) {
+          if (t >= seg.end - 0.015) {
             finish()
             return
           }
-          const processed = Math.max(0, t - segStart)
+          const processed = Math.max(0, t - seg.start)
           onProgress?.({ ratio: Math.min(1, (startedAt + processed) / totalKept) })
           rafId = requestAnimationFrame(tick)
         }
 
-        const onEnded = () => {
-          video.removeEventListener('ended', onEnded)
-          finish()
+        const onEnded = () => finish()
+        const onError = () => {
+          done = true
+          cancelAnimationFrame(rafId)
+          reject(new Error('Video playback error during trim'))
         }
         video.addEventListener('ended', onEnded)
+        video.addEventListener('error', onError)
 
-        video.play().then(() => {
-          setAudioGain(1)
-          rafId = requestAnimationFrame(tick)
-        }).catch((e) => reject(e as Error))
+        video.play()
+          .then(() => { rafId = requestAnimationFrame(tick) })
+          .catch((err) => {
+            if (done) return
+            done = true
+            reject(err as Error)
+          })
       })
-
-      // Mute audio immediately after the segment finishes so any tail
-      // samples while we pause/seek do not get encoded.
-      setAudioGain(0)
     }
+
+    // Pause first so we don't capture any tail samples after the last frame.
+    try { recorder.pause() } catch { /* noop */ }
+    await waitForRecorderState(recorder, 'paused', 250)
+    try { video.pause() } catch { /* noop */ }
   } finally {
     stopRecorder()
   }
