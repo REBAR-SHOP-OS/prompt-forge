@@ -371,12 +371,15 @@ export const jobOrchestratorGateway = {
             storagePaths = await jobService.deleteJob(svc, auth.userId, parsed.data.jobId);
           } catch (e) {
             const msg = (e as Error).message;
-            logError("deleteJob failed", { error: msg, jobId: parsed.data.jobId });
             const isNotFound = msg.toLowerCase().includes("not found");
-            const code = isNotFound ? "NOT_FOUND" : "DELETE_FAILED";
-            const status = isNotFound ? 404 : 500;
-            const safe = isNotFound ? "Job not found" : "Could not delete job. Please try again.";
-            return errorResponse(code, safe, status, ctx.requestId);
+            if (isNotFound) {
+              // Idempotent: job already gone (e.g. double-click, stale UI).
+              // Return success so the client clears the card cleanly.
+              await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
+              return jsonResponse({ ok: true, jobId: parsed.data.jobId, requestId: ctx.requestId });
+            }
+            logError("deleteJob failed", { error: msg, jobId: parsed.data.jobId });
+            return errorResponse("DELETE_FAILED", "Could not delete job. Please try again.", 500, ctx.requestId);
           }
 
           // Best-effort: purge files from Storage. Group by bucket.
