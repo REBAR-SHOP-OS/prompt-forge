@@ -93,6 +93,7 @@ import { VoiceoverDialog } from '@/modules/generator-ui/components/VoiceoverDial
 import CalendarInfoDialog from '@/modules/generator-ui/components/CalendarInfoDialog'
 import ImageReframeDialog from '@/modules/generator-ui/components/ImageReframeDialog'
 import AiImageDialog from '@/modules/generator-ui/components/AiImageDialog'
+import ScenarioWriterDialog from '@/modules/generator-ui/components/ScenarioWriterDialog'
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
