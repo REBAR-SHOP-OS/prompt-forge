@@ -15,7 +15,7 @@ import { errorResponse, jsonResponse, readJsonBody, startRequest } from "../../c
 import { authenticate } from "../../core/auth.ts";
 import { getEnv } from "../../core/env.ts";
 import { getServiceClient, getUserScopedClient } from "../../core/supabase.ts";
-import { logError, writeApiRequestLog } from "../../core/observability.ts";
+import { logError, logInfo, writeApiRequestLog } from "../../core/observability.ts";
 import { writeAuditLog } from "../../core/audit.ts";
 import { rateLimit } from "../../core/ratelimit.ts";
 import { jobService } from "./service.ts";
@@ -70,25 +70,59 @@ function isAllowedFrameUrl(url: string, userId: string): boolean {
 }
 
 // Estimate render progress when the provider hasn't reported one yet.
-// Uses status + created_at so the UI never shows a static "Rendering" with no
-// numeric feedback. Bounded to [18, 92] while in flight — 100% is reserved
-// for actual completion so the UI never falsely implies "almost done".
-function estimateProgressFromJob(status: string, createdAt: string | undefined): number | null {
+// Uses status + created_at + requested clip length so the UI never shows a
+// static "Rendering" with no numeric feedback. Bounded to [18, 92] while
+// in flight — 100% is reserved for actual completion so the UI never
+// falsely implies "almost done".
+function expectedRenderMsForDuration(durationSeconds: number | null | undefined): number {
+  // Wan 2.7 i2v: roughly 30s of wall-clock per 1s of output, with overhead.
+  const dur = durationSeconds && durationSeconds > 0 ? durationSeconds : 5;
+  // 5s ≈ 2.5min, 10s ≈ 5min, 15s ≈ 7.5min. Keep generous to avoid premature 92.
+  return Math.max(120_000, dur * 30_000);
+}
+
+function estimateProgressFromJob(
+  status: string,
+  createdAt: string | undefined,
+  durationSeconds?: number | null,
+): number | null {
   if (status === "completed") return 100;
   if (status === "failed" || status === "cancelled") return null;
   const startedAt = createdAt ? Date.parse(createdAt) : NaN;
-  // ~2.5 min expected for 5s 720P i2v on Wan; adjust gently if it changes.
-  const expectedMs = 150_000;
+  const expectedMs = expectedRenderMsForDuration(durationSeconds);
   if (!Number.isFinite(startedAt)) return status === "pending" ? 8 : 25;
   const elapsed = Date.now() - startedAt;
   const ratio = elapsed / expectedMs;
   return Math.max(status === "pending" ? 8 : 18, Math.min(92, Math.round(18 + ratio * 74)));
 }
 
-// Hard ceiling: if a job has been "processing" longer than this, the provider
-// is effectively stuck/lost and we force-fail with a refund so the user isn't
-// trapped on a forever-rendering card.
-const JOB_STUCK_TIMEOUT_MS = 15 * 60_000; // 15 minutes
+// Dynamic hard-timeout: longer clips legitimately take longer; we still
+// guarantee no job stays "processing" forever.
+function stuckTimeoutMsForDuration(durationSeconds: number | null | undefined): number {
+  const dur = durationSeconds && durationSeconds > 0 ? durationSeconds : 5;
+  // Floor at 15min for short clips, scale up for longer ones, cap at 45min.
+  return Math.min(45 * 60_000, Math.max(15 * 60_000, dur * 2.5 * 60_000));
+}
+
+function buildStatusMessage(
+  status: string,
+  createdAt: string | undefined,
+  durationSeconds: number | null | undefined,
+  hasError: boolean,
+): string | null {
+  if (status === "completed") return "Ready";
+  if (status === "failed") return hasError ? "Render failed — credits refunded" : "Failed";
+  if (status === "cancelled") return "Cancelled";
+  if (status === "pending") return "Queued — waiting for provider";
+  // processing
+  const startedAt = createdAt ? Date.parse(createdAt) : NaN;
+  if (!Number.isFinite(startedAt)) return "Rendering";
+  const elapsedMin = (Date.now() - startedAt) / 60_000;
+  const expectedMin = expectedRenderMsForDuration(durationSeconds) / 60_000;
+  if (elapsedMin < expectedMin * 0.8) return "Rendering";
+  if (elapsedMin < expectedMin * 1.5) return "Still rendering — almost there";
+  return "Still rendering — provider is taking longer than usual";
+}
 
 export const jobOrchestratorGateway = {
   contract: JOB_ORCHESTRATOR_CONTRACT,
@@ -127,6 +161,7 @@ export const jobOrchestratorGateway = {
 
           let progressPercent: number | null = null;
           let terminalFailedReason: string | null = null;
+          const requestedDuration = (detail as { requested_duration?: number | null }).requested_duration ?? null;
           if (
             detail.status === "processing" &&
             detail.provider_job_id &&
@@ -138,6 +173,13 @@ export const jobOrchestratorGateway = {
                 detail.provider_job_id,
                 { client: svc, userId: auth.userId },
               );
+              logInfo("inline poll result", {
+                jobId: detail.id,
+                provider: detail.provider_key,
+                pollStatus: poll.status,
+                pollProgress: poll.progressPercent ?? null,
+                hasVideo: Boolean(poll.videoUrl),
+              });
               if (poll.status === "completed" && poll.videoUrl) {
                 await jobService.completeJob(svc, {
                   userId: auth.userId,
@@ -175,15 +217,20 @@ export const jobOrchestratorGateway = {
                     logError("persist providerJobId failed", { error: (e as Error).message, jobId: detail.id });
                   }
                 }
-                progressPercent = poll.progressPercent ?? estimateProgressFromJob(detail.status, detail.created_at);
+                progressPercent = poll.progressPercent ?? estimateProgressFromJob(detail.status, detail.created_at, requestedDuration);
               }
             } catch (e) {
               // Don't fail the request just because polling errored — return current state.
-              logError("inline poll failed", { error: (e as Error).message, jobId: detail.id });
-              progressPercent = estimateProgressFromJob(detail.status, detail.created_at);
+              logError("inline poll failed", {
+                error: (e as Error).message,
+                stack: (e as Error).stack,
+                jobId: detail.id,
+                provider: detail.provider_key,
+              });
+              progressPercent = estimateProgressFromJob(detail.status, detail.created_at, requestedDuration);
             }
           } else {
-            progressPercent = estimateProgressFromJob(detail.status, detail.created_at);
+            progressPercent = estimateProgressFromJob(detail.status, detail.created_at, requestedDuration);
           }
 
           // Final safety net: if the job is still "processing" after the
@@ -194,8 +241,10 @@ export const jobOrchestratorGateway = {
             (detail.status === "processing" || detail.status === "pending")
           ) {
             const startedAt = Date.parse(detail.created_at);
-            if (Number.isFinite(startedAt) && Date.now() - startedAt > JOB_STUCK_TIMEOUT_MS) {
-              terminalFailedReason = "Video provider timed out before returning a result. Please try again.";
+            const stuckTimeoutMs = stuckTimeoutMsForDuration(requestedDuration);
+            if (Number.isFinite(startedAt) && Date.now() - startedAt > stuckTimeoutMs) {
+              const minutes = Math.round(stuckTimeoutMs / 60_000);
+              terminalFailedReason = `Video provider did not return a result within ${minutes} minutes. Credits refunded — please try again.`;
               try {
                 await jobService.failJob(svc, {
                   userId: auth.userId,
@@ -211,12 +260,20 @@ export const jobOrchestratorGateway = {
             }
           }
 
+          const responseStatus = terminalFailedReason ? "failed" : detail.status;
           const responseDetail = terminalFailedReason
             ? { ...detail, status: "failed" as const }
             : detail;
+          const statusMessage = terminalFailedReason
+            ?? buildStatusMessage(responseStatus, detail.created_at, requestedDuration, false);
 
           await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
-          return jsonResponse({ ...responseDetail, progress_percent: progressPercent, requestId: ctx.requestId });
+          return jsonResponse({
+            ...responseDetail,
+            progress_percent: progressPercent,
+            status_message: statusMessage,
+            requestId: ctx.requestId,
+          });
         }
 
         case "createJob": {

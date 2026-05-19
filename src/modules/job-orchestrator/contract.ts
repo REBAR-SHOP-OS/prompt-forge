@@ -8,10 +8,14 @@ export interface JobSummary {
   provider_job_id?: string | null;
   first_frame_url?: string | null;
   last_frame_url?: string | null;
+  requested_duration?: number | null;
+  requested_aspect_ratio?: string | null;
   created_at: string;
   updated_at?: string;
   /** 0-100 estimated render progress; null when unknown/terminal-failed. */
   progress_percent?: number | null;
+  /** Human-readable status line for the UI (e.g. "Queued", "Still rendering"). */
+  status_message?: string | null;
 }
 
 export interface JobVideo {
