@@ -19,7 +19,8 @@ type Props = {
   defaultDuration: ScenarioDuration
   userId: string | null
   onUseAsPrompt: (scenario: string, imageUrl?: string) => void
-  onSendScenes?: (scenes: string[]) => void | Promise<void>
+  onSendScenes?: (scenes: string[], imageUrl?: string) => void | Promise<void>
+
 }
 
 const DURATIONS: ScenarioDuration[] = [5, 10, 15, 45]
