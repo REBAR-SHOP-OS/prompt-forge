@@ -111,9 +111,14 @@ Deno.serve(async (req) => {
     const idea = typeof body?.idea === "string" ? body.idea.trim() : "";
     const durationRaw = Number(body?.durationSeconds);
     const duration = [5, 10, 15, 45].includes(durationRaw) ? durationRaw : 0;
+    const imageUrlRaw = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
+    const imageUrl =
+      imageUrlRaw && /^https?:\/\//i.test(imageUrlRaw) && imageUrlRaw.length <= 2048
+        ? imageUrlRaw
+        : undefined;
 
-    if (!idea) {
-      return new Response(JSON.stringify({ error: "idea is required" }), {
+    if (!idea && !imageUrl) {
+      return new Response(JSON.stringify({ error: "idea or imageUrl is required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -139,7 +144,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    let resp = await callGateway(apiKey, duration, idea);
+    const effectiveIdea = idea || "Generate a scenario based on the attached reference image.";
+    let resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl);
 
     if (resp.status === 429) {
       return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
