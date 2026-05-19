@@ -15,7 +15,7 @@ import { errorResponse, jsonResponse, readJsonBody, startRequest } from "../../c
 import { authenticate } from "../../core/auth.ts";
 import { getEnv } from "../../core/env.ts";
 import { getServiceClient, getUserScopedClient } from "../../core/supabase.ts";
-import { logError, writeApiRequestLog } from "../../core/observability.ts";
+import { logError, logInfo, writeApiRequestLog } from "../../core/observability.ts";
 import { writeAuditLog } from "../../core/audit.ts";
 import { rateLimit } from "../../core/ratelimit.ts";
 import { jobService } from "./service.ts";
