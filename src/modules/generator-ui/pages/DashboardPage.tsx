@@ -1752,12 +1752,21 @@ export default function DashboardPage() {
       // Independent per-job requests: one transient failure must not poison the
       // whole batch. Surface a banner only after several consecutive total-failures.
       const settled = await Promise.allSettled(
-        activeJobs.map((job) => jobOrchestratorGateway.getJob(job.id)),
+        activeJobs.map(async (job) => ({ jobId: job.id, detail: await jobOrchestratorGateway.getJob(job.id) })),
       )
+      const missingJobIds = settled
+        .filter((r): r is PromiseRejectedResult => r.status === 'rejected' && isMissingJobError(r.reason))
+        .map((r) => activeJobs[settled.indexOf(r)]?.id)
+        .filter((id): id is string => Boolean(id))
       const fulfilled = settled
-        .filter((r): r is PromiseFulfilledResult<JobDetail> => r.status === 'fulfilled')
-        .map((r) => r.value)
+        .filter((r): r is PromiseFulfilledResult<{ jobId: string; detail: JobDetail }> => r.status === 'fulfilled')
+        .map((r) => r.value.detail)
       const allFailed = fulfilled.length === 0 && settled.length > 0
+
+      if (missingJobIds.length > 0) {
+        setGeneratedVideos((currentJobs) => currentJobs.filter((job) => !missingJobIds.includes(job.id)))
+        unmarkActiveJobs(missingJobIds)
+      }
 
       if (fulfilled.length > 0) {
         setGeneratedVideos((currentJobs) =>
@@ -1765,7 +1774,7 @@ export default function DashboardPage() {
         )
       }
 
-      if (allFailed) {
+      if (allFailed && missingJobIds.length !== activeJobs.length) {
         pollFailureCountRef.current += 1
         if (pollFailureCountRef.current >= FAILURE_THRESHOLD) {
           const lastErr = settled.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined
