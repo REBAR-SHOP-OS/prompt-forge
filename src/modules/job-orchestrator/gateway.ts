@@ -23,8 +23,15 @@ export const jobOrchestratorGateway = {
       body: JSON.stringify(input),
     }),
 
-  getJob: (jobId: string) =>
-    request<JobDetail>(`/jobs-get?jobId=${encodeURIComponent(jobId)}`),
+  getJob: async (jobId: string) => {
+    const result = await request<JobDetail | { error?: { code?: string; message?: string }; missing?: boolean; requestId?: string }>(
+      `/jobs-get?jobId=${encodeURIComponent(jobId)}`,
+    );
+    if ('missing' in result && result.missing) {
+      throw new ApiError(404, result.error?.code ?? 'NOT_FOUND', result.error?.message ?? 'Job not found', result.requestId);
+    }
+    return result as JobDetail;
+  },
 
   deleteJob: (jobId: string) =>
     request<{ ok: true; jobId: string }>("/jobs-delete", {
