@@ -138,19 +138,22 @@ function estimateWanProgress(
   submitTime: string | undefined,
   providerProgress: number | null,
 ): number {
-  if (providerProgress !== null) return Math.min(92, providerProgress);
+  // Honor the provider's real progress as-is (it's the truth).
+  if (providerProgress !== null) return Math.max(0, Math.min(99, providerProgress));
   if (status === "SUCCEEDED") return 100;
   if (status === "FAILED" || status === "CANCELED") return 0;
   if (status === "PENDING") return 8;
-  // RUNNING / UNKNOWN: time-based.
+  // RUNNING / UNKNOWN with no real provider progress: conservative time-based
+  // ramp capped at 60 so the UI never falsely implies "almost done" when the
+  // provider hasn't actually reported it. The status message carries the
+  // real "still rendering" semantics.
   const startedAt = submitTime ? Date.parse(submitTime.replace(" ", "T") + "Z") : NaN;
   if (Number.isFinite(startedAt)) {
     const elapsed = Date.now() - startedAt;
     const ratio = elapsed / WAN_EXPECTED_RENDER_MS;
-    // Map to 18..92 range; cap below 100 so "almost done" only means truly done.
-    return Math.max(18, Math.min(92, Math.round(18 + ratio * 74)));
+    return Math.max(15, Math.min(60, Math.round(15 + ratio * 45)));
   }
-  return 25;
+  return 20;
 }
 
 async function startWanI2V(
