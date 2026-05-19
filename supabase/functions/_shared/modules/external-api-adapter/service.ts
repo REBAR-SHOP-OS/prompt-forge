@@ -322,6 +322,19 @@ async function pollWanI2V(taskId: string, apiKey: string): Promise<GenerationPol
   if (status === "RUNNING") {
     return { status: "processing", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null, progressPercent };
   }
+  if (status === "UNKNOWN") {
+    // DashScope returns UNKNOWN when the task_id is expired (>24h) or invalid.
+    // Treat as terminal failure so the job doesn't hang forever.
+    return {
+      status: "failed",
+      videoUrl: null,
+      thumbnailUrl: null,
+      aspectRatio: null,
+      duration: null,
+      reason: "Video provider lost track of this task (expired or unknown). Please try again.",
+      progressPercent: null,
+    };
+  }
   return { status: "pending", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null, progressPercent };
 }
 
