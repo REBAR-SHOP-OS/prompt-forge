@@ -2850,6 +2850,10 @@ export default function DashboardPage() {
       const names = brokenClips.map((b) => `"${b.filename}"`).join(', ')
       console.warn('[merge] skipped broken clips:', names)
     }
+    // Pre-flight: refresh the auth session so the storage upload at the end
+    // of Final Film never fails with a stale token (which would otherwise
+    // leave the UI stuck right after the merge finalizes).
+    try { await supabase.auth.refreshSession() } catch { /* ignore */ }
     try {
       // Determine target dimensions from the first video clip (mergeVideos.ts uses
       // the first clip's intrinsic size). If no video, fall back to a 1080p frame.
@@ -2934,13 +2938,21 @@ export default function DashboardPage() {
       setMergeProgress(96)
       const filename = `merged-${Date.now()}.${mergeRes.extension}`
       const storagePath = `${userId}/${filename}`
-      const { error: upErr } = await supabase.storage
+      // Hard timeout on the upload: if Supabase storage hangs (network/CDN
+      // hiccup), we'd otherwise sit at 96% forever. 2 minutes is plenty for
+      // a typical Final Film blob (<200MB).
+      const uploadPromise = supabase.storage
         .from(MERGED_BUCKET)
         .upload(storagePath, mergeRes.blob, { contentType: mergeRes.mimeType, upsert: false })
+      const uploadTimeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Upload timed out after 120s. Please check your connection and try again.')), 120_000),
+      )
+      const { error: upErr } = await Promise.race([uploadPromise, uploadTimeout]) as Awaited<typeof uploadPromise>
       if (upErr) throw new Error(upErr.message)
       setMergeProgress(99)
       const { data } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(storagePath)
       const publicUrl = data.publicUrl
+
 
       const mergedId = `merged-${crypto.randomUUID()}`
       // The merged mp4 inherits the first source clip's intrinsic dimensions

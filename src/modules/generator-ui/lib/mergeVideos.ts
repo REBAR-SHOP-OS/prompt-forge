@@ -452,6 +452,12 @@ export async function mergeVideoUrls(
   recorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) chunks.push(e.data)
   }
+  let recorderError: Error | null = null
+  recorder.onerror = (ev) => {
+    const err = (ev as unknown as { error?: Error }).error
+    recorderError = err instanceof Error ? err : new Error('MediaRecorder error')
+    console.error('[mergeVideoUrls] recorder error:', recorderError)
+  }
   const stopped = new Promise<void>((resolve) => {
     recorder.onstop = () => resolve()
   })
@@ -626,11 +632,11 @@ export async function mergeVideoUrls(
     try { prevClipNode.disconnect() } catch { /* ignore */ }
   }
 
-  onProgress?.({ ratio: 0.95, clipIndex: urls.length, totalClips: urls.length, stage: 'finalizing' })
-  await new Promise((r) => setTimeout(r, 250))
-  recorder.stop()
-  await stopped
-
+  // Pause any playback BEFORE stopping the recorder so no extra frames/audio
+  // sneak in during the stop handshake.
+  for (const v of preloaded) {
+    try { v.pause() } catch { /* ignore */ }
+  }
   if (soundtrackEl) {
     if (soundtrackClampRaf) cancelAnimationFrame(soundtrackClampRaf)
     if (soundtrackEndedHandler) soundtrackEl.removeEventListener('ended', soundtrackEndedHandler)
@@ -638,12 +644,59 @@ export async function mergeVideoUrls(
   }
   if (voiceoverEl) {
     try { voiceoverEl.pause() } catch { /* ignore */ }
-    voiceoverEl.src = ''
   }
+  cancelAnimationFrame(rafId)
+
+  onProgress?.({ ratio: 0.95, clipIndex: urls.length, totalClips: urls.length, stage: 'finalizing' })
+
+  // Flush any pending chunks BEFORE stop so the final blob is complete even
+  // when the browser delays the synthetic `dataavailable` after stop().
+  try { recorder.requestData() } catch { /* ignore */ }
+  await new Promise((r) => setTimeout(r, 100))
+
+  // Stop with a watchdog: some browsers/codecs (Safari, certain Chromium
+  // builds with hardware encoders) silently fail to fire `onstop`. Without a
+  // timeout, the merge UI would hang on 95% forever. We force-resolve after
+  // 8s and build the blob from whatever chunks we already have.
+  try {
+    if (recorder.state !== 'inactive') recorder.stop()
+  } catch (err) {
+    console.warn('[mergeVideoUrls] recorder.stop() threw:', err)
+  }
+  let finalizeTimedOut = false
+  await Promise.race([
+    stopped,
+    new Promise<void>((resolve) =>
+      setTimeout(() => { finalizeTimedOut = true; resolve() }, 8000),
+    ),
+  ])
+  if (finalizeTimedOut) {
+    console.warn('[mergeVideoUrls] recorder.onstop never fired within 8s — finalizing with current chunks')
+    try { recorder.requestData() } catch { /* ignore */ }
+    await new Promise((r) => setTimeout(r, 200))
+  }
+
+  // Final cleanup of media elements + audio graph.
+  for (const v of preloaded) {
+    try { v.removeAttribute('src'); v.load() } catch { /* ignore */ }
+  }
+  if (voiceoverEl) {
+    try { voiceoverEl.removeAttribute('src'); voiceoverEl.load() } catch { /* ignore */ }
+  }
+  if (soundtrackEl) {
+    try { soundtrackEl.removeAttribute('src'); soundtrackEl.load() } catch { /* ignore */ }
+  }
+  try {
+    for (const t of outStream.getTracks()) t.stop()
+  } catch { /* ignore */ }
   if (audioCtx) {
     try { await audioCtx.close() } catch { /* ignore */ }
   }
 
+  if (recorderError) throw recorderError
+  if (chunks.length === 0) throw new Error('Recorder produced no data')
+
   const blob = new Blob(chunks, { type: chosenMime })
+  if (blob.size === 0) throw new Error('Recorder produced an empty blob')
   return { blob, mimeType: chosenMime, extension: mimeTypeToExtension(chosenMime) }
 }

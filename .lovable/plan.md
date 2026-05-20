@@ -1,36 +1,49 @@
-مشکل فعلی با رندر provider فرق دارد: درصد 20٪ مربوط به ساخت Final Film داخل مرورگر است، نه jobs-get. کد فعلی فقط بعد از پایان هر کلیپ درصد را آپدیت می‌کند؛ بنابراین اگر اولین کلیپ طولانی/کند باشد یا ویدیو در پایان event ندهد، دکمه می‌تواند برای مدت طولانی روی یک درصد ثابت مثل 20٪ بماند. همچنین Auth refresh خطا داده و اگر token هنگام merge/proxy/upload نامعتبر شود، UI پیام دقیق و retry کنترل‌شده ندارد.
+بررسی نشان می‌دهد 95٪ از خودِ مرحله‌ی merge در مرورگر می‌آید، نه از آپلود: در `mergeVideos.ts` دقیقاً قبل از `recorder.stop()` مقدار 95٪ ارسال می‌شود و چون بعد از آن فقط وقتی `mergeVideoUrls` برگردد UI به 96٪ می‌رود، گیر کردن روی 95٪ یعنی فرآیند ضبط/نهایی‌سازی `MediaRecorder` کامل نمی‌شود یا هیچ خطای قابل‌نمایشی برنمی‌گرداند.
 
-برنامه اصلاح:
+## طرح اصلاح قطعی
 
-1. اصلاح progress واقعی Final Film در `mergeVideos.ts`
-- پیشرفت را فقط بعد از پایان هر کلیپ محاسبه نکنم.
-- هنگام پخش هر فریم/هر چندصد میلی‌ثانیه، progress را بر اساس `elapsedDuration + currentTime` گزارش کنم.
-- برای مرحله‌های داخلی وضعیت دقیق بدهم: loading sources، recording clip N، applying transition، finalizing، uploading، saving.
-- progress دیگر روی 20٪ ثابت نمی‌ماند، چون داخل همان کلیپ هم جلو می‌رود.
+1. **محکم‌کردن lifecycle ضبط در `mergeVideos.ts`**
+   - برای `MediaRecorder` رویدادهای `onstop`، `onerror` و timeout واقعی اضافه می‌کنم.
+   - اگر `recorder.stop()` یا final chunk بیش از زمان مجاز طول بکشد، merge با خطای واضح متوقف می‌شود و UI دیگر بی‌نهایت روی 95٪ نمی‌ماند.
+   - قبل از stop، ویدیوها/صداها pause می‌شوند و بعد از stop همه trackها، rAFها، intervalها، media elementها و `AudioContext` پاکسازی می‌شوند.
 
-2. جلوگیری از hang دائمی در merger
-- برای load metadata هر ویدیو timeout اضافه کنم تا اگر یک source/proxy گیر کرد، merge بی‌نهایت منتظر نماند.
-- اگر `play()` رد شد یا video بدون جلو رفتن `currentTime` ماند، با خطای قابل فهم merge را fail کنم.
-- cleanup کامل‌تر برای recorder، rAF، audio context و media elements اضافه کنم تا اجرای بعدی خراب نشود.
+2. **حذف حالت‌های بی‌پاسخ در لود و پخش کلیپ‌ها**
+   - `loadVideo`، preload metadata/canplay، seek فریم اول، music/voiceover metadata و `play()` همگی timeout و خطای قابل‌نمایش می‌گیرند.
+   - اگر playhead ویدیو جلو نرود یا browser playback گیر کند، merge fail می‌شود نه اینکه روی درصد ثابت بماند.
+   - `play()` rejection دیگر فقط `console.warn` نمی‌شود؛ به خطای کنترل‌شده تبدیل می‌شود.
 
-3. اصلاح UI دکمه Final Film در `DashboardPage.tsx`
-- به جای نمایش فقط عدد، مرحله فعلی را هم نشان بدهم تا مشخص باشد گیر در «recording»، «uploading» یا «saving» است.
-- progress مرحله‌ای را monotonic کنم ولی اجازه ندهم قبل از آپلود/ثبت نهایی به 100 برسد.
-- برای upload به storage و ثبت entry، progressهای قطعی مثل 92٪ و 98٪ نمایش داده شود؛ 100٪ فقط بعد از ساخته شدن Library entry.
+3. **Abort و cleanup سراسری برای Final Film**
+   - به `mergeVideoUrls` یک `AbortSignal`/cleanup داخلی اضافه می‌کنم تا اگر timeout یا خطا رخ داد، ضبط و منابع مرورگر قطع شوند.
+   - این جلوی zombie recorder و mergeهای نیمه‌تمام بعد از تلاش‌های قبلی را می‌گیرد.
 
-4. مدیریت خطای auth/proxy/upload
-- قبل از شروع Final Film session را تازه‌سازی/اعتبارسنجی کنم.
-- اگر refresh token یا auth خراب بود، merge شروع نشود و پیام روشن بدهد که کاربر باید دوباره وارد شود؛ نه اینکه روی درصد ثابت بماند.
-- خطاهای proxy/storage با نام مرحله و پیام قابل اقدام نمایش داده شوند.
+4. **اصلاح UI مرحله‌ای در `DashboardPage.tsx`**
+   - علاوه بر درصد، stage داخلی مثل `Loading`, `Recording`, `Finalizing`, `Uploading`, `Saving` نگه داشته می‌شود.
+   - 95٪ فقط به عنوان `Finalizing` نشان داده می‌شود و با watchdog اگر طولانی شد پیام دقیق می‌دهد.
+   - در `catch/finally`، state کامل reset می‌شود تا دکمه برای تلاش بعدی قفل نماند.
 
-5. اعتبارسنجی
-- سناریوی چند کلیپ + Final Film را با مرورگر بررسی می‌کنم.
-- شبکه را چک می‌کنم که storage upload و ثبت Library بعد از merge انجام شود.
-- console را چک می‌کنم که خطای merge/auth خام باقی نمانده باشد.
+5. **محکم‌کردن آپلود بعد از merge**
+   - قبل از شروع Final Film نشست کاربر revalidate/refresh می‌شود.
+   - آپلود فایل خروجی به storage با timeout و خطای روشن انجام می‌شود.
+   - اگر upload fail شود، کاربر پیام مشخص می‌بیند و UI روی 96/99٪ هم گیر نمی‌کند.
 
-فایل‌های اصلی برای تغییر:
+6. **اعتبارسنجی بعد از پیاده‌سازی**
+   - با سناریوی چند کلیپ + Final Film تست می‌کنم.
+   - در Network باید بعد از `Finalizing` یک upload به `merged-videos` دیده شود.
+   - در دیتابیس storage باید فایل `merged-*.mp4/webm` جدید ثبت شود.
+   - در UI باید مسیر کامل 95 → 96 → 99 → 100 یا خطای قابل‌فهم طی شود، نه گیر کردن بی‌نهایت.
+
+## فایل‌های هدف
+
 - `src/modules/generator-ui/lib/mergeVideos.ts`
 - `src/modules/generator-ui/pages/DashboardPage.tsx`
-- در صورت نیاز محدود: `src/modules/generator-ui/lib/proxiedVideoUrl.ts`
+- در صورت نیاز فقط برای اشتراک helper کوچک: یک helper محلی در همان فایل‌ها، بدون تغییر دیتابیس.
 
-نتیجه مورد انتظار: Final Film دیگر روی 20٪ ثابت نمی‌ماند؛ یا درصد زنده و مرحله دقیق نشان می‌دهد، یا با خطای مشخص و قابل retry متوقف می‌شود.
+## ریسک و کنترل
+
+- تغییر فقط محدود به مسیر Final Film/merge است و تولید ویدیو، History و Library دست‌نخورده می‌مانند.
+- هیچ migration لازم نیست.
+- هدف این نیست که هر خطای browser را پنهان کنیم؛ هدف این است که merge یا کامل شود یا سریع، تمیز و قابل‌فهم fail کند.
+
+<presentation-actions>
+<presentation-link url="https://docs.lovable.dev/tips-tricks/troubleshooting">Troubleshooting docs</presentation-link>
+</presentation-actions>
