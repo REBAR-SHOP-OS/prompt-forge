@@ -2981,114 +2981,16 @@ export default function DashboardPage() {
       const publicUrl = data.publicUrl
 
 
-      const mergedId = `merged-${crypto.randomUUID()}`
-      // The merged mp4 inherits the first source clip's intrinsic dimensions
-      // (mergeVideos.ts uses videoWidth/Height of the first clip). Mirror that
-      // here so the preview chrome matches what's actually in the file.
+      // Final Film is a TRANSIENT preview only — no card is created in
+      // Pending, Library, or History. The merged file is uploaded to storage
+      // and shown directly in the preview overlay. Pending source clips stay
+      // exactly where they are.
       const firstClipId = eligibleClips[0]?.id
       const mergedRatio: Ratio = (firstClipId ? clipAspectRatios[firstClipId] : undefined) ?? aspectRatio
-      const entry: JobDetail = {
-        id: mergedId,
-        status: 'completed',
-        input_prompt: urls.length === 1 ? 'Final clip — soundtrack applied' : `Final merged video — ${urls.length} clips`,
-        provider_key: 'merged',
-        model_key: 'browser-canvas',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        video: {
-          id: mergedId,
-          storage_path: publicUrl,
-          thumbnail_url: null,
-          aspect_ratio: mergedRatio,
-          duration: null,
-        },
-      }
-      rememberClipRatio(mergedId, mergedRatio)
+      setLastMergedPreview({ url: publicUrl, ratio: mergedRatio, clipCount: urls.length })
+      setPreviewDismissed(false)
+      setPreviewVideoId(null)
 
-      setMergedEntries((current) => {
-        const next = [entry, ...current]
-        persistMerged(next)
-        return next
-      })
-      // Auto-add to library (left panel).
-      setApprovedIds((current) => {
-        const next = new Set(current)
-        next.add(mergedId)
-        if (approvedStorageKey) {
-          try { window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
-        }
-        return next
-      })
-      setPreviewVideoId(mergedId)
-
-      // ===== Snapshot source clips for this project =====
-      // We keep source jobs on the server so the user can re-open the project
-      // from Library and inspect its source clips in HISTORY. We also save a
-      // snapshot here as a defensive fallback in case a source job is later
-      // removed for any reason.
-      // Include both the live workspace jobs AND any snapshot jobs from the
-      // project the user is extending (selectedProjectId), so re-running Final
-      // Film on a previously finalized project preserves its original clips.
-      // Build source-clip snapshot in the EXACT order the clips appear in the
-      // Final Film (eligibleClips), so re-opening this Library project later
-      // shows HISTORY cards in film order — not by created_at.
-      const liveSourceJobsById = new Map(
-        generatedVideos.filter((v) => !v.id.startsWith('merged-')).map((v) => [v.id, v]),
-      )
-      const snapshotJobsById = new Map(
-        (selectedProjectId ? (projectSourceJobs[selectedProjectId] ?? []) : []).map((j) => [j.id, j]),
-      )
-      const sourceJobs: JobDetail[] = []
-      for (const clip of eligibleClips) {
-        if (clip.kind !== 'video') continue
-        const job = liveSourceJobsById.get(clip.id) ?? snapshotJobsById.get(clip.id) ?? clip.job
-        sourceJobs.push(job)
-      }
-      {
-        const nextMap = { ...projectSourceJobs, [mergedId]: sourceJobs }
-        setProjectSourceJobs(nextMap)
-        persistProjectSourceJobs(nextMap)
-      }
-      // Hide the source jobs from the default HISTORY view so the workspace
-      // looks fresh after Final Film, but keep them on the server. Clicking
-      // the Library card re-shows them via selectedProjectId.
-      {
-        const nextHidden = new Set(workspaceHiddenJobIds)
-        for (const v of sourceJobs) nextHidden.add(v.id)
-        setWorkspaceHiddenJobIds(nextHidden)
-        persistWorkspaceHiddenJobIds(nextHidden)
-        // Remove from active manifest: they are now claimed by this Library
-        // project's source snapshot, not by the loose workspace.
-        unmarkActiveJobs(sourceJobs.map((v) => v.id))
-      }
-      // Same scoping for image cards: snapshot the images that went into the
-      // film so reopening the project re-shows only those, and hide them from
-      // the fresh workspace.
-      {
-        const liveImagesById = new Map(userImages.map((i) => [i.id, i]))
-        const snapshotImagesById = new Map(
-          (selectedProjectId ? (projectSourceImages[selectedProjectId] ?? []) : []).map((i) => [i.id, i]),
-        )
-        const sourceImages: UserImageItem[] = []
-        for (const clip of eligibleClips) {
-          if (clip.kind !== 'image') continue
-          const img = liveImagesById.get(clip.id) ?? snapshotImagesById.get(clip.id) ?? clip.image
-          sourceImages.push(img)
-        }
-        const nextImgMap = { ...projectSourceImages, [mergedId]: sourceImages }
-        setProjectSourceImages(nextImgMap)
-        persistProjectSourceImages(nextImgMap)
-
-        const nextHiddenImgs = new Set(workspaceHiddenImageIds)
-        for (const i of sourceImages) nextHiddenImgs.add(i.id)
-        setWorkspaceHiddenImageIds(nextHiddenImgs)
-        persistWorkspaceHiddenImageIds(nextHiddenImgs)
-        unmarkActiveImages(sourceImages.map((i) => i.id))
-      }
-      // Auto Start-Over: reset the working composer/history so the user can
-      // immediately begin the next project. Keep the preview open so they
-      // still see the freshly merged Final Film.
-      resetWorkspace({ keepPreview: true })
 
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Merge failed'
