@@ -626,6 +626,7 @@ export async function mergeVideoUrls(
     try { prevClipNode.disconnect() } catch { /* ignore */ }
   }
 
+  onProgress?.({ ratio: 0.95, clipIndex: urls.length, totalClips: urls.length, stage: 'finalizing' })
   await new Promise((r) => setTimeout(r, 250))
   recorder.stop()
   await stopped
