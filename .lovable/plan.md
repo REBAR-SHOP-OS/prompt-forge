@@ -1,49 +1,60 @@
-بررسی نشان می‌دهد 95٪ از خودِ مرحله‌ی merge در مرورگر می‌آید، نه از آپلود: در `mergeVideos.ts` دقیقاً قبل از `recorder.stop()` مقدار 95٪ ارسال می‌شود و چون بعد از آن فقط وقتی `mergeVideoUrls` برگردد UI به 96٪ می‌رود، گیر کردن روی 95٪ یعنی فرآیند ضبط/نهایی‌سازی `MediaRecorder` کامل نمی‌شود یا هیچ خطای قابل‌نمایشی برنمی‌گرداند.
+## هدف
 
-## طرح اصلاح قطعی
+Final Film فقط باید کارت‌های موجود در بخش Pending را merge کند و فایل خروجی را در preview نشان دهد. **هیچ کارت جدیدی** نباید در Pending، Library، یا History اضافه شود و کارت‌های منبع هم نباید مخفی/جابه‌جا شوند.
 
-1. **محکم‌کردن lifecycle ضبط در `mergeVideos.ts`**
-   - برای `MediaRecorder` رویدادهای `onstop`، `onerror` و timeout واقعی اضافه می‌کنم.
-   - اگر `recorder.stop()` یا final chunk بیش از زمان مجاز طول بکشد، merge با خطای واضح متوقف می‌شود و UI دیگر بی‌نهایت روی 95٪ نمی‌ماند.
-   - قبل از stop، ویدیوها/صداها pause می‌شوند و بعد از stop همه trackها، rAFها، intervalها، media elementها و `AudioContext` پاکسازی می‌شوند.
+## رفتار فعلی (مشکل)
 
-2. **حذف حالت‌های بی‌پاسخ در لود و پخش کلیپ‌ها**
-   - `loadVideo`، preload metadata/canplay، seek فریم اول، music/voiceover metadata و `play()` همگی timeout و خطای قابل‌نمایش می‌گیرند.
-   - اگر playhead ویدیو جلو نرود یا browser playback گیر کند، merge fail می‌شود نه اینکه روی درصد ثابت بماند.
-   - `play()` rejection دیگر فقط `console.warn` نمی‌شود؛ به خطای کنترل‌شده تبدیل می‌شود.
+در `DashboardPage.tsx` تابع Final Film بعد از merge این کارها را انجام می‌دهد:
 
-3. **Abort و cleanup سراسری برای Final Film**
-   - به `mergeVideoUrls` یک `AbortSignal`/cleanup داخلی اضافه می‌کنم تا اگر timeout یا خطا رخ داد، ضبط و منابع مرورگر قطع شوند.
-   - این جلوی zombie recorder و mergeهای نیمه‌تمام بعد از تلاش‌های قبلی را می‌گیرد.
+1. یک `JobDetail` با id `merged-...` می‌سازد (`entry`).
+2. آن را به `mergedEntries` اضافه می‌کند و در localStorage پایدار می‌کند (`persistMerged`).
+3. به‌صورت خودکار به `approvedIds` (Library) اضافه می‌کند.
+4. کلیپ‌های منبع را در `projectSourceJobs[mergedId]` و `projectSourceImages[mergedId]` snapshot می‌گیرد.
+5. کارت‌های منبع را در `workspaceHiddenJobIds` / `workspaceHiddenImageIds` پنهان می‌کند و از active manifest حذف می‌کند.
+6. `resetWorkspace({ keepPreview: true })` صدا می‌زند → کل workspace ریست می‌شود.
 
-4. **اصلاح UI مرحله‌ای در `DashboardPage.tsx`**
-   - علاوه بر درصد، stage داخلی مثل `Loading`, `Recording`, `Finalizing`, `Uploading`, `Saving` نگه داشته می‌شود.
-   - 95٪ فقط به عنوان `Finalizing` نشان داده می‌شود و با watchdog اگر طولانی شد پیام دقیق می‌دهد.
-   - در `catch/finally`، state کامل reset می‌شود تا دکمه برای تلاش بعدی قفل نماند.
+نتیجه: کاربر یک «پروژه‌ی جدید» در Pending/Library می‌بیند و کلیپ‌های اصلی محو می‌شوند.
 
-5. **محکم‌کردن آپلود بعد از merge**
-   - قبل از شروع Final Film نشست کاربر revalidate/refresh می‌شود.
-   - آپلود فایل خروجی به storage با timeout و خطای روشن انجام می‌شود.
-   - اگر upload fail شود، کاربر پیام مشخص می‌بیند و UI روی 96/99٪ هم گیر نمی‌کند.
+## تغییرات
 
-6. **اعتبارسنجی بعد از پیاده‌سازی**
-   - با سناریوی چند کلیپ + Final Film تست می‌کنم.
-   - در Network باید بعد از `Finalizing` یک upload به `merged-videos` دیده شود.
-   - در دیتابیس storage باید فایل `merged-*.mp4/webm` جدید ثبت شود.
-   - در UI باید مسیر کامل 95 → 96 → 99 → 100 یا خطای قابل‌فهم طی شود، نه گیر کردن بی‌نهایت.
+فقط در `src/modules/generator-ui/pages/DashboardPage.tsx`، در بدنه‌ی Final Film (تقریباً خطوط ۲۹۵۶–۳۰۶۴):
+
+1. **حذف ساخت و درج کارت merged**
+   - حذف ساخت `entry: JobDetail` و فراخوانی `setMergedEntries(...)` + `persistMerged(...)`.
+   - حذف `setApprovedIds(...)` و نوشتن در `approvedStorageKey`.
+   - حذف `rememberClipRatio(mergedId, ...)`.
+
+2. **حذف snapshot و مخفی‌سازی کلیپ‌های منبع**
+   - حذف ساخت `sourceJobs`, `setProjectSourceJobs`, `persistProjectSourceJobs`.
+   - حذف ساخت `sourceImages`, `setProjectSourceImages`, `persistProjectSourceImages`.
+   - حذف `setWorkspaceHiddenJobIds(...)`, `persistWorkspaceHiddenJobIds(...)`, `unmarkActiveJobs(...)`.
+   - حذف معادل image آن‌ها.
+
+3. **حذف reset workspace**
+   - حذف `resetWorkspace({ keepPreview: true })`. کارت‌های Pending دست‌نخورده باقی بمانند.
+
+4. **نمایش فایل merged در preview بدون ساخت کارت**
+   - پس از آپلود موفق و گرفتن `publicUrl`، یک state سبک محلی برای فایل خروجی نگه می‌داریم (مثلاً `lastMergedPreviewUrl: string | null`) و overlay/preview موجود را روی این URL مستقیم تنظیم می‌کنیم — بدون تولید id با پیشوند `merged-` و بدون درج در هیچ لیست.
+   - اگر منطق فعلی preview صرفاً نیاز به URL دارد، از همان `publicUrl` استفاده می‌کنیم؛ نیاز به `JobDetail` صوری نیست.
+
+5. **پاکسازی state در `finally`**
+   - `setIsMerging(false)` و `setMergeProgress(0)` حفظ می‌شوند.
+   - مطمئن می‌شویم در مسیر خطا یا موفقیت، هیچ نوشتن جدیدی در `mergedEntries`/`approvedIds`/`workspaceHiddenJobIds` رخ نمی‌دهد.
+
+## نکات حفظ‌شده
+
+- بررسی پیش‌از‌merge برای کلیپ‌های شکسته، single-card guard، آپلود به bucket `merged-videos`، timeout آپلود، refresh session، transitions، music/voiceover — همگی بدون تغییر.
+- اعتبار فایل خروجی در storage تغییری نمی‌کند؛ فقط ثبت آن به‌عنوان «کارت» در UI حذف می‌شود.
 
 ## فایل‌های هدف
 
-- `src/modules/generator-ui/lib/mergeVideos.ts`
-- `src/modules/generator-ui/pages/DashboardPage.tsx`
-- در صورت نیاز فقط برای اشتراک helper کوچک: یک helper محلی در همان فایل‌ها، بدون تغییر دیتابیس.
+- `src/modules/generator-ui/pages/DashboardPage.tsx` (تنها فایل)
 
-## ریسک و کنترل
+بدون تغییر دیتابیس، بدون تغییر backend، بدون migration.
 
-- تغییر فقط محدود به مسیر Final Film/merge است و تولید ویدیو، History و Library دست‌نخورده می‌مانند.
-- هیچ migration لازم نیست.
-- هدف این نیست که هر خطای browser را پنهان کنیم؛ هدف این است که merge یا کامل شود یا سریع، تمیز و قابل‌فهم fail کند.
+## اعتبارسنجی
 
-<presentation-actions>
-<presentation-link url="https://docs.lovable.dev/tips-tricks/troubleshooting">Troubleshooting docs</presentation-link>
-</presentation-actions>
+پس از پیاده‌سازی:
+- اجرای Final Film روی ۴ کلیپ Pending → preview فایل merged پخش می‌شود، اما پنل Pending همچنان همان ۴ کارت قبلی را دارد، هیچ «Final merged video — N clips» در Library/Pending ظاهر نمی‌شود.
+- localStorage کلید `merged-videos:<user>` دیگر رشد نمی‌کند.
+- دکمه‌ی Final Film دوباره قابل استفاده است و progress به ۹۵→۹۶→۹۹→۰ می‌رسد.
