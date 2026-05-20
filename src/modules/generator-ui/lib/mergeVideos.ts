@@ -495,6 +495,24 @@ export async function mergeVideoUrls(
   let prevVideo: HTMLVideoElement | null = null
   let prevClipNode: MediaElementAudioSourceNode | null = null
 
+  // Live progress ticker: emits progress every ~250ms based on the live
+  // playhead of the current clip, so the UI moves even within a single clip
+  // and never appears frozen on a static percentage like "20%".
+  let liveTicker: ReturnType<typeof setInterval> | null = null
+  const startLiveProgress = (video: HTMLVideoElement, clipIndex: number, stage: MergeProgress['stage']) => {
+    if (liveTicker) clearInterval(liveTicker)
+    liveTicker = setInterval(() => {
+      const ct = Number.isFinite(video.currentTime) ? video.currentTime : 0
+      const ratio = totalDuration > 0
+        ? Math.min(0.99, (elapsedDuration + ct) / totalDuration)
+        : clipIndex / urls.length
+      onProgress?.({ ratio, clipIndex, totalClips: urls.length, stage })
+    }, 250)
+  }
+  const stopLiveProgress = () => {
+    if (liveTicker) { clearInterval(liveTicker); liveTicker = null }
+  }
+
   for (let i = 0; i < urls.length; i++) {
     const video = preloaded[i]
     const dur = Number.isFinite(video.duration) ? video.duration : 0
@@ -532,6 +550,7 @@ export async function mergeVideoUrls(
         } catch (err) {
           console.warn('[mergeVideoUrls] play() rejected for clip', i, err)
         }
+        startLiveProgress(video, i + 1, 'transition')
 
         const start = performance.now()
         await new Promise<void>((resolve) => {
@@ -557,6 +576,7 @@ export async function mergeVideoUrls(
 
         // Continue painting the incoming clip from now on.
         loopPaint(video)
+        startLiveProgress(video, i + 1, 'recording')
         await endedPromise
       } else {
         // Cut: behave like before.
@@ -571,6 +591,7 @@ export async function mergeVideoUrls(
           console.warn('[mergeVideoUrls] play() rejected for clip', i, err)
         }
         loopPaint(video)
+        startLiveProgress(video, i + 1, 'recording')
         await endedPromise
       }
     } else {
@@ -582,19 +603,23 @@ export async function mergeVideoUrls(
         console.warn('[mergeVideoUrls] play() rejected for first clip', err)
       }
       loopPaint(video)
+      startLiveProgress(video, i + 1, 'recording')
       await endedPromise
     }
 
+    stopLiveProgress()
     elapsedDuration += dur
     onProgress?.({
-      ratio: totalDuration > 0 ? Math.min(1, elapsedDuration / totalDuration) : (i + 1) / urls.length,
+      ratio: totalDuration > 0 ? Math.min(0.99, elapsedDuration / totalDuration) : (i + 1) / urls.length,
       clipIndex: i + 1,
       totalClips: urls.length,
+      stage: 'recording',
     })
 
     prevVideo = video
     prevClipNode = clipNode
   }
+  stopLiveProgress()
 
   // Cleanup tail
   if (prevClipNode) {
