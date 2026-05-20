@@ -2926,17 +2926,19 @@ export default function DashboardPage() {
         : undefined
       const mergeRes = await mergeVideoUrls(
         urls,
-        (p) => setMergeProgress(Math.round(p.ratio * 100)),
+        (p) => setMergeProgress(Math.max(1, Math.min(95, Math.round(p.ratio * 100)))),
         audioOpt,
         transitionsForMerge,
       )
 
+      setMergeProgress(96)
       const filename = `merged-${Date.now()}.${mergeRes.extension}`
       const storagePath = `${userId}/${filename}`
       const { error: upErr } = await supabase.storage
         .from(MERGED_BUCKET)
         .upload(storagePath, mergeRes.blob, { contentType: mergeRes.mimeType, upsert: false })
       if (upErr) throw new Error(upErr.message)
+      setMergeProgress(99)
       const { data } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(storagePath)
       const publicUrl = data.publicUrl
 
