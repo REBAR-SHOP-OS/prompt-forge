@@ -2850,6 +2850,10 @@ export default function DashboardPage() {
       const names = brokenClips.map((b) => `"${b.filename}"`).join(', ')
       console.warn('[merge] skipped broken clips:', names)
     }
+    // Pre-flight: refresh the auth session so the storage upload at the end
+    // of Final Film never fails with a stale token (which would otherwise
+    // leave the UI stuck right after the merge finalizes).
+    try { await supabase.auth.refreshSession() } catch { /* ignore */ }
     try {
       // Determine target dimensions from the first video clip (mergeVideos.ts uses
       // the first clip's intrinsic size). If no video, fall back to a 1080p frame.
