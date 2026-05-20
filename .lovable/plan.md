@@ -1,63 +1,36 @@
-نتیجه مورد انتظار: هیچ کارت رندری دیگر روی 92٪ مبهم نماند؛ هر Job فقط یکی از این وضعیت‌های قابل اتکا را نشان بدهد: در صف/در حال رندر با پیام واقعی، تکمیل‌شده، یا fail قطعی با برگشت اعتبار.
-
-تشخیص دقیق فعلی:
-- Job فعلی `95d369d8...` در دیتابیس هنوز `processing` است، نه completed/failed.
-- `jobs-get` از backend برای همین Job فقط `progress_percent: 18` برمی‌گرداند، اما UI با تخمین زمان خودش آن را تا 92٪ بالا می‌برد.
-- بنابراین مشکل فعلی «رندر واقعاً 92٪ نیست»؛ مشکل اصلی این است که frontend درصد مصنوعی 92٪ می‌سازد و حس freeze می‌دهد.
-- لاگ backend نشان می‌دهد provider هنوز `processing` است و ویدیو نداده: `pollStatus=processing`, `pollProgress=18`, `hasVideo=false`.
-- دیتابیس ستون persistent برای دلیل خطا/پیام وضعیت ندارد؛ پس بعد از refresh علت دقیق fail یا provider status پایدار ذخیره نمی‌شود.
-
-محدودیت‌ها و چیزهایی که نباید خراب شوند:
-- ساخت ویدیو، refund اعتبار، حذف کارت‌ها، Final Film و chain چند Scene نباید تغییر رفتار مخرب داشته باشند.
-- فایل‌های auto-generated backend client/types دستکاری نمی‌شوند.
-- تغییرات DB فقط با migration انجام می‌شود.
-- هیچ Job نباید بی‌نهایت در `processing` بماند.
+مشکل فعلی با رندر provider فرق دارد: درصد 20٪ مربوط به ساخت Final Film داخل مرورگر است، نه jobs-get. کد فعلی فقط بعد از پایان هر کلیپ درصد را آپدیت می‌کند؛ بنابراین اگر اولین کلیپ طولانی/کند باشد یا ویدیو در پایان event ندهد، دکمه می‌تواند برای مدت طولانی روی یک درصد ثابت مثل 20٪ بماند. همچنین Auth refresh خطا داده و اگر token هنگام merge/proxy/upload نامعتبر شود، UI پیام دقیق و retry کنترل‌شده ندارد.
 
 برنامه اصلاح:
 
-1. حذف ریشه‌ای 92٪ مصنوعی از UI
-- `DashboardPage.tsx` دیگر برای Jobهای در حال پردازش progress را تا 92٪ time-based بالا نمی‌برد.
-- اگر provider درصد واقعی نمی‌دهد، UI به‌جای عدد نزدیک پایان، حالت مرحله‌ای نشان می‌دهد: queued / rendering / taking longer.
-- برای این حالت، progress bar به سقف محافظه‌کارانه پایین‌تر محدود می‌شود یا به حالت “active rendering” تبدیل می‌شود تا کاربر فکر نکند ویدیو 92٪ آماده است.
+1. اصلاح progress واقعی Final Film در `mergeVideos.ts`
+- پیشرفت را فقط بعد از پایان هر کلیپ محاسبه نکنم.
+- هنگام پخش هر فریم/هر چندصد میلی‌ثانیه، progress را بر اساس `elapsedDuration + currentTime` گزارش کنم.
+- برای مرحله‌های داخلی وضعیت دقیق بدهم: loading sources، recording clip N، applying transition، finalizing، uploading، saving.
+- progress دیگر روی 20٪ ثابت نمی‌ماند، چون داخل همان کلیپ هم جلو می‌رود.
 
-2. تفکیک progress واقعی از progress تخمینی backend
-- در backend، progress تخمینی Wan دیگر با `WAN_EXPECTED_RENDER_MS = 150s` تا 92٪ پرتاب نمی‌شود.
-- اگر DashScope درصد واقعی نداده باشد، backend فقط وضعیت provider را گزارش می‌کند، نه درصد جعلی نزدیک 100.
-- درصد 100 فقط وقتی برمی‌گردد که `video_url` واقعی دریافت و Job کامل شده باشد.
+2. جلوگیری از hang دائمی در merger
+- برای load metadata هر ویدیو timeout اضافه کنم تا اگر یک source/proxy گیر کرد، merge بی‌نهایت منتظر نماند.
+- اگر `play()` رد شد یا video بدون جلو رفتن `currentTime` ماند، با خطای قابل فهم merge را fail کنم.
+- cleanup کامل‌تر برای recorder، rAF، audio context و media elements اضافه کنم تا اجرای بعدی خراب نشود.
 
-3. ذخیره وضعیت/دلیل پایدار در دیتابیس
-- یک migration اضافه می‌شود برای ذخیره پیام وضعیت و آخرین وضعیت provider روی `generator_generation_jobs`.
-- هنگام poll، backend آخرین وضعیت provider، progress واقعی اگر وجود داشت، و دلیل fail را ذخیره می‌کند.
-- اگر Job fail شود، دلیل دقیق آن بعد از refresh هم قابل نمایش می‌ماند.
+3. اصلاح UI دکمه Final Film در `DashboardPage.tsx`
+- به جای نمایش فقط عدد، مرحله فعلی را هم نشان بدهم تا مشخص باشد گیر در «recording»، «uploading» یا «saving» است.
+- progress مرحله‌ای را monotonic کنم ولی اجازه ندهم قبل از آپلود/ثبت نهایی به 100 برسد.
+- برای upload به storage و ثبت entry، progressهای قطعی مثل 92٪ و 98٪ نمایش داده شود؛ 100٪ فقط بعد از ساخته شدن Library entry.
 
-4. اصلاح timeout قطعی و deterministic
-- timeout همچنان بر اساس duration محاسبه می‌شود، اما backend در هر `jobs-get` آن را enforce می‌کند.
-- برای 15s، اگر از زمان مجاز عبور کند، Job همان‌جا `failed` می‌شود و credit refund می‌گیرد.
-- پیام fail در خود Job ذخیره می‌شود، نه فقط transaction description.
+4. مدیریت خطای auth/proxy/upload
+- قبل از شروع Final Film session را تازه‌سازی/اعتبارسنجی کنم.
+- اگر refresh token یا auth خراب بود، merge شروع نشود و پیام روشن بدهد که کاربر باید دوباره وارد شود؛ نه اینکه روی درصد ثابت بماند.
+- خطاهای proxy/storage با نام مرحله و پیام قابل اقدام نمایش داده شوند.
 
-5. جلوگیری از polling/race اضافی
-- در frontend برای هر Job فقط یک `jobs-get` هم‌زمان مجاز می‌شود.
-- اگر یک poll هنوز در جریان باشد، tick بعدی همان Job را دوباره نمی‌زند.
-- این کار فشار روی backend/provider را کم می‌کند و وضعیت‌های متناقض کمتر تولید می‌شود.
+5. اعتبارسنجی
+- سناریوی چند کلیپ + Final Film را با مرورگر بررسی می‌کنم.
+- شبکه را چک می‌کنم که storage upload و ثبت Library بعد از merge انجام شود.
+- console را چک می‌کنم که خطای merge/auth خام باقی نمانده باشد.
 
-6. اصلاح پیام Scene chaining
-- وقتی 45s انتخاب شده و عملاً سه کلیپ 15s پشت‌سرهم ساخته می‌شود، UI واضح نشان می‌دهد که در حال انتظار برای Scene 1 است، نه اینکه کل پروژه روی 92٪ گیر کرده.
-- اگر Scene fail شود، دلیل backend دقیقاً در پیام chain نشان داده می‌شود.
+فایل‌های اصلی برای تغییر:
+- `src/modules/generator-ui/lib/mergeVideos.ts`
+- `src/modules/generator-ui/pages/DashboardPage.tsx`
+- در صورت نیاز محدود: `src/modules/generator-ui/lib/proxiedVideoUrl.ts`
 
-7. اعتبارسنجی بعد از اجرا
-- با `jobs-get` روی همین Job بررسی می‌شود که دیگر UI/response به شکل مبهم 92٪ رفتار نکند.
-- لاگ `jobs-get` بررسی می‌شود تا provider status، progress و timeout درست گزارش شوند.
-- اگر Job از timeout عبور کرده باشد، باید به `failed` با refund تبدیل شود؛ اگر هنوز قانونی در حال پردازش باشد، باید پیام واقعی نشان دهد نه 92٪.
-
-ریسک کم و کنترل‌شده:
-- این تغییرات ساختار اصلی تولید ویدیو را عوض نمی‌کند؛ فقط وضعیت، progress، timeout و پیام‌دهی را deterministic و پایدار می‌کند.
-
-بعد از تأیید شما، اول migration امن را می‌سازم، سپس کد frontend/backend را اصلاح و با همین Job فعلی تست می‌کنم.
-
-<presentation-actions>
-  <presentation-open-history>View History</presentation-open-history>
-</presentation-actions>
-
-<presentation-actions>
-<presentation-link url="https://docs.lovable.dev/tips-tricks/troubleshooting">Troubleshooting docs</presentation-link>
-</presentation-actions>
+نتیجه مورد انتظار: Final Film دیگر روی 20٪ ثابت نمی‌ماند؛ یا درصد زنده و مرحله دقیق نشان می‌دهد، یا با خطای مشخص و قابل retry متوقف می‌شود.
