@@ -1438,6 +1438,28 @@ export default function DashboardPage() {
   }, [displayedClips])
 
   const previewItem = useMemo<PreviewItem | null>(() => {
+    // Highest priority: the transient Final Film output (not a card).
+    if (lastMergedPreview) {
+      const synthetic: JobDetail = {
+        id: '__final_film_preview__',
+        status: 'completed',
+        input_prompt: lastMergedPreview.clipCount === 1
+          ? 'Final clip — soundtrack applied'
+          : `Final merged video — ${lastMergedPreview.clipCount} clips`,
+        provider_key: 'merged',
+        model_key: 'browser-canvas',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        video: {
+          id: '__final_film_preview__',
+          storage_path: lastMergedPreview.url,
+          thumbnail_url: null,
+          aspect_ratio: lastMergedPreview.ratio,
+          duration: null,
+        },
+      }
+      return { kind: 'video', job: synthetic }
+    }
     if (previewVideoId) {
       const found = displayedClips.find((c) => c.id === previewVideoId)
       if (found) {
@@ -1477,7 +1499,7 @@ export default function DashboardPage() {
     const firstImage = displayedClips.find((c) => c.kind === 'image')
     if (firstImage && firstImage.kind === 'image') return { kind: 'image', image: firstImage.image }
     return null
-  }, [displayedClips, previewVideoId, previewDismissed, selectedProjectId, visibleVideos, playableSequenceClips])
+  }, [lastMergedPreview, displayedClips, previewVideoId, previewDismissed, selectedProjectId, visibleVideos, playableSequenceClips])
 
   // Backwards-compat alias used by existing card highlight + start-frame code paths
   const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
