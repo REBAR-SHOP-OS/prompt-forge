@@ -452,6 +452,12 @@ export async function mergeVideoUrls(
   recorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) chunks.push(e.data)
   }
+  let recorderError: Error | null = null
+  recorder.onerror = (ev) => {
+    const err = (ev as unknown as { error?: Error }).error
+    recorderError = err instanceof Error ? err : new Error('MediaRecorder error')
+    console.error('[mergeVideoUrls] recorder error:', recorderError)
+  }
   const stopped = new Promise<void>((resolve) => {
     recorder.onstop = () => resolve()
   })
