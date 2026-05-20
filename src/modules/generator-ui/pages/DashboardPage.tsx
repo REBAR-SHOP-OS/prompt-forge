@@ -935,6 +935,11 @@ export default function DashboardPage() {
   const [mergedEntries, setMergedEntries] = useState<JobDetail[]>([])
   const [isMerging, setIsMerging] = useState(false)
   const [mergeProgress, setMergeProgress] = useState<number>(0)
+  // Transient preview of the latest Final Film output. Lives only in memory:
+  // never added to Pending, Library, or History. Cleared on Start Over.
+  const [lastMergedPreview, setLastMergedPreview] = useState<
+    { url: string; ratio: Ratio; clipCount: number } | null
+  >(null)
   // --- Background music for the Final Film ---
   const [musicName, setMusicName] = useState<string | null>(null)
   const [musicUrl, setMusicUrl] = useState<string | null>(null)
