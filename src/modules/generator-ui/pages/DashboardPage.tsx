@@ -3049,6 +3049,8 @@ export default function DashboardPage() {
     // Reset any in-flight merge progress UI.
     setIsMerging(false)
     setMergeProgress(0)
+    // Drop the transient Final Film preview so Start Over fully clears it.
+    setLastMergedPreview(null)
     // Reset the composer to a fresh state.
     setPromptText('')
     setUploadedFiles([])
