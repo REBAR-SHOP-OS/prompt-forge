@@ -1,60 +1,41 @@
-## هدف
+## Goal
 
-Final Film فقط باید کارت‌های موجود در بخش Pending را merge کند و فایل خروجی را در preview نشان دهد. **هیچ کارت جدیدی** نباید در Pending، Library، یا History اضافه شود و کارت‌های منبع هم نباید مخفی/جابه‌جا شوند.
+After a successful **Final Film** merge, the resulting video must be registered in **Your Library** (left panel) so the user can open / play / download / delete it later. Pending must stay untouched — no new card is ever created in Pending.
 
-## رفتار فعلی (مشکل)
+## Where to change
 
-در `DashboardPage.tsx` تابع Final Film بعد از merge این کارها را انجام می‌دهد:
+Single file: `src/modules/generator-ui/pages/DashboardPage.tsx`, inside the Final Film merge handler (around line 2980, right after `publicUrl` is obtained and before the transient-preview block at 2984–2992).
 
-1. یک `JobDetail` با id `merged-...` می‌سازد (`entry`).
-2. آن را به `mergedEntries` اضافه می‌کند و در localStorage پایدار می‌کند (`persistMerged`).
-3. به‌صورت خودکار به `approvedIds` (Library) اضافه می‌کند.
-4. کلیپ‌های منبع را در `projectSourceJobs[mergedId]` و `projectSourceImages[mergedId]` snapshot می‌گیرد.
-5. کارت‌های منبع را در `workspaceHiddenJobIds` / `workspaceHiddenImageIds` پنهان می‌کند و از active manifest حذف می‌کند.
-6. `resetWorkspace({ keepPreview: true })` صدا می‌زند → کل workspace ریست می‌شود.
+## Behavior
 
-نتیجه: کاربر یک «پروژه‌ی جدید» در Pending/Library می‌بیند و کلیپ‌های اصلی محو می‌شوند.
+1. Build a `JobDetail`-shaped entry for the merged film:
+   - `id`: `` `merged-${Date.now()}-${crypto.randomUUID().slice(0,8)}` ``
+   - `status`: `'completed'`
+   - `input_prompt`: a friendly title (e.g. `'Final Film'` + clip count)
+   - `provider_key`/`model_key`: `'final-film'` / `'merge'`
+   - `created_at`/`updated_at`: `new Date().toISOString()`
+   - `requested_aspect_ratio`: `mergedRatio`
+   - `video`: `{ id: <same merged id>, storage_path: publicUrl, thumbnail_url: null, aspect_ratio: mergedRatio, duration: null }`
 
-## تغییرات
+2. Append it to `mergedEntries` via `setMergedEntries((prev) => { const next = [entry, ...prev]; persistMerged(next); return next })` — this is what already powers the Library panel and persists across reload.
 
-فقط در `src/modules/generator-ui/pages/DashboardPage.tsx`، در بدنه‌ی Final Film (تقریباً خطوط ۲۹۵۶–۳۰۶۴):
+3. Add the new id to `approvedIds` (and persist to `approvedStorageKey`), because `libraryItems` is filtered by `approvedIds.has(...)`.
 
-1. **حذف ساخت و درج کارت merged**
-   - حذف ساخت `entry: JobDetail` و فراخوانی `setMergedEntries(...)` + `persistMerged(...)`.
-   - حذف `setApprovedIds(...)` و نوشتن در `approvedStorageKey`.
-   - حذف `rememberClipRatio(mergedId, ...)`.
+4. Snapshot the source clips into `projectSourceJobs[mergedId]` (and persist) so selecting the library card later shows the correct HISTORY (mirrors the existing legacy fallback at line 1305).
 
-2. **حذف snapshot و مخفی‌سازی کلیپ‌های منبع**
-   - حذف ساخت `sourceJobs`, `setProjectSourceJobs`, `persistProjectSourceJobs`.
-   - حذف ساخت `sourceImages`, `setProjectSourceImages`, `persistProjectSourceImages`.
-   - حذف `setWorkspaceHiddenJobIds(...)`, `persistWorkspaceHiddenJobIds(...)`, `unmarkActiveJobs(...)`.
-   - حذف معادل image آن‌ها.
+5. Keep the existing transient preview behavior (`setLastMergedPreview(...)`) — overlay still appears immediately. We just now ALSO save to Library.
 
-3. **حذف reset workspace**
-   - حذف `resetWorkspace({ keepPreview: true })`. کارت‌های Pending دست‌نخورده باقی بمانند.
+## Non-goals / guards
 
-4. **نمایش فایل merged در preview بدون ساخت کارت**
-   - پس از آپلود موفق و گرفتن `publicUrl`، یک state سبک محلی برای فایل خروجی نگه می‌داریم (مثلاً `lastMergedPreviewUrl: string | null`) و overlay/preview موجود را روی این URL مستقیم تنظیم می‌کنیم — بدون تولید id با پیشوند `merged-` و بدون درج در هیچ لیست.
-   - اگر منطق فعلی preview صرفاً نیاز به URL دارد، از همان `publicUrl` استفاده می‌کنیم؛ نیاز به `JobDetail` صوری نیست.
+- ❌ Do NOT push to `generatedVideos` (Pending) — Pending must remain untouched per prior directive.
+- ❌ Do NOT create a backend job row. Final Film is client-side; Library has always rendered local merged entries from `localStorage`.
+- ❌ Do NOT change `mergeVideoUrls` or upload logic.
+- Failure path stays the same: nothing is added to Library if the upload throws.
 
-5. **پاکسازی state در `finally`**
-   - `setIsMerging(false)` و `setMergeProgress(0)` حفظ می‌شوند.
-   - مطمئن می‌شویم در مسیر خطا یا موفقیت، هیچ نوشتن جدیدی در `mergedEntries`/`approvedIds`/`workspaceHiddenJobIds` رخ نمی‌دهد.
+## Verification
 
-## نکات حفظ‌شده
-
-- بررسی پیش‌از‌merge برای کلیپ‌های شکسته، single-card guard، آپلود به bucket `merged-videos`، timeout آپلود، refresh session، transitions، music/voiceover — همگی بدون تغییر.
-- اعتبار فایل خروجی در storage تغییری نمی‌کند؛ فقط ثبت آن به‌عنوان «کارت» در UI حذف می‌شود.
-
-## فایل‌های هدف
-
-- `src/modules/generator-ui/pages/DashboardPage.tsx` (تنها فایل)
-
-بدون تغییر دیتابیس، بدون تغییر backend، بدون migration.
-
-## اعتبارسنجی
-
-پس از پیاده‌سازی:
-- اجرای Final Film روی ۴ کلیپ Pending → preview فایل merged پخش می‌شود، اما پنل Pending همچنان همان ۴ کارت قبلی را دارد، هیچ «Final merged video — N clips» در Library/Pending ظاهر نمی‌شود.
-- localStorage کلید `merged-videos:<user>` دیگر رشد نمی‌کند.
-- دکمه‌ی Final Film دوباره قابل استفاده است و progress به ۹۵→۹۶→۹۹→۰ می‌رسد.
+- Build passes.
+- After clicking **FINAL FILM**: the preview overlay shows, AND the Library badge increments by 1, AND opening the library shows the new film as the newest entry with working play/download.
+- Pending count is unchanged (still 6 in the screenshot scenario).
+- Reload: the new film is still in the Library.
+- Delete from Library: removes it from `mergedEntries`, `approvedIds`, and `projectSourceJobs` (existing `deleteCard` already handles all three).

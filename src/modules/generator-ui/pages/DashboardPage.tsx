@@ -2981,15 +2981,65 @@ export default function DashboardPage() {
       const publicUrl = data.publicUrl
 
 
-      // Final Film is a TRANSIENT preview only — no card is created in
-      // Pending, Library, or History. The merged file is uploaded to storage
-      // and shown directly in the preview overlay. Pending source clips stay
-      // exactly where they are.
+      // Final Film preview overlay — Pending source clips stay untouched.
       const firstClipId = eligibleClips[0]?.id
       const mergedRatio: Ratio = (firstClipId ? clipAspectRatios[firstClipId] : undefined) ?? aspectRatio
       setLastMergedPreview({ url: publicUrl, ratio: mergedRatio, clipCount: urls.length })
       setPreviewDismissed(false)
       setPreviewVideoId(null)
+
+      // Register the merged film in Your Library (left panel). This does NOT
+      // touch Pending (generatedVideos); it only appends a JobDetail entry to
+      // mergedEntries + approvedIds (persisted in localStorage), exactly like
+      // saved library cards.
+      const mergedId = `merged-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
+      const nowIso = new Date().toISOString()
+      const libraryEntry: JobDetail = {
+        id: mergedId,
+        status: 'completed',
+        input_prompt: `Final Film (${urls.length} clip${urls.length === 1 ? '' : 's'})`,
+        provider_key: 'final-film',
+        model_key: 'merge',
+        provider_job_id: null,
+        first_frame_url: null,
+        last_frame_url: null,
+        requested_duration: null,
+        requested_aspect_ratio: mergedRatio,
+        created_at: nowIso,
+        updated_at: nowIso,
+        video: {
+          id: mergedId,
+          storage_path: publicUrl,
+          thumbnail_url: null,
+          aspect_ratio: mergedRatio,
+          duration: null,
+        },
+      }
+      setMergedEntries((prev) => {
+        const next = [libraryEntry, ...prev]
+        persistMerged(next)
+        return next
+      })
+      setApprovedIds((prev) => {
+        const next = new Set(prev)
+        next.add(mergedId)
+        if (approvedStorageKey) {
+          try { window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
+        }
+        return next
+      })
+      // Snapshot the source clips (video jobs only) so opening this Library
+      // card later shows the correct HISTORY in selected-project mode.
+      {
+        const sourceJobs: JobDetail[] = eligibleClips
+          .filter((c): c is Extract<UnifiedClip, { kind: 'video' }> => c.kind === 'video')
+          .map((c) => c.job)
+        if (sourceJobs.length > 0) {
+          const nextMap = { ...projectSourceJobs, [mergedId]: sourceJobs }
+          setProjectSourceJobs(nextMap)
+          persistProjectSourceJobs(nextMap)
+        }
+      }
 
 
     } catch (err) {
