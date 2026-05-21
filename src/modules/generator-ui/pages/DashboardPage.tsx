@@ -3080,6 +3080,18 @@ export default function DashboardPage() {
           persistProjectSourceJobs(nextMap)
         }
       }
+      // Same for source images: claim them under this merged project so they
+      // disappear from Pending and reappear inside the Library card's HISTORY.
+      {
+        const sourceImages: UserImageItem[] = eligibleClips
+          .filter((c): c is Extract<UnifiedClip, { kind: 'image' }> => c.kind === 'image')
+          .map((c) => c.image)
+        if (sourceImages.length > 0) {
+          const nextImgMap = { ...projectSourceImages, [mergedId]: sourceImages }
+          setProjectSourceImages(nextImgMap)
+          persistProjectSourceImages(nextImgMap)
+        }
+      }
 
 
     } catch (err) {
