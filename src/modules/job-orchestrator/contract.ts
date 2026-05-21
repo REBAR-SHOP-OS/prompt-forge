@@ -40,7 +40,7 @@ export interface CreateJobInput {
   firstFrameUrl?: string;
   lastFrameUrl?: string;
   /** Requested clip length in seconds. Defaults to 5 server-side. */
-  durationSeconds?: 5 | 10 | 15;
+  durationSeconds?: 5 | 10 | 15 | 45;
   /** Requested output aspect ratio. Defaults to 16:9 server-side. */
   aspectRatio?: AspectRatio;
 }
