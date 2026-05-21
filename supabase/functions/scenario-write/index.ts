@@ -182,8 +182,9 @@ Deno.serve(async (req) => {
     let raw: string = (data?.choices?.[0]?.message?.content ?? "").trim();
     let scenes = parseScenes(raw, duration);
 
-    // One retry for 45s if we didn't get exactly three scenes.
-    if (duration === 45 && scenes.length === 0) {
+    // One retry for multi-scene durations if we didn't get the expected count.
+    const expected = expectedSceneCount(duration);
+    if (expected > 1 && scenes.length === 0) {
       resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl);
       if (resp.ok) {
         data = await resp.json();
@@ -194,7 +195,7 @@ Deno.serve(async (req) => {
 
     if (scenes.length === 0) {
       // Final fallback: return the raw text as a single block so the UI still has something.
-      if (duration === 45) {
+      if (expected > 1) {
         const fallback = stripQuotes(raw);
         if (!fallback) {
           return new Response(JSON.stringify({ error: "Empty AI response" }), {
@@ -203,7 +204,7 @@ Deno.serve(async (req) => {
           });
         }
         return new Response(
-          JSON.stringify({ scenario: fallback, scenes: [fallback], warning: "Could not split into 3 scenes" }),
+          JSON.stringify({ scenario: fallback, scenes: [fallback], warning: `Could not split into ${expected} scenes` }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
