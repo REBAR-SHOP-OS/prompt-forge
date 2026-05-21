@@ -1,41 +1,46 @@
-## Goal
+## هدف
 
-After a successful **Final Film** merge, the resulting video must be registered in **Your Library** (left panel) so the user can open / play / download / delete it later. Pending must stay untouched — no new card is ever created in Pending.
+روی کارت‌های عکس (آپلودشده) دو تغییر اعمال شود:
 
-## Where to change
+1. **ورود دستی Duration** به‌جای دکمه‌های ثابت `5s / 10s / 15s`.
+2. اطمینان از اینکه کارت عکس در فرایند **FINAL FILM** دقیقاً مثل کارت ویدئو رفتار می‌کند (در ترتیب، Transitionها، شمول در merge، و persistence).
 
-Single file: `src/modules/generator-ui/pages/DashboardPage.tsx`, inside the Final Film merge handler (around line 2980, right after `publicUrl` is obtained and before the transient-preview block at 2984–2992).
+## محل تغییرات
 
-## Behavior
+تک‌فایل: `src/modules/generator-ui/pages/DashboardPage.tsx`
 
-1. Build a `JobDetail`-shaped entry for the merged film:
-   - `id`: `` `merged-${Date.now()}-${crypto.randomUUID().slice(0,8)}` ``
-   - `status`: `'completed'`
-   - `input_prompt`: a friendly title (e.g. `'Final Film'` + clip count)
-   - `provider_key`/`model_key`: `'final-film'` / `'merge'`
-   - `created_at`/`updated_at`: `new Date().toISOString()`
-   - `requested_aspect_ratio`: `mergedRatio`
-   - `video`: `{ id: <same merged id>, storage_path: publicUrl, thumbnail_url: null, aspect_ratio: mergedRatio, duration: null }`
+### ۱) ورودی دستی Duration روی کارت عکس (خط ۴۱۵۶–۴۱۸۵)
 
-2. Append it to `mergedEntries` via `setMergedEntries((prev) => { const next = [entry, ...prev]; persistMerged(next); return next })` — this is what already powers the Library panel and persists across reload.
+- بلوک فعلی radiogroup با سه دکمه (`5/10/15`) با یک **input عددی** + برچسب `s` جایگزین می‌شود.
+- مشخصات کنترل:
+  - `type="number"`, `min=1`, `max=15`, `step=1`, `inputMode="numeric"`
+  - مقدار اولیه: `img.still_duration_seconds ?? 3`
+  - عرض ثابت کوچک (مثلاً `w-14`)، استایل هم‌خانواده با سایر pillهای کارت (border `white/10`, bg `black/20`, متن `zinc-200`)
+  - `onClick`/`onKeyDown` با `stopPropagation` تا روی کارت preview تریگر نکند.
+  - `onChange`: مقدار را به state داخلی محلی می‌نویسد (برای تجربه‌ی روان تایپ).
+  - `onBlur` و `Enter`: `updateImageDuration(img.id, value)` فراخوانی می‌شود (همان تابع موجود که قبلاً مقدار را به ۱..۱۵ clamp و در DB ذخیره می‌کند — بدون تغییر).
+- مقادیر خارج محدوده به‌صورت خودکار توسط `updateImageDuration` clamp می‌شوند (موجود است).
+- یک پیشنهاد بصری سبک: کنار input سه چیپ کوچک «Presets: 5 / 10 / 15» نگه داشته شود (اختیاری، در صورت تأیید کاربر). در نسخه‌ی اولیه فقط input گذاشته می‌شود تا تجربه ساده بماند.
 
-3. Add the new id to `approvedIds` (and persist to `approvedStorageKey`), because `libraryItems` is filtered by `approvedIds.has(...)`.
+### ۲) رفتار FINAL FILM روی کارت‌های عکس
 
-4. Snapshot the source clips into `projectSourceJobs[mergedId]` (and persist) so selecting the library card later shows the correct HISTORY (mirrors the existing legacy fallback at line 1305).
+با بازخوانی کد فعلی، کارت‌های عکس از قبل در `eligibleClips` حضور دارند، در `manualOrder` ترتیب می‌گیرند، Transitionها بینشان اعمال می‌شود، در preview قبل از Final درست رندر می‌شوند، و در `mergeVideoUrls` با تبدیل به webm کوتاه به طول `still_duration_seconds` پیوست می‌شوند (خطوط ۲۷۶۴–۲۷۷۶، ۲۹۱۰–۲۹۲۷، ۳۷۲۸–۳۷۳۵). یعنی رفتار اصلی هم‌ارز ویدئو **برقرار است**.
 
-5. Keep the existing transient preview behavior (`setLastMergedPreview(...)`) — overlay still appears immediately. We just now ALSO save to Library.
+تنها نقطه‌ای که باید مطمئن شویم پس از تغییر #۱ همچنان درست کار می‌کند:
 
-## Non-goals / guards
+- مقدار جدید Duration که از input وارد می‌شود **بلافاصله** در state بنشیند (همین حالا `updateImageDuration` این کار را می‌کند → setState + DB update)، تا کلیپ تولیدی Final Film طولِ به‌روزشده را داشته باشد.
+- در preview overlay (`previewItem.image.still_duration_seconds`) و در ساخت `SeqClip` (خط ۳۷۳۴) همان مقدار خوانده می‌شود — تغییری لازم نیست.
+- در نتیجه پس از تغییر #۱ هیچ regressionی در Final Film انتظار نمی‌رود.
 
-- ❌ Do NOT push to `generatedVideos` (Pending) — Pending must remain untouched per prior directive.
-- ❌ Do NOT create a backend job row. Final Film is client-side; Library has always rendered local merged entries from `localStorage`.
-- ❌ Do NOT change `mergeVideoUrls` or upload logic.
-- Failure path stays the same: nothing is added to Library if the upload throws.
+## خارج از اسکوپ
 
-## Verification
+- بدون تغییر در طرح‌واره‌ی DB (ستون `still_duration_seconds` از قبل وجود دارد).
+- بدون تغییر در `imageUrlToClip`، `mergeVideoUrls`، یا منطق Library.
+- بدون تغییر در کارت‌های ویدئو.
 
-- Build passes.
-- After clicking **FINAL FILM**: the preview overlay shows, AND the Library badge increments by 1, AND opening the library shows the new film as the newest entry with working play/download.
-- Pending count is unchanged (still 6 in the screenshot scenario).
-- Reload: the new film is still in the Library.
-- Delete from Library: removes it from `mergedEntries`, `approvedIds`, and `projectSourceJobs` (existing `deleteCard` already handles all three).
+## راستی‌آزمایی
+
+- آپلود عکس → روی کارت input عددی دیده می‌شود؛ تایپ `7` و فشار Enter یا blur → مقدار ذخیره و باقی می‌ماند پس از reload.
+- ورود `0` یا `99` → به ۱ یا ۱۵ clamp می‌شود.
+- چند کارت عکس + ویدئو با Durationهای مختلف → کلیک FINAL FILM → فیلم نهایی شامل بخش‌های عکس به طول واردشده می‌شود؛ ترتیب drag و Transitionها حفظ می‌شوند؛ خروجی در Library ثبت می‌شود (طبق رفتار قبلی).
+- Pending دست نخورده می‌ماند.
