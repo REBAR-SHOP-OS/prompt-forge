@@ -86,20 +86,21 @@ function stripQuotes(s: string): string {
 
 function parseScenes(raw: string, duration: number): string[] {
   const cleaned = stripQuotes(raw);
-  if (duration !== 45) return [cleaned];
+  const expected = expectedSceneCount(duration);
+  if (expected <= 1) return [cleaned];
 
   const parts = cleaned
     .split(/\r?\n?\s*===SCENE===\s*\r?\n?/i)
     .map((s) => stripQuotes(s))
     .filter((s) => s.length > 0);
-  if (parts.length === 3) return parts;
+  if (parts.length === expected) return parts;
 
   // Fallback: try splitting on blank-line paragraphs.
   const paragraphs = cleaned
     .split(/\n\s*\n+/)
     .map((s) => stripQuotes(s))
     .filter((s) => s.length > 0);
-  if (paragraphs.length === 3) return paragraphs;
+  if (paragraphs.length === expected) return paragraphs;
 
   return []; // signal "needs retry"
 }
