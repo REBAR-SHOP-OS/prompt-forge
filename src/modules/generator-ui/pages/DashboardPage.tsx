@@ -2187,13 +2187,14 @@ export default function DashboardPage() {
     resumeSelectedProject()
 
     try {
-      const perClipDuration: 5 | 10 | 15 | 45 = durationSeconds
+      const iterations = durationSeconds === 45 ? 3 : 1
+      const perClipDuration: 5 | 10 | 15 = durationSeconds === 45 ? 15 : durationSeconds
 
       // The user's current selection always wins for per-clip generation.
       // (lockedProjectRatio still controls Final Film merge/preview only.)
       const effectiveRatio: Ratio = aspectRatio
 
-      {
+      for (let i = 0; i < iterations; i++) {
         let createdJob
         let seedFrames: { firstFrameUrl?: string; lastFrameUrl?: string } = {}
         let pendingEndAppendUrl: string | null = null
