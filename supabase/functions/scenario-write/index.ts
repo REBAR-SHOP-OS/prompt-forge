@@ -4,23 +4,32 @@
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 
-const WORD_CAPS: Record<number, number> = { 5: 40, 10: 70, 15: 100, 45: 270 };
+const WORD_CAPS: Record<number, number> = { 5: 40, 10: 70, 15: 100, 45: 270, 135: 810 };
 const BEAT_GUIDE: Record<number, string> = {
   5: "5s = 1 beat (one decisive shot)",
   10: "10s = 2 beats",
   15: "15s = 3 beats",
   45: "45s = three sequential 15s scenes",
+  135: "135s = nine sequential 15s scenes",
 };
 
 const SCENE_DELIM = "===SCENE===";
 
+function expectedSceneCount(duration: number): number {
+  if (duration === 135) return 9;
+  if (duration === 45) return 3;
+  return 1;
+}
+
 function buildSystemPrompt(duration: number): string {
-  if (duration === 45) {
+  const sceneCount = expectedSceneCount(duration);
+  if (sceneCount > 1) {
+    const numWord = sceneCount === 3 ? "THREE" : sceneCount === 9 ? "NINE" : String(sceneCount);
     return [
       "You are a professional short-form video scenario writer.",
-      "Given the user's idea, write a CONTINUOUS narrative scenario in ENGLISH for a 45-second cinematic video,",
-      "structured as THREE sequential 15-second scenes that flow into each other.",
-      `Output EXACTLY three scene blocks separated by the literal delimiter "${SCENE_DELIM}" on its own line.`,
+      `Given the user's idea, write a CONTINUOUS narrative scenario in ENGLISH for a ${duration}-second cinematic video,`,
+      `structured as ${numWord} sequential 15-second scenes that flow into each other.`,
+      `Output EXACTLY ${sceneCount} scene blocks separated by the literal delimiter "${SCENE_DELIM}" on its own line.`,
       "Do not number the scenes, do not add headings or labels, no markdown, no preamble, no quotes.",
       "Each scene must be 70-90 words and self-contained as a video prompt (include subject, action, camera move, lighting),",
       "while clearly continuing the story from the previous scene.",
@@ -77,20 +86,21 @@ function stripQuotes(s: string): string {
 
 function parseScenes(raw: string, duration: number): string[] {
   const cleaned = stripQuotes(raw);
-  if (duration !== 45) return [cleaned];
+  const expected = expectedSceneCount(duration);
+  if (expected <= 1) return [cleaned];
 
   const parts = cleaned
     .split(/\r?\n?\s*===SCENE===\s*\r?\n?/i)
     .map((s) => stripQuotes(s))
     .filter((s) => s.length > 0);
-  if (parts.length === 3) return parts;
+  if (parts.length === expected) return parts;
 
   // Fallback: try splitting on blank-line paragraphs.
   const paragraphs = cleaned
     .split(/\n\s*\n+/)
     .map((s) => stripQuotes(s))
     .filter((s) => s.length > 0);
-  if (paragraphs.length === 3) return paragraphs;
+  if (paragraphs.length === expected) return paragraphs;
 
   return []; // signal "needs retry"
 }
@@ -110,7 +120,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const idea = typeof body?.idea === "string" ? body.idea.trim() : "";
     const durationRaw = Number(body?.durationSeconds);
-    const duration = [5, 10, 15, 45].includes(durationRaw) ? durationRaw : 0;
+    const duration = [5, 10, 15, 45, 135].includes(durationRaw) ? durationRaw : 0;
     const imageUrlRaw = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
     const imageUrl =
       imageUrlRaw && /^https?:\/\//i.test(imageUrlRaw) && imageUrlRaw.length <= 2048
@@ -130,7 +140,7 @@ Deno.serve(async (req) => {
       });
     }
     if (!duration) {
-      return new Response(JSON.stringify({ error: "durationSeconds must be 5, 10, 15, or 45" }), {
+      return new Response(JSON.stringify({ error: "durationSeconds must be 5, 10, 15, 45, or 135" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -172,8 +182,9 @@ Deno.serve(async (req) => {
     let raw: string = (data?.choices?.[0]?.message?.content ?? "").trim();
     let scenes = parseScenes(raw, duration);
 
-    // One retry for 45s if we didn't get exactly three scenes.
-    if (duration === 45 && scenes.length === 0) {
+    // One retry for multi-scene durations if we didn't get the expected count.
+    const expected = expectedSceneCount(duration);
+    if (expected > 1 && scenes.length === 0) {
       resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl);
       if (resp.ok) {
         data = await resp.json();
@@ -184,7 +195,7 @@ Deno.serve(async (req) => {
 
     if (scenes.length === 0) {
       // Final fallback: return the raw text as a single block so the UI still has something.
-      if (duration === 45) {
+      if (expected > 1) {
         const fallback = stripQuotes(raw);
         if (!fallback) {
           return new Response(JSON.stringify({ error: "Empty AI response" }), {
@@ -193,7 +204,7 @@ Deno.serve(async (req) => {
           });
         }
         return new Response(
-          JSON.stringify({ scenario: fallback, scenes: [fallback], warning: "Could not split into 3 scenes" }),
+          JSON.stringify({ scenario: fallback, scenes: [fallback], warning: `Could not split into ${expected} scenes` }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
