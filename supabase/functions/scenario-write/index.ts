@@ -133,8 +133,8 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    if (idea.length > 1500) {
-      return new Response(JSON.stringify({ error: "idea too long (max 1500 chars)" }), {
+    if (idea.length > 16000) {
+      return new Response(JSON.stringify({ error: "idea too long (max 16000 chars)" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
