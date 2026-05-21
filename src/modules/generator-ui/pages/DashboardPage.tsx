@@ -184,6 +184,46 @@ const MODEL_CHOICES: ModelChoice[] = [
 ]
 
 
+function ImageDurationInput({
+  id,
+  value,
+  onCommit,
+}: {
+  id: string
+  value: number
+  onCommit: (seconds: number) => void
+}) {
+  const [text, setText] = useState<string>(String(value))
+  useEffect(() => { setText(String(value)) }, [value])
+  const commit = () => {
+    const n = parseInt(text, 10)
+    if (!Number.isFinite(n)) { setText(String(value)); return }
+    const clamped = Math.max(1, Math.min(15, n))
+    setText(String(clamped))
+    if (clamped !== value) onCommit(clamped)
+  }
+  return (
+    <input
+      id={id}
+      type="number"
+      min={1}
+      max={15}
+      step={1}
+      inputMode="numeric"
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur() }
+      }}
+      onClick={(e) => e.stopPropagation()}
+      aria-label="Image duration in seconds"
+      className="w-10 bg-transparent text-center text-zinc-100 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+    />
+  )
+}
+
+
 function isTerminalStatus(status: string) {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
 }
@@ -4158,27 +4198,14 @@ export default function DashboardPage() {
                           onClick={(event) => event.stopPropagation()}
                         >
                           <div className="inline-flex items-center gap-2">
-                            <span>Duration</span>
-                            <div
-                              role="radiogroup"
-                              aria-label="Image duration in Final Film"
-                              className="inline-flex rounded-full border border-white/10 bg-black/20 p-0.5 text-[11px] font-semibold"
-                            >
-                              {([5, 10, 15] as const).map((sec) => {
-                                const active = (img.still_duration_seconds || 3) === sec
-                                return (
-                                  <button
-                                    key={sec}
-                                    type="button"
-                                    role="radio"
-                                    aria-checked={active}
-                                    onClick={() => updateImageDuration(img.id, sec)}
-                                    className={`rounded-full px-2.5 py-1 transition ${active ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
-                                  >
-                                    {sec}s
-                                  </button>
-                                )
-                              })}
+                            <label htmlFor={`img-dur-${img.id}`}>Duration</label>
+                            <div className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/20 px-2 py-1 text-[11px] font-semibold text-zinc-200">
+                              <ImageDurationInput
+                                id={`img-dur-${img.id}`}
+                                value={img.still_duration_seconds || 3}
+                                onCommit={(sec) => updateImageDuration(img.id, sec)}
+                              />
+                              <span className="text-zinc-500">s</span>
                             </div>
                           </div>
                           <span>{formatCreatedAt(img.created_at)}</span>
