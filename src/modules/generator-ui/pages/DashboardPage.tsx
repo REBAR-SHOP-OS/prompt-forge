@@ -184,6 +184,46 @@ const MODEL_CHOICES: ModelChoice[] = [
 ]
 
 
+function ImageDurationInput({
+  id,
+  value,
+  onCommit,
+}: {
+  id: string
+  value: number
+  onCommit: (seconds: number) => void
+}) {
+  const [text, setText] = useState<string>(String(value))
+  useEffect(() => { setText(String(value)) }, [value])
+  const commit = () => {
+    const n = parseInt(text, 10)
+    if (!Number.isFinite(n)) { setText(String(value)); return }
+    const clamped = Math.max(1, Math.min(15, n))
+    setText(String(clamped))
+    if (clamped !== value) onCommit(clamped)
+  }
+  return (
+    <input
+      id={id}
+      type="number"
+      min={1}
+      max={15}
+      step={1}
+      inputMode="numeric"
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur() }
+      }}
+      onClick={(e) => e.stopPropagation()}
+      aria-label="Image duration in seconds"
+      className="w-10 bg-transparent text-center text-zinc-100 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+    />
+  )
+}
+
+
 function isTerminalStatus(status: string) {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
 }
