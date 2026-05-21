@@ -4158,27 +4158,14 @@ export default function DashboardPage() {
                           onClick={(event) => event.stopPropagation()}
                         >
                           <div className="inline-flex items-center gap-2">
-                            <span>Duration</span>
-                            <div
-                              role="radiogroup"
-                              aria-label="Image duration in Final Film"
-                              className="inline-flex rounded-full border border-white/10 bg-black/20 p-0.5 text-[11px] font-semibold"
-                            >
-                              {([5, 10, 15] as const).map((sec) => {
-                                const active = (img.still_duration_seconds || 3) === sec
-                                return (
-                                  <button
-                                    key={sec}
-                                    type="button"
-                                    role="radio"
-                                    aria-checked={active}
-                                    onClick={() => updateImageDuration(img.id, sec)}
-                                    className={`rounded-full px-2.5 py-1 transition ${active ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
-                                  >
-                                    {sec}s
-                                  </button>
-                                )
-                              })}
+                            <label htmlFor={`img-dur-${img.id}`}>Duration</label>
+                            <div className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/20 px-2 py-1 text-[11px] font-semibold text-zinc-200">
+                              <ImageDurationInput
+                                id={`img-dur-${img.id}`}
+                                value={img.still_duration_seconds || 3}
+                                onCommit={(sec) => updateImageDuration(img.id, sec)}
+                              />
+                              <span className="text-zinc-500">s</span>
                             </div>
                           </div>
                           <span>{formatCreatedAt(img.created_at)}</span>
