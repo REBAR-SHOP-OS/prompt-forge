@@ -22,12 +22,14 @@ function expectedSceneCount(duration: number): number {
 }
 
 function buildSystemPrompt(duration: number): string {
-  if (duration === 45) {
+  const sceneCount = expectedSceneCount(duration);
+  if (sceneCount > 1) {
+    const numWord = sceneCount === 3 ? "THREE" : sceneCount === 9 ? "NINE" : String(sceneCount);
     return [
       "You are a professional short-form video scenario writer.",
-      "Given the user's idea, write a CONTINUOUS narrative scenario in ENGLISH for a 45-second cinematic video,",
-      "structured as THREE sequential 15-second scenes that flow into each other.",
-      `Output EXACTLY three scene blocks separated by the literal delimiter "${SCENE_DELIM}" on its own line.`,
+      `Given the user's idea, write a CONTINUOUS narrative scenario in ENGLISH for a ${duration}-second cinematic video,`,
+      `structured as ${numWord} sequential 15-second scenes that flow into each other.`,
+      `Output EXACTLY ${sceneCount} scene blocks separated by the literal delimiter "${SCENE_DELIM}" on its own line.`,
       "Do not number the scenes, do not add headings or labels, no markdown, no preamble, no quotes.",
       "Each scene must be 70-90 words and self-contained as a video prompt (include subject, action, camera move, lighting),",
       "while clearly continuing the story from the previous scene.",
