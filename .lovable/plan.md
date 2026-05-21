@@ -1,32 +1,30 @@
-## مشکل
+## هدف
+وقتی کاربر روی 45 ثانیه است و یک پرامت ساده می‌نویسد (نه پرامت سناریونویس با `=== Scene N ===`)، قبل از ساخت ویدئو پرامت به‌صورت خودکار به سه سکانس 15 ثانیه‌ای متوالی تقسیم شود و هر سکانس به‌عنوان یک کارت جدا با اولویت ترتیبی (Scene 1 → Scene 2 → Scene 3) ساخته شود.
 
-پس از کلیک FINAL FILM، خروجی به‌درستی در Library ثبت می‌شود و کلیپ‌های ویدئویی منبع از طریق `projectSourceJobs[mergedId]` به پروژه‌ی Library نسبت داده می‌شوند، اما **عکس‌های منبع** هیچ‌گاه به `projectSourceImages[mergedId]` افزوده نمی‌شوند. نتیجه:
+## رفتار فعلی
+در `handleSubmit` (خط ~2190) وقتی `durationSeconds === 45`، حلقه سه بار با **همان پرامت** اجرا می‌شود و سه کلیپ 15 ثانیه‌ای یکسان می‌سازد بدون پیوستگی روایی.
 
-1. کارت عکس همچنان در Pending باقی می‌ماند (چون `displayedImages` فقط عکس‌هایی را که در `projectSourceImages` claim شده‌اند مخفی می‌کند — رفتار درست برای ویدئوهاست).
-2. باز کردن کارت Final Film در Library تاریخچه‌ی عکس‌های منبع را نشان نمی‌دهد (پروژه‌ی خودش فاقد آن عکس‌هاست).
+## تغییر پیشنهادی (فقط فرانت‌اند)
+در `src/modules/generator-ui/pages/DashboardPage.tsx`، داخل `handleSubmit` و دقیقاً قبل از بلاک شروع کار (خط ~2189)، یک شاخهٔ جدید برای حالت 45 ثانیه اضافه می‌شود:
 
-## تغییر
+1. اگر `durationSeconds === 45` و پرامت قبلاً با `=== Scene N ===` تگ‌گذاری **نشده** بود:
+   - فراخوانی edge function موجود `scenario-write` با `{ idea: nextPrompt, duration: 45, imageUrl?: readyStartFrame?.url }` که از قبل دقیقاً سه سکانس 15 ثانیه‌ای پشت‌سرهم برمی‌گرداند.
+   - نمایش پیام «Splitting your prompt into 3 scenes…» در `videoColumnMessage`.
+   - سپس فراخوانی `submitScenesAsJobs(scenes, readyStartFrame?.url)` که از قبل وجود دارد و هر سکانس را به‌ترتیب با `perClipDuration = 15` به‌عنوان یک کارت جدا می‌سازد و فریم آخر هر کلیپ را به‌عنوان فریم اول کلیپ بعدی استفاده می‌کند (پیوستگی روایی + اولویت ترتیبی).
+   - پاک کردن `promptText` و `uploadedFiles` مثل شاخهٔ سناریونویس.
+   - `return` تا حلقهٔ سه‌تایی فعلی اجرا نشود.
 
-تک‌فایل: `src/modules/generator-ui/pages/DashboardPage.tsx` در بلوک ثبت Library پس از merge (حدود خط ۳۰۷۱–۳۰۸۲).
+2. اگر `scenario-write` خطا داد یا کمتر از 2 سکانس برگرداند: fallback به رفتار قبلی (همان حلقهٔ سه‌تایی با پرامت یکسان) تا عملکرد قبلی هرگز نشکند.
 
-در کنار snapshot فعلی `sourceJobs` (ویدئوها به `projectSourceJobs`)، یک snapshot دوم اضافه می‌شود:
+3. سایر حالت‌ها (5/10/15 ثانیه، یا پرامت از قبل تگ‌خوردهٔ سناریونویس) بدون تغییر.
 
-- از `eligibleClips` آیتم‌هایی با `kind === 'image'` فیلتر شوند و `.image` (یعنی `UserImageItem`) جمع شود.
-- اگر طول > ۰ بود، `setProjectSourceImages({ ...projectSourceImages, [mergedId]: sourceImages })` و سپس `persistProjectSourceImages(next)` فراخوانی شود.
+## بدون تغییر
+- Edge function `scenario-write` (همین حالا 45s را به سه بلوک 15s تقسیم می‌کند).
+- منطق کارت‌های عکس، Final Film، Library، RLS، دیتابیس.
+- `submitScenesAsJobs` و `parseScenarioScenes`.
 
-این کار باعث می‌شود:
-
-- در `displayedImages` (خط ۱۴۲۰–۱۴۲۹) آن عکس‌ها داخل `claimedByProjects` قرار بگیرند و **از Pending حذف شوند**.
-- در حالت انتخاب پروژه‌ی Final Film، snapshot عکس‌های منبع نمایش داده شود (همان‌طور که برای ویدئو کار می‌کند).
-
-## خارج از اسکوپ
-
-- بدون تغییر در حذف/upload عکس‌ها.
-- بدون تغییر در DB، `mergeVideoUrls` یا کارت‌های ویدئو.
-- Pending ویدئوها مطابق رفتار فعلی دست‌نخورده می‌ماند (فقط عکس‌ها claim می‌شوند — این هم‌راستا با اصل «Final Film source clips stay untouched» در کامنت موجود است؛ تنها برای عکس‌ها رفتار قبلی ناقص بوده).
-
-## راستی‌آزمایی
-
-- یک عکس آپلود + Final Film → کارت عکس از Pending حذف می‌شود؛ کارت Final Film در Library ظاهر می‌شود؛ باز کردن آن پروژه، عکس منبع را در HISTORY نشان می‌دهد.
-- ترکیب عکس + ویدئو → هر دو نوع از Pending پاک شده و در پروژه‌ی Library قرار می‌گیرند.
-- Reload → وضعیت پایدار است (به‌خاطر `persistProjectSourceImages`).
+## تأیید
+- 45s + پرامت ساده → سه کارت با پرامت‌های متفاوت و پیوسته در Pending به ترتیب Scene 1، 2، 3.
+- 45s + پرامت دارای `=== Scene 1 ===` → مسیر سناریونویس قبلی (بدون فراخوانی اضافه).
+- 5/10/15s → بدون تغییر.
+- خطای شبکهٔ `scenario-write` → fallback به رفتار قبلی + پیام خطا در composer.
