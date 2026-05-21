@@ -3630,7 +3630,7 @@ export default function DashboardPage() {
       <ScenarioWriterDialog
         open={isScenarioDialogOpen}
         onOpenChange={setIsScenarioDialogOpen}
-        defaultDuration={durationSeconds === 45 ? 45 : (durationSeconds as 5 | 10 | 15)}
+        defaultDuration={durationSeconds === 45 || durationSeconds === 135 ? durationSeconds : (durationSeconds as 5 | 10 | 15)}
         userId={userId}
         onUseAsPrompt={(text, imageUrl) => {
           setPromptText(text)
