@@ -4,15 +4,22 @@
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 
-const WORD_CAPS: Record<number, number> = { 5: 40, 10: 70, 15: 100, 45: 270 };
+const WORD_CAPS: Record<number, number> = { 5: 40, 10: 70, 15: 100, 45: 270, 135: 810 };
 const BEAT_GUIDE: Record<number, string> = {
   5: "5s = 1 beat (one decisive shot)",
   10: "10s = 2 beats",
   15: "15s = 3 beats",
   45: "45s = three sequential 15s scenes",
+  135: "135s = nine sequential 15s scenes",
 };
 
 const SCENE_DELIM = "===SCENE===";
+
+function expectedSceneCount(duration: number): number {
+  if (duration === 135) return 9;
+  if (duration === 45) return 3;
+  return 1;
+}
 
 function buildSystemPrompt(duration: number): string {
   if (duration === 45) {
