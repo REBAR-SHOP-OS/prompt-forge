@@ -3185,7 +3185,42 @@ export default function DashboardPage() {
           .filter((c): c is Extract<UnifiedClip, { kind: 'video' }> => c.kind === 'video')
           .map((c) => c.job)
         if (sourceJobs.length > 0) {
-          const nextMap = { ...projectSourceJobs, [mergedId]: sourceJobs }
+          // Persist each source clip's video bytes to our own bucket so the
+          // snapshot keeps working even after the provider's signed URL
+          // expires. If a clip is already on our host, skip the re-upload.
+          const OWN_HOST_RE = /(^|\.)supabase\.co$/i
+          const isOwnHosted = (url: string): boolean => {
+            try {
+              const u = new URL(url)
+              if (typeof window !== 'undefined' && u.host === window.location.host) return true
+              return OWN_HOST_RE.test(u.host)
+            } catch { return false }
+          }
+          const stableJobs: JobDetail[] = await Promise.all(
+            sourceJobs.map(async (job) => {
+              const src = job.video?.storage_path
+              if (!src || !userId || isOwnHosted(src)) return job
+              try {
+                const proxied = await proxiedVideoUrl(src)
+                const resp = await fetch(proxied)
+                if (!resp.ok) throw new Error(`fetch ${resp.status}`)
+                const blob = await resp.blob()
+                const ct = blob.type || 'video/mp4'
+                const ext = ct.includes('webm') ? 'webm' : 'mp4'
+                const path = `${userId}/source-snapshot-${job.id}-${Date.now()}.${ext}`
+                const up = await supabase.storage
+                  .from(MERGED_BUCKET)
+                  .upload(path, blob, { contentType: ct, upsert: false })
+                if (up.error) throw new Error(up.error.message)
+                const publicUrl = supabase.storage.from(MERGED_BUCKET).getPublicUrl(path).data.publicUrl
+                return { ...job, video: { ...job.video!, storage_path: publicUrl } }
+              } catch (err) {
+                console.warn('[snapshot] source persist failed; keeping original URL', { jobId: job.id, err })
+                return job
+              }
+            }),
+          )
+          const nextMap = { ...projectSourceJobs, [mergedId]: stableJobs }
           setProjectSourceJobs(nextMap)
           persistProjectSourceJobs(nextMap)
         }
