@@ -112,16 +112,32 @@ export function mimeTypeToExtension(mimeType: string): 'mp4' | 'webm' {
   return mimeType.startsWith('video/mp4') ? 'mp4' : 'webm'
 }
 
-async function loadVideo(url: string, withAudio: boolean): Promise<HTMLVideoElement> {
+async function loadVideo(url: string, withAudio: boolean, clipLabel?: string): Promise<HTMLVideoElement> {
   return await new Promise((resolve, reject) => {
     const v = document.createElement('video')
     v.crossOrigin = 'anonymous'
     v.preload = 'auto'
     v.muted = !withAudio
     v.playsInline = true
+    const label = clipLabel ?? url
+    // Hard timeout so a single broken/expired URL can't hang Final Film forever.
+    const timeout = setTimeout(() => {
+      reject(new Error(`Clip ${label} did not load metadata within 20s — source may be expired or unreachable`))
+    }, 20000)
+    v.onloadedmetadata = () => {
+      clearTimeout(timeout)
+      const dur = Number.isFinite(v.duration) ? v.duration : 0
+      if (dur <= 0 || !v.videoWidth || !v.videoHeight) {
+        reject(new Error(`Clip ${label} has no playable content (duration=${dur}, ${v.videoWidth}x${v.videoHeight})`))
+        return
+      }
+      resolve(v)
+    }
+    v.onerror = () => {
+      clearTimeout(timeout)
+      reject(new Error(`Failed to load clip ${label}`))
+    }
     v.src = url
-    v.onloadedmetadata = () => resolve(v)
-    v.onerror = () => reject(new Error(`Failed to load video: ${url}`))
   })
 }
 
@@ -277,7 +293,7 @@ export async function mergeVideoUrls(
   const clipVolume = Math.max(0, Math.min(1, norm?.clipVolume ?? (useSoundtrack ? 0 : 1)))
   const captureClipAudio = clipVolume > 0
 
-  const first = await loadVideo(urls[0], captureClipAudio)
+  const first = await loadVideo(urls[0], captureClipAudio, `#1 of ${urls.length}`)
   const width = Math.max(640, Math.floor(first.videoWidth || 1280))
   const height = Math.max(360, Math.floor(first.videoHeight || 720))
 
@@ -460,6 +476,11 @@ export async function mergeVideoUrls(
         video.removeEventListener('ended', onEnded)
         if (timer) clearTimeout(timer)
         if (stallTimer) clearInterval(stallTimer)
+        // Always resume the recorder before moving on so the next clip is
+        // actually encoded even if this clip ended during a stall pause.
+        try {
+          if (recorder.state === 'paused') recorder.resume()
+        } catch { /* ignore */ }
         stopPaint()
         resolve()
       }
@@ -479,29 +500,44 @@ export async function mergeVideoUrls(
         }
       }, timeoutMs)
 
-      // Stall detector: if currentTime hasn't moved for >1.2s and we're not
-      // at the end, try to nudge playback. This prevents the MediaRecorder
-      // from encoding many seconds of an unchanging frame when the network
-      // or decoder hiccups mid-clip.
+      // Stall detector: if currentTime hasn't moved for >600ms and we're not
+      // at the end, PAUSE the MediaRecorder so we don't bake duplicated
+      // frozen frames into the output, then try to recover playback. Once
+      // playback advances again, resume the recorder. This is the root fix
+      // for the "Final Film has frozen sections" class of bug — previously
+      // we kept recording while the source stalled.
       let lastTime = video.currentTime
       let lastChangeAt = performance.now()
+      let recorderPausedForStall = false
       const stallTimer = setInterval(() => {
         if (done) return
         const ct = video.currentTime
         if (Math.abs(ct - lastTime) > 0.01) {
           lastTime = ct
           lastChangeAt = performance.now()
+          if (recorderPausedForStall) {
+            try {
+              if (recorder.state === 'paused') recorder.resume()
+            } catch { /* ignore */ }
+            recorderPausedForStall = false
+          }
           return
         }
         const stalledFor = performance.now() - lastChangeAt
-        if (stalledFor > 1200 && !video.paused && !video.ended) {
-          console.warn('[mergeVideoUrls] playback stall detected, trying to recover')
-          // Best-effort recovery: play() again. Browsers typically resume
-          // once the buffer catches up.
+        if (stalledFor > 600 && !video.paused && !video.ended) {
+          if (!recorderPausedForStall) {
+            try {
+              if (recorder.state === 'recording') {
+                recorder.pause()
+                recorderPausedForStall = true
+                console.warn('[mergeVideoUrls] playback stalled — recorder paused to prevent frozen frames')
+              }
+            } catch { /* ignore */ }
+          }
+          // Best-effort recovery: nudge playback.
           video.play().catch(() => { /* ignore */ })
-          lastChangeAt = performance.now() // give it another window
         }
-      }, 400)
+      }, 200)
     })
   }
 
@@ -510,7 +546,7 @@ export async function mergeVideoUrls(
   // and removes inter-clip loading gaps.
   const preloaded: HTMLVideoElement[] = [first]
   for (let i = 1; i < urls.length; i++) {
-    preloaded.push(await loadVideo(urls[i], captureClipAudio))
+    preloaded.push(await loadVideo(urls[i], captureClipAudio, `#${i + 1} of ${urls.length}`))
   }
   let totalDuration = 0
   for (const v of preloaded) {
