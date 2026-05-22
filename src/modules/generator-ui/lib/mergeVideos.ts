@@ -12,7 +12,7 @@ export interface MergeProgress {
   ratio: number
   clipIndex: number
   totalClips: number
-  stage?: 'loading' | 'recording' | 'transition' | 'finalizing'
+  stage?: 'loading' | 'recording' | 'transition' | 'finalizing' | 'encoding' | 'uploading'
 }
 
 export type MergeProgressCallback = (p: MergeProgress) => void
