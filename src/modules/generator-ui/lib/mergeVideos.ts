@@ -501,39 +501,25 @@ export async function mergeVideoUrls(
       }, timeoutMs)
 
       // Stall detector: if currentTime hasn't moved for >600ms and we're not
-      // at the end, PAUSE the MediaRecorder so we don't bake duplicated
-      // frozen frames into the output, then try to recover playback. Once
-      // playback advances again, resume the recorder. This is the root fix
-      // for the "Final Film has frozen sections" class of bug — previously
-      // we kept recording while the source stalled.
+      // at the end, nudge playback to recover. We deliberately DO NOT pause
+      // the MediaRecorder anymore — pause/resume cycles on the recorder were
+      // themselves causing frozen/glitchy stretches in the final output and
+      // occasionally left the recorder in a bad state that made finalization
+      // hang at 95%. Letting the canvas keep being captured (with the last
+      // painted frame) for the brief stall window is preferable to corrupting
+      // the recorder timeline.
       let lastTime = video.currentTime
       let lastChangeAt = performance.now()
-      let recorderPausedForStall = false
       const stallTimer = setInterval(() => {
         if (done) return
         const ct = video.currentTime
         if (Math.abs(ct - lastTime) > 0.01) {
           lastTime = ct
           lastChangeAt = performance.now()
-          if (recorderPausedForStall) {
-            try {
-              if (recorder.state === 'paused') recorder.resume()
-            } catch { /* ignore */ }
-            recorderPausedForStall = false
-          }
           return
         }
         const stalledFor = performance.now() - lastChangeAt
         if (stalledFor > 600 && !video.paused && !video.ended) {
-          if (!recorderPausedForStall) {
-            try {
-              if (recorder.state === 'recording') {
-                recorder.pause()
-                recorderPausedForStall = true
-                console.warn('[mergeVideoUrls] playback stalled — recorder paused to prevent frozen frames')
-              }
-            } catch { /* ignore */ }
-          }
           // Best-effort recovery: nudge playback.
           video.play().catch(() => { /* ignore */ })
         }
