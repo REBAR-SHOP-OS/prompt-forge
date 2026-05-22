@@ -24,6 +24,17 @@ export interface Mp4Result {
   extension: 'mp4'
 }
 
+/** Progress callback for ensureMp4. `ratio` is 0..1 inside the encode stage. */
+export type Mp4ProgressCallback = (info: {
+  stage: 'loading' | 'remux' | 'encode' | 'readout'
+  ratio: number
+}) => void
+
+/** Hard cap per ffmpeg exec call (5 min) — anything longer means hung. */
+const FFMPEG_EXEC_TIMEOUT_MS = 5 * 60_000
+/** Skip transcode for blobs bigger than this — ffmpeg.wasm OOMs silently otherwise. */
+const MAX_TRANSCODE_BLOB_BYTES = 800 * 1024 * 1024
+
 let ffmpegSingleton: FFmpeg | null = null
 let loadingPromise: Promise<FFmpeg> | null = null
 
