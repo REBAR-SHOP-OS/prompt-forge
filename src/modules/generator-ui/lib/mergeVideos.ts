@@ -6,7 +6,9 @@
 // - Supports per-gap transitions (cut/fade/crossfade/slide/wipe/zoom) painted
 //   on the canvas during a short overlap between the outgoing and incoming
 //   clip.
-// - Prefers MP4 (H.264 + AAC) when supported, falls back to WebM/Opus.
+// - Emits the browser recorder's stable WebM/Opus output directly. MP4
+//   transcoding is intentionally kept out of the Final Film path because
+//   ffmpeg.wasm can hang/OOM on long clips and strand the UI at 95%.
 
 export interface MergeProgress {
   ratio: number
@@ -811,33 +813,10 @@ export async function mergeVideoUrls(
   const blob = new Blob(chunks, { type: chosenMime })
   if (blob.size === 0) throw new Error('Recorder produced an empty blob')
 
-  // Try to deliver a broadly compatible MP4, but NEVER let an ffmpeg.wasm
-  // hang or failure block Final Film. If the in-browser transcode doesn't
-  // finish within a reasonable budget (or throws / OOMs), we fall back to
-  // the well-formed WebM blob we already have. WebM plays in every modern
-  // browser, VLC, Telegram, Discord, Android gallery, etc. — far better
-  // than leaving the user stuck on 95% forever.
-  const TRANSCODE_BUDGET_MS = 4 * 60_000
-  try {
-    const { ensureMp4 } = await import('./transcodeToMp4')
-    const transcode = ensureMp4(blob, chosenMime, (info) => {
-      if (info.stage === 'encode' || info.stage === 'remux') {
-        onProgress?.({
-          ratio: 0.95 + Math.max(0, Math.min(1, info.ratio)) * 0.04, // 95..99
-          clipIndex: urls.length,
-          totalClips: urls.length,
-          stage: 'encoding',
-        })
-      }
-    })
-    const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('mp4 transcode budget exceeded')), TRANSCODE_BUDGET_MS),
-    )
-    const mp4 = await Promise.race([transcode, timeout])
-    return { blob: mp4.blob, mimeType: mp4.mimeType, extension: mp4.extension }
-  } catch (err) {
-    console.warn('[mergeVideoUrls] mp4 transcode failed/timed out, falling back to WebM:', err)
-    onProgress?.({ ratio: 0.99, clipIndex: urls.length, totalClips: urls.length, stage: 'finalizing' })
-    return { blob, mimeType: chosenMime, extension: mimeTypeToExtension(chosenMime) }
-  }
+  // Root fix for the 95% stall: Final Film must not enter ffmpeg.wasm here.
+  // The recorder output is already a valid WebM and can be uploaded/played in
+  // the app immediately. MP4 conversion remains available only for explicit
+  // download/transcode flows, not for saving Final Film.
+  onProgress?.({ ratio: 0.99, clipIndex: urls.length, totalClips: urls.length, stage: 'finalizing' })
+  return { blob, mimeType: chosenMime, extension: mimeTypeToExtension(chosenMime) }
 }
