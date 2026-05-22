@@ -812,6 +812,24 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  // Tombstone set: draft ids (and the underlying clip/image ids they wrap)
+  // that the user explicitly deleted. The backfill effect skips anything in
+  // this set so deletion survives refresh.
+  const [deletedDraftIds, setDeletedDraftIds] = useState<Set<string>>(new Set())
+  const deletedDraftIdsKey = userId ? `deleted-draft-ids:${userId}` : null
+  useEffect(() => {
+    if (!deletedDraftIdsKey) { setDeletedDraftIds(new Set()); return }
+    try {
+      const raw = window.localStorage.getItem(deletedDraftIdsKey)
+      const arr = raw ? (JSON.parse(raw) as string[]) : []
+      setDeletedDraftIds(new Set(Array.isArray(arr) ? arr : []))
+    } catch { setDeletedDraftIds(new Set()) }
+  }, [deletedDraftIdsKey])
+  function persistDeletedDraftIds(next: Set<string>) {
+    if (!deletedDraftIdsKey) return
+    try { window.localStorage.setItem(deletedDraftIdsKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
+  }
+
 
   // Image ids hidden from the default workspace HISTORY/clip strip after
   // Final Film / Start Over. Parallels `workspaceHiddenJobIds` for images.
