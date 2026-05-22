@@ -369,10 +369,13 @@ export async function trimVideoLocally(
   }
 
   const finalBlob = await recordedBlob
+  // Normalize to standard MP4 so downloads/playback work everywhere.
+  const { ensureMp4 } = await import('./transcodeToMp4')
+  const mp4 = await ensureMp4(finalBlob, mimeType)
   return {
-    blob: finalBlob,
-    mimeType,
-    extension: mimeTypeToExtension(mimeType),
+    blob: mp4.blob,
+    mimeType: mp4.mimeType,
+    extension: mp4.extension,
     duration: totalKept,
   }
 }
