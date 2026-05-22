@@ -1145,6 +1145,38 @@ export default function DashboardPage() {
   async function deleteCard(jobId: string) {
     if (typeof window !== 'undefined' && !window.confirm('Delete this video card permanently?')) return
 
+    // Draft project card: drop the draft entry + its snapshots and stop here.
+    // The underlying workspace jobs (if still present) remain untouched.
+    if (jobId.startsWith('draft-')) {
+      setDraftEntries((prev) => {
+        if (!prev.some((d) => d.id === jobId)) return prev
+        const next = prev.filter((d) => d.id !== jobId)
+        persistDraftEntries(next)
+        return next
+      })
+      setDraftSourceJobs((prev) => {
+        if (!(jobId in prev)) return prev
+        const { [jobId]: _drop, ...rest } = prev
+        persistDraftSourceJobs(rest)
+        return rest
+      })
+      setDraftSourceImages((prev) => {
+        if (!(jobId in prev)) return prev
+        const { [jobId]: _drop, ...rest } = prev
+        persistDraftSourceImages(rest)
+        return rest
+      })
+      if (activeDraftId === jobId) {
+        setActiveDraftId(null)
+        persistActiveDraftId(null)
+      }
+      if (selectedProjectId === jobId) setSelectedProjectId(null)
+      if (previewVideoId === jobId) setPreviewVideoId(null)
+      return
+    }
+
+
+
     const isMerged = jobId.startsWith('merged-')
     const mergedEntry = isMerged ? mergedEntries.find((e) => e.id === jobId) : null
     const prevGenerated = generatedVideos
