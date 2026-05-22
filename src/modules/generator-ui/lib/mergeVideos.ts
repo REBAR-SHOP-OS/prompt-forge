@@ -788,5 +788,11 @@ export async function mergeVideoUrls(
 
   const blob = new Blob(chunks, { type: chosenMime })
   if (blob.size === 0) throw new Error('Recorder produced an empty blob')
-  return { blob, mimeType: chosenMime, extension: mimeTypeToExtension(chosenMime) }
+
+  // Always deliver a standard, broadly compatible MP4 to the rest of the app.
+  // Without this, downloaded final films won't play in QuickTime / WMP /
+  // mobile gallery viewers.
+  const { ensureMp4 } = await import('./transcodeToMp4')
+  const mp4 = await ensureMp4(blob, chosenMime)
+  return { blob: mp4.blob, mimeType: mp4.mimeType, extension: mp4.extension }
 }

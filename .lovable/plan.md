@@ -1,41 +1,45 @@
-## Problem
+## Goal
+همه‌ی فیلم‌های نهایی که کاربر دانلود می‌کند باید با فرمت `.mp4` و کاملاً سازگار با هر پلیر (QuickTime, WMP, VLC, موبایل) باشند — نه webm، نه MP4 قطعه‌قطعه‌ی (fragmented) خروجی MediaRecorder.
 
-When opening a Final Film from the Library, the right "Working clips" panel sometimes shows a single empty `0:00` card (the final film itself) instead of the source clips that produced it — and sometimes shows nothing. This happens for Final Films that were merged before the `projectSourceJobs` snapshot system existed (or where the snapshot upload failed silently), because:
+## Approach
+از آنجا که خروجی مستقیم `MediaRecorder` در کروم به‌صورت fragmented MP4 است و در پلیرهای دسکتاپ/موبایل پخش نمی‌شود، یک مرحله‌ی **ریماکس/ترنسکد در مرورگر با `@ffmpeg/ffmpeg` (ffmpeg.wasm)** اضافه می‌شود تا فایل به MP4 استاندارد (H.264 + AAC, `+faststart`) تبدیل گردد.
 
-1. `projectSourceJobs[selectedProjectId]` is empty for those old projects.
-2. The legacy fallback in `displayedVideos` (DashboardPage.tsx ~1747-1765) does not exclude the merged entry itself, so the Final Film's own merged file ends up rendered as a "source clip" card with no playable thumbnail → blank `0:00` card.
-3. Once the merged entry sneaks into the list, the real source clips (which exist in `generatedVideos` but were created before the merged entry) are still considered, but if their `claimed` set is wrong or their `created_at` is after the merge, they get filtered out.
+## Steps
 
-## Fix (DashboardPage.tsx only)
+1) **افزودن وابستگی ffmpeg.wasm**
+   - نصب: `@ffmpeg/ffmpeg` و `@ffmpeg/util`
+   - بارگذاری lazy فقط زمانی که نیاز شد (تا bundle بزرگ نشود).
 
-### 1. Harden the selected-project source list (`displayedVideos`, lines 1727-1793)
+2) **ابزار جدید: `src/modules/generator-ui/lib/transcodeToMp4.ts`**
+   - تابع `ensureMp4(blob, mimeType): Promise<{ blob, mimeType: 'video/mp4', extension: 'mp4' }>`
+   - اگر ورودی از قبل MP4 استاندارد بود → فقط با `-c copy -movflags +faststart` ریماکس می‌کند (سریع).
+   - در غیر این صورت → ترنسکد به H.264/AAC با `libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -movflags +faststart`.
 
-- In **all branches** (snapshot, single-clip, legacy fallback), filter out any clip whose id equals `selectedProjectId` and any id starting with `merged-`. The merged film itself must never appear in its own Working-clips list.
-- In the single-clip Library branch, only return the clip when `live?.video?.storage_path || savedJob?.video?.storage_path` is truthy — never a blank card.
-- In the legacy fallback, also drop any clip that has no `video.storage_path` (prevents the 0:00 placeholder).
+3) **تغییر `mergeVideos.ts`**
+   - بعد از پایان `MediaRecorder` و قبل از return، خروجی را از `ensureMp4` عبور دهد.
+   - `MergeResult` همیشه `extension: 'mp4'` و `mimeType: 'video/mp4'` برگرداند.
+   - مسیر storage که با `.${mergeRes.extension}` ساخته می‌شود خودبه‌خود `.mp4` می‌شود (هیچ تغییر دیگری در DashboardPage لازم نیست برای فایل‌های جدید).
 
-### 2. Backfill `projectSourceJobs` for legacy Final Films
+4) **تغییر `trimVideo.ts`**
+   - همان رویکرد: خروجی نهایی trim هم از `ensureMp4` عبور کند تا فایل‌های ذخیره‌شده‌ی edited همیشه mp4 باشند.
 
-Add a one-shot effect (next to the existing draft backfill at ~1667) that runs once `mergedEntries`, `librarySavedJobs`, `generatedVideos`, `userImages`, and `projectSourceJobs` have hydrated:
+5) **دکمه‌ی Download در `DashboardPage.tsx` (≈ خط 5306–5340)**
+   - بعد از `fetch(url)` و گرفتن blob، اگر URL/blob از نوع mp4 نبود (فایل‌های قدیمی webm که هنوز در storage مانده‌اند)، با `ensureMp4` به mp4 تبدیل شود.
+   - نام فایل همیشه `final-film-<id>.mp4` و `a.download` با همان نام.
+   - حذف منطق فعلی تشخیص extension از URL.
 
-- For every Library project id (`mergedEntries[*].id` and `Object.keys(librarySavedJobs)`) that has **no** entry (or an empty array) in `projectSourceJobs`:
-  - Resolve the merged entry's `created_at`.
-  - Pick non-merged completed `generatedVideos` with `video.storage_path`, `created_at <= mergedAt`, not already claimed by any other project's snapshot, ordered ASC.
-  - Same for `userImages` → `projectSourceImages`.
-  - If at least one source is found, persist it via `setProjectSourceJobs` / `persistProjectSourceJobs` (and the images equivalent). If zero are found, write `[]` so we don't re-run the heuristic every render and don't end up showing the merged film as its own source.
-- Guard: skip ids whose snapshot key is already present (even if empty) to keep the backfill idempotent.
+6) **اعمال همین رفتار به سایر مسیرهای دانلود**
+   - بررسی کوتاه DashboardPage برای هر دکمه‌ی Download دیگر (clip/edited) و یکسان‌سازی روی mp4.
 
-### 3. Empty-state UX (no new component)
-
-When `displayedClips.length === 0` while a Final project is selected, the existing empty state already renders. Update its copy (the existing string in the empty branch around line 4694) for the selected-project case to: "Source clips for this project are no longer available."
+## Technical notes
+- `ffmpeg.wasm` به `SharedArrayBuffer` نیاز دارد در حالت multi-thread؛ نسخه‌ی single-thread (`@ffmpeg/ffmpeg` v0.12+) بدون COOP/COEP کار می‌کند و برای فایل‌های کوتاه (≤ چند دقیقه) سرعت کافی دارد.
+- لود اولیه‌ی core (~30MB wasm) فقط یک‌بار در سشن و فقط هنگام merge/download انجام می‌شود؛ progress در UI همان progress فعلی merge ادامه می‌یابد (مرحله‌ی "Finalizing MP4…").
+- فایل‌های قدیمی روی storage بازنویسی نمی‌شوند (non-destructive)؛ فقط در لحظه‌ی دانلود به mp4 تبدیل می‌شوند.
+- بدون تغییر backend / schema / edge function.
 
 ## Files touched
-
-- `src/modules/generator-ui/pages/DashboardPage.tsx` only. No backend or schema changes.
-
-## Verification
-
-- Open the highlighted "Final clip — soundtrack applied" project → Working clips now shows the real source clip(s) with proper thumbnails, never the 0:00 placeholder of the merged film itself.
-- Open a freshly-merged Final Film → unchanged behavior (snapshot path still wins).
-- Open a legacy Final Film with truly no traceable sources → panel shows the new empty-state copy instead of a blank `0:00` card.
-- Refresh the page → backfilled snapshots persist, no re-computation needed.
+- `package.json` (افزودن `@ffmpeg/ffmpeg`, `@ffmpeg/util`)
+- `src/modules/generator-ui/lib/transcodeToMp4.ts` (جدید)
+- `src/modules/generator-ui/lib/mergeVideos.ts`
+- `src/modules/generator-ui/lib/trimVideo.ts`
+- `src/modules/generator-ui/pages/DashboardPage.tsx` (دکمه‌های دانلود)
