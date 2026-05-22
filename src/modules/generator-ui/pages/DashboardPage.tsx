@@ -1600,6 +1600,10 @@ export default function DashboardPage() {
       if (deletedDraftIds.has(job.id)) continue
       if (normalizeStatus(job.status) !== 'completed') continue
       if (!job.video?.storage_path) continue
+      // Live workspace items are owned by the active-workspace draft effect.
+      // Skipping here prevents a duplicate `draft-orphan-*` card from racing
+      // alongside the single `draft-<uuid>` active draft.
+      if (!workspaceHiddenJobIds.has(job.id)) continue
       const draftId = `draft-orphan-${job.id}`
       if (deletedDraftIds.has(draftId)) continue
       if (existingDraftIds.has(draftId)) continue
@@ -1624,6 +1628,8 @@ export default function DashboardPage() {
     for (const img of userImages) {
       if (claimedImageIds.has(img.id)) continue
       if (deletedDraftIds.has(img.id)) continue
+      // Same guard as clips: leave live workspace images to the active draft.
+      if (!workspaceHiddenImageIds.has(img.id)) continue
       const draftId = `draft-orphan-img-${img.id}`
       if (deletedDraftIds.has(draftId)) continue
       if (existingDraftIds.has(draftId)) continue
