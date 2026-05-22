@@ -731,7 +731,7 @@ export async function mergeVideoUrls(
   if (voiceoverEl) {
     try { voiceoverEl.pause() } catch { /* ignore */ }
   }
-  cancelAnimationFrame(rafId)
+  stopPaint()
 
   onProgress?.({ ratio: 0.95, clipIndex: urls.length, totalClips: urls.length, stage: 'finalizing' })
 
