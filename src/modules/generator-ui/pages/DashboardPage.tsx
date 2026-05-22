@@ -3487,6 +3487,12 @@ export default function DashboardPage() {
     setIsMerging(true)
     setMergeProgress(0)
     setVideoColumnMessage(null)
+    // Kick off ffmpeg core download in parallel with the merge so the MP4
+    // transcode step at the end doesn't add CDN latency to the perceived wait.
+    try {
+      const mod = await import('@/modules/generator-ui/lib/transcodeToMp4')
+      mod.preloadMp4Transcoder()
+    } catch { /* non-fatal */ }
     if (brokenClips.length > 0) {
       const names = brokenClips.map((b) => `"${b.filename}"`).join(', ')
       console.warn('[merge] skipped broken clips:', names)
