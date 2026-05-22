@@ -87,10 +87,13 @@ export interface MergeResult {
 }
 
 function pickMimeType(): string {
+  // We deliberately prefer WebM over MP4 here. Chromium's MediaRecorder MP4
+  // output is fragmented ISO BMFF that plays inside browsers but fails in
+  // QuickTime, Windows Media Player, mobile gallery viewers, and most
+  // downstream tools — users were getting "downloaded final film won't play"
+  // reports. WebM (VP9/VP8 + Opus) from MediaRecorder is well-formed and plays
+  // in VLC, modern desktop players, browsers, Android, Telegram, Discord, etc.
   const candidates = [
-    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-    'video/mp4;codecs=avc1,mp4a',
-    'video/mp4',
     'video/webm;codecs=vp9,opus',
     'video/webm;codecs=vp8,opus',
     'video/webm;codecs=opus',
@@ -103,6 +106,7 @@ function pickMimeType(): string {
   }
   return 'video/webm'
 }
+
 
 export function mimeTypeToExtension(mimeType: string): 'mp4' | 'webm' {
   return mimeType.startsWith('video/mp4') ? 'mp4' : 'webm'
