@@ -3560,12 +3560,9 @@ export default function DashboardPage() {
     setMergeProgress(0)
     setMergeStage(null)
     setVideoColumnMessage(null)
-    // Kick off ffmpeg core download in parallel with the merge so the MP4
-    // transcode step at the end doesn't add CDN latency to the perceived wait.
-    try {
-      const mod = await import('@/modules/generator-ui/lib/transcodeToMp4')
-      mod.preloadMp4Transcoder()
-    } catch { /* non-fatal */ }
+    // Final Film now saves the recorder's stable WebM output directly. Do not
+    // pre-load ffmpeg.wasm here; that was the root cause of long projects
+    // freezing around the old 95% encoding stage.
     if (brokenClips.length > 0) {
       const names = brokenClips.map((b) => `"${b.filename}"`).join(', ')
       console.warn('[merge] skipped broken clips:', names)
@@ -3890,8 +3887,11 @@ export default function DashboardPage() {
         isError: err instanceof Error,
         keys: err && typeof err === 'object' ? Object.keys(err as object) : null,
       })
-      const { stringifyAny } = await import('@/modules/generator-ui/lib/transcodeToMp4')
-      const msg = stringifyAny(err)
+      const msg = err instanceof Error
+        ? (err.message || err.name || 'Error')
+        : typeof err === 'string'
+          ? err
+          : (() => { try { return JSON.stringify(err) || 'unknown error' } catch { return 'unknown error' } })()
       const urlMatch = msg.match(/https?:\/\/\S+/)
       const filename = urlMatch ? (urlMatch[0].split('?')[0].split('/').pop() || '') : ''
       const friendly = filename
