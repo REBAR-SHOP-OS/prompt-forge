@@ -282,7 +282,27 @@ async function startWanT2V(
   };
 }
 
-async function pollWanI2V(taskId: string, apiKey: string): Promise<GenerationPollResult> {
+async function persistWanVideo(
+  videoUrl: string,
+  ctx: { client: SupabaseClient; userId: string },
+): Promise<string> {
+  const dl = await fetch(videoUrl);
+  if (!dl.ok) throw new Error(`WAN download ${dl.status}`);
+  const bytes = new Uint8Array(await dl.arrayBuffer());
+  const path = `${ctx.userId}/wan-${crypto.randomUUID()}.mp4`;
+  const { error: upErr } = await ctx.client.storage
+    .from("merged-videos")
+    .upload(path, bytes, { contentType: "video/mp4", upsert: false });
+  if (upErr) throw new Error(`WAN upload failed: ${upErr.message}`);
+  const { data: pub } = ctx.client.storage.from("merged-videos").getPublicUrl(path);
+  return pub.publicUrl;
+}
+
+async function pollWanI2V(
+  taskId: string,
+  apiKey: string,
+  ctx?: { client: SupabaseClient; userId: string },
+): Promise<GenerationPollResult> {
   const res = await fetch(`${DASHSCOPE_BASE_URL}${DASHSCOPE_TASK_PATH}/${encodeURIComponent(taskId)}`, {
     method: "GET",
     headers: { "Authorization": `Bearer ${apiKey}` },
