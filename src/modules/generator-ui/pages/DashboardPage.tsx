@@ -1727,9 +1727,9 @@ export default function DashboardPage() {
       setVideoColumnMessage('Please choose a video file (mp4, webm, mov…).')
       return
     }
-    const MAX_BYTES = 200 * 1024 * 1024
+    const MAX_BYTES = 1024 * 1024 * 1024
     if (file.size > MAX_BYTES) {
-      setVideoColumnMessage('Video is larger than 200MB. Please choose a smaller file.')
+      setVideoColumnMessage('Video is larger than 1GB. Please choose a smaller file.')
       return
     }
 
