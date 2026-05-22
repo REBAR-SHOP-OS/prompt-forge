@@ -1161,11 +1161,30 @@ export default function DashboardPage() {
   }, [approvedStorageKey, mergedEntries, librarySavedJobs])
 
   async function deleteCard(jobId: string) {
-    if (typeof window !== 'undefined' && !window.confirm('Delete this video card permanently?')) return
+    const confirmMsg = jobId.startsWith('draft-')
+      ? 'Delete this draft and all its clips permanently?'
+      : 'Delete this video card permanently?'
+    if (typeof window !== 'undefined' && !window.confirm(confirmMsg)) return
 
-    // Draft project card: drop the draft entry + its snapshots and stop here.
-    // The underlying workspace jobs (if still present) remain untouched.
+    // Draft project card: permanently delete the underlying clips/images
+    // server-side, then drop the local snapshot, and tombstone the ids so
+    // the backfill effect doesn't bring them back on refresh.
     if (jobId.startsWith('draft-')) {
+      const clipIds = (draftSourceJobs[jobId] ?? []).map((c) => c.id)
+      const imageIds = (draftSourceImages[jobId] ?? []).map((i) => i.id)
+
+      // Tombstone first so the backfill never re-creates these while we
+      // wait for the server deletes to finish.
+      setDeletedDraftIds((prev) => {
+        const next = new Set(prev)
+        next.add(jobId)
+        for (const id of clipIds) next.add(id)
+        for (const id of imageIds) next.add(id)
+        persistDeletedDraftIds(next)
+        return next
+      })
+
+      // Drop local snapshots immediately.
       setDraftEntries((prev) => {
         if (!prev.some((d) => d.id === jobId)) return prev
         const next = prev.filter((d) => d.id !== jobId)
@@ -1190,8 +1209,29 @@ export default function DashboardPage() {
       }
       if (selectedProjectId === jobId) setSelectedProjectId(null)
       if (previewVideoId === jobId) setPreviewVideoId(null)
+
+      // Optimistic in-memory removal of the underlying clips/images so they
+      // disappear from every other view too.
+      if (clipIds.length > 0) {
+        const drop = new Set(clipIds)
+        setGeneratedVideos((curr) => curr.filter((v) => !drop.has(v.id)))
+        unmarkActiveJobs(clipIds)
+      }
+      if (imageIds.length > 0) {
+        const drop = new Set(imageIds)
+        setUserImages((curr) => curr.filter((i) => !drop.has(i.id)))
+        unmarkActiveImages(imageIds)
+      }
+
+      // Server-side permanent deletes. Errors are non-fatal: the local
+      // tombstone keeps the card from coming back even if a row lingers.
+      await Promise.allSettled([
+        ...clipIds.map((id) => jobOrchestratorGateway.deleteJob(id)),
+        ...imageIds.map((id) => generatorUiGateway.deleteUserImage(id)),
+      ])
       return
     }
+
 
 
 
