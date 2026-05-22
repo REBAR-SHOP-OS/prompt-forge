@@ -3701,30 +3701,64 @@ export default function DashboardPage() {
           persistProjectSourceImages(nextImgMap)
         }
       }
-      // The in-progress chain just became a Final video — close out the
-      // active draft so it stops appearing in the Drafts section.
-      if (activeDraftId) {
-        const closedDraftId = activeDraftId
-        setDraftEntries((prev) => {
-          const next = prev.filter((d) => d.id !== closedDraftId)
-          persistDraftEntries(next)
-          return next
-        })
-        setDraftSourceJobs((prev) => {
-          if (!(closedDraftId in prev)) return prev
-          const { [closedDraftId]: _drop, ...rest } = prev
-          persistDraftSourceJobs(rest)
-          return rest
-        })
-        setDraftSourceImages((prev) => {
-          if (!(closedDraftId in prev)) return prev
-          const { [closedDraftId]: _drop, ...rest } = prev
-          persistDraftSourceImages(rest)
-          return rest
-        })
+      // The in-progress chain just became a Final video — close out any
+      // draft entries tied to this finalization so they stop appearing in
+      // the Drafts section. This covers both the implicit active draft and
+      // the case where the user explicitly opened a saved Draft from the
+      // Library and finalized it.
+      {
+        const draftIdsToClose = new Set<string>()
+        if (activeDraftId) draftIdsToClose.add(activeDraftId)
+        if (selectedProjectId && selectedProjectId.startsWith('draft-')) {
+          draftIdsToClose.add(selectedProjectId)
+        }
+        if (draftIdsToClose.size > 0) {
+          setDraftEntries((prev) => {
+            const next = prev.filter((d) => !draftIdsToClose.has(d.id))
+            persistDraftEntries(next)
+            return next
+          })
+          setDraftSourceJobs((prev) => {
+            let changed = false
+            const next: Record<string, JobDetail[]> = {}
+            for (const [k, v] of Object.entries(prev)) {
+              if (draftIdsToClose.has(k)) { changed = true; continue }
+              next[k] = v
+            }
+            if (!changed) return prev
+            persistDraftSourceJobs(next)
+            return next
+          })
+          setDraftSourceImages((prev) => {
+            let changed = false
+            const next: Record<string, UserImageItem[]> = {}
+            for (const [k, v] of Object.entries(prev)) {
+              if (draftIdsToClose.has(k)) { changed = true; continue }
+              next[k] = v
+            }
+            if (!changed) return prev
+            persistDraftSourceImages(next)
+            return next
+          })
+          // Tombstone so the backfill effect doesn't recreate them from
+          // orphan clips/images.
+          setDeletedDraftIds((prev) => {
+            const next = new Set(prev)
+            for (const id of draftIdsToClose) next.add(id)
+            persistDeletedDraftIds(next)
+            return next
+          })
+        }
         setActiveDraftId(null)
         persistActiveDraftId(null)
+        // If the user finalized while a draft project was selected, move the
+        // selection to the freshly created Final Film so the UI doesn't
+        // point at a now-deleted draft id.
+        if (selectedProjectId && draftIdsToClose.has(selectedProjectId)) {
+          setSelectedProjectId(mergedId)
+        }
       }
+
 
       // Final Film is done — auto Start Over so the workspace is fresh for
       // the next project. Source clips are already claimed by
