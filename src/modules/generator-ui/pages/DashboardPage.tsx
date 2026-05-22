@@ -5088,11 +5088,14 @@ export default function DashboardPage() {
                           <BookmarkCheck className="h-3 w-3 text-emerald-300" aria-hidden="true" />
                           Saved
                         </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
-                          Draft
-                        </span>
-                      )}
+                      ) : (() => {
+                        const clipCount = (draftSourceJobs[video.id]?.length ?? 0) + (draftSourceImages[video.id]?.length ?? 0)
+                        return (
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+                            Draft{clipCount > 0 ? ` · ${clipCount} clip${clipCount === 1 ? '' : 's'}` : ''}
+                          </span>
+                        )
+                      })()}
                       <span className="tabular-nums">{formatCreatedAt(video.created_at)}</span>
                     </div>
                   </div>
