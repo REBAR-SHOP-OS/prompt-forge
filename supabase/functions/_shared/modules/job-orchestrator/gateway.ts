@@ -374,6 +374,22 @@ export const jobOrchestratorGateway = {
             return errorResponse("PROVIDER_ERROR", "The video provider could not start generation. Please try again.", 502, ctx.requestId);
           }
 
+          // Guard: if the provider returned neither a job id we can poll nor a
+          // complete result, the card would silently sit in `processing` until
+          // the long stuck-timeout fires. Fail fast with a refund instead.
+          if (!gen.providerJobId && !(gen.isComplete && gen.videoUrl)) {
+            try {
+              await jobService.failJob(svc, {
+                userId: auth.userId,
+                jobId,
+                reason: "Provider did not return a job id",
+                refundCredits: true,
+              });
+            } catch (_) { /* best-effort */ }
+            logError("startGeneration returned no providerJobId", { jobId, provider: route.providerKey });
+            return errorResponse("PROVIDER_ERROR", "The video provider did not return a job id. Credits refunded — please try again.", 502, ctx.requestId);
+          }
+
           try {
             await jobService.markProcessing(svc, auth.userId, jobId, gen.providerJobId);
           } catch (e) {
