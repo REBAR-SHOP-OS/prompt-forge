@@ -748,6 +748,71 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  // ----- Draft projects -----
+  // The in-progress workspace (clips + images that haven't been merged into a
+  // Final Film yet) is auto-snapshotted into a Draft project so it survives
+  // refresh / Start Over. One active draft id per user session; closes (is
+  // cleared) when Final Film succeeds.
+  const [draftEntries, setDraftEntries] = useState<JobDetail[]>([])
+  const [draftSourceJobs, setDraftSourceJobs] = useState<Record<string, JobDetail[]>>({})
+  const [draftSourceImages, setDraftSourceImages] = useState<Record<string, UserImageItem[]>>({})
+  const [activeDraftId, setActiveDraftId] = useState<string | null>(null)
+  const draftEntriesKey = userId ? `draft-entries:${userId}` : null
+  const draftSourceJobsKey = userId ? `draft-source-jobs:${userId}` : null
+  const draftSourceImagesKey = userId ? `draft-source-images:${userId}` : null
+  const activeDraftIdKey = userId ? `active-draft-id:${userId}` : null
+  useEffect(() => {
+    if (!draftEntriesKey) { setDraftEntries([]); return }
+    try {
+      const raw = window.localStorage.getItem(draftEntriesKey)
+      const arr = raw ? (JSON.parse(raw) as JobDetail[]) : []
+      setDraftEntries(Array.isArray(arr) ? arr : [])
+    } catch { setDraftEntries([]) }
+  }, [draftEntriesKey])
+  useEffect(() => {
+    if (!draftSourceJobsKey) { setDraftSourceJobs({}); return }
+    try {
+      const raw = window.localStorage.getItem(draftSourceJobsKey)
+      const obj = raw ? (JSON.parse(raw) as Record<string, JobDetail[]>) : {}
+      setDraftSourceJobs(obj && typeof obj === 'object' ? obj : {})
+    } catch { setDraftSourceJobs({}) }
+  }, [draftSourceJobsKey])
+  useEffect(() => {
+    if (!draftSourceImagesKey) { setDraftSourceImages({}); return }
+    try {
+      const raw = window.localStorage.getItem(draftSourceImagesKey)
+      const obj = raw ? (JSON.parse(raw) as Record<string, UserImageItem[]>) : {}
+      setDraftSourceImages(obj && typeof obj === 'object' ? obj : {})
+    } catch { setDraftSourceImages({}) }
+  }, [draftSourceImagesKey])
+  useEffect(() => {
+    if (!activeDraftIdKey) { setActiveDraftId(null); return }
+    try {
+      const raw = window.localStorage.getItem(activeDraftIdKey)
+      setActiveDraftId(raw && typeof raw === 'string' ? raw : null)
+    } catch { setActiveDraftId(null) }
+  }, [activeDraftIdKey])
+  function persistDraftEntries(next: JobDetail[]) {
+    if (!draftEntriesKey) return
+    try { window.localStorage.setItem(draftEntriesKey, JSON.stringify(next)) } catch { /* ignore */ }
+  }
+  function persistDraftSourceJobs(next: Record<string, JobDetail[]>) {
+    if (!draftSourceJobsKey) return
+    try { window.localStorage.setItem(draftSourceJobsKey, JSON.stringify(next)) } catch { /* ignore */ }
+  }
+  function persistDraftSourceImages(next: Record<string, UserImageItem[]>) {
+    if (!draftSourceImagesKey) return
+    try { window.localStorage.setItem(draftSourceImagesKey, JSON.stringify(next)) } catch { /* ignore */ }
+  }
+  function persistActiveDraftId(next: string | null) {
+    if (!activeDraftIdKey) return
+    try {
+      if (next) window.localStorage.setItem(activeDraftIdKey, next)
+      else window.localStorage.removeItem(activeDraftIdKey)
+    } catch { /* ignore */ }
+  }
+
+
   // Image ids hidden from the default workspace HISTORY/clip strip after
   // Final Film / Start Over. Parallels `workspaceHiddenJobIds` for images.
   const [workspaceHiddenImageIds, setWorkspaceHiddenImageIds] = useState<Set<string>>(new Set())
@@ -1080,6 +1145,38 @@ export default function DashboardPage() {
   async function deleteCard(jobId: string) {
     if (typeof window !== 'undefined' && !window.confirm('Delete this video card permanently?')) return
 
+    // Draft project card: drop the draft entry + its snapshots and stop here.
+    // The underlying workspace jobs (if still present) remain untouched.
+    if (jobId.startsWith('draft-')) {
+      setDraftEntries((prev) => {
+        if (!prev.some((d) => d.id === jobId)) return prev
+        const next = prev.filter((d) => d.id !== jobId)
+        persistDraftEntries(next)
+        return next
+      })
+      setDraftSourceJobs((prev) => {
+        if (!(jobId in prev)) return prev
+        const { [jobId]: _drop, ...rest } = prev
+        persistDraftSourceJobs(rest)
+        return rest
+      })
+      setDraftSourceImages((prev) => {
+        if (!(jobId in prev)) return prev
+        const { [jobId]: _drop, ...rest } = prev
+        persistDraftSourceImages(rest)
+        return rest
+      })
+      if (activeDraftId === jobId) {
+        setActiveDraftId(null)
+        persistActiveDraftId(null)
+      }
+      if (selectedProjectId === jobId) setSelectedProjectId(null)
+      if (previewVideoId === jobId) setPreviewVideoId(null)
+      return
+    }
+
+
+
     const isMerged = jobId.startsWith('merged-')
     const mergedEntry = isMerged ? mergedEntries.find((e) => e.id === jobId) : null
     const prevGenerated = generatedVideos
@@ -1291,11 +1388,10 @@ export default function DashboardPage() {
   }>(() => {
     const liveById = new Map<string, JobDetail>()
     for (const j of generatedVideos) liveById.set(j.id, j)
-    const finalIds = new Set(mergedEntries.map((j) => j.id))
 
     const sortDesc = (a: JobDetail, b: JobDetail) => {
-      const ta = new Date(a.created_at ?? 0).getTime()
-      const tb = new Date(b.created_at ?? 0).getTime()
+      const ta = new Date(a.updated_at ?? a.created_at ?? 0).getTime()
+      const tb = new Date(b.updated_at ?? b.created_at ?? 0).getTime()
       return tb - ta
     }
 
@@ -1304,20 +1400,105 @@ export default function DashboardPage() {
       .map((j) => liveById.get(j.id) ?? j)
       .sort(sortDesc)
 
-    const draftMap = new Map<string, JobDetail>()
-    for (const j of Object.values(librarySavedJobs)) {
-      if (finalIds.has(j.id)) continue
-      if (!approvedIds.has(j.id)) continue
-      draftMap.set(j.id, liveById.get(j.id) ?? j)
-    }
-    const drafts = Array.from(draftMap.values()).sort(sortDesc)
+    const drafts = [...draftEntries].sort(sortDesc)
 
     return {
       libraryItems: [...finals, ...drafts],
       finalizedItems: finals,
       draftItems: drafts,
     }
-  }, [mergedEntries, librarySavedJobs, generatedVideos, approvedIds])
+  }, [mergedEntries, draftEntries, generatedVideos, approvedIds])
+
+  // ----- Auto-snapshot the active workspace into a Draft project -----
+  // Any time the workspace has at least one live clip/image, mirror it to a
+  // Draft entry + per-draft snapshot so the chain survives refresh & Start
+  // Over. Final Film success clears the draft (it becomes a Final video).
+  useEffect(() => {
+    if (!userId) return
+    // What counts as "live workspace"? Anything not hidden by Start Over and
+    // not already claimed by a Final Film project snapshot.
+    const finalClaimedJobs = new Set<string>()
+    for (const clips of Object.values(projectSourceJobs)) {
+      for (const c of clips) finalClaimedJobs.add(c.id)
+    }
+    const finalClaimedImages = new Set<string>()
+    for (const imgs of Object.values(projectSourceImages)) {
+      for (const i of imgs) finalClaimedImages.add(i.id)
+    }
+    const liveClips = generatedVideos.filter(
+      (v) => !workspaceHiddenJobIds.has(v.id) && !finalClaimedJobs.has(v.id),
+    )
+    const liveImages = userImages.filter(
+      (i) => !workspaceHiddenImageIds.has(i.id) && !finalClaimedImages.has(i.id),
+    )
+    if (liveClips.length === 0 && liveImages.length === 0) return
+
+    // Make sure we have a draft id; create one if needed.
+    let draftId = activeDraftId
+    if (!draftId) {
+      draftId = `draft-${typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`
+      setActiveDraftId(draftId)
+      persistActiveDraftId(draftId)
+    }
+    const did = draftId
+
+    // Update the snapshot maps only when ids actually change.
+    setDraftSourceJobs((prev) => {
+      const cur = prev[did] ?? []
+      const sameLen = cur.length === liveClips.length
+      const sameIds = sameLen && cur.every((c, i) => c.id === liveClips[i].id && (c.video?.storage_path ?? null) === (liveClips[i].video?.storage_path ?? null))
+      if (sameIds) return prev
+      const next = { ...prev, [did]: liveClips }
+      persistDraftSourceJobs(next)
+      return next
+    })
+    setDraftSourceImages((prev) => {
+      const cur = prev[did] ?? []
+      const sameLen = cur.length === liveImages.length
+      const sameIds = sameLen && cur.every((c, i) => c.id === liveImages[i].id)
+      if (sameIds) return prev
+      const next = { ...prev, [did]: liveImages }
+      persistDraftSourceImages(next)
+      return next
+    })
+
+    // Upsert the draft entry (used to render the Library card).
+    setDraftEntries((prev) => {
+      const nowIso = new Date().toISOString()
+      const firstClip = liveClips[liveClips.length - 1] // oldest = chain start
+      const firstImg = liveImages[liveImages.length - 1]
+      const prompt = firstClip?.input_prompt ?? 'Draft project'
+      const ratio = firstClip?.video?.aspect_ratio
+        ?? firstClip?.requested_aspect_ratio
+        ?? null
+      const thumb = firstClip?.video?.thumbnail_url ?? firstImg?.storage_path ?? null
+      const stubVideo: JobDetail['video'] = firstClip?.video
+        ? { ...firstClip.video }
+        : { id: did, storage_path: firstImg?.storage_path ?? '', thumbnail_url: thumb, aspect_ratio: ratio, duration: null }
+      const existing = prev.find((d) => d.id === did)
+      const entry: JobDetail = {
+        id: did,
+        input_prompt: prompt,
+        status: 'draft',
+        provider_key: existing?.provider_key ?? null,
+        model_key: existing?.model_key ?? null,
+        first_frame_url: null,
+        last_frame_url: null,
+        requested_duration: null,
+        requested_aspect_ratio: ratio,
+        created_at: existing?.created_at ?? nowIso,
+        updated_at: nowIso,
+        video: stubVideo,
+      }
+
+      const filtered = prev.filter((d) => d.id !== did)
+      const next = [entry, ...filtered]
+      persistDraftEntries(next)
+      return next
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, generatedVideos, userImages, workspaceHiddenJobIds, workspaceHiddenImageIds, projectSourceJobs, projectSourceImages, activeDraftId])
+
 
   const completedSourceVideos = useMemo(
     () => generatedVideos.filter(
@@ -1332,7 +1513,7 @@ export default function DashboardPage() {
   const lockedRatio = useMemo<Ratio | null>(() => {
     // Viewing a saved Library project: lock to that project's ratio.
     if (selectedProjectId) {
-      const proj = [...mergedEntries, ...generatedVideos, ...Object.values(librarySavedJobs)]
+      const proj = [...mergedEntries, ...generatedVideos, ...draftEntries, ...Object.values(librarySavedJobs)]
         .find((v) => v.id === selectedProjectId)
       if (proj) return getRatioFor(proj)
     }
@@ -1368,7 +1549,7 @@ export default function DashboardPage() {
     }
     return null
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [generatedVideos, userImages, selectedProjectId, projectSourceJobs, projectSourceImages, workspaceHiddenJobIds, workspaceHiddenImageIds, mergedEntries, librarySavedJobs])
+  }, [generatedVideos, userImages, selectedProjectId, projectSourceJobs, projectSourceImages, workspaceHiddenJobIds, workspaceHiddenImageIds, mergedEntries, draftEntries, librarySavedJobs])
 
   useEffect(() => {
     if (lockedRatio && aspectRatio !== lockedRatio) {
@@ -1382,19 +1563,20 @@ export default function DashboardPage() {
     // produced that Final Film, regardless of workspace-hidden state. The
     // snapshot is stored in EXACT film order — preserve it (do NOT re-sort).
     if (selectedProjectId) {
-      const snapshot = projectSourceJobs[selectedProjectId] ?? []
+      const snapshot = projectSourceJobs[selectedProjectId] ?? draftSourceJobs[selectedProjectId] ?? []
       const liveById = new Map(generatedVideos.map((v) => [v.id, v]))
       if (snapshot.length > 0) {
         return snapshot.map((s) => liveById.get(s.id) ?? s)
       }
       // Single-clip Library entry: the selected id is the original job id
       // (no "merged-" prefix and no snapshot). Show only that one clip.
-      if (!selectedProjectId.startsWith('merged-')) {
+      if (!selectedProjectId.startsWith('merged-') && !selectedProjectId.startsWith('draft-')) {
         const savedJob = librarySavedJobs[selectedProjectId]
         const live = liveById.get(selectedProjectId)
         const pick = live ?? savedJob
         return pick ? [pick] : []
       }
+
       // Legacy fallback: this Library project was created before snapshots
       // were tracked. Best-effort: show non-merged completed clips that were
       // created at or before the merged entry, and that are not already
@@ -1441,7 +1623,7 @@ export default function DashboardPage() {
       if (byId.has(v.id)) ordered.push(v)
     }
     return ordered
-  }, [generatedVideos, manualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs, mergedEntries, librarySavedJobs])
+  }, [generatedVideos, manualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs, draftSourceJobs, mergedEntries, librarySavedJobs])
 
   const handleCardDragStart = (id: string) => (event: React.DragEvent) => {
     setDraggingId(id)
@@ -1474,18 +1656,18 @@ export default function DashboardPage() {
   // ordering, drag handlers, and Final Film merge sequence.
   const visibleUserImages = useMemo<UserImageItem[]>(() => {
     if (selectedProjectId) {
-      const snapshot = projectSourceImages[selectedProjectId] ?? []
+      const snapshot = projectSourceImages[selectedProjectId] ?? draftSourceImages[selectedProjectId] ?? []
       const liveById = new Map(userImages.map((i) => [i.id, i]))
       if (snapshot.length > 0) return snapshot.map((s) => liveById.get(s.id) ?? s)
       // Single-clip Library entries never have image sources.
-      if (!selectedProjectId.startsWith('merged-')) return []
+      if (!selectedProjectId.startsWith('merged-') && !selectedProjectId.startsWith('draft-')) return []
     }
     const claimedByProjects = new Set<string>()
     for (const imgs of Object.values(projectSourceImages)) {
       for (const i of imgs) claimedByProjects.add(i.id)
     }
     return userImages.filter((i) => !workspaceHiddenImageIds.has(i.id) && !claimedByProjects.has(i.id))
-  }, [userImages, selectedProjectId, projectSourceImages, workspaceHiddenImageIds])
+  }, [userImages, selectedProjectId, projectSourceImages, draftSourceImages, workspaceHiddenImageIds])
 
   const displayedClips = useMemo<UnifiedClip[]>(() => {
     const items: UnifiedClip[] = [
@@ -1651,6 +1833,12 @@ export default function DashboardPage() {
             for (const clip of clips) protectedJobIds.add(clip.id)
           }
         }
+        const storedDraftSourceJobs = readStoredRecord<JobDetail[]>(draftSourceJobsKey)
+        for (const clips of Object.values({ ...storedDraftSourceJobs, ...draftSourceJobs })) {
+          if (Array.isArray(clips)) {
+            for (const clip of clips) protectedJobIds.add(clip.id)
+          }
+        }
         for (const id of Object.keys(readStoredRecord<JobDetail>(librarySavedJobsKey))) protectedJobIds.add(id)
 
         const protectedImageIds = new Set(activeImageIds)
@@ -1661,6 +1849,13 @@ export default function DashboardPage() {
             for (const image of images) protectedImageIds.add(image.id)
           }
         }
+        const storedDraftSourceImages = readStoredRecord<UserImageItem[]>(draftSourceImagesKey)
+        for (const images of Object.values({ ...storedDraftSourceImages, ...draftSourceImages })) {
+          if (Array.isArray(images)) {
+            for (const image of images) protectedImageIds.add(image.id)
+          }
+        }
+
 
         const orphanJobIds = summaries
           .map((s) => s.id)
@@ -3253,6 +3448,32 @@ export default function DashboardPage() {
           persistProjectSourceImages(nextImgMap)
         }
       }
+      // The in-progress chain just became a Final video — close out the
+      // active draft so it stops appearing in the Drafts section.
+      if (activeDraftId) {
+        const closedDraftId = activeDraftId
+        setDraftEntries((prev) => {
+          const next = prev.filter((d) => d.id !== closedDraftId)
+          persistDraftEntries(next)
+          return next
+        })
+        setDraftSourceJobs((prev) => {
+          if (!(closedDraftId in prev)) return prev
+          const { [closedDraftId]: _drop, ...rest } = prev
+          persistDraftSourceJobs(rest)
+          return rest
+        })
+        setDraftSourceImages((prev) => {
+          if (!(closedDraftId in prev)) return prev
+          const { [closedDraftId]: _drop, ...rest } = prev
+          persistDraftSourceImages(rest)
+          return rest
+        })
+        setActiveDraftId(null)
+        persistActiveDraftId(null)
+      }
+
+
 
 
     } catch (err) {
@@ -3361,8 +3582,16 @@ export default function DashboardPage() {
     for (const clips of Object.values(projectSourceJobs)) {
       for (const c of clips) claimedJobIds.add(c.id)
     }
+    // Draft snapshots are also protected so the Draft project in Library
+    // keeps its cards alive after Start Over.
+    for (const clips of Object.values(draftSourceJobs)) {
+      for (const c of clips) claimedJobIds.add(c.id)
+    }
     const claimedImageIds = new Set<string>()
     for (const imgs of Object.values(projectSourceImages)) {
+      for (const i of imgs) claimedImageIds.add(i.id)
+    }
+    for (const imgs of Object.values(draftSourceImages)) {
       for (const i of imgs) claimedImageIds.add(i.id)
     }
     const looseJobIds = Array.from(activeJobIds).filter((id) => !claimedJobIds.has(id))
@@ -3370,10 +3599,16 @@ export default function DashboardPage() {
 
     resetWorkspace({ keepPreview: false })
 
+    // Close the active draft id so the next workspace activity opens a new
+    // draft (the previous one is preserved in Library as-is).
+    setActiveDraftId(null)
+    persistActiveDraftId(null)
+
     // Clear the active manifest immediately so a refresh during the network
     // round-trip doesn't bring orphans back via the hydrate-protect path.
     setActiveJobIds(new Set()); persistActiveJobIds(new Set())
     setActiveImageIds(new Set()); persistActiveImageIds(new Set())
+
 
     if (looseJobIds.length === 0 && looseImageIds.length === 0) return
 
@@ -4815,7 +5050,7 @@ export default function DashboardPage() {
                         {video.input_prompt}
                       </p>
                       <div className="flex shrink-0 items-center gap-1">
-                        {video.video?.storage_path ? (
+                        {variant === 'final' && video.video?.storage_path ? (
                           <button
                             type="button"
                             onClick={async (event) => {
@@ -4866,11 +5101,14 @@ export default function DashboardPage() {
                           <BookmarkCheck className="h-3 w-3 text-emerald-300" aria-hidden="true" />
                           Saved
                         </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
-                          Draft
-                        </span>
-                      )}
+                      ) : (() => {
+                        const clipCount = (draftSourceJobs[video.id]?.length ?? 0) + (draftSourceImages[video.id]?.length ?? 0)
+                        return (
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+                            Draft{clipCount > 0 ? ` · ${clipCount} clip${clipCount === 1 ? '' : 's'}` : ''}
+                          </span>
+                        )
+                      })()}
                       <span className="tabular-nums">{formatCreatedAt(video.created_at)}</span>
                     </div>
                   </div>
