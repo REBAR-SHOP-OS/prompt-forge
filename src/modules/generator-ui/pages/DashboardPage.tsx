@@ -1284,23 +1284,39 @@ export default function DashboardPage() {
   // Library items: union of merged final-film entries and the persisted
   // single-clip snapshots, filtered by the approved set. Independent of
   // workspace lifecycle so reload / Start Over / Regenerate don't shrink it.
-  const libraryItems = useMemo<JobDetail[]>(() => {
-    const map = new Map<string, JobDetail>()
-    for (const j of mergedEntries) map.set(j.id, j)
-    for (const j of Object.values(librarySavedJobs)) {
-      if (!map.has(j.id)) map.set(j.id, j)
+  const { libraryItems, finalizedItems, draftItems } = useMemo<{
+    libraryItems: JobDetail[]
+    finalizedItems: JobDetail[]
+    draftItems: JobDetail[]
+  }>(() => {
+    const liveById = new Map<string, JobDetail>()
+    for (const j of generatedVideos) liveById.set(j.id, j)
+    const finalIds = new Set(mergedEntries.map((j) => j.id))
+
+    const sortDesc = (a: JobDetail, b: JobDetail) => {
+      const ta = new Date(a.created_at ?? 0).getTime()
+      const tb = new Date(b.created_at ?? 0).getTime()
+      return tb - ta
     }
-    // Prefer live workspace data when available (fresh status / urls).
-    for (const j of generatedVideos) {
-      if (map.has(j.id)) map.set(j.id, j)
-    }
-    return Array.from(map.values())
+
+    const finals: JobDetail[] = mergedEntries
       .filter((j) => approvedIds.has(j.id))
-      .sort((a, b) => {
-        const ta = new Date(a.created_at ?? 0).getTime()
-        const tb = new Date(b.created_at ?? 0).getTime()
-        return tb - ta
-      })
+      .map((j) => liveById.get(j.id) ?? j)
+      .sort(sortDesc)
+
+    const draftMap = new Map<string, JobDetail>()
+    for (const j of Object.values(librarySavedJobs)) {
+      if (finalIds.has(j.id)) continue
+      if (!approvedIds.has(j.id)) continue
+      draftMap.set(j.id, liveById.get(j.id) ?? j)
+    }
+    const drafts = Array.from(draftMap.values()).sort(sortDesc)
+
+    return {
+      libraryItems: [...finals, ...drafts],
+      finalizedItems: finals,
+      draftItems: drafts,
+    }
   }, [mergedEntries, librarySavedJobs, generatedVideos, approvedIds])
 
   const completedSourceVideos = useMemo(
