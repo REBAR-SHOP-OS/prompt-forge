@@ -84,6 +84,12 @@ export interface MergeResult {
   blob: Blob
   mimeType: string
   extension: 'mp4' | 'webm'
+  /**
+   * True when the MP4 transcode step failed and we fell back to delivering
+   * the raw WebM recording instead. Callers should surface a clear notice
+   * to the user (the file still plays in modern players).
+   */
+  degraded?: boolean
 }
 
 function pickMimeType(): string {
