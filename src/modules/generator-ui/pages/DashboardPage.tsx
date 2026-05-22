@@ -3726,6 +3726,17 @@ export default function DashboardPage() {
         persistActiveDraftId(null)
       }
 
+      // Final Film is done — auto Start Over so the workspace is fresh for
+      // the next project. Source clips are already claimed by
+      // projectSourceJobs[mergedId] / projectSourceImages[mergedId], so
+      // resetWorkspace will only hide them from the workspace, not delete.
+      // The new Final Film stays in mergedEntries (Library) untouched.
+      resetWorkspace({ keepPreview: false })
+      setActiveJobIds(new Set()); persistActiveJobIds(new Set())
+      setActiveImageIds(new Set()); persistActiveImageIds(new Set())
+
+
+
 
 
 
