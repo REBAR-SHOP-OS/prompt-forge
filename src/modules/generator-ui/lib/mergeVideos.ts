@@ -828,6 +828,17 @@ export async function mergeVideoUrls(
   // Always deliver a standard, broadly compatible MP4. Any failure here
   // surfaces to the caller as a real Error — we never silently save WebM.
   const { ensureMp4 } = await import('./transcodeToMp4')
-  const mp4 = await ensureMp4(blob, chosenMime)
+  const mp4 = await ensureMp4(blob, chosenMime, (info) => {
+    // Map ffmpeg encode/remux progress (0..1) into the overall merge ratio
+    // so the UI moves past 95% during the transcode instead of sitting frozen.
+    if (info.stage === 'encode' || info.stage === 'remux') {
+      onProgress?.({
+        ratio: 0.95 + Math.max(0, Math.min(1, info.ratio)) * 0.04, // 95..99
+        clipIndex: urls.length,
+        totalClips: urls.length,
+        stage: 'encoding',
+      })
+    }
+  })
   return { blob: mp4.blob, mimeType: mp4.mimeType, extension: mp4.extension }
 }
