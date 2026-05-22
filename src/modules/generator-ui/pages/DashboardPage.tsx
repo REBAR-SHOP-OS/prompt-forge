@@ -1427,7 +1427,9 @@ export default function DashboardPage() {
     if (selectedProjectId) {
       const snapshot = projectSourceImages[selectedProjectId] ?? []
       const liveById = new Map(userImages.map((i) => [i.id, i]))
-      return snapshot.map((s) => liveById.get(s.id) ?? s)
+      if (snapshot.length > 0) return snapshot.map((s) => liveById.get(s.id) ?? s)
+      // Single-clip Library entries never have image sources.
+      if (!selectedProjectId.startsWith('merged-')) return []
     }
     const claimedByProjects = new Set<string>()
     for (const imgs of Object.values(projectSourceImages)) {
