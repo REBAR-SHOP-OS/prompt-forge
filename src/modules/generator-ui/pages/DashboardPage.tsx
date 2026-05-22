@@ -4699,18 +4699,20 @@ export default function DashboardPage() {
                       tabIndex={0}
                       aria-label={`Preview ${video.input_prompt}`}
                       onClick={() => {
+                        setLastMergedPreview(null)
                         setPreviewVideoId(video.id)
                         setIsApprovedPanelOpen(false)
                         // Show this project's source clips in HISTORY.
-                        setSelectedProjectId(video.id.startsWith('merged-') ? video.id : null)
+                        setSelectedProjectId(video.id)
                         setPreviewDismissed(false)
                       }}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault()
+                          setLastMergedPreview(null)
                           setPreviewVideoId(video.id)
                           setIsApprovedPanelOpen(false)
-                          setSelectedProjectId(video.id.startsWith('merged-') ? video.id : null)
+                          setSelectedProjectId(video.id)
                           setPreviewDismissed(false)
                         }
                       }}
