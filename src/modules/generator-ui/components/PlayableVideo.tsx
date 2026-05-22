@@ -54,11 +54,13 @@ export function PlayableVideo({ src, fallbackClassName, controls, ...rest }: Pro
 
   const handleLoadedMetadata: VideoHTMLAttributes<HTMLVideoElement>["onLoadedMetadata"] = (e) => {
     const el = e.currentTarget;
-    const dur = Number.isFinite(el.duration) ? el.duration : 0;
-    if (dur > 0 && el.videoWidth > 0 && el.videoHeight > 0) {
+    // MediaRecorder WebM files often report duration as Infinity or NaN until
+    // the user seeks to the end. Treat a valid frame size as sufficient
+    // proof that the file is playable — otherwise Final Film cards (which
+    // are recorded WebMs) get falsely flagged as "Video unavailable".
+    if (el.videoWidth > 0 && el.videoHeight > 0) {
       setState("ready");
     } else {
-      // Metadata loaded but the file is empty/corrupt — treat as error.
       setState("error");
     }
     rest.onLoadedMetadata?.(e);
