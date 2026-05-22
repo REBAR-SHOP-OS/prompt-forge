@@ -3578,18 +3578,44 @@ export default function DashboardPage() {
             clipVolume: mixedClipVolume,
           }
         : undefined
-      const mergeRes = await mergeVideoUrls(
-        urls,
-        (p) => setMergeProgress(Math.max(1, Math.min(95, Math.round(p.ratio * 100)))),
-        audioOpt,
-        transitionsForMerge,
+      // Overall pipeline watchdog: if the entire merge+transcode+upload chain
+      // hasn't finished in 10 min, surface a clear error instead of leaving
+      // the UI stuck on 95% forever.
+      const PIPELINE_TIMEOUT_MS = 10 * 60_000
+      const pipelineTimeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Final Film took too long (>10 min). Please try again with fewer or shorter clips.')), PIPELINE_TIMEOUT_MS),
       )
 
-      setMergeProgress(96)
+      const mergeRes = await Promise.race([
+        mergeVideoUrls(
+          urls,
+          (p) => {
+            // Map stages into a monotonic 1..99 percent so the UI keeps
+            // moving past the old 95% cap during encode and upload.
+            if (p.stage === 'encoding') {
+              setMergeStage('encoding')
+              setMergeProgress(Math.max(95, Math.min(99, Math.round(p.ratio * 100))))
+            } else if (p.stage === 'finalizing') {
+              setMergeStage('finalizing')
+              setMergeProgress((curr) => Math.max(curr, 95))
+            } else {
+              setMergeStage('recording')
+              // Record/transition stages cap at 94 to reserve 95+ for finalize/encode.
+              setMergeProgress(Math.max(1, Math.min(94, Math.round(p.ratio * 100))))
+            }
+          },
+          audioOpt,
+          transitionsForMerge,
+        ),
+        pipelineTimeout,
+      ])
+
+      setMergeStage('uploading')
+      setMergeProgress(99)
       const filename = `merged-${Date.now()}.${mergeRes.extension}`
       const storagePath = `${userId}/${filename}`
       // Hard timeout on the upload: if Supabase storage hangs (network/CDN
-      // hiccup), we'd otherwise sit at 96% forever. 2 minutes is plenty for
+      // hiccup), we'd otherwise sit at 99% forever. 2 minutes is plenty for
       // a typical Final Film blob (<200MB).
       const uploadPromise = supabase.storage
         .from(MERGED_BUCKET)
@@ -3599,7 +3625,8 @@ export default function DashboardPage() {
       )
       const { error: upErr } = await Promise.race([uploadPromise, uploadTimeout]) as Awaited<typeof uploadPromise>
       if (upErr) throw new Error(upErr.message)
-      setMergeProgress(99)
+      setMergeProgress(100)
+      setMergeStage(null)
       const { data } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(storagePath)
       const publicUrl = data.publicUrl
 
