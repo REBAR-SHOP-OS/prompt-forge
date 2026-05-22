@@ -795,10 +795,16 @@ export async function mergeVideoUrls(
   const blob = new Blob(chunks, { type: chosenMime })
   if (blob.size === 0) throw new Error('Recorder produced an empty blob')
 
-  // Always deliver a standard, broadly compatible MP4 to the rest of the app.
-  // Without this, downloaded final films won't play in QuickTime / WMP /
-  // mobile gallery viewers.
-  const { ensureMp4 } = await import('./transcodeToMp4')
-  const mp4 = await ensureMp4(blob, chosenMime)
-  return { blob: mp4.blob, mimeType: mp4.mimeType, extension: mp4.extension }
+  // Always TRY to deliver a standard, broadly compatible MP4. If the
+  // in-browser transcode fails (CDN outage, OOM on long clips, etc.) we
+  // fall back to the raw WebM recording so the user never loses their
+  // Final Film — the caller can show a "saved as WebM" notice.
+  try {
+    const { ensureMp4 } = await import('./transcodeToMp4')
+    const mp4 = await ensureMp4(blob, chosenMime)
+    return { blob: mp4.blob, mimeType: mp4.mimeType, extension: mp4.extension }
+  } catch (err) {
+    console.warn('[mergeVideoUrls] MP4 transcode failed, returning raw WebM:', err)
+    return { blob, mimeType: chosenMime, extension: 'webm', degraded: true }
+  }
 }
