@@ -322,9 +322,27 @@ async function pollWanI2V(
 
   if (status === "SUCCEEDED") {
     const sr = json.usage?.SR;
+    const providerVideoUrl = json.output?.video_url ?? null;
+    let persistedUrl = providerVideoUrl;
+    if (providerVideoUrl && ctx) {
+      try {
+        persistedUrl = await persistWanVideo(providerVideoUrl, ctx);
+      } catch (e) {
+        logError("wan persist failed", { error: (e as Error).message, taskId });
+        return {
+          status: "failed",
+          videoUrl: null,
+          thumbnailUrl: null,
+          aspectRatio: null,
+          duration: null,
+          reason: "Could not save the generated video. Please try again.",
+          progressPercent: null,
+        };
+      }
+    }
     return {
       status: "completed",
-      videoUrl: json.output?.video_url ?? null,
+      videoUrl: persistedUrl,
       thumbnailUrl: null,
       aspectRatio: typeof sr === "number" ? `${sr}P` : null,
       duration: json.usage?.output_video_duration ?? json.usage?.duration ?? null,
