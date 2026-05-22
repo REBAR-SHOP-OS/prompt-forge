@@ -1392,7 +1392,7 @@ export default function DashboardPage() {
       if (byId.has(v.id)) ordered.push(v)
     }
     return ordered
-  }, [generatedVideos, manualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs, mergedEntries])
+  }, [generatedVideos, manualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs, mergedEntries, librarySavedJobs])
 
   const handleCardDragStart = (id: string) => (event: React.DragEvent) => {
     setDraggingId(id)
