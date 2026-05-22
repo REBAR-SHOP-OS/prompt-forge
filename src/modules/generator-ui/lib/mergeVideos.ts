@@ -293,7 +293,7 @@ export async function mergeVideoUrls(
   const clipVolume = Math.max(0, Math.min(1, norm?.clipVolume ?? (useSoundtrack ? 0 : 1)))
   const captureClipAudio = clipVolume > 0
 
-  const first = await loadVideo(urls[0], captureClipAudio)
+  const first = await loadVideo(urls[0], captureClipAudio, `#1 of ${urls.length}`)
   const width = Math.max(640, Math.floor(first.videoWidth || 1280))
   const height = Math.max(360, Math.floor(first.videoHeight || 720))
 
