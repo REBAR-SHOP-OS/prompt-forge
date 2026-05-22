@@ -282,7 +282,27 @@ async function startWanT2V(
   };
 }
 
-async function pollWanI2V(taskId: string, apiKey: string): Promise<GenerationPollResult> {
+async function persistWanVideo(
+  videoUrl: string,
+  ctx: { client: SupabaseClient; userId: string },
+): Promise<string> {
+  const dl = await fetch(videoUrl);
+  if (!dl.ok) throw new Error(`WAN download ${dl.status}`);
+  const bytes = new Uint8Array(await dl.arrayBuffer());
+  const path = `${ctx.userId}/wan-${crypto.randomUUID()}.mp4`;
+  const { error: upErr } = await ctx.client.storage
+    .from("merged-videos")
+    .upload(path, bytes, { contentType: "video/mp4", upsert: false });
+  if (upErr) throw new Error(`WAN upload failed: ${upErr.message}`);
+  const { data: pub } = ctx.client.storage.from("merged-videos").getPublicUrl(path);
+  return pub.publicUrl;
+}
+
+async function pollWanI2V(
+  taskId: string,
+  apiKey: string,
+  ctx?: { client: SupabaseClient; userId: string },
+): Promise<GenerationPollResult> {
   const res = await fetch(`${DASHSCOPE_BASE_URL}${DASHSCOPE_TASK_PATH}/${encodeURIComponent(taskId)}`, {
     method: "GET",
     headers: { "Authorization": `Bearer ${apiKey}` },
@@ -302,9 +322,27 @@ async function pollWanI2V(taskId: string, apiKey: string): Promise<GenerationPol
 
   if (status === "SUCCEEDED") {
     const sr = json.usage?.SR;
+    const providerVideoUrl = json.output?.video_url ?? null;
+    let persistedUrl = providerVideoUrl;
+    if (providerVideoUrl && ctx) {
+      try {
+        persistedUrl = await persistWanVideo(providerVideoUrl, ctx);
+      } catch (e) {
+        logError("wan persist failed", { error: (e as Error).message, taskId });
+        return {
+          status: "failed",
+          videoUrl: null,
+          thumbnailUrl: null,
+          aspectRatio: null,
+          duration: null,
+          reason: "Could not save the generated video. Please try again.",
+          progressPercent: null,
+        };
+      }
+    }
     return {
       status: "completed",
-      videoUrl: json.output?.video_url ?? null,
+      videoUrl: persistedUrl,
       thumbnailUrl: null,
       aspectRatio: typeof sr === "number" ? `${sr}P` : null,
       duration: json.usage?.output_video_duration ?? json.usage?.duration ?? null,
@@ -917,7 +955,7 @@ async function pollGeneration(
   }
 
   if (providerKey === "wan" && apiKey) {
-    return await pollWanI2V(providerJobId, apiKey);
+    return await pollWanI2V(providerJobId, apiKey, ctx);
   }
 
   if (providerKey === "flow" && apiKey) {
