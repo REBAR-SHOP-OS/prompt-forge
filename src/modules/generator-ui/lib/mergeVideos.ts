@@ -495,29 +495,44 @@ export async function mergeVideoUrls(
         }
       }, timeoutMs)
 
-      // Stall detector: if currentTime hasn't moved for >1.2s and we're not
-      // at the end, try to nudge playback. This prevents the MediaRecorder
-      // from encoding many seconds of an unchanging frame when the network
-      // or decoder hiccups mid-clip.
+      // Stall detector: if currentTime hasn't moved for >600ms and we're not
+      // at the end, PAUSE the MediaRecorder so we don't bake duplicated
+      // frozen frames into the output, then try to recover playback. Once
+      // playback advances again, resume the recorder. This is the root fix
+      // for the "Final Film has frozen sections" class of bug — previously
+      // we kept recording while the source stalled.
       let lastTime = video.currentTime
       let lastChangeAt = performance.now()
+      let recorderPausedForStall = false
       const stallTimer = setInterval(() => {
         if (done) return
         const ct = video.currentTime
         if (Math.abs(ct - lastTime) > 0.01) {
           lastTime = ct
           lastChangeAt = performance.now()
+          if (recorderPausedForStall) {
+            try {
+              if (recorder.state === 'paused') recorder.resume()
+            } catch { /* ignore */ }
+            recorderPausedForStall = false
+          }
           return
         }
         const stalledFor = performance.now() - lastChangeAt
-        if (stalledFor > 1200 && !video.paused && !video.ended) {
-          console.warn('[mergeVideoUrls] playback stall detected, trying to recover')
-          // Best-effort recovery: play() again. Browsers typically resume
-          // once the buffer catches up.
+        if (stalledFor > 600 && !video.paused && !video.ended) {
+          if (!recorderPausedForStall) {
+            try {
+              if (recorder.state === 'recording') {
+                recorder.pause()
+                recorderPausedForStall = true
+                console.warn('[mergeVideoUrls] playback stalled — recorder paused to prevent frozen frames')
+              }
+            } catch { /* ignore */ }
+          }
+          // Best-effort recovery: nudge playback.
           video.play().catch(() => { /* ignore */ })
-          lastChangeAt = performance.now() // give it another window
         }
-      }, 400)
+      }, 200)
     })
   }
 
