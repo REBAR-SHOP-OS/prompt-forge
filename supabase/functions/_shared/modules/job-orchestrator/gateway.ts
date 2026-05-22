@@ -231,6 +231,34 @@ export const jobOrchestratorGateway = {
             progressPercent = estimateProgressFromJob(detail.status, detail.created_at, requestedDuration);
           }
 
+          // Early-stuck guard: if the row sits in pending/processing without a
+          // provider_job_id (so the inline poll above can never advance it),
+          // fail with refund after ~60s. Without this, the only safety net is
+          // the 15–45min stuck-timeout below — which looks to the user like
+          // "the card never executed".
+          if (
+            !terminalFailedReason &&
+            (detail.status === "processing" || detail.status === "pending") &&
+            !detail.provider_job_id
+          ) {
+            const startedAt = Date.parse(detail.created_at);
+            if (Number.isFinite(startedAt) && Date.now() - startedAt > 60_000) {
+              terminalFailedReason = "Provider never returned a job id — credits refunded. Please try again.";
+              try {
+                await jobService.failJob(svc, {
+                  userId: auth.userId,
+                  jobId: detail.id,
+                  reason: terminalFailedReason,
+                  refundCredits: true,
+                });
+                detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
+              } catch (e) {
+                logError("null-providerJobId fail failed", { error: (e as Error).message, jobId: detail.id });
+              }
+              progressPercent = null;
+            }
+          }
+
           // Final safety net: if the job is still "processing" after the
           // hard timeout, force-fail with refund so the UI doesn't sit on a
           // forever-rendering card. Skips if we already flipped to terminal.
@@ -372,6 +400,22 @@ export const jobOrchestratorGateway = {
             } catch (_) { /* best-effort */ }
             logError("startGeneration failed", { error: (e as Error).message, jobId });
             return errorResponse("PROVIDER_ERROR", "The video provider could not start generation. Please try again.", 502, ctx.requestId);
+          }
+
+          // Guard: if the provider returned neither a job id we can poll nor a
+          // complete result, the card would silently sit in `processing` until
+          // the long stuck-timeout fires. Fail fast with a refund instead.
+          if (!gen.providerJobId && !(gen.isComplete && gen.videoUrl)) {
+            try {
+              await jobService.failJob(svc, {
+                userId: auth.userId,
+                jobId,
+                reason: "Provider did not return a job id",
+                refundCredits: true,
+              });
+            } catch (_) { /* best-effort */ }
+            logError("startGeneration returned no providerJobId", { jobId, provider: route.providerKey });
+            return errorResponse("PROVIDER_ERROR", "The video provider did not return a job id. Credits refunded — please try again.", 502, ctx.requestId);
           }
 
           try {

@@ -1,78 +1,61 @@
-## هدف
-کارگاه فعال (chain فعلی از کلیپ‌ها + تصاویر) به‌صورت خودکار به عنوان یک **پروژه‌ی Draft** در Library ذخیره شود و در تمام سناریوها زنده بماند:
-- در حال ساخت (هر بار کلیپ یا تصویر اضافه/حذف شود)
-- بعد از refresh صفحه
-- بعد از Start Over
-- اگر کاربر روی Final Film بزند → از Drafts خارج می‌شود و به Final videos منتقل می‌شود
 
-## محدوده
-فقط `src/modules/generator-ui/pages/DashboardPage.tsx`. بدون backend / migration. ذخیره‌سازی روی localStorage مثل بقیه‌ی state ها.
+## Problems
 
-## مدل داده
+1. **Some clip cards stay in Pending forever and never execute.**
+   Investigation of `jobs-create` / `jobs-get` shows that after the provider call (`startGeneration`) the job is marked `processing` and the UI polls `/jobs-get` every 4–20s. Two paths can leave a card stuck:
+   - `markProcessing` is called with `gen.providerJobId`. If that is `null/undefined` (some providers return it asynchronously, or a transient failure inside `startGeneration` is swallowed), the row sits in `processing` with `provider_job_id = NULL`. The inline poll in `jobs-get` gateway only runs `aiGateway.pollGeneration` when `detail.provider_job_id` is truthy — so the card never advances and only the 15–45min stuck-timeout eventually fails it (very late, looks like “nothing happened”).
+   - When `request("/jobs-create")` rejects on the client (network blip, 502 from `PROVIDER_ERROR`), no seeded card is added, but if the server already created the row before failing `startGeneration`, the row is correctly failed+refunded — fine. However when the client *succeeds* but `gen.providerJobId` is missing, we get the silent-stuck case above. There is currently **no client-side guard** that re-queues / surfaces this — the user just sees a pending card that never moves.
 
-### state جدید
-- `draftEntries: JobDetail[]` — لیست پروژه‌های Draft (مشابه `mergedEntries`). هر draft یک JobDetail مصنوعی است با `id = draft-<uuid>`, `input_prompt = اولین prompt در chain`, `created_at` ثابت، `updated_at` با هر تغییر. فیلد `video` به‌صورت stub با `thumbnail_url` و `storage_path` کلیپ اول پر می‌شود تا کارت preview نشان دهد (دانلود برای drafts غیرفعال است).
-- `activeDraftId: string | null` — id همان draft فعال این جلسه‌ی کاری.
-- هر دو در localStorage:
-  - `draft-entries:${userId}`
-  - `active-draft-id:${userId}`
+2. **Final-film MP4 doesn’t play in external players (VLC, QuickTime, WMP, mobile gallery).**
+   `mergeVideoUrls` records the canvas via `MediaRecorder` with `video/mp4;codecs=avc1,mp4a`. Chromium’s MediaRecorder writes **fragmented MP4 with the `moov` atom at the END**, no `mvhd` timescale that mobile players like, and a variable framerate. Web players play it fine, but most desktop/mobile players either show audio only, a black frame, or refuse to open the file. The download path already uses blob (good), so the bug is the file itself, not the download.
 
-### بازاستفاده از زیرساخت موجود
-snapshot کلیپ‌ها/تصاویر هر draft روی همان ساختار فعلی `projectSourceJobs[draftId]` و `projectSourceImages[draftId]` نوشته می‌شود. این یعنی کلیک روی کارت draft → `setSelectedProjectId(draftId)` و HISTORY/درست کارت‌ها همان منطق فعلی پروژه را اجرا می‌کند، بدون کد جدید.
+## Plan
 
-## منطق auto-snapshot (useEffect)
+### 1. Stop pending cards from getting silently stuck
 
-ورودی‌ها: `generatedVideos`, `userImages`, `workspaceHiddenJobIds`, `workspaceHiddenImageIds`, `projectSourceJobs`, `mergedEntries`.
+In `supabase/functions/_shared/modules/job-orchestrator/gateway.ts` (`createJob` branch):
 
-محاسبه‌ی **workspace زنده**:
-- کلیپ‌هایی از `generatedVideos` که `workspaceHiddenJobIds` نیستند و در snapshot هیچ پروژه‌ی Library/draft دیگر claim نشده‌اند.
-- تصاویر مشابه با `workspaceHiddenImageIds`.
+- If `gen.providerJobId` is empty AND `gen.isComplete` is false, treat it as a provider failure:
+  - call `jobService.failJob(... refundCredits: true)` with reason `"Provider did not return a job id"`,
+  - return `502 PROVIDER_ERROR` so the client toast surfaces it.
+- Log a structured warning when this happens so we can see real frequency in edge-function logs.
 
-سپس:
-- اگر workspace خالی است → هیچ کاری نکن (draft قبلی همان‌جا می‌ماند).
-- اگر workspace ≥ ۱ آیتم دارد:
-  - اگر `activeDraftId` null است → `activeDraftId = 'draft-<uuid>'` بساز و persist کن.
-  - یک ورودی برای `draftEntries[activeDraftId]` بنویس/به‌روزرسانی کن: prompt اولین کلیپ/تصویر، `updated_at = now`, `created_at` فقط در اولین بار، stub video از اولین کلیپ یا تصویر برای thumbnail.
-  - `projectSourceJobs[activeDraftId] = workspaceClips` و `projectSourceImages[activeDraftId] = workspaceImages`.
+In `gateway.ts` (`getJob` branch):
 
-## نقاط ترکیب با جریان موجود
+- For jobs in `processing`/`pending` with `provider_job_id IS NULL` older than ~60s, force-fail with refund and a clear reason `"Provider never returned a job id — credits refunded"`. Today only the long 15–45min timeout catches them.
 
-### Final Film موفق (حوالی خط ۳۲۳۹ بعد از saved projectSourceJobs)
-اگر `activeDraftId` ست است:
-- ورودی متناظر از `draftEntries` حذف می‌شود.
-- snapshotهای `projectSourceJobs[activeDraftId]` و `projectSourceImages[activeDraftId]` پاک می‌شوند (چون حالا روی `mergedId` ذخیره شده‌اند).
-- `activeDraftId = null`.
-نتیجه: پروژه از Drafts به Final videos منتقل می‌شود.
+In `DashboardPage.tsx` polling effect:
 
-### Start Over (`handleStartOver` خط ۳۳۵۶)
-- قبل از `resetWorkspace`: snapshot نهایی draft گرفته می‌شود تا چیزی از دست نرود (effect خودش این کار را می‌کند، فقط مطمئن می‌شویم state آپدیت قبل از hide ها flush شود — می‌توان مستقیماً اینجا snapshot کرد).
-- نکته‌ی مهم: محاسبه‌ی `claimedJobIds`/`claimedImageIds` باید **به draft snapshot هم نگاه کند** تا Start Over کلیپ‌های داخل draft را روی سرور حذف نکند (همان رفتار محافظت Library projects).
-- در پایان: `activeDraftId = null` تا چرخه‌ی بعدی draft جدید بسازد.
+- When `getJob` returns `status==='failed'`, also pop a one-shot inline message on the card (`status_message`) so the user understands why it never started.
 
-### deleteCard روی draft entry
-کلیک سطل زباله روی کارت draft در Library:
-- `draftEntries` بدون آن id بازنویسی می‌شود.
-- `projectSourceJobs[draftId]` و `projectSourceImages[draftId]` پاک می‌شوند.
-- اگر `activeDraftId === draftId` → null می‌شود.
-- جاب‌های سرور دست‌نخورده می‌مانند (احتمالاً قبلاً hide شده‌اند یا هنوز در workspace هستند).
-- منوی delete موجود (`deleteCard`) با شاخه‌ی `if (draftEntries has id)` تفکیک می‌شود.
+### 2. Make final-film MP4 universally playable
 
-### Refresh
-چون همه چیز در localStorage است (draftEntries + projectSourceJobs/Images + activeDraftId)، صرفاً به طور خودکار rehydrate می‌شود. Effect snapshot هم بعد از hydrate دوباره draft را همگام می‌کند.
+Pick one of the two implementations (recommend (a), it’s entirely client-side and avoids server cost):
 
-## UI Library — سکشن Drafts
+**(a) Client-side remux to a faststart MP4 with `mp4box.js`** (recommended)
 
-`draftItems` محاسبه‌شده در plan قبلی جایگزین می‌شود با:
-- `draftItems = draftEntries` مرتب نزولی با `updated_at`.
-- بخش Final videos بدون تغییر (همان `finalizedItems`).
-- در `renderCard` برای variant=`draft`:
-  - دکمه‌ی Download مخفی می‌شود (چون فیلم final ندارد).
-  - badge «Draft» با شمارنده‌ی کلیپ‌ها هم اضافه می‌شود (مثلاً `Draft · 3 clips`).
-  - thumbnail از اولین کلیپ snapshot.
+- Add `mp4box` dependency.
+- New helper `remuxToFaststartMp4(blob): Promise<Blob>` in `src/modules/generator-ui/lib/mergeVideos.ts`:
+  - Feed the recorder output through `MP4Box.createFile()` after appending the recorded ArrayBuffer.
+  - Use `mp4box.flush()` and `mp4box.getBuffer()` to produce a re-muxed file with `moov` at the front and a constant timescale.
+  - If remux fails for any reason, fall back to the original blob (current behavior) so we never regress.
+- In `mergeVideoUrls`, after `MediaRecorder.stop()` resolves, when the chosen mime is MP4, pipe the result through `remuxToFaststartMp4` before returning. WebM output stays unchanged.
 
-`librarySavedJobs` قدیمی (snapshot تک‌کلیپ approved) از سکشن Drafts خارج می‌شود — دیگر آنجا نمایش داده نمی‌شود (همچنان در state برای سازگاری باقی می‌ماند اما نقشی در Drafts ندارد).
+**(b) Server-side ffmpeg edge function fallback** (only if (a) is rejected)
 
-## ریسک
-- اگر کاربر چند پنجره باز کند، هر تب draft خودش را می‌سازد و ممکن است draft تکراری دیده شود (پذیرفتنی، رفتار localStorage فعلی).
-- مصرف localStorage کمی بیشتر می‌شود (یک snapshot دیگر برای draft فعال). قابل قبول.
-- effect snapshot باید با debounce کوچک یا فقط هنگام تغییر شمارش/idها اجرا شود تا روی هر re-render ننویسد. (در پیاده‌سازی از مقایسه‌ی shallow ids قبل از setState استفاده می‌شود.)
+- New `supabase/functions/video-remux/index.ts` that accepts a signed URL, runs `ffmpeg -i in.mp4 -c copy -movflags +faststart out.mp4` (via the existing ffmpeg-wasm binding used by other functions, or via a lambda relay) and returns the new blob.
+- DashboardPage calls this once on Final-Film completion and stores the remuxed asset in `generator_video_assets` as the canonical playback/download path.
+
+### 3. Verification
+
+- Manually finalize a multi-clip film, download the MP4, open in VLC + QuickTime + WhatsApp preview — must play with video + audio.
+- Submit several text-to-video jobs in a row; confirm no card stays Pending past ~60s without either advancing or surfacing a clear failure with refund.
+
+## Files touched
+
+- `supabase/functions/_shared/modules/job-orchestrator/gateway.ts` — providerJobId guards + 60s null-provider-id timeout.
+- `src/modules/generator-ui/pages/DashboardPage.tsx` — surface stuck-job failure message; minor only.
+- `src/modules/generator-ui/lib/mergeVideos.ts` — post-record remux to faststart MP4.
+- `package.json` — add `mp4box`.
+
+No DB schema changes required.

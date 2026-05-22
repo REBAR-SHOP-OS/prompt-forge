@@ -5056,7 +5056,13 @@ export default function DashboardPage() {
                             onClick={async (event) => {
                               event.stopPropagation()
                               const url = video.video!.storage_path
-                              const filename = `final-film-${video.id.slice(0, 8)}.mp4`
+                              // Derive extension from the stored URL so users
+                              // get a filename matching the real container
+                              // (webm vs mp4) — hardcoding .mp4 was producing
+                              // unplayable files when the merge wrote webm.
+                              const urlExtMatch = url.match(/\.(mp4|webm|mov|m4v)(?:\?|$)/i)
+                              const ext = urlExtMatch ? urlExtMatch[1].toLowerCase() : 'webm'
+                              const filename = `final-film-${video.id.slice(0, 8)}.${ext}`
                               try {
                                 const response = await fetch(url)
                                 if (!response.ok) throw new Error('Download failed')
