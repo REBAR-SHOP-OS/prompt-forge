@@ -1666,6 +1666,80 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, generatedVideos, userImages, mergedEntries, librarySavedJobs, projectSourceJobs, projectSourceImages, deletedDraftIds])
 
+  // Backfill `projectSourceJobs` / `projectSourceImages` for legacy Final
+  // Films that were merged before the snapshot system existed. Without this,
+  // opening such a project shows a blank "0:00" card (the merged film itself)
+  // instead of its real source clips. Runs once per project id and writes
+  // `[]` when no traceable sources exist so the heuristic doesn't loop.
+  useEffect(() => {
+    if (!userId) return
+    const projects: Array<{ id: string; created_at: string }> = []
+    for (const m of mergedEntries) projects.push({ id: m.id, created_at: m.created_at })
+    for (const j of Object.values(librarySavedJobs)) projects.push({ id: j.id, created_at: j.created_at })
+    if (projects.length === 0) return
+
+    const missing = projects.filter((p) => !(p.id in projectSourceJobs))
+    if (missing.length === 0) return
+
+    const claimedJobs = new Set<string>()
+    for (const clips of Object.values(projectSourceJobs)) {
+      for (const c of clips) claimedJobs.add(c.id)
+    }
+    const claimedImgs = new Set<string>()
+    for (const imgs of Object.values(projectSourceImages)) {
+      for (const i of imgs) claimedImgs.add(i.id)
+    }
+
+    const nextJobs = { ...projectSourceJobs }
+    const nextImgs = { ...projectSourceImages }
+    let jobsChanged = false
+    let imgsChanged = false
+
+    for (const p of missing) {
+      const cutoff = new Date(p.created_at).getTime()
+      const sourceClips = [...generatedVideos]
+        .filter(
+          (v) =>
+            v.id !== p.id &&
+            !v.id.startsWith('merged-') &&
+            !claimedJobs.has(v.id) &&
+            normalizeStatus(v.status) === 'completed' &&
+            !!v.video?.storage_path &&
+            new Date(v.created_at).getTime() <= cutoff,
+        )
+        .sort((l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime())
+      nextJobs[p.id] = sourceClips
+      jobsChanged = true
+      for (const c of sourceClips) claimedJobs.add(c.id)
+
+      if (!(p.id in projectSourceImages)) {
+        const sourceImgs = [...userImages]
+          .filter(
+            (i) =>
+              !claimedImgs.has(i.id) &&
+              !!i.storage_path &&
+              new Date(i.created_at).getTime() <= cutoff,
+          )
+          .sort((l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime())
+        nextImgs[p.id] = sourceImgs
+        imgsChanged = true
+        for (const i of sourceImgs) claimedImgs.add(i.id)
+      }
+    }
+
+    if (jobsChanged) {
+      setProjectSourceJobs(nextJobs)
+      persistProjectSourceJobs(nextJobs)
+    }
+    if (imgsChanged) {
+      setProjectSourceImages(nextImgs)
+      persistProjectSourceImages(nextImgs)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, mergedEntries, librarySavedJobs, generatedVideos, userImages])
+
+
+
 
   const completedSourceVideos = useMemo(
     () => generatedVideos.filter(
@@ -1732,8 +1806,18 @@ export default function DashboardPage() {
     if (selectedProjectId) {
       const snapshot = projectSourceJobs[selectedProjectId] ?? draftSourceJobs[selectedProjectId] ?? []
       const liveById = new Map(generatedVideos.map((v) => [v.id, v]))
+      // Hard guard: the merged film itself must never appear inside its own
+      // Working-clips list, and any clip without a playable storage_path is
+      // dropped to avoid blank 0:00 cards.
+      const sanitize = (jobs: JobDetail[]): JobDetail[] =>
+        jobs.filter(
+          (j) =>
+            j.id !== selectedProjectId &&
+            !j.id.startsWith('merged-') &&
+            !!j.video?.storage_path,
+        )
       if (snapshot.length > 0) {
-        return snapshot.map((s) => liveById.get(s.id) ?? s)
+        return sanitize(snapshot.map((s) => liveById.get(s.id) ?? s))
       }
       // Single-clip Library entry: the selected id is the original job id
       // (no "merged-" prefix and no snapshot). Show only that one clip.
@@ -1741,7 +1825,7 @@ export default function DashboardPage() {
         const savedJob = librarySavedJobs[selectedProjectId]
         const live = liveById.get(selectedProjectId)
         const pick = live ?? savedJob
-        return pick ? [pick] : []
+        return pick && pick.video?.storage_path ? [pick] : []
       }
 
       // Legacy fallback: this Library project was created before snapshots
@@ -1758,8 +1842,10 @@ export default function DashboardPage() {
       }
       return [...generatedVideos]
         .filter((v) =>
+          v.id !== selectedProjectId &&
           !v.id.startsWith('merged-') &&
           !claimed.has(v.id) &&
+          !!v.video?.storage_path &&
           new Date(v.created_at).getTime() <= cutoff,
         )
         .sort((l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime())
