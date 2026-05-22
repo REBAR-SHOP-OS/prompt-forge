@@ -5037,7 +5037,7 @@ export default function DashboardPage() {
                         {video.input_prompt}
                       </p>
                       <div className="flex shrink-0 items-center gap-1">
-                        {video.video?.storage_path ? (
+                        {variant === 'final' && video.video?.storage_path ? (
                           <button
                             type="button"
                             onClick={async (event) => {
