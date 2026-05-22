@@ -501,39 +501,25 @@ export async function mergeVideoUrls(
       }, timeoutMs)
 
       // Stall detector: if currentTime hasn't moved for >600ms and we're not
-      // at the end, PAUSE the MediaRecorder so we don't bake duplicated
-      // frozen frames into the output, then try to recover playback. Once
-      // playback advances again, resume the recorder. This is the root fix
-      // for the "Final Film has frozen sections" class of bug — previously
-      // we kept recording while the source stalled.
+      // at the end, nudge playback to recover. We deliberately DO NOT pause
+      // the MediaRecorder anymore — pause/resume cycles on the recorder were
+      // themselves causing frozen/glitchy stretches in the final output and
+      // occasionally left the recorder in a bad state that made finalization
+      // hang at 95%. Letting the canvas keep being captured (with the last
+      // painted frame) for the brief stall window is preferable to corrupting
+      // the recorder timeline.
       let lastTime = video.currentTime
       let lastChangeAt = performance.now()
-      let recorderPausedForStall = false
       const stallTimer = setInterval(() => {
         if (done) return
         const ct = video.currentTime
         if (Math.abs(ct - lastTime) > 0.01) {
           lastTime = ct
           lastChangeAt = performance.now()
-          if (recorderPausedForStall) {
-            try {
-              if (recorder.state === 'paused') recorder.resume()
-            } catch { /* ignore */ }
-            recorderPausedForStall = false
-          }
           return
         }
         const stalledFor = performance.now() - lastChangeAt
         if (stalledFor > 600 && !video.paused && !video.ended) {
-          if (!recorderPausedForStall) {
-            try {
-              if (recorder.state === 'recording') {
-                recorder.pause()
-                recorderPausedForStall = true
-                console.warn('[mergeVideoUrls] playback stalled — recorder paused to prevent frozen frames')
-              }
-            } catch { /* ignore */ }
-          }
           // Best-effort recovery: nudge playback.
           video.play().catch(() => { /* ignore */ })
         }
@@ -825,20 +811,33 @@ export async function mergeVideoUrls(
   const blob = new Blob(chunks, { type: chosenMime })
   if (blob.size === 0) throw new Error('Recorder produced an empty blob')
 
-  // Always deliver a standard, broadly compatible MP4. Any failure here
-  // surfaces to the caller as a real Error — we never silently save WebM.
-  const { ensureMp4 } = await import('./transcodeToMp4')
-  const mp4 = await ensureMp4(blob, chosenMime, (info) => {
-    // Map ffmpeg encode/remux progress (0..1) into the overall merge ratio
-    // so the UI moves past 95% during the transcode instead of sitting frozen.
-    if (info.stage === 'encode' || info.stage === 'remux') {
-      onProgress?.({
-        ratio: 0.95 + Math.max(0, Math.min(1, info.ratio)) * 0.04, // 95..99
-        clipIndex: urls.length,
-        totalClips: urls.length,
-        stage: 'encoding',
-      })
-    }
-  })
-  return { blob: mp4.blob, mimeType: mp4.mimeType, extension: mp4.extension }
+  // Try to deliver a broadly compatible MP4, but NEVER let an ffmpeg.wasm
+  // hang or failure block Final Film. If the in-browser transcode doesn't
+  // finish within a reasonable budget (or throws / OOMs), we fall back to
+  // the well-formed WebM blob we already have. WebM plays in every modern
+  // browser, VLC, Telegram, Discord, Android gallery, etc. — far better
+  // than leaving the user stuck on 95% forever.
+  const TRANSCODE_BUDGET_MS = 4 * 60_000
+  try {
+    const { ensureMp4 } = await import('./transcodeToMp4')
+    const transcode = ensureMp4(blob, chosenMime, (info) => {
+      if (info.stage === 'encode' || info.stage === 'remux') {
+        onProgress?.({
+          ratio: 0.95 + Math.max(0, Math.min(1, info.ratio)) * 0.04, // 95..99
+          clipIndex: urls.length,
+          totalClips: urls.length,
+          stage: 'encoding',
+        })
+      }
+    })
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('mp4 transcode budget exceeded')), TRANSCODE_BUDGET_MS),
+    )
+    const mp4 = await Promise.race([transcode, timeout])
+    return { blob: mp4.blob, mimeType: mp4.mimeType, extension: mp4.extension }
+  } catch (err) {
+    console.warn('[mergeVideoUrls] mp4 transcode failed/timed out, falling back to WebM:', err)
+    onProgress?.({ ratio: 0.99, clipIndex: urls.length, totalClips: urls.length, stage: 'finalizing' })
+    return { blob, mimeType: chosenMime, extension: mimeTypeToExtension(chosenMime) }
+  }
 }

@@ -1,52 +1,34 @@
-## Root cause
+## نتیجه‌ی مورد انتظار
+Final Film باید بدون گیر کردن روی ۹۵٪ کامل شود و خروجی نهایی بخش‌های فریز/تکرار فریم نداشته باشد. اگر مرورگر واقعاً نتواند پردازش را کامل کند، UI نباید بی‌نهایت گیر کند و باید خطای دقیق و قابل اقدام نشان دهد.
 
-`DashboardPage.tsx` has **two independent effects** that both create Draft cards from the same source clips/images, and they race on first paint:
+## تشخیص ریشه‌ای
+مسیر فعلی بعد از ضبط canvas در ۹۵٪ وارد مرحله‌ی `ensureMp4` و `ffmpeg.wasm` می‌شود. این بخش برای ویدئوهای طولانی/سنگین یا خروجی‌های بزرگ می‌تواند روی مرورگر قفل کند، کند شود یا حافظه‌ی WASM را تمام کند. بنابراین مشکل فقط «نمایش درصد» نیست؛ گلوگاه اصلی پردازش سنگین MP4 در سمت مرورگر است. همچنین منطق فعلی هنگام stall منبع، MediaRecorder را pause می‌کند که می‌تواند زمان‌بندی ضبط را شکننده کند و خودش به فریز/وقفه در خروجی کمک کند.
 
-1. **Active-workspace auto-snapshot** (lines 1473-1561) — creates one `draft-<uuid>` per session that wraps every live clip/image in the current workspace.
-2. **Historical-orphan backfill** (lines 1564-1670) — walks `generatedVideos` / `userImages` and creates a separate `draft-orphan-<jobId>` card for every clip/image not yet "claimed" by a Final Film, an existing Library project, **or** an existing draft snapshot.
+## برنامه‌ی اصلاح
+1. **حذف گلوگاه ۹۵٪**
+   - مسیر Final Film را طوری تغییر می‌دهم که خروجی ضبط‌شده‌ی مرورگر به‌صورت پایدار ذخیره شود و دیگر ساخت فیلم برای همه‌ی پروژه‌ها وابسته به encode سنگین `ffmpeg.wasm` در مرورگر نباشد.
+   - `ffmpeg.wasm` فقط به‌عنوان مسیر اختیاری/امن برای موارد کوچک و قابل پیش‌بینی باقی می‌ماند، نه نقطه‌ی اجباری که کل Final Film را متوقف کند.
 
-The orphan backfill is supposed to skip anything already in `draftSourceJobs`, but on the same render where a new clip first arrives, effect (2) often runs against state where `draftSourceJobs` has not yet been updated by effect (1). Result: the same clip ends up in both:
-- `draft-<uuid>` (active workspace draft)
-- `draft-orphan-<jobId>` (orphan backfill)
+2. **ضبط فریم بدون فریز واقعی**
+   - منطق merge را از حالت وابسته به playback زمان-واقعی و pause/resume recorder پایدارتر می‌کنم.
+   - در زمان stall منبع، به‌جای ضبط فریم‌های تکراری یا pause کردن recorder به‌شکل شکننده، پردازش آن کلیپ fail-fast می‌شود یا تا بازیابی واقعی decoder صبر کنترل‌شده دارد؛ خروجی نیمه‌فریز ذخیره نمی‌شود.
+   - برای هر کلیپ watchdog و بررسی پیشرفت `currentTime` اضافه/اصلاح می‌شود تا کلیپ خراب یا کند کل Final Film را در ۹۵٪ معطل نکند.
 
-→ Two identical "58777.mp4 — DRAFT • 1 CLIP" cards in the Library, as shown in the screenshot.
+3. **پیشرفت مرحله‌ای واقعی و خطای دقیق**
+   - مراحل Final Film به شکل واضح‌تر جدا می‌شوند: loading sources، recording، finalizing recorder، optional MP4 conversion، uploading.
+   - اگر مرحله‌ای timeout شود، پیام UI دقیقاً همان مرحله و دلیل احتمالی را نشان می‌دهد، نه اینکه فقط «Could not load source video» بدهد.
 
-## Fix
+4. **پاکسازی و جلوگیری از قفل‌های بعدی**
+   - timeoutهای recorder/ffmpeg را با cleanup کامل media tracks، audio context، object URLs و ffmpeg singleton همراه می‌کنم.
+   - اگر یک تلاش fail شود، تلاش بعدی با state تمیز شروع شود و روی heap/recorder قبلی گیر نکند.
 
-Make the orphan backfill the **fallback path only**. It must never claim a clip/image that is currently visible in the live workspace, because the active-workspace effect already owns those.
+## فایل‌های هدف
+- `src/modules/generator-ui/lib/mergeVideos.ts`
+- `src/modules/generator-ui/lib/transcodeToMp4.ts`
+- `src/modules/generator-ui/pages/DashboardPage.tsx`
 
-In the backfill effect (around line 1598-1646):
-
-- Skip any `job` where `!workspaceHiddenJobIds.has(job.id)` — i.e. the clip is still part of the active workspace; the auto-snapshot will (or already did) wrap it in the single active draft.
-- Skip any `img` where `!workspaceHiddenImageIds.has(img.id)` — same reasoning for uploaded images.
-- Add `workspaceHiddenJobIds` and `workspaceHiddenImageIds` to the dep array so the backfill re-runs when Start Over hides items and they truly become orphans.
-
-This guarantees: live workspace → exactly one `draft-<uuid>`; items removed from the workspace via Start Over (and not part of any Final Film) → exactly one `draft-orphan-…` card each. No more duplicates.
-
-## One-time cleanup of existing duplicates
-
-For users who already have duplicated drafts persisted in `localStorage`, add a small idempotent dedupe pass that runs once on mount:
-
-- Build a map `jobId → draftId` from `draftSourceJobs` and `draftSourceImages`.
-- If the same underlying source id appears in both a `draft-<uuid>` and a `draft-orphan-…` entry, drop the `draft-orphan-…` one from `draftEntries`, `draftSourceJobs`, `draftSourceImages` and add its id to `deletedDraftIds` so the backfill never resurrects it.
-- Persist the cleaned maps with the existing `persistDraft*` helpers.
-
-This keeps the UI honest for current sessions without requiring users to clear storage.
-
-## Files to change
-
-- `src/modules/generator-ui/pages/DashboardPage.tsx` — guard the backfill effect, add dep entries, add the one-time dedupe pass near the existing draft effects.
-
-## Safety
-
-- No DB, RLS, auth, or migration changes.
-- No edits to Final Film / merge / transcode pipelines.
-- Pure client-side change to draft bookkeeping; existing Library, Final Films, and project snapshots are untouched.
-- Backwards compatible with previously saved `draft-*` and `draft-orphan-*` entries — the cleanup pass only removes the duplicate orphan twin, never the active draft.
-
-## Validation
-
-- New clip in empty workspace → exactly one Draft card appears in Library.
-- Refresh page → still one Draft card (no orphan twin spawned).
-- Start Over → that draft becomes an orphan-style card (still one), and a new clip after Start Over creates its own single draft.
-- Existing accounts with two duplicate cards: after first load, one of the two disappears and does not return on refresh.
+## اعتبارسنجی بعد از اجرا
+- مسیرهای Final Film دیگر روی ۹۵٪ منتظر encode اجباری مرورگر نمی‌مانند.
+- خطاهای long-running/stall به‌صورت کنترل‌شده برمی‌گردند.
+- خروجی نهایی فقط وقتی ذخیره می‌شود که recorder داده‌ی معتبر و بدون stall بحرانی تولید کرده باشد.
+- سناریوی ویدئوی ۲ دقیقه‌ای مثل تصویر آپلودشده، به‌جای گیر کردن دائمی، یا کامل می‌شود یا خطای دقیق مرحله‌ای می‌دهد.
