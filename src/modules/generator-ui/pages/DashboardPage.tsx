@@ -3775,13 +3775,8 @@ export default function DashboardPage() {
       setActiveJobIds(new Set()); persistActiveJobIds(new Set())
       setActiveImageIds(new Set()); persistActiveImageIds(new Set())
 
-      // If the in-browser MP4 transcode failed, the file was saved as WebM.
-      // Surface a clear notice so the user knows why the extension differs.
-      if (mergeRes.degraded) {
-        setVideoColumnMessage(
-          'فایل نهایی به‌جای MP4 به‌صورت WebM ذخیره شد چون تبدیل MP4 در مرورگر شکست خورد (احتمالاً به دلیل حجم/حافظه). فایل در پلیرهای مدرن قابل پخش است.',
-        )
-      }
+
+
 
 
 

@@ -84,12 +84,6 @@ export interface MergeResult {
   blob: Blob
   mimeType: string
   extension: 'mp4' | 'webm'
-  /**
-   * True when the MP4 transcode step failed and we fell back to delivering
-   * the raw WebM recording instead. Callers should surface a clear notice
-   * to the user (the file still plays in modern players).
-   */
-  degraded?: boolean
 }
 
 function pickMimeType(): string {
@@ -795,16 +789,9 @@ export async function mergeVideoUrls(
   const blob = new Blob(chunks, { type: chosenMime })
   if (blob.size === 0) throw new Error('Recorder produced an empty blob')
 
-  // Always TRY to deliver a standard, broadly compatible MP4. If the
-  // in-browser transcode fails (CDN outage, OOM on long clips, etc.) we
-  // fall back to the raw WebM recording so the user never loses their
-  // Final Film — the caller can show a "saved as WebM" notice.
-  try {
-    const { ensureMp4 } = await import('./transcodeToMp4')
-    const mp4 = await ensureMp4(blob, chosenMime)
-    return { blob: mp4.blob, mimeType: mp4.mimeType, extension: mp4.extension }
-  } catch (err) {
-    console.warn('[mergeVideoUrls] MP4 transcode failed, returning raw WebM:', err)
-    return { blob, mimeType: chosenMime, extension: 'webm', degraded: true }
-  }
+  // Always deliver a standard, broadly compatible MP4. Any failure here
+  // surfaces to the caller as a real Error — we never silently save WebM.
+  const { ensureMp4 } = await import('./transcodeToMp4')
+  const mp4 = await ensureMp4(blob, chosenMime)
+  return { blob: mp4.blob, mimeType: mp4.mimeType, extension: mp4.extension }
 }

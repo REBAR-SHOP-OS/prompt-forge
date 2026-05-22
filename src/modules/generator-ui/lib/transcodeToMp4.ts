@@ -1,13 +1,22 @@
 // Browser-side transcode/remux to standard MP4 (H.264 + AAC, +faststart).
 //
-// MediaRecorder produces either WebM or fragmented MP4 — both fail in
-// QuickTime/WMP/mobile gallery players. We pipe the output through
-// ffmpeg.wasm so the user always gets a fully compatible .mp4 file.
+// MediaRecorder produces WebM (and sometimes fragmented MP4); both fail in
+// QuickTime / WMP / mobile gallery players. We always pipe the recording
+// through ffmpeg.wasm so the user gets a fully compatible .mp4 file.
 //
-// Single-threaded core (no SharedArrayBuffer / COOP-COEP required).
+// Single-threaded core (no SharedArrayBuffer / COOP-COEP required). The
+// core .js + .wasm are bundled as Vite assets served from our own origin,
+// so a CDN outage can never break Final Film. A single CDN URL is kept as
+// a last-resort fallback only.
 
 import { FFmpeg } from '@ffmpeg/ffmpeg'
-import { fetchFile } from '@ffmpeg/util'
+import { fetchFile, toBlobURL } from '@ffmpeg/util'
+
+// Vite turns these into URLs to hashed assets under /assets/.
+// eslint-disable-next-line import/no-unresolved
+import coreUrl from '@ffmpeg/core/dist/umd/ffmpeg-core.js?url'
+// eslint-disable-next-line import/no-unresolved
+import wasmUrl from '@ffmpeg/core/dist/umd/ffmpeg-core.wasm?url'
 
 export interface Mp4Result {
   blob: Blob
@@ -19,10 +28,7 @@ let ffmpegSingleton: FFmpeg | null = null
 let loadingPromise: Promise<FFmpeg> | null = null
 
 const CORE_VERSION = '0.12.6'
-const CDN_BASES = [
-  `https://unpkg.com/@ffmpeg/core@${CORE_VERSION}/dist/umd`,
-  `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${CORE_VERSION}/dist/umd`,
-]
+const REMOTE_FALLBACK = `https://unpkg.com/@ffmpeg/core@${CORE_VERSION}/dist/umd`
 
 /** Best-effort stringify so we never propagate "[object Object]" or non-Error throws. */
 export function stringifyAny(e: unknown): string {
@@ -47,14 +53,28 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   })
 }
 
-async function loadFromBase(ff: FFmpeg, base: string): Promise<void> {
+async function loadLocal(ff: FFmpeg): Promise<void> {
+  // Worker-style cross-origin loads require blob URLs of the same origin.
+  const [core, wasm] = await Promise.all([
+    toBlobURL(coreUrl, 'text/javascript'),
+    toBlobURL(wasmUrl, 'application/wasm'),
+  ])
   await withTimeout(
-    ff.load({
-      coreURL: `${base}/ffmpeg-core.js`,
-      wasmURL: `${base}/ffmpeg-core.wasm`,
-    }),
-    30_000,
-    `FFmpeg core load (${new URL(base).host})`,
+    ff.load({ coreURL: core, wasmURL: wasm }),
+    60_000,
+    'FFmpeg core load (local)',
+  )
+}
+
+async function loadRemote(ff: FFmpeg): Promise<void> {
+  const [core, wasm] = await Promise.all([
+    toBlobURL(`${REMOTE_FALLBACK}/ffmpeg-core.js`, 'text/javascript'),
+    toBlobURL(`${REMOTE_FALLBACK}/ffmpeg-core.wasm`, 'application/wasm'),
+  ])
+  await withTimeout(
+    ff.load({ coreURL: core, wasmURL: wasm }),
+    60_000,
+    'FFmpeg core load (remote)',
   )
 }
 
@@ -63,28 +83,37 @@ async function getFFmpeg(): Promise<FFmpeg> {
   if (loadingPromise) return loadingPromise
   loadingPromise = (async () => {
     const ff = new FFmpeg()
-    const failures: string[] = []
-    for (const base of CDN_BASES) {
+    try {
+      await loadLocal(ff)
+      ffmpegSingleton = ff
+      return ff
+    } catch (eLocal) {
+      const localMsg = stringifyAny(eLocal)
       try {
-        await loadFromBase(ff, base)
+        await loadRemote(ff)
         ffmpegSingleton = ff
         return ff
-      } catch (e) {
-        failures.push(`${new URL(base).host}: ${stringifyAny(e)}`)
-        // Continue to next CDN.
+      } catch (eRemote) {
+        throw new Error(
+          `FFmpeg core could not be loaded — local: ${localMsg} | remote: ${stringifyAny(eRemote)}`,
+        )
       }
     }
-    throw new Error(
-      `FFmpeg core could not be loaded from any CDN — ${failures.join(' | ')}`,
-    )
   })()
   try {
     return await loadingPromise
   } catch (e) {
-    // Allow a future call to retry instead of remembering the failure forever.
     loadingPromise = null
     throw e
   }
+}
+
+/** Force-reload the core after a failed exec — releases the WASM heap. */
+async function resetFFmpeg(): Promise<FFmpeg> {
+  try { ffmpegSingleton?.terminate() } catch { /* ignore */ }
+  ffmpegSingleton = null
+  loadingPromise = null
+  return await getFFmpeg()
 }
 
 function pickInputExt(mimeType: string, fallback?: string): string {
@@ -105,6 +134,29 @@ async function runStage<T>(label: string, fn: () => Promise<T>): Promise<T> {
   }
 }
 
+// Memory-friendly encode args. `ultrafast` uses roughly 3x less RAM than
+// `veryfast` at the cost of ~15% larger files — the right trade for a
+// browser WASM encoder that has to fit in ~2 GB. The scale filter caps
+// width at 1920px so a 4K source can't blow the heap. yuv420p keeps the
+// output compatible with QuickTime / mobile gallery players.
+function buildEncodeArgs(input: string, output: string, crf: number): string[] {
+  return [
+    '-i', input,
+    '-c:v', 'libx264',
+    '-preset', 'ultrafast',
+    '-tune', 'zerolatency',
+    '-crf', String(crf),
+    '-g', '60',
+    '-threads', '1',
+    '-pix_fmt', 'yuv420p',
+    '-vf', "scale='min(1920,iw)':-2",
+    '-c:a', 'aac',
+    '-b:a', '96k',
+    '-movflags', '+faststart',
+    output,
+  ]
+}
+
 /**
  * Ensure the given blob is a standard, broadly compatible MP4.
  *
@@ -112,33 +164,24 @@ async function runStage<T>(label: string, fn: () => Promise<T>): Promise<T> {
  *   `-c copy -movflags +faststart` to defragment / move moov to the front.
  * - Otherwise we transcode video to H.264 and audio to AAC.
  *
- * Returns a fresh blob; the caller owns it. Any failure throws a real
- * `Error` whose message starts with "ffmpeg <stage> failed:" so callers can
- * always show something useful to the user.
+ * Any failure throws a real `Error` whose message starts with
+ * "ffmpeg <stage> failed:" so callers can show something useful.
  */
 export async function ensureMp4(blob: Blob, mimeType?: string): Promise<Mp4Result> {
-  const ff = await runStage('load', () => getFFmpeg())
+  let ff = await runStage('load', () => getFFmpeg())
   const mt = mimeType || blob.type || ''
   const inExt = pickInputExt(mt)
   const inputName = `in.${inExt}`
   const outputName = 'out.mp4'
 
-  await runStage('writeFile', async () => {
-    await ff.writeFile(inputName, await fetchFile(blob))
-  })
+  const writeInput = async (instance: FFmpeg) => {
+    await runStage('writeFile', async () => {
+      await instance.writeFile(inputName, await fetchFile(blob))
+    })
+  }
+  await writeInput(ff)
 
   const isMp4 = inExt === 'mp4'
-  const encodeArgs = [
-    '-i', inputName,
-    '-c:v', 'libx264',
-    '-preset', 'veryfast',
-    '-crf', '23',
-    '-pix_fmt', 'yuv420p',
-    '-c:a', 'aac',
-    '-b:a', '128k',
-    '-movflags', '+faststart',
-    outputName,
-  ]
   const remuxArgs = [
     '-i', inputName,
     '-c', 'copy',
@@ -146,20 +189,30 @@ export async function ensureMp4(blob: Blob, mimeType?: string): Promise<Mp4Resul
     outputName,
   ]
 
-  try {
-    if (isMp4) {
+  let succeeded = false
+  if (isMp4) {
+    try {
       await runStage('remux', () => ff.exec(remuxArgs))
-    } else {
-      await runStage('encode', () => ff.exec(encodeArgs))
+      succeeded = true
+    } catch (err) {
+      // Remux of an mp4 input failed (e.g. unsupported codec inside).
+      // Fall through to a memory-friendly encode.
+      console.warn('[ensureMp4] remux failed, will encode:', stringifyAny(err))
     }
-  } catch (err) {
-    // Remux of an mp4 input failed (e.g. unsupported codec inside) — try
-    // a full encode as a last resort. For non-mp4 inputs we already tried
-    // encoding, so rethrow.
-    if (isMp4) {
-      await runStage('encode (fallback)', () => ff.exec(encodeArgs))
-    } else {
-      throw err
+  }
+
+  if (!succeeded) {
+    try {
+      await runStage('encode', () => ff.exec(buildEncodeArgs(inputName, outputName, 23)))
+      succeeded = true
+    } catch (err1) {
+      // OOM / abort: terminate the core to release the WASM heap, reload,
+      // and retry once at a higher CRF (smaller frames, less memory pressure).
+      console.warn('[ensureMp4] first encode failed, retrying after reset:', stringifyAny(err1))
+      try { await ff.deleteFile(inputName) } catch { /* ignore */ }
+      ff = await runStage('load (retry)', () => resetFFmpeg())
+      await writeInput(ff)
+      await runStage('encode (retry)', () => ff.exec(buildEncodeArgs(inputName, outputName, 28)))
     }
   }
 
