@@ -3537,8 +3537,16 @@ export default function DashboardPage() {
     for (const clips of Object.values(projectSourceJobs)) {
       for (const c of clips) claimedJobIds.add(c.id)
     }
+    // Draft snapshots are also protected so the Draft project in Library
+    // keeps its cards alive after Start Over.
+    for (const clips of Object.values(draftSourceJobs)) {
+      for (const c of clips) claimedJobIds.add(c.id)
+    }
     const claimedImageIds = new Set<string>()
     for (const imgs of Object.values(projectSourceImages)) {
+      for (const i of imgs) claimedImageIds.add(i.id)
+    }
+    for (const imgs of Object.values(draftSourceImages)) {
       for (const i of imgs) claimedImageIds.add(i.id)
     }
     const looseJobIds = Array.from(activeJobIds).filter((id) => !claimedJobIds.has(id))
@@ -3546,10 +3554,16 @@ export default function DashboardPage() {
 
     resetWorkspace({ keepPreview: false })
 
+    // Close the active draft id so the next workspace activity opens a new
+    // draft (the previous one is preserved in Library as-is).
+    setActiveDraftId(null)
+    persistActiveDraftId(null)
+
     // Clear the active manifest immediately so a refresh during the network
     // round-trip doesn't bring orphans back via the hydrate-protect path.
     setActiveJobIds(new Set()); persistActiveJobIds(new Set())
     setActiveImageIds(new Set()); persistActiveImageIds(new Set())
+
 
     if (looseJobIds.length === 0 && looseImageIds.length === 0) return
 
