@@ -3403,6 +3403,32 @@ export default function DashboardPage() {
           persistProjectSourceImages(nextImgMap)
         }
       }
+      // The in-progress chain just became a Final video — close out the
+      // active draft so it stops appearing in the Drafts section.
+      if (activeDraftId) {
+        const closedDraftId = activeDraftId
+        setDraftEntries((prev) => {
+          const next = prev.filter((d) => d.id !== closedDraftId)
+          persistDraftEntries(next)
+          return next
+        })
+        setDraftSourceJobs((prev) => {
+          if (!(closedDraftId in prev)) return prev
+          const { [closedDraftId]: _drop, ...rest } = prev
+          persistDraftSourceJobs(rest)
+          return rest
+        })
+        setDraftSourceImages((prev) => {
+          if (!(closedDraftId in prev)) return prev
+          const { [closedDraftId]: _drop, ...rest } = prev
+          persistDraftSourceImages(rest)
+          return rest
+        })
+        setActiveDraftId(null)
+        persistActiveDraftId(null)
+      }
+
+
 
 
     } catch (err) {
