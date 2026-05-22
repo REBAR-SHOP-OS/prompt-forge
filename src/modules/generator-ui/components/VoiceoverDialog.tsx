@@ -120,7 +120,7 @@ export function VoiceoverDialog({
     if (!audioUrl) return
     const a = document.createElement('a')
     a.href = audioUrl
-    a.download = `voiceover-${Date.now()}.wav`
+    a.download = `voiceover-${gender}-${tone}-${Date.now()}.wav`
     document.body.appendChild(a)
     a.click()
     a.remove()
@@ -233,17 +233,8 @@ export function VoiceoverDialog({
                 controls
                 className="w-full"
               />
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleDownload}
-                >
-                  <Download className="mr-2 h-3.5 w-3.5" />
-                  Download
-                </Button>
-                {onUseAsSoundtrack ? (
+              {onUseAsSoundtrack ? (
+                <div className="flex flex-wrap gap-2">
                   <Button
                     type="button"
                     size="sm"
@@ -252,13 +243,22 @@ export function VoiceoverDialog({
                     <Music2 className="mr-2 h-3.5 w-3.5" />
                     Use as soundtrack
                   </Button>
-                ) : null}
-              </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="gap-2 sm:gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleDownload}
+            disabled={!audioUrl}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            Download
+          </Button>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             Close
           </Button>

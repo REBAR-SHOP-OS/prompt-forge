@@ -1,13 +1,18 @@
-# Fix "Video is larger than 200MB" upload error
+## هدف
+کاربر می‌خواهد بعد از تولید voiceover، فایل صوتی ساخته‌شده را به‌راحتی دانلود کند.
 
-## Problem
-`handleUploadVideoFile` in `src/modules/generator-ui/pages/DashboardPage.tsx` (line 1730) rejects any video over 200MB with the message shown in the screenshot.
+## وضعیت فعلی
+در `src/modules/generator-ui/components/VoiceoverDialog.tsx` دکمه Download وجود دارد ولی داخل یک پنل کوچک کنار پلیر صوتی است و چندان واضح نیست. در فوتر دیالوگ فقط دکمه Close هست.
 
-## Plan
-1. Raise the client-side cap to **1GB** (`1024 * 1024 * 1024`) and update the warning text to match ("Video is larger than 1GB…").
-2. No backend changes — uploads go directly to storage; the Supabase Storage bucket already accepts files of this size for video assets used elsewhere in the project.
+## تغییر
+فقط در فایل `VoiceoverDialog.tsx`:
 
-## Technical notes
-- File: `src/modules/generator-ui/pages/DashboardPage.tsx`, lines 1730–1733 only.
-- Single constant + single string. No other call site uses `MAX_BYTES`.
-- If you'd prefer a different cap (e.g. 500MB or 2GB), tell me the number and I'll use it instead.
+1. دکمه **Download** را به فوتر دیالوگ (کنار Close) منتقل/اضافه می‌کنیم تا همیشه در دسترس و واضح باشد.
+2. وقتی `audioUrl` وجود نداشته باشد، دکمه disabled است؛ بعد از تولید فعال می‌شود.
+3. دکمه قبلی Download داخل پنل پلیر حذف می‌شود (برای جلوگیری از تکرار). دکمه "Use as soundtrack" در همان پنل باقی می‌ماند.
+4. نام فایل دانلود بر اساس voice/tone خواناتر می‌شود: مثل `voiceover-female-excited-<timestamp>.wav`.
+
+## خارج از scope
+- بدون تغییر edge function `tts-generate`.
+- بدون تغییر backend/storage.
+- بدون تغییر سایر بخش‌های UI داشبورد.
