@@ -112,7 +112,11 @@ export async function ensureMp4(blob: Blob, mimeType?: string): Promise<Mp4Resul
   try { await ff.deleteFile(outputName) } catch { /* noop */ }
 
   const u8 = data as Uint8Array
-  const out = new Blob([u8], { type: 'video/mp4' })
+  // Copy into a fresh ArrayBuffer so the Blob type matches BlobPart strictly
+  // (avoids SharedArrayBuffer-typed buffer issues from ffmpeg.wasm output).
+  const ab = new ArrayBuffer(u8.byteLength)
+  new Uint8Array(ab).set(u8)
+  const out = new Blob([ab], { type: 'video/mp4' })
   return { blob: out, mimeType: 'video/mp4', extension: 'mp4' }
 }
 
