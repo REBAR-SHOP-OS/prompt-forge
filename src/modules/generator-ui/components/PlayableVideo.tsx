@@ -69,7 +69,7 @@ export function PlayableVideo({ src, fallbackClassName, controls, ...rest }: Pro
     rest.onError?.(e);
   };
 
-  const fallback = (icon: React.ReactNode, label?: string) => (
+  const fallback = (icon: ReactNode, label?: string) => (
     <div
       className={
         fallbackClassName ??
