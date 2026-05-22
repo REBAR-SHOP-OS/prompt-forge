@@ -372,12 +372,64 @@ export async function mergeVideoUrls(
   }
 
   let rafId = 0
+  // Frame-accurate painter: when the browser exposes
+  // requestVideoFrameCallback (rVFC), paint ONLY when the decoder hands us a
+  // new frame. This eliminates the "rAF lag → duplicated frame baked into the
+  // recording" class of bugs that caused Final Film to look frozen in spots
+  // even though the source clip played fine. We also keep a low-rate rAF
+  // safety repaint so a single missed rVFC tick never leaves a stale frame
+  // on the canvas being captured.
+  type VFCCapableVideo = HTMLVideoElement & {
+    requestVideoFrameCallback?: (cb: (now: number, meta: unknown) => void) => number
+    cancelVideoFrameCallback?: (handle: number) => void
+  }
+  let activeVfcHandle = 0
+  let activeVfcVideo: VFCCapableVideo | null = null
   const loopPaint = (video: HTMLVideoElement) => {
-    const tick = () => {
-      drawContain(ctx, video, width, height)
-      rafId = requestAnimationFrame(tick)
+    cancelAnimationFrame(rafId)
+    if (activeVfcVideo && activeVfcHandle && activeVfcVideo.cancelVideoFrameCallback) {
+      try { activeVfcVideo.cancelVideoFrameCallback(activeVfcHandle) } catch { /* ignore */ }
     }
-    tick()
+    activeVfcVideo = null
+    activeVfcHandle = 0
+
+    const v = video as VFCCapableVideo
+    if (typeof v.requestVideoFrameCallback === 'function') {
+      activeVfcVideo = v
+      const onFrame = () => {
+        drawContain(ctx, video, width, height)
+        if (!video.paused && !video.ended && activeVfcVideo === v) {
+          activeVfcHandle = v.requestVideoFrameCallback!(onFrame)
+        }
+      }
+      activeVfcHandle = v.requestVideoFrameCallback(onFrame)
+      // Low-rate safety repaint (~10fps) — guarantees the captured canvas
+      // never goes stale if rVFC pauses (tab partially throttled).
+      const safetyTick = () => {
+        drawContain(ctx, video, width, height)
+        rafId = requestAnimationFrame(() => {
+          // Throttle to ~100ms.
+          setTimeout(safetyTick, 100)
+        })
+      }
+      safetyTick()
+    } else {
+      const tick = () => {
+        drawContain(ctx, video, width, height)
+        rafId = requestAnimationFrame(tick)
+      }
+      tick()
+    }
+  }
+
+  const stopPaint = () => {
+    cancelAnimationFrame(rafId)
+    rafId = 0
+    if (activeVfcVideo && activeVfcHandle && activeVfcVideo.cancelVideoFrameCallback) {
+      try { activeVfcVideo.cancelVideoFrameCallback(activeVfcHandle) } catch { /* ignore */ }
+    }
+    activeVfcVideo = null
+    activeVfcHandle = 0
   }
 
   /**
@@ -386,6 +438,11 @@ export async function mergeVideoUrls(
    * race where the event fired before this listener could be attached).
    * Also includes a safety timeout based on remaining duration so a missed
    * `ended` event can never hang the merge loop forever.
+   *
+   * NEW: also watches for playback stalls. If `currentTime` stops advancing
+   * for >1.2s while the video isn't ended, we wait for it to recover instead
+   * of letting MediaRecorder bake a frozen stretch into the file. If it
+   * truly cannot recover, we still bail out via the duration-based timeout.
    */
   function whenEnded(video: HTMLVideoElement): Promise<void> {
     return new Promise<void>((resolve) => {
@@ -395,7 +452,8 @@ export async function mergeVideoUrls(
         done = true
         video.removeEventListener('ended', onEnded)
         if (timer) clearTimeout(timer)
-        cancelAnimationFrame(rafId)
+        if (stallTimer) clearInterval(stallTimer)
+        stopPaint()
         resolve()
       }
       const onEnded = () => finish()
@@ -403,15 +461,40 @@ export async function mergeVideoUrls(
       video.addEventListener('ended', onEnded)
       const dur = Number.isFinite(video.duration) ? video.duration : 0
       const remaining = Math.max(0, dur - (video.currentTime || 0))
-      // +1500ms slack for decode/event dispatch latency. Minimum 3s so very
-      // short clips still get a real chance to fire `ended`.
-      const timeoutMs = Math.max(3000, Math.ceil(remaining * 1000) + 1500)
+      // +3000ms slack for decode/event dispatch latency + recovery from
+      // transient stalls. Minimum 4s so very short clips still get a real
+      // chance to fire `ended`.
+      const timeoutMs = Math.max(4000, Math.ceil(remaining * 1000) + 3000)
       const timer = setTimeout(() => {
         if (!done) {
           console.warn('[mergeVideoUrls] ended event missed; advancing via timeout')
           finish()
         }
       }, timeoutMs)
+
+      // Stall detector: if currentTime hasn't moved for >1.2s and we're not
+      // at the end, try to nudge playback. This prevents the MediaRecorder
+      // from encoding many seconds of an unchanging frame when the network
+      // or decoder hiccups mid-clip.
+      let lastTime = video.currentTime
+      let lastChangeAt = performance.now()
+      const stallTimer = setInterval(() => {
+        if (done) return
+        const ct = video.currentTime
+        if (Math.abs(ct - lastTime) > 0.01) {
+          lastTime = ct
+          lastChangeAt = performance.now()
+          return
+        }
+        const stalledFor = performance.now() - lastChangeAt
+        if (stalledFor > 1200 && !video.paused && !video.ended) {
+          console.warn('[mergeVideoUrls] playback stall detected, trying to recover')
+          // Best-effort recovery: play() again. Browsers typically resume
+          // once the buffer catches up.
+          video.play().catch(() => { /* ignore */ })
+          lastChangeAt = performance.now() // give it another window
+        }
+      }, 400)
     })
   }
 
