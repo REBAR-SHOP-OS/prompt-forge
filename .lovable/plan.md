@@ -1,64 +1,38 @@
-## Goal
+## Expected outcome
 
-1. Fix the actual cause of the "saved as WebM" fallback so Final Film really produces a standard `.mp4`.
-2. Remove the Persian notice; all merge/finalize messages must be English.
+Final Film should no longer bake frozen sections into the exported video, and every video card should either show a real playable preview or a clear recoverable loading/error state instead of an empty 0:00 grey player.
 
-## Root cause
+## Root cause to address
 
-The merge pipeline records WebM in the browser, then `ensureMp4()` transcodes it to MP4 with `ffmpeg.wasm`. Today that transcode runs the ffmpeg WebAssembly core fetched from `unpkg.com` / `jsdelivr` and uses `libx264 -preset veryfast -crf 23`. Two real failure modes cause the WebM fallback to fire:
+The current Final Film path records source clips by playing `<video>` elements into a canvas. That can still freeze when the browser decoder/network stalls: the recorder keeps running while the video frame is not advancing, so duplicated frames get permanently encoded. Separately, cards render `<video controls>` as soon as a URL is resolved, but they do not validate that metadata/duration loaded successfully; when the media fails, the browser shows a blank player at `0:00`.
 
-- The CDN-hosted `ffmpeg-core.js` / `ffmpeg-core.wasm` (~31 MB) fails or stalls (network, ISP, ad-blockers, CORS hiccups). The 30s load timeout then trips.
-- Long Final Films exceed the single-threaded ffmpeg.wasm memory ceiling during full re-encode and the `exec()` call aborts.
+## Implementation plan
 
-Both manifest as "MP4 transcode failed" → user sees a WebM file plus a Persian explanation.
+1. **Make merge input deterministic before recording**
+   - Add a preflight validator in `mergeVideos.ts` that waits for `loadedmetadata`, verifies duration and dimensions, seeks to the first real frame, and rejects bad/empty sources before MediaRecorder starts.
+   - During recording, pause capture timing when a clip stalls instead of letting the canvas recorder encode the same frame for seconds.
+   - If a clip cannot recover, fail Final Film with a specific message naming the bad clip, rather than exporting a frozen film.
 
-## Fix
+2. **Use frame-driven recording instead of play-and-hope timing**
+   - Replace the current `video.play() + whenEnded()` dependency with a deterministic seek/frame loop for each clip where possible: advance by fixed 30fps timestamps, draw the decoded frame, and let canvas capture each frame consistently.
+   - Keep transitions supported by drawing transition frames against known timestamps, not live playback timing.
+   - Keep audio mixing unchanged where possible, but avoid letting audio/live playback control visual frame progression.
 
-### 1. Self-host ffmpeg core (kills CDN failure mode)
+3. **Harden card playback previews**
+   - Update `PlayableVideo` so it tracks `loading`, `ready`, and `error` states based on `loadedmetadata`, `canplay`, and `error` events.
+   - Do not show native controls until metadata is valid; show a compact loader first.
+   - If playback metadata fails, retry once through the proxy/raw fallback path and then show a clear “video unavailable” state instead of a 0:00 blank card.
 
-- Import `ffmpeg-core.js` and `ffmpeg-core.wasm` from the `@ffmpeg/core` npm package as Vite asset URLs (`?url`) so they ship from our own origin (`/assets/ffmpeg-core.[hash].js|wasm`).
-- Replace the `CDN_BASES` array with a single local pair. Keep one CDN as a last-ditch fallback only.
-- Add `@ffmpeg/core` to `package.json`.
-- Result: no third-party network dependency for the transcoder.
+4. **Feed cards only validated URLs**
+   - In `DashboardPage.tsx`, avoid passing `undefined` or unresolved URLs into `PlayableVideo` for completed cards.
+   - Use the resolved playable URL consistently for card thumbnails, live preview, trim, and Final Film inputs so the UI and merger are using the same source.
 
-### 2. Memory-friendly encode (kills OOM on long videos)
+5. **Validation**
+   - Run the focused test/build check available in the project harness after changes.
+   - Verify the relevant source paths: Final Film generation now fails fast on bad sources, does not encode during stalls, and cards no longer render an empty 0:00 player for unresolved media.
 
-In `ensureMp4()`:
+## Safety notes
 
-- Detect input duration via a quick `ffprobe`-equivalent (`ff.exec(['-i', input])` parse) or by passing the known total duration from `mergeVideoUrls`.
-- For non-MP4 inputs (the normal WebM case), use:
-  - `-preset ultrafast` (was `veryfast`) — ~3× less RAM, slightly larger file.
-  - `-tune zerolatency`, `-g 60`, `-threads 1`.
-  - `-vf scale='min(1920,iw)':-2` cap to ≤1080p height equivalent so 4K WebMs don't blow memory.
-  - Audio `-c:a aac -b:a 96k`.
-- Wrap `ff.exec` in a single retry: if the first encode throws, terminate the core (`ff.terminate()` then reload) and retry with `-crf 28` + scale cap. Releases leaked WASM heap.
-
-### 3. Remove the silent WebM fallback
-
-- `mergeVideoUrls` no longer returns `{ degraded: true, extension: 'webm' }`. If MP4 conversion fails after the retry, it throws a plain English `Error` so the catch block in `DashboardPage` surfaces a real, actionable message instead of saving a half-working file.
-- Drop the `degraded` field from `MergeResult` and from any caller.
-
-### 4. English-only copy
-
-- Delete the Persian `setVideoColumnMessage(...)` notice in `DashboardPage.tsx` (lines 3778-3784). Nothing replaces it — Final Film either succeeds (MP4) or fails with the existing English error.
-- Also rewrite the in-code Persian comment in `SoundtrackWaveform.tsx` (line 112) to English.
-
-### 5. Out of scope (ask before touching)
-
-`CalendarInfoDialog.tsx` and `AuthForm.tsx` contain Persian strings, but they are part of an intentional bilingual feature (explicit EN/FA toggle, bilingual auth confirmations). I will not remove those unless you confirm — let me know if you want them stripped too.
-
-## Files to edit
-
-- `src/modules/generator-ui/lib/transcodeToMp4.ts` — self-host core, ultrafast preset, scale cap, retry with terminate.
-- `src/modules/generator-ui/lib/mergeVideos.ts` — remove WebM fallback, drop `degraded`, propagate ffmpeg error.
-- `src/modules/generator-ui/pages/DashboardPage.tsx` — delete the Persian degraded notice block; existing English catch-block error remains.
-- `src/modules/generator-ui/components/SoundtrackWaveform.tsx` — translate the Persian comment.
-- `package.json` — add `@ffmpeg/core` dependency.
-
-No schema, edge function, or RLS changes.
-
-## Verification
-
-- Open a Final Film with a long (>60s) WebM merge → file saves as `.mp4`, plays in QuickTime.
-- Block `unpkg.com` in devtools → still succeeds (core served locally).
-- Force a contrived ffmpeg failure → user sees an English error message, no WebM file is uploaded.
+- No database/schema changes are needed.
+- No destructive cleanup or deletion will be added.
+- Existing saved clips and library entries remain untouched; this is a frontend media-pipeline hardening change only.
