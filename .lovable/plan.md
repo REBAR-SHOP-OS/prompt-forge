@@ -1,61 +1,66 @@
+## Goal
 
-## Problems
+1. The Drafts section should list **every existing unfinalized clip/image in the system** as a draft project — not just chains that were active after the auto-snapshot feature shipped.
+2. Deleting a draft card must **permanently remove** the underlying clips, images, and jobs (server + local), not just hide the snapshot.
 
-1. **Some clip cards stay in Pending forever and never execute.**
-   Investigation of `jobs-create` / `jobs-get` shows that after the provider call (`startGeneration`) the job is marked `processing` and the UI polls `/jobs-get` every 4–20s. Two paths can leave a card stuck:
-   - `markProcessing` is called with `gen.providerJobId`. If that is `null/undefined` (some providers return it asynchronously, or a transient failure inside `startGeneration` is swallowed), the row sits in `processing` with `provider_job_id = NULL`. The inline poll in `jobs-get` gateway only runs `aiGateway.pollGeneration` when `detail.provider_job_id` is truthy — so the card never advances and only the 15–45min stuck-timeout eventually fails it (very late, looks like “nothing happened”).
-   - When `request("/jobs-create")` rejects on the client (network blip, 502 from `PROVIDER_ERROR`), no seeded card is added, but if the server already created the row before failing `startGeneration`, the row is correctly failed+refunded — fine. However when the client *succeeds* but `gen.providerJobId` is missing, we get the silent-stuck case above. There is currently **no client-side guard** that re-queues / surfaces this — the user just sees a pending card that never moves.
+---
 
-2. **Final-film MP4 doesn’t play in external players (VLC, QuickTime, WMP, mobile gallery).**
-   `mergeVideoUrls` records the canvas via `MediaRecorder` with `video/mp4;codecs=avc1,mp4a`. Chromium’s MediaRecorder writes **fragmented MP4 with the `moov` atom at the END**, no `mvhd` timescale that mobile players like, and a variable framerate. Web players play it fine, but most desktop/mobile players either show audio only, a black frame, or refuse to open the file. The download path already uses blob (good), so the bug is the file itself, not the download.
+## Current behavior
+
+- `draftEntries` are only created by the live auto-snapshot `useEffect` while the workspace is active. Anything generated before the feature, or any orphan clip outside an active session, never shows up.
+- Deleting a `draft-*` card today only drops the local snapshot in `localStorage`. The underlying jobs/images stay on the server and re-appear elsewhere.
+
+---
 
 ## Plan
 
-### 1. Stop pending cards from getting silently stuck
+### 1. Backfill historical drafts (DashboardPage.tsx)
 
-In `supabase/functions/_shared/modules/job-orchestrator/gateway.ts` (`createJob` branch):
+Add a one-shot backfill effect that runs after `generatedVideos` + `userImages` + `mergedEntries` + `librarySavedJobs` have hydrated:
 
-- If `gen.providerJobId` is empty AND `gen.isComplete` is false, treat it as a provider failure:
-  - call `jobService.failJob(... refundCredits: true)` with reason `"Provider did not return a job id"`,
-  - return `502 PROVIDER_ERROR` so the client toast surfaces it.
-- Log a structured warning when this happens so we can see real frequency in edge-function logs.
+- Build a `claimedIds` set from:
+  - every clip id inside `projectSourceJobs` (Final Film snapshots),
+  - every clip id inside existing `draftSourceJobs`,
+  - every `mergedEntries`/`librarySavedJobs` job id (finalized clips),
+  - same for images via `projectSourceImages` + `draftSourceImages`.
+- For every `generatedVideos` job NOT in `claimedIds` AND with a usable `video.storage_path`, create one synthetic draft project:
+  - id = `draft-orphan-<jobId>` (deterministic so reruns don't duplicate),
+  - snapshot in `draftSourceJobs[draftId] = [job]`,
+  - entry in `draftEntries` (same shape as the auto-snapshot writer).
+- Same for orphan `userImages` → `draft-orphan-img-<imageId>`.
+- Persist via the existing `persistDraftEntries` / `persistDraftSourceJobs` / `persistDraftSourceImages` helpers.
+- Guard: only backfill ids not already present in `draftEntries` so user-deleted drafts don't resurrect (we track deletions in step 3).
 
-In `gateway.ts` (`getJob` branch):
+### 2. Track permanently-deleted draft ids
 
-- For jobs in `processing`/`pending` with `provider_job_id IS NULL` older than ~60s, force-fail with refund and a clear reason `"Provider never returned a job id — credits refunded"`. Today only the long 15–45min timeout catches them.
+Add a `deletedDraftIds: Set<string>` persisted under `deleted-draft-ids:<userId>`. The backfill step skips any draft id (or its source clip/image id) listed here, so deletion is final across refresh.
 
-In `DashboardPage.tsx` polling effect:
+### 3. Permanent delete on draft card delete (`deleteCard`)
 
-- When `getJob` returns `status==='failed'`, also pop a one-shot inline message on the card (`status_message`) so the user understands why it never started.
+When `jobId.startsWith('draft-')`:
 
-### 2. Make final-film MP4 universally playable
+1. Read snapshot clips from `draftSourceJobs[jobId]` and images from `draftSourceImages[jobId]`.
+2. For each clip job: call the existing server-side job delete path (same code the non-draft branch uses for `generatedVideos` removal — `jobs-delete` edge function + state cleanup) so credits/storage stay consistent.
+3. For each image: call the existing user-image delete path (server delete + remove from `userImages`).
+4. Remove the draft entry + both snapshot maps (current behavior).
+5. Add the draft id AND every underlying clip/image id to `deletedDraftIds` and persist, so the backfill never recreates them.
+6. Keep the confirm() prompt; update its text to make permanence clear (e.g. "Delete this draft and all its clips permanently?").
 
-Pick one of the two implementations (recommend (a), it’s entirely client-side and avoids server cost):
+### 4. UI
 
-**(a) Client-side remux to a faststart MP4 with `mp4box.js`** (recommended)
+No new components. The existing Drafts list (`draftItems.map(renderCard(..., 'draft'))`) already renders these entries — the backfill just adds more cards. Clip count badge keeps working because `draftSourceJobs[id].length + draftSourceImages[id].length` is populated.
 
-- Add `mp4box` dependency.
-- New helper `remuxToFaststartMp4(blob): Promise<Blob>` in `src/modules/generator-ui/lib/mergeVideos.ts`:
-  - Feed the recorder output through `MP4Box.createFile()` after appending the recorded ArrayBuffer.
-  - Use `mp4box.flush()` and `mp4box.getBuffer()` to produce a re-muxed file with `moov` at the front and a constant timescale.
-  - If remux fails for any reason, fall back to the original blob (current behavior) so we never regress.
-- In `mergeVideoUrls`, after `MediaRecorder.stop()` resolves, when the chosen mime is MP4, pipe the result through `remuxToFaststartMp4` before returning. WebM output stays unchanged.
-
-**(b) Server-side ffmpeg edge function fallback** (only if (a) is rejected)
-
-- New `supabase/functions/video-remux/index.ts` that accepts a signed URL, runs `ffmpeg -i in.mp4 -c copy -movflags +faststart out.mp4` (via the existing ffmpeg-wasm binding used by other functions, or via a lambda relay) and returns the new blob.
-- DashboardPage calls this once on Final-Film completion and stores the remuxed asset in `generator_video_assets` as the canonical playback/download path.
-
-### 3. Verification
-
-- Manually finalize a multi-clip film, download the MP4, open in VLC + QuickTime + WhatsApp preview — must play with video + audio.
-- Submit several text-to-video jobs in a row; confirm no card stays Pending past ~60s without either advancing or surfacing a clear failure with refund.
+---
 
 ## Files touched
 
-- `supabase/functions/_shared/modules/job-orchestrator/gateway.ts` — providerJobId guards + 60s null-provider-id timeout.
-- `src/modules/generator-ui/pages/DashboardPage.tsx` — surface stuck-job failure message; minor only.
-- `src/modules/generator-ui/lib/mergeVideos.ts` — post-record remux to faststart MP4.
-- `package.json` — add `mp4box`.
+- `src/modules/generator-ui/pages/DashboardPage.tsx` — backfill effect, `deletedDraftIds` state + persistence, expanded `deleteCard` draft branch.
 
-No DB schema changes required.
+No backend changes; deletion reuses the existing job/image delete code paths already wired for the non-draft Library cards.
+
+## Verification
+
+- Refresh the page: every previously orphan clip/image appears as its own draft project card in the Drafts section, with the correct thumbnail and clip count.
+- Open a backfilled draft → workspace shows that clip/image with the locked aspect ratio.
+- Delete a backfilled draft → confirm prompt → card disappears, underlying clip vanishes from any other view, refresh does not bring it back.
+- Finalizing a draft into a Final Film still clears it (existing behavior preserved).
