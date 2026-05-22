@@ -1,51 +1,64 @@
-## ریشهٔ مشکل
-پیام `Could not load source video for merge ... (Merge failed)` در `DashboardPage.tsx` خط ۳۷۷۸ فقط زمانی نمایش داده می‌شود که شیء throw شده از نوع `Error` نباشد (fallback به رشتهٔ ثابت).
+## Goal
 
-تنها نقطه‌ای در کل زنجیرهٔ Final Film که می‌تواند مقدار غیر-Error throw کند، `ensureMp4` در `src/modules/generator-ui/lib/transcodeToMp4.ts` است. دلایل محتمل:
+1. Fix the actual cause of the "saved as WebM" fallback so Final Film really produces a standard `.mp4`.
+2. Remove the Persian notice; all merge/finalize messages must be English.
 
-1. `ffmpeg.wasm` core را از `unpkg.com` بارگذاری می‌کند؛ هر افت CDN/شبکه/CSP باعث reject با شیء داخلی Emscripten می‌شود.
-2. در حالت تک‌ریسمانه، transcode فیلم‌های طولانی به Abort/OOM می‌خورد و رشتهٔ `Aborted()` یا یک عدد throw می‌شود.
-3. چون `pickMimeType()` همیشه WebM انتخاب می‌کند، **هر** Final Film مجبور است از این مسیر عبور کند — پس هر شکست transcode کل پروژه را با همین پیام مبهم نابود می‌کند.
+## Root cause
 
-## تغییرات
+The merge pipeline records WebM in the browser, then `ensureMp4()` transcodes it to MP4 with `ffmpeg.wasm`. Today that transcode runs the ffmpeg WebAssembly core fetched from `unpkg.com` / `jsdelivr` and uses `libx264 -preset veryfast -crf 23`. Two real failure modes cause the WebM fallback to fire:
 
-### 1. شفاف‌سازی خطا — `transcodeToMp4.ts`
-- helper `stringifyAny(e)`: Error → message؛ string/number → String(e)؛ سایر → JSON.stringify ایمن با fallback.
-- هر مرحله (`getFFmpeg/load`, `writeFile`, `exec`, `readFile`, `deleteFile`) داخل try/catch مجزا با rethrow:
-  `throw new Error('ffmpeg <stage> failed: ' + stringifyAny(e))`.
-- تایم‌اوت ۳۰s روی `ff.load()` با پیام صریح.
+- The CDN-hosted `ffmpeg-core.js` / `ffmpeg-core.wasm` (~31 MB) fails or stalls (network, ISP, ad-blockers, CORS hiccups). The 30s load timeout then trips.
+- Long Final Films exceed the single-threaded ffmpeg.wasm memory ceiling during full re-encode and the `exec()` call aborts.
 
-### 2. مقاوم‌سازی CDN — `transcodeToMp4.ts`
-- در `getFFmpeg()` ابتدا `unpkg.com/@ffmpeg/core@0.12.6/dist/umd` تست شود؛ اگر `load` شکست خورد، خودکار `cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd` امتحان شود.
-- اگر هر دو شکست خوردند، خطای انسانی واضح: «FFmpeg core could not be loaded from any CDN».
+Both manifest as "MP4 transcode failed" → user sees a WebM file plus a Persian explanation.
 
-### 3. Fallback ایمن وقتی transcode شکست خورد — `mergeVideos.ts`
-- فیلد اختیاری `degraded?: boolean` به `MergeResult`.
-- فراخوانی `ensureMp4` (خط ۷۹۵–۷۹۷) در try/catch:
-  - موفق → همان MP4 برگردانده شود.
-  - خطا → `console.warn` با جزئیات + بازگشت `{ blob: webmBlob, mimeType: chosenMime, extension: 'webm', degraded: true }`.
+## Fix
 
-### 4. هندل degraded و catch بهتر — `DashboardPage.tsx`
-- بلاک catch خط ۳۷۷۷ تا ۳۷۸۵:
-  - `console.error('[merge] failed', err, { type: typeof err, keys: ... })`.
-  - استفاده از همان `stringifyAny` به‌جای fallback ثابت — دیگر هرگز پیام «Merge failed» مبهم تولید نمی‌شود.
-- پس از `mergeVideoUrls` اگر `mergeRes.degraded === true`:
-  - upload با extension `.webm` (الان از `mergeRes.extension` می‌آید — خودکار درست می‌شود).
-  - پس از موفقیت، یک نوتیس فارسی روی `setVideoColumnMessage`:
-    «فایل نهایی به‌جای MP4 به‌صورت WebM ذخیره شد چون تبدیل MP4 در مرورگر شکست خورد (احتمالاً به دلیل حجم). فایل در پلیرهای مدرن قابل پخش است.»
-  - بقیهٔ مسیر (افزودن به Library، بستن drafts، Start Over) دست‌نخورده.
-- (اختیاری) فراخوانی `preloadMp4Transcoder()` در شروع merge تا اگر CDN خراب بود، شکست زودتر تشخیص داده شود.
+### 1. Self-host ffmpeg core (kills CDN failure mode)
 
-## فایل‌های تغییریافته
-- `src/modules/generator-ui/lib/transcodeToMp4.ts`
-- `src/modules/generator-ui/lib/mergeVideos.ts`
-- `src/modules/generator-ui/pages/DashboardPage.tsx`
+- Import `ffmpeg-core.js` and `ffmpeg-core.wasm` from the `@ffmpeg/core` npm package as Vite asset URLs (`?url`) so they ship from our own origin (`/assets/ffmpeg-core.[hash].js|wasm`).
+- Replace the `CDN_BASES` array with a single local pair. Keep one CDN as a last-ditch fallback only.
+- Add `@ffmpeg/core` to `package.json`.
+- Result: no third-party network dependency for the transcoder.
 
-## بدون تأثیر روی
-- بک‌اند، schema، Edge Functionها، storage bucket یا RLS.
-- منطق snapshot منابع، draft/library، Start Over.
+### 2. Memory-friendly encode (kills OOM on long videos)
 
-## نتیجه برای کاربر
-- در حالت عادی: همچنان MP4 با کیفیت کامل (هدف اصلی حفظ می‌شود).
-- در صورت خرابی CDN یا OOM: پیام دقیق + فایل WebM قابل پخش به‌جای از دست رفتن کل کار.
-- در هر شکست دیگر: پیام انسانی واقعی به‌جای «Merge failed» مبهم.
+In `ensureMp4()`:
+
+- Detect input duration via a quick `ffprobe`-equivalent (`ff.exec(['-i', input])` parse) or by passing the known total duration from `mergeVideoUrls`.
+- For non-MP4 inputs (the normal WebM case), use:
+  - `-preset ultrafast` (was `veryfast`) — ~3× less RAM, slightly larger file.
+  - `-tune zerolatency`, `-g 60`, `-threads 1`.
+  - `-vf scale='min(1920,iw)':-2` cap to ≤1080p height equivalent so 4K WebMs don't blow memory.
+  - Audio `-c:a aac -b:a 96k`.
+- Wrap `ff.exec` in a single retry: if the first encode throws, terminate the core (`ff.terminate()` then reload) and retry with `-crf 28` + scale cap. Releases leaked WASM heap.
+
+### 3. Remove the silent WebM fallback
+
+- `mergeVideoUrls` no longer returns `{ degraded: true, extension: 'webm' }`. If MP4 conversion fails after the retry, it throws a plain English `Error` so the catch block in `DashboardPage` surfaces a real, actionable message instead of saving a half-working file.
+- Drop the `degraded` field from `MergeResult` and from any caller.
+
+### 4. English-only copy
+
+- Delete the Persian `setVideoColumnMessage(...)` notice in `DashboardPage.tsx` (lines 3778-3784). Nothing replaces it — Final Film either succeeds (MP4) or fails with the existing English error.
+- Also rewrite the in-code Persian comment in `SoundtrackWaveform.tsx` (line 112) to English.
+
+### 5. Out of scope (ask before touching)
+
+`CalendarInfoDialog.tsx` and `AuthForm.tsx` contain Persian strings, but they are part of an intentional bilingual feature (explicit EN/FA toggle, bilingual auth confirmations). I will not remove those unless you confirm — let me know if you want them stripped too.
+
+## Files to edit
+
+- `src/modules/generator-ui/lib/transcodeToMp4.ts` — self-host core, ultrafast preset, scale cap, retry with terminate.
+- `src/modules/generator-ui/lib/mergeVideos.ts` — remove WebM fallback, drop `degraded`, propagate ffmpeg error.
+- `src/modules/generator-ui/pages/DashboardPage.tsx` — delete the Persian degraded notice block; existing English catch-block error remains.
+- `src/modules/generator-ui/components/SoundtrackWaveform.tsx` — translate the Persian comment.
+- `package.json` — add `@ffmpeg/core` dependency.
+
+No schema, edge function, or RLS changes.
+
+## Verification
+
+- Open a Final Film with a long (>60s) WebM merge → file saves as `.mp4`, plays in QuickTime.
+- Block `unpkg.com` in devtools → still succeeds (core served locally).
+- Force a contrived ffmpeg failure → user sees an English error message, no WebM file is uploaded.
