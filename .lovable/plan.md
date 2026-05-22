@@ -1,22 +1,32 @@
+## هدف
+
+کاربر باید بتواند **قبل از ساخت اولین کلیپ** آزادانه aspect ratio (9:16 / 1:1 / 16:9) را انتخاب کند. به‌محض ساخت اولین کلیپ یا آپلود اولین تصویر در پروژه‌ی کاری فعلی، ratio قفل می‌شود (رفتار فعلی).
+
 ## مشکل ریشه‌ای
 
-با کلیک روی هر کارت در Library، state درست ست می‌شود (`previewVideoId` و `selectedProjectId`)، اما در `previewItem` (DashboardPage.tsx خط ۱۴۸۲) بالاترین اولویت با `lastMergedPreview` است. این یعنی هر وقت آخرین Final Film هنوز در state باشد، **پیش‌نمایش روی همان آخرین خروجی قفل می‌ماند** و انتخاب کاربر در Library نادیده گرفته می‌شود.
+در `DashboardPage.tsx` (خط ۱۳۱۶) منطق `lockedRatio` این است:
 
-علاوه بر این، در `onClick` کارت‌های Library (خط ۴۶۹۵ و ۴۷۰۳)، `setSelectedProjectId` فقط برای آیتم‌هایی که id آن‌ها با `merged-` شروع می‌شود ست می‌شود. کارت‌های Library که از یک کلیپ تکی ذخیره شده‌اند (مثل "Final clip — soundtrack applied") id اصلی job را دارند، پس `selectedProjectId` به `null` می‌رود و کارت‌های منبع در پنل راست به‌جای آن پروژه، کل workspace را نشان می‌دهند.
+```
+if (generatedVideos.length === 0) return null
+```
 
-## تغییرات (فقط در `src/modules/generator-ui/pages/DashboardPage.tsx`)
+ولی `generatedVideos` می‌تواند شامل کلیپ‌هایی باشد که قبلاً در یک پروژه‌ی Library snapshot شده‌اند یا توسط workspace-hidden مخفی شده‌اند. در نتیجه حتی وقتی workspace کاری «از دید کاربر» خالی است (مثلاً بعد از ذخیره‌ی Final Film در Library)، selector همچنان قفل می‌ماند و کاربر نمی‌تواند برای پروژه‌ی بعدی ratio جدید انتخاب کند.
 
-۱. **پاک کردن `lastMergedPreview` هنگام کلیک روی هر کارت Library**  
-   در هر دو هندلر `onClick` و `onKeyDown` کارت Library، قبل از ست کردن preview، `setLastMergedPreview(null)` فراخوانی شود تا preview واقعاً به آن پروژه‌ی کلیک‌شده سوییچ کند.
+علاوه بر این، uploaded images در `userImages` در نظر گرفته نشده‌اند، پس اگر کاربر فقط یک تصویر آپلود کرده باشد (بدون کلیپ ویدئویی)، قفل ratio فعال نمی‌شود.
 
-۲. **ست کردن `selectedProjectId` برای همه‌ی کارت‌های Library**  
-   شرط `video.id.startsWith('merged-') ? video.id : null` حذف و به‌سادگی `setSelectedProjectId(video.id)` ست شود. این کار باعث می‌شود برای پروژه‌های تک‌کلیپی ذخیره‌شده هم پنل سمت راست فقط کارت‌های همان پروژه را نشان دهد.
+## تغییرات (فقط `src/modules/generator-ui/pages/DashboardPage.tsx`)
 
-۳. **پشتیبانی `displayedClips`/`displayedImages` از پروژه‌های غیر-merged**  
-   منطق `displayedClips` (خط ۱۳۳۵-۱۳۸۷) و `displayedImages` (خط ۱۴۱۹-۱۴۲۹) که از `projectSourceJobs[selectedProjectId]` می‌خواند — برای کارت تک‌کلیپی Library snapshot وجود ندارد. اضافه شود: اگر `selectedProjectId` وجود دارد ولی snapshot ندارد و خود آن id یک job ذخیره‌شده در `librarySavedJobs` است، آن یک job به‌تنهایی به‌عنوان منبع نمایش داده شود (و سایر کلیپ‌ها فیلتر شوند، دقیقاً مانند رفتار فعلی برای پروژه‌های merged).
+۱. **بازنویسی `lockedRatio` بر اساس chain کاری واقعی**
+   - وقتی کاربر در حال مشاهده‌ی یک پروژه‌ی Library است (`selectedProjectId` ست است)، قفل را روی ratio همان پروژه نگه دار (رفتار فعلی).
+   - در غیر این صورت، از مجموعه‌ی **clipهای کاری زنده** استفاده کن: `generatedVideos` که در snapshot هیچ پروژه‌ی Library قرار نگرفته‌اند و در `workspaceHiddenJobIds` نیستند.
+   - اگر هیچ کلیپ ویدئویی زنده‌ای نبود، اولین تصویر کاری زنده (`visibleUserImages[0]`) را به‌عنوان مرجع قفل در نظر بگیر (ratio آن از پهنا/ارتفاع تصویر استنتاج شود، با همان تابعی که `getRatioFor` برای تصاویر استفاده می‌کند).
+   - اگر هیچ‌کدام نبود → `null` (selector کاملاً آزاد).
 
-۴. **قفل preview برای پروژه‌ی تک‌کلیپ**  
-   منطق فعلی در `previewItem` (خط ۱۵۱۴) که می‌گوید «اگر `selectedProjectId` ست است، preview را روی آن قفل کن» را برای حالت تک‌کلیپ هم نگه دار — چون id در `visibleVideos`/`librarySavedJobs` پیدا می‌شود نیازی به تغییر اضافی نیست، فقط مطمئن می‌شویم با حذف `lastMergedPreview` به این شاخه می‌رسد.
+۲. **تأیید رفتار «Start Over»**
+   - Start Over باید `generatedVideos` و `userImages` کاری را خالی کند تا selector بلافاصله آزاد شود. بررسی می‌شود و در صورت نیاز اصلاح کوچک انجام می‌شود.
+
+۳. **بدون تغییر در UI**
+   - رندر دکمه‌ها همان است؛ فقط منطق `lockedRatio` دقیق‌تر می‌شود تا «قبل از ساخت اولین کلیپ» واقعاً آزاد باشد.
 
 ## فایل‌های درگیر
 
@@ -24,6 +34,6 @@
 
 ## ریسک
 
-- تغییر کاملاً UI/state-level است، هیچ نوشتنی روی backend ندارد.
-- پاک کردن `lastMergedPreview` فقط هنگام کلیک کاربر اتفاق می‌افتد؛ جریان ساخت Final Film و ذخیره در Library دست‌نخورده می‌ماند.
-- رفتار قبلی (که Final Film تازه‌ساخته بالای همه نمایش داده شود) همچنان تا قبل از اولین کلیک کاربر روی Library حفظ است.
+- تغییر صرفاً منطقی است و فقط شرایط قفل را دقیق‌تر می‌کند.
+- بعد از ساخت/آپلود اولین آیتم در workspace، قفل دقیقاً مثل قبل عمل می‌کند.
+- پروژه‌های Library و Final Film دست‌نخورده باقی می‌مانند.
