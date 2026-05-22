@@ -955,7 +955,7 @@ async function pollGeneration(
   }
 
   if (providerKey === "wan" && apiKey) {
-    return await pollWanI2V(providerJobId, apiKey);
+    return await pollWanI2V(providerJobId, apiKey, ctx);
   }
 
   if (providerKey === "flow" && apiKey) {
