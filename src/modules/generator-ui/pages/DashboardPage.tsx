@@ -1356,11 +1356,10 @@ export default function DashboardPage() {
   }>(() => {
     const liveById = new Map<string, JobDetail>()
     for (const j of generatedVideos) liveById.set(j.id, j)
-    const finalIds = new Set(mergedEntries.map((j) => j.id))
 
     const sortDesc = (a: JobDetail, b: JobDetail) => {
-      const ta = new Date(a.created_at ?? 0).getTime()
-      const tb = new Date(b.created_at ?? 0).getTime()
+      const ta = new Date(a.updated_at ?? a.created_at ?? 0).getTime()
+      const tb = new Date(b.updated_at ?? b.created_at ?? 0).getTime()
       return tb - ta
     }
 
@@ -1369,20 +1368,103 @@ export default function DashboardPage() {
       .map((j) => liveById.get(j.id) ?? j)
       .sort(sortDesc)
 
-    const draftMap = new Map<string, JobDetail>()
-    for (const j of Object.values(librarySavedJobs)) {
-      if (finalIds.has(j.id)) continue
-      if (!approvedIds.has(j.id)) continue
-      draftMap.set(j.id, liveById.get(j.id) ?? j)
-    }
-    const drafts = Array.from(draftMap.values()).sort(sortDesc)
+    const drafts = [...draftEntries].sort(sortDesc)
 
     return {
       libraryItems: [...finals, ...drafts],
       finalizedItems: finals,
       draftItems: drafts,
     }
-  }, [mergedEntries, librarySavedJobs, generatedVideos, approvedIds])
+  }, [mergedEntries, draftEntries, generatedVideos, approvedIds])
+
+  // ----- Auto-snapshot the active workspace into a Draft project -----
+  // Any time the workspace has at least one live clip/image, mirror it to a
+  // Draft entry + per-draft snapshot so the chain survives refresh & Start
+  // Over. Final Film success clears the draft (it becomes a Final video).
+  useEffect(() => {
+    if (!userId) return
+    // What counts as "live workspace"? Anything not hidden by Start Over and
+    // not already claimed by a Final Film project snapshot.
+    const finalClaimedJobs = new Set<string>()
+    for (const clips of Object.values(projectSourceJobs)) {
+      for (const c of clips) finalClaimedJobs.add(c.id)
+    }
+    const finalClaimedImages = new Set<string>()
+    for (const imgs of Object.values(projectSourceImages)) {
+      for (const i of imgs) finalClaimedImages.add(i.id)
+    }
+    const liveClips = generatedVideos.filter(
+      (v) => !workspaceHiddenJobIds.has(v.id) && !finalClaimedJobs.has(v.id),
+    )
+    const liveImages = userImages.filter(
+      (i) => !workspaceHiddenImageIds.has(i.id) && !finalClaimedImages.has(i.id),
+    )
+    if (liveClips.length === 0 && liveImages.length === 0) return
+
+    // Make sure we have a draft id; create one if needed.
+    let draftId = activeDraftId
+    if (!draftId) {
+      draftId = `draft-${typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`
+      setActiveDraftId(draftId)
+      persistActiveDraftId(draftId)
+    }
+    const did = draftId
+
+    // Update the snapshot maps only when ids actually change.
+    setDraftSourceJobs((prev) => {
+      const cur = prev[did] ?? []
+      const sameLen = cur.length === liveClips.length
+      const sameIds = sameLen && cur.every((c, i) => c.id === liveClips[i].id && (c.video?.storage_path ?? null) === (liveClips[i].video?.storage_path ?? null))
+      if (sameIds) return prev
+      const next = { ...prev, [did]: liveClips }
+      persistDraftSourceJobs(next)
+      return next
+    })
+    setDraftSourceImages((prev) => {
+      const cur = prev[did] ?? []
+      const sameLen = cur.length === liveImages.length
+      const sameIds = sameLen && cur.every((c, i) => c.id === liveImages[i].id)
+      if (sameIds) return prev
+      const next = { ...prev, [did]: liveImages }
+      persistDraftSourceImages(next)
+      return next
+    })
+
+    // Upsert the draft entry (used to render the Library card).
+    setDraftEntries((prev) => {
+      const nowIso = new Date().toISOString()
+      const firstClip = liveClips[liveClips.length - 1] // oldest = chain start
+      const firstImg = liveImages[liveImages.length - 1]
+      const prompt = firstClip?.input_prompt ?? firstImg?.prompt ?? 'Draft project'
+      const ratio = firstClip?.video?.aspect_ratio
+        ?? firstClip?.requested_aspect_ratio
+        ?? null
+      const thumb = firstClip?.video?.thumbnail_url ?? null
+      const stubVideo = firstClip?.video
+        ? { ...firstClip.video }
+        : null
+      const existing = prev.find((d) => d.id === did)
+      const entry: JobDetail = {
+        id: did,
+        input_prompt: prompt,
+        status: 'draft',
+        provider: existing?.provider ?? 'draft',
+        first_frame_url: null,
+        last_frame_url: null,
+        requested_duration: null,
+        requested_aspect_ratio: ratio,
+        created_at: existing?.created_at ?? nowIso,
+        updated_at: nowIso,
+        video: stubVideo ?? { id: did, storage_path: '', thumbnail_url: thumb, aspect_ratio: ratio, duration: null },
+      } as JobDetail
+      const filtered = prev.filter((d) => d.id !== did)
+      const next = [entry, ...filtered]
+      persistDraftEntries(next)
+      return next
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, generatedVideos, userImages, workspaceHiddenJobIds, workspaceHiddenImageIds, projectSourceJobs, projectSourceImages, activeDraftId])
+
 
   const completedSourceVideos = useMemo(
     () => generatedVideos.filter(
