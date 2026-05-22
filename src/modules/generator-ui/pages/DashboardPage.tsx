@@ -3701,30 +3701,71 @@ export default function DashboardPage() {
           persistProjectSourceImages(nextImgMap)
         }
       }
-      // The in-progress chain just became a Final video — close out the
-      // active draft so it stops appearing in the Drafts section.
-      if (activeDraftId) {
-        const closedDraftId = activeDraftId
-        setDraftEntries((prev) => {
-          const next = prev.filter((d) => d.id !== closedDraftId)
-          persistDraftEntries(next)
-          return next
-        })
-        setDraftSourceJobs((prev) => {
-          if (!(closedDraftId in prev)) return prev
-          const { [closedDraftId]: _drop, ...rest } = prev
-          persistDraftSourceJobs(rest)
-          return rest
-        })
-        setDraftSourceImages((prev) => {
-          if (!(closedDraftId in prev)) return prev
-          const { [closedDraftId]: _drop, ...rest } = prev
-          persistDraftSourceImages(rest)
-          return rest
-        })
-        setActiveDraftId(null)
-        persistActiveDraftId(null)
+      // The in-progress chain just became a Final video — close out every
+      // draft that owned any of the merged source clips/images (not just the
+      // active session draft) so they stop appearing in Drafts.
+      {
+        const mergedJobIdSet = new Set<string>(
+          eligibleClips
+            .filter((c): c is Extract<UnifiedClip, { kind: 'video' }> => c.kind === 'video')
+            .map((c) => c.id),
+        )
+        const mergedImageIdSet = new Set<string>(
+          eligibleClips
+            .filter((c): c is Extract<UnifiedClip, { kind: 'image' }> => c.kind === 'image')
+            .map((c) => c.image.id),
+        )
+        const draftIdsToClose = new Set<string>()
+        if (activeDraftId) draftIdsToClose.add(activeDraftId)
+        for (const [dId, clips] of Object.entries(draftSourceJobs)) {
+          if (clips.some((c) => mergedJobIdSet.has(c.id))) draftIdsToClose.add(dId)
+        }
+        for (const [dId, imgs] of Object.entries(draftSourceImages)) {
+          if (imgs.some((i) => mergedImageIdSet.has(i.id))) draftIdsToClose.add(dId)
+        }
+        if (draftIdsToClose.size > 0) {
+          setDraftEntries((prev) => {
+            const next = prev.filter((d) => !draftIdsToClose.has(d.id))
+            persistDraftEntries(next)
+            return next
+          })
+          setDraftSourceJobs((prev) => {
+            let changed = false
+            const next: Record<string, JobDetail[]> = {}
+            for (const [k, v] of Object.entries(prev)) {
+              if (draftIdsToClose.has(k)) { changed = true; continue }
+              next[k] = v
+            }
+            if (!changed) return prev
+            persistDraftSourceJobs(next)
+            return next
+          })
+          setDraftSourceImages((prev) => {
+            let changed = false
+            const next: Record<string, UserImageItem[]> = {}
+            for (const [k, v] of Object.entries(prev)) {
+              if (draftIdsToClose.has(k)) { changed = true; continue }
+              next[k] = v
+            }
+            if (!changed) return prev
+            persistDraftSourceImages(next)
+            return next
+          })
+          // Tombstone so the backfill effect doesn't re-create orphan drafts
+          // for the same underlying clip/image ids on next render.
+          setDeletedDraftIds((prev) => {
+            const next = new Set(prev)
+            for (const id of draftIdsToClose) next.add(id)
+            persistDeletedDraftIds(next)
+            return next
+          })
+          if (activeDraftId && draftIdsToClose.has(activeDraftId)) {
+            setActiveDraftId(null)
+            persistActiveDraftId(null)
+          }
+        }
       }
+
 
       // Final Film is done — auto Start Over so the workspace is fresh for
       // the next project. Source clips are already claimed by
