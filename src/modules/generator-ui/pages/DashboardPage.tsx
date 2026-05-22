@@ -3487,6 +3487,12 @@ export default function DashboardPage() {
     setIsMerging(true)
     setMergeProgress(0)
     setVideoColumnMessage(null)
+    // Kick off ffmpeg core download in parallel with the merge so the MP4
+    // transcode step at the end doesn't add CDN latency to the perceived wait.
+    try {
+      const mod = await import('@/modules/generator-ui/lib/transcodeToMp4')
+      mod.preloadMp4Transcoder()
+    } catch { /* non-fatal */ }
     if (brokenClips.length > 0) {
       const names = brokenClips.map((b) => `"${b.filename}"`).join(', ')
       console.warn('[merge] skipped broken clips:', names)
@@ -3769,14 +3775,28 @@ export default function DashboardPage() {
       setActiveJobIds(new Set()); persistActiveJobIds(new Set())
       setActiveImageIds(new Set()); persistActiveImageIds(new Set())
 
+      // If the in-browser MP4 transcode failed, the file was saved as WebM.
+      // Surface a clear notice so the user knows why the extension differs.
+      if (mergeRes.degraded) {
+        setVideoColumnMessage(
+          'فایل نهایی به‌جای MP4 به‌صورت WebM ذخیره شد چون تبدیل MP4 در مرورگر شکست خورد (احتمالاً به دلیل حجم/حافظه). فایل در پلیرهای مدرن قابل پخش است.',
+        )
+      }
+
 
 
 
 
 
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Merge failed'
-      console.error('[merge] failed', err)
+      // Log the raw err first so we never lose detail to fallback strings.
+      console.error('[merge] failed', err, {
+        type: typeof err,
+        isError: err instanceof Error,
+        keys: err && typeof err === 'object' ? Object.keys(err as object) : null,
+      })
+      const { stringifyAny } = await import('@/modules/generator-ui/lib/transcodeToMp4')
+      const msg = stringifyAny(err)
       const urlMatch = msg.match(/https?:\/\/\S+/)
       const filename = urlMatch ? (urlMatch[0].split('?')[0].split('/').pop() || '') : ''
       const friendly = filename
