@@ -2,6 +2,8 @@
 // Supports two modes:
 //   { date: 'YYYY-MM-DD', lang } -> day mode (full detail)
 //   { month: 'YYYY-MM', lang }   -> month mode (list items with date+title+category, brief detail)
+import { authenticate } from '../_shared/core/auth.ts'
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
@@ -13,6 +15,14 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
 
   try {
+    const auth = await authenticate(req)
+    if (!auth) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+
     const body = await req.json().catch(() => ({}))
     const lang: 'en' | 'fa' = body?.lang === 'fa' ? 'fa' : 'en'
     const date = typeof body?.date === 'string' ? body.date : ''

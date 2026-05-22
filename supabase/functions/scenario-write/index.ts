@@ -122,8 +122,20 @@ Deno.serve(async (req) => {
     const durationRaw = Number(body?.durationSeconds);
     const duration = [5, 10, 15, 45, 135].includes(durationRaw) ? durationRaw : 0;
     const imageUrlRaw = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
+    const supabaseHost = (() => {
+      try { return new URL(Deno.env.get("SUPABASE_URL") ?? "").hostname; } catch { return ""; }
+    })();
+    const ALLOWED_HOST_SUFFIXES = [supabaseHost, ".supabase.co", ".supabase.in"].filter(Boolean);
+    const isAllowedImageUrl = (u: string): boolean => {
+      try {
+        const p = new URL(u);
+        if (p.protocol !== "https:") return false;
+        const h = p.hostname.toLowerCase();
+        return ALLOWED_HOST_SUFFIXES.some((s) => s.startsWith(".") ? h.endsWith(s) : h === s);
+      } catch { return false; }
+    };
     const imageUrl =
-      imageUrlRaw && /^https?:\/\//i.test(imageUrlRaw) && imageUrlRaw.length <= 2048
+      imageUrlRaw && imageUrlRaw.length <= 2048 && isAllowedImageUrl(imageUrlRaw)
         ? imageUrlRaw
         : undefined;
 
