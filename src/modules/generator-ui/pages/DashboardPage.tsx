@@ -4755,8 +4755,130 @@ export default function DashboardPage() {
 
         <div className="mt-3 flex-1 overflow-y-auto pr-1">
           {(() => {
-            const approvedVideos = libraryItems
-            if (approvedVideos.length === 0) {
+            const renderCard = (video: JobDetail, variant: 'final' | 'draft') => {
+              const isPreviewSelected = previewVideo?.id === video.id
+              return (
+                <article
+                  key={video.id}
+                  className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-2.5 transition hover:border-white/20 hover:bg-white/[0.055] ${
+                    isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : 'border-white/10 bg-white/[0.035]'
+                  }`}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Preview ${video.input_prompt}`}
+                  onClick={() => {
+                    setLastMergedPreview(null)
+                    setPreviewVideoId(video.id)
+                    setIsApprovedPanelOpen(false)
+                    setSelectedProjectId(video.id)
+                    setPreviewDismissed(false)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      setLastMergedPreview(null)
+                      setPreviewVideoId(video.id)
+                      setIsApprovedPanelOpen(false)
+                      setSelectedProjectId(video.id)
+                      setPreviewDismissed(false)
+                    }
+                  }}
+                >
+                  <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
+                    {video.video?.storage_path ? (
+                      <PlayableVideo
+                        className="h-full w-full bg-black object-cover"
+                        src={getCardVideoSrc(video.id, video.video.storage_path)}
+                        poster={video.video.thumbnail_url ?? undefined}
+                        muted
+                        playsInline
+                        preload="auto"
+                        onLoadedMetadata={(event) => {
+                          const el = event.currentTarget
+                          try {
+                            if (el.currentTime === 0) {
+                              const dur = Number.isFinite(el.duration) ? el.duration : 0
+                              el.currentTime = dur > 0 ? Math.min(4, Math.max(0, dur - 0.05)) : 0.05
+                            }
+                          } catch { /* ignore */ }
+                        }}
+                      />
+                    ) : (
+                      <div className="grid h-full w-full place-items-center text-zinc-500">
+                        <Clapperboard className="h-6 w-6" aria-hidden="true" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="line-clamp-2 min-w-0 flex-1 text-xs font-medium leading-5 text-zinc-200">
+                        {video.input_prompt}
+                      </p>
+                      <div className="flex shrink-0 items-center gap-1">
+                        {video.video?.storage_path ? (
+                          <button
+                            type="button"
+                            onClick={async (event) => {
+                              event.stopPropagation()
+                              const url = video.video!.storage_path
+                              const filename = `final-film-${video.id.slice(0, 8)}.mp4`
+                              try {
+                                const response = await fetch(url)
+                                if (!response.ok) throw new Error('Download failed')
+                                const blob = await response.blob()
+                                const blobUrl = URL.createObjectURL(blob)
+                                const a = document.createElement('a')
+                                a.href = blobUrl
+                                a.download = filename
+                                document.body.appendChild(a)
+                                a.click()
+                                document.body.removeChild(a)
+                                URL.revokeObjectURL(blobUrl)
+                              } catch (err) {
+                                console.error('Final film download failed', err)
+                                window.open(url, '_blank')
+                              }
+                            }}
+                            aria-label="Download video"
+                            title="Download video"
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                          >
+                            <Download className="h-3 w-3" aria-hidden="true" />
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            deleteCard(video.id)
+                          }}
+                          aria-label="Delete card"
+                          title="Delete card"
+                          className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                        >
+                          <Trash2 className="h-3 w-3" aria-hidden="true" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
+                      {variant === 'final' ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <BookmarkCheck className="h-3 w-3 text-emerald-300" aria-hidden="true" />
+                          Saved
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+                          Draft
+                        </span>
+                      )}
+                      <span className="tabular-nums">{formatCreatedAt(video.created_at)}</span>
+                    </div>
+                  </div>
+                </article>
+              )
+            }
+
+            if (finalizedItems.length === 0 && draftItems.length === 0) {
               return (
                 <div className="grid h-full place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
                   <div>
@@ -4769,130 +4891,50 @@ export default function DashboardPage() {
                 </div>
               )
             }
+
             return (
-              <div className="grid gap-3">
-                {approvedVideos.map((video) => {
-                  const isPreviewSelected = previewVideo?.id === video.id
-                  return (
-                    <article
-                      key={video.id}
-                      className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-2.5 transition hover:border-white/20 hover:bg-white/[0.055] ${
-                        isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : 'border-white/10 bg-white/[0.035]'
-                      }`}
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`Preview ${video.input_prompt}`}
-                      onClick={() => {
-                        setLastMergedPreview(null)
-                        setPreviewVideoId(video.id)
-                        setIsApprovedPanelOpen(false)
-                        // Show this project's source clips in HISTORY.
-                        setSelectedProjectId(video.id)
-                        setPreviewDismissed(false)
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault()
-                          setLastMergedPreview(null)
-                          setPreviewVideoId(video.id)
-                          setIsApprovedPanelOpen(false)
-                          setSelectedProjectId(video.id)
-                          setPreviewDismissed(false)
-                        }
-                      }}
-                    >
-                      <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
-                        {video.video?.storage_path ? (
-                          <PlayableVideo
-                            className="h-full w-full bg-black object-cover"
-                            src={getCardVideoSrc(video.id, video.video.storage_path)}
-                            poster={video.video.thumbnail_url ?? undefined}
-                            muted
-                            playsInline
-                            preload="auto"
-                            onLoadedMetadata={(event) => {
-                              const el = event.currentTarget
-                              try {
-                                if (el.currentTime === 0) {
-                                  const dur = Number.isFinite(el.duration) ? el.duration : 0
-                                  el.currentTime = dur > 0 ? Math.min(4, Math.max(0, dur - 0.05)) : 0.05
-                                }
-                              } catch { /* ignore */ }
-                            }}
-                          />
-                        ) : (
-                          <div className="grid h-full w-full place-items-center text-zinc-500">
-                            <Clapperboard className="h-6 w-6" aria-hidden="true" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="line-clamp-2 min-w-0 flex-1 text-xs font-medium leading-5 text-zinc-200">
-                            {video.input_prompt}
-                          </p>
-                          <div className="flex shrink-0 items-center gap-1">
-                            {video.video?.storage_path ? (
-                              <button
-                                type="button"
-                                onClick={async (event) => {
-                                  event.stopPropagation()
-                                  const url = video.video!.storage_path
-                                  const filename = `final-film-${video.id.slice(0, 8)}.mp4`
-                                  try {
-                                    const response = await fetch(url)
-                                    if (!response.ok) throw new Error('Download failed')
-                                    const blob = await response.blob()
-                                    const blobUrl = URL.createObjectURL(blob)
-                                    const a = document.createElement('a')
-                                    a.href = blobUrl
-                                    a.download = filename
-                                    document.body.appendChild(a)
-                                    a.click()
-                                    document.body.removeChild(a)
-                                    URL.revokeObjectURL(blobUrl)
-                                  } catch (err) {
-                                    console.error('Final film download failed', err)
-                                    window.open(url, '_blank')
-                                  }
-                                }}
-                                aria-label="Download video"
-                                title="Download video"
-                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
-                              >
-                                <Download className="h-3 w-3" aria-hidden="true" />
-                              </button>
-                            ) : null}
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                deleteCard(video.id)
-                              }}
-                              aria-label="Delete card"
-                              title="Delete card"
-                              className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
-                            >
-                              <Trash2 className="h-3 w-3" aria-hidden="true" />
-                            </button>
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
-                          <span className="inline-flex items-center gap-1.5">
-                            <BookmarkCheck className="h-3 w-3 text-emerald-300" aria-hidden="true" />
-                            Saved
-                          </span>
-                          <span className="tabular-nums">{formatCreatedAt(video.created_at)}</span>
-                        </div>
-                      </div>
-                    </article>
-                  )
-                })}
+              <div className="grid gap-5">
+                <section className="grid gap-3">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Final videos</h3>
+                    <span className="grid h-5 min-w-5 place-items-center rounded-full border border-white/10 px-1.5 text-[10px] font-semibold text-zinc-300">
+                      {finalizedItems.length}
+                    </span>
+                  </div>
+                  {finalizedItems.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-white/10 px-3 py-3 text-[11px] text-zinc-500">
+                      No final videos yet. Use Final Film to merge clips.
+                    </p>
+                  ) : (
+                    <div className="grid gap-3">
+                      {finalizedItems.map((v) => renderCard(v, 'final'))}
+                    </div>
+                  )}
+                </section>
+
+                <section className="grid gap-3">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Drafts</h3>
+                    <span className="grid h-5 min-w-5 place-items-center rounded-full border border-white/10 px-1.5 text-[10px] font-semibold text-zinc-300">
+                      {draftItems.length}
+                    </span>
+                  </div>
+                  {draftItems.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-white/10 px-3 py-3 text-[11px] text-zinc-500">
+                      No drafts. Saved clips that aren't merged yet show here.
+                    </p>
+                  ) : (
+                    <div className="grid gap-3">
+                      {draftItems.map((v) => renderCard(v, 'draft'))}
+                    </div>
+                  )}
+                </section>
               </div>
             )
           })()}
         </div>
       </aside>
+
 
       <form
         ref={composerRef}
