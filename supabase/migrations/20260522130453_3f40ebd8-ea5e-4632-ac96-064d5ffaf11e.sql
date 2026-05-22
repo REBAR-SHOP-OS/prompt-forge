@@ -1,0 +1,2 @@
+ALTER TABLE public.generator_generation_jobs DROP CONSTRAINT IF EXISTS generator_generation_jobs_provider_job_id_key;
+CREATE INDEX IF NOT EXISTS idx_gen_jobs_provider_job_id ON public.generator_generation_jobs (provider_job_id) WHERE provider_job_id IS NOT NULL;
