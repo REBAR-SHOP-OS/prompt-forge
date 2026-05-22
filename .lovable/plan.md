@@ -1,30 +1,43 @@
-## مشکل ریشه‌ای
+## هدف
+پنل Library به دو بخش مجزا تقسیم شود:
+1. **Final videos** — ویدئوهای نهایی شده (Final Film ها)
+2. **Drafts** — پروژه‌هایی که کلیپ‌هایشان ساخته و ذخیره شده‌اند اما هنوز به Final Film تبدیل نشده‌اند
 
-وقتی روی یک پروژه‌ی Library کلیک می‌شود، کارت‌های منبع از snapshot ذخیره‌شده در `projectSourceJobs[selectedProjectId]` خوانده می‌شوند. اما `storage_path` این snapshot همان URL پراویدر (DashScope / Veo / Flow) است که **signed URL با عمر محدود** دارد. بعد از چند ساعت/روز این URLها منقضی می‌شوند، در نتیجه پلیر کارت سیاه می‌ماند («0:00» در اسکرین‌شات همین است). proxy edge function هم مشکل را حل نمی‌کند چون فقط همان URL منقضی‌شده را دوباره از پراویدر می‌خواند.
+## محدوده تغییرات
+فقط `src/modules/generator-ui/pages/DashboardPage.tsx` (فقط UI — بدون تغییر backend یا منطق ذخیره‌سازی).
 
-برای کلیپ‌هایی که هنوز در `generatedVideos` زنده‌اند، `displayedVideos` از داده‌ی زنده استفاده می‌کند؛ ولی به‌محض اینکه Final Film ذخیره می‌شود و workspace پاک می‌شود، تنها مرجع همان snapshot منقضی است.
+## پیاده‌سازی
 
-## راه‌حل (هزینه‌ی کم، یک‌بار، در زمان ساخت Final Film)
+### ۱) تفکیک داده در `libraryItems` (حوالی خط ۱۲۸۷)
+به‌جای یک آرایه‌ی واحد، دو لیست محاسبه می‌شود:
+- `finalizedItems`: آیتم‌هایی که در `mergedEntries` هستند (یا live نسخه‌شان merged است) و در `approvedIds` تأیید شده‌اند.
+- `draftItems`: آیتم‌هایی از `librarySavedJobs` (یا live معادلشان) که در `approvedIds` هستند **و** در `mergedEntries` نیستند.
 
-در همان نقطه‌ای که Final Film موفق ذخیره می‌شود (تابع merge در `DashboardPage.tsx`، حوالی خط ۳۱۸۳ قبل از `setProjectSourceJobs`)، برای هر کلیپ ویدئویی منبع که `storage_path` آن **روی هاست خودمان (`MERGED_BUCKET`/`*.supabase.co`) نیست**:
+هر دو لیست به ترتیب نزولی تاریخ مرتب می‌شوند. شمارنده‌ی Library badge همچنان مجموع هر دو است.
 
-1. بایت‌های ویدئو از طریق `proxiedVideoUrl(...)` + `fetch` گرفته می‌شوند.
-2. روی `MERGED_BUCKET` با path پایدار مثل `${userId}/source-snapshot-${jobId}.{ext}` آپلود می‌شود.
-3. در snapshot‌ای که در `projectSourceJobs` نوشته می‌شود، `storage_path` با URL عمومی جدید جایگزین می‌شود.
+### ۲) UI پنل Library (حوالی خط ۴۷۳۵–۴۸۷۸)
+ساختار فعلی «Saved videos / Your library» جایگزین می‌شود با دو سکشن قابل تشخیص:
 
-نتیجه: بعد از این، هر بار کاربر پروژه را در Library باز کند، کارت‌ها از یک URL پایدار خوانده می‌شوند و همیشه قابل پخش هستند.
+```text
+LIBRARY  [count]                       [X]
+─────────────────────────────────────────
+Final videos  [n]
+  ▢ card  ▢ card  ▢ card …
+─────────────────────────────────────────
+Drafts  [m]
+  ▢ card  ▢ card  ▢ card …
+```
 
-اگر دانلود/آپلود برای یک کلیپ شکست خورد، آن کلیپ با همان URL اصلی snapshot می‌شود (degradation امن، رفتار فعلی).
+- هر سکشن header کوچک با عنوان + شمارنده دارد.
+- اگر یک سکشن خالی بود، یک پیام کوتاه placeholder نمایش می‌دهد (مثل «No final videos yet» / «No drafts yet»).
+- اگر هر دو خالی بودند، همان empty-state فعلی نمایش داده می‌شود.
+- markup خود کارت‌ها (thumbnail + prompt + download + delete + تاریخ) بدون تغییر بازاستفاده می‌شود — فقط در یک helper کوچک یا map دوبار رندر می‌شوند.
+- بج «Saved» داخل کارت در سکشن Drafts با بج «Draft» (رنگ amber/zinc) جایگزین می‌شود تا تفکیک بصری روشن باشد. در سکشن Final videos همان «Saved» سبز باقی می‌ماند.
 
-## محدودیت دامنه
+### ۳) رفتار کلیک
+بدون تغییر: کلیک روی هر کارت همان `setPreviewVideoId` + `setSelectedProjectId` فعلی را اجرا می‌کند. منطق «کارت‌های هر پروژه فقط برای همان پروژه» که قبلاً پیاده شد دست‌نخورده باقی می‌ماند.
 
-- فقط `src/modules/generator-ui/pages/DashboardPage.tsx` تغییر می‌کند.
-- هیچ migration یا تغییر backend / RLS لازم نیست (از همان bucket فعلی `MERGED_BUCKET` که قبلاً برای Final Film استفاده می‌شود استفاده می‌کنیم).
-- تصاویر منبع (`projectSourceImages`) از قبل در `generator_user_images` / Supabase storage پایدار هستند و نیاز به تغییر ندارند.
-- پروژه‌های Library قدیمی که snapshot منقضی دارند با باز کردن دوباره + ساخت Final Film جدید فقط به‌مرور درمان می‌شوند. (برای آن‌ها در همان لحظه‌ی باز شدن نمی‌توان کاری کرد چون URL پراویدر دیگر کار نمی‌کند.)
-
-## ریسک
-
-- زمان ذخیره‌ی Final Film کمی طولانی‌تر می‌شود (یک fetch + upload به ازای هر کلیپ منبع). با Promise.all موازی می‌شود.
-- مصرف storage افزایش پیدا می‌کند (هر کلیپ یک‌بار کپی پایدار می‌گیرد). قابل قبول است چون Final Film هم در همان bucket ذخیره می‌شود.
-- اگر کاربر اینترنت قطع شود وسط آپلود snapshot، fallback روی URL اصلی برمی‌گردد و رفتار قبلی حفظ می‌شود.
+## خارج از محدوده
+- تغییر در منطق ذخیره (`librarySavedJobs` / `mergedEntries`) یا تعریف اینکه چه چیزی draft محسوب می‌شود به‌جز همین تفکیک حضور در `mergedEntries`.
+- بدون تغییر backend / RLS / migration.
+- بدون تغییر در snapshot fix قبلی برای source clip ها.
