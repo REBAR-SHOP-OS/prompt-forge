@@ -748,6 +748,71 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  // ----- Draft projects -----
+  // The in-progress workspace (clips + images that haven't been merged into a
+  // Final Film yet) is auto-snapshotted into a Draft project so it survives
+  // refresh / Start Over. One active draft id per user session; closes (is
+  // cleared) when Final Film succeeds.
+  const [draftEntries, setDraftEntries] = useState<JobDetail[]>([])
+  const [draftSourceJobs, setDraftSourceJobs] = useState<Record<string, JobDetail[]>>({})
+  const [draftSourceImages, setDraftSourceImages] = useState<Record<string, UserImageItem[]>>({})
+  const [activeDraftId, setActiveDraftId] = useState<string | null>(null)
+  const draftEntriesKey = userId ? `draft-entries:${userId}` : null
+  const draftSourceJobsKey = userId ? `draft-source-jobs:${userId}` : null
+  const draftSourceImagesKey = userId ? `draft-source-images:${userId}` : null
+  const activeDraftIdKey = userId ? `active-draft-id:${userId}` : null
+  useEffect(() => {
+    if (!draftEntriesKey) { setDraftEntries([]); return }
+    try {
+      const raw = window.localStorage.getItem(draftEntriesKey)
+      const arr = raw ? (JSON.parse(raw) as JobDetail[]) : []
+      setDraftEntries(Array.isArray(arr) ? arr : [])
+    } catch { setDraftEntries([]) }
+  }, [draftEntriesKey])
+  useEffect(() => {
+    if (!draftSourceJobsKey) { setDraftSourceJobs({}); return }
+    try {
+      const raw = window.localStorage.getItem(draftSourceJobsKey)
+      const obj = raw ? (JSON.parse(raw) as Record<string, JobDetail[]>) : {}
+      setDraftSourceJobs(obj && typeof obj === 'object' ? obj : {})
+    } catch { setDraftSourceJobs({}) }
+  }, [draftSourceJobsKey])
+  useEffect(() => {
+    if (!draftSourceImagesKey) { setDraftSourceImages({}); return }
+    try {
+      const raw = window.localStorage.getItem(draftSourceImagesKey)
+      const obj = raw ? (JSON.parse(raw) as Record<string, UserImageItem[]>) : {}
+      setDraftSourceImages(obj && typeof obj === 'object' ? obj : {})
+    } catch { setDraftSourceImages({}) }
+  }, [draftSourceImagesKey])
+  useEffect(() => {
+    if (!activeDraftIdKey) { setActiveDraftId(null); return }
+    try {
+      const raw = window.localStorage.getItem(activeDraftIdKey)
+      setActiveDraftId(raw && typeof raw === 'string' ? raw : null)
+    } catch { setActiveDraftId(null) }
+  }, [activeDraftIdKey])
+  function persistDraftEntries(next: JobDetail[]) {
+    if (!draftEntriesKey) return
+    try { window.localStorage.setItem(draftEntriesKey, JSON.stringify(next)) } catch { /* ignore */ }
+  }
+  function persistDraftSourceJobs(next: Record<string, JobDetail[]>) {
+    if (!draftSourceJobsKey) return
+    try { window.localStorage.setItem(draftSourceJobsKey, JSON.stringify(next)) } catch { /* ignore */ }
+  }
+  function persistDraftSourceImages(next: Record<string, UserImageItem[]>) {
+    if (!draftSourceImagesKey) return
+    try { window.localStorage.setItem(draftSourceImagesKey, JSON.stringify(next)) } catch { /* ignore */ }
+  }
+  function persistActiveDraftId(next: string | null) {
+    if (!activeDraftIdKey) return
+    try {
+      if (next) window.localStorage.setItem(activeDraftIdKey, next)
+      else window.localStorage.removeItem(activeDraftIdKey)
+    } catch { /* ignore */ }
+  }
+
+
   // Image ids hidden from the default workspace HISTORY/clip strip after
   // Final Film / Start Over. Parallels `workspaceHiddenJobIds` for images.
   const [workspaceHiddenImageIds, setWorkspaceHiddenImageIds] = useState<Set<string>>(new Set())
