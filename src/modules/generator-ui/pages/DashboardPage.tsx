@@ -1624,18 +1624,18 @@ export default function DashboardPage() {
   // ordering, drag handlers, and Final Film merge sequence.
   const visibleUserImages = useMemo<UserImageItem[]>(() => {
     if (selectedProjectId) {
-      const snapshot = projectSourceImages[selectedProjectId] ?? []
+      const snapshot = projectSourceImages[selectedProjectId] ?? draftSourceImages[selectedProjectId] ?? []
       const liveById = new Map(userImages.map((i) => [i.id, i]))
       if (snapshot.length > 0) return snapshot.map((s) => liveById.get(s.id) ?? s)
       // Single-clip Library entries never have image sources.
-      if (!selectedProjectId.startsWith('merged-')) return []
+      if (!selectedProjectId.startsWith('merged-') && !selectedProjectId.startsWith('draft-')) return []
     }
     const claimedByProjects = new Set<string>()
     for (const imgs of Object.values(projectSourceImages)) {
       for (const i of imgs) claimedByProjects.add(i.id)
     }
     return userImages.filter((i) => !workspaceHiddenImageIds.has(i.id) && !claimedByProjects.has(i.id))
-  }, [userImages, selectedProjectId, projectSourceImages, workspaceHiddenImageIds])
+  }, [userImages, selectedProjectId, projectSourceImages, draftSourceImages, workspaceHiddenImageIds])
 
   const displayedClips = useMemo<UnifiedClip[]>(() => {
     const items: UnifiedClip[] = [
