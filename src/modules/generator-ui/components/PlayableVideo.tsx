@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type VideoHTMLAttributes } from "react";
+import { useEffect, useRef, useState, type ReactNode, type VideoHTMLAttributes } from "react";
 import { AlertTriangle, LoaderCircle } from "lucide-react";
 import { usePlayableVideoUrl } from "@/modules/generator-ui/lib/usePlayableVideoUrl";
 
