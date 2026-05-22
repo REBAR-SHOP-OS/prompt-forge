@@ -112,16 +112,32 @@ export function mimeTypeToExtension(mimeType: string): 'mp4' | 'webm' {
   return mimeType.startsWith('video/mp4') ? 'mp4' : 'webm'
 }
 
-async function loadVideo(url: string, withAudio: boolean): Promise<HTMLVideoElement> {
+async function loadVideo(url: string, withAudio: boolean, clipLabel?: string): Promise<HTMLVideoElement> {
   return await new Promise((resolve, reject) => {
     const v = document.createElement('video')
     v.crossOrigin = 'anonymous'
     v.preload = 'auto'
     v.muted = !withAudio
     v.playsInline = true
+    const label = clipLabel ?? url
+    // Hard timeout so a single broken/expired URL can't hang Final Film forever.
+    const timeout = setTimeout(() => {
+      reject(new Error(`Clip ${label} did not load metadata within 20s — source may be expired or unreachable`))
+    }, 20000)
+    v.onloadedmetadata = () => {
+      clearTimeout(timeout)
+      const dur = Number.isFinite(v.duration) ? v.duration : 0
+      if (dur <= 0 || !v.videoWidth || !v.videoHeight) {
+        reject(new Error(`Clip ${label} has no playable content (duration=${dur}, ${v.videoWidth}x${v.videoHeight})`))
+        return
+      }
+      resolve(v)
+    }
+    v.onerror = () => {
+      clearTimeout(timeout)
+      reject(new Error(`Failed to load clip ${label}`))
+    }
     v.src = url
-    v.onloadedmetadata = () => resolve(v)
-    v.onerror = () => reject(new Error(`Failed to load video: ${url}`))
   })
 }
 
