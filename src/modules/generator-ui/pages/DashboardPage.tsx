@@ -4131,7 +4131,10 @@ export default function DashboardPage() {
         {isMerging ? (
           <>
             <LoaderCircle className="h-[14px] w-[14px] animate-spin" aria-hidden="true" />
-            <span className="tabular-nums">{mergeProgress}%</span>
+            <span className="tabular-nums">
+              {mergeStage === 'encoding' ? 'Encoding ' : mergeStage === 'uploading' ? 'Uploading ' : mergeStage === 'finalizing' ? 'Finalizing ' : ''}
+              {mergeProgress}%
+            </span>
           </>
         ) : (
           <>
