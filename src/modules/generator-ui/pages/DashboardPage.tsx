@@ -1518,6 +1518,115 @@ export default function DashboardPage() {
   }, [userId, generatedVideos, userImages, workspaceHiddenJobIds, workspaceHiddenImageIds, projectSourceJobs, projectSourceImages, activeDraftId])
 
 
+  // ----- Backfill historical drafts -----
+  // Every completed clip / uploaded image that isn't part of a Final Film,
+  // an existing Library entry, or an existing draft becomes its own Draft
+  // project card. Deterministic ids keep reruns idempotent, and the
+  // `deletedDraftIds` tombstone prevents user-deleted drafts from coming
+  // back after a refresh.
+  useEffect(() => {
+    if (!userId) return
+    if (generatedVideos.length === 0 && userImages.length === 0) return
+
+    const claimedJobIds = new Set<string>()
+    for (const clips of Object.values(projectSourceJobs)) {
+      for (const c of clips) claimedJobIds.add(c.id)
+    }
+    for (const clips of Object.values(draftSourceJobs)) {
+      for (const c of clips) claimedJobIds.add(c.id)
+    }
+    for (const id of Object.keys(librarySavedJobs)) claimedJobIds.add(id)
+    for (const e of mergedEntries) claimedJobIds.add(e.id)
+
+    const claimedImageIds = new Set<string>()
+    for (const imgs of Object.values(projectSourceImages)) {
+      for (const i of imgs) claimedImageIds.add(i.id)
+    }
+    for (const imgs of Object.values(draftSourceImages)) {
+      for (const i of imgs) claimedImageIds.add(i.id)
+    }
+
+    const existingDraftIds = new Set(draftEntries.map((d) => d.id))
+
+    const newEntries: JobDetail[] = []
+    const newSourceJobs: Record<string, JobDetail[]> = {}
+    const newSourceImages: Record<string, UserImageItem[]> = {}
+
+    for (const job of generatedVideos) {
+      if (claimedJobIds.has(job.id)) continue
+      if (deletedDraftIds.has(job.id)) continue
+      if (normalizeStatus(job.status) !== 'completed') continue
+      if (!job.video?.storage_path) continue
+      const draftId = `draft-orphan-${job.id}`
+      if (deletedDraftIds.has(draftId)) continue
+      if (existingDraftIds.has(draftId)) continue
+      const ratio = job.video?.aspect_ratio ?? job.requested_aspect_ratio ?? null
+      newEntries.push({
+        id: draftId,
+        input_prompt: job.input_prompt ?? 'Draft project',
+        status: 'draft',
+        provider_key: job.provider_key ?? null,
+        model_key: job.model_key ?? null,
+        first_frame_url: null,
+        last_frame_url: null,
+        requested_duration: null,
+        requested_aspect_ratio: ratio,
+        created_at: job.created_at ?? new Date().toISOString(),
+        updated_at: job.updated_at ?? job.created_at ?? new Date().toISOString(),
+        video: { ...(job.video as JobDetail['video']) },
+      })
+      newSourceJobs[draftId] = [job]
+    }
+
+    for (const img of userImages) {
+      if (claimedImageIds.has(img.id)) continue
+      if (deletedDraftIds.has(img.id)) continue
+      const draftId = `draft-orphan-img-${img.id}`
+      if (deletedDraftIds.has(draftId)) continue
+      if (existingDraftIds.has(draftId)) continue
+      const nowIso = new Date().toISOString()
+      newEntries.push({
+        id: draftId,
+        input_prompt: 'Uploaded image',
+        status: 'draft',
+        provider_key: null,
+        model_key: null,
+        first_frame_url: null,
+        last_frame_url: null,
+        requested_duration: null,
+        requested_aspect_ratio: null,
+        created_at: (img as unknown as { created_at?: string }).created_at ?? nowIso,
+        updated_at: (img as unknown as { created_at?: string }).created_at ?? nowIso,
+        video: { id: draftId, storage_path: img.storage_path ?? '', thumbnail_url: img.storage_path ?? null, aspect_ratio: null, duration: null },
+      })
+      newSourceImages[draftId] = [img]
+    }
+
+    if (newEntries.length === 0) return
+
+    setDraftEntries((prev) => {
+      const next = [...newEntries, ...prev]
+      persistDraftEntries(next)
+      return next
+    })
+    if (Object.keys(newSourceJobs).length > 0) {
+      setDraftSourceJobs((prev) => {
+        const next = { ...prev, ...newSourceJobs }
+        persistDraftSourceJobs(next)
+        return next
+      })
+    }
+    if (Object.keys(newSourceImages).length > 0) {
+      setDraftSourceImages((prev) => {
+        const next = { ...prev, ...newSourceImages }
+        persistDraftSourceImages(next)
+        return next
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, generatedVideos, userImages, mergedEntries, librarySavedJobs, projectSourceJobs, projectSourceImages, deletedDraftIds])
+
+
   const completedSourceVideos = useMemo(
     () => generatedVideos.filter(
       (v) => normalizeStatus(v.status) === 'completed' && v.video?.storage_path
