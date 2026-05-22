@@ -1338,6 +1338,14 @@ export default function DashboardPage() {
       if (snapshot.length > 0) {
         return snapshot.map((s) => liveById.get(s.id) ?? s)
       }
+      // Single-clip Library entry: the selected id is the original job id
+      // (no "merged-" prefix and no snapshot). Show only that one clip.
+      if (!selectedProjectId.startsWith('merged-')) {
+        const savedJob = librarySavedJobs[selectedProjectId]
+        const live = liveById.get(selectedProjectId)
+        const pick = live ?? savedJob
+        return pick ? [pick] : []
+      }
       // Legacy fallback: this Library project was created before snapshots
       // were tracked. Best-effort: show non-merged completed clips that were
       // created at or before the merged entry, and that are not already
