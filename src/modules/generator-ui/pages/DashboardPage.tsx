@@ -3775,8 +3775,14 @@ export default function DashboardPage() {
 
 
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Merge failed'
-      console.error('[merge] failed', err)
+      // Log the raw err first so we never lose detail to fallback strings.
+      console.error('[merge] failed', err, {
+        type: typeof err,
+        isError: err instanceof Error,
+        keys: err && typeof err === 'object' ? Object.keys(err as object) : null,
+      })
+      const { stringifyAny } = await import('@/modules/generator-ui/lib/transcodeToMp4')
+      const msg = stringifyAny(err)
       const urlMatch = msg.match(/https?:\/\/\S+/)
       const filename = urlMatch ? (urlMatch[0].split('?')[0].split('/').pop() || '') : ''
       const friendly = filename
