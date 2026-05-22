@@ -3489,6 +3489,7 @@ export default function DashboardPage() {
     }
     setIsMerging(true)
     setMergeProgress(0)
+    setMergeStage(null)
     setVideoColumnMessage(null)
     // Kick off ffmpeg core download in parallel with the merge so the MP4
     // transcode step at the end doesn't add CDN latency to the perceived wait.
@@ -3831,6 +3832,7 @@ export default function DashboardPage() {
     } finally {
       setIsMerging(false)
       setMergeProgress(0)
+      setMergeStage(null)
     }
   }
 
@@ -3876,6 +3878,7 @@ export default function DashboardPage() {
     // Reset any in-flight merge progress UI.
     setIsMerging(false)
     setMergeProgress(0)
+    setMergeStage(null)
     // Drop the transient Final Film preview so Start Over fully clears it.
     setLastMergedPreview(null)
     // Reset the composer to a fresh state.
