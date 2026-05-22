@@ -1058,6 +1058,9 @@ export default function DashboardPage() {
   const [mergedEntries, setMergedEntries] = useState<JobDetail[]>([])
   const [isMerging, setIsMerging] = useState(false)
   const [mergeProgress, setMergeProgress] = useState<number>(0)
+  const [mergeStage, setMergeStage] = useState<
+    'recording' | 'encoding' | 'uploading' | 'finalizing' | null
+  >(null)
   // Transient preview of the latest Final Film output. Lives only in memory:
   // never added to Pending, Library, or History. Cleared on Start Over.
   const [lastMergedPreview, setLastMergedPreview] = useState<
