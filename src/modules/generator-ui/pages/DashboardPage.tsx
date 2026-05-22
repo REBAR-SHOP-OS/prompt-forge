@@ -5474,26 +5474,24 @@ export default function DashboardPage() {
                             onClick={async (event) => {
                               event.stopPropagation()
                               const url = video.video!.storage_path
-                              const filename = `final-film-${video.id.slice(0, 8)}.mp4`
+                              // Derive the real extension from the stored
+                              // file. Final Film now saves WebM directly, so
+                              // forcing ".mp4" would hand the user a file
+                              // whose container doesn't match its name.
+                              const lower = url.toLowerCase().split('?')[0]
+                              const ext = lower.endsWith('.webm')
+                                ? 'webm'
+                                : lower.endsWith('.mp4')
+                                  ? 'mp4'
+                                  : 'webm'
+                              const filename = `final-film-${video.id.slice(0, 8)}.${ext}`
                               try {
-                                const response = await fetch(url)
+                                // Use the CORS-safe proxied URL so fetch()
+                                // works regardless of where the file lives.
+                                const fetchUrl = await proxiedVideoUrl(url)
+                                const response = await fetch(fetchUrl)
                                 if (!response.ok) throw new Error('Download failed')
-                                let blob = await response.blob()
-                                // Force a standard MP4 container so the file
-                                // plays in every desktop / mobile player.
-                                // Legacy storage entries may still be .webm
-                                // or fragmented mp4 — transcode on the fly.
-                                const isMp4 = (blob.type || '').toLowerCase().includes('mp4')
-                                  && /\.mp4(?:\?|$)/i.test(url)
-                                if (!isMp4) {
-                                  try {
-                                    const { ensureMp4 } = await import('@/modules/generator-ui/lib/transcodeToMp4')
-                                    const mp4 = await ensureMp4(blob, blob.type)
-                                    blob = mp4.blob
-                                  } catch (convErr) {
-                                    console.error('MP4 conversion failed, downloading original', convErr)
-                                  }
-                                }
+                                const blob = await response.blob()
                                 const blobUrl = URL.createObjectURL(blob)
                                 const a = document.createElement('a')
                                 a.href = blobUrl
