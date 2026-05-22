@@ -812,6 +812,24 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  // Tombstone set: draft ids (and the underlying clip/image ids they wrap)
+  // that the user explicitly deleted. The backfill effect skips anything in
+  // this set so deletion survives refresh.
+  const [deletedDraftIds, setDeletedDraftIds] = useState<Set<string>>(new Set())
+  const deletedDraftIdsKey = userId ? `deleted-draft-ids:${userId}` : null
+  useEffect(() => {
+    if (!deletedDraftIdsKey) { setDeletedDraftIds(new Set()); return }
+    try {
+      const raw = window.localStorage.getItem(deletedDraftIdsKey)
+      const arr = raw ? (JSON.parse(raw) as string[]) : []
+      setDeletedDraftIds(new Set(Array.isArray(arr) ? arr : []))
+    } catch { setDeletedDraftIds(new Set()) }
+  }, [deletedDraftIdsKey])
+  function persistDeletedDraftIds(next: Set<string>) {
+    if (!deletedDraftIdsKey) return
+    try { window.localStorage.setItem(deletedDraftIdsKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
+  }
+
 
   // Image ids hidden from the default workspace HISTORY/clip strip after
   // Final Film / Start Over. Parallels `workspaceHiddenJobIds` for images.
@@ -1143,11 +1161,30 @@ export default function DashboardPage() {
   }, [approvedStorageKey, mergedEntries, librarySavedJobs])
 
   async function deleteCard(jobId: string) {
-    if (typeof window !== 'undefined' && !window.confirm('Delete this video card permanently?')) return
+    const confirmMsg = jobId.startsWith('draft-')
+      ? 'Delete this draft and all its clips permanently?'
+      : 'Delete this video card permanently?'
+    if (typeof window !== 'undefined' && !window.confirm(confirmMsg)) return
 
-    // Draft project card: drop the draft entry + its snapshots and stop here.
-    // The underlying workspace jobs (if still present) remain untouched.
+    // Draft project card: permanently delete the underlying clips/images
+    // server-side, then drop the local snapshot, and tombstone the ids so
+    // the backfill effect doesn't bring them back on refresh.
     if (jobId.startsWith('draft-')) {
+      const clipIds = (draftSourceJobs[jobId] ?? []).map((c) => c.id)
+      const imageIds = (draftSourceImages[jobId] ?? []).map((i) => i.id)
+
+      // Tombstone first so the backfill never re-creates these while we
+      // wait for the server deletes to finish.
+      setDeletedDraftIds((prev) => {
+        const next = new Set(prev)
+        next.add(jobId)
+        for (const id of clipIds) next.add(id)
+        for (const id of imageIds) next.add(id)
+        persistDeletedDraftIds(next)
+        return next
+      })
+
+      // Drop local snapshots immediately.
       setDraftEntries((prev) => {
         if (!prev.some((d) => d.id === jobId)) return prev
         const next = prev.filter((d) => d.id !== jobId)
@@ -1172,8 +1209,29 @@ export default function DashboardPage() {
       }
       if (selectedProjectId === jobId) setSelectedProjectId(null)
       if (previewVideoId === jobId) setPreviewVideoId(null)
+
+      // Optimistic in-memory removal of the underlying clips/images so they
+      // disappear from every other view too.
+      if (clipIds.length > 0) {
+        const drop = new Set(clipIds)
+        setGeneratedVideos((curr) => curr.filter((v) => !drop.has(v.id)))
+        unmarkActiveJobs(clipIds)
+      }
+      if (imageIds.length > 0) {
+        const drop = new Set(imageIds)
+        setUserImages((curr) => curr.filter((i) => !drop.has(i.id)))
+        unmarkActiveImages(imageIds)
+      }
+
+      // Server-side permanent deletes. Errors are non-fatal: the local
+      // tombstone keeps the card from coming back even if a row lingers.
+      await Promise.allSettled([
+        ...clipIds.map((id) => jobOrchestratorGateway.deleteJob(id)),
+        ...imageIds.map((id) => generatorUiGateway.deleteUserImage(id)),
+      ])
       return
     }
+
 
 
 
@@ -1498,6 +1556,115 @@ export default function DashboardPage() {
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, generatedVideos, userImages, workspaceHiddenJobIds, workspaceHiddenImageIds, projectSourceJobs, projectSourceImages, activeDraftId])
+
+
+  // ----- Backfill historical drafts -----
+  // Every completed clip / uploaded image that isn't part of a Final Film,
+  // an existing Library entry, or an existing draft becomes its own Draft
+  // project card. Deterministic ids keep reruns idempotent, and the
+  // `deletedDraftIds` tombstone prevents user-deleted drafts from coming
+  // back after a refresh.
+  useEffect(() => {
+    if (!userId) return
+    if (generatedVideos.length === 0 && userImages.length === 0) return
+
+    const claimedJobIds = new Set<string>()
+    for (const clips of Object.values(projectSourceJobs)) {
+      for (const c of clips) claimedJobIds.add(c.id)
+    }
+    for (const clips of Object.values(draftSourceJobs)) {
+      for (const c of clips) claimedJobIds.add(c.id)
+    }
+    for (const id of Object.keys(librarySavedJobs)) claimedJobIds.add(id)
+    for (const e of mergedEntries) claimedJobIds.add(e.id)
+
+    const claimedImageIds = new Set<string>()
+    for (const imgs of Object.values(projectSourceImages)) {
+      for (const i of imgs) claimedImageIds.add(i.id)
+    }
+    for (const imgs of Object.values(draftSourceImages)) {
+      for (const i of imgs) claimedImageIds.add(i.id)
+    }
+
+    const existingDraftIds = new Set(draftEntries.map((d) => d.id))
+
+    const newEntries: JobDetail[] = []
+    const newSourceJobs: Record<string, JobDetail[]> = {}
+    const newSourceImages: Record<string, UserImageItem[]> = {}
+
+    for (const job of generatedVideos) {
+      if (claimedJobIds.has(job.id)) continue
+      if (deletedDraftIds.has(job.id)) continue
+      if (normalizeStatus(job.status) !== 'completed') continue
+      if (!job.video?.storage_path) continue
+      const draftId = `draft-orphan-${job.id}`
+      if (deletedDraftIds.has(draftId)) continue
+      if (existingDraftIds.has(draftId)) continue
+      const ratio = job.video?.aspect_ratio ?? job.requested_aspect_ratio ?? null
+      newEntries.push({
+        id: draftId,
+        input_prompt: job.input_prompt ?? 'Draft project',
+        status: 'draft',
+        provider_key: job.provider_key ?? null,
+        model_key: job.model_key ?? null,
+        first_frame_url: null,
+        last_frame_url: null,
+        requested_duration: null,
+        requested_aspect_ratio: ratio,
+        created_at: job.created_at ?? new Date().toISOString(),
+        updated_at: job.updated_at ?? job.created_at ?? new Date().toISOString(),
+        video: { ...(job.video as JobDetail['video']) },
+      })
+      newSourceJobs[draftId] = [job]
+    }
+
+    for (const img of userImages) {
+      if (claimedImageIds.has(img.id)) continue
+      if (deletedDraftIds.has(img.id)) continue
+      const draftId = `draft-orphan-img-${img.id}`
+      if (deletedDraftIds.has(draftId)) continue
+      if (existingDraftIds.has(draftId)) continue
+      const nowIso = new Date().toISOString()
+      newEntries.push({
+        id: draftId,
+        input_prompt: 'Uploaded image',
+        status: 'draft',
+        provider_key: null,
+        model_key: null,
+        first_frame_url: null,
+        last_frame_url: null,
+        requested_duration: null,
+        requested_aspect_ratio: null,
+        created_at: (img as unknown as { created_at?: string }).created_at ?? nowIso,
+        updated_at: (img as unknown as { created_at?: string }).created_at ?? nowIso,
+        video: { id: draftId, storage_path: img.storage_path ?? '', thumbnail_url: img.storage_path ?? null, aspect_ratio: null, duration: null },
+      })
+      newSourceImages[draftId] = [img]
+    }
+
+    if (newEntries.length === 0) return
+
+    setDraftEntries((prev) => {
+      const next = [...newEntries, ...prev]
+      persistDraftEntries(next)
+      return next
+    })
+    if (Object.keys(newSourceJobs).length > 0) {
+      setDraftSourceJobs((prev) => {
+        const next = { ...prev, ...newSourceJobs }
+        persistDraftSourceJobs(next)
+        return next
+      })
+    }
+    if (Object.keys(newSourceImages).length > 0) {
+      setDraftSourceImages((prev) => {
+        const next = { ...prev, ...newSourceImages }
+        persistDraftSourceImages(next)
+        return next
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, generatedVideos, userImages, mergedEntries, librarySavedJobs, projectSourceJobs, projectSourceImages, deletedDraftIds])
 
 
   const completedSourceVideos = useMemo(
