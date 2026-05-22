@@ -476,6 +476,11 @@ export async function mergeVideoUrls(
         video.removeEventListener('ended', onEnded)
         if (timer) clearTimeout(timer)
         if (stallTimer) clearInterval(stallTimer)
+        // Always resume the recorder before moving on so the next clip is
+        // actually encoded even if this clip ended during a stall pause.
+        try {
+          if (recorder.state === 'paused') recorder.resume()
+        } catch { /* ignore */ }
         stopPaint()
         resolve()
       }
