@@ -1673,7 +1673,70 @@ export default function DashboardPage() {
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, generatedVideos, userImages, mergedEntries, librarySavedJobs, projectSourceJobs, projectSourceImages, deletedDraftIds])
+  }, [userId, generatedVideos, userImages, mergedEntries, librarySavedJobs, projectSourceJobs, projectSourceImages, draftSourceJobs, draftSourceImages, draftEntries, workspaceHiddenJobIds, workspaceHiddenImageIds, deletedDraftIds])
+
+  // One-time dedupe: older builds could create both an active `draft-<uuid>`
+  // and a `draft-orphan-<jobId>` entry for the same underlying clip/image.
+  // On mount, drop any orphan twin whose source id is already owned by
+  // another draft, and tombstone it so the backfill effect never resurrects
+  // it.
+  const dedupedDraftsRef = useRef(false)
+  useEffect(() => {
+    if (!userId) return
+    if (dedupedDraftsRef.current) return
+    if (draftEntries.length === 0) return
+    dedupedDraftsRef.current = true
+
+    const sourceOwners = new Map<string, string>()
+    for (const [draftId, clips] of Object.entries(draftSourceJobs)) {
+      if (draftId.startsWith('draft-orphan-')) continue
+      for (const c of clips) {
+        if (!sourceOwners.has(c.id)) sourceOwners.set(c.id, draftId)
+      }
+    }
+    for (const [draftId, imgs] of Object.entries(draftSourceImages)) {
+      if (draftId.startsWith('draft-orphan-')) continue
+      for (const i of imgs) {
+        if (!sourceOwners.has(i.id)) sourceOwners.set(i.id, draftId)
+      }
+    }
+
+    const toRemove = new Set<string>()
+    for (const [draftId, clips] of Object.entries(draftSourceJobs)) {
+      if (!draftId.startsWith('draft-orphan-')) continue
+      if (clips.some((c) => sourceOwners.has(c.id))) toRemove.add(draftId)
+    }
+    for (const [draftId, imgs] of Object.entries(draftSourceImages)) {
+      if (!draftId.startsWith('draft-orphan-')) continue
+      if (imgs.some((i) => sourceOwners.has(i.id))) toRemove.add(draftId)
+    }
+    if (toRemove.size === 0) return
+
+    setDraftEntries((prev) => {
+      const next = prev.filter((d) => !toRemove.has(d.id))
+      persistDraftEntries(next)
+      return next
+    })
+    setDraftSourceJobs((prev) => {
+      const next: Record<string, JobDetail[]> = {}
+      for (const [k, v] of Object.entries(prev)) if (!toRemove.has(k)) next[k] = v
+      persistDraftSourceJobs(next)
+      return next
+    })
+    setDraftSourceImages((prev) => {
+      const next: Record<string, UserImageItem[]> = {}
+      for (const [k, v] of Object.entries(prev)) if (!toRemove.has(k)) next[k] = v
+      persistDraftSourceImages(next)
+      return next
+    })
+    setDeletedDraftIds((prev) => {
+      const next = new Set(prev)
+      for (const id of toRemove) next.add(id)
+      persistDeletedDraftIds(next)
+      return next
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, draftEntries, draftSourceJobs, draftSourceImages])
 
   // Backfill `projectSourceJobs` / `projectSourceImages` for legacy Final
   // Films that were merged before the snapshot system existed. Without this,
