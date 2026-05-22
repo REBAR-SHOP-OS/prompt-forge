@@ -2314,12 +2314,16 @@ export default function DashboardPage() {
       setPromptText('')
       setUploadedFiles([])
     } catch (error) {
+      console.error('handleSubmit failed', error)
       let message = 'Could not start video generation.'
       if (error instanceof ApiError) {
         message = `${error.code}: ${error.message}`
+      } else if (error instanceof Error && error.message) {
+        message = error.message
       }
-      setComposerError(message)
-      setVideoColumnMessage(message)
+      // Don't overwrite a more specific message set by submitScenesAsJobs.
+      setComposerError((current) => current ?? message)
+      setVideoColumnMessage((current) => current ?? message)
     } finally {
       setIsSubmitting(false)
     }
