@@ -385,18 +385,18 @@ export async function mergeVideoUrls(
   }
   let activeVfcHandle = 0
   let activeVfcVideo: VFCCapableVideo | null = null
+  let paintGen = 0
+  let safetyTimer: ReturnType<typeof setTimeout> | null = null
   const loopPaint = (video: HTMLVideoElement) => {
-    cancelAnimationFrame(rafId)
-    if (activeVfcVideo && activeVfcHandle && activeVfcVideo.cancelVideoFrameCallback) {
-      try { activeVfcVideo.cancelVideoFrameCallback(activeVfcHandle) } catch { /* ignore */ }
-    }
-    activeVfcVideo = null
-    activeVfcHandle = 0
+    stopPaint()
+    paintGen += 1
+    const myGen = paintGen
 
     const v = video as VFCCapableVideo
     if (typeof v.requestVideoFrameCallback === 'function') {
       activeVfcVideo = v
       const onFrame = () => {
+        if (paintGen !== myGen) return
         drawContain(ctx, video, width, height)
         if (!video.paused && !video.ended && activeVfcVideo === v) {
           activeVfcHandle = v.requestVideoFrameCallback!(onFrame)
@@ -404,17 +404,18 @@ export async function mergeVideoUrls(
       }
       activeVfcHandle = v.requestVideoFrameCallback(onFrame)
       // Low-rate safety repaint (~10fps) — guarantees the captured canvas
-      // never goes stale if rVFC pauses (tab partially throttled).
+      // never goes stale if rVFC pauses (tab partially throttled). Uses a
+      // generation guard so stopPaint() reliably cancels it across
+      // transitions and clip swaps.
       const safetyTick = () => {
+        if (paintGen !== myGen) return
         drawContain(ctx, video, width, height)
-        rafId = requestAnimationFrame(() => {
-          // Throttle to ~100ms.
-          setTimeout(safetyTick, 100)
-        })
+        safetyTimer = setTimeout(safetyTick, 100)
       }
       safetyTick()
     } else {
       const tick = () => {
+        if (paintGen !== myGen) return
         drawContain(ctx, video, width, height)
         rafId = requestAnimationFrame(tick)
       }
@@ -423,8 +424,10 @@ export async function mergeVideoUrls(
   }
 
   const stopPaint = () => {
+    paintGen += 1
     cancelAnimationFrame(rafId)
     rafId = 0
+    if (safetyTimer) { clearTimeout(safetyTimer); safetyTimer = null }
     if (activeVfcVideo && activeVfcHandle && activeVfcVideo.cancelVideoFrameCallback) {
       try { activeVfcVideo.cancelVideoFrameCallback(activeVfcHandle) } catch { /* ignore */ }
     }
