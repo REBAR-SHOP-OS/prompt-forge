@@ -1,16 +1,21 @@
-When the user creates a Final Film, automatically reset the workspace to a fresh "Start Over" state so it's ready for the next project.
+## مشکل
+وقتی پروژه نهایی ساخته می‌شود فقط `activeDraftId` بسته می‌شود، اما اگر کلیپ‌های منبع از طریق درفت‌های دیگر (مثل `draft-orphan-{jobId}` که به‌طور خودکار برای هر کلیپ تنها ساخته می‌شوند، یا یک درفت قبلی که از Library دوباره باز شده) وارد ورک‌اسپیس شده باشند، آن درفت‌ها همچنان در بخش Drafts باقی می‌مانند چون منطق پاکسازی فقط درفت فعال جلسه را هدف می‌گیرد.
 
-### What will change
-In `DashboardPage.tsx`, after the Final Film merge succeeds and the source clips are snapshotted / draft is closed, add an automatic workspace reset before the `finally` block.
+## راه‌حل
+در `src/modules/generator-ui/pages/DashboardPage.tsx`، بلافاصله بعد از `setProjectSourceImages` و قبل از بلاک `if (activeDraftId)` (حدود خط 3704)، همهٔ درفت‌هایی را که حاوی کلیپ یا تصویرِ منبعِ این Final Film هستند پیدا کرده و حذف کنیم:
 
-### Exact steps
-1. After line 3727 (end of draft cleanup inside the Final Film `try` block), insert:
-   - `resetWorkspace({ keepPreview: false })` — clears composer, transitions, soundtrack, edited clips, merge progress, and hides all current workspace cards.
-   - `setActiveJobIds(new Set()); persistActiveJobIds(new Set())` — clears the active job manifest.
-   - `setActiveImageIds(new Set()); persistActiveImageIds(new Set())` — clears the active image manifest.
+1. ساخت `mergedJobIdSet` از `eligibleClips` با `kind === 'video'` و `mergedImageIdSet` از `kind === 'image'`.
+2. پیمایش `draftSourceJobs` و `draftSourceImages` و جمع‌آوری هر `draftId` که حداقل یک id مشترک با مجموعه‌های بالا دارد (به‌علاوهٔ `activeDraftId` در صورت وجود) در یک `Set<string> draftIdsToClose`.
+3. اگر `draftIdsToClose` غیرخالی بود:
+   - `setDraftEntries(prev => filter out)` + `persistDraftEntries`
+   - حذف کلیدها از `draftSourceJobs` و `draftSourceImages` با persist مربوطه
+   - افزودن همان idها به `deletedDraftIds` و persist، تا افکت backfill بعدی (که هر کلیپ کلیم‌نشده را دوباره به‌صورت `draft-orphan-*` می‌سازد) آن‌ها را دوباره برنگرداند. برای درفت‌های `draft-orphan-{id}` و `draft-orphan-img-{id}`، اضافه‌کردنِ خود `draftId` کافی است چون شرط `deletedDraftIds.has(draftId)` در backfill بررسی می‌شود.
+4. `setActiveDraftId(null)` و `persistActiveDraftId(null)` اگر `activeDraftId` در مجموعه بود (بلاک موجود را حفظ/جذب می‌کنیم).
 
-### Why this is safe
-- The source clips are already claimed by `projectSourceJobs[mergedId]` and `projectSourceImages[mergedId]`, so they will NOT be deleted.
-- `resetWorkspace` already hides all unclaimed workspace cards via `workspaceHiddenJobIds` / `workspaceHiddenImageIds`.
-- The newly created Final Film remains in `mergedEntries` (Library) forever.
-- No backend/schema changes needed.
+## چرا امن است
+- `mergedEntries` و `projectSourceJobs[mergedId]` دست‌نخورده می‌مانند، پس Final Film و تاریخچهٔ آن در Library سالم است.
+- استفاده از `deletedDraftIds` فقط مانع از بازسازی خودکار درفت‌های orphan برای همان clip ids می‌شود؛ روی پروژه‌های Final تأثیری ندارد چون آن‌ها از مسیر `mergedEntries` رندر می‌شوند نه backfill.
+- بدون تغییر بکند/اسکیما.
+
+## فایل تغییر یافته
+- `src/modules/generator-ui/pages/DashboardPage.tsx` (فقط)
