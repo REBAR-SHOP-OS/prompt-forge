@@ -1481,7 +1481,7 @@ export default function DashboardPage() {
   const lockedRatio = useMemo<Ratio | null>(() => {
     // Viewing a saved Library project: lock to that project's ratio.
     if (selectedProjectId) {
-      const proj = [...mergedEntries, ...generatedVideos, ...Object.values(librarySavedJobs)]
+      const proj = [...mergedEntries, ...generatedVideos, ...draftEntries, ...Object.values(librarySavedJobs)]
         .find((v) => v.id === selectedProjectId)
       if (proj) return getRatioFor(proj)
     }
@@ -1517,7 +1517,7 @@ export default function DashboardPage() {
     }
     return null
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [generatedVideos, userImages, selectedProjectId, projectSourceJobs, projectSourceImages, workspaceHiddenJobIds, workspaceHiddenImageIds, mergedEntries, librarySavedJobs])
+  }, [generatedVideos, userImages, selectedProjectId, projectSourceJobs, projectSourceImages, workspaceHiddenJobIds, workspaceHiddenImageIds, mergedEntries, draftEntries, librarySavedJobs])
 
   useEffect(() => {
     if (lockedRatio && aspectRatio !== lockedRatio) {
@@ -1531,19 +1531,20 @@ export default function DashboardPage() {
     // produced that Final Film, regardless of workspace-hidden state. The
     // snapshot is stored in EXACT film order — preserve it (do NOT re-sort).
     if (selectedProjectId) {
-      const snapshot = projectSourceJobs[selectedProjectId] ?? []
+      const snapshot = projectSourceJobs[selectedProjectId] ?? draftSourceJobs[selectedProjectId] ?? []
       const liveById = new Map(generatedVideos.map((v) => [v.id, v]))
       if (snapshot.length > 0) {
         return snapshot.map((s) => liveById.get(s.id) ?? s)
       }
       // Single-clip Library entry: the selected id is the original job id
       // (no "merged-" prefix and no snapshot). Show only that one clip.
-      if (!selectedProjectId.startsWith('merged-')) {
+      if (!selectedProjectId.startsWith('merged-') && !selectedProjectId.startsWith('draft-')) {
         const savedJob = librarySavedJobs[selectedProjectId]
         const live = liveById.get(selectedProjectId)
         const pick = live ?? savedJob
         return pick ? [pick] : []
       }
+
       // Legacy fallback: this Library project was created before snapshots
       // were tracked. Best-effort: show non-merged completed clips that were
       // created at or before the merged entry, and that are not already
