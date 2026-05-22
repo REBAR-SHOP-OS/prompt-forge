@@ -632,8 +632,8 @@ export async function mergeVideoUrls(
         snapCtx.fillRect(0, 0, width, height)
         drawContain(snapCtx, prevVideo, width, height)
 
-        // Begin playing the incoming clip muted-of-RAF; we paint the blended frame manually.
-        cancelAnimationFrame(rafId)
+        // Begin playing the incoming clip; we paint the blended frame manually.
+        stopPaint()
         // IMPORTANT: register the `ended` listener BEFORE play() so we never
         // miss the event if it fires during/just after the transition.
         const endedPromise = whenEnded(video)
