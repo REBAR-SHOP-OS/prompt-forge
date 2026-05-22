@@ -1833,6 +1833,12 @@ export default function DashboardPage() {
             for (const clip of clips) protectedJobIds.add(clip.id)
           }
         }
+        const storedDraftSourceJobs = readStoredRecord<JobDetail[]>(draftSourceJobsKey)
+        for (const clips of Object.values({ ...storedDraftSourceJobs, ...draftSourceJobs })) {
+          if (Array.isArray(clips)) {
+            for (const clip of clips) protectedJobIds.add(clip.id)
+          }
+        }
         for (const id of Object.keys(readStoredRecord<JobDetail>(librarySavedJobsKey))) protectedJobIds.add(id)
 
         const protectedImageIds = new Set(activeImageIds)
@@ -1843,6 +1849,13 @@ export default function DashboardPage() {
             for (const image of images) protectedImageIds.add(image.id)
           }
         }
+        const storedDraftSourceImages = readStoredRecord<UserImageItem[]>(draftSourceImagesKey)
+        for (const images of Object.values({ ...storedDraftSourceImages, ...draftSourceImages })) {
+          if (Array.isArray(images)) {
+            for (const image of images) protectedImageIds.add(image.id)
+          }
+        }
+
 
         const orphanJobIds = summaries
           .map((s) => s.id)
