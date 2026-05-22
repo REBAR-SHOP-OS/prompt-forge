@@ -1732,8 +1732,18 @@ export default function DashboardPage() {
     if (selectedProjectId) {
       const snapshot = projectSourceJobs[selectedProjectId] ?? draftSourceJobs[selectedProjectId] ?? []
       const liveById = new Map(generatedVideos.map((v) => [v.id, v]))
+      // Hard guard: the merged film itself must never appear inside its own
+      // Working-clips list, and any clip without a playable storage_path is
+      // dropped to avoid blank 0:00 cards.
+      const sanitize = (jobs: JobDetail[]): JobDetail[] =>
+        jobs.filter(
+          (j) =>
+            j.id !== selectedProjectId &&
+            !j.id.startsWith('merged-') &&
+            !!j.video?.storage_path,
+        )
       if (snapshot.length > 0) {
-        return snapshot.map((s) => liveById.get(s.id) ?? s)
+        return sanitize(snapshot.map((s) => liveById.get(s.id) ?? s))
       }
       // Single-clip Library entry: the selected id is the original job id
       // (no "merged-" prefix and no snapshot). Show only that one clip.
@@ -1741,7 +1751,7 @@ export default function DashboardPage() {
         const savedJob = librarySavedJobs[selectedProjectId]
         const live = liveById.get(selectedProjectId)
         const pick = live ?? savedJob
-        return pick ? [pick] : []
+        return pick && pick.video?.storage_path ? [pick] : []
       }
 
       // Legacy fallback: this Library project was created before snapshots
@@ -1758,8 +1768,10 @@ export default function DashboardPage() {
       }
       return [...generatedVideos]
         .filter((v) =>
+          v.id !== selectedProjectId &&
           !v.id.startsWith('merged-') &&
           !claimed.has(v.id) &&
+          !!v.video?.storage_path &&
           new Date(v.created_at).getTime() <= cutoff,
         )
         .sort((l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime())
