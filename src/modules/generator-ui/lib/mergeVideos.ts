@@ -526,7 +526,7 @@ export async function mergeVideoUrls(
   // and removes inter-clip loading gaps.
   const preloaded: HTMLVideoElement[] = [first]
   for (let i = 1; i < urls.length; i++) {
-    preloaded.push(await loadVideo(urls[i], captureClipAudio))
+    preloaded.push(await loadVideo(urls[i], captureClipAudio, `#${i + 1} of ${urls.length}`))
   }
   let totalDuration = 0
   for (const v of preloaded) {
