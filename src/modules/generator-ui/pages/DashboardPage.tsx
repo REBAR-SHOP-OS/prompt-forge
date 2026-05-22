@@ -1314,12 +1314,45 @@ export default function DashboardPage() {
   // every subsequent clip must match the FIRST clip's aspect ratio. The lock
   // releases automatically when the chain is empty (e.g. after Start Over).
   const lockedRatio = useMemo<Ratio | null>(() => {
-    if (generatedVideos.length === 0) return null
-    // generatedVideos is newest-first; the oldest (first in chain) is last.
-    const first = generatedVideos[generatedVideos.length - 1]
-    return getRatioFor(first)
+    // Viewing a saved Library project: lock to that project's ratio.
+    if (selectedProjectId) {
+      const proj = [...mergedEntries, ...generatedVideos, ...Object.values(librarySavedJobs)]
+        .find((v) => v.id === selectedProjectId)
+      if (proj) return getRatioFor(proj)
+    }
+    // Active working chain only: ignore clips already snapshotted into a
+    // Library project and clips/images hidden from the workspace.
+    const claimedJobIds = new Set<string>()
+    for (const clips of Object.values(projectSourceJobs)) {
+      for (const c of clips) claimedJobIds.add(c.id)
+    }
+    const liveVideos = generatedVideos.filter(
+      (v) => !claimedJobIds.has(v.id) && !workspaceHiddenJobIds.has(v.id),
+    )
+    if (liveVideos.length > 0) {
+      // newest-first; the oldest (first in chain) is last.
+      const first = liveVideos[liveVideos.length - 1]
+      return getRatioFor(first)
+    }
+    const claimedImageIds = new Set<string>()
+    for (const imgs of Object.values(projectSourceImages)) {
+      for (const i of imgs) claimedImageIds.add(i.id)
+    }
+    const liveImages = userImages.filter(
+      (i) => !claimedImageIds.has(i.id) && !workspaceHiddenImageIds.has(i.id),
+    )
+    if (liveImages.length > 0) {
+      const firstImg = liveImages[liveImages.length - 1]
+      const w = firstImg.width ?? 0
+      const h = firstImg.height ?? 0
+      if (w > 0 && h > 0) {
+        const r = w / h
+        return r > 1.2 ? '16:9' : r < 0.85 ? '9:16' : '1:1'
+      }
+    }
+    return null
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [generatedVideos])
+  }, [generatedVideos, userImages, selectedProjectId, projectSourceJobs, projectSourceImages, workspaceHiddenJobIds, workspaceHiddenImageIds, mergedEntries, librarySavedJobs])
 
   useEffect(() => {
     if (lockedRatio && aspectRatio !== lockedRatio) {
