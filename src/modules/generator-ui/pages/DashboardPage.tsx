@@ -1435,28 +1435,30 @@ export default function DashboardPage() {
       const nowIso = new Date().toISOString()
       const firstClip = liveClips[liveClips.length - 1] // oldest = chain start
       const firstImg = liveImages[liveImages.length - 1]
-      const prompt = firstClip?.input_prompt ?? firstImg?.prompt ?? 'Draft project'
+      const prompt = firstClip?.input_prompt ?? 'Draft project'
       const ratio = firstClip?.video?.aspect_ratio
         ?? firstClip?.requested_aspect_ratio
         ?? null
-      const thumb = firstClip?.video?.thumbnail_url ?? null
-      const stubVideo = firstClip?.video
+      const thumb = firstClip?.video?.thumbnail_url ?? firstImg?.storage_path ?? null
+      const stubVideo: JobDetail['video'] = firstClip?.video
         ? { ...firstClip.video }
-        : null
+        : { id: did, storage_path: firstImg?.storage_path ?? '', thumbnail_url: thumb, aspect_ratio: ratio, duration: null }
       const existing = prev.find((d) => d.id === did)
       const entry: JobDetail = {
         id: did,
         input_prompt: prompt,
         status: 'draft',
-        provider: existing?.provider ?? 'draft',
+        provider_key: existing?.provider_key ?? null,
+        model_key: existing?.model_key ?? null,
         first_frame_url: null,
         last_frame_url: null,
         requested_duration: null,
         requested_aspect_ratio: ratio,
         created_at: existing?.created_at ?? nowIso,
         updated_at: nowIso,
-        video: stubVideo ?? { id: did, storage_path: '', thumbnail_url: thumb, aspect_ratio: ratio, duration: null },
-      } as JobDetail
+        video: stubVideo,
+      }
+
       const filtered = prev.filter((d) => d.id !== did)
       const next = [entry, ...filtered]
       persistDraftEntries(next)
