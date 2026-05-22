@@ -178,12 +178,34 @@ function buildEncodeArgs(input: string, output: string, crf: number): string[] {
  * Any failure throws a real `Error` whose message starts with
  * "ffmpeg <stage> failed:" so callers can show something useful.
  */
-export async function ensureMp4(blob: Blob, mimeType?: string): Promise<Mp4Result> {
+export async function ensureMp4(
+  blob: Blob,
+  mimeType?: string,
+  onProgress?: Mp4ProgressCallback,
+): Promise<Mp4Result> {
+  if (blob.size > MAX_TRANSCODE_BLOB_BYTES) {
+    throw new Error(
+      `Final film is too large to transcode in-browser (${Math.round(blob.size / (1024 * 1024))} MB). ` +
+        'Please shorten the project or use fewer 1080p clips.',
+    )
+  }
+
+  onProgress?.({ stage: 'loading', ratio: 0 })
   let ff = await runStage('load', () => getFFmpeg())
   const mt = mimeType || blob.type || ''
   const inExt = pickInputExt(mt)
   const inputName = `in.${inExt}`
   const outputName = 'out.mp4'
+
+  // Wire ffmpeg's native progress event into the caller-supplied callback.
+  // This is what actually makes the UI move past 95% during the encode.
+  let currentStage: 'remux' | 'encode' = 'encode'
+  const onFfProgress = (e: { progress: number }) => {
+    if (!onProgress) return
+    const r = Math.max(0, Math.min(0.99, e.progress || 0))
+    onProgress({ stage: currentStage, ratio: r })
+  }
+  try { ff.on('progress', onFfProgress) } catch { /* ignore */ }
 
   const writeInput = async (instance: FFmpeg) => {
     await runStage('writeFile', async () => {
@@ -200,41 +222,57 @@ export async function ensureMp4(blob: Blob, mimeType?: string): Promise<Mp4Resul
     outputName,
   ]
 
+  // Per-exec timeout so a hung ffmpeg call surfaces a real error instead of
+  // leaving the UI stuck on 95% forever. On timeout we terminate the WASM
+  // instance to release its heap.
+  const execWithTimeout = async (label: string, args: string[]) => {
+    try {
+      await withTimeout(ff.exec(args), FFMPEG_EXEC_TIMEOUT_MS, `ffmpeg ${label}`)
+    } catch (e) {
+      if (e instanceof Error && /timed out/i.test(e.message)) {
+        try { ffmpegSingleton?.terminate() } catch { /* ignore */ }
+        ffmpegSingleton = null
+        loadingPromise = null
+      }
+      throw e
+    }
+  }
+
   let succeeded = false
   if (isMp4) {
+    currentStage = 'remux'
+    onProgress?.({ stage: 'remux', ratio: 0 })
     try {
-      await runStage('remux', () => ff.exec(remuxArgs))
+      await runStage('remux', () => execWithTimeout('remux', remuxArgs))
       succeeded = true
     } catch (err) {
-      // Remux of an mp4 input failed (e.g. unsupported codec inside).
-      // Fall through to a memory-friendly encode.
       console.warn('[ensureMp4] remux failed, will encode:', stringifyAny(err))
     }
   }
 
   if (!succeeded) {
+    currentStage = 'encode'
+    onProgress?.({ stage: 'encode', ratio: 0 })
     try {
-      await runStage('encode', () => ff.exec(buildEncodeArgs(inputName, outputName, 23)))
+      await runStage('encode', () => execWithTimeout('encode', buildEncodeArgs(inputName, outputName, 23)))
       succeeded = true
     } catch (err1) {
-      // OOM / abort: terminate the core to release the WASM heap, reload,
-      // and retry once at a higher CRF (smaller frames, less memory pressure).
       console.warn('[ensureMp4] first encode failed, retrying after reset:', stringifyAny(err1))
       try { await ff.deleteFile(inputName) } catch { /* ignore */ }
       ff = await runStage('load (retry)', () => resetFFmpeg())
+      try { ff.on('progress', onFfProgress) } catch { /* ignore */ }
       await writeInput(ff)
-      await runStage('encode (retry)', () => ff.exec(buildEncodeArgs(inputName, outputName, 28)))
+      await runStage('encode (retry)', () => execWithTimeout('encode (retry)', buildEncodeArgs(inputName, outputName, 28)))
     }
   }
 
+  onProgress?.({ stage: 'readout', ratio: 1 })
   const data = await runStage('readFile', () => ff.readFile(outputName))
-  // Cleanup virtual FS so repeated calls don't leak memory.
+  try { ff.off('progress', onFfProgress) } catch { /* ignore */ }
   try { await ff.deleteFile(inputName) } catch { /* noop */ }
   try { await ff.deleteFile(outputName) } catch { /* noop */ }
 
   const u8 = data as Uint8Array
-  // Copy into a fresh ArrayBuffer so the Blob type matches BlobPart strictly
-  // (avoids SharedArrayBuffer-typed buffer issues from ffmpeg.wasm output).
   const ab = new ArrayBuffer(u8.byteLength)
   new Uint8Array(ab).set(u8)
   const out = new Blob([ab], { type: 'video/mp4' })
