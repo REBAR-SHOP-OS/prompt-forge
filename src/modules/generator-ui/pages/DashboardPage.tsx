@@ -2314,12 +2314,16 @@ export default function DashboardPage() {
       setPromptText('')
       setUploadedFiles([])
     } catch (error) {
+      console.error('handleSubmit failed', error)
       let message = 'Could not start video generation.'
       if (error instanceof ApiError) {
         message = `${error.code}: ${error.message}`
+      } else if (error instanceof Error && error.message) {
+        message = error.message
       }
-      setComposerError(message)
-      setVideoColumnMessage(message)
+      // Don't overwrite a more specific message set by submitScenesAsJobs.
+      setComposerError((current) => current ?? message)
+      setVideoColumnMessage((current) => current ?? message)
     } finally {
       setIsSubmitting(false)
     }
@@ -2354,13 +2358,37 @@ export default function DashboardPage() {
         throw new Error(`${sceneLabel} failed; cannot chain remaining scenes`)
       }
       if (status === 'completed' && detail?.video?.storage_path) {
-        const proxied = await proxiedVideoUrl(detail.video.storage_path)
-        const blob = await captureLastFrameAsBlob(proxied)
+        // Prefer the server-provided last_frame_url when available — avoids
+        // the canvas-tainted/CORS path entirely for the common case.
+        const serverLastFrame =
+          typeof detail.last_frame_url === 'string' && /^https?:\/\//i.test(detail.last_frame_url)
+            ? detail.last_frame_url
+            : null
+        if (serverLastFrame) return serverLastFrame
+
+        let proxied: string
+        try {
+          proxied = await proxiedVideoUrl(detail.video.storage_path)
+        } catch (err) {
+          console.error(`${sceneLabel}: proxiedVideoUrl failed`, err)
+          throw new Error(`${sceneLabel}: could not load previous clip (proxy)`)
+        }
+        let blob: Blob
+        try {
+          blob = await captureLastFrameAsBlob(proxied)
+        } catch (err) {
+          console.error(`${sceneLabel}: captureLastFrameAsBlob failed`, err)
+          const reason = err instanceof Error ? err.message : 'unknown'
+          throw new Error(`${sceneLabel}: could not capture last frame (${reason})`)
+        }
         const storagePath = `${userId}/scene-chain-${Date.now()}-${crypto.randomUUID()}.png`
         const { error } = await supabase.storage
           .from(FRAMES_BUCKET)
           .upload(storagePath, blob, { contentType: 'image/png', upsert: false })
-        if (error) throw new Error(error.message)
+        if (error) {
+          console.error(`${sceneLabel}: storage upload failed`, error)
+          throw new Error(`${sceneLabel}: could not upload seed frame (${error.message})`)
+        }
         const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
         return data.publicUrl
       }
