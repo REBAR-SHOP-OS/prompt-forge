@@ -249,7 +249,16 @@ export function VoiceoverDialog({
           ) : null}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="gap-2 sm:gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleDownload}
+            disabled={!audioUrl}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            Download
+          </Button>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             Close
           </Button>
