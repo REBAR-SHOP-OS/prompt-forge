@@ -14,9 +14,9 @@ import { fetchFile, toBlobURL } from '@ffmpeg/util'
 
 // Vite turns these into URLs to hashed assets under /assets/.
 // eslint-disable-next-line import/no-unresolved
-import coreUrl from '@ffmpeg/core/dist/umd/ffmpeg-core.js?url'
+import coreUrl from '@ffmpeg/core?url'
 // eslint-disable-next-line import/no-unresolved
-import wasmUrl from '@ffmpeg/core/dist/umd/ffmpeg-core.wasm?url'
+import wasmUrl from '@ffmpeg/core/wasm?url'
 
 export interface Mp4Result {
   blob: Blob
