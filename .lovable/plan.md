@@ -1,39 +1,29 @@
-هدف: خروجی Final Film نباید بخش‌های فریز/تکرار فریم داشته باشد و ساخت ویدئوی نهایی باید پایدارتر از روش فعلی باشد.
+## مشکل ریشه‌ای
 
-ریشه‌ی مشکل
-- Final Film الان در مرورگر با `canvas.captureStream + requestAnimationFrame + MediaRecorder` ساخته می‌شود.
-- این روش به توان لحظه‌ای مرورگر، decode ویدئو، tab throttling، کندی شبکه و timing وابسته است.
-- وقتی مرورگر حتی کوتاه‌مدت عقب می‌افتد، MediaRecorder آخرین فریم canvas را ادامه می‌دهد؛ نتیجه در فایل نهایی به شکل فریز بخشی از ویدئو دیده می‌شود.
-- پس مشکل فقط پخش نیست؛ خود فایل خروجی می‌تواند با فریم‌های تکراری encode شود.
+با کلیک روی هر کارت در Library، state درست ست می‌شود (`previewVideoId` و `selectedProjectId`)، اما در `previewItem` (DashboardPage.tsx خط ۱۴۸۲) بالاترین اولویت با `lastMergedPreview` است. این یعنی هر وقت آخرین Final Film هنوز در state باشد، **پیش‌نمایش روی همان آخرین خروجی قفل می‌ماند** و انتخاب کاربر در Library نادیده گرفته می‌شود.
 
-برنامه‌ی رفع دائمی
-1. جایگزینی موتور merge فعلی با مسیر پایدارتر
-   - در `mergeVideos.ts` از ضبط canvas/rAF برای کلیپ‌های ویدئویی فاصله می‌گیریم.
-   - برای حالت‌های ساده و رایج Final Film، از capture مستقیم خود `<video>` استفاده می‌کنیم تا فریم‌ها از decoder واقعی ویدئو وارد MediaRecorder شوند، نه از repaint دستی canvas.
-   - فقط برای clipهای تصویری/transitionهای بصری، مسیر canvas محدود و کنترل‌شده باقی می‌ماند.
+علاوه بر این، در `onClick` کارت‌های Library (خط ۴۶۹۵ و ۴۷۰۳)، `setSelectedProjectId` فقط برای آیتم‌هایی که id آن‌ها با `merged-` شروع می‌شود ست می‌شود. کارت‌های Library که از یک کلیپ تکی ذخیره شده‌اند (مثل "Final clip — soundtrack applied") id اصلی job را دارند، پس `selectedProjectId` به `null` می‌رود و کارت‌های منبع در پنل راست به‌جای آن پروژه، کل workspace را نشان می‌دهند.
 
-2. محافظت در برابر clipهای ناسازگار
-   - قبل از شروع merge، هر clip فقط بعد از رسیدن به `canplay`/metadata وارد فرآیند شود.
-   - برای duration نامعتبر، videoWidth/videoHeight صفر، یا source کند/خراب، خطای قابل فهم نشان داده شود و clip خراب وارد Final Film نشود.
+## تغییرات (فقط در `src/modules/generator-ui/pages/DashboardPage.tsx`)
 
-3. جلوگیری از encode شدن dead-time
-   - هنگام seek/load/تعویض clip، recorder نباید زمان خالی یا فریم آخر clip قبلی را ضبط کند.
-   - recorder در زمان‌های انتقال غیرواقعی pause/resume می‌شود تا زمان فایل خروجی فقط زمان واقعی پخش clipها باشد.
+۱. **پاک کردن `lastMergedPreview` هنگام کلیک روی هر کارت Library**  
+   در هر دو هندلر `onClick` و `onKeyDown` کارت Library، قبل از ست کردن preview، `setLastMergedPreview(null)` فراخوانی شود تا preview واقعاً به آن پروژه‌ی کلیک‌شده سوییچ کند.
 
-4. fallback امن برای موارد پیچیده
-   - اگر کاربر transition تصویری، still-image clip، یا ترکیب صوتی پیچیده داشته باشد، مسیر canvas هنوز وجود دارد، اما با watchdog و کنترل lag تقویت می‌شود.
-   - در صورت شناسایی افت شدید frame paint، merge متوقف می‌شود و به جای تولید فایل خراب، پیام retry/کاهش پیچیدگی نشان داده می‌شود.
+۲. **ست کردن `selectedProjectId` برای همه‌ی کارت‌های Library**  
+   شرط `video.id.startsWith('merged-') ? video.id : null` حذف و به‌سادگی `setSelectedProjectId(video.id)` ست شود. این کار باعث می‌شود برای پروژه‌های تک‌کلیپی ذخیره‌شده هم پنل سمت راست فقط کارت‌های همان پروژه را نشان دهد.
 
-5. اعتبارسنجی بعد از ساخت
-   - بعد از merge، duration خروجی با مجموع duration ورودی‌ها مقایسه می‌شود.
-   - اگر اختلاف غیرعادی باشد یا blob ناقص باشد، فایل در Library ثبت نمی‌شود تا Final Film خراب ذخیره نشود.
+۳. **پشتیبانی `displayedClips`/`displayedImages` از پروژه‌های غیر-merged**  
+   منطق `displayedClips` (خط ۱۳۳۵-۱۳۸۷) و `displayedImages` (خط ۱۴۱۹-۱۴۲۹) که از `projectSourceJobs[selectedProjectId]` می‌خواند — برای کارت تک‌کلیپی Library snapshot وجود ندارد. اضافه شود: اگر `selectedProjectId` وجود دارد ولی snapshot ندارد و خود آن id یک job ذخیره‌شده در `librarySavedJobs` است، آن یک job به‌تنهایی به‌عنوان منبع نمایش داده شود (و سایر کلیپ‌ها فیلتر شوند، دقیقاً مانند رفتار فعلی برای پروژه‌های merged).
 
-فایل‌های درگیر
-- `src/modules/generator-ui/lib/mergeVideos.ts`
-- `src/modules/generator-ui/pages/DashboardPage.tsx`
-- در صورت نیاز کوچک: `src/modules/generator-ui/components/VideoWithSoundtrack.tsx` یا player مربوط به preview فقط برای اطمینان از پخش پایدار، نه تغییر UI.
+۴. **قفل preview برای پروژه‌ی تک‌کلیپ**  
+   منطق فعلی در `previewItem` (خط ۱۵۱۴) که می‌گوید «اگر `selectedProjectId` ست است، preview را روی آن قفل کن» را برای حالت تک‌کلیپ هم نگه دار — چون id در `visibleVideos`/`librarySavedJobs` پیدا می‌شود نیازی به تغییر اضافی نیست، فقط مطمئن می‌شویم با حذف `lastMergedPreview` به این شاخه می‌رسد.
 
-ریسک و کنترل
-- تغییر محدود به ساخت Final Film است و تولید کلیپ، Voiceover، Music و Library دست‌نخورده می‌مانند.
-- اگر مرورگر/codec از capture مستقیم پشتیبانی نکند، fallback فعلی حفظ می‌شود تا قابلیت کاملاً از کار نیفتد.
-- تمرکز روی حذف فریز واقعی داخل فایل خروجی است، نه صرفاً مخفی کردن مشکل در پلیر.
+## فایل‌های درگیر
+
+- `src/modules/generator-ui/pages/DashboardPage.tsx` (تنها فایل)
+
+## ریسک
+
+- تغییر کاملاً UI/state-level است، هیچ نوشتنی روی backend ندارد.
+- پاک کردن `lastMergedPreview` فقط هنگام کلیک کاربر اتفاق می‌افتد؛ جریان ساخت Final Film و ذخیره در Library دست‌نخورده می‌ماند.
+- رفتار قبلی (که Final Film تازه‌ساخته بالای همه نمایش داده شود) همچنان تا قبل از اولین کلیک کاربر روی Library حفظ است.

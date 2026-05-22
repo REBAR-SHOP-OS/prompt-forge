@@ -1338,6 +1338,14 @@ export default function DashboardPage() {
       if (snapshot.length > 0) {
         return snapshot.map((s) => liveById.get(s.id) ?? s)
       }
+      // Single-clip Library entry: the selected id is the original job id
+      // (no "merged-" prefix and no snapshot). Show only that one clip.
+      if (!selectedProjectId.startsWith('merged-')) {
+        const savedJob = librarySavedJobs[selectedProjectId]
+        const live = liveById.get(selectedProjectId)
+        const pick = live ?? savedJob
+        return pick ? [pick] : []
+      }
       // Legacy fallback: this Library project was created before snapshots
       // were tracked. Best-effort: show non-merged completed clips that were
       // created at or before the merged entry, and that are not already
@@ -1384,7 +1392,7 @@ export default function DashboardPage() {
       if (byId.has(v.id)) ordered.push(v)
     }
     return ordered
-  }, [generatedVideos, manualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs, mergedEntries])
+  }, [generatedVideos, manualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs, mergedEntries, librarySavedJobs])
 
   const handleCardDragStart = (id: string) => (event: React.DragEvent) => {
     setDraggingId(id)
@@ -1419,7 +1427,9 @@ export default function DashboardPage() {
     if (selectedProjectId) {
       const snapshot = projectSourceImages[selectedProjectId] ?? []
       const liveById = new Map(userImages.map((i) => [i.id, i]))
-      return snapshot.map((s) => liveById.get(s.id) ?? s)
+      if (snapshot.length > 0) return snapshot.map((s) => liveById.get(s.id) ?? s)
+      // Single-clip Library entries never have image sources.
+      if (!selectedProjectId.startsWith('merged-')) return []
     }
     const claimedByProjects = new Set<string>()
     for (const imgs of Object.values(projectSourceImages)) {
@@ -4689,18 +4699,20 @@ export default function DashboardPage() {
                       tabIndex={0}
                       aria-label={`Preview ${video.input_prompt}`}
                       onClick={() => {
+                        setLastMergedPreview(null)
                         setPreviewVideoId(video.id)
                         setIsApprovedPanelOpen(false)
                         // Show this project's source clips in HISTORY.
-                        setSelectedProjectId(video.id.startsWith('merged-') ? video.id : null)
+                        setSelectedProjectId(video.id)
                         setPreviewDismissed(false)
                       }}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault()
+                          setLastMergedPreview(null)
                           setPreviewVideoId(video.id)
                           setIsApprovedPanelOpen(false)
-                          setSelectedProjectId(video.id.startsWith('merged-') ? video.id : null)
+                          setSelectedProjectId(video.id)
                           setPreviewDismissed(false)
                         }
                       }}
