@@ -3887,8 +3887,11 @@ export default function DashboardPage() {
         isError: err instanceof Error,
         keys: err && typeof err === 'object' ? Object.keys(err as object) : null,
       })
-      const { stringifyAny } = await import('@/modules/generator-ui/lib/transcodeToMp4')
-      const msg = stringifyAny(err)
+      const msg = err instanceof Error
+        ? (err.message || err.name || 'Error')
+        : typeof err === 'string'
+          ? err
+          : (() => { try { return JSON.stringify(err) || 'unknown error' } catch { return 'unknown error' } })()
       const urlMatch = msg.match(/https?:\/\/\S+/)
       const filename = urlMatch ? (urlMatch[0].split('?')[0].split('/').pop() || '') : ''
       const friendly = filename
