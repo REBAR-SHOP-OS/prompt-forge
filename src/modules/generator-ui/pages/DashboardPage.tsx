@@ -479,7 +479,7 @@ export default function DashboardPage() {
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
-  const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15 | 45 | 135>(5)
+  const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15 | 30 | 45 | 135>(5)
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '1:1' | '16:9'>(() => {
     if (typeof window === 'undefined') return '16:9'
     try {
@@ -2748,8 +2748,8 @@ export default function DashboardPage() {
       // 45s auto-split: ask scenario-write to break the user's single prompt into
       // three sequential 15s scenes, then chain them via submitScenesAsJobs so each
       // becomes its own card with narrative continuity (frame-to-frame seeding).
-      if (durationSeconds === 45 || durationSeconds === 135) {
-        const expectedScenes = durationSeconds === 135 ? 9 : 3
+      if (durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135) {
+        const expectedScenes = durationSeconds === 135 ? 9 : durationSeconds === 45 ? 3 : 2
         setVideoColumnMessage(`Splitting your prompt into ${expectedScenes} scenes…`)
         let autoScenes: string[] = []
         try {
@@ -2782,9 +2782,10 @@ export default function DashboardPage() {
         // else: fall through to legacy behavior below (N identical 15s clips).
       }
 
-      const iterations = durationSeconds === 135 ? 9 : durationSeconds === 45 ? 3 : 1
+      const iterations = durationSeconds === 135 ? 9 : durationSeconds === 45 ? 3 : durationSeconds === 30 ? 2 : 1
       const perClipDuration: 5 | 10 | 15 =
-        durationSeconds === 45 || durationSeconds === 135 ? 15 : durationSeconds
+        (durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135) ? 15 : durationSeconds
+
 
 
       // The user's current selection always wins for per-clip generation.
@@ -4362,7 +4363,7 @@ export default function DashboardPage() {
       <ScenarioWriterDialog
         open={isScenarioDialogOpen}
         onOpenChange={setIsScenarioDialogOpen}
-        defaultDuration={durationSeconds === 45 || durationSeconds === 135 ? durationSeconds : (durationSeconds as 5 | 10 | 15)}
+        defaultDuration={durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135 ? durationSeconds : (durationSeconds as 5 | 10 | 15)}
         userId={userId}
         onUseAsPrompt={(text, imageUrl) => {
           setPromptText(text)
@@ -5610,7 +5611,7 @@ export default function DashboardPage() {
             </button>
           </div>
           <div role="radiogroup" aria-label="Clip duration" className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
-            {([5, 10, 15, 45, 135] as const).map((sec) => {
+            {([5, 10, 15, 30, 45, 135] as const).map((sec) => {
               const active = durationSeconds === sec
               return (
                 <button

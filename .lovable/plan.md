@@ -1,28 +1,36 @@
-هدف: کاربر بتواند فرایند ساخت ویدئو را در حین رندر کنسل کند. این شامل دو مسیر می‌شود:
+افزودن گزینه‌ی **30s** به انتخاب‌گر مدت‌زمان کلیپ، بین `15s` و `45s`.
 
-1) Final Film (رندر سمت کلاینت — همان مودال "16% Rendering" در اسکرین‌شات)
-2) جاب‌های Pending (تولید کلیپ سمت سرور — کارت‌های ستون راست)
+پیاده‌سازی همان الگوی 45s/135s است (Auto-split به چند صحنه‌ی 15s)، چون پروایدر فعلی کلیپ‌های ۵/۱۰/۱۵ ثانیه‌ای می‌سازد:
 
-برنامه:
+تغییرات در `src/modules/generator-ui/pages/DashboardPage.tsx`:
 
-A. Final Film — افزودن قابلیت کنسل
-- در `src/modules/generator-ui/lib/mergeVideos.ts` پارامتر اختیاری `signal?: AbortSignal` به `mergeVideoUrls` اضافه می‌کنم. در نقاط امن (بین کلیپ‌ها، داخل حلقه‌ی paint، قبل از encode/upload، و در صورت abort داخل MediaRecorder) چک می‌کنیم؛ اگر `signal.aborted` بود recorder/audio و RAF را تمیز متوقف می‌کنیم و یک خطای نام‌گذاری شده `MergeCancelledError` پرتاب می‌کنیم.
-- در `DashboardPage.tsx`:
-  - یک `mergeAbortRef = useRef<AbortController | null>(null)` اضافه می‌کنم.
-  - شروع merge: کنترلر جدید می‌سازم و `signal` را به `mergeVideoUrls` و به `Promise.race` پاس می‌دهم.
-  - دکمه‌ی Final Film در حالت `isMerging` تبدیل به دکمه‌ی Cancel می‌شود (هاور قرمز + آیکن X) و با تایید کاربر، `controller.abort()` صدا زده می‌شود.
-  - در `catch`، اگر خطا `MergeCancelledError` بود بدون alert فقط state ها (`isMerging`, `mergeProgress`, `mergeStage`) ریست می‌شوند و فایل آپلودشده‌ای هم درکار نیست.
-  - برای لغو سمت سرور آپلود وسط راه: قبل از فراخوانی `supabase.storage.upload` چک نهایی abort انجام می‌شود.
-
-B. Pending Jobs — دکمه‌ی Cancel
-- در کارت Pending کنار دکمه‌ی حذف، فقط وقتی `status` در `pending` یا `processing` است یک دکمه‌ی «Cancel» با آیکن X اضافه می‌شود. کلیک → دیالوگ تایید → `jobOrchestratorGateway.deleteJob(jobId)` (همان مسیر فعلی حذف امن سمت سرور با soft-delete که جاب را عملاً متوقف می‌کند) + پاکسازی محلی state ها.
-- داخل مودال پیش‌نمایش بزرگ هم وقتی `isRendering` است، یک دکمه‌ی Cancel rendering در پایین مودال اضافه می‌شود که همان action را صدا می‌زند.
+1. خط 482 — توسعه‌ی type:
+   ```
+   useState<5 | 10 | 15 | 30 | 45 | 135>(5)
+   ```
+2. خط 5613 — افزودن `30` به لیست رادیو:
+   ```
+   [5, 10, 15, 30, 45, 135]
+   ```
+3. خط 2751 — اضافه‌کردن 30 به branch اسپلیت:
+   ```
+   if (durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135)
+   ```
+4. خط 2752 — تعداد صحنه‌ها:
+   ```
+   const expectedScenes = durationSeconds === 135 ? 9 : durationSeconds === 45 ? 3 : 2
+   ```
+5. خط 2785–2787 — fallback تکرار:
+   ```
+   const iterations = durationSeconds === 135 ? 9 : durationSeconds === 45 ? 3 : durationSeconds === 30 ? 2 : 1
+   const perClipDuration: 5 | 10 | 15 =
+     (durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135) ? 15 : durationSeconds
+   ```
+6. خط 4365 — type widen در `defaultDuration` prop: شامل کردن 30 در مسیر split.
 
 فایل‌های تغییریافته:
-- `src/modules/generator-ui/lib/mergeVideos.ts`
-- `src/modules/generator-ui/pages/DashboardPage.tsx`
+- `src/modules/generator-ui/pages/DashboardPage.tsx` (تنها)
 
 ریسک‌ها:
-- نشت منابع MediaRecorder/AudioContext اگر abort به‌درستی پاکسازی نکند → در `finally` همه‌ی منابع را close می‌کنیم.
-- فایل میانی ست (still-frame webmهای آپلودشده برای تصاویر) ممکن است در bucket باقی بمانند؛ همان رفتار فعلی است و در این task پاک نمی‌شوند (ریسک پذیرفته).
-- هیچ تغییری در backend، RLS، یا منطق Draft نمی‌دهیم.
+- اگر edge function `scenario-write` با `durationSeconds: 30` صحنه‌های کمتر از 2 برگرداند، fallback قانون legacy (2 کلیپ ۱۵ ثانیه‌ای با همان پرامپت) فعال می‌شود — رفتار سازگار با 45s.
+- هیچ تغییر backend/auth/DB لازم نیست.
