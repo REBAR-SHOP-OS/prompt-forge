@@ -4118,7 +4118,12 @@ export default function DashboardPage() {
       {showWelcome && <WelcomeVideoOverlay onClose={dismissWelcome} />}
       {(() => {
         if (!trimmingJobId) return null
-        const job = visibleVideos.find((v) => v.id === trimmingJobId)
+        const job =
+          generatedVideos.find((v) => v.id === trimmingJobId) ??
+          mergedEntries.find((v) => v.id === trimmingJobId) ??
+          Object.values(projectSourceJobs).flat().find((v) => v.id === trimmingJobId) ??
+          Object.values(draftSourceJobs).flat().find((v) => v.id === trimmingJobId) ??
+          librarySavedJobs[trimmingJobId]
         if (!job?.video?.storage_path) return null
         if (!trimSrc) return null
         return (
