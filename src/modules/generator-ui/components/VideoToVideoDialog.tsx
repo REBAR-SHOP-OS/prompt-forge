@@ -86,7 +86,11 @@ export default function VideoToVideoDialog({
       onOpenChange(false)
     } catch (e) {
       console.error('[VideoToVideoDialog] edit failed', e)
-      setError(stringifyAny(e) || 'AI video edit failed')
+      const raw = stringifyAny(e) || 'AI video edit failed'
+      const friendly = /ffmpeg/i.test(raw)
+        ? `Couldn't start the in-browser video engine. Please reload the page and try again. (${raw})`
+        : raw
+      setError(friendly)
     } finally {
       setBusy(false)
     }
