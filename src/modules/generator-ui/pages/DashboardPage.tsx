@@ -2746,6 +2746,12 @@ export default function DashboardPage() {
     setComposerError(null)
     setVideoColumnMessage(null)
     resumeSelectedProject()
+    // Lock the project's aspect ratio the instant the user submits — every
+    // subsequent clip in this chain must match. Released only by Start Over.
+    if (!lockedProjectRatio) {
+      setLockedProjectRatio(aspectRatio)
+      persistLockedRatio(aspectRatio)
+    }
 
     try {
       // 45s auto-split: ask scenario-write to break the user's single prompt into
