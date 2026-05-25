@@ -1,13 +1,19 @@
 // Video-to-Video editing via per-frame AI edits.
 //
-// Uses the shared ffmpeg loader from transcodeToMp4 (with local → unpkg
-// fallback + timeouts) so a broken local @ffmpeg/core URL can't leave the
-// dialog stuck on "Preparing… 0%". Every stage is wrapped so failures
-// surface as real, readable error messages.
+// Uses an ISOLATED FFmpeg worker per job (not the shared singleton) so a heap
+// that fragments during long extract/encode runs can't poison other features
+// (trim, Final Film, etc.) — and vice versa. The worker is terminated at the
+// end of every job, success or failure, so the next run starts clean.
+//
+// Extraction is two-tiered: a normal pass first, then a low-memory retry on a
+// fresh worker if the first pass hits `memory access out of bounds`, which is
+// a known ffmpeg.wasm issue on some inputs (see upstream issues #673, #820,
+// #823). Same retry strategy covers the encode step.
 
+import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile } from '@ffmpeg/util'
 import { supabase } from '@/integrations/supabase/client'
-import { getFFmpeg, resetFFmpeg, stringifyAny } from './transcodeToMp4'
+import { createIsolatedFFmpeg, stringifyAny } from './transcodeToMp4'
 
 export interface EditVideoOptions {
   prompt: string
@@ -61,7 +67,6 @@ async function dataUrlToBytes(dataUrl: string): Promise<Uint8Array> {
 }
 
 async function editFrameViaGateway(dataUrl: string, prompt: string): Promise<string> {
-  // 30s soft timeout per frame so a hung gateway call doesn't stall the whole job.
   const timeoutMs = 30_000
   const result = await Promise.race([
     supabase.functions.invoke('ai-image-edit', { body: { imageUrl: dataUrl, prompt } }),
@@ -92,6 +97,86 @@ async function pool<T>(items: T[], concurrency: number, worker: (t: T, i: number
   await Promise.all(runners)
 }
 
+interface ExtractPreset {
+  /** Max width OR height in px; whichever side is larger gets clamped. */
+  maxSide: number
+  /** JPEG quality (FFmpeg -q:v, lower = better, 2..15). */
+  q: number
+  fps: number
+  maxDur: number
+}
+
+/** Build extraction args that cap BOTH axes — vertical clips were the failing case. */
+function buildExtractArgs(p: ExtractPreset): string[] {
+  // scale=if(gt(iw,ih),min(maxSide,iw),-2):if(gt(iw,ih),-2,min(maxSide,ih))
+  // i.e. clamp the longer side to maxSide, keep aspect, ensure even dims.
+  const vf =
+    `fps=${p.fps},` +
+    `scale='if(gt(iw,ih),min(${p.maxSide},iw),-2)':'if(gt(iw,ih),-2,min(${p.maxSide},ih))'`
+  return [
+    '-i', 'src.mp4',
+    '-an',            // drop audio — we don't need it for frame extraction
+    '-sn',            // drop subtitles
+    '-t', String(p.maxDur),
+    '-vf', vf,
+    '-q:v', String(p.q),
+    'f_%03d.jpg',
+  ]
+}
+
+/** Try to extract; on memory-access / generic failure, rebuild worker + downscale. */
+async function extractWithRetry(
+  initial: FFmpeg,
+  srcBytes: Uint8Array,
+  preset: ExtractPreset,
+): Promise<{ ff: FFmpeg; files: { name: string }[] }> {
+  const attempts: ExtractPreset[] = [
+    preset,
+    { ...preset, maxSide: 480, q: 6 },
+    { ...preset, maxSide: 360, q: 8, fps: Math.min(preset.fps, 3) },
+  ]
+
+  let ff = initial
+  let lastErr: unknown = null
+  for (let i = 0; i < attempts.length; i++) {
+    const p = attempts[i]
+    try {
+      if (i > 0) {
+        // Fresh worker — previous heap is suspect.
+        try { ff.terminate() } catch { /* ignore */ }
+        ff = await createIsolatedFFmpeg()
+      }
+      await ff.writeFile('src.mp4', srcBytes)
+      await ff.exec(buildExtractArgs(p))
+      const allFiles = await ff.listDir('/')
+      const files = allFiles
+        .filter((f) => /^f_\d{3}\.jpg$/.test(f.name))
+        .sort((a, b) => a.name.localeCompare(b.name))
+      if (files.length === 0) {
+        throw new Error('produced 0 frames')
+      }
+      return { ff, files }
+    } catch (e) {
+      lastErr = e
+      console.warn(`[editVideoWithAi] extract attempt ${i + 1} failed (maxSide=${p.maxSide}):`, stringifyAny(e))
+      // Clean up FS so the next attempt starts fresh.
+      try {
+        const all = await ff.listDir('/')
+        for (const f of all) {
+          if (/^f_\d{3}\.jpg$/.test(f.name) || f.name === 'src.mp4') {
+            try { await ff.deleteFile(f.name) } catch { /* ignore */ }
+          }
+        }
+      } catch { /* ignore */ }
+    }
+  }
+  throw new Error(
+    `Could not extract frames from this video after ${attempts.length} attempts. ` +
+      `The in-browser video engine ran out of memory. Try a shorter or lower-resolution clip. ` +
+      `(${stringifyAny(lastErr)})`,
+  )
+}
+
 export async function editVideoWithAi(
   sourceUrl: string,
   opts: EditVideoOptions,
@@ -103,92 +188,81 @@ export async function editVideoWithAi(
   if (!prompt) throw new Error('Prompt is required')
 
   opts.onProgress?.({ stage: 'loading', ratio: 0 })
-  let ff = await runStage('load ffmpeg', () => getFFmpeg())
+  let ff = await runStage('load ffmpeg', () => createIsolatedFFmpeg())
   opts.onProgress?.({ stage: 'loading', ratio: 1 })
 
-  // Fetch source as bytes
-  const srcBytes = await runStage('fetch source', () => fetchFile(sourceUrl))
-  await runStage('writeFile src', () => ff.writeFile('src.mp4', srcBytes))
-
-  // Extract frames (capped at maxDur)
-  opts.onProgress?.({ stage: 'extracting', ratio: 0 })
-  await runStage('extract frames', () => ff.exec([
-    '-i', 'src.mp4',
-    '-t', String(maxDur),
-    '-vf', `fps=${fps},scale='min(720,iw)':-2`,
-    '-q:v', '4',
-    'f_%03d.jpg',
-  ]))
-
-  const allFiles = await runStage('listDir', () => ff.listDir('/'))
-  const files = allFiles
-    .filter((f) => /^f_\d{3}\.jpg$/.test(f.name))
-    .sort((a, b) => a.name.localeCompare(b.name))
-  if (files.length === 0) {
-    throw new Error('No frames could be extracted from this video. Try a shorter or different clip.')
-  }
-  opts.onProgress?.({ stage: 'extracting', ratio: 1 })
-
-  let done = 0
-  opts.onProgress?.({ stage: 'editing', ratio: 0, done, total: files.length })
-
-  const editPrompt = `${prompt}. Preserve composition, camera angle, subject identity and framing. Output ONLY the edited image.`
-
-  // Keep edited frame bytes in JS memory so we can re-hydrate the ffmpeg FS
-  // if the encode step fails and we have to reset the worker.
-  const editedFrames: Uint8Array[] = new Array(files.length)
-
-  await pool(files, concurrency, async (file, i) => {
-    const bytes = (await ff.readFile(file.name)) as Uint8Array
-    const inputUrl = dataUrlFromBytes(bytes, 'image/jpeg')
-    let outDataUrl: string
-    try {
-      outDataUrl = await editFrameViaGateway(inputUrl, editPrompt)
-    } catch (e) {
-      console.warn('[editVideoWithAi] frame edit failed, keeping original', file.name, stringifyAny(e))
-      outDataUrl = inputUrl
-    }
-    const outBytes = await dataUrlToBytes(outDataUrl)
-    await ff.writeFile(file.name, outBytes)
-    editedFrames[i] = outBytes
-    done += 1
-    opts.onProgress?.({ stage: 'editing', ratio: done / files.length, done, total: files.length })
-  })
-
-  opts.onProgress?.({ stage: 'encoding', ratio: 0 })
-  const encodeArgs = [
-    '-framerate', String(fps),
-    '-i', 'f_%03d.jpg',
-    '-c:v', 'libx264',
-    '-preset', 'ultrafast',
-    '-pix_fmt', 'yuv420p',
-    '-r', String(fps),
-    '-movflags', '+faststart',
-    'out.mp4',
-  ]
   try {
-    await runStage('encode', () => ff.exec(encodeArgs))
-  } catch (e1) {
-    console.warn('[editVideoWithAi] encode failed, resetting and retrying:', stringifyAny(e1))
-    ff = await runStage('reset ffmpeg', () => resetFFmpeg())
-    // FS was wiped by reset — re-write every frame from the in-memory copy.
-    for (let i = 0; i < files.length; i++) {
-      await ff.writeFile(files[i].name, editedFrames[i])
+    const srcBytes = await runStage('fetch source', () => fetchFile(sourceUrl))
+
+    opts.onProgress?.({ stage: 'extracting', ratio: 0 })
+    const extracted = await extractWithRetry(ff, srcBytes, {
+      maxSide: 720,
+      q: 4,
+      fps,
+      maxDur,
+    })
+    ff = extracted.ff
+    const files = extracted.files
+    opts.onProgress?.({ stage: 'extracting', ratio: 1 })
+
+    let done = 0
+    opts.onProgress?.({ stage: 'editing', ratio: 0, done, total: files.length })
+
+    const editPrompt = `${prompt}. Preserve composition, camera angle, subject identity and framing. Output ONLY the edited image.`
+
+    // Keep edited bytes in JS memory in case the encode step needs a fresh worker.
+    const editedFrames: Uint8Array[] = new Array(files.length)
+
+    await pool(files, concurrency, async (file, i) => {
+      const bytes = (await ff.readFile(file.name)) as Uint8Array
+      const inputUrl = dataUrlFromBytes(bytes, 'image/jpeg')
+      let outDataUrl: string
+      try {
+        outDataUrl = await editFrameViaGateway(inputUrl, editPrompt)
+      } catch (e) {
+        console.warn('[editVideoWithAi] frame edit failed, keeping original', file.name, stringifyAny(e))
+        outDataUrl = inputUrl
+      }
+      const outBytes = await dataUrlToBytes(outDataUrl)
+      await ff.writeFile(file.name, outBytes)
+      editedFrames[i] = outBytes
+      done += 1
+      opts.onProgress?.({ stage: 'editing', ratio: done / files.length, done, total: files.length })
+    })
+
+    opts.onProgress?.({ stage: 'encoding', ratio: 0 })
+    const encodeArgs = [
+      '-framerate', String(fps),
+      '-i', 'f_%03d.jpg',
+      '-c:v', 'libx264',
+      '-preset', 'ultrafast',
+      '-pix_fmt', 'yuv420p',
+      '-r', String(fps),
+      '-threads', '1',
+      '-movflags', '+faststart',
+      'out.mp4',
+    ]
+    try {
+      await runStage('encode', () => ff.exec(encodeArgs))
+    } catch (e1) {
+      console.warn('[editVideoWithAi] encode failed, rebuilding worker and retrying:', stringifyAny(e1))
+      try { ff.terminate() } catch { /* ignore */ }
+      ff = await runStage('reload ffmpeg', () => createIsolatedFFmpeg())
+      for (let i = 0; i < files.length; i++) {
+        await ff.writeFile(files[i].name, editedFrames[i])
+      }
+      await runStage('encode (retry)', () => ff.exec(encodeArgs))
     }
-    await runStage('encode (retry)', () => ff.exec(encodeArgs))
-  }
-  const outData = (await runStage('readFile out', () => ff.readFile('out.mp4'))) as Uint8Array
+    const outData = (await runStage('readFile out', () => ff.readFile('out.mp4'))) as Uint8Array
+    opts.onProgress?.({ stage: 'encoding', ratio: 1 })
 
-  try { await ff.deleteFile('src.mp4') } catch { /* noop */ }
-  try { await ff.deleteFile('out.mp4') } catch { /* noop */ }
-  for (const f of files) {
-    try { await ff.deleteFile(f.name) } catch { /* noop */ }
+    const ab = new ArrayBuffer(outData.byteLength)
+    new Uint8Array(ab).set(outData)
+    const blob = new Blob([ab], { type: 'video/mp4' })
+    const duration = Math.min(maxDur, files.length / fps)
+    return { blob, mimeType: 'video/mp4', extension: 'mp4', duration }
+  } finally {
+    // Always tear down the isolated worker so its heap is fully released.
+    try { ff.terminate() } catch { /* ignore */ }
   }
-  opts.onProgress?.({ stage: 'encoding', ratio: 1 })
-
-  const ab = new ArrayBuffer(outData.byteLength)
-  new Uint8Array(ab).set(outData)
-  const blob = new Blob([ab], { type: 'video/mp4' })
-  const duration = Math.min(maxDur, files.length / fps)
-  return { blob, mimeType: 'video/mp4', extension: 'mp4', duration }
 }
