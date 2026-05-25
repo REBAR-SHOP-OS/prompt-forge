@@ -3538,17 +3538,7 @@ export default function DashboardPage() {
       return
     }
 
-    // Single-card guard: requires either audio (music/voiceover) or an applied edit,
-    // otherwise the "merge" would just re-encode the same clip with no change.
-    if (eligibleClips.length === 1) {
-      const hasAudio = Boolean(musicUrl && musicRange[1] > musicRange[0]) || Boolean(voiceoverUrl)
-      const onlyClip = eligibleClips[0]
-      const hasEdit = onlyClip.kind === 'video' && editedJobIds.has(onlyClip.id)
-      if (!hasAudio && !hasEdit) {
-        setVideoColumnMessage('Add music/voiceover or edit the card before finalizing.')
-        return
-      }
-    }
+    // Single-clip Final Film is always allowed — edits and audio are optional.
     setIsMerging(true)
     setMergeProgress(0)
     setMergeStage(null)
