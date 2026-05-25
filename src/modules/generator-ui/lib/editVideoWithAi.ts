@@ -134,7 +134,11 @@ export async function editVideoWithAi(
 
   const editPrompt = `${prompt}. Preserve composition, camera angle, subject identity and framing. Output ONLY the edited image.`
 
-  await pool(files, concurrency, async (file) => {
+  // Keep edited frame bytes in JS memory so we can re-hydrate the ffmpeg FS
+  // if the encode step fails and we have to reset the worker.
+  const editedFrames: Uint8Array[] = new Array(files.length)
+
+  await pool(files, concurrency, async (file, i) => {
     const bytes = (await ff.readFile(file.name)) as Uint8Array
     const inputUrl = dataUrlFromBytes(bytes, 'image/jpeg')
     let outDataUrl: string
@@ -146,6 +150,7 @@ export async function editVideoWithAi(
     }
     const outBytes = await dataUrlToBytes(outDataUrl)
     await ff.writeFile(file.name, outBytes)
+    editedFrames[i] = outBytes
     done += 1
     opts.onProgress?.({ stage: 'editing', ratio: done / files.length, done, total: files.length })
   })
@@ -166,13 +171,9 @@ export async function editVideoWithAi(
   } catch (e1) {
     console.warn('[editVideoWithAi] encode failed, resetting and retrying:', stringifyAny(e1))
     ff = await runStage('reset ffmpeg', () => resetFFmpeg())
-    // Re-write frames after reset
-    for (const file of files) {
-      const bytes = (await ff.readFile(file.name).catch(() => null)) as Uint8Array | null
-      if (!bytes) {
-        // FS was wiped — bail with a clean error
-        throw new Error('FFmpeg was reset and frame data was lost. Please retry.')
-      }
+    // FS was wiped by reset — re-write every frame from the in-memory copy.
+    for (let i = 0; i < files.length; i++) {
+      await ff.writeFile(files[i].name, editedFrames[i])
     }
     await runStage('encode (retry)', () => ff.exec(encodeArgs))
   }
