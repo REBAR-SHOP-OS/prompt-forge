@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { editVideoWithAi } from '@/modules/generator-ui/lib/editVideoWithAi'
+import { stringifyAny } from '@/modules/generator-ui/lib/transcodeToMp4'
 
 interface VideoToVideoDialogProps {
   open: boolean
@@ -68,8 +69,8 @@ export default function VideoToVideoDialog({
     try {
       const result = await editVideoWithAi(videoUrl, {
         prompt: prompt.trim(),
-        fps: 6,
-        maxDurationSec: 8,
+        fps: 4,
+        maxDurationSec: 6,
         concurrency: 3,
         onProgress: (info) => {
           setStage(info.stage)
@@ -84,7 +85,8 @@ export default function VideoToVideoDialog({
       await onApply(result.blob, result.duration, 'mp4')
       onOpenChange(false)
     } catch (e) {
-      setError((e as Error).message ?? 'AI video edit failed')
+      console.error('[VideoToVideoDialog] edit failed', e)
+      setError(stringifyAny(e) || 'AI video edit failed')
     } finally {
       setBusy(false)
     }
@@ -106,7 +108,7 @@ export default function VideoToVideoDialog({
             <Wand2 className="h-4 w-4 text-rose-400" /> Video-to-Video Editing
           </DialogTitle>
           <DialogDescription className="line-clamp-2">
-            {title ?? 'Describe how to transform this video. The AI edits up to 8 seconds at 6 fps.'}
+            {title ?? 'Describe how to transform this video. The AI edits up to 6 seconds at 4 fps.'}
           </DialogDescription>
         </DialogHeader>
 

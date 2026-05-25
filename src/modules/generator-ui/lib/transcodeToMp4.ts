@@ -89,7 +89,7 @@ async function loadRemote(ff: FFmpeg): Promise<void> {
   )
 }
 
-async function getFFmpeg(): Promise<FFmpeg> {
+export async function getFFmpeg(): Promise<FFmpeg> {
   if (ffmpegSingleton) return ffmpegSingleton
   if (loadingPromise) return loadingPromise
   loadingPromise = (async () => {
@@ -120,7 +120,7 @@ async function getFFmpeg(): Promise<FFmpeg> {
 }
 
 /** Force-reload the core after a failed exec — releases the WASM heap. */
-async function resetFFmpeg(): Promise<FFmpeg> {
+export async function resetFFmpeg(): Promise<FFmpeg> {
   try { ffmpegSingleton?.terminate() } catch { /* ignore */ }
   ffmpegSingleton = null
   loadingPromise = null
