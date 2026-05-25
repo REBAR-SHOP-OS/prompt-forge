@@ -136,6 +136,33 @@ export async function resetFFmpeg(): Promise<FFmpeg> {
   return await getFFmpeg()
 }
 
+/**
+ * Create a brand-new, NON-singleton FFmpeg instance with its own worker + heap.
+ * Use for jobs that do many execs in a row (e.g. per-frame video editing) so
+ * heap fragmentation from one job can't poison the shared singleton or vice
+ * versa. Caller is responsible for calling `terminate()` when done.
+ */
+export async function createIsolatedFFmpeg(): Promise<FFmpeg> {
+  const ff = new FFmpeg()
+  try {
+    await loadLocal(ff)
+    return ff
+  } catch (eLocal) {
+    try { ff.terminate() } catch { /* ignore */ }
+    const ff2 = new FFmpeg()
+    try {
+      await loadRemote(ff2)
+      return ff2
+    } catch (eRemote) {
+      try { ff2.terminate() } catch { /* ignore */ }
+      throw new Error(
+        `Video engine (ffmpeg) failed to start — local: ${stringifyAny(eLocal)} | remote: ${stringifyAny(eRemote)}`,
+      )
+    }
+  }
+}
+
+
 function pickInputExt(mimeType: string, fallback?: string): string {
   const mt = (mimeType || '').toLowerCase()
   if (mt.includes('mp4')) return 'mp4'
