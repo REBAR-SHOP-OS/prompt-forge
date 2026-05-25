@@ -986,7 +986,24 @@ export default function DashboardPage() {
       setTrimSrc(edited)
       return
     }
-    const job = visibleVideos.find((v) => v.id === trimmingJobId)
+    // Look across every snapshot source we render cards from, not just
+    // visibleVideos, so Trim works on project/draft snapshot cards too.
+    const findById = (id: string): JobDetail | undefined => {
+      const live = generatedVideos.find((v) => v.id === id)
+      if (live) return live
+      const merged = mergedEntries.find((v) => v.id === id)
+      if (merged) return merged
+      for (const arr of Object.values(projectSourceJobs)) {
+        const hit = arr.find((v) => v.id === id)
+        if (hit) return hit
+      }
+      for (const arr of Object.values(draftSourceJobs)) {
+        const hit = arr.find((v) => v.id === id)
+        if (hit) return hit
+      }
+      return librarySavedJobs[id]
+    }
+    const job = findById(trimmingJobId)
     const raw = job?.video?.storage_path
     if (!raw) {
       setTrimSrc(null)
@@ -4101,7 +4118,12 @@ export default function DashboardPage() {
       {showWelcome && <WelcomeVideoOverlay onClose={dismissWelcome} />}
       {(() => {
         if (!trimmingJobId) return null
-        const job = visibleVideos.find((v) => v.id === trimmingJobId)
+        const job =
+          generatedVideos.find((v) => v.id === trimmingJobId) ??
+          mergedEntries.find((v) => v.id === trimmingJobId) ??
+          Object.values(projectSourceJobs).flat().find((v) => v.id === trimmingJobId) ??
+          Object.values(draftSourceJobs).flat().find((v) => v.id === trimmingJobId) ??
+          librarySavedJobs[trimmingJobId]
         if (!job?.video?.storage_path) return null
         if (!trimSrc) return null
         return (
