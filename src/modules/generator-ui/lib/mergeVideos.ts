@@ -278,13 +278,23 @@ function paintTransitionFrame(
   }
 }
 
+export class MergeCancelledError extends Error {
+  constructor() {
+    super('Merge cancelled')
+    this.name = 'MergeCancelledError'
+  }
+}
+
 export async function mergeVideoUrls(
   urls: string[],
   onProgress?: MergeProgressCallback,
   audio?: MergeAudioOptions,
   transitions?: TransitionSpec[],
+  signal?: AbortSignal,
 ): Promise<MergeResult> {
   if (urls.length === 0) throw new Error('No videos to merge')
+  if (signal?.aborted) throw new MergeCancelledError()
+
 
   const norm = normalizeAudioOptions(audio)
   const musicTrack = norm?.music && norm.music.endSec > norm.music.startSec ? norm.music : undefined
