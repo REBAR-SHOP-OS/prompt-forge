@@ -4256,13 +4256,20 @@ export default function DashboardPage() {
           librarySavedJobs[v2vJobId]
         if (!job?.video?.storage_path) return null
         if (!v2vSrc) return null
+        const sourceRatio = getRatioFor(job)
         return (
           <VideoToVideoDialog
             open
             onOpenChange={(o) => { if (!o) { setV2vJobId(null); setV2vSrc(null) } }}
             videoUrl={v2vSrc}
+            userId={userId}
+            sourceAspectRatio={sourceRatio}
             title={job?.input_prompt ?? undefined}
-            onApply={applyTrimToCard(v2vJobId)}
+            onJobCreated={(seeded, ratio) => {
+              setGeneratedVideos((curr) => mergeJob(curr, seeded))
+              rememberClipRatio(seeded.id, ratio)
+              markActiveJob(seeded.id)
+            }}
           />
         )
       })()}
