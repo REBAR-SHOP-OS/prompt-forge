@@ -1,42 +1,51 @@
-## Problem
+## هدف
+رفع ریشه‌ای خطای Video-to-Video تا دیالوگ روی `Preparing… 0%` گیر نکند و `ffmpeg` در محیط Vite به‌صورت پایدار لود شود.
 
-The Video-to-Video dialog stays at **"Preparing… 0%"** forever. That stage corresponds to `editVideoWithAi`'s `getFFmpeg()` call — i.e. ffmpeg.wasm core never finishes loading. The error swallowed by the dialog is empty, so nothing surfaces to the user.
+## مشکل دقیق
+بررسی کد، لاگ و شبکه نشان داد:
+- `ffmpeg-core.js` و `ffmpeg-core.wasm` از مرورگر با `200` لود می‌شوند، پس مشکل فقط «نبودن فایل» نیست.
+- خطا در مرحله‌ی `ffmpeg.load()` رخ می‌دهد و handshake با worker کامل نمی‌شود.
+- نسخه‌ی فعلی `@ffmpeg/ffmpeg` از worker ماژولی استفاده می‌کند و امکان پاس دادن `classWorkerURL`، `workerURL`، `coreURL` و `wasmURL` را دارد.
+- loader فعلی در `transcodeToMp4.ts` فقط `coreURL/wasmURL` را می‌دهد و worker را صریح و سازگار با Vite تنظیم نمی‌کند.
+- fallback فعلی هم به `dist/umd` تکیه دارد، در حالی که برای این پکیج/محیط Vite مسیر `esm` و worker صریح پایدارتر است.
 
-`editVideoWithAi.ts` has its own naïve loader:
+## برنامه اجرا
+### 1) بازنویسی loader مشترک ffmpeg
+فایل: `src/modules/generator-ui/lib/transcodeToMp4.ts`
+- وارد کردن URL لوکال worker از خود پکیج `@ffmpeg/ffmpeg`.
+- تغییر loader از حالت فعلی به loader صریح و کامل:
+  - local: `coreURL + wasmURL + classWorkerURL`
+  - remote fallback: `dist/esm` با `coreURL + wasmURL + workerURL + classWorkerURL`
+- حذف وابستگی به fallback ناقص فعلی مبتنی بر `umd`.
+- نگه داشتن timeoutها، singleton و `resetFFmpeg`.
+- اگر load شکست خورد، خطا شامل این باشد که failure در کدام بخش بوده: `class worker`, `core`, `wasm`, یا `remote fallback`.
 
-```ts
-await ff.load({ coreURL: core, wasmURL: wasm })
-```
+### 2) هم‌راستا کردن مسیر Video-to-Video با loader جدید
+فایل: `src/modules/generator-ui/lib/editVideoWithAi.ts`
+- بدون ساخت مسیر موازی جدید، از همان loader اصلاح‌شده‌ی مشترک استفاده شود.
+- خطاهای مرحله‌ی load/extract/edit/encode واضح بمانند.
+- اگر reset/retry لازم شد، روی همان loader نهایی انجام شود.
 
-with **no timeout, no remote fallback, no reset on retry**. Meanwhile `transcodeToMp4.ts` already ships a robust loader (`getFFmpeg`, `resetFFmpeg`, `stringifyAny`) with local → unpkg fallback + 60s timeouts, which is what the working Final Film pipeline uses. The fact that Final Film works but Video-to-Video doesn't strongly indicates the local `@ffmpeg/core` URL is failing in this preview and the editor needs the same fallback.
+### 3) شفاف‌سازی خطا در UI
+فایل: `src/modules/generator-ui/components/VideoToVideoDialog.tsx`
+- نمایش پیام خطای نهایی حفظ شود، اما متن کاربرپسندتر شود تا اگر باز هم load شکست خورد، دقیقاً مشخص باشد مشکل لود موتور ویدئو است نه prompt یا خود ویدئو.
+- متن progress فقط وقتی ffmpeg واقعاً لود شد از `Preparing…` عبور کند.
 
-## Plan
+### 4) اعتبارسنجی بعد از اصلاح
+- بررسی اینکه با باز کردن دیالوگ، مرحله‌ی `Preparing…` از 0٪ عبور کند.
+- تست اینکه extraction شروع شود و progress stage عوض شود.
+- تست اینکه Final Film/trim که از همان loader استفاده می‌کند regress نشود.
+- حذف هر کد مرده یا fallback ناقص قبلی اگر بعد از اصلاح دیگر استفاده نشود.
 
-Frontend-only changes. No DB, no edge function, no secret changes.
+## جزئیات فنی
+- ریشه‌ی مشکل در خود feature Video-to-Video نیست؛ در loader مشترک ffmpeg است.
+- برای این نسخه از `@ffmpeg/ffmpeg`، `load()` از worker ماژولی استفاده می‌کند و `classWorkerURL` می‌تواند برای Vite ضروری باشد.
+- از آن‌جا که `ffmpeg-core.js` و `wasm` با 200 برمی‌گردند ولی `load()` timeout می‌شود، failure محتمل در bootstrap شدن worker/worker-to-core chain است، نه دانلود فایل خام.
+- راه‌حل درست این است که worker chain به‌صورت explicit و سازگار با Vite تعریف شود، نه اینکه فقط timeout را بیشتر کنیم.
 
-### 1. `src/modules/generator-ui/lib/transcodeToMp4.ts`
-- Export `getFFmpeg`, `resetFFmpeg`, and `stringifyAny` so other modules can reuse the proven loader.
-
-### 2. `src/modules/generator-ui/lib/editVideoWithAi.ts`
-- Remove the local `ffmpegSingleton` + `getFFmpeg()` and the `@ffmpeg/core` / `wasm` imports.
-- Import `{ getFFmpeg, resetFFmpeg, stringifyAny }` from `./transcodeToMp4`.
-- Wrap every ffmpeg/network stage in a `runStage(label, fn)` helper so thrown errors become `Error("video-edit <stage> failed: <real reason>")` instead of empty strings.
-- After `await getFFmpeg()`, immediately emit `onProgress({ stage: 'loading', ratio: 1 })` so the UI clearly moves off 0%.
-- After `ff.exec(extract)` , verify `listDir` returned ≥1 frame; if 0, throw a clear "No frames could be extracted" error.
-- Wrap each `supabase.functions.invoke('ai-image-edit', …)` in a 30s `AbortController` timeout so a hung gateway call surfaces instead of silently stalling.
-- On any failure inside the encode step, call `resetFFmpeg()` once and retry, mirroring Final Film's recovery.
-- Reduce defaults: `fps` 6 → **4**, `maxDurationSec` 8 → **6** (caps API calls at 24 — safer for rate limits).
-
-### 3. `src/modules/generator-ui/components/VideoToVideoDialog.tsx`
-- Replace `setError((e as Error).message ?? 'AI video edit failed')` with `setError(stringifyAny(e) || 'AI video edit failed')` so non-Error throws and empty messages still render a readable string.
-- Update the dialog caption text to reflect new defaults (6s @ 4fps).
-
-## Files touched
-
-- `src/modules/generator-ui/lib/transcodeToMp4.ts` (export 3 helpers)
-- `src/modules/generator-ui/lib/editVideoWithAi.ts` (rewrite loader + error handling)
-- `src/modules/generator-ui/components/VideoToVideoDialog.tsx` (better error display)
-
-## Validation
-
-After build, open the dialog with the same clip, submit any prompt, and watch the stage label progress past "Preparing… 0%". If ffmpeg core still cannot load, the visible error will now be e.g. *"FFmpeg core could not be loaded — local: … | remote: …"* instead of nothing, which tells us exactly what to fix next.
+## خروجی مورد انتظار
+بعد از پیاده‌سازی، Video-to-Video باید:
+- از 0٪ عبور کند
+- وارد مرحله‌ی `Extracting frames…` شود
+- در صورت خطا، پیام واقعی و دقیق نشان دهد
+- از همان زیرساخت پایدار ffmpeg در کل اپ استفاده کند
