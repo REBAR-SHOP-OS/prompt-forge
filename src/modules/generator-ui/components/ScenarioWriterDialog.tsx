@@ -23,7 +23,7 @@ type Props = {
 
 }
 
-const DURATIONS: ScenarioDuration[] = [5, 10, 15, 45, 135]
+const DURATIONS: ScenarioDuration[] = [5, 10, 15, 30, 45, 135]
 const SCENE_RANGES = ['0–15s', '15–30s', '30–45s']
 const FRAMES_BUCKET = 'wan-frames'
 
