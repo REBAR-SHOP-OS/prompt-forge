@@ -643,7 +643,20 @@ export async function mergeVideoUrls(
     if (liveTicker) { clearInterval(liveTicker); liveTicker = null }
   }
 
+  const abortPromise = new Promise<'aborted'>((resolve) => {
+    if (!signal) return
+    if (signal.aborted) { resolve('aborted'); return }
+    signal.addEventListener('abort', () => resolve('aborted'), { once: true })
+  })
+  const raceAbort = async <T,>(p: Promise<T>): Promise<T> => {
+    const r = await Promise.race([p, abortPromise])
+    if (r === 'aborted') throw new MergeCancelledError()
+    return r as T
+  }
+
   for (let i = 0; i < urls.length; i++) {
+    if (signal?.aborted) throw new MergeCancelledError()
+
     const video = preloaded[i]
     const dur = Number.isFinite(video.duration) ? video.duration : 0
 
