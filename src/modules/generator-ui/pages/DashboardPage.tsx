@@ -3632,6 +3632,8 @@ export default function DashboardPage() {
         setTimeout(() => reject(new Error('Final Film took too long (>10 min). Please try again with fewer or shorter clips.')), PIPELINE_TIMEOUT_MS),
       )
 
+      const abortController = new AbortController()
+      mergeAbortRef.current = abortController
       const mergeRes = await Promise.race([
         mergeVideoUrls(
           urls,
@@ -3652,9 +3654,11 @@ export default function DashboardPage() {
           },
           audioOpt,
           transitionsForMerge,
+          abortController.signal,
         ),
         pipelineTimeout,
       ])
+      if (abortController.signal.aborted) throw new MergeCancelledError()
 
       setMergeStage('uploading')
       setMergeProgress(99)
@@ -3671,6 +3675,7 @@ export default function DashboardPage() {
       )
       const { error: upErr } = await Promise.race([uploadPromise, uploadTimeout]) as Awaited<typeof uploadPromise>
       if (upErr) throw new Error(upErr.message)
+
       setMergeProgress(100)
       setMergeStage(null)
       const { data } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(storagePath)
