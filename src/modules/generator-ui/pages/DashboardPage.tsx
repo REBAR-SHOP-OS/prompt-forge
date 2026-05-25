@@ -1021,6 +1021,47 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trimmingJobId])
 
+  // Resolve a CORS-safe URL for the Video-to-Video dialog. Same lookup as Trim.
+  useEffect(() => {
+    let cancelled = false
+    if (!v2vJobId) {
+      setV2vSrc(null)
+      return
+    }
+    const edited = editedClips[v2vJobId]?.url
+    if (edited) {
+      setV2vSrc(edited)
+      return
+    }
+    const findById = (id: string): JobDetail | undefined => {
+      const live = generatedVideos.find((v) => v.id === id)
+      if (live) return live
+      const merged = mergedEntries.find((v) => v.id === id)
+      if (merged) return merged
+      for (const arr of Object.values(projectSourceJobs)) {
+        const hit = arr.find((v) => v.id === id)
+        if (hit) return hit
+      }
+      for (const arr of Object.values(draftSourceJobs)) {
+        const hit = arr.find((v) => v.id === id)
+        if (hit) return hit
+      }
+      return librarySavedJobs[id]
+    }
+    const job = findById(v2vJobId)
+    const raw = job?.video?.storage_path
+    if (!raw) {
+      setV2vSrc(null)
+      return
+    }
+    setV2vSrc(null)
+    proxiedVideoUrl(raw)
+      .then((u) => { if (!cancelled) setV2vSrc(u) })
+      .catch(() => { if (!cancelled) setV2vSrc(raw) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v2vJobId])
+
   const applyTrimToCard = (jobId: string) => async (
     blob: Blob,
     newDuration: number,
