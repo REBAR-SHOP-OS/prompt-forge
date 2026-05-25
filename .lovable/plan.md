@@ -1,49 +1,68 @@
-## مشکل (Root Cause)
+# افزودن انتخاب ناحیه و بازه زمانی به Video-to-Video
 
-در `src/modules/generator-ui/pages/DashboardPage.tsx` (خطوط ۲۲۶۴–۲۳۴۲) یک افکت در زمان mount اجرا می‌شود که:
+## هدف
+کاربر بتواند روی فریم اول ویدیو **یک کادر مستطیلی** بکشد تا دقیقاً مشخص کند کجای صحنه باید تغییر کند، و یک **بازه زمانی** (شروع/پایان ثانیه) هم انتخاب کند. هر دو به‌صورت توضیحات ساختاریافته به پرامپت Veo اضافه می‌شوند تا مدل بهتر بفهمد کجا و کِی را تغییر دهد.
 
-1. **هیچ‌گاه** کارت‌های `generatedVideos` (ستون Pending / SHOWING PROJECT) و `userImages` را از بک‌اند دوباره بارگذاری نمی‌کند.
-2. در عوض هر job/image ای را که در `activeJobIds` / `projectSourceJobs` / `draftSourceJobs` / `librarySavedJobs` لوکال‌استوریج پیدا نشود، **به‌صورت دائمی از بک‌اند پاک می‌کند** (`jobOrchestratorGateway.deleteJob` و `generatorUiGateway.deleteUserImage`).
+## تغییرات
 
-نتیجه:
-- بعد از Refresh ستون **Pending** خالی می‌شود چون `generatedVideos` همیشه با `[]` شروع می‌شود و هرگز هیدریت نمی‌شود.
-- اگر کلید localStorage یک مرورگر/تب تمیز شود یا با تأخیر هیدریت شود، کارت‌های Library / Drafts / منابع پروژه به‌صورت دائمی از دیتابیس حذف می‌شوند و قابل بازیابی نیستند.
+### `src/modules/generator-ui/components/VideoToVideoDialog.tsx`
+تنها فایلی که عوض می‌شود.
 
-این دقیقاً برخلاف خواسته کاربر است: «تنها وقتی خودِ یوزر پروژه را حذف کند باید از مموری حذف شود».
+1. **آیکون جدید کنار textarea**
+   - دکمه‌ای با آیکون `Crop` (از lucide-react) با تولتیپ «Select area to edit».
+   - بعد از کلیک، حالت Select فعال می‌شود و یک overlay روی پلیر ویدیو نمایش داده می‌شود.
 
-## راه‌حل (یک مسیر تمیز و تک‌خطی)
+2. **Selection overlay روی پلیر**
+   - ویدیو pause می‌شود و یک `<canvas>`/`<div>` با موقعیت absolute روی ویدیو می‌آید.
+   - کاربر با drag یک مستطیل می‌کشد؛ rectangle با border خط‌چین رزی نمایش داده می‌شود.
+   - دکمه‌های «Confirm» / «Clear» در گوشه overlay.
+   - مختصات به‌صورت درصد (نسبت به ابعاد ویدیو، نه پیکسل) ذخیره می‌شود تا مستقل از resolution باشد: `{ xPct, yPct, wPct, hPct }`.
 
-افکت هیدریشن را به یک **بازیابی غیرمخرّب (read-only restore)** تبدیل می‌کنیم، بدون افزودن endpoint جدید، بدون تغییر بک‌اند، بدون تغییر UI.
+3. **انتخاب بازه زمانی (Time range)**
+   - زیر textarea یک range slider دوسر (با دو `<Slider>` shadcn یا dual-input ساده) از `0` تا `video.duration`.
+   - مقادیر `startSec` و `endSec` با clamp.
+   - برچسب کوچک: `Apply change between 2.0s – 5.5s`.
+   - اگر کاربر چیزی انتخاب نکند، پیش‌فرض کل کلیپ است و چیزی به پرامپت اضافه نمی‌شود.
 
-### تغییرات در `src/modules/generator-ui/pages/DashboardPage.tsx`
+4. **ساخت پرامپت غنی‌شده**
+   - تابع `buildAugmentedPrompt(userPrompt, region?, timeRange?)` که خروجی فعلی را گسترش می‌دهد:
+     ```
+     {userPrompt}
 
-بازنویسی بلوک خطوط ۲۲۶۴–۲۳۴۲ (`hydrationRanRef` effect):
+     — Target region: focus the change on the area roughly in the
+       {vertical} {horizontal} of the frame (approx. {xPct}%–{xPct+wPct}% from the left,
+       {yPct}%–{yPct+hPct}% from the top). Leave everything outside this area unchanged.
 
-1. حذف کامل منطقِ «orphan delete» (هر دو `jobOrchestratorGateway.deleteJob` و `generatorUiGateway.deleteUserImage` در این افکت).
-2. به‌جای آن، پس از فراخوانی `listMyJobs()` و `select id from generator_user_images`:
-   - برای هر `summary` که در `workspaceHiddenJobIds` نباشد، `jobOrchestratorGateway.getJob(id)` را موازی فراخوانی کرده و نتیجه را با `mergeJob` به `generatedVideos` اضافه کن (همان الگوی `hydrateJobs` موجود در خط ۳۷۶).
-   - برای تصاویر، ردیف‌های کامل را با `select id, storage_path, created_at, still_duration_seconds, width, height` بخوان و آن‌هایی که در `workspaceHiddenImageIds` نیستند را در `setUserImages` بریز.
-3. کامنت «MANDATORY RULE: Pending is NOT a history view» به همراه منطق پاکسازی حذف می‌شود؛ ستون Pending از این پس از روی workspace persisted (همان `activeJobIds` و `workspaceHiddenJobIds` که از قبل در localStorage هستند) و داده‌های بازیابی‌شده از بک‌اند ساخته می‌شود.
-4. حذف فقط زمانی اتفاق می‌افتد که کاربر روی Trash یک کارت کلیک کند (مسیر موجود `handleDeleteClip` / `handleDeleteProject` که `workspaceHiddenJobIds` + `jobOrchestratorGateway.deleteJob` را فراخوانی می‌کنند — دست‌نخورده باقی می‌مانند).
+     — Target time window: apply the change between {startSec}s and {endSec}s of the clip.
+       Before and after that window the scene should match the original.
 
-### نتیجه پس از اعمال
+     — Keep the exact same composition, camera angle, framing, lighting,
+       subject identity and motion as the reference frame. Only change what
+       was explicitly requested above. Do not add new subjects. Do not
+       change the environment unless asked.
+     ```
+   - `{vertical}` و `{horizontal}` از مرکز کادر محاسبه می‌شوند (top/middle/bottom + left/center/right) تا توضیح برای مدل طبیعی‌تر باشد.
 
-- **Library → Final Videos / Drafts**: همان localStorage فعلی + پشتیبان بک‌اند (چون دیگر هیچ‌چیز silently حذف نمی‌شود).
-- **ستون Pending (SHOWING PROJECT)**: بعد از Refresh دقیقاً همان کارت‌هایی که قبل از رفرش بودند بازیابی می‌شوند.
-- **حذف کارت/پروژه** فقط با اقدام صریح کاربر (دکمه trash) انجام می‌شود — مطابق خواسته.
+5. **رسم کادر روی فریم آپلودی (اختیاری ولی توصیه‌شده)**
+   - در `snapshotFirstFrame`، اگر `region` تنظیم شده باشد، **روی همان canvas** قبل از `toBlob` یک مستطیل نیمه‌شفاف رزی + خط پررنگ بکشیم.
+   - این کار به Veo کمک می‌کند بصری هم بفهمد کدام ناحیه را عوض کند (چون Veo از mask پشتیبانی نمی‌کند، این تنها سیگنال بصری ممکن است).
+   - یک checkbox کوچک «Show region on reference frame» (پیش‌فرض روشن) که کاربر بتواند خاموش کند.
 
-## فایل‌های تغییرکننده
+6. **State و reset**
+   - state جدید: `selectMode`, `region`, `timeRange`, `videoDuration`.
+   - در effect مربوط به `open=false`، همه را پاک می‌کنیم (هم‌راستا با reset فعلی).
 
-- `src/modules/generator-ui/pages/DashboardPage.tsx` — فقط بلوک ۲۲۶۴–۲۳۴۲ بازنویسی می‌شود.
+## بدون تغییر در
+- Edge functions و adapter Veo (همه چیز همچنان از طریق همان پرامپت متنی + first frame می‌رود).
+- `jobOrchestratorGateway.createJob` و امضای آن.
+- Persistence/hydration در `DashboardPage`.
 
-## ریسک
+## محدودیت‌ها (شفاف به کاربر)
+- Veo از mask ورودی پشتیبانی نمی‌کند؛ region و time range به‌صورت **راهنمای متنی + overlay بصری روی فریم مرجع** ارسال می‌شوند. این کیفیت targeting را بالا می‌برد ولی تضمین قطعی نیست.
+- خروجی Veo همچنان حداکثر ۸ ثانیه است؛ time range فقط به مدل می‌گوید «در این بازه از کلیپ تغییر بده، بقیه‌اش مطابق اصل بماند».
 
-- چون منطقِ پاک‌کردن jobهای واقعاً رهاشده (مثلاً اگر کاربر در گذشته localStorage را پاک کرده باشد و jobهای قدیمی در DB مانده باشند) برداشته می‌شود، ممکن است در دفعه اول، چند کارت قدیمی هم در Pending ظاهر شوند. این دقیقاً همان رفتاری است که کاربر خواسته («تا وقتی خودش حذف نکند نباید از مموری برود»). کاربر می‌تواند با دکمه Trash هر کارتی را که نمی‌خواهد پاک کند.
-- هیچ تغییری در RLS، migration، یا قراردادهای gateway لازم نیست.
-
-## چک‌لیست تست
-
-1. چند Job بساز تا در Pending ظاهر شوند → Refresh کن → باید همه دوباره ظاهر شوند.
-2. یک پروژه را Final Film کن → در Library/Final Videos ذخیره شود → Refresh → باقی بماند.
-3. روی Trash یک کارت کلیک کن → باید حذف شود → Refresh → بازنگردد.
-4. Start Over بزن → کارت‌ها از Pending به Library/Hidden منتقل شوند (رفتار موجود) → Refresh → Library سالم بماند.
+## تست دستی
+1. باز کردن دیالوگ → کلیک روی آیکون Crop → کشیدن کادر دور سوژه → Confirm.
+2. تنظیم بازه ۲s–۵s با اسلایدر.
+3. نوشتن پرامپت «change the helmet color to red» → Apply.
+4. بررسی کنسول: پرامپت ارسال‌شده باید شامل بخش‌های Target region / Target time window باشد و فریم آپلودشده در bucket باید کادر رزی روی هلمت داشته باشد.
