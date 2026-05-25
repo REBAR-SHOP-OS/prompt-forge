@@ -3792,15 +3792,42 @@ export default function DashboardPage() {
           persistProjectSourceImages(nextImgMap)
         }
       }
-      // The in-progress chain just became a Final video — close out any
-      // draft entries tied to this finalization so they stop appearing in
-      // the Drafts section. This covers both the implicit active draft and
-      // the case where the user explicitly opened a saved Draft from the
-      // Library and finalized it.
+      // The in-progress chain just became a Final video — retire any draft
+      // entries tied to this finalization so they disappear from the Drafts
+      // section. Source clips are already claimed under
+      // projectSourceJobs[mergedId], so they remain visible inside the new
+      // Library card's HISTORY view.
       {
-        // Drafts are never auto-removed by Final Film. Only close the active
-        // draft id so the next workspace activity starts a fresh draft.
-        // Existing draft cards stay in Library until the user deletes them.
+        const draftIdsToRemove = new Set<string>()
+        if (activeDraftId) draftIdsToRemove.add(activeDraftId)
+        if (selectedProjectId && selectedProjectId.startsWith('draft-')) {
+          draftIdsToRemove.add(selectedProjectId)
+        }
+        if (draftIdsToRemove.size > 0) {
+          setDraftEntries((prev) => {
+            const next = prev.filter((d) => !draftIdsToRemove.has(d.id))
+            persistDraftEntries(next)
+            return next
+          })
+          setDraftSourceJobs((prev) => {
+            const next = { ...prev }
+            for (const id of draftIdsToRemove) delete next[id]
+            persistDraftSourceJobs(next)
+            return next
+          })
+          setDraftSourceImages((prev) => {
+            const next = { ...prev }
+            for (const id of draftIdsToRemove) delete next[id]
+            persistDraftSourceImages(next)
+            return next
+          })
+          setDeletedDraftIds((prev) => {
+            const next = new Set(prev)
+            for (const id of draftIdsToRemove) next.add(id)
+            persistDeletedDraftIds(next)
+            return next
+          })
+        }
         setActiveDraftId(null)
         persistActiveDraftId(null)
         if (selectedProjectId && selectedProjectId.startsWith('draft-')) {

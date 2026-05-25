@@ -1,9 +1,27 @@
-## Remove single-clip Final Film guard
+## Auto-remove draft after Final Film succeeds
 
-In `src/modules/generator-ui/pages/DashboardPage.tsx` (lines 3541-3551), remove the block that blocks Final Film when there's only one clip without audio/edits and shows the message "Add music/voiceover or edit the card before finalizing."
+Currently in `src/modules/generator-ui/pages/DashboardPage.tsx` lines ~3795-3809, after a successful Final Film the code intentionally keeps the draft entry in Library (only clearing `activeDraftId`). The comment says: "Drafts are never auto-removed by Final Film."
 
-After removal, a single clip will go through the merge pipeline normally and be saved to Final Videos just like multi-clip flows. The edit/audio addition remains fully optional for the user.
+Change this behavior so a finalized draft is removed from the Drafts section.
 
-No other logic changes. The merge pipeline already handles a single clip correctly (it re-encodes and uploads to the final-videos bucket).
+### What to do
 
-**File:** `src/modules/generator-ui/pages/DashboardPage.tsx` only.
+In that block, after `setMergedEntries` succeeds, compute the set of draft ids to retire:
+- `activeDraftId` (the implicit in-progress draft)
+- `selectedProjectId` if it starts with `draft-` (user explicitly opened a draft and finalized it)
+
+For each such draft id:
+1. Remove from `draftEntries` and persist via `persistDraftEntries`.
+2. Remove its entry from `draftSourceJobs` and persist.
+3. Remove its entry from `draftSourceImages` and persist.
+4. Add to `deletedDraftIds` and persist (so the draft auto-snapshot effect doesn't recreate it from the same source clips, since those clips are now claimed under `projectSourceJobs[mergedId]`).
+
+Then clear `activeDraftId` (already done) and switch `selectedProjectId` to `mergedId` if it pointed at a removed draft (already done).
+
+Update the comment to reflect the new behavior.
+
+### Files
+- `src/modules/generator-ui/pages/DashboardPage.tsx` only.
+
+### Risk
+- The source clips for the draft are already claimed under `projectSourceJobs[mergedId]` earlier in the same block, so they remain visible inside the new Library card's HISTORY view. No data loss.
