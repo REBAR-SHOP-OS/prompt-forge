@@ -17,6 +17,12 @@ import { fetchFile, toBlobURL } from '@ffmpeg/util'
 import coreUrl from '@ffmpeg/core?url'
 // eslint-disable-next-line import/no-unresolved
 import wasmUrl from '@ffmpeg/core/wasm?url'
+// The class-level Worker that the FFmpeg() instance spawns. Without an
+// explicit classWorkerURL the @ffmpeg/ffmpeg package tries to resolve
+// `./worker.js` relative to its own ESM URL, which under Vite's dep-optimizer
+// silently fails to spawn — load() then never resolves and the UI sits on 0%.
+// eslint-disable-next-line import/no-unresolved
+import classWorkerUrl from '@ffmpeg/ffmpeg/dist/esm/worker.js?worker&url'
 
 export interface Mp4Result {
   blob: Blob
@@ -39,7 +45,7 @@ let ffmpegSingleton: FFmpeg | null = null
 let loadingPromise: Promise<FFmpeg> | null = null
 
 const CORE_VERSION = '0.12.6'
-const REMOTE_FALLBACK = `https://unpkg.com/@ffmpeg/core@${CORE_VERSION}/dist/umd`
+const REMOTE_BASE = `https://unpkg.com/@ffmpeg/core@${CORE_VERSION}/dist/esm`
 
 /** Best-effort stringify so we never propagate "[object Object]" or non-Error throws. */
 export function stringifyAny(e: unknown): string {
@@ -65,26 +71,26 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 }
 
 async function loadLocal(ff: FFmpeg): Promise<void> {
-  // Worker-style cross-origin loads require blob URLs of the same origin.
+  // Same-origin blob URLs so the module worker can importScripts/import them.
   const [core, wasm] = await Promise.all([
     toBlobURL(coreUrl, 'text/javascript'),
     toBlobURL(wasmUrl, 'application/wasm'),
   ])
   await withTimeout(
-    ff.load({ coreURL: core, wasmURL: wasm }),
-    60_000,
+    ff.load({ coreURL: core, wasmURL: wasm, classWorkerURL: classWorkerUrl }),
+    45_000,
     'FFmpeg core load (local)',
   )
 }
 
 async function loadRemote(ff: FFmpeg): Promise<void> {
   const [core, wasm] = await Promise.all([
-    toBlobURL(`${REMOTE_FALLBACK}/ffmpeg-core.js`, 'text/javascript'),
-    toBlobURL(`${REMOTE_FALLBACK}/ffmpeg-core.wasm`, 'application/wasm'),
+    toBlobURL(`${REMOTE_BASE}/ffmpeg-core.js`, 'text/javascript'),
+    toBlobURL(`${REMOTE_BASE}/ffmpeg-core.wasm`, 'application/wasm'),
   ])
   await withTimeout(
-    ff.load({ coreURL: core, wasmURL: wasm }),
-    60_000,
+    ff.load({ coreURL: core, wasmURL: wasm, classWorkerURL: classWorkerUrl }),
+    45_000,
     'FFmpeg core load (remote)',
   )
 }
@@ -93,20 +99,25 @@ export async function getFFmpeg(): Promise<FFmpeg> {
   if (ffmpegSingleton) return ffmpegSingleton
   if (loadingPromise) return loadingPromise
   loadingPromise = (async () => {
-    const ff = new FFmpeg()
+    // Each attempt needs a fresh FFmpeg() — once load() fails, the internal
+    // worker is in a broken state and the next call will hang again.
+    const ffLocal = new FFmpeg()
     try {
-      await loadLocal(ff)
-      ffmpegSingleton = ff
-      return ff
+      await loadLocal(ffLocal)
+      ffmpegSingleton = ffLocal
+      return ffLocal
     } catch (eLocal) {
+      try { ffLocal.terminate() } catch { /* ignore */ }
       const localMsg = stringifyAny(eLocal)
+      const ffRemote = new FFmpeg()
       try {
-        await loadRemote(ff)
-        ffmpegSingleton = ff
-        return ff
+        await loadRemote(ffRemote)
+        ffmpegSingleton = ffRemote
+        return ffRemote
       } catch (eRemote) {
+        try { ffRemote.terminate() } catch { /* ignore */ }
         throw new Error(
-          `FFmpeg core could not be loaded — local: ${localMsg} | remote: ${stringifyAny(eRemote)}`,
+          `Video engine (ffmpeg) failed to start — local: ${localMsg} | remote: ${stringifyAny(eRemote)}`,
         )
       }
     }
