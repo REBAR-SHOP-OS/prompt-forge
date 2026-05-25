@@ -1,36 +1,35 @@
-افزودن گزینه‌ی **30s** به انتخاب‌گر مدت‌زمان کلیپ، بین `15s` و `45s`.
+## هدف
+وقتی کاربر نسبت ابعاد را انتخاب می‌کند و اولین درخواست ساخت را ثبت می‌کند، آن نسبت باید بلافاصله برای کل پروژه قفل شود — حتی پیش از اینکه ویدئوی اول آماده شود — تا تمام کلیپ‌های بعدی همان نسبت را داشته باشند. قفل تنها با **Start Over** آزاد می‌شود.
 
-پیاده‌سازی همان الگوی 45s/135s است (Auto-split به چند صحنه‌ی 15s)، چون پروایدر فعلی کلیپ‌های ۵/۱۰/۱۵ ثانیه‌ای می‌سازد:
+## وضعیت فعلی
+- `lockedRatio` (UI lock) فقط زمانی فعال می‌شود که یک کلیپ یا تصویر «زنده» در workspace وجود داشته باشد.
+- `lockedProjectRatio` (state ماندگار برای merge) فقط **پس از اتمام موفق** اولین کلیپ ست می‌شود (خط ~2848).
+- نتیجه: بین لحظه‌ی Submit و آماده‌شدن اولین کلیپ، کاربر می‌تواند ratio را تغییر دهد و کلیپ دوم با نسبت متفاوت ساخته شود.
 
-تغییرات در `src/modules/generator-ui/pages/DashboardPage.tsx`:
+## تغییرات (فقط `src/modules/generator-ui/pages/DashboardPage.tsx`)
 
-1. خط 482 — توسعه‌ی type:
-   ```
-   useState<5 | 10 | 15 | 30 | 45 | 135>(5)
-   ```
-2. خط 5613 — افزودن `30` به لیست رادیو:
-   ```
-   [5, 10, 15, 30, 45, 135]
-   ```
-3. خط 2751 — اضافه‌کردن 30 به branch اسپلیت:
-   ```
-   if (durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135)
-   ```
-4. خط 2752 — تعداد صحنه‌ها:
-   ```
-   const expectedScenes = durationSeconds === 135 ? 9 : durationSeconds === 45 ? 3 : 2
-   ```
-5. خط 2785–2787 — fallback تکرار:
-   ```
-   const iterations = durationSeconds === 135 ? 9 : durationSeconds === 45 ? 3 : durationSeconds === 30 ? 2 : 1
-   const perClipDuration: 5 | 10 | 15 =
-     (durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135) ? 15 : durationSeconds
-   ```
-6. خط 4365 — type widen در `defaultDuration` prop: شامل کردن 30 در مسیر split.
+1. **ست‌کردن `lockedProjectRatio` در زمان Submit، نه پس از تکمیل:**
+   - در مسیر submit ویدئو (همان جایی که `effectiveRatio` محاسبه و job ارسال می‌شود، حوالی خطوط 2793 و 2971)، بلافاصله قبل از enqueue:
+     ```ts
+     if (!lockedProjectRatio) {
+       setLockedProjectRatio(effectiveRatio)
+     }
+     ```
+   - بلوک‌های فعلی `if (!lockedProjectRatio)` که در completion هستند (خطوط 2848 و 2999) حذف یا به‌عنوان safety-net حفظ شوند.
 
-فایل‌های تغییریافته:
-- `src/modules/generator-ui/pages/DashboardPage.tsx` (تنها)
+2. **افزودن `lockedProjectRatio` به منطق `lockedRatio` UI (خطوط 1805-1844):**
+   - در ابتدای memo، اگر `lockedProjectRatio` موجود است و پروژه‌ی Library انتخاب نشده، همان را برگردان:
+     ```ts
+     if (!selectedProjectId && lockedProjectRatio) return lockedProjectRatio
+     ```
+   - این باعث می‌شود دکمه‌های ratio بلافاصله پس از Submit قفل شوند، حتی اگر کلیپ هنوز در `generatedVideos` ظاهر نشده باشد.
+   - `lockedProjectRatio` به deps memo اضافه شود.
 
-ریسک‌ها:
-- اگر edge function `scenario-write` با `durationSeconds: 30` صحنه‌های کمتر از 2 برگرداند، fallback قانون legacy (2 کلیپ ۱۵ ثانیه‌ای با همان پرامپت) فعال می‌شود — رفتار سازگار با 45s.
-- هیچ تغییر backend/auth/DB لازم نیست.
+3. **Start Over** — تأیید اینکه `setLockedProjectRatio(null)` (و پاک‌سازی localStorage) همچنان فراخوانی می‌شود تا قفل آزاد گردد. (در حال حاضر انجام می‌شود؛ تنها بررسی.)
+
+## ریسک‌ها
+- بسیار محدود؛ تنها زمان‌بندی ست‌شدن یک state موجود تغییر می‌کند.
+- اگر job اولین کاربر fail شود، قفل همچنان فعال می‌ماند تا Start Over. این رفتار مطلوب است چون کاربر نسبت را آگاهانه انتخاب کرده.
+
+## فایل‌ها
+- `src/modules/generator-ui/pages/DashboardPage.tsx` (تنها فایل تغییریافته)

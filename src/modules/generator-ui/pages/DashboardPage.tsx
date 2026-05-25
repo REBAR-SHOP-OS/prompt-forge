@@ -1809,6 +1809,9 @@ export default function DashboardPage() {
         .find((v) => v.id === selectedProjectId)
       if (proj) return getRatioFor(proj)
     }
+    // Project ratio is locked the moment the user submits the first job —
+    // honor it immediately even before the clip materializes in workspace.
+    if (lockedProjectRatio) return lockedProjectRatio
     // Active working chain only: ignore clips already snapshotted into a
     // Library project and clips/images hidden from the workspace.
     const claimedJobIds = new Set<string>()
@@ -1841,7 +1844,7 @@ export default function DashboardPage() {
     }
     return null
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [generatedVideos, userImages, selectedProjectId, projectSourceJobs, projectSourceImages, workspaceHiddenJobIds, workspaceHiddenImageIds, mergedEntries, draftEntries, librarySavedJobs])
+  }, [generatedVideos, userImages, selectedProjectId, projectSourceJobs, projectSourceImages, workspaceHiddenJobIds, workspaceHiddenImageIds, mergedEntries, draftEntries, librarySavedJobs, lockedProjectRatio])
 
   useEffect(() => {
     if (lockedRatio && aspectRatio !== lockedRatio) {
@@ -2743,6 +2746,12 @@ export default function DashboardPage() {
     setComposerError(null)
     setVideoColumnMessage(null)
     resumeSelectedProject()
+    // Lock the project's aspect ratio the instant the user submits — every
+    // subsequent clip in this chain must match. Released only by Start Over.
+    if (!lockedProjectRatio) {
+      setLockedProjectRatio(aspectRatio)
+      persistLockedRatio(aspectRatio)
+    }
 
     try {
       // 45s auto-split: ask scenario-write to break the user's single prompt into
@@ -2967,6 +2976,10 @@ export default function DashboardPage() {
     setComposerError(null)
     setVideoColumnMessage(null)
     resumeSelectedProject()
+    if (!lockedProjectRatio) {
+      setLockedProjectRatio(aspectRatio)
+      persistLockedRatio(aspectRatio)
+    }
 
     const effectiveRatio: Ratio = aspectRatio
     const perClipDuration: 5 | 10 | 15 = 15
