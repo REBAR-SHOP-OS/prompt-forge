@@ -124,13 +124,17 @@ export default function ClipTrimmerDialog({
     setError(null)
     setBusy(true)
     setProgress(0)
+    setStageLabel('Recording')
     try {
       if (norm.length === 0 && !muteAudio) {
         throw new Error('No changes to apply. Mark a cut or mute the audio first.')
       }
       const result = await trimVideoLocally(videoUrl, norm, {
         muteAudio,
-        onProgress: (p) => setProgress(p.ratio),
+        onProgress: (p) => {
+          setProgress(p.ratio)
+          if (p.stage) setStageLabel(p.stage)
+        },
       })
       await onApply(result.blob, result.duration, result.extension)
       onOpenChange(false)
