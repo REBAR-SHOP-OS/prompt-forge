@@ -124,11 +124,16 @@ async function getFFmpeg(): Promise<FFmpeg> {
       return ff
     } catch (eLocal) {
       const localMsg = stringifyAny(eLocal)
+      // The local attempt may have left a half-initialized worker; tear it
+      // down before trying the remote fallback on a fresh instance.
+      try { ff.terminate() } catch { /* ignore */ }
+      const ff2 = new FFmpeg()
       try {
-        await loadRemote(ff)
-        ffmpegSingleton = ff
-        return ff
+        await loadRemote(ff2)
+        ffmpegSingleton = ff2
+        return ff2
       } catch (eRemote) {
+        try { ff2.terminate() } catch { /* ignore */ }
         throw new Error(
           `FFmpeg core could not be loaded — local: ${localMsg} | remote: ${stringifyAny(eRemote)}`,
         )
