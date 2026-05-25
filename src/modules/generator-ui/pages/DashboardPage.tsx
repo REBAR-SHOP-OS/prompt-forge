@@ -6011,6 +6011,16 @@ export default function DashboardPage() {
           ) : null}
         </DialogContent>
       </Dialog>
+      <Dialog open={promptViewer !== null} onOpenChange={(o) => { if (!o) setPromptViewer(null) }}>
+        <DialogContent className="max-w-2xl border-white/10 bg-[#0b0c0e]/95">
+          <DialogHeader>
+            <DialogTitle>Prompt</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-words text-sm leading-6 text-zinc-200">
+            {promptViewer}
+          </div>
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }
