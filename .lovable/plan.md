@@ -1,33 +1,42 @@
-## علت اصلی
+## مشکل
 
-در `src/modules/generator-ui/lib/transcodeToMp4.ts` این دو import داریم:
+ارور `Failed to fetch dynamically imported module .../transcodeToMp4.ts` ناشی از این خطای Vite است:
 
-```ts
-import coreUrl from '@ffmpeg/core?url'
-import wasmUrl from '@ffmpeg/core/wasm?url'
+```
+Missing "./dist/umd/ffmpeg-core.js" specifier in "@ffmpeg/core" package
 ```
 
-این‌ها به نسخه **ESM** هسته اشاره می‌کنند (`/node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.js` — در network log قابل مشاهده). ولی کتابخانه `@ffmpeg/ffmpeg` هنگام `ff.load()` این فایل را به‌صورت یک Worker با `importScripts` (یعنی classic script) اجرا می‌کند. فایل ESM شامل `import.meta.url` و `await import(...)` است که داخل classic script اجرا نمی‌شود؛ Worker بی‌صدا خراب می‌شود و `ff.load()` هرگز resolve نمی‌شود.
+پکیج `@ffmpeg/core` در `package.json` فقط این subpath ها را در `exports` اعلام کرده:
+- `.` → ESM/UMD
+- `./wasm` → ESM/UMD
 
-نتیجه: UI روی «Loading encoder… 50%» می‌ماند تا تایم‌اوت ۶۰ ثانیه‌ای local load اتفاق بیفتد، سپس fallback به remote هم همان مشکل را دارد، و در نهایت با خطا fail می‌شود (یا اگر هنوز در حال load است، روی ۵۰٪ گیر می‌کند).
+بنابراین import کردن مستقیم `@ffmpeg/core/dist/umd/ffmpeg-core.js?url` توسط Vite بلاک می‌شود (هرچند فایل روی دیسک وجود دارد). در نتیجه ماژول `transcodeToMp4.ts` اصلاً لود نمی‌شود و کل دیالوگ Trim می‌ترکد.
+
+از طرف دیگر، استفاده از ESM build (که در `exports.import` تعریف شده) باعث هنگ در Worker می‌شود — همان مشکل قبلی.
 
 ## راه‌حل
 
-تعویض import‌ها به نسخه **UMD** که برای classic script ساخته شده:
+فایل‌های UMD core را به‌صورت static asset از `public/` سرو می‌کنیم تا کاملاً مستقل از resolver Vite باشد:
 
-```ts
-import coreUrl from '@ffmpeg/core/dist/umd/ffmpeg-core.js?url'
-import wasmUrl from '@ffmpeg/core/dist/umd/ffmpeg-core.wasm?url'
-```
+1. کپی `node_modules/@ffmpeg/core/dist/umd/ffmpeg-core.js` به `public/ffmpeg/ffmpeg-core.js`
+2. کپی `node_modules/@ffmpeg/core/dist/umd/ffmpeg-core.wasm` به `public/ffmpeg/ffmpeg-core.wasm`
+3. در `src/modules/generator-ui/lib/transcodeToMp4.ts`:
+   - حذف دو import مشکل‌دار `@ffmpeg/core/dist/umd/...?url`
+   - جایگزینی با URL ثابت:
+     ```ts
+     const coreUrl = '/ffmpeg/ffmpeg-core.js'
+     const wasmUrl = '/ffmpeg/ffmpeg-core.wasm'
+     ```
+   - بقیه‌ی منطق `loadLocal` / `toBlobURL` / fallback به unpkg بدون تغییر می‌ماند.
 
-این فایل‌ها واقعاً در پروژه موجودند (تایید شده در `node_modules/@ffmpeg/core/dist/umd/`). بقیه منطق `loadLocal` / `toBlobURL` / fallback همان می‌ماند.
+## چرا این کار می‌کند
 
-## فایل تغییر یافته
+- فایل‌های `public/` بدون عبور از resolver Vite سرو می‌شوند، پس قید `exports` بی‌اثر است.
+- نسخه‌ی UMD با Worker کلاسیک `@ffmpeg/ffmpeg` سازگار است (بر خلاف ESM که `import.meta.url` دارد).
+- Fallback به CDN unpkg به‌عنوان لایه‌ی دوم حفظ می‌شود.
 
-- `src/modules/generator-ui/lib/transcodeToMp4.ts` — فقط دو خط import.
+## فایل‌های تغییریافته
 
-## اعتبارسنجی
-
-- باز کردن Trim → Mark cut → Apply
-- نوار پیشرفت باید از «Recording» (۰→۵۰٪) به «Loading encoder» (~۵۰٪) و بلافاصله به «Encoding» (۵۵→۹۵٪) و «Finalizing» (~۹۸٪) برسد و دیالوگ بسته شود.
-- در network باید `ffmpeg-core.js` از مسیر `dist/umd/` خوانده شود (نه `dist/esm/`).
+- `public/ffmpeg/ffmpeg-core.js` (جدید، کپی از node_modules)
+- `public/ffmpeg/ffmpeg-core.wasm` (جدید، کپی از node_modules)
+- `src/modules/generator-ui/lib/transcodeToMp4.ts` (دو خط import حذف، دو ثابت URL جایگزین)
