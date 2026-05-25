@@ -51,6 +51,7 @@ export default function ClipTrimmerDialog({
   const [error, setError] = useState<string | null>(null)
   const [muteAudio, setMuteAudio] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [stageLabel, setStageLabel] = useState<string>('Recording')
 
   // Reset on open.
   useEffect(() => {
