@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { editVideoWithAi } from '@/modules/generator-ui/lib/editVideoWithAi'
+import { stringifyAny } from '@/modules/generator-ui/lib/transcodeToMp4'
 
 interface VideoToVideoDialogProps {
   open: boolean
