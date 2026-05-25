@@ -1710,31 +1710,9 @@ export default function DashboardPage() {
       if (!draftId.startsWith('draft-orphan-')) continue
       if (imgs.some((i) => sourceOwners.has(i.id))) toRemove.add(draftId)
     }
+    // Per user requirement: drafts are never auto-removed. Duplicate
+    // detection is preserved for diagnostics but no draft is deleted here.
     if (toRemove.size === 0) return
-
-    setDraftEntries((prev) => {
-      const next = prev.filter((d) => !toRemove.has(d.id))
-      persistDraftEntries(next)
-      return next
-    })
-    setDraftSourceJobs((prev) => {
-      const next: Record<string, JobDetail[]> = {}
-      for (const [k, v] of Object.entries(prev)) if (!toRemove.has(k)) next[k] = v
-      persistDraftSourceJobs(next)
-      return next
-    })
-    setDraftSourceImages((prev) => {
-      const next: Record<string, UserImageItem[]> = {}
-      for (const [k, v] of Object.entries(prev)) if (!toRemove.has(k)) next[k] = v
-      persistDraftSourceImages(next)
-      return next
-    })
-    setDeletedDraftIds((prev) => {
-      const next = new Set(prev)
-      for (const id of toRemove) next.add(id)
-      persistDeletedDraftIds(next)
-      return next
-    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, draftEntries, draftSourceJobs, draftSourceImages])
 
@@ -3810,54 +3788,12 @@ export default function DashboardPage() {
       // the case where the user explicitly opened a saved Draft from the
       // Library and finalized it.
       {
-        const draftIdsToClose = new Set<string>()
-        if (activeDraftId) draftIdsToClose.add(activeDraftId)
-        if (selectedProjectId && selectedProjectId.startsWith('draft-')) {
-          draftIdsToClose.add(selectedProjectId)
-        }
-        if (draftIdsToClose.size > 0) {
-          setDraftEntries((prev) => {
-            const next = prev.filter((d) => !draftIdsToClose.has(d.id))
-            persistDraftEntries(next)
-            return next
-          })
-          setDraftSourceJobs((prev) => {
-            let changed = false
-            const next: Record<string, JobDetail[]> = {}
-            for (const [k, v] of Object.entries(prev)) {
-              if (draftIdsToClose.has(k)) { changed = true; continue }
-              next[k] = v
-            }
-            if (!changed) return prev
-            persistDraftSourceJobs(next)
-            return next
-          })
-          setDraftSourceImages((prev) => {
-            let changed = false
-            const next: Record<string, UserImageItem[]> = {}
-            for (const [k, v] of Object.entries(prev)) {
-              if (draftIdsToClose.has(k)) { changed = true; continue }
-              next[k] = v
-            }
-            if (!changed) return prev
-            persistDraftSourceImages(next)
-            return next
-          })
-          // Tombstone so the backfill effect doesn't recreate them from
-          // orphan clips/images.
-          setDeletedDraftIds((prev) => {
-            const next = new Set(prev)
-            for (const id of draftIdsToClose) next.add(id)
-            persistDeletedDraftIds(next)
-            return next
-          })
-        }
+        // Drafts are never auto-removed by Final Film. Only close the active
+        // draft id so the next workspace activity starts a fresh draft.
+        // Existing draft cards stay in Library until the user deletes them.
         setActiveDraftId(null)
         persistActiveDraftId(null)
-        // If the user finalized while a draft project was selected, move the
-        // selection to the freshly created Final Film so the UI doesn't
-        // point at a now-deleted draft id.
-        if (selectedProjectId && draftIdsToClose.has(selectedProjectId)) {
+        if (selectedProjectId && selectedProjectId.startsWith('draft-')) {
           setSelectedProjectId(mergedId)
         }
       }
