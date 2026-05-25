@@ -29,8 +29,10 @@ export interface CutRange {
 }
 
 export interface TrimProgress {
-  /** 0..1 — based on kept-time processed so far */
+  /** 0..1 — overall progress including encode stage. */
   ratio: number
+  /** Optional human label of current phase. */
+  stage?: string
 }
 
 export interface TrimResult {
