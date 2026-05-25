@@ -5443,6 +5443,20 @@ export default function DashboardPage() {
                             <Scissors className="h-3.5 w-3.5" aria-hidden="true" />
                           </button>
                         ) : null}
+                        {(video.video?.storage_path || editedClips[video.id]?.url) ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setV2vJobId(video.id)
+                            }}
+                            aria-label="Video-to-Video Editing"
+                            title="Video-to-Video Editing (AI prompt)"
+                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-rose-400/40 bg-rose-500/15 text-rose-300 transition hover:border-rose-300/60 hover:bg-rose-500/30 hover:text-rose-100"
+                          >
+                            <Wand2 className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={(event) => {
