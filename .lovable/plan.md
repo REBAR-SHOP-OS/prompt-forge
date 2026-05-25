@@ -1,29 +1,33 @@
 ## مشکل
 
-وقتی روی آیکون سطل آشغال یک کارت کلیک می‌کنید و در دیالوگ تایید می‌کنید:
+روی کارت‌هایی که از snapshot یک پروژه (selected-project / draft) رندر می‌شوند، کلیک روی آیکون قیچی (trim) کار نمی‌کند. علت:
 
-1. درخواست `jobs-delete` به سرور می‌رود و با `ok: true` پاسخ می‌گیرد (ردیف Job و فایل ویدیو در بک‌اند واقعاً حذف می‌شود).
-2. در فرانت‌اند، `deleteCard` کارت را به‌صورت optimistic از `generatedVideos` حذف می‌کند.
-3. ولی چون پنل سمت‌راست در حالت «SHOWING PROJECT» است، لیست Working clips از روی snapshot ساخته می‌شود نه از `generatedVideos`. در `displayedVideos` اگر `selectedProjectId` یک draft باشد، از `draftSourceJobs[selectedProjectId]` خوانده می‌شود — و این snapshot هنوز کلیپ حذف‌شده را دارد، پس کارت بلافاصله دوباره ظاهر می‌شود.
-
-`deleteCard` فقط `projectSourceJobs` و `projectSourceImages` را تمیز می‌کند و `draftSourceJobs` / `draftSourceImages` فراموش شده‌اند.
+- `setTrimmingJobId(video.id)` ست می‌شود
+- ولی effect خط ۹۸۹ و render-guard خط ۴۱۰۴، job را فقط در `visibleVideos = mergedEntries + generatedVideos` جستجو می‌کنند
+- اگر کلیپ live در `generatedVideos` موجود نباشد (مثلاً فقط از `draftSourceJobs`/`projectSourceJobs` رندر شده)، `find` `undefined` می‌شود → `trimSrc` ست نمی‌شود → دیالوگ باز نمی‌شود
 
 ## راه‌حل
 
-فقط در `src/modules/generator-ui/pages/DashboardPage.tsx` داخل تابع `deleteCard` (مسیر non-draft، حدود خط 1249–1271) دو prune مشابه برای snapshotهای draft هم اضافه می‌شود:
+در `src/modules/generator-ui/pages/DashboardPage.tsx`:
 
-- روی `draftSourceJobs` لوپ بزن و در هر آرایه، کلیپ با `id === jobId` را حذف کن، سپس `setDraftSourceJobs` + `persistDraftSourceJobs`.
-- روی `draftSourceImages` همان کار را برای حالت merged انجام بده (مشابه بلوک موجود `projectSourceImages`).
-- اگر بعد از prune، یک draft هیچ کلیپ/تصویری نداشت، آن draft از `draftEntries` هم حذف شود (همان الگوی persist).
+1. تابع `findJobByIdAcrossSnapshots(id)` اضافه می‌شود که job را به ترتیب از این منابع پیدا کند:
+   - `generatedVideos`
+   - `mergedEntries`
+   - `Object.values(projectSourceJobs).flat()`
+   - `Object.values(draftSourceJobs).flat()`
+   - `Object.values(librarySavedJobs)`
 
-هیچ تغییری در بک‌اند، RPC، edge functions، یا منطق Library/Final Film لازم نیست. منطق snapshotهای پروژه دست‌نخورده می‌ماند؛ فقط نشت snapshot رفع می‌شود.
+2. در useEffect خط ۹۷۸ به‌جای `visibleVideos.find(...)` از این resolver استفاده می‌شود.
+3. در رندر دیالوگ خط ۴۱۰۳–۴۱۱۴ همان resolver استفاده می‌شود.
 
-## فایل‌های تغییر یافته
+هیچ تغییری در بک‌اند، edge functions، `applyTrimToCard`، یا سایر دکمه‌ها لازم نیست.
 
-- `src/modules/generator-ui/pages/DashboardPage.tsx` — افزودن prune برای `draftSourceJobs` و `draftSourceImages` در `deleteCard`.
+## فایل تغییر یافته
+
+- `src/modules/generator-ui/pages/DashboardPage.tsx`
 
 ## اعتبارسنجی
 
-- در حالت داشتن یک draft فعال، کلیک روی سطل آشغال یک کارت → کارت بلافاصله ناپدید می‌شود و بعد از refresh هم برنمی‌گردد.
-- بعد از F5، listMyJobs دیگر آن job را برنمی‌گرداند (سرور قبلاً حذف کرده)، و چون draft snapshot هم تمیز شده، resurrection ندارد.
-- حذف در حالت بدون پروژهٔ انتخاب‌شده، و حذف draft کامل، رفتار قبلی را حفظ می‌کنند.
+- در حالت SHOWING PROJECT کلیک روی قیچی هر کارت Ready → دیالوگ ClipTrimmer باز می‌شود و ویدیو در آن لود می‌شود.
+- در حالت پیش‌فرض (بدون پروژه‌ی انتخاب‌شده) رفتار قبلی حفظ می‌ماند.
+- اعمال Trim و ذخیره به‌عنوان نسخه ویرایش‌شده طبق منطق فعلی کار می‌کند.
