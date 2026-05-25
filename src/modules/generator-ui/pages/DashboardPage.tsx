@@ -39,6 +39,7 @@ import {
   Trash2,
   Upload,
   UserRound,
+  Wand2,
   X
 } from 'lucide-react'
 import {
@@ -90,6 +91,7 @@ import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { generatorUiGateway } from '@/modules/generator-ui/gateway'
 import { mergeVideoUrls, MergeCancelledError, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
+import VideoToVideoDialog from '@/modules/generator-ui/components/VideoToVideoDialog'
 import { VoiceoverDialog } from '@/modules/generator-ui/components/VoiceoverDialog'
 import CalendarInfoDialog from '@/modules/generator-ui/components/CalendarInfoDialog'
 import ImageReframeDialog from '@/modules/generator-ui/components/ImageReframeDialog'
@@ -661,6 +663,8 @@ export default function DashboardPage() {
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [trimmingJobId, setTrimmingJobId] = useState<string | null>(null)
   const [trimSrc, setTrimSrc] = useState<string | null>(null)
+  const [v2vJobId, setV2vJobId] = useState<string | null>(null)
+  const [v2vSrc, setV2vSrc] = useState<string | null>(null)
   const [editedClips, setEditedClips] = useState<Record<string, { url: string; duration: number }>>({})
   // Set of job ids the user has explicitly applied edits to. Persisted so that
   // Final Film can know which cards to merge after a refresh.
@@ -1016,6 +1020,47 @@ export default function DashboardPage() {
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trimmingJobId])
+
+  // Resolve a CORS-safe URL for the Video-to-Video dialog. Same lookup as Trim.
+  useEffect(() => {
+    let cancelled = false
+    if (!v2vJobId) {
+      setV2vSrc(null)
+      return
+    }
+    const edited = editedClips[v2vJobId]?.url
+    if (edited) {
+      setV2vSrc(edited)
+      return
+    }
+    const findById = (id: string): JobDetail | undefined => {
+      const live = generatedVideos.find((v) => v.id === id)
+      if (live) return live
+      const merged = mergedEntries.find((v) => v.id === id)
+      if (merged) return merged
+      for (const arr of Object.values(projectSourceJobs)) {
+        const hit = arr.find((v) => v.id === id)
+        if (hit) return hit
+      }
+      for (const arr of Object.values(draftSourceJobs)) {
+        const hit = arr.find((v) => v.id === id)
+        if (hit) return hit
+      }
+      return librarySavedJobs[id]
+    }
+    const job = findById(v2vJobId)
+    const raw = job?.video?.storage_path
+    if (!raw) {
+      setV2vSrc(null)
+      return
+    }
+    setV2vSrc(null)
+    proxiedVideoUrl(raw)
+      .then((u) => { if (!cancelled) setV2vSrc(u) })
+      .catch(() => { if (!cancelled) setV2vSrc(raw) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v2vJobId])
 
   const applyTrimToCard = (jobId: string) => async (
     blob: Blob,
@@ -4164,6 +4209,26 @@ export default function DashboardPage() {
           />
         )
       })()}
+      {(() => {
+        if (!v2vJobId) return null
+        const job =
+          generatedVideos.find((v) => v.id === v2vJobId) ??
+          mergedEntries.find((v) => v.id === v2vJobId) ??
+          Object.values(projectSourceJobs).flat().find((v) => v.id === v2vJobId) ??
+          Object.values(draftSourceJobs).flat().find((v) => v.id === v2vJobId) ??
+          librarySavedJobs[v2vJobId]
+        if (!job?.video?.storage_path) return null
+        if (!v2vSrc) return null
+        return (
+          <VideoToVideoDialog
+            open
+            onOpenChange={(o) => { if (!o) { setV2vJobId(null); setV2vSrc(null) } }}
+            videoUrl={v2vSrc}
+            title={job?.input_prompt ?? undefined}
+            onApply={applyTrimToCard(v2vJobId)}
+          />
+        )
+      })()}
       <div
         className={`pointer-events-none absolute inset-0 border transition duration-200 ${
           isDragging ? 'border-amber-300/40 bg-amber-300/[0.045]' : 'border-transparent'
@@ -5376,6 +5441,20 @@ export default function DashboardPage() {
                             className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-200"
                           >
                             <Scissors className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        ) : null}
+                        {(video.video?.storage_path || editedClips[video.id]?.url) ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setV2vJobId(video.id)
+                            }}
+                            aria-label="Video-to-Video Editing"
+                            title="Video-to-Video Editing (AI prompt)"
+                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-rose-400/40 bg-rose-500/15 text-rose-300 transition hover:border-rose-300/60 hover:bg-rose-500/30 hover:text-rose-100"
+                          >
+                            <Wand2 className="h-3.5 w-3.5" aria-hidden="true" />
                           </button>
                         ) : null}
                         <button
