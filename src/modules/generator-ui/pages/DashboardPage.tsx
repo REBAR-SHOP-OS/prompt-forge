@@ -663,6 +663,8 @@ export default function DashboardPage() {
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [trimmingJobId, setTrimmingJobId] = useState<string | null>(null)
   const [trimSrc, setTrimSrc] = useState<string | null>(null)
+  const [v2vJobId, setV2vJobId] = useState<string | null>(null)
+  const [v2vSrc, setV2vSrc] = useState<string | null>(null)
   const [editedClips, setEditedClips] = useState<Record<string, { url: string; duration: number }>>({})
   // Set of job ids the user has explicitly applied edits to. Persisted so that
   // Final Film can know which cards to merge after a refresh.
