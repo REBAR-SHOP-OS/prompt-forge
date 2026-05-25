@@ -154,7 +154,7 @@ Deno.serve(async (req) => {
       });
     }
     if (!duration) {
-      return new Response(JSON.stringify({ error: "durationSeconds must be 5, 10, 15, 45, or 135" }), {
+      return new Response(JSON.stringify({ error: "durationSeconds must be 5, 10, 15, 30, 45, or 135" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
