@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode, type VideoHTMLAttributes } from "react";
+import { useRef, useState, type ReactNode, type VideoHTMLAttributes } from "react";
 import { AlertTriangle, LoaderCircle } from "lucide-react";
 import { usePlayableVideoUrl } from "@/modules/generator-ui/lib/usePlayableVideoUrl";
 
@@ -9,65 +9,27 @@ type Props = Omit<VideoHTMLAttributes<HTMLVideoElement>, "src"> & {
 
 /**
  * Drop-in <video> that routes external URLs through the same-origin
- * video-proxy and renders explicit loading / error states so a card never
- * gets stuck showing a blank player at 0:00 when the underlying media
- * fails to load (expired signed URL, CORS, dead provider, etc).
- *
- * State machine:
- *   resolving  -> resolving the playable URL via usePlayableVideoUrl
- *   loading    -> URL ready, waiting for HTMLVideoElement metadata
- *   ready      -> loadedmetadata fired with a finite duration > 0
- *   error      -> network/decode error OR metadata never arrived in time
- *
- * Controls + native <video> chrome only appear in 'ready' so the user
- * never sees an empty 0:00 timeline for a broken card.
+ * video-proxy. Renders the real <video> element as soon as we have a
+ * CORS-safe URL — the browser's own poster / loading behavior covers
+ * the load window. We only show "Video unavailable" on an explicit
+ * <video> onError, never on a metadata timeout, because the proxy
+ * stream from Aliyun OSS can take many seconds and racing it with a
+ * watchdog produced false negatives (cards stuck on "Video
+ * unavailable" while the same URL played fine elsewhere).
  */
-export function PlayableVideo({ src, fallbackClassName, controls, ...rest }: Props) {
+export function PlayableVideo({ src, fallbackClassName, controls, poster, ...rest }: Props) {
   const { url, loading: resolving } = usePlayableVideoUrl(src);
-  const [state, setState] = useState<"resolving" | "loading" | "ready" | "error">(
-    src ? (resolving || !url ? "resolving" : "loading") : "error",
-  );
+  const [errored, setErrored] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const attemptRef = useRef(0);
-
-  // Reset state whenever the resolved URL changes.
-  useEffect(() => {
-    if (!src) {
-      setState("error");
-      return;
-    }
-    if (resolving || !url) {
-      setState("resolving");
-      return;
-    }
-    setState("loading");
-    attemptRef.current += 1;
-    const myAttempt = attemptRef.current;
-    // Watchdog: if metadata never arrives within 15s, surface an error
-    // instead of leaving a blank 0:00 player on screen.
-    const watchdog = window.setTimeout(() => {
-      if (attemptRef.current !== myAttempt) return;
-      setState((curr) => (curr === "loading" ? "error" : curr));
-    }, 15000);
-    return () => window.clearTimeout(watchdog);
-  }, [src, url, resolving]);
 
   const handleLoadedMetadata: VideoHTMLAttributes<HTMLVideoElement>["onLoadedMetadata"] = (e) => {
-    const el = e.currentTarget;
-    // MediaRecorder WebM files often report duration as Infinity or NaN until
-    // the user seeks to the end. Treat a valid frame size as sufficient
-    // proof that the file is playable — otherwise Final Film cards (which
-    // are recorded WebMs) get falsely flagged as "Video unavailable".
-    if (el.videoWidth > 0 && el.videoHeight > 0) {
-      setState("ready");
-    } else {
-      setState("error");
-    }
+    // Clear any stale error from a previous src if metadata now arrives.
+    if (errored) setErrored(false);
     rest.onLoadedMetadata?.(e);
   };
 
   const handleError: VideoHTMLAttributes<HTMLVideoElement>["onError"] = (e) => {
-    setState("error");
+    setErrored(true);
     rest.onError?.(e);
   };
 
@@ -87,34 +49,16 @@ export function PlayableVideo({ src, fallbackClassName, controls, ...rest }: Pro
     </div>
   );
 
-  if (state === "resolving" || state === "loading") {
-    return (
-      <>
-        {fallback(<LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />)}
-        {/* Mount a hidden <video> so the browser actually loads metadata
-            while we show the loader. Once metadata fires, we swap to the
-            visible player. */}
-        {state === "loading" && url ? (
-          <video
-            ref={videoRef}
-            src={url}
-            preload="metadata"
-            muted
-            playsInline
-            onLoadedMetadata={handleLoadedMetadata}
-            onError={handleError}
-            style={{ display: "none" }}
-          />
-        ) : null}
-      </>
-    );
+  if (!src) {
+    return fallback(<AlertTriangle className="h-5 w-5 text-zinc-400" aria-hidden="true" />, "Video unavailable");
   }
 
-  if (state === "error" || !url) {
-    return fallback(
-      <AlertTriangle className="h-5 w-5 text-zinc-400" aria-hidden="true" />,
-      "Video unavailable",
-    );
+  if (resolving || !url) {
+    return fallback(<LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />);
+  }
+
+  if (errored) {
+    return fallback(<AlertTriangle className="h-5 w-5 text-zinc-400" aria-hidden="true" />, "Video unavailable");
   }
 
   return (
@@ -122,6 +66,7 @@ export function PlayableVideo({ src, fallbackClassName, controls, ...rest }: Pro
       {...rest}
       ref={videoRef}
       src={url}
+      poster={poster}
       controls={controls}
       onLoadedMetadata={handleLoadedMetadata}
       onError={handleError}
