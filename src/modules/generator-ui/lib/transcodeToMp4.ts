@@ -13,10 +13,14 @@ import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile, toBlobURL } from '@ffmpeg/util'
 
 // Vite turns these into URLs to hashed assets under /assets/.
+// IMPORTANT: use the UMD build — @ffmpeg/ffmpeg loads the core via a classic
+// Worker (importScripts), which can't execute the ESM build (it uses
+// `import.meta.url` and top-level `await import(...)`). Pointing at the ESM
+// entry causes ff.load() to hang silently (UI stuck at "Loading encoder…").
 // eslint-disable-next-line import/no-unresolved
-import coreUrl from '@ffmpeg/core?url'
+import coreUrl from '@ffmpeg/core/dist/umd/ffmpeg-core.js?url'
 // eslint-disable-next-line import/no-unresolved
-import wasmUrl from '@ffmpeg/core/wasm?url'
+import wasmUrl from '@ffmpeg/core/dist/umd/ffmpeg-core.wasm?url'
 
 export interface Mp4Result {
   blob: Blob
