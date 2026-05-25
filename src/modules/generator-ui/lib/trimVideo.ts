@@ -327,7 +327,7 @@ export async function trimVideoLocally(
           video.removeEventListener('ended', onEnded)
           video.removeEventListener('error', onError)
           keptSoFar = startedAt + segDur
-          onProgress?.({ ratio: Math.min(1, keptSoFar / totalKept) })
+          onProgress?.({ ratio: Math.min(0.5, (keptSoFar / totalKept) * 0.5), stage: 'Recording' })
           resolve()
         }
 
@@ -339,7 +339,7 @@ export async function trimVideoLocally(
             return
           }
           const processed = Math.max(0, t - seg.start)
-          onProgress?.({ ratio: Math.min(1, (startedAt + processed) / totalKept) })
+          onProgress?.({ ratio: Math.min(0.5, ((startedAt + processed) / totalKept) * 0.5), stage: 'Recording' })
           rafId = requestAnimationFrame(tick)
         }
 
