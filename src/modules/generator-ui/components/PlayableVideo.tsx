@@ -49,8 +49,22 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, ...res
     </div>
   );
 
+  // Fallback to poster image when one is available — prevents draft cards
+  // from looking "lost" if the proxied stream momentarily fails. Playback
+  // is unaffected; this is purely the unavailable-state visual.
+  const posterFallback = (label?: string) => {
+    if (poster) {
+      return (
+        <div className={fallbackClassName ?? "h-full w-full bg-black"}>
+          <img src={poster} alt={label ?? ""} className="h-full w-full object-cover" />
+        </div>
+      );
+    }
+    return fallback(<AlertTriangle className="h-5 w-5 text-zinc-400" aria-hidden="true" />, label);
+  };
+
   if (!src) {
-    return fallback(<AlertTriangle className="h-5 w-5 text-zinc-400" aria-hidden="true" />, "Video unavailable");
+    return posterFallback("Video unavailable");
   }
 
   if (resolving || !url) {
@@ -58,7 +72,7 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, ...res
   }
 
   if (errored) {
-    return fallback(<AlertTriangle className="h-5 w-5 text-zinc-400" aria-hidden="true" />, "Video unavailable");
+    return posterFallback("Video unavailable");
   }
 
   return (

@@ -1640,13 +1640,34 @@ export default function DashboardPage() {
     }
     const did = draftId
 
-    // Update the snapshot maps only when ids actually change.
+    // Update the snapshot maps only when ids actually change. Critically,
+    // we MERGE with the existing snapshot instead of replacing it: a clip
+    // that lost its storage_path (provider hiccup, transient poll error)
+    // keeps its previously-known good entry, so the draft never silently
+    // loses its video content.
     setDraftSourceJobs((prev) => {
       const cur = prev[did] ?? []
-      const sameLen = cur.length === liveClips.length
-      const sameIds = sameLen && cur.every((c, i) => c.id === liveClips[i].id && (c.video?.storage_path ?? null) === (liveClips[i].video?.storage_path ?? null))
+      const byId = new Map(cur.map((c) => [c.id, c] as const))
+      const liveIds = new Set(liveClips.map((c) => c.id))
+      // Step 1: merge live clips, preferring previous snapshot if live lost storage_path.
+      const merged = liveClips.map((c) => {
+        const hasPath = !!c.video?.storage_path
+        const existing = byId.get(c.id)
+        if (!hasPath && existing?.video?.storage_path) return existing
+        return c
+      })
+      // Step 2: KEEP previously-snapshotted clips that disappeared from the
+      // live workspace but still have a valid storage_path. This is what
+      // guarantees a draft never silently loses its video, even if the
+      // server briefly stops returning a row for it.
+      const survivors = cur.filter(
+        (c) => !liveIds.has(c.id) && !!c.video?.storage_path,
+      )
+      const finalList = [...merged, ...survivors]
+      const sameLen = cur.length === finalList.length
+      const sameIds = sameLen && cur.every((c, i) => c.id === finalList[i].id && (c.video?.storage_path ?? null) === (finalList[i].video?.storage_path ?? null))
       if (sameIds) return prev
-      const next = { ...prev, [did]: liveClips }
+      const next = { ...prev, [did]: finalList }
       persistDraftSourceJobs(next)
       return next
     })
@@ -2530,10 +2551,17 @@ export default function DashboardPage() {
       const settled = await Promise.allSettled(
         activeJobs.map(async (job) => ({ jobId: job.id, detail: await jobOrchestratorGateway.getJob(job.id) })),
       )
+      // Protect drafts: any job referenced by an active draft snapshot must
+      // never be silently dropped on a transient "missing" poll error, only
+      // when the user explicitly deletes the draft or finalizes it.
+      const draftProtectedIds = new Set<string>()
+      for (const arr of Object.values(draftSourceJobs)) {
+        for (const c of arr) draftProtectedIds.add(c.id)
+      }
       const missingJobIds = settled
         .filter((r): r is PromiseRejectedResult => r.status === 'rejected' && isMissingJobError(r.reason))
         .map((r) => activeJobs[settled.indexOf(r)]?.id)
-        .filter((id): id is string => Boolean(id))
+        .filter((id): id is string => Boolean(id) && !draftProtectedIds.has(id))
       const fulfilled = settled
         .filter((r): r is PromiseFulfilledResult<{ jobId: string; detail: JobDetail }> => r.status === 'fulfilled')
         .map((r) => r.value.detail)
@@ -3653,15 +3681,24 @@ export default function DashboardPage() {
     }
 
     if (brokenClips.length > 0) {
-      // Auto-hide broken cards from the workspace so subsequent Final Film
-      // attempts don't trip on them again.
-      setWorkspaceHiddenJobIds((curr) => {
-        const next = new Set(curr)
-        for (const b of brokenClips) next.add(b.jobId)
-        persistWorkspaceHiddenJobIds(next)
-        return next
-      })
-      unmarkActiveJobs(brokenClips.map((b) => b.jobId))
+      // Drafts are protected: clips that belong to any draft snapshot are
+      // only skipped for this Final Film run (so the user can regenerate),
+      // but their workspace card stays so the draft never silently loses
+      // its video content. Non-draft broken clips are hidden as before.
+      const draftProtectedIds = new Set<string>()
+      for (const arr of Object.values(draftSourceJobs)) {
+        for (const c of arr) draftProtectedIds.add(c.id)
+      }
+      const hideable = brokenClips.filter((b) => !draftProtectedIds.has(b.jobId))
+      if (hideable.length > 0) {
+        setWorkspaceHiddenJobIds((curr) => {
+          const next = new Set(curr)
+          for (const b of hideable) next.add(b.jobId)
+          persistWorkspaceHiddenJobIds(next)
+          return next
+        })
+        unmarkActiveJobs(hideable.map((b) => b.jobId))
+      }
     }
 
     if (eligibleClips.length < 1) {
