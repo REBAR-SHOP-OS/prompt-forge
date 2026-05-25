@@ -1648,18 +1648,26 @@ export default function DashboardPage() {
     setDraftSourceJobs((prev) => {
       const cur = prev[did] ?? []
       const byId = new Map(cur.map((c) => [c.id, c] as const))
+      const liveIds = new Set(liveClips.map((c) => c.id))
+      // Step 1: merge live clips, preferring previous snapshot if live lost storage_path.
       const merged = liveClips.map((c) => {
         const hasPath = !!c.video?.storage_path
         const existing = byId.get(c.id)
-        // If the live clip is missing a storage_path but we had a good
-        // snapshot before, keep the snapshot. Otherwise prefer the live one.
         if (!hasPath && existing?.video?.storage_path) return existing
         return c
       })
-      const sameLen = cur.length === merged.length
-      const sameIds = sameLen && cur.every((c, i) => c.id === merged[i].id && (c.video?.storage_path ?? null) === (merged[i].video?.storage_path ?? null))
+      // Step 2: KEEP previously-snapshotted clips that disappeared from the
+      // live workspace but still have a valid storage_path. This is what
+      // guarantees a draft never silently loses its video, even if the
+      // server briefly stops returning a row for it.
+      const survivors = cur.filter(
+        (c) => !liveIds.has(c.id) && !!c.video?.storage_path,
+      )
+      const finalList = [...merged, ...survivors]
+      const sameLen = cur.length === finalList.length
+      const sameIds = sameLen && cur.every((c, i) => c.id === finalList[i].id && (c.video?.storage_path ?? null) === (finalList[i].video?.storage_path ?? null))
       if (sameIds) return prev
-      const next = { ...prev, [did]: merged }
+      const next = { ...prev, [did]: finalList }
       persistDraftSourceJobs(next)
       return next
     })
