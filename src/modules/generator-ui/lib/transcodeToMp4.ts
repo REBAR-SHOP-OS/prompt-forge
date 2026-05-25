@@ -12,12 +12,13 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile, toBlobURL } from '@ffmpeg/util'
 
-// Serve the UMD core as static assets from /public so we bypass Vite's
-// package `exports` resolver (which blocks deep imports into @ffmpeg/core)
-// AND avoid the ESM build (which hangs in a classic Worker because it uses
-// `import.meta.url` / top-level `await import(...)`).
-const coreUrl = '/ffmpeg/ffmpeg-core.js'
-const wasmUrl = '/ffmpeg/ffmpeg-core.wasm'
+// UMD core served as static assets from /public — same origin as the app,
+// so the worker can `importScripts(coreURL)` directly without any blob
+// indirection. Going through `toBlobURL` on the 31MB wasm wrapper caused
+// `ff.load()` to hang silently → 60s timeout. Direct same-origin URLs
+// are the only deterministic path that actually returns from load().
+const LOCAL_CORE_URL = '/ffmpeg/ffmpeg-core.js'
+const LOCAL_WASM_URL = '/ffmpeg/ffmpeg-core.wasm'
 
 export interface Mp4Result {
   blob: Blob
@@ -33,6 +34,8 @@ export type Mp4ProgressCallback = (info: {
 
 /** Hard cap per ffmpeg exec call (5 min) — anything longer means hung. */
 const FFMPEG_EXEC_TIMEOUT_MS = 5 * 60_000
+/** Hard cap for core load (wasm ~31MB; even slow links finish in ≪90s). */
+const FFMPEG_LOAD_TIMEOUT_MS = 90_000
 /** Skip transcode for blobs bigger than this — ffmpeg.wasm OOMs silently otherwise. */
 const MAX_TRANSCODE_BLOB_BYTES = 800 * 1024 * 1024
 
@@ -65,27 +68,47 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   })
 }
 
+/** Absolute same-origin URL — required so the worker's `importScripts` resolves it. */
+function absUrl(path: string): string {
+  if (typeof window === 'undefined') return path
+  return new URL(path, window.location.origin).href
+}
+
+/** Pre-fetch an asset so we surface a clear network error instead of a
+ *  meaningless 90s load timeout when the file isn't actually reachable. */
+async function assertReachable(url: string, label: string): Promise<void> {
+  let res: Response
+  try {
+    res = await fetch(url, { method: 'GET', cache: 'force-cache' })
+  } catch (e) {
+    throw new Error(`${label} not reachable: ${stringifyAny(e)}`)
+  }
+  if (!res.ok) throw new Error(`${label} not reachable: HTTP ${res.status}`)
+  try { await res.arrayBuffer() } catch { /* ignore */ }
+}
+
 async function loadLocal(ff: FFmpeg): Promise<void> {
-  // Worker-style cross-origin loads require blob URLs of the same origin.
-  const [core, wasm] = await Promise.all([
-    toBlobURL(coreUrl, 'text/javascript'),
-    toBlobURL(wasmUrl, 'application/wasm'),
-  ])
+  const coreURL = absUrl(LOCAL_CORE_URL)
+  const wasmURL = absUrl(LOCAL_WASM_URL)
+  await assertReachable(coreURL, 'local ffmpeg-core.js')
+  await assertReachable(wasmURL, 'local ffmpeg-core.wasm')
   await withTimeout(
-    ff.load({ coreURL: core, wasmURL: wasm }),
-    60_000,
+    ff.load({ coreURL, wasmURL }),
+    FFMPEG_LOAD_TIMEOUT_MS,
     'FFmpeg core load (local)',
   )
 }
 
 async function loadRemote(ff: FFmpeg): Promise<void> {
-  const [core, wasm] = await Promise.all([
+  // CDN is cross-origin, so we MUST wrap into same-origin blob URLs to let
+  // the worker's `importScripts` execute the script.
+  const [coreURL, wasmURL] = await Promise.all([
     toBlobURL(`${REMOTE_FALLBACK}/ffmpeg-core.js`, 'text/javascript'),
     toBlobURL(`${REMOTE_FALLBACK}/ffmpeg-core.wasm`, 'application/wasm'),
   ])
   await withTimeout(
-    ff.load({ coreURL: core, wasmURL: wasm }),
-    60_000,
+    ff.load({ coreURL, wasmURL }),
+    FFMPEG_LOAD_TIMEOUT_MS,
     'FFmpeg core load (remote)',
   )
 }
