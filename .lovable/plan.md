@@ -1,33 +1,27 @@
-## مشکل
+هدف نهایی: دکمه Apply changes بعد از رسیدن به ۱۰۰٪ واقعاً ویدئوی Trim شده را روی کارت اعمال کند، دیالوگ بسته شود، کارت و Preview/Final Film از نسخه‌ی ویرایش‌شده استفاده کنند، و اگر مرحله‌ی ذخیره‌سازی یا تبدیل شکست خورد کاربر خطای واقعی ببیند نه حالت گیرکرده.
 
-روی کارت‌هایی که از snapshot یک پروژه (selected-project / draft) رندر می‌شوند، کلیک روی آیکون قیچی (trim) کار نمی‌کند. علت:
+محدودیت‌ها و ریسک‌ها:
+- مسیر Trim فعلی دو مرحله دارد: ساخت ویدئوی جدید در مرورگر، سپس آپلود و ثبت asset جدید روی backend.
+- تصویر نشان می‌دهد مرحله‌ی ساخت ویدئو به ۱۰۰٪ رسیده، اما بعد از آن Promise کامل نمی‌شود؛ محتمل‌ترین نقاط گیر: `ensureMp4` در مرحله readout/cleanup یا `onApply` هنگام آپلود/ثبت backend.
+- نباید منطق Final Film، حذف کارت‌ها، یا تولید ویدئوهای جدید خراب شود.
+- تغییر باید محدود به Trim باشد و با کمترین دستکاری انجام شود.
 
-- `setTrimmingJobId(video.id)` ست می‌شود
-- ولی effect خط ۹۸۹ و render-guard خط ۴۱۰۴، job را فقط در `visibleVideos = mergedEntries + generatedVideos` جستجو می‌کنند
-- اگر کلیپ live در `generatedVideos` موجود نباشد (مثلاً فقط از `draftSourceJobs`/`projectSourceJobs` رندر شده)، `find` `undefined` می‌شود → `trimSrc` ست نمی‌شود → دیالوگ باز نمی‌شود
+پلن اجرا:
+1. در `ClipTrimmerDialog.tsx` وضعیت پیشرفت را مرحله‌ای کنم تا ۱۰۰٪ فقط زمانی نمایش داده شود که کل عملیات تمام شده باشد، نه صرفاً وقتی پردازش محلی تمام شده است.
+   - مرحله‌ها مثل: Rendering، Applying، Saving.
+   - `onApply` باید پیشرفت ذخیره‌سازی را گزارش کند یا حداقل بعد از render روی حالت Saving بماند.
 
-## راه‌حل
+2. در `trimVideo.ts` و `transcodeToMp4.ts` جلوی گیرکردن خاموش را بگیرم.
+   - callback پیشرفت encode را به `ensureMp4` پاس بدهم تا UI دقیق بماند.
+   - برای مرحله‌ی `readFile`/readout هم timeout مشخص اضافه کنم تا اگر ffmpeg.wasm قفل کرد، خطای قابل نمایش برگردد.
+   - cleanup و حذف فایل‌های ffmpeg را در `finally` مطمئن‌تر کنم تا عملیات‌های بعدی هم خراب نشوند.
 
-در `src/modules/generator-ui/pages/DashboardPage.tsx`:
+3. در `DashboardPage.tsx` تابع `applyTrimToCard` را به یک مسیر قابل اتکا تبدیل کنم.
+   - اگر job فقط در snapshot/project/draft باشد، aspect و state را از resolver سراسری پیدا کند، نه فقط `generatedVideos`.
+   - بعد از آپلود و `updateEditedVideo`، همان job آپدیت‌شده را علاوه بر `generatedVideos` در snapshotهای مرتبط هم جایگزین کند تا کارت فعلی فوراً تغییر کند.
+   - در صورت خطا، خطا را به دیالوگ برگرداند تا دکمه از حالت Rendering خارج شود و پیام واقعی نمایش داده شود.
 
-1. تابع `findJobByIdAcrossSnapshots(id)` اضافه می‌شود که job را به ترتیب از این منابع پیدا کند:
-   - `generatedVideos`
-   - `mergedEntries`
-   - `Object.values(projectSourceJobs).flat()`
-   - `Object.values(draftSourceJobs).flat()`
-   - `Object.values(librarySavedJobs)`
-
-2. در useEffect خط ۹۷۸ به‌جای `visibleVideos.find(...)` از این resolver استفاده می‌شود.
-3. در رندر دیالوگ خط ۴۱۰۳–۴۱۱۴ همان resolver استفاده می‌شود.
-
-هیچ تغییری در بک‌اند، edge functions، `applyTrimToCard`، یا سایر دکمه‌ها لازم نیست.
-
-## فایل تغییر یافته
-
-- `src/modules/generator-ui/pages/DashboardPage.tsx`
-
-## اعتبارسنجی
-
-- در حالت SHOWING PROJECT کلیک روی قیچی هر کارت Ready → دیالوگ ClipTrimmer باز می‌شود و ویدیو در آن لود می‌شود.
-- در حالت پیش‌فرض (بدون پروژه‌ی انتخاب‌شده) رفتار قبلی حفظ می‌ماند.
-- اعمال Trim و ذخیره به‌عنوان نسخه ویرایش‌شده طبق منطق فعلی کار می‌کند.
+4. اعتبارسنجی بعد از تغییر:
+   - بررسی TypeScript/ساختار importها به شکل استاتیک با خواندن مسیرهای تغییر داده‌شده.
+   - تست رفتاری مسیر Promise: Apply باید یا دیالوگ را ببندد و کارت را با Blob جدید نشان دهد، یا خطا بدهد؛ نباید روی ۱۰۰٪ بماند.
+   - اگر لازم شد لاگ‌های هدفمند فقط برای همین مسیر اضافه می‌کنم تا در پیام بعدی بتوانیم دقیقاً نقطه‌ی گیر را ببینیم.
