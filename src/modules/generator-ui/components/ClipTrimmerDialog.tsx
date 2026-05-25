@@ -124,6 +124,7 @@ export default function ClipTrimmerDialog({
   const apply = async () => {
     setError(null)
     setBusy(true)
+    setStage('rendering')
     setProgress(0)
     try {
       if (norm.length === 0 && !muteAudio) {
@@ -133,6 +134,8 @@ export default function ClipTrimmerDialog({
         muteAudio,
         onProgress: (p) => setProgress(p.ratio),
       })
+      setStage('saving')
+      setProgress(1)
       await onApply(result.blob, result.duration, result.extension)
       onOpenChange(false)
     } catch (e) {
