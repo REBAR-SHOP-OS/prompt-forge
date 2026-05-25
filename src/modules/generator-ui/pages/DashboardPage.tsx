@@ -39,6 +39,7 @@ import {
   Trash2,
   Upload,
   UserRound,
+  Wand2,
   X
 } from 'lucide-react'
 import {
