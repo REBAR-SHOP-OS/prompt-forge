@@ -88,7 +88,7 @@ import { PlayableVideo } from '@/modules/generator-ui/components/PlayableVideo'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { generatorUiGateway } from '@/modules/generator-ui/gateway'
-import { mergeVideoUrls, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
+import { mergeVideoUrls, MergeCancelledError, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
 import { VoiceoverDialog } from '@/modules/generator-ui/components/VoiceoverDialog'
 import CalendarInfoDialog from '@/modules/generator-ui/components/CalendarInfoDialog'
@@ -1061,6 +1061,7 @@ export default function DashboardPage() {
   const [mergeStage, setMergeStage] = useState<
     'recording' | 'encoding' | 'uploading' | 'finalizing' | null
   >(null)
+  const mergeAbortRef = useRef<AbortController | null>(null)
   // Transient preview of the latest Final Film output. Lives only in memory:
   // never added to Pending, Library, or History. Cleared on Start Over.
   const [lastMergedPreview, setLastMergedPreview] = useState<
@@ -3631,6 +3632,8 @@ export default function DashboardPage() {
         setTimeout(() => reject(new Error('Final Film took too long (>10 min). Please try again with fewer or shorter clips.')), PIPELINE_TIMEOUT_MS),
       )
 
+      const abortController = new AbortController()
+      mergeAbortRef.current = abortController
       const mergeRes = await Promise.race([
         mergeVideoUrls(
           urls,
@@ -3651,9 +3654,11 @@ export default function DashboardPage() {
           },
           audioOpt,
           transitionsForMerge,
+          abortController.signal,
         ),
         pipelineTimeout,
       ])
+      if (abortController.signal.aborted) throw new MergeCancelledError()
 
       setMergeStage('uploading')
       setMergeProgress(99)
@@ -3670,6 +3675,7 @@ export default function DashboardPage() {
       )
       const { error: upErr } = await Promise.race([uploadPromise, uploadTimeout]) as Awaited<typeof uploadPromise>
       if (upErr) throw new Error(upErr.message)
+
       setMergeProgress(100)
       setMergeStage(null)
       const { data } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(storagePath)
@@ -3817,6 +3823,10 @@ export default function DashboardPage() {
 
 
     } catch (err) {
+      if (err instanceof MergeCancelledError) {
+        console.info('[merge] cancelled by user')
+        setVideoColumnMessage('Rendering cancelled.')
+      } else {
       // Log the raw err first so we never lose detail to fallback strings.
       console.error('[merge] failed', err, {
         type: typeof err,
@@ -3834,11 +3844,14 @@ export default function DashboardPage() {
         ? `Source file "${filename}" could not be loaded from the server (it may have been deleted). Remove that clip from the workspace and try again.`
         : `Could not load source video for merge — please try again in a moment. (${msg})`
       setVideoColumnMessage(friendly)
+      }
     } finally {
+      mergeAbortRef.current = null
       setIsMerging(false)
       setMergeProgress(0)
       setMergeStage(null)
     }
+
   }
 
   function resetWorkspace({ keepPreview }: { keepPreview: boolean }) {
@@ -4115,39 +4128,47 @@ export default function DashboardPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <button
-        type="button"
-        onClick={handleMergeAllVideos}
-        disabled={isMerging || (Math.max(completedSourceVideos.length, selectedProjectId ? (projectSourceJobs[selectedProjectId]?.length ?? 0) : 0) + visibleUserImages.length) < 1}
-        className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-emerald-300/30 hover:bg-emerald-300/[0.06] hover:text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
-        aria-label="Save cards as a final film"
-        title={(() => {
-          const totalCards = completedSourceVideos.length + visibleUserImages.length
-          if (totalCards < 1) return 'Need at least 1 finished item (video or image)'
-          const hasAudio = Boolean(musicUrl) || Boolean(voiceoverUrl)
-          if (totalCards === 1) {
-            return hasAudio ? 'Apply soundtrack and save to Library' : 'Save this clip as a Final Film'
-          }
-          return musicUrl
-            ? `Final film with music (${formatTimeMS(musicRange[0])} – ${formatTimeMS(musicRange[1])})`
-            : 'Save cards as a final film'
-        })()}
-      >
-        {isMerging ? (
-          <>
-            <LoaderCircle className="h-[14px] w-[14px] animate-spin" aria-hidden="true" />
-            <span className="tabular-nums">
-              {mergeStage === 'encoding' ? 'Encoding ' : mergeStage === 'uploading' ? 'Uploading ' : mergeStage === 'finalizing' ? 'Finalizing ' : ''}
-              {mergeProgress}%
-            </span>
-          </>
-        ) : (
-          <>
-            <Film className="h-[14px] w-[14px]" aria-hidden="true" />
-            <span>Final film</span>
-          </>
-        )}
-      </button>
+      {isMerging ? (
+        <div className="flex h-9 items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-2 text-xs uppercase tracking-[0.18em] text-zinc-200/80">
+          <LoaderCircle className="h-[14px] w-[14px] animate-spin" aria-hidden="true" />
+          <span className="tabular-nums px-1">
+            {mergeStage === 'encoding' ? 'Encoding ' : mergeStage === 'uploading' ? 'Uploading ' : mergeStage === 'finalizing' ? 'Finalizing ' : ''}
+            {mergeProgress}%
+          </span>
+          <button
+            type="button"
+            onClick={() => { mergeAbortRef.current?.abort() }}
+            className="ml-1 grid h-6 w-6 place-items-center rounded text-zinc-300 transition hover:bg-red-500/20 hover:text-red-200"
+            aria-label="Cancel rendering"
+            title="Cancel rendering"
+          >
+            <X className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={handleMergeAllVideos}
+          disabled={(Math.max(completedSourceVideos.length, selectedProjectId ? (projectSourceJobs[selectedProjectId]?.length ?? 0) : 0) + visibleUserImages.length) < 1}
+          className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-emerald-300/30 hover:bg-emerald-300/[0.06] hover:text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
+          aria-label="Save cards as a final film"
+          title={(() => {
+            const totalCards = completedSourceVideos.length + visibleUserImages.length
+            if (totalCards < 1) return 'Need at least 1 finished item (video or image)'
+            const hasAudio = Boolean(musicUrl) || Boolean(voiceoverUrl)
+            if (totalCards === 1) {
+              return hasAudio ? 'Apply soundtrack and save to Library' : 'Save this clip as a Final Film'
+            }
+            return musicUrl
+              ? `Final film with music (${formatTimeMS(musicRange[0])} – ${formatTimeMS(musicRange[1])})`
+              : 'Save cards as a final film'
+          })()}
+        >
+          <Film className="h-[14px] w-[14px]" aria-hidden="true" />
+          <span>Final film</span>
+        </button>
+      )}
+
 
       {/* Background music: pick an audio file + select a window. Applied as
           the soundtrack of the Final Film (clip audio is muted). */}
@@ -4720,6 +4741,21 @@ export default function DashboardPage() {
                               {previewItem.job.status_message ?? 'Waiting for render output.'}
                             </p>
                           )}
+                          {isRendering && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm('Cancel this rendering job?')) {
+                                  void deleteCard(previewItem.job.id)
+                                }
+                              }}
+                              className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs uppercase tracking-[0.18em] text-zinc-300 transition hover:border-red-400/40 hover:bg-red-500/10 hover:text-red-200"
+                            >
+                              <X className="h-3.5 w-3.5" aria-hidden="true" />
+                              <span>Cancel rendering</span>
+                            </button>
+                          )}
+
                         </div>
                       )
                     })()}

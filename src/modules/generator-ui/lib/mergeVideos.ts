@@ -278,13 +278,23 @@ function paintTransitionFrame(
   }
 }
 
+export class MergeCancelledError extends Error {
+  constructor() {
+    super('Merge cancelled')
+    this.name = 'MergeCancelledError'
+  }
+}
+
 export async function mergeVideoUrls(
   urls: string[],
   onProgress?: MergeProgressCallback,
   audio?: MergeAudioOptions,
   transitions?: TransitionSpec[],
+  signal?: AbortSignal,
 ): Promise<MergeResult> {
   if (urls.length === 0) throw new Error('No videos to merge')
+  if (signal?.aborted) throw new MergeCancelledError()
+
 
   const norm = normalizeAudioOptions(audio)
   const musicTrack = norm?.music && norm.music.endSec > norm.music.startSec ? norm.music : undefined
@@ -633,7 +643,20 @@ export async function mergeVideoUrls(
     if (liveTicker) { clearInterval(liveTicker); liveTicker = null }
   }
 
+  const abortPromise = new Promise<'aborted'>((resolve) => {
+    if (!signal) return
+    if (signal.aborted) { resolve('aborted'); return }
+    signal.addEventListener('abort', () => resolve('aborted'), { once: true })
+  })
+  const raceAbort = async <T,>(p: Promise<T>): Promise<T> => {
+    const r = await Promise.race([p, abortPromise])
+    if (r === 'aborted') throw new MergeCancelledError()
+    return r as T
+  }
+
   for (let i = 0; i < urls.length; i++) {
+    if (signal?.aborted) throw new MergeCancelledError()
+
     const video = preloaded[i]
     const dur = Number.isFinite(video.duration) ? video.duration : 0
 
@@ -697,7 +720,7 @@ export async function mergeVideoUrls(
         // Continue painting the incoming clip from now on.
         loopPaint(video)
         startLiveProgress(video, i + 1, 'recording')
-        await endedPromise
+        await raceAbort(endedPromise)
       } else {
         // Cut: behave like before.
         if (prevClipNode) {
@@ -712,7 +735,7 @@ export async function mergeVideoUrls(
         }
         loopPaint(video)
         startLiveProgress(video, i + 1, 'recording')
-        await endedPromise
+        await raceAbort(endedPromise)
       }
     } else {
       // First clip — no transition in.
@@ -724,7 +747,7 @@ export async function mergeVideoUrls(
       }
       loopPaint(video)
       startLiveProgress(video, i + 1, 'recording')
-      await endedPromise
+      await raceAbort(endedPromise)
     }
 
     stopLiveProgress()
