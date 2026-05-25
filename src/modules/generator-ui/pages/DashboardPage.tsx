@@ -1061,6 +1061,7 @@ export default function DashboardPage() {
   const [mergeStage, setMergeStage] = useState<
     'recording' | 'encoding' | 'uploading' | 'finalizing' | null
   >(null)
+  const mergeAbortRef = useRef<AbortController | null>(null)
   // Transient preview of the latest Final Film output. Lives only in memory:
   // never added to Pending, Library, or History. Cleared on Start Over.
   const [lastMergedPreview, setLastMergedPreview] = useState<
