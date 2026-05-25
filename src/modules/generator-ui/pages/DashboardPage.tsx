@@ -2748,8 +2748,8 @@ export default function DashboardPage() {
       // 45s auto-split: ask scenario-write to break the user's single prompt into
       // three sequential 15s scenes, then chain them via submitScenesAsJobs so each
       // becomes its own card with narrative continuity (frame-to-frame seeding).
-      if (durationSeconds === 45 || durationSeconds === 135) {
-        const expectedScenes = durationSeconds === 135 ? 9 : 3
+      if (durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135) {
+        const expectedScenes = durationSeconds === 135 ? 9 : durationSeconds === 45 ? 3 : 2
         setVideoColumnMessage(`Splitting your prompt into ${expectedScenes} scenes…`)
         let autoScenes: string[] = []
         try {
@@ -2782,9 +2782,10 @@ export default function DashboardPage() {
         // else: fall through to legacy behavior below (N identical 15s clips).
       }
 
-      const iterations = durationSeconds === 135 ? 9 : durationSeconds === 45 ? 3 : 1
+      const iterations = durationSeconds === 135 ? 9 : durationSeconds === 45 ? 3 : durationSeconds === 30 ? 2 : 1
       const perClipDuration: 5 | 10 | 15 =
-        durationSeconds === 45 || durationSeconds === 135 ? 15 : durationSeconds
+        (durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135) ? 15 : durationSeconds
+
 
 
       // The user's current selection always wins for per-clip generation.
