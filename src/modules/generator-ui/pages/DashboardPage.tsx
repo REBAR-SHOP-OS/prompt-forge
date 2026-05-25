@@ -4209,6 +4209,26 @@ export default function DashboardPage() {
           />
         )
       })()}
+      {(() => {
+        if (!v2vJobId) return null
+        const job =
+          generatedVideos.find((v) => v.id === v2vJobId) ??
+          mergedEntries.find((v) => v.id === v2vJobId) ??
+          Object.values(projectSourceJobs).flat().find((v) => v.id === v2vJobId) ??
+          Object.values(draftSourceJobs).flat().find((v) => v.id === v2vJobId) ??
+          librarySavedJobs[v2vJobId]
+        if (!job?.video?.storage_path) return null
+        if (!v2vSrc) return null
+        return (
+          <VideoToVideoDialog
+            open
+            onOpenChange={(o) => { if (!o) { setV2vJobId(null); setV2vSrc(null) } }}
+            videoUrl={v2vSrc}
+            title={job?.input_prompt ?? undefined}
+            onApply={applyTrimToCard(v2vJobId)}
+          />
+        )
+      })()}
       <div
         className={`pointer-events-none absolute inset-0 border transition duration-200 ${
           isDragging ? 'border-amber-300/40 bg-amber-300/[0.045]' : 'border-transparent'
