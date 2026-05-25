@@ -17,12 +17,6 @@ import { fetchFile, toBlobURL } from '@ffmpeg/util'
 import coreUrl from '@ffmpeg/core?url'
 // eslint-disable-next-line import/no-unresolved
 import wasmUrl from '@ffmpeg/core/wasm?url'
-// The class-level Worker that the FFmpeg() instance spawns. Without an
-// explicit classWorkerURL the @ffmpeg/ffmpeg package tries to resolve
-// `./worker.js` relative to its own ESM URL, which under Vite's dep-optimizer
-// silently fails to spawn — load() then never resolves and the UI sits on 0%.
-// eslint-disable-next-line import/no-unresolved
-import classWorkerUrl from '@ffmpeg/ffmpeg/dist/esm/worker.js?worker&url'
 
 export interface Mp4Result {
   blob: Blob
@@ -70,14 +64,18 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   })
 }
 
+// IMPORTANT: do NOT pass `classWorkerURL`. The @ffmpeg/ffmpeg package spawns its
+// own bundled `./worker.js` via `new URL('./worker.js', import.meta.url)` which
+// Vite handles correctly as long as the package is excluded from optimizeDeps
+// (see vite.config.ts). Overriding classWorkerURL with `?worker&url` makes Vite
+// rewrap the worker and the LOAD message handler never replies → load() hangs.
 async function loadLocal(ff: FFmpeg): Promise<void> {
-  // Same-origin blob URLs so the module worker can importScripts/import them.
   const [core, wasm] = await Promise.all([
     toBlobURL(coreUrl, 'text/javascript'),
     toBlobURL(wasmUrl, 'application/wasm'),
   ])
   await withTimeout(
-    ff.load({ coreURL: core, wasmURL: wasm, classWorkerURL: classWorkerUrl }),
+    ff.load({ coreURL: core, wasmURL: wasm }),
     45_000,
     'FFmpeg core load (local)',
   )
@@ -89,7 +87,7 @@ async function loadRemote(ff: FFmpeg): Promise<void> {
     toBlobURL(`${REMOTE_BASE}/ffmpeg-core.wasm`, 'application/wasm'),
   ])
   await withTimeout(
-    ff.load({ coreURL: core, wasmURL: wasm, classWorkerURL: classWorkerUrl }),
+    ff.load({ coreURL: core, wasmURL: wasm }),
     45_000,
     'FFmpeg core load (remote)',
   )

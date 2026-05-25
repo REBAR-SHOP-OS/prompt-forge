@@ -19,4 +19,11 @@ export default defineConfig(({ mode }) => ({
     },
     dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime", "@tanstack/react-query", "@tanstack/query-core"],
   },
+  // ffmpeg.wasm ships its own ES module worker that uses dynamic import().
+  // Vite's dep-optimizer rewrites those imports and breaks the worker load,
+  // leaving FFmpeg.load() hanging until timeout. Excluding the packages keeps
+  // them served as native ESM so the worker spawns correctly.
+  optimizeDeps: {
+    exclude: ["@ffmpeg/ffmpeg", "@ffmpeg/util", "@ffmpeg/core"],
+  },
 }));
