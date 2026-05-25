@@ -2530,10 +2530,17 @@ export default function DashboardPage() {
       const settled = await Promise.allSettled(
         activeJobs.map(async (job) => ({ jobId: job.id, detail: await jobOrchestratorGateway.getJob(job.id) })),
       )
+      // Protect drafts: any job referenced by an active draft snapshot must
+      // never be silently dropped on a transient "missing" poll error, only
+      // when the user explicitly deletes the draft or finalizes it.
+      const draftProtectedIds = new Set<string>()
+      for (const arr of Object.values(draftSourceJobs)) {
+        for (const c of arr) draftProtectedIds.add(c.id)
+      }
       const missingJobIds = settled
         .filter((r): r is PromiseRejectedResult => r.status === 'rejected' && isMissingJobError(r.reason))
         .map((r) => activeJobs[settled.indexOf(r)]?.id)
-        .filter((id): id is string => Boolean(id))
+        .filter((id): id is string => Boolean(id) && !draftProtectedIds.has(id))
       const fulfilled = settled
         .filter((r): r is PromiseFulfilledResult<{ jobId: string; detail: JobDetail }> => r.status === 'fulfilled')
         .map((r) => r.value.detail)
