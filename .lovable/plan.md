@@ -1,20 +1,15 @@
-## مشکل
-کارت‌های Draft (در Library) و Pending به اشتباه «Video unavailable» نشان می‌دهند، در حالی که همان ویدئو در preview مرکزی به‌درستی پخش می‌شود. پس URL سالم است.
+هدف نهایی: هیچ Draftی از Library حذف یا مخفی نشود، مگر وقتی خود کاربر دکمه حذف همان Draft را بزند و تایید کند.
 
-## ریشه
-کامپوننت `PlayableVideo` یک `<video preload="metadata">` مخفی mount می‌کند و فقط بعد از `loadedmetadata` ویدئو واقعی را نشان می‌دهد. اگر این رویداد در ۱۵ ثانیه نرسد (پروکسی Aliyun OSS کند است یا چند کارت همزمان درخواست می‌دهند)، watchdog state را به `error` می‌برد و «Video unavailable» نمایش داده می‌شود — حتی وقتی فایل کاملاً سالم است. این gate دو-مرحله‌ای علت اصلی است، نه خود URL.
+برنامه اجرا:
+1. منطق Final Film را اصلاح می‌کنم تا بعد از ساخت فیلم نهایی، Draft قبلی را از `draftEntries`، `draftSourceJobs` و `draftSourceImages` حذف نکند و tombstone هم برای آن نسازد.
+2. منطق dedupe خودکار Draftها را امن می‌کنم؛ به‌جای حذف کارت‌های Draft تکراری از Library، فقط از ساخت تکراری‌های جدید جلوگیری می‌شود یا Draft موجود حفظ می‌شود.
+3. رفتار Start Over دست‌نخورده می‌ماند: فقط workspace فعلی را خالی می‌کند و Draftهای ذخیره‌شده در Library را نگه می‌دارد.
+4. مسیر حذف دستی را نگه می‌دارم: فقط `deleteCard` برای Draft، بعد از تایید کاربر، اجازه حذف Draft و منابعش را دارد.
+5. یک بررسی سریع انجام می‌دهم که عبارت‌های حذف خودکار Draft فقط در مسیر حذف دستی باقی مانده باشند.
 
-## برنامه (فقط فرانت‌اند، یک فایل)
+فایل هدف:
+- `src/modules/generator-ui/pages/DashboardPage.tsx`
 
-ساده‌سازی `src/modules/generator-ui/components/PlayableVideo.tsx`:
-
-1. حذف مرحله‌ی hidden-video و watchdog ۱۵ ثانیه‌ای.
-2. به محض اینکه URL با proxy ریزالو شد، مستقیماً همان `<video>` نهایی (با `poster`، `controls`، `muted`، `playsInline`) را render کن.
-3. تا زمانی که URL ریزالو نشده، loader نمایش بده.
-4. حالت `error` فقط در پاسخ به رویداد واقعی `onError` خود `<video>` فعال شود، نه با timeout.
-5. منطق فعلی `onLoadedMetadata` (پذیرش WebM با duration نامعتبر) حفظ شود، ولی فقط برای فراخوانی callback خارجی — دیگر state را به ready/error تغییر نمی‌دهد.
-
-نتیجه: کارت‌های Draft و Pending مثل preview مرکزی فایل را پخش می‌کنند و فقط در شکست واقعی شبکه پیام «Video unavailable» می‌دهند. هیچ تغییری در مسیر Final Film، دانلود، یا backend نیست.
-
-## فایل‌های تغییریافته
-- `src/modules/generator-ui/components/PlayableVideo.tsx`
+ریسک‌ها و کنترل‌ها:
+- ریسک نمایش duplicate Draft وجود دارد؛ کنترلش این است که dedupe دیگر destructive نباشد و فقط مانع ایجاد موارد جدید شود، نه اینکه Draftهای قبلی را پاک کند.
+- به backend، auth، آپلود، یا حذف ویدئوهای Final دست نمی‌زنم.
