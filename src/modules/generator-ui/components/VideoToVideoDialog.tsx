@@ -158,6 +158,31 @@ export default function VideoToVideoDialog({
     setBusy(true)
     cancelled.current = false
     try {
+      // Step 1: analyze the full source video so Veo gets full-clip context.
+      setStage('Analyzing video…')
+      let analysisBlock = ''
+      try {
+        const { data: analyzeData, error: analyzeErr } = await supabase.functions.invoke(
+          'video-analyze',
+          { body: { videoUrl } },
+        )
+        if (analyzeErr) throw analyzeErr
+        const a = (analyzeData as { analysis?: Record<string, string> })?.analysis ?? {}
+        const lines = [
+          a.summary && `- Summary: ${a.summary}`,
+          a.subjects && `- Subjects: ${a.subjects}`,
+          a.camera && `- Camera: ${a.camera}`,
+          a.motion && `- Motion: ${a.motion}`,
+          a.lighting && `- Lighting: ${a.lighting}`,
+          a.environment && `- Environment: ${a.environment}`,
+          a.key_moments && `- Key moments: ${a.key_moments}`,
+        ].filter(Boolean)
+        if (lines.length) analysisBlock = lines.join('\n')
+      } catch (e) {
+        console.warn('[VideoToVideoDialog] analyze failed, falling back to frame-only', e)
+      }
+      if (cancelled.current) return
+
       setStage('Capturing first frame…')
       const blob = await snapshotFirstFrame(videoUrl)
       if (cancelled.current) return
@@ -175,9 +200,12 @@ export default function VideoToVideoDialog({
       setStage('Sending to video model…')
       const ratio = veoAspect(sourceAspectRatio)
       const augmentedPrompt =
-        `${trimmed}\n\n` +
-        '— Keep the exact same composition, camera angle, framing, lighting, subject identity ' +
-        'and motion as the reference frame. Only change what was explicitly requested above. ' +
+        `USER EDIT INSTRUCTION:\n${trimmed}\n\n` +
+        (analysisBlock
+          ? `ORIGINAL VIDEO ANALYSIS (preserve everything below unless explicitly changed above):\n${analysisBlock}\n\n`
+          : '') +
+        'Rules: keep the exact composition, camera angle, framing, lighting, subject identity ' +
+        'and motion as the original video. Only apply the user edit instruction above. ' +
         'Do not add new subjects. Do not change the environment unless asked.'
 
       const created: CreateJobResult = await jobOrchestratorGateway.createJob({
