@@ -1,33 +1,40 @@
 ## مشکل
 
-روی کارت‌هایی که از snapshot یک پروژه (selected-project / draft) رندر می‌شوند، کلیک روی آیکون قیچی (trim) کار نمی‌کند. علت:
+عملیات Trim دو فاز دارد ولی فقط فاز اول به نوار پیشرفت گزارش می‌شود:
 
-- `setTrimmingJobId(video.id)` ست می‌شود
-- ولی effect خط ۹۸۹ و render-guard خط ۴۱۰۴، job را فقط در `visibleVideos = mergedEntries + generatedVideos` جستجو می‌کنند
-- اگر کلیپ live در `generatedVideos` موجود نباشد (مثلاً فقط از `draftSourceJobs`/`projectSourceJobs` رندر شده)، `find` `undefined` می‌شود → `trimSrc` ست نمی‌شود → دیالوگ باز نمی‌شود
+1. **Record با MediaRecorder** — تمام `onProgress` به دیالوگ می‌رسد و سریع به ۱۰۰٪ می‌رسد.
+2. **ensureMp4 با ffmpeg.wasm** (load core + remux/encode + readFile) — می‌تواند چند ثانیه تا چند دقیقه طول بکشد ولی هیچ خبری به UI نمی‌رسد.
+
+نتیجه: کاربر «Rendering… 100%» را می‌بیند و فکر می‌کند گیر کرده، در حالی‌که ffmpeg در پس‌زمینه کار می‌کند.
+
+علت در `src/modules/generator-ui/lib/trimVideo.ts` خط ۳۷۳–۳۷۴: `ensureMp4(finalBlob, mimeType)` بدون callback پیشرفت صدا زده شده، در حالی‌که `ensureMp4` پارامتر `Mp4ProgressCallback` با مراحل `loading|remux|encode|readout` دارد.
 
 ## راه‌حل
 
-در `src/modules/generator-ui/pages/DashboardPage.tsx`:
+### `src/modules/generator-ui/lib/trimVideo.ts`
 
-1. تابع `findJobByIdAcrossSnapshots(id)` اضافه می‌شود که job را به ترتیب از این منابع پیدا کند:
-   - `generatedVideos`
-   - `mergedEntries`
-   - `Object.values(projectSourceJobs).flat()`
-   - `Object.values(draftSourceJobs).flat()`
-   - `Object.values(librarySavedJobs)`
+- مقدار `onProgress` فاز ضبط را به نیمه اول ماپ کنیم: `ratio * 0.5`.
+- موقع فراخوانی `ensureMp4` یک callback بدهیم که فازهای ffmpeg را به نیمه دوم ماپ کند:
+  - `loading` → 0.5 → 0.55
+  - `remux`   → 0.55 → 0.95
+  - `encode`  → 0.55 → 0.95
+  - `readout` → ~1.0
+- ساختار `TrimProgress` را گسترش دهیم به `{ ratio: number; stage?: string }` بدون شکستن callerهای فعلی.
 
-2. در useEffect خط ۹۷۸ به‌جای `visibleVideos.find(...)` از این resolver استفاده می‌شود.
-3. در رندر دیالوگ خط ۴۱۰۳–۴۱۱۴ همان resolver استفاده می‌شود.
+### `src/modules/generator-ui/components/ClipTrimmerDialog.tsx`
 
-هیچ تغییری در بک‌اند، edge functions، `applyTrimToCard`، یا سایر دکمه‌ها لازم نیست.
+- state جدید `stageLabel` که از `onProgress` ست می‌شود (مثلاً «Recording»، «Loading encoder»، «Encoding»، «Finalizing»).
+- داخل دکمه Apply کنار درصد، برچسب فاز نمایش داده شود.
 
-## فایل تغییر یافته
+هیچ تغییری در بک‌اند، edge functions، یا منطق `applyTrimToCard` لازم نیست. خروجی نهایی (`Blob`, `duration`, `extension`) بدون تغییر می‌ماند.
 
-- `src/modules/generator-ui/pages/DashboardPage.tsx`
+## فایل‌های تغییر یافته
+
+- `src/modules/generator-ui/lib/trimVideo.ts`
+- `src/modules/generator-ui/components/ClipTrimmerDialog.tsx`
 
 ## اعتبارسنجی
 
-- در حالت SHOWING PROJECT کلیک روی قیچی هر کارت Ready → دیالوگ ClipTrimmer باز می‌شود و ویدیو در آن لود می‌شود.
-- در حالت پیش‌فرض (بدون پروژه‌ی انتخاب‌شده) رفتار قبلی حفظ می‌ماند.
-- اعمال Trim و ذخیره به‌عنوان نسخه ویرایش‌شده طبق منطق فعلی کار می‌کند.
+- پس از رسیدن فاز ضبط به ۵۰٪، برچسب به «Loading encoder…» و سپس «Encoding…» و در پایان «Finalizing…» تغییر کند و درصد واقعاً به سمت ۱۰۰٪ پیش برود.
+- در پایان، دیالوگ بسته و کلیپ ویرایش‌شده در کارت Pending ظاهر می‌شود.
+- در صورت خطا یا timeout ffmpeg، پیغام خطای فعلی همچنان نمایش داده می‌شود.
