@@ -29,10 +29,8 @@ export interface CutRange {
 }
 
 export interface TrimProgress {
-  /** 0..1 — overall progress including encode stage. */
+  /** 0..1 — based on kept-time processed so far */
   ratio: number
-  /** Optional human label of current phase. */
-  stage?: string
 }
 
 export interface TrimResult {
@@ -327,7 +325,7 @@ export async function trimVideoLocally(
           video.removeEventListener('ended', onEnded)
           video.removeEventListener('error', onError)
           keptSoFar = startedAt + segDur
-          onProgress?.({ ratio: Math.min(0.5, (keptSoFar / totalKept) * 0.5), stage: 'Recording' })
+          onProgress?.({ ratio: Math.min(1, keptSoFar / totalKept) })
           resolve()
         }
 
@@ -339,7 +337,7 @@ export async function trimVideoLocally(
             return
           }
           const processed = Math.max(0, t - seg.start)
-          onProgress?.({ ratio: Math.min(0.5, ((startedAt + processed) / totalKept) * 0.5), stage: 'Recording' })
+          onProgress?.({ ratio: Math.min(1, (startedAt + processed) / totalKept) })
           rafId = requestAnimationFrame(tick)
         }
 
@@ -373,21 +371,7 @@ export async function trimVideoLocally(
   const finalBlob = await recordedBlob
   // Normalize to standard MP4 so downloads/playback work everywhere.
   const { ensureMp4 } = await import('./transcodeToMp4')
-  const stageLabels: Record<string, string> = {
-    loading: 'Loading encoder',
-    remux: 'Finalizing',
-    encode: 'Encoding',
-    readout: 'Finalizing',
-  }
-  const mp4 = await ensureMp4(finalBlob, mimeType, ({ stage, ratio }) => {
-    // Map ffmpeg stage progress into the second half (0.5 -> 1.0).
-    let mapped = 0.5
-    if (stage === 'loading') mapped = 0.5 + Math.min(0.05, ratio * 0.05)
-    else if (stage === 'remux' || stage === 'encode') mapped = 0.55 + Math.min(0.4, ratio * 0.4)
-    else if (stage === 'readout') mapped = 0.98
-    onProgress?.({ ratio: Math.min(1, mapped), stage: stageLabels[stage] ?? stage })
-  })
-  onProgress?.({ ratio: 1, stage: 'Done' })
+  const mp4 = await ensureMp4(finalBlob, mimeType)
   return {
     blob: mp4.blob,
     mimeType: mp4.mimeType,
