@@ -974,27 +974,6 @@ export default function DashboardPage() {
     return edited ?? fallback ?? undefined
   }
 
-  // Resolve a job by id across every snapshot source we render cards from,
-  // so actions like Trim work even when the card came from a project/draft
-  // snapshot rather than the live `generatedVideos` list.
-  const findJobByIdAcrossSnapshots = useCallback((id: string): JobDetail | undefined => {
-    const fromLive = generatedVideos.find((v) => v.id === id)
-    if (fromLive) return fromLive
-    const fromMerged = mergedEntries.find((v) => v.id === id)
-    if (fromMerged) return fromMerged
-    for (const arr of Object.values(projectSourceJobs)) {
-      const hit = arr.find((v) => v.id === id)
-      if (hit) return hit
-    }
-    for (const arr of Object.values(draftSourceJobs)) {
-      const hit = arr.find((v) => v.id === id)
-      if (hit) return hit
-    }
-    const saved = librarySavedJobs[id]
-    if (saved) return saved
-    return undefined
-  }, [generatedVideos, mergedEntries, projectSourceJobs, draftSourceJobs, librarySavedJobs])
-
   // Resolve a CORS-safe URL for the trim dialog whenever it opens.
   useEffect(() => {
     let cancelled = false
@@ -1007,7 +986,24 @@ export default function DashboardPage() {
       setTrimSrc(edited)
       return
     }
-    const job = findJobByIdAcrossSnapshots(trimmingJobId)
+    // Look across every snapshot source we render cards from, not just
+    // visibleVideos, so Trim works on project/draft snapshot cards too.
+    const findById = (id: string): JobDetail | undefined => {
+      const live = generatedVideos.find((v) => v.id === id)
+      if (live) return live
+      const merged = mergedEntries.find((v) => v.id === id)
+      if (merged) return merged
+      for (const arr of Object.values(projectSourceJobs)) {
+        const hit = arr.find((v) => v.id === id)
+        if (hit) return hit
+      }
+      for (const arr of Object.values(draftSourceJobs)) {
+        const hit = arr.find((v) => v.id === id)
+        if (hit) return hit
+      }
+      return librarySavedJobs[id]
+    }
+    const job = findById(trimmingJobId)
     const raw = job?.video?.storage_path
     if (!raw) {
       setTrimSrc(null)
