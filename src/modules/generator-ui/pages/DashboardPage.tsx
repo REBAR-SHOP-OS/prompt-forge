@@ -4741,6 +4741,21 @@ export default function DashboardPage() {
                               {previewItem.job.status_message ?? 'Waiting for render output.'}
                             </p>
                           )}
+                          {isRendering && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm('Cancel this rendering job?')) {
+                                  void deleteCard(previewItem.job.id)
+                                }
+                              }}
+                              className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs uppercase tracking-[0.18em] text-zinc-300 transition hover:border-red-400/40 hover:bg-red-500/10 hover:text-red-200"
+                            >
+                              <X className="h-3.5 w-3.5" aria-hidden="true" />
+                              <span>Cancel rendering</span>
+                            </button>
+                          )}
+
                         </div>
                       )
                     })()}
