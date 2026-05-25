@@ -26,7 +26,7 @@ function expectedSceneCount(duration: number): number {
 function buildSystemPrompt(duration: number): string {
   const sceneCount = expectedSceneCount(duration);
   if (sceneCount > 1) {
-    const numWord = sceneCount === 3 ? "THREE" : sceneCount === 9 ? "NINE" : String(sceneCount);
+    const numWord = sceneCount === 2 ? "TWO" : sceneCount === 3 ? "THREE" : sceneCount === 9 ? "NINE" : String(sceneCount);
     return [
       "You are a professional short-form video scenario writer.",
       `Given the user's idea, write a CONTINUOUS narrative scenario in ENGLISH for a ${duration}-second cinematic video,`,
