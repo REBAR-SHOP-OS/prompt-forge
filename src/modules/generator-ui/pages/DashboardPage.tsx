@@ -2261,17 +2261,13 @@ export default function DashboardPage() {
     return hasComposerInput ? 'Shape the next version' : 'Start forging a prompt'
   }, [hasComposerInput, isDragging])
 
-  // MANDATORY RULE: the right-side "Pending" column is NOT a history view.
-  // It is only a holding area for the cards of the *current* working project
-  // (cards the user is editing before Final Film). On mount we therefore:
-  //   1) NEVER hydrate jobs/images from the backend into the UI.
-  //   2) Permanently delete any backend job/image that is NOT claimed by
-  //      the active workspace manifest, so refresh can never resurrect a
-  //      previously-pending card. Final Film outputs live only in Library.
+  // Non-destructive restore: on mount, re-hydrate `generatedVideos` and
+  // `userImages` from the backend so the Pending column and source images
+  // survive a page refresh. Items only ever leave memory when the user
+  // explicitly deletes them via the Trash buttons.
   const hydrationRanRef = useRef<string | null>(null)
   useEffect(() => {
     if (!userId) return
-    if (!activeJobIdsKey || !activeImageIdsKey) return
     if (hydrationRanRef.current === userId) return
     hydrationRanRef.current = userId
     let cancelled = false
@@ -2283,63 +2279,39 @@ export default function DashboardPage() {
           jobOrchestratorGateway.listMyJobs().catch(() => [] as JobSummary[]),
           supabase
             .from('generator_user_images')
-            .select('id')
+            .select('id, storage_path, created_at, still_duration_seconds, width, height')
             .eq('user_id', userId)
             .is('deleted_at', null),
         ])
         if (cancelled) return
 
-        const protectedJobIds = new Set(activeJobIds)
-        for (const id of readStoredIdSet(activeJobIdsKey)) protectedJobIds.add(id)
-        const storedProjectSourceJobs = readStoredRecord<JobDetail[]>(projectSourceJobsKey)
-        for (const clips of Object.values({ ...storedProjectSourceJobs, ...projectSourceJobs })) {
-          if (Array.isArray(clips)) {
-            for (const clip of clips) protectedJobIds.add(clip.id)
-          }
-        }
-        const storedDraftSourceJobs = readStoredRecord<JobDetail[]>(draftSourceJobsKey)
-        for (const clips of Object.values({ ...storedDraftSourceJobs, ...draftSourceJobs })) {
-          if (Array.isArray(clips)) {
-            for (const clip of clips) protectedJobIds.add(clip.id)
-          }
-        }
-        for (const id of Object.keys(readStoredRecord<JobDetail>(librarySavedJobsKey))) protectedJobIds.add(id)
-
-        const protectedImageIds = new Set(activeImageIds)
-        for (const id of readStoredIdSet(activeImageIdsKey)) protectedImageIds.add(id)
-        const storedProjectSourceImages = readStoredRecord<UserImageItem[]>(projectSourceImagesKey)
-        for (const images of Object.values({ ...storedProjectSourceImages, ...projectSourceImages })) {
-          if (Array.isArray(images)) {
-            for (const image of images) protectedImageIds.add(image.id)
-          }
-        }
-        const storedDraftSourceImages = readStoredRecord<UserImageItem[]>(draftSourceImagesKey)
-        for (const images of Object.values({ ...storedDraftSourceImages, ...draftSourceImages })) {
-          if (Array.isArray(images)) {
-            for (const image of images) protectedImageIds.add(image.id)
-          }
+        const hiddenJobs = workspaceHiddenJobIds
+        const visibleSummaries = summaries.filter((s) => !hiddenJobs.has(s.id))
+        const hydrated = await hydrateJobs(visibleSummaries)
+        if (cancelled) return
+        if (hydrated.length > 0) {
+          setGeneratedVideos((current) => hydrated.reduce((acc, j) => mergeJob(acc, j), current))
         }
 
-
-        const orphanJobIds = summaries
-          .map((s) => s.id)
-          .filter((id) => !protectedJobIds.has(id))
-        const orphanImageIds = ((imgRowsRes.data ?? []) as { id: string }[])
-          .map((r) => r.id)
-          .filter((id) => !protectedImageIds.has(id))
-
-        // Silent permanent cleanup — never surfaces in the UI.
-        await Promise.allSettled([
-          ...orphanJobIds.map((id) => jobOrchestratorGateway.deleteJob(id)),
-          ...orphanImageIds.map((id) => generatorUiGateway.deleteUserImage(id)),
-        ])
+        const imgRows = (imgRowsRes.data ?? []) as UserImageItem[]
+        const visibleImages = imgRows.filter((r) => !workspaceHiddenImageIds.has(r.id))
+        if (visibleImages.length > 0) {
+          setUserImages((current) => {
+            const known = new Set(current.map((i) => i.id))
+            const merged = [...current]
+            for (const img of visibleImages) if (!known.has(img.id)) merged.push(img)
+            return merged.sort(
+              (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+            )
+          })
+        }
       } catch (err) {
-        console.error('Pending cleanup failed', err)
+        console.error('Workspace restore failed', err)
       }
     })()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, activeJobIdsKey, activeImageIdsKey])
+  }, [userId])
 
   const handlePickImage = () => {
     if (isUploadingImage) return
