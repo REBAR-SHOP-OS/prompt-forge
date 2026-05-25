@@ -393,9 +393,17 @@ interface VeoState {
   pendingExtensionUri?: string;
   // How many times we've tried to start the extension. Capped to avoid loops.
   extensionAttempts?: number;
+  // ms since epoch — the earliest time we're allowed to retry the extension
+  // call. Google needs a real ingest window after phase-1 finishes; retrying
+  // every poll (~2-4s) burns the attempt budget before the file is ready.
+  nextExtensionAttemptAt?: number;
 }
 
-const MAX_EXTENSION_ATTEMPTS = 6;
+const MAX_EXTENSION_ATTEMPTS = 20;
+// Backoff between extension retries when Google says the phase-1 clip isn't
+// processed yet. Linear: 15s, 30s, 45s, ... capped at 90s.
+const EXTENSION_RETRY_BASE_MS = 15_000;
+const EXTENSION_RETRY_CAP_MS = 90_000;
 
 const VEO_STATE_PREFIX = "veo:v1:";
 
