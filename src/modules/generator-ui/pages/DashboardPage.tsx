@@ -1269,6 +1269,51 @@ export default function DashboardPage() {
         persistProjectSourceImages(nextImgMap)
       }
     }
+
+    // Also prune draft snapshots so deleted clips/images cannot be revived
+    // when a draft project is currently selected (the right-side Working
+    // clips list reads from draftSourceJobs / draftSourceImages in that mode).
+    {
+      const nextDraftJobs: Record<string, JobDetail[]> = {}
+      let jobsChanged = false
+      for (const [did, clips] of Object.entries(draftSourceJobs)) {
+        const filtered = clips.filter((c) => c.id !== jobId)
+        if (filtered.length !== clips.length) jobsChanged = true
+        nextDraftJobs[did] = filtered
+      }
+      if (jobsChanged) {
+        setDraftSourceJobs(nextDraftJobs)
+        persistDraftSourceJobs(nextDraftJobs)
+      }
+
+      if (isMerged) {
+        const nextDraftImgs: Record<string, UserImageItem[]> = {}
+        for (const [did, imgs] of Object.entries(draftSourceImages)) {
+          if (did === jobId) continue
+          nextDraftImgs[did] = imgs
+        }
+        if (Object.keys(nextDraftImgs).length !== Object.keys(draftSourceImages).length) {
+          setDraftSourceImages(nextDraftImgs)
+          persistDraftSourceImages(nextDraftImgs)
+        }
+      }
+
+      // Drop any draft entry that is now empty (no clips and no images).
+      const emptyDraftIds = new Set<string>()
+      for (const did of new Set([...Object.keys(nextDraftJobs), ...Object.keys(draftSourceImages)])) {
+        const clipsLeft = (nextDraftJobs[did] ?? draftSourceJobs[did] ?? []).length
+        const imgsLeft = (draftSourceImages[did] ?? []).length
+        if (clipsLeft === 0 && imgsLeft === 0) emptyDraftIds.add(did)
+      }
+      if (emptyDraftIds.size > 0) {
+        setDraftEntries((prev) => {
+          const next = prev.filter((d) => !emptyDraftIds.has(d.id))
+          if (next.length === prev.length) return prev
+          persistDraftEntries(next)
+          return next
+        })
+      }
+    }
     if (isMerged && selectedProjectId === jobId) setSelectedProjectId(null)
 
     // Optimistic UI removal — remove from in-memory list immediately.
