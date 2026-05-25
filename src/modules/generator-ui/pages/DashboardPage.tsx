@@ -415,6 +415,7 @@ export default function DashboardPage() {
   const [promptText, setPromptText] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
+  const [promptViewer, setPromptViewer] = useState<string | null>(null)
   const [startContext] = useState('Start')
   const [endGoal] = useState('End')
   const [generatedVideos, setGeneratedVideos] = useState<JobDetail[]>([])
@@ -5146,9 +5147,17 @@ export default function DashboardPage() {
                     </div>
 
                     <div className="mt-3 flex items-start justify-between gap-2">
-                      <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setPromptViewer(video.input_prompt)
+                        }}
+                        title={video.input_prompt}
+                        className="max-h-12 min-w-0 flex-1 cursor-pointer overflow-hidden whitespace-normal break-words text-left text-sm font-medium leading-6 text-zinc-200 transition hover:text-zinc-50"
+                      >
                         {video.input_prompt}
-                      </p>
+                      </button>
                       <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
                         <span
                           onClick={(event) => event.stopPropagation()}
@@ -6000,6 +6009,16 @@ export default function DashboardPage() {
               className="mx-auto max-h-[80vh] w-auto object-contain"
             />
           ) : null}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={promptViewer !== null} onOpenChange={(o) => { if (!o) setPromptViewer(null) }}>
+        <DialogContent className="max-w-2xl border-white/10 bg-[#0b0c0e]/95">
+          <DialogHeader>
+            <DialogTitle>Prompt</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-words text-sm leading-6 text-zinc-200">
+            {promptViewer}
+          </div>
         </DialogContent>
       </Dialog>
     </section>
