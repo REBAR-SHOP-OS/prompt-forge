@@ -720,7 +720,7 @@ export async function mergeVideoUrls(
         // Continue painting the incoming clip from now on.
         loopPaint(video)
         startLiveProgress(video, i + 1, 'recording')
-        await endedPromise
+        await raceAbort(endedPromise)
       } else {
         // Cut: behave like before.
         if (prevClipNode) {
@@ -735,7 +735,7 @@ export async function mergeVideoUrls(
         }
         loopPaint(video)
         startLiveProgress(video, i + 1, 'recording')
-        await endedPromise
+        await raceAbort(endedPromise)
       }
     } else {
       // First clip — no transition in.
@@ -747,7 +747,7 @@ export async function mergeVideoUrls(
       }
       loopPaint(video)
       startLiveProgress(video, i + 1, 'recording')
-      await endedPromise
+      await raceAbort(endedPromise)
     }
 
     stopLiveProgress()
