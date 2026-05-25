@@ -4128,39 +4128,47 @@ export default function DashboardPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <button
-        type="button"
-        onClick={handleMergeAllVideos}
-        disabled={isMerging || (Math.max(completedSourceVideos.length, selectedProjectId ? (projectSourceJobs[selectedProjectId]?.length ?? 0) : 0) + visibleUserImages.length) < 1}
-        className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-emerald-300/30 hover:bg-emerald-300/[0.06] hover:text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
-        aria-label="Save cards as a final film"
-        title={(() => {
-          const totalCards = completedSourceVideos.length + visibleUserImages.length
-          if (totalCards < 1) return 'Need at least 1 finished item (video or image)'
-          const hasAudio = Boolean(musicUrl) || Boolean(voiceoverUrl)
-          if (totalCards === 1) {
-            return hasAudio ? 'Apply soundtrack and save to Library' : 'Save this clip as a Final Film'
-          }
-          return musicUrl
-            ? `Final film with music (${formatTimeMS(musicRange[0])} – ${formatTimeMS(musicRange[1])})`
-            : 'Save cards as a final film'
-        })()}
-      >
-        {isMerging ? (
-          <>
-            <LoaderCircle className="h-[14px] w-[14px] animate-spin" aria-hidden="true" />
-            <span className="tabular-nums">
-              {mergeStage === 'encoding' ? 'Encoding ' : mergeStage === 'uploading' ? 'Uploading ' : mergeStage === 'finalizing' ? 'Finalizing ' : ''}
-              {mergeProgress}%
-            </span>
-          </>
-        ) : (
-          <>
-            <Film className="h-[14px] w-[14px]" aria-hidden="true" />
-            <span>Final film</span>
-          </>
-        )}
-      </button>
+      {isMerging ? (
+        <div className="flex h-9 items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-2 text-xs uppercase tracking-[0.18em] text-zinc-200/80">
+          <LoaderCircle className="h-[14px] w-[14px] animate-spin" aria-hidden="true" />
+          <span className="tabular-nums px-1">
+            {mergeStage === 'encoding' ? 'Encoding ' : mergeStage === 'uploading' ? 'Uploading ' : mergeStage === 'finalizing' ? 'Finalizing ' : ''}
+            {mergeProgress}%
+          </span>
+          <button
+            type="button"
+            onClick={() => { mergeAbortRef.current?.abort() }}
+            className="ml-1 grid h-6 w-6 place-items-center rounded text-zinc-300 transition hover:bg-red-500/20 hover:text-red-200"
+            aria-label="Cancel rendering"
+            title="Cancel rendering"
+          >
+            <X className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={handleMergeAllVideos}
+          disabled={(Math.max(completedSourceVideos.length, selectedProjectId ? (projectSourceJobs[selectedProjectId]?.length ?? 0) : 0) + visibleUserImages.length) < 1}
+          className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-emerald-300/30 hover:bg-emerald-300/[0.06] hover:text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
+          aria-label="Save cards as a final film"
+          title={(() => {
+            const totalCards = completedSourceVideos.length + visibleUserImages.length
+            if (totalCards < 1) return 'Need at least 1 finished item (video or image)'
+            const hasAudio = Boolean(musicUrl) || Boolean(voiceoverUrl)
+            if (totalCards === 1) {
+              return hasAudio ? 'Apply soundtrack and save to Library' : 'Save this clip as a Final Film'
+            }
+            return musicUrl
+              ? `Final film with music (${formatTimeMS(musicRange[0])} – ${formatTimeMS(musicRange[1])})`
+              : 'Save cards as a final film'
+          })()}
+        >
+          <Film className="h-[14px] w-[14px]" aria-hidden="true" />
+          <span>Final film</span>
+        </button>
+      )}
+
 
       {/* Background music: pick an audio file + select a window. Applied as
           the soundtrack of the Final Film (clip audio is muted). */}
