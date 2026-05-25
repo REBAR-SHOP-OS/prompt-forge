@@ -1640,13 +1640,26 @@ export default function DashboardPage() {
     }
     const did = draftId
 
-    // Update the snapshot maps only when ids actually change.
+    // Update the snapshot maps only when ids actually change. Critically,
+    // we MERGE with the existing snapshot instead of replacing it: a clip
+    // that lost its storage_path (provider hiccup, transient poll error)
+    // keeps its previously-known good entry, so the draft never silently
+    // loses its video content.
     setDraftSourceJobs((prev) => {
       const cur = prev[did] ?? []
-      const sameLen = cur.length === liveClips.length
-      const sameIds = sameLen && cur.every((c, i) => c.id === liveClips[i].id && (c.video?.storage_path ?? null) === (liveClips[i].video?.storage_path ?? null))
+      const byId = new Map(cur.map((c) => [c.id, c] as const))
+      const merged = liveClips.map((c) => {
+        const hasPath = !!c.video?.storage_path
+        const existing = byId.get(c.id)
+        // If the live clip is missing a storage_path but we had a good
+        // snapshot before, keep the snapshot. Otherwise prefer the live one.
+        if (!hasPath && existing?.video?.storage_path) return existing
+        return c
+      })
+      const sameLen = cur.length === merged.length
+      const sameIds = sameLen && cur.every((c, i) => c.id === merged[i].id && (c.video?.storage_path ?? null) === (merged[i].video?.storage_path ?? null))
       if (sameIds) return prev
-      const next = { ...prev, [did]: liveClips }
+      const next = { ...prev, [did]: merged }
       persistDraftSourceJobs(next)
       return next
     })
