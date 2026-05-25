@@ -69,8 +69,8 @@ export default function VideoToVideoDialog({
     try {
       const result = await editVideoWithAi(videoUrl, {
         prompt: prompt.trim(),
-        fps: 6,
-        maxDurationSec: 8,
+        fps: 4,
+        maxDurationSec: 6,
         concurrency: 3,
         onProgress: (info) => {
           setStage(info.stage)
@@ -85,7 +85,8 @@ export default function VideoToVideoDialog({
       await onApply(result.blob, result.duration, 'mp4')
       onOpenChange(false)
     } catch (e) {
-      setError((e as Error).message ?? 'AI video edit failed')
+      console.error('[VideoToVideoDialog] edit failed', e)
+      setError(stringifyAny(e) || 'AI video edit failed')
     } finally {
       setBusy(false)
     }
