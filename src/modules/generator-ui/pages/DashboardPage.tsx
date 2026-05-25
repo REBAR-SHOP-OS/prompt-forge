@@ -3660,15 +3660,24 @@ export default function DashboardPage() {
     }
 
     if (brokenClips.length > 0) {
-      // Auto-hide broken cards from the workspace so subsequent Final Film
-      // attempts don't trip on them again.
-      setWorkspaceHiddenJobIds((curr) => {
-        const next = new Set(curr)
-        for (const b of brokenClips) next.add(b.jobId)
-        persistWorkspaceHiddenJobIds(next)
-        return next
-      })
-      unmarkActiveJobs(brokenClips.map((b) => b.jobId))
+      // Drafts are protected: clips that belong to any draft snapshot are
+      // only skipped for this Final Film run (so the user can regenerate),
+      // but their workspace card stays so the draft never silently loses
+      // its video content. Non-draft broken clips are hidden as before.
+      const draftProtectedIds = new Set<string>()
+      for (const arr of Object.values(draftSourceJobs)) {
+        for (const c of arr) draftProtectedIds.add(c.id)
+      }
+      const hideable = brokenClips.filter((b) => !draftProtectedIds.has(b.jobId))
+      if (hideable.length > 0) {
+        setWorkspaceHiddenJobIds((curr) => {
+          const next = new Set(curr)
+          for (const b of hideable) next.add(b.jobId)
+          persistWorkspaceHiddenJobIds(next)
+          return next
+        })
+        unmarkActiveJobs(hideable.map((b) => b.jobId))
+      }
     }
 
     if (eligibleClips.length < 1) {
