@@ -48,6 +48,7 @@ export default function ClipTrimmerDialog({
   const [cuts, setCuts] = useState<CutRange[]>([])
   const [pendingStart, setPendingStart] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
+  const [stage, setStage] = useState<'rendering' | 'saving'>('rendering')
   const [error, setError] = useState<string | null>(null)
   const [muteAudio, setMuteAudio] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -58,6 +59,7 @@ export default function ClipTrimmerDialog({
       setCuts([])
       setPendingStart(null)
       setBusy(false)
+      setStage('rendering')
       setError(null)
       setCurrentTime(0)
       setMuteAudio(false)
@@ -122,6 +124,7 @@ export default function ClipTrimmerDialog({
   const apply = async () => {
     setError(null)
     setBusy(true)
+    setStage('rendering')
     setProgress(0)
     try {
       if (norm.length === 0 && !muteAudio) {
@@ -131,6 +134,8 @@ export default function ClipTrimmerDialog({
         muteAudio,
         onProgress: (p) => setProgress(p.ratio),
       })
+      setStage('saving')
+      setProgress(1)
       await onApply(result.blob, result.duration, result.extension)
       onOpenChange(false)
     } catch (e) {
@@ -291,7 +296,11 @@ export default function ClipTrimmerDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
           <Button onClick={apply} disabled={busy || (norm.length === 0 && !muteAudio)}>
             {busy ? (
-              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Rendering… {Math.round(progress * 100)}%</>
+              stage === 'saving' ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving…</>
+              ) : (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Rendering… {Math.round(progress * 100)}%</>
+              )
             ) : 'Apply changes'}
           </Button>
         </DialogFooter>

@@ -1035,27 +1035,52 @@ export default function DashboardPage() {
     // 2) Persist the trimmed file AND make it the card's real asset
     //    server-side so Final Film stitches the edited file, not the original.
     if (!userId) return
+    // Hard timeout so a hung upload / edge call can never leave the dialog
+    // stuck on "Saving…" forever. The user will see a real error instead.
+    const withTimeout = async <T,>(p: Promise<T>, ms: number, label: string): Promise<T> => {
+      let timer: ReturnType<typeof setTimeout> | null = null
+      try {
+        return await Promise.race([
+          p,
+          new Promise<T>((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)), ms)
+          }),
+        ])
+      } finally {
+        if (timer) clearTimeout(timer)
+      }
+    }
     try {
       const contentType = ext === 'webm' ? 'video/webm' : 'video/mp4'
       const path = `${userId}/edited-${jobId}-${Date.now()}.${ext}`
-      const up = await supabase.storage
-        .from(MERGED_BUCKET)
-        .upload(path, blob, { contentType, upsert: false })
+      const up = await withTimeout(
+        supabase.storage.from(MERGED_BUCKET).upload(path, blob, { contentType, upsert: false }),
+        90_000,
+        'Upload',
+      )
       if (up.error) throw new Error(up.error.message)
       const { data } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(path)
       const publicUrl = data.publicUrl
 
-      // Replace the asset row in the backend so the card's storage_path is
-      // the edited file. After this, every consumer (Final Film, refresh,
-      // etc.) sees the edited video as the card's source of truth.
-      const job = generatedVideos.find((j) => j.id === jobId)
+      // Replace the asset row in the backend. Look the job up across every
+      // snapshot source so this works for project/draft cards too.
+      const job =
+        generatedVideos.find((j) => j.id === jobId) ??
+        mergedEntries.find((j) => j.id === jobId) ??
+        Object.values(projectSourceJobs).flat().find((j) => j.id === jobId) ??
+        Object.values(draftSourceJobs).flat().find((j) => j.id === jobId) ??
+        librarySavedJobs[jobId]
       const aspect = job?.video?.aspect_ratio ?? undefined
-      const updated = await jobOrchestratorGateway.updateEditedVideo({
-        jobId,
-        storagePath: publicUrl,
-        durationSeconds: Math.round(newDuration),
-        aspectRatio: aspect,
-      })
+      const updated = await withTimeout(
+        jobOrchestratorGateway.updateEditedVideo({
+          jobId,
+          storagePath: publicUrl,
+          durationSeconds: Math.round(newDuration),
+          aspectRatio: aspect,
+        }),
+        60_000,
+        'Save',
+      )
       setGeneratedVideos((current) => mergeJob(current, updated))
 
       // Mark this card as "applied" so Final Film uses it.
@@ -1070,6 +1095,9 @@ export default function DashboardPage() {
       console.error('[applyTrimToCard] persist failed', err)
       const msg = err instanceof Error ? err.message : 'Apply changes failed'
       setVideoColumnMessage(`Could not apply changes: ${msg}`)
+      // Re-throw so the dialog leaves its busy state and shows the error
+      // instead of appearing to hang on 100%.
+      throw err instanceof Error ? err : new Error(msg)
     }
   }
   const [transitions, setTransitions] = useState<Record<string, TransitionId>>({})
