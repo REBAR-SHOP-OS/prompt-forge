@@ -2976,6 +2976,10 @@ export default function DashboardPage() {
     setComposerError(null)
     setVideoColumnMessage(null)
     resumeSelectedProject()
+    if (!lockedProjectRatio) {
+      setLockedProjectRatio(aspectRatio)
+      persistLockedRatio(aspectRatio)
+    }
 
     const effectiveRatio: Ratio = aspectRatio
     const perClipDuration: 5 | 10 | 15 = 15
