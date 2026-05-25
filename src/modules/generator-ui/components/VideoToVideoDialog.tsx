@@ -108,7 +108,7 @@ export default function VideoToVideoDialog({
             <Wand2 className="h-4 w-4 text-rose-400" /> Video-to-Video Editing
           </DialogTitle>
           <DialogDescription className="line-clamp-2">
-            {title ?? 'Describe how to transform this video. The AI edits up to 8 seconds at 6 fps.'}
+            {title ?? 'Describe how to transform this video. The AI edits up to 6 seconds at 4 fps.'}
           </DialogDescription>
         </DialogHeader>
 
