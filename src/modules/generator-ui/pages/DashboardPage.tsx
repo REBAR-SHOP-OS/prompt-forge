@@ -3823,6 +3823,10 @@ export default function DashboardPage() {
 
 
     } catch (err) {
+      if (err instanceof MergeCancelledError) {
+        console.info('[merge] cancelled by user')
+        setVideoColumnMessage('Rendering cancelled.')
+      } else {
       // Log the raw err first so we never lose detail to fallback strings.
       console.error('[merge] failed', err, {
         type: typeof err,
@@ -3840,11 +3844,14 @@ export default function DashboardPage() {
         ? `Source file "${filename}" could not be loaded from the server (it may have been deleted). Remove that clip from the workspace and try again.`
         : `Could not load source video for merge — please try again in a moment. (${msg})`
       setVideoColumnMessage(friendly)
+      }
     } finally {
+      mergeAbortRef.current = null
       setIsMerging(false)
       setMergeProgress(0)
       setMergeStage(null)
     }
+
   }
 
   function resetWorkspace({ keepPreview }: { keepPreview: boolean }) {
