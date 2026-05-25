@@ -122,7 +122,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const idea = typeof body?.idea === "string" ? body.idea.trim() : "";
     const durationRaw = Number(body?.durationSeconds);
-    const duration = [5, 10, 15, 45, 135].includes(durationRaw) ? durationRaw : 0;
+    const duration = [5, 10, 15, 30, 45, 135].includes(durationRaw) ? durationRaw : 0;
     const imageUrlRaw = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
     const supabaseHost = (() => {
       try { return new URL(Deno.env.get("SUPABASE_URL") ?? "").hostname; } catch { return ""; }
