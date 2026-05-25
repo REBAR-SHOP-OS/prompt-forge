@@ -296,7 +296,11 @@ export default function ClipTrimmerDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
           <Button onClick={apply} disabled={busy || (norm.length === 0 && !muteAudio)}>
             {busy ? (
-              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Rendering… {Math.round(progress * 100)}%</>
+              stage === 'saving' ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving…</>
+              ) : (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Rendering… {Math.round(progress * 100)}%</>
+              )
             ) : 'Apply changes'}
           </Button>
         </DialogFooter>
