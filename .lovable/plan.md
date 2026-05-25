@@ -1,27 +1,17 @@
-## Auto-remove draft after Final Film succeeds
+## اضافه کردن پشتیبانی 30 ثانیه به scenario-write
 
-Currently in `src/modules/generator-ui/pages/DashboardPage.tsx` lines ~3795-3809, after a successful Final Film the code intentionally keeps the draft entry in Library (only clearing `activeDraftId`). The comment says: "Drafts are never auto-removed by Final Film."
+در فرانت‌اند `DashboardPage.tsx`، حالت 30 ثانیه از قبل پیاده شده (split به 2 کلیپ 15 ثانیه‌ای، درست مشابه منطق 45s=3×15s و 135s=9×15s). اما edge function `scenario-write` فقط مقادیر `[5, 10, 15, 45, 135]` را می‌پذیرد و درخواست 30 ثانیه با خطا برمی‌گردد — همان «Error / The app encountered an error» که در اسکرین‌شات دیده می‌شود.
 
-Change this behavior so a finalized draft is removed from the Drafts section.
+### تغییرات در `supabase/functions/scenario-write/index.ts`
 
-### What to do
+1. اضافه کردن `30: 180` به `WORD_CAPS`.
+2. اضافه کردن `30: "30s = two sequential 15s scenes"` به `BEAT_GUIDE`.
+3. در `expectedSceneCount`: اگر `duration === 30` → return `2`.
+4. در `buildSystemPrompt` (شاخه multi-scene): پشتیبانی numWord برای 2 (`"TWO"`).
+5. در validation: تغییر لیست مجاز به `[5, 10, 15, 30, 45, 135]` و به‌روزرسانی پیام خطا.
 
-In that block, after `setMergedEntries` succeeds, compute the set of draft ids to retire:
-- `activeDraftId` (the implicit in-progress draft)
-- `selectedProjectId` if it starts with `draft-` (user explicitly opened a draft and finalized it)
+### فایل‌ها
+- فقط `supabase/functions/scenario-write/index.ts`.
 
-For each such draft id:
-1. Remove from `draftEntries` and persist via `persistDraftEntries`.
-2. Remove its entry from `draftSourceJobs` and persist.
-3. Remove its entry from `draftSourceImages` and persist.
-4. Add to `deletedDraftIds` and persist (so the draft auto-snapshot effect doesn't recreate it from the same source clips, since those clips are now claimed under `projectSourceJobs[mergedId]`).
-
-Then clear `activeDraftId` (already done) and switch `selectedProjectId` to `mergedId` if it pointed at a removed draft (already done).
-
-Update the comment to reflect the new behavior.
-
-### Files
-- `src/modules/generator-ui/pages/DashboardPage.tsx` only.
-
-### Risk
-- The source clips for the draft are already claimed under `projectSourceJobs[mergedId]` earlier in the same block, so they remain visible inside the new Library card's HISTORY view. No data loss.
+### ریسک
+- بدون تغییر در فرانت یا دیتابیس. فرانت‌اند از قبل آماده دریافت 2 صحنه برای 30s است.

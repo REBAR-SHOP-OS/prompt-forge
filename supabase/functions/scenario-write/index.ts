@@ -4,11 +4,12 @@
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 
-const WORD_CAPS: Record<number, number> = { 5: 40, 10: 70, 15: 100, 45: 270, 135: 810 };
+const WORD_CAPS: Record<number, number> = { 5: 40, 10: 70, 15: 100, 30: 180, 45: 270, 135: 810 };
 const BEAT_GUIDE: Record<number, string> = {
   5: "5s = 1 beat (one decisive shot)",
   10: "10s = 2 beats",
   15: "15s = 3 beats",
+  30: "30s = two sequential 15s scenes",
   45: "45s = three sequential 15s scenes",
   135: "135s = nine sequential 15s scenes",
 };
@@ -18,13 +19,14 @@ const SCENE_DELIM = "===SCENE===";
 function expectedSceneCount(duration: number): number {
   if (duration === 135) return 9;
   if (duration === 45) return 3;
+  if (duration === 30) return 2;
   return 1;
 }
 
 function buildSystemPrompt(duration: number): string {
   const sceneCount = expectedSceneCount(duration);
   if (sceneCount > 1) {
-    const numWord = sceneCount === 3 ? "THREE" : sceneCount === 9 ? "NINE" : String(sceneCount);
+    const numWord = sceneCount === 2 ? "TWO" : sceneCount === 3 ? "THREE" : sceneCount === 9 ? "NINE" : String(sceneCount);
     return [
       "You are a professional short-form video scenario writer.",
       `Given the user's idea, write a CONTINUOUS narrative scenario in ENGLISH for a ${duration}-second cinematic video,`,
@@ -120,7 +122,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const idea = typeof body?.idea === "string" ? body.idea.trim() : "";
     const durationRaw = Number(body?.durationSeconds);
-    const duration = [5, 10, 15, 45, 135].includes(durationRaw) ? durationRaw : 0;
+    const duration = [5, 10, 15, 30, 45, 135].includes(durationRaw) ? durationRaw : 0;
     const imageUrlRaw = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
     const supabaseHost = (() => {
       try { return new URL(Deno.env.get("SUPABASE_URL") ?? "").hostname; } catch { return ""; }
@@ -152,7 +154,7 @@ Deno.serve(async (req) => {
       });
     }
     if (!duration) {
-      return new Response(JSON.stringify({ error: "durationSeconds must be 5, 10, 15, 45, or 135" }), {
+      return new Response(JSON.stringify({ error: "durationSeconds must be 5, 10, 15, 30, 45, or 135" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
