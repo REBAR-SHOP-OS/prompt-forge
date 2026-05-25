@@ -5147,9 +5147,17 @@ export default function DashboardPage() {
                     </div>
 
                     <div className="mt-3 flex items-start justify-between gap-2">
-                      <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setPromptViewer(video.input_prompt)
+                        }}
+                        title={video.input_prompt}
+                        className="max-h-12 min-w-0 flex-1 cursor-pointer overflow-hidden whitespace-normal break-words text-left text-sm font-medium leading-6 text-zinc-200 transition hover:text-zinc-50"
+                      >
                         {video.input_prompt}
-                      </p>
+                      </button>
                       <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
                         <span
                           onClick={(event) => event.stopPropagation()}
