@@ -1,91 +1,97 @@
 
-# Full-Video Analysis Before V2V Edit
+# پلن مدیریت هزینه‌ها — ۵ لایه
 
-## Problem
-Today, `Apply AI edit` only captures the **first frame** of the source video and sends it to Veo with the user's prompt. Veo never "sees" the rest of the clip — motion, subject behavior, scene changes, props, environment continuity are all guessed from one still frame. The result often drifts from the original.
+سقف پیش‌فرض روزانه: **$15 معادل کردیت per-user** (قابل override توسط ادمین).
 
-The user wants the model to **first analyze the whole video**, then apply the requested change while preserving everything else.
+> نکته: rate limiting سنتی در backend پشتیبانی نمی‌شود؛ به‌جای آن از **سقف مصرف روزانه (quota)** و **duplicate-guard** استفاده می‌کنیم که اثر مشابه دارد و امن‌تر است.
 
-## Approach
+---
 
-Use Gemini multimodal (which natively accepts video) to **describe the source video in detail**, merge that description with the user's edit instruction into a single rich prompt, then send that prompt + the first frame to Veo for generation. Veo itself does not accept video input on our current adapter (`flow-video-1` is image-to-video), so the "full-video understanding" step is done by Gemini and injected into the Veo prompt.
+## لایه ۱ — اصلاح حسابداری کردیت (بحرانی)
 
-```text
-[Source video] ──► Gemini 2.5 Pro (video understanding) ──► Scene description
-                                                                │
-[User prompt: "change the ball"] ───────────────────────────────┤
-                                                                ▼
-                                                  Augmented prompt
-                                                                │
-[First frame snapshot] ─────────────────────────────────────────┤
-                                                                ▼
-                                                       Veo (flow-video-1)
-                                                                │
-                                                                ▼
-                                                       Edited video
+**مشکل:** RPC `generator_start_job` فقط job می‌سازد و کردیت کم نمی‌کند. به همین دلیل ۲۹۶ ویدئو ساخته شد ولی فقط ۵۰ کردیت ثبت شد.
+
+**تغییرات:**
+- بازنویسی `generator_start_job` تا:
+  1. balance فعلی را چک کند، اگر کافی نیست → `insufficient_credits`.
+  2. `credits_balance` را به‌اندازه‌ی `_cost` کم کند.
+  3. ردیف در `billing_credit_transactions` با `type='spend'` و `job_id` ثبت کند.
+- محاسبه‌ی هزینه‌ی واقعی در `external-api-adapter/service.ts`:
+  - Veo Standard: `duration × 0.40 × 100` کردیت (۱ کردیت = $0.01)
+  - Veo Fast: `duration × 0.10 × 100`
+  - Wan: ثابت ~۱۵ کردیت
+- برای کلیپ‌های ۱۰/۱۵ ثانیه (extension) → cost ضرب در ۲.
+- `generator_fail_job` از قبل refund می‌کند (✅ موجود است).
+
+## لایه ۲ — Quota روزانه per-user
+
+**جدول جدید `billing_user_quotas`:**
+```
+user_id uuid PK
+daily_limit_credits int default 1500   -- $15
+monthly_limit_credits int default 30000 -- $300
+used_today int default 0
+used_this_month int default 0
+last_reset_day date
+last_reset_month date
 ```
 
-## What changes
+- RPC جدید `check_and_reserve_quota(_user_id, _cost)` که در ابتدای `generator_start_job` صدا زده می‌شود.
+- اگر `used_today + cost > daily_limit` → reject با پیام «سقف روزانه‌ی $15 رد شد».
+- reset خودکار با مقایسه‌ی تاریخ.
+- ادمین در داشبورد می‌تواند per-user limit را override کند.
 
-### 1. New edge function `video-analyze`
-- Input: `{ videoUrl }` (must be publicly fetchable — same `wan-frames` style public URL, or proxied).
-- Downloads the video bytes server-side, uploads to Gemini Files API, then calls `google/gemini-2.5-pro` via the Lovable AI Gateway with the video part + a structured analysis prompt.
-- Returns a tight JSON: `{ summary, subjects[], camera, motion, lighting, environment, duration_seconds, key_moments[] }`.
-- Auth required, rate-limited via existing `_shared/core/ratelimit.ts`.
+## لایه ۳ — تغییر مدل پیش‌فرض به ارزان‌تر
 
-### 2. `VideoToVideoDialog.tsx` flow update
-New stages shown to the user:
-1. `Analyzing video…` → calls `video-analyze` with the source `videoUrl`.
-2. `Capturing reference frame…` → existing first-frame snapshot.
-3. `Uploading reference frame…` → existing upload.
-4. `Sending to video model…` → existing `jobOrchestratorGateway.createJob`, but with the **augmented prompt**:
-   ```
-   USER EDIT INSTRUCTION:
-   <user prompt>
+**در `external-api-adapter/service.ts`:**
+- `flow-video-1` → **Veo 3 Fast** ($0.10/s) به‌جای Veo 3.1 Standard ($0.40/s).
+- ایجاد modelKey جدید `flow-video-1-pro` برای کاربرانی که explicit کیفیت بالا می‌خواهند.
+- در UI (`VideoToVideoDialog` و فرم اصلی)، toggle "کیفیت استاندارد / بالا" با نمایش قیمت تخمینی per-second.
+- پیش‌فرض duration: 5s (نه 10s).
 
-   ORIGINAL VIDEO ANALYSIS (preserve everything below unless explicitly changed above):
-   - Summary: ...
-   - Subjects: ...
-   - Camera: ...
-   - Motion: ...
-   - Lighting: ...
-   - Environment: ...
-   - Key moments: ...
+**اثر:** ~۷۵٪ کاهش هزینه برای تولیدهای معمولی.
 
-   Rules: keep composition, camera angle, framing, lighting, subject identity, and motion
-   identical to the analysis. Only apply the user's edit instruction. Do not add new subjects
-   or change the environment unless asked.
-   ```
-5. Seeds the `JobDetail` into Pending as today.
+## لایه ۴ — Duplicate-Guard (جایگزین rate limit)
 
-The dialog gets a new busy stage label and a hard timeout (~45s) on the analyze step. Errors from analyze surface in the existing red error line; the edit can still proceed without analysis if the user retries (fallback path: if analyze fails, fall back to current first-frame-only behavior with a warning, so the feature never becomes a hard blocker).
+در `generator_start_job`:
+- محاسبه‌ی `hash(user_id + prompt + first_frame_url + last_frame_url)`.
+- اگر job مشابه در ۶۰ ثانیه‌ی گذشته با همین hash وجود دارد → reject با «این درخواست همین الان ارسال شد».
+- جلوگیری از double-click و loop accidental روی Apply AI edit.
 
-### 3. No DB schema changes
-The augmented prompt is stored in `generator_generation_jobs.input_prompt` like any other prompt. No new tables, no new buckets.
+## لایه ۵ — داشبورد و Alert ادمین
 
-### 4. No changes to Veo adapter
-`flow-video-1` already takes prompt + first frame. We only enrich the prompt.
+**در `admin-monitor`:**
+- صفحه‌ی جدید `/admin/costs`:
+  - کارت‌های «امروز / هفته / ماه» — جمع `estimated_cost` از `audit_api_request_logs` به تفکیک `provider_key`.
+  - جدول top-10 کاربر پرمصرف با ستون‌های: ایمیل، تعداد job، ثانیه، دلار، quota فعلی.
+  - دکمه per-user: تنظیم daily/monthly limit.
+- Edge function `cost-alert` با `pg_cron` (روزانه ۹ صبح):
+  - اگر هزینه‌ی روز قبل > آستانه (پیش‌فرض $50) → ثبت در `audit_audit_logs` با action `cost_alert` و metadata.
+  - (اختیاری: ارسال ایمیل از طریق Resend اگر کاربر بخواهد)
 
-## Technical notes
-- Gemini Files API accepts videos up to ~2GB; our source clips are ≤15s so size is fine.
-- Use `google/gemini-2.5-pro` (best multimodal reasoning) with a strict JSON-schema tool call to guarantee parseable output.
-- The edge function fetches the video via `fetch(videoUrl)` server-side, so CORS in the browser is not a concern.
-- Cost: one extra Gemini call per edit (~$0.01-0.03 per 15s clip). Acceptable for an explicit user action.
-- Latency: adds ~5–15s before Veo is kicked off. Stage label keeps the user informed.
+---
 
-## Files touched
-- **new** `supabase/functions/video-analyze/index.ts`
-- **new** `supabase/functions/_shared/modules/external-api-adapter/videoAnalysis.ts` (helper that wraps the Gemini call)
-- **edit** `src/modules/generator-ui/components/VideoToVideoDialog.tsx` (add analyze step + augmented prompt + new stage strings + fallback)
-- **edit** `supabase/config.toml` (register new function, `verify_jwt = true`)
+## ترتیب اجرا و فایل‌های اصلی
 
-## Out of scope
-- True video-to-video (Veo currently doesn't accept video input in our adapter). If/when we add Runway Gen-3 V2V, the same augmented prompt + analysis becomes the input to that provider too — no rework needed.
-- Per-frame editing or temporal masks.
+| مرحله | فایل‌ها |
+|---|---|
+| ۱. Migration | `billing_user_quotas` جدول + بازنویسی RPCهای `generator_start_job`, افزودن `check_and_reserve_quota` |
+| ۲. Backend | `supabase/functions/_shared/modules/external-api-adapter/service.ts` (cost calculator + Veo Fast mapping) |
+| ۳. Backend | `_shared/modules/job-orchestrator/service.ts` (پاس‌دادن cost واقعی به createJob) |
+| ۴. Backend | Edge function جدید `cost-alert` + cron |
+| ۵. Frontend | `VideoToVideoDialog.tsx` + فرم اصلی (toggle کیفیت + نمایش قیمت) |
+| ۶. Frontend | `admin-monitor/pages/AdminPage.tsx` → صفحه‌ی costs |
 
-## Validation
-1. Open a Pending clip → ✨ → type "change the hard hat to red" → Apply.
-2. Stage label cycles: `Analyzing video…` → `Capturing reference frame…` → `Uploading…` → `Sending to video model…` → dialog closes.
-3. New Pending card appears; in `generator_generation_jobs.input_prompt` the row contains both the user instruction and the analysis block.
-4. Final Veo output preserves composition/lighting/subject and only changes the hard hat.
-5. Force analyze to fail (bad URL) → dialog shows warning but still proceeds with first-frame-only path.
+---
+
+## تخمین صرفه‌جویی
+
+- فقط لایه ۳: ~۷۵٪ کاهش = اگر سال قبل $600 بود، می‌شد ~$150.
+- لایه ۱+۲: جلوی سواستفاده‌ی نامحدود را می‌گیرد (سقف سخت $15/day/user).
+- لایه ۵: شفافیت کامل برای ادمین.
+
+## ریسک‌ها
+
+- اصلاح RPC `generator_start_job` روی production — باید دقیق تست شود تا job ساخت نشکند.
+- کاربرانی که با کردیت کم مواجه می‌شوند نیاز به UI شفاف برای top-up دارند (در این پلن شامل نیست — جدا اگر خواستی).
+- تغییر مدل پیش‌فرض به Fast ممکن است کیفیت visual را کمی کاهش دهد؛ toggle "Pro" این را جبران می‌کند.
