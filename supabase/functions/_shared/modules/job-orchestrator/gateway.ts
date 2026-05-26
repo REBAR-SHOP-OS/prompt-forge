@@ -354,9 +354,17 @@ export const jobOrchestratorGateway = {
           // No up-front rejection needed — the adapter handles the chain.
 
           // Cross-domain call via external-api-adapter contract.
-          const route = await aiGateway.resolveRoute(svc, providerKey, parsed.data.requestedModel, prompt);
+          // Pass duration + lastFrame so cost is accurate and Veo tier is
+          // chosen correctly (Fast unless last-frame interpolation needed).
+          const route = await aiGateway.resolveRoute(svc, providerKey, parsed.data.requestedModel, prompt, {
+            durationSeconds: parsed.data.durationSeconds ?? 5,
+            hasLastFrame: Boolean(lastFrameUrl),
+          });
 
-          // Atomic: validate credits + create pending job + debit.
+          // Convert USD cost to credits (1 credit = $0.01). Minimum 1 credit.
+          const costCredits = Math.max(1, Math.ceil(route.estimatedCost * 100));
+
+          // Atomic: duplicate-guard + quota check + balance debit + create pending job.
           const chosenAspectRatio = parsed.data.aspectRatio ?? "16:9";
           let jobId: string;
           try {
@@ -365,15 +373,33 @@ export const jobOrchestratorGateway = {
               prompt,
               providerKey: route.providerKey,
               modelKey: route.resolvedModel,
-              estimatedCost: route.estimatedCost,
+              estimatedCost: costCredits,
               firstFrameUrl,
               lastFrameUrl,
               aspectRatio: chosenAspectRatio,
               durationSeconds: parsed.data.durationSeconds ?? null,
             });
           } catch (e) {
-            const msg = (e as Error).message;
+            const msg = (e as Error).message ?? "";
             logError("createJob failed", { error: msg });
+
+            // Map RPC error tags → clean HTTP responses for the UI.
+            if (msg.includes("duplicate_job")) {
+              await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 409, latencyMs: Date.now() - ctx.startedAt, errorCode: "DUPLICATE_JOB" });
+              return errorResponse("DUPLICATE_JOB", "An identical request was just submitted. Please wait a moment.", 409, ctx.requestId);
+            }
+            if (msg.includes("quota_exceeded_daily")) {
+              await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 402, latencyMs: Date.now() - ctx.startedAt, errorCode: "QUOTA_DAILY" });
+              return errorResponse("QUOTA_DAILY", "Daily generation budget reached. Try again tomorrow or ask an admin to raise your limit.", 402, ctx.requestId);
+            }
+            if (msg.includes("quota_exceeded_monthly")) {
+              await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 402, latencyMs: Date.now() - ctx.startedAt, errorCode: "QUOTA_MONTHLY" });
+              return errorResponse("QUOTA_MONTHLY", "Monthly generation budget reached. Ask an admin to raise your limit.", 402, ctx.requestId);
+            }
+            if (msg.includes("insufficient_credits")) {
+              await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 402, latencyMs: Date.now() - ctx.startedAt, errorCode: "INSUFFICIENT_CREDITS" });
+              return errorResponse("INSUFFICIENT_CREDITS", "Not enough credits for this generation. Top up to continue.", 402, ctx.requestId);
+            }
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 500, latencyMs: Date.now() - ctx.startedAt, errorCode: "JOB_START_FAILED" });
             return errorResponse("JOB_START_FAILED", "Could not start the job. Please try again.", 500, ctx.requestId);
           }
