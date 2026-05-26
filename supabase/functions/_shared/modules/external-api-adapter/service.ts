@@ -9,30 +9,55 @@ import type {
   GenerationStartResult,
   ProviderKey,
   ResolvedRoute,
+  ResolveRouteOptions,
 } from "./contract.ts";
 import { getEnv } from "../../core/env.ts";
 import { logError, logInfo } from "../../core/observability.ts";
 
-interface ModelCostConfig {
-  // Cost per 1k prompt characters (proxy unit for preview-stage estimation).
-  costPer1kChars: number;
+// ---- Cost model -------------------------------------------------------------
+// Costs are real provider USD rates so audit logs reflect true spend.
+// Veo is per-second; Wan is flat per clip. The gateway converts USD to credits
+// by ×100 (1 credit = $0.01) before charging.
+interface ModelCost {
+  perSecondUsd?: number;
+  flatUsd?: number;
 }
 
-const COST_MAP: Record<string, ModelCostConfig> = {
-  "flow-video-1": { costPer1kChars: 0.04 },
-  "veo-3.0-fast-generate-001": { costPer1kChars: 0.04 },
-  "veo-3.0-generate-001": { costPer1kChars: 0.08 },
-  "veo-3.1-generate-preview": { costPer1kChars: 0.08 },
-  "wan-video-1": { costPer1kChars: 0.03 },
-  "wan2.7-i2v-2026-04-25": { costPer1kChars: 0.05 },
-  "wan2.7-t2v-2026-04-25": { costPer1kChars: 0.05 },
+const COST_MAP_USD: Record<string, ModelCost> = {
+  // Google Veo — pricing per second of generated video
+  "veo-3.0-fast-generate-001": { perSecondUsd: 0.10 },
+  "veo-3.0-generate-001":      { perSecondUsd: 0.40 },
+  "veo-3.1-generate-preview":  { perSecondUsd: 0.40 },
+  // Alibaba Wan — flat per clip (5–10s)
+  "wan-video-1":              { flatUsd: 0.15 },
+  "wan2.7-i2v-2026-04-25":    { flatUsd: 0.15 },
+  "wan2.7-t2v-2026-04-25":    { flatUsd: 0.15 },
 };
 
-function resolveVeoModel(model: string): string {
-  // Veo 3.1 supports first+last frame interpolation. Older 3.0 models do not,
-  // so we route the generic "flow-video-1" alias to 3.1.
-  if (model === "flow-video-1") return "veo-3.1-generate-preview";
-  if (model === "veo-3.0-fast-generate-001") return "veo-3.1-generate-preview";
+/** Compute USD cost for one generation, including Veo extension chain. */
+function computeUsd(resolvedModel: string, durationSeconds: number): number {
+  const cfg = COST_MAP_USD[resolvedModel];
+  if (!cfg) return 0;
+  if (cfg.flatUsd !== undefined) return cfg.flatUsd;
+  if (cfg.perSecondUsd !== undefined) {
+    // Veo single call is 8s; longer requests chain a 2nd call → bill both.
+    const calls = durationSeconds > 8 ? 2 : 1;
+    const billed = calls === 2 ? 16 : Math.min(8, durationSeconds);
+    return +(cfg.perSecondUsd * billed).toFixed(4);
+  }
+  return 0;
+}
+
+/** Map the public model alias to a concrete provider model. The cheaper
+ *  Veo 3 Fast tier is preferred by default; we only fall back to Veo 3.1
+ *  Standard when the request *requires* first+last frame interpolation
+ *  (Fast does not support last-frame). */
+function resolveVeoModel(model: string, opts: ResolveRouteOptions = {}): string {
+  const needs31 = Boolean(opts.hasLastFrame);
+  if (model === "flow-video-1") {
+    return needs31 ? "veo-3.1-generate-preview" : "veo-3.0-fast-generate-001";
+  }
+  if (model === "flow-video-1-pro") return "veo-3.1-generate-preview";
   return model;
 }
 
@@ -69,6 +94,7 @@ async function resolveRoute(
   providerKey: ProviderKey,
   requestedModel: string | undefined,
   prompt: string,
+  opts: ResolveRouteOptions = {},
 ): Promise<ResolvedRoute> {
   const { data, error } = await svc
     .from("core_ai_provider_registry")
@@ -80,10 +106,17 @@ async function resolveRoute(
   if (!data) throw new Error(`unknown provider: ${providerKey}`);
   if (!data.enabled) throw new Error(`provider disabled: ${providerKey}`);
 
-  const resolvedModel = (requestedModel?.trim() || data.default_model);
-  const cost = COST_MAP[resolvedModel];
-  const promptLen = prompt.length;
-  const estimatedCost = cost ? +(promptLen / 1000 * cost.costPer1kChars).toFixed(6) : 0;
+  const aliasOrModel = (requestedModel?.trim() || data.default_model);
+  // For Veo (flow) provider we expand the alias to a concrete model so cost
+  // is computed against the actual tier we'll bill against.
+  const resolvedModel = providerKey === "flow"
+    ? resolveVeoModel(aliasOrModel, opts)
+    : aliasOrModel;
+
+  const duration = opts.durationSeconds && opts.durationSeconds > 0
+    ? opts.durationSeconds
+    : 5;
+  const estimatedCost = computeUsd(resolvedModel, duration);
 
   return { providerKey, resolvedModel, estimatedCost };
 }

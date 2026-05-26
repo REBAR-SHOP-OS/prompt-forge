@@ -52,12 +52,24 @@ export interface GenerationPollResult {
   providerJobId?: string | null;
 }
 
+/** Optional context that lets resolveRoute pick the right Veo tier and compute
+ *  a duration-accurate cost preview. Safe to omit — callers without context
+ *  get a default short-clip preview. */
+export interface ResolveRouteOptions {
+  /** Generation duration in seconds (5/10/15). Defaults to 5. */
+  durationSeconds?: number | null;
+  /** When true, the request includes a last-frame and must use a model that
+   *  supports first+last frame interpolation (Veo 3.1, not Veo Fast). */
+  hasLastFrame?: boolean;
+}
+
 export interface AiGateway {
   resolveRoute(
     client: SupabaseClient,
     providerKey: ProviderKey,
     requestedModel: string | undefined,
     prompt: string,
+    opts?: ResolveRouteOptions,
   ): Promise<ResolvedRoute>;
   sanitizePrompt(p: string): string;
   getProviderApiKey(p: ProviderKey): string | null;
