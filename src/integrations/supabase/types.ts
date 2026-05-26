@@ -153,6 +153,42 @@ export type Database = {
           },
         ]
       }
+      billing_user_quotas: {
+        Row: {
+          created_at: string
+          daily_limit_credits: number
+          last_reset_day: string
+          last_reset_month: string
+          monthly_limit_credits: number
+          updated_at: string
+          used_this_month: number
+          used_today: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          daily_limit_credits?: number
+          last_reset_day?: string
+          last_reset_month?: string
+          monthly_limit_credits?: number
+          updated_at?: string
+          used_this_month?: number
+          used_today?: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          daily_limit_credits?: number
+          last_reset_day?: string
+          last_reset_month?: string
+          monthly_limit_credits?: number
+          updated_at?: string
+          used_this_month?: number
+          used_today?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       core_ai_provider_registry: {
         Row: {
           base_url: string | null
@@ -463,6 +499,11 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_cost_summary: { Args: never; Returns: Json }
+      admin_set_user_quota: {
+        Args: { _daily: number; _monthly: number; _user_id: string }
+        Returns: undefined
+      }
       generator_complete_job: {
         Args: {
           _aspect_ratio: string
