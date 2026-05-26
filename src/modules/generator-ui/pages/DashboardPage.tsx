@@ -160,9 +160,25 @@ type ModelChoice = {
 
 const MODEL_CHOICES: ModelChoice[] = [
   {
+    id: 'flow-v1',
+    label: 'Google Veo 3 Fast',
+    description: 'Default. ~$0.10/s, good quality, fast generation. Recommended.',
+    providerKey: 'flow',
+    model: 'flow-video-1',
+    supports: ['t2v', 'i2v'],
+  },
+  {
+    id: 'flow-v1-pro',
+    label: 'Google Veo 3.1 Pro',
+    description: 'Highest quality Veo 3.1. ~$0.40/s — 4× more expensive than Fast.',
+    providerKey: 'flow',
+    model: 'flow-video-1-pro',
+    supports: ['t2v', 'i2v'],
+  },
+  {
     id: 'wan-i2v',
     label: 'Wan 2.7 — Image to Video',
-    description: 'Animate a Start and/or End frame.',
+    description: 'Animate a Start and/or End frame. ~$0.15 / clip.',
     providerKey: 'wan',
     model: 'wan2.7-i2v-2026-04-25',
     supports: ['i2v'],
@@ -170,18 +186,10 @@ const MODEL_CHOICES: ModelChoice[] = [
   {
     id: 'wan-t2v',
     label: 'Wan 2.7 — Text to Video',
-    description: 'Generate a clip purely from a prompt.',
+    description: 'Generate a clip purely from a prompt. ~$0.15 / clip.',
     providerKey: 'wan',
     model: 'wan2.7-t2v-2026-04-25',
     supports: ['t2v'],
-  },
-  {
-    id: 'flow-v1',
-    label: 'Google Veo 3 (Flow)',
-    description: '8s clips, 16:9 or 9:16, text or image to video.',
-    providerKey: 'flow',
-    model: 'flow-video-1',
-    supports: ['t2v', 'i2v'],
   },
 ]
 
