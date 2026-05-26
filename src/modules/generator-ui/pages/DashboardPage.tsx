@@ -193,6 +193,28 @@ const MODEL_CHOICES: ModelChoice[] = [
   },
 ]
 
+// Mirrors backend pricing in supabase/functions/_shared/modules/external-api-adapter/service.ts.
+// 1 USD = 100 credits. Keep in sync with COST_MAP_USD.
+function estimateGenerationCost(model: ModelChoice, totalDurationSec: number): {
+  usd: number
+  credits: number
+  clips: number
+  perClipSec: number
+  perClipUsd: number
+} {
+  const clips = totalDurationSec === 135 ? 9 : totalDurationSec === 45 ? 3 : totalDurationSec === 30 ? 2 : 1
+  const perClipSec = clips > 1 ? 15 : totalDurationSec
+  let perClipUsd = 0
+  if (model.model === 'flow-video-1') perClipUsd = perClipSec * 0.10
+  else if (model.model === 'flow-video-1-pro') perClipUsd = perClipSec * 0.40
+  else perClipUsd = 0.15 // wan (fixed per clip)
+  const usd = perClipUsd * clips
+  const credits = Math.round(usd * 100)
+  return { usd, credits, clips, perClipSec, perClipUsd }
+}
+
+
+
 
 function ImageDurationInput({
   id,
@@ -1526,6 +1548,20 @@ export default function DashboardPage() {
     if (typeof window === 'undefined') return
     window.localStorage.setItem('ui:preferred-model', selectedModelId)
   }, [selectedModelId])
+
+  // Cost preview / confirm dialog state
+  const [confirmCostOpen, setConfirmCostOpen] = useState(false)
+  const [dontAskCost, setDontAskCost] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return window.sessionStorage.getItem('ui:skip-cost-confirm') === '1'
+  })
+  const submitConfirmedRef = useRef(false)
+  const costEstimate = useMemo(
+    () => estimateGenerationCost(selectedModel, durationSeconds),
+    [selectedModel, durationSeconds],
+  )
+
+
 
 
   const runEnhancePrompt = async (
@@ -5818,7 +5854,16 @@ export default function DashboardPage() {
       <form
         ref={composerRef}
         className="fixed bottom-4 left-1/2 z-30 grid w-[min(96rem,calc(100vw-2rem))] -translate-x-1/2 gap-3 rounded-[22px] border border-white/10 bg-[#111214]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(96rem,calc(100vw-56rem))] sm:p-4"
-        onSubmit={handleSubmit}
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (isSubmitting || hasUploadingFiles || isEnhancingPrompt) return
+          if (submitConfirmedRef.current || dontAskCost) {
+            submitConfirmedRef.current = false
+            void handleSubmit({ preventDefault: () => {} } as FormEvent<HTMLFormElement>)
+            return
+          }
+          setConfirmCostOpen(true)
+        }}
       >
         <div className="flex flex-wrap items-center gap-2" aria-label="Generation mode">
           <div role="tablist" aria-label="Choose generation mode" className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
@@ -6031,6 +6076,12 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center justify-between gap-2 sm:justify-end">
+            <span
+              title={`Estimated cost for ${durationSeconds}s on ${selectedModel.label}${costEstimate.clips > 1 ? ` (${costEstimate.clips} × ${costEstimate.perClipSec}s clips)` : ''}`}
+              className="hidden sm:inline-flex h-10 items-center gap-1.5 rounded-full border border-amber-300/20 bg-amber-300/[0.06] px-3 text-[11px] font-semibold text-amber-200/90"
+            >
+              ≈ ${costEstimate.usd.toFixed(2)} · {costEstimate.credits} cr
+            </span>
             <Popover open={isModelMenuOpen} onOpenChange={setIsModelMenuOpen}>
               <PopoverTrigger asChild>
                 <button
@@ -6217,6 +6268,79 @@ export default function DashboardPage() {
           <div className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-words text-sm leading-6 text-zinc-200">
             {promptViewer}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmCostOpen} onOpenChange={setConfirmCostOpen}>
+        <DialogContent className="max-w-md border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+          <DialogHeader>
+            <DialogTitle>Confirm generation cost</DialogTitle>
+            <DialogDescription className="text-zinc-400">
+              Review the estimated cost before generating. Credits are deducted only if generation succeeds.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2.5 rounded-lg border border-white/10 bg-black/30 p-4 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-400">Model</span>
+              <span className="font-semibold">{selectedModel.label}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-400">Duration</span>
+              <span className="font-semibold">
+                {costEstimate.clips > 1
+                  ? `${costEstimate.clips} × ${costEstimate.perClipSec}s = ${durationSeconds}s`
+                  : `${durationSeconds}s`}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-400">Per clip</span>
+              <span className="font-semibold">
+                ${costEstimate.perClipUsd.toFixed(2)} ({Math.round(costEstimate.perClipUsd * 100)} cr)
+              </span>
+            </div>
+            <div className="mt-1 flex items-center justify-between border-t border-white/10 pt-2.5">
+              <span className="text-zinc-300">Estimated total</span>
+              <span className="text-base font-bold text-amber-300">
+                ≈ ${costEstimate.usd.toFixed(2)} · {costEstimate.credits} credits
+              </span>
+            </div>
+          </div>
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-400">
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5 accent-amber-300"
+              checked={dontAskCost}
+              onChange={(e) => {
+                const v = e.target.checked
+                setDontAskCost(v)
+                if (typeof window !== 'undefined') {
+                  if (v) window.sessionStorage.setItem('ui:skip-cost-confirm', '1')
+                  else window.sessionStorage.removeItem('ui:skip-cost-confirm')
+                }
+              }}
+            />
+            Don&apos;t ask again this session
+          </label>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmCostOpen(false)}
+              className="inline-flex h-9 items-center justify-center rounded-full border border-white/10 px-4 text-xs font-semibold text-zinc-200 hover:bg-white/[0.05]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmCostOpen(false)
+                submitConfirmedRef.current = true
+                if (composerRef.current) composerRef.current.requestSubmit()
+              }}
+              className="inline-flex h-9 items-center justify-center rounded-full bg-amber-300 px-4 text-xs font-bold text-zinc-950 hover:bg-amber-200"
+            >
+              Generate (${costEstimate.usd.toFixed(2)})
+            </button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </section>
