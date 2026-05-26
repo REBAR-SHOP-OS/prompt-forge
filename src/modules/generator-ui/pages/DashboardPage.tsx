@@ -193,6 +193,28 @@ const MODEL_CHOICES: ModelChoice[] = [
   },
 ]
 
+// Mirrors backend pricing in supabase/functions/_shared/modules/external-api-adapter/service.ts.
+// 1 USD = 100 credits. Keep in sync with COST_MAP_USD.
+function estimateGenerationCost(model: ModelChoice, totalDurationSec: number): {
+  usd: number
+  credits: number
+  clips: number
+  perClipSec: number
+  perClipUsd: number
+} {
+  const clips = totalDurationSec === 135 ? 9 : totalDurationSec === 45 ? 3 : totalDurationSec === 30 ? 2 : 1
+  const perClipSec = clips > 1 ? 15 : totalDurationSec
+  let perClipUsd = 0
+  if (model.model === 'flow-video-1') perClipUsd = perClipSec * 0.10
+  else if (model.model === 'flow-video-1-pro') perClipUsd = perClipSec * 0.40
+  else perClipUsd = 0.15 // wan (fixed per clip)
+  const usd = perClipUsd * clips
+  const credits = Math.round(usd * 100)
+  return { usd, credits, clips, perClipSec, perClipUsd }
+}
+
+
+
 
 function ImageDurationInput({
   id,
