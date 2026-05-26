@@ -6270,6 +6270,79 @@ export default function DashboardPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={confirmCostOpen} onOpenChange={setConfirmCostOpen}>
+        <DialogContent className="max-w-md border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+          <DialogHeader>
+            <DialogTitle>Confirm generation cost</DialogTitle>
+            <DialogDescription className="text-zinc-400">
+              Review the estimated cost before generating. Credits are deducted only if generation succeeds.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2.5 rounded-lg border border-white/10 bg-black/30 p-4 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-400">Model</span>
+              <span className="font-semibold">{selectedModel.label}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-400">Duration</span>
+              <span className="font-semibold">
+                {costEstimate.clips > 1
+                  ? `${costEstimate.clips} × ${costEstimate.perClipSec}s = ${durationSeconds}s`
+                  : `${durationSeconds}s`}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-400">Per clip</span>
+              <span className="font-semibold">
+                ${costEstimate.perClipUsd.toFixed(2)} ({Math.round(costEstimate.perClipUsd * 100)} cr)
+              </span>
+            </div>
+            <div className="mt-1 flex items-center justify-between border-t border-white/10 pt-2.5">
+              <span className="text-zinc-300">Estimated total</span>
+              <span className="text-base font-bold text-amber-300">
+                ≈ ${costEstimate.usd.toFixed(2)} · {costEstimate.credits} credits
+              </span>
+            </div>
+          </div>
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-400">
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5 accent-amber-300"
+              checked={dontAskCost}
+              onChange={(e) => {
+                const v = e.target.checked
+                setDontAskCost(v)
+                if (typeof window !== 'undefined') {
+                  if (v) window.sessionStorage.setItem('ui:skip-cost-confirm', '1')
+                  else window.sessionStorage.removeItem('ui:skip-cost-confirm')
+                }
+              }}
+            />
+            Don&apos;t ask again this session
+          </label>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmCostOpen(false)}
+              className="inline-flex h-9 items-center justify-center rounded-full border border-white/10 px-4 text-xs font-semibold text-zinc-200 hover:bg-white/[0.05]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmCostOpen(false)
+                submitConfirmedRef.current = true
+                if (composerRef.current) composerRef.current.requestSubmit()
+              }}
+              className="inline-flex h-9 items-center justify-center rounded-full bg-amber-300 px-4 text-xs font-bold text-zinc-950 hover:bg-amber-200"
+            >
+              Generate (${costEstimate.usd.toFixed(2)})
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }
