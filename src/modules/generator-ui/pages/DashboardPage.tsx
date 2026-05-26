@@ -6076,6 +6076,12 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center justify-between gap-2 sm:justify-end">
+            <span
+              title={`Estimated cost for ${durationSeconds}s on ${selectedModel.label}${costEstimate.clips > 1 ? ` (${costEstimate.clips} × ${costEstimate.perClipSec}s clips)` : ''}`}
+              className="hidden sm:inline-flex h-10 items-center gap-1.5 rounded-full border border-amber-300/20 bg-amber-300/[0.06] px-3 text-[11px] font-semibold text-amber-200/90"
+            >
+              ≈ ${costEstimate.usd.toFixed(2)} · {costEstimate.credits} cr
+            </span>
             <Popover open={isModelMenuOpen} onOpenChange={setIsModelMenuOpen}>
               <PopoverTrigger asChild>
                 <button
