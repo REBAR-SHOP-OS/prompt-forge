@@ -1549,6 +1549,20 @@ export default function DashboardPage() {
     window.localStorage.setItem('ui:preferred-model', selectedModelId)
   }, [selectedModelId])
 
+  // Cost preview / confirm dialog state
+  const [confirmCostOpen, setConfirmCostOpen] = useState(false)
+  const [dontAskCost, setDontAskCost] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return window.sessionStorage.getItem('ui:skip-cost-confirm') === '1'
+  })
+  const submitConfirmedRef = useRef(false)
+  const costEstimate = useMemo(
+    () => estimateGenerationCost(selectedModel, durationSeconds),
+    [selectedModel, durationSeconds],
+  )
+
+
+
 
   const runEnhancePrompt = async (
     options: { mode: 'silent' | 'narrated'; narratorScript?: string },
