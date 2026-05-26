@@ -1,23 +1,59 @@
 
 ## هدف
-در منوی انتخاب مدل (که الان فقط Wan 2.7 i2v، Wan 2.7 t2v و Google Veo 3 (Flow) را نشان می‌دهد) همه مدل‌های پشتیبانی‌شده‌ی بک‌اند نمایش داده شود تا کاربر بتواند بین نسخه‌ی سریع/ارزان و نسخه‌ی باکیفیت/گران Veo انتخاب کند.
+قبل از هر بار ساخت ویدئو، هزینه‌ی تخمینی (دلار + کردیت) براساس مدل انتخاب‌شده و مدت‌زمان به کاربر نمایش داده شود تا بداند چقدر مصرف می‌کند و سپس تأیید کند.
 
-## تغییرات
-فقط یک فایل فرانت‌اند ویرایش می‌شود: `src/modules/generator-ui/pages/DashboardPage.tsx` (آرایه‌ی `MODEL_CHOICES` خط 161).
+## دو لایه‌ی نمایش
 
-آرایه به این صورت گسترش می‌یابد:
+### ۱) نشانگر همیشه‌فعال (Inline cost badge)
+کنار دکمه‌ی Generate و کنار chip انتخاب مدل، یک برچسب کوچک اضافه می‌شود که به‌صورت لحظه‌ای هزینه را نشان دهد:
 
-1. **Wan 2.7 — Image to Video** (بدون تغییر) — `wan2.7-i2v-2026-04-25` — ~$0.15 / clip
-2. **Wan 2.7 — Text to Video** (بدون تغییر) — `wan2.7-t2v-2026-04-25` — ~$0.15 / clip
-3. **Google Veo 3 Fast (پیش‌فرض، ارزان)** — `flow-video-1` — توضیح: «۸ ثانیه، کیفیت خوب، ~$0.10/ثانیه. انتخاب پیش‌فرض برای کاهش هزینه.» — t2v + i2v
-4. **Google Veo 3.1 Pro (کیفیت بالا، گران)** — `flow-video-1-pro` — توضیح: «بهترین کیفیت Veo 3.1، ~$0.40/ثانیه. ۴ برابر گران‌تر از Fast.» — t2v + i2v
+```
+≈ $0.50 · 50 credits
+```
 
-نام برچسب فعلی «Google Veo 3 (Flow)» به «Google Veo 3 Fast» تغییر می‌کند تا تفاوت با Pro واضح باشد. `model` همان `flow-video-1` می‌ماند (در بک‌اند به Veo Fast مپ می‌شود؛ اگر `hasLastFrame` باشد خودکار به 3.1 سوییچ می‌شود؛ این منطق در `external-api-adapter` قبلاً پیاده شده).
+محاسبه در فرانت با همان فرمول بک‌اند (`external-api-adapter/service.ts`):
+- `flow-video-1` (Veo 3 Fast): `duration × $0.10` → کردیت = `duration × 10`
+- `flow-video-1-pro` (Veo 3.1 Pro): `duration × $0.40` → کردیت = `duration × 40`
+- `wan2.7-*`: ثابت `$0.15` → `15 credits`
 
-## نکات
-- هیچ تغییری در بک‌اند، RPC، یا قیمت‌گذاری لازم نیست — `flow-video-1-pro` در `external-api-adapter` در همان مرحله قبل اضافه شد.
-- سهمیه‌ی ۱۵۰۰ کردیت روزانه دست‌نخورده می‌ماند؛ کاربری که Pro را انتخاب کند زودتر به سقف می‌خورد (۷ ویدئو ۵ ثانیه‌ای در روز).
-- ترتیب نمایش طوری چیده می‌شود که ارزان‌ترین گزینه (Veo Fast) به‌عنوان پیش‌فرض بالا باشد.
+این تابع به‌صورت یک util کوچک `estimateCost(model, durationSec)` در فایل dashboard اضافه می‌شود (یا اگر فایل common.ts موجود است، آنجا).
+
+### ۲) دیالوگ تأیید قبل از submit
+وقتی کاربر دکمه‌ی Generate را می‌زند، به‌جای ارسال مستقیم، یک `Dialog` (shadcn) باز می‌شود با محتوای:
+
+```
+Confirm generation
+──────────────────
+Model:       Google Veo 3 Fast
+Duration:    5 seconds
+Estimated:   $0.50  (50 credits)
+Your balance: 1240 credits
+                       [Cancel] [Generate]
+```
+
+اگر در مرحله‌ی Auto-split چند صحنه ساخته می‌شود (مثل ۳×۱۵s)، جمع کل صحنه‌ها نشان داده شود:
+```
+3 scenes × 15s × Veo 3 Fast = $4.50 (450 credits)
+```
+
+balance از `core_user_profiles.credits_balance` که قبلاً در state موجود است خوانده می‌شود.
+
+اگر balance کمتر از هزینه باشد، دکمه‌ی Generate در دیالوگ disable می‌شود و پیام «Insufficient credits» نمایش داده می‌شود.
+
+## گزینه‌ی Skip (اختیاری اما توصیه‌شده)
+چک‌باکس «Don't ask again for this session» در دیالوگ. اگر تیک بخورد، در `sessionStorage` ذخیره می‌شود و تا بسته‌شدن tab دیالوگ نشان داده نمی‌شود (فقط inline badge باقی می‌ماند). به این شکل تجربه‌ی کاربر حرفه‌ای آزار نمی‌بیند ولی کاربر تازه‌کار هر بار هشدار می‌بیند.
+
+## فایل‌های ویرایش‌شده
+فقط یک فایل فرانت‌اند:
+- `src/modules/generator-ui/pages/DashboardPage.tsx`
+  - افزودن `estimateCost()` کنار `MODEL_CHOICES`
+  - افزودن badge کنار chip مدل (نزدیک خط 6180)
+  - افزودن state `pendingSubmit` و دیالوگ confirm
+  - wrap کردن submit handler: اگر `sessionStorage` flag ست نیست → باز کردن دیالوگ به‌جای اجرای مستقیم
+  - برای جریان Auto-split (`submitScenesAsJobs`) هزینه‌ی کل قبل از حلقه محاسبه و در همان دیالوگ نشان داده می‌شود
+
+## بدون تغییر در بک‌اند
+هیچ migration یا تغییر edge function لازم نیست. منطق دقیق کسر کردیت همان `generator_start_job` در بک‌اند می‌ماند (single source of truth). این فقط یک پیش‌نمایش UI است.
 
 ## ریسک
-بسیار کم — فقط افزودن آیتم به یک آرایه‌ی ثابت در UI. ساختار `ModelChoice` و فیلتر `compatible` بدون تغییر است.
+بسیار کم. فرمول‌ها با بک‌اند یکی هستند؛ اگر در آینده قیمت‌ها در بک‌اند عوض شود، تابع `estimateCost` باید به‌روز شود (در همان فایل و در `external-api-adapter/service.ts` کنار هم کامنت می‌گذاریم).
