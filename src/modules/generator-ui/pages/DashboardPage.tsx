@@ -4343,6 +4343,8 @@ export default function DashboardPage() {
         <CalendarDays className="h-[18px] w-[18px]" aria-hidden="true" />
       </button>
 
+      <UsageStatsPopover />
+
       <CalendarInfoDialog
         open={isCalendarOpen}
         onOpenChange={setIsCalendarOpen}
