@@ -384,6 +384,19 @@ function isMissingJobError(error: unknown): boolean {
   return error instanceof ApiError && error.status === 404 && error.code === 'NOT_FOUND'
 }
 
+function isExpectedBillingError(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 402 || error.code === 'INSUFFICIENT_CREDITS')
+}
+
+function generationStartErrorMessage(error: unknown, fallback: string): string {
+  if (isExpectedBillingError(error)) {
+    return 'Not enough credits for this generation. Add credits or choose a lower-cost model/duration.'
+  }
+  if (error instanceof ApiError) return `${error.code}: ${error.message}`
+  if (error instanceof Error && error.message) return error.message
+  return fallback
+}
+
 function readStoredIdSet(key: string | null): Set<string> {
   if (!key || typeof window === 'undefined') return new Set()
   try {
