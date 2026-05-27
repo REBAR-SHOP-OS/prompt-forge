@@ -2991,6 +2991,54 @@ export default function DashboardPage() {
     setPreviewDismissed(true)
   }
 
+  // Open any Library entry. For finalized projects we keep today's snapshot
+  // view (selectedProjectId set, workspace untouched). For Draft projects we
+  // restore the draft's clips/images into the live workspace so the user can
+  // immediately keep working on them — opening a draft == resuming it.
+  function openLibraryEntry(video: JobDetail) {
+    setLastMergedPreview(null)
+    setPreviewVideoId(video.id)
+    setIsApprovedPanelOpen(false)
+    setPreviewDismissed(false)
+
+    if (video.id.startsWith('draft-')) {
+      const did = video.id
+      const videoSnapshot = draftSourceJobs[did] ?? []
+      const imageSnapshot = draftSourceImages[did] ?? []
+
+      if (videoSnapshot.length > 0) {
+        setGeneratedVideos((current) => videoSnapshot.reduce((acc, j) => mergeJob(acc, j), current))
+        setWorkspaceHiddenJobIds((curr) => {
+          const next = new Set(curr)
+          for (const j of videoSnapshot) next.delete(j.id)
+          persistWorkspaceHiddenJobIds(next)
+          return next
+        })
+      }
+      if (imageSnapshot.length > 0) {
+        setUserImages((current) => {
+          const byId = new Map(current.map((i) => [i.id, i] as const))
+          for (const img of imageSnapshot) if (!byId.has(img.id)) byId.set(img.id, img)
+          return Array.from(byId.values())
+        })
+        setWorkspaceHiddenImageIds((curr) => {
+          const next = new Set(curr)
+          for (const i of imageSnapshot) next.delete(i.id)
+          persistWorkspaceHiddenImageIds(next)
+          return next
+        })
+      }
+
+      setActiveDraftId(did)
+      persistActiveDraftId(did)
+      // Draft == live workspace, not a frozen snapshot view.
+      setSelectedProjectId(null)
+      return
+    }
+
+    setSelectedProjectId(video.id)
+  }
+
   function parseScenarioScenes(text: string): string[] | null {
     if (!/===\s*Scene\s+\d+\s*===/i.test(text)) return null
     const parts = text
@@ -5871,21 +5919,11 @@ export default function DashboardPage() {
                   role="button"
                   tabIndex={0}
                   aria-label={`Preview ${video.input_prompt}`}
-                  onClick={() => {
-                    setLastMergedPreview(null)
-                    setPreviewVideoId(video.id)
-                    setIsApprovedPanelOpen(false)
-                    setSelectedProjectId(video.id)
-                    setPreviewDismissed(false)
-                  }}
+                  onClick={() => openLibraryEntry(video)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault()
-                      setLastMergedPreview(null)
-                      setPreviewVideoId(video.id)
-                      setIsApprovedPanelOpen(false)
-                      setSelectedProjectId(video.id)
-                      setPreviewDismissed(false)
+                      openLibraryEntry(video)
                     }
                   }}
                 >
