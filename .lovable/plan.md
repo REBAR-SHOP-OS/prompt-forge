@@ -1,49 +1,50 @@
-# Usage Stats Popover
+## افزودن تقویم مصرف روزانه به Usage & Credits
 
-Add a small icon button in the top header (next to the user email / library) that opens a popover with the user's generation usage and remaining daily/monthly quota.
+به popover موجود (`UsageStatsPopover.tsx`) یک بخش تقویم اضافه می‌شود که برای هر روز ماه جاری، مجموع مصرف اعتبار و معادل دلاری آن را نشان می‌دهد.
 
-## What the user sees
+### آنچه کاربر می‌بیند
 
-Icon: `BarChart3` (or `Gauge`) button in the header.
+- یک بخش جدید زیر «How many more videos today?» با عنوان **«مصرف روزانه (این ماه)»**
+- گرید تقویم ۷ستونه (یکشنبه تا شنبه) شبیه date-picker
+- هر سلول روز نمایش می‌دهد:
+  - شماره روز
+  - مبلغ دلاری مصرف آن روز (مثل `$0.45`) — اگر صفر باشد خالی/کم‌رنگ
+- شدت رنگ پس‌زمینه سلول بر اساس میزان مصرف (heatmap سبک با toneهای amber)
+- روز جاری حاشیه برجسته دارد
+- hover روی هر سلول tooltip با جزئیات: تعداد job ها + credits + dollars
+- ناوبری ماه قبل/بعد با دو دکمه chevron در هدر بخش
+- مجموع ماه در پایین: `Total: $X.XX · N videos`
 
-Popover content:
-- **Videos made (total)** — count of completed jobs
-- **Credits spent (lifetime)** — sum of `spend` transactions
-- **Today**: `used_today / daily_limit_credits` with a progress bar + "X credits left today"
-- **This month**: `used_this_month / monthly_limit_credits` with progress bar
-- **Remaining videos today** — estimated as `floor(creditsLeftToday / costOfCurrentSelection)` using the same `estimateGenerationCost()` already in `DashboardPage.tsx`. Shows per model:
-  - Veo 3 Fast (5s) → N videos
-  - Veo 3.1 Pro (5s) → N videos
-  - Wan 2.7 (1 clip) → N videos
-- **Avg cost per video** — `total_spent / completed_jobs` (lifetime), shown in $ and credits
+### منبع داده
 
-Refresh button + auto-refresh on open.
+یک query اضافه به `billing_credit_transactions` که در همان `load()` موازی با بقیه اجرا می‌شود:
 
-## Data source
+```ts
+supabase
+  .from('billing_credit_transactions')
+  .select('amount, created_at')
+  .eq('user_id', user.id)
+  .eq('type', 'spend')
+  .gte('created_at', monthStart.toISOString())
+  .lt('created_at', nextMonthStart.toISOString())
+```
 
-Read-only — no backend mutations.
+نتیجه در client به صورت `Map<YYYY-MM-DD, { credits: number, count: number }>` aggregate می‌شود. تبدیل به دلار: `credits / 100`.
 
-Frontend uses existing `supabase` client + tables (already RLS-protected by `auth.uid()`):
-1. `core_user_profiles` → `credits_balance`
-2. `billing_user_quotas` → `daily_limit_credits, monthly_limit_credits, used_today, used_this_month, last_reset_day, last_reset_month` (with stale-day fallback: if `last_reset_day < today`, treat `used_today` as 0 in the UI; the DB row resets on next job)
-3. `billing_credit_transactions` → aggregate `sum(amount) where type='spend'` and `count(*) where type='spend'`
-4. `generator_generation_jobs` → `count(*) where status='completed'`
+برای ناوبری ماه، state جدید `viewMonth: Date` اضافه می‌شود و با تغییرش `load()` دوباره صدا زده می‌شود (یا فقط query تقویم مجدداً اجرا می‌شود تا بقیه stats بی‌دلیل refetch نشوند — بهینه‌تر).
 
-All four queries scoped to current user via RLS. Fired in parallel on popover open.
+### فایل‌ها
 
-## Files
+- **EDIT** `src/modules/generator-ui/components/UsageStatsPopover.tsx`
+  - اضافه شدن state: `viewMonth`, `dailySpend: Map<string, {credits, count}>`
+  - اضافه شدن query تقویم در `load()` + یک loader جداگانه برای تغییر ماه
+  - اضافه شدن JSX بخش calendar grid با heatmap
+  - افزایش عرض popover از `w-[340px]` به حدود `w-[380px]` تا تقویم جا شود
 
-- **NEW** `src/modules/generator-ui/components/UsageStatsPopover.tsx` — popover trigger + content, uses shadcn `Popover`, `Progress`, existing `estimateGenerationCost` re-exported from DashboardPage (move it to `src/modules/generator-ui/lib/cost.ts` so both files can import).
-- **NEW** `src/modules/generator-ui/lib/cost.ts` — extract `estimateGenerationCost`, `MODEL_CHOICES` pricing map from `DashboardPage.tsx` (same formulas, no behavior change). Confirm dialog and inline badge in DashboardPage import from here.
-- **EDIT** `src/modules/generator-ui/pages/DashboardPage.tsx` — import `estimateGenerationCost` from `lib/cost.ts` (remove the inline duplicate). Mount `<UsageStatsPopover />` in the header next to the user email dropdown.
+### بدون تغییرات backend
 
-## Technical notes
+هیچ migration، edge function، یا RLS جدیدی لازم نیست. جدول `billing_credit_transactions` قبلاً با `auth.uid() = user_id` محافظت شده.
 
-- No backend / SQL / edge function changes. No new RLS policies needed — all tables already allow `select` for `auth.uid() = user_id`.
-- `billing_credit_transactions` aggregations: use `.select('amount', { head: false }).eq('type','spend')` then sum client-side (small per-user volume); if rows grow large later, swap to a SQL view.
-- Numbers are estimates; the dialog clearly labels them "≈".
-- Stays in frontend only — single source of truth for credit math remains `generator_start_job` on the backend.
+### ریسک
 
-## Risk
-
-Very low. Pure read-only UI addition. Refactor of `estimateGenerationCost` into a shared file is a mechanical extraction.
+پایین. صرفاً یک query read-only اضافه + UI. هزینه query کم است (per-user، per-month، با index موجود روی user_id).
