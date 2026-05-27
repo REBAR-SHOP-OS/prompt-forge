@@ -5871,21 +5871,11 @@ export default function DashboardPage() {
                   role="button"
                   tabIndex={0}
                   aria-label={`Preview ${video.input_prompt}`}
-                  onClick={() => {
-                    setLastMergedPreview(null)
-                    setPreviewVideoId(video.id)
-                    setIsApprovedPanelOpen(false)
-                    setSelectedProjectId(video.id)
-                    setPreviewDismissed(false)
-                  }}
+                  onClick={() => openLibraryEntry(video)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault()
-                      setLastMergedPreview(null)
-                      setPreviewVideoId(video.id)
-                      setIsApprovedPanelOpen(false)
-                      setSelectedProjectId(video.id)
-                      setPreviewDismissed(false)
+                      openLibraryEntry(video)
                     }
                   }}
                 >
