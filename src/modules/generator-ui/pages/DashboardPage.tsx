@@ -5295,8 +5295,65 @@ export default function DashboardPage() {
         ) : null}
 
         <div className="mt-3 flex-1 overflow-y-auto overflow-x-hidden pr-1">
+          {currentCover ? (
+            <div className="mb-3">
+              <article
+                className="w-full min-w-0 rounded-2xl border border-amber-300/30 bg-amber-300/[0.04] p-3 shadow-[0_8px_30px_rgba(252,211,77,0.08)]"
+                aria-label="Film cover"
+              >
+                <div
+                  className="relative w-full min-w-0 overflow-hidden rounded-xl border border-amber-300/20 bg-[#15171a]"
+                  style={{ aspectRatio: (lockedProjectRatio ?? aspectRatio) === '9:16' ? '9 / 16' : (lockedProjectRatio ?? aspectRatio) === '16:9' ? '16 / 9' : '1 / 1' }}
+                >
+                  <img
+                    src={currentCover.storage_path}
+                    alt="Film cover"
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                  <span className="pointer-events-none absolute left-2 top-2 rounded-full bg-amber-300/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-950 shadow-md">
+                    Cover
+                  </span>
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <p className="min-w-0 flex-1 truncate text-sm font-medium text-amber-100">
+                    Film cover
+                  </p>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => { setAiDialogMode('cover'); setIsAiImageDialogOpen(true) }}
+                      className="inline-flex h-7 items-center gap-1 rounded-full border border-white/10 bg-black/30 px-2 text-[11px] font-medium text-zinc-200 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100"
+                      aria-label="Regenerate cover"
+                      title="Regenerate cover"
+                    >
+                      <RefreshCw className="h-3 w-3" aria-hidden="true" />
+                      Replace
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCoverImages((prev) => {
+                          const next = { ...prev }
+                          delete next[coverScopeKey]
+                          persistCoverImages(next)
+                          return next
+                        })
+                      }}
+                      className="grid h-7 w-7 place-items-center rounded-full border border-white/10 bg-black/30 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                      aria-label="Remove cover"
+                      title="Remove cover"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+              </article>
+            </div>
+          ) : null}
           {displayedClips.length > 0 ? (
             <div className="grid min-w-0 gap-3">
+
               {displayedClips.map((clip, index) => {
                 const isLast = index === displayedClips.length - 1
                 const isDragging = draggingId === clip.id
