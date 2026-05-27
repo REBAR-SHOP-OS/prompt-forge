@@ -3611,25 +3611,51 @@ export default function DashboardPage() {
 
   async function handleMergeAllVideos() {
     if (isMerging) return
-    // Capture snapshot before resume (resume's setState won't reflect synchronously).
-    const snapshotForMerge = selectedProjectId ? (projectSourceJobs[selectedProjectId] ?? []) : []
+    // Capture snapshots before resume (resume's setState won't reflect synchronously).
+    const videoSnapshotForMerge = selectedProjectId
+      ? (projectSourceJobs[selectedProjectId] ?? draftSourceJobs[selectedProjectId] ?? [])
+      : []
+    const imageSnapshotForMerge = selectedProjectId
+      ? (projectSourceImages[selectedProjectId] ?? draftSourceImages[selectedProjectId] ?? [])
+      : []
     resumeSelectedProject()
 
-    // Build the merge set from AUTHORITATIVE live data, not from `displayedClips`.
-    // `displayedClips` filters out workspaceHiddenJobIds, which are the source
-    // clips a previous Final Film already hid from History. Those clips are
-    // still valid completed sources — using them lets the user re-finalize
-    // (e.g. add music after the fact) without first re-opening a project.
+    // Build the merge set strictly from the ACTIVE scope so clips/images
+    // belonging to other drafts or finalized projects can never leak in.
+    //
+    // - Selected project/draft: use ONLY that snapshot (hydrated with live data
+    //   when available). Never union with all generatedVideos/userImages.
+    // - Default workspace: same filtering rule as displayedVideos +
+    //   visibleUserImages (exclude clips claimed by ANY other project/draft
+    //   snapshot, and workspace-hidden ids).
     const videoJobsById = new Map<string, JobDetail>()
-    for (const v of completedSourceVideos) videoJobsById.set(v.id, v)
-    for (const j of snapshotForMerge) {
-      if (
-        !videoJobsById.has(j.id) &&
-        normalizeStatus(j.status) === 'completed' &&
-        j.video?.storage_path
-      ) {
-        videoJobsById.set(j.id, j)
+    const liveVideoById = new Map(generatedVideos.map((v) => [v.id, v]))
+    const liveImageById = new Map(userImages.map((i) => [i.id, i]))
+    let imageList: UserImageItem[] = []
+
+    if (selectedProjectId) {
+      for (const j of videoSnapshotForMerge) {
+        const live = liveVideoById.get(j.id) ?? j
+        if (normalizeStatus(live.status) === 'completed' && live.video?.storage_path) {
+          videoJobsById.set(live.id, live)
+        }
       }
+      imageList = imageSnapshotForMerge.map((s) => liveImageById.get(s.id) ?? s)
+    } else {
+      const claimedJobIds = new Set<string>()
+      for (const clips of Object.values(projectSourceJobs)) {
+        for (const c of clips) claimedJobIds.add(c.id)
+      }
+      for (const [did, clips] of Object.entries(draftSourceJobs)) {
+        if (did === activeDraftId) continue
+        for (const c of clips) claimedJobIds.add(c.id)
+      }
+      for (const v of completedSourceVideos) {
+        if (workspaceHiddenJobIds.has(v.id)) continue
+        if (claimedJobIds.has(v.id)) continue
+        videoJobsById.set(v.id, v)
+      }
+      imageList = visibleUserImages
     }
 
     const baseClips: UnifiedClip[] = [
@@ -3639,7 +3665,7 @@ export default function DashboardPage() {
         createdAt: job.created_at,
         job,
       })),
-      ...visibleUserImages.map((image) => ({
+      ...imageList.map((image) => ({
         kind: 'image' as const,
         id: image.id,
         createdAt: image.created_at,
