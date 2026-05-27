@@ -863,6 +863,28 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  // Film covers — one AI-generated cover image per draft/project scope.
+  // Keyed by activeDraftId (or selectedProjectId for finalized projects).
+  // Persisted to localStorage so covers survive refresh.
+  const [coverImages, setCoverImages] = useState<Record<string, UserImageItem>>({})
+  const coverImagesKey = userId ? `project-cover-images:${userId}` : null
+  useEffect(() => {
+    if (!coverImagesKey) { setCoverImages({}); return }
+    try {
+      const raw = window.localStorage.getItem(coverImagesKey)
+      const obj = raw ? (JSON.parse(raw) as Record<string, UserImageItem>) : {}
+      setCoverImages(obj && typeof obj === 'object' ? obj : {})
+    } catch { setCoverImages({}) }
+  }, [coverImagesKey])
+  function persistCoverImages(next: Record<string, UserImageItem>) {
+    if (!coverImagesKey) return
+    try { window.localStorage.setItem(coverImagesKey, JSON.stringify(next)) } catch { /* ignore */ }
+  }
+  // Dialog mode: 'frame' stages the AI image as a Start frame for image-to-video;
+  // 'cover' pins it as the film cover at the top of Pending.
+  const [aiDialogMode, setAiDialogMode] = useState<'frame' | 'cover'>('frame')
+
+
   // Tombstone set: draft ids (and the underlying clip/image ids they wrap)
   // that the user explicitly deleted. The backfill effect skips anything in
   // this set so deletion survives refresh.
