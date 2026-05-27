@@ -384,6 +384,19 @@ function isMissingJobError(error: unknown): boolean {
   return error instanceof ApiError && error.status === 404 && error.code === 'NOT_FOUND'
 }
 
+function isExpectedBillingError(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 402 || error.code === 'INSUFFICIENT_CREDITS')
+}
+
+function generationStartErrorMessage(error: unknown, fallback: string): string {
+  if (isExpectedBillingError(error)) {
+    return 'Not enough credits for this generation. Add credits or choose a lower-cost model/duration.'
+  }
+  if (error instanceof ApiError) return `${error.code}: ${error.message}`
+  if (error instanceof Error && error.message) return error.message
+  return fallback
+}
+
 function readStoredIdSet(key: string | null): Set<string> {
   if (!key || typeof window === 'undefined') return new Set()
   try {
@@ -3063,13 +3076,8 @@ export default function DashboardPage() {
       setPromptText('')
       setUploadedFiles([])
     } catch (error) {
-      console.error('handleSubmit failed', error)
-      let message = 'Could not start video generation.'
-      if (error instanceof ApiError) {
-        message = `${error.code}: ${error.message}`
-      } else if (error instanceof Error && error.message) {
-        message = error.message
-      }
+      if (!isExpectedBillingError(error)) console.error('handleSubmit failed', error)
+      const message = generationStartErrorMessage(error, 'Could not start video generation.')
       // Don't overwrite a more specific message set by submitScenesAsJobs.
       setComposerError((current) => current ?? message)
       setVideoColumnMessage((current) => current ?? message)
@@ -3201,12 +3209,7 @@ export default function DashboardPage() {
       }
       setVideoColumnMessage(null)
     } catch (error) {
-      let message = 'Could not start scenario generation.'
-      if (error instanceof ApiError) {
-        message = `${error.code}: ${error.message}`
-      } else if (error instanceof Error) {
-        message = error.message
-      }
+      const message = generationStartErrorMessage(error, 'Could not start scenario generation.')
       setComposerError(message)
       setVideoColumnMessage(message)
       throw error
@@ -3507,9 +3510,7 @@ export default function DashboardPage() {
         setVideoColumnMessage(msg)
       })
     } catch (error) {
-      const message = error instanceof ApiError
-        ? `${error.code}: ${error.message}`
-        : (error instanceof Error ? error.message : 'Could not regenerate this card.')
+      const message = generationStartErrorMessage(error, 'Could not regenerate this card.')
       setVideoColumnMessage(message)
     } finally {
       setRegeneratingIds((current) => {
