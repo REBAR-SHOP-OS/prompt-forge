@@ -4680,7 +4680,7 @@ export default function DashboardPage() {
         onSaved={async (row) => {
           if (aiDialogMode === 'cover') {
             if (!coverScopeKey) {
-              toast({ title: 'Open a project first', description: 'Covers attach to a specific project or draft.' })
+              setVideoColumnMessage('Open or create a project first — covers attach to a specific project.')
               setAiDialogMode('frame')
               return
             }
