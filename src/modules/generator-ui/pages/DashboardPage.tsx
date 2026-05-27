@@ -873,7 +873,13 @@ export default function DashboardPage() {
     try {
       const raw = window.localStorage.getItem(coverImagesKey)
       const obj = raw ? (JSON.parse(raw) as Record<string, UserImageItem>) : {}
-      setCoverImages(obj && typeof obj === 'object' ? obj : {})
+      const safe = obj && typeof obj === 'object' ? { ...obj } : {}
+      // Drop any legacy workspace-wide cover so it can't leak across projects.
+      if ('__workspace__' in safe) {
+        delete (safe as Record<string, UserImageItem>)['__workspace__']
+        try { window.localStorage.setItem(coverImagesKey, JSON.stringify(safe)) } catch { /* ignore */ }
+      }
+      setCoverImages(safe)
     } catch { setCoverImages({}) }
   }, [coverImagesKey])
   function persistCoverImages(next: Record<string, UserImageItem>) {
