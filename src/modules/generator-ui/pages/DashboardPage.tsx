@@ -2896,16 +2896,53 @@ export default function DashboardPage() {
   // alongside the new card, then exit project-snapshot mode.
   function resumeSelectedProject() {
     if (!selectedProjectId) return
-    const snapshot = projectSourceJobs[selectedProjectId] ?? []
-    if (snapshot.length > 0) {
-      setGeneratedVideos((current) => snapshot.reduce((acc, j) => mergeJob(acc, j), current))
+    const pid = selectedProjectId
+    const isDraft = pid.startsWith('draft-')
+
+    // Pull snapshots from whichever bucket owns this project id.
+    const videoSnapshot = isDraft
+      ? (draftSourceJobs[pid] ?? [])
+      : (projectSourceJobs[pid] ?? [])
+    const imageSnapshot = isDraft
+      ? (draftSourceImages[pid] ?? [])
+      : (projectSourceImages[pid] ?? [])
+
+    // Restore clips into the live workspace so the upcoming card joins them.
+    if (videoSnapshot.length > 0) {
+      setGeneratedVideos((current) => videoSnapshot.reduce((acc, j) => mergeJob(acc, j), current))
       setWorkspaceHiddenJobIds((curr) => {
         const next = new Set(curr)
-        for (const j of snapshot) next.delete(j.id)
+        for (const j of videoSnapshot) next.delete(j.id)
         persistWorkspaceHiddenJobIds(next)
         return next
       })
     }
+    if (imageSnapshot.length > 0) {
+      setUserImages((current) => {
+        const byId = new Map(current.map((i) => [i.id, i] as const))
+        for (const img of imageSnapshot) if (!byId.has(img.id)) byId.set(img.id, img)
+        return Array.from(byId.values())
+      })
+      setWorkspaceHiddenImageIds((curr) => {
+        const next = new Set(curr)
+        for (const i of imageSnapshot) next.delete(i.id)
+        persistWorkspaceHiddenImageIds(next)
+        return next
+      })
+    }
+
+    // Critical: for a draft, keep the SAME draft active so the snapshot
+    // effect appends new cards to it instead of spawning a brand-new draft.
+    // For a finalized project there is no draft yet, so clear activeDraftId
+    // and let the effect create a fresh draft as before.
+    if (isDraft) {
+      setActiveDraftId(pid)
+      persistActiveDraftId(pid)
+    } else {
+      setActiveDraftId(null)
+      persistActiveDraftId(null)
+    }
+
     setSelectedProjectId(null)
     setPreviewVideoId(null)
     setPreviewDismissed(true)
