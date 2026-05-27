@@ -4672,6 +4672,23 @@ export default function DashboardPage() {
         userId={userId}
         defaultAspect={lockedProjectRatio ?? aspectRatio}
         onSaved={async (row) => {
+          if (aiDialogMode === 'cover') {
+            // Pin this image as the film cover for the current scope.
+            // Do NOT stage it as a Start frame, do NOT add it to the regular
+            // pending source-image list (it's excluded via allCoverImageIds).
+            setUserImages((prev) => {
+              if (prev.some((p) => p.id === row.id)) return prev
+              return [row as UserImageItem, ...prev]
+            })
+            setCoverImages((prev) => {
+              const next = { ...prev, [coverScopeKey]: row as UserImageItem }
+              persistCoverImages(next)
+              return next
+            })
+            setAiDialogMode('frame')
+            return
+          }
+
           setUserImages((prev) => [row as UserImageItem, ...prev])
           markActiveImage((row as UserImageItem).id)
           setGenerationMode('image-to-video')
