@@ -107,7 +107,10 @@ Deno.serve(async (req) => {
 
   let upstream: Response;
   try {
-    upstream = await fetch(upstreamUrl.toString(), {
+    // IMPORTANT: pass the original `target` string (not upstreamUrl.toString()),
+    // because URL.toString() re-encodes query parameters and breaks
+    // signed-URL signatures (e.g. Aliyun OSS `Signature=...`).
+    upstream = await fetch(target, {
       method: req.method,
       headers: fwdHeaders,
       redirect: "follow",
