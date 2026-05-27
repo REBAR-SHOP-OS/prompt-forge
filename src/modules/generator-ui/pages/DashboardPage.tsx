@@ -3828,7 +3828,7 @@ export default function DashboardPage() {
       mergeAbortRef.current = abortController
       const mergeRes = await Promise.race([
         mergeVideoUrls(
-          urls,
+          mergeClips,
           (p) => {
             // Map stages into a monotonic 1..99 percent so the UI keeps
             // moving past the old 95% cap during encode and upload.
@@ -3877,7 +3877,7 @@ export default function DashboardPage() {
       // Final Film preview overlay — Pending source clips stay untouched.
       const firstClipId = eligibleClips[0]?.id
       const mergedRatio: Ratio = (firstClipId ? clipAspectRatios[firstClipId] : undefined) ?? aspectRatio
-      setLastMergedPreview({ url: publicUrl, ratio: mergedRatio, clipCount: urls.length })
+      setLastMergedPreview({ url: publicUrl, ratio: mergedRatio, clipCount: mergeClips.length })
       setPreviewDismissed(false)
       setPreviewVideoId(null)
 
@@ -3890,7 +3890,7 @@ export default function DashboardPage() {
       const libraryEntry: JobDetail = {
         id: mergedId,
         status: 'completed',
-        input_prompt: `Final Film (${urls.length} clip${urls.length === 1 ? '' : 's'})`,
+        input_prompt: `Final Film (${mergeClips.length} clip${mergeClips.length === 1 ? '' : 's'})`,
         provider_key: 'final-film',
         model_key: 'merge',
         provider_job_id: null,
