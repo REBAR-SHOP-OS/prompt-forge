@@ -4679,6 +4679,11 @@ export default function DashboardPage() {
         defaultAspect={lockedProjectRatio ?? aspectRatio}
         onSaved={async (row) => {
           if (aiDialogMode === 'cover') {
+            if (!coverScopeKey) {
+              toast({ title: 'Open a project first', description: 'Covers attach to a specific project or draft.' })
+              setAiDialogMode('frame')
+              return
+            }
             // Pin this image as the film cover for the current scope.
             // Do NOT stage it as a Start frame, do NOT add it to the regular
             // pending source-image list (it's excluded via allCoverImageIds).
