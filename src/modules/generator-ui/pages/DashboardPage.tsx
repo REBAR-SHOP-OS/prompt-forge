@@ -2214,8 +2214,8 @@ export default function DashboardPage() {
   // ordering, drag handlers, and Final Film merge sequence.
   // Active scope for the film cover: a finalized project takes priority, then
   // the active draft, otherwise the bare workspace.
-  const coverScopeKey = selectedProjectId ?? activeDraftId ?? '__workspace__'
-  const currentCover: UserImageItem | null = coverImages[coverScopeKey] ?? null
+  const coverScopeKey: string | null = selectedProjectId ?? activeDraftId ?? null
+  const currentCover: UserImageItem | null = coverScopeKey ? (coverImages[coverScopeKey] ?? null) : null
   // All cover image ids across every scope — used to hide them from the normal
   // clip list so a cover never double-renders as a generation source.
   const allCoverImageIds = useMemo(() => {
