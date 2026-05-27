@@ -107,11 +107,16 @@ Deno.serve(async (req) => {
 
   let upstream: Response;
   try {
-    // IMPORTANT: pass the original `target` string (not upstreamUrl.toString()),
-    // because URL.toString() re-encodes query parameters and breaks
-    // signed-URL signatures (e.g. Aliyun OSS `Signature=...`).
+    // IMPORTANT:
+    // 1. Pass the original `target` string (not upstreamUrl.toString()) — URL
+    //    re-serialization breaks signed-URL signatures (e.g. Aliyun OSS).
+    // 2. ALWAYS fetch upstream with GET. Aliyun OSS v1 signed URLs include the
+    //    HTTP method in the signature payload, so a URL signed for GET returns
+    //    403 on HEAD. The browser's <video> element issues HEAD preflights for
+    //    range support; we satisfy them by doing a GET upstream and stripping
+    //    the body when the client asked for HEAD.
     upstream = await fetch(target, {
-      method: req.method,
+      method: "GET",
       headers: fwdHeaders,
       redirect: "follow",
     });
@@ -133,6 +138,16 @@ Deno.serve(async (req) => {
   }
   if (!respHeaders.has("accept-ranges")) {
     respHeaders.set("accept-ranges", "bytes");
+  }
+
+  // For HEAD: discard the body but reply with the upstream status + headers
+  // so the client gets accurate Content-Length / Accept-Ranges.
+  if (req.method === "HEAD") {
+    try { await upstream.body?.cancel(); } catch { /* ignore */ }
+    return new Response(null, {
+      status: upstream.status,
+      headers: respHeaders,
+    });
   }
 
   return new Response(upstream.body, {
