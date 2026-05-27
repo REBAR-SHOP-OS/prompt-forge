@@ -7,7 +7,9 @@ import {
   ChevronsRight,
   Check,
   Cpu,
+  Camera,
   Clapperboard,
+   
   
   Combine,
   Crop,
