@@ -1,66 +1,55 @@
-# رفع باگ: نشت کلیپ‌های پروژه‌های درفت دیگر در Final Film
+# رفع باگ: آپلود ویدیو/تصویر داخل پروژه‌ی فعلی بماند
 
-## مشکل (Root Cause)
+## مشکل
 
-در `src/modules/generator-ui/pages/DashboardPage.tsx`، تابع `handleMergeAllVideos` (خط ۳۶۰۲) برخلاف UI، از لیست فیلتر‌شده‌ی `displayedClips` استفاده نمی‌کند. در عوض:
+وقتی کاربر یک پروژه‌ی درفت یا فاینال‌شده باز کرده (`selectedProjectId` ست است و هدر می‌گوید "Showing Project") و یک ویدیو/تصویر آپلود می‌کند، کارت جدید وارد همان پروژه نمی‌شود؛ یک «پروژه‌ی جدید» ساخته می‌شود.
+
+## ریشه (Root Cause)
+
+در `src/modules/generator-ui/pages/DashboardPage.tsx`، تابع `resumeSelectedProject` (خط ۲۸۹۷) فقط حالت **پروژه‌ی فاینال‌شده** را پشتیبانی می‌کند:
 
 ```ts
-// خط 3613-3623
-const videoJobsById = new Map<string, JobDetail>()
-for (const v of completedSourceVideos) videoJobsById.set(v.id, v)  // ⚠️ همه ویدیوهای حساب
-for (const j of snapshotForMerge) { ... }
+const snapshot = projectSourceJobs[selectedProjectId] ?? []   // فقط فاینال‌ها
 ```
 
-و `completedSourceVideos` (خط ۲۰۱۰) فقط فیلتر `status === completed` دارد — **هیچ فیلتری برای `workspaceHiddenJobIds`، `projectSourceJobs`، یا `draftSourceJobs` ندارد.**
+برای درفت‌ها (`selectedProjectId` که با `draft-` شروع می‌شود) snapshot از `draftSourceJobs` خوانده نمی‌شود و `activeDraftId` هم به آن درفت ست نمی‌شود. در نتیجه:
 
-نتیجه:
-- وقتی کاربر چند درفت دارد و درفت A را Final می‌کند، کلیپ‌های درفت B و C هم وارد ویدیوی نهایی می‌شوند.
-- حتی وقتی `selectedProjectId` ست شده، snapshot پروژه با همه‌ی ویدیوهای حساب union می‌شود.
+1. `resumeSelectedProject` بدون restore کردن کلیپ‌های درفت فعلی، `selectedProjectId` را null می‌کند.
+2. آپلود وارد `generatedVideos` می‌شود، ولی بدون دیدن سایر کلیپ‌های درفت.
+3. effect خط ۱۶۹۲ که snapshot درفت را می‌سازد، چون `activeDraftId` فعلی همان درفت قبلی نیست (یا null است)، یک **درفت تازه** می‌سازد که فقط شامل کارت جدید (و کلیپ‌های قبلی که حالا visible شده‌اند) است — این همان «پروژه‌ی جدید» است که کاربر می‌بیند.
 
-برای تصاویر نیز `visibleUserImages` (خط ۲۱۷۹) فقط `projectSourceImages` (پروژه‌های نهایی) را حذف می‌کند ولی `draftSourceImages` را حذف نمی‌کند — پس تصاویر درفت‌های دیگر هم نشت می‌کنند.
+همین مسئله برای آپلود تصویر در `handleUploadImageFile` (خط ۲۴۰۳) و برای ارسال یک prompt جدید (`handleSubmit` خط ۲۹۵۲) هم وجود دارد، ولی برای کاربر مشکل تنها در آپلود گزارش شده است — راه حل پایه‌ای باید همه را پوشش دهد، چون منبع باگ همان تابع است.
 
 ## تغییرات
 
 **فایل:** `src/modules/generator-ui/pages/DashboardPage.tsx`
 
-### ۱. اصلاح `handleMergeAllVideos` (حدود خط ۳۶۰۲-۳۶۳۸)
+### اصلاح `resumeSelectedProject` (حدود خط ۲۸۹۷–۲۹۱۲)
 
-ساخت مجموعه merge را به دو مسیر تقسیم می‌کنیم:
+تابع را طوری بازنویسی می‌کنیم که هر دو حالت را پوشش دهد:
 
-- **حالت پروژه انتخاب‌شده (`selectedProjectId` ست است):**
-  فقط از snapshot آن پروژه/درفت استفاده شود (`projectSourceJobs[id] ?? draftSourceJobs[id]` برای ویدیو، و `projectSourceImages[id] ?? draftSourceImages[id]` برای تصویر). از `completedSourceVideos` و `userImages` به‌صورت سراسری استفاده نکن — فقط برای hydrate کردن داده‌های زنده از `id`های snapshot.
+1. **اگر `selectedProjectId` با `draft-` شروع می‌شود (درفت فعال):**
+   - snapshot را از `draftSourceJobs[id]` و `draftSourceImages[id]` بخوان.
+   - کلیپ‌ها/تصاویر را با `mergeJob` / `mergeImage` به `generatedVideos` / `userImages` برگردان (در صورت لازم).
+   - از `workspaceHiddenJobIds` / `workspaceHiddenImageIds` پاک نشوند (همان روش پروژه‌ی فاینال).
+   - `setActiveDraftId(selectedProjectId)` و `persistActiveDraftId(selectedProjectId)` تا effect snapshot روی **همین** درفت کار کند و کارت جدید به آن اضافه شود.
+   - سپس `setSelectedProjectId(null)`.
 
-- **حالت ورک‌اسپیس پیش‌فرض (بدون انتخاب پروژه):**
-  از همان منطق `displayedVideos` + `visibleUserImages` استفاده شود، با این تفاوت که:
-  - کلیپ‌های claimed توسط **هر** snapshot (شامل `projectSourceJobs` و `draftSourceJobs`) حذف شوند.
-  - تصاویر claimed توسط `projectSourceImages` **و** `draftSourceImages` حذف شوند.
-  - `workspaceHiddenJobIds` / `workspaceHiddenImageIds` همچنان حذف شوند.
+2. **اگر `selectedProjectId` پروژه‌ی فاینال است (مسیر فعلی):**
+   - رفتار فعلی حفظ شود — به اضافه‌ی اینکه چون درفتی برای این پروژه وجود ندارد، `activeDraftId` به null ست شود تا effect یک درفت **تازه** بسازد (که در واقع همان رفتار «گسترش پروژه‌ی فاینال‌شده در یک درفت تازه» است که الان هم انجام می‌شود).
 
-این دقیقاً همان مجموعه‌ای است که در UI به کاربر نمایش داده می‌شود (یعنی `displayedClips`)، پس قانون «what you see is what you finalize» برقرار می‌شود.
-
-### ۲. اصلاح `visibleUserImages` (خط ۲۱۷۹-۲۱۹۲)
-
-به `claimedByProjects` هم `draftSourceImages` اضافه شود تا تصاویر درفت‌های دیگر در ورک‌اسپیس فعلی پنهان شوند (همان رفتاری که `displayedVideos` با `claimedByProjects` ندارد و باید اضافه شود).
-
-### ۳. اصلاح `displayedVideos` (خط ۲۱۲۵-۲۱۳۰)
-
-به `claimedByProjects` هم `draftSourceJobs` اضافه شود تا کلیپ‌های ویدیویی درفت‌های دیگر در ورک‌اسپیس پیش‌فرض نشت نکنند.
-
-### ۴. حذف منطق "re-finalize بعد از hidden"
-
-کامنت‌های خط ۳۶۰۸-۳۶۱۲ توضیح می‌دهند که عمداً از `displayedClips` رد شده‌اند تا کلیپ‌های hidden قابل re-finalize باشند. این use-case به‌جای دور زدن فیلتر، باید با باز کردن مجدد پروژه از Library انجام شود (که `selectedProjectId` ست می‌شود و مسیر اول snapshot را برمی‌گرداند).
+3. هیچ تغییری در `handleUploadVideoFile`، `handleUploadImageFile` و `handleSubmit` لازم نیست؛ همه قبلاً `resumeSelectedProject()` را صدا می‌زنند.
 
 ## اعتبارسنجی
 
-1. دو درفت با کلیپ‌های متفاوت بساز.
-2. روی درفت A کلیک کن، Final Film بزن.
-3. **انتظار:** ویدیوی نهایی فقط شامل کلیپ‌های درفت A باشد.
-4. سپس درفت B را باز کن — کلیپ‌هایش دست‌نخورده باشند.
-5. در حالت ورک‌اسپیس پیش‌فرض (بدون انتخاب پروژه)، کلیپ‌های هیچ درفتی نمایش داده نشوند.
-6. بازکردن یک پروژه قدیمی از Library و زدن Final Film دوباره — فقط کلیپ‌های همان پروژه merge شوند.
+1. یک درفت با دو کلیپ بساز، آن را از Library باز کن (هدر می‌گوید "Showing Project").
+2. یک ویدیو آپلود کن.  
+   **انتظار:** کارت جدید در همان پروژه ظاهر شود، نه به‌عنوان پروژه‌ی جدید در sidebar/Library.
+3. دوباره Library را بررسی کن — فقط یک درفت با ۳ کلیپ باید وجود داشته باشد.
+4. همین تست را برای آپلود تصویر و ارسال prompt جدید تکرار کن.
+5. سپس یک پروژه‌ی فاینال‌شده را باز کن، آپلود کن — رفتار قبلی (extending با درفت تازه) دست‌نخورده باشد.
 
 ## نکات
 
-- بدون تغییر دیتابیس یا edge function — فقط منطق فرانت‌اند.
-- کش `localStorage` (`project-source-jobs`, `active-draft-id`, ...) دست‌نخورده می‌ماند.
-- ratio lock و overlay و audio mixing تحت تأثیر قرار نمی‌گیرند.
+- فقط منطق فرانت‌اند؛ دیتابیس و edge functionها بدون تغییر.
+- منطق فیلتر `displayedVideos` / `visibleUserImages` که در اصلاح قبلی اضافه شد دست‌نخورده می‌ماند و درست با این فیکس همکاری می‌کند، چون `activeDraftId` به درفت درست ست می‌شود.
