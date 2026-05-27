@@ -873,7 +873,13 @@ export default function DashboardPage() {
     try {
       const raw = window.localStorage.getItem(coverImagesKey)
       const obj = raw ? (JSON.parse(raw) as Record<string, UserImageItem>) : {}
-      setCoverImages(obj && typeof obj === 'object' ? obj : {})
+      const safe = obj && typeof obj === 'object' ? { ...obj } : {}
+      // Drop any legacy workspace-wide cover so it can't leak across projects.
+      if ('__workspace__' in safe) {
+        delete (safe as Record<string, UserImageItem>)['__workspace__']
+        try { window.localStorage.setItem(coverImagesKey, JSON.stringify(safe)) } catch { /* ignore */ }
+      }
+      setCoverImages(safe)
     } catch { setCoverImages({}) }
   }, [coverImagesKey])
   function persistCoverImages(next: Record<string, UserImageItem>) {
@@ -2208,8 +2214,8 @@ export default function DashboardPage() {
   // ordering, drag handlers, and Final Film merge sequence.
   // Active scope for the film cover: a finalized project takes priority, then
   // the active draft, otherwise the bare workspace.
-  const coverScopeKey = selectedProjectId ?? activeDraftId ?? '__workspace__'
-  const currentCover: UserImageItem | null = coverImages[coverScopeKey] ?? null
+  const coverScopeKey: string | null = selectedProjectId ?? activeDraftId ?? null
+  const currentCover: UserImageItem | null = coverScopeKey ? (coverImages[coverScopeKey] ?? null) : null
   // All cover image ids across every scope — used to hide them from the normal
   // clip list so a cover never double-renders as a generation source.
   const allCoverImageIds = useMemo(() => {
@@ -4673,6 +4679,11 @@ export default function DashboardPage() {
         defaultAspect={lockedProjectRatio ?? aspectRatio}
         onSaved={async (row) => {
           if (aiDialogMode === 'cover') {
+            if (!coverScopeKey) {
+              setVideoColumnMessage('Open or create a project first — covers attach to a specific project.')
+              setAiDialogMode('frame')
+              return
+            }
             // Pin this image as the film cover for the current scope.
             // Do NOT stage it as a Start frame, do NOT add it to the regular
             // pending source-image list (it's excluded via allCoverImageIds).
@@ -5248,9 +5259,10 @@ export default function DashboardPage() {
             <button
               type="button"
               onClick={() => { setAiDialogMode('cover'); setIsAiImageDialogOpen(true) }}
-              className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100"
+              disabled={!coverScopeKey}
+              className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/10 disabled:hover:bg-[#141518]/95 disabled:hover:text-zinc-300"
               aria-label="Generate film cover with AI"
-              title="Generate film cover with AI"
+              title={coverScopeKey ? 'Generate film cover with AI' : 'Open or create a project first'}
             >
               <Camera className="h-4 w-4" aria-hidden="true" />
             </button>
