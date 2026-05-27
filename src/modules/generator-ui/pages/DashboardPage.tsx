@@ -2119,11 +2119,17 @@ export default function DashboardPage() {
         )
         .sort((l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime())
     }
-    // Backstop: any clip already snapshotted into a Library project must
-    // never appear loose in the default workspace, even if the hidden-set is
-    // empty (cleared storage, new device, etc.).
+    // Backstop: any clip already snapshotted into a Library project OR into
+    // another (non-active) draft must never appear loose in the default
+    // workspace — that was the root cause of cross-draft clips leaking into
+    // Final Film. The active draft's own snapshot mirrors the live workspace,
+    // so it must NOT be treated as "claimed by another project".
     const claimedByProjects = new Set<string>()
     for (const clips of Object.values(projectSourceJobs)) {
+      for (const c of clips) claimedByProjects.add(c.id)
+    }
+    for (const [did, clips] of Object.entries(draftSourceJobs)) {
+      if (did === activeDraftId) continue
       for (const c of clips) claimedByProjects.add(c.id)
     }
     const chronoAsc = [...generatedVideos]
@@ -2145,7 +2151,7 @@ export default function DashboardPage() {
       if (byId.has(v.id)) ordered.push(v)
     }
     return ordered
-  }, [generatedVideos, manualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs, draftSourceJobs, mergedEntries, librarySavedJobs])
+  }, [generatedVideos, manualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs, draftSourceJobs, activeDraftId, mergedEntries, librarySavedJobs])
 
   const handleCardDragStart = (id: string) => (event: React.DragEvent) => {
     setDraggingId(id)
