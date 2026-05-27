@@ -1,67 +1,66 @@
-# Fix: Final Film fails on uploaded image — "Clip #1 has no playable content (duration=0, 720x1280)"
+# رفع باگ: نشت کلیپ‌های پروژه‌های درفت دیگر در Final Film
 
-## Root cause
+## مشکل (Root Cause)
 
-In `src/modules/generator-ui/lib/imageToClip.ts`, image clips are converted to a WebM via `MediaRecorder` on a canvas stream. Browser-recorded WebMs from `canvas.captureStream()` are written without a duration in the EBML header, so when `loadVideo()` in `src/modules/generator-ui/lib/mergeVideos.ts` does:
+در `src/modules/generator-ui/pages/DashboardPage.tsx`، تابع `handleMergeAllVideos` (خط ۳۶۰۲) برخلاف UI، از لیست فیلتر‌شده‌ی `displayedClips` استفاده نمی‌کند. در عوض:
 
 ```ts
-const dur = Number.isFinite(v.duration) ? v.duration : 0
-if (dur <= 0 || !v.videoWidth || !v.videoHeight) reject(...)
+// خط 3613-3623
+const videoJobsById = new Map<string, JobDetail>()
+for (const v of completedSourceVideos) videoJobsById.set(v.id, v)  // ⚠️ همه ویدیوهای حساب
+for (const j of snapshotForMerge) { ... }
 ```
 
-`v.duration` comes back as `Infinity`, gets clamped to `0`, and the clip is rejected. This is exactly the error in the screenshot, and it breaks Final Film whenever an uploaded image is among the clips.
+و `completedSourceVideos` (خط ۲۰۱۰) فقط فیلتر `status === completed` دارد — **هیچ فیلتری برای `workspaceHiddenJobIds`، `projectSourceJobs`، یا `draftSourceJobs` ندارد.**
 
-The current approach is also wasteful: every image is encoded to WebM and uploaded to the `merged-videos` bucket on every Final Film run.
+نتیجه:
+- وقتی کاربر چند درفت دارد و درفت A را Final می‌کند، کلیپ‌های درفت B و C هم وارد ویدیوی نهایی می‌شوند.
+- حتی وقتی `selectedProjectId` ست شده، snapshot پروژه با همه‌ی ویدیوهای حساب union می‌شود.
 
-## Fix (principled, minimal, non-breaking)
+برای تصاویر نیز `visibleUserImages` (خط ۲۱۷۹) فقط `projectSourceImages` (پروژه‌های نهایی) را حذف می‌کند ولی `draftSourceImages` را حذف نمی‌کند — پس تصاویر درفت‌های دیگر هم نشت می‌کنند.
 
-Make the merger handle image clips natively, by painting the still image directly onto the shared canvas for its configured duration — bypassing MediaRecorder, the duration probe, and the storage upload entirely.
+## تغییرات
 
-### 1. `src/modules/generator-ui/lib/mergeVideos.ts`
-- Introduce a union input type so callers can pass either a video URL or an image clip:
-  ```ts
-  export type MergeClip =
-    | { kind: 'video'; url: string }
-    | { kind: 'image'; url: string; durationSec: number }
-  ```
-- Add an overload of `mergeVideoUrls` that accepts `MergeClip[]` (keep the existing `string[]` signature for back-compat — internally normalize strings to `{ kind: 'video', url }`).
-- Add a small `loadImage(url)` helper that resolves to an `HTMLImageElement` and returns natural `width/height`.
-- In the main loop:
-  - For `kind: 'video'` → unchanged path (`loadVideo` + frame-accurate painter + `whenEnded`).
-  - For `kind: 'image'` → skip `loadVideo` entirely. Paint the image with the existing `drawContain`-style logic onto the canvas, then drive a frame loop for exactly `durationSec * fps` frames using `requestAnimationFrame` (or `setTimeout(_, durationSec*1000)`) and resolve when done. No audio track is produced by the clip itself — music/voiceover mixing is unaffected.
-- For target size detection (currently uses the first video's dimensions): if the first clip is an image and no video exists, fall back to the image's natural size, then to the aspect-ratio default already used by the caller.
-- Transition handling stays identical — when transitioning from/into an image clip, the "outgoing snapshot" is the canvas (which already holds the painted image), and the "incoming" can be either a video element or an image painted into a temporary offscreen canvas. Keep the existing `paintTransitionFrame` signature by reusing the offscreen `snapshot` canvas for image-incoming frames.
+**فایل:** `src/modules/generator-ui/pages/DashboardPage.tsx`
 
-### 2. `src/modules/generator-ui/pages/DashboardPage.tsx` — `handleMergeAllVideos` (around lines 3771–3791)
-- Replace the `urls: string[]` + per-image `imageUrlToClip` + Supabase upload block with a `clips: MergeClip[]` build:
-  ```ts
-  const clips: MergeClip[] = []
-  for (const clip of eligibleClips) {
-    if (clip.kind === 'video') {
-      clips.push({ kind: 'video', url: await proxiedVideoUrl(clip.job.video!.storage_path as string) })
-    } else {
-      const seconds = Math.max(1, Math.min(15, clip.image.still_duration_seconds || 3))
-      clips.push({ kind: 'image', url: await proxiedVideoUrl(clip.image.storage_path), durationSec: seconds })
-    }
-  }
-  ```
-- Pass `clips` to `mergeVideoUrls(clips, ...)`.
-- Remove the now-dead WebM upload to `MERGED_BUCKET` for stills. (Imports of `imageUrlToClip` can stay if used elsewhere — verify and remove only the unused references.)
+### ۱. اصلاح `handleMergeAllVideos` (حدود خط ۳۶۰۲-۳۶۳۸)
 
-### 3. Keep `imageUrlToClip` for now
-It's also called in two other branches (lines ~2664 and ~2731) for appending a still to a single generated video. Those paths feed the same merger and have the same latent bug, but fixing Final Film is the user's reported issue. After the merger accepts `MergeClip[]`, those two callers can be migrated in a follow-up — out of scope here unless they break.
+ساخت مجموعه merge را به دو مسیر تقسیم می‌کنیم:
 
-## Why this is the right fix
+- **حالت پروژه انتخاب‌شده (`selectedProjectId` ست است):**
+  فقط از snapshot آن پروژه/درفت استفاده شود (`projectSourceJobs[id] ?? draftSourceJobs[id]` برای ویدیو، و `projectSourceImages[id] ?? draftSourceImages[id]` برای تصویر). از `completedSourceVideos` و `userImages` به‌صورت سراسری استفاده نکن — فقط برای hydrate کردن داده‌های زنده از `id`های snapshot.
 
-- Removes the broken round-trip (canvas → MediaRecorder WebM → upload → `<video>` probe) that was producing duration-less files.
-- No backend / storage / RLS changes.
-- Back-compat preserved: `mergeVideoUrls(string[], ...)` keeps working.
-- Faster Final Film (no per-image encode + upload).
-- Same visual output: the image is still painted on the same merge canvas, so transitions, aspect ratio, and recorded WebM/Opus output are unchanged.
+- **حالت ورک‌اسپیس پیش‌فرض (بدون انتخاب پروژه):**
+  از همان منطق `displayedVideos` + `visibleUserImages` استفاده شود، با این تفاوت که:
+  - کلیپ‌های claimed توسط **هر** snapshot (شامل `projectSourceJobs` و `draftSourceJobs`) حذف شوند.
+  - تصاویر claimed توسط `projectSourceImages` **و** `draftSourceImages` حذف شوند.
+  - `workspaceHiddenJobIds` / `workspaceHiddenImageIds` همچنان حذف شوند.
 
-## Verification
+این دقیقاً همان مجموعه‌ای است که در UI به کاربر نمایش داده می‌شود (یعنی `displayedClips`)، پس قانون «what you see is what you finalize» برقرار می‌شود.
 
-1. With the previous failing project (uploaded image as clip #1, then 3 generated videos), click Final Film → it should complete without the "duration=0" error.
-2. Image-only Final Film (all clips are uploads) renders a valid WebM of total length = sum of `still_duration_seconds`.
-3. Mixed image/video with each transition type (cut, fade, crossfade, slide, wipe, zoom) renders without freezing or black frames at the image→video boundaries.
-4. Music + voiceover mixing still works (image clips contribute no audio, music/VO unchanged).
+### ۲. اصلاح `visibleUserImages` (خط ۲۱۷۹-۲۱۹۲)
+
+به `claimedByProjects` هم `draftSourceImages` اضافه شود تا تصاویر درفت‌های دیگر در ورک‌اسپیس فعلی پنهان شوند (همان رفتاری که `displayedVideos` با `claimedByProjects` ندارد و باید اضافه شود).
+
+### ۳. اصلاح `displayedVideos` (خط ۲۱۲۵-۲۱۳۰)
+
+به `claimedByProjects` هم `draftSourceJobs` اضافه شود تا کلیپ‌های ویدیویی درفت‌های دیگر در ورک‌اسپیس پیش‌فرض نشت نکنند.
+
+### ۴. حذف منطق "re-finalize بعد از hidden"
+
+کامنت‌های خط ۳۶۰۸-۳۶۱۲ توضیح می‌دهند که عمداً از `displayedClips` رد شده‌اند تا کلیپ‌های hidden قابل re-finalize باشند. این use-case به‌جای دور زدن فیلتر، باید با باز کردن مجدد پروژه از Library انجام شود (که `selectedProjectId` ست می‌شود و مسیر اول snapshot را برمی‌گرداند).
+
+## اعتبارسنجی
+
+1. دو درفت با کلیپ‌های متفاوت بساز.
+2. روی درفت A کلیک کن، Final Film بزن.
+3. **انتظار:** ویدیوی نهایی فقط شامل کلیپ‌های درفت A باشد.
+4. سپس درفت B را باز کن — کلیپ‌هایش دست‌نخورده باشند.
+5. در حالت ورک‌اسپیس پیش‌فرض (بدون انتخاب پروژه)، کلیپ‌های هیچ درفتی نمایش داده نشوند.
+6. بازکردن یک پروژه قدیمی از Library و زدن Final Film دوباره — فقط کلیپ‌های همان پروژه merge شوند.
+
+## نکات
+
+- بدون تغییر دیتابیس یا edge function — فقط منطق فرانت‌اند.
+- کش `localStorage` (`project-source-jobs`, `active-draft-id`, ...) دست‌نخورده می‌ماند.
+- ratio lock و overlay و audio mixing تحت تأثیر قرار نمی‌گیرند.
