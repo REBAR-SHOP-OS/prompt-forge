@@ -1,55 +1,48 @@
-# رفع باگ: آپلود ویدیو/تصویر داخل پروژه‌ی فعلی بماند
+# Add Film Cover via AI
 
-## مشکل
+## Goal
+Add a new Camera icon (📷) button next to the existing Sparkles AI-image button. Clicking it opens the same `Generate image with AI` dialog, but the resulting image is treated as the **film cover** and pinned as a special card at the **top** of the Pending column (not staged as a Start frame).
 
-وقتی کاربر یک پروژه‌ی درفت یا فاینال‌شده باز کرده (`selectedProjectId` ست است و هدر می‌گوید "Showing Project") و یک ویدیو/تصویر آپلود می‌کند، کارت جدید وارد همان پروژه نمی‌شود؛ یک «پروژه‌ی جدید» ساخته می‌شود.
+## UX
+- **New button:** Camera icon (`lucide-react` `Camera`) placed immediately after the existing Sparkles button (around line 6034–6042 in `DashboardPage.tsx`), same circular style.
+- **Tooltip / aria:** "Generate film cover with AI".
+- **Dialog:** Reuses `AiImageDialog` unchanged. We open it with a new mode flag (`mode: 'cover'`) so `onSaved` knows to route the result to the cover slot instead of the Start frame.
+- **Pending column:** The generated cover renders as the **first card** in Pending with a small `COVER` badge in the corner. It shows the image full-bleed using the locked project aspect ratio. Only one cover per project — generating a new one replaces it.
+- **Behavior:** The cover card is NOT a generation source (not added to `manualOrder` or merge sequence by default). It's metadata for the project — displayed as the visual cover and included as the first 1-second still in the final merged video (image-to-clip via existing `imageToClip` helper) when present.
 
-## ریشه (Root Cause)
+## Implementation
 
-در `src/modules/generator-ui/pages/DashboardPage.tsx`، تابع `resumeSelectedProject` (خط ۲۸۹۷) فقط حالت **پروژه‌ی فاینال‌شده** را پشتیبانی می‌کند:
+### 1. State + persistence (`DashboardPage.tsx`)
+- Add `const [coverImage, setCoverImage] = useState<UserImageItem | null>(null)` keyed per active draft/project. Persist alongside `draftSourceImages` as `draftCoverImage: Record<draftId, UserImageItem>` (localStorage). On project switch, hydrate the cover for that scope.
+- Add a small helper `setProjectCover(image)` that writes to both state and persisted map, scoped to `activeDraftId` (or `selectedProjectId` if a finalized project is open).
 
-```ts
-const snapshot = projectSourceJobs[selectedProjectId] ?? []   // فقط فاینال‌ها
-```
+### 2. Open dialog in "cover mode"
+- Add `aiDialogMode: 'frame' | 'cover'` state, default `'frame'`.
+- New Camera button sets `setAiDialogMode('cover')` then `setIsAiImageDialogOpen(true)`.
+- Existing Sparkles button sets `setAiDialogMode('frame')` first.
 
-برای درفت‌ها (`selectedProjectId` که با `draft-` شروع می‌شود) snapshot از `draftSourceJobs` خوانده نمی‌شود و `activeDraftId` هم به آن درفت ست نمی‌شود. در نتیجه:
+### 3. Route the saved image
+In the `<AiImageDialog onSaved={...}>` handler (line ~4637), branch on `aiDialogMode`:
+- `'frame'`: keep current behavior (Start frame staging).
+- `'cover'`: call `setProjectCover(row)`, exclude the image from `visibleUserImages` (add its id to a `coverImageIds` Set so it doesn't double-render as a normal source image), and skip all Start-frame staging code.
 
-1. `resumeSelectedProject` بدون restore کردن کلیپ‌های درفت فعلی، `selectedProjectId` را null می‌کند.
-2. آپلود وارد `generatedVideos` می‌شود، ولی بدون دیدن سایر کلیپ‌های درفت.
-3. effect خط ۱۶۹۲ که snapshot درفت را می‌سازد، چون `activeDraftId` فعلی همان درفت قبلی نیست (یا null است)، یک **درفت تازه** می‌سازد که فقط شامل کارت جدید (و کلیپ‌های قبلی که حالا visible شده‌اند) است — این همان «پروژه‌ی جدید» است که کاربر می‌بیند.
+### 4. Render the cover card at top of Pending
+- In the Pending panel JSX (around the `displayedClips` map, ~line 5135+), render a dedicated `<CoverCard image={coverImage} onRemove={...} onRegenerate={...} />` above the regular clip list when `coverImage` is set.
+- Styling matches existing clip cards (rounded, border, aspect ratio from `lockedProjectRatio ?? aspectRatio`) with an amber `COVER` chip top-left.
 
-همین مسئله برای آپلود تصویر در `handleUploadImageFile` (خط ۲۴۰۳) و برای ارسال یک prompt جدید (`handleSubmit` خط ۲۹۵۲) هم وجود دارد، ولی برای کاربر مشکل تنها در آپلود گزارش شده است — راه حل پایه‌ای باید همه را پوشش دهد، چون منبع باگ همان تابع است.
+### 5. Include in final merge (optional, on by default)
+In `handleMergeAllVideos`, if `coverImage` exists for the active scope, prepend a 1.5s still clip generated via the existing `imageToClip` helper (already used elsewhere). This becomes frame 0 of the final film.
 
-## تغییرات
+## Files touched
+- `src/modules/generator-ui/pages/DashboardPage.tsx` — button, state, dialog routing, Pending render, merge prepend.
+- No changes needed to `AiImageDialog.tsx`, edge functions, or DB.
 
-**فایل:** `src/modules/generator-ui/pages/DashboardPage.tsx`
+## Verification
+1. Click Camera icon → dialog opens with aspect ratio prefilled.
+2. Generate image → it appears as a single `COVER` card at the top of Pending; does NOT appear as a normal source image; does NOT get staged into the Start slot.
+3. Click Camera again → new cover replaces the old one.
+4. Trigger Final Film → first 1.5s of merged video is the cover still, followed by clips in current order.
+5. Switch between drafts/projects → cover follows the active scope.
 
-### اصلاح `resumeSelectedProject` (حدود خط ۲۸۹۷–۲۹۱۲)
-
-تابع را طوری بازنویسی می‌کنیم که هر دو حالت را پوشش دهد:
-
-1. **اگر `selectedProjectId` با `draft-` شروع می‌شود (درفت فعال):**
-   - snapshot را از `draftSourceJobs[id]` و `draftSourceImages[id]` بخوان.
-   - کلیپ‌ها/تصاویر را با `mergeJob` / `mergeImage` به `generatedVideos` / `userImages` برگردان (در صورت لازم).
-   - از `workspaceHiddenJobIds` / `workspaceHiddenImageIds` پاک نشوند (همان روش پروژه‌ی فاینال).
-   - `setActiveDraftId(selectedProjectId)` و `persistActiveDraftId(selectedProjectId)` تا effect snapshot روی **همین** درفت کار کند و کارت جدید به آن اضافه شود.
-   - سپس `setSelectedProjectId(null)`.
-
-2. **اگر `selectedProjectId` پروژه‌ی فاینال است (مسیر فعلی):**
-   - رفتار فعلی حفظ شود — به اضافه‌ی اینکه چون درفتی برای این پروژه وجود ندارد، `activeDraftId` به null ست شود تا effect یک درفت **تازه** بسازد (که در واقع همان رفتار «گسترش پروژه‌ی فاینال‌شده در یک درفت تازه» است که الان هم انجام می‌شود).
-
-3. هیچ تغییری در `handleUploadVideoFile`، `handleUploadImageFile` و `handleSubmit` لازم نیست؛ همه قبلاً `resumeSelectedProject()` را صدا می‌زنند.
-
-## اعتبارسنجی
-
-1. یک درفت با دو کلیپ بساز، آن را از Library باز کن (هدر می‌گوید "Showing Project").
-2. یک ویدیو آپلود کن.  
-   **انتظار:** کارت جدید در همان پروژه ظاهر شود، نه به‌عنوان پروژه‌ی جدید در sidebar/Library.
-3. دوباره Library را بررسی کن — فقط یک درفت با ۳ کلیپ باید وجود داشته باشد.
-4. همین تست را برای آپلود تصویر و ارسال prompt جدید تکرار کن.
-5. سپس یک پروژه‌ی فاینال‌شده را باز کن، آپلود کن — رفتار قبلی (extending با درفت تازه) دست‌نخورده باشد.
-
-## نکات
-
-- فقط منطق فرانت‌اند؛ دیتابیس و edge functionها بدون تغییر.
-- منطق فیلتر `displayedVideos` / `visibleUserImages` که در اصلاح قبلی اضافه شد دست‌نخورده می‌ماند و درست با این فیکس همکاری می‌کند، چون `activeDraftId` به درفت درست ست می‌شود.
+## Open question (assumed default, override if wrong)
+- Should the cover automatically be included as the first frame of the final merged video? **Assumed: yes, 1.5s still.** If you'd rather have it as a pure visual badge only (no merge inclusion), say so and I'll drop step 5.

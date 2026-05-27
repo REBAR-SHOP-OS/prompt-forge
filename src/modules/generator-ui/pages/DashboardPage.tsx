@@ -7,7 +7,9 @@ import {
   ChevronsRight,
   Check,
   Cpu,
+  Camera,
   Clapperboard,
+   
   
   Combine,
   Crop,
@@ -860,6 +862,28 @@ export default function DashboardPage() {
       else window.localStorage.removeItem(activeDraftIdKey)
     } catch { /* ignore */ }
   }
+
+  // Film covers — one AI-generated cover image per draft/project scope.
+  // Keyed by activeDraftId (or selectedProjectId for finalized projects).
+  // Persisted to localStorage so covers survive refresh.
+  const [coverImages, setCoverImages] = useState<Record<string, UserImageItem>>({})
+  const coverImagesKey = userId ? `project-cover-images:${userId}` : null
+  useEffect(() => {
+    if (!coverImagesKey) { setCoverImages({}); return }
+    try {
+      const raw = window.localStorage.getItem(coverImagesKey)
+      const obj = raw ? (JSON.parse(raw) as Record<string, UserImageItem>) : {}
+      setCoverImages(obj && typeof obj === 'object' ? obj : {})
+    } catch { setCoverImages({}) }
+  }, [coverImagesKey])
+  function persistCoverImages(next: Record<string, UserImageItem>) {
+    if (!coverImagesKey) return
+    try { window.localStorage.setItem(coverImagesKey, JSON.stringify(next)) } catch { /* ignore */ }
+  }
+  // Dialog mode: 'frame' stages the AI image as a Start frame for image-to-video;
+  // 'cover' pins it as the film cover at the top of Pending.
+  const [aiDialogMode, setAiDialogMode] = useState<'frame' | 'cover'>('frame')
+
 
   // Tombstone set: draft ids (and the underlying clip/image ids they wrap)
   // that the user explicitly deleted. The backfill effect skips anything in
@@ -2182,11 +2206,23 @@ export default function DashboardPage() {
   // Unified clip list (videos + uploaded images), ordered by created_at ASC,
   // with manual drag-and-drop overrides. Both kinds share the same numbering,
   // ordering, drag handlers, and Final Film merge sequence.
+  // Active scope for the film cover: a finalized project takes priority, then
+  // the active draft, otherwise the bare workspace.
+  const coverScopeKey = selectedProjectId ?? activeDraftId ?? '__workspace__'
+  const currentCover: UserImageItem | null = coverImages[coverScopeKey] ?? null
+  // All cover image ids across every scope — used to hide them from the normal
+  // clip list so a cover never double-renders as a generation source.
+  const allCoverImageIds = useMemo(() => {
+    const s = new Set<string>()
+    for (const img of Object.values(coverImages)) s.add(img.id)
+    return s
+  }, [coverImages])
+
   const visibleUserImages = useMemo<UserImageItem[]>(() => {
     if (selectedProjectId) {
       const snapshot = projectSourceImages[selectedProjectId] ?? draftSourceImages[selectedProjectId] ?? []
       const liveById = new Map(userImages.map((i) => [i.id, i]))
-      if (snapshot.length > 0) return snapshot.map((s) => liveById.get(s.id) ?? s)
+      if (snapshot.length > 0) return snapshot.map((s) => liveById.get(s.id) ?? s).filter((i) => !allCoverImageIds.has(i.id))
       // Single-clip Library entries never have image sources.
       if (!selectedProjectId.startsWith('merged-') && !selectedProjectId.startsWith('draft-')) return []
     }
@@ -2198,8 +2234,9 @@ export default function DashboardPage() {
       if (did === activeDraftId) continue
       for (const i of imgs) claimedByProjects.add(i.id)
     }
-    return userImages.filter((i) => !workspaceHiddenImageIds.has(i.id) && !claimedByProjects.has(i.id))
-  }, [userImages, selectedProjectId, projectSourceImages, draftSourceImages, activeDraftId, workspaceHiddenImageIds])
+    return userImages.filter((i) => !workspaceHiddenImageIds.has(i.id) && !claimedByProjects.has(i.id) && !allCoverImageIds.has(i.id))
+  }, [userImages, selectedProjectId, projectSourceImages, draftSourceImages, activeDraftId, workspaceHiddenImageIds, allCoverImageIds])
+
 
   const displayedClips = useMemo<UnifiedClip[]>(() => {
     const items: UnifiedClip[] = [
@@ -4635,6 +4672,23 @@ export default function DashboardPage() {
         userId={userId}
         defaultAspect={lockedProjectRatio ?? aspectRatio}
         onSaved={async (row) => {
+          if (aiDialogMode === 'cover') {
+            // Pin this image as the film cover for the current scope.
+            // Do NOT stage it as a Start frame, do NOT add it to the regular
+            // pending source-image list (it's excluded via allCoverImageIds).
+            setUserImages((prev) => {
+              if (prev.some((p) => p.id === row.id)) return prev
+              return [row as UserImageItem, ...prev]
+            })
+            setCoverImages((prev) => {
+              const next = { ...prev, [coverScopeKey]: row as UserImageItem }
+              persistCoverImages(next)
+              return next
+            })
+            setAiDialogMode('frame')
+            return
+          }
+
           setUserImages((prev) => [row as UserImageItem, ...prev])
           markActiveImage((row as UserImageItem).id)
           setGenerationMode('image-to-video')
@@ -5241,8 +5295,65 @@ export default function DashboardPage() {
         ) : null}
 
         <div className="mt-3 flex-1 overflow-y-auto overflow-x-hidden pr-1">
+          {currentCover ? (
+            <div className="mb-3">
+              <article
+                className="w-full min-w-0 rounded-2xl border border-amber-300/30 bg-amber-300/[0.04] p-3 shadow-[0_8px_30px_rgba(252,211,77,0.08)]"
+                aria-label="Film cover"
+              >
+                <div
+                  className="relative w-full min-w-0 overflow-hidden rounded-xl border border-amber-300/20 bg-[#15171a]"
+                  style={{ aspectRatio: (lockedProjectRatio ?? aspectRatio) === '9:16' ? '9 / 16' : (lockedProjectRatio ?? aspectRatio) === '16:9' ? '16 / 9' : '1 / 1' }}
+                >
+                  <img
+                    src={currentCover.storage_path}
+                    alt="Film cover"
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                  <span className="pointer-events-none absolute left-2 top-2 rounded-full bg-amber-300/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-950 shadow-md">
+                    Cover
+                  </span>
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <p className="min-w-0 flex-1 truncate text-sm font-medium text-amber-100">
+                    Film cover
+                  </p>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => { setAiDialogMode('cover'); setIsAiImageDialogOpen(true) }}
+                      className="inline-flex h-7 items-center gap-1 rounded-full border border-white/10 bg-black/30 px-2 text-[11px] font-medium text-zinc-200 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100"
+                      aria-label="Regenerate cover"
+                      title="Regenerate cover"
+                    >
+                      <RefreshCw className="h-3 w-3" aria-hidden="true" />
+                      Replace
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCoverImages((prev) => {
+                          const next = { ...prev }
+                          delete next[coverScopeKey]
+                          persistCoverImages(next)
+                          return next
+                        })
+                      }}
+                      className="grid h-7 w-7 place-items-center rounded-full border border-white/10 bg-black/30 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                      aria-label="Remove cover"
+                      title="Remove cover"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+              </article>
+            </div>
+          ) : null}
           {displayedClips.length > 0 ? (
             <div className="grid min-w-0 gap-3">
+
               {displayedClips.map((clip, index) => {
                 const isLast = index === displayedClips.length - 1
                 const isDragging = draggingId === clip.id
@@ -6033,13 +6144,23 @@ export default function DashboardPage() {
           </button>
           <button
             type="button"
-            onClick={() => setIsAiImageDialogOpen(true)}
+            onClick={() => { setAiDialogMode('frame'); setIsAiImageDialogOpen(true) }}
             className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/20 text-zinc-300 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100"
             aria-label="Generate image with AI"
             title="Generate image with AI (Nano Banana)"
           >
             <Sparkles className="h-4 w-4" aria-hidden="true" />
           </button>
+          <button
+            type="button"
+            onClick={() => { setAiDialogMode('cover'); setIsAiImageDialogOpen(true) }}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/20 text-zinc-300 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100"
+            aria-label="Generate film cover with AI"
+            title="Generate film cover with AI"
+          >
+            <Camera className="h-4 w-4" aria-hidden="true" />
+          </button>
+
           <button
             type="button"
             onClick={() => setIsScenarioDialogOpen(true)}
