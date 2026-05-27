@@ -5259,9 +5259,10 @@ export default function DashboardPage() {
             <button
               type="button"
               onClick={() => { setAiDialogMode('cover'); setIsAiImageDialogOpen(true) }}
-              className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100"
+              disabled={!coverScopeKey}
+              className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/10 disabled:hover:bg-[#141518]/95 disabled:hover:text-zinc-300"
               aria-label="Generate film cover with AI"
-              title="Generate film cover with AI"
+              title={coverScopeKey ? 'Generate film cover with AI' : 'Open or create a project first'}
             >
               <Camera className="h-4 w-4" aria-hidden="true" />
             </button>
