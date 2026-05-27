@@ -2206,11 +2206,23 @@ export default function DashboardPage() {
   // Unified clip list (videos + uploaded images), ordered by created_at ASC,
   // with manual drag-and-drop overrides. Both kinds share the same numbering,
   // ordering, drag handlers, and Final Film merge sequence.
+  // Active scope for the film cover: a finalized project takes priority, then
+  // the active draft, otherwise the bare workspace.
+  const coverScopeKey = selectedProjectId ?? activeDraftId ?? '__workspace__'
+  const currentCover: UserImageItem | null = coverImages[coverScopeKey] ?? null
+  // All cover image ids across every scope — used to hide them from the normal
+  // clip list so a cover never double-renders as a generation source.
+  const allCoverImageIds = useMemo(() => {
+    const s = new Set<string>()
+    for (const img of Object.values(coverImages)) s.add(img.id)
+    return s
+  }, [coverImages])
+
   const visibleUserImages = useMemo<UserImageItem[]>(() => {
     if (selectedProjectId) {
       const snapshot = projectSourceImages[selectedProjectId] ?? draftSourceImages[selectedProjectId] ?? []
       const liveById = new Map(userImages.map((i) => [i.id, i]))
-      if (snapshot.length > 0) return snapshot.map((s) => liveById.get(s.id) ?? s)
+      if (snapshot.length > 0) return snapshot.map((s) => liveById.get(s.id) ?? s).filter((i) => !allCoverImageIds.has(i.id))
       // Single-clip Library entries never have image sources.
       if (!selectedProjectId.startsWith('merged-') && !selectedProjectId.startsWith('draft-')) return []
     }
@@ -2222,8 +2234,9 @@ export default function DashboardPage() {
       if (did === activeDraftId) continue
       for (const i of imgs) claimedByProjects.add(i.id)
     }
-    return userImages.filter((i) => !workspaceHiddenImageIds.has(i.id) && !claimedByProjects.has(i.id))
-  }, [userImages, selectedProjectId, projectSourceImages, draftSourceImages, activeDraftId, workspaceHiddenImageIds])
+    return userImages.filter((i) => !workspaceHiddenImageIds.has(i.id) && !claimedByProjects.has(i.id) && !allCoverImageIds.has(i.id))
+  }, [userImages, selectedProjectId, projectSourceImages, draftSourceImages, activeDraftId, workspaceHiddenImageIds, allCoverImageIds])
+
 
   const displayedClips = useMemo<UnifiedClip[]>(() => {
     const items: UnifiedClip[] = [
