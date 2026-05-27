@@ -3076,13 +3076,8 @@ export default function DashboardPage() {
       setPromptText('')
       setUploadedFiles([])
     } catch (error) {
-      console.error('handleSubmit failed', error)
-      let message = 'Could not start video generation.'
-      if (error instanceof ApiError) {
-        message = `${error.code}: ${error.message}`
-      } else if (error instanceof Error && error.message) {
-        message = error.message
-      }
+      if (!isExpectedBillingError(error)) console.error('handleSubmit failed', error)
+      const message = generationStartErrorMessage(error, 'Could not start video generation.')
       // Don't overwrite a more specific message set by submitScenesAsJobs.
       setComposerError((current) => current ?? message)
       setVideoColumnMessage((current) => current ?? message)
@@ -3214,12 +3209,7 @@ export default function DashboardPage() {
       }
       setVideoColumnMessage(null)
     } catch (error) {
-      let message = 'Could not start scenario generation.'
-      if (error instanceof ApiError) {
-        message = `${error.code}: ${error.message}`
-      } else if (error instanceof Error) {
-        message = error.message
-      }
+      const message = generationStartErrorMessage(error, 'Could not start scenario generation.')
       setComposerError(message)
       setVideoColumnMessage(message)
       throw error
@@ -3520,9 +3510,7 @@ export default function DashboardPage() {
         setVideoColumnMessage(msg)
       })
     } catch (error) {
-      const message = error instanceof ApiError
-        ? `${error.code}: ${error.message}`
-        : (error instanceof Error ? error.message : 'Could not regenerate this card.')
+      const message = generationStartErrorMessage(error, 'Could not regenerate this card.')
       setVideoColumnMessage(message)
     } finally {
       setRegeneratingIds((current) => {
