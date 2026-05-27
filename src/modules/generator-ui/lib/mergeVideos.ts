@@ -2,6 +2,8 @@
 //
 // - Sequentially plays each source URL into a hidden <video>, paints frames
 //   onto a shared <canvas>, and captures the canvas stream.
+// - Image clips are painted directly onto the same canvas for their
+//   configured duration — no fake WebM round-trip, no duration probe.
 // - Always emits a real audio track in the recorded MediaStream.
 // - Supports per-gap transitions (cut/fade/crossfade/slide/wipe/zoom) painted
 //   on the canvas during a short overlap between the outgoing and incoming
@@ -88,6 +90,19 @@ export interface MergeResult {
   extension: 'mp4' | 'webm'
 }
 
+/**
+ * Input clip descriptor for {@link mergeVideoUrls}. The merger handles image
+ * clips natively (no MediaRecorder round-trip), so still images get painted
+ * directly on the merge canvas for `durationSec` seconds.
+ */
+export type MergeClip =
+  | { kind: 'video'; url: string }
+  | { kind: 'image'; url: string; durationSec: number }
+
+type ClipItem =
+  | { kind: 'video'; video: HTMLVideoElement; duration: number; width: number; height: number }
+  | { kind: 'image'; image: HTMLImageElement; duration: number; width: number; height: number }
+
 function pickMimeType(): string {
   // We deliberately prefer WebM over MP4 here. Chromium's MediaRecorder MP4
   // output is fragmented ISO BMFF that plays inside browsers but fails in
@@ -143,23 +158,72 @@ async function loadVideo(url: string, withAudio: boolean, clipLabel?: string): P
   })
 }
 
+async function loadImage(url: string, clipLabel?: string): Promise<HTMLImageElement> {
+  return await new Promise((resolve, reject) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    const label = clipLabel ?? url
+    const timeout = setTimeout(() => {
+      reject(new Error(`Image clip ${label} did not load within 20s`))
+    }, 20000)
+    img.onload = () => {
+      clearTimeout(timeout)
+      if (!img.naturalWidth || !img.naturalHeight) {
+        reject(new Error(`Image clip ${label} has no pixels (${img.naturalWidth}x${img.naturalHeight})`))
+        return
+      }
+      resolve(img)
+    }
+    img.onerror = () => {
+      clearTimeout(timeout)
+      reject(new Error(`Failed to load image clip ${label}`))
+    }
+    img.src = url
+  })
+}
+
+async function loadClip(c: MergeClip, withAudio: boolean, label: string): Promise<ClipItem> {
+  if (c.kind === 'image') {
+    const image = await loadImage(c.url, label)
+    return {
+      kind: 'image',
+      image,
+      duration: Math.max(0.05, c.durationSec),
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+    }
+  }
+  const video = await loadVideo(c.url, withAudio, label)
+  return {
+    kind: 'video',
+    video,
+    duration: Number.isFinite(video.duration) ? video.duration : 0,
+    width: video.videoWidth,
+    height: video.videoHeight,
+  }
+}
+
+function clipSource(c: ClipItem): HTMLVideoElement | HTMLImageElement {
+  return c.kind === 'video' ? c.video : c.image
+}
+
 function drawContain(
   ctx: CanvasRenderingContext2D,
-  video: HTMLVideoElement,
+  source: HTMLVideoElement | HTMLImageElement,
   cw: number,
   ch: number,
 ) {
   ctx.fillStyle = '#000'
   ctx.fillRect(0, 0, cw, ch)
-  const vw = video.videoWidth
-  const vh = video.videoHeight
+  const vw = source instanceof HTMLImageElement ? source.naturalWidth : source.videoWidth
+  const vh = source instanceof HTMLImageElement ? source.naturalHeight : source.videoHeight
   if (!vw || !vh) return
   const scale = Math.min(cw / vw, ch / vh)
   const dw = vw * scale
   const dh = vh * scale
   const dx = (cw - dw) / 2
   const dy = (ch - dh) / 2
-  ctx.drawImage(video, dx, dy, dw, dh)
+  ctx.drawImage(source, dx, dy, dw, dh)
 }
 
 function easeInOut(t: number): number {
@@ -168,14 +232,15 @@ function easeInOut(t: number): number {
 
 /**
  * Paint a single transition frame composed of the outgoing snapshot (canvas
- * with last frame of clip A) and the incoming live video (clip B).
+ * with last frame of clip A) and the incoming live source (clip B, which may
+ * be a video element or a still image).
  */
 function paintTransitionFrame(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
   outgoing: HTMLCanvasElement,
-  incoming: HTMLVideoElement,
+  incoming: HTMLVideoElement | HTMLImageElement,
   spec: TransitionSpec,
   t: number,
 ) {
@@ -286,15 +351,19 @@ export class MergeCancelledError extends Error {
 }
 
 export async function mergeVideoUrls(
-  urls: string[],
+  inputs: Array<string | MergeClip>,
   onProgress?: MergeProgressCallback,
   audio?: MergeAudioOptions,
   transitions?: TransitionSpec[],
   signal?: AbortSignal,
 ): Promise<MergeResult> {
-  if (urls.length === 0) throw new Error('No videos to merge')
+  if (inputs.length === 0) throw new Error('No videos to merge')
   if (signal?.aborted) throw new MergeCancelledError()
 
+  // Normalize: accept legacy `string[]` (always videos) or `MergeClip[]`.
+  const clipDefs: MergeClip[] = inputs.map((it) =>
+    typeof it === 'string' ? { kind: 'video', url: it } : it,
+  )
 
   const norm = normalizeAudioOptions(audio)
   const musicTrack = norm?.music && norm.music.endSec > norm.music.startSec ? norm.music : undefined
@@ -305,9 +374,10 @@ export async function mergeVideoUrls(
   const clipVolume = Math.max(0, Math.min(1, norm?.clipVolume ?? (useSoundtrack ? 0 : 1)))
   const captureClipAudio = clipVolume > 0
 
-  const first = await loadVideo(urls[0], captureClipAudio, `#1 of ${urls.length}`)
-  const width = Math.max(640, Math.floor(first.videoWidth || 1280))
-  const height = Math.max(360, Math.floor(first.videoHeight || 720))
+  const totalClips = clipDefs.length
+  const first = await loadClip(clipDefs[0], captureClipAudio, `#1 of ${totalClips}`)
+  const width = Math.max(640, Math.floor(first.width || 1280))
+  const height = Math.max(360, Math.floor(first.height || 720))
 
   const canvas = document.createElement('canvas')
   canvas.width = width
@@ -404,7 +474,7 @@ export async function mergeVideoUrls(
   }
 
   let rafId = 0
-  // Frame-accurate painter: when the browser exposes
+  // Frame-accurate painter for video clips: when the browser exposes
   // requestVideoFrameCallback (rVFC), paint ONLY when the decoder hands us a
   // new frame. This eliminates the "rAF lag → duplicated frame baked into the
   // recording" class of bugs that caused Final Film to look frozen in spots
@@ -419,6 +489,19 @@ export async function mergeVideoUrls(
   let activeVfcVideo: VFCCapableVideo | null = null
   let paintGen = 0
   let safetyTimer: ReturnType<typeof setTimeout> | null = null
+
+  const stopPaint = () => {
+    paintGen += 1
+    cancelAnimationFrame(rafId)
+    rafId = 0
+    if (safetyTimer) { clearTimeout(safetyTimer); safetyTimer = null }
+    if (activeVfcVideo && activeVfcHandle && activeVfcVideo.cancelVideoFrameCallback) {
+      try { activeVfcVideo.cancelVideoFrameCallback(activeVfcHandle) } catch { /* ignore */ }
+    }
+    activeVfcVideo = null
+    activeVfcHandle = 0
+  }
+
   const loopPaint = (video: HTMLVideoElement) => {
     stopPaint()
     paintGen += 1
@@ -435,10 +518,6 @@ export async function mergeVideoUrls(
         }
       }
       activeVfcHandle = v.requestVideoFrameCallback(onFrame)
-      // Low-rate safety repaint (~10fps) — guarantees the captured canvas
-      // never goes stale if rVFC pauses (tab partially throttled). Uses a
-      // generation guard so stopPaint() reliably cancels it across
-      // transitions and clip swaps.
       const safetyTick = () => {
         if (paintGen !== myGen) return
         drawContain(ctx, video, width, height)
@@ -455,31 +534,31 @@ export async function mergeVideoUrls(
     }
   }
 
-  const stopPaint = () => {
+  const paintStillImage = (image: HTMLImageElement) => {
+    stopPaint()
     paintGen += 1
-    cancelAnimationFrame(rafId)
-    rafId = 0
-    if (safetyTimer) { clearTimeout(safetyTimer); safetyTimer = null }
-    if (activeVfcVideo && activeVfcHandle && activeVfcVideo.cancelVideoFrameCallback) {
-      try { activeVfcVideo.cancelVideoFrameCallback(activeVfcHandle) } catch { /* ignore */ }
+    const myGen = paintGen
+    // Paint once, then repaint at ~10fps so the captured canvas stream never
+    // appears to "freeze" from the recorder's perspective even if a browser
+    // pauses emitting frames when canvas is static.
+    const tick = () => {
+      if (paintGen !== myGen) return
+      drawContain(ctx, image, width, height)
+      safetyTimer = setTimeout(tick, 100)
     }
-    activeVfcVideo = null
-    activeVfcHandle = 0
+    tick()
+  }
+
+  const startPainting = (clip: ClipItem) => {
+    if (clip.kind === 'image') paintStillImage(clip.image)
+    else loopPaint(clip.video)
   }
 
   /**
-   * Resolve when the given video reaches the end. Attaches the listener
-   * synchronously and short-circuits if `ended` is already true (avoids the
-   * race where the event fired before this listener could be attached).
-   * Also includes a safety timeout based on remaining duration so a missed
-   * `ended` event can never hang the merge loop forever.
-   *
-   * NEW: also watches for playback stalls. If `currentTime` stops advancing
-   * for >1.2s while the video isn't ended, we wait for it to recover instead
-   * of letting MediaRecorder bake a frozen stretch into the file. If it
-   * truly cannot recover, we still bail out via the duration-based timeout.
+   * Resolve when the given video clip reaches the end. See video-clip notes
+   * inline below (stall detection, missed-event watchdog, etc).
    */
-  function whenEnded(video: HTMLVideoElement): Promise<void> {
+  function whenVideoEnded(video: HTMLVideoElement): Promise<void> {
     return new Promise<void>((resolve) => {
       let done = false
       const finish = () => {
@@ -488,8 +567,6 @@ export async function mergeVideoUrls(
         video.removeEventListener('ended', onEnded)
         if (timer) clearTimeout(timer)
         if (stallTimer) clearInterval(stallTimer)
-        // Always resume the recorder before moving on so the next clip is
-        // actually encoded even if this clip ended during a stall pause.
         try {
           if (recorder.state === 'paused') recorder.resume()
         } catch { /* ignore */ }
@@ -501,9 +578,6 @@ export async function mergeVideoUrls(
       video.addEventListener('ended', onEnded)
       const dur = Number.isFinite(video.duration) ? video.duration : 0
       const remaining = Math.max(0, dur - (video.currentTime || 0))
-      // +3000ms slack for decode/event dispatch latency + recovery from
-      // transient stalls. Minimum 4s so very short clips still get a real
-      // chance to fire `ended`.
       const timeoutMs = Math.max(4000, Math.ceil(remaining * 1000) + 3000)
       const timer = setTimeout(() => {
         if (!done) {
@@ -512,14 +586,6 @@ export async function mergeVideoUrls(
         }
       }, timeoutMs)
 
-      // Stall detector: if currentTime hasn't moved for >600ms and we're not
-      // at the end, nudge playback to recover. We deliberately DO NOT pause
-      // the MediaRecorder anymore — pause/resume cycles on the recorder were
-      // themselves causing frozen/glitchy stretches in the final output and
-      // occasionally left the recorder in a bad state that made finalization
-      // hang at 95%. Letting the canvas keep being captured (with the last
-      // painted frame) for the brief stall window is preferable to corrupting
-      // the recorder timeline.
       let lastTime = video.currentTime
       let lastChangeAt = performance.now()
       const stallTimer = setInterval(() => {
@@ -532,43 +598,54 @@ export async function mergeVideoUrls(
         }
         const stalledFor = performance.now() - lastChangeAt
         if (stalledFor > 600 && !video.paused && !video.ended) {
-          // Best-effort recovery: nudge playback.
           video.play().catch(() => { /* ignore */ })
         }
       }, 200)
     })
   }
 
+  /** Resolve after `durationSec` for image clips; delegate to whenVideoEnded otherwise. */
+  function whenClipEnded(clip: ClipItem): Promise<void> {
+    if (clip.kind === 'image') {
+      return new Promise<void>((resolve) =>
+        setTimeout(() => { stopPaint(); resolve() }, Math.max(50, clip.duration * 1000)),
+      )
+    }
+    return whenVideoEnded(clip.video)
+  }
+
   // Pre-load ALL clips before starting the recorder. This avoids capturing
   // black frames at the start while videos are still being fetched/decoded,
   // and removes inter-clip loading gaps.
-  const preloaded: HTMLVideoElement[] = [first]
-  for (let i = 1; i < urls.length; i++) {
-    preloaded.push(await loadVideo(urls[i], captureClipAudio, `#${i + 1} of ${urls.length}`))
+  const preloaded: ClipItem[] = [first]
+  for (let i = 1; i < clipDefs.length; i++) {
+    preloaded.push(await loadClip(clipDefs[i], captureClipAudio, `#${i + 1} of ${totalClips}`))
   }
   let totalDuration = 0
-  for (const v of preloaded) {
-    totalDuration += Number.isFinite(v.duration) ? v.duration : 0
-  }
+  for (const c of preloaded) totalDuration += c.duration
 
   // Paint the very first frame onto the canvas BEFORE the recorder starts so
   // the captured stream begins on real content (not a black fill).
-  await new Promise<void>((resolve) => {
-    const onSeeked = () => {
-      first.removeEventListener('seeked', onSeeked)
-      drawContain(ctx, first, width, height)
-      resolve()
-    }
-    first.addEventListener('seeked', onSeeked)
-    try {
-      first.currentTime = 0
-    } catch {
-      // Some browsers throw if currentTime is set before metadata; fall back.
-      first.removeEventListener('seeked', onSeeked)
-      drawContain(ctx, first, width, height)
-      resolve()
-    }
-  })
+  if (first.kind === 'video') {
+    const firstVideo = first.video
+    await new Promise<void>((resolve) => {
+      const onSeeked = () => {
+        firstVideo.removeEventListener('seeked', onSeeked)
+        drawContain(ctx, firstVideo, width, height)
+        resolve()
+      }
+      firstVideo.addEventListener('seeked', onSeeked)
+      try {
+        firstVideo.currentTime = 0
+      } catch {
+        firstVideo.removeEventListener('seeked', onSeeked)
+        drawContain(ctx, firstVideo, width, height)
+        resolve()
+      }
+    })
+  } else {
+    drawContain(ctx, first.image, width, height)
+  }
 
   const chosenMime = pickMimeType()
   const recorder = new MediaRecorder(outStream, { mimeType: chosenMime })
@@ -590,13 +667,7 @@ export async function mergeVideoUrls(
   if (soundtrackEl && musicTrack) {
     const winStart = Math.max(0, musicTrack.startSec)
     const winEnd = Math.max(winStart + 0.05, musicTrack.endSec)
-    // Re-seek immediately before play() — some browsers reset currentTime
-    // while the element is idle, which would otherwise leak the unselected
-    // intro of the file into the recording.
     try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
-    // rAF clamp loop: snap back to winStart the instant currentTime crosses
-    // winEnd. This is much tighter than 'timeupdate' (~250ms granularity)
-    // and guarantees nothing past winEnd is captured.
     const clampTick = () => {
       if (!soundtrackEl) return
       if (soundtrackEl.currentTime >= winEnd) {
@@ -605,8 +676,6 @@ export async function mergeVideoUrls(
       soundtrackClampRaf = requestAnimationFrame(clampTick)
     }
     soundtrackClampRaf = requestAnimationFrame(clampTick)
-    // If the file's natural end is reached before winEnd (shouldn't happen
-    // given the clamp above, but defensive), wrap to winStart and resume.
     soundtrackEndedHandler = () => {
       if (!soundtrackEl) return
       try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
@@ -622,21 +691,30 @@ export async function mergeVideoUrls(
   }
 
   let elapsedDuration = 0
-  let prevVideo: HTMLVideoElement | null = null
+  let prevClip: ClipItem | null = null
   let prevClipNode: MediaElementAudioSourceNode | null = null
 
   // Live progress ticker: emits progress every ~250ms based on the live
-  // playhead of the current clip, so the UI moves even within a single clip
-  // and never appears frozen on a static percentage like "20%".
+  // playhead of the current clip (or wall-clock for image clips).
   let liveTicker: ReturnType<typeof setInterval> | null = null
-  const startLiveProgress = (video: HTMLVideoElement, clipIndex: number, stage: MergeProgress['stage']) => {
+  const startLiveProgress = (
+    clip: ClipItem,
+    clipIndex: number,
+    stage: MergeProgress['stage'],
+    imageStartMs?: number,
+  ) => {
     if (liveTicker) clearInterval(liveTicker)
     liveTicker = setInterval(() => {
-      const ct = Number.isFinite(video.currentTime) ? video.currentTime : 0
+      let ct = 0
+      if (clip.kind === 'video') {
+        ct = Number.isFinite(clip.video.currentTime) ? clip.video.currentTime : 0
+      } else if (imageStartMs != null) {
+        ct = Math.min(clip.duration, Math.max(0, (performance.now() - imageStartMs) / 1000))
+      }
       const ratio = totalDuration > 0
         ? Math.min(0.99, (elapsedDuration + ct) / totalDuration)
-        : clipIndex / urls.length
-      onProgress?.({ ratio, clipIndex, totalClips: urls.length, stage })
+        : clipIndex / totalClips
+      onProgress?.({ ratio, clipIndex, totalClips, stage })
     }, 250)
   }
   const stopLiveProgress = () => {
@@ -654,16 +732,16 @@ export async function mergeVideoUrls(
     return r as T
   }
 
-  for (let i = 0; i < urls.length; i++) {
+  for (let i = 0; i < preloaded.length; i++) {
     if (signal?.aborted) throw new MergeCancelledError()
 
-    const video = preloaded[i]
-    const dur = Number.isFinite(video.duration) ? video.duration : 0
+    const clip = preloaded[i]
+    const dur = clip.duration
 
     let clipNode: MediaElementAudioSourceNode | null = null
-    if (captureClipAudio && audioCtx && audioDest) {
+    if (clip.kind === 'video' && captureClipAudio && audioCtx && audioDest) {
       try {
-        clipNode = audioCtx.createMediaElementSource(video)
+        clipNode = audioCtx.createMediaElementSource(clip.video)
         const gain = audioCtx.createGain()
         gain.gain.value = clipVolume
         clipNode.connect(gain)
@@ -674,35 +752,41 @@ export async function mergeVideoUrls(
       }
     }
 
+    const startClipPlayback = async (): Promise<number | undefined> => {
+      if (clip.kind === 'video') {
+        try { await clip.video.play() } catch (err) {
+          console.warn('[mergeVideoUrls] play() rejected for clip', i, err)
+        }
+        return undefined
+      }
+      // Image clip: no media playback, just record the start time for progress.
+      return performance.now()
+    }
+
     // Transition INTO this clip from the previous one.
-    if (i > 0 && prevVideo) {
+    if (i > 0 && prevClip) {
       const spec = transitions?.[i - 1] ?? { id: 'cut' as TransitionId, durationMs: 0 }
       if (spec.id !== 'cut' && spec.durationMs > 0) {
         // Snapshot the last frame of the outgoing clip.
         snapCtx.fillStyle = '#000'
         snapCtx.fillRect(0, 0, width, height)
-        drawContain(snapCtx, prevVideo, width, height)
+        drawContain(snapCtx, clipSource(prevClip), width, height)
 
         // Begin playing the incoming clip; we paint the blended frame manually.
         stopPaint()
-        // IMPORTANT: register the `ended` listener BEFORE play() so we never
-        // miss the event if it fires during/just after the transition.
-        const endedPromise = whenEnded(video)
-        try {
-          await video.play()
-        } catch (err) {
-          console.warn('[mergeVideoUrls] play() rejected for clip', i, err)
-        }
-        startLiveProgress(video, i + 1, 'transition')
+        const endedPromise = whenClipEnded(clip)
+        const imageStartMs = await startClipPlayback()
+        startLiveProgress(clip, i + 1, 'transition', imageStartMs)
 
+        const incomingSource = clipSource(clip)
         const start = performance.now()
         await new Promise<void>((resolve) => {
           const tick = () => {
             const now = performance.now()
             const t = Math.min(1, (now - start) / spec.durationMs)
-            paintTransitionFrame(ctx, width, height, snapshot, video, spec, t)
-            // Stop early if the incoming clip has already ended (very short clip).
-            if (t >= 1 || video.ended) {
+            paintTransitionFrame(ctx, width, height, snapshot, incomingSource, spec, t)
+            const incomingEnded = clip.kind === 'video' && clip.video.ended
+            if (t >= 1 || incomingEnded) {
               resolve()
               return
             }
@@ -718,8 +802,8 @@ export async function mergeVideoUrls(
         }
 
         // Continue painting the incoming clip from now on.
-        loopPaint(video)
-        startLiveProgress(video, i + 1, 'recording')
+        startPainting(clip)
+        startLiveProgress(clip, i + 1, 'recording', imageStartMs)
         await raceAbort(endedPromise)
       } else {
         // Cut: behave like before.
@@ -727,39 +811,31 @@ export async function mergeVideoUrls(
           try { prevClipNode.disconnect() } catch { /* ignore */ }
           prevClipNode = null
         }
-        const endedPromise = whenEnded(video)
-        try {
-          await video.play()
-        } catch (err) {
-          console.warn('[mergeVideoUrls] play() rejected for clip', i, err)
-        }
-        loopPaint(video)
-        startLiveProgress(video, i + 1, 'recording')
+        const endedPromise = whenClipEnded(clip)
+        const imageStartMs = await startClipPlayback()
+        startPainting(clip)
+        startLiveProgress(clip, i + 1, 'recording', imageStartMs)
         await raceAbort(endedPromise)
       }
     } else {
       // First clip — no transition in.
-      const endedPromise = whenEnded(video)
-      try {
-        await video.play()
-      } catch (err) {
-        console.warn('[mergeVideoUrls] play() rejected for first clip', err)
-      }
-      loopPaint(video)
-      startLiveProgress(video, i + 1, 'recording')
+      const endedPromise = whenClipEnded(clip)
+      const imageStartMs = await startClipPlayback()
+      startPainting(clip)
+      startLiveProgress(clip, i + 1, 'recording', imageStartMs)
       await raceAbort(endedPromise)
     }
 
     stopLiveProgress()
     elapsedDuration += dur
     onProgress?.({
-      ratio: totalDuration > 0 ? Math.min(0.99, elapsedDuration / totalDuration) : (i + 1) / urls.length,
+      ratio: totalDuration > 0 ? Math.min(0.99, elapsedDuration / totalDuration) : (i + 1) / totalClips,
       clipIndex: i + 1,
-      totalClips: urls.length,
+      totalClips,
       stage: 'recording',
     })
 
-    prevVideo = video
+    prevClip = clip
     prevClipNode = clipNode
   }
   stopLiveProgress()
@@ -771,8 +847,10 @@ export async function mergeVideoUrls(
 
   // Pause any playback BEFORE stopping the recorder so no extra frames/audio
   // sneak in during the stop handshake.
-  for (const v of preloaded) {
-    try { v.pause() } catch { /* ignore */ }
+  for (const c of preloaded) {
+    if (c.kind === 'video') {
+      try { c.video.pause() } catch { /* ignore */ }
+    }
   }
   if (soundtrackEl) {
     if (soundtrackClampRaf) cancelAnimationFrame(soundtrackClampRaf)
@@ -784,17 +862,11 @@ export async function mergeVideoUrls(
   }
   stopPaint()
 
-  onProgress?.({ ratio: 0.95, clipIndex: urls.length, totalClips: urls.length, stage: 'finalizing' })
+  onProgress?.({ ratio: 0.95, clipIndex: totalClips, totalClips, stage: 'finalizing' })
 
-  // Flush any pending chunks BEFORE stop so the final blob is complete even
-  // when the browser delays the synthetic `dataavailable` after stop().
   try { recorder.requestData() } catch { /* ignore */ }
   await new Promise((r) => setTimeout(r, 100))
 
-  // Stop with a watchdog: some browsers/codecs (Safari, certain Chromium
-  // builds with hardware encoders) silently fail to fire `onstop`. Without a
-  // timeout, the merge UI would hang on 95% forever. We force-resolve after
-  // 8s and build the blob from whatever chunks we already have.
   try {
     if (recorder.state !== 'inactive') recorder.stop()
   } catch (err) {
@@ -814,8 +886,10 @@ export async function mergeVideoUrls(
   }
 
   // Final cleanup of media elements + audio graph.
-  for (const v of preloaded) {
-    try { v.removeAttribute('src'); v.load() } catch { /* ignore */ }
+  for (const c of preloaded) {
+    if (c.kind === 'video') {
+      try { c.video.removeAttribute('src'); c.video.load() } catch { /* ignore */ }
+    }
   }
   if (voiceoverEl) {
     try { voiceoverEl.removeAttribute('src'); voiceoverEl.load() } catch { /* ignore */ }
@@ -836,10 +910,6 @@ export async function mergeVideoUrls(
   const blob = new Blob(chunks, { type: chosenMime })
   if (blob.size === 0) throw new Error('Recorder produced an empty blob')
 
-  // Root fix for the 95% stall: Final Film must not enter ffmpeg.wasm here.
-  // The recorder output is already a valid WebM and can be uploaded/played in
-  // the app immediately. MP4 conversion remains available only for explicit
-  // download/transcode flows, not for saving Final Film.
-  onProgress?.({ ratio: 0.99, clipIndex: urls.length, totalClips: urls.length, stage: 'finalizing' })
+  onProgress?.({ ratio: 0.99, clipIndex: totalClips, totalClips, stage: 'finalizing' })
   return { blob, mimeType: chosenMime, extension: mimeTypeToExtension(chosenMime) }
 }
