@@ -3768,25 +3768,22 @@ export default function DashboardPage() {
         targetSize = r === '9:16' ? { width: 1080, height: 1920 } : r === '1:1' ? { width: 1080, height: 1080 } : { width: 1920, height: 1080 }
       }
 
-      // Build the merge URL list in display order, converting image clips to
-      // short still-frame webm clips uploaded to the merged-videos bucket.
-      const urls: string[] = []
+      // Build the merge clip list in display order. Image clips are handed
+      // to the merger as native `{ kind: 'image', durationSec }` entries —
+      // the merger paints them straight onto the recording canvas, which
+      // avoids the duration-less MediaRecorder WebM that used to break
+      // Final Film with "Clip #N has no playable content (duration=0, ...)".
+      const mergeClips: import('@/modules/generator-ui/lib/mergeVideos').MergeClip[] = []
       for (const clip of eligibleClips) {
         if (clip.kind === 'video') {
           // After Apply Changes, the card's storage_path IS the edited file
           // (replaced server-side), so we always use it as the source of truth.
           const src = await proxiedVideoUrl(clip.job.video!.storage_path as string)
-          urls.push(src)
+          mergeClips.push({ kind: 'video', url: src })
         } else {
           const seconds = Math.max(1, Math.min(15, clip.image.still_duration_seconds || 3))
-          const blob = await imageUrlToClip(clip.image.storage_path, seconds, targetSize)
-          const stillPath = `${userId}/still-${clip.image.id}-${Date.now()}.webm`
-          const up = await supabase.storage
-            .from(MERGED_BUCKET)
-            .upload(stillPath, blob, { contentType: 'video/webm', upsert: false })
-          if (up.error) throw new Error(up.error.message)
-          const { data: pub } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(stillPath)
-          urls.push(await proxiedVideoUrl(pub.publicUrl))
+          const src = await proxiedVideoUrl(clip.image.storage_path)
+          mergeClips.push({ kind: 'image', url: src, durationSec: seconds })
         }
       }
 
