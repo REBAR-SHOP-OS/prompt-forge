@@ -4515,7 +4515,7 @@ export default function DashboardPage() {
 
       <button
         type="button"
-        onClick={() => setIsCalendarOpen(true)}
+        onClick={() => { setCalendarTodayOnly(false); setIsCalendarOpen(true) }}
         aria-label="Open calendar"
         className="fixed left-14 top-4 z-50 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-16 sm:top-5"
       >
@@ -4526,13 +4526,16 @@ export default function DashboardPage() {
 
       <CalendarInfoDialog
         open={isCalendarOpen}
-        onOpenChange={setIsCalendarOpen}
+        onOpenChange={(o) => { setIsCalendarOpen(o); if (!o) setCalendarTodayOnly(false) }}
+        todayOnly={calendarTodayOnly}
         onApplyPrompt={(p) => {
           setPromptText(p)
           setDurationSeconds(10)
           setIsCalendarOpen(false)
+          setCalendarTodayOnly(false)
         }}
       />
+
 
       <div className="fixed left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-2 sm:top-5">
       <AlertDialog>
