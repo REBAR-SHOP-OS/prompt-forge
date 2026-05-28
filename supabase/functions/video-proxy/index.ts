@@ -6,13 +6,14 @@
 // This function re-serves the bytes with permissive CORS headers and
 // supports HTTP Range requests so <video> can seek.
 //
-// Usage: GET /video-proxy?url=<encoded>&token=<access_token>
-// Auth: requires a valid Supabase JWT. Token may come from the
-// Authorization header OR (because <video> can't set headers) from a
-// `token` query string parameter.
+// Usage: GET /video-proxy?url=<encoded>&pt=<proxyToken>
+// Auth: requires a short-lived HMAC proxy token (issued by the
+// `video-proxy-token` edge function) bound to (user, exact target URL,
+// expiry, purpose=video_proxy). Supabase JWTs are NEVER accepted in the
+// query string, and never logged.
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { getCorsHeaders } from "../_shared/core/http.ts";
+import { verifyProxyToken } from "../_shared/core/proxyToken.ts";
 
 const EXPOSE_HEADERS = "Content-Length, Content-Range, Accept-Ranges, Content-Type, ETag";
 const cors = (req: Request) => ({
