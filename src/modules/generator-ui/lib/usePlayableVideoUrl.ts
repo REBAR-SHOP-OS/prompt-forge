@@ -52,13 +52,17 @@ function resolve(src: string): Promise<string> {
   inflight.set(src, p);
   return p;
 }
+
+export function usePlayableVideoUrl(src: string | null | undefined): {
   url: string | undefined;
   loading: boolean;
 } {
   const initial =
-    src && (src.startsWith("blob:") || src.startsWith("data:") || cache.has(src))
-      ? cache.get(src) ?? src
-      : undefined;
+    src && (src.startsWith("blob:") || src.startsWith("data:"))
+      ? src
+      : src
+        ? readCache(src)
+        : undefined;
   const [url, setUrl] = useState<string | undefined>(initial);
 
   useEffect(() => {
@@ -70,7 +74,7 @@ function resolve(src: string): Promise<string> {
       setUrl(src);
       return;
     }
-    const cached = cache.get(src);
+    const cached = readCache(src);
     if (cached) {
       setUrl(cached);
       return;
@@ -97,7 +101,7 @@ export function usePlayableVideoUrls(srcs: Array<string | null | undefined>): {
     srcs.map((s) => {
       if (!s) return undefined;
       if (s.startsWith("blob:") || s.startsWith("data:")) return s;
-      return cache.get(s);
+      return readCache(s);
     }),
   );
 
