@@ -527,6 +527,22 @@ export default function DashboardPage() {
   }
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
+  const [calendarTodayOnly, setCalendarTodayOnly] = useState(false)
+
+  // Auto-open today's occasions after login (once per login)
+  useEffect(() => {
+    const uid = session?.user?.id
+    if (!uid) return
+    const key = `pending-occasions-popup:${uid}`
+    try {
+      if (window.localStorage.getItem(key) === '1') {
+        window.localStorage.removeItem(key)
+        setCalendarTodayOnly(true)
+        setIsCalendarOpen(true)
+      }
+    } catch { /* ignore */ }
+  }, [session?.user?.id])
+
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
   const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15 | 30 | 45 | 135>(5)
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '1:1' | '16:9'>(() => {
