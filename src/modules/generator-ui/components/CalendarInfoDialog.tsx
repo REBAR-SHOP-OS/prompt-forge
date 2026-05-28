@@ -111,7 +111,6 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
     }
   }, [open, todayOnly])
 
-  }, [dayCacheKey])
 
   // Day fetch
   useEffect(() => {
