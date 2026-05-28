@@ -1,17 +1,22 @@
-// Wraps an external video URL through our same-origin video-proxy edge function
-// so the bytes come back with proper CORS headers (required for canvas capture
-// in the merger and last-frame extractor).
+// Wraps a video URL through our same-origin video-proxy edge function so the
+// bytes come back with proper CORS headers and HTTP Range support. We route
+// ALL external/HTTP video URLs through the proxy — including our own Supabase
+// Storage — so cards, previews, trim, merge, and last-frame extraction all
+// use the exact same playback path. A single code path eliminates the
+// random "Video unavailable" flicker we used to see when one component got
+// the raw Storage URL and another got the proxied URL for the same asset.
 //
-// URLs that are already same-origin or hosted on our own Supabase storage are
-// returned unchanged.
+// Returned unchanged:
+//   - blob: / data: URLs
+//   - same-origin relative paths (already CORS-safe)
 
 import { supabase } from "@/integrations/supabase/client";
 import { FUNCTIONS_BASE } from "@/core/api/client";
 
-const PROJECT_ID = "sacxoanuyetjfrfllkzx";
-const OWN_SUPABASE_HOST = `${PROJECT_ID}.supabase.co`;
-
 export async function proxiedVideoUrl(url: string): Promise<string> {
+  if (!url) return url;
+  if (url.startsWith("blob:") || url.startsWith("data:")) return url;
+
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -19,19 +24,15 @@ export async function proxiedVideoUrl(url: string): Promise<string> {
     return url;
   }
 
-  // Same-origin or our own Supabase storage host — no proxy needed.
+  // Same-origin (e.g. relative URLs already on our domain) — no proxy needed.
   if (typeof window !== "undefined" && parsed.host === window.location.host) {
-    return url;
-  }
-  if (parsed.host === OWN_SUPABASE_HOST) {
     return url;
   }
 
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) {
-    // Not signed in — fall back to the raw URL (will likely fail CORS, but
-    // the caller will surface a clearer error).
+    // Not signed in — fall back to the raw URL.
     return url;
   }
 
