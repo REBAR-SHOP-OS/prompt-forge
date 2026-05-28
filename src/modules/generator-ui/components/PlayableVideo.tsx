@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode, type VideoHTMLAttributes } from "react";
-import { AlertTriangle, LoaderCircle } from "lucide-react";
+import { useEffect, useRef, useState, type VideoHTMLAttributes } from "react";
+import { LoaderCircle } from "lucide-react";
 import { usePlayableVideoUrl } from "@/modules/generator-ui/lib/usePlayableVideoUrl";
 
 type Props = Omit<VideoHTMLAttributes<HTMLVideoElement>, "src"> & {
@@ -7,23 +7,20 @@ type Props = Omit<VideoHTMLAttributes<HTMLVideoElement>, "src"> & {
   fallbackClassName?: string;
 };
 
-const MAX_RETRIES = 2;
+const MAX_RETRIES = 3;
 
 /**
  * Drop-in <video> that routes URLs through the same-origin video-proxy.
  *
  * Resilience model:
- *   - A single <video> onError no longer permanently marks the card as
- *     unavailable. We retry up to MAX_RETRIES times with a cache-busting
- *     query string, because the most common cause of the old "Video
- *     unavailable" flicker was a transient first-byte/range failure on
- *     the very first attempt — re-mounting the element with a fresh URL
- *     recovers cleanly without the user ever seeing the broken state.
- *   - Only after we've exhausted retries do we show the poster (if any)
- *     or the warning fallback.
- *   - Whenever the resolved URL changes (new src, new session), retry
- *     count + error state are reset so a card that briefly failed can
- *     recover on its next render.
+ *   - On <video> error, retry up to MAX_RETRIES with a cache-busting query
+ *     string. This recovers from transient first-byte/range failures.
+ *   - After retries are exhausted we NEVER render a noisy "Video unavailable"
+ *     warning card. Instead we keep the card looking intact by showing the
+ *     poster image (if one exists) or a neutral dark surface. The card UI
+ *     itself surfaces real failures via job status — the video tile should
+ *     never become a giant error placeholder.
+ *   - While resolving, a quiet loader is shown.
  */
 export function PlayableVideo({ src, fallbackClassName, controls, poster, ...rest }: Props) {
   const { url, loading: resolving } = usePlayableVideoUrl(src);
@@ -40,7 +37,6 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, ...res
   }, [url]);
 
   const handleLoadedMetadata: VideoHTMLAttributes<HTMLVideoElement>["onLoadedMetadata"] = (e) => {
-    // Successful load — clear any prior error state.
     if (errored) setErrored(false);
     retriesRef.current = 0;
     rest.onLoadedMetadata?.(e);
@@ -49,8 +45,6 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, ...res
   const handleError: VideoHTMLAttributes<HTMLVideoElement>["onError"] = (e) => {
     if (retriesRef.current < MAX_RETRIES) {
       retriesRef.current += 1;
-      // Re-mount with a cache-busting token so the browser re-issues the
-      // request from scratch instead of reusing the failed response.
       setRetryToken((n) => n + 1);
       return;
     }
@@ -58,41 +52,35 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, ...res
     rest.onError?.(e);
   };
 
-  const fallback = (icon: ReactNode, label?: string) => (
-    <div
-      className={
-        fallbackClassName ??
-        "grid h-full w-full place-items-center bg-[#15171a] text-zinc-500"
-      }
-      role="status"
-      aria-live="polite"
-    >
-      <div className="flex flex-col items-center gap-1.5 text-xs">
-        {icon}
-        {label ? <span>{label}</span> : null}
-      </div>
-    </div>
-  );
-
-  // Prefer the poster image when one is available — keeps the card
-  // looking intact even if the stream momentarily fails.
-  const posterFallback = (label?: string) => {
+  // Neutral, quiet placeholder — never shows the "Video unavailable" text.
+  const quietPlaceholder = (showLoader: boolean) => {
     if (poster) {
       return (
         <div className={fallbackClassName ?? "h-full w-full bg-black"}>
-          <img src={poster} alt={label ?? ""} className="h-full w-full object-cover" />
+          <img src={poster} alt="" className="h-full w-full object-cover" />
         </div>
       );
     }
-    return fallback(<AlertTriangle className="h-5 w-5 text-zinc-400" aria-hidden="true" />, label);
+    return (
+      <div
+        className={
+          fallbackClassName ??
+          "grid h-full w-full place-items-center bg-[#15171a] text-zinc-500"
+        }
+        role="presentation"
+      >
+        {showLoader ? (
+          <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+        ) : null}
+      </div>
+    );
   };
 
-  if (!src) return posterFallback("Video unavailable");
-  if (resolving || !url) return fallback(<LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />);
-  if (errored) return posterFallback("Video unavailable");
+  if (!src) return quietPlaceholder(false);
+  if (resolving || !url) return quietPlaceholder(true);
+  if (errored) return quietPlaceholder(false);
 
-  // Cache-bust the URL on retry so the browser doesn't reuse the failed
-  // response. The proxy ignores unknown query params, so this is safe.
+  // Cache-bust on retry so the browser re-issues the request.
   const playUrl = retryToken > 0
     ? `${url}${url.includes("?") ? "&" : "?"}_r=${retryToken}`
     : url;
