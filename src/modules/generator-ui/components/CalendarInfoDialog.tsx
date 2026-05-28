@@ -433,8 +433,10 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
                   })}
                 </ul>
               )}
-            </div>
           </div>
+          )}
+
+
 
           {/* Column 4: AI scenario */}
           <div className="flex max-h-[70vh] min-h-[420px] flex-col md:border-l border-white/10">
