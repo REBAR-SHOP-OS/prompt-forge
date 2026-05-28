@@ -3,11 +3,10 @@
 //   { date: 'YYYY-MM-DD', lang } -> day mode (full detail)
 //   { month: 'YYYY-MM', lang }   -> month mode (list items with date+title+category, brief detail)
 import { authenticate } from '../_shared/core/auth.ts'
+import { getCorsHeaders } from '../_shared/core/http.ts'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-}
+const cors = (req: Request) => getCorsHeaders(req)
+
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
