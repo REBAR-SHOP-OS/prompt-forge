@@ -116,7 +116,7 @@ function parseRateFromMime(mime: string | undefined): number {
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
+    return new Response(null, { headers: cors(req) })
   }
 
   try {
@@ -124,7 +124,7 @@ Deno.serve(async (req) => {
     if (!auth) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...cors(req), 'Content-Type': 'application/json' },
       })
     }
 
@@ -134,7 +134,7 @@ Deno.serve(async (req) => {
         JSON.stringify({ error: 'GEMINI_API_KEY is not configured' }),
         {
           status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          headers: { ...cors(req), 'Content-Type': 'application/json' },
         },
       )
     }
@@ -145,7 +145,7 @@ Deno.serve(async (req) => {
     if (!body) {
       return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
         status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...cors(req), 'Content-Type': 'application/json' },
       })
     }
 
@@ -156,13 +156,13 @@ Deno.serve(async (req) => {
     if (!text) {
       return new Response(JSON.stringify({ error: 'text is required' }), {
         status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...cors(req), 'Content-Type': 'application/json' },
       })
     }
     if (text.length > 5000) {
       return new Response(JSON.stringify({ error: 'text too long (max 5000 chars)' }), {
         status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...cors(req), 'Content-Type': 'application/json' },
       })
     }
 
@@ -196,7 +196,7 @@ Deno.serve(async (req) => {
         JSON.stringify({ error: `TTS provider error (${status})` }),
         {
           status,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          headers: { ...cors(req), 'Content-Type': 'application/json' },
         },
       )
     }
@@ -210,7 +210,7 @@ Deno.serve(async (req) => {
       console.error('No audio in response', JSON.stringify(json).slice(0, 500))
       return new Response(JSON.stringify({ error: 'No audio returned by provider' }), {
         status: 502,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...cors(req), 'Content-Type': 'application/json' },
       })
     }
 
@@ -230,7 +230,7 @@ Deno.serve(async (req) => {
       }),
       {
         status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...cors(req), 'Content-Type': 'application/json' },
       },
     )
   } catch (e) {
@@ -239,7 +239,7 @@ Deno.serve(async (req) => {
       JSON.stringify({ error: 'Internal error' }),
       {
         status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...cors(req), 'Content-Type': 'application/json' },
       },
     )
   }
