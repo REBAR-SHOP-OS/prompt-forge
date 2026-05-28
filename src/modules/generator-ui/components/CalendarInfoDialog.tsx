@@ -360,7 +360,9 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
           </div>
 
           {/* Column 3: month list with filters */}
+          {!todayOnly && (
           <div className="flex max-h-[70vh] min-h-[420px] flex-col">
+
             <div className="flex items-center justify-between gap-2 border-b border-white/10 px-5 py-2">
               <div className="flex flex-col leading-tight">
                 <div className="text-[10px] uppercase tracking-wide text-zinc-500">{t.monthTitle}</div>
