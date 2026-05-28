@@ -4389,12 +4389,25 @@ export default function DashboardPage() {
     setUserImages((curr) => curr.filter((i) => !looseImageIds.includes(i.id)))
   }
 
-  // Legacy `pending-fresh-start` flag is no longer honoured — refresh must
-  // never auto-reset the workspace. Just clear the flag if it lingers.
+  // On a fresh login (not a refresh), AuthProvider sets `pending-fresh-start`.
+  // Consume it once to reset the workspace so the dashboard opens blank.
   useEffect(() => {
     if (!userId) return
-    try { window.localStorage.removeItem(`pending-fresh-start:${userId}`) } catch { /* ignore */ }
+    let shouldReset = false
+    try {
+      const key = `pending-fresh-start:${userId}`
+      if (window.localStorage.getItem(key) === '1') {
+        window.localStorage.removeItem(key)
+        shouldReset = true
+      }
+    } catch { /* ignore */ }
+    if (shouldReset) {
+      // Defer to next tick so dependent state/handlers are wired up.
+      setTimeout(() => { handleStartOver() }, 0)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId])
+
 
   return (
     <section
