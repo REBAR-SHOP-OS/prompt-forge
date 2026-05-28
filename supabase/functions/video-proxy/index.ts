@@ -35,25 +35,6 @@ function isAllowedHost(hostname: string): boolean {
   return ALLOWED_HOST_SUFFIXES.some((suffix) => h === suffix || h.endsWith(`.${suffix}`));
 }
 
-async function authenticate(req: Request, urlObj: URL): Promise<boolean> {
-  let token: string | null = null;
-  const authHeader = req.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) {
-    token = authHeader.slice("Bearer ".length);
-  } else {
-    token = urlObj.searchParams.get("token");
-  }
-  if (!token) return false;
-
-  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-  const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return false;
-
-  const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  const { data, error } = await client.auth.getUser(token);
-  return !error && !!data?.user?.id;
-}
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: cors(req) });
@@ -66,18 +47,25 @@ Deno.serve(async (req) => {
   }
 
   const reqUrl = new URL(req.url);
+  const target = reqUrl.searchParams.get("url");
+  const proxyToken = reqUrl.searchParams.get("pt");
 
-  if (!(await authenticate(req, reqUrl))) {
+  if (!target) {
+    return new Response(JSON.stringify({ error: "Missing url" }), {
+      status: 400,
+      headers: { ...cors(req), "Content-Type": "application/json" },
+    });
+  }
+  if (!proxyToken) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { ...cors(req), "Content-Type": "application/json" },
     });
   }
-
-  const target = reqUrl.searchParams.get("url");
-  if (!target) {
-    return new Response(JSON.stringify({ error: "Missing url" }), {
-      status: 400,
+  const verified = await verifyProxyToken(proxyToken, target);
+  if (!verified) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
       headers: { ...cors(req), "Content-Type": "application/json" },
     });
   }
