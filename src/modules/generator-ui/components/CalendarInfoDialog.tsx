@@ -258,16 +258,18 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-7xl border-white/10 bg-[#0b0c0e]/95 p-0 text-zinc-100">
+      <DialogContent className={cn('border-white/10 bg-[#0b0c0e]/95 p-0 text-zinc-100', todayOnly ? 'max-w-4xl' : 'max-w-7xl')}>
         <DialogHeader className="border-b border-white/10 px-6 py-4">
           <DialogTitle className="flex items-center gap-2 text-base font-medium">
             <CalendarDays className="h-4 w-4 text-amber-300" />
-            <span>Calendar</span>
+            <span>{todayOnly ? (lang === 'fa' ? 'مناسبت‌های امروز' : "Today's Occasions") : 'Calendar'}</span>
           </DialogTitle>
         </DialogHeader>
-        <div className="grid gap-0 md:grid-cols-[auto,1fr,1fr,1fr]">
+        <div className={cn('grid gap-0', todayOnly ? 'md:grid-cols-[1fr,1fr]' : 'md:grid-cols-[auto,1fr,1fr,1fr]')}>
           {/* Column 1: calendar */}
+          {!todayOnly && (
           <div className="border-white/10 p-4 md:border-r">
+
             <Calendar
               mode="single"
               selected={selectedDate}
