@@ -2,12 +2,12 @@
 // Calls Google AI Studio (Gemini 2.5 Flash Preview TTS) and returns base64 WAV.
 
 import { authenticate } from '../_shared/core/auth.ts'
+import { getCorsHeaders } from '../_shared/core/http.ts'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type',
-}
+// Per-request CORS headers (origin allowlist). All sites that previously
+// spread `corsHeaders` now spread `cors(req)`.
+const cors = (req: Request) => getCorsHeaders(req)
+
 
 type Gender = 'female' | 'male'
 type Tone =
