@@ -11,6 +11,7 @@ interface CalendarInfoDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onApplyPrompt?: (prompt: string) => void
+  todayOnly?: boolean
 }
 
 type Category = 'canada' | 'international' | 'religious'
@@ -71,7 +72,7 @@ const labels = {
 
 const ALL_CATEGORIES: Category[] = ['canada', 'international', 'religious']
 
-export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt }: CalendarInfoDialogProps) {
+export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, todayOnly = false }: CalendarInfoDialogProps) {
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date())
   const [visibleMonth, setVisibleMonth] = useState<Date>(() => new Date())
   const [lang, setLang] = useState<'en' | 'fa'>('en')
@@ -96,10 +97,20 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt }
   const occasions = dayCache[dayCacheKey] ?? null
   const monthOccasions = monthCache[monthCacheKey] ?? null
   const t = labels[lang]
-
   useEffect(() => {
     setExpandedIndex(null)
   }, [dayCacheKey])
+
+  // When dialog opens in "today only" mode, snap to today.
+  useEffect(() => {
+    if (open && todayOnly) {
+      const today = new Date()
+      setSelectedDate(today)
+      setVisibleMonth(today)
+      setSelectedOccasion(null)
+    }
+  }, [open, todayOnly])
+
 
   // Day fetch
   useEffect(() => {
@@ -247,16 +258,18 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-7xl border-white/10 bg-[#0b0c0e]/95 p-0 text-zinc-100">
+      <DialogContent className={cn('border-white/10 bg-[#0b0c0e]/95 p-0 text-zinc-100', todayOnly ? 'max-w-4xl' : 'max-w-7xl')}>
         <DialogHeader className="border-b border-white/10 px-6 py-4">
           <DialogTitle className="flex items-center gap-2 text-base font-medium">
             <CalendarDays className="h-4 w-4 text-amber-300" />
-            <span>Calendar</span>
+            <span>{todayOnly ? (lang === 'fa' ? 'مناسبت‌های امروز' : "Today's Occasions") : 'Calendar'}</span>
           </DialogTitle>
         </DialogHeader>
-        <div className="grid gap-0 md:grid-cols-[auto,1fr,1fr,1fr]">
+        <div className={cn('grid gap-0', todayOnly ? 'md:grid-cols-[1fr,1fr]' : 'md:grid-cols-[auto,1fr,1fr,1fr]')}>
           {/* Column 1: calendar */}
+          {!todayOnly && (
           <div className="border-white/10 p-4 md:border-r">
+
             <Calendar
               mode="single"
               selected={selectedDate}
@@ -266,6 +279,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt }
               className={cn('p-3 pointer-events-auto')}
             />
           </div>
+          )}
 
           {/* Column 2: day details */}
           <div className="flex max-h-[70vh] min-h-[420px] flex-col md:border-r border-white/10">
@@ -346,7 +360,9 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt }
           </div>
 
           {/* Column 3: month list with filters */}
+          {!todayOnly && (
           <div className="flex max-h-[70vh] min-h-[420px] flex-col">
+
             <div className="flex items-center justify-between gap-2 border-b border-white/10 px-5 py-2">
               <div className="flex flex-col leading-tight">
                 <div className="text-[10px] uppercase tracking-wide text-zinc-500">{t.monthTitle}</div>
@@ -419,6 +435,10 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt }
               )}
             </div>
           </div>
+          )}
+
+
+
 
           {/* Column 4: AI scenario */}
           <div className="flex max-h-[70vh] min-h-[420px] flex-col md:border-l border-white/10">

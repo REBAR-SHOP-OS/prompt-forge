@@ -47,7 +47,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(sess?.user ?? null);
       if (sess?.user) {
         if (event === 'SIGNED_IN') {
-          try { window.localStorage.setItem(`pending-fresh-start:${sess.user.id}`, '1'); } catch { /* ignore */ }
+          try {
+            window.localStorage.setItem(`pending-fresh-start:${sess.user.id}`, '1');
+            window.localStorage.setItem(`pending-occasions-popup:${sess.user.id}`, '1');
+          } catch { /* ignore */ }
         }
         setTimeout(() => { refreshProfile(); }, 0);
       } else {
