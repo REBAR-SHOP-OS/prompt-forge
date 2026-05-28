@@ -433,8 +433,10 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
                   })}
                 </ul>
               )}
+            </div>
           </div>
           )}
+
 
 
 
