@@ -12,13 +12,16 @@
 // `token` query string parameter.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { getCorsHeaders } from "../_shared/core/http.ts";
 
-const corsHeaders: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, range",
-  "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-  "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges, Content-Type, ETag",
-};
+const EXPOSE_HEADERS = "Content-Length, Content-Range, Accept-Ranges, Content-Type, ETag";
+const cors = (req: Request) => ({
+  ...getCorsHeaders(req, { exposeHeaders: EXPOSE_HEADERS, methods: "GET, HEAD, OPTIONS" }),
+  // Range is needed for <video> seeking; not in the base allowed-headers set.
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, range, x-request-id",
+});
+
 
 const ALLOWED_HOST_SUFFIXES = [
   "aliyuncs.com",     // dashscope-*.oss-*.aliyuncs.com
