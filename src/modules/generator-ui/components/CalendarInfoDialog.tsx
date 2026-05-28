@@ -97,9 +97,20 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
   const occasions = dayCache[dayCacheKey] ?? null
   const monthOccasions = monthCache[monthCacheKey] ?? null
   const t = labels[lang]
-
   useEffect(() => {
     setExpandedIndex(null)
+  }, [dayCacheKey])
+
+  // When dialog opens in "today only" mode, snap to today.
+  useEffect(() => {
+    if (open && todayOnly) {
+      const today = new Date()
+      setSelectedDate(today)
+      setVisibleMonth(today)
+      setSelectedOccasion(null)
+    }
+  }, [open, todayOnly])
+
   }, [dayCacheKey])
 
   // Day fetch
