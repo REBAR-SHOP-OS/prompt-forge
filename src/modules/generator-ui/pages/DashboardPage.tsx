@@ -1317,12 +1317,17 @@ export default function DashboardPage() {
 
   useEffect(() => {
     // Library Final Film entries must persist across reloads.
-    if (!mergedStorageKey) { setMergedEntries([]); return }
+    if (!mergedStorageKey) {
+      setMergedEntries([])
+      mergedEntriesHydratedRef.current = false
+      return
+    }
     try {
       const raw = window.localStorage.getItem(mergedStorageKey)
       const arr = raw ? (JSON.parse(raw) as JobDetail[]) : []
       setMergedEntries(Array.isArray(arr) ? arr : [])
     } catch { setMergedEntries([]) }
+    mergedEntriesHydratedRef.current = true
   }, [mergedStorageKey])
 
   function persistMerged(next: JobDetail[]) {
@@ -1335,9 +1340,17 @@ export default function DashboardPage() {
   // Prune dangling ids in approvedIds that have no backing entry in either
   // mergedEntries or librarySavedJobs. Keeps the Library badge truthful and
   // prevents ghost cards across releases.
+  //
+  // CRITICAL: only run AFTER both backing stores have been hydrated from
+  // localStorage. Previously this effect could fire on the initial render
+  // when mergedEntries / librarySavedJobs were still empty, and would
+  // permanently wipe every approved id — which is the root cause of the
+  // "Library shows different projects on different days" bug.
   useEffect(() => {
     if (!approvedStorageKey) return
     if (approvedIds.size === 0) return
+    if (!mergedEntriesHydratedRef.current) return
+    if (!librarySavedJobsHydratedRef.current) return
     const known = new Set<string>()
     for (const j of mergedEntries) known.add(j.id)
     for (const id of Object.keys(librarySavedJobs)) known.add(id)
@@ -1357,6 +1370,7 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [approvedStorageKey, mergedEntries, librarySavedJobs])
+
 
   async function deleteCard(jobId: string) {
     const confirmMsg = jobId.startsWith('draft-')
