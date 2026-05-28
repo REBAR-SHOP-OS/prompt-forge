@@ -40,7 +40,27 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, ...res
     if (errored) setErrored(false);
     retriesRef.current = 0;
     rest.onLoadedMetadata?.(e);
+    // When there's no poster, some browsers (Chromium) won't paint the
+    // seeked frame for a muted <video> until play() is called. Briefly
+    // kick playback to force a visible first frame, then pause.
+    if (!poster) {
+      const el = e.currentTarget;
+      const kick = () => {
+        const p = el.play();
+        if (p && typeof p.then === "function") {
+          p.then(() => { try { el.pause(); } catch { /* ignore */ } }).catch(() => { /* ignore */ });
+        }
+      };
+      // Wait for the post-seek frame if a seek was requested in user handler.
+      if (el.seeking) {
+        const onSeeked = () => { el.removeEventListener("seeked", onSeeked); kick(); };
+        el.addEventListener("seeked", onSeeked);
+      } else {
+        kick();
+      }
+    }
   };
+
 
   const handleError: VideoHTMLAttributes<HTMLVideoElement>["onError"] = (e) => {
     if (retriesRef.current < MAX_RETRIES) {
