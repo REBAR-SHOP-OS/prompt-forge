@@ -703,14 +703,26 @@ export default function DashboardPage() {
   // page reloads, Start Over, and other workspace resets.
   const librarySavedJobsKey = userId ? `library-saved-jobs:${userId}` : null
   const [librarySavedJobs, setLibrarySavedJobs] = useState<Record<string, JobDetail>>({})
+  // Hydration guards — prevent the "prune dangling approvedIds" effect from
+  // running before mergedEntries / librarySavedJobs have been loaded from
+  // localStorage on mount. Without these, the effect briefly sees an empty
+  // backing store and wipes every approved id, permanently emptying the
+  // Library on the next render.
+  const librarySavedJobsHydratedRef = useRef(false)
+  const mergedEntriesHydratedRef = useRef(false)
 
   useEffect(() => {
-    if (!librarySavedJobsKey) { setLibrarySavedJobs({}); return }
+    if (!librarySavedJobsKey) {
+      setLibrarySavedJobs({})
+      librarySavedJobsHydratedRef.current = false
+      return
+    }
     try {
       const raw = window.localStorage.getItem(librarySavedJobsKey)
       const obj = raw ? (JSON.parse(raw) as Record<string, JobDetail>) : {}
       setLibrarySavedJobs(obj && typeof obj === 'object' ? obj : {})
     } catch { setLibrarySavedJobs({}) }
+    librarySavedJobsHydratedRef.current = true
   }, [librarySavedJobsKey])
 
   function persistLibrarySavedJobs(next: Record<string, JobDetail>) {
@@ -719,6 +731,7 @@ export default function DashboardPage() {
       window.localStorage.setItem(librarySavedJobsKey, JSON.stringify(next))
     } catch { /* ignore */ }
   }
+
   const pendingEndAppendsKey = userId ? `pending-end-appends:${userId}` : null
   const pendingStartPrependsKey = userId ? `pending-start-prepends:${userId}` : null
   const [manualOrder, setManualOrder] = useState<string[] | null>(null)
