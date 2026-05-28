@@ -11,6 +11,7 @@ interface CalendarInfoDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onApplyPrompt?: (prompt: string) => void
+  todayOnly?: boolean
 }
 
 type Category = 'canada' | 'international' | 'religious'
@@ -71,7 +72,7 @@ const labels = {
 
 const ALL_CATEGORIES: Category[] = ['canada', 'international', 'religious']
 
-export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt }: CalendarInfoDialogProps) {
+export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, todayOnly = false }: CalendarInfoDialogProps) {
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date())
   const [visibleMonth, setVisibleMonth] = useState<Date>(() => new Date())
   const [lang, setLang] = useState<'en' | 'fa'>('en')
