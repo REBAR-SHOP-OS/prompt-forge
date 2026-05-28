@@ -55,12 +55,12 @@ async function authenticate(req: Request, urlObj: URL): Promise<boolean> {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response("ok", { headers: cors(req) });
   }
   if (req.method !== "GET" && req.method !== "HEAD") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...cors(req), "Content-Type": "application/json" },
     });
   }
 
@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
   if (!(await authenticate(req, reqUrl))) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...cors(req), "Content-Type": "application/json" },
     });
   }
 
@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
   if (!target) {
     return new Response(JSON.stringify({ error: "Missing url" }), {
       status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...cors(req), "Content-Type": "application/json" },
     });
   }
 
@@ -87,20 +87,20 @@ Deno.serve(async (req) => {
   } catch {
     return new Response(JSON.stringify({ error: "Invalid url" }), {
       status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...cors(req), "Content-Type": "application/json" },
     });
   }
 
   if (upstreamUrl.protocol !== "https:" && upstreamUrl.protocol !== "http:") {
     return new Response(JSON.stringify({ error: "Unsupported protocol" }), {
       status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...cors(req), "Content-Type": "application/json" },
     });
   }
   if (!isAllowedHost(upstreamUrl.hostname)) {
     return new Response(JSON.stringify({ error: "Host not allowed" }), {
       status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...cors(req), "Content-Type": "application/json" },
     });
   }
 
@@ -126,11 +126,11 @@ Deno.serve(async (req) => {
   } catch (e) {
     return new Response(JSON.stringify({ error: `Upstream fetch failed: ${(e as Error).message}` }), {
       status: 502,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...cors(req), "Content-Type": "application/json" },
     });
   }
 
-  const respHeaders = new Headers(corsHeaders);
+  const respHeaders = new Headers(cors(req));
   const passthrough = ["content-type", "content-length", "content-range", "accept-ranges", "etag", "last-modified", "cache-control"];
   for (const h of passthrough) {
     const v = upstream.headers.get(h);
