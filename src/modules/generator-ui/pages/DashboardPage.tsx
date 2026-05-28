@@ -4526,7 +4526,7 @@ export default function DashboardPage() {
 
       <CalendarInfoDialog
         open={isCalendarOpen}
-        onOpenChange={(o) => { setIsCalendarOpen(o); if (!o) setCalendarTodayOnly(false) }}
+        onOpenChange={setIsCalendarOpen}
         todayOnly={calendarTodayOnly}
         onApplyPrompt={(p) => {
           setPromptText(p)

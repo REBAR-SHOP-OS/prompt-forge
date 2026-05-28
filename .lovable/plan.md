@@ -1,29 +1,36 @@
-## هدف
-بعد از هر لاگین، به‌صورت خودکار دیالوگ تقویم باز شود و فقط مناسبت‌های همان روز را نمایش دهد.
+## Problem
 
-## تغییرات
+When closing the "Today's Occasions" dialog, the full Calendar layout (with the date grid + month list + scenario columns) flashes for a few hundredths of a second before the dialog fully disappears.
 
-### ۱) `DashboardPage.tsx`
-- یک `useEffect` اضافه می‌شود که به رویداد `SIGNED_IN` (یا اولین رندر با session فعال در همان نشست) واکنش نشان دهد.
-- از `sessionStorage` با کلید `occasions_shown_<userId>_<YYYY-MM-DD>` استفاده می‌شود تا در همان روز/نشست فقط یک بار باز شود (با هر لاگین جدید دوباره فعال می‌شود چون sessionStorage پاک می‌شود یا تاریخ تغییر می‌کند).
-- در صورت true بودن شرط، `setIsCalendarOpen(true)` و انتخاب پیش‌فرض تاریخِ امروز.
+## Root cause
 
-### ۲) `CalendarInfoDialog.tsx`
-- اضافه شدن یک پراپ اختیاری `todayOnly?: boolean`.
-- وقتی `todayOnly=true`:
-  - تاریخ روی امروز قفل شود (یا فقط بخش «مناسبت‌های امروز» نمایش داده شود).
-  - بخش گرید ماه/ناوبری ماه و انتخاب روزهای دیگر مخفی شود.
-  - عنوان دیالوگ به «مناسبت‌های امروز» تغییر کند.
-  - بقیه ستون‌ها (Scenario و …) دست‌نخورده باقی بمانند چون درخواست کاربر «بخشی که فقط مناسبت‌های همان روز را نشان دهد» است.
+In `DashboardPage.tsx` (line 4529):
 
-### ۳) رفتار باز شدن
-- پس از لاگین: `CalendarInfoDialog` با `todayOnly` باز می‌شود.
-- آیکون تقویم در هدر همچنان حالت کامل (انتخاب روزهای دیگر) را باز می‌کند → `todayOnly` فقط برای auto-open پس از لاگین است.
+```tsx
+onOpenChange={(o) => { setIsCalendarOpen(o); if (!o) setCalendarTodayOnly(false) }}
+```
 
-## فایل‌های تحت تأثیر
-- `src/modules/generator-ui/pages/DashboardPage.tsx` (افزودن effect)
-- `src/modules/generator-ui/components/CalendarInfoDialog.tsx` (افزودن حالت todayOnly)
+Radix `Dialog` plays a fade-out animation when `open` flips to `false`. During that animation the dialog is still mounted and visible. We immediately set `calendarTodayOnly = false`, which switches the layout from the 2-column "Today's Occasions" view to the full 4-column "Calendar" view — visible for the duration of the close animation, hence the flash.
 
-## ریسک‌ها
-- بدون تغییر در منطق fetch مناسبت‌ها (همان مسیر موجود استفاده می‌شود).
-- اگر مناسبت در حال بارگذاری باشد، همان حالت «Loading occasions…» نمایش داده می‌شود (بدون تغییر).
+## Fix
+
+Stop resetting `calendarTodayOnly` synchronously on close. The flag is already explicitly set to the correct value at every open site:
+- Auto-open after login → sets `true`
+- Manual calendar icon click → sets `false` before opening
+- `onApplyPrompt` → also resets it
+
+So the on-close reset is redundant and is the sole cause of the flash. Remove it (or defer it via `setTimeout` after the animation, ~250 ms). Preferred: just remove it.
+
+### Edit
+
+`src/modules/generator-ui/pages/DashboardPage.tsx` line 4529:
+
+```tsx
+onOpenChange={setIsCalendarOpen}
+```
+
+## Verification
+
+1. Login → "Today's Occasions" auto-opens in 2-column mode → close it → no Calendar flash.
+2. Click calendar icon in header → opens full Calendar normally.
+3. Pick an occasion → "Use in prompt" → dialog closes cleanly.
