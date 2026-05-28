@@ -279,6 +279,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
               className={cn('p-3 pointer-events-auto')}
             />
           </div>
+          )}
 
           {/* Column 2: day details */}
           <div className="flex max-h-[70vh] min-h-[420px] flex-col md:border-r border-white/10">
