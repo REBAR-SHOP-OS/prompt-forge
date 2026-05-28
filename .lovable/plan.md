@@ -1,36 +1,24 @@
-## Problem
+## هدف
+هیچ کارت ویدیویی — چه خروجی تولیدشده، چه Final Film، چه ویدیوی آپلودی کاربر — نباید حالت بزرگ و خالیِ «Video unavailable» را مثل تصویر نشان دهد.
 
-When closing the "Today's Occasions" dialog, the full Calendar layout (with the date grid + month list + scenario columns) flashes for a few hundredths of a second before the dialog fully disappears.
+## مشکل فعلی
+کامپوننت `PlayableVideo` بعد از چند خطای بارگذاری، کل کارت را با fallback متنی/آیکونی جایگزین می‌کند. برای ویدیوهای آپلودی کاربر معمولاً `thumbnail_url` هم وجود ندارد، پس به‌جای یک تصویر/نمای پایدار، کارت خالی با پیام خطا دیده می‌شود.
 
-## Root cause
+## برنامه اجرا
+1. **تغییر رفتار `PlayableVideo`**
+   - پیام متنی `Video unavailable` را از UI کارت‌ها حذف می‌کنم.
+   - هنگام خطای موقت، به‌جای نمایش خطا، همان قاب ویدیو/پوستر/پس‌زمینه پایدار حفظ می‌شود.
+   - retry با cache-busting باقی می‌ماند، اما fallback نهایی دیگر کارت را خراب و خالی نمی‌کند.
 
-In `DashboardPage.tsx` (line 4529):
+2. **پوستر برای ویدیوهای آپلودی کاربر**
+   - هنگام آپلود ویدیو، از خود فایل در مرورگر یک thumbnail محلی می‌سازم.
+   - این thumbnail در کارت همان لحظه استفاده می‌شود تا کاربر هیچ کارت خالی نبیند.
+   - اگر ذخیره thumbnail در دیتابیس/بک‌اند موجود نبود، حداقل در state فعلی استفاده می‌شود؛ بدون تغییر دیتابیس مگر ضروری باشد.
 
-```tsx
-onOpenChange={(o) => { setIsCalendarOpen(o); if (!o) setCalendarTodayOnly(false) }}
-```
+3. **یکسان‌سازی کارت‌های Pending و Library**
+   - هر دو محل استفاده از `PlayableVideo` را طوری نگه می‌دارم که خطای transient باعث نمایش کارت خطا نشود.
+   - برای ویدیوهایی که واقعاً دیگر قابل دسترسی نیستند، کارت به‌صورت شیک و کم‌حاشیه باقی می‌ماند و در صورت نیاز فقط کنترل‌های خراب‌کننده پنهان می‌شوند، نه اینکه متن بزرگ خطا وسط کارت دیده شود.
 
-Radix `Dialog` plays a fade-out animation when `open` flips to `false`. During that animation the dialog is still mounted and visible. We immediately set `calendarTodayOnly = false`, which switches the layout from the 2-column "Today's Occasions" view to the full 4-column "Calendar" view — visible for the duration of the close animation, hence the flash.
-
-## Fix
-
-Stop resetting `calendarTodayOnly` synchronously on close. The flag is already explicitly set to the correct value at every open site:
-- Auto-open after login → sets `true`
-- Manual calendar icon click → sets `false` before opening
-- `onApplyPrompt` → also resets it
-
-So the on-close reset is redundant and is the sole cause of the flash. Remove it (or defer it via `setTimeout` after the animation, ~250 ms). Preferred: just remove it.
-
-### Edit
-
-`src/modules/generator-ui/pages/DashboardPage.tsx` line 4529:
-
-```tsx
-onOpenChange={setIsCalendarOpen}
-```
-
-## Verification
-
-1. Login → "Today's Occasions" auto-opens in 2-column mode → close it → no Calendar flash.
-2. Click calendar icon in header → opens full Calendar normally.
-3. Pick an occasion → "Use in prompt" → dialog closes cleanly.
+4. **اعتبارسنجی**
+   - بررسی می‌کنم مسیرهای کارت در `DashboardPage.tsx` همچنان برای generated، uploaded و library یکسان کار کنند.
+   - مطمئن می‌شوم preview اصلی و کارت‌های کوچک دیگر حالت «Video unavailable» واضح و بزرگ نشان نمی‌دهند.
