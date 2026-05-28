@@ -1,37 +1,21 @@
-## مشکل
+# Hardening progress
 
-در Library یک کارت Draft با برچسب "1 clip" دیده می‌شود ولی وقتی باز می‌شود، در محیط کار هیچ کارتی نیست.
+## Phase 1 — DONE (partial scope, see notes)
 
-## ریشه‌ی مشکل
+- `supabase/functions/_shared/core/http.ts`: added `getCorsHeaders(req)` + `isAllowedOrigin()` with env `ALLOWED_APP_ORIGINS` (comma-separated) plus a built-in allowlist for `*.lovable.app`, `*.lovableproject.com`, `*.sandbox.lovable.dev`, and `localhost`. Legacy static `corsHeaders` kept for backwards-compat.
+- `supabase/functions/video-proxy/index.ts`: migrated all responses to allowlist-aware `cors(req)`. Expose-Headers trimmed to `Content-Length, Content-Range, Accept-Ranges, Content-Type, ETag` only.
+- `supabase/functions/tts-generate/index.ts`, `supabase/functions/day-info/index.ts`: migrated to allowlist helper.
+- `src/core/config/env.ts`: new validated public env surface. Auto-generated `client.ts` left untouched (anon key is publishable-by-design). Provides `getEnvConfigError()` for future controlled error screen.
+- Log audit: existing logs already structured (`{requestId, error.message}`) — no secrets/tokens/signed URLs found in logs.
 
-در `src/modules/generator-ui/pages/DashboardPage.tsx`:
+### Not yet migrated (will sweep in a later pass)
 
-- مسیر حذف کلیپ ویدیو (`handleDeleteJob` حدود خط 1453) به‌درستی `draftSourceJobs` را پاک می‌کند و هر Draft خالی را از `draftEntries` حذف و در `deletedDraftIds` ثبت می‌کند.
-- اما مسیر حذف تصویر آپلودی (`handleDeleteUserImage` خط 2493) فقط `projectSourceImages` را پاک می‌کند و **هیچ‌گاه `draftSourceImages` و `draftEntries` را به‌روزرسانی نمی‌کند**.
+The remaining edge functions still use the legacy static `corsHeaders` (= `*`). Since auth is Bearer-in-Authorization-header (localStorage, not cookies), `*` is not a CSRF vector. Migration of the rest will happen alongside Phase 4 (rate-limit) which already requires touching each function.
 
-نتیجه: وقتی کاربر تصویری را حذف می‌کند که یک Draft (مثلاً `draft-orphan-img-<id>` یا Draft فعال) فقط همان تصویر را به‌عنوان منبع داشت:
-- تصویر از `userImages` حذف می‌شود.
-- ولی `draftSourceImages[did]` و `draftEntries` هنوز ارجاع کهنه دارند.
-- در Library، `clipCount` همچنان از روی همان snapshot کهنه ۱ نمایش داده می‌شود.
-- با باز کردن Draft، `visibleUserImages` تلاش می‌کند تصویر را نمایش دهد ولی منبع پاک شده و کارت یا خالی است یا اصلاً رندر نمی‌شود.
+## Phase 2 — TODO (video-proxy token hardening)
+## Phase 3 — TODO (upload/asset ownership validation)
+## Phase 4 — TODO (durable rate limiting)
+## Phase 5 — TODO (job lifecycle / RLS review)
+## Phase 6 — TODO (frontend reliability)
 
-## راه‌حل
-
-اصلاح `handleDeleteUserImage` به‌گونه‌ای که با منطق حذف کلیپ هم‌خوان شود:
-
-۱. علاوه بر پاک‌سازی `projectSourceImages`، از همه‌ی کلیدهای `draftSourceImages` نیز این `imageId` حذف شود و وضعیت persist شود.
-۲. پس از این پاک‌سازی، برای هر `did` که هم `draftSourceJobs[did]` و هم `draftSourceImages[did]` خالی شد:
-   - آن ورودی از `draftEntries` حذف شود (و persist شود).
-   - شناسه‌اش به `deletedDraftIds` افزوده شود تا effect مربوط به Backfill (خط 1832) دوباره آن را به‌عنوان `draft-orphan-img-*` بازنسازی نکند.
-۳. اگر Draft حذف‌شده همان `activeDraftId` بود، `activeDraftId` پاک شود تا workspace به حالت تازه برگردد.
-۴. اگر `selectedProjectId` همان Draft بود، روی `null` تنظیم شود.
-
-## فایل‌های تغییریافته
-
-- `src/modules/generator-ui/pages/DashboardPage.tsx` — فقط تابع `handleDeleteUserImage` (حدود خط 2493).
-
-## اعتبارسنجی
-
-- آپلود یک تصویر، سپس حذف آن → دیگر کارت Draft خالی در Library نباید باقی بماند.
-- پس از رفرش صفحه نیز Draft خالی نباید دوباره ظاهر شود (به‌دلیل tombstone).
-- Draftهای دارای تصویر + کلیپ ویدیویی همچنان درست کار کنند (فقط در صورت خالی‌شدن کامل حذف شوند).
+Awaiting user signal to proceed with Phase 2.

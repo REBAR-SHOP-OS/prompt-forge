@@ -3,22 +3,21 @@
 //   { date: 'YYYY-MM-DD', lang } -> day mode (full detail)
 //   { month: 'YYYY-MM', lang }   -> month mode (list items with date+title+category, brief detail)
 import { authenticate } from '../_shared/core/auth.ts'
+import { getCorsHeaders } from '../_shared/core/http.ts'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-}
+const cors = (req: Request) => getCorsHeaders(req)
+
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
+  if (req.method === 'OPTIONS') return new Response(null, { headers: cors(req) })
 
   try {
     const auth = await authenticate(req)
     if (!auth) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401, headers: { ...cors(req), 'Content-Type': 'application/json' },
       })
     }
 
@@ -32,14 +31,14 @@ Deno.serve(async (req) => {
 
     if (!isDayMode && !isMonthMode) {
       return new Response(JSON.stringify({ error: 'Provide date (YYYY-MM-DD) or month (YYYY-MM).' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400, headers: { ...cors(req), 'Content-Type': 'application/json' },
       })
     }
 
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')
     if (!LOVABLE_API_KEY) {
       return new Response(JSON.stringify({ error: 'LOVABLE_API_KEY not configured' }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500, headers: { ...cors(req), 'Content-Type': 'application/json' },
       })
     }
 
@@ -156,18 +155,18 @@ Be exhaustive but strict — include every qualifying observance in the month, b
     if (!aiResp.ok) {
       if (aiResp.status === 429) {
         return new Response(JSON.stringify({ error: 'Rate limit exceeded. Try again shortly.' }), {
-          status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 429, headers: { ...cors(req), 'Content-Type': 'application/json' },
         })
       }
       if (aiResp.status === 402) {
         return new Response(JSON.stringify({ error: 'AI credits exhausted. Add credits in Workspace settings.' }), {
-          status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 402, headers: { ...cors(req), 'Content-Type': 'application/json' },
         })
       }
       const txt = await aiResp.text()
       console.error('AI gateway error:', aiResp.status, txt)
       return new Response(JSON.stringify({ error: 'AI gateway error' }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500, headers: { ...cors(req), 'Content-Type': 'application/json' },
       })
     }
 
@@ -191,12 +190,12 @@ Be exhaustive but strict — include every qualifying observance in the month, b
     }))
 
     return new Response(JSON.stringify({ occasions, lang }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: { ...cors(req), 'Content-Type': 'application/json' },
     })
   } catch (e) {
     console.error('day-info error:', e)
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Unknown error' }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500, headers: { ...cors(req), 'Content-Type': 'application/json' },
     })
   }
 })
