@@ -2509,6 +2509,56 @@ export default function DashboardPage() {
         persistProjectSourceImages(nextMap)
       }
     }
+    // Mirror the job-delete cleanup for drafts: prune image from every draft
+    // snapshot, drop any draft entry that becomes empty, and tombstone it so
+    // the orphan-backfill effect cannot resurrect a ghost "1 clip" card.
+    {
+      const nextDraftImgs: Record<string, UserImageItem[]> = {}
+      let imgsChanged = false
+      for (const [did, imgs] of Object.entries(draftSourceImages)) {
+        const filtered = imgs.filter((i) => i.id !== imageId)
+        if (filtered.length !== imgs.length) imgsChanged = true
+        nextDraftImgs[did] = filtered
+      }
+      if (imgsChanged) {
+        setDraftSourceImages(nextDraftImgs)
+        persistDraftSourceImages(nextDraftImgs)
+      }
+
+      const emptyDraftIds = new Set<string>()
+      for (const did of new Set([
+        ...Object.keys(nextDraftImgs),
+        ...Object.keys(draftSourceJobs),
+      ])) {
+        const clipsLeft = (draftSourceJobs[did] ?? []).length
+        const imgsLeft = (nextDraftImgs[did] ?? draftSourceImages[did] ?? []).length
+        if (clipsLeft === 0 && imgsLeft === 0) emptyDraftIds.add(did)
+      }
+      if (emptyDraftIds.size > 0) {
+        setDraftEntries((p) => {
+          const next = p.filter((d) => !emptyDraftIds.has(d.id))
+          if (next.length === p.length) return p
+          persistDraftEntries(next)
+          return next
+        })
+        // Tombstone so the backfill effect doesn't recreate the same draft.
+        const tombstones = new Set<string>([...deletedDraftIds, ...emptyDraftIds])
+        // Also tombstone the inferred orphan-image id form so a re-uploaded
+        // image with a new id is the only thing that can produce a new card.
+        tombstones.add(`draft-orphan-img-${imageId}`)
+        setDeletedDraftIds(tombstones)
+        if (deletedDraftIdsKey) {
+          try { window.localStorage.setItem(deletedDraftIdsKey, JSON.stringify(Array.from(tombstones))) } catch { /* ignore */ }
+        }
+        if (activeDraftId && emptyDraftIds.has(activeDraftId)) {
+          setActiveDraftId(null)
+          persistActiveDraftId(null)
+        }
+        if (selectedProjectId && emptyDraftIds.has(selectedProjectId)) {
+          setSelectedProjectId(null)
+        }
+      }
+    }
     try {
       // Server-side, permanent delete (DB row + storage file).
       await generatorUiGateway.deleteUserImage(imageId)

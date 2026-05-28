@@ -1,21 +1,37 @@
-## هدف
-هر بار که کاربر لاگین می‌کند (نه refresh)، داشبورد باید کاملاً خام و خالی نشان داده شود — معادل اجرای «Start Over».
+## مشکل
 
-## وضعیت فعلی
-- `AuthProvider` هنگام رویداد `SIGNED_IN` کلید `pending-fresh-start:<uid>` را در localStorage می‌گذارد. این کلید فقط در لاگین تازه ست می‌شود، نه در refresh صفحه.
-- در `DashboardPage` یک `useEffect` قدیمی این کلید را فقط پاک می‌کند و هیچ کاری انجام نمی‌دهد (با کامنت «refresh نباید reset کند»).
+در Library یک کارت Draft با برچسب "1 clip" دیده می‌شود ولی وقتی باز می‌شود، در محیط کار هیچ کارتی نیست.
 
-تمایز لاگین/refresh درست انجام می‌شود؛ فقط رفتار اجرایی نیاز به اصلاح دارد.
+## ریشه‌ی مشکل
 
-## تغییر
-در `DashboardPage.tsx` همان `useEffect` را به این صورت تغییر می‌دهم:
-- اگر کلید `pending-fresh-start:<uid>` در localStorage وجود داشت → ابتدا آن را حذف می‌کنیم، سپس `handleStartOver()` صدا زده می‌شود.
-- در غیر این صورت (refresh ساده) هیچ کاری انجام نمی‌شود.
+در `src/modules/generator-ui/pages/DashboardPage.tsx`:
 
-به این ترتیب:
-- لاگین جدید ⇒ workspace کاملاً خام مثل تصویر کاربر.
-- Refresh صفحه ⇒ هیچ ریستی رخ نمی‌دهد و state حفظ می‌شود.
-- پاپ‌آپ مناسبت‌های روز که قبلاً پیاده شد همچنان بعد از لاگین باز می‌شود (کلید جدا دارد).
+- مسیر حذف کلیپ ویدیو (`handleDeleteJob` حدود خط 1453) به‌درستی `draftSourceJobs` را پاک می‌کند و هر Draft خالی را از `draftEntries` حذف و در `deletedDraftIds` ثبت می‌کند.
+- اما مسیر حذف تصویر آپلودی (`handleDeleteUserImage` خط 2493) فقط `projectSourceImages` را پاک می‌کند و **هیچ‌گاه `draftSourceImages` و `draftEntries` را به‌روزرسانی نمی‌کند**.
 
-## فایل‌های تحت تأثیر
-- `src/modules/generator-ui/pages/DashboardPage.tsx` (همان effect کوچک حدود خط ۴۳۹۴).
+نتیجه: وقتی کاربر تصویری را حذف می‌کند که یک Draft (مثلاً `draft-orphan-img-<id>` یا Draft فعال) فقط همان تصویر را به‌عنوان منبع داشت:
+- تصویر از `userImages` حذف می‌شود.
+- ولی `draftSourceImages[did]` و `draftEntries` هنوز ارجاع کهنه دارند.
+- در Library، `clipCount` همچنان از روی همان snapshot کهنه ۱ نمایش داده می‌شود.
+- با باز کردن Draft، `visibleUserImages` تلاش می‌کند تصویر را نمایش دهد ولی منبع پاک شده و کارت یا خالی است یا اصلاً رندر نمی‌شود.
+
+## راه‌حل
+
+اصلاح `handleDeleteUserImage` به‌گونه‌ای که با منطق حذف کلیپ هم‌خوان شود:
+
+۱. علاوه بر پاک‌سازی `projectSourceImages`، از همه‌ی کلیدهای `draftSourceImages` نیز این `imageId` حذف شود و وضعیت persist شود.
+۲. پس از این پاک‌سازی، برای هر `did` که هم `draftSourceJobs[did]` و هم `draftSourceImages[did]` خالی شد:
+   - آن ورودی از `draftEntries` حذف شود (و persist شود).
+   - شناسه‌اش به `deletedDraftIds` افزوده شود تا effect مربوط به Backfill (خط 1832) دوباره آن را به‌عنوان `draft-orphan-img-*` بازنسازی نکند.
+۳. اگر Draft حذف‌شده همان `activeDraftId` بود، `activeDraftId` پاک شود تا workspace به حالت تازه برگردد.
+۴. اگر `selectedProjectId` همان Draft بود، روی `null` تنظیم شود.
+
+## فایل‌های تغییریافته
+
+- `src/modules/generator-ui/pages/DashboardPage.tsx` — فقط تابع `handleDeleteUserImage` (حدود خط 2493).
+
+## اعتبارسنجی
+
+- آپلود یک تصویر، سپس حذف آن → دیگر کارت Draft خالی در Library نباید باقی بماند.
+- پس از رفرش صفحه نیز Draft خالی نباید دوباره ظاهر شود (به‌دلیل tombstone).
+- Draftهای دارای تصویر + کلیپ ویدیویی همچنان درست کار کنند (فقط در صورت خالی‌شدن کامل حذف شوند).
