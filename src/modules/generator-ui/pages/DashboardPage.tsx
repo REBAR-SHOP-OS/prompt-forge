@@ -208,7 +208,13 @@ function estimateGenerationCost(model: ModelChoice, totalDurationSec: number): {
   const clips = totalDurationSec === 135 ? 9 : totalDurationSec === 45 ? 3 : totalDurationSec === 30 ? 2 : 1
   const perClipSec = clips > 1 ? 15 : totalDurationSec
   let perClipUsd = 0
-  if (model.model === 'flow-video-1') perClipUsd = perClipSec * 0.10
+  if (model.model === 'flow-video-1') {
+    // Veo Fast cannot be extended: clips >8s actually run on Veo 3.1 ($0.40/s)
+    // via the extension chain, so price them at the higher tier to match
+    // backend billing. Clips ≤8s stay on the cheaper Fast tier.
+    const veoRate = perClipSec > 8 ? 0.40 : 0.10
+    perClipUsd = perClipSec * veoRate
+  }
   else if (model.model === 'flow-video-1-pro') perClipUsd = perClipSec * 0.40
   else perClipUsd = 0.15 // wan (fixed per clip)
   const usd = perClipUsd * clips

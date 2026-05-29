@@ -1,37 +1,29 @@
-## مشکل
+## نتیجه‌ی مورد انتظار
+بعد از اصلاح، انتخاب **Google Veo 3 Fast** برای خروجی‌های 10s/15s دیگر با خطای provider شکست نمی‌خورد. اگر درخواست واقعاً به extension یا last-frame interpolation نیاز داشته باشد، backend به‌صورت خودکار مدل سازگار Veo 3.1 را انتخاب می‌کند؛ برای کلیپ‌های کوتاه بدون نیاز خاص، Fast همچنان استفاده می‌شود.
 
-در Library یک کارت Draft با برچسب "1 clip" دیده می‌شود ولی وقتی باز می‌شود، در محیط کار هیچ کارتی نیست.
+## یافته‌ی ریشه‌ای
+- Job خراب اخیر در دیتابیس با `requested_duration = 15` و `model_key = veo-3.0-fast-generate-001` ساخته شده است.
+- همان job state نشان می‌دهد `targetDuration = 16` بوده، یعنی سیستم قصد extension داشته است.
+- `veo-3.0-fast-generate-001` برای extension مناسب نیست؛ بنابراین مسیر 15s با Fast وارد مدل اشتباه می‌شود و در poll/extension به شکست می‌رسد.
+- علت در `resolveVeoModel` است: فقط وجود `lastFrame` را دلیل انتخاب Veo 3.1 می‌داند، اما duration بالای 8s را لحاظ نمی‌کند.
 
-## ریشه‌ی مشکل
+## تغییرات پیشنهادی
+1. در `supabase/functions/_shared/modules/external-api-adapter/service.ts` منطق انتخاب مدل را اصلاح می‌کنم:
+   - `flow-video-1` + duration `> 8` → `veo-3.1-generate-preview`
+   - `flow-video-1` + `lastFrame` → `veo-3.1-generate-preview`
+   - `flow-video-1` برای کلیپ‌های 5s/8s بدون lastFrame → `veo-3.0-fast-generate-001`
+   - `flow-video-1-pro` همیشه → `veo-3.1-generate-preview`
 
-در `src/modules/generator-ui/pages/DashboardPage.tsx`:
+2. یک guard دفاعی در `startVeo` اضافه می‌کنم تا حتی اگر route قدیمی/اشتباه یا job قدیمی با مدل Fast وارد مسیر extension شد، قبل از ارسال درخواست extension مدل را به Veo 3.1 ارتقا دهد. این باعث می‌شود fix فقط به route preview وابسته نباشد.
 
-- مسیر حذف کلیپ ویدیو (`handleDeleteJob` حدود خط 1453) به‌درستی `draftSourceJobs` را پاک می‌کند و هر Draft خالی را از `draftEntries` حذف و در `deletedDraftIds` ثبت می‌کند.
-- اما مسیر حذف تصویر آپلودی (`handleDeleteUserImage` خط 2493) فقط `projectSourceImages` را پاک می‌کند و **هیچ‌گاه `draftSourceImages` و `draftEntries` را به‌روزرسانی نمی‌کند**.
+3. قرارداد/کامنت‌های مرتبط را دقیق می‌کنم تا مشخص باشد duration بالای 8 ثانیه هم مثل last-frame نیازمند Veo 3.1 است.
 
-نتیجه: وقتی کاربر تصویری را حذف می‌کند که یک Draft (مثلاً `draft-orphan-img-<id>` یا Draft فعال) فقط همان تصویر را به‌عنوان منبع داشت:
-- تصویر از `userImages` حذف می‌شود.
-- ولی `draftSourceImages[did]` و `draftEntries` هنوز ارجاع کهنه دارند.
-- در Library، `clipCount` همچنان از روی همان snapshot کهنه ۱ نمایش داده می‌شود.
-- با باز کردن Draft، `visibleUserImages` تلاش می‌کند تصویر را نمایش دهد ولی منبع پاک شده و کارت یا خالی است یا اصلاً رندر نمی‌شود.
+4. تست می‌کنم:
+   - route/create برای Image-to-Video با `requestedModel: flow-video-1` و `durationSeconds: 15` باید `resolvedModel: veo-3.1-generate-preview` بدهد.
+   - کلیپ 5s با همان مدل باید همچنان Fast بماند.
+   - edge function مربوطه را deploy و با درخواست واقعی/سبک تست می‌کنم تا مطمئن شوم job جدید دیگر با `veo-3.0-fast` برای duration 15 ساخته نمی‌شود.
 
-## راه‌حل
-
-اصلاح `handleDeleteUserImage` به‌گونه‌ای که با منطق حذف کلیپ هم‌خوان شود:
-
-۱. علاوه بر پاک‌سازی `projectSourceImages`، از همه‌ی کلیدهای `draftSourceImages` نیز این `imageId` حذف شود و وضعیت persist شود.
-۲. پس از این پاک‌سازی، برای هر `did` که هم `draftSourceJobs[did]` و هم `draftSourceImages[did]` خالی شد:
-   - آن ورودی از `draftEntries` حذف شود (و persist شود).
-   - شناسه‌اش به `deletedDraftIds` افزوده شود تا effect مربوط به Backfill (خط 1832) دوباره آن را به‌عنوان `draft-orphan-img-*` بازنسازی نکند.
-۳. اگر Draft حذف‌شده همان `activeDraftId` بود، `activeDraftId` پاک شود تا workspace به حالت تازه برگردد.
-۴. اگر `selectedProjectId` همان Draft بود، روی `null` تنظیم شود.
-
-## فایل‌های تغییریافته
-
-- `src/modules/generator-ui/pages/DashboardPage.tsx` — فقط تابع `handleDeleteUserImage` (حدود خط 2493).
-
-## اعتبارسنجی
-
-- آپلود یک تصویر، سپس حذف آن → دیگر کارت Draft خالی در Library نباید باقی بماند.
-- پس از رفرش صفحه نیز Draft خالی نباید دوباره ظاهر شود (به‌دلیل tombstone).
-- Draftهای دارای تصویر + کلیپ ویدیویی همچنان درست کار کنند (فقط در صورت خالی‌شدن کامل حذف شوند).
+## ریسک و کنترل
+- ریسک اصلی افزایش هزینه برای 10s/15s است، اما این لازم است چون extension با Fast مجاز نیست. UI فعلاً هزینه‌ی Veo Fast را برای 15s ارزان‌تر نشان می‌دهد؛ اگر بعد از fix اختلاف قیمت باعث ابهام شود، در همین اصلاح preview/cost UI را هم با backend هم‌راستا می‌کنم تا کاربر هزینه‌ی واقعی را ببیند.
+- هیچ تغییر دیتابیس یا حذف داده انجام نمی‌شود.
+- مسیرهای Wan و Veo Pro دست‌نخورده می‌مانند.
