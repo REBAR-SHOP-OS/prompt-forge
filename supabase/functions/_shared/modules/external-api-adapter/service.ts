@@ -555,7 +555,21 @@ async function startVeo(
   input: GenerationStartInput,
   apiKey: string,
 ): Promise<GenerationStartResult> {
-  const veoModel = resolveVeoModel(resolvedModel);
+  const requested = input.durationSeconds ?? VEO_BASE_DURATION_SECONDS;
+  // Veo's single call is capped at 8s; longer requests are served by extension.
+  const willExtend = requested > VEO_BASE_DURATION_SECONDS;
+
+  // Expand any alias (no-op when already concrete) and then guarantee the
+  // model can actually be extended. Veo Fast does not support the extension
+  // chain, so a 10s/15s request must run on Veo 3.1 even if a legacy/route
+  // path handed us veo-3.0-fast.
+  const veoModel = ensureVeoExtensionCapable(
+    resolveVeoModel(resolvedModel, {
+      durationSeconds: requested,
+      hasLastFrame: Boolean(input.lastFrameUrl),
+    }),
+    willExtend,
+  );
   const aspectRatio = mapVeoAspect(input.aspectRatio);
 
   const instance: Record<string, unknown> = { prompt: input.prompt };
@@ -569,9 +583,6 @@ async function startVeo(
     instance.lastFrame = { bytesBase64Encoded: frame.data, mimeType: frame.mimeType };
   }
 
-  const requested = input.durationSeconds ?? VEO_BASE_DURATION_SECONDS;
-  // Veo's single call is capped at 8s; longer requests are served by extension.
-  const willExtend = requested > VEO_BASE_DURATION_SECONDS;
 
   const body = {
     instances: [instance],
