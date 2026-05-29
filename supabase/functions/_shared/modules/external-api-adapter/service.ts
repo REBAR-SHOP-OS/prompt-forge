@@ -49,15 +49,29 @@ function computeUsd(resolvedModel: string, durationSeconds: number): number {
 }
 
 /** Map the public model alias to a concrete provider model. The cheaper
- *  Veo 3 Fast tier is preferred by default; we only fall back to Veo 3.1
- *  Standard when the request *requires* first+last frame interpolation
- *  (Fast does not support last-frame). */
+ *  Veo 3 Fast tier is preferred by default; we fall back to Veo 3.1
+ *  Standard when the request *requires* a capability Fast does not support:
+ *   - first+last frame interpolation (lastFrame), or
+ *   - durations > 8s, which are delivered via the Veo extension chain and
+ *     are NOT allowed on veo-3.0-fast (Google returns 400 "Video extension
+ *     is not allowed for this model"). */
 function resolveVeoModel(model: string, opts: ResolveRouteOptions = {}): string {
-  const needs31 = Boolean(opts.hasLastFrame);
+  const needs31 = Boolean(opts.hasLastFrame) || (opts.durationSeconds ?? 0) > 8;
   if (model === "flow-video-1") {
     return needs31 ? "veo-3.1-generate-preview" : "veo-3.0-fast-generate-001";
   }
   if (model === "flow-video-1-pro") return "veo-3.1-generate-preview";
+  return model;
+}
+
+/** Veo Fast cannot be extended. When a job needs more than a single 8s base
+ *  clip (i.e. an extension chain), force the model up to Veo 3.1 even if an
+ *  alias/legacy route resolved to Fast. Keeps the fix independent of the
+ *  route-preview path. */
+function ensureVeoExtensionCapable(model: string, willExtend: boolean): string {
+  if (willExtend && model === "veo-3.0-fast-generate-001") {
+    return "veo-3.1-generate-preview";
+  }
   return model;
 }
 
