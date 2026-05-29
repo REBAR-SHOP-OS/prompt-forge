@@ -3122,14 +3122,19 @@ export default function DashboardPage() {
   // immediately keep working on them — opening a draft == resuming it.
   function openLibraryEntry(video: JobDetail) {
     setLastMergedPreview(null)
-    setPreviewVideoId(video.id)
     setIsApprovedPanelOpen(false)
     setPreviewDismissed(false)
 
     if (video.id.startsWith('draft-')) {
       const did = video.id
-      const videoSnapshot = draftSourceJobs[did] ?? []
-      const imageSnapshot = draftSourceImages[did] ?? []
+      // Only restore clips/images that actually have a playable source — a
+      // draft must never re-hydrate the workspace with empty/broken cards.
+      const videoSnapshot = (draftSourceJobs[did] ?? []).filter(
+        (j) => !!j.video?.storage_path,
+      )
+      const imageSnapshot = (draftSourceImages[did] ?? []).filter(
+        (i) => !!i.storage_path,
+      )
 
       if (videoSnapshot.length > 0) {
         setGeneratedVideos((current) => videoSnapshot.reduce((acc, j) => mergeJob(acc, j), current))
@@ -3158,9 +3163,14 @@ export default function DashboardPage() {
       persistActiveDraftId(did)
       // Draft == live workspace, not a frozen snapshot view.
       setSelectedProjectId(null)
+      // Focus the first PLAYABLE restored clip/image, never the draft id
+      // itself (which has no real asset and would render a blank preview).
+      const firstPlayableId = videoSnapshot[0]?.id ?? imageSnapshot[0]?.id ?? null
+      setPreviewVideoId(firstPlayableId)
       return
     }
 
+    setPreviewVideoId(video.id)
     setSelectedProjectId(video.id)
   }
 
