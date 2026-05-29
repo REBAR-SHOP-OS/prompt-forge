@@ -25,6 +25,8 @@ const RoutePreviewSchema = z.object({
   providerKey: z.enum(["flow", "wan"]),
   requestedModel: z.string().trim().min(1).max(100).optional(),
   prompt: z.string().min(1).max(16000),
+  durationSeconds: z.union([z.literal(5), z.literal(10), z.literal(15)]).optional(),
+  hasLastFrame: z.boolean().optional(),
 });
 
 export const externalApiAdapterGateway = {
