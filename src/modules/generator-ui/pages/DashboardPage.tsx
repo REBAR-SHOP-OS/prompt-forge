@@ -4179,17 +4179,29 @@ export default function DashboardPage() {
             sourceJobs.map(async (job) => {
               const src = job.video?.storage_path
               if (!src || !userId || isOwnHosted(src)) return job
+              // Per-source hard timeout: a hanging fetch/upload here must never
+              // keep Final Film spinning — the film itself is already saved.
+              const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
+                Promise.race([
+                  p,
+                  new Promise<T>((_, reject) =>
+                    setTimeout(() => reject(new Error('snapshot timed out')), ms),
+                  ),
+                ])
               try {
                 const proxied = await proxiedVideoUrl(src)
-                const resp = await fetch(proxied)
+                const resp = await withTimeout(fetch(proxied), 60_000)
                 if (!resp.ok) throw new Error(`fetch ${resp.status}`)
-                const blob = await resp.blob()
+                const blob = await withTimeout(resp.blob(), 60_000)
                 const ct = blob.type || 'video/mp4'
                 const ext = ct.includes('webm') ? 'webm' : 'mp4'
                 const path = `${userId}/source-snapshot-${job.id}-${Date.now()}.${ext}`
-                const up = await supabase.storage
-                  .from(MERGED_BUCKET)
-                  .upload(path, blob, { contentType: ct, upsert: false })
+                const up = await withTimeout(
+                  supabase.storage
+                    .from(MERGED_BUCKET)
+                    .upload(path, blob, { contentType: ct, upsert: false }),
+                  90_000,
+                )
                 if (up.error) throw new Error(up.error.message)
                 const publicUrl = supabase.storage.from(MERGED_BUCKET).getPublicUrl(path).data.publicUrl
                 return { ...job, video: { ...job.video!, storage_path: publicUrl } }
