@@ -129,33 +129,77 @@ export function mimeTypeToExtension(mimeType: string): 'mp4' | 'webm' {
   return mimeType.startsWith('video/mp4') ? 'mp4' : 'webm'
 }
 
+// WebM produced by MediaRecorder (e.g. previous Final Film outputs or webm
+// source snapshots) reports `duration === Infinity` until the element is
+// seeked past the end. A clip with an unknown/infinite duration breaks the
+// end-of-clip detection (the `ended` event never fires reliably and the
+// time-based watchdog computes an infinite timeout), which is exactly what
+// made Final Film hang forever at the recording cap (94%). We force the real
+// duration to materialize by seeking to a huge time, then rewind to 0.
+function resolveRealDuration(v: HTMLVideoElement, label: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (Number.isFinite(v.duration) && v.duration > 0) {
+      resolve()
+      return
+    }
+    const giveUp = setTimeout(() => {
+      cleanup()
+      // Couldn't materialize a finite duration; fail clearly instead of
+      // letting the merge hang on this clip later.
+      reject(new Error(`Clip ${label} has an unreadable duration — source may be a malformed/streaming file`))
+    }, 8000)
+    const onDurationChange = () => {
+      if (Number.isFinite(v.duration) && v.duration > 0) {
+        cleanup()
+        try { v.currentTime = 0 } catch { /* ignore */ }
+        resolve()
+      }
+    }
+    const cleanup = () => {
+      clearTimeout(giveUp)
+      v.removeEventListener('durationchange', onDurationChange)
+      v.removeEventListener('seeked', onDurationChange)
+    }
+    v.addEventListener('durationchange', onDurationChange)
+    v.addEventListener('seeked', onDurationChange)
+    try {
+      v.currentTime = 1e7
+    } catch {
+      cleanup()
+      reject(new Error(`Clip ${label} has an unreadable duration`))
+    }
+  })
+}
+
 async function loadVideo(url: string, withAudio: boolean, clipLabel?: string): Promise<HTMLVideoElement> {
-  return await new Promise((resolve, reject) => {
-    const v = document.createElement('video')
-    v.crossOrigin = 'anonymous'
-    v.preload = 'auto'
-    v.muted = !withAudio
-    v.playsInline = true
+  const v = await new Promise<HTMLVideoElement>((resolve, reject) => {
+    const el = document.createElement('video')
+    el.crossOrigin = 'anonymous'
+    el.preload = 'auto'
+    el.muted = !withAudio
+    el.playsInline = true
     const label = clipLabel ?? url
     // Hard timeout so a single broken/expired URL can't hang Final Film forever.
     const timeout = setTimeout(() => {
       reject(new Error(`Clip ${label} did not load metadata within 20s — source may be expired or unreachable`))
     }, 20000)
-    v.onloadedmetadata = () => {
+    el.onloadedmetadata = () => {
       clearTimeout(timeout)
-      const dur = Number.isFinite(v.duration) ? v.duration : 0
-      if (dur <= 0 || !v.videoWidth || !v.videoHeight) {
-        reject(new Error(`Clip ${label} has no playable content (duration=${dur}, ${v.videoWidth}x${v.videoHeight})`))
+      if (!el.videoWidth || !el.videoHeight) {
+        reject(new Error(`Clip ${label} has no playable content (${el.videoWidth}x${el.videoHeight})`))
         return
       }
-      resolve(v)
+      resolve(el)
     }
-    v.onerror = () => {
+    el.onerror = () => {
       clearTimeout(timeout)
       reject(new Error(`Failed to load clip ${label}`))
     }
-    v.src = url
+    el.src = url
   })
+  // Ensure a finite, usable duration before the clip enters the merge loop.
+  await resolveRealDuration(v, clipLabel ?? url)
+  return v
 }
 
 async function loadImage(url: string, clipLabel?: string): Promise<HTMLImageElement> {
@@ -576,15 +620,17 @@ export async function mergeVideoUrls(
       const onEnded = () => finish()
       if (video.ended) { finish(); return }
       video.addEventListener('ended', onEnded)
-      const dur = Number.isFinite(video.duration) ? video.duration : 0
+      const dur = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0
       const remaining = Math.max(0, dur - (video.currentTime || 0))
-      const timeoutMs = Math.max(4000, Math.ceil(remaining * 1000) + 3000)
+      // Absolute ceiling so a clip with a missing/odd duration can never make
+      // the merge wait forever. Generous (clip length + 15s, capped at 90s).
+      const maxWaitMs = Math.min(90_000, Math.ceil(remaining * 1000) + 15_000)
       const timer = setTimeout(() => {
         if (!done) {
           console.warn('[mergeVideoUrls] ended event missed; advancing via timeout')
           finish()
         }
-      }, timeoutMs)
+      }, Math.max(4000, maxWaitMs))
 
       let lastTime = video.currentTime
       let lastChangeAt = performance.now()
@@ -596,9 +642,24 @@ export async function mergeVideoUrls(
           lastChangeAt = performance.now()
           return
         }
+        // Playhead hasn't moved. If we're effectively at the end of the clip,
+        // treat it as finished instead of trying to resume forever — this is
+        // the case that pinned Final Film at 94% for clips whose `ended` event
+        // never arrived (notably WebM sources).
+        const atEnd = dur > 0 && ct >= dur - 0.25
         const stalledFor = performance.now() - lastChangeAt
+        if (video.ended || (atEnd && stalledFor > 400)) {
+          finish()
+          return
+        }
         if (stalledFor > 600 && !video.paused && !video.ended) {
           video.play().catch(() => { /* ignore */ })
+        }
+        // If a clip with no known duration stalls for a long stretch with no
+        // progress, give up waiting so the pipeline advances cleanly.
+        if (dur === 0 && stalledFor > 8000) {
+          console.warn('[mergeVideoUrls] unknown-duration clip stalled; advancing')
+          finish()
         }
       }, 200)
     })
