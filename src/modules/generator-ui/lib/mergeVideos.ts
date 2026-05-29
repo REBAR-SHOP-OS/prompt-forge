@@ -620,15 +620,17 @@ export async function mergeVideoUrls(
       const onEnded = () => finish()
       if (video.ended) { finish(); return }
       video.addEventListener('ended', onEnded)
-      const dur = Number.isFinite(video.duration) ? video.duration : 0
+      const dur = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0
       const remaining = Math.max(0, dur - (video.currentTime || 0))
-      const timeoutMs = Math.max(4000, Math.ceil(remaining * 1000) + 3000)
+      // Absolute ceiling so a clip with a missing/odd duration can never make
+      // the merge wait forever. Generous (clip length + 15s, capped at 90s).
+      const maxWaitMs = Math.min(90_000, Math.ceil(remaining * 1000) + 15_000)
       const timer = setTimeout(() => {
         if (!done) {
           console.warn('[mergeVideoUrls] ended event missed; advancing via timeout')
           finish()
         }
-      }, timeoutMs)
+      }, Math.max(4000, maxWaitMs))
 
       let lastTime = video.currentTime
       let lastChangeAt = performance.now()
@@ -640,9 +642,24 @@ export async function mergeVideoUrls(
           lastChangeAt = performance.now()
           return
         }
+        // Playhead hasn't moved. If we're effectively at the end of the clip,
+        // treat it as finished instead of trying to resume forever — this is
+        // the case that pinned Final Film at 94% for clips whose `ended` event
+        // never arrived (notably WebM sources).
+        const atEnd = dur > 0 && ct >= dur - 0.25
         const stalledFor = performance.now() - lastChangeAt
+        if (video.ended || (atEnd && stalledFor > 400)) {
+          finish()
+          return
+        }
         if (stalledFor > 600 && !video.paused && !video.ended) {
           video.play().catch(() => { /* ignore */ })
+        }
+        // If a clip with no known duration stalls for a long stretch with no
+        // progress, give up waiting so the pipeline advances cleanly.
+        if (dur === 0 && stalledFor > 8000) {
+          console.warn('[mergeVideoUrls] unknown-duration clip stalled; advancing')
+          finish()
         }
       }, 200)
     })
