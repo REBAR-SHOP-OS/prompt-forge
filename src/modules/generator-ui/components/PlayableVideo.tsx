@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type VideoHTMLAttributes } from "react";
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle, Clapperboard } from "lucide-react";
 import { usePlayableVideoUrl } from "@/modules/generator-ui/lib/usePlayableVideoUrl";
 
 type Props = Omit<VideoHTMLAttributes<HTMLVideoElement>, "src"> & {
@@ -72,7 +72,10 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, ...res
     rest.onError?.(e);
   };
 
-  // Neutral, quiet placeholder — never shows the "Video unavailable" text.
+  // Neutral, quiet placeholder — never shows the "Video unavailable" text and
+  // never leaves a fully blank/black card. Without a poster we paint a small
+  // film icon so a card whose source can't be played still reads as a clip,
+  // not an empty mystery box.
   const quietPlaceholder = (showLoader: boolean) => {
     if (poster) {
       return (
@@ -91,7 +94,9 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, ...res
       >
         {showLoader ? (
           <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
-        ) : null}
+        ) : (
+          <Clapperboard className="h-6 w-6 opacity-70" aria-hidden="true" />
+        )}
       </div>
     );
   };

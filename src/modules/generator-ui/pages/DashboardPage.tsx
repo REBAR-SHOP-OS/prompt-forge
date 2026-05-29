@@ -3122,14 +3122,19 @@ export default function DashboardPage() {
   // immediately keep working on them — opening a draft == resuming it.
   function openLibraryEntry(video: JobDetail) {
     setLastMergedPreview(null)
-    setPreviewVideoId(video.id)
     setIsApprovedPanelOpen(false)
     setPreviewDismissed(false)
 
     if (video.id.startsWith('draft-')) {
       const did = video.id
-      const videoSnapshot = draftSourceJobs[did] ?? []
-      const imageSnapshot = draftSourceImages[did] ?? []
+      // Only restore clips/images that actually have a playable source — a
+      // draft must never re-hydrate the workspace with empty/broken cards.
+      const videoSnapshot = (draftSourceJobs[did] ?? []).filter(
+        (j) => !!j.video?.storage_path,
+      )
+      const imageSnapshot = (draftSourceImages[did] ?? []).filter(
+        (i) => !!i.storage_path,
+      )
 
       if (videoSnapshot.length > 0) {
         setGeneratedVideos((current) => videoSnapshot.reduce((acc, j) => mergeJob(acc, j), current))
@@ -3158,9 +3163,14 @@ export default function DashboardPage() {
       persistActiveDraftId(did)
       // Draft == live workspace, not a frozen snapshot view.
       setSelectedProjectId(null)
+      // Focus the first PLAYABLE restored clip/image, never the draft id
+      // itself (which has no real asset and would render a blank preview).
+      const firstPlayableId = videoSnapshot[0]?.id ?? imageSnapshot[0]?.id ?? null
+      setPreviewVideoId(firstPlayableId)
       return
     }
 
+    setPreviewVideoId(video.id)
     setSelectedProjectId(video.id)
   }
 
@@ -4039,9 +4049,12 @@ export default function DashboardPage() {
       // the first clip's intrinsic size). If no video, fall back to a 1080p frame.
       const firstVideo = eligibleClips.find((c) => c.kind === 'video') as Extract<UnifiedClip, { kind: 'video' }> | undefined
       let targetSize: { width: number; height: number } | undefined
-      if (firstVideo?.job.video?.storage_path) {
+      const firstVideoSrc = firstVideo
+        ? (editedClips[firstVideo.job.id]?.url ?? (firstVideo.job.video?.storage_path as string | undefined))
+        : undefined
+      if (firstVideoSrc) {
         try {
-          const probeUrl = await proxiedVideoUrl(firstVideo.job.video.storage_path)
+          const probeUrl = await proxiedVideoUrl(firstVideoSrc)
           targetSize = await new Promise((resolve) => {
             const v = document.createElement('video')
             v.crossOrigin = 'anonymous'
@@ -4065,9 +4078,13 @@ export default function DashboardPage() {
       const mergeClips: import('@/modules/generator-ui/lib/mergeVideos').MergeClip[] = []
       for (const clip of eligibleClips) {
         if (clip.kind === 'video') {
-          // After Apply Changes, the card's storage_path IS the edited file
-          // (replaced server-side), so we always use it as the source of truth.
-          const src = await proxiedVideoUrl(clip.job.video!.storage_path as string)
+          // Prefer the locally trimmed/edited blob when one exists, so a card
+          // the user cut down is merged as its TRIMMED version — not the
+          // original long source. Falls back to the stored file otherwise.
+          const rawSrc =
+            editedClips[clip.job.id]?.url ??
+            (clip.job.video!.storage_path as string)
+          const src = await proxiedVideoUrl(rawSrc)
           mergeClips.push({ kind: 'video', url: src })
         } else {
           const seconds = Math.max(1, Math.min(15, clip.image.still_duration_seconds || 3))
