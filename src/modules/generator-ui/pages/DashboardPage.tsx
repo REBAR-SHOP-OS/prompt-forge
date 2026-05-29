@@ -4065,9 +4065,13 @@ export default function DashboardPage() {
       const mergeClips: import('@/modules/generator-ui/lib/mergeVideos').MergeClip[] = []
       for (const clip of eligibleClips) {
         if (clip.kind === 'video') {
-          // After Apply Changes, the card's storage_path IS the edited file
-          // (replaced server-side), so we always use it as the source of truth.
-          const src = await proxiedVideoUrl(clip.job.video!.storage_path as string)
+          // Prefer the locally trimmed/edited blob when one exists, so a card
+          // the user cut down is merged as its TRIMMED version — not the
+          // original long source. Falls back to the stored file otherwise.
+          const rawSrc =
+            editedClips[clip.job.id]?.url ??
+            (clip.job.video!.storage_path as string)
+          const src = await proxiedVideoUrl(rawSrc)
           mergeClips.push({ kind: 'video', url: src })
         } else {
           const seconds = Math.max(1, Math.min(15, clip.image.still_duration_seconds || 3))
