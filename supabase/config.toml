@@ -3,9 +3,6 @@ project_id = "sacxoanuyetjfrfllkzx"
 [functions.video-proxy]
 verify_jwt = false
 
-[functions.video-proxy-token]
-verify_jwt = false
-
 [functions.jobs-delete]
 verify_jwt = false
 

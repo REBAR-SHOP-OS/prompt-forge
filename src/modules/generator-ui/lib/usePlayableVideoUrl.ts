@@ -14,39 +14,25 @@
 import { useEffect, useState } from "react";
 import { proxiedVideoUrl } from "./proxiedVideoUrl";
 
-// Resolved URLs embed a short-lived HMAC proxy token (~1h server-side TTL).
-// Cache them for slightly less so we re-mint before the token expires.
-const CACHE_TTL_MS = 50 * 60 * 1000;
-interface Entry { url: string; expiresAt: number }
-const cache = new Map<string, Entry>();
+const cache = new Map<string, string>();
 const inflight = new Map<string, Promise<string>>();
-
-function readCache(src: string): string | undefined {
-  const e = cache.get(src);
-  if (!e) return undefined;
-  if (e.expiresAt <= Date.now()) {
-    cache.delete(src);
-    return undefined;
-  }
-  return e.url;
-}
 
 function resolve(src: string): Promise<string> {
   if (!src) return Promise.resolve(src);
   if (src.startsWith("blob:") || src.startsWith("data:")) return Promise.resolve(src);
-  const cached = readCache(src);
+  const cached = cache.get(src);
   if (cached) return Promise.resolve(cached);
   const existing = inflight.get(src);
   if (existing) return existing;
   const p = proxiedVideoUrl(src)
     .then((u) => {
-      cache.set(src, { url: u, expiresAt: Date.now() + CACHE_TTL_MS });
+      cache.set(src, u);
       inflight.delete(src);
       return u;
     })
     .catch(() => {
       inflight.delete(src);
-      cache.set(src, { url: src, expiresAt: Date.now() + 60_000 });
+      cache.set(src, src);
       return src;
     });
   inflight.set(src, p);
@@ -58,11 +44,9 @@ export function usePlayableVideoUrl(src: string | null | undefined): {
   loading: boolean;
 } {
   const initial =
-    src && (src.startsWith("blob:") || src.startsWith("data:"))
-      ? src
-      : src
-        ? readCache(src)
-        : undefined;
+    src && (src.startsWith("blob:") || src.startsWith("data:") || cache.has(src))
+      ? cache.get(src) ?? src
+      : undefined;
   const [url, setUrl] = useState<string | undefined>(initial);
 
   useEffect(() => {
@@ -74,7 +58,7 @@ export function usePlayableVideoUrl(src: string | null | undefined): {
       setUrl(src);
       return;
     }
-    const cached = readCache(src);
+    const cached = cache.get(src);
     if (cached) {
       setUrl(cached);
       return;
@@ -101,7 +85,7 @@ export function usePlayableVideoUrls(srcs: Array<string | null | undefined>): {
     srcs.map((s) => {
       if (!s) return undefined;
       if (s.startsWith("blob:") || s.startsWith("data:")) return s;
-      return readCache(s);
+      return cache.get(s);
     }),
   );
 

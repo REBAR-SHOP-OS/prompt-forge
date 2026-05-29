@@ -1,60 +1,12 @@
 // Shared core: CORS + JSON response helpers + request id.
-//
-// CORS hardening:
-// - The legacy `corsHeaders` export remains a static object with `*` for
-//   backwards-compat (auth here is Bearer in Authorization header, which the
-//   browser cannot send cross-origin without explicit CORS approval — so `*`
-//   alone is not a CSRF vector).
-// - Prefer `getCorsHeaders(req)` which echoes the request Origin only when it
-//   is on the allowlist (env `ALLOWED_APP_ORIGINS`, comma-separated, plus a
-//   built-in safety list of lovable.app/lovableproject.com + localhost).
 const DEFAULT_JSON_BODY_MAX_BYTES = 32_768;
-
-const BASE_ALLOWED_HEADERS =
-  "authorization, x-client-info, apikey, content-type, x-request-id, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version";
-
-const BUILTIN_ORIGIN_SUFFIXES = [".lovable.app", ".lovableproject.com", ".sandbox.lovable.dev"];
-const BUILTIN_ORIGIN_EXACT = ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"];
-
-function envAllowedOrigins(): string[] {
-  try {
-    const raw = Deno.env.get("ALLOWED_APP_ORIGINS") ?? "";
-    return raw.split(",").map((s) => s.trim()).filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
-export function isAllowedOrigin(origin: string | null): boolean {
-  if (!origin) return false;
-  if (BUILTIN_ORIGIN_EXACT.includes(origin)) return true;
-  if (envAllowedOrigins().includes(origin)) return true;
-  try {
-    const host = new URL(origin).hostname.toLowerCase();
-    if (BUILTIN_ORIGIN_SUFFIXES.some((s) => host === s.slice(1) || host.endsWith(s))) return true;
-  } catch { /* ignore */ }
-  return false;
-}
-
-export function getCorsHeaders(req?: Request, opts?: { exposeHeaders?: string; methods?: string }): Record<string, string> {
-  const origin = req?.headers.get("origin") ?? null;
-  const allowOrigin = isAllowedOrigin(origin) ? (origin as string) : "*";
-  const headers: Record<string, string> = {
-    "Access-Control-Allow-Origin": allowOrigin,
-    "Access-Control-Allow-Headers": BASE_ALLOWED_HEADERS,
-    "Access-Control-Allow-Methods": opts?.methods ?? "GET, POST, OPTIONS",
-    "Vary": "Origin",
-  };
-  if (opts?.exposeHeaders) headers["Access-Control-Expose-Headers"] = opts.exposeHeaders;
-  return headers;
-}
 
 export const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": BASE_ALLOWED_HEADERS,
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-request-id, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
-
 
 function contentLength(req: Request): number | null {
   const raw = req.headers.get("content-length");
