@@ -65,7 +65,10 @@ export const externalApiAdapterGateway = {
 
           const prompt = aiGateway.sanitizePrompt(parsed.data.prompt);
           const providerKey = parsed.data.providerKey as ProviderKey;
-          const resolved = await aiGateway.resolveRoute(svc, providerKey, parsed.data.requestedModel, prompt);
+          const resolved = await aiGateway.resolveRoute(svc, providerKey, parsed.data.requestedModel, prompt, {
+            durationSeconds: parsed.data.durationSeconds ?? 5,
+            hasLastFrame: Boolean(parsed.data.hasLastFrame),
+          });
 
           await writeApiRequestLog(svc, {
             ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt,
