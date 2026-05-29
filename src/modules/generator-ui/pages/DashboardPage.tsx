@@ -4039,9 +4039,12 @@ export default function DashboardPage() {
       // the first clip's intrinsic size). If no video, fall back to a 1080p frame.
       const firstVideo = eligibleClips.find((c) => c.kind === 'video') as Extract<UnifiedClip, { kind: 'video' }> | undefined
       let targetSize: { width: number; height: number } | undefined
-      if (firstVideo?.job.video?.storage_path) {
+      const firstVideoSrc = firstVideo
+        ? (editedClips[firstVideo.job.id]?.url ?? (firstVideo.job.video?.storage_path as string | undefined))
+        : undefined
+      if (firstVideoSrc) {
         try {
-          const probeUrl = await proxiedVideoUrl(firstVideo.job.video.storage_path)
+          const probeUrl = await proxiedVideoUrl(firstVideoSrc)
           targetSize = await new Promise((resolve) => {
             const v = document.createElement('video')
             v.crossOrigin = 'anonymous'
