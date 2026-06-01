@@ -2211,17 +2211,21 @@ export default function DashboardPage() {
     // produced that Final Film, regardless of workspace-hidden state. The
     // snapshot is stored in EXACT film order — preserve it (do NOT re-sort).
     if (selectedProjectId) {
+      const isDraft = selectedProjectId.startsWith('draft-')
       const snapshot = projectSourceJobs[selectedProjectId] ?? draftSourceJobs[selectedProjectId] ?? []
       const liveById = new Map(generatedVideos.map((v) => [v.id, v]))
       // Hard guard: the merged film itself must never appear inside its own
-      // Working-clips list, and any clip without a playable storage_path is
-      // dropped to avoid blank 0:00 cards.
+      // Working-clips list. For finalized projects we also drop clips without a
+      // playable storage_path (blank 0:00 cards). For DRAFTS we keep every
+      // source card even if its video isn't ready yet — the user must always be
+      // able to open a draft and see the cards it's composed of; the card UI
+      // shows a quiet placeholder for not-yet-playable clips.
       const sanitize = (jobs: JobDetail[]): JobDetail[] =>
         jobs.filter(
           (j) =>
             j.id !== selectedProjectId &&
             !j.id.startsWith('merged-') &&
-            !!j.video?.storage_path,
+            (isDraft || !!j.video?.storage_path),
         )
       if (snapshot.length > 0) {
         return sanitize(snapshot.map((s) => liveById.get(s.id) ?? s))
