@@ -1127,6 +1127,16 @@ export default function DashboardPage() {
     stampImageDraft(id, did)
     markActiveImage(id)
   }
+  // A derived clip (regenerate / video-to-video) belongs to the SAME draft as
+  // its source clip, so it stays inside the same film instead of leaking into
+  // the current active draft. Falls back to the active draft when the source
+  // has no mapping yet.
+  function markDerivedClip(sourceId: string, newId: string) {
+    const did = jobDraftMap[sourceId] ?? ensureActiveDraftId()
+    stampJobDraft(newId, did)
+    markActiveJob(newId)
+  }
+
 
 
   // When set, HISTORY is filtered to show only the source clips of this
