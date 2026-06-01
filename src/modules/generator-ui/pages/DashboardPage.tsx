@@ -3882,7 +3882,7 @@ export default function DashboardPage() {
         next.add(seededJob.id)
         return next
       })
-      markActiveJob(seededJob.id)
+      markDerivedClip(job.id, seededJob.id)
       // Fire-and-forget cleanup of the old job in the backend.
       jobOrchestratorGateway.deleteJob(job.id).catch((err) => {
         // Non-blocking; surface as a soft message.
