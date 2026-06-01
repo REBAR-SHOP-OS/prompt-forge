@@ -555,10 +555,6 @@ export default function DashboardPage() {
       setArchiveLoading(false)
     }
   }
-  const openArchive = () => {
-    setIsArchiveOpen(true)
-    void loadArchive()
-  }
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [calendarTodayOnly, setCalendarTodayOnly] = useState(false)
 
@@ -4839,15 +4835,196 @@ export default function DashboardPage() {
         <CalendarDays className="h-[18px] w-[18px]" aria-hidden="true" />
       </button>
 
-      <button
-        type="button"
-        onClick={openArchive}
-        aria-label="Open storage archive"
-        title="Storage"
-        className="fixed left-[8.5rem] top-4 z-50 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-40 sm:top-5"
+      <Popover
+        open={isArchiveOpen}
+        onOpenChange={(next) => {
+          setIsArchiveOpen(next)
+          if (next) void loadArchive()
+        }}
       >
-        <Database className="h-[18px] w-[18px]" aria-hidden="true" />
-      </button>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-label="Open storage archive"
+            title="Storage"
+            className="fixed left-[8.5rem] top-4 z-50 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-40 sm:top-5"
+          >
+            <Database className="h-[18px] w-[18px]" aria-hidden="true" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          sideOffset={10}
+          className="z-50 flex max-h-[min(34rem,calc(100vh-6rem))] w-[min(22rem,calc(100vw-1.5rem))] flex-col border-white/10 bg-[#0b0c0e]/95 p-3 text-zinc-100 shadow-[0_22px_70px_rgba(0,0,0,0.4)] backdrop-blur-xl"
+        >
+          <div className="flex items-center justify-between border-b border-white/10 pb-3">
+            <div className="inline-flex items-center gap-2">
+              <Database className="h-4 w-4 text-sky-300" aria-hidden="true" />
+              <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">Storage</p>
+              <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
+                {archiveJobs.length}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-100"
+              aria-label="Refresh storage"
+              title="Refresh"
+              onClick={() => { void loadArchive() }}
+            >
+              <RefreshCw className={`h-4 w-4 ${archiveLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
+            </button>
+          </div>
+
+          <div className="mt-3">
+            <p className="text-xs font-medium text-zinc-500">All films</p>
+            <h2 className="text-sm font-semibold text-zinc-100">Everything you've created</h2>
+          </div>
+
+          <div className="mt-3 flex-1 overflow-y-auto pr-1">
+            {(() => {
+              const videoByJob = new Map<string, VideoSummary>()
+              for (const v of archiveVideos) {
+                if (!videoByJob.has(v.job_id)) videoByJob.set(v.job_id, v)
+              }
+              const entries = [...archiveJobs].sort(
+                (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
+              )
+
+              if (archiveLoading && entries.length === 0) {
+                return (
+                  <div className="grid min-h-[10rem] place-items-center text-zinc-500">
+                    <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
+                  </div>
+                )
+              }
+
+              if (entries.length === 0) {
+                return (
+                  <div className="grid min-h-[10rem] place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
+                    <div>
+                      <Database className="mx-auto h-8 w-8 text-zinc-600" aria-hidden="true" />
+                      <p className="mt-3 text-sm font-medium text-zinc-300">No films yet</p>
+                      <p className="mt-2 text-xs leading-5 text-zinc-600">
+                        Every film you generate will be archived here with its date.
+                      </p>
+                    </div>
+                  </div>
+                )
+              }
+
+              const statusBadge = (status: string) => {
+                if (status === 'completed') {
+                  return (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/30 bg-emerald-300/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
+                      Ready
+                    </span>
+                  )
+                }
+                if (status === 'failed' || status === 'cancelled') {
+                  return (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-300/30 bg-rose-300/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-200">
+                      Failed
+                    </span>
+                  )
+                }
+                return (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+                    <LoaderCircle className="h-2.5 w-2.5 animate-spin" aria-hidden="true" />
+                    Rendering
+                  </span>
+                )
+              }
+
+              return (
+                <div className="grid gap-3">
+                  {entries.map((job) => {
+                    const video = videoByJob.get(job.id)
+                    return (
+                      <article
+                        key={job.id}
+                        className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-2.5"
+                      >
+                        <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
+                          {video?.storage_path ? (
+                            <PlayableVideo
+                              className="h-full w-full bg-black object-cover"
+                              src={getCardVideoSrc(job.id, video.storage_path)}
+                              poster={video.thumbnail_url ?? undefined}
+                              muted
+                              playsInline
+                              preload="auto"
+                              onLoadedMetadata={(event) => {
+                                const el = event.currentTarget
+                                try {
+                                  if (el.currentTime === 0) {
+                                    const dur = Number.isFinite(el.duration) ? el.duration : 0
+                                    el.currentTime = dur > 0 ? Math.min(4, Math.max(0, dur - 0.05)) : 0.05
+                                  }
+                                } catch { /* ignore */ }
+                              }}
+                            />
+                          ) : (
+                            <div className="grid h-full w-full place-items-center text-zinc-500">
+                              <Clapperboard className="h-6 w-6" aria-hidden="true" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="line-clamp-2 min-w-0 flex-1 text-xs font-medium leading-5 text-zinc-200">
+                              {job.input_prompt}
+                            </p>
+                            {job.status === 'completed' && video?.storage_path ? (
+                              <button
+                                type="button"
+                                onClick={async (event) => {
+                                  event.stopPropagation()
+                                  if (!video) return
+                                  const url = video.storage_path
+                                  const lower = url.toLowerCase().split('?')[0]
+                                  const ext = lower.endsWith('.webm') ? 'webm' : lower.endsWith('.mp4') ? 'mp4' : 'webm'
+                                  const filename = `film-${job.id.slice(0, 8)}.${ext}`
+                                  try {
+                                    const fetchUrl = await proxiedVideoUrl(url)
+                                    const response = await fetch(fetchUrl)
+                                    if (!response.ok) throw new Error('Download failed')
+                                    const blob = await response.blob()
+                                    const blobUrl = URL.createObjectURL(blob)
+                                    const a = document.createElement('a')
+                                    a.href = blobUrl
+                                    a.download = filename
+                                    document.body.appendChild(a)
+                                    a.click()
+                                    document.body.removeChild(a)
+                                    URL.revokeObjectURL(blobUrl)
+                                  } catch (err) {
+                                    console.error('Archive download failed', err)
+                                    window.open(url, '_blank')
+                                  }
+                                }}
+                                aria-label="Download video"
+                                title="Download video"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                              >
+                                <Download className="h-3 w-3" aria-hidden="true" />
+                              </button>
+                            ) : null}
+                          </div>
+                          <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
+                            {statusBadge(job.status)}
+                            <span className="tabular-nums">{formatCreatedAt(job.created_at)}</span>
+                          </div>
+                        </div>
+                      </article>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+          </div>
+        </PopoverContent>
+      </Popover>
 
       <UsageStatsPopover />
 
@@ -6446,202 +6623,6 @@ export default function DashboardPage() {
         </div>
       </aside>
 
-      {/* Storage archive panel — every film the user ever made, read live from the server. */}
-      <button
-        type="button"
-        aria-label="Close storage"
-        className={`fixed inset-0 z-20 bg-black/35 transition lg:hidden ${
-          isArchiveOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
-        }`}
-        onClick={() => setIsArchiveOpen(false)}
-      />
-
-      <aside
-        className={`fixed bottom-3 left-3 top-3 z-40 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.4)] backdrop-blur-xl transition duration-300 sm:bottom-5 sm:left-28 sm:top-5 sm:w-80 lg:w-80 xl:w-96 2xl:w-[26rem] ${
-          isArchiveOpen
-            ? 'pointer-events-auto visible translate-x-0 opacity-100'
-            : 'pointer-events-none invisible -translate-x-[calc(100%+1.25rem)] opacity-0'
-        }`}
-        aria-label="Storage"
-        aria-hidden={!isArchiveOpen}
-      >
-        <div className="flex items-center justify-between border-b border-white/10 pb-3">
-          <div className="inline-flex items-center gap-2">
-            <Database className="h-4 w-4 text-sky-300" aria-hidden="true" />
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">Storage</p>
-            <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
-              {archiveJobs.length}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-100"
-              aria-label="Refresh storage"
-              title="Refresh"
-              onClick={() => { void loadArchive() }}
-            >
-              <RefreshCw className={`h-4 w-4 ${archiveLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-100"
-              aria-label="Close storage"
-              onClick={() => setIsArchiveOpen(false)}
-            >
-              <X className="h-4 w-4" aria-hidden="true" />
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-4">
-          <p className="text-xs font-medium text-zinc-500">All films</p>
-          <h2 className="text-sm font-semibold text-zinc-100">Everything you've created</h2>
-        </div>
-
-        <div className="mt-3 flex-1 overflow-y-auto pr-1">
-          {(() => {
-            const videoByJob = new Map<string, VideoSummary>()
-            for (const v of archiveVideos) {
-              if (!videoByJob.has(v.job_id)) videoByJob.set(v.job_id, v)
-            }
-            const entries = [...archiveJobs].sort(
-              (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
-            )
-
-            if (archiveLoading && entries.length === 0) {
-              return (
-                <div className="grid h-full place-items-center text-zinc-500">
-                  <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
-                </div>
-              )
-            }
-
-            if (entries.length === 0) {
-              return (
-                <div className="grid h-full place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
-                  <div>
-                    <Database className="mx-auto h-8 w-8 text-zinc-600" aria-hidden="true" />
-                    <p className="mt-3 text-sm font-medium text-zinc-300">No films yet</p>
-                    <p className="mt-2 text-xs leading-5 text-zinc-600">
-                      Every film you generate will be archived here with its date.
-                    </p>
-                  </div>
-                </div>
-              )
-            }
-
-            const statusBadge = (status: string) => {
-              if (status === 'completed') {
-                return (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/30 bg-emerald-300/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
-                    Ready
-                  </span>
-                )
-              }
-              if (status === 'failed' || status === 'cancelled') {
-                return (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-300/30 bg-rose-300/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-200">
-                    Failed
-                  </span>
-                )
-              }
-              return (
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
-                  <LoaderCircle className="h-2.5 w-2.5 animate-spin" aria-hidden="true" />
-                  Rendering
-                </span>
-              )
-            }
-
-            return (
-              <div className="grid gap-3">
-                {entries.map((job) => {
-                  const video = videoByJob.get(job.id)
-                  return (
-                    <article
-                      key={job.id}
-                      className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-2.5"
-                    >
-                      <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
-                        {video?.storage_path ? (
-                          <PlayableVideo
-                            className="h-full w-full bg-black object-cover"
-                            src={getCardVideoSrc(job.id, video.storage_path)}
-                            poster={video.thumbnail_url ?? undefined}
-                            muted
-                            playsInline
-                            preload="auto"
-                            onLoadedMetadata={(event) => {
-                              const el = event.currentTarget
-                              try {
-                                if (el.currentTime === 0) {
-                                  const dur = Number.isFinite(el.duration) ? el.duration : 0
-                                  el.currentTime = dur > 0 ? Math.min(4, Math.max(0, dur - 0.05)) : 0.05
-                                }
-                              } catch { /* ignore */ }
-                            }}
-                          />
-                        ) : (
-                          <div className="grid h-full w-full place-items-center text-zinc-500">
-                            <Clapperboard className="h-6 w-6" aria-hidden="true" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="line-clamp-2 min-w-0 flex-1 text-xs font-medium leading-5 text-zinc-200">
-                            {job.input_prompt}
-                          </p>
-                          {job.status === 'completed' && video?.storage_path ? (
-                            <button
-                              type="button"
-                              onClick={async (event) => {
-                                event.stopPropagation()
-                                if (!video) return
-                                const url = video.storage_path
-                                const lower = url.toLowerCase().split('?')[0]
-                                const ext = lower.endsWith('.webm') ? 'webm' : lower.endsWith('.mp4') ? 'mp4' : 'webm'
-                                const filename = `film-${job.id.slice(0, 8)}.${ext}`
-                                try {
-                                  const fetchUrl = await proxiedVideoUrl(url)
-                                  const response = await fetch(fetchUrl)
-                                  if (!response.ok) throw new Error('Download failed')
-                                  const blob = await response.blob()
-                                  const blobUrl = URL.createObjectURL(blob)
-                                  const a = document.createElement('a')
-                                  a.href = blobUrl
-                                  a.download = filename
-                                  document.body.appendChild(a)
-                                  a.click()
-                                  document.body.removeChild(a)
-                                  URL.revokeObjectURL(blobUrl)
-                                } catch (err) {
-                                  console.error('Archive download failed', err)
-                                  window.open(url, '_blank')
-                                }
-                              }}
-                              aria-label="Download video"
-                              title="Download video"
-                              className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
-                            >
-                              <Download className="h-3 w-3" aria-hidden="true" />
-                            </button>
-                          ) : null}
-                        </div>
-                        <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
-                          {statusBadge(job.status)}
-                          <span className="tabular-nums">{formatCreatedAt(job.created_at)}</span>
-                        </div>
-                      </div>
-                    </article>
-                  )
-                })}
-              </div>
-            )
-          })()}
-        </div>
-      </aside>
 
 
 
