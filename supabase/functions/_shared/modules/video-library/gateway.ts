@@ -33,7 +33,9 @@ export const videoLibraryGateway = {
       switch (operation) {
         case "listMyVideos": {
           const userClient = getUserScopedClient(auth.authHeader);
-          const items = await videoLibraryService.listMyVideos(auth.userId, userClient);
+          const limitParam = Number(new URL(req.url).searchParams.get("limit"));
+          const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(500, Math.floor(limitParam)) : undefined;
+          const items = await videoLibraryService.listMyVideos(auth.userId, userClient, limit);
           await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
           return jsonResponse({ items, requestId: ctx.requestId });
         }

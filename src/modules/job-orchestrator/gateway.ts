@@ -18,8 +18,9 @@ const inflightGetJob = new Map<string, Promise<JobDetail>>();
 export const jobOrchestratorGateway = {
   contractVersion: JOB_ORCHESTRATOR_CONTRACT_VERSION,
 
-  listMyJobs: async (): Promise<JobSummary[]> => {
-    const r = await request<{ items: JobSummary[] }>("/jobs-list");
+  listMyJobs: async (limit?: number): Promise<JobSummary[]> => {
+    const qs = limit ? `?limit=${encodeURIComponent(limit)}` : "";
+    const r = await request<{ items: JobSummary[] }>(`/jobs-list${qs}`);
     return r.items ?? [];
   },
 
