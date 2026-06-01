@@ -5030,7 +5030,7 @@ export default function DashboardPage() {
           }
 
           setUserImages((prev) => [row as UserImageItem, ...prev])
-          markActiveImage((row as UserImageItem).id)
+          markNewImage((row as UserImageItem).id)
           setGenerationMode('image-to-video')
           setUploadTarget('Start')
           const seedId = Date.now()
