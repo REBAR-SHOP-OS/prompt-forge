@@ -23,9 +23,10 @@ const MAX_RETRIES = 3;
  *   - While resolving, a quiet loader is shown.
  */
 export function PlayableVideo({ src, fallbackClassName, controls, poster, ...rest }: Props) {
-  const { url, loading: resolving } = usePlayableVideoUrl(src);
+  const { url, loading: resolving, reload } = usePlayableVideoUrl(src);
   const [errored, setErrored] = useState(false);
   const retriesRef = useRef(0);
+  const reloadedRef = useRef(false);
   const [retryToken, setRetryToken] = useState(0);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
