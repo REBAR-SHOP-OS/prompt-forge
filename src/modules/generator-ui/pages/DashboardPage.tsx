@@ -6598,6 +6598,7 @@ export default function DashboardPage() {
                               type="button"
                               onClick={async (event) => {
                                 event.stopPropagation()
+                                if (!video) return
                                 const url = video.storage_path
                                 const lower = url.toLowerCase().split('?')[0]
                                 const ext = lower.endsWith('.webm') ? 'webm' : lower.endsWith('.mp4') ? 'mp4' : 'webm'
