@@ -4129,7 +4129,6 @@ export default function DashboardPage() {
       // the UI stuck on 95% forever. The timer id is cleared in `finally` so a
       // successful run never leaves a dangling 10-min timeout behind.
       const PIPELINE_TIMEOUT_MS = 10 * 60_000
-      let pipelineTimer: ReturnType<typeof setTimeout> | null = null
       const pipelineTimeout = new Promise<never>((_, reject) => {
         pipelineTimer = setTimeout(() => reject(new Error('Final Film took too long (>10 min). Please try again with fewer or shorter clips.')), PIPELINE_TIMEOUT_MS)
       })
