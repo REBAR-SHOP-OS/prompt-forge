@@ -4725,7 +4725,7 @@ export default function DashboardPage() {
             onJobCreated={(seeded, ratio) => {
               setGeneratedVideos((curr) => mergeJob(curr, seeded))
               rememberClipRatio(seeded.id, ratio)
-              markActiveJob(seeded.id)
+              markDerivedClip(job.id, seeded.id)
             }}
           />
         )
