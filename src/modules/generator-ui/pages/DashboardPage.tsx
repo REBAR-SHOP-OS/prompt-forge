@@ -4948,12 +4948,13 @@ export default function DashboardPage() {
                         <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
                           {video?.storage_path ? (
                             <PlayableVideo
+                              thumbnail
                               className="h-full w-full bg-black object-cover"
                               src={getCardVideoSrc(job.id, video.storage_path)}
                               poster={video.thumbnail_url ?? undefined}
                               muted
                               playsInline
-                              preload="auto"
+                              preload="metadata"
                               onLoadedMetadata={(event) => {
                                 const el = event.currentTarget
                                 try {
@@ -6113,13 +6114,14 @@ export default function DashboardPage() {
                     >
                       {video.video?.storage_path ? (
                         <PlayableVideo
+                          thumbnail
                           className="h-full w-full max-w-full bg-black object-contain"
                           src={getCardVideoSrc(video.id, video.video.storage_path)}
                           poster={video.video.thumbnail_url ?? undefined}
                           controls
                           muted
                           playsInline
-                          preload="auto"
+                          preload="metadata"
                           onLoadedMetadata={(event) => {
                             const el = event.currentTarget
                             try {
@@ -6459,12 +6461,13 @@ export default function DashboardPage() {
                   <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
                     {display?.storage_path ? (
                       <PlayableVideo
+                        thumbnail
                         className="h-full w-full bg-black object-cover"
                         src={getCardVideoSrc(video.id, display.storage_path)}
                         poster={display.thumbnail_url ?? undefined}
                         muted
                         playsInline
-                        preload="auto"
+                        preload="metadata"
                         onLoadedMetadata={(event) => {
                           const el = event.currentTarget
                           try {
