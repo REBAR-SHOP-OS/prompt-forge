@@ -2044,20 +2044,18 @@ export default function DashboardPage() {
 
 
   // ----- Backfill historical drafts -----
-  // Every completed clip / uploaded image that isn't part of a Final Film,
-  // an existing Library entry, or an existing draft becomes its own Draft
-  // project card. Deterministic ids keep reruns idempotent, and the
-  // `deletedDraftIds` tombstone prevents user-deleted drafts from coming
-  // back after a refresh.
+  // Any completed clip / uploaded image that has no draft ownership yet AND is
+  // not part of a Final Film becomes its OWN isolated draft: we stamp it into
+  // jobDraftMap / imageDraftMap with a deterministic per-item draft id. The
+  // grouping effect above then builds the snapshot + Library card from that
+  // mapping. Deterministic ids keep reruns idempotent; the `deletedDraftIds`
+  // tombstone prevents user-deleted drafts from coming back.
   useEffect(() => {
     if (!userId) return
     if (generatedVideos.length === 0 && userImages.length === 0) return
 
     const claimedJobIds = new Set<string>()
     for (const clips of Object.values(projectSourceJobs)) {
-      for (const c of clips) claimedJobIds.add(c.id)
-    }
-    for (const clips of Object.values(draftSourceJobs)) {
       for (const c of clips) claimedJobIds.add(c.id)
     }
     for (const id of Object.keys(librarySavedJobs)) claimedJobIds.add(id)
@@ -2067,95 +2065,57 @@ export default function DashboardPage() {
     for (const imgs of Object.values(projectSourceImages)) {
       for (const i of imgs) claimedImageIds.add(i.id)
     }
-    for (const imgs of Object.values(draftSourceImages)) {
-      for (const i of imgs) claimedImageIds.add(i.id)
-    }
 
-    const existingDraftIds = new Set(draftEntries.map((d) => d.id))
-
-    const newEntries: JobDetail[] = []
-    const newSourceJobs: Record<string, JobDetail[]> = {}
-    const newSourceImages: Record<string, UserImageItem[]> = {}
-
+    const jobStamps: Record<string, string> = {}
     for (const job of generatedVideos) {
+      if (jobDraftMap[job.id]) continue // already owned by a draft
       if (claimedJobIds.has(job.id)) continue
+      if (job.id.startsWith('merged-')) continue
       if (deletedDraftIds.has(job.id)) continue
       if (normalizeStatus(job.status) !== 'completed') continue
       if (!job.video?.storage_path) continue
-      // Live workspace items are owned by the active-workspace draft effect.
-      // Skipping here prevents a duplicate `draft-orphan-*` card from racing
-      // alongside the single `draft-<uuid>` active draft.
-      if (!workspaceHiddenJobIds.has(job.id)) continue
       const draftId = `draft-orphan-${job.id}`
       if (deletedDraftIds.has(draftId)) continue
-      if (existingDraftIds.has(draftId)) continue
-      const ratio = job.video?.aspect_ratio ?? job.requested_aspect_ratio ?? null
-      newEntries.push({
-        id: draftId,
-        input_prompt: job.input_prompt ?? 'Draft project',
-        status: 'draft',
-        provider_key: job.provider_key ?? null,
-        model_key: job.model_key ?? null,
-        first_frame_url: null,
-        last_frame_url: null,
-        requested_duration: null,
-        requested_aspect_ratio: ratio,
-        created_at: job.created_at ?? new Date().toISOString(),
-        updated_at: job.updated_at ?? job.created_at ?? new Date().toISOString(),
-        video: { ...(job.video as JobDetail['video']) },
-      })
-      newSourceJobs[draftId] = [job]
+      jobStamps[job.id] = draftId
     }
 
+    const imageStamps: Record<string, string> = {}
     for (const img of userImages) {
+      if (imageDraftMap[img.id]) continue
       if (claimedImageIds.has(img.id)) continue
       if (deletedDraftIds.has(img.id)) continue
-      // Same guard as clips: leave live workspace images to the active draft.
-      if (!workspaceHiddenImageIds.has(img.id)) continue
       const draftId = `draft-orphan-img-${img.id}`
       if (deletedDraftIds.has(draftId)) continue
-      if (existingDraftIds.has(draftId)) continue
-      const nowIso = new Date().toISOString()
-      newEntries.push({
-        id: draftId,
-        input_prompt: 'Uploaded image',
-        status: 'draft',
-        provider_key: null,
-        model_key: null,
-        first_frame_url: null,
-        last_frame_url: null,
-        requested_duration: null,
-        requested_aspect_ratio: null,
-        created_at: (img as unknown as { created_at?: string }).created_at ?? nowIso,
-        updated_at: (img as unknown as { created_at?: string }).created_at ?? nowIso,
-        video: { id: draftId, storage_path: img.storage_path ?? '', thumbnail_url: img.storage_path ?? null, aspect_ratio: null, duration: null },
-      })
-      newSourceImages[draftId] = [img]
+      imageStamps[img.id] = draftId
     }
 
-    if (newEntries.length === 0) return
-
-    setDraftEntries((prev) => {
-      const next = [...newEntries, ...prev]
-      persistDraftEntries(next)
-      return next
-    })
-    if (Object.keys(newSourceJobs).length > 0) {
-      setDraftSourceJobs((prev) => {
-        const next = { ...prev, ...newSourceJobs }
-        persistDraftSourceJobs(next)
+    if (Object.keys(jobStamps).length > 0) {
+      setJobDraftMap((prev) => {
+        let changed = false
+        const next = { ...prev }
+        for (const [id, did] of Object.entries(jobStamps)) {
+          if (next[id] !== did) { next[id] = did; changed = true }
+        }
+        if (!changed) return prev
+        persistJobDraftMap(next)
         return next
       })
     }
-    if (Object.keys(newSourceImages).length > 0) {
-      setDraftSourceImages((prev) => {
-        const next = { ...prev, ...newSourceImages }
-        persistDraftSourceImages(next)
+    if (Object.keys(imageStamps).length > 0) {
+      setImageDraftMap((prev) => {
+        let changed = false
+        const next = { ...prev }
+        for (const [id, did] of Object.entries(imageStamps)) {
+          if (next[id] !== did) { next[id] = did; changed = true }
+        }
+        if (!changed) return prev
+        persistImageDraftMap(next)
         return next
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, generatedVideos, userImages, mergedEntries, librarySavedJobs, projectSourceJobs, projectSourceImages, draftSourceJobs, draftSourceImages, draftEntries, workspaceHiddenJobIds, workspaceHiddenImageIds, deletedDraftIds])
+  }, [userId, generatedVideos, userImages, mergedEntries, librarySavedJobs, projectSourceJobs, projectSourceImages, jobDraftMap, imageDraftMap, deletedDraftIds])
+
 
   // One-time dedupe: older builds could create both an active `draft-<uuid>`
   // and a `draft-orphan-<jobId>` entry for the same underlying clip/image.
