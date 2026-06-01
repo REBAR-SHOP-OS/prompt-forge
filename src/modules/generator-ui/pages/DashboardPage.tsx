@@ -6113,13 +6113,14 @@ export default function DashboardPage() {
                     >
                       {video.video?.storage_path ? (
                         <PlayableVideo
+                          thumbnail
                           className="h-full w-full max-w-full bg-black object-contain"
                           src={getCardVideoSrc(video.id, video.video.storage_path)}
                           poster={video.video.thumbnail_url ?? undefined}
                           controls
                           muted
                           playsInline
-                          preload="auto"
+                          preload="metadata"
                           onLoadedMetadata={(event) => {
                             const el = event.currentTarget
                             try {
