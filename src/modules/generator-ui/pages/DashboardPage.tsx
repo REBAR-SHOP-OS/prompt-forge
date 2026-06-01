@@ -1706,6 +1706,14 @@ export default function DashboardPage() {
     // Optimistic UI removal — remove from in-memory list immediately.
     setGeneratedVideos((current) => current.filter((v) => v.id !== jobId))
     unmarkActiveJobs([jobId])
+    // Drop this clip's draft ownership so its draft can't be rebuilt from it.
+    setJobDraftMap((prev) => {
+      if (!(jobId in prev)) return prev
+      const { [jobId]: _drop, ...rest } = prev
+      persistJobDraftMap(rest)
+      return rest
+    })
+
     setApprovedIds((current) => {
       if (!current.has(jobId)) return current
       const next = new Set(current)
