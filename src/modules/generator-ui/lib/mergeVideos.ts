@@ -634,6 +634,7 @@ export async function mergeVideoUrls(
 
       let lastTime = video.currentTime
       let lastChangeAt = performance.now()
+      let resumeAttempts = 0
       const stallTimer = setInterval(() => {
         if (done) return
         const ct = video.currentTime
@@ -652,13 +653,22 @@ export async function mergeVideoUrls(
           finish()
           return
         }
-        if (stalledFor > 600 && !video.paused && !video.ended) {
+        // Try to recover playback whether the element is paused (a rejected
+        // autoplay/play()) or just stalled mid-stream. Re-kicking play() while
+        // paused is exactly the case that previously pinned Final Film at 94%
+        // because the old guard (`!video.paused`) never retried a paused clip.
+        if (stalledFor > 600 && !video.ended) {
+          resumeAttempts += 1
+          try { if (recorder.state === 'paused') recorder.resume() } catch { /* ignore */ }
           video.play().catch(() => { /* ignore */ })
         }
-        // If a clip with no known duration stalls for a long stretch with no
-        // progress, give up waiting so the pipeline advances cleanly.
-        if (dur === 0 && stalledFor > 8000) {
-          console.warn('[mergeVideoUrls] unknown-duration clip stalled; advancing')
+        // Hard stall escape hatch: if the playhead has made NO progress for a
+        // long stretch despite repeated resume attempts, stop waiting and let
+        // the pipeline advance cleanly instead of hanging the whole merge.
+        // Covers unknown-duration clips AND known-duration clips whose decoder
+        // wedged (the real-world "stuck at 94%" report).
+        if (stalledFor > 8000 && resumeAttempts >= 3) {
+          console.warn('[mergeVideoUrls] clip stalled with no progress; advancing', { dur, ct })
           finish()
         }
       }, 200)
