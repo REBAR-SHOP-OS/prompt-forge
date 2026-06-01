@@ -54,12 +54,21 @@ function resolve(src: string): Promise<string> {
 export function usePlayableVideoUrl(src: string | null | undefined): {
   url: string | undefined;
   loading: boolean;
+  reload: () => void;
 } {
   const initial =
     src && (src.startsWith("blob:") || src.startsWith("data:") || cache.has(src))
       ? cache.get(src) ?? src
       : undefined;
   const [url, setUrl] = useState<string | undefined>(initial);
+  // Bumped to force a fresh resolve() after invalidating a stale (expired
+  // token) proxy URL.
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  const reload = () => {
+    invalidatePlayableVideoUrl(src);
+    setReloadNonce((n) => n + 1);
+  };
 
   useEffect(() => {
     if (!src) {
@@ -83,9 +92,9 @@ export function usePlayableVideoUrl(src: string | null | undefined): {
     return () => {
       cancelled = true;
     };
-  }, [src]);
+  }, [src, reloadNonce]);
 
-  return { url, loading: !!src && !url };
+  return { url, loading: !!src && !url, reload };
 }
 
 export function usePlayableVideoUrls(srcs: Array<string | null | undefined>): {
