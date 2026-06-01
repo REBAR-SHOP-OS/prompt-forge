@@ -4385,6 +4385,7 @@ export default function DashboardPage() {
       setVideoColumnMessage(friendly)
       }
     } finally {
+      if (pipelineTimer) { clearTimeout(pipelineTimer); pipelineTimer = null }
       mergeAbortRef.current = null
       setIsMerging(false)
       setMergeProgress(0)
