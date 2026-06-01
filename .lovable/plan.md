@@ -1,58 +1,40 @@
-علت اصلی‌ای که از کد مشخص شد این است که Final Film به‌عنوان «پروژه‌ی واقعیِ پایدار» در دیتابیس ذخیره نمی‌شود؛ بخش مهمی از Library فعلاً روی localStorage و URLهای کش‌شده تکیه دارد.
+# Fix incorrect price display (Fast/Pro & durations > 8s)
 
-## علت دقیق مشکل
+## Problem
+The price badge (`≈ $X · Y cr`) is computed on the frontend by `estimateGenerationCost` in `src/modules/generator-ui/pages/DashboardPage.tsx`. It multiplies the raw requested seconds by a per-second rate. But the backend (`computeUsd` in `supabase/functions/_shared/modules/external-api-adapter/service.ts`) bills any clip longer than 8s as a fixed **16s** extension chain, and forces Veo Fast above 8s up to Veo 3.1 ($0.40/s). Result: every duration above 8s shows a wrong (too low) price, and Fast/Pro look identical for the wrong reason.
 
-1. **کارت‌های Final Film فقط محلی ذخیره می‌شوند**
-   - خروجی Final Film در storage آپلود می‌شود، اما خودِ رکورد Library/project با idهایی مثل `merged-*` در `localStorage` ذخیره می‌شود (`merged-videos:${userId}`، `project-source-jobs:${userId}` و …).
-   - یعنی بعد از sign out، تغییر مرورگر، پاک‌شدن storage مرورگر، یا گذشت زمان، پروژه دیگر یک منبع قطعی backend ندارد.
+## Goal
+Make the displayed estimate exactly equal to what the backend charges, for every duration and both tiers. No backend change — the backend billing is the source of truth; only the frontend estimate is out of sync.
 
-2. **URL پخش ویدئو با token قدیمی cache می‌شود**
-   - `usePlayableVideoUrl` آدرس proxied ویدئو را به‌صورت سراسری cache می‌کند.
-   - این آدرس داخل query خودش access token دارد.
-   - بعد از گذشت زمان یا sign out/sign in، token قبلی منقضی می‌شود ولی cache همچنان همان URL قدیمی را برمی‌گرداند؛ در نتیجه `video-proxy` پاسخ 401/خطا می‌دهد و کارت به‌صورت خاکستری/خالی دیده می‌شود.
-   - retry فعلی فقط `_r=` اضافه می‌کند، اما URL اصلی همچنان با token مرده است؛ پس مشکل ریشه‌ای حل نمی‌شود.
+## Change (single function, frontend only)
+Rewrite the per-clip cost branch inside `estimateGenerationCost` (lines ~210–222 of `DashboardPage.tsx`) to mirror `computeUsd`:
 
-3. **Source clipهای داخل پروژه ممکن است URL موقت provider داشته باشند**
-   - هنگام Final Film تلاش می‌شود source clipها به bucket داخلی کپی شوند، اما این مرحله `best-effort` است: اگر کپی fail شود، سیستم بی‌صدا همان URL اصلی provider را نگه می‌دارد.
-   - URLهای provider بعد از مدتی expire می‌شوند؛ بنابراین وقتی پروژه را بعداً باز می‌کنی، source cardهای داخل پروژه ممکن است دیگر قابل پخش نباشند.
+```text
+billedSec = perClipSec > 8 ? 16 : min(8, perClipSec)
 
-## برنامه‌ی اصلاح ریشه‌ای
+flow-video-1 (Fast):
+    rate = perClipSec > 8 ? 0.40 : 0.10      // >8s runs on Veo 3.1
+    perClipUsd = rate * billedSec
+flow-video-1-pro (Pro):
+    perClipUsd = 0.40 * billedSec
+wan (t2v / i2v):
+    perClipUsd = 0.15 (flat, unchanged)
+```
 
-### 1. حذف وابستگی حیاتی Library به localStorage
-- یک ذخیره‌سازی پایدار برای پروژه‌های Library در backend اضافه می‌کنم:
-  - Final Film entry
-  - aspect ratio انتخاب‌شده
-  - آدرس ویدئوی final
-  - لیست source clipها/images با ترتیب دقیق
-  - thumbnail/cover و metadata لازم
-- RLS/permissionها owner-scoped می‌شوند تا هر کاربر فقط پروژه‌های خودش را ببیند.
-- localStorage فقط cache کمکی می‌ماند، نه منبع حقیقت.
+`clips`, `perClipSec`, `usd = perClipUsd * clips`, `credits = round(usd*100)` stay as-is.
 
-### 2. اضافه‌کردن API پایدار برای Library projects
-- endpoint/gateway برای این عملیات اضافه می‌شود:
-  - `listLibraryProjects`
-  - `saveLibraryProject`
-  - `deleteLibraryProject`
-- Dashboard هنگام load اول از backend پروژه‌ها را می‌خواند و بعد localStorage را فقط برای compatibility/backfill استفاده می‌کند.
+### Resulting prices (verified against backend)
+- 5s Fast $0.50 / Pro $2.00 (unchanged, already correct)
+- 10s Fast & Pro $6.40 (was wrongly $4.00)
+- 15s Fast & Pro $6.40 (was wrongly $6.00)
+- 30s = 2×15s clips → $12.80; 45s = 3×$6.40 = $19.20; 135s = 9×$6.40 = $57.60
 
-### 3. اصلاح Final Film commit flow
-- بعد از ساخت Final Film، پروژه فقط وقتی به Library اضافه می‌شود که metadata آن در backend ذخیره شده باشد.
-- اگر source snapshot باید کپی شود، دیگر خطای آن بی‌صدا بلعیده نمی‌شود؛ یا نسخه‌ی پایدار ساخته می‌شود، یا UI با fallback سالم Final Film باز می‌شود و کارت خالی نمایش داده نمی‌شود.
+This makes the badge match the real charge, and Fast is correctly cheaper than Pro only at ≤8s (where Fast stays on the cheap tier).
 
-### 4. اصلاح cache و lifecycle پخش ویدئو
-- `usePlayableVideoUrl` طوری اصلاح می‌شود که URLهای proxy شامل token قدیمی را دائمی cache نکند.
-- cache با تغییر auth/session پاک یا re-resolve می‌شود.
-- هنگام error پخش، به‌جای retry روی همان URL خراب، cache invalidate می‌شود و URL تازه با token تازه ساخته می‌شود.
-- `PlayableVideo` با تغییر source/session دوباره mount/initialize می‌شود تا کارت بعد از sign out/sign in روی پلیر قدیمی گیر نکند.
+## Optional clarity (only if you want it)
+Add a tiny hint near the model picker that "Fast above 8s runs on Veo 3.1, so the price matches Pro." I will only add this if you confirm — otherwise I keep the change to the price math alone.
 
-### 5. fallback امن برای پروژه‌های قدیمی
-- پروژه‌هایی که قبلاً فقط در localStorage ذخیره شده‌اند، در اولین load تا حد امکان به backend migrate/backfill می‌شوند.
-- اگر source clip قدیمی expire شده باشد، کارت پروژه نباید blank بماند؛ حداقل final merged video یا cover/placeholder کنترل‌شده نمایش داده می‌شود.
-
-### 6. تست و اعتبارسنجی
-- تست می‌کنم که:
-  - Final Film جدید بعد از refresh همچنان در Library و داخل پروژه پخش شود.
-  - بعد از sign out/sign in، cache ویدئو با token جدید ساخته شود و کارت blank نشود.
-  - بازکردن پروژه‌ی Final Film، source clipها را با ترتیب درست نشان دهد.
-  - اگر یک URL قدیمی provider خراب/expired بود، UI به کارت خالی یا ویدئوی 0:00 تبدیل نشود.
-  - aspect ratio همان مقدار ذخیره‌شده باقی بماند و به 16:9 برنگردد.
+## Technical notes
+- Keep the comment block above `estimateGenerationCost` pointing to `COST_MAP_USD` and update it to note the 16s extension-chain billing so the two stay in sync.
+- No schema, edge-function, or API changes. Pure presentation fix.
+- Verify with a quick unit check of the function for 5/10/15/30/45/135 on both tiers.
