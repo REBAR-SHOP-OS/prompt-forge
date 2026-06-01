@@ -1,40 +1,53 @@
-# Fix incorrect price display (Fast/Pro & durations > 8s)
+## مشکل (علت اصلی)
 
-## Problem
-The price badge (`≈ $X · Y cr`) is computed on the frontend by `estimateGenerationCost` in `src/modules/generator-ui/pages/DashboardPage.tsx`. It multiplies the raw requested seconds by a per-second rate. But the backend (`computeUsd` in `supabase/functions/_shared/modules/external-api-adapter/service.ts`) bills any clip longer than 8s as a fixed **16s** extension chain, and forces Veo Fast above 8s up to Veo 3.1 ($0.40/s). Result: every duration above 8s shows a wrong (too low) price, and Fast/Pro look identical for the wrong reason.
+وقتی روی یک پروژه‌ی **Draft** در لایبرری کلیک می‌کنی، تابع `openLibraryEntry` (در `DashboardPage.tsx`) رفتار متفاوتی نسبت به پروژه‌های نهایی (Final Film) دارد:
 
-## Goal
-Make the displayed estimate exactly equal to what the backend charges, for every duration and both tiers. No backend change — the backend billing is the source of truth; only the frontend estimate is out of sync.
+- **Final Film:** `selectedProjectId` را ست می‌کند و یک «نمای اسنپ‌شات» باز می‌شود که از طریق `displayedVideos` کارت‌های سازنده را نشان می‌دهد. این مسیر هوشمند است: هر کلیپ را با داده‌ی زنده (`generatedVideos`) همگام می‌کند (`liveById.get(s.id) ?? s`).
+- **Draft:** به‌جای نمای اسنپ‌شات، کلیپ‌ها را داخل ورک‌اسپیس زنده می‌ریزد و فقط کلیپ‌هایی را می‌پذیرد که `j.video?.storage_path` دارند. این فیلتر روی **کپی stale داخل اسنپ‌شات** اعمال می‌شود، نه روی job زنده.
 
-## Change (single function, frontend only)
-Rewrite the per-clip cost branch inside `estimateGenerationCost` (lines ~210–222 of `DashboardPage.tsx`) to mirror `computeUsd`:
+نتیجه: درفت‌هایی که کلیپ‌هایشان در لحظه‌ی ذخیره هنوز `storage_path` نداشتند (که در اسکرین‌شات هم با تامبنیل placeholder دیده می‌شود)، بعد از کلیک کاملاً خالی نمایش داده می‌شوند — درحالی‌که بج «DRAFT · 2 CLIPS» می‌گوید دو کلیپ دارد.
 
 ```text
-billedSec = perClipSec > 8 ? 16 : min(8, perClipSec)
-
-flow-video-1 (Fast):
-    rate = perClipSec > 8 ? 0.40 : 0.10      // >8s runs on Veo 3.1
-    perClipUsd = rate * billedSec
-flow-video-1-pro (Pro):
-    perClipUsd = 0.40 * billedSec
-wan (t2v / i2v):
-    perClipUsd = 0.15 (flat, unchanged)
+کلیک روی Draft
+   → openLibraryEntry (مسیر draft)
+      → فیلتر storage_path روی اسنپ‌شات stale
+         → هیچ کلیپی عبور نمی‌کند
+            → ورک‌اسپیس خالی → "Start forging a prompt"
 ```
 
-`clips`, `perClipSec`, `usd = perClipUsd * clips`, `credits = round(usd*100)` stay as-is.
+## هدف
 
-### Resulting prices (verified against backend)
-- 5s Fast $0.50 / Pro $2.00 (unchanged, already correct)
-- 10s Fast & Pro $6.40 (was wrongly $4.00)
-- 15s Fast & Pro $6.40 (was wrongly $6.00)
-- 30s = 2×15s clips → $12.80; 45s = 3×$6.40 = $19.20; 135s = 9×$6.40 = $57.60
+کلیک روی درفت باید همان «نمای داخل پروژه» را مثل Final Film نشان دهد: کارت‌هایی که درفت از آن‌ها ساخته شده، با همگام‌سازی از داده‌ی زنده، و هرگز خالی نشود.
 
-This makes the badge match the real charge, and Fast is correctly cheaper than Pro only at ≤8s (where Fast stays on the cheap tier).
+## تغییرات (همه فرانت‌اند، یک فایل: `DashboardPage.tsx`)
 
-## Optional clarity (only if you want it)
-Add a tiny hint near the model picker that "Fast above 8s runs on Veo 3.1, so the price matches Pro." I will only add this if you confirm — otherwise I keep the change to the price math alone.
+### ۱) کلیک روی درفت → نمای اسنپ‌شات (نه ریختن در ورک‌اسپیس)
+در `openLibraryEntry`، شاخه‌ی `video.id.startsWith('draft-')` بازنویسی می‌شود تا مثل پروژه‌ی نهایی عمل کند:
 
-## Technical notes
-- Keep the comment block above `estimateGenerationCost` pointing to `COST_MAP_USD` and update it to note the 16s extension-chain billing so the two stay in sync.
-- No schema, edge-function, or API changes. Pure presentation fix.
-- Verify with a quick unit check of the function for 5/10/15/30/45/135 on both tiers.
+```text
+setSelectedProjectId(did)          // نمای اسنپ‌شات درفت را باز کن
+setPreviewVideoId(اولین کلیپ قابل‌پخش یا null)
+```
+
+به‌جای ست‌کردن `activeDraftId` و ریختن کلیپ‌ها در ورک‌اسپیس. این از مسیر قبلاً مقاومِ `displayedVideos` (که در خط ~2214 از `draftSourceJobs[selectedProjectId]` پشتیبانی می‌کند) استفاده می‌کند. ادامه‌ی کار/افزودن کارت همچنان از طریق دکمه‌ی Resume موجود (`resumeSelectedProject`) ممکن است که برای drafts همان `activeDraftId` را حفظ می‌کند.
+
+### ۲) همگام‌سازی با داده‌ی زنده + عدم پنهان‌کردن کارت‌های بدون storage_path
+در `displayedVideos` (شاخه‌ی `selectedProjectId`)، الان `sanitize` هر کلیپ بدون `storage_path` را حذف می‌کند. برای drafts این باعث خالی‌شدن می‌شود. تغییر:
+
+- ابتدا هر کلیپ اسنپ‌شات با job زنده همگام شود (همین حالا انجام می‌شود: `liveById.get(s.id) ?? s`).
+- فقط merged-self و کارت‌های واقعاً تهی حذف شوند؛ برای drafts، کارت‌هایی که هنوز `storage_path` ندارند به‌صورت کارت placeholder نمایش داده شوند (نه حذف) تا کاربر همان «۲ کلیپ» را ببیند. کامپوننت `PlayableVideo`/کارت از قبل برای منبع نامعتبر یک placeholder آرام نشان می‌دهد، پس بلوکِ تصویری خراب نمی‌شود.
+
+### ۳) (در صورت لزوم) به‌روزرسانی اسنپ‌شات درفت با storage_path زنده
+اگر job زنده اکنون `storage_path` دارد ولی اسنپ‌شات stale است، هنگام باز شدن نما، نسخه‌ی همگام‌شده برای رندر استفاده می‌شود (از مرحله‌ی ۲). نیازی به نوشتن مجدد در localStorage نیست؛ تغییر فقط در لحظه‌ی نمایش است تا رفتار غیرمخرب بماند.
+
+## یادداشت‌های فنی
+- بدون تغییر بک‌اند، اسکیما، یا edge function — صرفاً اصلاح نمایش فرانت‌اند.
+- بدون حذف یا بازنویسی هیچ داده‌ی درفت؛ صرفاً مسیر باز کردن و فیلتر نمایش اصلاح می‌شود (non-destructive).
+- پس از تغییر، اعتبارسنجی: یک درفت با کلیپ‌های دارای storage_path و یک درفت با کلیپ‌های بدون storage_path هر دو باید کارت‌ها را نشان دهند؛ هیچ‌کدام نباید «Start forging a prompt» خالی شوند.
+
+## یک ابهام
+کارت‌های درفت در اسکرین‌شات تامبنیل placeholder دارند (یعنی کلیپ‌ها `storage_path` ندارند). آیا می‌خواهی:
+- (الف) فقط کارت‌ها را ببینی حتی اگر ویدئوشان هنوز آماده/قابل‌پخش نیست (نمایش placeholder)، یا
+- (ب) کلیپ‌ها باید واقعاً پخش شوند و اگر منبعشان از دست رفته باید بازیابی شود؟
+
+اگر (ب) مدنظرت است، باید بررسی کنیم که آیا job اصلی هنوز در دیتابیس/استوریج موجود است یا نه. در غیر این صورت با (الف) پیش می‌روم.
