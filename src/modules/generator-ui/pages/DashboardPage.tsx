@@ -918,6 +918,71 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  // Permanent ownership maps: every generated clip / uploaded image belongs to
+  // EXACTLY one draft, stamped at creation time. Draft snapshots are derived
+  // from these maps (not from "is it live in the workspace"), which is what
+  // guarantees a clip can never leak into another draft project.
+  const [jobDraftMap, setJobDraftMap] = useState<Record<string, string>>({})
+  const [imageDraftMap, setImageDraftMap] = useState<Record<string, string>>({})
+  const jobDraftMapKey = userId ? `job-draft-map:${userId}` : null
+  const imageDraftMapKey = userId ? `image-draft-map:${userId}` : null
+  useEffect(() => {
+    if (!jobDraftMapKey) { setJobDraftMap({}); return }
+    try {
+      const raw = window.localStorage.getItem(jobDraftMapKey)
+      const obj = raw ? (JSON.parse(raw) as Record<string, string>) : {}
+      setJobDraftMap(obj && typeof obj === 'object' ? obj : {})
+    } catch { setJobDraftMap({}) }
+  }, [jobDraftMapKey])
+  useEffect(() => {
+    if (!imageDraftMapKey) { setImageDraftMap({}); return }
+    try {
+      const raw = window.localStorage.getItem(imageDraftMapKey)
+      const obj = raw ? (JSON.parse(raw) as Record<string, string>) : {}
+      setImageDraftMap(obj && typeof obj === 'object' ? obj : {})
+    } catch { setImageDraftMap({}) }
+  }, [imageDraftMapKey])
+  function persistJobDraftMap(next: Record<string, string>) {
+    if (!jobDraftMapKey) return
+    try { window.localStorage.setItem(jobDraftMapKey, JSON.stringify(next)) } catch { /* ignore */ }
+  }
+  function persistImageDraftMap(next: Record<string, string>) {
+    if (!imageDraftMapKey) return
+    try { window.localStorage.setItem(imageDraftMapKey, JSON.stringify(next)) } catch { /* ignore */ }
+  }
+
+  // Ensure there is an active draft id; create + persist one if needed.
+  // Returns the id to stamp newly-created clips/images with.
+  const ensureActiveDraftIdRef = useRef<string | null>(null)
+  ensureActiveDraftIdRef.current = activeDraftId
+  function ensureActiveDraftId(): string {
+    let did = ensureActiveDraftIdRef.current
+    if (!did) {
+      did = `draft-${typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`
+      ensureActiveDraftIdRef.current = did
+      setActiveDraftId(did)
+      persistActiveDraftId(did)
+    }
+    return did
+  }
+  function stampJobDraft(jobId: string, draftId: string) {
+    setJobDraftMap((prev) => {
+      if (prev[jobId] === draftId) return prev
+      const next = { ...prev, [jobId]: draftId }
+      persistJobDraftMap(next)
+      return next
+    })
+  }
+  function stampImageDraft(imageId: string, draftId: string) {
+    setImageDraftMap((prev) => {
+      if (prev[imageId] === draftId) return prev
+      const next = { ...prev, [imageId]: draftId }
+      persistImageDraftMap(next)
+      return next
+    })
+  }
+
+
   // Film covers — one AI-generated cover image per draft/project scope.
   // Keyed by activeDraftId (or selectedProjectId for finalized projects).
   // Persisted to localStorage so covers survive refresh.
