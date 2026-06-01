@@ -2211,17 +2211,21 @@ export default function DashboardPage() {
     // produced that Final Film, regardless of workspace-hidden state. The
     // snapshot is stored in EXACT film order — preserve it (do NOT re-sort).
     if (selectedProjectId) {
+      const isDraft = selectedProjectId.startsWith('draft-')
       const snapshot = projectSourceJobs[selectedProjectId] ?? draftSourceJobs[selectedProjectId] ?? []
       const liveById = new Map(generatedVideos.map((v) => [v.id, v]))
       // Hard guard: the merged film itself must never appear inside its own
-      // Working-clips list, and any clip without a playable storage_path is
-      // dropped to avoid blank 0:00 cards.
+      // Working-clips list. For finalized projects we also drop clips without a
+      // playable storage_path (blank 0:00 cards). For DRAFTS we keep every
+      // source card even if its video isn't ready yet — the user must always be
+      // able to open a draft and see the cards it's composed of; the card UI
+      // shows a quiet placeholder for not-yet-playable clips.
       const sanitize = (jobs: JobDetail[]): JobDetail[] =>
         jobs.filter(
           (j) =>
             j.id !== selectedProjectId &&
             !j.id.startsWith('merged-') &&
-            !!j.video?.storage_path,
+            (isDraft || !!j.video?.storage_path),
         )
       if (snapshot.length > 0) {
         return sanitize(snapshot.map((s) => liveById.get(s.id) ?? s))
@@ -3160,45 +3164,24 @@ export default function DashboardPage() {
 
     if (video.id.startsWith('draft-')) {
       const did = video.id
-      // Only restore clips/images that actually have a playable source — a
-      // draft must never re-hydrate the workspace with empty/broken cards.
-      const videoSnapshot = (draftSourceJobs[did] ?? []).filter(
-        (j) => !!j.video?.storage_path,
-      )
-      const imageSnapshot = (draftSourceImages[did] ?? []).filter(
-        (i) => !!i.storage_path,
-      )
+      // Open the draft as a SNAPSHOT view (same as a finalized project),
+      // instead of dumping its clips into the live workspace. This reuses the
+      // robust `displayedVideos` snapshot path, which hydrates each clip from
+      // live job data, so the user always sees the cards the draft is made of
+      // — even if the stored snapshot copy is stale. Resuming/adding more
+      // cards is still available via the existing Resume action.
+      const clips = draftSourceJobs[did] ?? []
+      const images = draftSourceImages[did] ?? []
+      // Prefer the first clip/image that can actually be played for the preview
+      // focus; fall back to the first entry so the preview is never wrong.
+      const liveById = new Map(generatedVideos.map((v) => [v.id, v]))
+      const firstPlayable =
+        clips.find((c) => !!(liveById.get(c.id)?.video?.storage_path ?? c.video?.storage_path)) ??
+        clips[0]
+      const firstPlayableId =
+        firstPlayable?.id ?? images.find((i) => !!i.storage_path)?.id ?? images[0]?.id ?? null
 
-      if (videoSnapshot.length > 0) {
-        setGeneratedVideos((current) => videoSnapshot.reduce((acc, j) => mergeJob(acc, j), current))
-        setWorkspaceHiddenJobIds((curr) => {
-          const next = new Set(curr)
-          for (const j of videoSnapshot) next.delete(j.id)
-          persistWorkspaceHiddenJobIds(next)
-          return next
-        })
-      }
-      if (imageSnapshot.length > 0) {
-        setUserImages((current) => {
-          const byId = new Map(current.map((i) => [i.id, i] as const))
-          for (const img of imageSnapshot) if (!byId.has(img.id)) byId.set(img.id, img)
-          return Array.from(byId.values())
-        })
-        setWorkspaceHiddenImageIds((curr) => {
-          const next = new Set(curr)
-          for (const i of imageSnapshot) next.delete(i.id)
-          persistWorkspaceHiddenImageIds(next)
-          return next
-        })
-      }
-
-      setActiveDraftId(did)
-      persistActiveDraftId(did)
-      // Draft == live workspace, not a frozen snapshot view.
-      setSelectedProjectId(null)
-      // Focus the first PLAYABLE restored clip/image, never the draft id
-      // itself (which has no real asset and would render a blank preview).
-      const firstPlayableId = videoSnapshot[0]?.id ?? imageSnapshot[0]?.id ?? null
+      setSelectedProjectId(did)
       setPreviewVideoId(firstPlayableId)
       return
     }
