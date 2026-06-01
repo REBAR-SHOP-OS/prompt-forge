@@ -5,6 +5,14 @@ import { usePlayableVideoUrl } from "@/modules/generator-ui/lib/usePlayableVideo
 type Props = Omit<VideoHTMLAttributes<HTMLVideoElement>, "src"> & {
   src: string | null | undefined;
   fallbackClassName?: string;
+  /**
+   * Thumbnail/card mode. When true the component renders a STABLE container:
+   * the poster (or a neutral surface) stays mounted in place the whole time
+   * and the <video> fades in on top once its first frame is painted. This
+   * eliminates the gray/black flicker that happened when the placeholder DOM
+   * node was swapped out for a fresh <video> node mid-load.
+   */
+  thumbnail?: boolean;
 };
 
 const MAX_RETRIES = 3;
@@ -21,21 +29,30 @@ const MAX_RETRIES = 3;
  *     itself surfaces real failures via job status — the video tile should
  *     never become a giant error placeholder.
  *   - While resolving, a quiet loader is shown.
+ *
+ * Flicker model (thumbnail mode):
+ *   - The poster/placeholder layer is mounted once and never unmounted, so
+ *     there is no DOM swap when the resolved URL arrives.
+ *   - The <video> overlays the poster with opacity 0 and fades to 1 only
+ *     after `loadeddata` (first frame painted), so the card never flashes a
+ *     blank/gray surface between poster and video.
  */
-export function PlayableVideo({ src, fallbackClassName, controls, poster, ...rest }: Props) {
+export function PlayableVideo({ src, fallbackClassName, controls, poster, thumbnail, ...rest }: Props) {
   const { url, loading: resolving, reload } = usePlayableVideoUrl(src);
   const [errored, setErrored] = useState(false);
+  const [painted, setPainted] = useState(false);
   const retriesRef = useRef(0);
   const reloadedRef = useRef(false);
   const [retryToken, setRetryToken] = useState(0);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Reset retry state every time the resolved URL changes.
+  // Reset retry/paint state every time the resolved URL changes.
   useEffect(() => {
     retriesRef.current = 0;
     reloadedRef.current = false;
     setErrored(false);
     setRetryToken(0);
+    setPainted(false);
   }, [url]);
 
   const handleLoadedMetadata: VideoHTMLAttributes<HTMLVideoElement>["onLoadedMetadata"] = (e) => {
@@ -66,6 +83,10 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, ...res
     kick();
   };
 
+  const handleLoadedData: VideoHTMLAttributes<HTMLVideoElement>["onLoadedData"] = (e) => {
+    setPainted(true);
+    rest.onLoadedData?.(e);
+  };
 
   const handleError: VideoHTMLAttributes<HTMLVideoElement>["onError"] = (e) => {
     if (retriesRef.current < MAX_RETRIES) {
@@ -115,6 +136,41 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, ...res
       </div>
     );
   };
+
+  // ---- Thumbnail/card mode: stable, flicker-free layered render. ----
+  // The poster/placeholder layer is always mounted; the <video> fades in on
+  // top once it has painted a frame. No node is ever swapped mid-load.
+  if (thumbnail) {
+    const showVideo = !!src && !resolving && !!url && !errored;
+    const playUrl =
+      showVideo && retryToken > 0
+        ? `${url}${url.includes("?") ? "&" : "?"}_r=${retryToken}`
+        : url;
+    const { className, ...videoRest } = rest;
+    return (
+      <div className="relative h-full w-full overflow-hidden">
+        <div className="absolute inset-0">
+          {quietPlaceholder(!src ? false : resolving || (!painted && !errored))}
+        </div>
+        {showVideo ? (
+          <video
+            {...videoRest}
+            key={retryToken}
+            ref={videoRef}
+            src={playUrl}
+            poster={poster}
+            controls={controls}
+            onLoadedMetadata={handleLoadedMetadata}
+            onLoadedData={handleLoadedData}
+            onError={handleError}
+            className={`${className ?? ""} absolute inset-0 transition-opacity duration-200 ${
+              painted ? "opacity-100" : "opacity-0"
+            }`}
+          />
+        ) : null}
+      </div>
+    );
+  }
 
   if (!src) return quietPlaceholder(false);
   if (resolving || !url) return quietPlaceholder(true);
