@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type VideoHTMLAttributes } from "react";
 import { LoaderCircle, Clapperboard } from "lucide-react";
-import { usePlayableVideoUrl, invalidatePlayableVideoUrl } from "@/modules/generator-ui/lib/usePlayableVideoUrl";
+import { usePlayableVideoUrl } from "@/modules/generator-ui/lib/usePlayableVideoUrl";
 
 type Props = Omit<VideoHTMLAttributes<HTMLVideoElement>, "src"> & {
   src: string | null | undefined;
