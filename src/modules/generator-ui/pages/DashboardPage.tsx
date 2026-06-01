@@ -1113,6 +1113,22 @@ export default function DashboardPage() {
     })
   }
 
+  // Creation-site helpers: stamp a brand-new clip / image to the current
+  // active draft (creating one if needed) AND mark it active. Use these at
+  // generation sites so each new film's clips are permanently owned by one
+  // draft. Do NOT use for hydration/restore of existing jobs.
+  function markNewClip(id: string) {
+    const did = ensureActiveDraftId()
+    stampJobDraft(id, did)
+    markActiveJob(id)
+  }
+  function markNewImage(id: string) {
+    const did = ensureActiveDraftId()
+    stampImageDraft(id, did)
+    markActiveImage(id)
+  }
+
+
   // When set, HISTORY is filtered to show only the source clips of this
   // Library project. Cleared by Start Over or by the inline "Clear" button.
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
