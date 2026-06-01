@@ -17,6 +17,18 @@ import { proxiedVideoUrl } from "./proxiedVideoUrl";
 const cache = new Map<string, string>();
 const inflight = new Map<string, Promise<string>>();
 
+/**
+ * Drop a resolved URL from the cache so the next resolve() re-runs the proxy
+ * with a fresh access token. Called when <video> playback fails on a proxied
+ * URL whose embedded token has likely expired — without this the stale URL
+ * would be handed back forever and the card would stay blank.
+ */
+export function invalidatePlayableVideoUrl(src: string | null | undefined): void {
+  if (!src) return;
+  cache.delete(src);
+  inflight.delete(src);
+}
+
 function resolve(src: string): Promise<string> {
   if (!src) return Promise.resolve(src);
   if (src.startsWith("blob:") || src.startsWith("data:")) return Promise.resolve(src);
@@ -42,12 +54,21 @@ function resolve(src: string): Promise<string> {
 export function usePlayableVideoUrl(src: string | null | undefined): {
   url: string | undefined;
   loading: boolean;
+  reload: () => void;
 } {
   const initial =
     src && (src.startsWith("blob:") || src.startsWith("data:") || cache.has(src))
       ? cache.get(src) ?? src
       : undefined;
   const [url, setUrl] = useState<string | undefined>(initial);
+  // Bumped to force a fresh resolve() after invalidating a stale (expired
+  // token) proxy URL.
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  const reload = () => {
+    invalidatePlayableVideoUrl(src);
+    setReloadNonce((n) => n + 1);
+  };
 
   useEffect(() => {
     if (!src) {
@@ -71,9 +92,9 @@ export function usePlayableVideoUrl(src: string | null | undefined): {
     return () => {
       cancelled = true;
     };
-  }, [src]);
+  }, [src, reloadNonce]);
 
-  return { url, loading: !!src && !url };
+  return { url, loading: !!src && !url, reload };
 }
 
 export function usePlayableVideoUrls(srcs: Array<string | null | undefined>): {

@@ -23,15 +23,17 @@ const MAX_RETRIES = 3;
  *   - While resolving, a quiet loader is shown.
  */
 export function PlayableVideo({ src, fallbackClassName, controls, poster, ...rest }: Props) {
-  const { url, loading: resolving } = usePlayableVideoUrl(src);
+  const { url, loading: resolving, reload } = usePlayableVideoUrl(src);
   const [errored, setErrored] = useState(false);
   const retriesRef = useRef(0);
+  const reloadedRef = useRef(false);
   const [retryToken, setRetryToken] = useState(0);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   // Reset retry state every time the resolved URL changes.
   useEffect(() => {
     retriesRef.current = 0;
+    reloadedRef.current = false;
     setErrored(false);
     setRetryToken(0);
   }, [url]);
@@ -66,6 +68,16 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, ...res
     if (retriesRef.current < MAX_RETRIES) {
       retriesRef.current += 1;
       setRetryToken((n) => n + 1);
+      return;
+    }
+    // Retries on the same URL are exhausted. If the resolved URL was a
+    // token-bearing proxy URL, the token may have expired — drop it from the
+    // cache and re-resolve once with a fresh token before giving up. This is
+    // what lets a card recover after the tab has been open a while or after a
+    // sign-out/in, instead of staying blank forever.
+    if (!reloadedRef.current && src) {
+      reloadedRef.current = true;
+      reload();
       return;
     }
     setErrored(true);

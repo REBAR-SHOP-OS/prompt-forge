@@ -29,6 +29,17 @@ export async function proxiedVideoUrl(url: string): Promise<string> {
     return url;
   }
 
+  // Our own Supabase Storage PUBLIC objects are already CORS-enabled and
+  // Range-capable, and crucially require NO auth token. Routing them through
+  // the auth'd video-proxy would bake a short-lived access token into the URL;
+  // once that token expires (tab left open a while, sign-out/in) the proxied
+  // URL starts returning 401 and the card goes blank. Public Final Film output
+  // (merged-videos) and other public buckets must be played directly so they
+  // keep working indefinitely.
+  if (parsed.pathname.includes("/storage/v1/object/public/")) {
+    return url;
+  }
+
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) {
