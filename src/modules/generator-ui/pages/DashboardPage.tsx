@@ -1591,6 +1591,30 @@ export default function DashboardPage() {
         unmarkActiveImages(imageIds)
       }
 
+      // Drop draft ownership mappings for the removed clips/images so the
+      // grouping effect can never rebuild this draft from stale entries.
+      if (clipIds.length > 0) {
+        setJobDraftMap((prev) => {
+          let changed = false
+          const next = { ...prev }
+          for (const id of clipIds) { if (id in next) { delete next[id]; changed = true } }
+          if (!changed) return prev
+          persistJobDraftMap(next)
+          return next
+        })
+      }
+      if (imageIds.length > 0) {
+        setImageDraftMap((prev) => {
+          let changed = false
+          const next = { ...prev }
+          for (const id of imageIds) { if (id in next) { delete next[id]; changed = true } }
+          if (!changed) return prev
+          persistImageDraftMap(next)
+          return next
+        })
+      }
+
+
       // Server-side permanent deletes. Errors are non-fatal: the local
       // tombstone keeps the card from coming back even if a row lingers.
       await Promise.allSettled([
