@@ -1,37 +1,58 @@
-## مشکل چیست
+علت اصلی‌ای که از کد مشخص شد این است که Final Film به‌عنوان «پروژه‌ی واقعیِ پایدار» در دیتابیس ذخیره نمی‌شود؛ بخش مهمی از Library فعلاً روی localStorage و URLهای کش‌شده تکیه دارد.
 
-وقتی کارتی را در نسبت ۹:۱۶ می‌سازی، نسبت درست در دیتابیس ذخیره می‌شود (`requested_aspect_ratio = "9:16"`)، اما بعد از رفرش یا sign out کارت‌ها به ۱۶:۹ برمی‌گردند.
+## علت دقیق مشکل
 
-علت دقیق (تأیید‌شده با کوئری دیتابیس):
+1. **کارت‌های Final Film فقط محلی ذخیره می‌شوند**
+   - خروجی Final Film در storage آپلود می‌شود، اما خودِ رکورد Library/project با idهایی مثل `merged-*` در `localStorage` ذخیره می‌شود (`merged-videos:${userId}`، `project-source-jobs:${userId}` و …).
+   - یعنی بعد از sign out، تغییر مرورگر، پاک‌شدن storage مرورگر، یا گذشت زمان، پروژه دیگر یک منبع قطعی backend ندارد.
 
-1. تابع `getRatioFor` در `DashboardPage.tsx` نسبت هر کارت را فقط از دو منبع می‌گیرد:
-   - حافظه‌ی محلی مرورگر (`clipAspectRatios` در localStorage)
-   - مقدار `video.aspect_ratio` روی ردیف asset
-2. مقدار `aspect_ratio` که provider برمی‌گرداند اغلب چیزی مثل `"720P"` است (یک برچسب رزولوشن، نه نسبت). بنابراین `normalizeRatio` آن را `null` می‌کند و تابع به مقدار پیش‌فرض **`'16:9'`** سقوط می‌کند.
-3. تا وقتی هستی، `clipAspectRatios` در localStorage نسبت درست را نگه می‌دارد و کارت درست دیده می‌شود. اما با **sign out یا پاک‌شدن localStorage** آن حافظه از بین می‌رود و چون asset مقدار `"720P"` دارد، همه‌چیز به ۱۶:۹ می‌افتد.
+2. **URL پخش ویدئو با token قدیمی cache می‌شود**
+   - `usePlayableVideoUrl` آدرس proxied ویدئو را به‌صورت سراسری cache می‌کند.
+   - این آدرس داخل query خودش access token دارد.
+   - بعد از گذشت زمان یا sign out/sign in، token قبلی منقضی می‌شود ولی cache همچنان همان URL قدیمی را برمی‌گرداند؛ در نتیجه `video-proxy` پاسخ 401/خطا می‌دهد و کارت به‌صورت خاکستری/خالی دیده می‌شود.
+   - retry فعلی فقط `_r=` اضافه می‌کند، اما URL اصلی همچنان با token مرده است؛ پس مشکل ریشه‌ای حل نمی‌شود.
 
-نکته‌ی کلیدی: نسبتی که کاربر انتخاب کرده **به‌صورت قابل‌اعتماد در دیتابیس** زیر فیلد `requested_aspect_ratio` ذخیره شده — اما UI اصلاً از آن استفاده نمی‌کند.
+3. **Source clipهای داخل پروژه ممکن است URL موقت provider داشته باشند**
+   - هنگام Final Film تلاش می‌شود source clipها به bucket داخلی کپی شوند، اما این مرحله `best-effort` است: اگر کپی fail شود، سیستم بی‌صدا همان URL اصلی provider را نگه می‌دارد.
+   - URLهای provider بعد از مدتی expire می‌شوند؛ بنابراین وقتی پروژه را بعداً باز می‌کنی، source cardهای داخل پروژه ممکن است دیگر قابل پخش نباشند.
 
-## راه‌حل
+## برنامه‌ی اصلاح ریشه‌ای
 
-نسبت کارت را از منبع قطعی و ماندگار (دیتابیس) بخوانیم تا مستقل از localStorage و مستقل از مقدار خراب `"720P"` همیشه همان نسبت انتخابی کاربر باشد.
+### 1. حذف وابستگی حیاتی Library به localStorage
+- یک ذخیره‌سازی پایدار برای پروژه‌های Library در backend اضافه می‌کنم:
+  - Final Film entry
+  - aspect ratio انتخاب‌شده
+  - آدرس ویدئوی final
+  - لیست source clipها/images با ترتیب دقیق
+  - thumbnail/cover و metadata لازم
+- RLS/permissionها owner-scoped می‌شوند تا هر کاربر فقط پروژه‌های خودش را ببیند.
+- localStorage فقط cache کمکی می‌ماند، نه منبع حقیقت.
 
-### تغییرات
+### 2. اضافه‌کردن API پایدار برای Library projects
+- endpoint/gateway برای این عملیات اضافه می‌شود:
+  - `listLibraryProjects`
+  - `saveLibraryProject`
+  - `deleteLibraryProject`
+- Dashboard هنگام load اول از backend پروژه‌ها را می‌خواند و بعد localStorage را فقط برای compatibility/backfill استفاده می‌کند.
 
-`src/modules/generator-ui/pages/DashboardPage.tsx`
+### 3. اصلاح Final Film commit flow
+- بعد از ساخت Final Film، پروژه فقط وقتی به Library اضافه می‌شود که metadata آن در backend ذخیره شده باشد.
+- اگر source snapshot باید کپی شود، دیگر خطای آن بی‌صدا بلعیده نمی‌شود؛ یا نسخه‌ی پایدار ساخته می‌شود، یا UI با fallback سالم Final Film باز می‌شود و کارت خالی نمایش داده نمی‌شود.
 
-1. **اصلاح `getRatioFor`**: ترتیب اولویت منابع نسبت اصلاح شود تا `requested_aspect_ratio` (انتخاب کاربر، ذخیره‌شده در دیتابیس) قبل از سقوط به ۱۶:۹ بررسی شود:
-   - اول: `clipAspectRatios[id]` (محلی، برای واکنش فوری)
-   - بعد: `normalizeRatio(video.video?.aspect_ratio)` (فقط اگر نسبت واقعی و معتبر باشد، نه `"720P"`)
-   - بعد: `normalizeRatio(video.requested_aspect_ratio)` ← منبع ماندگار و قطعی
-   - فقط در نهایت: `'16:9'` به‌عنوان آخرین چاره
-   - امضای تابع گسترش یابد تا فیلد `requested_aspect_ratio` را هم بپذیرد.
+### 4. اصلاح cache و lifecycle پخش ویدئو
+- `usePlayableVideoUrl` طوری اصلاح می‌شود که URLهای proxy شامل token قدیمی را دائمی cache نکند.
+- cache با تغییر auth/session پاک یا re-resolve می‌شود.
+- هنگام error پخش، به‌جای retry روی همان URL خراب، cache invalidate می‌شود و URL تازه با token تازه ساخته می‌شود.
+- `PlayableVideo` با تغییر source/session دوباره mount/initialize می‌شود تا کارت بعد از sign out/sign in روی پلیر قدیمی گیر نکند.
 
-2. **هیدریت‌کردن `clipAspectRatios` از دیتابیس**: هنگام بارگذاری لیست کارت‌ها، برای هر job که `requested_aspect_ratio` معتبر دارد، آن نسبت در `clipAspectRatios` ثبت شود (`rememberClipRatio`). این کار باعث می‌شود حتی پس از sign out و ورود دوباره، حافظه‌ی محلی از روی منبع قطعی دیتابیس بازسازی شود.
+### 5. fallback امن برای پروژه‌های قدیمی
+- پروژه‌هایی که قبلاً فقط در localStorage ذخیره شده‌اند، در اولین load تا حد امکان به backend migrate/backfill می‌شوند.
+- اگر source clip قدیمی expire شده باشد، کارت پروژه نباید blank بماند؛ حداقل final merged video یا cover/placeholder کنترل‌شده نمایش داده می‌شود.
 
-با این دو تغییر، هر کارتی که نسبتش را تعیین کرده‌ای پس از رفرش یا sign out همان نسبت باقی می‌ماند و دیگر به ۱۶:۹ تغییر نمی‌کند.
-
-## تأیید
-
-- بررسی build، و سپس بازکردن preview و مقایسه‌ی نسبت کارت‌ها قبل/بعد از رفرش و sign out برای اطمینان از ثبات نسبت.
-- این تغییر کاملاً frontend است؛ هیچ داده‌ای حذف یا تغییر داده نمی‌شود و backend دست‌نخورده می‌ماند (نسبت درست از قبل در دیتابیس هست).
+### 6. تست و اعتبارسنجی
+- تست می‌کنم که:
+  - Final Film جدید بعد از refresh همچنان در Library و داخل پروژه پخش شود.
+  - بعد از sign out/sign in، cache ویدئو با token جدید ساخته شود و کارت blank نشود.
+  - بازکردن پروژه‌ی Final Film، source clipها را با ترتیب درست نشان دهد.
+  - اگر یک URL قدیمی provider خراب/expired بود، UI به کارت خالی یا ویدئوی 0:00 تبدیل نشود.
+  - aspect ratio همان مقدار ذخیره‌شده باقی بماند و به 16:9 برنگردد.
