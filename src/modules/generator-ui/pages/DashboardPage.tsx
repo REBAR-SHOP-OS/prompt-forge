@@ -4044,6 +4044,8 @@ export default function DashboardPage() {
     // of Final Film never fails with a stale token (which would otherwise
     // leave the UI stuck right after the merge finalizes).
     try { await supabase.auth.refreshSession() } catch { /* ignore */ }
+    // Declared here so the `finally` block can always clear it on success.
+    let pipelineTimer: ReturnType<typeof setTimeout> | null = null
     try {
       // Determine target dimensions from the first video clip (mergeVideos.ts uses
       // the first clip's intrinsic size). If no video, fall back to a 1080p frame.
