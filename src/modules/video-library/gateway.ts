@@ -10,8 +10,9 @@ export const VIDEO_LIBRARY_CONTRACT_VERSION = "v1" as const;
 export const videoLibraryGateway = {
   contractVersion: VIDEO_LIBRARY_CONTRACT_VERSION,
 
-  listMyVideos: async (): Promise<VideoSummary[]> => {
-    const r = await request<{ items: VideoSummary[] }>("/videos-list");
+  listMyVideos: async (limit?: number): Promise<VideoSummary[]> => {
+    const qs = limit ? `?limit=${encodeURIComponent(limit)}` : "";
+    const r = await request<{ items: VideoSummary[] }>(`/videos-list${qs}`);
     return r.items ?? [];
   },
 };
