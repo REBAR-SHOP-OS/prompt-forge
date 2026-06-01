@@ -4839,6 +4839,16 @@ export default function DashboardPage() {
         <CalendarDays className="h-[18px] w-[18px]" aria-hidden="true" />
       </button>
 
+      <button
+        type="button"
+        onClick={openArchive}
+        aria-label="Open storage archive"
+        title="Storage"
+        className="fixed left-[6.5rem] top-4 z-50 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-28 sm:top-5"
+      >
+        <Database className="h-[18px] w-[18px]" aria-hidden="true" />
+      </button>
+
       <UsageStatsPopover />
 
       <CalendarInfoDialog
