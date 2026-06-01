@@ -13,6 +13,7 @@ import {
   
   Combine,
   Crop,
+  Database,
   Download,
   FileUp,
   Film,
