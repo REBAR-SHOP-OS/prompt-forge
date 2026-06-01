@@ -70,6 +70,16 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, ...res
       setRetryToken((n) => n + 1);
       return;
     }
+    // Retries on the same URL are exhausted. If the resolved URL was a
+    // token-bearing proxy URL, the token may have expired — drop it from the
+    // cache and re-resolve once with a fresh token before giving up. This is
+    // what lets a card recover after the tab has been open a while or after a
+    // sign-out/in, instead of staying blank forever.
+    if (!reloadedRef.current && src) {
+      reloadedRef.current = true;
+      reload();
+      return;
+    }
     setErrored(true);
     rest.onError?.(e);
   };
