@@ -594,13 +594,45 @@ export default function DashboardPage() {
     }
     return null
   }
-  const getRatioFor = (video: { id: string; video?: { aspect_ratio?: string | null } | null } | null | undefined): Ratio => {
+  const getRatioFor = (
+    video:
+      | {
+          id: string
+          requested_aspect_ratio?: string | null
+          video?: { aspect_ratio?: string | null } | null
+        }
+      | null
+      | undefined,
+  ): Ratio => {
     if (!video) return aspectRatio
+    // 1) Local map gives instant, in-session reactivity.
     const local = clipAspectRatios[video.id]
     if (local) return local
+    // 2) Real provider aspect ratio on the asset (ignored when it's a
+    //    non-ratio label like "720P" — normalizeRatio returns null).
     const fromAsset = normalizeRatio(video.video?.aspect_ratio ?? null)
-    return fromAsset ?? '16:9'
+    if (fromAsset) return fromAsset
+    // 3) The user's chosen ratio, durably persisted in the database. This is
+    //    the authoritative source that survives sign-out / localStorage clears.
+    const fromRequested = normalizeRatio(video.requested_aspect_ratio ?? null)
+    if (fromRequested) return fromRequested
+    // 4) Last-resort fallback.
+    return '16:9'
   }
+  // Rehydrate the local ratio map from the database-backed source of truth.
+  // `requested_aspect_ratio` (and any valid asset `aspect_ratio`) is persisted
+  // server-side, so after a refresh or sign-out the local map is rebuilt and
+  // each card keeps the exact ratio the user chose — never silently 16:9.
+  useEffect(() => {
+    for (const job of generatedVideos) {
+      if (!job?.id) continue
+      const fromAsset = normalizeRatio(job.video?.aspect_ratio ?? null)
+      const fromRequested = normalizeRatio(job.requested_aspect_ratio ?? null)
+      const r = fromAsset ?? fromRequested
+      if (r) rememberClipRatio(job.id, r)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generatedVideos])
   const ratioToCss = (r: Ratio): string => (r === '9:16' ? '9 / 16' : r === '1:1' ? '1 / 1' : '16 / 9')
   // Vertical budget is live-measured from the composer's top edge (see
   // previewMaxHeightPx above). We pass it as a px value into both the height
