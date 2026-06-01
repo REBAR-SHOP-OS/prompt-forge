@@ -6524,45 +6524,22 @@ export default function DashboardPage() {
                         {variant === 'final' && video.video?.storage_path ? (
                           <button
                             type="button"
-                            onClick={async (event) => {
+                            disabled={downloadingId === video.id}
+                            onClick={(event) => {
                               event.stopPropagation()
-                              const url = video.video!.storage_path
-                              // Derive the real extension from the stored
-                              // file. Final Film now saves WebM directly, so
-                              // forcing ".mp4" would hand the user a file
-                              // whose container doesn't match its name.
-                              const lower = url.toLowerCase().split('?')[0]
-                              const ext = lower.endsWith('.webm')
-                                ? 'webm'
-                                : lower.endsWith('.mp4')
-                                  ? 'mp4'
-                                  : 'webm'
-                              const filename = `final-film-${video.id.slice(0, 8)}.${ext}`
-                              try {
-                                // Use the CORS-safe proxied URL so fetch()
-                                // works regardless of where the file lives.
-                                const fetchUrl = await proxiedVideoUrl(url)
-                                const response = await fetch(fetchUrl)
-                                if (!response.ok) throw new Error('Download failed')
-                                const blob = await response.blob()
-                                const blobUrl = URL.createObjectURL(blob)
-                                const a = document.createElement('a')
-                                a.href = blobUrl
-                                a.download = filename
-                                document.body.appendChild(a)
-                                a.click()
-                                document.body.removeChild(a)
-                                URL.revokeObjectURL(blobUrl)
-                              } catch (err) {
-                                console.error('Final film download failed', err)
-                                window.open(url, '_blank')
-                              }
+                              // Always hand the user a standard, broadly
+                              // compatible MP4 (Final Film output is WebM).
+                              void downloadAsMp4(video.id, video.video!.storage_path, 'final-film')
                             }}
                             aria-label="Download video"
                             title="Download video"
-                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                           >
-                            <Download className="h-3 w-3" aria-hidden="true" />
+                            {downloadingId === video.id ? (
+                              <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                            ) : (
+                              <Download className="h-3 w-3" aria-hidden="true" />
+                            )}
                           </button>
                         ) : null}
                         <button
