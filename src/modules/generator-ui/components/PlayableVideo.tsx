@@ -41,26 +41,29 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, ...res
   const handleLoadedMetadata: VideoHTMLAttributes<HTMLVideoElement>["onLoadedMetadata"] = (e) => {
     if (errored) setErrored(false);
     retriesRef.current = 0;
+    const el = e.currentTarget;
+    // Let the consumer run first (it may seek to a preview frame).
     rest.onLoadedMetadata?.(e);
-    // When there's no poster, some browsers (Chromium) won't paint the
-    // seeked frame for a muted <video> until play() is called. Briefly
-    // kick playback to force a visible first frame, then pause.
-    if (!poster) {
-      const el = e.currentTarget;
-      const kick = () => {
-        const p = el.play();
-        if (p && typeof p.then === "function") {
-          p.then(() => { try { el.pause(); } catch { /* ignore */ } }).catch(() => { /* ignore */ });
-        }
-      };
-      // Wait for the post-seek frame if a seek was requested in user handler.
-      if (el.seeking) {
-        const onSeeked = () => { el.removeEventListener("seeked", onSeeked); kick(); };
-        el.addEventListener("seeked", onSeeked);
-      } else {
-        kick();
+
+    // If the consumer requested a seek (or one is already in flight), the
+    // browser will paint that frame on its own — kicking play()/pause() on
+    // top of it causes a visible flicker (the clip briefly plays, then jumps
+    // back to the seeked frame). So only force a paint when there is NO
+    // poster AND no seek is happening. A poster already covers the first
+    // paint, so no kick is needed there either.
+    const seekRequested = el.seeking || el.currentTime > 0;
+    if (poster || seekRequested) return;
+
+    // No poster and no seek: some browsers (Chromium) won't paint the first
+    // frame of a muted <video> until play() is called. Briefly kick playback
+    // once to force a visible first frame, then pause.
+    const kick = () => {
+      const p = el.play();
+      if (p && typeof p.then === "function") {
+        p.then(() => { try { el.pause(); } catch { /* ignore */ } }).catch(() => { /* ignore */ });
       }
-    }
+    };
+    kick();
   };
 
 
