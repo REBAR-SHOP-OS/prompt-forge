@@ -555,10 +555,6 @@ export default function DashboardPage() {
       setArchiveLoading(false)
     }
   }
-  const openArchive = () => {
-    setIsArchiveOpen(true)
-    void loadArchive()
-  }
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [calendarTodayOnly, setCalendarTodayOnly] = useState(false)
 
