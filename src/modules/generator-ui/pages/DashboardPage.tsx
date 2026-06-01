@@ -3451,7 +3451,7 @@ export default function DashboardPage() {
 
         setPreviewVideoId(seededJob.id)
         setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
-        markActiveJob(seededJob.id)
+        markNewClip(seededJob.id)
       }
       setPromptText('')
       setUploadedFiles([])
