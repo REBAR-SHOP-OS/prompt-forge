@@ -478,6 +478,51 @@ export default function DashboardPage() {
   const [startContext] = useState('Start')
   const [endGoal] = useState('End')
   const [generatedVideos, setGeneratedVideos] = useState<JobDetail[]>([])
+  // Tracks which card's download is currently being prepared (fetched +
+  // transcoded to standard MP4) so we can show a spinner on that button.
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+
+  // Download a film as a standard, broadly-compatible MP4. Final Film output
+  // is WebM (MediaRecorder), which fails in QuickTime / WMP / mobile galleries.
+  // We fetch the stored file and run it through ensureMp4 (ffmpeg.wasm) so the
+  // user always gets a .mp4. On any transcode failure (e.g. file too large to
+  // process in-browser) we fall back to downloading the original file as-is.
+  const downloadAsMp4 = async (cardId: string, url: string, namePrefix: string) => {
+    if (downloadingId) return
+    setDownloadingId(cardId)
+    const triggerDownload = (blob: Blob, filename: string) => {
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(blobUrl)
+    }
+    try {
+      const fetchUrl = await proxiedVideoUrl(url)
+      const response = await fetch(fetchUrl)
+      if (!response.ok) throw new Error('Download failed')
+      const blob = await response.blob()
+      try {
+        const mp4 = await ensureMp4(blob, blob.type)
+        triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.mp4`)
+      } catch (transErr) {
+        // Transcode failed (too large / OOM) — hand over the original file so
+        // the user is never left without a download.
+        console.warn('[download] MP4 transcode failed, serving original:', transErr)
+        const lower = url.toLowerCase().split('?')[0]
+        const ext = lower.endsWith('.webm') ? 'webm' : lower.endsWith('.mp4') ? 'mp4' : 'webm'
+        triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${ext}`)
+      }
+    } catch (err) {
+      console.error('Film download failed', err)
+      window.open(url, '_blank')
+    } finally {
+      setDownloadingId(null)
+    }
+  }
   // Tracks card IDs currently re-submitting a Regenerate. Used to disable the
   // per-card regenerate button while its new Job is being created so the user
   // can't queue duplicates with rapid clicks.
