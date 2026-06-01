@@ -33,6 +33,7 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, ...res
   // Reset retry state every time the resolved URL changes.
   useEffect(() => {
     retriesRef.current = 0;
+    reloadedRef.current = false;
     setErrored(false);
     setRetryToken(0);
   }, [url]);
