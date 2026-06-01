@@ -594,12 +594,30 @@ export default function DashboardPage() {
     }
     return null
   }
-  const getRatioFor = (video: { id: string; video?: { aspect_ratio?: string | null } | null } | null | undefined): Ratio => {
+  const getRatioFor = (
+    video:
+      | {
+          id: string
+          requested_aspect_ratio?: string | null
+          video?: { aspect_ratio?: string | null } | null
+        }
+      | null
+      | undefined,
+  ): Ratio => {
     if (!video) return aspectRatio
+    // 1) Local map gives instant, in-session reactivity.
     const local = clipAspectRatios[video.id]
     if (local) return local
+    // 2) Real provider aspect ratio on the asset (ignored when it's a
+    //    non-ratio label like "720P" — normalizeRatio returns null).
     const fromAsset = normalizeRatio(video.video?.aspect_ratio ?? null)
-    return fromAsset ?? '16:9'
+    if (fromAsset) return fromAsset
+    // 3) The user's chosen ratio, durably persisted in the database. This is
+    //    the authoritative source that survives sign-out / localStorage clears.
+    const fromRequested = normalizeRatio(video.requested_aspect_ratio ?? null)
+    if (fromRequested) return fromRequested
+    // 4) Last-resort fallback.
+    return '16:9'
   }
   const ratioToCss = (r: Ratio): string => (r === '9:16' ? '9 / 16' : r === '1:1' ? '1 / 1' : '16 / 9')
   // Vertical budget is live-measured from the composer's top edge (see
