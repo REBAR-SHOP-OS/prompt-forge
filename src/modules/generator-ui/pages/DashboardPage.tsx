@@ -619,6 +619,20 @@ export default function DashboardPage() {
     // 4) Last-resort fallback.
     return '16:9'
   }
+  // Rehydrate the local ratio map from the database-backed source of truth.
+  // `requested_aspect_ratio` (and any valid asset `aspect_ratio`) is persisted
+  // server-side, so after a refresh or sign-out the local map is rebuilt and
+  // each card keeps the exact ratio the user chose — never silently 16:9.
+  useEffect(() => {
+    for (const job of generatedVideos) {
+      if (!job?.id) continue
+      const fromAsset = normalizeRatio(job.video?.aspect_ratio ?? null)
+      const fromRequested = normalizeRatio(job.requested_aspect_ratio ?? null)
+      const r = fromAsset ?? fromRequested
+      if (r) rememberClipRatio(job.id, r)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generatedVideos])
   const ratioToCss = (r: Ratio): string => (r === '9:16' ? '9 / 16' : r === '1:1' ? '1 / 1' : '16 / 9')
   // Vertical budget is live-measured from the composer's top edge (see
   // previewMaxHeightPx above). We pass it as a px value into both the height
