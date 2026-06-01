@@ -536,6 +536,29 @@ export default function DashboardPage() {
     setPreviewDismissed(true)
   }
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
+  // ----- Storage archive: every film the user ever made, read live from the
+  // server (independent of drafts/library local state). -----
+  const [isArchiveOpen, setIsArchiveOpen] = useState(false)
+  const [archiveJobs, setArchiveJobs] = useState<JobSummary[]>([])
+  const [archiveVideos, setArchiveVideos] = useState<VideoSummary[]>([])
+  const [archiveLoading, setArchiveLoading] = useState(false)
+  const loadArchive = async () => {
+    setArchiveLoading(true)
+    try {
+      const [jobs, videos] = await Promise.all([
+        jobOrchestratorGateway.listMyJobs(200).catch(() => [] as JobSummary[]),
+        videoLibraryGateway.listMyVideos(200).catch(() => [] as VideoSummary[]),
+      ])
+      setArchiveJobs(jobs)
+      setArchiveVideos(videos)
+    } finally {
+      setArchiveLoading(false)
+    }
+  }
+  const openArchive = () => {
+    setIsArchiveOpen(true)
+    void loadArchive()
+  }
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [calendarTodayOnly, setCalendarTodayOnly] = useState(false)
 
