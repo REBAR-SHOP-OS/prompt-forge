@@ -17,6 +17,18 @@ import { proxiedVideoUrl } from "./proxiedVideoUrl";
 const cache = new Map<string, string>();
 const inflight = new Map<string, Promise<string>>();
 
+/**
+ * Drop a resolved URL from the cache so the next resolve() re-runs the proxy
+ * with a fresh access token. Called when <video> playback fails on a proxied
+ * URL whose embedded token has likely expired — without this the stale URL
+ * would be handed back forever and the card would stay blank.
+ */
+export function invalidatePlayableVideoUrl(src: string | null | undefined): void {
+  if (!src) return;
+  cache.delete(src);
+  inflight.delete(src);
+}
+
 function resolve(src: string): Promise<string> {
   if (!src) return Promise.resolve(src);
   if (src.startsWith("blob:") || src.startsWith("data:")) return Promise.resolve(src);
