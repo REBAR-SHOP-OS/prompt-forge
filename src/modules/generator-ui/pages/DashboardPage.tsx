@@ -4044,6 +4044,8 @@ export default function DashboardPage() {
     // of Final Film never fails with a stale token (which would otherwise
     // leave the UI stuck right after the merge finalizes).
     try { await supabase.auth.refreshSession() } catch { /* ignore */ }
+    // Declared here so the `finally` block can always clear it on success.
+    let pipelineTimer: ReturnType<typeof setTimeout> | null = null
     try {
       // Determine target dimensions from the first video clip (mergeVideos.ts uses
       // the first clip's intrinsic size). If no video, fall back to a 1080p frame.
@@ -4124,11 +4126,12 @@ export default function DashboardPage() {
         : undefined
       // Overall pipeline watchdog: if the entire merge+transcode+upload chain
       // hasn't finished in 10 min, surface a clear error instead of leaving
-      // the UI stuck on 95% forever.
+      // the UI stuck on 95% forever. The timer id is cleared in `finally` so a
+      // successful run never leaves a dangling 10-min timeout behind.
       const PIPELINE_TIMEOUT_MS = 10 * 60_000
-      const pipelineTimeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Final Film took too long (>10 min). Please try again with fewer or shorter clips.')), PIPELINE_TIMEOUT_MS),
-      )
+      const pipelineTimeout = new Promise<never>((_, reject) => {
+        pipelineTimer = setTimeout(() => reject(new Error('Final Film took too long (>10 min). Please try again with fewer or shorter clips.')), PIPELINE_TIMEOUT_MS)
+      })
 
       const abortController = new AbortController()
       mergeAbortRef.current = abortController
@@ -4383,6 +4386,7 @@ export default function DashboardPage() {
       setVideoColumnMessage(friendly)
       }
     } finally {
+      if (pipelineTimer) { clearTimeout(pipelineTimer); pipelineTimer = null }
       mergeAbortRef.current = null
       setIsMerging(false)
       setMergeProgress(0)
