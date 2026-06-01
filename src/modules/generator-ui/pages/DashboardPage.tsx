@@ -918,6 +918,71 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  // Permanent ownership maps: every generated clip / uploaded image belongs to
+  // EXACTLY one draft, stamped at creation time. Draft snapshots are derived
+  // from these maps (not from "is it live in the workspace"), which is what
+  // guarantees a clip can never leak into another draft project.
+  const [jobDraftMap, setJobDraftMap] = useState<Record<string, string>>({})
+  const [imageDraftMap, setImageDraftMap] = useState<Record<string, string>>({})
+  const jobDraftMapKey = userId ? `job-draft-map:${userId}` : null
+  const imageDraftMapKey = userId ? `image-draft-map:${userId}` : null
+  useEffect(() => {
+    if (!jobDraftMapKey) { setJobDraftMap({}); return }
+    try {
+      const raw = window.localStorage.getItem(jobDraftMapKey)
+      const obj = raw ? (JSON.parse(raw) as Record<string, string>) : {}
+      setJobDraftMap(obj && typeof obj === 'object' ? obj : {})
+    } catch { setJobDraftMap({}) }
+  }, [jobDraftMapKey])
+  useEffect(() => {
+    if (!imageDraftMapKey) { setImageDraftMap({}); return }
+    try {
+      const raw = window.localStorage.getItem(imageDraftMapKey)
+      const obj = raw ? (JSON.parse(raw) as Record<string, string>) : {}
+      setImageDraftMap(obj && typeof obj === 'object' ? obj : {})
+    } catch { setImageDraftMap({}) }
+  }, [imageDraftMapKey])
+  function persistJobDraftMap(next: Record<string, string>) {
+    if (!jobDraftMapKey) return
+    try { window.localStorage.setItem(jobDraftMapKey, JSON.stringify(next)) } catch { /* ignore */ }
+  }
+  function persistImageDraftMap(next: Record<string, string>) {
+    if (!imageDraftMapKey) return
+    try { window.localStorage.setItem(imageDraftMapKey, JSON.stringify(next)) } catch { /* ignore */ }
+  }
+
+  // Ensure there is an active draft id; create + persist one if needed.
+  // Returns the id to stamp newly-created clips/images with.
+  const ensureActiveDraftIdRef = useRef<string | null>(null)
+  ensureActiveDraftIdRef.current = activeDraftId
+  function ensureActiveDraftId(): string {
+    let did = ensureActiveDraftIdRef.current
+    if (!did) {
+      did = `draft-${typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`
+      ensureActiveDraftIdRef.current = did
+      setActiveDraftId(did)
+      persistActiveDraftId(did)
+    }
+    return did
+  }
+  function stampJobDraft(jobId: string, draftId: string) {
+    setJobDraftMap((prev) => {
+      if (prev[jobId] === draftId) return prev
+      const next = { ...prev, [jobId]: draftId }
+      persistJobDraftMap(next)
+      return next
+    })
+  }
+  function stampImageDraft(imageId: string, draftId: string) {
+    setImageDraftMap((prev) => {
+      if (prev[imageId] === draftId) return prev
+      const next = { ...prev, [imageId]: draftId }
+      persistImageDraftMap(next)
+      return next
+    })
+  }
+
+
   // Film covers — one AI-generated cover image per draft/project scope.
   // Keyed by activeDraftId (or selectedProjectId for finalized projects).
   // Persisted to localStorage so covers survive refresh.
@@ -1047,6 +1112,32 @@ export default function DashboardPage() {
       persistActiveImageIds(next); return next
     })
   }
+
+  // Creation-site helpers: stamp a brand-new clip / image to the current
+  // active draft (creating one if needed) AND mark it active. Use these at
+  // generation sites so each new film's clips are permanently owned by one
+  // draft. Do NOT use for hydration/restore of existing jobs.
+  function markNewClip(id: string) {
+    const did = ensureActiveDraftId()
+    stampJobDraft(id, did)
+    markActiveJob(id)
+  }
+  function markNewImage(id: string) {
+    const did = ensureActiveDraftId()
+    stampImageDraft(id, did)
+    markActiveImage(id)
+  }
+  // A derived clip (regenerate / video-to-video) belongs to the SAME draft as
+  // its source clip, so it stays inside the same film instead of leaking into
+  // the current active draft. Falls back to the active draft when the source
+  // has no mapping yet.
+  function markDerivedClip(sourceId: string, newId: string) {
+    const did = jobDraftMap[sourceId] ?? ensureActiveDraftId()
+    stampJobDraft(newId, did)
+    markActiveJob(newId)
+  }
+
+
 
   // When set, HISTORY is filtered to show only the source clips of this
   // Library project. Cleared by Start Over or by the inline "Clear" button.
@@ -1500,6 +1591,30 @@ export default function DashboardPage() {
         unmarkActiveImages(imageIds)
       }
 
+      // Drop draft ownership mappings for the removed clips/images so the
+      // grouping effect can never rebuild this draft from stale entries.
+      if (clipIds.length > 0) {
+        setJobDraftMap((prev) => {
+          let changed = false
+          const next = { ...prev }
+          for (const id of clipIds) { if (id in next) { delete next[id]; changed = true } }
+          if (!changed) return prev
+          persistJobDraftMap(next)
+          return next
+        })
+      }
+      if (imageIds.length > 0) {
+        setImageDraftMap((prev) => {
+          let changed = false
+          const next = { ...prev }
+          for (const id of imageIds) { if (id in next) { delete next[id]; changed = true } }
+          if (!changed) return prev
+          persistImageDraftMap(next)
+          return next
+        })
+      }
+
+
       // Server-side permanent deletes. Errors are non-fatal: the local
       // tombstone keeps the card from coming back even if a row lingers.
       await Promise.allSettled([
@@ -1591,6 +1706,14 @@ export default function DashboardPage() {
     // Optimistic UI removal — remove from in-memory list immediately.
     setGeneratedVideos((current) => current.filter((v) => v.id !== jobId))
     unmarkActiveJobs([jobId])
+    // Drop this clip's draft ownership so its draft can't be rebuilt from it.
+    setJobDraftMap((prev) => {
+      if (!(jobId in prev)) return prev
+      const { [jobId]: _drop, ...rest } = prev
+      persistJobDraftMap(rest)
+      return rest
+    })
+
     setApprovedIds((current) => {
       if (!current.has(jobId)) return current
       const next = new Set(current)
@@ -1807,10 +1930,16 @@ export default function DashboardPage() {
   // Any time the workspace has at least one live clip/image, mirror it to a
   // Draft entry + per-draft snapshot so the chain survives refresh & Start
   // Over. Final Film success clears the draft (it becomes a Final video).
+  //
+  // Ownership model: each clip / image is permanently stamped to exactly one
+  // draft via jobDraftMap / imageDraftMap at creation time. We rebuild every
+  // draft's snapshot by GROUPING clips by their owning draft id — never by
+  // "is it currently live in the workspace". This is what guarantees a clip
+  // can never leak into a different draft project.
   useEffect(() => {
     if (!userId) return
-    // What counts as "live workspace"? Anything not hidden by Start Over and
-    // not already claimed by a Final Film project snapshot.
+    // Clips/images already claimed by a finalized Final Film project must not
+    // also live inside a draft (the draft graduated into a Final video).
     const finalClaimedJobs = new Set<string>()
     for (const clips of Object.values(projectSourceJobs)) {
       for (const c of clips) finalClaimedJobs.add(c.id)
@@ -1819,117 +1948,146 @@ export default function DashboardPage() {
     for (const imgs of Object.values(projectSourceImages)) {
       for (const i of imgs) finalClaimedImages.add(i.id)
     }
-    const liveClips = generatedVideos.filter(
-      (v) => !workspaceHiddenJobIds.has(v.id) && !finalClaimedJobs.has(v.id),
-    )
-    const liveImages = userImages.filter(
-      (i) => !workspaceHiddenImageIds.has(i.id) && !finalClaimedImages.has(i.id),
-    )
-    if (liveClips.length === 0 && liveImages.length === 0) return
 
-    // Make sure we have a draft id; create one if needed.
-    let draftId = activeDraftId
-    if (!draftId) {
-      draftId = `draft-${typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`
-      setActiveDraftId(draftId)
-      persistActiveDraftId(draftId)
+    // Group every mapped clip / image by its owning draft id.
+    const clipsByDraft = new Map<string, JobDetail[]>()
+    for (const v of generatedVideos) {
+      if (v.id.startsWith('merged-')) continue
+      if (finalClaimedJobs.has(v.id)) continue
+      const did = jobDraftMap[v.id]
+      if (!did || deletedDraftIds.has(did)) continue
+      const arr = clipsByDraft.get(did) ?? []
+      arr.push(v)
+      clipsByDraft.set(did, arr)
     }
-    const did = draftId
+    const imagesByDraft = new Map<string, UserImageItem[]>()
+    for (const img of userImages) {
+      if (finalClaimedImages.has(img.id)) continue
+      const did = imageDraftMap[img.id]
+      if (!did || deletedDraftIds.has(did)) continue
+      const arr = imagesByDraft.get(did) ?? []
+      arr.push(img)
+      imagesByDraft.set(did, arr)
+    }
 
-    // Update the snapshot maps only when ids actually change. Critically,
-    // we MERGE with the existing snapshot instead of replacing it: a clip
-    // that lost its storage_path (provider hiccup, transient poll error)
-    // keeps its previously-known good entry, so the draft never silently
-    // loses its video content.
+    const involvedDraftIds = new Set<string>([...clipsByDraft.keys(), ...imagesByDraft.keys()])
+    if (involvedDraftIds.size === 0) return
+
+    // Rebuild draft clip snapshots. We MERGE with the prior snapshot only
+    // within the SAME draft: a clip that momentarily lost its storage_path
+    // (provider hiccup / transient poll error) keeps its last-known-good copy
+    // so a draft never silently loses its video content.
     setDraftSourceJobs((prev) => {
-      const cur = prev[did] ?? []
-      const byId = new Map(cur.map((c) => [c.id, c] as const))
-      const liveIds = new Set(liveClips.map((c) => c.id))
-      // Step 1: merge live clips, preferring previous snapshot if live lost storage_path.
-      const merged = liveClips.map((c) => {
-        const hasPath = !!c.video?.storage_path
-        const existing = byId.get(c.id)
-        if (!hasPath && existing?.video?.storage_path) return existing
-        return c
-      })
-      // Step 2: KEEP previously-snapshotted clips that disappeared from the
-      // live workspace but still have a valid storage_path. This is what
-      // guarantees a draft never silently loses its video, even if the
-      // server briefly stops returning a row for it.
-      const survivors = cur.filter(
-        (c) => !liveIds.has(c.id) && !!c.video?.storage_path,
-      )
-      const finalList = [...merged, ...survivors]
-      const sameLen = cur.length === finalList.length
-      const sameIds = sameLen && cur.every((c, i) => c.id === finalList[i].id && (c.video?.storage_path ?? null) === (finalList[i].video?.storage_path ?? null))
-      if (sameIds) return prev
-      const next = { ...prev, [did]: finalList }
+      let changed = false
+      const next = { ...prev }
+      for (const did of involvedDraftIds) {
+        const live = clipsByDraft.get(did) ?? []
+        const cur = prev[did] ?? []
+        const byId = new Map(cur.map((c) => [c.id, c] as const))
+        const finalList = live.map((c) => {
+          const hasPath = !!c.video?.storage_path
+          const existing = byId.get(c.id)
+          if (!hasPath && existing?.video?.storage_path) return existing
+          return c
+        })
+        const sameLen = cur.length === finalList.length
+        const sameIds = sameLen && cur.every((c, i) => c.id === finalList[i].id && (c.video?.storage_path ?? null) === (finalList[i].video?.storage_path ?? null))
+        if (!sameIds) { next[did] = finalList; changed = true }
+      }
+      if (!changed) return prev
       persistDraftSourceJobs(next)
       return next
     })
     setDraftSourceImages((prev) => {
-      const cur = prev[did] ?? []
-      const sameLen = cur.length === liveImages.length
-      const sameIds = sameLen && cur.every((c, i) => c.id === liveImages[i].id)
-      if (sameIds) return prev
-      const next = { ...prev, [did]: liveImages }
+      let changed = false
+      const next = { ...prev }
+      for (const did of involvedDraftIds) {
+        const live = imagesByDraft.get(did) ?? []
+        const cur = prev[did] ?? []
+        const sameLen = cur.length === live.length
+        const sameIds = sameLen && cur.every((c, i) => c.id === live[i].id)
+        if (!sameIds) { next[did] = live; changed = true }
+      }
+      if (!changed) return prev
       persistDraftSourceImages(next)
       return next
     })
 
-    // Upsert the draft entry (used to render the Library card).
+    // Upsert one Library card per involved draft.
     setDraftEntries((prev) => {
       const nowIso = new Date().toISOString()
-      const firstClip = liveClips[liveClips.length - 1] // oldest = chain start
-      const firstImg = liveImages[liveImages.length - 1]
-      const prompt = firstClip?.input_prompt ?? 'Draft project'
-      const ratio = firstClip?.video?.aspect_ratio
-        ?? firstClip?.requested_aspect_ratio
-        ?? null
-      const thumb = firstClip?.video?.thumbnail_url ?? firstImg?.storage_path ?? null
-      const stubVideo: JobDetail['video'] = firstClip?.video
-        ? { ...firstClip.video }
-        : { id: did, storage_path: firstImg?.storage_path ?? '', thumbnail_url: thumb, aspect_ratio: ratio, duration: null }
-      const existing = prev.find((d) => d.id === did)
-      const entry: JobDetail = {
-        id: did,
-        input_prompt: prompt,
-        status: 'draft',
-        provider_key: existing?.provider_key ?? null,
-        model_key: existing?.model_key ?? null,
-        first_frame_url: null,
-        last_frame_url: null,
-        requested_duration: null,
-        requested_aspect_ratio: ratio,
-        created_at: existing?.created_at ?? nowIso,
-        updated_at: nowIso,
-        video: stubVideo,
+      let changed = false
+      const byId = new Map(prev.map((d) => [d.id, d] as const))
+      for (const did of involvedDraftIds) {
+        const liveClips = clipsByDraft.get(did) ?? []
+        const liveImages = imagesByDraft.get(did) ?? []
+        if (liveClips.length === 0 && liveImages.length === 0) {
+          // Draft became empty — drop its card.
+          if (byId.has(did)) { byId.delete(did); changed = true }
+          continue
+        }
+        const firstClip = liveClips[liveClips.length - 1] // oldest = chain start
+        const firstImg = liveImages[liveImages.length - 1]
+        const prompt = firstClip?.input_prompt ?? 'Draft project'
+        const ratio = firstClip?.video?.aspect_ratio
+          ?? firstClip?.requested_aspect_ratio
+          ?? null
+        const thumb = firstClip?.video?.thumbnail_url ?? firstImg?.storage_path ?? null
+        const stubVideo: JobDetail['video'] = firstClip?.video
+          ? { ...firstClip.video }
+          : { id: did, storage_path: firstImg?.storage_path ?? '', thumbnail_url: thumb, aspect_ratio: ratio, duration: null }
+        const existing = byId.get(did)
+        const entry: JobDetail = {
+          id: did,
+          input_prompt: prompt,
+          status: 'draft',
+          provider_key: existing?.provider_key ?? null,
+          model_key: existing?.model_key ?? null,
+          first_frame_url: null,
+          last_frame_url: null,
+          requested_duration: null,
+          requested_aspect_ratio: ratio,
+          created_at: existing?.created_at ?? nowIso,
+          updated_at: nowIso,
+          video: stubVideo,
+        }
+        byId.set(did, entry)
+        changed = true
       }
-
-      const filtered = prev.filter((d) => d.id !== did)
-      const next = [entry, ...filtered]
-      persistDraftEntries(next)
-      return next
+      if (!changed) return prev
+      // Preserve previous relative order; new drafts go to the front.
+      const seen = new Set<string>()
+      const ordered: JobDetail[] = []
+      for (const d of prev) {
+        const cur = byId.get(d.id)
+        if (cur && !seen.has(d.id)) { ordered.push(cur); seen.add(d.id) }
+      }
+      for (const did of involvedDraftIds) {
+        const cur = byId.get(did)
+        if (cur && !seen.has(did)) { ordered.unshift(cur); seen.add(did) }
+      }
+      persistDraftEntries(ordered)
+      return ordered
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, generatedVideos, userImages, workspaceHiddenJobIds, workspaceHiddenImageIds, projectSourceJobs, projectSourceImages, activeDraftId])
+  }, [userId, generatedVideos, userImages, jobDraftMap, imageDraftMap, projectSourceJobs, projectSourceImages, deletedDraftIds])
+
+
 
 
   // ----- Backfill historical drafts -----
-  // Every completed clip / uploaded image that isn't part of a Final Film,
-  // an existing Library entry, or an existing draft becomes its own Draft
-  // project card. Deterministic ids keep reruns idempotent, and the
-  // `deletedDraftIds` tombstone prevents user-deleted drafts from coming
-  // back after a refresh.
+  // Any completed clip / uploaded image that has no draft ownership yet AND is
+  // not part of a Final Film becomes its OWN isolated draft: we stamp it into
+  // jobDraftMap / imageDraftMap with a deterministic per-item draft id. The
+  // grouping effect above then builds the snapshot + Library card from that
+  // mapping. Deterministic ids keep reruns idempotent; the `deletedDraftIds`
+  // tombstone prevents user-deleted drafts from coming back.
   useEffect(() => {
     if (!userId) return
     if (generatedVideos.length === 0 && userImages.length === 0) return
 
     const claimedJobIds = new Set<string>()
     for (const clips of Object.values(projectSourceJobs)) {
-      for (const c of clips) claimedJobIds.add(c.id)
-    }
-    for (const clips of Object.values(draftSourceJobs)) {
       for (const c of clips) claimedJobIds.add(c.id)
     }
     for (const id of Object.keys(librarySavedJobs)) claimedJobIds.add(id)
@@ -1939,95 +2097,57 @@ export default function DashboardPage() {
     for (const imgs of Object.values(projectSourceImages)) {
       for (const i of imgs) claimedImageIds.add(i.id)
     }
-    for (const imgs of Object.values(draftSourceImages)) {
-      for (const i of imgs) claimedImageIds.add(i.id)
-    }
 
-    const existingDraftIds = new Set(draftEntries.map((d) => d.id))
-
-    const newEntries: JobDetail[] = []
-    const newSourceJobs: Record<string, JobDetail[]> = {}
-    const newSourceImages: Record<string, UserImageItem[]> = {}
-
+    const jobStamps: Record<string, string> = {}
     for (const job of generatedVideos) {
+      if (jobDraftMap[job.id]) continue // already owned by a draft
       if (claimedJobIds.has(job.id)) continue
+      if (job.id.startsWith('merged-')) continue
       if (deletedDraftIds.has(job.id)) continue
       if (normalizeStatus(job.status) !== 'completed') continue
       if (!job.video?.storage_path) continue
-      // Live workspace items are owned by the active-workspace draft effect.
-      // Skipping here prevents a duplicate `draft-orphan-*` card from racing
-      // alongside the single `draft-<uuid>` active draft.
-      if (!workspaceHiddenJobIds.has(job.id)) continue
       const draftId = `draft-orphan-${job.id}`
       if (deletedDraftIds.has(draftId)) continue
-      if (existingDraftIds.has(draftId)) continue
-      const ratio = job.video?.aspect_ratio ?? job.requested_aspect_ratio ?? null
-      newEntries.push({
-        id: draftId,
-        input_prompt: job.input_prompt ?? 'Draft project',
-        status: 'draft',
-        provider_key: job.provider_key ?? null,
-        model_key: job.model_key ?? null,
-        first_frame_url: null,
-        last_frame_url: null,
-        requested_duration: null,
-        requested_aspect_ratio: ratio,
-        created_at: job.created_at ?? new Date().toISOString(),
-        updated_at: job.updated_at ?? job.created_at ?? new Date().toISOString(),
-        video: { ...(job.video as JobDetail['video']) },
-      })
-      newSourceJobs[draftId] = [job]
+      jobStamps[job.id] = draftId
     }
 
+    const imageStamps: Record<string, string> = {}
     for (const img of userImages) {
+      if (imageDraftMap[img.id]) continue
       if (claimedImageIds.has(img.id)) continue
       if (deletedDraftIds.has(img.id)) continue
-      // Same guard as clips: leave live workspace images to the active draft.
-      if (!workspaceHiddenImageIds.has(img.id)) continue
       const draftId = `draft-orphan-img-${img.id}`
       if (deletedDraftIds.has(draftId)) continue
-      if (existingDraftIds.has(draftId)) continue
-      const nowIso = new Date().toISOString()
-      newEntries.push({
-        id: draftId,
-        input_prompt: 'Uploaded image',
-        status: 'draft',
-        provider_key: null,
-        model_key: null,
-        first_frame_url: null,
-        last_frame_url: null,
-        requested_duration: null,
-        requested_aspect_ratio: null,
-        created_at: (img as unknown as { created_at?: string }).created_at ?? nowIso,
-        updated_at: (img as unknown as { created_at?: string }).created_at ?? nowIso,
-        video: { id: draftId, storage_path: img.storage_path ?? '', thumbnail_url: img.storage_path ?? null, aspect_ratio: null, duration: null },
-      })
-      newSourceImages[draftId] = [img]
+      imageStamps[img.id] = draftId
     }
 
-    if (newEntries.length === 0) return
-
-    setDraftEntries((prev) => {
-      const next = [...newEntries, ...prev]
-      persistDraftEntries(next)
-      return next
-    })
-    if (Object.keys(newSourceJobs).length > 0) {
-      setDraftSourceJobs((prev) => {
-        const next = { ...prev, ...newSourceJobs }
-        persistDraftSourceJobs(next)
+    if (Object.keys(jobStamps).length > 0) {
+      setJobDraftMap((prev) => {
+        let changed = false
+        const next = { ...prev }
+        for (const [id, did] of Object.entries(jobStamps)) {
+          if (next[id] !== did) { next[id] = did; changed = true }
+        }
+        if (!changed) return prev
+        persistJobDraftMap(next)
         return next
       })
     }
-    if (Object.keys(newSourceImages).length > 0) {
-      setDraftSourceImages((prev) => {
-        const next = { ...prev, ...newSourceImages }
-        persistDraftSourceImages(next)
+    if (Object.keys(imageStamps).length > 0) {
+      setImageDraftMap((prev) => {
+        let changed = false
+        const next = { ...prev }
+        for (const [id, did] of Object.entries(imageStamps)) {
+          if (next[id] !== did) { next[id] = did; changed = true }
+        }
+        if (!changed) return prev
+        persistImageDraftMap(next)
         return next
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, generatedVideos, userImages, mergedEntries, librarySavedJobs, projectSourceJobs, projectSourceImages, draftSourceJobs, draftSourceImages, draftEntries, workspaceHiddenJobIds, workspaceHiddenImageIds, deletedDraftIds])
+  }, [userId, generatedVideos, userImages, mergedEntries, librarySavedJobs, projectSourceJobs, projectSourceImages, jobDraftMap, imageDraftMap, deletedDraftIds])
+
 
   // One-time dedupe: older builds could create both an active `draft-<uuid>`
   // and a `draft-orphan-<jobId>` entry for the same underlying clip/image.
@@ -2577,7 +2697,7 @@ export default function DashboardPage() {
         .single()
       if (insErr) throw insErr
       setUserImages((prev) => [row as UserImageItem, ...prev])
-      markActiveImage((row as UserImageItem).id)
+      markNewImage((row as UserImageItem).id)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Upload failed.'
       setVideoColumnMessage(`Image upload failed: ${msg}`)
@@ -3360,7 +3480,7 @@ export default function DashboardPage() {
 
         setPreviewVideoId(seededJob.id)
         setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
-        markActiveJob(seededJob.id)
+        markNewClip(seededJob.id)
       }
       setPromptText('')
       setUploadedFiles([])
@@ -3493,7 +3613,7 @@ export default function DashboardPage() {
         }
         setPreviewVideoId(seededJob.id)
         setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
-        markActiveJob(seededJob.id)
+        markNewClip(seededJob.id)
         previousJobId = seededJob.id
       }
       setVideoColumnMessage(null)
@@ -3791,7 +3911,7 @@ export default function DashboardPage() {
         next.add(seededJob.id)
         return next
       })
-      markActiveJob(seededJob.id)
+      markDerivedClip(job.id, seededJob.id)
       // Fire-and-forget cleanup of the old job in the backend.
       jobOrchestratorGateway.deleteJob(job.id).catch((err) => {
         // Non-blocking; surface as a soft message.
@@ -4634,7 +4754,7 @@ export default function DashboardPage() {
             onJobCreated={(seeded, ratio) => {
               setGeneratedVideos((curr) => mergeJob(curr, seeded))
               rememberClipRatio(seeded.id, ratio)
-              markActiveJob(seeded.id)
+              markDerivedClip(job.id, seeded.id)
             }}
           />
         )
@@ -4939,7 +5059,7 @@ export default function DashboardPage() {
           }
 
           setUserImages((prev) => [row as UserImageItem, ...prev])
-          markActiveImage((row as UserImageItem).id)
+          markNewImage((row as UserImageItem).id)
           setGenerationMode('image-to-video')
           setUploadTarget('Start')
           const seedId = Date.now()
