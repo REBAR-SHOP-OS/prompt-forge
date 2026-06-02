@@ -1698,12 +1698,17 @@ export default function DashboardPage() {
       }
 
 
-      // Server-side permanent deletes. Errors are non-fatal: the local
-      // tombstone keeps the card from coming back even if a row lingers.
-      await Promise.allSettled([
-        ...clipIds.map((id) => jobOrchestratorGateway.deleteJob(id)),
-        ...imageIds.map((id) => generatorUiGateway.deleteUserImage(id)),
-      ])
+      // Storage is the permanent archive. Deleting a draft only hides its
+      // clips from the workspace — the server jobs are kept so the films stay
+      // in Storage until the user removes them there explicitly.
+      if (clipIds.length > 0) {
+        setWorkspaceHiddenJobIds((curr) => {
+          const next = new Set(curr)
+          for (const id of clipIds) next.add(id)
+          persistWorkspaceHiddenJobIds(next)
+          return next
+        })
+      }
       return
     }
 
@@ -1845,8 +1850,15 @@ export default function DashboardPage() {
           }
         }
       } else {
-        // Real job: backend delete (DB rows + Storage files, server-side).
-        await jobOrchestratorGateway.deleteJob(jobId)
+        // Real job: keep it on the server (Storage is the permanent archive)
+        // and only hide it from the workspace. It stays in Storage until the
+        // user deletes it from there explicitly.
+        setWorkspaceHiddenJobIds((curr) => {
+          const next = new Set(curr)
+          next.add(jobId)
+          persistWorkspaceHiddenJobIds(next)
+          return next
+        })
       }
     } catch (err) {
       // Roll back the optimistic removal on failure.
@@ -3995,11 +4007,13 @@ export default function DashboardPage() {
         return next
       })
       markDerivedClip(job.id, seededJob.id)
-      // Fire-and-forget cleanup of the old job in the backend.
-      jobOrchestratorGateway.deleteJob(job.id).catch((err) => {
-        // Non-blocking; surface as a soft message.
-        const msg = err instanceof Error ? err.message : 'Old card cleanup failed'
-        setVideoColumnMessage(msg)
+      // Keep the old version on the server (Storage is the permanent archive)
+      // and only hide it from the workspace so the regenerated card replaces it.
+      setWorkspaceHiddenJobIds((curr) => {
+        const next = new Set(curr)
+        next.add(job.id)
+        persistWorkspaceHiddenJobIds(next)
+        return next
       })
     } catch (error) {
       const message = generationStartErrorMessage(error, 'Could not regenerate this card.')
@@ -4734,18 +4748,24 @@ export default function DashboardPage() {
     setActiveImageIds(new Set()); persistActiveImageIds(new Set())
 
 
-    if (looseJobIds.length === 0 && looseImageIds.length === 0) return
+    if (looseImageIds.length === 0) {
+      // Loose jobs are kept on the server (Storage archive); resetWorkspace
+      // already hid them from the workspace via workspaceHiddenJobIds.
+      setGeneratedVideos((curr) => curr.filter((j) => !looseJobIds.includes(j.id)))
+      return
+    }
 
-    const results = await Promise.allSettled([
-      ...looseJobIds.map((id) => jobOrchestratorGateway.deleteJob(id)),
-      ...looseImageIds.map((id) => generatorUiGateway.deleteUserImage(id)),
-    ])
+    // Source images are not films and are not listed in Storage, so they are
+    // still removed. Loose video jobs are intentionally kept on the server.
+    const results = await Promise.allSettled(
+      looseImageIds.map((id) => generatorUiGateway.deleteUserImage(id)),
+    )
     const failed = results.filter((r) => r.status === 'rejected').length
     if (failed > 0) {
       console.error(`Start Over: ${failed} item(s) failed to delete`)
       setVideoColumnMessage(`Could not permanently delete ${failed} item(s). They may reappear after refresh.`)
     }
-    // Drop deleted ids from local state immediately.
+    // Drop dropped ids from local state immediately.
     setGeneratedVideos((curr) => curr.filter((j) => !looseJobIds.includes(j.id)))
     setUserImages((curr) => curr.filter((i) => !looseImageIds.includes(i.id)))
   }
