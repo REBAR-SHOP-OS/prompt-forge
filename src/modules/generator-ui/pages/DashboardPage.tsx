@@ -100,6 +100,7 @@ import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDial
 import UsageStatsPopover from '@/modules/generator-ui/components/UsageStatsPopover'
 import VideoToVideoDialog from '@/modules/generator-ui/components/VideoToVideoDialog'
 import { VoiceoverDialog } from '@/modules/generator-ui/components/VoiceoverDialog'
+import CalendarInfoDialog from '@/modules/generator-ui/components/CalendarInfoDialog'
 
 import ImageReframeDialog from '@/modules/generator-ui/components/ImageReframeDialog'
 import AiImageDialog from '@/modules/generator-ui/components/AiImageDialog'
