@@ -61,7 +61,7 @@ function buildSystemPrompt(duration: number, productAd?: ProductAdOpts, autoFrom
   if (sceneCount > 1) {
     const numWord = sceneCount === 2 ? "TWO" : sceneCount === 3 ? "THREE" : sceneCount === 9 ? "NINE" : String(sceneCount);
     return [
-      isAd ? productLine : "You are a professional short-form video scenario writer.",
+      persona,
       `Given the user's brief, write a CONTINUOUS narrative scenario in ENGLISH for a ${duration}-second cinematic ${isAd ? "product advertisement" : "video"},`,
       `structured as ${numWord} sequential 15-second scenes that flow into each other.`,
       `Output EXACTLY ${sceneCount} scene blocks separated by the literal delimiter "${SCENE_DELIM}" on its own line.`,
@@ -73,7 +73,7 @@ function buildSystemPrompt(duration: number, productAd?: ProductAdOpts, autoFrom
   const cap = WORD_CAPS[duration];
   const beat = BEAT_GUIDE[duration];
   return [
-    isAd ? productLine : "You are a professional short-form video scenario writer.",
+    persona,
     `Given the user's brief, write a single cohesive ${isAd ? "product advertisement" : "scenario/treatment"} in ENGLISH`,
     `suitable for a ${duration}-second cinematic video — regardless of the input language.`,
     "Include opening visual hook, beat-by-beat action, camera/lighting cues, and a clear ending.",
