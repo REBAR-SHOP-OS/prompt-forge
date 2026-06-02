@@ -601,6 +601,21 @@ export default function DashboardPage() {
       setArchiveLoading(false)
     }
   }
+  const [deletingArchiveId, setDeletingArchiveId] = useState<string | null>(null)
+  const handleDeleteArchiveJob = async (jobId: string) => {
+    setDeletingArchiveId(jobId)
+    try {
+      await jobOrchestratorGateway.deleteJob(jobId)
+      setArchiveJobs((prev) => prev.filter((j) => j.id !== jobId))
+      setArchiveVideos((prev) => prev.filter((v) => v.job_id !== jobId))
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : (err as Error).message
+      if (typeof window !== 'undefined') window.alert(`Delete failed: ${msg}`)
+    } finally {
+      setDeletingArchiveId(null)
+    }
+  }
+
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [calendarTodayOnly, setCalendarTodayOnly] = useState(false)
 
