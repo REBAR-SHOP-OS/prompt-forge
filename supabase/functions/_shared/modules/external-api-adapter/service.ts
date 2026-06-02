@@ -168,6 +168,16 @@ interface DashScopeTaskResponse {
 // progress doesn't sit at 95% for too short a time.
 const WAN_EXPECTED_RENDER_MS = 150_000; // ~2.5 minutes
 
+// Time-based progress that ramps 15 -> 60 over `expectedMs`, then slowly creeps
+// 60 -> ~95 on an asymptotic tail so a long-running provider job never looks
+// frozen. Never returns 100 (reserved for real completion).
+export function creepingProgress(elapsedMs: number, expectedMs: number): number {
+  const ratio = expectedMs > 0 ? Math.max(0, elapsedMs) / expectedMs : 0;
+  if (ratio <= 1) return Math.max(15, Math.round(15 + ratio * 45));
+  const tail = ratio - 1;
+  return Math.min(95, Math.round(60 + (tail / (tail + 3)) * 35));
+}
+
 function parseProviderProgress(raw: number | string | undefined): number | null {
   if (raw === undefined || raw === null) return null;
   if (typeof raw === "number" && Number.isFinite(raw)) {
@@ -190,15 +200,13 @@ function estimateWanProgress(
   if (status === "SUCCEEDED") return 100;
   if (status === "FAILED" || status === "CANCELED") return 0;
   if (status === "PENDING") return 8;
-  // RUNNING / UNKNOWN with no real provider progress: conservative time-based
-  // ramp capped at 60 so the UI never falsely implies "almost done" when the
-  // provider hasn't actually reported it. The status message carries the
-  // real "still rendering" semantics.
+  // RUNNING / UNKNOWN with no real provider progress: time-based ramp to 60
+  // over the expected window, then a slow asymptotic creep toward ~95 so the
+  // bar keeps visibly moving when the provider takes longer than usual instead
+  // of freezing at 60. It never reaches 100 — only real completion does.
   const startedAt = submitTime ? Date.parse(submitTime.replace(" ", "T") + "Z") : NaN;
   if (Number.isFinite(startedAt)) {
-    const elapsed = Date.now() - startedAt;
-    const ratio = elapsed / WAN_EXPECTED_RENDER_MS;
-    return Math.max(15, Math.min(60, Math.round(15 + ratio * 45)));
+    return creepingProgress(Date.now() - startedAt, WAN_EXPECTED_RENDER_MS);
   }
   return 20;
 }

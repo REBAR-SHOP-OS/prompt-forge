@@ -90,8 +90,12 @@ function estimateProgressFromJob(
   if (!Number.isFinite(startedAt)) return status === "pending" ? 8 : 20;
   const elapsed = Date.now() - startedAt;
   const ratio = elapsed / expectedMs;
-  // Cap fallback estimate at 60 — anything higher must come from real provider data.
-  return Math.max(status === "pending" ? 8 : 15, Math.min(60, Math.round(15 + ratio * 45)));
+  if (status === "pending") return Math.max(8, Math.min(20, Math.round(8 + ratio * 12)));
+  // Ramp to 60 over the expected window, then creep slowly toward ~95 so a
+  // long-running provider job doesn't appear frozen. Only real completion = 100.
+  if (ratio <= 1) return Math.max(15, Math.round(15 + ratio * 45));
+  const tail = ratio - 1;
+  return Math.min(95, Math.round(60 + (tail / (tail + 3)) * 35));
 }
 
 // Dynamic hard-timeout: longer clips legitimately take longer; we still
