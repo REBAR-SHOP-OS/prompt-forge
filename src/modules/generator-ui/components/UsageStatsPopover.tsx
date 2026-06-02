@@ -50,7 +50,7 @@ function monthLabel(d: Date) {
   return d.toLocaleString(undefined, { month: 'long', year: 'numeric' })
 }
 
-export default function UsageStatsPopover() {
+export default function UsageStatsPopover({ triggerClassName }: { triggerClassName?: string } = {}) {
   const { user } = useAuth()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
