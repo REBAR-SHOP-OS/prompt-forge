@@ -89,10 +89,13 @@ async function callGateway(
   idea: string,
   imageUrl?: string,
   productAd?: ProductAdOpts,
+  autoFromImage?: boolean,
 ): Promise<Response> {
   const refText = productAd
     ? `Brief: ${idea}\nThe attached image is the actual product — match its exact look, color, shape, and branding in every shot.`
-    : `Idea: ${idea}\nBase the scenario on the attached reference image (subjects, setting, mood, props, style).`;
+    : autoFromImage
+      ? `No written idea was provided. Analyze the attached image and write the scenario entirely based on what you observe in it.`
+      : `Idea: ${idea}\nBase the scenario on the attached reference image (subjects, setting, mood, props, style).`;
   const userContent: unknown = imageUrl
     ? [
         { type: "text", text: refText },
@@ -109,7 +112,7 @@ async function callGateway(
     body: JSON.stringify({
       model: "google/gemini-2.5-flash",
       messages: [
-        { role: "system", content: buildSystemPrompt(duration, productAd) },
+        { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage) },
         { role: "user", content: userContent },
       ],
     }),
