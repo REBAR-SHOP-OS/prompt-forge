@@ -1,49 +1,32 @@
-# Product Ad Scenario Generator
+## Goal
+در دیالوگ Scenario Writer وقتی کاربر عکس آپلود می‌کند، امکان بدهیم که سناریو بر اساس همان عکس نوشته شود — با دو حالت روشن:
+1. **ایده‌ی خودم** — کاربر ایده‌اش را تایپ می‌کند (عکس هم به‌عنوان مرجع استفاده می‌شود).
+2. **ایده‌ی اتوماتیک** — سیستم خودش عکس را تحلیل می‌کند و بدون نیاز به متن، ایده/سناریو می‌سازد.
 
-Add a new icon button next to the existing Scenario Writer (Clapperboard) icon in the prompt toolbar. Clicking it opens a guided dialog where the user attaches a product photo, enters the product name, answers a few questions, and gets an AI-generated advertising scenario that respects the chosen camera style and movement.
+> در حال حاضر backend تولید بر اساس عکس را پشتیبانی می‌کند و حتی با ایده‌ی خالی هم کار می‌کند، اما این رفتار در UI واضح نیست. این تغییر آن را به یک انتخاب صریح و کاربرپسند تبدیل می‌کند.
 
-## User flow
+## تغییرات UI (`ScenarioWriterDialog.tsx`)
+- افزودن یک سوییچ/تَب دو حالته زیر بخش «Your idea»:
+  - **Auto from image** (پیش‌فرض وقتی عکس آپلود شده و متنی نیست)
+  - **Write my own idea**
+- در حالت Auto:
+  - فیلد متن غیرفعال/کم‌رنگ می‌شود و یک راهنما نمایش داده می‌شود: «سناریو به‌طور خودکار بر اساس عکس آپلودشده نوشته می‌شود».
+  - دکمه‌ی تولید فقط با وجود عکس فعال است.
+- در حالت Write my own idea: رفتار فعلی حفظ می‌شود (متن لازم است، عکس اختیاری به‌عنوان مرجع).
+- اگر عکسی آپلود نشده باشد، حالت Auto مخفی/غیرفعال است.
+- پیام راهنمای بالای دیالوگ کمی به‌روزرسانی می‌شود تا قابلیت تحلیل عکس را توضیح دهد.
 
-```text
-[🎬 Product Ad icon]  ->  Dialog opens
-   Step 1 — Product
-     • Attach product photo (upload)
-     • Product name (text)
-     • Short product description (optional)
-   Step 2 — Questions
-     • Duration: 5 / 10 / 15 / 30 / 45 / 135 s
-     • Camera style (pick one):
-         Whip Pan, Orbit Shot, FPV Drone, Tracking Shot,
-         Push In Cinematic, Fly Through, Crash Zoom,
-         Handheld Dynamic, Dolly Zoom, Parallax Motion
-     • Camera movement notes (free text, optional)
-   ->  "Generate ad scenario"
-   ->  Scenario shown (single or 3 scenes for 45s, like today)
-   ->  "Use as prompt"  (fills main prompt + attaches the product image)
-       / "Send all to Pending" for 45s split
-```
+## تغییرات Backend (`supabase/functions/scenario-write/index.ts`)
+- افزودن یک حالت `autoFromImage` (یا تشخیص خودکار وقتی `imageUrl` هست و `idea` خالی است).
+- بهبود system/user prompt برای حالت auto: مدل ابتدا عکس را با دقت تحلیل کند (سوژه، صحنه، حال‌وهوا، رنگ، اشیاء، سبک) و سپس یک سناریوی سینمایی منطبق با همان عکس و متناسب با مدت‌زمان انتخابی بنویسد.
+- در حالت «ایده‌ی خودم با عکس» همان رفتار فعلی (عکس به‌عنوان مرجع) حفظ می‌شود.
+- محدودیت‌های اعتبارسنجی فعلی (طول، دامنه‌ی مجاز عکس، durations) بدون تغییر باقی می‌ماند.
 
-## What gets built
+## تأیید
+- تست با آپلود عکس و حالت Auto: تولید سناریو بدون متن.
+- تست حالت Write my own idea با و بدون عکس.
+- بررسی build و لاگ edge function.
 
-### 1. New dialog component
-`src/modules/generator-ui/components/ProductAdDialog.tsx`
-- Modeled on the existing `ScenarioWriterDialog` (reuse its image-upload to the `wan-frames` bucket, duration selector, scene rendering, copy / regenerate / use-as-prompt actions).
-- Adds: product name input, optional description, a camera-style selector (10 options as pill buttons), and a camera-movement notes textarea.
-- Reuses the same `onUseAsPrompt` and `onSendScenes` callbacks already wired for the Scenario Writer so the result flows into the prompt box / Pending exactly like today.
-
-### 2. Toolbar icon
-In `DashboardPage.tsx`, add a button right after the Scenario Writer icon (around line 6967) using a product-style Lucide icon (e.g. `Package` or `ShoppingBag`), with its own `isProductAdOpen` state, and render `<ProductAdDialog .../>` near the existing `<ScenarioWriterDialog />` (around line 5558), passing the same handlers.
-
-### 3. Edge function support
-Extend the existing `scenario-write` function (`supabase/functions/scenario-write/index.ts`) to accept optional fields: `mode: "product-ad"`, `productName`, `productDescription`, `cameraStyle`, `cameraMovement`. When in product-ad mode, the system prompt is rewritten to produce a persuasive product-commercial scenario that:
-- Centers the named product as the hero,
-- Bakes the selected camera style (e.g. "Crash Zoom", "Orbit Shot") and any movement notes into the shot descriptions,
-- Keeps the existing duration/word-cap and multi-scene (`===SCENE===`) splitting logic unchanged.
-
-All existing scenario-writer behavior stays intact; product-ad is an additive branch.
-
-## Technical notes
-
-- No database/schema changes; reuses the `wan-frames` storage bucket and current auth.
-- Camera-style list stored as a constant array in the dialog so it is easy to extend.
-- The product image is sent to `scenario-write` as `imageUrl` (already supported) so the AI grounds the scenario in the actual product, and is forwarded to `onUseAsPrompt` to pre-attach it for generation.
+## جزئیات فنی
+- مدل: همان `google/gemini-2.5-flash` با محتوای چندوجهی (متن + image_url) که الان استفاده می‌شود.
+- منطق split برای 45s/135s و دکمه‌های Use as prompt / Send all بدون تغییر.
