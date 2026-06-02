@@ -5125,17 +5125,6 @@ export default function DashboardPage() {
 
       <UsageStatsPopover />
 
-      <CalendarInfoDialog
-        open={isCalendarOpen}
-        onOpenChange={setIsCalendarOpen}
-        todayOnly={calendarTodayOnly}
-        onApplyPrompt={(p) => {
-          setPromptText(p)
-          setDurationSeconds(10)
-          setIsCalendarOpen(false)
-          setCalendarTodayOnly(false)
-        }}
-      />
 
 
       <div className="fixed left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-2 sm:top-5">
