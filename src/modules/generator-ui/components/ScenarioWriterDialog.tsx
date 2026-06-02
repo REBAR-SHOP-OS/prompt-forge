@@ -185,7 +185,7 @@ export default function ScenarioWriterDialog({
     setIdeaMode('manual')
   }
 
-  const isSplit = duration === 45 && scenes.length === 3
+  const isSplit = SPLIT_DURATIONS.includes(duration) && scenes.length > 1
   const concatenated = scenes.join('\n\n')
   const isAutoMode = ideaMode === 'auto' && Boolean(uploadedImageUrl)
   const canGenerate =
