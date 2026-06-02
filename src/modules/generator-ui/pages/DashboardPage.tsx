@@ -4991,7 +4991,7 @@ export default function DashboardPage() {
                         key={job.id}
                         className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3"
                       >
-                        <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
+                        <div className="relative aspect-video w-full shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
                           {video?.storage_path ? (
                             <PlayableVideo
                               thumbnail
