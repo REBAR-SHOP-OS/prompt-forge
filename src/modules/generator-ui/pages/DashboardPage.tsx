@@ -105,6 +105,7 @@ import CalendarInfoDialog from '@/modules/generator-ui/components/CalendarInfoDi
 import ImageReframeDialog from '@/modules/generator-ui/components/ImageReframeDialog'
 import AiImageDialog from '@/modules/generator-ui/components/AiImageDialog'
 import ScenarioWriterDialog from '@/modules/generator-ui/components/ScenarioWriterDialog'
+import ProductAdDialog from '@/modules/generator-ui/components/ProductAdDialog'
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
