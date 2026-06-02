@@ -4881,53 +4881,53 @@ export default function DashboardPage() {
         <CalendarDays className="h-[18px] w-[18px]" aria-hidden="true" />
       </button>
 
-      <Popover
+      <button
+        type="button"
+        aria-label="Open storage archive"
+        title="Storage"
+        onClick={() => { setIsArchiveOpen(true); void loadArchive() }}
+        className="fixed left-[8.5rem] top-4 z-50 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-40 sm:top-5"
+      >
+        <Database className="h-[18px] w-[18px]" aria-hidden="true" />
+      </button>
+
+      <Dialog
         open={isArchiveOpen}
         onOpenChange={(next) => {
           setIsArchiveOpen(next)
           if (next) void loadArchive()
         }}
       >
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            aria-label="Open storage archive"
-            title="Storage"
-            className="fixed left-[8.5rem] top-4 z-50 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-40 sm:top-5"
-          >
-            <Database className="h-[18px] w-[18px]" aria-hidden="true" />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent
-          align="start"
-          sideOffset={10}
-          className="z-50 flex max-h-[min(34rem,calc(100vh-6rem))] w-[min(22rem,calc(100vw-1.5rem))] flex-col border-white/10 bg-[#0b0c0e]/95 p-3 text-zinc-100 shadow-[0_22px_70px_rgba(0,0,0,0.4)] backdrop-blur-xl"
+        <DialogContent
+          className="z-50 flex h-[min(90vh,52rem)] w-[min(72rem,95vw)] max-w-none flex-col gap-0 border-white/10 bg-[#0b0c0e]/95 p-0 text-zinc-100 shadow-[0_22px_70px_rgba(0,0,0,0.4)] backdrop-blur-xl"
         >
-          <div className="flex items-center justify-between border-b border-white/10 pb-3">
-            <div className="inline-flex items-center gap-2">
-              <Database className="h-4 w-4 text-sky-300" aria-hidden="true" />
-              <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">Storage</p>
-              <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
-                {archiveJobs.length}
-              </span>
+          <DialogHeader className="border-b border-white/10 px-6 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="inline-flex items-center gap-2">
+                <Database className="h-5 w-5 text-sky-300" aria-hidden="true" />
+                <DialogTitle className="text-sm font-medium uppercase tracking-[0.18em] text-zinc-300">
+                  Storage
+                </DialogTitle>
+                <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
+                  {archiveJobs.length}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-100"
+                aria-label="Refresh storage"
+                title="Refresh"
+                onClick={() => { void loadArchive() }}
+              >
+                <RefreshCw className={`h-4 w-4 ${archiveLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
+              </button>
             </div>
-            <button
-              type="button"
-              className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-100"
-              aria-label="Refresh storage"
-              title="Refresh"
-              onClick={() => { void loadArchive() }}
-            >
-              <RefreshCw className={`h-4 w-4 ${archiveLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
-            </button>
-          </div>
+            <DialogDescription className="mt-1 text-left text-xs text-zinc-500">
+              All films — everything you've created
+            </DialogDescription>
+          </DialogHeader>
 
-          <div className="mt-3">
-            <p className="text-xs font-medium text-zinc-500">All films</p>
-            <h2 className="text-sm font-semibold text-zinc-100">Everything you've created</h2>
-          </div>
-
-          <div className="mt-3 flex-1 overflow-y-auto pr-1">
+          <div className="flex-1 overflow-y-auto px-6 py-5">
             {(() => {
               const videoByJob = new Map<string, VideoSummary>()
               for (const v of archiveVideos) {
