@@ -4912,16 +4912,8 @@ export default function DashboardPage() {
                   {archiveJobs.length}
                 </span>
               </div>
-              <button
-                type="button"
-                className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-100"
-                aria-label="Refresh storage"
-                title="Refresh"
-                onClick={() => { void loadArchive() }}
-              >
-                <RefreshCw className={`h-4 w-4 ${archiveLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
-              </button>
             </div>
+
             <DialogDescription className="mt-1 text-left text-xs text-zinc-500">
               All films — everything you've created
             </DialogDescription>
