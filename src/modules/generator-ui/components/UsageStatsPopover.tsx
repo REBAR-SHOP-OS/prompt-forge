@@ -202,10 +202,11 @@ export default function UsageStatsPopover({ triggerClassName }: { triggerClassNa
         <button
           type="button"
           aria-label="Usage and credits"
-          className="fixed left-24 top-4 z-50 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-28 sm:top-5"
+          className={triggerClassName ?? 'fixed left-24 top-4 z-50 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-28 sm:top-5'}
         >
           <BarChart3 className="h-[18px] w-[18px]" aria-hidden="true" />
         </button>
+
       </PopoverTrigger>
       <PopoverContent align="start" sideOffset={8} className="w-[380px] p-0">
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
