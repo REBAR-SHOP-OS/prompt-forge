@@ -618,34 +618,20 @@ export default function DashboardPage() {
 
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [calendarTodayOnly, setCalendarTodayOnly] = useState(false)
-  // null = unknown/loading, true = today has a special occasion, false = none
-  const [todayHasOccasion, setTodayHasOccasion] = useState<boolean | null>(null)
 
-  // Consume (and discard) the post-login popup flag so the occasions window
-  // never auto-opens. Users open it on demand via the calendar icon instead.
+  // Auto-open today's occasions after login (once per login)
   useEffect(() => {
     const uid = session?.user?.id
     if (!uid) return
-    try { window.localStorage.removeItem(`pending-occasions-popup:${uid}`) } catch { /* ignore */ }
+    const key = `pending-occasions-popup:${uid}`
+    try {
+      if (window.localStorage.getItem(key) === '1') {
+        window.localStorage.removeItem(key)
+        setCalendarTodayOnly(true)
+        setIsCalendarOpen(true)
+      }
+    } catch { /* ignore */ }
   }, [session?.user?.id])
-
-  // Detect whether today has a special occasion so the calendar icon can show
-  // a red (special) vs green (none) status.
-  useEffect(() => {
-    let cancelled = false
-    const now = new Date()
-    const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-    ;(async () => {
-      try {
-        const { data, error } = await supabase.functions.invoke('day-info', { body: { date, lang: 'en' } })
-        if (cancelled || error) return
-        const list = (data as { occasions?: unknown[] })?.occasions
-        setTodayHasOccasion(Array.isArray(list) && list.length > 0)
-      } catch { /* leave as unknown */ }
-    })()
-    return () => { cancelled = true }
-  }, [])
-
 
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
   const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15 | 30 | 45 | 135>(5)
@@ -4923,18 +4909,12 @@ export default function DashboardPage() {
 
       <button
         type="button"
-        onClick={() => { setCalendarTodayOnly(true); setIsCalendarOpen(true) }}
-        aria-label="Open today's occasions"
-        title={todayHasOccasion ? "Today's occasions (special day)" : "Today's occasions"}
-        className={`fixed left-14 top-4 z-50 grid h-9 w-9 place-items-center rounded-md border transition sm:left-16 sm:top-5 ${
-          todayHasOccasion
-            ? 'border-rose-400/40 bg-rose-400/10 text-rose-400 hover:bg-rose-400/15'
-            : 'border-emerald-400/40 bg-emerald-400/10 text-emerald-400 hover:bg-emerald-400/15'
-        }`}
+        onClick={() => { setCalendarTodayOnly(false); setIsCalendarOpen(true) }}
+        aria-label="Open calendar"
+        className="fixed left-14 top-4 z-50 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-16 sm:top-5"
       >
         <CalendarDays className="h-[18px] w-[18px]" aria-hidden="true" />
       </button>
-
 
       <button
         type="button"
