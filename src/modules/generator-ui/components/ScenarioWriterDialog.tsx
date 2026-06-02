@@ -181,11 +181,15 @@ export default function ScenarioWriterDialog({
     setCopiedIndex(null)
     setIsSending(false)
     clearImage()
+    setIdeaMode('manual')
   }
 
   const isSplit = duration === 45 && scenes.length === 3
   const concatenated = scenes.join('\n\n')
-  const canGenerate = (idea.trim().length > 0 || Boolean(uploadedImageUrl)) && !isUploadingImage
+  const isAutoMode = ideaMode === 'auto' && Boolean(uploadedImageUrl)
+  const canGenerate =
+    (isAutoMode ? Boolean(uploadedImageUrl) : idea.trim().length > 0 || Boolean(uploadedImageUrl)) &&
+    !isUploadingImage
 
   return (
     <Dialog
