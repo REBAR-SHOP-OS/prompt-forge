@@ -190,15 +190,13 @@ function estimateWanProgress(
   if (status === "SUCCEEDED") return 100;
   if (status === "FAILED" || status === "CANCELED") return 0;
   if (status === "PENDING") return 8;
-  // RUNNING / UNKNOWN with no real provider progress: conservative time-based
-  // ramp capped at 60 so the UI never falsely implies "almost done" when the
-  // provider hasn't actually reported it. The status message carries the
-  // real "still rendering" semantics.
+  // RUNNING / UNKNOWN with no real provider progress: time-based ramp to 60
+  // over the expected window, then a slow asymptotic creep toward ~95 so the
+  // bar keeps visibly moving when the provider takes longer than usual instead
+  // of freezing at 60. It never reaches 100 — only real completion does.
   const startedAt = submitTime ? Date.parse(submitTime.replace(" ", "T") + "Z") : NaN;
   if (Number.isFinite(startedAt)) {
-    const elapsed = Date.now() - startedAt;
-    const ratio = elapsed / WAN_EXPECTED_RENDER_MS;
-    return Math.max(15, Math.min(60, Math.round(15 + ratio * 45)));
+    return creepingProgress(Date.now() - startedAt, WAN_EXPECTED_RENDER_MS);
   }
   return 20;
 }
