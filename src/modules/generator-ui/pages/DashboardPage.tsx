@@ -6548,7 +6548,7 @@ export default function DashboardPage() {
       />
 
       <aside
-        className={`fixed bottom-3 left-3 top-3 z-40 flex w-[min(22rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.4)] backdrop-blur-xl transition duration-300 sm:bottom-5 sm:left-16 sm:top-5 sm:w-80 lg:w-80 xl:w-96 2xl:w-[26rem] ${
+        className={`fixed bottom-3 left-3 top-3 z-40 flex w-[min(24rem,calc(100vw-1.5rem))] flex-col rounded-[22px] border border-white/10 bg-[#0b0c0e]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.4)] backdrop-blur-xl transition duration-300 sm:bottom-5 sm:left-16 sm:top-5 sm:w-96 lg:w-[26rem] xl:w-[30rem] 2xl:w-[34rem] ${
           isApprovedPanelOpen
             ? 'pointer-events-auto visible translate-x-0 opacity-100'
             : 'pointer-events-none invisible -translate-x-[calc(100%+1.25rem)] opacity-0'
