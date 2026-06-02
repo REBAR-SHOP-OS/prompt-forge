@@ -603,6 +603,7 @@ export default function DashboardPage() {
     }
   }
   const [deletingArchiveId, setDeletingArchiveId] = useState<string | null>(null)
+  const [playingArchiveId, setPlayingArchiveId] = useState<string | null>(null)
   const handleDeleteArchiveJob = async (jobId: string) => {
     setDeletingArchiveId(jobId)
     try {
