@@ -5602,6 +5602,52 @@ export default function DashboardPage() {
         }}
       />
 
+      <ProductAdDialog
+        open={isProductAdOpen}
+        onOpenChange={setIsProductAdOpen}
+        defaultDuration={durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135 ? durationSeconds : (durationSeconds as 5 | 10 | 15)}
+        userId={userId}
+        onUseAsPrompt={(text, imageUrl) => {
+          setPromptText(text)
+          if (imageUrl) {
+            setGenerationMode('image-to-video')
+            setUploadTarget('Start')
+            setUploadedFiles([{
+              id: Date.now(),
+              name: 'product-ad-reference.png',
+              size: 0,
+              target: 'Start',
+              type: 'image/png',
+              status: 'ready',
+              url: imageUrl,
+              error: null,
+            }])
+          }
+        }}
+        onSendScenes={async (scenes, imageUrl) => {
+          const tagged = scenes
+            .map((s, i) => `=== Scene ${i + 1} ===\n${s.trim()}`)
+            .join('\n\n')
+          setPromptText(tagged)
+          if (imageUrl) {
+            setGenerationMode('image-to-video')
+            setUploadTarget('Start')
+            setUploadedFiles([{
+              id: Date.now(),
+              name: 'product-ad-reference.png',
+              size: 0,
+              target: 'Start',
+              type: 'image/png',
+              status: 'ready',
+              url: imageUrl,
+              error: null,
+            }])
+          }
+        }}
+      />
+
+
+
 
 
       <Dialog open={isMusicDialogOpen} onOpenChange={setIsMusicDialogOpen}>
