@@ -4983,13 +4983,13 @@ export default function DashboardPage() {
               }
 
               return (
-                <div className="grid gap-3">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {entries.map((job) => {
                     const video = videoByJob.get(job.id)
                     return (
                       <article
                         key={job.id}
-                        className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-2.5"
+                        className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3"
                       >
                         <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
                           {video?.storage_path ? (
