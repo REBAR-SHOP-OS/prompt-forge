@@ -601,6 +601,21 @@ export default function DashboardPage() {
       setArchiveLoading(false)
     }
   }
+  const [deletingArchiveId, setDeletingArchiveId] = useState<string | null>(null)
+  const handleDeleteArchiveJob = async (jobId: string) => {
+    setDeletingArchiveId(jobId)
+    try {
+      await jobOrchestratorGateway.deleteJob(jobId)
+      setArchiveJobs((prev) => prev.filter((j) => j.id !== jobId))
+      setArchiveVideos((prev) => prev.filter((v) => v.job_id !== jobId))
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : (err as Error).message
+      if (typeof window !== 'undefined') window.alert(`Delete failed: ${msg}`)
+    } finally {
+      setDeletingArchiveId(null)
+    }
+  }
+
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [calendarTodayOnly, setCalendarTodayOnly] = useState(false)
 
@@ -5014,26 +5029,64 @@ export default function DashboardPage() {
                             <p className="line-clamp-2 min-w-0 flex-1 text-xs font-medium leading-5 text-zinc-200">
                               {job.input_prompt}
                             </p>
-                            {job.status === 'completed' && video?.storage_path ? (
-                              <button
-                                type="button"
-                                disabled={downloadingId === job.id}
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  if (!video) return
-                                  void downloadAsMp4(job.id, video.storage_path, 'film')
-                                }}
-                                aria-label="Download video"
-                                title="Download video"
-                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
-                              >
-                                {downloadingId === job.id ? (
-                                  <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
-                                ) : (
-                                  <Download className="h-3 w-3" aria-hidden="true" />
-                                )}
-                              </button>
-                            ) : null}
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              {job.status === 'completed' && video?.storage_path ? (
+                                <button
+                                  type="button"
+                                  disabled={downloadingId === job.id}
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    if (!video) return
+                                    void downloadAsMp4(job.id, video.storage_path, 'film')
+                                  }}
+                                  aria-label="Download video"
+                                  title="Download video"
+                                  className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                >
+                                  {downloadingId === job.id ? (
+                                    <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                  ) : (
+                                    <Download className="h-3 w-3" aria-hidden="true" />
+                                  )}
+                                </button>
+                              ) : null}
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <button
+                                    type="button"
+                                    disabled={deletingArchiveId === job.id}
+                                    onClick={(event) => event.stopPropagation()}
+                                    aria-label="Delete video permanently"
+                                    title="Delete permanently"
+                                    className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200 disabled:opacity-60"
+                                  >
+                                    {deletingArchiveId === job.id ? (
+                                      <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                    ) : (
+                                      <Trash2 className="h-3 w-3" aria-hidden="true" />
+                                    )}
+                                  </button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete this film permanently?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      This will permanently remove the film and its files. This action cannot be undone.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => { void handleDeleteArchiveJob(job.id) }}
+                                      className="bg-rose-600 text-white hover:bg-rose-700"
+                                    >
+                                      Delete
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </div>
+
                           </div>
                           <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
                             {statusBadge(job.status)}
