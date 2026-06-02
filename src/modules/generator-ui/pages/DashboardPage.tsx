@@ -501,21 +501,51 @@ export default function DashboardPage() {
       document.body.removeChild(a)
       URL.revokeObjectURL(blobUrl)
     }
+    // ffmpeg.wasm transcode is heavy and routinely OOMs / fails to load on
+    // mobile browsers. When that happens we used to hand back a WebM file
+    // renamed .mp4, which iOS / the mobile gallery cannot play. So on mobile
+    // we skip the in-browser transcode entirely and download the original
+    // file with its TRUE extension based on the real blob MIME type.
+    const isMobile =
+      typeof navigator !== 'undefined' &&
+      /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+    const extFromType = (type: string, fallbackUrl: string): string => {
+      const t = (type || '').toLowerCase()
+      if (t.includes('mp4')) return 'mp4'
+      if (t.includes('webm')) return 'webm'
+      if (t.includes('quicktime') || t.includes('mov')) return 'mov'
+      const lower = fallbackUrl.toLowerCase().split('?')[0]
+      if (lower.endsWith('.mp4')) return 'mp4'
+      if (lower.endsWith('.webm')) return 'webm'
+      if (lower.endsWith('.mov')) return 'mov'
+      return 'mp4'
+    }
     try {
       const fetchUrl = await proxiedVideoUrl(url)
       const response = await fetch(fetchUrl)
       if (!response.ok) throw new Error('Download failed')
       const blob = await response.blob()
+      const sourceIsMp4 =
+        (blob.type || '').toLowerCase().includes('mp4') ||
+        url.toLowerCase().split('?')[0].endsWith('.mp4')
+
+      // On mobile, or when the source is already a standard MP4, skip the
+      // in-browser transcode and serve the file directly with its real
+      // extension so it always opens in the gallery / player.
+      if (isMobile || sourceIsMp4) {
+        triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${extFromType(blob.type, url)}`)
+        return
+      }
+
       try {
         const mp4 = await ensureMp4(blob, blob.type)
         triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.mp4`)
       } catch (transErr) {
-        // Transcode failed (too large / OOM) — hand over the original file so
-        // the user is never left without a download.
+        // Transcode failed (too large / OOM) — hand over the original file
+        // with its TRUE extension (never mislabel WebM as .mp4) so the user
+        // is never left without a download.
         console.warn('[download] MP4 transcode failed, serving original:', transErr)
-        const lower = url.toLowerCase().split('?')[0]
-        const ext = lower.endsWith('.webm') ? 'webm' : lower.endsWith('.mp4') ? 'mp4' : 'webm'
-        triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${ext}`)
+        triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${extFromType(blob.type, url)}`)
       }
     } catch (err) {
       console.error('Film download failed', err)
