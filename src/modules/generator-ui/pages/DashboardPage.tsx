@@ -4977,6 +4977,7 @@ export default function DashboardPage() {
         onOpenChange={(next) => {
           setIsArchiveOpen(next)
           if (next) void loadArchive()
+          else setPlayingArchiveId(null)
         }}
       >
         <DialogContent
