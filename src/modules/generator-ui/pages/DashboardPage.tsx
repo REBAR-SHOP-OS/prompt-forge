@@ -5204,6 +5204,31 @@ export default function DashboardPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={!!playerFilm}
+        onOpenChange={(next) => { if (!next) setPlayerFilm(null) }}
+      >
+        <DialogContent className="z-[60] w-[min(60rem,95vw)] max-w-none border-white/10 bg-[#0b0c0e]/95 p-0 text-zinc-100 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+          <DialogHeader className="border-b border-white/10 px-5 py-3">
+            <DialogTitle className="line-clamp-1 pr-8 text-sm font-medium text-zinc-200">
+              {playerFilm?.title ?? 'Film'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="bg-black">
+            {playerFilm ? (
+              <PlayableVideo
+                className="aspect-video h-auto w-full bg-black object-contain"
+                src={getCardVideoSrc(playerFilm.jobId, playerFilm.storagePath)}
+                poster={playerFilm.poster ?? undefined}
+                controls
+                autoPlay
+                playsInline
+              />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+
 
 
       <CalendarInfoDialog
