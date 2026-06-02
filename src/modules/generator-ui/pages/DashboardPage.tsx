@@ -4924,40 +4924,53 @@ export default function DashboardPage() {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <button
-        type="button"
-        onClick={() => { setIsCalendarOpen(true) }}
-        aria-label={hasOccasionToday ? 'Today has an occasion — open calendar' : 'Open calendar'}
-        title={hasOccasionToday ? 'Today has an occasion — take a look' : 'Calendar'}
-        className="fixed left-14 top-4 z-50 grid h-9 w-9 place-items-center rounded-md border border-transparent transition hover:border-white/10 hover:bg-white/[0.045] sm:left-16 sm:top-5"
-      >
-        <span className="relative grid place-items-center">
-          {hasOccasionToday && (
-            <span className="absolute inline-flex h-3.5 w-3.5 animate-ping rounded-full bg-red-500/60" aria-hidden="true" />
-          )}
+      <div className="fixed left-14 top-4 z-50 flex items-center gap-2 sm:left-16 sm:top-5">
+        <button
+          type="button"
+          onClick={() => { setIsCalendarOpen(true) }}
+          aria-label={hasOccasionToday ? 'Today has an occasion — open calendar' : 'Open calendar'}
+          title={hasOccasionToday ? 'Today has an occasion — take a look' : 'Calendar'}
+          className={`group flex h-9 items-center gap-2 rounded-md border px-2.5 transition ${
+            hasOccasionToday
+              ? 'border-red-500/40 bg-red-500/10 hover:bg-red-500/15'
+              : 'border-emerald-500/30 bg-emerald-500/[0.08] hover:bg-emerald-500/15'
+          }`}
+        >
+          <span className="relative grid place-items-center">
+            <CalendarDays
+              className={`h-[20px] w-[20px] ${hasOccasionToday ? 'text-red-300' : 'text-emerald-300'}`}
+              aria-hidden="true"
+            />
+            {hasOccasionToday && (
+              <span className="absolute -right-1 -top-1 inline-flex h-2.5 w-2.5 animate-ping rounded-full bg-red-500/70" aria-hidden="true" />
+            )}
+            <span
+              className={`absolute -right-1 -top-1 inline-block h-2.5 w-2.5 rounded-full ring-2 ring-[#0b0c0e] ${
+                hasOccasionToday ? 'bg-red-500' : 'bg-emerald-500'
+              }`}
+              aria-hidden="true"
+            />
+          </span>
           <span
-            className={`relative inline-block h-3 w-3 rounded-full ring-2 transition-colors ${
-              hasOccasionToday
-                ? 'bg-red-500 ring-red-500/30 shadow-[0_0_8px_2px_rgba(239,68,68,0.55)]'
-                : 'bg-emerald-500 ring-emerald-500/25'
+            className={`text-[11px] font-medium uppercase tracking-[0.12em] ${
+              hasOccasionToday ? 'text-red-300' : 'text-emerald-300'
             }`}
-            aria-hidden="true"
-          />
+          >
+            {hasOccasionToday ? 'Occasion today' : 'No occasion'}
+          </span>
+        </button>
 
-        </span>
-      </button>
+        <button
+          type="button"
+          aria-label="Open storage archive"
+          title="Storage"
+          onClick={() => { setIsArchiveOpen(true); void loadArchive() }}
+          className="grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100"
+        >
+          <Database className="h-[18px] w-[18px]" aria-hidden="true" />
+        </button>
+      </div>
 
-
-
-      <button
-        type="button"
-        aria-label="Open storage archive"
-        title="Storage"
-        onClick={() => { setIsArchiveOpen(true); void loadArchive() }}
-        className="fixed left-[8.5rem] top-4 z-50 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-40 sm:top-5"
-      >
-        <Database className="h-[18px] w-[18px]" aria-hidden="true" />
-      </button>
 
       <Dialog
         open={isArchiveOpen}
