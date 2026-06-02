@@ -24,8 +24,10 @@ type Props = {
 }
 
 const DURATIONS: ProductAdDuration[] = [5, 10, 15, 30, 45, 135]
-const SCENE_RANGES = ['0–15s', '15–30s', '30–45s']
 const FRAMES_BUCKET = 'wan-frames'
+
+const SPLIT_DURATIONS = [30, 45, 135]
+const sceneRange = (i: number) => `${i * 15}–${(i + 1) * 15}s`
 
 const CAMERA_STYLES = [
   'Whip Pan',
@@ -207,7 +209,7 @@ export default function ProductAdDialog({
     clearImage()
   }
 
-  const isSplit = duration === 45 && scenes.length === 3
+  const isSplit = SPLIT_DURATIONS.includes(duration) && scenes.length > 1
   const concatenated = scenes.join('\n\n')
   const canGenerate = (productName.trim().length > 0 || Boolean(uploadedImageUrl)) && !isUploadingImage
 
@@ -331,9 +333,9 @@ export default function ProductAdDialog({
                 )
               })}
             </div>
-            {duration === 45 ? (
+            {SPLIT_DURATIONS.includes(duration) ? (
               <p className="mt-2 text-xs text-zinc-500">
-                Will be split into 3 sequential 15s scenes and sent as 3 cards.
+                Will be split into {duration / 15} sequential 15s scenes and sent as {duration / 15} cards.
               </p>
             ) : null}
           </div>
@@ -389,7 +391,7 @@ export default function ProductAdDialog({
                 <div key={i} className="rounded-md border border-white/10 bg-black/30 p-3">
                   <div className="mb-1.5 flex items-center justify-between">
                     <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                      Scene {i + 1} ({SCENE_RANGES[i]})
+                      Scene {i + 1} ({sceneRange(i)})
                     </div>
                     <Button
                       variant="ghost"
