@@ -4970,7 +4970,10 @@ export default function DashboardPage() {
         >
           <Database className="h-[18px] w-[18px]" aria-hidden="true" />
         </button>
+
+        <UsageStatsPopover triggerClassName="grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100" />
       </div>
+
 
 
       <Dialog
