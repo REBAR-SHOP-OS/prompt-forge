@@ -184,7 +184,7 @@ export default function ProductAdDialog({
   }
 
   async function handleSendAll() {
-    if (scenes.length !== 3 || !onSendScenes || isSending) return
+    if (scenes.length < 2 || !onSendScenes || isSending) return
     setIsSending(true)
     setError(null)
     try {
