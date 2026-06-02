@@ -3,7 +3,7 @@ import {
   ArrowRight,
   BookmarkCheck,
   BookmarkPlus,
-  
+  CalendarDays,
   ChevronsRight,
   Check,
   Cpu,
