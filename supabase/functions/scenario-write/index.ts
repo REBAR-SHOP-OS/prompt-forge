@@ -154,6 +154,19 @@ Deno.serve(async (req) => {
     const durationRaw = Number(body?.durationSeconds);
     const duration = [5, 10, 15, 30, 45, 135].includes(durationRaw) ? durationRaw : 0;
     const imageUrlRaw = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
+    const isProductAd = body?.mode === "product-ad";
+    const clip = (v: unknown, max: number): string | undefined => {
+      const s = typeof v === "string" ? v.trim() : "";
+      return s ? s.slice(0, max) : undefined;
+    };
+    const productAd: ProductAdOpts | undefined = isProductAd
+      ? {
+          productName: clip(body?.productName, 200),
+          productDescription: clip(body?.productDescription, 2000),
+          cameraStyle: clip(body?.cameraStyle, 100),
+          cameraMovement: clip(body?.cameraMovement, 1000),
+        }
+      : undefined;
     const supabaseHost = (() => {
       try { return new URL(Deno.env.get("SUPABASE_URL") ?? "").hostname; } catch { return ""; }
     })();
