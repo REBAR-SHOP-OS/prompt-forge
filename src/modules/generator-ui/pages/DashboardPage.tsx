@@ -4937,14 +4937,14 @@ export default function DashboardPage() {
             <span className="absolute inline-flex h-3.5 w-3.5 animate-ping rounded-full bg-red-500/60" aria-hidden="true" />
           )}
           <span
-            className={cn(
-              'relative inline-block h-3 w-3 rounded-full ring-2 transition-colors',
+            className={`relative inline-block h-3 w-3 rounded-full ring-2 transition-colors ${
               hasOccasionToday
                 ? 'bg-red-500 ring-red-500/30 shadow-[0_0_8px_2px_rgba(239,68,68,0.55)]'
-                : 'bg-emerald-500 ring-emerald-500/25',
-            )}
+                : 'bg-emerald-500 ring-emerald-500/25'
+            }`}
             aria-hidden="true"
           />
+
         </span>
       </button>
 
