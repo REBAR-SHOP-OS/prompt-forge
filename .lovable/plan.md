@@ -1,32 +1,41 @@
 ## Goal
-در دیالوگ Scenario Writer وقتی کاربر عکس آپلود می‌کند، امکان بدهیم که سناریو بر اساس همان عکس نوشته شود — با دو حالت روشن:
-1. **ایده‌ی خودم** — کاربر ایده‌اش را تایپ می‌کند (عکس هم به‌عنوان مرجع استفاده می‌شود).
-2. **ایده‌ی اتوماتیک** — سیستم خودش عکس را تحلیل می‌کند و بدون نیاز به متن، ایده/سناریو می‌سازد.
 
-> در حال حاضر backend تولید بر اساس عکس را پشتیبانی می‌کند و حتی با ایده‌ی خالی هم کار می‌کند، اما این رفتار در UI واضح نیست. این تغییر آن را به یک انتخاب صریح و کاربرپسند تبدیل می‌کند.
+Make the Scenario Writer (and Product Ad) dialogs handle every multi-scene duration the same way the 45s option already works: split into sequential 15-second scenes, show each as a numbered card with a correct time range, and enable "Send all to Pending".
 
-## تغییرات UI (`ScenarioWriterDialog.tsx`)
-- افزودن یک سوییچ/تَب دو حالته زیر بخش «Your idea»:
-  - **Auto from image** (پیش‌فرض وقتی عکس آپلود شده و متنی نیست)
-  - **Write my own idea**
-- در حالت Auto:
-  - فیلد متن غیرفعال/کم‌رنگ می‌شود و یک راهنما نمایش داده می‌شود: «سناریو به‌طور خودکار بر اساس عکس آپلودشده نوشته می‌شود».
-  - دکمه‌ی تولید فقط با وجود عکس فعال است.
-- در حالت Write my own idea: رفتار فعلی حفظ می‌شود (متن لازم است، عکس اختیاری به‌عنوان مرجع).
-- اگر عکسی آپلود نشده باشد، حالت Auto مخفی/غیرفعال است.
-- پیام راهنمای بالای دیالوگ کمی به‌روزرسانی می‌شود تا قابلیت تحلیل عکس را توضیح دهد.
+- 30s → 2 sequential 15s scenes
+- 45s → 3 sequential 15s scenes (already works)
+- 135s → 9 sequential 15s scenes
 
-## تغییرات Backend (`supabase/functions/scenario-write/index.ts`)
-- افزودن یک حالت `autoFromImage` (یا تشخیص خودکار وقتی `imageUrl` هست و `idea` خالی است).
-- بهبود system/user prompt برای حالت auto: مدل ابتدا عکس را با دقت تحلیل کند (سوژه، صحنه، حال‌وهوا، رنگ، اشیاء، سبک) و سپس یک سناریوی سینمایی منطبق با همان عکس و متناسب با مدت‌زمان انتخابی بنویسد.
-- در حالت «ایده‌ی خودم با عکس» همان رفتار فعلی (عکس به‌عنوان مرجع) حفظ می‌شود.
-- محدودیت‌های اعتبارسنجی فعلی (طول، دامنه‌ی مجاز عکس، durations) بدون تغییر باقی می‌ماند.
+The backend already produces the right number of scenes and uses the same 15s-scene prompt style for all of these durations, so no backend change is needed — this is a UI-only fix.
 
-## تأیید
-- تست با آپلود عکس و حالت Auto: تولید سناریو بدون متن.
-- تست حالت Write my own idea با و بدون عکس.
-- بررسی build و لاگ edge function.
+## What's wrong today
 
-## جزئیات فنی
-- مدل: همان `google/gemini-2.5-flash` با محتوای چندوجهی (متن + image_url) که الان استفاده می‌شود.
-- منطق split برای 45s/135s و دکمه‌های Use as prompt / Send all بدون تغییر.
+In both `ScenarioWriterDialog.tsx` and `ProductAdDialog.tsx`:
+
+- `const SCENE_RANGES = ['0–15s', '15–30s', '30–45s']` is hard-coded to 3 ranges.
+- `const isSplit = duration === 45 && scenes.length === 3` only treats 45s as a split result.
+- The helper note only renders for `duration === 45` ("Will be split into 3 sequential 15s scenes").
+
+So when a user picks 30s or 135s, the returned scenes are not shown as numbered scene cards, the time labels are missing/wrong, and the "Send all to Pending" action does not appear.
+
+## Changes (both dialog files, identical edits)
+
+1. Replace the fixed `SCENE_RANGES` array with a helper that builds ranges dynamically from the scene count, e.g. `0–15s`, `15–30s`, … `120–135s`.
+2. Change the split detection to be multi-duration:
+   - `isSplit = (duration === 30 || duration === 45 || duration === 135) && scenes.length > 1`
+   - Use the dynamic range helper for each scene's label instead of indexing the old 3-item array.
+3. Update the helper note under the Duration selector to show the correct count for the selected duration:
+   - 30s → "Will be split into 2 sequential 15s scenes and sent as 2 cards."
+   - 45s → "...3 sequential 15s scenes...3 cards."
+   - 135s → "...9 sequential 15s scenes...9 cards."
+4. The `Send all to Pending` button condition already keys off `isSplit && onSendScenes`, so generalizing `isSplit` automatically enables it for 30s and 135s.
+
+## Notes
+
+- `onSendScenes` in `DashboardPage.tsx` already maps an arbitrary number of scenes into `=== Scene N ===` blocks and chains them, so it needs no change.
+- No edge function or database changes.
+
+## Files
+
+- `src/modules/generator-ui/components/ScenarioWriterDialog.tsx`
+- `src/modules/generator-ui/components/ProductAdDialog.tsx`
