@@ -209,7 +209,7 @@ export default function ProductAdDialog({
     clearImage()
   }
 
-  const isSplit = duration === 45 && scenes.length === 3
+  const isSplit = SPLIT_DURATIONS.includes(duration) && scenes.length > 1
   const concatenated = scenes.join('\n\n')
   const canGenerate = (productName.trim().length > 0 || Boolean(uploadedImageUrl)) && !isUploadingImage
 
