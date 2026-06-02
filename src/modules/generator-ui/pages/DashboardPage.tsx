@@ -4748,18 +4748,24 @@ export default function DashboardPage() {
     setActiveImageIds(new Set()); persistActiveImageIds(new Set())
 
 
-    if (looseJobIds.length === 0 && looseImageIds.length === 0) return
+    if (looseImageIds.length === 0) {
+      // Loose jobs are kept on the server (Storage archive); resetWorkspace
+      // already hid them from the workspace via workspaceHiddenJobIds.
+      setGeneratedVideos((curr) => curr.filter((j) => !looseJobIds.includes(j.id)))
+      return
+    }
 
-    const results = await Promise.allSettled([
-      ...looseJobIds.map((id) => jobOrchestratorGateway.deleteJob(id)),
-      ...looseImageIds.map((id) => generatorUiGateway.deleteUserImage(id)),
-    ])
+    // Source images are not films and are not listed in Storage, so they are
+    // still removed. Loose video jobs are intentionally kept on the server.
+    const results = await Promise.allSettled(
+      looseImageIds.map((id) => generatorUiGateway.deleteUserImage(id)),
+    )
     const failed = results.filter((r) => r.status === 'rejected').length
     if (failed > 0) {
       console.error(`Start Over: ${failed} item(s) failed to delete`)
       setVideoColumnMessage(`Could not permanently delete ${failed} item(s). They may reappear after refresh.`)
     }
-    // Drop deleted ids from local state immediately.
+    // Drop dropped ids from local state immediately.
     setGeneratedVideos((curr) => curr.filter((j) => !looseJobIds.includes(j.id)))
     setUserImages((curr) => curr.filter((i) => !looseImageIds.includes(i.id)))
   }
