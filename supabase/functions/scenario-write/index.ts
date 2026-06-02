@@ -161,6 +161,7 @@ Deno.serve(async (req) => {
     const durationRaw = Number(body?.durationSeconds);
     const duration = [5, 10, 15, 30, 45, 135].includes(durationRaw) ? durationRaw : 0;
     const imageUrlRaw = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
+    const autoFromImageReq = body?.autoFromImage === true;
     const isProductAd = body?.mode === "product-ad";
     const clip = (v: unknown, max: number): string | undefined => {
       const s = typeof v === "string" ? v.trim() : "";
