@@ -249,16 +249,53 @@ export default function ScenarioWriterDialog({
           </div>
 
           <div>
-            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              Your idea
+            <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                Your idea
+              </div>
+              {uploadedImageUrl ? (
+                <div
+                  role="radiogroup"
+                  aria-label="Idea mode"
+                  className="inline-flex rounded-full border border-white/10 bg-black/20 p-0.5 text-[11px] font-semibold"
+                >
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={ideaMode === 'auto'}
+                    onClick={() => setIdeaMode('auto')}
+                    className={`rounded-full px-2.5 py-1 transition ${
+                      ideaMode === 'auto' ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    Auto from image
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={ideaMode === 'manual'}
+                    onClick={() => setIdeaMode('manual')}
+                    className={`rounded-full px-2.5 py-1 transition ${
+                      ideaMode === 'manual' ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    Write my own
+                  </button>
+                </div>
+              ) : null}
             </div>
             <div className="relative">
               <Textarea
                 value={idea}
                 onChange={(e) => setIdea(e.target.value)}
                 rows={4}
-                placeholder="Describe your idea (any language)…"
-                className="min-h-[100px] border-white/10 bg-black/30 pb-12 text-zinc-100"
+                disabled={isAutoMode}
+                placeholder={
+                  isAutoMode
+                    ? 'The scenario will be written automatically from the uploaded image…'
+                    : 'Describe your idea (any language)…'
+                }
+                className="min-h-[100px] border-white/10 bg-black/30 pb-12 text-zinc-100 disabled:opacity-60"
               />
               <div className="absolute bottom-2 left-2 flex items-center gap-2">
                 <input
