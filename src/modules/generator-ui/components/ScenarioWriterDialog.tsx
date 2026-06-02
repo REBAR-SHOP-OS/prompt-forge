@@ -110,16 +110,18 @@ export default function ScenarioWriterDialog({
   }
 
   async function generate() {
-    if ((!idea.trim() && !uploadedImageUrl) || isWriting) return
+    const isAuto = ideaMode === 'auto' && Boolean(uploadedImageUrl)
+    if ((!isAuto && !idea.trim() && !uploadedImageUrl) || (isAuto && !uploadedImageUrl) || isWriting) return
     setIsWriting(true)
     setError(null)
     setScenes([])
     try {
       const { data, error: invokeErr } = await supabase.functions.invoke('scenario-write', {
         body: {
-          idea: idea.trim() || 'Generate a scenario based on the attached reference image.',
+          idea: isAuto ? '' : (idea.trim() || 'Generate a scenario based on the attached reference image.'),
           durationSeconds: duration,
           imageUrl: uploadedImageUrl ?? undefined,
+          autoFromImage: isAuto,
         },
       })
       if (invokeErr) {
