@@ -242,9 +242,9 @@ export default function ScenarioWriterDialog({
                 )
               })}
             </div>
-            {duration === 45 ? (
+            {SPLIT_DURATIONS.includes(duration) ? (
               <p className="mt-2 text-xs text-zinc-500">
-                Will be split into 3 sequential 15s scenes and sent as 3 cards.
+                Will be split into {duration / 15} sequential 15s scenes and sent as {duration / 15} cards.
               </p>
             ) : null}
           </div>
