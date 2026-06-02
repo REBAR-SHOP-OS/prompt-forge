@@ -41,9 +41,12 @@ function cameraGuidance(opts: ProductAdOpts): string {
   return bits.join(" ");
 }
 
-function buildSystemPrompt(duration: number, productAd?: ProductAdOpts): string {
+function buildSystemPrompt(duration: number, productAd?: ProductAdOpts, autoFromImage?: boolean): string {
   const sceneCount = expectedSceneCount(duration);
   const isAd = Boolean(productAd);
+  const autoLine = autoFromImage
+    ? "You are a professional short-form video scenario writer. The user provided ONLY a reference image and no written idea. First, carefully analyze the attached image — identify the main subject, setting, mood, colors, lighting, props, and overall style — then invent a compelling cinematic scenario that is faithful to and inspired by what you see in the image."
+    : "";
   const productLine = isAd
     ? [
         "You are a world-class advertising creative director writing a high-energy PRODUCT COMMERCIAL scenario.",
@@ -53,6 +56,7 @@ function buildSystemPrompt(duration: number, productAd?: ProductAdOpts): string 
         cameraGuidance(productAd ?? {}),
       ].filter(Boolean).join(" ")
     : "";
+  const persona = isAd ? productLine : (autoFromImage ? autoLine : "You are a professional short-form video scenario writer.");
 
   if (sceneCount > 1) {
     const numWord = sceneCount === 2 ? "TWO" : sceneCount === 3 ? "THREE" : sceneCount === 9 ? "NINE" : String(sceneCount);
