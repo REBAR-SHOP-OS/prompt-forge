@@ -359,7 +359,7 @@ export default function ScenarioWriterDialog({
                 >
                   <div className="mb-1.5 flex items-center justify-between">
                     <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                      Scene {i + 1} ({SCENE_RANGES[i]})
+                      Scene {i + 1} ({sceneRange(i)})
                     </div>
                     <Button
                       variant="ghost"
