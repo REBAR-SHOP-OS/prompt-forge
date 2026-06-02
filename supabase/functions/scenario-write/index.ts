@@ -251,7 +251,7 @@ Deno.serve(async (req) => {
     // One retry for multi-scene durations if we didn't get the expected count.
     const expected = expectedSceneCount(duration);
     if (expected > 1 && scenes.length === 0) {
-      resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl, productAd);
+      resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl, productAd, autoFromImage);
       if (resp.ok) {
         data = await resp.json();
         raw = (data?.choices?.[0]?.message?.content ?? "").trim();
