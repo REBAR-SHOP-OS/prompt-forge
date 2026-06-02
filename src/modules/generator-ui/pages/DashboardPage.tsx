@@ -4007,11 +4007,13 @@ export default function DashboardPage() {
         return next
       })
       markDerivedClip(job.id, seededJob.id)
-      // Fire-and-forget cleanup of the old job in the backend.
-      jobOrchestratorGateway.deleteJob(job.id).catch((err) => {
-        // Non-blocking; surface as a soft message.
-        const msg = err instanceof Error ? err.message : 'Old card cleanup failed'
-        setVideoColumnMessage(msg)
+      // Keep the old version on the server (Storage is the permanent archive)
+      // and only hide it from the workspace so the regenerated card replaces it.
+      setWorkspaceHiddenJobIds((curr) => {
+        const next = new Set(curr)
+        next.add(job.id)
+        persistWorkspaceHiddenJobIds(next)
+        return next
       })
     } catch (error) {
       const message = generationStartErrorMessage(error, 'Could not regenerate this card.')
