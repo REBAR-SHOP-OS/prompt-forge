@@ -618,20 +618,34 @@ export default function DashboardPage() {
 
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [calendarTodayOnly, setCalendarTodayOnly] = useState(false)
+  // null = unknown/loading, true = today has a special occasion, false = none
+  const [todayHasOccasion, setTodayHasOccasion] = useState<boolean | null>(null)
 
-  // Auto-open today's occasions after login (once per login)
+  // Consume (and discard) the post-login popup flag so the occasions window
+  // never auto-opens. Users open it on demand via the calendar icon instead.
   useEffect(() => {
     const uid = session?.user?.id
     if (!uid) return
-    const key = `pending-occasions-popup:${uid}`
-    try {
-      if (window.localStorage.getItem(key) === '1') {
-        window.localStorage.removeItem(key)
-        setCalendarTodayOnly(true)
-        setIsCalendarOpen(true)
-      }
-    } catch { /* ignore */ }
+    try { window.localStorage.removeItem(`pending-occasions-popup:${uid}`) } catch { /* ignore */ }
   }, [session?.user?.id])
+
+  // Detect whether today has a special occasion so the calendar icon can show
+  // a red (special) vs green (none) status.
+  useEffect(() => {
+    let cancelled = false
+    const now = new Date()
+    const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    ;(async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('day-info', { body: { date, lang: 'en' } })
+        if (cancelled || error) return
+        const list = (data as { occasions?: unknown[] })?.occasions
+        setTodayHasOccasion(Array.isArray(list) && list.length > 0)
+      } catch { /* leave as unknown */ }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
 
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
   const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15 | 30 | 45 | 135>(5)
