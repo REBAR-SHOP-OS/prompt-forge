@@ -168,6 +168,16 @@ interface DashScopeTaskResponse {
 // progress doesn't sit at 95% for too short a time.
 const WAN_EXPECTED_RENDER_MS = 150_000; // ~2.5 minutes
 
+// Time-based progress that ramps 15 -> 60 over `expectedMs`, then slowly creeps
+// 60 -> ~95 on an asymptotic tail so a long-running provider job never looks
+// frozen. Never returns 100 (reserved for real completion).
+export function creepingProgress(elapsedMs: number, expectedMs: number): number {
+  const ratio = expectedMs > 0 ? Math.max(0, elapsedMs) / expectedMs : 0;
+  if (ratio <= 1) return Math.max(15, Math.round(15 + ratio * 45));
+  const tail = ratio - 1;
+  return Math.min(95, Math.round(60 + (tail / (tail + 3)) * 35));
+}
+
 function parseProviderProgress(raw: number | string | undefined): number | null {
   if (raw === undefined || raw === null) return null;
   if (typeof raw === "number" && Number.isFinite(raw)) {
