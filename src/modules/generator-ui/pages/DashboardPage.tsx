@@ -1850,8 +1850,15 @@ export default function DashboardPage() {
           }
         }
       } else {
-        // Real job: backend delete (DB rows + Storage files, server-side).
-        await jobOrchestratorGateway.deleteJob(jobId)
+        // Real job: keep it on the server (Storage is the permanent archive)
+        // and only hide it from the workspace. It stays in Storage until the
+        // user deletes it from there explicitly.
+        setWorkspaceHiddenJobIds((curr) => {
+          const next = new Set(curr)
+          next.add(jobId)
+          persistWorkspaceHiddenJobIds(next)
+          return next
+        })
       }
     } catch (err) {
       // Roll back the optimistic removal on failure.
