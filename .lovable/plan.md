@@ -1,38 +1,49 @@
-## هدف
+# Product Ad Scenario Generator
 
-دانلود فیلم‌ها روی موبایل باید همیشه یک فایل MP4 قابل‌پخش (H.264/AAC) بدهد، بدون وابستگی به تبدیل سمت مرورگر که روی موبایل شکست می‌خورد.
+Add a new icon button next to the existing Scenario Writer (Clapperboard) icon in the prompt toolbar. Clicking it opens a guided dialog where the user attaches a product photo, enters the product name, answers a few questions, and gets an AI-generated advertising scenario that respects the chosen camera style and movement.
 
-## ریشه‌ی مشکل
+## User flow
 
-در `src/modules/generator-ui/pages/DashboardPage.tsx` تابع `downloadAsMp4`:
-- ابتدا با `ffmpeg.wasm` تبدیل به MP4 می‌کند (`ensureMp4`).
-- روی موبایل این تبدیل به‌دلیل محدودیت حافظه اغلب شکست می‌خورد.
-- در حالت شکست، فایل اصلی (که ممکن است WebM/VP9 باشد) تحویل می‌شود؛ iOS و گالری موبایل نمی‌توانند آن را پخش کنند.
+```text
+[🎬 Product Ad icon]  ->  Dialog opens
+   Step 1 — Product
+     • Attach product photo (upload)
+     • Product name (text)
+     • Short product description (optional)
+   Step 2 — Questions
+     • Duration: 5 / 10 / 15 / 30 / 45 / 135 s
+     • Camera style (pick one):
+         Whip Pan, Orbit Shot, FPV Drone, Tracking Shot,
+         Push In Cinematic, Fly Through, Crash Zoom,
+         Handheld Dynamic, Dolly Zoom, Parallax Motion
+     • Camera movement notes (free text, optional)
+   ->  "Generate ad scenario"
+   ->  Scenario shown (single or 3 scenes for 45s, like today)
+   ->  "Use as prompt"  (fills main prompt + attaches the product image)
+       / "Send all to Pending" for 45s split
+```
 
-## تغییرات
+## What gets built
 
-### ۱. تشخیص موبایل و عبور از تبدیل سنگین مرورگری
-در `downloadAsMp4`:
-- اگر دستگاه موبایل بود یا فایل مبدأ از قبل MP4 بود، از مرحله‌ی `ensureMp4` رد شو و مستقیم فایل را دانلود کن (با تشخیص درست پسوند/Content-Type).
-- فقط روی دسکتاپ و برای فایل‌های غیر-MP4 (مثل WebM) تبدیل مرورگری را امتحان کن.
+### 1. New dialog component
+`src/modules/generator-ui/components/ProductAdDialog.tsx`
+- Modeled on the existing `ScenarioWriterDialog` (reuse its image-upload to the `wan-frames` bucket, duration selector, scene rendering, copy / regenerate / use-as-prompt actions).
+- Adds: product name input, optional description, a camera-style selector (10 options as pill buttons), and a camera-movement notes textarea.
+- Reuses the same `onUseAsPrompt` and `onSendScenes` callbacks already wired for the Scenario Writer so the result flows into the prompt box / Pending exactly like today.
 
-### ۲. افزودن یک edge function برای دانلود امن
-یک edge function جدید (مثلاً `video-download`) که:
-- فایل را از Storage می‌گیرد،
-- در صورت نیاز کدک را بررسی/سرور می‌کند،
-- با هدر `Content-Disposition: attachment; filename="..."` و `Content-Type: video/mp4` صحیح برمی‌گرداند.
-این باعث می‌شود موبایل فایل را به‌درستی به‌عنوان دانلود ذخیره کند، نه پخش درون‌مرورگری.
+### 2. Toolbar icon
+In `DashboardPage.tsx`, add a button right after the Scenario Writer icon (around line 6967) using a product-style Lucide icon (e.g. `Package` or `ShoppingBag`), with its own `isProductAdOpen` state, and render `<ProductAdDialog .../>` near the existing `<ScenarioWriterDialog />` (around line 5558), passing the same handlers.
 
-> اگر منابع per-clip از همان ابتدا MP4 استاندارد هستند، صرفِ مرحله‌ی ۱ (رد کردن تبدیل و دانلود مستقیم) مشکل اصلی موبایل را حل می‌کند و edge function اختیاری است.
+### 3. Edge function support
+Extend the existing `scenario-write` function (`supabase/functions/scenario-write/index.ts`) to accept optional fields: `mode: "product-ad"`, `productName`, `productDescription`, `cameraStyle`, `cameraMovement`. When in product-ad mode, the system prompt is rewritten to produce a persuasive product-commercial scenario that:
+- Centers the named product as the hero,
+- Bakes the selected camera style (e.g. "Crash Zoom", "Orbit Shot") and any movement notes into the shot descriptions,
+- Keeps the existing duration/word-cap and multi-scene (`===SCENE===`) splitting logic unchanged.
 
-### ۳. اصلاح fallback خطرناک
-در بلوک `catch (transErr)`، هرگز فایل WebM را با پسوند `.mp4` تحویل نده؛ پسوند واقعی فایل را بر اساس نوع MIME واقعی بلاب تعیین کن تا فایل گمراه‌کننده نباشد.
+All existing scenario-writer behavior stays intact; product-ad is an additive branch.
 
-## نکات فنی
-- تشخیص موبایل با `navigator.userAgent` یا `matchMedia` (سبک، سمت کلاینت).
-- مسیر `proxiedVideoUrl` و دانلود از طریق Blob حفظ می‌شود.
-- فایل‌های Final Film (خروجی merge با MediaRecorder) همان‌هایی هستند که بیشترین مشکل را دارند؛ برای آن‌ها روی موبایل، دانلود مستقیم WebM با پسوند درست + پیام راهنما، یا تبدیل سمت سرور بهترین گزینه است.
+## Technical notes
 
-## فایل‌های تغییریافته
-- `src/modules/generator-ui/pages/DashboardPage.tsx`
-- (اختیاری) `supabase/functions/video-download/index.ts`
+- No database/schema changes; reuses the `wan-frames` storage bucket and current auth.
+- Camera-style list stored as a constant array in the dialog so it is easy to extend.
+- The product image is sent to `scenario-write` as `imageUrl` (already supported) so the AI grounds the scenario in the actual product, and is forwarded to `onUseAsPrompt` to pre-attach it for generation.

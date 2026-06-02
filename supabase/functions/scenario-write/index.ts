@@ -23,13 +23,42 @@ function expectedSceneCount(duration: number): number {
   return 1;
 }
 
-function buildSystemPrompt(duration: number): string {
+interface ProductAdOpts {
+  productName?: string;
+  productDescription?: string;
+  cameraStyle?: string;
+  cameraMovement?: string;
+}
+
+function cameraGuidance(opts: ProductAdOpts): string {
+  const bits: string[] = [];
+  if (opts.cameraStyle) {
+    bits.push(`Use a "${opts.cameraStyle}" camera style as the dominant cinematic technique throughout, and explicitly name this camera move in the shot descriptions.`);
+  }
+  if (opts.cameraMovement) {
+    bits.push(`Honor these specific camera-movement notes from the user: ${opts.cameraMovement}.`);
+  }
+  return bits.join(" ");
+}
+
+function buildSystemPrompt(duration: number, productAd?: ProductAdOpts): string {
   const sceneCount = expectedSceneCount(duration);
+  const isAd = Boolean(productAd);
+  const productLine = isAd
+    ? [
+        "You are a world-class advertising creative director writing a high-energy PRODUCT COMMERCIAL scenario.",
+        productAd?.productName ? `The hero product is "${productAd.productName}".` : "Center the scenario on the product in the user's brief.",
+        productAd?.productDescription ? `Product details: ${productAd.productDescription}.` : "",
+        "Make the product the unmistakable hero of every shot: show it prominently, highlight its look, texture, and key selling points, and build desire.",
+        cameraGuidance(productAd ?? {}),
+      ].filter(Boolean).join(" ")
+    : "";
+
   if (sceneCount > 1) {
     const numWord = sceneCount === 2 ? "TWO" : sceneCount === 3 ? "THREE" : sceneCount === 9 ? "NINE" : String(sceneCount);
     return [
-      "You are a professional short-form video scenario writer.",
-      `Given the user's idea, write a CONTINUOUS narrative scenario in ENGLISH for a ${duration}-second cinematic video,`,
+      isAd ? productLine : "You are a professional short-form video scenario writer.",
+      `Given the user's brief, write a CONTINUOUS narrative scenario in ENGLISH for a ${duration}-second cinematic ${isAd ? "product advertisement" : "video"},`,
       `structured as ${numWord} sequential 15-second scenes that flow into each other.`,
       `Output EXACTLY ${sceneCount} scene blocks separated by the literal delimiter "${SCENE_DELIM}" on its own line.`,
       "Do not number the scenes, do not add headings or labels, no markdown, no preamble, no quotes.",
@@ -40,8 +69,8 @@ function buildSystemPrompt(duration: number): string {
   const cap = WORD_CAPS[duration];
   const beat = BEAT_GUIDE[duration];
   return [
-    "You are a professional short-form video scenario writer.",
-    "Given the user's idea, write a single cohesive scenario/treatment in ENGLISH",
+    isAd ? productLine : "You are a professional short-form video scenario writer.",
+    `Given the user's brief, write a single cohesive ${isAd ? "product advertisement" : "scenario/treatment"} in ENGLISH`,
     `suitable for a ${duration}-second cinematic video — regardless of the input language.`,
     "Include opening visual hook, beat-by-beat action, camera/lighting cues, and a clear ending.",
     `Match pacing realistically to the duration: ${beat}.`,
@@ -55,16 +84,17 @@ async function callGateway(
   duration: number,
   idea: string,
   imageUrl?: string,
+  productAd?: ProductAdOpts,
 ): Promise<Response> {
+  const refText = productAd
+    ? `Brief: ${idea}\nThe attached image is the actual product — match its exact look, color, shape, and branding in every shot.`
+    : `Idea: ${idea}\nBase the scenario on the attached reference image (subjects, setting, mood, props, style).`;
   const userContent: unknown = imageUrl
     ? [
-        {
-          type: "text",
-          text: `Idea: ${idea}\nBase the scenario on the attached reference image (subjects, setting, mood, props, style).`,
-        },
+        { type: "text", text: refText },
         { type: "image_url", image_url: { url: imageUrl } },
       ]
-    : `Idea: ${idea}`;
+    : productAd ? `Brief: ${idea}` : `Idea: ${idea}`;
 
   return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
@@ -75,7 +105,7 @@ async function callGateway(
     body: JSON.stringify({
       model: "google/gemini-2.5-flash",
       messages: [
-        { role: "system", content: buildSystemPrompt(duration) },
+        { role: "system", content: buildSystemPrompt(duration, productAd) },
         { role: "user", content: userContent },
       ],
     }),
@@ -124,6 +154,19 @@ Deno.serve(async (req) => {
     const durationRaw = Number(body?.durationSeconds);
     const duration = [5, 10, 15, 30, 45, 135].includes(durationRaw) ? durationRaw : 0;
     const imageUrlRaw = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
+    const isProductAd = body?.mode === "product-ad";
+    const clip = (v: unknown, max: number): string | undefined => {
+      const s = typeof v === "string" ? v.trim() : "";
+      return s ? s.slice(0, max) : undefined;
+    };
+    const productAd: ProductAdOpts | undefined = isProductAd
+      ? {
+          productName: clip(body?.productName, 200),
+          productDescription: clip(body?.productDescription, 2000),
+          cameraStyle: clip(body?.cameraStyle, 100),
+          cameraMovement: clip(body?.cameraMovement, 1000),
+        }
+      : undefined;
     const supabaseHost = (() => {
       try { return new URL(Deno.env.get("SUPABASE_URL") ?? "").hostname; } catch { return ""; }
     })();
@@ -141,7 +184,7 @@ Deno.serve(async (req) => {
         ? imageUrlRaw
         : undefined;
 
-    if (!idea && !imageUrl) {
+    if (!idea && !imageUrl && !productAd?.productName) {
       return new Response(JSON.stringify({ error: "idea or imageUrl is required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -168,8 +211,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    const effectiveIdea = idea || "Generate a scenario based on the attached reference image.";
-    let resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl);
+    const effectiveIdea = idea || (productAd?.productName ? `Create an advertisement for ${productAd.productName}.` : "Generate a scenario based on the attached reference image.");
+    let resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl, productAd);
 
     if (resp.status === 429) {
       return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
@@ -199,7 +242,7 @@ Deno.serve(async (req) => {
     // One retry for multi-scene durations if we didn't get the expected count.
     const expected = expectedSceneCount(duration);
     if (expected > 1 && scenes.length === 0) {
-      resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl);
+      resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl, productAd);
       if (resp.ok) {
         data = await resp.json();
         raw = (data?.choices?.[0]?.message?.content ?? "").trim();

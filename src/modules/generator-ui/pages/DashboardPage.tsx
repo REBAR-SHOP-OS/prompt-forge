@@ -9,6 +9,7 @@ import {
   Cpu,
   Camera,
   Clapperboard,
+  Package,
    
   
   Combine,
@@ -105,6 +106,7 @@ import CalendarInfoDialog from '@/modules/generator-ui/components/CalendarInfoDi
 import ImageReframeDialog from '@/modules/generator-ui/components/ImageReframeDialog'
 import AiImageDialog from '@/modules/generator-ui/components/AiImageDialog'
 import ScenarioWriterDialog from '@/modules/generator-ui/components/ScenarioWriterDialog'
+import ProductAdDialog from '@/modules/generator-ui/components/ProductAdDialog'
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
@@ -600,6 +602,7 @@ export default function DashboardPage() {
   const imageUploadInputRef = useRef<HTMLInputElement | null>(null)
   const [isAiImageDialogOpen, setIsAiImageDialogOpen] = useState(false)
   const [isScenarioDialogOpen, setIsScenarioDialogOpen] = useState(false)
+  const [isProductAdOpen, setIsProductAdOpen] = useState(false)
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
@@ -5599,6 +5602,52 @@ export default function DashboardPage() {
         }}
       />
 
+      <ProductAdDialog
+        open={isProductAdOpen}
+        onOpenChange={setIsProductAdOpen}
+        defaultDuration={durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135 ? durationSeconds : (durationSeconds as 5 | 10 | 15)}
+        userId={userId}
+        onUseAsPrompt={(text, imageUrl) => {
+          setPromptText(text)
+          if (imageUrl) {
+            setGenerationMode('image-to-video')
+            setUploadTarget('Start')
+            setUploadedFiles([{
+              id: Date.now(),
+              name: 'product-ad-reference.png',
+              size: 0,
+              target: 'Start',
+              type: 'image/png',
+              status: 'ready',
+              url: imageUrl,
+              error: null,
+            }])
+          }
+        }}
+        onSendScenes={async (scenes, imageUrl) => {
+          const tagged = scenes
+            .map((s, i) => `=== Scene ${i + 1} ===\n${s.trim()}`)
+            .join('\n\n')
+          setPromptText(tagged)
+          if (imageUrl) {
+            setGenerationMode('image-to-video')
+            setUploadTarget('Start')
+            setUploadedFiles([{
+              id: Date.now(),
+              name: 'product-ad-reference.png',
+              size: 0,
+              target: 'Start',
+              type: 'image/png',
+              status: 'ready',
+              url: imageUrl,
+              error: null,
+            }])
+          }
+        }}
+      />
+
+
+
 
 
       <Dialog open={isMusicDialogOpen} onOpenChange={setIsMusicDialogOpen}>
@@ -6964,6 +7013,16 @@ export default function DashboardPage() {
             title="Write a scenario from your idea"
           >
             <Clapperboard className="h-4 w-4" aria-hidden="true" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsProductAdOpen(true)}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/20 text-zinc-300 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100"
+            aria-label="Create a product advertising scenario"
+            title="Create a product advertising scenario"
+          >
+            <Package className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
 
