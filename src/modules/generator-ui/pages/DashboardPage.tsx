@@ -5173,7 +5173,7 @@ export default function DashboardPage() {
         </DialogContent>
       </Dialog>
 
-      <UsageStatsPopover />
+
 
       <CalendarInfoDialog
         open={isCalendarOpen}
