@@ -1870,15 +1870,9 @@ export default function DashboardPage() {
           }
         }
       } else {
-        // Real job: keep it on the server (Storage is the permanent archive)
-        // and only hide it from the workspace. It stays in Storage until the
-        // user deletes it from there explicitly.
-        setWorkspaceHiddenJobIds((curr) => {
-          const next = new Set(curr)
-          next.add(jobId)
-          persistWorkspaceHiddenJobIds(next)
-          return next
-        })
+        // Real job: permanently delete it on the server, which also removes
+        // the video file(s) from Storage.
+        await jobOrchestratorGateway.deleteJob(jobId)
       }
     } catch (err) {
       // Roll back the optimistic removal on failure.
