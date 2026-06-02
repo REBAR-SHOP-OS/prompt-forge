@@ -5055,8 +5055,8 @@ export default function DashboardPage() {
               )
             })()}
           </div>
-        </PopoverContent>
-      </Popover>
+        </DialogContent>
+      </Dialog>
 
       <UsageStatsPopover />
 
