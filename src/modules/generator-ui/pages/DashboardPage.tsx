@@ -1698,12 +1698,17 @@ export default function DashboardPage() {
       }
 
 
-      // Server-side permanent deletes. Errors are non-fatal: the local
-      // tombstone keeps the card from coming back even if a row lingers.
-      await Promise.allSettled([
-        ...clipIds.map((id) => jobOrchestratorGateway.deleteJob(id)),
-        ...imageIds.map((id) => generatorUiGateway.deleteUserImage(id)),
-      ])
+      // Storage is the permanent archive. Deleting a draft only hides its
+      // clips from the workspace — the server jobs are kept so the films stay
+      // in Storage until the user removes them there explicitly.
+      if (clipIds.length > 0) {
+        setWorkspaceHiddenJobIds((curr) => {
+          const next = new Set(curr)
+          for (const id of clipIds) next.add(id)
+          persistWorkspaceHiddenJobIds(next)
+          return next
+        })
+      }
       return
     }
 
