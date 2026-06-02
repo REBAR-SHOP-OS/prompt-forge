@@ -1,32 +1,32 @@
-## Goal
+## هدف
 
-In the **STORAGE** ("All films") modal, clicking on a film card's thumbnail should play that film inline (with video controls), instead of the card staying a static poster.
+در پنجره‌ی **STORAGE** (همه‌ی فیلم‌ها)، با کلیک روی هر کارت فیلم، یک پنجره‌ی جداگانه (پاپ‌آپ) باز شود و همان فیلم را با کنترل‌های پخش نمایش دهد — به‌جای پخش درون‌خطی روی خود کارت.
 
-## Current behavior
+## وضعیت فعلی
 
-In `src/modules/generator-ui/pages/DashboardPage.tsx` (archive modal, ~lines 5058–5165), each card renders a `<PlayableVideo thumbnail … />` that shows a frozen frame/poster. There is no click handler, so nothing happens when the user clicks a card. Only the Download and Delete icon buttons are interactive.
+در `src/modules/generator-ui/pages/DashboardPage.tsx` با کلیک روی کارت، مقدار `playingArchiveId` تنظیم می‌شود و ویدیو **داخل همان کاشی** (به‌جای تصویر بندانگشتی) پخش می‌شود. این باعث می‌شود ویدیو در فضای کوچک کارت پخش شود.
 
-## Change
+## تغییرات
 
-All edits in `src/modules/generator-ui/pages/DashboardPage.tsx`.
+همه‌ی ویرایش‌ها در `src/modules/generator-ui/pages/DashboardPage.tsx`:
 
-1. **Add local state** near the other archive state (`deletingArchiveId`, etc.):
-   `const [playingArchiveId, setPlayingArchiveId] = useState<string | null>(null)`
-   Reset it to `null` when the archive dialog closes so reopening starts fresh.
+1. **افزودن state برای فیلم انتخاب‌شده:** به‌جای استفاده از `playingArchiveId` برای پخش درون‌خطی، یک state نگه می‌داریم که جابِ انتخاب‌شده برای پخش در پنجره را ذخیره کند (شامل `jobId`, `storage_path`, `poster`, و عنوان prompt).
 
-2. **Make the thumbnail area clickable** (the `div` with `aspect-video`, ~line 5067):
-   - Add `onClick`, `role="button"`, `tabIndex`, and keyboard handler so clicking a card with a playable `video.storage_path` sets `playingArchiveId = job.id`.
-   - When `playingArchiveId === job.id`, render `PlayableVideo` in **full playback mode** (not `thumbnail`): pass `controls`, `autoPlay`, `playsInline`, and the same `getCardVideoSrc(...)` source, filling the tile.
-   - Otherwise keep the existing `thumbnail` poster render. Add a subtle play affordance (e.g. a small centered play icon overlay) on the thumbnail so it reads as clickable.
-   - Only one film plays at a time (clicking another card switches `playingArchiveId`).
+2. **کلیک روی کارت → باز کردن پنجره:** کلیک یا Enter/Space روی ناحیه‌ی بندانگشتی، به‌جای پخش درون‌خطی، پنجره‌ی پخش‌کننده را باز می‌کند. کارت همیشه تصویر بندانگشتی + آیکون Play را نشان می‌دهد (دیگر حالت پخش درون‌خطی روی کارت وجود ندارد).
 
-3. The Download/Delete buttons already call `event.stopPropagation()`, so they won't trigger playback. No change needed there.
+3. **افزودن یک Dialog پخش‌کننده‌ی ویدیو:** یک `Dialog` جدید (یا تو در تو) که:
+   - وقتی فیلمی انتخاب شده باز است.
+   - `PlayableVideo` را در حالت کامل با `controls`, `autoPlay`, `playsInline` و منبع `getCardVideoSrc(...)` در اندازه‌ی بزرگ (مثلاً عرض تا حدود ۸۰۰px و نسبت 16:9 / object-contain) نمایش می‌دهد.
+   - عنوان prompt فیلم را به‌عنوان سرتیتر نشان می‌دهد.
+   - با بستن پنجره، پخش متوقف و state پاک می‌شود (همان رفتار توقف هنگام بسته‌شدن).
 
-## Technical notes
+4. **حفظ رفتار دکمه‌ها:** دکمه‌های دانلود و حذف همچنان `stopPropagation` دارند تا کلیک روی آن‌ها پنجره‌ی پخش را باز نکند.
 
-- Reuse the existing `PlayableVideo` component — it already proxies the URL and handles retries. Playback mode is simply omitting the `thumbnail` prop and adding `controls`/`autoPlay`.
-- Cards without `video.storage_path` (e.g. still rendering) remain non-clickable and keep the `Clapperboard` placeholder.
-- Purely a client-side UI change; no backend, schema, or data changes.
+## نکات فنی
 
-## Files touched
+- از همان کامپوننت موجود `PlayableVideo` استفاده می‌شود؛ نیازی به منطق جدید پخش/پروکسی نیست.
+- تغییر کاملاً سمت کلاینت و UI است؛ بدون تغییر بک‌اند، دیتابیس یا داده‌ها.
+- پنجره‌ی پخش باید روی پنجره‌ی STORAGE قرار گیرد (z-index بالاتر) و بستن آن کاربر را به همان لیست STORAGE برگرداند.
+
+## فایل‌های تغییریافته
 - `src/modules/generator-ui/pages/DashboardPage.tsx`
