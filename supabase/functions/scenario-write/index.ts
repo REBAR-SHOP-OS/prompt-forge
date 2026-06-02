@@ -211,8 +211,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    const effectiveIdea = idea || "Generate a scenario based on the attached reference image.";
-    let resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl);
+    const effectiveIdea = idea || (productAd?.productName ? `Create an advertisement for ${productAd.productName}.` : "Generate a scenario based on the attached reference image.");
+    let resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl, productAd);
 
     if (resp.status === 429) {
       return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
