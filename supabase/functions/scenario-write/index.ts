@@ -184,7 +184,7 @@ Deno.serve(async (req) => {
         ? imageUrlRaw
         : undefined;
 
-    if (!idea && !imageUrl) {
+    if (!idea && !imageUrl && !productAd?.productName) {
       return new Response(JSON.stringify({ error: "idea or imageUrl is required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
