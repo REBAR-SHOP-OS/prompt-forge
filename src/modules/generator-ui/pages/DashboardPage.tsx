@@ -3,7 +3,6 @@ import {
   ArrowRight,
   BookmarkCheck,
   BookmarkPlus,
-  CalendarDays,
   ChevronsRight,
   Check,
   Cpu,
@@ -617,6 +616,37 @@ export default function DashboardPage() {
     }
   }
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
+  const [hasOccasionToday, setHasOccasionToday] = useState(false)
+
+  // Lightweight daily check: does today have any occasion? Cached once per day.
+  useEffect(() => {
+    const today = new Date()
+    const dayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+    const cacheKey = `occasion-today:${dayKey}`
+    try {
+      const cached = window.localStorage.getItem(cacheKey)
+      if (cached === '1' || cached === '0') {
+        setHasOccasionToday(cached === '1')
+        return
+      }
+    } catch { /* ignore */ }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('day-info', { body: { date: dayKey, lang: 'en' } })
+        if (cancelled || error) return
+        const list = Array.isArray((data as { occasions?: unknown[] })?.occasions)
+          ? (data as { occasions: unknown[] }).occasions
+          : []
+        const has = list.length > 0
+        setHasOccasionToday(has)
+        try { window.localStorage.setItem(cacheKey, has ? '1' : '0') } catch { /* ignore */ }
+      } catch { /* keep default green */ }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+
 
 
 
@@ -4897,11 +4927,26 @@ export default function DashboardPage() {
       <button
         type="button"
         onClick={() => { setIsCalendarOpen(true) }}
-        aria-label="Open calendar"
-        className="fixed left-14 top-4 z-50 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-16 sm:top-5"
+        aria-label={hasOccasionToday ? 'Today has an occasion — open calendar' : 'Open calendar'}
+        title={hasOccasionToday ? 'Today has an occasion — take a look' : 'Calendar'}
+        className="fixed left-14 top-4 z-50 grid h-9 w-9 place-items-center rounded-md border border-transparent transition hover:border-white/10 hover:bg-white/[0.045] sm:left-16 sm:top-5"
       >
-        <CalendarDays className="h-[18px] w-[18px]" aria-hidden="true" />
+        <span className="relative grid place-items-center">
+          {hasOccasionToday && (
+            <span className="absolute inline-flex h-3.5 w-3.5 animate-ping rounded-full bg-red-500/60" aria-hidden="true" />
+          )}
+          <span
+            className={`relative inline-block h-3 w-3 rounded-full ring-2 transition-colors ${
+              hasOccasionToday
+                ? 'bg-red-500 ring-red-500/30 shadow-[0_0_8px_2px_rgba(239,68,68,0.55)]'
+                : 'bg-emerald-500 ring-emerald-500/25'
+            }`}
+            aria-hidden="true"
+          />
+
+        </span>
       </button>
+
 
 
       <button
