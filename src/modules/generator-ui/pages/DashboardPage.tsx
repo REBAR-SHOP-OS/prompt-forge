@@ -4923,12 +4923,18 @@ export default function DashboardPage() {
 
       <button
         type="button"
-        onClick={() => { setCalendarTodayOnly(false); setIsCalendarOpen(true) }}
-        aria-label="Open calendar"
-        className="fixed left-14 top-4 z-50 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-16 sm:top-5"
+        onClick={() => { setCalendarTodayOnly(true); setIsCalendarOpen(true) }}
+        aria-label="Open today's occasions"
+        title={todayHasOccasion ? "Today's occasions (special day)" : "Today's occasions"}
+        className={`fixed left-14 top-4 z-50 grid h-9 w-9 place-items-center rounded-md border transition sm:left-16 sm:top-5 ${
+          todayHasOccasion
+            ? 'border-rose-400/40 bg-rose-400/10 text-rose-400 hover:bg-rose-400/15'
+            : 'border-emerald-400/40 bg-emerald-400/10 text-emerald-400 hover:bg-emerald-400/15'
+        }`}
       >
         <CalendarDays className="h-[18px] w-[18px]" aria-hidden="true" />
       </button>
+
 
       <button
         type="button"
