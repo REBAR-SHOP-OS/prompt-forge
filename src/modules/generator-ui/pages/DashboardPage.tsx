@@ -6504,17 +6504,17 @@ export default function DashboardPage() {
         aria-label="Library"
         aria-hidden={!isApprovedPanelOpen}
       >
-        <div className="flex items-center justify-between border-b border-white/10 pb-3">
+        <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-3 pt-12 sm:pt-14">
           <div className="inline-flex items-center gap-2">
             <Library className="h-4 w-4 text-emerald-300" aria-hidden="true" />
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">Library</p>
-            <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">Library</p>
+            <span className="grid h-5 min-w-5 place-items-center rounded-full border border-white/10 bg-white/[0.04] px-1.5 text-[11px] font-semibold text-zinc-300">
               {libraryItems.length}
             </span>
           </div>
           <button
             type="button"
-            className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-100"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-zinc-100"
             aria-label="Close library"
             onClick={() => setIsApprovedPanelOpen(false)}
           >
