@@ -3,7 +3,7 @@ import {
   ArrowRight,
   BookmarkCheck,
   BookmarkPlus,
-  
+  CalendarDays,
   ChevronsRight,
   Check,
   Cpu,
@@ -100,6 +100,7 @@ import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDial
 import UsageStatsPopover from '@/modules/generator-ui/components/UsageStatsPopover'
 import VideoToVideoDialog from '@/modules/generator-ui/components/VideoToVideoDialog'
 import { VoiceoverDialog } from '@/modules/generator-ui/components/VoiceoverDialog'
+import CalendarInfoDialog from '@/modules/generator-ui/components/CalendarInfoDialog'
 
 import ImageReframeDialog from '@/modules/generator-ui/components/ImageReframeDialog'
 import AiImageDialog from '@/modules/generator-ui/components/AiImageDialog'
@@ -615,7 +616,7 @@ export default function DashboardPage() {
       setDeletingArchiveId(null)
     }
   }
-
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false)
 
 
 
@@ -4893,6 +4894,15 @@ export default function DashboardPage() {
         </DropdownMenuContent>
       </DropdownMenu>
 
+      <button
+        type="button"
+        onClick={() => { setIsCalendarOpen(true) }}
+        aria-label="Open calendar"
+        className="fixed left-14 top-4 z-50 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-16 sm:top-5"
+      >
+        <CalendarDays className="h-[18px] w-[18px]" aria-hidden="true" />
+      </button>
+
 
       <button
         type="button"
@@ -5102,6 +5112,19 @@ export default function DashboardPage() {
       </Dialog>
 
       <UsageStatsPopover />
+
+      <CalendarInfoDialog
+        open={isCalendarOpen}
+        onOpenChange={setIsCalendarOpen}
+        todayOnly={false}
+        onApplyPrompt={(p) => {
+          setPromptText(p)
+          setDurationSeconds(10)
+          setIsCalendarOpen(false)
+        }}
+      />
+
+
 
 
 
