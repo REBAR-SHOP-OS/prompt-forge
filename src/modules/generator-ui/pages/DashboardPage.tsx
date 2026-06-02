@@ -1716,16 +1716,18 @@ export default function DashboardPage() {
       }
 
 
-      // Storage is the permanent archive. Deleting a draft only hides its
-      // clips from the workspace — the server jobs are kept so the films stay
-      // in Storage until the user removes them there explicitly.
-      if (clipIds.length > 0) {
-        setWorkspaceHiddenJobIds((curr) => {
-          const next = new Set(curr)
-          for (const id of clipIds) next.add(id)
-          persistWorkspaceHiddenJobIds(next)
-          return next
-        })
+      // Permanently purge the underlying clips and images from Storage. Each
+      // clip id is a real server job id, so deleteJob removes the DB row AND
+      // the video file; deleteUserImage does the same for image assets.
+      const results = await Promise.allSettled([
+        ...clipIds.map((id) => jobOrchestratorGateway.deleteJob(id)),
+        ...imageIds.map((id) => generatorUiGateway.deleteUserImage(id)),
+      ])
+      const firstError = results.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined
+      if (firstError) {
+        const reason = firstError.reason
+        const msg = reason instanceof ApiError ? reason.message : (reason as Error)?.message ?? 'Unknown error'
+        if (typeof window !== 'undefined') window.alert(`Some files could not be deleted: ${msg}`)
       }
       return
     }
@@ -1868,15 +1870,9 @@ export default function DashboardPage() {
           }
         }
       } else {
-        // Real job: keep it on the server (Storage is the permanent archive)
-        // and only hide it from the workspace. It stays in Storage until the
-        // user deletes it from there explicitly.
-        setWorkspaceHiddenJobIds((curr) => {
-          const next = new Set(curr)
-          next.add(jobId)
-          persistWorkspaceHiddenJobIds(next)
-          return next
-        })
+        // Real job: permanently delete it on the server, which also removes
+        // the video file(s) from Storage.
+        await jobOrchestratorGateway.deleteJob(jobId)
       }
     } catch (err) {
       // Roll back the optimistic removal on failure.
