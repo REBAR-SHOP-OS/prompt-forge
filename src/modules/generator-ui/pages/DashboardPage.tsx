@@ -603,6 +603,7 @@ export default function DashboardPage() {
     }
   }
   const [deletingArchiveId, setDeletingArchiveId] = useState<string | null>(null)
+  const [playingArchiveId, setPlayingArchiveId] = useState<string | null>(null)
   const handleDeleteArchiveJob = async (jobId: string) => {
     setDeletingArchiveId(jobId)
     try {
@@ -4977,6 +4978,7 @@ export default function DashboardPage() {
         onOpenChange={(next) => {
           setIsArchiveOpen(next)
           if (next) void loadArchive()
+          else setPlayingArchiveId(null)
         }}
       >
         <DialogContent
@@ -5064,26 +5066,55 @@ export default function DashboardPage() {
                         key={job.id}
                         className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3"
                       >
-                        <div className="relative aspect-video w-full shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
+                        <div
+                          className={`relative aspect-video w-full shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a] ${video?.storage_path ? 'cursor-pointer' : ''}`}
+                          role={video?.storage_path ? 'button' : undefined}
+                          tabIndex={video?.storage_path ? 0 : undefined}
+                          onClick={() => { if (video?.storage_path) setPlayingArchiveId(job.id) }}
+                          onKeyDown={(event) => {
+                            if (video?.storage_path && (event.key === 'Enter' || event.key === ' ')) {
+                              event.preventDefault()
+                              setPlayingArchiveId(job.id)
+                            }
+                          }}
+                        >
                           {video?.storage_path ? (
-                            <PlayableVideo
-                              thumbnail
-                              className="h-full w-full bg-black object-cover"
-                              src={getCardVideoSrc(job.id, video.storage_path)}
-                              poster={video.thumbnail_url ?? undefined}
-                              muted
-                              playsInline
-                              preload="metadata"
-                              onLoadedMetadata={(event) => {
-                                const el = event.currentTarget
-                                try {
-                                  if (el.currentTime === 0) {
-                                    const dur = Number.isFinite(el.duration) ? el.duration : 0
-                                    el.currentTime = dur > 0 ? Math.min(4, Math.max(0, dur - 0.05)) : 0.05
-                                  }
-                                } catch { /* ignore */ }
-                              }}
-                            />
+                            playingArchiveId === job.id ? (
+                              <PlayableVideo
+                                className="h-full w-full bg-black object-contain"
+                                src={getCardVideoSrc(job.id, video.storage_path)}
+                                poster={video.thumbnail_url ?? undefined}
+                                controls
+                                autoPlay
+                                playsInline
+                              />
+                            ) : (
+                              <>
+                                <PlayableVideo
+                                  thumbnail
+                                  className="h-full w-full bg-black object-cover"
+                                  src={getCardVideoSrc(job.id, video.storage_path)}
+                                  poster={video.thumbnail_url ?? undefined}
+                                  muted
+                                  playsInline
+                                  preload="metadata"
+                                  onLoadedMetadata={(event) => {
+                                    const el = event.currentTarget
+                                    try {
+                                      if (el.currentTime === 0) {
+                                        const dur = Number.isFinite(el.duration) ? el.duration : 0
+                                        el.currentTime = dur > 0 ? Math.min(4, Math.max(0, dur - 0.05)) : 0.05
+                                      }
+                                    } catch { /* ignore */ }
+                                  }}
+                                />
+                                <div className="pointer-events-none absolute inset-0 grid place-items-center">
+                                  <span className="grid h-10 w-10 place-items-center rounded-full bg-black/50 text-white backdrop-blur-sm transition group-hover:bg-black/60">
+                                    <Play className="h-5 w-5" aria-hidden="true" />
+                                  </span>
+                                </div>
+                              </>
+                            )
                           ) : (
                             <div className="grid h-full w-full place-items-center text-zinc-500">
                               <Clapperboard className="h-6 w-6" aria-hidden="true" />
