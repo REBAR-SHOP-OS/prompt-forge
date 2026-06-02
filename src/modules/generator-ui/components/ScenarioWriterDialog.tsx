@@ -90,6 +90,8 @@ export default function ScenarioWriterDialog({
       if (upErr) throw new Error(upErr.message)
       const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
       setUploadedImageUrl(data.publicUrl)
+      // When an image is attached, default to auto-from-image mode.
+      if (!idea.trim()) setIdeaMode('auto')
     } catch (e) {
       setError((e as Error).message ?? 'Image upload failed')
       setImagePreviewUrl(null)
@@ -103,6 +105,7 @@ export default function ScenarioWriterDialog({
     if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
     setImagePreviewUrl(null)
     setUploadedImageUrl(null)
+    setIdeaMode('manual')
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
