@@ -1,23 +1,18 @@
-## Goal
+## مشکل
+کارت اول این پروژه با ابعاد **9:16** ساخته شده (در دیتابیس `requested_aspect_ratio = 9:16`)، اما نوار انتخاب ابعاد روی **16:9** قفل شده است.
 
-The Scenario Writer should always generate an **advertising** scenario that follows a clear story arc — a defined beginning, a middle that builds, and a defined ending — regardless of whether the user writes their own idea or auto-generates from an image.
+علت: وقتی یک پروژه/درفت در ورک‌اسپیس انتخاب می‌شود، قفل ابعاد از روی «کارت اول» محاسبه می‌شود. اما هنگام ساختن آبجکت پروژه، مقدار ابعاد از روی `video.aspect_ratio` خوانده می‌شود که برای این کلیپ‌ها مقدار `"720P"` است (یک برچسب کیفیت، نه نسبت ابعاد). چون `"720P"` یک نسبت معتبر نیست، منطق نرمال‌سازی آن را نادیده می‌گیرد و به مقدار پیش‌فرض **16:9** برمی‌گردد — به‌جای اینکه به `requested_aspect_ratio` (یعنی 9:16) رجوع کند.
 
-## Change
+به همین دلیل خود کارت درست (9:16) نمایش داده می‌شود ولی قفلِ نوار اشتباه (16:9) می‌شود.
 
-Edit the system prompt in `supabase/functions/scenario-write/index.ts` (`buildSystemPrompt`), which currently builds the persona/instructions for the non-product-ad path.
+## راه‌حل
+در `DashboardPage.tsx` (محاسبه‌ی `ratio` برای آبجکت پروژه/درفت، حدود خط ۲۱۷۵)، مقدار ابعاد را قبل از استفاده نرمال‌سازی کنیم و وقتی `video.aspect_ratio` یک نسبت معتبر نیست (مثل `"720P"`) به `requested_aspect_ratio` رجوع کنیم:
 
-1. **Persona** — for both the "write my own" and "auto from image" cases, change the persona from a generic "professional short-form video scenario writer" to an **advertising creative director** who writes commercial scenarios. Keep the existing image-analysis instruction for the auto-from-image case.
+```text
+ratio = normalizeRatio(video.aspect_ratio) ?? normalizeRatio(requested_aspect_ratio) ?? null
+```
 
-2. **Narrative arc** — add explicit instructions to every scenario (single-scene and multi-scene durations) requiring:
-   - A clear **hook / opening** that establishes subject and setting.
-   - A **middle** that develops the story and builds interest/desire.
-   - A **defined ending / payoff** (resolution or call-to-feel moment) so the scenario starts at one clear point and ends at another.
-   - Advertising tone: persuasive, product/subject-forward, designed to sell or promote.
+با این تغییر، نسبت ابعاد کارت اول به‌درستی 9:16 شناخته شده و قفل نوار هم روی 9:16 تنظیم می‌شود — یعنی همان معیاری که کاربر در ابتدا انتخاب کرده.
 
-3. For multi-scene durations (30s/45s/135s) the arc should span the whole sequence: opening scene sets up, middle scenes build, final scene resolves — while keeping the existing `===SCENE===` delimiter, scene count, and 70–90 word per-scene rules unchanged.
-
-No frontend or schema changes are needed — only the prompt text in the edge function. The edge function redeploys automatically.
-
-## Files
-
-- `supabase/functions/scenario-write/index.ts`
+## فایل‌ها
+- `src/modules/generator-ui/pages/DashboardPage.tsx` — اصلاح خواندن نسبت ابعاد در ساخت آبجکت پروژه/درفت (فقط همین یک نقطه؛ بدون تغییر بک‌اند یا اسکیما).
