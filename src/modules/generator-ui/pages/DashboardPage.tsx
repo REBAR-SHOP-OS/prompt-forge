@@ -930,15 +930,35 @@ export default function DashboardPage() {
   // cards stay visible there.
   const [workspaceHiddenJobIds, setWorkspaceHiddenJobIds] = useState<Set<string>>(new Set())
   const workspaceHiddenJobIdsKey = userId ? `workspace-hidden-jobs:${userId}` : null
+  // Refs mirror the latest hidden sets so effects that run before/independent
+  // of a re-render (e.g. the one-shot workspace restore) read current values
+  // instead of a stale closure. `hiddenSetsReady` flags that BOTH hidden sets
+  // have been loaded from localStorage for the current user, which gates the
+  // restore effect so it never hydrates items Start Over hid.
+  const workspaceHiddenJobIdsRef = useRef<Set<string>>(new Set())
+  const workspaceHiddenImageIdsRef = useRef<Set<string>>(new Set())
+  const [hiddenSetsReady, setHiddenSetsReady] = useState(false)
 
   useEffect(() => {
-    if (!workspaceHiddenJobIdsKey) { setWorkspaceHiddenJobIds(new Set()); return }
+    setHiddenSetsReady(false)
+    if (!workspaceHiddenJobIdsKey) {
+      workspaceHiddenJobIdsRef.current = new Set()
+      setWorkspaceHiddenJobIds(new Set())
+      return
+    }
     try {
       const raw = window.localStorage.getItem(workspaceHiddenJobIdsKey)
       const arr = raw ? (JSON.parse(raw) as string[]) : []
-      setWorkspaceHiddenJobIds(new Set(Array.isArray(arr) ? arr : []))
-    } catch { setWorkspaceHiddenJobIds(new Set()) }
+      const next = new Set(Array.isArray(arr) ? arr : [])
+      workspaceHiddenJobIdsRef.current = next
+      setWorkspaceHiddenJobIds(next)
+    } catch {
+      workspaceHiddenJobIdsRef.current = new Set()
+      setWorkspaceHiddenJobIds(new Set())
+    }
   }, [workspaceHiddenJobIdsKey])
+
+  useEffect(() => { workspaceHiddenJobIdsRef.current = workspaceHiddenJobIds }, [workspaceHiddenJobIds])
 
   function persistWorkspaceHiddenJobIds(next: Set<string>) {
     if (!workspaceHiddenJobIdsKey) return
