@@ -2315,6 +2315,10 @@ export default function DashboardPage() {
     const jobStamps: Record<string, string> = {}
     for (const job of generatedVideos) {
       if (jobDraftMap[job.id]) continue // already owned by a draft
+      // Only items still owned by the active workspace manifest may be backfilled
+      // into an orphan draft. After Start Over the manifest is cleared, so old
+      // backend jobs can never be re-stamped into a visible Pending/Draft card.
+      if (!activeJobIds.has(job.id)) continue
       if (workspaceHiddenJobIds.has(job.id)) continue // hidden by Start Over — never resurface
       if (claimedJobIds.has(job.id)) continue
       if (job.id.startsWith('merged-')) continue
@@ -2329,6 +2333,7 @@ export default function DashboardPage() {
     const imageStamps: Record<string, string> = {}
     for (const img of userImages) {
       if (imageDraftMap[img.id]) continue
+      if (!activeImageIds.has(img.id)) continue // not in active manifest — never resurface
       if (workspaceHiddenImageIds.has(img.id)) continue // hidden by Start Over — never resurface
       if (claimedImageIds.has(img.id)) continue
       if (deletedDraftIds.has(img.id)) continue
@@ -2336,6 +2341,7 @@ export default function DashboardPage() {
       if (deletedDraftIds.has(draftId)) continue
       imageStamps[img.id] = draftId
     }
+
 
     if (Object.keys(jobStamps).length > 0) {
       setJobDraftMap((prev) => {
