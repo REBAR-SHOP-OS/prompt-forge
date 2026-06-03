@@ -102,6 +102,7 @@ export default function AiImageDialog({
   const [editPrompt, setEditPrompt] = useState('')
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null)
   const [referenceImages, setReferenceImages] = useState<AiReferenceImage[]>([])
+  const [refineReferenceImages, setRefineReferenceImages] = useState<AiReferenceImage[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
