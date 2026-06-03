@@ -62,8 +62,9 @@ function buildSystemPrompt(duration: number, productAd?: ProductAdOpts, autoFrom
     const numWord = sceneCount === 2 ? "TWO" : sceneCount === 3 ? "THREE" : sceneCount === 9 ? "NINE" : String(sceneCount);
     return [
       persona,
-      `Given the user's brief, write a CONTINUOUS narrative scenario in ENGLISH for a ${duration}-second cinematic ${isAd ? "product advertisement" : "video"},`,
+      `Given the user's brief, write a CONTINUOUS advertising narrative scenario in ENGLISH for a ${duration}-second cinematic ${isAd ? "product advertisement" : "commercial"},`,
       `structured as ${numWord} sequential 15-second scenes that flow into each other.`,
+      "The scenario MUST follow a clear story arc across the whole sequence: the opening scene is an attention-grabbing hook that establishes the subject and setting, the middle scenes develop the story and build interest and desire, and the final scene delivers a defined payoff/resolution that ends the ad on a strong, memorable note.",
       `Output EXACTLY ${sceneCount} scene blocks separated by the literal delimiter "${SCENE_DELIM}" on its own line.`,
       "Do not number the scenes, do not add headings or labels, no markdown, no preamble, no quotes.",
       "Each scene must be 70-90 words and self-contained as a video prompt (include subject, action, camera move, lighting),",
@@ -74,8 +75,9 @@ function buildSystemPrompt(duration: number, productAd?: ProductAdOpts, autoFrom
   const beat = BEAT_GUIDE[duration];
   return [
     persona,
-    `Given the user's brief, write a single cohesive ${isAd ? "product advertisement" : "scenario/treatment"} in ENGLISH`,
+    `Given the user's brief, write a single cohesive ${isAd ? "product advertisement" : "advertising scenario/treatment"} in ENGLISH`,
     `suitable for a ${duration}-second cinematic video — regardless of the input language.`,
+    "It MUST be persuasive and commercial in tone, and follow a clear narrative arc with a defined beginning, middle, and end: an attention-grabbing opening hook that establishes the subject and setting, a middle that develops the story and builds desire, and a clear payoff/resolution that ends the ad on a strong, memorable note.",
     "Include opening visual hook, beat-by-beat action, camera/lighting cues, and a clear ending.",
     `Match pacing realistically to the duration: ${beat}.`,
     "Output prose only — no markdown headings, no bullet lists, no preamble, no quotes.",
