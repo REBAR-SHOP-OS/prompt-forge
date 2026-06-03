@@ -1,37 +1,57 @@
-# Fix: random videos appear in Pending after a page refresh
+# حفظ کیفیت در «Final Film»
 
-## Symptom
-The workspace looks empty (`Pending 0`, "No renders yet"), but after a browser refresh several old videos suddenly appear in the Pending / Working-clips column.
+## مشکل ریشه‌ای
 
-## Root cause
-The Pending column is rendered from `displayedClips` → `displayedVideos`. In its default (no selected project) branch, `displayedVideos` returns **every** job in `generatedVideos`, only removing:
-- jobs hidden via `workspaceHiddenJobIds`, and
-- jobs claimed by another project or a **non-active** draft snapshot.
+وقتی روی **Final Film** زده می‌شود، کلیپ‌ها از طریق canvas + `MediaRecorder` دوباره ضبط/فشرده می‌شوند. در `src/modules/generator-ui/lib/mergeVideos.ts` (خط ۷۳۵) رکوردر بدون تعیین نرخ بیت ساخته می‌شود:
 
-On refresh, the hydration effect reloads **all** of the user's past jobs from the backend into `generatedVideos`. Any job that is neither hidden nor already owned by another draft/project is "loose", so it falls straight into the default list and shows up in Pending.
+```text
+new MediaRecorder(outStream, { mimeType: chosenMime })
+```
 
-The app tries to paper over this with the "orphan backfill" effect, which later stamps each loose job into its own `draft-orphan-<id>` so it becomes "claimed" and disappears. But that effect runs **after** mount and asynchronously, so on every refresh the loose jobs flash/persist in Pending before (or instead of) being reclassified. This is fragile by design: Pending is defined as "everything minus exclusions" instead of "only the active chain".
+پیش‌فرض کرومیوم حدود ۲.۵ مگابیت بر ثانیه است؛ همین باعث می‌شود فیلم ۱۰۸۰p یا ۹:۱۶ پس از فاینال، تار و کم‌کیفیت شود. این علت اصلی افت کیفیت است.
 
-## Principled fix
-Pending must show **only the active working chain**, never the full job history. The app already tracks active-chain membership authoritatively in `activeJobIds` (every clip added to the workspace goes through `markActiveJob`/`markNewClip`; `Start Over` clears it). So the default branch of `displayedVideos` should additionally require `activeJobIds.has(id)`.
+علاوه بر این، حتی وقتی فقط **یک کلیپ بدون صدا/ترنزیشن/برش** داریم، باز هم فایل از مسیر canvas دوباره کدگذاری می‌شود که ذاتاً افت کیفیت دارد و کاملاً غیرضروری است.
 
-Result:
-- After `Start Over` or on a fresh/empty workspace, `activeJobIds` is empty → Pending stays empty across refreshes.
-- Freshly generated/uploaded/derived clips (all of which call `markActiveJob`) still appear immediately.
-- Old backend jobs that aren't part of the current chain never leak in, regardless of draft/orphan timing.
+## راه‌حل
 
-Apply the same active-chain gate to `lockedRatio`'s "live videos" computation so the aspect-ratio lock is also driven by the active chain rather than loose history.
+دو تغییر هدفمند، بدون تغییر در منطق بقیه‌ی جریان کار:
 
-## Changes (single file: `src/modules/generator-ui/pages/DashboardPage.tsx`)
-1. **`displayedVideos`** (default branch, ~line 2540): change the filter
-   from `!workspaceHiddenJobIds.has(v.id) && !claimedByProjects.has(v.id)`
-   to also require `activeJobIds.has(v.id)`. Add `activeJobIds` to the memo dependency array (~line 2559).
-2. **`lockedRatio`** (~line 2437): change the `liveVideos` filter to also require `activeJobIds.has(v.id)` and add `activeJobIds` to its dependency array (~line 2463), so the chain lock follows the active chain too.
+### ۱. نرخ بیت بالا برای رکوردر (اصلی‌ترین رفع)
 
-No backend, schema, or other component changes. The orphan-backfill / Library-draft logic is left intact (it still builds Library cards from history); it simply no longer governs what Pending shows.
+در `mergeVideos.ts` هنگام ساخت `MediaRecorder`، نرخ بیت ویدئو را بر اساس ابعاد و fps محاسبه می‌کنیم تا خروجی از نظر بصری بدون افت باشد:
 
-## Verification
-1. Generate or upload a clip → it appears in Pending.
-2. Refresh → the same active clip(s) persist, and no extra/old videos appear.
-3. Click `Start Over` → Pending empties; refresh again → Pending stays empty (no resurrected videos).
-4. Confirm Library still shows previous projects/drafts (history is untouched).
+- محاسبه: تقریباً `width * height * fps * 0.15` بیت بر ثانیه.
+- محدودسازی به بازه‌ی امن: حداقل ~۸ مگابیت، حداکثر ~۴۰ مگابیت بر ثانیه.
+- `audioBitsPerSecond: 192000` برای صدای تمیز.
+- اگر مرورگر این گزینه‌ها را نپذیرفت، با try/catch به همان حالت قبلی برمی‌گردیم تا فاینال هیچ‌وقت خراب نشود.
+
+نتیجه: فیلم خروجی در عمل هم‌کیفیت با منبع باقی می‌ماند.
+
+### ۲. عبور مستقیم برای فاینالِ تک‌کلیپ (بدون کدگذاری مجدد)
+
+در `DashboardPage.tsx` در تابع فاینال، قبل از فراخوانی `mergeVideoUrls`، یک شرط «مسیر بدون افت» اضافه می‌کنیم:
+
+اگر همه‌ی این‌ها برقرار بود:
+- فقط یک آیتم واجد شرایط و از نوع ویدئو باشد،
+- موزیک یا وویس‌اوور فعال نباشد،
+- نسخه‌ی برش‌خورده/ادیت‌شده‌ی محلی برای آن کلیپ وجود نداشته باشد،
+
+آنگاه به‌جای merge/ری‌اِنکد، همان فایل اصلی ذخیره‌شده مستقیماً به‌عنوان خروجی Final Film استفاده می‌شود (همان روند ذخیره/نمایش فعلی، فقط بدون مرحله‌ی canvas). این تضمین می‌کند رایج‌ترین حالت «نهایی‌کردن یک کلیپ» صفر افت کیفیت داشته باشد.
+
+برای حالت چند کلیپ، صدا، ترنزیشن یا کلیپِ برش‌خورده، مسیر merge با نرخ بیت بالای بند ۱ استفاده می‌شود.
+
+## بخش فنی
+
+- `src/modules/generator-ui/lib/mergeVideos.ts`
+  - افزودن محاسبه‌ی `videoBitsPerSecond`/`audioBitsPerSecond` و پاس‌دادن آن به سازنده‌ی `MediaRecorder` با fallback ایمن.
+- `src/modules/generator-ui/pages/DashboardPage.tsx`
+  - افزودن شاخه‌ی passthrough تک‌کلیپ (استفاده از مسیر آپلود/نمایش موجود با فایل اصلی، بدون فراخوانی merge) پیش از منطق فعلی merge.
+
+هیچ تغییری در بک‌اند، اسکیمای دیتابیس یا UI ظاهری لازم نیست.
+
+## تست
+
+1. یک کلیپ تکی را Final Film کنید → خروجی باید دقیقاً هم‌کیفیت منبع باشد (passthrough).
+2. چند کلیپ ۹:۱۶ را با ترنزیشن Final Film کنید → خروجی باید واضح و بدون تاری محسوس باشد.
+3. فاینال همراه با موزیک/وویس‌اوور → صدا و تصویر تمیز.
+4. مطمئن شوید فاینال در همه‌ی حالت‌ها بدون خطا کامل می‌شود.
