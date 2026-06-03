@@ -1,27 +1,37 @@
-# Fix: uploaded video doesn't show as a card
+# Fix: random videos appear in Pending after a page refresh
 
-## Problem
-When a user uploads a video file, the backend saves it correctly (job + asset rows are created, `jobs-get` returns valid public URLs), but no card appears in the Working clips / Pending panel and the video can't be used.
+## Symptom
+The workspace looks empty (`Pending 0`, "No renders yet"), but after a browser refresh several old videos suddenly appear in the Pending / Working-clips column.
 
 ## Root cause
-In `src/modules/generator-ui/pages/DashboardPage.tsx`, `handleUploadVideoFile` finishes with:
+The Pending column is rendered from `displayedClips` → `displayedVideos`. In its default (no selected project) branch, `displayedVideos` returns **every** job in `generatedVideos`, only removing:
+- jobs hidden via `workspaceHiddenJobIds`, and
+- jobs claimed by another project or a **non-active** draft snapshot.
 
-```ts
-setGeneratedVideos((current) => mergeJob(current, detail))
-markActiveJob(detail.id)
-```
+On refresh, the hydration effect reloads **all** of the user's past jobs from the backend into `generatedVideos`. Any job that is neither hidden nor already owned by another draft/project is "loose", so it falls straight into the default list and shows up in Pending.
 
-`markActiveJob` only adds the id to `activeJobIds`; it does **not** assign the clip to the current working draft. Generated clips instead use `markNewClip`, which both stamps the clip into the active draft (`stampJobDraft(id, ensureActiveDraftId())`) and marks it active.
+The app tries to paper over this with the "orphan backfill" effect, which later stamps each loose job into its own `draft-orphan-<id>` so it becomes "claimed" and disappears. But that effect runs **after** mount and asynchronously, so on every refresh the loose jobs flash/persist in Pending before (or instead of) being reclassified. This is fragile by design: Pending is defined as "everything minus exclusions" instead of "only the active chain".
 
-Without a draft stamp, the orphan-draft backfill effect puts the uploaded clip into its own separate draft (`draft-orphan-<jobId>`). The default workspace clip list (`displayedVideos` → `displayedClips`) filters out any clip that belongs to a draft other than `activeDraftId`, so the uploaded clip is hidden and Pending shows 0 / "No renders yet".
+## Principled fix
+Pending must show **only the active working chain**, never the full job history. The app already tracks active-chain membership authoritatively in `activeJobIds` (every clip added to the workspace goes through `markActiveJob`/`markNewClip`; `Start Over` clears it). So the default branch of `displayedVideos` should additionally require `activeJobIds.has(id)`.
 
-## Fix
-In `handleUploadVideoFile`, replace `markActiveJob(detail.id)` with `markNewClip(detail.id)` so the uploaded clip joins the active working chain exactly like a generated clip. This makes the card render immediately, persist across refresh, and support trim/Apply, delete, drag, transitions, and Final Film — matching the existing generated-clip behavior.
+Result:
+- After `Start Over` or on a fresh/empty workspace, `activeJobIds` is empty → Pending stays empty across refreshes.
+- Freshly generated/uploaded/derived clips (all of which call `markActiveJob`) still appear immediately.
+- Old backend jobs that aren't part of the current chain never leak in, regardless of draft/orphan timing.
 
-## Files
-- `src/modules/generator-ui/pages/DashboardPage.tsx` (one-line change in `handleUploadVideoFile`)
+Apply the same active-chain gate to `lockedRatio`'s "live videos" computation so the aspect-ratio lock is also driven by the active chain rather than loose history.
+
+## Changes (single file: `src/modules/generator-ui/pages/DashboardPage.tsx`)
+1. **`displayedVideos`** (default branch, ~line 2540): change the filter
+   from `!workspaceHiddenJobIds.has(v.id) && !claimedByProjects.has(v.id)`
+   to also require `activeJobIds.has(v.id)`. Add `activeJobIds` to the memo dependency array (~line 2559).
+2. **`lockedRatio`** (~line 2437): change the `liveVideos` filter to also require `activeJobIds.has(v.id)` and add `activeJobIds` to its dependency array (~line 2463), so the chain lock follows the active chain too.
+
+No backend, schema, or other component changes. The orphan-backfill / Library-draft logic is left intact (it still builds Library cards from history); it simply no longer governs what Pending shows.
 
 ## Verification
-- Upload a video → a card appears immediately in Pending and plays.
-- Reload the page → the card is still present.
-- Confirm it behaves like a generated clip (selectable, trimmable, included in Final Film).
+1. Generate or upload a clip → it appears in Pending.
+2. Refresh → the same active clip(s) persist, and no extra/old videos appear.
+3. Click `Start Over` → Pending empties; refresh again → Pending stays empty (no resurrected videos).
+4. Confirm Library still shows previous projects/drafts (history is untouched).

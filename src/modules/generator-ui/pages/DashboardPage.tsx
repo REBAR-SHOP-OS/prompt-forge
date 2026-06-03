@@ -2435,7 +2435,7 @@ export default function DashboardPage() {
       for (const c of clips) claimedJobIds.add(c.id)
     }
     const liveVideos = generatedVideos.filter(
-      (v) => !claimedJobIds.has(v.id) && !workspaceHiddenJobIds.has(v.id),
+      (v) => activeJobIds.has(v.id) && !claimedJobIds.has(v.id) && !workspaceHiddenJobIds.has(v.id),
     )
     if (liveVideos.length > 0) {
       // newest-first; the oldest (first in chain) is last.
@@ -2460,7 +2460,7 @@ export default function DashboardPage() {
     }
     return null
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [generatedVideos, userImages, selectedProjectId, projectSourceJobs, projectSourceImages, workspaceHiddenJobIds, workspaceHiddenImageIds, mergedEntries, draftEntries, librarySavedJobs, lockedProjectRatio])
+  }, [generatedVideos, userImages, selectedProjectId, projectSourceJobs, projectSourceImages, workspaceHiddenJobIds, workspaceHiddenImageIds, mergedEntries, draftEntries, librarySavedJobs, lockedProjectRatio, activeJobIds])
 
   useEffect(() => {
     if (lockedRatio && aspectRatio !== lockedRatio) {
@@ -2538,7 +2538,7 @@ export default function DashboardPage() {
       for (const c of clips) claimedByProjects.add(c.id)
     }
     const chronoAsc = [...generatedVideos]
-      .filter((v) => !workspaceHiddenJobIds.has(v.id) && !claimedByProjects.has(v.id))
+      .filter((v) => activeJobIds.has(v.id) && !workspaceHiddenJobIds.has(v.id) && !claimedByProjects.has(v.id))
       .sort(
         (l, r) => new Date(l.created_at).getTime() - new Date(r.created_at).getTime()
       )
@@ -2556,7 +2556,7 @@ export default function DashboardPage() {
       if (byId.has(v.id)) ordered.push(v)
     }
     return ordered
-  }, [generatedVideos, manualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs, draftSourceJobs, activeDraftId, mergedEntries, librarySavedJobs])
+  }, [generatedVideos, manualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs, draftSourceJobs, activeDraftId, mergedEntries, librarySavedJobs, activeJobIds])
 
   const handleCardDragStart = (id: string) => (event: React.DragEvent) => {
     setDraggingId(id)
