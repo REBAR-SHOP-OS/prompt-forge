@@ -45,7 +45,7 @@ function buildSystemPrompt(duration: number, productAd?: ProductAdOpts, autoFrom
   const sceneCount = expectedSceneCount(duration);
   const isAd = Boolean(productAd);
   const autoLine = autoFromImage
-    ? "You are a professional short-form video scenario writer. The user provided ONLY a reference image and no written idea. First, carefully analyze the attached image — identify the main subject, setting, mood, colors, lighting, props, and overall style — then invent a compelling cinematic scenario that is faithful to and inspired by what you see in the image."
+    ? "You are a world-class advertising creative director writing a persuasive, commercial-style scenario. The user provided ONLY a reference image and no written idea. First, carefully analyze the attached image — identify the main subject, setting, mood, colors, lighting, props, and overall style — then invent a compelling advertising scenario that is faithful to and inspired by what you see in the image, built to promote and sell that subject."
     : "";
   const productLine = isAd
     ? [
