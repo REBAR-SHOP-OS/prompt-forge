@@ -15,11 +15,17 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
-    const imageUrl = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
     const maskUrl = typeof body?.maskUrl === "string" ? body.maskUrl.trim() : "";
     const aspectRatio = typeof body?.aspectRatio === "string" && ["1:1","9:16","16:9"].includes(body.aspectRatio)
       ? body.aspectRatio as "1:1" | "9:16" | "16:9"
       : null;
+
+    // Accept either a single imageUrl (legacy) or an imageUrls array (multiple references).
+    const MAX_REFERENCE_IMAGES = 4;
+    const rawUrls: string[] = Array.isArray(body?.imageUrls)
+      ? body.imageUrls.filter((u: unknown) => typeof u === "string").map((u: string) => u.trim())
+      : (typeof body?.imageUrl === "string" ? [body.imageUrl.trim()] : []);
+    const imageUrls = rawUrls.filter((u) => u.length > 0);
 
     if (!prompt) {
       return new Response(JSON.stringify({ error: "prompt is required" }), {
@@ -31,29 +37,42 @@ Deno.serve(async (req) => {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    if (imageUrls.length === 0) {
+      return new Response(JSON.stringify({ error: "at least one image is required" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (imageUrls.length > MAX_REFERENCE_IMAGES) {
+      return new Response(JSON.stringify({ error: `at most ${MAX_REFERENCE_IMAGES} images allowed` }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     // Allow data: URLs (from a freshly generated image) or https URLs from our supabase host.
     const supabaseHost = (() => {
       try { return new URL(Deno.env.get("SUPABASE_URL") ?? "").hostname; } catch { return ""; }
     })();
-    const isDataUrl = imageUrl.startsWith("data:image/");
-    let isAllowedHttps = false;
-    try {
-      const u = new URL(imageUrl);
-      isAllowedHttps = u.protocol === "https:" && (
-        u.hostname === supabaseHost ||
-        u.hostname.endsWith(".supabase.co") ||
-        u.hostname.endsWith(".supabase.in")
-      );
-    } catch { /* ignore */ }
-    if (!isDataUrl && !isAllowedHttps) {
-      return new Response(JSON.stringify({ error: "imageUrl must be a data URL or supabase https URL" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    if (imageUrl.length > 15_000_000) {
-      return new Response(JSON.stringify({ error: "imageUrl too large" }), {
-        status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const isUrlAllowed = (url: string): boolean => {
+      if (url.startsWith("data:image/")) return true;
+      try {
+        const u = new URL(url);
+        return u.protocol === "https:" && (
+          u.hostname === supabaseHost ||
+          u.hostname.endsWith(".supabase.co") ||
+          u.hostname.endsWith(".supabase.in")
+        );
+      } catch { return false; }
+    };
+    for (const url of imageUrls) {
+      if (!isUrlAllowed(url)) {
+        return new Response(JSON.stringify({ error: "each image must be a data URL or supabase https URL" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (url.length > 15_000_000) {
+        return new Response(JSON.stringify({ error: "imageUrl too large" }), {
+          status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
     if (maskUrl) {
       if (!maskUrl.startsWith("data:image/")) {
