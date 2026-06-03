@@ -1,33 +1,47 @@
-## Plan
+# Fix: Final Film quality drops sharply
 
-Fix the **Pending / Working clips** restore bug so when the user has pressed **Start Over** and the workspace is blank, refreshing the page keeps it blank.
+## What's wrong
 
-### What will change
+The Final Film is built in the browser by painting each clip onto a canvas and recording that canvas with `MediaRecorder` (`src/modules/generator-ui/lib/mergeVideos.ts`).
 
-1. **Stop broad restore into Pending**
-   - Update the page refresh hydration logic in `DashboardPage.tsx` so it does **not** automatically reload every past server job/image into the active Pending column.
-   - Only restore items that belong to the current active workspace/draft manifest.
+The recorder is created with **no bitrate set**:
 
-2. **Respect Start Over as authoritative**
-   - When **Start Over** clears the workspace and clears the active manifest, refresh should treat that as intentional and restore nothing.
-   - Old videos remain available in storage/archive/library flows, but they should not reappear as active working clips.
+```ts
+const recorder = new MediaRecorder(outStream, { mimeType: chosenMime })
+```
 
-3. **Keep current draft behavior safe**
-   - If there is an active draft/workspace that has not been Start Over-cleared, refresh may restore only that draft’s clips/images.
-   - Final Film project snapshots and Library behavior should stay unchanged.
+When `videoBitsPerSecond` is omitted, Chromium falls back to a low default (~2.5 Mbps) regardless of the output resolution. For a 1080p / 9:16 reel that is far too low, so the final video looks blocky and soft compared to the source clips — exactly the "quality dropped dramatically" the user is seeing. The individual clips look fine because they were encoded by the provider at a proper bitrate; only the re-recorded merge is starved.
 
-### Technical details
+A secondary, smaller factor: the canvas 2D context uses default image-smoothing, which can soften scaled frames.
 
-- File to edit: `src/modules/generator-ui/pages/DashboardPage.tsx`
-- Root cause: the hydration effect calls `listMyJobs()` and merges returned jobs into `generatedVideos` using only `workspaceHiddenJobIds` as a filter. If those hidden IDs are missing/stale or the active workspace was cleared, old server jobs are reintroduced to `displayedClips` after refresh.
-- Fix approach:
-  - Build restore allowlists from `activeJobIds`, `activeImageIds`, and/or the current `activeDraftId` snapshot.
-  - During hydration, only hydrate jobs/images whose IDs are explicitly in those allowlists.
-  - If the allowlists are empty, leave `generatedVideos` and `userImages` empty for Pending.
+## The fix
 
-### Verification
+All changes stay inside `src/modules/generator-ui/lib/mergeVideos.ts` (presentation/encoding only — no backend or schema changes).
 
-- Press **Start Over** so Pending is empty.
-- Refresh the page.
-- Confirm Pending remains empty and the center preview remains in the empty “Start forging a prompt” state.
-- Confirm existing Library/Archive videos are still accessible and not deleted.
+1. **Set a resolution-scaled video bitrate** on the `MediaRecorder`. Compute a target from the canvas pixel count so 720p, 1080p, and vertical reels each get an appropriate rate, and add a healthy audio bitrate. Roughly:
+   - target ≈ `width * height * fps * bitsPerPixel` with a sensible factor (~0.1), clamped to a reasonable floor/ceiling (e.g. min 6 Mbps, max ~24 Mbps).
+   - `audioBitsPerSecond`: 128 kbps.
+   - Pass these in the `MediaRecorder` options, guarded so that if the chosen values aren't accepted the recorder still constructs.
+
+2. **Improve canvas draw fidelity**: enable `ctx.imageSmoothingEnabled = true` and `ctx.imageSmoothingQuality = 'high'` on the main and snapshot contexts so down/upscaled frames stay crisp.
+
+3. Keep everything else (WebM output, transition painting, audio routing, progress) unchanged.
+
+## Technical detail
+
+```text
+pixels      = canvas.width * canvas.height
+targetVideo = clamp(round(pixels * fps * 0.1), 6_000_000, 24_000_000)
+recorder    = new MediaRecorder(outStream, {
+                mimeType: chosenMime,
+                videoBitsPerSecond: targetVideo,
+                audioBitsPerSecond: 128_000,
+              })
+```
+
+Wrapped in a try/catch that falls back to the current no-bitrate construction if the browser rejects the options.
+
+## Verification
+
+- Build a Final Film from the current 3-clip project and confirm the exported video is visibly sharp and close to the source clip quality.
+- Confirm the merge still completes (progress reaches 100%, no hang) and the file still plays.
