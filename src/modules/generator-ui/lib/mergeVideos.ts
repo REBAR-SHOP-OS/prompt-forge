@@ -440,6 +440,8 @@ export async function mergeVideoUrls(
   snapshot.height = height
   const snapCtx = snapshot.getContext('2d')
   if (!snapCtx) throw new Error('Canvas 2D not supported (snapshot)')
+  snapCtx.imageSmoothingEnabled = true
+  snapCtx.imageSmoothingQuality = 'high'
 
   const fps = 30
   const videoStream = canvas.captureStream(fps)
