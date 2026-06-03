@@ -304,9 +304,9 @@ export default function AiImageDialog({
     try {
       let url: string | undefined
 
-      if (referenceImage) {
+      if (referenceImages.length > 0) {
         const { data, error: fnErr } = await supabase.functions.invoke('ai-image-edit', {
-          body: { prompt: prompt.trim(), imageUrl: referenceImage.dataUrl, aspectRatio: aspect },
+          body: { prompt: prompt.trim(), imageUrls: referenceImages.map((r) => r.dataUrl), aspectRatio: aspect },
         })
         if (fnErr) {
           const msg = await extractFnError(fnErr, 'Failed to generate image.')
