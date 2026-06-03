@@ -232,6 +232,47 @@ export default function AiImageDialog({
     }
   }
 
+  function handleRemoveRefineReference(index: number) {
+    setRefineReferenceImages((prev) => prev.filter((_, i) => i !== index))
+    if (refineReferenceInputRef.current) {
+      refineReferenceInputRef.current.value = ''
+    }
+  }
+
+  async function handleRefineReferenceChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? [])
+    if (files.length === 0) return
+
+    const imageFiles = files.filter((f) => f.type.startsWith('image/'))
+    if (imageFiles.length === 0) {
+      setError('Please choose image files.')
+      event.target.value = ''
+      return
+    }
+
+    setError(null)
+    try {
+      const remaining = MAX_REFERENCE_IMAGES - refineReferenceImages.length
+      if (remaining <= 0) {
+        setError(`You can add up to ${MAX_REFERENCE_IMAGES} reference images.`)
+        event.target.value = ''
+        return
+      }
+      const toAdd = imageFiles.slice(0, remaining)
+      const added = await Promise.all(
+        toAdd.map(async (file) => ({ name: file.name, dataUrl: await fileToDataUrl(file) })),
+      )
+      setRefineReferenceImages((prev) => [...prev, ...added])
+      if (imageFiles.length > remaining) {
+        setError(`Only ${MAX_REFERENCE_IMAGES} reference images are allowed. Extra files were ignored.`)
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to read image.')
+    } finally {
+      event.target.value = ''
+    }
+  }
+
   function exportMaskDataUrl(): string | null {
     const c = maskCanvasRef.current
     if (!c || !hasMask) return null
