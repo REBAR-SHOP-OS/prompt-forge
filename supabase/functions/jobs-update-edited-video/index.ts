@@ -102,6 +102,35 @@ Deno.serve(async (req) => {
       throw new Error("asset insert failed");
     }
 
+    // Best-effort: permanently purge the OLD file(s) from storage now that the
+    // new asset row is committed. A failure here must NOT fail the apply — the
+    // DB swap already succeeded. Mirrors the delete-job purge logic.
+    {
+      const KNOWN_BUCKETS = ["merged-videos", "wan-frames", "user-videos"];
+      const byBucket: Record<string, string[]> = {};
+      for (const raw of oldStoragePaths) {
+        if (!raw || raw === storagePath) continue; // never delete the new file
+        const urlMatch = raw.match(/\/storage\/v1\/object\/(?:public\/)?([^/]+)\/(.+)$/);
+        if (urlMatch && KNOWN_BUCKETS.includes(urlMatch[1])) {
+          (byBucket[urlMatch[1]] ??= []).push(decodeURIComponent(urlMatch[2]));
+          continue;
+        }
+        if (/^https?:\/\//i.test(raw)) continue; // external URL we can't own
+        const bucket = KNOWN_BUCKETS.find((b) => raw.startsWith(`${b}/`));
+        if (bucket) (byBucket[bucket] ??= []).push(raw.slice(bucket.length + 1));
+      }
+      for (const [bucket, paths] of Object.entries(byBucket)) {
+        try {
+          const { error: rmErr } = await svc.storage.from(bucket).remove(paths);
+          if (rmErr) console.error(JSON.stringify({ level: "error", msg: "storage purge failed", bucket, error: rmErr.message, jobId, requestId }));
+        } catch (e) {
+          console.error(JSON.stringify({ level: "error", msg: "storage purge threw", bucket, error: (e as Error).message, jobId, requestId }));
+        }
+      }
+    }
+
+
+
     // Make sure the job is marked completed (in case it wasn't).
     await svc
       .from("generator_generation_jobs")
