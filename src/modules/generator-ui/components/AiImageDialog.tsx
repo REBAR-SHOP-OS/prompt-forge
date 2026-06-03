@@ -120,7 +120,7 @@ export default function AiImageDialog({
       setPrompt('')
       setEditPrompt('')
       setImageDataUrl(null)
-      setReferenceImage(null)
+      setReferenceImages([])
       setError(null)
       setIsLoading(false)
       setIsSaving(false)
