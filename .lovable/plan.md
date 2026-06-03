@@ -1,39 +1,32 @@
-# Purge old video from storage on Trim clip "Apply changes"
+# Allow Multiple Reference Images in "Generate image with AI"
 
-## Goal
-When the user clicks **Apply changes** in the Trim clip dialog, the previous video file must be **permanently deleted from storage**, while the new (trimmed) file stays.
+Currently the dialog (`AiImageDialog.tsx`) accepts only a single reference image, and the `ai-image-edit` edge function accepts only one `imageUrl`. This plan upgrades both to support multiple reference images (up to 4).
 
-## Current behavior (root cause)
-The trim flow uploads the new trimmed file to the `merged-videos` bucket, then calls the `jobs-update-edited-video` edge function. That function:
-1. Soft-deletes the previous `generator_video_assets` row(s) (`deleted_at` set), and
-2. Inserts a new asset row pointing at the new file.
+## Frontend — `src/modules/generator-ui/components/AiImageDialog.tsx`
 
-It **never removes the old physical file from storage** — only the DB row is hidden. So orphaned video files accumulate in the bucket forever. (The `deleteJob` flow already does a proper storage purge; this flow does not.)
+1. **State**: replace `referenceImage: AiReferenceImage | null` with `referenceImages: AiReferenceImage[]` (array). Reset to `[]` on dialog open.
+2. **File input**: add `multiple` attribute to the hidden `<input type="file">`. Update `handleReferenceChange` to iterate over all selected files, convert each to a data URL, and append to the array (enforce a max of 4, show an error if exceeded).
+3. **Add / remove**: 
+   - The button label becomes "Add image" (instead of "Replace image"); clicking it lets the user add more.
+   - Each thumbnail gets its own remove (X) button that removes only that image.
+4. **Preview list**: render the selected references as a list/grid of thumbnails with name + per-item remove button.
+5. **Generate logic** (`handleGenerate`): 
+   - If `referenceImages.length > 0` → call `ai-image-edit` with the new `imageUrls` array (send all references).
+   - If empty → call `ai-image-generate` as today.
+6. Keep the single-image refine/mask flow unchanged (refine still operates on the generated result).
 
-## Fix
-Edit `supabase/functions/jobs-update-edited-video/index.ts` to purge the old file(s) from storage, reusing the same purge logic already proven in the delete-job path.
+## Backend — `supabase/functions/ai-image-edit/index.ts`
 
-Sequence inside the handler:
-1. **Before** soft-deleting, fetch the storage paths of the current live asset(s):
-   `select id, storage_path from generator_video_assets where job_id = jobId and user_id = auth.userId and deleted_at is null`.
-2. Soft-delete the old asset row(s) (unchanged).
-3. Insert the new asset row (unchanged).
-4. **After** the new asset is successfully inserted**, best-effort delete the old physical files from storage:
-   - Skip any path equal to the new `storagePath` (safety: never delete the file we just saved).
-   - Resolve each old path to `bucket` + `objectPath` using the same rules as `deleteJob` (handle both full Supabase storage URLs and `"<bucket>/<path>"` strings), limited to known buckets `merged-videos`, `wan-frames`, `user-videos`.
-   - Group by bucket and call `svc.storage.from(bucket).remove(paths)`.
-   - Wrap in try/catch and log failures — a storage-remove failure must NOT fail the apply (the DB swap already succeeded).
+1. Accept a new `imageUrls: string[]` field (keep backward-compatible support for the existing single `imageUrl`).
+2. Validate each URL with the existing rules (data URL or allowed Supabase https, size limit) — reject if any is invalid; cap the count at 4.
+3. Build the model message content with a text instruction plus one `image_url` entry per reference image, so the model uses all of them as references.
+4. When a `maskUrl` is provided (refine flow) it still uses a single original image — that path is unchanged.
 
-## Order matters
-The old file is removed only **after** the new asset row is inserted, so a failed upload/insert never destroys the existing video.
+## Technical notes
+- Max 4 reference images to stay within payload/size limits.
+- No database or storage schema changes; references are sent inline as data URLs.
+- Edge function deploys automatically after the edit.
 
 ## Files
-- `supabase/functions/jobs-update-edited-video/index.ts` — add pre-fetch of old paths + post-insert storage purge.
-
-No frontend changes, no DB migration, no new RPC needed. Edge function deploys automatically.
-
-## Test checklist
-1. Open a generated clip → Trim clip → mark a cut / mute → Apply changes.
-2. Confirm the card shows the new trimmed video.
-3. Verify the old file is gone from the `merged-videos` bucket and the new file remains.
-4. Confirm an apply still succeeds (and shows the new clip) even if storage purge logs a non-fatal error.
+- `src/modules/generator-ui/components/AiImageDialog.tsx`
+- `supabase/functions/ai-image-edit/index.ts`

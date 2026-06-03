@@ -38,6 +38,8 @@ type AiReferenceImage = {
   dataUrl: string
 }
 
+const MAX_REFERENCE_IMAGES = 4
+
 const ASPECT_OPTIONS: { value: AiImageAspect; label: string; sub: string; box: string }[] = [
   { value: '1:1', label: '1:1', sub: 'Square', box: 'aspect-square' },
   { value: '9:16', label: '9:16', sub: 'Reels', box: 'aspect-[9/16]' },
@@ -99,7 +101,7 @@ export default function AiImageDialog({
   const [prompt, setPrompt] = useState('')
   const [editPrompt, setEditPrompt] = useState('')
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null)
-  const [referenceImage, setReferenceImage] = useState<AiReferenceImage | null>(null)
+  const [referenceImages, setReferenceImages] = useState<AiReferenceImage[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -118,7 +120,7 @@ export default function AiImageDialog({
       setPrompt('')
       setEditPrompt('')
       setImageDataUrl(null)
-      setReferenceImage(null)
+      setReferenceImages([])
       setError(null)
       setIsLoading(false)
       setIsSaving(false)
@@ -183,28 +185,43 @@ export default function AiImageDialog({
     setHasMask(false)
   }
 
-  function handleRemoveReference() {
-    setReferenceImage(null)
+  function handleRemoveReference(index: number) {
+    setReferenceImages((prev) => prev.filter((_, i) => i !== index))
     if (referenceInputRef.current) {
       referenceInputRef.current.value = ''
     }
   }
 
   async function handleReferenceChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    if (!file) return
-    if (!file.type.startsWith('image/')) {
-      setError('Please choose an image file.')
+    const files = Array.from(event.target.files ?? [])
+    if (files.length === 0) return
+
+    const imageFiles = files.filter((f) => f.type.startsWith('image/'))
+    if (imageFiles.length === 0) {
+      setError('Please choose image files.')
       event.target.value = ''
       return
     }
 
     setError(null)
     try {
-      const dataUrl = await fileToDataUrl(file)
-      setReferenceImage({ name: file.name, dataUrl })
+      const remaining = MAX_REFERENCE_IMAGES - referenceImages.length
+      if (remaining <= 0) {
+        setError(`You can add up to ${MAX_REFERENCE_IMAGES} reference images.`)
+        event.target.value = ''
+        return
+      }
+      const toAdd = imageFiles.slice(0, remaining)
+      const added = await Promise.all(
+        toAdd.map(async (file) => ({ name: file.name, dataUrl: await fileToDataUrl(file) })),
+      )
+      setReferenceImages((prev) => [...prev, ...added])
+      if (imageFiles.length > remaining) {
+        setError(`Only ${MAX_REFERENCE_IMAGES} reference images are allowed. Extra files were ignored.`)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to read image.')
+    } finally {
       event.target.value = ''
     }
   }
@@ -287,9 +304,9 @@ export default function AiImageDialog({
     try {
       let url: string | undefined
 
-      if (referenceImage) {
+      if (referenceImages.length > 0) {
         const { data, error: fnErr } = await supabase.functions.invoke('ai-image-edit', {
-          body: { prompt: prompt.trim(), imageUrl: referenceImage.dataUrl, aspectRatio: aspect },
+          body: { prompt: prompt.trim(), imageUrls: referenceImages.map((r) => r.dataUrl), aspectRatio: aspect },
         })
         if (fnErr) {
           const msg = await extractFnError(fnErr, 'Failed to generate image.')
@@ -438,45 +455,56 @@ export default function AiImageDialog({
                   ref={referenceInputRef}
                   type="file"
                   accept="image/*"
+                  multiple
                   className="hidden"
                   onChange={handleReferenceChange}
                 />
                 <button
                   type="button"
                   onClick={() => referenceInputRef.current?.click()}
-                  disabled={isLoading}
+                  disabled={isLoading || referenceImages.length >= MAX_REFERENCE_IMAGES}
                   className="absolute bottom-3 left-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                  title="Upload a reference image"
+                  title="Upload reference images"
                 >
                   <ImagePlus className="h-4 w-4" />
-                  <span>{referenceImage ? 'Replace image' : 'Upload image'}</span>
+                  <span>{referenceImages.length > 0 ? 'Add image' : 'Upload image'}</span>
                 </button>
               </div>
-              {referenceImage ? (
-                <div className="mt-3 flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
-                  <img
-                    src={referenceImage.dataUrl}
-                    alt="Reference preview"
-                    className="h-11 w-11 rounded-lg object-cover"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm text-zinc-100">{referenceImage.name}</div>
-                    <div className="text-[11px] text-zinc-500">Using this image as a reference for generation.</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleRemoveReference}
-                    disabled={isLoading}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    title="Remove reference image"
-                  >
-                    <X className="h-4 w-4" />
-                    <span className="sr-only">Remove reference image</span>
-                  </button>
+              {referenceImages.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {referenceImages.map((ref, index) => (
+                    <div
+                      key={`${ref.name}-${index}`}
+                      className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2"
+                    >
+                      <img
+                        src={ref.dataUrl}
+                        alt="Reference preview"
+                        className="h-11 w-11 rounded-lg object-cover"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm text-zinc-100">{ref.name}</div>
+                        <div className="text-[11px] text-zinc-500">Using this image as a reference for generation.</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveReference(index)}
+                        disabled={isLoading}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        title="Remove reference image"
+                      >
+                        <X className="h-4 w-4" />
+                        <span className="sr-only">Remove reference image</span>
+                      </button>
+                    </div>
+                  ))}
+                  <p className="text-[11px] text-zinc-500">
+                    {referenceImages.length} of {MAX_REFERENCE_IMAGES} reference images added.
+                  </p>
                 </div>
               ) : (
                 <p className="mt-3 text-xs text-zinc-500">
-                  Add a reference image if you want the result to follow an existing shot, product, or frame.
+                  Add up to {MAX_REFERENCE_IMAGES} reference images if you want the result to follow existing shots, products, or frames.
                 </p>
               )}
             </div>

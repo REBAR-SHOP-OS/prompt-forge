@@ -15,11 +15,17 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
-    const imageUrl = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
     const maskUrl = typeof body?.maskUrl === "string" ? body.maskUrl.trim() : "";
     const aspectRatio = typeof body?.aspectRatio === "string" && ["1:1","9:16","16:9"].includes(body.aspectRatio)
       ? body.aspectRatio as "1:1" | "9:16" | "16:9"
       : null;
+
+    // Accept either a single imageUrl (legacy) or an imageUrls array (multiple references).
+    const MAX_REFERENCE_IMAGES = 4;
+    const rawUrls: string[] = Array.isArray(body?.imageUrls)
+      ? body.imageUrls.filter((u: unknown) => typeof u === "string").map((u: string) => u.trim())
+      : (typeof body?.imageUrl === "string" ? [body.imageUrl.trim()] : []);
+    const imageUrls = rawUrls.filter((u) => u.length > 0);
 
     if (!prompt) {
       return new Response(JSON.stringify({ error: "prompt is required" }), {
@@ -31,29 +37,42 @@ Deno.serve(async (req) => {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    if (imageUrls.length === 0) {
+      return new Response(JSON.stringify({ error: "at least one image is required" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (imageUrls.length > MAX_REFERENCE_IMAGES) {
+      return new Response(JSON.stringify({ error: `at most ${MAX_REFERENCE_IMAGES} images allowed` }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     // Allow data: URLs (from a freshly generated image) or https URLs from our supabase host.
     const supabaseHost = (() => {
       try { return new URL(Deno.env.get("SUPABASE_URL") ?? "").hostname; } catch { return ""; }
     })();
-    const isDataUrl = imageUrl.startsWith("data:image/");
-    let isAllowedHttps = false;
-    try {
-      const u = new URL(imageUrl);
-      isAllowedHttps = u.protocol === "https:" && (
-        u.hostname === supabaseHost ||
-        u.hostname.endsWith(".supabase.co") ||
-        u.hostname.endsWith(".supabase.in")
-      );
-    } catch { /* ignore */ }
-    if (!isDataUrl && !isAllowedHttps) {
-      return new Response(JSON.stringify({ error: "imageUrl must be a data URL or supabase https URL" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    if (imageUrl.length > 15_000_000) {
-      return new Response(JSON.stringify({ error: "imageUrl too large" }), {
-        status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const isUrlAllowed = (url: string): boolean => {
+      if (url.startsWith("data:image/")) return true;
+      try {
+        const u = new URL(url);
+        return u.protocol === "https:" && (
+          u.hostname === supabaseHost ||
+          u.hostname.endsWith(".supabase.co") ||
+          u.hostname.endsWith(".supabase.in")
+        );
+      } catch { return false; }
+    };
+    for (const url of imageUrls) {
+      if (!isUrlAllowed(url)) {
+        return new Response(JSON.stringify({ error: "each image must be a data URL or supabase https URL" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (url.length > 15_000_000) {
+        return new Response(JSON.stringify({ error: "imageUrl too large" }), {
+          status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
     if (maskUrl) {
       if (!maskUrl.startsWith("data:image/")) {
@@ -75,15 +94,19 @@ Deno.serve(async (req) => {
       });
     }
 
+    const multiRefText = imageUrls.length > 1
+      ? `You will receive ${imageUrls.length} reference images. Combine and use them together as references to produce a single new image following this instruction (which may be in any language, including Persian/Farsi/Arabic): ${prompt}.${aspectRatio ? ` The output image MUST keep a strict ${aspectRatio} aspect ratio.` : ""} Respond with ONLY the resulting image — no text, captions, or explanations.`
+      : `Edit the provided image as follows: ${prompt}.${aspectRatio ? ` The output image MUST keep a strict ${aspectRatio} aspect ratio.` : " Preserve the overall composition and aspect ratio of the original image unless the instruction explicitly requires otherwise."} Respond with ONLY the edited image — no text, captions, or explanations.`;
+
     const messageContent = maskUrl
       ? [
           { type: "text", text: `You will receive two images. Image 1 is the ORIGINAL. Image 2 is a strict edit MASK (transparent background; opaque/white pixels mark the editable region). Only the white/opaque pixels of the mask define the editable region — DO NOT alter pixels where the mask is transparent. Keep every pixel outside the mask absolutely identical (same composition, colors, lighting, subject, pose, background). The user instruction (which may be in any language, including Persian/Farsi/Arabic) describes what to put inside the masked region: ${prompt}.${aspectRatio ? ` Output MUST keep a strict ${aspectRatio} aspect ratio.` : ""} Respond with ONLY the edited image — no text.` },
-          { type: "image_url", image_url: { url: imageUrl } },
+          { type: "image_url", image_url: { url: imageUrls[0] } },
           { type: "image_url", image_url: { url: maskUrl } },
         ]
       : [
-          { type: "text", text: `Edit the provided image as follows: ${prompt}.${aspectRatio ? ` The output image MUST keep a strict ${aspectRatio} aspect ratio.` : " Preserve the overall composition and aspect ratio of the original image unless the instruction explicitly requires otherwise."} Respond with ONLY the edited image — no text, captions, or explanations.` },
-          { type: "image_url", image_url: { url: imageUrl } },
+          { type: "text", text: multiRefText },
+          ...imageUrls.map((url) => ({ type: "image_url", image_url: { url } })),
         ];
 
     const callModel = async (model: string) => {
