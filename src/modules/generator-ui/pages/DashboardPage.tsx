@@ -2368,7 +2368,7 @@ export default function DashboardPage() {
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, generatedVideos, userImages, mergedEntries, librarySavedJobs, projectSourceJobs, projectSourceImages, jobDraftMap, imageDraftMap, deletedDraftIds, workspaceHiddenJobIds, workspaceHiddenImageIds])
+  }, [userId, generatedVideos, userImages, mergedEntries, librarySavedJobs, projectSourceJobs, projectSourceImages, jobDraftMap, imageDraftMap, deletedDraftIds, workspaceHiddenJobIds, workspaceHiddenImageIds, activeJobIds, activeImageIds])
 
 
   // One-time dedupe: older builds could create both an active `draft-<uuid>`
