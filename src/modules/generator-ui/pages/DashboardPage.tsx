@@ -4407,63 +4407,115 @@ export default function DashboardPage() {
             clipVolume: mixedClipVolume,
           }
         : undefined
-      // Overall pipeline watchdog: if the entire merge+transcode+upload chain
-      // hasn't finished in 10 min, surface a clear error instead of leaving
-      // the UI stuck on 95% forever. The timer id is cleared in `finally` so a
-      // successful run never leaves a dangling 10-min timeout behind.
-      const PIPELINE_TIMEOUT_MS = 10 * 60_000
-      const pipelineTimeout = new Promise<never>((_, reject) => {
-        pipelineTimer = setTimeout(() => reject(new Error('Final Film took too long (>10 min). Please try again with fewer or shorter clips.')), PIPELINE_TIMEOUT_MS)
-      })
-
-      const abortController = new AbortController()
-      mergeAbortRef.current = abortController
-      const mergeRes = await Promise.race([
-        mergeVideoUrls(
-          mergeClips,
-          (p) => {
-            // Map stages into a monotonic 1..99 percent so the UI keeps
-            // moving past the old 95% cap during encode and upload.
-            if (p.stage === 'encoding') {
-              setMergeStage('encoding')
-              setMergeProgress(Math.max(95, Math.min(99, Math.round(p.ratio * 100))))
-            } else if (p.stage === 'finalizing') {
-              setMergeStage('finalizing')
-              setMergeProgress((curr) => Math.max(curr, 95))
-            } else {
-              setMergeStage('recording')
-              // Record/transition stages cap at 94 to reserve 95+ for finalize/encode.
-              setMergeProgress(Math.max(1, Math.min(94, Math.round(p.ratio * 100))))
-            }
-          },
-          audioOpt,
-          transitionsForMerge,
-          abortController.signal,
-        ),
-        pipelineTimeout,
-      ])
-      if (abortController.signal.aborted) throw new MergeCancelledError()
-
-      setMergeStage('uploading')
-      setMergeProgress(99)
-      const filename = `merged-${Date.now()}.${mergeRes.extension}`
-      const storagePath = `${userId}/${filename}`
-      // Hard timeout on the upload: if Supabase storage hangs (network/CDN
-      // hiccup), we'd otherwise sit at 99% forever. 2 minutes is plenty for
-      // a typical Final Film blob (<200MB).
-      const uploadPromise = supabase.storage
-        .from(MERGED_BUCKET)
-        .upload(storagePath, mergeRes.blob, { contentType: mergeRes.mimeType, upsert: false })
-      const uploadTimeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Upload timed out after 120s. Please check your connection and try again.')), 120_000),
+      // Quality requirement: a single video clip with no audio overlay and no
+      // local edit must be finalized WITHOUT any canvas re-encode, so the Final
+      // Film is byte-for-byte the same quality as the source. We only fall back
+      // to the merge/re-encode pipeline when stitching is actually needed
+      // (multiple clips, transitions, music, voiceover, or a trimmed/edited clip).
+      const singleVideo =
+        eligibleClips.length === 1 && eligibleClips[0].kind === 'video'
+          ? (eligibleClips[0] as Extract<UnifiedClip, { kind: 'video' }>)
+          : undefined
+      const canPassthrough = Boolean(
+        singleVideo && !hasMusic && !hasVoiceover && !editedClips[singleVideo.job.id],
       )
-      const { error: upErr } = await Promise.race([uploadPromise, uploadTimeout]) as Awaited<typeof uploadPromise>
-      if (upErr) throw new Error(upErr.message)
 
-      setMergeProgress(100)
-      setMergeStage(null)
-      const { data } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(storagePath)
-      const publicUrl = data.publicUrl
+      let publicUrl: string
+      if (canPassthrough && singleVideo) {
+        // --- Lossless passthrough: finalize the original file as-is. ---
+        setMergeStage('uploading')
+        setMergeProgress(50)
+        const rawSrc = singleVideo.job.video!.storage_path as string
+        const OWN_HOST_RE = /(^|\.)supabase\.co$/i
+        const isOwn = (() => {
+          try {
+            const u = new URL(rawSrc)
+            if (typeof window !== 'undefined' && u.host === window.location.host) return true
+            return OWN_HOST_RE.test(u.host)
+          } catch {
+            return false
+          }
+        })()
+        if (isOwn) {
+          publicUrl = rawSrc
+        } else {
+          // Copy the bytes verbatim into our public bucket — no transcode, so
+          // quality is preserved exactly. This also keeps the Final Film URL
+          // alive after the provider's signed URL expires.
+          const proxied = await proxiedVideoUrl(rawSrc)
+          const resp = await fetch(proxied, { cache: 'no-store' })
+          if (!resp.ok) throw new Error(`Could not fetch source clip (${resp.status})`)
+          const blob = await resp.blob()
+          const ct = blob.type || 'video/mp4'
+          const ext = ct.includes('webm') ? 'webm' : 'mp4'
+          const path = `${userId}/final-${Date.now()}.${ext}`
+          const up = await supabase.storage
+            .from(MERGED_BUCKET)
+            .upload(path, blob, { contentType: ct, upsert: false })
+          if (up.error) throw new Error(up.error.message)
+          publicUrl = supabase.storage.from(MERGED_BUCKET).getPublicUrl(path).data.publicUrl
+        }
+        setMergeProgress(100)
+        setMergeStage(null)
+      } else {
+        // --- Merge pipeline (multi-clip / audio / transitions / edited clip). ---
+        // Overall pipeline watchdog: if the entire merge+transcode+upload chain
+        // hasn't finished in 10 min, surface a clear error instead of leaving
+        // the UI stuck on 95% forever. The timer id is cleared in `finally` so a
+        // successful run never leaves a dangling 10-min timeout behind.
+        const PIPELINE_TIMEOUT_MS = 10 * 60_000
+        const pipelineTimeout = new Promise<never>((_, reject) => {
+          pipelineTimer = setTimeout(() => reject(new Error('Final Film took too long (>10 min). Please try again with fewer or shorter clips.')), PIPELINE_TIMEOUT_MS)
+        })
+
+        const abortController = new AbortController()
+        mergeAbortRef.current = abortController
+        const mergeRes = await Promise.race([
+          mergeVideoUrls(
+            mergeClips,
+            (p) => {
+              // Map stages into a monotonic 1..99 percent so the UI keeps
+              // moving past the old 95% cap during encode and upload.
+              if (p.stage === 'encoding') {
+                setMergeStage('encoding')
+                setMergeProgress(Math.max(95, Math.min(99, Math.round(p.ratio * 100))))
+              } else if (p.stage === 'finalizing') {
+                setMergeStage('finalizing')
+                setMergeProgress((curr) => Math.max(curr, 95))
+              } else {
+                setMergeStage('recording')
+                // Record/transition stages cap at 94 to reserve 95+ for finalize/encode.
+                setMergeProgress(Math.max(1, Math.min(94, Math.round(p.ratio * 100))))
+              }
+            },
+            audioOpt,
+            transitionsForMerge,
+            abortController.signal,
+          ),
+          pipelineTimeout,
+        ])
+        if (abortController.signal.aborted) throw new MergeCancelledError()
+
+        setMergeStage('uploading')
+        setMergeProgress(99)
+        const filename = `merged-${Date.now()}.${mergeRes.extension}`
+        const storagePath = `${userId}/${filename}`
+        // Hard timeout on the upload: if Supabase storage hangs (network/CDN
+        // hiccup), we'd otherwise sit at 99% forever. 2 minutes is plenty for
+        // a typical Final Film blob (<200MB).
+        const uploadPromise = supabase.storage
+          .from(MERGED_BUCKET)
+          .upload(storagePath, mergeRes.blob, { contentType: mergeRes.mimeType, upsert: false })
+        const uploadTimeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Upload timed out after 120s. Please check your connection and try again.')), 120_000),
+        )
+        const { error: upErr } = await Promise.race([uploadPromise, uploadTimeout]) as Awaited<typeof uploadPromise>
+        if (upErr) throw new Error(upErr.message)
+
+        setMergeProgress(100)
+        setMergeStage(null)
+        publicUrl = supabase.storage.from(MERGED_BUCKET).getPublicUrl(storagePath).data.publicUrl
+      }
 
 
       // Final Film preview overlay — Pending source clips stay untouched.
