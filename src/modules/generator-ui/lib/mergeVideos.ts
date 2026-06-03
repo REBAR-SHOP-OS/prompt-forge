@@ -623,8 +623,8 @@ export async function mergeVideoUrls(
       const dur = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0
       const remaining = Math.max(0, dur - (video.currentTime || 0))
       // Absolute ceiling so a clip with a missing/odd duration can never make
-      // the merge wait forever. Generous (clip length + 15s, capped at 90s).
-      const maxWaitMs = Math.min(90_000, Math.ceil(remaining * 1000) + 15_000)
+      // the merge wait forever. Generous (clip length + 10s, capped at 45s).
+      const maxWaitMs = Math.min(45_000, Math.ceil(remaining * 1000) + 10_000)
       const timer = setTimeout(() => {
         if (!done) {
           console.warn('[mergeVideoUrls] ended event missed; advancing via timeout')
@@ -649,7 +649,7 @@ export async function mergeVideoUrls(
         // never arrived (notably WebM sources).
         const atEnd = dur > 0 && ct >= dur - 0.25
         const stalledFor = performance.now() - lastChangeAt
-        if (video.ended || (atEnd && stalledFor > 400)) {
+        if (video.ended || (atEnd && stalledFor > 300)) {
           finish()
           return
         }
@@ -657,7 +657,7 @@ export async function mergeVideoUrls(
         // autoplay/play()) or just stalled mid-stream. Re-kicking play() while
         // paused is exactly the case that previously pinned Final Film at 94%
         // because the old guard (`!video.paused`) never retried a paused clip.
-        if (stalledFor > 600 && !video.ended) {
+        if (stalledFor > 500 && !video.ended) {
           resumeAttempts += 1
           try { if (recorder.state === 'paused') recorder.resume() } catch { /* ignore */ }
           video.play().catch(() => { /* ignore */ })
@@ -666,12 +666,14 @@ export async function mergeVideoUrls(
         // long stretch despite repeated resume attempts, stop waiting and let
         // the pipeline advance cleanly instead of hanging the whole merge.
         // Covers unknown-duration clips AND known-duration clips whose decoder
-        // wedged (the real-world "stuck at 94%" report).
-        if (stalledFor > 8000 && resumeAttempts >= 3) {
+        // wedged (the real-world "stuck at 94%" report). Kept aggressive so a
+        // single bad clip frees the UI in a few seconds, not minutes.
+        if (stalledFor > 4000 && resumeAttempts >= 2) {
           console.warn('[mergeVideoUrls] clip stalled with no progress; advancing', { dur, ct })
           finish()
         }
       }, 200)
+
     })
   }
 
@@ -690,6 +692,7 @@ export async function mergeVideoUrls(
   // and removes inter-clip loading gaps.
   const preloaded: ClipItem[] = [first]
   for (let i = 1; i < clipDefs.length; i++) {
+    if (signal?.aborted) throw new MergeCancelledError()
     preloaded.push(await loadClip(clipDefs[i], captureClipAudio, `#${i + 1} of ${totalClips}`))
   }
   let totalDuration = 0
@@ -700,18 +703,28 @@ export async function mergeVideoUrls(
   if (first.kind === 'video') {
     const firstVideo = first.video
     await new Promise<void>((resolve) => {
-      const onSeeked = () => {
+      let settled = false
+      const done = () => {
+        if (settled) return
+        settled = true
+        clearTimeout(seekTimer)
         firstVideo.removeEventListener('seeked', onSeeked)
-        drawContain(ctx, firstVideo, width, height)
+        try { drawContain(ctx, firstVideo, width, height) } catch { /* ignore */ }
         resolve()
       }
+      const onSeeked = () => done()
+      // Never block the whole merge on a first-frame seek that never fires
+      // (some proxied/streaming sources load metadata but stall on seek). Paint
+      // whatever frame we have after a short grace period and proceed.
+      const seekTimer = setTimeout(() => {
+        console.warn('[mergeVideoUrls] first-frame seek timed out; painting current frame')
+        done()
+      }, 5000)
       firstVideo.addEventListener('seeked', onSeeked)
       try {
         firstVideo.currentTime = 0
       } catch {
-        firstVideo.removeEventListener('seeked', onSeeked)
-        drawContain(ctx, firstVideo, width, height)
-        resolve()
+        done()
       }
     })
   } else {
