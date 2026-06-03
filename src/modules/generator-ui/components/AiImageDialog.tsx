@@ -632,6 +632,24 @@ export default function AiImageDialog({
                   Refine with AI (Nano Banana edit)
                 </div>
                 <div className="flex items-center gap-2">
+                  <input
+                    ref={refineReferenceInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={handleRefineReferenceChange}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => refineReferenceInputRef.current?.click()}
+                    disabled={isLoading || isSaving || isMaskMode || refineReferenceImages.length >= MAX_REFERENCE_IMAGES}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-40"
+                    title={isMaskMode ? 'Exit edit-area mode to add reference images' : 'Add reference images'}
+                  >
+                    <ImagePlus className="h-3.5 w-3.5" />
+                    Add image
+                  </button>
                   <button
                     type="button"
                     onClick={() => { setIsMaskMode((m) => !m); requestAnimationFrame(() => syncCanvasSize()) }}
