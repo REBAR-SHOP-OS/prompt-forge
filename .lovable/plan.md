@@ -1,27 +1,26 @@
-# Fix: uploaded video doesn't show as a card
+# Fix: Pending repopulates after refresh following Start Over
 
 ## Problem
-When a user uploads a video file, the backend saves it correctly (job + asset rows are created, `jobs-get` returns valid public URLs), but no card appears in the Working clips / Pending panel and the video can't be used.
+After clicking **Start Over** the workspace clears correctly, but on page refresh some clips/images reappear in the Pending column. Start Over is supposed to leave a clean workspace that survives refresh.
 
 ## Root cause
-In `src/modules/generator-ui/pages/DashboardPage.tsx`, `handleUploadVideoFile` finishes with:
+In `src/modules/generator-ui/pages/DashboardPage.tsx`:
 
-```ts
-setGeneratedVideos((current) => mergeJob(current, detail))
-markActiveJob(detail.id)
-```
-
-`markActiveJob` only adds the id to `activeJobIds`; it does **not** assign the clip to the current working draft. Generated clips instead use `markNewClip`, which both stamps the clip into the active draft (`stampJobDraft(id, ensureActiveDraftId())`) and marks it active.
-
-Without a draft stamp, the orphan-draft backfill effect puts the uploaded clip into its own separate draft (`draft-orphan-<jobId>`). The default workspace clip list (`displayedVideos` → `displayedClips`) filters out any clip that belongs to a draft other than `activeDraftId`, so the uploaded clip is hidden and Pending shows 0 / "No renders yet".
+1. The workspace-restore effect (~line 2755) hydrates jobs/images from the backend and filters them against `workspaceHiddenJobIds` / `workspaceHiddenImageIds`. But it depends only on `[userId]` and reads those sets from a **stale closure**. The hidden sets are loaded from `localStorage` in separate effects (lines 934 and 1173) that have not committed into the restore effect's closure when it runs. So the filter uses **empty** hidden sets and re-hydrates everything Start Over had hidden.
+2. The orphan-draft backfill effect (~line 2228) never checks the hidden sets, so any resurfaced loose clip gets re-stamped into a new `draft-orphan-*` draft and shown again.
 
 ## Fix
-In `handleUploadVideoFile`, replace `markActiveJob(detail.id)` with `markNewClip(detail.id)` so the uploaded clip joins the active working chain exactly like a generated clip. This makes the card render immediately, persist across refresh, and support trim/Apply, delete, drag, transitions, and Final Film — matching the existing generated-clip behavior.
+1. Keep the current hidden sets in refs that always mirror the latest state (`workspaceHiddenJobIdsRef`, `workspaceHiddenImageIdsRef`), updated whenever the sets change.
+2. Gate the restore effect so it only runs **after** the hidden sets have been loaded from `localStorage` for the current user (track a per-user "hidden sets ready" flag), and have it read the hidden sets from the refs rather than the closure. This guarantees hidden items are filtered out of hydration.
+3. In the orphan-draft backfill effect, skip any job whose id is in `workspaceHiddenJobIds` (and any image in `workspaceHiddenImageIds`) so a hidden item can never be re-stamped into a new orphan draft.
+
+This keeps drafts in Library intact (Start Over still preserves them there) while ensuring the working Pending column stays empty across refresh.
 
 ## Files
-- `src/modules/generator-ui/pages/DashboardPage.tsx` (one-line change in `handleUploadVideoFile`)
+- `src/modules/generator-ui/pages/DashboardPage.tsx`
 
 ## Verification
-- Upload a video → a card appears immediately in Pending and plays.
-- Reload the page → the card is still present.
-- Confirm it behaves like a generated clip (selectable, trimmable, included in Final Film).
+- Create clips, click Start Over → Pending empties.
+- Refresh → Pending stays empty; no clips/images reappear.
+- Confirm previously saved Library drafts/projects are still present and openable.
+- Generate a new clip after Start Over → it appears normally in Pending.
