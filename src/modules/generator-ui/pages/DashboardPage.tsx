@@ -2172,8 +2172,8 @@ export default function DashboardPage() {
         const firstClip = liveClips[liveClips.length - 1] // oldest = chain start
         const firstImg = liveImages[liveImages.length - 1]
         const prompt = firstClip?.input_prompt ?? 'Draft project'
-        const ratio = firstClip?.video?.aspect_ratio
-          ?? firstClip?.requested_aspect_ratio
+        const ratio = normalizeRatio(firstClip?.video?.aspect_ratio ?? null)
+          ?? normalizeRatio(firstClip?.requested_aspect_ratio ?? null)
           ?? null
         const thumb = firstClip?.video?.thumbnail_url ?? firstImg?.storage_path ?? null
         const stubVideo: JobDetail['video'] = firstClip?.video
