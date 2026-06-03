@@ -455,45 +455,56 @@ export default function AiImageDialog({
                   ref={referenceInputRef}
                   type="file"
                   accept="image/*"
+                  multiple
                   className="hidden"
                   onChange={handleReferenceChange}
                 />
                 <button
                   type="button"
                   onClick={() => referenceInputRef.current?.click()}
-                  disabled={isLoading}
+                  disabled={isLoading || referenceImages.length >= MAX_REFERENCE_IMAGES}
                   className="absolute bottom-3 left-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                  title="Upload a reference image"
+                  title="Upload reference images"
                 >
                   <ImagePlus className="h-4 w-4" />
-                  <span>{referenceImage ? 'Replace image' : 'Upload image'}</span>
+                  <span>{referenceImages.length > 0 ? 'Add image' : 'Upload image'}</span>
                 </button>
               </div>
-              {referenceImage ? (
-                <div className="mt-3 flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
-                  <img
-                    src={referenceImage.dataUrl}
-                    alt="Reference preview"
-                    className="h-11 w-11 rounded-lg object-cover"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm text-zinc-100">{referenceImage.name}</div>
-                    <div className="text-[11px] text-zinc-500">Using this image as a reference for generation.</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleRemoveReference}
-                    disabled={isLoading}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    title="Remove reference image"
-                  >
-                    <X className="h-4 w-4" />
-                    <span className="sr-only">Remove reference image</span>
-                  </button>
+              {referenceImages.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {referenceImages.map((ref, index) => (
+                    <div
+                      key={`${ref.name}-${index}`}
+                      className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2"
+                    >
+                      <img
+                        src={ref.dataUrl}
+                        alt="Reference preview"
+                        className="h-11 w-11 rounded-lg object-cover"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm text-zinc-100">{ref.name}</div>
+                        <div className="text-[11px] text-zinc-500">Using this image as a reference for generation.</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveReference(index)}
+                        disabled={isLoading}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        title="Remove reference image"
+                      >
+                        <X className="h-4 w-4" />
+                        <span className="sr-only">Remove reference image</span>
+                      </button>
+                    </div>
+                  ))}
+                  <p className="text-[11px] text-zinc-500">
+                    {referenceImages.length} of {MAX_REFERENCE_IMAGES} reference images added.
+                  </p>
                 </div>
               ) : (
                 <p className="mt-3 text-xs text-zinc-500">
-                  Add a reference image if you want the result to follow an existing shot, product, or frame.
+                  Add up to {MAX_REFERENCE_IMAGES} reference images if you want the result to follow existing shots, products, or frames.
                 </p>
               )}
             </div>
