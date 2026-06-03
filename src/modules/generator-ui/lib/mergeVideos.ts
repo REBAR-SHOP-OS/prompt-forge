@@ -428,6 +428,8 @@ export async function mergeVideoUrls(
   canvas.height = height
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Canvas 2D not supported')
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
 
   ctx.fillStyle = '#000'
   ctx.fillRect(0, 0, width, height)
