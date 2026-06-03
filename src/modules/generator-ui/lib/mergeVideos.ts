@@ -700,18 +700,28 @@ export async function mergeVideoUrls(
   if (first.kind === 'video') {
     const firstVideo = first.video
     await new Promise<void>((resolve) => {
-      const onSeeked = () => {
+      let settled = false
+      const done = () => {
+        if (settled) return
+        settled = true
+        clearTimeout(seekTimer)
         firstVideo.removeEventListener('seeked', onSeeked)
-        drawContain(ctx, firstVideo, width, height)
+        try { drawContain(ctx, firstVideo, width, height) } catch { /* ignore */ }
         resolve()
       }
+      const onSeeked = () => done()
+      // Never block the whole merge on a first-frame seek that never fires
+      // (some proxied/streaming sources load metadata but stall on seek). Paint
+      // whatever frame we have after a short grace period and proceed.
+      const seekTimer = setTimeout(() => {
+        console.warn('[mergeVideoUrls] first-frame seek timed out; painting current frame')
+        done()
+      }, 5000)
       firstVideo.addEventListener('seeked', onSeeked)
       try {
         firstVideo.currentTime = 0
       } catch {
-        firstVideo.removeEventListener('seeked', onSeeked)
-        drawContain(ctx, firstVideo, width, height)
-        resolve()
+        done()
       }
     })
   } else {
