@@ -1,26 +1,49 @@
-# Fix: Pending repopulates after refresh following Start Over
+## Plan
 
-## Problem
-After clicking **Start Over** the workspace clears correctly, but on page refresh some clips/images reappear in the Pending column. Start Over is supposed to leave a clean workspace that survives refresh.
+I’ll fix this at the root by changing the restore/reset model from “hide whatever happens to be in memory” to “only restore what the active workspace manifest says belongs there.”
 
-## Root cause
-In `src/modules/generator-ui/pages/DashboardPage.tsx`:
+### Root cause to address
 
-1. The workspace-restore effect (~line 2755) hydrates jobs/images from the backend and filters them against `workspaceHiddenJobIds` / `workspaceHiddenImageIds`. But it depends only on `[userId]` and reads those sets from a **stale closure**. The hidden sets are loaded from `localStorage` in separate effects (lines 934 and 1173) that have not committed into the restore effect's closure when it runs. So the filter uses **empty** hidden sets and re-hydrates everything Start Over had hidden.
-2. The orphan-draft backfill effect (~line 2228) never checks the hidden sets, so any resurfaced loose clip gets re-stamped into a new `draft-orphan-*` draft and shown again.
+The previous fix only filtered restore by `workspaceHiddenJobIds` / `workspaceHiddenImageIds`.
 
-## Fix
-1. Keep the current hidden sets in refs that always mirror the latest state (`workspaceHiddenJobIdsRef`, `workspaceHiddenImageIdsRef`), updated whenever the sets change.
-2. Gate the restore effect so it only runs **after** the hidden sets have been loaded from `localStorage` for the current user (track a per-user "hidden sets ready" flag), and have it read the hidden sets from the refs rather than the closure. This guarantees hidden items are filtered out of hydration.
-3. In the orphan-draft backfill effect, skip any job whose id is in `workspaceHiddenJobIds` (and any image in `workspaceHiddenImageIds`) so a hidden item can never be re-stamped into a new orphan draft.
+But `handleStartOver()` hides only the videos/images currently loaded in React state. On refresh, `listMyJobs()` can return older server jobs that were not in memory when Start Over ran, so they are not in the hidden set and get rehydrated into Pending.
 
-This keeps drafts in Library intact (Start Over still preserves them there) while ensuring the working Pending column stays empty across refresh.
+There is already an intended source of truth:
 
-## Files
-- `src/modules/generator-ui/pages/DashboardPage.tsx`
+- `workspace-active-jobs:{userId}`
+- `workspace-active-images:{userId}`
 
-## Verification
-- Create clips, click Start Over → Pending empties.
-- Refresh → Pending stays empty; no clips/images reappear.
-- Confirm previously saved Library drafts/projects are still present and openable.
-- Generate a new clip after Start Over → it appears normally in Pending.
+However the restore effect currently ignores those active manifests and restores every backend item that is not hidden.
+
+## Implementation steps
+
+1. **Add ready refs for active workspace manifests**
+   - Mirror `activeJobIds` and `activeImageIds` into refs, similar to the hidden-set refs.
+   - Add an `activeSetsReady` flag so hydration waits until both active sets are loaded from `localStorage`.
+
+2. **Make hydration manifest-authoritative**
+   - In the workspace restore effect, only hydrate:
+     - jobs whose id exists in `activeJobIdsRef.current`
+     - images whose id exists in `activeImageIdsRef.current`
+   - Still also respect hidden sets as a defensive filter.
+   - Result: after Start Over clears the active manifest, refresh restores zero loose Pending items.
+
+3. **Prevent orphan backfill from rebuilding cleared workspaces**
+   - Update the historical orphan-draft backfill so it does not stamp backend jobs/images into drafts unless they are still in the active manifest or already have an existing draft mapping.
+   - This prevents old backend jobs from being converted into visible Draft/Pending cards after Start Over.
+
+4. **Strengthen Start Over cleanup**
+   - Keep clearing `activeJobIds`, `activeImageIds`, and `activeDraftId`.
+   - Also persist these clears before any async delete work, which is already mostly done, and ensure refs are updated immediately so same-session effects cannot race with stale active ids.
+
+5. **Keep Library intact**
+   - Do not delete or mutate saved Final Film entries.
+   - Keep existing `projectSourceJobs`, `projectSourceImages`, `draftSourceJobs`, and `draftSourceImages` snapshots so Library projects remain available.
+   - Only the default loose Pending workspace becomes empty after Start Over and stays empty after refresh.
+
+## Expected result
+
+- Click Start Over → Pending becomes empty.
+- Refresh page → Pending stays empty.
+- Old backend videos/images no longer leak back into Pending.
+- Saved Library projects/drafts remain visible and can still be opened intentionally.
