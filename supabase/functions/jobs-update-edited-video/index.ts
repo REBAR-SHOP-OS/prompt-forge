@@ -62,6 +62,18 @@ Deno.serve(async (req) => {
       return errorResponse("NOT_FOUND", "Job not found", 404, requestId);
     }
 
+    // Capture the previous live asset path(s) BEFORE soft-deleting so we can
+    // permanently purge the old file(s) from storage once the swap succeeds.
+    const { data: oldAssets } = await svc
+      .from("generator_video_assets")
+      .select("storage_path")
+      .eq("job_id", jobId)
+      .eq("user_id", auth.userId)
+      .is("deleted_at", null);
+    const oldStoragePaths = (oldAssets ?? [])
+      .map((r) => (r as { storage_path: string }).storage_path)
+      .filter((p): p is string => typeof p === "string" && p.length > 0);
+
     // Soft-delete previous live asset(s) for this job.
     const { error: delErr } = await svc
       .from("generator_video_assets")
