@@ -930,35 +930,15 @@ export default function DashboardPage() {
   // cards stay visible there.
   const [workspaceHiddenJobIds, setWorkspaceHiddenJobIds] = useState<Set<string>>(new Set())
   const workspaceHiddenJobIdsKey = userId ? `workspace-hidden-jobs:${userId}` : null
-  // Refs mirror the latest hidden sets so effects that run before/independent
-  // of a re-render (e.g. the one-shot workspace restore) read current values
-  // instead of a stale closure. `hiddenSetsReady` flags that BOTH hidden sets
-  // have been loaded from localStorage for the current user, which gates the
-  // restore effect so it never hydrates items Start Over hid.
-  const workspaceHiddenJobIdsRef = useRef<Set<string>>(new Set())
-  const workspaceHiddenImageIdsRef = useRef<Set<string>>(new Set())
-  const [hiddenSetsReady, setHiddenSetsReady] = useState(false)
 
   useEffect(() => {
-    setHiddenSetsReady(false)
-    if (!workspaceHiddenJobIdsKey) {
-      workspaceHiddenJobIdsRef.current = new Set()
-      setWorkspaceHiddenJobIds(new Set())
-      return
-    }
+    if (!workspaceHiddenJobIdsKey) { setWorkspaceHiddenJobIds(new Set()); return }
     try {
       const raw = window.localStorage.getItem(workspaceHiddenJobIdsKey)
       const arr = raw ? (JSON.parse(raw) as string[]) : []
-      const next = new Set(Array.isArray(arr) ? arr : [])
-      workspaceHiddenJobIdsRef.current = next
-      setWorkspaceHiddenJobIds(next)
-    } catch {
-      workspaceHiddenJobIdsRef.current = new Set()
-      setWorkspaceHiddenJobIds(new Set())
-    }
+      setWorkspaceHiddenJobIds(new Set(Array.isArray(arr) ? arr : []))
+    } catch { setWorkspaceHiddenJobIds(new Set()) }
   }, [workspaceHiddenJobIdsKey])
-
-  useEffect(() => { workspaceHiddenJobIdsRef.current = workspaceHiddenJobIds }, [workspaceHiddenJobIds])
 
   function persistWorkspaceHiddenJobIds(next: Set<string>) {
     if (!workspaceHiddenJobIdsKey) return
@@ -1190,28 +1170,13 @@ export default function DashboardPage() {
   const [workspaceHiddenImageIds, setWorkspaceHiddenImageIds] = useState<Set<string>>(new Set())
   const workspaceHiddenImageIdsKey = userId ? `workspace-hidden-images:${userId}` : null
   useEffect(() => {
-    if (!workspaceHiddenImageIdsKey) {
-      workspaceHiddenImageIdsRef.current = new Set()
-      setWorkspaceHiddenImageIds(new Set())
-      setHiddenSetsReady(false)
-      return
-    }
+    if (!workspaceHiddenImageIdsKey) { setWorkspaceHiddenImageIds(new Set()); return }
     try {
       const raw = window.localStorage.getItem(workspaceHiddenImageIdsKey)
       const arr = raw ? (JSON.parse(raw) as string[]) : []
-      const next = new Set(Array.isArray(arr) ? arr : [])
-      workspaceHiddenImageIdsRef.current = next
-      setWorkspaceHiddenImageIds(next)
-    } catch {
-      workspaceHiddenImageIdsRef.current = new Set()
-      setWorkspaceHiddenImageIds(new Set())
-    }
-    // Both hidden sets share the same user key lifecycle; this load effect runs
-    // alongside the job-ids load effect, so marking ready here means both refs
-    // now reflect localStorage for the current user.
-    setHiddenSetsReady(true)
+      setWorkspaceHiddenImageIds(new Set(Array.isArray(arr) ? arr : []))
+    } catch { setWorkspaceHiddenImageIds(new Set()) }
   }, [workspaceHiddenImageIdsKey])
-  useEffect(() => { workspaceHiddenImageIdsRef.current = workspaceHiddenImageIds }, [workspaceHiddenImageIds])
   function persistWorkspaceHiddenImageIds(next: Set<string>) {
     if (!workspaceHiddenImageIdsKey) return
     try {
@@ -1230,63 +1195,27 @@ export default function DashboardPage() {
   const activeImageIdsKey = userId ? `workspace-active-images:${userId}` : null
   const [activeJobIds, setActiveJobIds] = useState<Set<string>>(new Set())
   const [activeImageIds, setActiveImageIds] = useState<Set<string>>(new Set())
-  // Refs mirror the latest active manifests so the one-shot workspace restore
-  // reads current values (not a stale closure). `activeSetsReady` gates restore
-  // until BOTH active manifests have loaded from localStorage for the current
-  // user — restore is authoritative against these sets, so it must never run
-  // against empty placeholders.
-  const activeJobIdsRef = useRef<Set<string>>(new Set())
-  const activeImageIdsRef = useRef<Set<string>>(new Set())
-  const [activeJobIdsReady, setActiveJobIdsReady] = useState(false)
-  const [activeImageIdsReady, setActiveImageIdsReady] = useState(false)
-  const activeSetsReady = activeJobIdsReady && activeImageIdsReady
   useEffect(() => {
-    setActiveJobIdsReady(false)
-    if (!activeJobIdsKey) {
-      activeJobIdsRef.current = new Set()
-      setActiveJobIds(new Set())
-      return
-    }
+    if (!activeJobIdsKey) { setActiveJobIds(new Set()); return }
     try {
       const raw = window.localStorage.getItem(activeJobIdsKey)
       const arr = raw ? (JSON.parse(raw) as string[]) : []
-      const next = new Set(Array.isArray(arr) ? arr : [])
-      activeJobIdsRef.current = next
-      setActiveJobIds(next)
-    } catch {
-      activeJobIdsRef.current = new Set()
-      setActiveJobIds(new Set())
-    }
-    setActiveJobIdsReady(true)
+      setActiveJobIds(new Set(Array.isArray(arr) ? arr : []))
+    } catch { setActiveJobIds(new Set()) }
   }, [activeJobIdsKey])
   useEffect(() => {
-    setActiveImageIdsReady(false)
-    if (!activeImageIdsKey) {
-      activeImageIdsRef.current = new Set()
-      setActiveImageIds(new Set())
-      return
-    }
+    if (!activeImageIdsKey) { setActiveImageIds(new Set()); return }
     try {
       const raw = window.localStorage.getItem(activeImageIdsKey)
       const arr = raw ? (JSON.parse(raw) as string[]) : []
-      const next = new Set(Array.isArray(arr) ? arr : [])
-      activeImageIdsRef.current = next
-      setActiveImageIds(next)
-    } catch {
-      activeImageIdsRef.current = new Set()
-      setActiveImageIds(new Set())
-    }
-    setActiveImageIdsReady(true)
+      setActiveImageIds(new Set(Array.isArray(arr) ? arr : []))
+    } catch { setActiveImageIds(new Set()) }
   }, [activeImageIdsKey])
-  useEffect(() => { activeJobIdsRef.current = activeJobIds }, [activeJobIds])
-  useEffect(() => { activeImageIdsRef.current = activeImageIds }, [activeImageIds])
   function persistActiveJobIds(next: Set<string>) {
-    activeJobIdsRef.current = next
     if (!activeJobIdsKey) return
     try { window.localStorage.setItem(activeJobIdsKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
   }
   function persistActiveImageIds(next: Set<string>) {
-    activeImageIdsRef.current = next
     if (!activeImageIdsKey) return
     try { window.localStorage.setItem(activeImageIdsKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
   }
@@ -2315,11 +2244,6 @@ export default function DashboardPage() {
     const jobStamps: Record<string, string> = {}
     for (const job of generatedVideos) {
       if (jobDraftMap[job.id]) continue // already owned by a draft
-      // Only items still owned by the active workspace manifest may be backfilled
-      // into an orphan draft. After Start Over the manifest is cleared, so old
-      // backend jobs can never be re-stamped into a visible Pending/Draft card.
-      if (!activeJobIds.has(job.id)) continue
-      if (workspaceHiddenJobIds.has(job.id)) continue // hidden by Start Over — never resurface
       if (claimedJobIds.has(job.id)) continue
       if (job.id.startsWith('merged-')) continue
       if (deletedDraftIds.has(job.id)) continue
@@ -2333,15 +2257,12 @@ export default function DashboardPage() {
     const imageStamps: Record<string, string> = {}
     for (const img of userImages) {
       if (imageDraftMap[img.id]) continue
-      if (!activeImageIds.has(img.id)) continue // not in active manifest — never resurface
-      if (workspaceHiddenImageIds.has(img.id)) continue // hidden by Start Over — never resurface
       if (claimedImageIds.has(img.id)) continue
       if (deletedDraftIds.has(img.id)) continue
       const draftId = `draft-orphan-img-${img.id}`
       if (deletedDraftIds.has(draftId)) continue
       imageStamps[img.id] = draftId
     }
-
 
     if (Object.keys(jobStamps).length > 0) {
       setJobDraftMap((prev) => {
@@ -2368,7 +2289,7 @@ export default function DashboardPage() {
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, generatedVideos, userImages, mergedEntries, librarySavedJobs, projectSourceJobs, projectSourceImages, jobDraftMap, imageDraftMap, deletedDraftIds, workspaceHiddenJobIds, workspaceHiddenImageIds, activeJobIds, activeImageIds])
+  }, [userId, generatedVideos, userImages, mergedEntries, librarySavedJobs, projectSourceJobs, projectSourceImages, jobDraftMap, imageDraftMap, deletedDraftIds])
 
 
   // One-time dedupe: older builds could create both an active `draft-<uuid>`
@@ -2833,12 +2754,6 @@ export default function DashboardPage() {
   const hydrationRanRef = useRef<string | null>(null)
   useEffect(() => {
     if (!userId) return
-    // Wait until BOTH the hidden sets and the active workspace manifests have
-    // loaded from localStorage for this user. Restore is authoritative against
-    // the active manifest, so running before it loads would re-hydrate items
-    // that Start Over removed (they'd reappear in Pending after a refresh).
-    if (!hiddenSetsReady) return
-    if (!activeSetsReady) return
     if (hydrationRanRef.current === userId) return
     hydrationRanRef.current = userId
     let cancelled = false
@@ -2856,17 +2771,8 @@ export default function DashboardPage() {
         ])
         if (cancelled) return
 
-        // Manifest-authoritative restore: only items the active workspace
-        // manifest still owns are hydrated into the loose Pending workspace.
-        // Hidden sets are also respected as a defensive filter. Library/draft
-        // projects do NOT depend on this — they render from their persisted
-        // snapshot copies, so Start Over (which clears the active manifest)
-        // leaves Pending empty without affecting saved projects.
-        const activeJobs = activeJobIdsRef.current
-        const hiddenJobs = workspaceHiddenJobIdsRef.current
-        const visibleSummaries = summaries.filter(
-          (s) => activeJobs.has(s.id) && !hiddenJobs.has(s.id),
-        )
+        const hiddenJobs = workspaceHiddenJobIds
+        const visibleSummaries = summaries.filter((s) => !hiddenJobs.has(s.id))
         const hydrated = await hydrateJobs(visibleSummaries)
         if (cancelled) return
         if (hydrated.length > 0) {
@@ -2874,11 +2780,7 @@ export default function DashboardPage() {
         }
 
         const imgRows = (imgRowsRes.data ?? []) as UserImageItem[]
-        const activeImgs = activeImageIdsRef.current
-        const hiddenImgs = workspaceHiddenImageIdsRef.current
-        const visibleImages = imgRows.filter(
-          (r) => activeImgs.has(r.id) && !hiddenImgs.has(r.id),
-        )
+        const visibleImages = imgRows.filter((r) => !workspaceHiddenImageIds.has(r.id))
         if (visibleImages.length > 0) {
           setUserImages((current) => {
             const known = new Set(current.map((i) => i.id))
@@ -2895,8 +2797,7 @@ export default function DashboardPage() {
     })()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, hiddenSetsReady, activeSetsReady])
-
+  }, [userId])
 
   const handlePickImage = () => {
     if (isUploadingImage) return

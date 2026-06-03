@@ -1,49 +1,27 @@
-## Plan
+# Fix: uploaded video doesn't show as a card
 
-I’ll fix this at the root by changing the restore/reset model from “hide whatever happens to be in memory” to “only restore what the active workspace manifest says belongs there.”
+## Problem
+When a user uploads a video file, the backend saves it correctly (job + asset rows are created, `jobs-get` returns valid public URLs), but no card appears in the Working clips / Pending panel and the video can't be used.
 
-### Root cause to address
+## Root cause
+In `src/modules/generator-ui/pages/DashboardPage.tsx`, `handleUploadVideoFile` finishes with:
 
-The previous fix only filtered restore by `workspaceHiddenJobIds` / `workspaceHiddenImageIds`.
+```ts
+setGeneratedVideos((current) => mergeJob(current, detail))
+markActiveJob(detail.id)
+```
 
-But `handleStartOver()` hides only the videos/images currently loaded in React state. On refresh, `listMyJobs()` can return older server jobs that were not in memory when Start Over ran, so they are not in the hidden set and get rehydrated into Pending.
+`markActiveJob` only adds the id to `activeJobIds`; it does **not** assign the clip to the current working draft. Generated clips instead use `markNewClip`, which both stamps the clip into the active draft (`stampJobDraft(id, ensureActiveDraftId())`) and marks it active.
 
-There is already an intended source of truth:
+Without a draft stamp, the orphan-draft backfill effect puts the uploaded clip into its own separate draft (`draft-orphan-<jobId>`). The default workspace clip list (`displayedVideos` → `displayedClips`) filters out any clip that belongs to a draft other than `activeDraftId`, so the uploaded clip is hidden and Pending shows 0 / "No renders yet".
 
-- `workspace-active-jobs:{userId}`
-- `workspace-active-images:{userId}`
+## Fix
+In `handleUploadVideoFile`, replace `markActiveJob(detail.id)` with `markNewClip(detail.id)` so the uploaded clip joins the active working chain exactly like a generated clip. This makes the card render immediately, persist across refresh, and support trim/Apply, delete, drag, transitions, and Final Film — matching the existing generated-clip behavior.
 
-However the restore effect currently ignores those active manifests and restores every backend item that is not hidden.
+## Files
+- `src/modules/generator-ui/pages/DashboardPage.tsx` (one-line change in `handleUploadVideoFile`)
 
-## Implementation steps
-
-1. **Add ready refs for active workspace manifests**
-   - Mirror `activeJobIds` and `activeImageIds` into refs, similar to the hidden-set refs.
-   - Add an `activeSetsReady` flag so hydration waits until both active sets are loaded from `localStorage`.
-
-2. **Make hydration manifest-authoritative**
-   - In the workspace restore effect, only hydrate:
-     - jobs whose id exists in `activeJobIdsRef.current`
-     - images whose id exists in `activeImageIdsRef.current`
-   - Still also respect hidden sets as a defensive filter.
-   - Result: after Start Over clears the active manifest, refresh restores zero loose Pending items.
-
-3. **Prevent orphan backfill from rebuilding cleared workspaces**
-   - Update the historical orphan-draft backfill so it does not stamp backend jobs/images into drafts unless they are still in the active manifest or already have an existing draft mapping.
-   - This prevents old backend jobs from being converted into visible Draft/Pending cards after Start Over.
-
-4. **Strengthen Start Over cleanup**
-   - Keep clearing `activeJobIds`, `activeImageIds`, and `activeDraftId`.
-   - Also persist these clears before any async delete work, which is already mostly done, and ensure refs are updated immediately so same-session effects cannot race with stale active ids.
-
-5. **Keep Library intact**
-   - Do not delete or mutate saved Final Film entries.
-   - Keep existing `projectSourceJobs`, `projectSourceImages`, `draftSourceJobs`, and `draftSourceImages` snapshots so Library projects remain available.
-   - Only the default loose Pending workspace becomes empty after Start Over and stays empty after refresh.
-
-## Expected result
-
-- Click Start Over → Pending becomes empty.
-- Refresh page → Pending stays empty.
-- Old backend videos/images no longer leak back into Pending.
-- Saved Library projects/drafts remain visible and can still be opened intentionally.
+## Verification
+- Upload a video → a card appears immediately in Pending and plays.
+- Reload the page → the card is still present.
+- Confirm it behaves like a generated clip (selectable, trimmable, included in Final Film).
