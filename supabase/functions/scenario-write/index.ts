@@ -56,7 +56,7 @@ function buildSystemPrompt(duration: number, productAd?: ProductAdOpts, autoFrom
         cameraGuidance(productAd ?? {}),
       ].filter(Boolean).join(" ")
     : "";
-  const persona = isAd ? productLine : (autoFromImage ? autoLine : "You are a professional short-form video scenario writer.");
+  const persona = isAd ? productLine : (autoFromImage ? autoLine : "You are a world-class advertising creative director who writes persuasive, commercial-style video scenarios designed to promote and sell the subject.");
 
   if (sceneCount > 1) {
     const numWord = sceneCount === 2 ? "TWO" : sceneCount === 3 ? "THREE" : sceneCount === 9 ? "NINE" : String(sceneCount);
