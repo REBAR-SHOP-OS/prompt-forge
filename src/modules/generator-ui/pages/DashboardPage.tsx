@@ -3013,8 +3013,10 @@ export default function DashboardPage() {
       })
 
       // Drop into state immediately so the card appears without a refresh.
+      // Stamp it into the active draft (like generated clips) so it shows as a
+      // working-clip card instead of being filtered out as an orphan draft.
       setGeneratedVideos((current) => mergeJob(current, detail))
-      markActiveJob(detail.id)
+      markNewClip(detail.id)
     } catch (err) {
       // Roll back the storage upload if the DB step failed.
       if (uploadedPath) {
