@@ -1,28 +1,33 @@
-# Add Reference Images to the "Refine with AI" Step
+## Plan
 
-The "Generate" step now supports multiple reference images, but the **Refine with AI (Nano Banana edit)** step (shown after an image is generated) only supports a text prompt + optional mask. This adds the ability to attach reference images during refine, so the edit can follow other shots/products.
+Fix the **Pending / Working clips** restore bug so when the user has pressed **Start Over** and the workspace is blank, refreshing the page keeps it blank.
 
-## Frontend — `src/modules/generator-ui/components/AiImageDialog.tsx`
+### What will change
 
-1. **State**: add `refineReferenceImages: AiReferenceImage[]` (separate from the generate-step references). Reset to `[]` on dialog open, after a successful refine, and on discard/regenerate.
-2. **File input**: add a second hidden `<input type="file" multiple>` (own ref) for the refine section, with an "Add image" button placed in the Refine header next to the Edit-area controls. Reuse the same add/validate logic (max 4, image-only) used by the generate step.
-3. **Thumbnails**: render the selected refine references as a small thumbnail list under the refine textarea, each with an individual remove (X) button.
-4. **`handleRefine`**: 
-   - Build `imageUrls = [originalUrl, ...refineReferenceImages.map(r => r.dataUrl)]`.
-   - Send that array to `ai-image-edit` (instead of single `imageUrl`).
-   - The mask flow stays mask-only on the base image: when a mask is active, ignore extra references for that call (mask edits a specific region of the original). Show the references only as supported when no mask is painted, or simply skip them while masking. Keep current mask compositing unchanged.
-5. After a successful apply, clear the refine references along with the mask/prompt.
+1. **Stop broad restore into Pending**
+   - Update the page refresh hydration logic in `DashboardPage.tsx` so it does **not** automatically reload every past server job/image into the active Pending column.
+   - Only restore items that belong to the current active workspace/draft manifest.
 
-## Backend — `supabase/functions/ai-image-edit/index.ts`
+2. **Respect Start Over as authoritative**
+   - When **Start Over** clears the workspace and clears the active manifest, refresh should treat that as intentional and restore nothing.
+   - Old videos remain available in storage/archive/library flows, but they should not reappear as active working clips.
 
-Already accepts an `imageUrls` array (added previously). Minor refinement:
-- In the non-mask branch, when more than one image is sent, treat **image 1 as the base to edit** and the remaining images as **references** (update the multi-image instruction text to say: edit/transform image 1 according to the prompt, using the other images as visual references). This keeps both generate-step (combine references) and refine-step (edit base + references) behavior sensible.
+3. **Keep current draft behavior safe**
+   - If there is an active draft/workspace that has not been Start Over-cleared, refresh may restore only that draft’s clips/images.
+   - Final Film project snapshots and Library behavior should stay unchanged.
 
-## Technical notes
-- Max 4 total reference images in refine, same as generate.
-- No DB/storage changes; images sent inline as data URLs.
-- Edge function redeploys automatically.
+### Technical details
 
-## Files
-- `src/modules/generator-ui/components/AiImageDialog.tsx`
-- `supabase/functions/ai-image-edit/index.ts`
+- File to edit: `src/modules/generator-ui/pages/DashboardPage.tsx`
+- Root cause: the hydration effect calls `listMyJobs()` and merges returned jobs into `generatedVideos` using only `workspaceHiddenJobIds` as a filter. If those hidden IDs are missing/stale or the active workspace was cleared, old server jobs are reintroduced to `displayedClips` after refresh.
+- Fix approach:
+  - Build restore allowlists from `activeJobIds`, `activeImageIds`, and/or the current `activeDraftId` snapshot.
+  - During hydration, only hydrate jobs/images whose IDs are explicitly in those allowlists.
+  - If the allowlists are empty, leave `generatedVideos` and `userImages` empty for Pending.
+
+### Verification
+
+- Press **Start Over** so Pending is empty.
+- Refresh the page.
+- Confirm Pending remains empty and the center preview remains in the empty “Start forging a prompt” state.
+- Confirm existing Library/Archive videos are still accessible and not deleted.
