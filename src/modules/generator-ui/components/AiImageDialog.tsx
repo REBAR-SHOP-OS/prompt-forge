@@ -113,6 +113,7 @@ export default function AiImageDialog({
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const imgRef = useRef<HTMLImageElement | null>(null)
   const referenceInputRef = useRef<HTMLInputElement | null>(null)
+  const refineReferenceInputRef = useRef<HTMLInputElement | null>(null)
   const isDrawingRef = useRef(false)
 
   useEffect(() => {
