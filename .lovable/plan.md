@@ -1,40 +1,39 @@
-## برنامه اصلاح ریشه‌ای گیرکردن روی ۹۴٪
+# Purge old video from storage on Trim clip "Apply changes"
 
-### مشکل محتمل
-- درصد ۹۴٪ مربوط به مرحله `recording` در `Final Film` است؛ کد عمداً ضبط/ادغام را تا ۹۴٪ محدود کرده و فقط بعد از پایان کامل `mergeVideoUrls` وارد `finalizing/uploading` می‌شود.
-- اگر یکی از Promiseهای داخلی ادغام گیر کند، UI برای کاربر روی ۹۴٪ می‌ماند تا timeout کلی ۱۰ دقیقه‌ای برسد.
-- نقاط پرریسک فعلی:
-  - `abort` فقط بعضی awaitها را قطع می‌کند و هنگام pre-load یا برخی promiseهای transition/finalize سریع اثر نمی‌گذارد.
-  - `MediaRecorder` اگر stop/onstop یا flush دیتای آخر بدرفتاری کند، مرحله نهایی دیر یا نامشخص می‌شود.
-  - وقتی گیر می‌کند، پیام مرحله‌ای دقیق به کاربر داده نمی‌شود و فقط عدد ۹۴٪ دیده می‌شود.
+## Goal
+When the user clicks **Apply changes** in the Trim clip dialog, the previous video file must be **permanently deleted from storage**, while the new (trimmed) file stays.
 
-### تغییرات پیشنهادی
-1. **در `mergeVideos.ts` timeout مرحله‌ای اضافه می‌کنم**
-   - برای pre-load هر کلیپ، شروع playback، transition، انتظار پایان کلیپ، و توقف recorder سقف زمانی مشخص می‌گذارم.
-   - اگر کلیپی گیر کرد، به جای ماندن بی‌نهایت روی ۹۴٪، یا با fallback امن جلو می‌رود یا خطای واضح برمی‌گرداند.
+## Current behavior (root cause)
+The trim flow uploads the new trimmed file to the `merged-videos` bucket, then calls the `jobs-update-edited-video` edge function. That function:
+1. Soft-deletes the previous `generator_video_assets` row(s) (`deleted_at` set), and
+2. Inserts a new asset row pointing at the new file.
 
-2. **Abort را واقعاً سراسری می‌کنم**
-   - تمام انتظارهای طولانی داخل `mergeVideoUrls` با `AbortSignal` race می‌شوند تا دکمه X فوراً فرآیند را متوقف کند.
+It **never removes the old physical file from storage** — only the DB row is hidden. So orphaned video files accumulate in the bucket forever. (The `deleteJob` flow already does a proper storage purge; this flow does not.)
 
-3. **progress را دقیق‌تر و قابل تشخیص می‌کنم**
-   - وقتی ضبط تمام شد، فوراً stage به `finalizing` برود و روی ۹۵٪ بماند، نه اینکه روی ۹۴٪ حس فریز بدهد.
-   - اگر timeout رخ دهد، پیام خطا مشخص کند گیر در کدام مرحله/کدام کلیپ بوده است.
+## Fix
+Edit `supabase/functions/jobs-update-edited-video/index.ts` to purge the old file(s) from storage, reusing the same purge logic already proven in the delete-job path.
 
-4. **مرحله ساخت blob را مقاوم‌تر می‌کنم**
-   - `MediaRecorder` قبل از stop داده را flush کند.
-   - اگر onstop دیر کرد ولی chunk معتبر موجود بود، خروجی با همان chunkها ساخته شود.
-   - cleanup کامل‌تر انجام شود تا recorder/audio/video elementها در حالت نیمه‌فعال نمانند.
+Sequence inside the handler:
+1. **Before** soft-deleting, fetch the storage paths of the current live asset(s):
+   `select id, storage_path from generator_video_assets where job_id = jobId and user_id = auth.userId and deleted_at is null`.
+2. Soft-delete the old asset row(s) (unchanged).
+3. Insert the new asset row (unchanged).
+4. **After** the new asset is successfully inserted**, best-effort delete the old physical files from storage:
+   - Skip any path equal to the new `storagePath` (safety: never delete the file we just saved).
+   - Resolve each old path to `bucket` + `objectPath` using the same rules as `deleteJob` (handle both full Supabase storage URLs and `"<bucket>/<path>"` strings), limited to known buckets `merged-videos`, `wan-frames`, `user-videos`.
+   - Group by bucket and call `svc.storage.from(bucket).remove(paths)`.
+   - Wrap in try/catch and log failures — a storage-remove failure must NOT fail the apply (the DB swap already succeeded).
 
-5. **تست بعد از اصلاح**
-   - یک تست واحد برای مسیرهای timeout/abort در `mergeVideos` اضافه یا به‌روزرسانی می‌کنم اگر ساختار تست اجازه بدهد.
-   - در preview سناریوی واقعی را تست می‌کنم: اجرای Final Film با کلیپ‌های موجود، مشاهده عبور از ۹۴٪ به finalizing/uploading یا دریافت خطای واضح به جای گیرکردن.
-   - اگر تست preview هنوز خراب بود، دوباره همان مسیر را اصلاح می‌کنم تا گیر بی‌صدا باقی نماند.
+## Order matters
+The old file is removed only **after** the new asset row is inserted, so a failed upload/insert never destroys the existing video.
 
-### فایل‌های درگیر
-- `src/modules/generator-ui/lib/mergeVideos.ts`
-- `src/modules/generator-ui/pages/DashboardPage.tsx`
+## Files
+- `supabase/functions/jobs-update-edited-video/index.ts` — add pre-fetch of old paths + post-insert storage purge.
 
-### نتیجه مورد انتظار
-- Final Film دیگر به‌صورت نامحدود روی ۹۴٪ نمی‌ماند.
-- اگر کلیپ/مرورگر/recorder واقعاً خراب باشد، کاربر پیام قابل‌فهم می‌گیرد و UI آزاد می‌شود.
-- اگر فقط event مرورگر جا افتاده باشد، pipeline ادامه می‌دهد و فیلم ذخیره می‌شود.
+No frontend changes, no DB migration, no new RPC needed. Edge function deploys automatically.
+
+## Test checklist
+1. Open a generated clip → Trim clip → mark a cut / mute → Apply changes.
+2. Confirm the card shows the new trimmed video.
+3. Verify the old file is gone from the `merged-videos` bucket and the new file remains.
+4. Confirm an apply still succeeds (and shows the new clip) even if storage purge logs a non-fatal error.
