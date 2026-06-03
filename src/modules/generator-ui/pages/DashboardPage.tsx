@@ -2279,6 +2279,7 @@ export default function DashboardPage() {
     const jobStamps: Record<string, string> = {}
     for (const job of generatedVideos) {
       if (jobDraftMap[job.id]) continue // already owned by a draft
+      if (workspaceHiddenJobIds.has(job.id)) continue // hidden by Start Over — never resurface
       if (claimedJobIds.has(job.id)) continue
       if (job.id.startsWith('merged-')) continue
       if (deletedDraftIds.has(job.id)) continue
