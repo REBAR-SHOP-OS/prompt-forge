@@ -185,28 +185,43 @@ export default function AiImageDialog({
     setHasMask(false)
   }
 
-  function handleRemoveReference() {
-    setReferenceImage(null)
+  function handleRemoveReference(index: number) {
+    setReferenceImages((prev) => prev.filter((_, i) => i !== index))
     if (referenceInputRef.current) {
       referenceInputRef.current.value = ''
     }
   }
 
   async function handleReferenceChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    if (!file) return
-    if (!file.type.startsWith('image/')) {
-      setError('Please choose an image file.')
+    const files = Array.from(event.target.files ?? [])
+    if (files.length === 0) return
+
+    const imageFiles = files.filter((f) => f.type.startsWith('image/'))
+    if (imageFiles.length === 0) {
+      setError('Please choose image files.')
       event.target.value = ''
       return
     }
 
     setError(null)
     try {
-      const dataUrl = await fileToDataUrl(file)
-      setReferenceImage({ name: file.name, dataUrl })
+      const remaining = MAX_REFERENCE_IMAGES - referenceImages.length
+      if (remaining <= 0) {
+        setError(`You can add up to ${MAX_REFERENCE_IMAGES} reference images.`)
+        event.target.value = ''
+        return
+      }
+      const toAdd = imageFiles.slice(0, remaining)
+      const added = await Promise.all(
+        toAdd.map(async (file) => ({ name: file.name, dataUrl: await fileToDataUrl(file) })),
+      )
+      setReferenceImages((prev) => [...prev, ...added])
+      if (imageFiles.length > remaining) {
+        setError(`Only ${MAX_REFERENCE_IMAGES} reference images are allowed. Extra files were ignored.`)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to read image.')
+    } finally {
       event.target.value = ''
     }
   }
