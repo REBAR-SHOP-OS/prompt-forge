@@ -102,6 +102,7 @@ export default function AiImageDialog({
   const [editPrompt, setEditPrompt] = useState('')
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null)
   const [referenceImages, setReferenceImages] = useState<AiReferenceImage[]>([])
+  const [refineReferenceImages, setRefineReferenceImages] = useState<AiReferenceImage[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -112,6 +113,7 @@ export default function AiImageDialog({
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const imgRef = useRef<HTMLImageElement | null>(null)
   const referenceInputRef = useRef<HTMLInputElement | null>(null)
+  const refineReferenceInputRef = useRef<HTMLInputElement | null>(null)
   const isDrawingRef = useRef(false)
 
   useEffect(() => {
@@ -121,6 +123,7 @@ export default function AiImageDialog({
       setEditPrompt('')
       setImageDataUrl(null)
       setReferenceImages([])
+      setRefineReferenceImages([])
       setError(null)
       setIsLoading(false)
       setIsSaving(false)
@@ -128,6 +131,9 @@ export default function AiImageDialog({
       setHasMask(false)
       if (referenceInputRef.current) {
         referenceInputRef.current.value = ''
+      }
+      if (refineReferenceInputRef.current) {
+        refineReferenceInputRef.current.value = ''
       }
     }
   }, [open, defaultAspect])
@@ -216,6 +222,47 @@ export default function AiImageDialog({
         toAdd.map(async (file) => ({ name: file.name, dataUrl: await fileToDataUrl(file) })),
       )
       setReferenceImages((prev) => [...prev, ...added])
+      if (imageFiles.length > remaining) {
+        setError(`Only ${MAX_REFERENCE_IMAGES} reference images are allowed. Extra files were ignored.`)
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to read image.')
+    } finally {
+      event.target.value = ''
+    }
+  }
+
+  function handleRemoveRefineReference(index: number) {
+    setRefineReferenceImages((prev) => prev.filter((_, i) => i !== index))
+    if (refineReferenceInputRef.current) {
+      refineReferenceInputRef.current.value = ''
+    }
+  }
+
+  async function handleRefineReferenceChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? [])
+    if (files.length === 0) return
+
+    const imageFiles = files.filter((f) => f.type.startsWith('image/'))
+    if (imageFiles.length === 0) {
+      setError('Please choose image files.')
+      event.target.value = ''
+      return
+    }
+
+    setError(null)
+    try {
+      const remaining = MAX_REFERENCE_IMAGES - refineReferenceImages.length
+      if (remaining <= 0) {
+        setError(`You can add up to ${MAX_REFERENCE_IMAGES} reference images.`)
+        event.target.value = ''
+        return
+      }
+      const toAdd = imageFiles.slice(0, remaining)
+      const added = await Promise.all(
+        toAdd.map(async (file) => ({ name: file.name, dataUrl: await fileToDataUrl(file) })),
+      )
+      setRefineReferenceImages((prev) => [...prev, ...added])
       if (imageFiles.length > remaining) {
         setError(`Only ${MAX_REFERENCE_IMAGES} reference images are allowed. Extra files were ignored.`)
       }
@@ -341,9 +388,13 @@ export default function AiImageDialog({
     try {
       const originalUrl = imageDataUrl
       const maskUrl = exportMaskDataUrl()
-      const { data, error: fnErr } = await supabase.functions.invoke('ai-image-edit', {
-        body: { prompt: editPrompt.trim(), imageUrl: originalUrl, aspectRatio: aspect, ...(maskUrl ? { maskUrl } : {}) },
-      })
+      // When a mask is painted, the edit is scoped to the masked region of the
+      // original only. Otherwise, send any attached reference images alongside.
+      const refUrls = refineReferenceImages.map((r) => r.dataUrl)
+      const body = maskUrl
+        ? { prompt: editPrompt.trim(), imageUrl: originalUrl, aspectRatio: aspect, maskUrl }
+        : { prompt: editPrompt.trim(), imageUrls: [originalUrl, ...refUrls], aspectRatio: aspect }
+      const { data, error: fnErr } = await supabase.functions.invoke('ai-image-edit', { body })
       if (fnErr) {
         const msg = await extractFnError(fnErr, 'Failed to edit image.')
         throw new Error(msg)
@@ -354,6 +405,7 @@ export default function AiImageDialog({
       const finalUrl = maskUrl ? await compositeWithMask(originalUrl, normalizedEdit) : normalizedEdit
       setImageDataUrl(finalUrl)
       setEditPrompt('')
+      setRefineReferenceImages([])
       handleClearMask()
       setIsMaskMode(false)
     } catch (e) {
@@ -399,6 +451,7 @@ export default function AiImageDialog({
   const handleDiscard = () => {
     setImageDataUrl(null)
     setEditPrompt('')
+    setRefineReferenceImages([])
     setError(null)
   }
 
@@ -579,6 +632,24 @@ export default function AiImageDialog({
                   Refine with AI (Nano Banana edit)
                 </div>
                 <div className="flex items-center gap-2">
+                  <input
+                    ref={refineReferenceInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={handleRefineReferenceChange}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => refineReferenceInputRef.current?.click()}
+                    disabled={isLoading || isSaving || isMaskMode || refineReferenceImages.length >= MAX_REFERENCE_IMAGES}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-40"
+                    title={isMaskMode ? 'Exit edit-area mode to add reference images' : 'Add reference images'}
+                  >
+                    <ImagePlus className="h-3.5 w-3.5" />
+                    Add image
+                  </button>
                   <button
                     type="button"
                     onClick={() => { setIsMaskMode((m) => !m); requestAnimationFrame(() => syncCanvasSize()) }}
@@ -627,6 +698,29 @@ export default function AiImageDialog({
                 rows={3}
                 disabled={isLoading || isSaving}
               />
+              {refineReferenceImages.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {refineReferenceImages.map((ref, index) => (
+                    <div
+                      key={`${ref.name}-${index}`}
+                      className="group relative h-14 w-14 overflow-hidden rounded-lg border border-white/10"
+                      title={ref.name}
+                    >
+                      <img src={ref.dataUrl} alt="Reference" className="h-full w-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveRefineReference(index)}
+                        disabled={isLoading || isSaving}
+                        className="absolute right-0.5 top-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-zinc-200 transition hover:bg-black/90 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        title="Remove reference image"
+                      >
+                        <X className="h-3 w-3" />
+                        <span className="sr-only">Remove reference image</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               <div className="mt-2 flex items-center justify-between gap-2">
                 <span className="text-[11px] text-zinc-500">
                   {hasMask ? 'Edit applied only inside the painted area.' : 'Tip: paint an area to edit only that region.'}
