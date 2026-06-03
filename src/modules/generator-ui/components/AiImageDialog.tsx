@@ -388,9 +388,13 @@ export default function AiImageDialog({
     try {
       const originalUrl = imageDataUrl
       const maskUrl = exportMaskDataUrl()
-      const { data, error: fnErr } = await supabase.functions.invoke('ai-image-edit', {
-        body: { prompt: editPrompt.trim(), imageUrl: originalUrl, aspectRatio: aspect, ...(maskUrl ? { maskUrl } : {}) },
-      })
+      // When a mask is painted, the edit is scoped to the masked region of the
+      // original only. Otherwise, send any attached reference images alongside.
+      const refUrls = refineReferenceImages.map((r) => r.dataUrl)
+      const body = maskUrl
+        ? { prompt: editPrompt.trim(), imageUrl: originalUrl, aspectRatio: aspect, maskUrl }
+        : { prompt: editPrompt.trim(), imageUrls: [originalUrl, ...refUrls], aspectRatio: aspect }
+      const { data, error: fnErr } = await supabase.functions.invoke('ai-image-edit', { body })
       if (fnErr) {
         const msg = await extractFnError(fnErr, 'Failed to edit image.')
         throw new Error(msg)
@@ -401,6 +405,7 @@ export default function AiImageDialog({
       const finalUrl = maskUrl ? await compositeWithMask(originalUrl, normalizedEdit) : normalizedEdit
       setImageDataUrl(finalUrl)
       setEditPrompt('')
+      setRefineReferenceImages([])
       handleClearMask()
       setIsMaskMode(false)
     } catch (e) {
