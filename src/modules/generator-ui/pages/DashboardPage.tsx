@@ -1190,13 +1190,28 @@ export default function DashboardPage() {
   const [workspaceHiddenImageIds, setWorkspaceHiddenImageIds] = useState<Set<string>>(new Set())
   const workspaceHiddenImageIdsKey = userId ? `workspace-hidden-images:${userId}` : null
   useEffect(() => {
-    if (!workspaceHiddenImageIdsKey) { setWorkspaceHiddenImageIds(new Set()); return }
+    if (!workspaceHiddenImageIdsKey) {
+      workspaceHiddenImageIdsRef.current = new Set()
+      setWorkspaceHiddenImageIds(new Set())
+      setHiddenSetsReady(false)
+      return
+    }
     try {
       const raw = window.localStorage.getItem(workspaceHiddenImageIdsKey)
       const arr = raw ? (JSON.parse(raw) as string[]) : []
-      setWorkspaceHiddenImageIds(new Set(Array.isArray(arr) ? arr : []))
-    } catch { setWorkspaceHiddenImageIds(new Set()) }
+      const next = new Set(Array.isArray(arr) ? arr : [])
+      workspaceHiddenImageIdsRef.current = next
+      setWorkspaceHiddenImageIds(next)
+    } catch {
+      workspaceHiddenImageIdsRef.current = new Set()
+      setWorkspaceHiddenImageIds(new Set())
+    }
+    // Both hidden sets share the same user key lifecycle; this load effect runs
+    // alongside the job-ids load effect, so marking ready here means both refs
+    // now reflect localStorage for the current user.
+    setHiddenSetsReady(true)
   }, [workspaceHiddenImageIdsKey])
+  useEffect(() => { workspaceHiddenImageIdsRef.current = workspaceHiddenImageIds }, [workspaceHiddenImageIds])
   function persistWorkspaceHiddenImageIds(next: Set<string>) {
     if (!workspaceHiddenImageIdsKey) return
     try {
