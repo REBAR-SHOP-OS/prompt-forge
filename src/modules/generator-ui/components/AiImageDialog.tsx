@@ -123,6 +123,7 @@ export default function AiImageDialog({
       setEditPrompt('')
       setImageDataUrl(null)
       setReferenceImages([])
+      setRefineReferenceImages([])
       setError(null)
       setIsLoading(false)
       setIsSaving(false)
@@ -130,6 +131,9 @@ export default function AiImageDialog({
       setHasMask(false)
       if (referenceInputRef.current) {
         referenceInputRef.current.value = ''
+      }
+      if (refineReferenceInputRef.current) {
+        refineReferenceInputRef.current.value = ''
       }
     }
   }, [open, defaultAspect])
