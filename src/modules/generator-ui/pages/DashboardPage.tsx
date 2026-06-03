@@ -1230,27 +1230,63 @@ export default function DashboardPage() {
   const activeImageIdsKey = userId ? `workspace-active-images:${userId}` : null
   const [activeJobIds, setActiveJobIds] = useState<Set<string>>(new Set())
   const [activeImageIds, setActiveImageIds] = useState<Set<string>>(new Set())
+  // Refs mirror the latest active manifests so the one-shot workspace restore
+  // reads current values (not a stale closure). `activeSetsReady` gates restore
+  // until BOTH active manifests have loaded from localStorage for the current
+  // user — restore is authoritative against these sets, so it must never run
+  // against empty placeholders.
+  const activeJobIdsRef = useRef<Set<string>>(new Set())
+  const activeImageIdsRef = useRef<Set<string>>(new Set())
+  const [activeJobIdsReady, setActiveJobIdsReady] = useState(false)
+  const [activeImageIdsReady, setActiveImageIdsReady] = useState(false)
+  const activeSetsReady = activeJobIdsReady && activeImageIdsReady
   useEffect(() => {
-    if (!activeJobIdsKey) { setActiveJobIds(new Set()); return }
+    setActiveJobIdsReady(false)
+    if (!activeJobIdsKey) {
+      activeJobIdsRef.current = new Set()
+      setActiveJobIds(new Set())
+      return
+    }
     try {
       const raw = window.localStorage.getItem(activeJobIdsKey)
       const arr = raw ? (JSON.parse(raw) as string[]) : []
-      setActiveJobIds(new Set(Array.isArray(arr) ? arr : []))
-    } catch { setActiveJobIds(new Set()) }
+      const next = new Set(Array.isArray(arr) ? arr : [])
+      activeJobIdsRef.current = next
+      setActiveJobIds(next)
+    } catch {
+      activeJobIdsRef.current = new Set()
+      setActiveJobIds(new Set())
+    }
+    setActiveJobIdsReady(true)
   }, [activeJobIdsKey])
   useEffect(() => {
-    if (!activeImageIdsKey) { setActiveImageIds(new Set()); return }
+    setActiveImageIdsReady(false)
+    if (!activeImageIdsKey) {
+      activeImageIdsRef.current = new Set()
+      setActiveImageIds(new Set())
+      return
+    }
     try {
       const raw = window.localStorage.getItem(activeImageIdsKey)
       const arr = raw ? (JSON.parse(raw) as string[]) : []
-      setActiveImageIds(new Set(Array.isArray(arr) ? arr : []))
-    } catch { setActiveImageIds(new Set()) }
+      const next = new Set(Array.isArray(arr) ? arr : [])
+      activeImageIdsRef.current = next
+      setActiveImageIds(next)
+    } catch {
+      activeImageIdsRef.current = new Set()
+      setActiveImageIds(new Set())
+    }
+    setActiveImageIdsReady(true)
   }, [activeImageIdsKey])
+  useEffect(() => { activeJobIdsRef.current = activeJobIds }, [activeJobIds])
+  useEffect(() => { activeImageIdsRef.current = activeImageIds }, [activeImageIds])
   function persistActiveJobIds(next: Set<string>) {
+    activeJobIdsRef.current = next
     if (!activeJobIdsKey) return
     try { window.localStorage.setItem(activeJobIdsKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
   }
   function persistActiveImageIds(next: Set<string>) {
+    activeImageIdsRef.current = next
     if (!activeImageIdsKey) return
     try { window.localStorage.setItem(activeImageIdsKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
   }
