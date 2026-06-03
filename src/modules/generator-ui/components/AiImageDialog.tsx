@@ -38,6 +38,8 @@ type AiReferenceImage = {
   dataUrl: string
 }
 
+const MAX_REFERENCE_IMAGES = 4
+
 const ASPECT_OPTIONS: { value: AiImageAspect; label: string; sub: string; box: string }[] = [
   { value: '1:1', label: '1:1', sub: 'Square', box: 'aspect-square' },
   { value: '9:16', label: '9:16', sub: 'Reels', box: 'aspect-[9/16]' },
