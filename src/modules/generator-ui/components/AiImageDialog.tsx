@@ -451,6 +451,7 @@ export default function AiImageDialog({
   const handleDiscard = () => {
     setImageDataUrl(null)
     setEditPrompt('')
+    setRefineReferenceImages([])
     setError(null)
   }
 
