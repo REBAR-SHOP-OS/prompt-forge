@@ -2789,6 +2789,10 @@ export default function DashboardPage() {
   const hydrationRanRef = useRef<string | null>(null)
   useEffect(() => {
     if (!userId) return
+    // Wait until the hidden sets have loaded from localStorage for this user,
+    // otherwise we'd filter against empty sets and re-hydrate items that Start
+    // Over hid (they'd reappear in Pending after a refresh).
+    if (!hiddenSetsReady) return
     if (hydrationRanRef.current === userId) return
     hydrationRanRef.current = userId
     let cancelled = false
@@ -2806,7 +2810,8 @@ export default function DashboardPage() {
         ])
         if (cancelled) return
 
-        const hiddenJobs = workspaceHiddenJobIds
+        // Read from refs so we always use the latest loaded hidden sets.
+        const hiddenJobs = workspaceHiddenJobIdsRef.current
         const visibleSummaries = summaries.filter((s) => !hiddenJobs.has(s.id))
         const hydrated = await hydrateJobs(visibleSummaries)
         if (cancelled) return
@@ -2815,7 +2820,8 @@ export default function DashboardPage() {
         }
 
         const imgRows = (imgRowsRes.data ?? []) as UserImageItem[]
-        const visibleImages = imgRows.filter((r) => !workspaceHiddenImageIds.has(r.id))
+        const hiddenImgs = workspaceHiddenImageIdsRef.current
+        const visibleImages = imgRows.filter((r) => !hiddenImgs.has(r.id))
         if (visibleImages.length > 0) {
           setUserImages((current) => {
             const known = new Set(current.map((i) => i.id))
@@ -2832,7 +2838,7 @@ export default function DashboardPage() {
     })()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId])
+  }, [userId, hiddenSetsReady])
 
   const handlePickImage = () => {
     if (isUploadingImage) return
