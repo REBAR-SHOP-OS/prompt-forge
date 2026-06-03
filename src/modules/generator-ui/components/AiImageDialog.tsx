@@ -698,6 +698,29 @@ export default function AiImageDialog({
                 rows={3}
                 disabled={isLoading || isSaving}
               />
+              {refineReferenceImages.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {refineReferenceImages.map((ref, index) => (
+                    <div
+                      key={`${ref.name}-${index}`}
+                      className="group relative h-14 w-14 overflow-hidden rounded-lg border border-white/10"
+                      title={ref.name}
+                    >
+                      <img src={ref.dataUrl} alt="Reference" className="h-full w-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveRefineReference(index)}
+                        disabled={isLoading || isSaving}
+                        className="absolute right-0.5 top-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-zinc-200 transition hover:bg-black/90 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        title="Remove reference image"
+                      >
+                        <X className="h-3 w-3" />
+                        <span className="sr-only">Remove reference image</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               <div className="mt-2 flex items-center justify-between gap-2">
                 <span className="text-[11px] text-zinc-500">
                   {hasMask ? 'Edit applied only inside the painted area.' : 'Tip: paint an area to edit only that region.'}
