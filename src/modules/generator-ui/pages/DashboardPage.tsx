@@ -2293,6 +2293,7 @@ export default function DashboardPage() {
     const imageStamps: Record<string, string> = {}
     for (const img of userImages) {
       if (imageDraftMap[img.id]) continue
+      if (workspaceHiddenImageIds.has(img.id)) continue // hidden by Start Over — never resurface
       if (claimedImageIds.has(img.id)) continue
       if (deletedDraftIds.has(img.id)) continue
       const draftId = `draft-orphan-img-${img.id}`
