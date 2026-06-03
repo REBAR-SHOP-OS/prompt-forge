@@ -2748,12 +2748,9 @@ export default function DashboardPage() {
   }, [hasComposerInput, isDragging])
 
   // Non-destructive restore: on mount, re-hydrate `generatedVideos` and
-  // `userImages` from the backend so the Pending column survives a refresh.
-  // CRITICAL: only items that belong to the ACTIVE workspace manifest
-  // (activeJobIds / activeImageIds) are restored. After Start Over the
-  // manifest is cleared, so a refresh restores nothing and Pending stays
-  // empty — old server jobs/images are kept in storage/library but must not
-  // flood back into the working column.
+  // `userImages` from the backend so the Pending column and source images
+  // survive a page refresh. Items only ever leave memory when the user
+  // explicitly deletes them via the Trash buttons.
   const hydrationRanRef = useRef<string | null>(null)
   useEffect(() => {
     if (!userId) return
@@ -2761,22 +2758,6 @@ export default function DashboardPage() {
     hydrationRanRef.current = userId
     let cancelled = false
     setVideoColumnMessage(null)
-
-    // Read the active manifest straight from localStorage to avoid a race
-    // with the state-loading effects (which may not have run yet).
-    const readIds = (key: string | null): Set<string> => {
-      if (!key) return new Set()
-      try {
-        const raw = window.localStorage.getItem(key)
-        const arr = raw ? (JSON.parse(raw) as string[]) : []
-        return new Set(Array.isArray(arr) ? arr : [])
-      } catch { return new Set() }
-    }
-    const activeJobs = readIds(activeJobIdsKey)
-    const activeImages = readIds(activeImageIdsKey)
-
-    // Nothing is active (e.g. after Start Over): keep Pending empty.
-    if (activeJobs.size === 0 && activeImages.size === 0) return
 
     ;(async () => {
       try {
@@ -2790,12 +2771,8 @@ export default function DashboardPage() {
         ])
         if (cancelled) return
 
-        // Only restore jobs that are part of the active workspace manifest
-        // and not hidden.
         const hiddenJobs = workspaceHiddenJobIds
-        const visibleSummaries = summaries.filter(
-          (s) => activeJobs.has(s.id) && !hiddenJobs.has(s.id),
-        )
+        const visibleSummaries = summaries.filter((s) => !hiddenJobs.has(s.id))
         const hydrated = await hydrateJobs(visibleSummaries)
         if (cancelled) return
         if (hydrated.length > 0) {
@@ -2803,9 +2780,7 @@ export default function DashboardPage() {
         }
 
         const imgRows = (imgRowsRes.data ?? []) as UserImageItem[]
-        const visibleImages = imgRows.filter(
-          (r) => activeImages.has(r.id) && !workspaceHiddenImageIds.has(r.id),
-        )
+        const visibleImages = imgRows.filter((r) => !workspaceHiddenImageIds.has(r.id))
         if (visibleImages.length > 0) {
           setUserImages((current) => {
             const known = new Set(current.map((i) => i.id))

@@ -428,8 +428,6 @@ export async function mergeVideoUrls(
   canvas.height = height
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Canvas 2D not supported')
-  ctx.imageSmoothingEnabled = true
-  ctx.imageSmoothingQuality = 'high'
 
   ctx.fillStyle = '#000'
   ctx.fillRect(0, 0, width, height)
@@ -440,8 +438,6 @@ export async function mergeVideoUrls(
   snapshot.height = height
   const snapCtx = snapshot.getContext('2d')
   if (!snapCtx) throw new Error('Canvas 2D not supported (snapshot)')
-  snapCtx.imageSmoothingEnabled = true
-  snapCtx.imageSmoothingQuality = 'high'
 
   const fps = 30
   const videoStream = canvas.captureStream(fps)
@@ -736,24 +732,7 @@ export async function mergeVideoUrls(
   }
 
   const chosenMime = pickMimeType()
-  // Pick a resolution-scaled bitrate. MediaRecorder's default (~2.5 Mbps) is
-  // far too low for HD/vertical output and was the cause of the Final Film
-  // looking blocky/soft versus the source clips. Scale with pixel count * fps.
-  const targetVideoBitrate = Math.min(
-    24_000_000,
-    Math.max(6_000_000, Math.round(width * height * fps * 0.1)),
-  )
-  let recorder: MediaRecorder
-  try {
-    recorder = new MediaRecorder(outStream, {
-      mimeType: chosenMime,
-      videoBitsPerSecond: targetVideoBitrate,
-      audioBitsPerSecond: 128_000,
-    })
-  } catch (err) {
-    console.warn('[mergeVideoUrls] recorder rejected bitrate options, using defaults:', err)
-    recorder = new MediaRecorder(outStream, { mimeType: chosenMime })
-  }
+  const recorder = new MediaRecorder(outStream, { mimeType: chosenMime })
   const chunks: Blob[] = []
   recorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) chunks.push(e.data)
