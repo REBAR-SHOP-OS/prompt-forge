@@ -3374,6 +3374,12 @@ export default function DashboardPage() {
     const pid = selectedProjectId
     const isDraft = pid.startsWith('draft-')
 
+    // Finalized "Final video" projects are read-only: never restore them into
+    // the live workspace. This is the principled backstop so no edit action can
+    // mutate a finished film, even if a UI control is missed.
+    if (!isDraft) return
+
+
     // Pull snapshots from whichever bucket owns this project id.
     const videoSnapshot = isDraft
       ? (draftSourceJobs[pid] ?? [])
