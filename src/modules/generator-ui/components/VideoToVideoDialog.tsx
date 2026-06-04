@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { supabase } from '@/integrations/supabase/client'
+import { archiveUserImage } from '@/modules/generator-ui/lib/archiveUserImage'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import type { JobDetail, CreateJobResult, AspectRatio } from '@/modules/job-orchestrator/contract'
 
