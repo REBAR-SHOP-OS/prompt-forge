@@ -6029,7 +6029,7 @@ export default function DashboardPage() {
                   {previewItem.job.input_prompt}
                 </p>
                 <div className="flex shrink-0 items-center gap-2">
-                  {previewItem.job.video?.storage_path ? (
+                  {previewItem.job.video?.storage_path && !isReadOnlyProject ? (
                     <button
                       type="button"
                       onClick={() => setTrimmingJobId(previewItem.job.id)}
