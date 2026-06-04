@@ -7,6 +7,7 @@ import { Crop, LoaderCircle, UploadCloud, Wand2, Download, RefreshCw } from 'luc
 import { supabase } from '@/integrations/supabase/client'
 import { useAuth } from '@/core/auth/AuthProvider'
 import { useToast } from '@/hooks/use-toast'
+import { archiveUserImage } from '@/modules/generator-ui/lib/archiveUserImage'
 
 const RATIOS = [
   { value: '9:16', label: '9:16', hint: 'Reels', cls: 'aspect-[9/16]' },
@@ -74,6 +75,7 @@ export default function ImageReframeDialog({ open, onOpenChange, onUseAsStartFra
         .upload(inputPath, file, { contentType: file.type, upsert: false })
       if (up.error) throw new Error(up.error.message)
       const { data: pub } = supabase.storage.from('user-images').getPublicUrl(inputPath)
+      void archiveUserImage({ userId: user.id, publicUrl: pub.publicUrl, sizeBytes: file.size, mimeType: file.type })
 
       const { data: sess } = await supabase.auth.getSession()
       const token = sess.session?.access_token
@@ -92,6 +94,7 @@ export default function ImageReframeDialog({ open, onOpenChange, onUseAsStartFra
         throw new Error(json?.error || `Request failed (${resp.status})`)
       }
       setResultUrl(json.publicUrl as string)
+      void archiveUserImage({ userId: user.id, publicUrl: json.publicUrl as string, mimeType: 'image/png' })
       toast({ title: 'Image reframed', description: `Converted to ${ratio}` })
     } catch (e) {
       const msg = (e as Error).message || 'Something went wrong.'

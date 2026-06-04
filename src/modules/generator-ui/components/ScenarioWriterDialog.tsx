@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { supabase } from '@/integrations/supabase/client'
+import { archiveUserImage } from '@/modules/generator-ui/lib/archiveUserImage'
 
 export type ScenarioDuration = 5 | 10 | 15 | 30 | 45 | 135
 
@@ -91,6 +92,7 @@ export default function ScenarioWriterDialog({
       if (upErr) throw new Error(upErr.message)
       const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
       setUploadedImageUrl(data.publicUrl)
+      void archiveUserImage({ userId, publicUrl: data.publicUrl, sizeBytes: file.size, mimeType: file.type })
       // When an image is attached, default to auto-from-image mode.
       if (!idea.trim()) setIdeaMode('auto')
     } catch (e) {
