@@ -11,7 +11,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { supabase } from '@/integrations/supabase/client'
-import { archiveUserImage } from '@/modules/generator-ui/lib/archiveUserImage'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import type { JobDetail, CreateJobResult, AspectRatio } from '@/modules/job-orchestrator/contract'
 
@@ -196,7 +195,6 @@ export default function VideoToVideoDialog({
       if (upErr) throw new Error(upErr.message)
       const { data: pub } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(path)
       const firstFrameUrl = pub.publicUrl
-      void archiveUserImage({ userId, publicUrl: firstFrameUrl, sizeBytes: blob.size, mimeType: 'image/jpeg' })
       if (cancelled.current) return
 
       setStage('Sending to video model…')
