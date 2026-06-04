@@ -21,6 +21,7 @@ import {
   GripVertical,
   Hammer,
   History,
+  Image as ImageIcon,
   ImagePlus,
   LayoutGrid,
   Library,
@@ -556,6 +557,33 @@ export default function DashboardPage() {
       setDownloadingId(null)
     }
   }
+  const downloadImageFile = async (imageId: string, url: string) => {
+    if (downloadingId) return
+    setDownloadingId(imageId)
+    try {
+      const response = await fetch(url)
+      if (!response.ok) throw new Error('Download failed')
+      const blob = await response.blob()
+      const t = (blob.type || '').toLowerCase()
+      const ext = t.includes('png') ? 'png'
+        : t.includes('webp') ? 'webp'
+        : t.includes('jpeg') || t.includes('jpg') ? 'jpg'
+        : (url.toLowerCase().split('?')[0].split('.').pop() || 'png')
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = `image-${imageId.slice(0, 8)}.${ext}`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(blobUrl)
+    } catch (err) {
+      console.error('Image download failed', err)
+      window.open(url, '_blank')
+    } finally {
+      setDownloadingId(null)
+    }
+  }
   // Tracks card IDs currently re-submitting a Regenerate. Used to disable the
   // per-card regenerate button while its new Job is being created so the user
   // can't queue duplicates with rapid clicks.
@@ -619,18 +647,29 @@ export default function DashboardPage() {
   // ----- Storage archive: every film the user ever made, read live from the
   // server (independent of drafts/library local state). -----
   const [isArchiveOpen, setIsArchiveOpen] = useState(false)
+  const [archiveTab, setArchiveTab] = useState<'films' | 'images'>('films')
   const [archiveJobs, setArchiveJobs] = useState<JobSummary[]>([])
   const [archiveVideos, setArchiveVideos] = useState<VideoSummary[]>([])
+  const [archiveImages, setArchiveImages] = useState<UserImageItem[]>([])
   const [archiveLoading, setArchiveLoading] = useState(false)
   const loadArchive = async () => {
     setArchiveLoading(true)
     try {
-      const [jobs, videos] = await Promise.all([
+      const [jobs, videos, imagesRes] = await Promise.all([
         jobOrchestratorGateway.listMyJobs(200).catch(() => [] as JobSummary[]),
         videoLibraryGateway.listMyVideos(200).catch(() => [] as VideoSummary[]),
+        userId
+          ? supabase
+              .from('generator_user_images')
+              .select('id, storage_path, created_at, still_duration_seconds, width, height')
+              .eq('user_id', userId)
+              .is('deleted_at', null)
+              .order('created_at', { ascending: false })
+          : Promise.resolve({ data: [] as UserImageItem[] }),
       ])
       setArchiveJobs(jobs)
       setArchiveVideos(videos)
+      setArchiveImages(((imagesRes as { data?: UserImageItem[] }).data ?? []) as UserImageItem[])
     } finally {
       setArchiveLoading(false)
     }
@@ -2859,6 +2898,7 @@ export default function DashboardPage() {
     if (!userId) return
     const prev = userImages
     setUserImages((curr) => curr.filter((i) => i.id !== imageId))
+    setArchiveImages((curr) => curr.filter((i) => i.id !== imageId))
     // Also drop it from any per-project image snapshot it belonged to.
     {
       const nextMap: Record<string, UserImageItem[]> = {}
@@ -5038,18 +5078,137 @@ export default function DashboardPage() {
                   Storage
                 </DialogTitle>
                 <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
-                  {archiveJobs.length}
+                  {archiveTab === 'films' ? archiveJobs.length : archiveImages.length}
                 </span>
               </div>
             </div>
 
             <DialogDescription className="mt-1 text-left text-xs text-zinc-500">
-              All films — everything you've created
+              {archiveTab === 'films'
+                ? "All films — everything you've created"
+                : "All images — everything you've created"}
             </DialogDescription>
+
+            <div className="mt-3 inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-1">
+              <button
+                type="button"
+                onClick={() => setArchiveTab('films')}
+                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                  archiveTab === 'films'
+                    ? 'bg-white/[0.08] text-zinc-100'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <Clapperboard className="h-3.5 w-3.5" aria-hidden="true" />
+                Films
+                <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{archiveJobs.length}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setArchiveTab('images')}
+                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                  archiveTab === 'images'
+                    ? 'bg-white/[0.08] text-zinc-100'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                Images
+                <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{archiveImages.length}</span>
+              </button>
+            </div>
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto px-6 py-5">
-            {(() => {
+            {archiveTab === 'images' ? (() => {
+              if (archiveLoading && archiveImages.length === 0) {
+                return (
+                  <div className="grid min-h-[10rem] place-items-center text-zinc-500">
+                    <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
+                  </div>
+                )
+              }
+              if (archiveImages.length === 0) {
+                return (
+                  <div className="grid min-h-[10rem] place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
+                    <div>
+                      <ImageIcon className="mx-auto h-8 w-8 text-zinc-600" aria-hidden="true" />
+                      <p className="mt-3 text-sm font-medium text-zinc-300">No images yet</p>
+                      <p className="mt-2 text-xs leading-5 text-zinc-600">
+                        Every image you generate or upload will be archived here with its date.
+                      </p>
+                    </div>
+                  </div>
+                )
+              }
+              return (
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                  {archiveImages.map((img) => (
+                    <article
+                      key={img.id}
+                      className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3"
+                    >
+                      <div className="relative aspect-square w-full shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
+                        <img
+                          src={img.storage_path}
+                          alt="Generated"
+                          loading="lazy"
+                          className="h-full w-full object-cover"
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
+                        <span className="tabular-nums">{formatCreatedAt(img.created_at)}</span>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={downloadingId === img.id}
+                            onClick={() => { void downloadImageFile(img.id, img.storage_path) }}
+                            aria-label="Download image"
+                            title="Download image"
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                          >
+                            {downloadingId === img.id ? (
+                              <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                            ) : (
+                              <Download className="h-3 w-3" aria-hidden="true" />
+                            )}
+                          </button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <button
+                                type="button"
+                                aria-label="Delete image permanently"
+                                title="Delete permanently"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                              >
+                                <Trash2 className="h-3 w-3" aria-hidden="true" />
+                              </button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete this image permanently?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will permanently remove the image. This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => { void handleDeleteUserImage(img.id) }}
+                                  className="bg-rose-600 text-white hover:bg-rose-700"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )
+            })() : (() => {
               const videoByJob = new Map<string, VideoSummary>()
               for (const v of archiveVideos) {
                 if (!videoByJob.has(v.job_id)) videoByJob.set(v.job_id, v)
