@@ -2870,6 +2870,7 @@ export default function DashboardPage() {
     if (!userId) return
     const prev = userImages
     setUserImages((curr) => curr.filter((i) => i.id !== imageId))
+    setArchiveImages((curr) => curr.filter((i) => i.id !== imageId))
     // Also drop it from any per-project image snapshot it belonged to.
     {
       const nextMap: Record<string, UserImageItem[]> = {}
