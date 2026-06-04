@@ -619,18 +619,29 @@ export default function DashboardPage() {
   // ----- Storage archive: every film the user ever made, read live from the
   // server (independent of drafts/library local state). -----
   const [isArchiveOpen, setIsArchiveOpen] = useState(false)
+  const [archiveTab, setArchiveTab] = useState<'films' | 'images'>('films')
   const [archiveJobs, setArchiveJobs] = useState<JobSummary[]>([])
   const [archiveVideos, setArchiveVideos] = useState<VideoSummary[]>([])
+  const [archiveImages, setArchiveImages] = useState<UserImageItem[]>([])
   const [archiveLoading, setArchiveLoading] = useState(false)
   const loadArchive = async () => {
     setArchiveLoading(true)
     try {
-      const [jobs, videos] = await Promise.all([
+      const [jobs, videos, imagesRes] = await Promise.all([
         jobOrchestratorGateway.listMyJobs(200).catch(() => [] as JobSummary[]),
         videoLibraryGateway.listMyVideos(200).catch(() => [] as VideoSummary[]),
+        userId
+          ? supabase
+              .from('generator_user_images')
+              .select('id, storage_path, created_at, still_duration_seconds, width, height')
+              .eq('user_id', userId)
+              .is('deleted_at', null)
+              .order('created_at', { ascending: false })
+          : Promise.resolve({ data: [] as UserImageItem[] }),
       ])
       setArchiveJobs(jobs)
       setArchiveVideos(videos)
+      setArchiveImages(((imagesRes as { data?: UserImageItem[] }).data ?? []) as UserImageItem[])
     } finally {
       setArchiveLoading(false)
     }
