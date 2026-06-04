@@ -5148,14 +5148,20 @@ export default function DashboardPage() {
                       key={img.id}
                       className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3"
                     >
-                      <div className="relative aspect-square w-full shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewImageUrl(img.storage_path)}
+                        aria-label="View image"
+                        title="Click to view"
+                        className="group relative aspect-square w-full shrink-0 cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-[#15171a] transition hover:border-white/30"
+                      >
                         <img
                           src={img.storage_path}
                           alt="Generated"
                           loading="lazy"
-                          className="h-full w-full object-cover"
+                          className="h-full w-full object-cover transition group-hover:scale-[1.03]"
                         />
-                      </div>
+                      </button>
                       <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
                         <span className="tabular-nums">{formatCreatedAt(img.created_at)}</span>
                         <div className="flex shrink-0 items-center gap-1.5">
