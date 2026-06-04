@@ -2234,6 +2234,8 @@ export default function DashboardPage() {
       if (jobDraftMap[job.id]) continue // already owned by a draft
       if (claimedJobIds.has(job.id)) continue
       if (job.id.startsWith('merged-')) continue
+      if (job.provider_key === 'final-film') continue // Final video, not a draft
+      if (job.parent_final_job_id) continue // source clip of a Final Film
       if (deletedDraftIds.has(job.id)) continue
       if (normalizeStatus(job.status) !== 'completed') continue
       if (!job.video?.storage_path) continue
