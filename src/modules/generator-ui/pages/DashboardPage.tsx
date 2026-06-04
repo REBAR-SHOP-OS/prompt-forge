@@ -5483,6 +5483,8 @@ export default function DashboardPage() {
           </PopoverContent>
         </Popover>
       ) : null}
+      </>
+      )}
       <VoiceoverDialog
         open={isVoiceoverOpen}
         onOpenChange={setIsVoiceoverOpen}
