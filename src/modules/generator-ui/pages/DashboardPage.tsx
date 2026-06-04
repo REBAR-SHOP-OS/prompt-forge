@@ -6458,6 +6458,7 @@ export default function DashboardPage() {
                       >
                         {video.input_prompt}
                       </button>
+                      {!isReadOnlyProject && (
                       <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
                         <span
                           onClick={(event) => event.stopPropagation()}
