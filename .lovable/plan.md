@@ -1,37 +1,51 @@
-# Fix: random videos appear in Pending after a page refresh
+# Make Final videos view-only
 
-## Symptom
-The workspace looks empty (`Pending 0`, "No renders yet"), but after a browser refresh several old videos suddenly appear in the Pending / Working-clips column.
+## Goal
+When a user opens an entry from the **Final videos** section of the Library, it should open in a **read-only viewer**: they can watch/preview it, **download** it, and **delete** it from the library — but they can no longer modify the project in any way (no resuming it into the workspace, no adding/uploading clips, no trimming/reframing/voiceover/music edits, no re-running Final Film, no reordering or deleting individual source clips).
 
-## Root cause
-The Pending column is rendered from `displayedClips` → `displayedVideos`. In its default (no selected project) branch, `displayedVideos` returns **every** job in `generatedVideos`, only removing:
-- jobs hidden via `workspaceHiddenJobIds`, and
-- jobs claimed by another project or a **non-active** draft snapshot.
+Drafts are unaffected — they remain fully editable/resumable as today.
 
-On refresh, the hydration effect reloads **all** of the user's past jobs from the backend into `generatedVideos`. Any job that is neither hidden nor already owned by another draft/project is "loose", so it falls straight into the default list and shows up in Pending.
+## Concept
+The app already distinguishes the two cases by id:
+- Finalized project selected → `selectedProjectId` is set and does **not** start with `draft-`.
+- Draft selected → `selectedProjectId` starts with `draft-`.
 
-The app tries to paper over this with the "orphan backfill" effect, which later stamps each loose job into its own `draft-orphan-<id>` so it becomes "claimed" and disappears. But that effect runs **after** mount and asynchronously, so on every refresh the loose jobs flash/persist in Pending before (or instead of) being reclassified. This is fragile by design: Pending is defined as "everything minus exclusions" instead of "only the active chain".
+We introduce one derived flag:
 
-## Principled fix
-Pending must show **only the active working chain**, never the full job history. The app already tracks active-chain membership authoritatively in `activeJobIds` (every clip added to the workspace goes through `markActiveJob`/`markNewClip`; `Start Over` clears it). So the default branch of `displayedVideos` should additionally require `activeJobIds.has(id)`.
+```text
+isReadOnlyProject = !!selectedProjectId && !selectedProjectId.startsWith('draft-')
+```
 
-Result:
-- After `Start Over` or on a fresh/empty workspace, `activeJobIds` is empty → Pending stays empty across refreshes.
-- Freshly generated/uploaded/derived clips (all of which call `markActiveJob`) still appear immediately.
-- Old backend jobs that aren't part of the current chain never leak in, regardless of draft/orphan timing.
-
-Apply the same active-chain gate to `lockedRatio`'s "live videos" computation so the aspect-ratio lock is also driven by the active chain rather than loose history.
+This flag becomes the single source of truth for "the open project is a finished Final video, so block all mutations."
 
 ## Changes (single file: `src/modules/generator-ui/pages/DashboardPage.tsx`)
-1. **`displayedVideos`** (default branch, ~line 2540): change the filter
-   from `!workspaceHiddenJobIds.has(v.id) && !claimedByProjects.has(v.id)`
-   to also require `activeJobIds.has(v.id)`. Add `activeJobIds` to the memo dependency array (~line 2559).
-2. **`lockedRatio`** (~line 2437): change the `liveVideos` filter to also require `activeJobIds.has(v.id)` and add `activeJobIds` to its dependency array (~line 2463), so the chain lock follows the active chain too.
 
-No backend, schema, or other component changes. The orphan-backfill / Library-draft logic is left intact (it still builds Library cards from history); it simply no longer governs what Pending shows.
+### 1. Define the flag
+Add the `isReadOnlyProject` derived boolean near where `selectedProjectId` and related view state are computed, so it can be referenced by both handlers and JSX.
+
+### 2. Hard-stop the editing entry point
+`resumeSelectedProject()` is what converts a viewed finalized project back into an editable live workspace. Every edit action funnels through it (submit prompt, upload image, upload video, etc.). Make it **early-return without doing anything when `isReadOnlyProject` is true**. This is the principled backstop: even if a control is missed in the UI, no finalized project can be mutated.
+
+### 3. Disable/hide editing controls while a Final video is open
+When `isReadOnlyProject` is true, hide or disable these surfaces (keep them exactly as-is for drafts and normal workspace):
+
+- **Composer** (bottom prompt bar): disable the prompt textarea, the submit/forge button, model/duration/ratio controls, and the image/video upload buttons — or replace the composer with a small "This final video is read-only" notice.
+- **Top toolbar**: hide/disable the editing actions that mutate the open project — Final Film (re-render), Music soundtrack, Voiceover. `Start Over` stays available (it just exits/clears the view).
+- **Per-clip card actions** in the snapshot/history view: hide Trim, Reframe, Video-to-Video, voiceover, drag-to-reorder handles, and the per-card delete button for the source clips of the finalized project.
+
+### 4. Keep what the user asked to keep
+- **Download** button on the Final video library card stays active (already `stopPropagation`'d).
+- **Delete** button on the Final video library card stays active (removes the whole final video).
+- Playback/preview of the final video and its clips stays fully functional.
+
+## What is intentionally NOT changed
+- Drafts remain editable and resumable.
+- The normal generation workspace (no project selected) is untouched.
+- No backend, schema, RLS, or edge-function changes — this is purely frontend gating.
 
 ## Verification
-1. Generate or upload a clip → it appears in Pending.
-2. Refresh → the same active clip(s) persist, and no extra/old videos appear.
-3. Click `Start Over` → Pending empties; refresh again → Pending stays empty (no resurrected videos).
-4. Confirm Library still shows previous projects/drafts (history is untouched).
+1. Open a **Final video** from the Library → it plays/previews; composer and all edit controls are gone/disabled; Download and Delete still work.
+2. Try to add a clip / upload / trim / re-run Final Film → not possible; the project is never pushed back into the editable workspace.
+3. Open a **Draft** → still fully editable and resumable (unchanged).
+4. `Start Over` from a Final video view → returns to a clean workspace.
+5. Refresh while viewing a Final video → still read-only.

@@ -1278,6 +1278,11 @@ export default function DashboardPage() {
   // Library project. Cleared by Start Over or by the inline "Clear" button.
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
 
+  // A finalized "Final video" project is open when a project is selected and
+  // its id is NOT a draft. Such projects are READ-ONLY: the user may watch,
+  // download, and delete them, but cannot edit/resume/extend them.
+  const isReadOnlyProject = !!selectedProjectId && !selectedProjectId.startsWith('draft-')
+
   // Persist selectedProjectId + preview state per-user across refreshes so
   // a hard reload re-opens the same Final Film the user was viewing.
   const selectedProjectKey = userId ? `selected-project:${userId}` : null
@@ -3369,6 +3374,12 @@ export default function DashboardPage() {
     const pid = selectedProjectId
     const isDraft = pid.startsWith('draft-')
 
+    // Finalized "Final video" projects are read-only: never restore them into
+    // the live workspace. This is the principled backstop so no edit action can
+    // mutate a finished film, even if a UI control is missed.
+    if (!isDraft) return
+
+
     // Pull snapshots from whichever bucket owns this project id.
     const videoSnapshot = isDraft
       ? (draftSourceJobs[pid] ?? [])
@@ -5307,6 +5318,8 @@ export default function DashboardPage() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {!isReadOnlyProject && (
+      <>
       {isMerging ? (
         <div className="flex h-9 items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-2 text-xs uppercase tracking-[0.18em] text-zinc-200/80">
           <LoaderCircle className="h-[14px] w-[14px] animate-spin" aria-hidden="true" />
@@ -5470,6 +5483,8 @@ export default function DashboardPage() {
           </PopoverContent>
         </Popover>
       ) : null}
+      </>
+      )}
       <VoiceoverDialog
         open={isVoiceoverOpen}
         onOpenChange={setIsVoiceoverOpen}
@@ -6014,7 +6029,7 @@ export default function DashboardPage() {
                   {previewItem.job.input_prompt}
                 </p>
                 <div className="flex shrink-0 items-center gap-2">
-                  {previewItem.job.video?.storage_path ? (
+                  {previewItem.job.video?.storage_path && !isReadOnlyProject ? (
                     <button
                       type="button"
                       onClick={() => setTrimmingJobId(previewItem.job.id)}
@@ -6242,7 +6257,7 @@ export default function DashboardPage() {
                   return (
                     <Fragment key={`img-${img.id}`}>
                       <article
-                        draggable
+                        draggable={!isReadOnlyProject}
                         onDragStart={handleCardDragStart(clip.id)}
                         onDragOver={handleCardDragOver}
                         onDrop={handleCardDrop(clip.id)}
@@ -6282,6 +6297,7 @@ export default function DashboardPage() {
                           <p className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-200">
                             Uploaded image
                           </p>
+                          {!isReadOnlyProject && (
                           <div className="flex shrink-0 items-center gap-1.5">
                             <span
                               onClick={(event) => event.stopPropagation()}
@@ -6304,6 +6320,7 @@ export default function DashboardPage() {
                               <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                             </button>
                           </div>
+                          )}
                         </div>
                         <div
                           className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500"
@@ -6373,7 +6390,7 @@ export default function DashboardPage() {
                 return (
                   <Fragment key={video.id}>
                   <article
-                    draggable
+                    draggable={!isReadOnlyProject}
                     onDragStart={handleCardDragStart(video.id)}
                     onDragOver={handleCardDragOver}
                     onDrop={handleCardDrop(video.id)}
@@ -6441,6 +6458,7 @@ export default function DashboardPage() {
                       >
                         {video.input_prompt}
                       </button>
+                      {!isReadOnlyProject && (
                       <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
                         <span
                           onClick={(event) => event.stopPropagation()}
@@ -6593,6 +6611,7 @@ export default function DashboardPage() {
                           <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
                       </div>
+                      )}
                     </div>
 
                     <div className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500">
@@ -6891,6 +6910,7 @@ export default function DashboardPage() {
 
 
 
+      {!isReadOnlyProject && (
       <form
         ref={composerRef}
         className="fixed bottom-4 left-1/2 z-30 grid w-[min(96rem,calc(100vw-2rem))] -translate-x-1/2 gap-3 rounded-[22px] border border-white/10 bg-[#111214]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(96rem,calc(100vw-56rem))] sm:p-4"
@@ -7296,6 +7316,15 @@ export default function DashboardPage() {
           </div>
         </div>
       </form>
+      )}
+
+
+      {isReadOnlyProject && (
+        <div className="fixed bottom-4 left-1/2 z-30 flex w-[min(96rem,calc(100vw-2rem))] -translate-x-1/2 items-center justify-center gap-2 rounded-[22px] border border-white/10 bg-[#111214]/95 p-4 text-center text-xs text-zinc-400 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(96rem,calc(100vw-56rem))]">
+          <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+          <span>This final video is read-only. Use Start over to create a new project.</span>
+        </div>
+      )}
 
       <Dialog open={!!previewImageUrl} onOpenChange={(o) => { if (!o) setPreviewImageUrl(null) }}>
         <DialogContent className="max-w-3xl border-white/10 bg-black/90 p-3">
