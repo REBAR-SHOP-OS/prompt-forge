@@ -5318,6 +5318,8 @@ export default function DashboardPage() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {!isReadOnlyProject && (
+      <>
       {isMerging ? (
         <div className="flex h-9 items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-2 text-xs uppercase tracking-[0.18em] text-zinc-200/80">
           <LoaderCircle className="h-[14px] w-[14px] animate-spin" aria-hidden="true" />
