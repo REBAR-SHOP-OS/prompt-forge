@@ -2082,6 +2082,8 @@ export default function DashboardPage() {
     const clipsByDraft = new Map<string, JobDetail[]>()
     for (const v of generatedVideos) {
       if (v.id.startsWith('merged-')) continue
+      if (v.provider_key === 'final-film') continue // a Final video, never a draft
+      if (v.parent_final_job_id) continue // already part of a Final Film
       if (finalClaimedJobs.has(v.id)) continue
       const did = jobDraftMap[v.id]
       if (!did || deletedDraftIds.has(did)) continue
