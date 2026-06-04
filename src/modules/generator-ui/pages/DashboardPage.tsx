@@ -84,7 +84,7 @@ import { Button } from '@/components/ui/button'
 import { ApiError } from '@/core/api/client'
 import { useAuth } from '@/core/auth/AuthProvider'
 import { supabase } from '@/integrations/supabase/client'
-import WelcomeVideoOverlay from '@/modules/generator-ui/components/WelcomeVideoOverlay'
+
 import { SoundtrackWaveform, type SoundtrackWaveformHandle } from '@/modules/generator-ui/components/SoundtrackWaveform'
 import { TransitionPreview } from '@/modules/generator-ui/components/TransitionPreview'
 import { SequentialClipPlayer } from '@/modules/generator-ui/components/SequentialClipPlayer'
@@ -807,22 +807,8 @@ export default function DashboardPage() {
   const userId = session?.user?.id ?? null
   const approvedStorageKey = userId ? `approved-videos:${userId}` : null
   const [approvedIds, setApprovedIds] = useState<Set<string>>(() => new Set())
-  const [showWelcome, setShowWelcome] = useState(false)
 
-  useEffect(() => {
-    if (!userId) return
-    const key = `welcome_seen_${userId}`
-    try {
-      if (!window.localStorage.getItem(key)) setShowWelcome(true)
-    } catch { /* ignore */ }
-  }, [userId])
 
-  function dismissWelcome() {
-    if (userId) {
-      try { window.localStorage.setItem(`welcome_seen_${userId}`, '1') } catch { /* ignore */ }
-    }
-    setShowWelcome(false)
-  }
 
   useEffect(() => {
     // Library must persist across reloads — hydrate approved set from storage.
@@ -4916,7 +4902,7 @@ export default function DashboardPage() {
         addUploadedFiles(event.dataTransfer.files, 'Start')
       }}
     >
-      {showWelcome && <WelcomeVideoOverlay onClose={dismissWelcome} />}
+      
       {(() => {
         if (!trimmingJobId) return null
         const job =
