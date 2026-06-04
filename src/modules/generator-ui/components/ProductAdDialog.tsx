@@ -107,6 +107,7 @@ export default function ProductAdDialog({
       if (upErr) throw new Error(upErr.message)
       const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
       setUploadedImageUrl(data.publicUrl)
+      void archiveUserImage({ userId, publicUrl: data.publicUrl, sizeBytes: file.size, mimeType: file.type })
     } catch (e) {
       setError((e as Error).message ?? 'Image upload failed')
       setImagePreviewUrl(null)
