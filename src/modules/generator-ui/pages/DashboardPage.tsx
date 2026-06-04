@@ -556,6 +556,33 @@ export default function DashboardPage() {
       setDownloadingId(null)
     }
   }
+  const downloadImageFile = async (imageId: string, url: string) => {
+    if (downloadingId) return
+    setDownloadingId(imageId)
+    try {
+      const response = await fetch(url)
+      if (!response.ok) throw new Error('Download failed')
+      const blob = await response.blob()
+      const t = (blob.type || '').toLowerCase()
+      const ext = t.includes('png') ? 'png'
+        : t.includes('webp') ? 'webp'
+        : t.includes('jpeg') || t.includes('jpg') ? 'jpg'
+        : (url.toLowerCase().split('?')[0].split('.').pop() || 'png')
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = `image-${imageId.slice(0, 8)}.${ext}`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(blobUrl)
+    } catch (err) {
+      console.error('Image download failed', err)
+      window.open(url, '_blank')
+    } finally {
+      setDownloadingId(null)
+    }
+  }
   // Tracks card IDs currently re-submitting a Regenerate. Used to disable the
   // per-card regenerate button while its new Job is being created so the user
   // can't queue duplicates with rapid clicks.
