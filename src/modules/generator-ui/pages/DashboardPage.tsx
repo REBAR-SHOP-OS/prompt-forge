@@ -2413,10 +2413,12 @@ export default function DashboardPage() {
 
   const completedSourceVideos = useMemo(
     () => generatedVideos.filter(
-      (v) => normalizeStatus(v.status) === 'completed' && v.video?.storage_path
+      (v) => v.provider_key !== 'final-film' &&
+        normalizeStatus(v.status) === 'completed' && v.video?.storage_path
     ),
     [generatedVideos]
   )
+
 
   // Aspect-ratio chain lock: once the user has any clip in the current chain,
   // every subsequent clip must match the FIRST clip's aspect ratio. The lock
