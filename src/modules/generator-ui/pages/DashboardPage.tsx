@@ -1278,6 +1278,11 @@ export default function DashboardPage() {
   // Library project. Cleared by Start Over or by the inline "Clear" button.
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
 
+  // A finalized "Final video" project is open when a project is selected and
+  // its id is NOT a draft. Such projects are READ-ONLY: the user may watch,
+  // download, and delete them, but cannot edit/resume/extend them.
+  const isReadOnlyProject = !!selectedProjectId && !selectedProjectId.startsWith('draft-')
+
   // Persist selectedProjectId + preview state per-user across refreshes so
   // a hard reload re-opens the same Final Film the user was viewing.
   const selectedProjectKey = userId ? `selected-project:${userId}` : null
