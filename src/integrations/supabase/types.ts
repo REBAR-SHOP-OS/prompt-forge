@@ -325,6 +325,7 @@ export type Database = {
           last_frame_url: string | null
           model_key: string | null
           negative_prompt: string | null
+          parent_final_job_id: string | null
           provider_job_id: string | null
           provider_key: string | null
           requested_aspect_ratio: string | null
@@ -342,6 +343,7 @@ export type Database = {
           last_frame_url?: string | null
           model_key?: string | null
           negative_prompt?: string | null
+          parent_final_job_id?: string | null
           provider_job_id?: string | null
           provider_key?: string | null
           requested_aspect_ratio?: string | null
@@ -359,6 +361,7 @@ export type Database = {
           last_frame_url?: string | null
           model_key?: string | null
           negative_prompt?: string | null
+          parent_final_job_id?: string | null
           provider_job_id?: string | null
           provider_key?: string | null
           requested_aspect_ratio?: string | null
@@ -533,6 +536,17 @@ export type Database = {
           _user_id: string
         }
         Returns: undefined
+      }
+      generator_finalize_film: {
+        Args: {
+          _aspect_ratio: string
+          _clip_count: number
+          _duration: number
+          _source_job_ids: string[]
+          _storage_path: string
+          _user_id: string
+        }
+        Returns: string
       }
       generator_mark_job_processing: {
         Args: { _job_id: string; _provider_job_id: string; _user_id: string }
