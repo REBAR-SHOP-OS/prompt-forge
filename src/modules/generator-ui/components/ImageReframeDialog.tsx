@@ -7,6 +7,7 @@ import { Crop, LoaderCircle, UploadCloud, Wand2, Download, RefreshCw } from 'luc
 import { supabase } from '@/integrations/supabase/client'
 import { useAuth } from '@/core/auth/AuthProvider'
 import { useToast } from '@/hooks/use-toast'
+import { archiveUserImage } from '@/modules/generator-ui/lib/archiveUserImage'
 
 const RATIOS = [
   { value: '9:16', label: '9:16', hint: 'Reels', cls: 'aspect-[9/16]' },
