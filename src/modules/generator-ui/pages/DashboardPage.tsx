@@ -4551,6 +4551,40 @@ export default function DashboardPage() {
         }
         return next
       })
+
+      // Durable server-side record of this Final Film. This is the source of
+      // truth that survives reload / cache clear / another browser: the new
+      // `final-film` job appears under "Final videos" and its source clips are
+      // linked via parent_final_job_id so they never resurface as Drafts.
+      {
+        const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+        const sourceJobIds = eligibleClips
+          .filter((c): c is Extract<UnifiedClip, { kind: 'video' }> => c.kind === 'video')
+          .map((c) => c.job.id)
+          .filter((id) => UUID_RE.test(id))
+        try {
+          const finalJob = await jobOrchestratorGateway.finalizeFilm({
+            storagePath: publicUrl,
+            aspectRatio: mergedRatio,
+            durationSeconds: lastMergedPreview?.url === publicUrl ? undefined : undefined,
+            clipCount: mergeClips.length,
+            sourceJobIds,
+          })
+          // Reflect the durable record locally so categorization (which now
+          // keys on provider_key === 'final-film') updates immediately, and
+          // source clips drop out of Drafts via parent_final_job_id.
+          setGeneratedVideos((curr) => {
+            const linked = new Set(sourceJobIds)
+            const withParent = curr.map((j) =>
+              linked.has(j.id) ? { ...j, parent_final_job_id: finalJob.id } : j,
+            )
+            return [finalJob, ...withParent.filter((j) => j.id !== finalJob.id)]
+          })
+        } catch (err) {
+          console.warn('[finalize] server persist failed; keeping local-only entry', err)
+        }
+      }
+
       // Snapshot the source clips (video jobs only) so opening this Library
       // card later shows the correct HISTORY in selected-project mode.
       {
