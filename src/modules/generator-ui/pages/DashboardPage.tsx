@@ -21,6 +21,7 @@ import {
   GripVertical,
   Hammer,
   History,
+  Image as ImageIcon,
   ImagePlus,
   LayoutGrid,
   Library,
