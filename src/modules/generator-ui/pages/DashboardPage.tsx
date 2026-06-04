@@ -6388,7 +6388,7 @@ export default function DashboardPage() {
                 return (
                   <Fragment key={video.id}>
                   <article
-                    draggable
+                    draggable={!isReadOnlyProject}
                     onDragStart={handleCardDragStart(video.id)}
                     onDragOver={handleCardDragOver}
                     onDrop={handleCardDrop(video.id)}
