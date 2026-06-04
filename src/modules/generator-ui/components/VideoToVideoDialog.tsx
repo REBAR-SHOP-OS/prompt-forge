@@ -196,6 +196,7 @@ export default function VideoToVideoDialog({
       if (upErr) throw new Error(upErr.message)
       const { data: pub } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(path)
       const firstFrameUrl = pub.publicUrl
+      void archiveUserImage({ userId, publicUrl: firstFrameUrl, sizeBytes: blob.size, mimeType: 'image/jpeg' })
       if (cancelled.current) return
 
       setStage('Sending to video model…')
