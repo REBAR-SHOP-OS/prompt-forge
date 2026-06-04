@@ -2041,12 +2041,24 @@ export default function DashboardPage() {
       return tb - ta
     }
 
-    const finals: JobDetail[] = mergedEntries
-      .filter((j) => approvedIds.has(j.id))
-      .map((j) => liveById.get(j.id) ?? j)
-      .sort(sortDesc)
+    // Final videos = durable server-side `final-film` jobs PLUS the local
+    // mergedEntries cache (deduped). The server records survive reload / cache
+    // clear / another browser, so a finalized film never falls back to Drafts.
+    const finalsById = new Map<string, JobDetail>()
+    for (const j of generatedVideos) {
+      if (j.provider_key === 'final-film') finalsById.set(j.id, j)
+    }
+    for (const j of mergedEntries) {
+      if (!approvedIds.has(j.id)) continue
+      if (finalsById.has(j.id)) continue
+      finalsById.set(j.id, liveById.get(j.id) ?? j)
+    }
+    const finals: JobDetail[] = [...finalsById.values()].sort(sortDesc)
 
-    const drafts = [...draftEntries].sort(sortDesc)
+    // Drafts must never include anything that graduated into a Final Film.
+    const drafts = [...draftEntries]
+      .filter((d) => d.provider_key !== 'final-film' && !d.parent_final_job_id)
+      .sort(sortDesc)
 
     return {
       libraryItems: [...finals, ...drafts],
@@ -2054,6 +2066,7 @@ export default function DashboardPage() {
       draftItems: drafts,
     }
   }, [mergedEntries, draftEntries, generatedVideos, approvedIds])
+
 
   // ----- Auto-snapshot the active workspace into a Draft project -----
   // Any time the workspace has at least one live clip/image, mirror it to a
