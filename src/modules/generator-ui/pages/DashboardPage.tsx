@@ -7313,6 +7313,7 @@ export default function DashboardPage() {
       </form>
       )}
 
+
       {isReadOnlyProject && (
         <div className="fixed bottom-4 left-1/2 z-30 flex w-[min(96rem,calc(100vw-2rem))] -translate-x-1/2 items-center justify-center gap-2 rounded-[22px] border border-white/10 bg-[#111214]/95 p-4 text-center text-xs text-zinc-400 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(96rem,calc(100vw-56rem))]">
           <Lock className="h-3.5 w-3.5" aria-hidden="true" />
