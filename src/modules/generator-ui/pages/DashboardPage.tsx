@@ -6257,7 +6257,7 @@ export default function DashboardPage() {
                   return (
                     <Fragment key={`img-${img.id}`}>
                       <article
-                        draggable
+                        draggable={!isReadOnlyProject}
                         onDragStart={handleCardDragStart(clip.id)}
                         onDragOver={handleCardDragOver}
                         onDrop={handleCardDrop(clip.id)}
