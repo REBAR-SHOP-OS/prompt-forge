@@ -6297,6 +6297,7 @@ export default function DashboardPage() {
                           <p className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-200">
                             Uploaded image
                           </p>
+                          {!isReadOnlyProject && (
                           <div className="flex shrink-0 items-center gap-1.5">
                             <span
                               onClick={(event) => event.stopPropagation()}
@@ -6319,6 +6320,7 @@ export default function DashboardPage() {
                               <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                             </button>
                           </div>
+                          )}
                         </div>
                         <div
                           className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500"
