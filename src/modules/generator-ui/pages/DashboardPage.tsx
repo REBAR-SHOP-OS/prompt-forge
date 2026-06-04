@@ -2045,12 +2045,21 @@ export default function DashboardPage() {
     // mergedEntries cache (deduped). The server records survive reload / cache
     // clear / another browser, so a finalized film never falls back to Drafts.
     const finalsById = new Map<string, JobDetail>()
+    const finalStoragePaths = new Set<string>()
     for (const j of generatedVideos) {
-      if (j.provider_key === 'final-film') finalsById.set(j.id, j)
+      if (j.provider_key === 'final-film') {
+        finalsById.set(j.id, j)
+        const sp = j.video?.storage_path
+        if (sp) finalStoragePaths.add(sp)
+      }
     }
     for (const j of mergedEntries) {
       if (!approvedIds.has(j.id)) continue
       if (finalsById.has(j.id)) continue
+      // Skip local cache cards already covered by a durable server record
+      // (same merged file) so a finalized film never shows twice.
+      const sp = j.video?.storage_path
+      if (sp && finalStoragePaths.has(sp)) continue
       finalsById.set(j.id, liveById.get(j.id) ?? j)
     }
     const finals: JobDetail[] = [...finalsById.values()].sort(sortDesc)
