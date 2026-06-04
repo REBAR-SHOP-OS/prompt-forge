@@ -71,25 +71,6 @@ export const jobOrchestratorGateway = {
     }),
 
   /**
-   * Persist a Final Film server-side: creates a real `final-film` job + asset
-   * pointing at the merged storage path, and links the source clip jobs to it
-   * (parent_final_job_id) so they never resurface as Drafts. Returns the new
-   * JobDetail so the caller can drop it straight into the Final videos list.
-   */
-  finalizeFilm: (input: {
-    storagePath: string;
-    aspectRatio?: "16:9" | "1:1" | "9:16";
-    durationSeconds?: number;
-    clipCount?: number;
-    sourceJobIds?: string[];
-  }) =>
-    request<JobDetail>("/jobs-finalize", {
-      method: "POST",
-      body: JSON.stringify(input),
-    }),
-
-
-  /**
    * Replace the video asset of an existing job (e.g. after Apply Changes
    * in the trim dialog). Returns the fresh JobDetail.
    */

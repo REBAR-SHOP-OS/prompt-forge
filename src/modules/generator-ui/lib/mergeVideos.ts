@@ -732,27 +732,7 @@ export async function mergeVideoUrls(
   }
 
   const chosenMime = pickMimeType()
-  // Quality requirement: the recorder must NOT degrade the source. Chromium's
-  // default MediaRecorder bitrate (~2.5 Mbps) crushes 1080p / 9:16 footage,
-  // making the Final Film look blurry. Compute a visually-lossless bitrate from
-  // the canvas resolution + fps (~0.15 bits/pixel/frame), clamped to a safe
-  // 8–40 Mbps window, plus a clean 192 kbps audio track. We pass the options in
-  // a try/catch so an unsupported-options browser still records (never breaks
-  // Final Film) — it just falls back to the default bitrate.
-  const targetVideoBitrate = Math.round(
-    Math.min(40_000_000, Math.max(8_000_000, width * height * fps * 0.15)),
-  )
-  let recorder: MediaRecorder
-  try {
-    recorder = new MediaRecorder(outStream, {
-      mimeType: chosenMime,
-      videoBitsPerSecond: targetVideoBitrate,
-      audioBitsPerSecond: 192_000,
-    })
-  } catch (err) {
-    console.warn('[mergeVideoUrls] high-bitrate recorder unsupported, using defaults:', err)
-    recorder = new MediaRecorder(outStream, { mimeType: chosenMime })
-  }
+  const recorder = new MediaRecorder(outStream, { mimeType: chosenMime })
   const chunks: Blob[] = []
   recorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) chunks.push(e.data)

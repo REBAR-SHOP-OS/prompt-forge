@@ -3,7 +3,7 @@ import type { SupabaseClient } from "../../core/supabase.ts";
 import type { CreateJobInput, JobDetail, JobService, JobSummary } from "./contract.ts";
 
 const JOB_COLUMNS =
-  "id, status, input_prompt, provider_key, model_key, provider_job_id, parent_final_job_id, first_frame_url, last_frame_url, requested_duration, requested_aspect_ratio, created_at, updated_at";
+  "id, status, input_prompt, provider_key, model_key, provider_job_id, first_frame_url, last_frame_url, requested_duration, requested_aspect_ratio, created_at, updated_at";
 
 export const jobService: JobService = {
   async listMyJobs(userId, client, limit = 20) {

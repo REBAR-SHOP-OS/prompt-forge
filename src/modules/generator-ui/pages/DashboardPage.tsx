@@ -84,7 +84,7 @@ import { Button } from '@/components/ui/button'
 import { ApiError } from '@/core/api/client'
 import { useAuth } from '@/core/auth/AuthProvider'
 import { supabase } from '@/integrations/supabase/client'
-
+import WelcomeVideoOverlay from '@/modules/generator-ui/components/WelcomeVideoOverlay'
 import { SoundtrackWaveform, type SoundtrackWaveformHandle } from '@/modules/generator-ui/components/SoundtrackWaveform'
 import { TransitionPreview } from '@/modules/generator-ui/components/TransitionPreview'
 import { SequentialClipPlayer } from '@/modules/generator-ui/components/SequentialClipPlayer'
@@ -807,8 +807,22 @@ export default function DashboardPage() {
   const userId = session?.user?.id ?? null
   const approvedStorageKey = userId ? `approved-videos:${userId}` : null
   const [approvedIds, setApprovedIds] = useState<Set<string>>(() => new Set())
+  const [showWelcome, setShowWelcome] = useState(false)
 
+  useEffect(() => {
+    if (!userId) return
+    const key = `welcome_seen_${userId}`
+    try {
+      if (!window.localStorage.getItem(key)) setShowWelcome(true)
+    } catch { /* ignore */ }
+  }, [userId])
 
+  function dismissWelcome() {
+    if (userId) {
+      try { window.localStorage.setItem(`welcome_seen_${userId}`, '1') } catch { /* ignore */ }
+    }
+    setShowWelcome(false)
+  }
 
   useEffect(() => {
     // Library must persist across reloads — hydrate approved set from storage.
@@ -2041,33 +2055,12 @@ export default function DashboardPage() {
       return tb - ta
     }
 
-    // Final videos = durable server-side `final-film` jobs PLUS the local
-    // mergedEntries cache (deduped). The server records survive reload / cache
-    // clear / another browser, so a finalized film never falls back to Drafts.
-    const finalsById = new Map<string, JobDetail>()
-    const finalStoragePaths = new Set<string>()
-    for (const j of generatedVideos) {
-      if (j.provider_key === 'final-film') {
-        finalsById.set(j.id, j)
-        const sp = j.video?.storage_path
-        if (sp) finalStoragePaths.add(sp)
-      }
-    }
-    for (const j of mergedEntries) {
-      if (!approvedIds.has(j.id)) continue
-      if (finalsById.has(j.id)) continue
-      // Skip local cache cards already covered by a durable server record
-      // (same merged file) so a finalized film never shows twice.
-      const sp = j.video?.storage_path
-      if (sp && finalStoragePaths.has(sp)) continue
-      finalsById.set(j.id, liveById.get(j.id) ?? j)
-    }
-    const finals: JobDetail[] = [...finalsById.values()].sort(sortDesc)
-
-    // Drafts must never include anything that graduated into a Final Film.
-    const drafts = [...draftEntries]
-      .filter((d) => d.provider_key !== 'final-film' && !d.parent_final_job_id)
+    const finals: JobDetail[] = mergedEntries
+      .filter((j) => approvedIds.has(j.id))
+      .map((j) => liveById.get(j.id) ?? j)
       .sort(sortDesc)
+
+    const drafts = [...draftEntries].sort(sortDesc)
 
     return {
       libraryItems: [...finals, ...drafts],
@@ -2075,7 +2068,6 @@ export default function DashboardPage() {
       draftItems: drafts,
     }
   }, [mergedEntries, draftEntries, generatedVideos, approvedIds])
-
 
   // ----- Auto-snapshot the active workspace into a Draft project -----
   // Any time the workspace has at least one live clip/image, mirror it to a
@@ -2104,8 +2096,6 @@ export default function DashboardPage() {
     const clipsByDraft = new Map<string, JobDetail[]>()
     for (const v of generatedVideos) {
       if (v.id.startsWith('merged-')) continue
-      if (v.provider_key === 'final-film') continue // a Final video, never a draft
-      if (v.parent_final_job_id) continue // already part of a Final Film
       if (finalClaimedJobs.has(v.id)) continue
       const did = jobDraftMap[v.id]
       if (!did || deletedDraftIds.has(did)) continue
@@ -2256,8 +2246,6 @@ export default function DashboardPage() {
       if (jobDraftMap[job.id]) continue // already owned by a draft
       if (claimedJobIds.has(job.id)) continue
       if (job.id.startsWith('merged-')) continue
-      if (job.provider_key === 'final-film') continue // Final video, not a draft
-      if (job.parent_final_job_id) continue // source clip of a Final Film
       if (deletedDraftIds.has(job.id)) continue
       if (normalizeStatus(job.status) !== 'completed') continue
       if (!job.video?.storage_path) continue
@@ -2422,12 +2410,10 @@ export default function DashboardPage() {
 
   const completedSourceVideos = useMemo(
     () => generatedVideos.filter(
-      (v) => v.provider_key !== 'final-film' &&
-        normalizeStatus(v.status) === 'completed' && v.video?.storage_path
+      (v) => normalizeStatus(v.status) === 'completed' && v.video?.storage_path
     ),
     [generatedVideos]
   )
-
 
   // Aspect-ratio chain lock: once the user has any clip in the current chain,
   // every subsequent clip must match the FIRST clip's aspect ratio. The lock
@@ -4421,115 +4407,63 @@ export default function DashboardPage() {
             clipVolume: mixedClipVolume,
           }
         : undefined
-      // Quality requirement: a single video clip with no audio overlay and no
-      // local edit must be finalized WITHOUT any canvas re-encode, so the Final
-      // Film is byte-for-byte the same quality as the source. We only fall back
-      // to the merge/re-encode pipeline when stitching is actually needed
-      // (multiple clips, transitions, music, voiceover, or a trimmed/edited clip).
-      const singleVideo =
-        eligibleClips.length === 1 && eligibleClips[0].kind === 'video'
-          ? (eligibleClips[0] as Extract<UnifiedClip, { kind: 'video' }>)
-          : undefined
-      const canPassthrough = Boolean(
-        singleVideo && !hasMusic && !hasVoiceover && !editedClips[singleVideo.job.id],
+      // Overall pipeline watchdog: if the entire merge+transcode+upload chain
+      // hasn't finished in 10 min, surface a clear error instead of leaving
+      // the UI stuck on 95% forever. The timer id is cleared in `finally` so a
+      // successful run never leaves a dangling 10-min timeout behind.
+      const PIPELINE_TIMEOUT_MS = 10 * 60_000
+      const pipelineTimeout = new Promise<never>((_, reject) => {
+        pipelineTimer = setTimeout(() => reject(new Error('Final Film took too long (>10 min). Please try again with fewer or shorter clips.')), PIPELINE_TIMEOUT_MS)
+      })
+
+      const abortController = new AbortController()
+      mergeAbortRef.current = abortController
+      const mergeRes = await Promise.race([
+        mergeVideoUrls(
+          mergeClips,
+          (p) => {
+            // Map stages into a monotonic 1..99 percent so the UI keeps
+            // moving past the old 95% cap during encode and upload.
+            if (p.stage === 'encoding') {
+              setMergeStage('encoding')
+              setMergeProgress(Math.max(95, Math.min(99, Math.round(p.ratio * 100))))
+            } else if (p.stage === 'finalizing') {
+              setMergeStage('finalizing')
+              setMergeProgress((curr) => Math.max(curr, 95))
+            } else {
+              setMergeStage('recording')
+              // Record/transition stages cap at 94 to reserve 95+ for finalize/encode.
+              setMergeProgress(Math.max(1, Math.min(94, Math.round(p.ratio * 100))))
+            }
+          },
+          audioOpt,
+          transitionsForMerge,
+          abortController.signal,
+        ),
+        pipelineTimeout,
+      ])
+      if (abortController.signal.aborted) throw new MergeCancelledError()
+
+      setMergeStage('uploading')
+      setMergeProgress(99)
+      const filename = `merged-${Date.now()}.${mergeRes.extension}`
+      const storagePath = `${userId}/${filename}`
+      // Hard timeout on the upload: if Supabase storage hangs (network/CDN
+      // hiccup), we'd otherwise sit at 99% forever. 2 minutes is plenty for
+      // a typical Final Film blob (<200MB).
+      const uploadPromise = supabase.storage
+        .from(MERGED_BUCKET)
+        .upload(storagePath, mergeRes.blob, { contentType: mergeRes.mimeType, upsert: false })
+      const uploadTimeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Upload timed out after 120s. Please check your connection and try again.')), 120_000),
       )
+      const { error: upErr } = await Promise.race([uploadPromise, uploadTimeout]) as Awaited<typeof uploadPromise>
+      if (upErr) throw new Error(upErr.message)
 
-      let publicUrl: string
-      if (canPassthrough && singleVideo) {
-        // --- Lossless passthrough: finalize the original file as-is. ---
-        setMergeStage('uploading')
-        setMergeProgress(50)
-        const rawSrc = singleVideo.job.video!.storage_path as string
-        const OWN_HOST_RE = /(^|\.)supabase\.co$/i
-        const isOwn = (() => {
-          try {
-            const u = new URL(rawSrc)
-            if (typeof window !== 'undefined' && u.host === window.location.host) return true
-            return OWN_HOST_RE.test(u.host)
-          } catch {
-            return false
-          }
-        })()
-        if (isOwn) {
-          publicUrl = rawSrc
-        } else {
-          // Copy the bytes verbatim into our public bucket — no transcode, so
-          // quality is preserved exactly. This also keeps the Final Film URL
-          // alive after the provider's signed URL expires.
-          const proxied = await proxiedVideoUrl(rawSrc)
-          const resp = await fetch(proxied, { cache: 'no-store' })
-          if (!resp.ok) throw new Error(`Could not fetch source clip (${resp.status})`)
-          const blob = await resp.blob()
-          const ct = blob.type || 'video/mp4'
-          const ext = ct.includes('webm') ? 'webm' : 'mp4'
-          const path = `${userId}/final-${Date.now()}.${ext}`
-          const up = await supabase.storage
-            .from(MERGED_BUCKET)
-            .upload(path, blob, { contentType: ct, upsert: false })
-          if (up.error) throw new Error(up.error.message)
-          publicUrl = supabase.storage.from(MERGED_BUCKET).getPublicUrl(path).data.publicUrl
-        }
-        setMergeProgress(100)
-        setMergeStage(null)
-      } else {
-        // --- Merge pipeline (multi-clip / audio / transitions / edited clip). ---
-        // Overall pipeline watchdog: if the entire merge+transcode+upload chain
-        // hasn't finished in 10 min, surface a clear error instead of leaving
-        // the UI stuck on 95% forever. The timer id is cleared in `finally` so a
-        // successful run never leaves a dangling 10-min timeout behind.
-        const PIPELINE_TIMEOUT_MS = 10 * 60_000
-        const pipelineTimeout = new Promise<never>((_, reject) => {
-          pipelineTimer = setTimeout(() => reject(new Error('Final Film took too long (>10 min). Please try again with fewer or shorter clips.')), PIPELINE_TIMEOUT_MS)
-        })
-
-        const abortController = new AbortController()
-        mergeAbortRef.current = abortController
-        const mergeRes = await Promise.race([
-          mergeVideoUrls(
-            mergeClips,
-            (p) => {
-              // Map stages into a monotonic 1..99 percent so the UI keeps
-              // moving past the old 95% cap during encode and upload.
-              if (p.stage === 'encoding') {
-                setMergeStage('encoding')
-                setMergeProgress(Math.max(95, Math.min(99, Math.round(p.ratio * 100))))
-              } else if (p.stage === 'finalizing') {
-                setMergeStage('finalizing')
-                setMergeProgress((curr) => Math.max(curr, 95))
-              } else {
-                setMergeStage('recording')
-                // Record/transition stages cap at 94 to reserve 95+ for finalize/encode.
-                setMergeProgress(Math.max(1, Math.min(94, Math.round(p.ratio * 100))))
-              }
-            },
-            audioOpt,
-            transitionsForMerge,
-            abortController.signal,
-          ),
-          pipelineTimeout,
-        ])
-        if (abortController.signal.aborted) throw new MergeCancelledError()
-
-        setMergeStage('uploading')
-        setMergeProgress(99)
-        const filename = `merged-${Date.now()}.${mergeRes.extension}`
-        const storagePath = `${userId}/${filename}`
-        // Hard timeout on the upload: if Supabase storage hangs (network/CDN
-        // hiccup), we'd otherwise sit at 99% forever. 2 minutes is plenty for
-        // a typical Final Film blob (<200MB).
-        const uploadPromise = supabase.storage
-          .from(MERGED_BUCKET)
-          .upload(storagePath, mergeRes.blob, { contentType: mergeRes.mimeType, upsert: false })
-        const uploadTimeout = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Upload timed out after 120s. Please check your connection and try again.')), 120_000),
-        )
-        const { error: upErr } = await Promise.race([uploadPromise, uploadTimeout]) as Awaited<typeof uploadPromise>
-        if (upErr) throw new Error(upErr.message)
-
-        setMergeProgress(100)
-        setMergeStage(null)
-        publicUrl = supabase.storage.from(MERGED_BUCKET).getPublicUrl(storagePath).data.publicUrl
-      }
+      setMergeProgress(100)
+      setMergeStage(null)
+      const { data } = supabase.storage.from(MERGED_BUCKET).getPublicUrl(storagePath)
+      const publicUrl = data.publicUrl
 
 
       // Final Film preview overlay — Pending source clips stay untouched.
@@ -4579,39 +4513,6 @@ export default function DashboardPage() {
         }
         return next
       })
-
-      // Durable server-side record of this Final Film. This is the source of
-      // truth that survives reload / cache clear / another browser: the new
-      // `final-film` job appears under "Final videos" and its source clips are
-      // linked via parent_final_job_id so they never resurface as Drafts.
-      {
-        const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-        const sourceJobIds = eligibleClips
-          .filter((c): c is Extract<UnifiedClip, { kind: 'video' }> => c.kind === 'video')
-          .map((c) => c.job.id)
-          .filter((id) => UUID_RE.test(id))
-        try {
-          const finalJob = await jobOrchestratorGateway.finalizeFilm({
-            storagePath: publicUrl,
-            aspectRatio: mergedRatio,
-            clipCount: mergeClips.length,
-            sourceJobIds,
-          })
-          // Reflect the durable record locally so categorization (which now
-          // keys on provider_key === 'final-film') updates immediately, and
-          // source clips drop out of Drafts via parent_final_job_id.
-          setGeneratedVideos((curr) => {
-            const linked = new Set(sourceJobIds)
-            const withParent = curr.map((j) =>
-              linked.has(j.id) ? { ...j, parent_final_job_id: finalJob.id } : j,
-            )
-            return [finalJob, ...withParent.filter((j) => j.id !== finalJob.id)]
-          })
-        } catch (err) {
-          console.warn('[finalize] server persist failed; keeping local-only entry', err)
-        }
-      }
-
       // Snapshot the source clips (video jobs only) so opening this Library
       // card later shows the correct HISTORY in selected-project mode.
       {
@@ -4694,27 +4595,6 @@ export default function DashboardPage() {
         if (selectedProjectId && selectedProjectId.startsWith('draft-')) {
           draftIdsToRemove.add(selectedProjectId)
         }
-        // Also retire every draft that owned one of this film's source clips /
-        // images — including the deterministic per-item "draft-orphan-*" cards.
-        // Otherwise a clip that was its own draft would linger in Drafts after
-        // graduating into this Final video.
-        const sourceVideoIds = eligibleClips
-          .filter((c): c is Extract<UnifiedClip, { kind: 'video' }> => c.kind === 'video')
-          .map((c) => c.job.id)
-        const sourceImageIds = eligibleClips
-          .filter((c): c is Extract<UnifiedClip, { kind: 'image' }> => c.kind === 'image')
-          .map((c) => c.image.id)
-        for (const jid of sourceVideoIds) {
-          const owning = jobDraftMap[jid]
-          if (owning) draftIdsToRemove.add(owning)
-          draftIdsToRemove.add(`draft-orphan-${jid}`)
-        }
-        for (const iid of sourceImageIds) {
-          const owning = imageDraftMap[iid]
-          if (owning) draftIdsToRemove.add(owning)
-          draftIdsToRemove.add(`draft-orphan-img-${iid}`)
-        }
-
         if (draftIdsToRemove.size > 0) {
           setDraftEntries((prev) => {
             const next = prev.filter((d) => !draftIdsToRemove.has(d.id))
@@ -4984,7 +4864,7 @@ export default function DashboardPage() {
         addUploadedFiles(event.dataTransfer.files, 'Start')
       }}
     >
-      
+      {showWelcome && <WelcomeVideoOverlay onClose={dismissWelcome} />}
       {(() => {
         if (!trimmingJobId) return null
         const job =

@@ -6,7 +6,6 @@ export interface JobSummary {
   provider_key: string | null;
   model_key: string | null;
   provider_job_id?: string | null;
-  parent_final_job_id?: string | null;
   first_frame_url?: string | null;
   last_frame_url?: string | null;
   requested_duration?: number | null;
