@@ -84,7 +84,7 @@ import { Button } from '@/components/ui/button'
 import { ApiError } from '@/core/api/client'
 import { useAuth } from '@/core/auth/AuthProvider'
 import { supabase } from '@/integrations/supabase/client'
-import WelcomeVideoOverlay from '@/modules/generator-ui/components/WelcomeVideoOverlay'
+
 import { SoundtrackWaveform, type SoundtrackWaveformHandle } from '@/modules/generator-ui/components/SoundtrackWaveform'
 import { TransitionPreview } from '@/modules/generator-ui/components/TransitionPreview'
 import { SequentialClipPlayer } from '@/modules/generator-ui/components/SequentialClipPlayer'
@@ -4916,7 +4916,7 @@ export default function DashboardPage() {
         addUploadedFiles(event.dataTransfer.files, 'Start')
       }}
     >
-      {showWelcome && <WelcomeVideoOverlay onClose={dismissWelcome} />}
+      
       {(() => {
         if (!trimmingJobId) return null
         const job =
