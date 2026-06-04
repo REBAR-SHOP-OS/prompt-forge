@@ -6611,6 +6611,7 @@ export default function DashboardPage() {
                           <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                         </button>
                       </div>
+                      )}
                     </div>
 
                     <div className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500">
