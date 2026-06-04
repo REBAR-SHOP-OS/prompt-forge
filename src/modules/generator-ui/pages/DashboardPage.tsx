@@ -2041,12 +2041,24 @@ export default function DashboardPage() {
       return tb - ta
     }
 
-    const finals: JobDetail[] = mergedEntries
-      .filter((j) => approvedIds.has(j.id))
-      .map((j) => liveById.get(j.id) ?? j)
-      .sort(sortDesc)
+    // Final videos = durable server-side `final-film` jobs PLUS the local
+    // mergedEntries cache (deduped). The server records survive reload / cache
+    // clear / another browser, so a finalized film never falls back to Drafts.
+    const finalsById = new Map<string, JobDetail>()
+    for (const j of generatedVideos) {
+      if (j.provider_key === 'final-film') finalsById.set(j.id, j)
+    }
+    for (const j of mergedEntries) {
+      if (!approvedIds.has(j.id)) continue
+      if (finalsById.has(j.id)) continue
+      finalsById.set(j.id, liveById.get(j.id) ?? j)
+    }
+    const finals: JobDetail[] = [...finalsById.values()].sort(sortDesc)
 
-    const drafts = [...draftEntries].sort(sortDesc)
+    // Drafts must never include anything that graduated into a Final Film.
+    const drafts = [...draftEntries]
+      .filter((d) => d.provider_key !== 'final-film' && !d.parent_final_job_id)
+      .sort(sortDesc)
 
     return {
       libraryItems: [...finals, ...drafts],
@@ -2054,6 +2066,7 @@ export default function DashboardPage() {
       draftItems: drafts,
     }
   }, [mergedEntries, draftEntries, generatedVideos, approvedIds])
+
 
   // ----- Auto-snapshot the active workspace into a Draft project -----
   // Any time the workspace has at least one live clip/image, mirror it to a
@@ -2082,6 +2095,8 @@ export default function DashboardPage() {
     const clipsByDraft = new Map<string, JobDetail[]>()
     for (const v of generatedVideos) {
       if (v.id.startsWith('merged-')) continue
+      if (v.provider_key === 'final-film') continue // a Final video, never a draft
+      if (v.parent_final_job_id) continue // already part of a Final Film
       if (finalClaimedJobs.has(v.id)) continue
       const did = jobDraftMap[v.id]
       if (!did || deletedDraftIds.has(did)) continue
@@ -2232,6 +2247,8 @@ export default function DashboardPage() {
       if (jobDraftMap[job.id]) continue // already owned by a draft
       if (claimedJobIds.has(job.id)) continue
       if (job.id.startsWith('merged-')) continue
+      if (job.provider_key === 'final-film') continue // Final video, not a draft
+      if (job.parent_final_job_id) continue // source clip of a Final Film
       if (deletedDraftIds.has(job.id)) continue
       if (normalizeStatus(job.status) !== 'completed') continue
       if (!job.video?.storage_path) continue
@@ -2396,10 +2413,12 @@ export default function DashboardPage() {
 
   const completedSourceVideos = useMemo(
     () => generatedVideos.filter(
-      (v) => normalizeStatus(v.status) === 'completed' && v.video?.storage_path
+      (v) => v.provider_key !== 'final-film' &&
+        normalizeStatus(v.status) === 'completed' && v.video?.storage_path
     ),
     [generatedVideos]
   )
+
 
   // Aspect-ratio chain lock: once the user has any clip in the current chain,
   // every subsequent clip must match the FIRST clip's aspect ratio. The lock
@@ -4551,6 +4570,39 @@ export default function DashboardPage() {
         }
         return next
       })
+
+      // Durable server-side record of this Final Film. This is the source of
+      // truth that survives reload / cache clear / another browser: the new
+      // `final-film` job appears under "Final videos" and its source clips are
+      // linked via parent_final_job_id so they never resurface as Drafts.
+      {
+        const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+        const sourceJobIds = eligibleClips
+          .filter((c): c is Extract<UnifiedClip, { kind: 'video' }> => c.kind === 'video')
+          .map((c) => c.job.id)
+          .filter((id) => UUID_RE.test(id))
+        try {
+          const finalJob = await jobOrchestratorGateway.finalizeFilm({
+            storagePath: publicUrl,
+            aspectRatio: mergedRatio,
+            clipCount: mergeClips.length,
+            sourceJobIds,
+          })
+          // Reflect the durable record locally so categorization (which now
+          // keys on provider_key === 'final-film') updates immediately, and
+          // source clips drop out of Drafts via parent_final_job_id.
+          setGeneratedVideos((curr) => {
+            const linked = new Set(sourceJobIds)
+            const withParent = curr.map((j) =>
+              linked.has(j.id) ? { ...j, parent_final_job_id: finalJob.id } : j,
+            )
+            return [finalJob, ...withParent.filter((j) => j.id !== finalJob.id)]
+          })
+        } catch (err) {
+          console.warn('[finalize] server persist failed; keeping local-only entry', err)
+        }
+      }
+
       // Snapshot the source clips (video jobs only) so opening this Library
       // card later shows the correct HISTORY in selected-project mode.
       {
@@ -4633,6 +4685,27 @@ export default function DashboardPage() {
         if (selectedProjectId && selectedProjectId.startsWith('draft-')) {
           draftIdsToRemove.add(selectedProjectId)
         }
+        // Also retire every draft that owned one of this film's source clips /
+        // images — including the deterministic per-item "draft-orphan-*" cards.
+        // Otherwise a clip that was its own draft would linger in Drafts after
+        // graduating into this Final video.
+        const sourceVideoIds = eligibleClips
+          .filter((c): c is Extract<UnifiedClip, { kind: 'video' }> => c.kind === 'video')
+          .map((c) => c.job.id)
+        const sourceImageIds = eligibleClips
+          .filter((c): c is Extract<UnifiedClip, { kind: 'image' }> => c.kind === 'image')
+          .map((c) => c.image.id)
+        for (const jid of sourceVideoIds) {
+          const owning = jobDraftMap[jid]
+          if (owning) draftIdsToRemove.add(owning)
+          draftIdsToRemove.add(`draft-orphan-${jid}`)
+        }
+        for (const iid of sourceImageIds) {
+          const owning = imageDraftMap[iid]
+          if (owning) draftIdsToRemove.add(owning)
+          draftIdsToRemove.add(`draft-orphan-img-${iid}`)
+        }
+
         if (draftIdsToRemove.size > 0) {
           setDraftEntries((prev) => {
             const next = prev.filter((d) => !draftIdsToRemove.has(d.id))
