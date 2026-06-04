@@ -4566,7 +4566,6 @@ export default function DashboardPage() {
           const finalJob = await jobOrchestratorGateway.finalizeFilm({
             storagePath: publicUrl,
             aspectRatio: mergedRatio,
-            durationSeconds: lastMergedPreview?.url === publicUrl ? undefined : undefined,
             clipCount: mergeClips.length,
             sourceJobIds,
           })
