@@ -4668,6 +4668,27 @@ export default function DashboardPage() {
         if (selectedProjectId && selectedProjectId.startsWith('draft-')) {
           draftIdsToRemove.add(selectedProjectId)
         }
+        // Also retire every draft that owned one of this film's source clips /
+        // images — including the deterministic per-item "draft-orphan-*" cards.
+        // Otherwise a clip that was its own draft would linger in Drafts after
+        // graduating into this Final video.
+        const sourceVideoIds = eligibleClips
+          .filter((c): c is Extract<UnifiedClip, { kind: 'video' }> => c.kind === 'video')
+          .map((c) => c.job.id)
+        const sourceImageIds = eligibleClips
+          .filter((c): c is Extract<UnifiedClip, { kind: 'image' }> => c.kind === 'image')
+          .map((c) => c.image.id)
+        for (const jid of sourceVideoIds) {
+          const owning = jobDraftMap[jid]
+          if (owning) draftIdsToRemove.add(owning)
+          draftIdsToRemove.add(`draft-orphan-${jid}`)
+        }
+        for (const iid of sourceImageIds) {
+          const owning = imageDraftMap[iid]
+          if (owning) draftIdsToRemove.add(owning)
+          draftIdsToRemove.add(`draft-orphan-img-${iid}`)
+        }
+
         if (draftIdsToRemove.size > 0) {
           setDraftEntries((prev) => {
             const next = prev.filter((d) => !draftIdsToRemove.has(d.id))
