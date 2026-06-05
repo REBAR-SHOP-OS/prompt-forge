@@ -29,20 +29,20 @@ const FRAMES_BUCKET = 'wan-frames'
 const SPLIT_DURATIONS = [30, 45, 135]
 const sceneRange = (i: number) => `${i * 15}–${(i + 1) * 15}s`
 
-const CAMERA_STYLES = [
-  'Whip Pan',
-  'Orbit Shot',
-  'FPV Drone',
-  'Tracking Shot',
-  'Push In Cinematic',
-  'Fly Through',
-  'Crash Zoom',
-  'Handheld Dynamic',
-  'Dolly Zoom',
-  'Parallax Motion',
+const CAMERA_STYLES: { label: string; icon: string }[] = [
+  { label: 'Whip Pan', icon: '💫' },
+  { label: 'Orbit Shot', icon: '🛰️' },
+  { label: 'FPV Drone', icon: '🚁' },
+  { label: 'Tracking Shot', icon: '🎯' },
+  { label: 'Push In Cinematic', icon: '🎬' },
+  { label: 'Fly Through', icon: '🕊️' },
+  { label: 'Crash Zoom', icon: '💥' },
+  { label: 'Handheld Dynamic', icon: '🤳' },
+  { label: 'Dolly Zoom', icon: '🌀' },
+  { label: 'Parallax Motion', icon: '🧊' },
 ]
 
-type GenreTemplate = { id: string; label: string; prompt: string }
+type GenreTemplate = { id: string; label: string; icon: string; prompt: string }
 
 const GENRE_TEMPLATES: GenreTemplate[] = [
   {
