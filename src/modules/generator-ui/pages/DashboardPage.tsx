@@ -2078,7 +2078,48 @@ export default function DashboardPage() {
       setIsEnhancingPrompt(false)
     }
   }
-  const startUploadCount = uploadedFiles.filter((file) => file.target === 'Start').length
+
+  // Camera-style rewrite: rewrites the prompt in English around the chosen
+  // camera movement so the scenario feels more complete and cinematic.
+  const runCameraStyle = async (style: string) => {
+    if (isEnhancingPrompt || isSubmitting) return
+    setIsEnhancingPrompt(true)
+    setActiveCameraStyle(style)
+    setComposerError(null)
+    try {
+      const imageUrls = [readyStartFrame?.url, readyEndFrame?.url].filter(
+        (u): u is string => typeof u === 'string' && u.length > 0,
+      )
+      const { data, error } = await supabase.functions.invoke('enhance-prompt', {
+        body: {
+          prompt: promptText.trim(),
+          imageUrls,
+          mode: 'camera',
+          cameraStyle: style,
+        },
+      })
+      if (error) {
+        const ctx = (error as unknown as { context?: { status?: number } })?.context
+        const status = ctx?.status
+        if (status === 429) setComposerError('Rate limit reached. Try again in a moment.')
+        else if (status === 402) setComposerError('AI credits exhausted. Add credits to continue.')
+        else setComposerError('Could not apply camera style. Please try again.')
+        return
+      }
+      const enhanced = (data as { enhancedPrompt?: string } | null)?.enhancedPrompt?.trim()
+      if (!enhanced) {
+        setComposerError('Could not apply camera style. Please try again.')
+        return
+      }
+      setPromptText(enhanced)
+      setIsCameraMenuOpen(false)
+    } catch {
+      setComposerError('Could not apply camera style. Please try again.')
+    } finally {
+      setIsEnhancingPrompt(false)
+    }
+  }
+
   const endUploadCount = uploadedFiles.filter((file) => file.target === 'End').length
   const visibleVideos = useMemo(() => {
     return [...mergedEntries, ...generatedVideos]
