@@ -181,7 +181,7 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json().catch(() => null) as
-      | { text?: string; gender?: string; tone?: string }
+      | { text?: string; gender?: string; tone?: string; durationSec?: number }
       | null
     if (!body) {
       return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
@@ -193,6 +193,13 @@ Deno.serve(async (req) => {
     const text = (body.text || '').trim()
     const gender: Gender = isGender(body.gender) ? body.gender : 'female'
     const tone: Tone = isTone(body.tone) ? body.tone : 'narrative'
+
+    // Optional target duration in seconds (1–600). Omitted => no constraint.
+    let targetDurationSec: number | null = null
+    if (typeof body.durationSec === 'number' && isFinite(body.durationSec)) {
+      const d = Math.round(body.durationSec)
+      if (d >= 1 && d <= 600) targetDurationSec = d
+    }
 
     if (!text) {
       return new Response(JSON.stringify({ error: 'text is required' }), {
@@ -208,7 +215,10 @@ Deno.serve(async (req) => {
     }
 
     const voiceName = VOICE_MAP[gender][tone]
-    const styledPrompt = `${STYLE_INSTRUCTION[tone]}: ${text}`
+    const paceHint = targetDurationSec
+      ? ` Pace the delivery naturally so the entire line lasts about ${targetDurationSec} seconds.`
+      : ''
+    const styledPrompt = `${STYLE_INSTRUCTION[tone]}${paceHint}: ${text}`
 
     const url =
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${encodeURIComponent(apiKey)}`
