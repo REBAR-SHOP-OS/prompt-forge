@@ -2387,6 +2387,67 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, draftEntries, draftSourceJobs, draftSourceImages])
 
+  // One-time cleanup of legacy pollution: earlier builds could turn a Film
+  // Cover image into its own `draft-orphan-img-*` draft. Such a draft has a
+  // single image whose id is a known cover. Remove those ghost drafts, strip
+  // their ownership stamp, and tombstone them so they never come back.
+  const coverGhostCleanedRef = useRef(false)
+  useEffect(() => {
+    if (!userId) return
+    if (coverGhostCleanedRef.current) return
+    if (Object.keys(coverImages).length === 0) return
+    coverGhostCleanedRef.current = true
+
+    const coverIds = new Set<string>()
+    for (const ci of Object.values(coverImages)) coverIds.add(ci.id)
+
+    const ghostDraftIds = new Set<string>()
+    for (const [draftId, imgs] of Object.entries(draftSourceImages)) {
+      const onlyCovers = imgs.length > 0 && imgs.every((i) => coverIds.has(i.id))
+      const noClips = (draftSourceJobs[draftId] ?? []).length === 0
+      if (onlyCovers && noClips) ghostDraftIds.add(draftId)
+    }
+    // Also catch deterministic orphan ids built from cover image ids even if
+    // the snapshot wasn't written yet.
+    for (const id of coverIds) ghostDraftIds.add(`draft-orphan-img-${id}`)
+
+    if (ghostDraftIds.size === 0) return
+
+    setDraftEntries((prev) => {
+      const next = prev.filter((d) => !ghostDraftIds.has(d.id))
+      if (next.length === prev.length) return prev
+      persistDraftEntries(next)
+      return next
+    })
+    setDraftSourceImages((prev) => {
+      const next = { ...prev }
+      let changed = false
+      for (const id of ghostDraftIds) { if (id in next) { delete next[id]; changed = true } }
+      if (!changed) return prev
+      persistDraftSourceImages(next)
+      return next
+    })
+    setImageDraftMap((prev) => {
+      const next = { ...prev }
+      let changed = false
+      for (const [imgId, did] of Object.entries(prev)) {
+        if (coverIds.has(imgId) || ghostDraftIds.has(did)) { delete next[imgId]; changed = true }
+      }
+      if (!changed) return prev
+      persistImageDraftMap(next)
+      return next
+    })
+    setDeletedDraftIds((prev) => {
+      const next = new Set(prev)
+      for (const id of ghostDraftIds) next.add(id)
+      persistDeletedDraftIds(next)
+      return next
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, coverImages, draftSourceImages, draftSourceJobs])
+
+
+
   // Backfill `projectSourceJobs` / `projectSourceImages` for legacy Final
   // Films that were merged before the snapshot system existed. Without this,
   // opening such a project shows a blank "0:00" card (the merged film itself)
