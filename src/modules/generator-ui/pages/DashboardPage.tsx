@@ -27,7 +27,7 @@ import {
   Library,
   LoaderCircle,
   Lock,
-  Loader2,
+  
   LogOut,
   Mic,
   MicOff,
@@ -608,7 +608,7 @@ export default function DashboardPage() {
   // reflects only the in-memory active workspace.
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false)
-  const [isCameraMenuOpen, setIsCameraMenuOpen] = useState(false)
+  
   const [activeCameraStyle, setActiveCameraStyle] = useState<string | null>(null)
   // Live-measured vertical budget for the preview stage. The composer is
   // position:fixed at the bottom and its height changes (textarea rows, error
@@ -2014,7 +2014,7 @@ export default function DashboardPage() {
     if (typeof window === 'undefined') return 'wan-i2v'
     return window.localStorage.getItem('ui:preferred-model') ?? 'wan-i2v'
   })
-  const [narratorMode, setNarratorMode] = useState<'idle' | 'input'>('idle')
+  const [narratorMode, setNarratorMode] = useState<'idle' | 'input' | 'camera'>('idle')
   const [narratorScript, setNarratorScript] = useState('')
 
   const selectedModel = useMemo<ModelChoice>(() => {
@@ -2128,7 +2128,8 @@ export default function DashboardPage() {
         return
       }
       setPromptText(enhanced)
-      setIsCameraMenuOpen(false)
+      setIsPromptMenuOpen(false)
+      setNarratorMode('idle')
     } catch {
       setComposerError('Could not apply camera style. Please try again.')
     } finally {
@@ -7271,53 +7272,8 @@ export default function DashboardPage() {
           >
             <Package className="h-4 w-4" aria-hidden="true" />
           </button>
-
-          <Popover open={isCameraMenuOpen} onOpenChange={setIsCameraMenuOpen}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                disabled={isEnhancingPrompt || isSubmitting}
-                className={`inline-flex h-8 w-8 items-center justify-center rounded-full border transition disabled:opacity-50 disabled:cursor-not-allowed ${
-                  activeCameraStyle
-                    ? 'border-amber-300/50 bg-amber-300/10 text-amber-100'
-                    : 'border-white/10 bg-black/20 text-zinc-300 hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100'
-                }`}
-                aria-label="Camera style"
-                title="Camera style — rewrite the prompt around a camera movement"
-              >
-                {isEnhancingPrompt && activeCameraStyle ? (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                ) : (
-                  <Camera className="h-4 w-4" aria-hidden="true" />
-                )}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-64 p-2">
-              <div className="px-2 pb-2 pt-1">
-                <p className="text-xs font-semibold text-zinc-200">Camera style</p>
-                <p className="text-[11px] text-zinc-500">
-                  Rewrites your prompt in English around the chosen camera movement.
-                </p>
-              </div>
-              <div className="grid gap-0.5">
-                {CAMERA_STYLES.map((style) => (
-                  <button
-                    key={style.label}
-                    type="button"
-                    disabled={isEnhancingPrompt || isSubmitting}
-                    onClick={() => runCameraStyle(style.label)}
-                    className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-white/5 disabled:opacity-50 ${
-                      activeCameraStyle === style.label ? 'bg-amber-300/10 text-amber-100' : 'text-zinc-200'
-                    }`}
-                  >
-                    <span>{style.label}</span>
-                    <span className="text-[10px] uppercase tracking-wide text-zinc-500">{style.hint}</span>
-                  </button>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
         </div>
+
 
 
 
@@ -7568,6 +7524,57 @@ export default function DashboardPage() {
                         Apply
                       </button>
                     </div>
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => setNarratorMode('camera')}
+                  disabled={isEnhancingPrompt || promptText.trim().length === 0}
+                  title={promptText.trim().length === 0 ? 'Write a prompt first' : undefined}
+                  className={`mt-1 flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40 ${
+                    narratorMode === 'camera' ? 'bg-white/[0.04]' : ''
+                  }`}
+                >
+                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-zinc-300">
+                    <Camera className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-zinc-100">Camera style</span>
+                    <span className="block text-xs leading-5 text-zinc-500">
+                      Add a cinematic camera movement to your prompt (keeps your wording).
+                    </span>
+                  </span>
+                </button>
+
+                {narratorMode === 'camera' ? (
+                  <div className="mt-2 space-y-2 border-t border-white/10 px-1 pt-3">
+                    <p className="px-1 text-xs font-medium text-zinc-400">Choose a camera movement</p>
+                    <div className="grid grid-cols-2 gap-1">
+                      {CAMERA_STYLES.map((style) => (
+                        <button
+                          key={style.label}
+                          type="button"
+                          disabled={isEnhancingPrompt || isSubmitting}
+                          onClick={() => runCameraStyle(style.label)}
+                          title={style.hint}
+                          className={`flex flex-col items-start gap-0.5 rounded-md border px-2 py-1.5 text-left transition hover:bg-white/5 disabled:opacity-50 ${
+                            activeCameraStyle === style.label
+                              ? 'border-amber-300/50 bg-amber-300/10 text-amber-100'
+                              : 'border-white/10 text-zinc-200'
+                          }`}
+                        >
+                          <span className="text-xs font-semibold">{style.label}</span>
+                          <span className="text-[10px] leading-tight text-zinc-500">{style.hint}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {isEnhancingPrompt && activeCameraStyle ? (
+                      <p className="flex items-center gap-2 px-1 text-[11px] text-amber-200/90">
+                        <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                        Applying {activeCameraStyle}…
+                      </p>
+                    ) : null}
                   </div>
                 ) : null}
               </PopoverContent>
