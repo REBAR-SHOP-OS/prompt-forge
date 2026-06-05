@@ -6461,6 +6461,7 @@ export default function DashboardPage() {
                 <ImagePlus className="h-4 w-4" aria-hidden="true" />
               )}
             </button>
+            {!isReadOnlyProject && (
             <button
               type="button"
               onClick={() => { setAiDialogMode('cover'); setIsAiImageDialogOpen(true) }}
@@ -6471,6 +6472,7 @@ export default function DashboardPage() {
             >
               <Camera className="h-4 w-4" aria-hidden="true" />
             </button>
+            )}
             <input
               ref={uploadVideoInputRef}
               id="upload-film-input"
