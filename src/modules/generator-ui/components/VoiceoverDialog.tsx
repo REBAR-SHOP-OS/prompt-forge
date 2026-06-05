@@ -101,11 +101,17 @@ export function VoiceoverDialog({
     }
     setIsGenerating(true)
     try {
+      const durationSec = resolveDurationSec()
       const { data, error } = await supabase.functions.invoke('tts-generate', {
-        body: { text: trimmed, gender, tone },
+        body: { text: trimmed, gender, tone, ...(durationSec ? { durationSec } : {}) },
       })
       if (error) throw error
-      const payload = data as { audioBase64?: string; mimeType?: string; error?: string } | null
+      const payload = data as {
+        audioBase64?: string
+        mimeType?: string
+        error?: string
+        warning?: string
+      } | null
       if (!payload?.audioBase64) {
         throw new Error(payload?.error || 'No audio returned')
       }
@@ -117,6 +123,8 @@ export function VoiceoverDialog({
       const url = URL.createObjectURL(blob)
       lastUrlRef.current = url
       setAudioUrl(url)
+      if (payload.warning) toast.warning(payload.warning)
+
     } catch (err) {
       console.error('Voiceover generation failed', err)
       toast.error(
