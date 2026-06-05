@@ -301,6 +301,7 @@ export default function ProductAdDialog({
     setCameraStyle(CAMERA_STYLES[0])
     setCameraMovement('')
     setGenre('')
+    setScene('')
     setScenes([])
     setError(null)
     setCopiedIndex(null)
