@@ -7270,7 +7270,54 @@ export default function DashboardPage() {
           >
             <Package className="h-4 w-4" aria-hidden="true" />
           </button>
+
+          <Popover open={isCameraMenuOpen} onOpenChange={setIsCameraMenuOpen}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                disabled={isEnhancingPrompt || isSubmitting}
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-full border transition disabled:opacity-50 disabled:cursor-not-allowed ${
+                  activeCameraStyle
+                    ? 'border-amber-300/50 bg-amber-300/10 text-amber-100'
+                    : 'border-white/10 bg-black/20 text-zinc-300 hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100'
+                }`}
+                aria-label="Camera style"
+                title="Camera style — rewrite the prompt around a camera movement"
+              >
+                {isEnhancingPrompt && activeCameraStyle ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Camera className="h-4 w-4" aria-hidden="true" />
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-64 p-2">
+              <div className="px-2 pb-2 pt-1">
+                <p className="text-xs font-semibold text-zinc-200">Camera style</p>
+                <p className="text-[11px] text-zinc-500">
+                  Rewrites your prompt in English around the chosen camera movement.
+                </p>
+              </div>
+              <div className="grid gap-0.5">
+                {CAMERA_STYLES.map((style) => (
+                  <button
+                    key={style.label}
+                    type="button"
+                    disabled={isEnhancingPrompt || isSubmitting}
+                    onClick={() => runCameraStyle(style.label)}
+                    className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-white/5 disabled:opacity-50 ${
+                      activeCameraStyle === style.label ? 'bg-amber-300/10 text-amber-100' : 'text-zinc-200'
+                    }`}
+                  >
+                    <span>{style.label}</span>
+                    <span className="text-[10px] uppercase tracking-wide text-zinc-500">{style.hint}</span>
+                  </button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
+
 
 
         {!isTextToVideo ? (
