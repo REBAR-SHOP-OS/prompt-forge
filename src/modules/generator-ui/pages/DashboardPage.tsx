@@ -2659,8 +2659,8 @@ export default function DashboardPage() {
       if (did === activeDraftId) continue
       for (const i of imgs) claimedByProjects.add(i.id)
     }
-    return userImages.filter((i) => !workspaceHiddenImageIds.has(i.id) && !claimedByProjects.has(i.id) && !allCoverImageIds.has(i.id))
-  }, [userImages, selectedProjectId, projectSourceImages, draftSourceImages, activeDraftId, workspaceHiddenImageIds, allCoverImageIds])
+    return userImages.filter((i) => activeImageIds.has(i.id) && !workspaceHiddenImageIds.has(i.id) && !claimedByProjects.has(i.id) && !allCoverImageIds.has(i.id))
+  }, [userImages, selectedProjectId, projectSourceImages, draftSourceImages, activeDraftId, workspaceHiddenImageIds, allCoverImageIds, activeImageIds])
 
 
   const displayedClips = useMemo<UnifiedClip[]>(() => {
@@ -3437,6 +3437,15 @@ export default function DashboardPage() {
         persistWorkspaceHiddenJobIds(next)
         return next
       })
+      // Membership is authoritative: mark the resumed clips active so they
+      // join the workspace + Final Film scope. Nothing outside this manifest
+      // can ever leak into the film.
+      setActiveJobIds((curr) => {
+        const next = new Set(curr)
+        for (const j of videoSnapshot) next.add(j.id)
+        persistActiveJobIds(next)
+        return next
+      })
     }
     if (imageSnapshot.length > 0) {
       setUserImages((current) => {
@@ -3448,6 +3457,12 @@ export default function DashboardPage() {
         const next = new Set(curr)
         for (const i of imageSnapshot) next.delete(i.id)
         persistWorkspaceHiddenImageIds(next)
+        return next
+      })
+      setActiveImageIds((curr) => {
+        const next = new Set(curr)
+        for (const i of imageSnapshot) next.add(i.id)
+        persistActiveImageIds(next)
         return next
       })
     }
@@ -4248,6 +4263,7 @@ export default function DashboardPage() {
         for (const c of clips) claimedJobIds.add(c.id)
       }
       for (const v of completedSourceVideos) {
+        if (!activeJobIds.has(v.id)) continue
         if (workspaceHiddenJobIds.has(v.id)) continue
         if (claimedJobIds.has(v.id)) continue
         videoJobsById.set(v.id, v)
