@@ -265,8 +265,34 @@ Deno.serve(async (req) => {
       })
     }
 
-    const pcm = base64ToBytes(inline.data)
+    let pcm = base64ToBytes(inline.data)
     const sampleRate = parseRateFromMime(inline.mimeType)
+
+    // Snap to the requested duration via pitch-preserving time-stretch.
+    const bytesPerSample = 2
+    const rawDurationSec = pcm.byteLength / (sampleRate * bytesPerSample)
+    let actualDurationSec = rawDurationSec
+    let warning: string | undefined
+
+    if (targetDurationSec && rawDurationSec > 0) {
+      if (Math.abs(rawDurationSec - targetDurationSec) > 0.15) {
+        // factor = target / source (>1 => stretch longer). Clamp to keep quality.
+        let factor = targetDurationSec / rawDurationSec
+        const clamped = Math.min(1.8, Math.max(0.6, factor))
+        if (clamped !== factor) {
+          warning =
+            `The text is ${rawDurationSec > targetDurationSec ? 'too long' : 'too short'} ` +
+            `for a ${targetDurationSec}s voiceover, so the duration was adjusted as close as possible. ` +
+            `Try ${rawDurationSec > targetDurationSec ? 'shortening' : 'lengthening'} the text for an exact fit.`
+          factor = clamped
+        }
+        pcm = timeStretchPcm16(pcm, factor, sampleRate)
+        actualDurationSec = pcm.byteLength / (sampleRate * bytesPerSample)
+      } else {
+        actualDurationSec = rawDurationSec
+      }
+    }
+
     const wav = pcmToWav(pcm, sampleRate, 1)
     const wavBase64 = bytesToBase64(wav)
 
@@ -278,6 +304,9 @@ Deno.serve(async (req) => {
         voiceName,
         gender,
         tone,
+        targetDurationSec,
+        actualDurationSec: Math.round(actualDurationSec * 100) / 100,
+        warning,
       }),
       {
         status: 200,
