@@ -132,7 +132,7 @@ Deno.serve(async (req) => {
       : [];
 
 
-    if (!prompt && mode !== "narrated" && mode !== "camera") {
+    if (!prompt && mode !== "narrated") {
       return new Response(JSON.stringify({ error: "prompt is required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
