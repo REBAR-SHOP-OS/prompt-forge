@@ -53,6 +53,7 @@ export default function ProductAdDialog({
   const [duration, setDuration] = useState<ProductAdDuration>(defaultDuration)
   const [productName, setProductName] = useState('')
   const [productDescription, setProductDescription] = useState('')
+  const [userPrompt, setUserPrompt] = useState('')
   const [cameraStyle, setCameraStyle] = useState<string>(CAMERA_STYLES[0])
   const [cameraMovement, setCameraMovement] = useState('')
   const [isWriting, setIsWriting] = useState(false)
@@ -125,20 +126,27 @@ export default function ProductAdDialog({
 
   async function generate() {
     if (isWriting) return
-    if (!productName.trim() && !uploadedImageUrl) {
-      setError('Add a product name or attach a product photo.')
+    if (!userPrompt.trim() && !productName.trim() && !uploadedImageUrl) {
+      setError('Write a prompt, add a product name, or attach a product photo.')
       return
     }
     setIsWriting(true)
     setError(null)
     setScenes([])
     try {
+      const trimmedPrompt = userPrompt.trim()
+      const trimmedName = productName.trim()
+      const idea = trimmedPrompt
+        ? trimmedName
+          ? `${trimmedPrompt}\n\nThis is an advertisement for the product "${trimmedName}".`
+          : trimmedPrompt
+        : trimmedName
+          ? `Advertisement for the product "${trimmedName}".`
+          : 'Advertisement for the attached product.'
       const { data, error: invokeErr } = await supabase.functions.invoke('scenario-write', {
         body: {
           mode: 'product-ad',
-          idea: productName.trim()
-            ? `Advertisement for the product "${productName.trim()}".`
-            : 'Advertisement for the attached product.',
+          idea,
           durationSeconds: duration,
           imageUrl: uploadedImageUrl ?? undefined,
           productName: productName.trim() || undefined,
@@ -200,6 +208,7 @@ export default function ProductAdDialog({
   function reset() {
     setProductName('')
     setProductDescription('')
+    setUserPrompt('')
     setCameraStyle(CAMERA_STYLES[0])
     setCameraMovement('')
     setScenes([])
@@ -211,7 +220,7 @@ export default function ProductAdDialog({
 
   const isSplit = SPLIT_DURATIONS.includes(duration) && scenes.length > 1
   const concatenated = scenes.join('\n\n')
-  const canGenerate = (productName.trim().length > 0 || Boolean(uploadedImageUrl)) && !isUploadingImage
+  const canGenerate = (userPrompt.trim().length > 0 || productName.trim().length > 0 || Boolean(uploadedImageUrl)) && !isUploadingImage
 
   return (
     <Dialog
@@ -305,7 +314,21 @@ export default function ProductAdDialog({
             </div>
           </div>
 
-          {/* Duration */}
+          {/* Your prompt */}
+          <div>
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+              Your prompt <span className="text-zinc-600">(optional)</span>
+            </div>
+            <Textarea
+              value={userPrompt}
+              onChange={(e) => setUserPrompt(e.target.value)}
+              rows={3}
+              placeholder="Write your own prompt / idea — it will be rewritten for your selected duration and camera style…"
+              className="min-h-[72px] border-white/10 bg-black/30 text-zinc-100"
+            />
+          </div>
+
+
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
               Duration
