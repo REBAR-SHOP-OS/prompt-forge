@@ -47,35 +47,6 @@ function narratedSuffix(script: string): string {
 
 const DEFAULT_SUFFIX = "Keep it under 80 words.";
 
-// Allowed camera styles + a short cinematic definition of each, so the model
-// knows exactly how to weave the movement into the rewritten prompt.
-const CAMERA_STYLES: Record<string, string> = {
-  "Whip Pan": "an extremely fast horizontal pan that creates motion blur, used as a snappy transition or to reveal a new subject",
-  "Orbit Shot": "a smooth 360-degree camera orbit revolving around the subject, keeping it centered while the background sweeps by",
-  "FPV Drone": "an immersive first-person-view drone flight with fast, fluid, sweeping aerial movement that dives, climbs and weaves through the scene",
-  "Tracking Shot": "the camera smoothly follows the moving subject, holding it in frame as it travels through the environment",
-  "Push In Cinematic": "a slow, deliberate dolly push-in toward the subject that builds tension and emotional intensity",
-  "Fly Through": "the camera flies continuously through the environment, passing through openings, gaps and spaces in one unbroken move",
-  "Crash Zoom": "a sudden, aggressive rapid zoom-in onto the subject for dramatic, punchy emphasis",
-  "Handheld Dynamic": "energetic handheld camera work with natural shake and reactive movement for a raw, documentary, in-the-moment feel",
-  "Dolly Zoom": "the vertigo effect — dolly the camera while zooming the opposite direction so the background warps while the subject stays the same size",
-  "Parallax Motion": "a lateral camera move that creates strong depth as foreground and background layers slide past each other at different speeds",
-};
-
-function cameraSuffix(style: string, definition: string): string {
-  return [
-    `CAMERA STYLE DIRECTIVE: Rewrite and enrich the prompt as a single cinematic`,
-    `video prompt built around the "${style}" camera movement, which is:`,
-    `${definition}.`,
-    `Weave this camera movement naturally into the scene and describe how the`,
-    `camera moves. Keep the original subject, action, setting and mood, and add`,
-    `vivid detail (subject, action, environment, lighting, mood) so the scenario`,
-    `feels complete and cinematic.`,
-    `CRITICAL: Output the rewritten prompt in ENGLISH ONLY, regardless of the`,
-    `input language. Translate everything to natural English. Keep it under 90 words.`,
-  ].join(" ");
-}
-
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -91,12 +62,8 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
-    const mode: "silent" | "narrated" | "camera" | null =
-      body?.mode === "silent" || body?.mode === "narrated" || body?.mode === "camera"
-        ? body.mode
-        : null;
-    const cameraStyle: string =
-      typeof body?.cameraStyle === "string" ? body.cameraStyle.trim() : "";
+    const mode: "silent" | "narrated" | null =
+      body?.mode === "silent" || body?.mode === "narrated" ? body.mode : null;
     const narratorScript: string =
       typeof body?.narratorScript === "string" ? body.narratorScript.trim() : "";
     const rawUrls: unknown = body?.imageUrls;
@@ -131,7 +98,7 @@ Deno.serve(async (req) => {
       : [];
 
 
-    if (!prompt && mode !== "narrated" && mode !== "camera") {
+    if (!prompt && mode !== "narrated") {
       return new Response(JSON.stringify({ error: "prompt is required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -157,12 +124,6 @@ Deno.serve(async (req) => {
         });
       }
     }
-    if (mode === "camera" && !CAMERA_STYLES[cameraStyle]) {
-      return new Response(JSON.stringify({ error: "valid cameraStyle is required when mode=camera" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
 
     const systemPrompt = `${BASE_SYSTEM_PROMPT}\n\n${
@@ -170,19 +131,14 @@ Deno.serve(async (req) => {
         ? SILENT_SUFFIX
         : mode === "narrated"
           ? narratedSuffix(narratorScript)
-          : mode === "camera"
-            ? cameraSuffix(cameraStyle, CAMERA_STYLES[cameraStyle])
-            : DEFAULT_SUFFIX
+          : DEFAULT_SUFFIX
     }`;
 
     // For narrated mode with no user prompt, seed with the script so the model
-    // has something to anchor the visual scene to. For camera mode with no
-    // prompt, seed from the camera style so the model can invent a scene.
+    // has something to anchor the visual scene to.
     const effectivePrompt = prompt || (mode === "narrated"
       ? `Cinematic short scene built around this narrator script: "${narratorScript}"`
-      : mode === "camera"
-        ? `A cinematic scene that showcases a "${cameraStyle}" camera movement.`
-        : "");
+      : "");
 
 
     const apiKey = Deno.env.get("LOVABLE_API_KEY");
