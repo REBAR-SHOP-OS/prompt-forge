@@ -48,48 +48,56 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
   {
     id: 'epic-fantasy',
     label: 'Epic Fantasy',
+    icon: '🐉',
     prompt:
       'Epic fantasy directing: sweeping wide vistas of dreamlike landscapes, castles and mythical creatures, magical glowing lighting and an awe-inspiring heroic mood.',
   },
   {
     id: 'sci-fi-minimalist',
     label: 'Sci-Fi Minimalist',
+    icon: '🛸',
     prompt:
       'Minimalist sci-fi directing: clean white spaces, straight lines, hidden seamless technology and a calm, sleek futuristic atmosphere.',
   },
   {
     id: 'post-apocalyptic',
     label: 'Post-Apocalyptic',
+    icon: '☢️',
     prompt:
       'Post-apocalyptic directing: ruined cities, nature overgrowing buildings, ash, dust and a desolate abandoned atmosphere with muted desaturated tones.',
   },
   {
     id: 'horror-jump-scare',
     label: 'Horror Jump-Scare',
+    icon: '👻',
     prompt:
       'Sudden-horror directing: deep darkness, harsh localized light (like a flashlight), tense silence and abrupt movement changes that create dread and fear.',
   },
   {
     id: 'high-octane-action',
     label: 'High-Octane Action',
+    icon: '🔥',
     prompt:
       'High-octane action directing: rapid cuts, camera shake, explosions, high speed and motion blur for an intense adrenaline-fueled feel.',
   },
   {
     id: 'romantic-dreamscape',
     label: 'Romantic Dreamscape',
+    icon: '💗',
     prompt:
       'Romantic dreamscape directing: soft golden-hour sunlight, gentle soft focus on the subjects and warm dreamy colors for an intimate emotional mood.',
   },
   {
     id: 'documentary-realism',
     label: 'Documentary / Realism',
+    icon: '🎥',
     prompt:
       'Documentary realism directing: natural light, no stylized grading, true-to-life colors and simple unobtrusive camera movements for an authentic real feel.',
   },
   {
     id: 'anime-manga',
     label: 'Anime / Manga Style',
+    icon: '🌸',
     prompt:
       'Anime/manga style directing: bold outline lines, saturated flat 2D colors and exaggerated dynamic motion effects with expressive energetic action.',
   },
