@@ -60,9 +60,22 @@ export function VoiceoverDialog({
   const [text, setText] = useState('')
   const [gender, setGender] = useState<Gender>('female')
   const [tone, setTone] = useState<Tone>('advertising')
+  const [durationMode, setDurationMode] = useState<string>('auto')
+  const [customDuration, setCustomDuration] = useState<string>('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const lastUrlRef = useRef<string | null>(null)
+
+  function resolveDurationSec(): number | undefined {
+    if (durationMode === 'auto') return undefined
+    if (durationMode === 'custom') {
+      const n = Math.round(Number(customDuration))
+      if (Number.isFinite(n) && n >= 1 && n <= 135) return n
+      return undefined
+    }
+    const n = Number(durationMode)
+    return Number.isFinite(n) ? n : undefined
+  }
 
   // Cleanup blob URLs we created (not the one handed off to the parent).
   useEffect(() => {
