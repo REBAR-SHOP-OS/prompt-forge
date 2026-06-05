@@ -208,6 +208,7 @@ export default function ProductAdDialog({
   function reset() {
     setProductName('')
     setProductDescription('')
+    setUserPrompt('')
     setCameraStyle(CAMERA_STYLES[0])
     setCameraMovement('')
     setScenes([])
