@@ -608,7 +608,7 @@ export default function DashboardPage() {
   // reflects only the in-memory active workspace.
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false)
-  const [isCameraMenuOpen, setIsCameraMenuOpen] = useState(false)
+  
   const [activeCameraStyle, setActiveCameraStyle] = useState<string | null>(null)
   // Live-measured vertical budget for the preview stage. The composer is
   // position:fixed at the bottom and its height changes (textarea rows, error
