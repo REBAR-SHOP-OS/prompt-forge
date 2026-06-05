@@ -288,6 +288,14 @@ export function SequentialClipPlayer({
                 playsInline
                 autoPlay={isPlaying}
                 controls={false}
+                onLoadedMetadata={(e) => {
+                  // Apply clip volume as soon as the element is ready — the
+                  // volume effect may have run while the <video> was still
+                  // loading (ref null), so re-apply here.
+                  const el = e.currentTarget
+                  el.volume = Math.max(0, Math.min(1, clipVolume))
+                  el.muted = clipVolume <= 0
+                }}
                 onEnded={goNext}
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => {
