@@ -177,13 +177,11 @@ Deno.serve(async (req) => {
     }`;
 
     // For narrated mode with no user prompt, seed with the script so the model
-    // has something to anchor the visual scene to. For camera mode with no
-    // prompt, seed from the camera style so the model can invent a scene.
+    // has something to anchor the visual scene to. Camera mode always requires
+    // an existing prompt (the UI enforces it), so it uses the prompt verbatim.
     const effectivePrompt = prompt || (mode === "narrated"
       ? `Cinematic short scene built around this narrator script: "${narratorScript}"`
-      : mode === "camera"
-        ? `A cinematic scene that showcases a "${cameraStyle}" camera movement.`
-        : "");
+      : "");
 
 
     const apiKey = Deno.env.get("LOVABLE_API_KEY");
