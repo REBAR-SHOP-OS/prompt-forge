@@ -1,16 +1,18 @@
 ## Goal
-Make the welcome/intro video that plays on entry fill the entire screen instead of showing small and centered.
+Add a free-form "Your prompt" input to the Product Ad Scenario dialog. When the user types their own prompt, picks a camera style and duration, then clicks Generate, the prompt is rewritten by AI according to the chosen duration + camera style.
 
-## Change
-In `src/modules/generator-ui/components/WelcomeVideoOverlay.tsx`:
-- Change the `<video>` from `max-h-[85vh] max-w-[90vw] rounded-lg shadow-2xl` to fill the full viewport: `h-full w-full object-cover` (full-bleed) so it covers the whole screen edge-to-edge.
-- Keep the overlay container `fixed inset-0` and remove the inner padding so there are no gaps.
-- Keep the existing Skip button (top-right) and `onEnded`/`autoPlay`/`playsInline` behavior.
+## Changes — `src/modules/generator-ui/components/ProductAdDialog.tsx`
+1. Add state `const [userPrompt, setUserPrompt] = useState('')`.
+2. Add a new "Your prompt" `Textarea` section (above or below Description) where the user writes their own idea, e.g. placeholder "Write your own prompt / idea — it will be rewritten for your duration and camera style…".
+3. In `generate()`, build the `idea` sent to the `scenario-write` function from the user's prompt when present:
+   - If `userPrompt` is filled → `idea = userPrompt.trim()` (plus product name context if available).
+   - Otherwise keep current behavior (product name based).
+   - Continue passing `durationSeconds: duration` and `cameraStyle` so the rewrite is tuned to both (already supported server-side).
+4. Update `canGenerate` and the empty-input guard so a non-empty `userPrompt` alone is enough to generate (currently requires product name or image).
+5. Add `setUserPrompt('')` to `reset()`.
 
-```text
-Before: small centered video with rounded corners and margins
-After:  video covers entire screen, Skip button floating top-right
-```
+## Result
+The user writes their prompt, selects camera style + duration, clicks Generate (the wand icon), and gets back a rewritten cinematic scenario tuned to that duration and camera style — shown in the existing results area and usable via "Use as prompt".
 
-## Notes
-- `object-cover` fills the screen and crops slightly to avoid black bars. If you prefer the full frame always visible (with possible black bars), `object-contain` can be used instead — let me know your preference, otherwise I'll use `object-cover` for a true full-screen look.
+## Notes (technical)
+No edge-function change required: `scenario-write` already incorporates `idea`, `durationSeconds`, and `cameraStyle` into the system prompt. This is a frontend-only change.

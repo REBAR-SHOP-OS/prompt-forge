@@ -53,6 +53,7 @@ export default function ProductAdDialog({
   const [duration, setDuration] = useState<ProductAdDuration>(defaultDuration)
   const [productName, setProductName] = useState('')
   const [productDescription, setProductDescription] = useState('')
+  const [userPrompt, setUserPrompt] = useState('')
   const [cameraStyle, setCameraStyle] = useState<string>(CAMERA_STYLES[0])
   const [cameraMovement, setCameraMovement] = useState('')
   const [isWriting, setIsWriting] = useState(false)
