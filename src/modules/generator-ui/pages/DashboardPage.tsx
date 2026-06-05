@@ -2428,6 +2428,9 @@ export default function DashboardPage() {
     for (const imgs of Object.values(draftSourceImages)) {
       for (const i of imgs) draftOwnedImageIds.add(i.id)
     }
+    // Film covers belong to a specific project scope and must never be pulled
+    // into another project's legacy source-image backfill.
+    for (const ci of Object.values(coverImages)) draftOwnedImageIds.add(ci.id)
 
     for (const p of missing) {
       const cutoff = new Date(p.created_at).getTime()
