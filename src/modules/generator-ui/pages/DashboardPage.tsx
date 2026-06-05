@@ -2618,7 +2618,6 @@ export default function DashboardPage() {
   }, [generatedVideos, manualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs, draftSourceJobs, activeDraftId, mergedEntries, librarySavedJobs, activeJobIds])
 
   const handleCardDragStart = (id: string) => (event: React.DragEvent) => {
-    if (isReadOnlyProject) return
     setDraggingId(id)
     event.dataTransfer.effectAllowed = 'move'
     try { event.dataTransfer.setData('text/plain', id) } catch {}
@@ -2629,7 +2628,6 @@ export default function DashboardPage() {
   }
   const handleCardDrop = (targetId: string) => (event: React.DragEvent) => {
     event.preventDefault()
-    if (isReadOnlyProject) return
     const sourceId = draggingId || event.dataTransfer.getData('text/plain')
     setDraggingId(null)
     if (!sourceId || sourceId === targetId) return
@@ -2991,8 +2989,6 @@ export default function DashboardPage() {
   }
 
   const updateImageDuration = (imageId: string, secondsRaw: number) => {
-    // Finalized projects are read-only: never mutate a source clip's duration.
-    if (isReadOnlyProject) return
     const seconds = Math.max(1, Math.min(15, Math.round(secondsRaw) || 1))
     setUserImages((curr) => curr.map((i) => (i.id === imageId ? { ...i, still_duration_seconds: seconds } : i)))
     void supabase
@@ -6569,15 +6565,11 @@ export default function DashboardPage() {
                           <div className="inline-flex items-center gap-2">
                             <label htmlFor={`img-dur-${img.id}`}>Duration</label>
                             <div className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/20 px-2 py-1 text-[11px] font-semibold text-zinc-200">
-                              {isReadOnlyProject ? (
-                                <span className="tabular-nums">{img.still_duration_seconds || 3}</span>
-                              ) : (
-                                <ImageDurationInput
-                                  id={`img-dur-${img.id}`}
-                                  value={img.still_duration_seconds || 3}
-                                  onCommit={(sec) => updateImageDuration(img.id, sec)}
-                                />
-                              )}
+                              <ImageDurationInput
+                                id={`img-dur-${img.id}`}
+                                value={img.still_duration_seconds || 3}
+                                onCommit={(sec) => updateImageDuration(img.id, sec)}
+                              />
                               <span className="text-zinc-500">s</span>
                             </div>
                           </div>
@@ -6590,15 +6582,6 @@ export default function DashboardPage() {
                           onClick={(event) => event.stopPropagation()}
                         >
                           <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
-                          {isReadOnlyProject ? (
-                            <span
-                              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-2.5 py-1 text-[11px] font-medium text-zinc-400"
-                              aria-label={`Transition: ${TRANSITION_LABEL[transitionId]}`}
-                            >
-                              <TransitionPreview id={transitionId} size={22} />
-                              <span>{TRANSITION_LABEL[transitionId]}</span>
-                            </span>
-                          ) : (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <button
@@ -6628,7 +6611,6 @@ export default function DashboardPage() {
                               ))}
                             </DropdownMenuContent>
                           </DropdownMenu>
-                          )}
                           <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
                         </div>
                       ) : null}
@@ -6898,15 +6880,6 @@ export default function DashboardPage() {
                       onClick={(event) => event.stopPropagation()}
                     >
                       <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
-                      {isReadOnlyProject ? (
-                        <span
-                          className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-2.5 py-1 text-[11px] font-medium text-zinc-400"
-                          aria-label={`Transition: ${TRANSITION_LABEL[transitionId]}`}
-                        >
-                          <TransitionPreview id={transitionId} size={22} />
-                          <span>{TRANSITION_LABEL[transitionId]}</span>
-                        </span>
-                      ) : (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <button
@@ -6936,7 +6909,6 @@ export default function DashboardPage() {
                           ))}
                         </DropdownMenuContent>
                       </DropdownMenu>
-                      )}
                       <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
                     </div>
                   ) : null}
