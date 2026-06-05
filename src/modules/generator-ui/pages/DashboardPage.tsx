@@ -2406,6 +2406,19 @@ export default function DashboardPage() {
     let jobsChanged = false
     let imgsChanged = false
 
+    // Items owned by ANY draft (via ownership maps or live draft snapshots)
+    // must never be claimed by a legacy Final Film backfill — that is exactly
+    // how a draft's image/clip leaks into another project. Only truly loose,
+    // unowned legacy items are eligible.
+    const draftOwnedJobIds = new Set<string>(Object.keys(jobDraftMap))
+    for (const clips of Object.values(draftSourceJobs)) {
+      for (const c of clips) draftOwnedJobIds.add(c.id)
+    }
+    const draftOwnedImageIds = new Set<string>(Object.keys(imageDraftMap))
+    for (const imgs of Object.values(draftSourceImages)) {
+      for (const i of imgs) draftOwnedImageIds.add(i.id)
+    }
+
     for (const p of missing) {
       const cutoff = new Date(p.created_at).getTime()
       const sourceClips = [...generatedVideos]
@@ -2414,6 +2427,7 @@ export default function DashboardPage() {
             v.id !== p.id &&
             !v.id.startsWith('merged-') &&
             !claimedJobs.has(v.id) &&
+            !draftOwnedJobIds.has(v.id) &&
             normalizeStatus(v.status) === 'completed' &&
             !!v.video?.storage_path &&
             new Date(v.created_at).getTime() <= cutoff,
@@ -2428,6 +2442,7 @@ export default function DashboardPage() {
           .filter(
             (i) =>
               !claimedImgs.has(i.id) &&
+              !draftOwnedImageIds.has(i.id) &&
               !!i.storage_path &&
               new Date(i.created_at).getTime() <= cutoff,
           )
