@@ -42,6 +42,59 @@ const CAMERA_STYLES = [
   'Parallax Motion',
 ]
 
+type GenreTemplate = { id: string; label: string; prompt: string }
+
+const GENRE_TEMPLATES: GenreTemplate[] = [
+  {
+    id: 'epic-fantasy',
+    label: 'Epic Fantasy',
+    prompt:
+      'Epic fantasy directing: sweeping wide vistas of dreamlike landscapes, castles and mythical creatures, magical glowing lighting and an awe-inspiring heroic mood.',
+  },
+  {
+    id: 'sci-fi-minimalist',
+    label: 'Sci-Fi Minimalist',
+    prompt:
+      'Minimalist sci-fi directing: clean white spaces, straight lines, hidden seamless technology and a calm, sleek futuristic atmosphere.',
+  },
+  {
+    id: 'post-apocalyptic',
+    label: 'Post-Apocalyptic',
+    prompt:
+      'Post-apocalyptic directing: ruined cities, nature overgrowing buildings, ash, dust and a desolate abandoned atmosphere with muted desaturated tones.',
+  },
+  {
+    id: 'horror-jump-scare',
+    label: 'Horror Jump-Scare',
+    prompt:
+      'Sudden-horror directing: deep darkness, harsh localized light (like a flashlight), tense silence and abrupt movement changes that create dread and fear.',
+  },
+  {
+    id: 'high-octane-action',
+    label: 'High-Octane Action',
+    prompt:
+      'High-octane action directing: rapid cuts, camera shake, explosions, high speed and motion blur for an intense adrenaline-fueled feel.',
+  },
+  {
+    id: 'romantic-dreamscape',
+    label: 'Romantic Dreamscape',
+    prompt:
+      'Romantic dreamscape directing: soft golden-hour sunlight, gentle soft focus on the subjects and warm dreamy colors for an intimate emotional mood.',
+  },
+  {
+    id: 'documentary-realism',
+    label: 'Documentary / Realism',
+    prompt:
+      'Documentary realism directing: natural light, no stylized grading, true-to-life colors and simple unobtrusive camera movements for an authentic real feel.',
+  },
+  {
+    id: 'anime-manga',
+    label: 'Anime / Manga Style',
+    prompt:
+      'Anime/manga style directing: bold outline lines, saturated flat 2D colors and exaggerated dynamic motion effects with expressive energetic action.',
+  },
+]
+
 export default function ProductAdDialog({
   open,
   onOpenChange,
@@ -56,6 +109,7 @@ export default function ProductAdDialog({
   const [userPrompt, setUserPrompt] = useState('')
   const [cameraStyle, setCameraStyle] = useState<string>(CAMERA_STYLES[0])
   const [cameraMovement, setCameraMovement] = useState('')
+  const [genre, setGenre] = useState<string>('')
   const [isWriting, setIsWriting] = useState(false)
   const [scenes, setScenes] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -153,6 +207,7 @@ export default function ProductAdDialog({
           productDescription: productDescription.trim() || undefined,
           cameraStyle,
           cameraMovement: cameraMovement.trim() || undefined,
+          genre: GENRE_TEMPLATES.find((g) => g.id === genre)?.prompt || undefined,
         },
       })
       if (invokeErr) {
@@ -211,6 +266,7 @@ export default function ProductAdDialog({
     setUserPrompt('')
     setCameraStyle(CAMERA_STYLES[0])
     setCameraMovement('')
+    setGenre('')
     setScenes([])
     setError(null)
     setCopiedIndex(null)
@@ -390,6 +446,37 @@ export default function ProductAdDialog({
               })}
             </div>
           </div>
+
+          {/* Genre & atmosphere */}
+          <div>
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+              Genre &amp; atmosphere <span className="text-zinc-600">(optional)</span>
+            </div>
+            <div role="radiogroup" aria-label="Genre and atmosphere" className="flex flex-wrap gap-2">
+              {GENRE_TEMPLATES.map((g) => {
+                const active = genre === g.id
+                return (
+                  <button
+                    key={g.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    title={g.prompt}
+                    onClick={() => setGenre((cur) => (cur === g.id ? '' : g.id))}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                      active
+                        ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
+                        : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {g.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+
 
           {/* Camera movement notes */}
           <div>

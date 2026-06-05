@@ -28,6 +28,7 @@ interface ProductAdOpts {
   productDescription?: string;
   cameraStyle?: string;
   cameraMovement?: string;
+  genre?: string;
 }
 
 function cameraGuidance(opts: ProductAdOpts): string {
@@ -37,6 +38,9 @@ function cameraGuidance(opts: ProductAdOpts): string {
   }
   if (opts.cameraMovement) {
     bits.push(`Honor these specific camera-movement notes from the user: ${opts.cameraMovement}.`);
+  }
+  if (opts.genre) {
+    bits.push(`Direct the entire scenario in this genre/atmosphere: ${opts.genre}. Apply its mood, lighting, color palette, and visual style consistently across every shot while keeping the product the clear hero of the advertisement.`);
   }
   return bits.join(" ");
 }
@@ -175,6 +179,7 @@ Deno.serve(async (req) => {
           productDescription: clip(body?.productDescription, 2000),
           cameraStyle: clip(body?.cameraStyle, 100),
           cameraMovement: clip(body?.cameraMovement, 1000),
+          genre: clip(body?.genre, 300),
         }
       : undefined;
     const supabaseHost = (() => {
