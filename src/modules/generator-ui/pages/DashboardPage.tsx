@@ -6461,7 +6461,6 @@ export default function DashboardPage() {
                 <ImagePlus className="h-4 w-4" aria-hidden="true" />
               )}
             </button>
-            {!isReadOnlyProject && (
             <button
               type="button"
               onClick={() => { setAiDialogMode('cover'); setIsAiImageDialogOpen(true) }}
@@ -6472,7 +6471,6 @@ export default function DashboardPage() {
             >
               <Camera className="h-4 w-4" aria-hidden="true" />
             </button>
-            )}
             <input
               ref={uploadVideoInputRef}
               id="upload-film-input"
@@ -6523,7 +6521,7 @@ export default function DashboardPage() {
         ) : null}
 
         <div className="mt-3 flex-1 overflow-y-auto overflow-x-hidden pr-1">
-          {currentCover && !isReadOnlyProject ? (
+          {currentCover ? (
             <div className="mb-3">
               <article
                 className="w-full min-w-0 rounded-2xl border border-amber-300/30 bg-amber-300/[0.04] p-3 shadow-[0_8px_30px_rgba(252,211,77,0.08)]"
