@@ -6,11 +6,11 @@ interface Props {
 
 export default function WelcomeVideoOverlay({ onClose }: Props) {
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/95 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black">
       <button
         type="button"
         onClick={onClose}
-        className="absolute top-4 right-4 inline-flex items-center gap-2 rounded-full border border-border bg-background/80 px-3 py-1.5 text-sm text-foreground hover:bg-background"
+        className="absolute top-4 right-4 z-10 inline-flex items-center gap-2 rounded-full border border-border bg-background/80 px-3 py-1.5 text-sm text-foreground hover:bg-background"
         aria-label="Skip intro"
       >
         <X className="h-4 w-4" />
@@ -22,7 +22,7 @@ export default function WelcomeVideoOverlay({ onClose }: Props) {
         playsInline
         controls
         onEnded={onClose}
-        className="max-h-[85vh] max-w-[90vw] rounded-lg shadow-2xl"
+        className="h-full w-full object-cover"
       />
     </div>
   )
