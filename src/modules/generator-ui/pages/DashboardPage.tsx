@@ -6049,74 +6049,46 @@ export default function DashboardPage() {
 
             {/* Audio mode: music-only vs mix */}
             <div className="space-y-3 rounded-md border border-white/10 bg-black/40 p-3">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSoundtrackMode('music-only')}
-                  aria-pressed={soundtrackMode === 'music-only'}
-                  title="Play only the soundtrack — clip audio is muted"
-                  className={`inline-flex flex-1 items-center justify-center gap-2 rounded-md border px-3 py-2 text-xs font-medium transition ${
-                    soundtrackMode === 'music-only'
-                      ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-200'
-                      : 'border-white/10 bg-transparent text-zinc-300 hover:border-white/20 hover:text-zinc-100'
-                  }`}
+              <div className="flex items-center">
+                <div
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-emerald-500/60 bg-emerald-500/15 px-4 py-3 text-sm font-semibold text-emerald-200"
                 >
-                  <Music2 className="h-4 w-4" aria-hidden="true" />
-                  <span>Music only</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSoundtrackMode('mix')}
-                  aria-pressed={soundtrackMode === 'mix'}
-                  title="Mix clip audio and music — adjust volumes below"
-                  className={`inline-flex flex-1 items-center justify-center gap-2 rounded-md border px-3 py-2 text-xs font-medium transition ${
-                    soundtrackMode === 'mix'
-                      ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-200'
-                      : 'border-white/10 bg-transparent text-zinc-300 hover:border-white/20 hover:text-zinc-100'
-                  }`}
-                >
-                  <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+                  <SlidersHorizontal className="h-5 w-5" aria-hidden="true" />
                   <span>Mix audio</span>
-                </button>
+                </div>
               </div>
 
-              {soundtrackMode === 'mix' ? (
-                <div className="space-y-3 pt-1">
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                      <span>Clip audio</span>
-                      <span className="tabular-nums text-zinc-200">{Math.round(clipVolume * 100)}%</span>
-                    </div>
-                    <Slider
-                      value={[Math.round(clipVolume * 100)]}
-                      min={0}
-                      max={100}
-                      step={1}
-                      onValueChange={(v) => setClipVolume((v[0] ?? 0) / 100)}
-                    />
+              <div className="space-y-3 pt-1">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                    <span>Clip audio</span>
+                    <span className="tabular-nums text-zinc-200">{Math.round(clipVolume * 100)}%</span>
                   </div>
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                      <span>Music</span>
-                      <span className="tabular-nums text-zinc-200">{Math.round(musicVolume * 100)}%</span>
-                    </div>
-                    <Slider
-                      value={[Math.round(musicVolume * 100)]}
-                      min={0}
-                      max={100}
-                      step={1}
-                      onValueChange={(v) => setMusicVolume((v[0] ?? 0) / 100)}
-                    />
-                  </div>
-                  <p className="text-[11px] leading-relaxed text-zinc-500">
-                    Both audio sources are mixed and applied to the Final Film at render time.
-                  </p>
+                  <Slider
+                    value={[Math.round(clipVolume * 100)]}
+                    min={0}
+                    max={100}
+                    step={1}
+                    onValueChange={(v) => setClipVolume((v[0] ?? 0) / 100)}
+                  />
                 </div>
-              ) : (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                    <span>Music</span>
+                    <span className="tabular-nums text-zinc-200">{Math.round(musicVolume * 100)}%</span>
+                  </div>
+                  <Slider
+                    value={[Math.round(musicVolume * 100)]}
+                    min={0}
+                    max={100}
+                    step={1}
+                    onValueChange={(v) => setMusicVolume((v[0] ?? 0) / 100)}
+                  />
+                </div>
                 <p className="text-[11px] leading-relaxed text-zinc-500">
-                  Only the music will play on the Final Film. The original clip audio is muted.
+                  Both audio sources are mixed and applied to the Final Film at render time.
                 </p>
-              )}
+              </div>
             </div>
           </div>
 
