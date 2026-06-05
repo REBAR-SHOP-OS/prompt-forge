@@ -204,6 +204,21 @@ const MODEL_CHOICES: ModelChoice[] = [
   },
 ]
 
+// Camera movement styles offered in the composer. Picking one rewrites the
+// prompt (in English) around that camera movement to enrich the scenario.
+const CAMERA_STYLES: { label: string; hint: string }[] = [
+  { label: 'Whip Pan', hint: 'Fast blur transition' },
+  { label: 'Orbit Shot', hint: '360° around subject' },
+  { label: 'FPV Drone', hint: 'Immersive aerial flight' },
+  { label: 'Tracking Shot', hint: 'Follow the subject' },
+  { label: 'Push In Cinematic', hint: 'Slow dramatic dolly in' },
+  { label: 'Fly Through', hint: 'Fly through the space' },
+  { label: 'Crash Zoom', hint: 'Sudden rapid zoom' },
+  { label: 'Handheld Dynamic', hint: 'Raw handheld energy' },
+  { label: 'Dolly Zoom', hint: 'Vertigo effect' },
+  { label: 'Parallax Motion', hint: 'Deep layered motion' },
+]
+
 // Mirrors backend pricing in supabase/functions/_shared/modules/external-api-adapter/service.ts.
 // 1 USD = 100 credits. Keep in sync with COST_MAP_USD.
 function estimateGenerationCost(model: ModelChoice, totalDurationSec: number): {
