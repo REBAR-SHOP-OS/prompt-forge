@@ -64,15 +64,16 @@ const CAMERA_STYLES: Record<string, string> = {
 
 function cameraSuffix(style: string, definition: string): string {
   return [
-    `CAMERA STYLE DIRECTIVE: Rewrite and enrich the prompt as a single cinematic`,
-    `video prompt built around the "${style}" camera movement, which is:`,
-    `${definition}.`,
-    `Weave this camera movement naturally into the scene and describe how the`,
-    `camera moves. Keep the original subject, action, setting and mood, and add`,
-    `vivid detail (subject, action, environment, lighting, mood) so the scenario`,
-    `feels complete and cinematic.`,
-    `CRITICAL: Output the rewritten prompt in ENGLISH ONLY, regardless of the`,
-    `input language. Translate everything to natural English. Keep it under 90 words.`,
+    `CAMERA STYLE DIRECTIVE: Do NOT invent a new scene and do NOT rewrite the`,
+    `user's prompt. Keep the user's original prompt — its subject, action,`,
+    `setting, wording and intent — essentially intact. Your ONLY job is to ADD`,
+    `the "${style}" camera movement (${definition}) to it, weaving in a brief,`,
+    `natural description of how the camera moves so the shot feels more`,
+    `cinematic and attractive. Keep additions minimal and supportive of the`,
+    `existing prompt.`,
+    `CRITICAL: Keep the SAME LANGUAGE as the user's original prompt`,
+    `(Persian stays Persian, English stays English). Do NOT translate.`,
+    `Output only the augmented prompt. Keep it under 90 words.`,
   ].join(" ");
 }
 
