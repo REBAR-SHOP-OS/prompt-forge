@@ -511,6 +511,44 @@ export default function ProductAdDialog({
             </div>
           </div>
 
+          {/* Scene & environment */}
+          <div>
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+              Scene &amp; environment <span className="text-zinc-600">(optional)</span>
+            </div>
+            <div className="space-y-2.5">
+              {SCENE_GROUPS.map((group) => (
+                <div key={group}>
+                  <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                    {group}
+                  </div>
+                  <div role="radiogroup" aria-label={group} className="flex flex-wrap gap-2">
+                    {SCENE_TEMPLATES.filter((s) => s.group === group).map((s) => {
+                      const active = scene === s.id
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          title={s.prompt}
+                          onClick={() => setScene((cur) => (cur === s.id ? '' : s.id))}
+                          className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                            active
+                              ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
+                              : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
+                          }`}
+                        >
+                          {s.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
 
 
           {/* Camera movement notes */}
