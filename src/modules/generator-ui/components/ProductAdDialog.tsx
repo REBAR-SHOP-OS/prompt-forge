@@ -142,6 +142,7 @@ export default function ProductAdDialog({
   const [cameraStyle, setCameraStyle] = useState<string>(CAMERA_STYLES[0])
   const [cameraMovement, setCameraMovement] = useState('')
   const [genre, setGenre] = useState<string>('')
+  const [scene, setScene] = useState<string>('')
   const [isWriting, setIsWriting] = useState(false)
   const [scenes, setScenes] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
