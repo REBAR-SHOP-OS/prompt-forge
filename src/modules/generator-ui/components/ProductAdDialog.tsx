@@ -469,21 +469,22 @@ export default function ProductAdDialog({
             </div>
             <div role="radiogroup" aria-label="Camera style" className="flex flex-wrap gap-2">
               {CAMERA_STYLES.map((style) => {
-                const active = cameraStyle === style
+                const active = cameraStyle === style.label
                 return (
                   <button
-                    key={style}
+                    key={style.label}
                     type="button"
                     role="radio"
                     aria-checked={active}
-                    onClick={() => setCameraStyle(style)}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                    onClick={() => setCameraStyle(style.label)}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                       active
                         ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
                         : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
                     }`}
                   >
-                    {style}
+                    <span className="text-sm leading-none">{style.icon}</span>
+                    {style.label}
                   </button>
                 )
               })}
