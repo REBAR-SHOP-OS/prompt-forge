@@ -131,7 +131,7 @@ Deno.serve(async (req) => {
       : [];
 
 
-    if (!prompt && mode !== "narrated") {
+    if (!prompt && mode !== "narrated" && mode !== "camera") {
       return new Response(JSON.stringify({ error: "prompt is required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -157,6 +157,12 @@ Deno.serve(async (req) => {
         });
       }
     }
+    if (mode === "camera" && !CAMERA_STYLES[cameraStyle]) {
+      return new Response(JSON.stringify({ error: "valid cameraStyle is required when mode=camera" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
 
     const systemPrompt = `${BASE_SYSTEM_PROMPT}\n\n${
@@ -164,14 +170,19 @@ Deno.serve(async (req) => {
         ? SILENT_SUFFIX
         : mode === "narrated"
           ? narratedSuffix(narratorScript)
-          : DEFAULT_SUFFIX
+          : mode === "camera"
+            ? cameraSuffix(cameraStyle, CAMERA_STYLES[cameraStyle])
+            : DEFAULT_SUFFIX
     }`;
 
     // For narrated mode with no user prompt, seed with the script so the model
-    // has something to anchor the visual scene to.
+    // has something to anchor the visual scene to. For camera mode with no
+    // prompt, seed from the camera style so the model can invent a scene.
     const effectivePrompt = prompt || (mode === "narrated"
       ? `Cinematic short scene built around this narrator script: "${narratorScript}"`
-      : "");
+      : mode === "camera"
+        ? `A cinematic scene that showcases a "${cameraStyle}" camera movement.`
+        : "");
 
 
     const apiKey = Deno.env.get("LOVABLE_API_KEY");
