@@ -7525,6 +7525,57 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => setNarratorMode('camera')}
+                  disabled={isEnhancingPrompt || promptText.trim().length === 0}
+                  title={promptText.trim().length === 0 ? 'Write a prompt first' : undefined}
+                  className={`mt-1 flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40 ${
+                    narratorMode === 'camera' ? 'bg-white/[0.04]' : ''
+                  }`}
+                >
+                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-zinc-300">
+                    <Camera className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-zinc-100">Camera style</span>
+                    <span className="block text-xs leading-5 text-zinc-500">
+                      Add a cinematic camera movement to your prompt (keeps your wording).
+                    </span>
+                  </span>
+                </button>
+
+                {narratorMode === 'camera' ? (
+                  <div className="mt-2 space-y-2 border-t border-white/10 px-1 pt-3">
+                    <p className="px-1 text-xs font-medium text-zinc-400">Choose a camera movement</p>
+                    <div className="grid grid-cols-2 gap-1">
+                      {CAMERA_STYLES.map((style) => (
+                        <button
+                          key={style.label}
+                          type="button"
+                          disabled={isEnhancingPrompt || isSubmitting}
+                          onClick={() => runCameraStyle(style.label)}
+                          title={style.hint}
+                          className={`flex flex-col items-start gap-0.5 rounded-md border px-2 py-1.5 text-left transition hover:bg-white/5 disabled:opacity-50 ${
+                            activeCameraStyle === style.label
+                              ? 'border-amber-300/50 bg-amber-300/10 text-amber-100'
+                              : 'border-white/10 text-zinc-200'
+                          }`}
+                        >
+                          <span className="text-xs font-semibold">{style.label}</span>
+                          <span className="text-[10px] leading-tight text-zinc-500">{style.hint}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {isEnhancingPrompt && activeCameraStyle ? (
+                      <p className="flex items-center gap-2 px-1 text-[11px] text-amber-200/90">
+                        <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                        Applying {activeCameraStyle}…
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
               </PopoverContent>
             </Popover>
 
