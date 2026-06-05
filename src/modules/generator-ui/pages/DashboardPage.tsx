@@ -2014,7 +2014,7 @@ export default function DashboardPage() {
     if (typeof window === 'undefined') return 'wan-i2v'
     return window.localStorage.getItem('ui:preferred-model') ?? 'wan-i2v'
   })
-  const [narratorMode, setNarratorMode] = useState<'idle' | 'input'>('idle')
+  const [narratorMode, setNarratorMode] = useState<'idle' | 'input' | 'camera'>('idle')
   const [narratorScript, setNarratorScript] = useState('')
 
   const selectedModel = useMemo<ModelChoice>(() => {
