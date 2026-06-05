@@ -4757,12 +4757,34 @@ export default function DashboardPage() {
             })
           }
         }
+        // Carry the Film Cover from the finalized draft/project scope over to
+        // the new merged project so it stays attached and visible after Final
+        // Film, and never lingers under the now-retired draft id.
+        {
+          const sourceScopeKeys = [selectedProjectId, activeDraftId].filter(
+            (k): k is string => !!k,
+          )
+          let movedCover: UserImageItem | null = null
+          for (const k of sourceScopeKeys) {
+            if (coverImages[k]) { movedCover = coverImages[k]; break }
+          }
+          if (movedCover) {
+            setCoverImages((prev) => {
+              const next = { ...prev }
+              for (const k of sourceScopeKeys) delete next[k]
+              next[mergedId] = movedCover as UserImageItem
+              persistCoverImages(next)
+              return next
+            })
+          }
+        }
         setActiveDraftId(null)
         persistActiveDraftId(null)
         if (selectedProjectId && selectedProjectId.startsWith('draft-')) {
           setSelectedProjectId(mergedId)
         }
       }
+
 
 
       // Final Film is done — auto Start Over so the workspace is fresh for
