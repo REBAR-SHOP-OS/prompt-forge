@@ -2475,7 +2475,7 @@ export default function DashboardPage() {
       persistProjectSourceImages(nextImgs)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, mergedEntries, librarySavedJobs, generatedVideos, userImages, jobDraftMap, imageDraftMap, draftSourceJobs, draftSourceImages])
+  }, [userId, mergedEntries, librarySavedJobs, generatedVideos, userImages, jobDraftMap, imageDraftMap, draftSourceJobs, draftSourceImages, coverImages])
 
 
 
