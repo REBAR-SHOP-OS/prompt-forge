@@ -2147,9 +2147,14 @@ export default function DashboardPage() {
       arr.push(v)
       clipsByDraft.set(did, arr)
     }
+    // Film covers are owned by a project scope (coverImages), NEVER by a
+    // draft. They must never be grouped into a draft snapshot.
+    const coverImageIds = new Set<string>()
+    for (const ci of Object.values(coverImages)) coverImageIds.add(ci.id)
     const imagesByDraft = new Map<string, UserImageItem[]>()
     for (const img of userImages) {
       if (finalClaimedImages.has(img.id)) continue
+      if (coverImageIds.has(img.id)) continue
       const did = imageDraftMap[img.id]
       if (!did || deletedDraftIds.has(did)) continue
       const arr = imagesByDraft.get(did) ?? []
