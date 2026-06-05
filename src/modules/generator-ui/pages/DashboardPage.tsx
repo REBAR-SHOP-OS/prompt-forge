@@ -2128,7 +2128,8 @@ export default function DashboardPage() {
         return
       }
       setPromptText(enhanced)
-      setIsCameraMenuOpen(false)
+      setIsPromptMenuOpen(false)
+      setNarratorMode('idle')
     } catch {
       setComposerError('Could not apply camera style. Please try again.')
     } finally {
