@@ -1,72 +1,53 @@
-## وضعیت تأییدشده
+## هدف
+تصویر ساخته‌شده با آیکون `Film Cover` باید فقط کاور همان پروژه باشد:
+- خودش نباید Draft project جداگانه بسازد.
+- نباید وارد Pending به‌عنوان کارت معمولی شود.
+- اگر داخل یک Draft ساخته شده، بعد از `Final Film` باید همراه همان پروژه نهایی منتقل شود و در همان پروژه نمایش داده شود.
+- تحت هیچ شرایطی نباید به Draft یا پروژه دیگری راه پیدا کند.
 
-- مسیر فعال: `/#/app`
-- فایل بررسی‌شده: `src/modules/generator-ui/pages/DashboardPage.tsx`
-- بخش‌های بررسی‌شده:
-  - `visibleUserImages`
-  - `displayedVideos`
-  - `handleMergeAllVideos`
-  - `resumeSelectedProject`
-  - `resetWorkspace`
-  - snapshotهای `projectSourceImages` / `draftSourceImages`
-  - backfill legacy برای پروژه‌های قدیمی
+## ریشه مشکل
+در `DashboardPage.tsx`، کاور در `coverImages[scopeId]` ذخیره می‌شود، اما همان رکورد تصویر در `userImages` هم اضافه می‌شود. چون روی آن `imageDraftMap` زده نمی‌شود و در `projectSourceImages` هم نیست، effect مربوط به historical/orphan backfill آن را «عکس آزاد» می‌بیند و برایش `draft-orphan-img-*` می‌سازد. همین باعث کارت Draft جداگانه در Library می‌شود.
 
-## علت محتمل باگ
+مشکل دوم این است که هنگام تبدیل Draft به Final Film، فقط source images داخل `eligibleClips` به پروژه نهایی منتقل می‌شوند؛ اما Film Cover عمداً از `eligibleClips` حذف شده، پس mapping کاور از draftId به mergedId منتقل نمی‌شود.
 
-فیلتر قبلی برای نمایش و Final Film بهتر شده، اما هنوز یک مسیر خطرناک باقی مانده:
+## برنامه اصلاح
 
-1. وقتی یک Draft انتخاب شده و Final Film می‌شود، اسنپ‌شات عکس‌های همان Draft باید فقط از `imageSnapshotForMerge` ساخته شود.
-2. اما بعد از ساخت Final Film، state و localStorage مربوط به عکس‌ها/درفت‌ها در چند effect همزمان دوباره محاسبه می‌شود.
-3. مسیر legacy/backfill پروژه‌های Final Film قدیمی هنوز می‌تواند برای پروژه‌هایی که snapshot تصویر ندارند، عکس‌های قدیمی‌تر از زمان Final Film را به `projectSourceImages` بچسباند.
-4. این یعنی یک عکس متعلق به Draft دیگر، اگر زمان ساختش قبل از Final Film باشد و هنوز در localStorage/userImages وجود داشته باشد، ممکن است به عنوان منبع پروژه‌ی جدید ثبت یا در Pending نمایش داده شود.
+### 1. تعریف مالکیت مستقل برای Film Cover
+در تمام logicهایی که عکس آزاد یا Draft orphan می‌سازند، `allCoverImageIds` به‌عنوان claimed/protected محسوب شود.
 
-این باگ باید از دو طرف بسته شود: هم هنگام ساخت Final Film، snapshot منبع باید قفل‌شده و دقیق باشد؛ هم backfill نباید هیچ عکسِ دارای مالکیت درفت دیگر را وارد پروژه‌ی Final کند.
+تغییرات اصلی:
+- در backfill historical drafts، اگر `img.id` داخل `allCoverImageIds` بود، اصلاً `imageDraftMap` برای آن ساخته نشود.
+- در legacy Final Film backfill، کاورها هرگز به `projectSourceImages` هیچ پروژه‌ای اضافه نشوند.
+- در محاسبه `lockedRatio`، کاورها مثل source image معمولی حساب نشوند.
 
-## طرح اصلاح
+### 2. جلوگیری قطعی از Draft شدن کاور
+برای تصویر ذخیره‌شده از حالت `aiDialogMode === 'cover'`:
+- همچنان در `userImages` نگه داشته شود تا URL و metadata قابل دسترسی باشد.
+- اما `markNewImage` برای آن صدا زده نشود.
+- علاوه بر فیلتر فعلی `allCoverImageIds` در Pending، backfillهای draft/project هم آن را نادیده بگیرند.
 
-### 1. قفل کردن scope عکس‌ها برای Final Film
-در `handleMergeAllVideos`، قبل از merge یک set قطعی از آیتم‌های مجاز می‌سازم:
+### 3. انتقال کاور Draft به پروژه Final Film
+در `handleMergeAllVideos`، وقتی یک Draft فاینال می‌شود:
+- اگر `coverImages[selectedProjectId]` یا `coverImages[activeDraftId]` وجود داشت، همان کاور به `coverImages[mergedId]` منتقل شود.
+- کلید قدیمی draft cover حذف شود تا کاور همان Draft بعد از فاینال به Draft ghost متصل نماند.
+- اگر پروژه Final بلافاصله باز شد، `currentCover` باید از `coverImages[mergedId]` خوانده شود.
 
-- اگر پروژه/درفت انتخاب شده باشد:
-  - فقط آیتم‌های داخل snapshot همان `selectedProjectId` مجاز هستند.
-  - هیچ آیتمی از `visibleUserImages` یا `userImages` کلی وارد نمی‌شود.
-- اگر workspace آزاد باشد:
-  - فقط `activeImageIds` و `activeJobIds` مجاز هستند.
-  - آیتم‌های موجود در هر draft/project دیگر حذف می‌شوند.
+### 4. محافظت نمایشی در Pending و Library
+- Pending همچنان source clips/images را نشان می‌دهد، اما Film Cover در بالای Pending فقط از `currentCover` خوانده می‌شود.
+- Library/Drafts نباید هیچ Draftی بسازد که تنها محتوایش یک Film Cover باشد.
 
-### 2. پاک‌سازی مالکیت درفت بعد از Final Film
-بعد از موفقیت Final Film:
+### 5. پاکسازی داده‌های آلوده قبلی
+برای داده‌هایی که قبلاً خراب شده‌اند:
+- یک guard در dedupe/backfill اضافه می‌شود تا Draftهای `draft-orphan-img-*` که source آن‌ها Film Cover است حذف و tombstone شوند.
+- این باعث می‌شود کارت Draft اشتباهی که فقط از کاور ساخته شده، بعد از refresh/اجرای app دیگر برنگردد.
 
-- عکس‌ها و ویدئوهایی که واقعاً در `eligibleClips` بوده‌اند به `projectSourceImages[mergedId]` و `projectSourceJobs[mergedId]` منتقل می‌شوند.
-- همان آیتم‌ها از draft snapshots مربوط به draft فاینال‌شده حذف می‌شوند.
-- `imageDraftMap` و `jobDraftMap` فقط برای همان آیتم‌های منتقل‌شده پاک یا بازنشانی می‌شوند تا بعداً backfill آن‌ها را به draft اشتباه برنگرداند.
-- آیتم‌هایی که متعلق به draftهای دیگر هستند دست‌نخورده باقی می‌مانند.
-
-### 3. امن‌سازی legacy backfill
-در effect مربوط به backfill `projectSourceImages` برای Final Filmهای قدیمی:
-
-- عکس‌هایی که در `imageDraftMap` مالکیت draft دارند، وارد پروژه‌ی Final Film دیگری نشوند.
-- عکس‌هایی که در `draftSourceImages` هر draft دیگری وجود دارند، وارد snapshot پروژه‌ی Final نشوند.
-- فقط عکس‌های واقعاً آزاد/legacy و بی‌مالکیت قابل backfill باشند.
-
-### 4. اصلاح قفل نسبت تصویر
-در `lockedRatio`، فیلتر `liveImages` باید مثل `visibleUserImages` از `activeImageIds` استفاده کند. الان این بخش هنوز عکس‌های غیر-active را در محاسبه نسبت پروژه لحاظ می‌کند و می‌تواند نشانه‌ای از نشت state باشد.
-
-### 5. اعتبارسنجی دستی بعد از پیاده‌سازی
-بعد از اعمال تغییرات، این سناریو باید پاس شود:
-
-1. یک Draft با یک عکس بسازید و آن را Final Film نکنید.
-2. وارد Draft دیگر شوید یا یک Draft جدید بسازید.
-3. Draft دوم را Final Film کنید.
-4. در Pending پروژه Final شده، فقط کارت‌های مربوط به همان Draft دوم نمایش داده شوند.
-5. عکس Draft اول نه در Pending پروژه دوم و نه در snapshot پروژه دوم دیده شود.
-6. باز کردن Draft اول همچنان عکس خودش را نشان دهد.
-
-## فایل‌هایی که تغییر می‌کنند
-
+## فایل‌های درگیر
 - `src/modules/generator-ui/pages/DashboardPage.tsx`
-- در صورت نیاز، فقط به‌روزرسانی مستندات برنامه: `.lovable/plan.md`
 
-## ریسک باقی‌مانده
-
-- داده‌های قدیمی localStorage که قبلاً snapshot اشتباه ساخته‌اند ممکن است از قبل آلوده شده باشند. برای این مورد یک guard اضافه می‌کنم تا از این به بعد snapshotهای جدید درست ساخته شوند و نمایش Pending بر اساس scope صحیح فیلتر شود.
+## تست پذیرش
+1. داخل یک Draft با آیکون Film Cover عکس بسازید.
+2. نباید در Library یک Draft project جدا فقط برای آن عکس ساخته شود.
+3. Draft را Final Film کنید.
+4. کاور باید در همان Final Film نمایش داده شود.
+5. کاور نباید در Pending پروژه دیگر، Draft دیگر، یا Workspace آزاد ظاهر شود.
+6. اگر داده آلوده قدیمی وجود داشته باشد، Draft ghost مربوط به کاور باید حذف شود و برنگردد.
