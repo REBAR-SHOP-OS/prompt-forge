@@ -314,7 +314,21 @@ export default function ProductAdDialog({
             </div>
           </div>
 
-          {/* Duration */}
+          {/* Your prompt */}
+          <div>
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+              Your prompt <span className="text-zinc-600">(optional)</span>
+            </div>
+            <Textarea
+              value={userPrompt}
+              onChange={(e) => setUserPrompt(e.target.value)}
+              rows={3}
+              placeholder="Write your own prompt / idea — it will be rewritten for your selected duration and camera style…"
+              className="min-h-[72px] border-white/10 bg-black/30 text-zinc-100"
+            />
+          </div>
+
+
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
               Duration
