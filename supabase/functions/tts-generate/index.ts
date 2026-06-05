@@ -90,6 +90,47 @@ function pcmToWav(pcm: Uint8Array, sampleRate = 24000, channels = 1): Uint8Array
   return new Uint8Array(buffer)
 }
 
+// Pitch-preserving time-stretch of 16-bit mono PCM using overlap-add (OLA).
+// factor > 1 makes audio longer (slower); factor < 1 makes it shorter (faster).
+function timeStretchPcm16(pcm: Uint8Array, factor: number, sampleRate: number): Uint8Array {
+  if (!isFinite(factor) || factor <= 0 || Math.abs(factor - 1) < 0.001) return pcm
+  const input = new Int16Array(pcm.buffer, pcm.byteOffset, Math.floor(pcm.byteLength / 2))
+  const inLen = input.length
+  if (inLen === 0) return pcm
+
+  // Frame ~30ms, 50% overlap synthesis hop, analysis hop scaled by factor.
+  const frame = Math.max(256, Math.round(sampleRate * 0.03))
+  const synHop = Math.floor(frame / 2)
+  const anaHop = Math.max(1, Math.round(synHop / factor))
+  const outLen = Math.max(frame, Math.round(inLen / factor) + frame)
+  const out = new Float32Array(outLen)
+  const norm = new Float32Array(outLen)
+  const win = new Float32Array(frame)
+  for (let i = 0; i < frame; i++) win[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (frame - 1))
+
+  let outPos = 0
+  for (let inPos = 0; inPos + frame <= inLen; inPos += anaHop) {
+    for (let i = 0; i < frame; i++) {
+      const w = win[i]
+      out[outPos + i] += input[inPos + i] * w
+      norm[outPos + i] += w
+    }
+    outPos += synHop
+    if (outPos + frame > outLen) break
+  }
+
+  const used = Math.min(outLen, outPos + frame)
+  const result = new Int16Array(used)
+  for (let i = 0; i < used; i++) {
+    const n = norm[i] > 1e-6 ? norm[i] : 1
+    let v = out[i] / n
+    if (v > 32767) v = 32767
+    else if (v < -32768) v = -32768
+    result[i] = v
+  }
+  return new Uint8Array(result.buffer.slice(0, result.byteLength))
+}
+
 function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64)
   const out = new Uint8Array(bin.length)
