@@ -6569,11 +6569,15 @@ export default function DashboardPage() {
                           <div className="inline-flex items-center gap-2">
                             <label htmlFor={`img-dur-${img.id}`}>Duration</label>
                             <div className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/20 px-2 py-1 text-[11px] font-semibold text-zinc-200">
-                              <ImageDurationInput
-                                id={`img-dur-${img.id}`}
-                                value={img.still_duration_seconds || 3}
-                                onCommit={(sec) => updateImageDuration(img.id, sec)}
-                              />
+                              {isReadOnlyProject ? (
+                                <span className="tabular-nums">{img.still_duration_seconds || 3}</span>
+                              ) : (
+                                <ImageDurationInput
+                                  id={`img-dur-${img.id}`}
+                                  value={img.still_duration_seconds || 3}
+                                  onCommit={(sec) => updateImageDuration(img.id, sec)}
+                                />
+                              )}
                               <span className="text-zinc-500">s</span>
                             </div>
                           </div>
