@@ -179,6 +179,7 @@ Deno.serve(async (req) => {
           productDescription: clip(body?.productDescription, 2000),
           cameraStyle: clip(body?.cameraStyle, 100),
           cameraMovement: clip(body?.cameraMovement, 1000),
+          genre: clip(body?.genre, 300),
         }
       : undefined;
     const supabaseHost = (() => {
