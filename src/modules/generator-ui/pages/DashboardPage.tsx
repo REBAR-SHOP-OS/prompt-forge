@@ -27,6 +27,7 @@ import {
   Library,
   LoaderCircle,
   Lock,
+  Loader2,
   LogOut,
   Mic,
   MicOff,
@@ -202,6 +203,21 @@ const MODEL_CHOICES: ModelChoice[] = [
     model: 'wan2.7-t2v-2026-04-25',
     supports: ['t2v'],
   },
+]
+
+// Camera movement styles offered in the composer. Picking one rewrites the
+// prompt (in English) around that camera movement to enrich the scenario.
+const CAMERA_STYLES: { label: string; hint: string }[] = [
+  { label: 'Whip Pan', hint: 'Fast blur transition' },
+  { label: 'Orbit Shot', hint: '360° around subject' },
+  { label: 'FPV Drone', hint: 'Immersive aerial flight' },
+  { label: 'Tracking Shot', hint: 'Follow the subject' },
+  { label: 'Push In Cinematic', hint: 'Slow dramatic dolly in' },
+  { label: 'Fly Through', hint: 'Fly through the space' },
+  { label: 'Crash Zoom', hint: 'Sudden rapid zoom' },
+  { label: 'Handheld Dynamic', hint: 'Raw handheld energy' },
+  { label: 'Dolly Zoom', hint: 'Vertigo effect' },
+  { label: 'Parallax Motion', hint: 'Deep layered motion' },
 ]
 
 // Mirrors backend pricing in supabase/functions/_shared/modules/external-api-adapter/service.ts.
@@ -592,6 +608,8 @@ export default function DashboardPage() {
   // reflects only the in-memory active workspace.
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false)
+  const [isCameraMenuOpen, setIsCameraMenuOpen] = useState(false)
+  const [activeCameraStyle, setActiveCameraStyle] = useState<string | null>(null)
   // Live-measured vertical budget for the preview stage. The composer is
   // position:fixed at the bottom and its height changes (textarea rows, error
   // line, ratio chips wrapping). We observe its top edge and reserve that
@@ -2076,6 +2094,48 @@ export default function DashboardPage() {
       setIsEnhancingPrompt(false)
     }
   }
+
+  // Camera-style rewrite: rewrites the prompt in English around the chosen
+  // camera movement so the scenario feels more complete and cinematic.
+  const runCameraStyle = async (style: string) => {
+    if (isEnhancingPrompt || isSubmitting) return
+    setIsEnhancingPrompt(true)
+    setActiveCameraStyle(style)
+    setComposerError(null)
+    try {
+      const imageUrls = [readyStartFrame?.url, readyEndFrame?.url].filter(
+        (u): u is string => typeof u === 'string' && u.length > 0,
+      )
+      const { data, error } = await supabase.functions.invoke('enhance-prompt', {
+        body: {
+          prompt: promptText.trim(),
+          imageUrls,
+          mode: 'camera',
+          cameraStyle: style,
+        },
+      })
+      if (error) {
+        const ctx = (error as unknown as { context?: { status?: number } })?.context
+        const status = ctx?.status
+        if (status === 429) setComposerError('Rate limit reached. Try again in a moment.')
+        else if (status === 402) setComposerError('AI credits exhausted. Add credits to continue.')
+        else setComposerError('Could not apply camera style. Please try again.')
+        return
+      }
+      const enhanced = (data as { enhancedPrompt?: string } | null)?.enhancedPrompt?.trim()
+      if (!enhanced) {
+        setComposerError('Could not apply camera style. Please try again.')
+        return
+      }
+      setPromptText(enhanced)
+      setIsCameraMenuOpen(false)
+    } catch {
+      setComposerError('Could not apply camera style. Please try again.')
+    } finally {
+      setIsEnhancingPrompt(false)
+    }
+  }
+
   const startUploadCount = uploadedFiles.filter((file) => file.target === 'Start').length
   const endUploadCount = uploadedFiles.filter((file) => file.target === 'End').length
   const visibleVideos = useMemo(() => {
@@ -7211,7 +7271,54 @@ export default function DashboardPage() {
           >
             <Package className="h-4 w-4" aria-hidden="true" />
           </button>
+
+          <Popover open={isCameraMenuOpen} onOpenChange={setIsCameraMenuOpen}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                disabled={isEnhancingPrompt || isSubmitting}
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-full border transition disabled:opacity-50 disabled:cursor-not-allowed ${
+                  activeCameraStyle
+                    ? 'border-amber-300/50 bg-amber-300/10 text-amber-100'
+                    : 'border-white/10 bg-black/20 text-zinc-300 hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100'
+                }`}
+                aria-label="Camera style"
+                title="Camera style — rewrite the prompt around a camera movement"
+              >
+                {isEnhancingPrompt && activeCameraStyle ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Camera className="h-4 w-4" aria-hidden="true" />
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-64 p-2">
+              <div className="px-2 pb-2 pt-1">
+                <p className="text-xs font-semibold text-zinc-200">Camera style</p>
+                <p className="text-[11px] text-zinc-500">
+                  Rewrites your prompt in English around the chosen camera movement.
+                </p>
+              </div>
+              <div className="grid gap-0.5">
+                {CAMERA_STYLES.map((style) => (
+                  <button
+                    key={style.label}
+                    type="button"
+                    disabled={isEnhancingPrompt || isSubmitting}
+                    onClick={() => runCameraStyle(style.label)}
+                    className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-white/5 disabled:opacity-50 ${
+                      activeCameraStyle === style.label ? 'bg-amber-300/10 text-amber-100' : 'text-zinc-200'
+                    }`}
+                  >
+                    <span>{style.label}</span>
+                    <span className="text-[10px] uppercase tracking-wide text-zinc-500">{style.hint}</span>
+                  </button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
+
 
 
         {!isTextToVideo ? (
