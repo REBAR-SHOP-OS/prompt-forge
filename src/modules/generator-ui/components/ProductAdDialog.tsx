@@ -543,12 +543,13 @@ export default function ProductAdDialog({
                           aria-checked={active}
                           title={s.prompt}
                           onClick={() => setScene((cur) => (cur === s.id ? '' : s.id))}
-                          className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                             active
                               ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
                               : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
                           }`}
                         >
+                          <span className="text-sm leading-none">{s.icon}</span>
                           {s.label}
                         </button>
                       )
