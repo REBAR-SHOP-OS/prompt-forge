@@ -2518,6 +2518,8 @@ export default function DashboardPage() {
     for (const imgs of Object.values(projectSourceImages)) {
       for (const i of imgs) claimedImageIds.add(i.id)
     }
+    // Film covers are not generation sources and must not drive the chain ratio.
+    for (const ci of Object.values(coverImages)) claimedImageIds.add(ci.id)
     const liveImages = userImages.filter(
       (i) => activeImageIds.has(i.id) && !claimedImageIds.has(i.id) && !workspaceHiddenImageIds.has(i.id),
     )
