@@ -27,7 +27,7 @@ import {
   Library,
   LoaderCircle,
   Lock,
-  Loader2,
+  
   LogOut,
   Mic,
   MicOff,
