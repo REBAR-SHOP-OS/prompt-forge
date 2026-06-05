@@ -35,3 +35,6 @@ verify_jwt = false
 
 [functions.video-analyze]
 verify_jwt = false
+
+[functions.local-llm-plan-video]
+verify_jwt = false
