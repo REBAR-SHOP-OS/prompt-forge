@@ -126,20 +126,27 @@ export default function ProductAdDialog({
 
   async function generate() {
     if (isWriting) return
-    if (!productName.trim() && !uploadedImageUrl) {
-      setError('Add a product name or attach a product photo.')
+    if (!userPrompt.trim() && !productName.trim() && !uploadedImageUrl) {
+      setError('Write a prompt, add a product name, or attach a product photo.')
       return
     }
     setIsWriting(true)
     setError(null)
     setScenes([])
     try {
+      const trimmedPrompt = userPrompt.trim()
+      const trimmedName = productName.trim()
+      const idea = trimmedPrompt
+        ? trimmedName
+          ? `${trimmedPrompt}\n\nThis is an advertisement for the product "${trimmedName}".`
+          : trimmedPrompt
+        : trimmedName
+          ? `Advertisement for the product "${trimmedName}".`
+          : 'Advertisement for the attached product.'
       const { data, error: invokeErr } = await supabase.functions.invoke('scenario-write', {
         body: {
           mode: 'product-ad',
-          idea: productName.trim()
-            ? `Advertisement for the product "${productName.trim()}".`
-            : 'Advertisement for the attached product.',
+          idea,
           durationSeconds: duration,
           imageUrl: uploadedImageUrl ?? undefined,
           productName: productName.trim() || undefined,
