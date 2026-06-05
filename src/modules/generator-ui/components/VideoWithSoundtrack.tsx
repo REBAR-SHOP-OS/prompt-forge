@@ -156,7 +156,15 @@ export function VideoWithSoundtrack({
           src={resolvedSrc}
           className={videoClassName}
           style={videoStyle}
+          onLoadedMetadata={(e) => {
+            // Apply clip volume as soon as the element is ready — the volume
+            // effect may have run while the <video> was still loading.
+            const el = e.currentTarget
+            el.volume = Math.max(0, Math.min(1, clipVolume))
+            el.muted = clipVolume <= 0
+          }}
         />
+
       )}
       <span className="pointer-events-none absolute bottom-2 right-2 z-10 rounded-full border border-emerald-300/30 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-200 backdrop-blur">
         Live preview
