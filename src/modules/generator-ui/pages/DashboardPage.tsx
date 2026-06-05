@@ -2303,10 +2303,15 @@ export default function DashboardPage() {
       jobStamps[job.id] = draftId
     }
 
+    // Film covers belong to a project scope, not a draft — never give a
+    // cover its own orphan draft.
+    const coverImageIds = new Set<string>()
+    for (const ci of Object.values(coverImages)) coverImageIds.add(ci.id)
     const imageStamps: Record<string, string> = {}
     for (const img of userImages) {
       if (imageDraftMap[img.id]) continue
       if (claimedImageIds.has(img.id)) continue
+      if (coverImageIds.has(img.id)) continue
       if (deletedDraftIds.has(img.id)) continue
       const draftId = `draft-orphan-img-${img.id}`
       if (deletedDraftIds.has(draftId)) continue
