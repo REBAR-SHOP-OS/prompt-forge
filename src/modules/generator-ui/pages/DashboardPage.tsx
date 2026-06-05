@@ -1615,7 +1615,7 @@ export default function DashboardPage() {
   const [musicUrl, setMusicUrl] = useState<string | null>(null)
   const [musicDuration, setMusicDuration] = useState<number>(0)
   const [musicRange, setMusicRange] = useState<[number, number]>([0, 0])
-  const [soundtrackMode, setSoundtrackMode] = useState<'music-only' | 'mix'>('music-only')
+  const [soundtrackMode, setSoundtrackMode] = useState<'music-only' | 'mix'>('mix')
   const [clipVolume, setClipVolume] = useState<number>(1)
   const [musicVolume, setMusicVolume] = useState<number>(1)
   const [isMusicDialogOpen, setIsMusicDialogOpen] = useState(false)
