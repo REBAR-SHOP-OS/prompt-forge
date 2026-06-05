@@ -1,14 +1,16 @@
-## Goal
-Make the app's entry intro video (`LoginIntro`) display fullscreen, filling the entire screen with no black letterbox bars.
+## هدف
+در پنجره‌ی STORAGE → تب Images، با کلیک روی هر عکس، آن عکس در یک نمای بزرگ (پیش‌نمایش) به کاربر نشان داده شود.
 
-## Change
-In `src/components/intro/LoginIntro.tsx`:
-- Change the `<video>` className from `h-full w-full object-contain` to `h-full w-full object-cover`.
+## وضعیت فعلی
+- یک دیالوگ پیش‌نمایش عکس از قبل وجود دارد: state به نام `previewImageUrl` و یک `Dialog` در انتهای فایل (حدود خط ۷۴۸۸) که هر URL داده‌شده را بزرگ نمایش می‌دهد.
+- اما تصویرِ بندانگشتی در گرید عکس‌ها (خط ۵۱۵۲) قابل کلیک نیست، پس راهی برای باز کردن این پیش‌نمایش وجود ندارد.
 
-The container is already `fixed inset-0` (covers the whole viewport). `object-contain` keeps the whole frame visible but adds black bars on the sides; `object-cover` scales the video to fill the screen edge-to-edge (cropping slightly as needed) for a true fullscreen experience.
+## تغییر
+تنها فایل: `src/modules/generator-ui/pages/DashboardPage.tsx`
 
-## Verification
-Reload the app / sign-out and sign-in flow to trigger the intro, confirm the video fills the screen with no black bars.
+- تصویر بندانگشتی هر کارت عکس (`<img src={img.storage_path} …>` داخل کانتینر خط ۵۱۵۱) را به یک دکمه‌ی قابل کلیک تبدیل می‌کنیم که با کلیک، `setPreviewImageUrl(img.storage_path)` را صدا می‌زند تا دیالوگ پیش‌نمایش بزرگ باز شود.
+- استایل: افزودن `cursor-pointer` و یک افکت hover ملایم تا مشخص باشد قابل کلیک است؛ و `title`/`aria-label` مناسب برای دسترسی‌پذیری.
+- دکمه‌های دانلود و حذف بدون تغییر باقی می‌مانند (کلیک روی تصویر فقط پیش‌نمایش را باز می‌کند).
 
-## Note
-If you prefer the whole frame always visible (no cropping) instead of edge-to-edge fill, let me know — that's the trade-off with `object-contain` vs `object-cover`.
+## تأیید نهایی
+باز کردن STORAGE → تب Images → کلیک روی عکس → باز شدن نمای بزرگ عکس → بستن دیالوگ بدون مشکل.
