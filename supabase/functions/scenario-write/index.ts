@@ -43,6 +43,9 @@ function cameraGuidance(opts: ProductAdOpts): string {
   if (opts.genre) {
     bits.push(`Direct the entire scenario in this genre/atmosphere: ${opts.genre}. Apply its mood, lighting, color palette, and visual style consistently across every shot while keeping the product the clear hero of the advertisement.`);
   }
+  if (opts.scene) {
+    bits.push(`Set the entire scenario in this environment/location: ${opts.scene}. Use its setting, lighting, textures, and atmosphere consistently across every shot while keeping the product the clear hero of the advertisement.`);
+  }
   return bits.join(" ");
 }
 
