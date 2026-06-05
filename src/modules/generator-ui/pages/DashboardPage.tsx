@@ -4702,6 +4702,46 @@ export default function DashboardPage() {
             return next
           })
         }
+        // Re-stamp ownership: the exact items that went into this Final Film
+        // now belong to the merged project, not a draft. Strip them from the
+        // draft ownership maps so the orphan/backfill effects can never pull
+        // them back into a draft and leak them into another project's Pending.
+        {
+          const mergedJobIds = new Set(
+            eligibleClips.filter((c) => c.kind === 'video').map((c) => c.id),
+          )
+          const mergedImageIds = new Set(
+            eligibleClips.filter((c) => c.kind === 'image').map((c) => c.id),
+          )
+          if (mergedJobIds.size > 0) {
+            setJobDraftMap((prev) => {
+              let changed = false
+              const next = { ...prev }
+              for (const id of mergedJobIds) { if (id in next) { delete next[id]; changed = true } }
+              if (!changed) return prev
+              persistJobDraftMap(next)
+              return next
+            })
+          }
+          if (mergedImageIds.size > 0) {
+            setImageDraftMap((prev) => {
+              let changed = false
+              const next = { ...prev }
+              for (const id of mergedImageIds) { if (id in next) { delete next[id]; changed = true } }
+              if (!changed) return prev
+              persistImageDraftMap(next)
+              return next
+            })
+            // Tombstone the per-item orphan draft ids so backfill can't rebuild
+            // an isolated draft from these now-finalized images.
+            setDeletedDraftIds((prev) => {
+              const next = new Set(prev)
+              for (const id of mergedImageIds) next.add(`draft-orphan-img-${id}`)
+              persistDeletedDraftIds(next)
+              return next
+            })
+          }
+        }
         setActiveDraftId(null)
         persistActiveDraftId(null)
         if (selectedProjectId && selectedProjectId.startsWith('draft-')) {
