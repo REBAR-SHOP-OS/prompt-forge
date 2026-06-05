@@ -6590,6 +6590,15 @@ export default function DashboardPage() {
                           onClick={(event) => event.stopPropagation()}
                         >
                           <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
+                          {isReadOnlyProject ? (
+                            <span
+                              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-2.5 py-1 text-[11px] font-medium text-zinc-400"
+                              aria-label={`Transition: ${TRANSITION_LABEL[transitionId]}`}
+                            >
+                              <TransitionPreview id={transitionId} size={22} />
+                              <span>{TRANSITION_LABEL[transitionId]}</span>
+                            </span>
+                          ) : (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <button
@@ -6619,6 +6628,7 @@ export default function DashboardPage() {
                               ))}
                             </DropdownMenuContent>
                           </DropdownMenu>
+                          )}
                           <span className="h-px flex-1 bg-white/10" aria-hidden="true" />
                         </div>
                       ) : null}
