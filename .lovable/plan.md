@@ -1,12 +1,21 @@
 ## Goal
-In the "Soundtrack for Final Film" dialog, remove the **Music only** button and keep only the **Mix audio** option, displayed as a single large button.
+Fix the **Clip audio** slider so it correctly controls the clip's own audio volume in the live preview (both the Final Film sequential preview and the single-clip preview).
 
-## Changes (in `src/modules/generator-ui/pages/DashboardPage.tsx`, ~lines 6051–6120)
+## Root cause
+In both preview players the `clipVolume` is applied to the `<video>` element inside a `useEffect`, but the effect runs while the video element is still loading (not yet mounted), so `videoRef.current` is `null`. After the video finally mounts (when `usePlayableVideoUrl` resolves the URL), the effect does **not** re-run, so the freshly mounted `<video>` keeps its default `volume = 1`. Result: the clip always plays at full volume and the slider appears to have no effect.
 
-1. Remove the **Music only** `<button>` (the `setSoundtrackMode('music-only')` element with the `Music2` icon).
-2. Make the **Mix audio** button span the full width as a single large button (keep the `SlidersHorizontal` icon + "Mix audio" label, larger padding).
-3. Force the audio mode to always be `mix`: set `soundtrackMode` default to `'mix'` and remove the music-only branch, so the clip/music volume sliders are always shown.
-4. Remove the now-unused music-only explanatory paragraph and, if no longer referenced, the `Music2` import.
+- `SequentialClipPlayer.tsx` (line ~164): effect deps are `[current?.id, clipVolume]` — missing the resolved src / mount moment.
+- `VideoWithSoundtrack.tsx` (clip volume effect): deps are `[clipVolume]` — same issue; also doesn't react to the resolved src.
+
+## Changes
+
+### 1. `src/modules/generator-ui/components/SequentialClipPlayer.tsx`
+- Add `resolvedVideoSrc` (and `srcLoading`) to the clip-volume effect dependency array so volume is re-applied every time the video element mounts / its source resolves.
+- Add an `onLoadedMetadata` (or `onLoadedData`) handler on the `<video>` that sets `el.volume`/`el.muted` from the current `clipVolume`, guaranteeing the value is applied as soon as the media element is ready.
+
+### 2. `src/modules/generator-ui/components/VideoWithSoundtrack.tsx`
+- Make the clip-volume effect also depend on the resolved playable src so it re-applies when the `<video>` mounts after loading.
+- Add the same `onLoadedMetadata` handler on its `<video>` to apply `clipVolume` on mount.
 
 ## Result
-The dialog shows one prominent "Mix audio" button with the Clip audio / Music volume sliders always visible; the music-only mode is gone.
+The Clip audio slider immediately and reliably controls the clip's own audio in the preview, including right after a clip loads — matching the Music slider behavior. No backend or render-pipeline changes needed.
