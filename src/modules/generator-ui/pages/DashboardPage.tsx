@@ -2406,6 +2406,19 @@ export default function DashboardPage() {
     let jobsChanged = false
     let imgsChanged = false
 
+    // Items owned by ANY draft (via ownership maps or live draft snapshots)
+    // must never be claimed by a legacy Final Film backfill — that is exactly
+    // how a draft's image/clip leaks into another project. Only truly loose,
+    // unowned legacy items are eligible.
+    const draftOwnedJobIds = new Set<string>(Object.keys(jobDraftMap))
+    for (const clips of Object.values(draftSourceJobs)) {
+      for (const c of clips) draftOwnedJobIds.add(c.id)
+    }
+    const draftOwnedImageIds = new Set<string>(Object.keys(imageDraftMap))
+    for (const imgs of Object.values(draftSourceImages)) {
+      for (const i of imgs) draftOwnedImageIds.add(i.id)
+    }
+
     for (const p of missing) {
       const cutoff = new Date(p.created_at).getTime()
       const sourceClips = [...generatedVideos]
@@ -2414,6 +2427,7 @@ export default function DashboardPage() {
             v.id !== p.id &&
             !v.id.startsWith('merged-') &&
             !claimedJobs.has(v.id) &&
+            !draftOwnedJobIds.has(v.id) &&
             normalizeStatus(v.status) === 'completed' &&
             !!v.video?.storage_path &&
             new Date(v.created_at).getTime() <= cutoff,
@@ -2428,6 +2442,7 @@ export default function DashboardPage() {
           .filter(
             (i) =>
               !claimedImgs.has(i.id) &&
+              !draftOwnedImageIds.has(i.id) &&
               !!i.storage_path &&
               new Date(i.created_at).getTime() <= cutoff,
           )
@@ -2447,7 +2462,7 @@ export default function DashboardPage() {
       persistProjectSourceImages(nextImgs)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, mergedEntries, librarySavedJobs, generatedVideos, userImages])
+  }, [userId, mergedEntries, librarySavedJobs, generatedVideos, userImages, jobDraftMap, imageDraftMap, draftSourceJobs, draftSourceImages])
 
 
 
@@ -2491,7 +2506,7 @@ export default function DashboardPage() {
       for (const i of imgs) claimedImageIds.add(i.id)
     }
     const liveImages = userImages.filter(
-      (i) => !claimedImageIds.has(i.id) && !workspaceHiddenImageIds.has(i.id),
+      (i) => activeImageIds.has(i.id) && !claimedImageIds.has(i.id) && !workspaceHiddenImageIds.has(i.id),
     )
     if (liveImages.length > 0) {
       const firstImg = liveImages[liveImages.length - 1]
@@ -2504,7 +2519,7 @@ export default function DashboardPage() {
     }
     return null
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [generatedVideos, userImages, selectedProjectId, projectSourceJobs, projectSourceImages, workspaceHiddenJobIds, workspaceHiddenImageIds, mergedEntries, draftEntries, librarySavedJobs, lockedProjectRatio, activeJobIds])
+  }, [generatedVideos, userImages, selectedProjectId, projectSourceJobs, projectSourceImages, workspaceHiddenJobIds, workspaceHiddenImageIds, mergedEntries, draftEntries, librarySavedJobs, lockedProjectRatio, activeJobIds, activeImageIds])
 
   useEffect(() => {
     if (lockedRatio && aspectRatio !== lockedRatio) {
@@ -4686,6 +4701,46 @@ export default function DashboardPage() {
             persistDeletedDraftIds(next)
             return next
           })
+        }
+        // Re-stamp ownership: the exact items that went into this Final Film
+        // now belong to the merged project, not a draft. Strip them from the
+        // draft ownership maps so the orphan/backfill effects can never pull
+        // them back into a draft and leak them into another project's Pending.
+        {
+          const mergedJobIds = new Set(
+            eligibleClips.filter((c) => c.kind === 'video').map((c) => c.id),
+          )
+          const mergedImageIds = new Set(
+            eligibleClips.filter((c) => c.kind === 'image').map((c) => c.id),
+          )
+          if (mergedJobIds.size > 0) {
+            setJobDraftMap((prev) => {
+              let changed = false
+              const next = { ...prev }
+              for (const id of mergedJobIds) { if (id in next) { delete next[id]; changed = true } }
+              if (!changed) return prev
+              persistJobDraftMap(next)
+              return next
+            })
+          }
+          if (mergedImageIds.size > 0) {
+            setImageDraftMap((prev) => {
+              let changed = false
+              const next = { ...prev }
+              for (const id of mergedImageIds) { if (id in next) { delete next[id]; changed = true } }
+              if (!changed) return prev
+              persistImageDraftMap(next)
+              return next
+            })
+            // Tombstone the per-item orphan draft ids so backfill can't rebuild
+            // an isolated draft from these now-finalized images.
+            setDeletedDraftIds((prev) => {
+              const next = new Set(prev)
+              for (const id of mergedImageIds) next.add(`draft-orphan-img-${id}`)
+              persistDeletedDraftIds(next)
+              return next
+            })
+          }
         }
         setActiveDraftId(null)
         persistActiveDraftId(null)
