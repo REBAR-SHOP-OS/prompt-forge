@@ -4248,6 +4248,7 @@ export default function DashboardPage() {
         for (const c of clips) claimedJobIds.add(c.id)
       }
       for (const v of completedSourceVideos) {
+        if (!activeJobIds.has(v.id)) continue
         if (workspaceHiddenJobIds.has(v.id)) continue
         if (claimedJobIds.has(v.id)) continue
         videoJobsById.set(v.id, v)
