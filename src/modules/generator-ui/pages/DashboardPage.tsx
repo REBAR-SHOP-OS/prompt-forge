@@ -2618,6 +2618,7 @@ export default function DashboardPage() {
   }, [generatedVideos, manualOrder, workspaceHiddenJobIds, selectedProjectId, projectSourceJobs, draftSourceJobs, activeDraftId, mergedEntries, librarySavedJobs, activeJobIds])
 
   const handleCardDragStart = (id: string) => (event: React.DragEvent) => {
+    if (isReadOnlyProject) return
     setDraggingId(id)
     event.dataTransfer.effectAllowed = 'move'
     try { event.dataTransfer.setData('text/plain', id) } catch {}
@@ -2628,6 +2629,7 @@ export default function DashboardPage() {
   }
   const handleCardDrop = (targetId: string) => (event: React.DragEvent) => {
     event.preventDefault()
+    if (isReadOnlyProject) return
     const sourceId = draggingId || event.dataTransfer.getData('text/plain')
     setDraggingId(null)
     if (!sourceId || sourceId === targetId) return
@@ -2989,6 +2991,8 @@ export default function DashboardPage() {
   }
 
   const updateImageDuration = (imageId: string, secondsRaw: number) => {
+    // Finalized projects are read-only: never mutate a source clip's duration.
+    if (isReadOnlyProject) return
     const seconds = Math.max(1, Math.min(15, Math.round(secondsRaw) || 1))
     setUserImages((curr) => curr.map((i) => (i.id === imageId ? { ...i, still_duration_seconds: seconds } : i)))
     void supabase
