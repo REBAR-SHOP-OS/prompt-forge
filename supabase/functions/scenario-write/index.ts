@@ -29,6 +29,7 @@ interface ProductAdOpts {
   cameraStyle?: string;
   cameraMovement?: string;
   genre?: string;
+  scene?: string;
 }
 
 function cameraGuidance(opts: ProductAdOpts): string {
