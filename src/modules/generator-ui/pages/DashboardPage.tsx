@@ -2262,7 +2262,7 @@ export default function DashboardPage() {
       return ordered
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, generatedVideos, userImages, jobDraftMap, imageDraftMap, projectSourceJobs, projectSourceImages, deletedDraftIds])
+  }, [userId, generatedVideos, userImages, jobDraftMap, imageDraftMap, projectSourceJobs, projectSourceImages, deletedDraftIds, coverImages])
 
 
 
