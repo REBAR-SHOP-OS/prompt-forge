@@ -2147,9 +2147,14 @@ export default function DashboardPage() {
       arr.push(v)
       clipsByDraft.set(did, arr)
     }
+    // Film covers are owned by a project scope (coverImages), NEVER by a
+    // draft. They must never be grouped into a draft snapshot.
+    const coverImageIds = new Set<string>()
+    for (const ci of Object.values(coverImages)) coverImageIds.add(ci.id)
     const imagesByDraft = new Map<string, UserImageItem[]>()
     for (const img of userImages) {
       if (finalClaimedImages.has(img.id)) continue
+      if (coverImageIds.has(img.id)) continue
       const did = imageDraftMap[img.id]
       if (!did || deletedDraftIds.has(did)) continue
       const arr = imagesByDraft.get(did) ?? []
@@ -2257,7 +2262,7 @@ export default function DashboardPage() {
       return ordered
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, generatedVideos, userImages, jobDraftMap, imageDraftMap, projectSourceJobs, projectSourceImages, deletedDraftIds])
+  }, [userId, generatedVideos, userImages, jobDraftMap, imageDraftMap, projectSourceJobs, projectSourceImages, deletedDraftIds, coverImages])
 
 
 
@@ -2298,10 +2303,15 @@ export default function DashboardPage() {
       jobStamps[job.id] = draftId
     }
 
+    // Film covers belong to a project scope, not a draft — never give a
+    // cover its own orphan draft.
+    const coverImageIds = new Set<string>()
+    for (const ci of Object.values(coverImages)) coverImageIds.add(ci.id)
     const imageStamps: Record<string, string> = {}
     for (const img of userImages) {
       if (imageDraftMap[img.id]) continue
       if (claimedImageIds.has(img.id)) continue
+      if (coverImageIds.has(img.id)) continue
       if (deletedDraftIds.has(img.id)) continue
       const draftId = `draft-orphan-img-${img.id}`
       if (deletedDraftIds.has(draftId)) continue
@@ -2333,7 +2343,7 @@ export default function DashboardPage() {
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, generatedVideos, userImages, mergedEntries, librarySavedJobs, projectSourceJobs, projectSourceImages, jobDraftMap, imageDraftMap, deletedDraftIds])
+  }, [userId, generatedVideos, userImages, mergedEntries, librarySavedJobs, projectSourceJobs, projectSourceImages, jobDraftMap, imageDraftMap, deletedDraftIds, coverImages])
 
 
   // One-time dedupe: older builds could create both an active `draft-<uuid>`
@@ -2377,6 +2387,67 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, draftEntries, draftSourceJobs, draftSourceImages])
 
+  // One-time cleanup of legacy pollution: earlier builds could turn a Film
+  // Cover image into its own `draft-orphan-img-*` draft. Such a draft has a
+  // single image whose id is a known cover. Remove those ghost drafts, strip
+  // their ownership stamp, and tombstone them so they never come back.
+  const coverGhostCleanedRef = useRef(false)
+  useEffect(() => {
+    if (!userId) return
+    if (coverGhostCleanedRef.current) return
+    if (Object.keys(coverImages).length === 0) return
+    coverGhostCleanedRef.current = true
+
+    const coverIds = new Set<string>()
+    for (const ci of Object.values(coverImages)) coverIds.add(ci.id)
+
+    const ghostDraftIds = new Set<string>()
+    for (const [draftId, imgs] of Object.entries(draftSourceImages)) {
+      const onlyCovers = imgs.length > 0 && imgs.every((i) => coverIds.has(i.id))
+      const noClips = (draftSourceJobs[draftId] ?? []).length === 0
+      if (onlyCovers && noClips) ghostDraftIds.add(draftId)
+    }
+    // Also catch deterministic orphan ids built from cover image ids even if
+    // the snapshot wasn't written yet.
+    for (const id of coverIds) ghostDraftIds.add(`draft-orphan-img-${id}`)
+
+    if (ghostDraftIds.size === 0) return
+
+    setDraftEntries((prev) => {
+      const next = prev.filter((d) => !ghostDraftIds.has(d.id))
+      if (next.length === prev.length) return prev
+      persistDraftEntries(next)
+      return next
+    })
+    setDraftSourceImages((prev) => {
+      const next = { ...prev }
+      let changed = false
+      for (const id of ghostDraftIds) { if (id in next) { delete next[id]; changed = true } }
+      if (!changed) return prev
+      persistDraftSourceImages(next)
+      return next
+    })
+    setImageDraftMap((prev) => {
+      const next = { ...prev }
+      let changed = false
+      for (const [imgId, did] of Object.entries(prev)) {
+        if (coverIds.has(imgId) || ghostDraftIds.has(did)) { delete next[imgId]; changed = true }
+      }
+      if (!changed) return prev
+      persistImageDraftMap(next)
+      return next
+    })
+    setDeletedDraftIds((prev) => {
+      const next = new Set(prev)
+      for (const id of ghostDraftIds) next.add(id)
+      persistDeletedDraftIds(next)
+      return next
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, coverImages, draftSourceImages, draftSourceJobs])
+
+
+
   // Backfill `projectSourceJobs` / `projectSourceImages` for legacy Final
   // Films that were merged before the snapshot system existed. Without this,
   // opening such a project shows a blank "0:00" card (the merged film itself)
@@ -2418,6 +2489,9 @@ export default function DashboardPage() {
     for (const imgs of Object.values(draftSourceImages)) {
       for (const i of imgs) draftOwnedImageIds.add(i.id)
     }
+    // Film covers belong to a specific project scope and must never be pulled
+    // into another project's legacy source-image backfill.
+    for (const ci of Object.values(coverImages)) draftOwnedImageIds.add(ci.id)
 
     for (const p of missing) {
       const cutoff = new Date(p.created_at).getTime()
@@ -2462,7 +2536,7 @@ export default function DashboardPage() {
       persistProjectSourceImages(nextImgs)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, mergedEntries, librarySavedJobs, generatedVideos, userImages, jobDraftMap, imageDraftMap, draftSourceJobs, draftSourceImages])
+  }, [userId, mergedEntries, librarySavedJobs, generatedVideos, userImages, jobDraftMap, imageDraftMap, draftSourceJobs, draftSourceImages, coverImages])
 
 
 
@@ -2505,6 +2579,8 @@ export default function DashboardPage() {
     for (const imgs of Object.values(projectSourceImages)) {
       for (const i of imgs) claimedImageIds.add(i.id)
     }
+    // Film covers are not generation sources and must not drive the chain ratio.
+    for (const ci of Object.values(coverImages)) claimedImageIds.add(ci.id)
     const liveImages = userImages.filter(
       (i) => activeImageIds.has(i.id) && !claimedImageIds.has(i.id) && !workspaceHiddenImageIds.has(i.id),
     )
@@ -2519,7 +2595,7 @@ export default function DashboardPage() {
     }
     return null
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [generatedVideos, userImages, selectedProjectId, projectSourceJobs, projectSourceImages, workspaceHiddenJobIds, workspaceHiddenImageIds, mergedEntries, draftEntries, librarySavedJobs, lockedProjectRatio, activeJobIds, activeImageIds])
+  }, [generatedVideos, userImages, selectedProjectId, projectSourceJobs, projectSourceImages, workspaceHiddenJobIds, workspaceHiddenImageIds, mergedEntries, draftEntries, librarySavedJobs, lockedProjectRatio, activeJobIds, activeImageIds, coverImages])
 
   useEffect(() => {
     if (lockedRatio && aspectRatio !== lockedRatio) {
@@ -4742,12 +4818,34 @@ export default function DashboardPage() {
             })
           }
         }
+        // Carry the Film Cover from the finalized draft/project scope over to
+        // the new merged project so it stays attached and visible after Final
+        // Film, and never lingers under the now-retired draft id.
+        {
+          const sourceScopeKeys = [selectedProjectId, activeDraftId].filter(
+            (k): k is string => !!k,
+          )
+          let movedCover: UserImageItem | null = null
+          for (const k of sourceScopeKeys) {
+            if (coverImages[k]) { movedCover = coverImages[k]; break }
+          }
+          if (movedCover) {
+            setCoverImages((prev) => {
+              const next = { ...prev }
+              for (const k of sourceScopeKeys) delete next[k]
+              next[mergedId] = movedCover as UserImageItem
+              persistCoverImages(next)
+              return next
+            })
+          }
+        }
         setActiveDraftId(null)
         persistActiveDraftId(null)
         if (selectedProjectId && selectedProjectId.startsWith('draft-')) {
           setSelectedProjectId(mergedId)
         }
       }
+
 
 
       // Final Film is done — auto Start Over so the workspace is fresh for
