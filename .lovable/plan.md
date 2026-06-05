@@ -1,21 +1,24 @@
 ## Goal
-Fix the **Clip audio** slider so it correctly controls the clip's own audio volume in the live preview (both the Final Film sequential preview and the single-clip preview).
+Make every option chip in the prompt builder (ProductAdDialog) visual: add a colorful emoji/icon in front of each label across **Camera Style**, **Genre & Atmosphere**, and **Scene & Environment**, so users recognize options at a glance.
 
-## Root cause
-In both preview players the `clipVolume` is applied to the `<video>` element inside a `useEffect`, but the effect runs while the video element is still loading (not yet mounted), so `videoRef.current` is `null`. After the video finally mounts (when `usePlayableVideoUrl` resolves the URL), the effect does **not** re-run, so the freshly mounted `<video>` keeps its default `volume = 1`. Result: the clip always plays at full volume and the slider appears to have no effect.
+## Approach
+Use colorful emojis (native, already colored) as the visual marker — the cleanest way to add meaning to many small chips without custom SVG assets. Each chip shows `emoji + label`.
 
-- `SequentialClipPlayer.tsx` (line ~164): effect deps are `[current?.id, clipVolume]` — missing the resolved src / mount moment.
-- `VideoWithSoundtrack.tsx` (clip volume effect): deps are `[clipVolume]` — same issue; also doesn't react to the resolved src.
+## Changes — `src/modules/generator-ui/components/ProductAdDialog.tsx`
 
-## Changes
+1. **Camera Style**: convert `CAMERA_STYLES` from a `string[]` into `{ label, icon }[]` (or add a lookup map) and pick a fitting emoji for each:
+   - Whip Pan 💫, Orbit Shot 🛰️, FPV Drone 🚁, Tracking Shot 🎯, Push In Cinematic 🎬, Fly Through 🕊️, Crash Zoom 💥, Handheld Dynamic 🤳, Dolly Zoom 🌀, Parallax Motion 🧊.
+   - Update the render loop to show the icon before the label and keep `cameraStyle` state value as the existing label string (so downstream logic is unchanged).
 
-### 1. `src/modules/generator-ui/components/SequentialClipPlayer.tsx`
-- Add `resolvedVideoSrc` (and `srcLoading`) to the clip-volume effect dependency array so volume is re-applied every time the video element mounts / its source resolves.
-- Add an `onLoadedMetadata` (or `onLoadedData`) handler on the `<video>` that sets `el.volume`/`el.muted` from the current `clipVolume`, guaranteeing the value is applied as soon as the media element is ready.
+2. **Genre & Atmosphere**: add an `icon` field to each `GENRE_TEMPLATES` entry:
+   - Epic Fantasy 🐉, Sci-Fi Minimalist 🛸, Post-Apocalyptic ☢️, Horror Jump-Scare 👻, High-Octane Action 🔥, Romantic Dreamscape 💗, Documentary / Realism 🎥, Anime / Manga Style 🌸.
+   - Render `g.icon` before `g.label`.
 
-### 2. `src/modules/generator-ui/components/VideoWithSoundtrack.tsx`
-- Make the clip-volume effect also depend on the resolved playable src so it re-applies when the `<video>` mounts after loading.
-- Add the same `onLoadedMetadata` handler on its `<video>` to apply `clipVolume` on mount.
+3. **Scene & Environment**: add an `icon` field to each `SCENE_TEMPLATES` entry:
+   - Construction Site 🏗️, Heavy Industry Factory 🏭, Abandoned Warehouse 🕸️, Shipyard / Dock 🚢, High-Tech Laboratory 🔬, Megacity Corporate 🏙️, Cyberpunk Alleyway 🌃, Subway / Underground Station 🚇, Rooftop Overlook 🌆, Epic Mountain Range 🏔️, Post-Apocalyptic Wasteland 🏜️, Deep Mystical Forest 🌲, Arctic Tundra / Ice Landscape ❄️, Medieval Castle / Citadel 🏰, Ancient Ruins 🏛️, Gothic Cathedral ⛪, Steampunk Workshop ⚙️, Dimly Lit Jazz Club 🎷, Dark Academia Library 📚, Retro Diner 🍔.
+   - Render `s.icon` before `s.label`.
+
+4. In all three chip buttons, place the emoji in a small `<span>` with a little right margin so spacing stays clean; keep the existing rounded-chip styling, active/amber states, and selection logic exactly as-is.
 
 ## Result
-The Clip audio slider immediately and reliably controls the clip's own audio in the preview, including right after a clip loads — matching the Music slider behavior. No backend or render-pipeline changes needed.
+All chips in this prompt UI become colorful and icon-led, making the choices instantly scannable, with no change to selection behavior or the generated prompt payloads.

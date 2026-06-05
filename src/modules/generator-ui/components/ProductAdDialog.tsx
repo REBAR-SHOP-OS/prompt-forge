@@ -29,100 +29,108 @@ const FRAMES_BUCKET = 'wan-frames'
 const SPLIT_DURATIONS = [30, 45, 135]
 const sceneRange = (i: number) => `${i * 15}–${(i + 1) * 15}s`
 
-const CAMERA_STYLES = [
-  'Whip Pan',
-  'Orbit Shot',
-  'FPV Drone',
-  'Tracking Shot',
-  'Push In Cinematic',
-  'Fly Through',
-  'Crash Zoom',
-  'Handheld Dynamic',
-  'Dolly Zoom',
-  'Parallax Motion',
+const CAMERA_STYLES: { label: string; icon: string }[] = [
+  { label: 'Whip Pan', icon: '💫' },
+  { label: 'Orbit Shot', icon: '🛰️' },
+  { label: 'FPV Drone', icon: '🚁' },
+  { label: 'Tracking Shot', icon: '🎯' },
+  { label: 'Push In Cinematic', icon: '🎬' },
+  { label: 'Fly Through', icon: '🕊️' },
+  { label: 'Crash Zoom', icon: '💥' },
+  { label: 'Handheld Dynamic', icon: '🤳' },
+  { label: 'Dolly Zoom', icon: '🌀' },
+  { label: 'Parallax Motion', icon: '🧊' },
 ]
 
-type GenreTemplate = { id: string; label: string; prompt: string }
+type GenreTemplate = { id: string; label: string; icon: string; prompt: string }
 
 const GENRE_TEMPLATES: GenreTemplate[] = [
   {
     id: 'epic-fantasy',
     label: 'Epic Fantasy',
+    icon: '🐉',
     prompt:
       'Epic fantasy directing: sweeping wide vistas of dreamlike landscapes, castles and mythical creatures, magical glowing lighting and an awe-inspiring heroic mood.',
   },
   {
     id: 'sci-fi-minimalist',
     label: 'Sci-Fi Minimalist',
+    icon: '🛸',
     prompt:
       'Minimalist sci-fi directing: clean white spaces, straight lines, hidden seamless technology and a calm, sleek futuristic atmosphere.',
   },
   {
     id: 'post-apocalyptic',
     label: 'Post-Apocalyptic',
+    icon: '☢️',
     prompt:
       'Post-apocalyptic directing: ruined cities, nature overgrowing buildings, ash, dust and a desolate abandoned atmosphere with muted desaturated tones.',
   },
   {
     id: 'horror-jump-scare',
     label: 'Horror Jump-Scare',
+    icon: '👻',
     prompt:
       'Sudden-horror directing: deep darkness, harsh localized light (like a flashlight), tense silence and abrupt movement changes that create dread and fear.',
   },
   {
     id: 'high-octane-action',
     label: 'High-Octane Action',
+    icon: '🔥',
     prompt:
       'High-octane action directing: rapid cuts, camera shake, explosions, high speed and motion blur for an intense adrenaline-fueled feel.',
   },
   {
     id: 'romantic-dreamscape',
     label: 'Romantic Dreamscape',
+    icon: '💗',
     prompt:
       'Romantic dreamscape directing: soft golden-hour sunlight, gentle soft focus on the subjects and warm dreamy colors for an intimate emotional mood.',
   },
   {
     id: 'documentary-realism',
     label: 'Documentary / Realism',
+    icon: '🎥',
     prompt:
       'Documentary realism directing: natural light, no stylized grading, true-to-life colors and simple unobtrusive camera movements for an authentic real feel.',
   },
   {
     id: 'anime-manga',
     label: 'Anime / Manga Style',
+    icon: '🌸',
     prompt:
       'Anime/manga style directing: bold outline lines, saturated flat 2D colors and exaggerated dynamic motion effects with expressive energetic action.',
   },
 ]
 
-type SceneTemplate = { id: string; label: string; group: string; prompt: string }
+type SceneTemplate = { id: string; label: string; icon: string; group: string; prompt: string }
 
 const SCENE_TEMPLATES: SceneTemplate[] = [
   // Industrial & Construction
-  { id: 'construction-site', label: 'Construction Site', group: 'Industrial & Construction', prompt: 'Construction site environment: steel building skeletons, giant moving cranes, dust and dirt, hard-hat workers at sunset.' },
-  { id: 'heavy-industry', label: 'Heavy Industry Factory', group: 'Industrial & Construction', prompt: 'Heavy industry factory environment: molten iron, welding sparks, large gear machinery and huge smokestacks.' },
-  { id: 'abandoned-warehouse', label: 'Abandoned Warehouse', group: 'Industrial & Construction', prompt: 'Abandoned warehouse environment: large empty space, broken windows, light beams piercing from the roof and dust floating in the air.' },
-  { id: 'shipyard-dock', label: 'Shipyard / Dock', group: 'Industrial & Construction', prompt: 'Shipyard and dock environment: giant container ships, coastal cranes, seawater and rusty steel structures.' },
-  { id: 'high-tech-lab', label: 'High-Tech Laboratory', group: 'Industrial & Construction', prompt: 'High-tech laboratory environment: clean white walls, blinking computer server racks, glass chambers and cold blue or laser lighting.' },
+  { id: 'construction-site', label: 'Construction Site', icon: '🏗️', group: 'Industrial & Construction', prompt: 'Construction site environment: steel building skeletons, giant moving cranes, dust and dirt, hard-hat workers at sunset.' },
+  { id: 'heavy-industry', label: 'Heavy Industry Factory', icon: '🏭', group: 'Industrial & Construction', prompt: 'Heavy industry factory environment: molten iron, welding sparks, large gear machinery and huge smokestacks.' },
+  { id: 'abandoned-warehouse', label: 'Abandoned Warehouse', icon: '🕸️', group: 'Industrial & Construction', prompt: 'Abandoned warehouse environment: large empty space, broken windows, light beams piercing from the roof and dust floating in the air.' },
+  { id: 'shipyard-dock', label: 'Shipyard / Dock', icon: '🚢', group: 'Industrial & Construction', prompt: 'Shipyard and dock environment: giant container ships, coastal cranes, seawater and rusty steel structures.' },
+  { id: 'high-tech-lab', label: 'High-Tech Laboratory', icon: '🔬', group: 'Industrial & Construction', prompt: 'High-tech laboratory environment: clean white walls, blinking computer server racks, glass chambers and cold blue or laser lighting.' },
   // Urban & Modern
-  { id: 'megacity-corporate', label: 'Megacity Corporate', group: 'Urban & Modern', prompt: 'Megacity corporate environment: giant glass skyscrapers, clouds reflecting on the glass and a sleek upscale business atmosphere.' },
-  { id: 'cyberpunk-alleyway', label: 'Cyberpunk Alleyway', group: 'Urban & Modern', prompt: 'Cyberpunk alleyway environment: crowded narrow streets at night, multilingual neon signs, hanging wires and street-food kiosks.' },
-  { id: 'subway-station', label: 'Subway / Underground Station', group: 'Urban & Modern', prompt: 'Subway station environment: dark tunnels, fast moving trains with motion blur and concrete platforms under fluorescent light.' },
-  { id: 'rooftop-overlook', label: 'Rooftop Overlook', group: 'Urban & Modern', prompt: 'Rooftop overlook environment: the edge of a tall tower rooftop at night while the whole city lights glow in the background with cinematic bokeh.' },
+  { id: 'megacity-corporate', label: 'Megacity Corporate', icon: '🏙️', group: 'Urban & Modern', prompt: 'Megacity corporate environment: giant glass skyscrapers, clouds reflecting on the glass and a sleek upscale business atmosphere.' },
+  { id: 'cyberpunk-alleyway', label: 'Cyberpunk Alleyway', icon: '🌃', group: 'Urban & Modern', prompt: 'Cyberpunk alleyway environment: crowded narrow streets at night, multilingual neon signs, hanging wires and street-food kiosks.' },
+  { id: 'subway-station', label: 'Subway / Underground Station', icon: '🚇', group: 'Urban & Modern', prompt: 'Subway station environment: dark tunnels, fast moving trains with motion blur and concrete platforms under fluorescent light.' },
+  { id: 'rooftop-overlook', label: 'Rooftop Overlook', icon: '🌆', group: 'Urban & Modern', prompt: 'Rooftop overlook environment: the edge of a tall tower rooftop at night while the whole city lights glow in the background with cinematic bokeh.' },
   // Natural & Epic Landscapes
-  { id: 'epic-mountain', label: 'Epic Mountain Range', group: 'Natural & Epic Landscapes', prompt: 'Epic mountain range environment: sharp snowy peaks, thick fog in the valleys and steep cliffs.' },
-  { id: 'apocalyptic-wasteland', label: 'Post-Apocalyptic Wasteland', group: 'Natural & Epic Landscapes', prompt: 'Post-apocalyptic wasteland environment: endless sand plains, abandoned worn vehicles, dusty sky and a scorching sun.' },
-  { id: 'mystical-forest', label: 'Deep Mystical Forest', group: 'Natural & Epic Landscapes', prompt: 'Deep mystical forest environment: ancient tall trees, dense foliage, light filtered through leaves reaching the ground and a misty atmosphere.' },
-  { id: 'arctic-tundra', label: 'Arctic Tundra / Ice Landscape', group: 'Natural & Epic Landscapes', prompt: 'Arctic tundra ice landscape environment: endless white plains, ice caves with blue light reflections and a snowstorm.' },
+  { id: 'epic-mountain', label: 'Epic Mountain Range', icon: '🏔️', group: 'Natural & Epic Landscapes', prompt: 'Epic mountain range environment: sharp snowy peaks, thick fog in the valleys and steep cliffs.' },
+  { id: 'apocalyptic-wasteland', label: 'Post-Apocalyptic Wasteland', icon: '🏜️', group: 'Natural & Epic Landscapes', prompt: 'Post-apocalyptic wasteland environment: endless sand plains, abandoned worn vehicles, dusty sky and a scorching sun.' },
+  { id: 'mystical-forest', label: 'Deep Mystical Forest', icon: '🌲', group: 'Natural & Epic Landscapes', prompt: 'Deep mystical forest environment: ancient tall trees, dense foliage, light filtered through leaves reaching the ground and a misty atmosphere.' },
+  { id: 'arctic-tundra', label: 'Arctic Tundra / Ice Landscape', icon: '❄️', group: 'Natural & Epic Landscapes', prompt: 'Arctic tundra ice landscape environment: endless white plains, ice caves with blue light reflections and a snowstorm.' },
   // Historical & Fantasy
-  { id: 'medieval-castle', label: 'Medieval Castle / Citadel', group: 'Historical & Fantasy', prompt: 'Medieval castle environment: large stone walls, lit torches on the walls and dark halls with long wooden tables.' },
-  { id: 'ancient-ruins', label: 'Ancient Ruins', group: 'Historical & Fantasy', prompt: 'Ancient ruins environment: cracked Greek or Egyptian stone columns covered in vines, set in a desert or forest.' },
-  { id: 'gothic-cathedral', label: 'Gothic Cathedral', group: 'Historical & Fantasy', prompt: 'Gothic cathedral environment: pointed architecture and large stained-glass windows casting colorful light into a vast dark hall.' },
-  { id: 'steampunk-workshop', label: 'Steampunk Workshop', group: 'Historical & Fantasy', prompt: 'Steampunk workshop environment: copper pipes, gauge dials, steam and intricate 19th-century mechanical tools.' },
+  { id: 'medieval-castle', label: 'Medieval Castle / Citadel', icon: '🏰', group: 'Historical & Fantasy', prompt: 'Medieval castle environment: large stone walls, lit torches on the walls and dark halls with long wooden tables.' },
+  { id: 'ancient-ruins', label: 'Ancient Ruins', icon: '🏛️', group: 'Historical & Fantasy', prompt: 'Ancient ruins environment: cracked Greek or Egyptian stone columns covered in vines, set in a desert or forest.' },
+  { id: 'gothic-cathedral', label: 'Gothic Cathedral', icon: '⛪', group: 'Historical & Fantasy', prompt: 'Gothic cathedral environment: pointed architecture and large stained-glass windows casting colorful light into a vast dark hall.' },
+  { id: 'steampunk-workshop', label: 'Steampunk Workshop', icon: '⚙️', group: 'Historical & Fantasy', prompt: 'Steampunk workshop environment: copper pipes, gauge dials, steam and intricate 19th-century mechanical tools.' },
   // Interior & Moody
-  { id: 'jazz-club', label: 'Dimly Lit Jazz Club', group: 'Interior & Moody', prompt: 'Dimly lit jazz club environment: a cozy space, cigarette smoke hanging in spot lighting, shiny brass instruments and dark leather furniture.' },
-  { id: 'dark-academia-library', label: 'Dark Academia Library', group: 'Interior & Moody', prompt: 'Dark academia library environment: tall wooden shelves full of old leather books, study desks with green lamps and the scent of old paper.' },
-  { id: 'retro-diner', label: 'Retro Diner', group: 'Interior & Moody', prompt: 'Retro 80s diner environment: red leather booths, neon interior decor, a jukebox and rain-streaked windows at night.' },
+  { id: 'jazz-club', label: 'Dimly Lit Jazz Club', icon: '🎷', group: 'Interior & Moody', prompt: 'Dimly lit jazz club environment: a cozy space, cigarette smoke hanging in spot lighting, shiny brass instruments and dark leather furniture.' },
+  { id: 'dark-academia-library', label: 'Dark Academia Library', icon: '📚', group: 'Interior & Moody', prompt: 'Dark academia library environment: tall wooden shelves full of old leather books, study desks with green lamps and the scent of old paper.' },
+  { id: 'retro-diner', label: 'Retro Diner', icon: '🍔', group: 'Interior & Moody', prompt: 'Retro 80s diner environment: red leather booths, neon interior decor, a jukebox and rain-streaked windows at night.' },
 ]
 
 const SCENE_GROUPS = Array.from(new Set(SCENE_TEMPLATES.map((s) => s.group)))
@@ -139,7 +147,7 @@ export default function ProductAdDialog({
   const [productName, setProductName] = useState('')
   const [productDescription, setProductDescription] = useState('')
   const [userPrompt, setUserPrompt] = useState('')
-  const [cameraStyle, setCameraStyle] = useState<string>(CAMERA_STYLES[0])
+  const [cameraStyle, setCameraStyle] = useState<string>(CAMERA_STYLES[0].label)
   const [cameraMovement, setCameraMovement] = useState('')
   const [genre, setGenre] = useState<string>('')
   const [scene, setScene] = useState<string>('')
@@ -298,7 +306,7 @@ export default function ProductAdDialog({
     setProductName('')
     setProductDescription('')
     setUserPrompt('')
-    setCameraStyle(CAMERA_STYLES[0])
+    setCameraStyle(CAMERA_STYLES[0].label)
     setCameraMovement('')
     setGenre('')
     setScene('')
@@ -461,21 +469,22 @@ export default function ProductAdDialog({
             </div>
             <div role="radiogroup" aria-label="Camera style" className="flex flex-wrap gap-2">
               {CAMERA_STYLES.map((style) => {
-                const active = cameraStyle === style
+                const active = cameraStyle === style.label
                 return (
                   <button
-                    key={style}
+                    key={style.label}
                     type="button"
                     role="radio"
                     aria-checked={active}
-                    onClick={() => setCameraStyle(style)}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                    onClick={() => setCameraStyle(style.label)}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                       active
                         ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
                         : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
                     }`}
                   >
-                    {style}
+                    <span className="text-sm leading-none">{style.icon}</span>
+                    {style.label}
                   </button>
                 )
               })}
@@ -498,12 +507,13 @@ export default function ProductAdDialog({
                     aria-checked={active}
                     title={g.prompt}
                     onClick={() => setGenre((cur) => (cur === g.id ? '' : g.id))}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                       active
                         ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
                         : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
                     }`}
                   >
+                    <span className="text-sm leading-none">{g.icon}</span>
                     {g.label}
                   </button>
                 )
@@ -533,12 +543,13 @@ export default function ProductAdDialog({
                           aria-checked={active}
                           title={s.prompt}
                           onClick={() => setScene((cur) => (cur === s.id ? '' : s.id))}
-                          className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                             active
                               ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
                               : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
                           }`}
                         >
+                          <span className="text-sm leading-none">{s.icon}</span>
                           {s.label}
                         </button>
                       )
