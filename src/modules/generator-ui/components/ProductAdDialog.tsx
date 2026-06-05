@@ -95,6 +95,38 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
   },
 ]
 
+type SceneTemplate = { id: string; label: string; group: string; prompt: string }
+
+const SCENE_TEMPLATES: SceneTemplate[] = [
+  // Industrial & Construction
+  { id: 'construction-site', label: 'Construction Site', group: 'Industrial & Construction', prompt: 'Construction site environment: steel building skeletons, giant moving cranes, dust and dirt, hard-hat workers at sunset.' },
+  { id: 'heavy-industry', label: 'Heavy Industry Factory', group: 'Industrial & Construction', prompt: 'Heavy industry factory environment: molten iron, welding sparks, large gear machinery and huge smokestacks.' },
+  { id: 'abandoned-warehouse', label: 'Abandoned Warehouse', group: 'Industrial & Construction', prompt: 'Abandoned warehouse environment: large empty space, broken windows, light beams piercing from the roof and dust floating in the air.' },
+  { id: 'shipyard-dock', label: 'Shipyard / Dock', group: 'Industrial & Construction', prompt: 'Shipyard and dock environment: giant container ships, coastal cranes, seawater and rusty steel structures.' },
+  { id: 'high-tech-lab', label: 'High-Tech Laboratory', group: 'Industrial & Construction', prompt: 'High-tech laboratory environment: clean white walls, blinking computer server racks, glass chambers and cold blue or laser lighting.' },
+  // Urban & Modern
+  { id: 'megacity-corporate', label: 'Megacity Corporate', group: 'Urban & Modern', prompt: 'Megacity corporate environment: giant glass skyscrapers, clouds reflecting on the glass and a sleek upscale business atmosphere.' },
+  { id: 'cyberpunk-alleyway', label: 'Cyberpunk Alleyway', group: 'Urban & Modern', prompt: 'Cyberpunk alleyway environment: crowded narrow streets at night, multilingual neon signs, hanging wires and street-food kiosks.' },
+  { id: 'subway-station', label: 'Subway / Underground Station', group: 'Urban & Modern', prompt: 'Subway station environment: dark tunnels, fast moving trains with motion blur and concrete platforms under fluorescent light.' },
+  { id: 'rooftop-overlook', label: 'Rooftop Overlook', group: 'Urban & Modern', prompt: 'Rooftop overlook environment: the edge of a tall tower rooftop at night while the whole city lights glow in the background with cinematic bokeh.' },
+  // Natural & Epic Landscapes
+  { id: 'epic-mountain', label: 'Epic Mountain Range', group: 'Natural & Epic Landscapes', prompt: 'Epic mountain range environment: sharp snowy peaks, thick fog in the valleys and steep cliffs.' },
+  { id: 'apocalyptic-wasteland', label: 'Post-Apocalyptic Wasteland', group: 'Natural & Epic Landscapes', prompt: 'Post-apocalyptic wasteland environment: endless sand plains, abandoned worn vehicles, dusty sky and a scorching sun.' },
+  { id: 'mystical-forest', label: 'Deep Mystical Forest', group: 'Natural & Epic Landscapes', prompt: 'Deep mystical forest environment: ancient tall trees, dense foliage, light filtered through leaves reaching the ground and a misty atmosphere.' },
+  { id: 'arctic-tundra', label: 'Arctic Tundra / Ice Landscape', group: 'Natural & Epic Landscapes', prompt: 'Arctic tundra ice landscape environment: endless white plains, ice caves with blue light reflections and a snowstorm.' },
+  // Historical & Fantasy
+  { id: 'medieval-castle', label: 'Medieval Castle / Citadel', group: 'Historical & Fantasy', prompt: 'Medieval castle environment: large stone walls, lit torches on the walls and dark halls with long wooden tables.' },
+  { id: 'ancient-ruins', label: 'Ancient Ruins', group: 'Historical & Fantasy', prompt: 'Ancient ruins environment: cracked Greek or Egyptian stone columns covered in vines, set in a desert or forest.' },
+  { id: 'gothic-cathedral', label: 'Gothic Cathedral', group: 'Historical & Fantasy', prompt: 'Gothic cathedral environment: pointed architecture and large stained-glass windows casting colorful light into a vast dark hall.' },
+  { id: 'steampunk-workshop', label: 'Steampunk Workshop', group: 'Historical & Fantasy', prompt: 'Steampunk workshop environment: copper pipes, gauge dials, steam and intricate 19th-century mechanical tools.' },
+  // Interior & Moody
+  { id: 'jazz-club', label: 'Dimly Lit Jazz Club', group: 'Interior & Moody', prompt: 'Dimly lit jazz club environment: a cozy space, cigarette smoke hanging in spot lighting, shiny brass instruments and dark leather furniture.' },
+  { id: 'dark-academia-library', label: 'Dark Academia Library', group: 'Interior & Moody', prompt: 'Dark academia library environment: tall wooden shelves full of old leather books, study desks with green lamps and the scent of old paper.' },
+  { id: 'retro-diner', label: 'Retro Diner', group: 'Interior & Moody', prompt: 'Retro 80s diner environment: red leather booths, neon interior decor, a jukebox and rain-streaked windows at night.' },
+]
+
+const SCENE_GROUPS = Array.from(new Set(SCENE_TEMPLATES.map((s) => s.group)))
+
 export default function ProductAdDialog({
   open,
   onOpenChange,
@@ -110,6 +142,7 @@ export default function ProductAdDialog({
   const [cameraStyle, setCameraStyle] = useState<string>(CAMERA_STYLES[0])
   const [cameraMovement, setCameraMovement] = useState('')
   const [genre, setGenre] = useState<string>('')
+  const [scene, setScene] = useState<string>('')
   const [isWriting, setIsWriting] = useState(false)
   const [scenes, setScenes] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -208,6 +241,7 @@ export default function ProductAdDialog({
           cameraStyle,
           cameraMovement: cameraMovement.trim() || undefined,
           genre: GENRE_TEMPLATES.find((g) => g.id === genre)?.prompt || undefined,
+          scene: SCENE_TEMPLATES.find((s) => s.id === scene)?.prompt || undefined,
         },
       })
       if (invokeErr) {
@@ -267,6 +301,7 @@ export default function ProductAdDialog({
     setCameraStyle(CAMERA_STYLES[0])
     setCameraMovement('')
     setGenre('')
+    setScene('')
     setScenes([])
     setError(null)
     setCopiedIndex(null)
@@ -473,6 +508,44 @@ export default function ProductAdDialog({
                   </button>
                 )
               })}
+            </div>
+          </div>
+
+          {/* Scene & environment */}
+          <div>
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+              Scene &amp; environment <span className="text-zinc-600">(optional)</span>
+            </div>
+            <div className="space-y-2.5">
+              {SCENE_GROUPS.map((group) => (
+                <div key={group}>
+                  <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                    {group}
+                  </div>
+                  <div role="radiogroup" aria-label={group} className="flex flex-wrap gap-2">
+                    {SCENE_TEMPLATES.filter((s) => s.group === group).map((s) => {
+                      const active = scene === s.id
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          title={s.prompt}
+                          onClick={() => setScene((cur) => (cur === s.id ? '' : s.id))}
+                          className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                            active
+                              ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
+                              : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
+                          }`}
+                        >
+                          {s.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
