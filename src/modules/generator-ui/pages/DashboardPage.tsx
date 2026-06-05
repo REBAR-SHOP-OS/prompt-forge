@@ -3437,6 +3437,15 @@ export default function DashboardPage() {
         persistWorkspaceHiddenJobIds(next)
         return next
       })
+      // Membership is authoritative: mark the resumed clips active so they
+      // join the workspace + Final Film scope. Nothing outside this manifest
+      // can ever leak into the film.
+      setActiveJobIds((curr) => {
+        const next = new Set(curr)
+        for (const j of videoSnapshot) next.add(j.id)
+        persistActiveJobIds(next)
+        return next
+      })
     }
     if (imageSnapshot.length > 0) {
       setUserImages((current) => {
@@ -3448,6 +3457,12 @@ export default function DashboardPage() {
         const next = new Set(curr)
         for (const i of imageSnapshot) next.delete(i.id)
         persistWorkspaceHiddenImageIds(next)
+        return next
+      })
+      setActiveImageIds((curr) => {
+        const next = new Set(curr)
+        for (const i of imageSnapshot) next.add(i.id)
+        persistActiveImageIds(next)
         return next
       })
     }
