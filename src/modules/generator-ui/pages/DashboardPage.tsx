@@ -2534,7 +2534,7 @@ export default function DashboardPage() {
     }
     return null
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [generatedVideos, userImages, selectedProjectId, projectSourceJobs, projectSourceImages, workspaceHiddenJobIds, workspaceHiddenImageIds, mergedEntries, draftEntries, librarySavedJobs, lockedProjectRatio, activeJobIds, activeImageIds])
+  }, [generatedVideos, userImages, selectedProjectId, projectSourceJobs, projectSourceImages, workspaceHiddenJobIds, workspaceHiddenImageIds, mergedEntries, draftEntries, librarySavedJobs, lockedProjectRatio, activeJobIds, activeImageIds, coverImages])
 
   useEffect(() => {
     if (lockedRatio && aspectRatio !== lockedRatio) {
