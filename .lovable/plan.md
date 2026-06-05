@@ -1,27 +1,26 @@
 ## Goal
-Move the **Camera style** feature into the existing **Prompt** button's popover (the circled "Prompt" enhance menu), and change its behavior so it only **adds a cinematography/camera-movement style to the user's own prompt** — keeping the user's original prompt intact and just enriching it so the video looks more cinematic. The standalone Camera icon in the toolbar row is removed.
+Add a **Camera Style** picker (icon button) to the prompt composer toolbar. When the user picks a style, the current prompt is rewritten in English to incorporate that camera movement, making the scenario richer. Output is always English.
+
+## Camera styles
+Whip Pan · Orbit Shot · FPV Drone · Tracking Shot · Push In Cinematic · Fly Through · Crash Zoom · Handheld Dynamic · Dolly Zoom · Parallax Motion
 
 ## UI changes — `src/modules/generator-ui/pages/DashboardPage.tsx`
-- Remove the standalone Camera `Popover`/icon button currently in the toolbar row (lines ~7275–7319).
-- Inside the existing **Prompt** popover (the one with "No narrator" / "With narrator", lines ~7500–7573), add a third option: **Camera style**.
-  - It shows a small grid/list of the 10 styles (Whip Pan, Orbit Shot, FPV Drone, Tracking Shot, Push In Cinematic, Fly Through, Crash Zoom, Handheld Dynamic, Dolly Zoom, Parallax Motion) as selectable chips, similar to how "With narrator" reveals a sub-panel.
-  - Selecting a style calls `runCameraStyle(style)`, shows the spinner, and closes the popover on success.
-  - The Camera style option is disabled when the prompt is empty (since it only augments an existing prompt).
+- Add a new round icon button (a camera/video icon, e.g. `Video` or `Camera` from lucide) in the toolbar row alongside the existing Reframe / AI-image / Scenario / Product-ad buttons (around lines 7176–7213).
+- Wrap it in a Popover (project already uses shadcn popover) listing the 10 camera styles as selectable items. Tooltip/title: "Camera style".
+- Selecting a style triggers a rewrite of the prompt (shows the same spinner state as enhance, disables while running) and closes the popover.
 
-## Behavior change — `runCameraStyle` (lines ~2100–2137)
-- Keep the same `enhance-prompt` invocation with `mode: 'camera'` and `cameraStyle`.
-- Behavior intent stays "augment, don't rewrite" — the returned prompt = the user's original prompt with the camera style woven in.
+## Rewrite logic — `runCameraStyle(style)` helper in DashboardPage
+- Reuse the existing `enhance-prompt` flow pattern (`runEnhancePrompt`). Add a new function that invokes the `enhance-prompt` edge function with a new `mode: 'camera'` and a `cameraStyle` field, passing the current prompt + any start/end frame image URLs.
+- On success, set `promptText` to the returned (English) rewritten prompt.
+- Handle 429 / 402 / generic errors via `setComposerError`, same as enhance.
+- If prompt is empty, still allow generating a camera-driven scene description from the chosen style alone (seed prompt from the style).
 
-## Backend change — `supabase/functions/enhance-prompt/index.ts`
-- Rewrite `cameraSuffix()` so the model is instructed to:
-  - **Preserve the user's original prompt content, subject, scene, and wording as much as possible.**
-  - Only **add/integrate the chosen camera movement** (and minimal supporting cinematic phrasing) so the shot feels more attractive — not invent a new scenario.
-  - **Keep the user's original language** (do not force-translate to English), so the addition matches the prompt's language.
-- Keep validation (`mode === 'camera'` requires a valid `cameraStyle`) and the camera-style definitions as-is.
-- Since camera mode now requires an existing prompt, the "seed from style alone" fallback for empty prompts is no longer needed (the UI blocks empty-prompt usage).
-- Redeploy the edge function.
+## Backend — `supabase/functions/enhance-prompt/index.ts`
+- Accept `mode: 'camera'` and a `cameraStyle` string (validate against the allowed list).
+- Add a camera-style system suffix instructing the model to:
+  - Rewrite/expand the prompt as a single cinematic video prompt built around the chosen camera movement (define each style, e.g. "Whip Pan = fast rotational blur transition", "Dolly Zoom = vertigo effect", etc.).
+  - **Always output in English**, regardless of the input language (overrides the default "preserve original language" rule for this mode).
+  - Keep it concise and cinematic, include subject/action/lighting/mood, and weave the camera motion naturally.
 
 ## Verification
-- Build passes.
-- Open the composer, type a prompt, click **Prompt**, choose **Camera style → e.g. Orbit Shot**, and confirm the prompt field updates with the same idea plus the camera movement, in the original language.
-- Confirm the old standalone camera icon is gone from the toolbar.
+- Build passes; open composer, click the new Camera style icon, pick a style, confirm the prompt field updates with an English, camera-aware rewrite. Test with an empty prompt and with an existing Persian prompt (should come back in English).
