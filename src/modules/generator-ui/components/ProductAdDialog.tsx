@@ -207,6 +207,7 @@ export default function ProductAdDialog({
           productDescription: productDescription.trim() || undefined,
           cameraStyle,
           cameraMovement: cameraMovement.trim() || undefined,
+          genre: GENRE_TEMPLATES.find((g) => g.id === genre)?.prompt || undefined,
         },
       })
       if (invokeErr) {
