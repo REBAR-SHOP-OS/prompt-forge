@@ -59,7 +59,7 @@ export default function LoginIntro({ onFinish, onDisableForever }: LoginIntroPro
         playsInline
         onEnded={onFinish}
         onError={onFinish}
-        className="h-full w-full object-contain"
+        className="h-full w-full object-cover"
       />
 
       <button
