@@ -447,6 +447,37 @@ export default function ProductAdDialog({
             </div>
           </div>
 
+          {/* Genre & atmosphere */}
+          <div>
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+              Genre &amp; atmosphere <span className="text-zinc-600">(optional)</span>
+            </div>
+            <div role="radiogroup" aria-label="Genre and atmosphere" className="flex flex-wrap gap-2">
+              {GENRE_TEMPLATES.map((g) => {
+                const active = genre === g.id
+                return (
+                  <button
+                    key={g.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    title={g.prompt}
+                    onClick={() => setGenre((cur) => (cur === g.id ? '' : g.id))}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                      active
+                        ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
+                        : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {g.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+
+
           {/* Camera movement notes */}
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
