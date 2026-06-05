@@ -1,16 +1,16 @@
-## هدف
-در پنجره‌ی STORAGE → تب Images، با کلیک روی هر عکس، آن عکس در یک نمای بزرگ (پیش‌نمایش) به کاربر نشان داده شود.
+## Goal
+Make the welcome/intro video that plays on entry fill the entire screen instead of showing small and centered.
 
-## وضعیت فعلی
-- یک دیالوگ پیش‌نمایش عکس از قبل وجود دارد: state به نام `previewImageUrl` و یک `Dialog` در انتهای فایل (حدود خط ۷۴۸۸) که هر URL داده‌شده را بزرگ نمایش می‌دهد.
-- اما تصویرِ بندانگشتی در گرید عکس‌ها (خط ۵۱۵۲) قابل کلیک نیست، پس راهی برای باز کردن این پیش‌نمایش وجود ندارد.
+## Change
+In `src/modules/generator-ui/components/WelcomeVideoOverlay.tsx`:
+- Change the `<video>` from `max-h-[85vh] max-w-[90vw] rounded-lg shadow-2xl` to fill the full viewport: `h-full w-full object-cover` (full-bleed) so it covers the whole screen edge-to-edge.
+- Keep the overlay container `fixed inset-0` and remove the inner padding so there are no gaps.
+- Keep the existing Skip button (top-right) and `onEnded`/`autoPlay`/`playsInline` behavior.
 
-## تغییر
-تنها فایل: `src/modules/generator-ui/pages/DashboardPage.tsx`
+```text
+Before: small centered video with rounded corners and margins
+After:  video covers entire screen, Skip button floating top-right
+```
 
-- تصویر بندانگشتی هر کارت عکس (`<img src={img.storage_path} …>` داخل کانتینر خط ۵۱۵۱) را به یک دکمه‌ی قابل کلیک تبدیل می‌کنیم که با کلیک، `setPreviewImageUrl(img.storage_path)` را صدا می‌زند تا دیالوگ پیش‌نمایش بزرگ باز شود.
-- استایل: افزودن `cursor-pointer` و یک افکت hover ملایم تا مشخص باشد قابل کلیک است؛ و `title`/`aria-label` مناسب برای دسترسی‌پذیری.
-- دکمه‌های دانلود و حذف بدون تغییر باقی می‌مانند (کلیک روی تصویر فقط پیش‌نمایش را باز می‌کند).
-
-## تأیید نهایی
-باز کردن STORAGE → تب Images → کلیک روی عکس → باز شدن نمای بزرگ عکس → بستن دیالوگ بدون مشکل.
+## Notes
+- `object-cover` fills the screen and crops slightly to avoid black bars. If you prefer the full frame always visible (with possible black bars), `object-contain` can be used instead — let me know your preference, otherwise I'll use `object-cover` for a true full-screen look.
