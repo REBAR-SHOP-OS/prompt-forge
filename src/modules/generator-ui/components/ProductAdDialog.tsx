@@ -241,6 +241,7 @@ export default function ProductAdDialog({
           cameraStyle,
           cameraMovement: cameraMovement.trim() || undefined,
           genre: GENRE_TEMPLATES.find((g) => g.id === genre)?.prompt || undefined,
+          scene: SCENE_TEMPLATES.find((s) => s.id === scene)?.prompt || undefined,
         },
       })
       if (invokeErr) {
