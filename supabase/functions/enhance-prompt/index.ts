@@ -91,8 +91,12 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
-    const mode: "silent" | "narrated" | null =
-      body?.mode === "silent" || body?.mode === "narrated" ? body.mode : null;
+    const mode: "silent" | "narrated" | "camera" | null =
+      body?.mode === "silent" || body?.mode === "narrated" || body?.mode === "camera"
+        ? body.mode
+        : null;
+    const cameraStyle: string =
+      typeof body?.cameraStyle === "string" ? body.cameraStyle.trim() : "";
     const narratorScript: string =
       typeof body?.narratorScript === "string" ? body.narratorScript.trim() : "";
     const rawUrls: unknown = body?.imageUrls;
