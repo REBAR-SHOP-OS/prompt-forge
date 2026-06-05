@@ -2491,7 +2491,7 @@ export default function DashboardPage() {
       for (const i of imgs) claimedImageIds.add(i.id)
     }
     const liveImages = userImages.filter(
-      (i) => !claimedImageIds.has(i.id) && !workspaceHiddenImageIds.has(i.id),
+      (i) => activeImageIds.has(i.id) && !claimedImageIds.has(i.id) && !workspaceHiddenImageIds.has(i.id),
     )
     if (liveImages.length > 0) {
       const firstImg = liveImages[liveImages.length - 1]
