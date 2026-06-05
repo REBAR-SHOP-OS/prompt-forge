@@ -2120,6 +2120,7 @@ export default function DashboardPage() {
     }
   }
 
+  const startUploadCount = uploadedFiles.filter((file) => file.target === 'Start').length
   const endUploadCount = uploadedFiles.filter((file) => file.target === 'End').length
   const visibleVideos = useMemo(() => {
     return [...mergedEntries, ...generatedVideos]
