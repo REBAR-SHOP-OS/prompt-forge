@@ -2659,8 +2659,8 @@ export default function DashboardPage() {
       if (did === activeDraftId) continue
       for (const i of imgs) claimedByProjects.add(i.id)
     }
-    return userImages.filter((i) => !workspaceHiddenImageIds.has(i.id) && !claimedByProjects.has(i.id) && !allCoverImageIds.has(i.id))
-  }, [userImages, selectedProjectId, projectSourceImages, draftSourceImages, activeDraftId, workspaceHiddenImageIds, allCoverImageIds])
+    return userImages.filter((i) => activeImageIds.has(i.id) && !workspaceHiddenImageIds.has(i.id) && !claimedByProjects.has(i.id) && !allCoverImageIds.has(i.id))
+  }, [userImages, selectedProjectId, projectSourceImages, draftSourceImages, activeDraftId, workspaceHiddenImageIds, allCoverImageIds, activeImageIds])
 
 
   const displayedClips = useMemo<UnifiedClip[]>(() => {

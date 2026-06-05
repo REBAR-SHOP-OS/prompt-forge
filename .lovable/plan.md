@@ -1,51 +1,40 @@
-# Add Scene & Environment Templates
+# Fix: draft items leaking into another project's Final Film
 
-Add a new optional picker called **Scene & environment** to the Product Ad Scenario dialog, mirroring the existing **Genre & atmosphere** picker. The user can pick one environment preset, and it gets woven into the generated ad scenario (its mood, lighting, location details), while keeping the product the hero.
+## The problem
 
-## Environments to add (~20 presets, 5 groups)
+You finalized a new video and an old image + old video from a previous draft were silently pulled into your project. Draft projects must be fully isolated — this should never happen.
 
-**Industrial & Construction**
-- Construction Site — steel building skeletons, giant moving cranes, dust, hard-hat workers at sunset
-- Heavy Industry Factory — molten iron, welding sparks, large gear machinery, huge smokestacks
-- Abandoned Warehouse — large empty space, broken windows, light beams from the roof, floating dust
-- Shipyard / Dock — giant container ships, coastal cranes, seawater, rusty steel structures
-- High-Tech Laboratory — clean white walls, blinking server racks, glass chambers, cold blue/laser light
+## Root cause
 
-**Urban & Modern**
-- Megacity Corporate — giant glass skyscrapers, cloud reflections, sleek business atmosphere
-- Cyberpunk Alleyway — narrow crowded night streets, multilingual neon signs, hanging wires, street-food kiosks
-- Subway / Underground Station — dark tunnels, fast trains with motion blur, concrete platforms, fluorescent light
-- Rooftop Overlook — high-rise rooftop edge at night, city lights and cinematic bokeh in the background
+All project/draft state lives in the browser (localStorage), keyed per user, inside `DashboardPage.tsx`. There is an authoritative "current workspace membership" set — `activeJobIds` (videos) and `activeImageIds` (images) — that is stamped when you create/upload an item and cleared on Start Over and after Final Film.
 
-**Natural & Epic Landscapes**
-- Epic Mountain Range — snowy sharp peaks, thick valley fog, steep cliffs
-- Post-Apocalyptic Wasteland — endless sand plains, abandoned worn vehicles, dusty sky, scorching sun
-- Deep Mystical Forest — ancient tall trees, dense foliage, light filtering through leaves, misty atmosphere
-- Arctic Tundra / Ice Landscape — endless white plains, ice caves with blue light reflections, snowstorm
+The bug is an **inconsistency in how this membership set is enforced**:
 
-**Historical & Fantasy**
-- Medieval Castle / Citadel — large stone walls, lit wall torches, dark halls with long wooden tables
-- Ancient Ruins — cracked Greek/Egyptian stone columns covered in vines, in a desert or forest
-- Gothic Cathedral — pointed architecture, large stained-glass windows casting colored light into a dark hall
-- Steampunk Workshop — copper pipes, gauge dials, steam, intricate 19th-century mechanical tools
+| Path | Videos | Images |
+|------|--------|--------|
+| Workspace display | filtered by `activeJobIds` ✅ | NOT filtered by `activeImageIds` ❌ |
+| Final Film merge set | NOT filtered by `activeJobIds` ❌ | NOT filtered by `activeImageIds` ❌ |
 
-**Interior & Moody**
-- Dimly Lit Jazz Club — cozy space, smoke in spot lighting, shiny brass instruments, dark leather furniture
-- Dark Academia Library — tall wooden shelves of old leather books, green desk lamps, scent of old paper
-- Retro Diner — red leather booths, neon interior decor, jukebox, rain-streaked windows at night
+Because the image display (`visibleUserImages`) and the Final Film merge set (`handleMergeAllVideos`, default-workspace branch) only exclude *hidden* and *claimed* items — instead of requiring membership in the active manifest — any leftover image or video that escaped a snapshot/hidden bucket (timing race, legacy item, an old draft that was never explicitly closed via Start Over) gets swept into the new film. Final Film then permanently "claims" those stray items into the finalized project, baking the leak in.
 
-## Frontend changes (`src/modules/generator-ui/components/ProductAdDialog.tsx`)
-1. Add a `SceneTemplate` type and a `SCENE_TEMPLATES` array with `{ id, label, group, prompt }` for the 20 presets above (English directing notes in `prompt`).
-2. Add `scene` state (`useState<string>('')`, empty = none).
-3. Render a new **"Scene & environment (optional)"** chip group below Genre & atmosphere, styled identically (amber active, white inactive, toggle to deselect). Optionally show small group sub-labels for readability.
-4. In `generate()`, pass `scene: SCENE_TEMPLATES.find((s) => s.id === scene)?.prompt || undefined` to the `scenario-write` invoke body.
-5. Clear `scene` in `reset()`.
+## The fix
 
-## Backend changes (`supabase/functions/scenario-write/index.ts`)
-1. Add optional `scene?: string` (max ~300 chars) to `ProductAdOpts`, read/clip from `body?.scene`.
-2. In the camera/genre guidance block, add a line: "Set the entire scenario in this environment/location: ${opts.scene}. Use its setting, lighting, textures, and atmosphere consistently across every shot while keeping the product the clear hero of the advertisement."
-3. Backward compatible — ignored when absent. Redeploy the function.
+Make `activeJobIds` / `activeImageIds` the single authoritative scope for the **default workspace**, applied symmetrically to images and videos, in both display and merge.
 
-## Technical notes
-- Pattern is identical to the existing `GENRE_TEMPLATES` + `genre` implementation, so no new dependencies.
-- Single-select, optional; combines freely with duration, camera style, and genre.
+### `DashboardPage.tsx`
+
+1. **`visibleUserImages`** (default-workspace branch): add `&& activeImageIds.has(i.id)` to the filter, mirroring how `displayedVideos` already gates videos on `activeJobIds`. Add `activeImageIds` to the dependency array.
+
+2. **`handleMergeAllVideos`** (default-workspace branch, no selected project): gate the video loop on `activeJobIds.has(v.id)` so only clips actually in the current workspace are eligible. The image side already uses `visibleUserImages`, which now carries the `activeImageIds` filter, so images are covered automatically.
+
+3. **`resumeSelectedProject`**: when restoring a draft's snapshot into the live workspace, also mark each restored clip/image active (`markActiveJob` / `markActiveImage`), not just un-hide them. This keeps reopening a draft working correctly now that membership is strictly enforced — the resumed draft's items become the active manifest, and nothing else can join the film.
+
+## Why this is the principled fix
+
+After this change, an item can only enter a Final Film if it was explicitly created, uploaded, or resumed into the *current* workspace session. Items belonging to any other draft are never in the active manifest, so they are structurally impossible to merge in — closing the leak at its source rather than patching one symptom. No backend/schema changes are needed; this is purely client-side workspace-scoping logic.
+
+## Verification
+
+- Build passes (run automatically).
+- Manual: create a draft (clip + image), Start Over, create a new project, Final Film → only the new project's items appear; the old draft's clip/image stay isolated in their own Drafts entry.
+- Reopen an existing draft and confirm its items still populate the workspace and finalize correctly.
