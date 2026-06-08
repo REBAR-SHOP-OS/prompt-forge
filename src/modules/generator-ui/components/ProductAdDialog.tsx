@@ -349,13 +349,19 @@ export default function ProductAdDialog({
     try {
       const trimmedPrompt = userPrompt.trim()
       const trimmedName = productName.trim()
-      const idea = trimmedPrompt
+      const templatePrompts = VIDEO_TEMPLATES.filter((v) => templateIds.has(v.id))
+        .map((v) => v.prompt)
+        .join(' ')
+      let idea = trimmedPrompt
         ? trimmedName
           ? `${trimmedPrompt}\n\nThis is an advertisement for the product "${trimmedName}".`
           : trimmedPrompt
         : trimmedName
           ? `Advertisement for the product "${trimmedName}".`
           : 'Advertisement for the attached product.'
+      if (templatePrompts) {
+        idea += `\n\nFollow these video template styles and conventions: ${templatePrompts}`
+      }
       const { data, error: invokeErr } = await supabase.functions.invoke('scenario-write', {
         body: {
           mode: 'product-ad',
