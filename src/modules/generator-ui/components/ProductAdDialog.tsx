@@ -669,7 +669,7 @@ export default function ProductAdDialog({
           {/* Scene & environment */}
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              Scene &amp; environment <span className="text-zinc-600">(optional)</span>
+              {t.scene} <span className="text-zinc-600">{t.optional}</span>
             </div>
             <div className="space-y-2.5">
               {SCENE_GROUPS.map((group) => (
