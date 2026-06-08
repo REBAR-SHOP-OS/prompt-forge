@@ -267,6 +267,8 @@ export default function ProductAdDialog({
   const [cameraMovement, setCameraMovement] = useState('')
   const [genre, setGenre] = useState<string>('')
   const [scene, setScene] = useState<string>('')
+  const [templateIds, setTemplateIds] = useState<Set<string>>(new Set())
+  const [lang, setLang] = useState<Lang>('en')
   const [isWriting, setIsWriting] = useState(false)
   const [scenes, setScenes] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
