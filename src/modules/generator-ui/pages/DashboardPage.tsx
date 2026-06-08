@@ -155,10 +155,22 @@ type UnifiedClip =
   | { kind: 'video'; id: string; createdAt: string; job: JobDetail }
   | { kind: 'image'; id: string; createdAt: string; image: UserImageItem }
 
+type UserAudioItem = {
+  id: string
+  storage_path: string
+  kind: 'music' | 'voiceover'
+  name: string | null
+  duration_seconds: number | null
+  created_at: string
+  /** Signed URL for playback/download (private bucket). */
+  url?: string | null
+}
+
 
 const FRAMES_BUCKET = 'wan-frames'
 const MERGED_BUCKET = 'merged-videos'
 const USER_IMAGES_BUCKET = 'user-images'
+const USER_AUDIO_BUCKET = 'user-audio'
 
 type ModelChoice = {
   id: string
@@ -651,6 +663,88 @@ export default function DashboardPage() {
       setDownloadingId(null)
     }
   }
+  // Persist an audio item (uploaded music or generated voiceover) to the
+  // private user-audio bucket and track it in generator_user_audio so it shows
+  // up in Storage › Audio with download/delete support.
+  const persistUserAudio = async (
+    blob: Blob,
+    kind: 'music' | 'voiceover',
+    name: string,
+    durationSeconds?: number | null,
+  ) => {
+    if (!userId) return
+    try {
+      const type = (blob.type || '').toLowerCase()
+      const ext = type.includes('mpeg') || type.includes('mp3') ? 'mp3'
+        : type.includes('wav') ? 'wav'
+        : type.includes('ogg') ? 'ogg'
+        : type.includes('webm') ? 'webm'
+        : type.includes('aac') ? 'aac'
+        : type.includes('m4a') || type.includes('mp4') ? 'm4a'
+        : 'audio'
+      const path = `${userId}/${crypto.randomUUID()}.${ext}`
+      const { error: upErr } = await supabase.storage
+        .from(USER_AUDIO_BUCKET)
+        .upload(path, blob, { contentType: blob.type || 'audio/mpeg', upsert: false })
+      if (upErr) throw upErr
+      await supabase.from('generator_user_audio').insert({
+        user_id: userId,
+        storage_path: path,
+        kind,
+        name,
+        duration_seconds: durationSeconds && Number.isFinite(durationSeconds) ? durationSeconds : null,
+        size_bytes: blob.size,
+        mime_type: blob.type || null,
+      })
+    } catch (err) {
+      console.error('Failed to save audio to storage', err)
+    }
+  }
+  const downloadAudioFile = async (audioId: string, url: string | null | undefined, name: string | null) => {
+    if (downloadingId || !url) return
+    setDownloadingId(audioId)
+    try {
+      const response = await fetch(url)
+      if (!response.ok) throw new Error('Download failed')
+      const blob = await response.blob()
+      const t = (blob.type || '').toLowerCase()
+      const ext = t.includes('mpeg') || t.includes('mp3') ? 'mp3'
+        : t.includes('wav') ? 'wav'
+        : t.includes('ogg') ? 'ogg'
+        : t.includes('webm') ? 'webm'
+        : t.includes('aac') ? 'aac'
+        : t.includes('m4a') || t.includes('mp4') ? 'm4a'
+        : (url.toLowerCase().split('?')[0].split('.').pop() || 'mp3')
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const base = (name || `audio-${audioId.slice(0, 8)}`).replace(/\.[^.]+$/, '')
+      a.href = blobUrl
+      a.download = `${base}.${ext}`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(blobUrl)
+    } catch (err) {
+      console.error('Audio download failed', err)
+      window.open(url, '_blank')
+    } finally {
+      setDownloadingId(null)
+    }
+  }
+  const handleDeleteUserAudio = async (item: UserAudioItem) => {
+    if (!userId) return
+    setArchiveAudio((curr) => curr.filter((a) => a.id !== item.id))
+    try {
+      await supabase
+        .from('generator_user_audio')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', item.id)
+        .eq('user_id', userId)
+      await supabase.storage.from(USER_AUDIO_BUCKET).remove([item.storage_path])
+    } catch (err) {
+      console.error('Failed to delete audio', err)
+    }
+  }
   // Tracks card IDs currently re-submitting a Regenerate. Used to disable the
   // per-card regenerate button while its new Job is being created so the user
   // can't queue duplicates with rapid clicks.
@@ -714,15 +808,16 @@ export default function DashboardPage() {
   // ----- Storage archive: every film the user ever made, read live from the
   // server (independent of drafts/library local state). -----
   const [isArchiveOpen, setIsArchiveOpen] = useState(false)
-  const [archiveTab, setArchiveTab] = useState<'films' | 'images'>('films')
+  const [archiveTab, setArchiveTab] = useState<'films' | 'images' | 'audio'>('films')
   const [archiveJobs, setArchiveJobs] = useState<JobSummary[]>([])
   const [archiveVideos, setArchiveVideos] = useState<VideoSummary[]>([])
   const [archiveImages, setArchiveImages] = useState<UserImageItem[]>([])
+  const [archiveAudio, setArchiveAudio] = useState<UserAudioItem[]>([])
   const [archiveLoading, setArchiveLoading] = useState(false)
   const loadArchive = async () => {
     setArchiveLoading(true)
     try {
-      const [jobs, videos, imagesRes] = await Promise.all([
+      const [jobs, videos, imagesRes, audioRes] = await Promise.all([
         jobOrchestratorGateway.listMyJobs(200).catch(() => [] as JobSummary[]),
         videoLibraryGateway.listMyVideos(200).catch(() => [] as VideoSummary[]),
         userId
@@ -733,10 +828,33 @@ export default function DashboardPage() {
               .is('deleted_at', null)
               .order('created_at', { ascending: false })
           : Promise.resolve({ data: [] as UserImageItem[] }),
+        userId
+          ? supabase
+              .from('generator_user_audio')
+              .select('id, storage_path, kind, name, duration_seconds, created_at')
+              .eq('user_id', userId)
+              .is('deleted_at', null)
+              .order('created_at', { ascending: false })
+          : Promise.resolve({ data: [] as UserAudioItem[] }),
       ])
       setArchiveJobs(jobs)
       setArchiveVideos(videos)
       setArchiveImages(((imagesRes as { data?: UserImageItem[] }).data ?? []) as UserImageItem[])
+      const audioRows = ((audioRes as { data?: UserAudioItem[] }).data ?? []) as UserAudioItem[]
+      // Generate short-lived signed URLs for private-bucket playback.
+      const withUrls = await Promise.all(
+        audioRows.map(async (a) => {
+          try {
+            const { data } = await supabase.storage
+              .from(USER_AUDIO_BUCKET)
+              .createSignedUrl(a.storage_path, 60 * 60)
+            return { ...a, url: data?.signedUrl ?? null }
+          } catch {
+            return { ...a, url: null }
+          }
+        }),
+      )
+      setArchiveAudio(withUrls)
     } finally {
       setArchiveLoading(false)
     }
@@ -4400,6 +4518,8 @@ export default function DashboardPage() {
     setMusicDuration(0)
     setMusicRange([0, 0])
     setIsMusicDialogOpen(true)
+    // Persist the uploaded track so it appears in Storage › Audio.
+    void persistUserAudio(file, 'music', file.name)
   }
 
   function handleMusicLoadedMetadata(e: SyntheticEvent<HTMLAudioElement>) {
@@ -4431,7 +4551,11 @@ export default function DashboardPage() {
     setVoiceoverUrl(url)
     setVoiceoverName(name)
     setIsVoiceoverOpen(false)
+    // Voiceover persistence to Storage › Audio happens at generation time
+    // inside VoiceoverDialog, so no extra save is needed here.
   }
+
+
 
   function handleClearVoiceover() {
     if (voiceoverUrl) {
@@ -5382,7 +5506,11 @@ export default function DashboardPage() {
                   Storage
                 </DialogTitle>
                 <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
-                  {archiveTab === 'films' ? archiveJobs.length : archiveImages.length}
+                  {archiveTab === 'films'
+                    ? archiveJobs.length
+                    : archiveTab === 'images'
+                      ? archiveImages.length
+                      : archiveAudio.length}
                 </span>
               </div>
             </div>
@@ -5390,7 +5518,9 @@ export default function DashboardPage() {
             <DialogDescription className="mt-1 text-left text-xs text-zinc-500">
               {archiveTab === 'films'
                 ? "All films — everything you've created"
-                : "All images — everything you've created"}
+                : archiveTab === 'images'
+                  ? "All images — everything you've created"
+                  : "All audio — uploaded music and generated voiceovers"}
             </DialogDescription>
 
             <div className="mt-3 inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-1">
@@ -5420,11 +5550,124 @@ export default function DashboardPage() {
                 Images
                 <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{archiveImages.length}</span>
               </button>
+              <button
+                type="button"
+                onClick={() => setArchiveTab('audio')}
+                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                  archiveTab === 'audio'
+                    ? 'bg-white/[0.08] text-zinc-100'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <Music2 className="h-3.5 w-3.5" aria-hidden="true" />
+                Audio
+                <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{archiveAudio.length}</span>
+              </button>
             </div>
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto px-6 py-5">
-            {archiveTab === 'images' ? (() => {
+            {archiveTab === 'audio' ? (() => {
+              if (archiveLoading && archiveAudio.length === 0) {
+                return (
+                  <div className="grid min-h-[10rem] place-items-center text-zinc-500">
+                    <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
+                  </div>
+                )
+              }
+              if (archiveAudio.length === 0) {
+                return (
+                  <div className="grid min-h-[10rem] place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
+                    <div>
+                      <Music2 className="mx-auto h-8 w-8 text-zinc-600" aria-hidden="true" />
+                      <p className="mt-3 text-sm font-medium text-zinc-300">No audio yet</p>
+                      <p className="mt-2 text-xs leading-5 text-zinc-600">
+                        Music you upload and voiceovers you generate are saved here for download.
+                      </p>
+                    </div>
+                  </div>
+                )
+              }
+              return (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {archiveAudio.map((a) => (
+                    <article
+                      key={a.id}
+                      className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-4"
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/[0.04] text-emerald-200">
+                          {a.kind === 'voiceover'
+                            ? <Mic className="h-4 w-4" aria-hidden="true" />
+                            : <Music2 className="h-4 w-4" aria-hidden="true" />}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-zinc-200" title={a.name ?? undefined}>
+                            {a.name || (a.kind === 'voiceover' ? 'Voiceover' : 'Music')}
+                          </p>
+                          <span className="mt-0.5 inline-flex items-center rounded-full border border-white/10 bg-black/30 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-zinc-400">
+                            {a.kind === 'voiceover' ? 'Voiceover' : 'Music'}
+                          </span>
+                        </div>
+                      </div>
+                      {a.url ? (
+                        <audio controls preload="none" src={a.url} className="w-full" />
+                      ) : (
+                        <p className="text-[11px] text-zinc-600">Preview unavailable</p>
+                      )}
+                      <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
+                        <span className="tabular-nums">{formatCreatedAt(a.created_at)}</span>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={downloadingId === a.id || !a.url}
+                            onClick={() => { void downloadAudioFile(a.id, a.url, a.name) }}
+                            aria-label="Download audio"
+                            title="Download audio"
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                          >
+                            {downloadingId === a.id ? (
+                              <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                            ) : (
+                              <Download className="h-3 w-3" aria-hidden="true" />
+                            )}
+                          </button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <button
+                                type="button"
+                                aria-label="Delete audio permanently"
+                                title="Delete permanently"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                              >
+                                <Trash2 className="h-3 w-3" aria-hidden="true" />
+                              </button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete this audio permanently?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will permanently remove the audio file. This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => { void handleDeleteUserAudio(a) }}
+                                  className="bg-rose-600 text-white hover:bg-rose-700"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )
+            })() : archiveTab === 'images' ? (() => {
               if (archiveLoading && archiveImages.length === 0) {
                 return (
                   <div className="grid min-h-[10rem] place-items-center text-zinc-500">

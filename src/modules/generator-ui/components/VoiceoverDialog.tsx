@@ -94,7 +94,39 @@ export function VoiceoverDialog({
     }
   }, [open])
 
+  async function persistVoiceover(blob: Blob) {
+    try {
+      const { data: userRes } = await supabase.auth.getUser()
+      const uid = userRes.user?.id
+      if (!uid) return
+      const type = (blob.type || '').toLowerCase()
+      const ext = type.includes('mpeg') || type.includes('mp3') ? 'mp3'
+        : type.includes('ogg') ? 'ogg'
+        : type.includes('webm') ? 'webm'
+        : type.includes('m4a') || type.includes('mp4') ? 'm4a'
+        : 'wav'
+      const path = `${uid}/${crypto.randomUUID()}.${ext}`
+      const { error: upErr } = await supabase.storage
+        .from('user-audio')
+        .upload(path, blob, { contentType: blob.type || 'audio/wav', upsert: false })
+      if (upErr) throw upErr
+      await supabase.from('generator_user_audio').insert({
+        user_id: uid,
+        storage_path: path,
+        kind: 'voiceover',
+        name: `Voiceover (${gender}, ${tone})`,
+        size_bytes: blob.size,
+        mime_type: blob.type || null,
+      })
+    } catch (err) {
+      console.error('Failed to save voiceover to storage', err)
+    }
+  }
+
   async function handleGenerate() {
+
+
+
     const trimmed = text.trim()
     if (!trimmed) {
       toast.error('Please write some text first')
@@ -125,6 +157,9 @@ export function VoiceoverDialog({
       lastUrlRef.current = url
       setAudioUrl(url)
       if (payload.warning) toast.warning(payload.warning)
+      // Persist to Storage › Audio so every generated voiceover is saved.
+      void persistVoiceover(blob)
+
 
     } catch (err) {
       console.error('Voiceover generation failed', err)

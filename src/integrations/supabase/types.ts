@@ -380,6 +380,48 @@ export type Database = {
           },
         ]
       }
+      generator_user_audio: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          duration_seconds: number | null
+          id: string
+          kind: string
+          mime_type: string | null
+          name: string | null
+          size_bytes: number | null
+          storage_path: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          duration_seconds?: number | null
+          id?: string
+          kind: string
+          mime_type?: string | null
+          name?: string | null
+          size_bytes?: number | null
+          storage_path: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          duration_seconds?: number | null
+          id?: string
+          kind?: string
+          mime_type?: string | null
+          name?: string | null
+          size_bytes?: number | null
+          storage_path?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       generator_user_images: {
         Row: {
           created_at: string
