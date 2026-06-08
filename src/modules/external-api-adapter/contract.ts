@@ -1,5 +1,5 @@
 // External API Adapter — frontend-side shared types (mirror of backend contract).
-export type ProviderKey = "flow" | "wan";
+export type ProviderKey = "flow" | "wan" | "local";
 
 export interface RoutePreviewInput {
   providerKey: ProviderKey;

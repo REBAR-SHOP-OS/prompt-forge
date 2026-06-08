@@ -44,7 +44,7 @@ export const jobService: JobService = {
       _prompt: input.prompt,
       _provider_key: input.providerKey,
       _model_key: input.modelKey,
-      _cost: Math.max(1, Math.ceil(input.estimatedCost || 1)),
+      _cost: Math.max(0, Math.ceil(input.estimatedCost || 0)),
     });
     if (error) throw new Error(error.message);
     const jobId = data as string;

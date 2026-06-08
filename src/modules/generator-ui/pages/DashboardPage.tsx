@@ -164,7 +164,7 @@ type ModelChoice = {
   id: string
   label: string
   description: string
-  providerKey: 'wan' | 'flow'
+  providerKey: 'wan' | 'flow' | 'local'
   model: string
   supports: Array<'t2v' | 'i2v'>
 }
@@ -200,6 +200,38 @@ const MODEL_CHOICES: ModelChoice[] = [
     description: 'Generate a clip purely from a prompt. ~$0.15 / clip.',
     providerKey: 'wan',
     model: 'wan2.7-t2v-2026-04-25',
+    supports: ['t2v'],
+  },
+  {
+    id: 'local-wan21-i2v',
+    label: 'Local Wan 2.1 — Image to Video',
+    description: 'RTX 4090 local generation through your video router. $0 cloud spend.',
+    providerKey: 'local',
+    model: 'local/wan-2.1-i2v',
+    supports: ['i2v'],
+  },
+  {
+    id: 'local-wan21-t2v',
+    label: 'Local Wan 2.1 — Text to Video',
+    description: 'RTX 4090 local text-to-video. $0 cloud spend.',
+    providerKey: 'local',
+    model: 'local/wan-2.1-t2v',
+    supports: ['t2v'],
+  },
+  {
+    id: 'local-ltx-i2v',
+    label: 'Local LTX Video — Image to Video',
+    description: 'Fast local fallback for animating a Start or End frame.',
+    providerKey: 'local',
+    model: 'local/ltx-video-i2v',
+    supports: ['i2v'],
+  },
+  {
+    id: 'local-ltx-t2v',
+    label: 'Local LTX Video — Text to Video',
+    description: 'Fast local text-to-video fallback on the RTX 4090.',
+    providerKey: 'local',
+    model: 'local/ltx-video-t2v',
     supports: ['t2v'],
   },
 ]
@@ -259,6 +291,7 @@ function estimateGenerationCost(model: ModelChoice, totalDurationSec: number): {
     perClipUsd = veoRate * billedSec
   }
   else if (model.model === 'flow-video-1-pro') perClipUsd = 0.40 * billedSec
+  else if (model.providerKey === 'local') perClipUsd = 0
   else perClipUsd = 0.15 // wan (fixed per clip)
   const usd = perClipUsd * clips
   const credits = Math.round(usd * 100)
@@ -4238,7 +4271,7 @@ export default function DashboardPage() {
    */
   async function regenerateCard(
     job: JobDetail,
-    override?: { providerKey: 'wan' | 'flow'; requestedModel: string },
+    override?: { providerKey: 'wan' | 'flow' | 'local'; requestedModel: string },
   ) {
     if (regeneratingIds.has(job.id)) return
 
@@ -4252,7 +4285,7 @@ export default function DashboardPage() {
     // provider from the Regenerate menu). Otherwise resolve from the card,
     // falling back to currently selected model.
     const providerKey = override?.providerKey
-      ?? (job.provider_key as 'wan' | 'flow' | null)
+      ?? (job.provider_key as 'wan' | 'flow' | 'local' | null)
       ?? selectedModel?.providerKey
     const requestedModel = override?.requestedModel ?? job.model_key ?? selectedModel?.model
     if (!providerKey) {

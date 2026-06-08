@@ -30,7 +30,7 @@ export const JOB_ORCHESTRATOR_CONTRACT: DomainContractMeta = {
 } as const;
 
 const CreateJobSchema = z.object({
-  providerKey: z.enum(["wan", "flow"]),
+  providerKey: z.enum(["wan", "flow", "local"]),
   requestedModel: z.string().trim().min(1).max(100).optional(),
   prompt: z.string().min(1).max(16000),
   firstFrameUrl: z.string().url().max(2048).optional(),

@@ -86,6 +86,16 @@ const MOCK_THUMB = "https://commondatastorage.googleapis.com/gtv-videos-bucket/s
 const DASHSCOPE_BASE_URL = "https://dashscope-intl.aliyuncs.com";
 const DASHSCOPE_CREATE_PATH = "/api/v1/services/aigc/video-generation/video-synthesis";
 const DASHSCOPE_TASK_PATH = "/api/v1/tasks";
+const LOCAL_VIDEO_MODELS = new Set([
+  "local/wan-2.1-i2v",
+  "local/wan-2.1-t2v",
+  "local/ltx-video-i2v",
+  "local/ltx-video-t2v",
+]);
+
+type LocalVideoConfig =
+  | { ok: true; baseUrl: string; apiKey: string | null }
+  | { ok: false; error: string };
 
 function sanitizePrompt(p: string): string {
   return p.replace(/\s+/g, " ").trim();
@@ -96,11 +106,158 @@ function getProviderApiKey(providerKey: ProviderKey): string | null {
     return Deno.env.get("GEMINI_API_KEY") ?? Deno.env.get("FLOW_API_KEY") ?? null;
   }
   if (providerKey === "wan") return Deno.env.get("WAN_API_KEY") ?? null;
+  if (providerKey === "local") {
+    return (
+      Deno.env.get("LOCAL_VIDEO_API_KEY") ??
+      Deno.env.get("LOCAL_AI_ROUTER_TOKEN") ??
+      Deno.env.get("LOCAL_IMAGE_API_KEY") ??
+      Deno.env.get("LOCAL_LLM_API_KEY") ??
+      null
+    );
+  }
   return null;
 }
 
 function allowMockGeneration(): boolean {
   return getEnv("ALLOW_MOCK_GENERATION", false).toLowerCase() === "true";
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return (
+    host === "localhost" ||
+    host === "0.0.0.0" ||
+    host === "::1" ||
+    host.startsWith("127.") ||
+    host.endsWith(".localhost")
+  );
+}
+
+function readLocalVideoConfig(): LocalVideoConfig {
+  const rawBaseUrl = (
+    Deno.env.get("LOCAL_VIDEO_BASE_URL") ??
+    Deno.env.get("LOCAL_AI_ROUTER_BASE_URL") ??
+    Deno.env.get("LOCAL_IMAGE_BASE_URL") ??
+    Deno.env.get("LOCAL_LLM_BASE_URL") ??
+    ""
+  ).trim();
+
+  if (!rawBaseUrl) {
+    return { ok: false, error: "Local video generation is not configured. Set LOCAL_VIDEO_BASE_URL to your HTTPS router /v1 URL." };
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(rawBaseUrl);
+  } catch {
+    return { ok: false, error: "LOCAL_VIDEO_BASE_URL is not a valid URL." };
+  }
+
+  if (isLoopbackHost(parsed.hostname) && Deno.env.get("ALLOW_LOCAL_VIDEO_LOOPBACK") !== "true") {
+    return { ok: false, error: "LOCAL_VIDEO_BASE_URL must be public HTTPS for deployed edge functions, not localhost." };
+  }
+  if (parsed.protocol !== "https:" && Deno.env.get("ALLOW_LOCAL_VIDEO_HTTP") !== "true") {
+    return { ok: false, error: "LOCAL_VIDEO_BASE_URL must use HTTPS." };
+  }
+
+  const withoutTrailingSlash = parsed.toString().replace(/\/+$/, "");
+  const baseUrl = withoutTrailingSlash.endsWith("/v1")
+    ? withoutTrailingSlash
+    : `${withoutTrailingSlash}/v1`;
+  const apiKey = getProviderApiKey("local");
+  return { ok: true, baseUrl, apiKey };
+}
+
+function isLocalVideoModel(model: string): boolean {
+  return LOCAL_VIDEO_MODELS.has(model);
+}
+
+function localVideoHeaders(config: Extract<LocalVideoConfig, { ok: true }>): HeadersInit {
+  return {
+    ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
+    "Content-Type": "application/json",
+  };
+}
+
+function localVideoText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function localVideoNumber(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return value;
+}
+
+function localVideoRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function localVideoArrayRecord(value: unknown, key: string): Record<string, unknown> {
+  const child = localVideoRecord(value)[key];
+  return Array.isArray(child) ? localVideoRecord(child[0]) : {};
+}
+
+function extractLocalVideoUrl(payload: unknown): string | null {
+  const p = localVideoRecord(payload);
+  const output = localVideoRecord(p.output);
+  const data0 = localVideoArrayRecord(payload, "data");
+  return (
+    localVideoText(p.video_url) ??
+    localVideoText(p.videoUrl) ??
+    localVideoText(p.url) ??
+    localVideoText(output.video_url) ??
+    localVideoText(output.videoUrl) ??
+    localVideoText(data0.url) ??
+    localVideoText(data0.video_url) ??
+    localVideoText(data0.videoUrl) ??
+    null
+  );
+}
+
+function extractLocalThumbnailUrl(payload: unknown): string | null {
+  const p = localVideoRecord(payload);
+  const data0 = localVideoArrayRecord(payload, "data");
+  return (
+    localVideoText(p.thumbnail_url) ??
+    localVideoText(p.thumbnailUrl) ??
+    localVideoText(data0.thumbnail_url) ??
+    localVideoText(data0.thumbnailUrl) ??
+    null
+  );
+}
+
+function extractLocalJobId(payload: unknown): string | null {
+  const p = localVideoRecord(payload);
+  const output = localVideoRecord(p.output);
+  return (
+    localVideoText(p.id) ??
+    localVideoText(p.job_id) ??
+    localVideoText(p.jobId) ??
+    localVideoText(p.task_id) ??
+    localVideoText(p.taskId) ??
+    localVideoText(p.provider_job_id) ??
+    localVideoText(p.providerJobId) ??
+    localVideoText(output.task_id) ??
+    null
+  );
+}
+
+function normalizeLocalStatus(payload: unknown): GenerationPollResult["status"] {
+  const p = localVideoRecord(payload);
+  const output = localVideoRecord(p.output);
+  const raw = String(
+    p.status ??
+    p.state ??
+    output.task_status ??
+    p.task_status ??
+    "",
+  ).toLowerCase();
+  if (["completed", "complete", "succeeded", "success", "done"].includes(raw)) return "completed";
+  if (["failed", "failure", "error", "cancelled", "canceled"].includes(raw)) return "failed";
+  if (["pending", "queued", "created"].includes(raw)) return "pending";
+  return "processing";
 }
 
 async function resolveRoute(
@@ -110,6 +267,14 @@ async function resolveRoute(
   prompt: string,
   opts: ResolveRouteOptions = {},
 ): Promise<ResolvedRoute> {
+  if (providerKey === "local") {
+    const resolvedModel = requestedModel?.trim() || "local/wan-2.1-i2v";
+    if (!isLocalVideoModel(resolvedModel)) {
+      throw new Error(`unsupported local video model: ${resolvedModel}`);
+    }
+    return { providerKey, resolvedModel, estimatedCost: 0 };
+  }
+
   const { data, error } = await svc
     .from("core_ai_provider_registry")
     .select("provider_key, default_model, enabled")
@@ -953,12 +1118,157 @@ async function pollVeo(
   };
 }
 
+async function startLocalVideo(
+  resolvedModel: string,
+  input: GenerationStartInput,
+): Promise<GenerationStartResult> {
+  if (!isLocalVideoModel(resolvedModel)) {
+    throw new Error(`Unsupported local video model: ${resolvedModel}`);
+  }
+  const config = readLocalVideoConfig();
+  if (!config.ok) throw new Error(config.error);
+
+  const body = {
+    model: resolvedModel,
+    prompt: input.prompt,
+    image_url: input.firstFrameUrl ?? input.lastFrameUrl ?? null,
+    first_frame_url: input.firstFrameUrl ?? null,
+    last_frame_url: input.lastFrameUrl ?? null,
+    duration: input.durationSeconds ?? 5,
+    duration_seconds: input.durationSeconds ?? 5,
+    aspect_ratio: input.aspectRatio ?? "16:9",
+    response_format: "url",
+  };
+
+  const res = await fetch(`${config.baseUrl}/videos/generations`, {
+    method: "POST",
+    headers: localVideoHeaders(config),
+    body: JSON.stringify(body),
+  });
+  const text = await res.text().catch(() => "");
+  let payload: unknown = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    payload = null;
+  }
+
+  if (!res.ok) {
+    logError("local video create failed", { status: res.status, body: text.slice(0, 500), model: resolvedModel });
+    throw new Error(`Local video router ${res.status}: ${text.slice(0, 300) || "unknown error"}`);
+  }
+
+  const videoUrl = extractLocalVideoUrl(payload);
+  if (videoUrl) {
+    return {
+      providerJobId: `local_sync_${crypto.randomUUID()}`,
+      videoUrl,
+      thumbnailUrl: extractLocalThumbnailUrl(payload),
+      aspectRatio: input.aspectRatio ?? null,
+      duration: input.durationSeconds ?? null,
+      isComplete: true,
+    };
+  }
+
+  const jobId = extractLocalJobId(payload);
+  if (!jobId) {
+    throw new Error("Local video router returned no video URL or job id");
+  }
+
+  return {
+    providerJobId: `local:${jobId}`,
+    videoUrl: null,
+    thumbnailUrl: null,
+    aspectRatio: input.aspectRatio ?? null,
+    duration: input.durationSeconds ?? null,
+    isComplete: false,
+  };
+}
+
+async function pollLocalVideo(providerJobId: string): Promise<GenerationPollResult> {
+  if (providerJobId.startsWith("local_sync_")) {
+    return { status: "completed", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null, progressPercent: 100 };
+  }
+
+  const config = readLocalVideoConfig();
+  if (!config.ok) {
+    return {
+      status: "failed",
+      videoUrl: null,
+      thumbnailUrl: null,
+      aspectRatio: null,
+      duration: null,
+      reason: config.error,
+      progressPercent: null,
+    };
+  }
+
+  const jobId = providerJobId.startsWith("local:") ? providerJobId.slice("local:".length) : providerJobId;
+  const res = await fetch(`${config.baseUrl}/videos/generations/${encodeURIComponent(jobId)}`, {
+    method: "GET",
+    headers: localVideoHeaders(config),
+  });
+  const text = await res.text().catch(() => "");
+  let payload: unknown = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    payload = null;
+  }
+
+  if (!res.ok) {
+    logError("local video poll failed", { status: res.status, body: text.slice(0, 500), providerJobId });
+    if (res.status >= 500 || res.status === 429) {
+      return { status: "processing", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null, progressPercent: 25 };
+    }
+    return {
+      status: "failed",
+      videoUrl: null,
+      thumbnailUrl: null,
+      aspectRatio: null,
+      duration: null,
+      reason: `Local video router ${res.status}: ${text.slice(0, 300) || "unknown error"}`,
+      progressPercent: null,
+    };
+  }
+
+  const status = normalizeLocalStatus(payload);
+  const payloadRecord = localVideoRecord(payload);
+  const progress = localVideoNumber(payloadRecord.progress) ?? localVideoNumber(payloadRecord.progress_percent);
+  const videoUrl = extractLocalVideoUrl(payload);
+  if (status === "completed" && !videoUrl) {
+    return {
+      status: "failed",
+      videoUrl: null,
+      thumbnailUrl: null,
+      aspectRatio: null,
+      duration: null,
+      reason: "Local video router completed without a video URL",
+      progressPercent: null,
+    };
+  }
+
+  return {
+    status,
+    videoUrl,
+    thumbnailUrl: extractLocalThumbnailUrl(payload),
+    aspectRatio: localVideoText(payloadRecord.aspect_ratio) ?? localVideoText(payloadRecord.aspectRatio),
+    duration: localVideoNumber(payloadRecord.duration) ?? localVideoNumber(payloadRecord.duration_seconds),
+    reason: status === "failed" ? (localVideoText(payloadRecord.error) ?? localVideoText(payloadRecord.reason)) : null,
+    progressPercent: status === "completed" ? 100 : progress,
+  };
+}
+
 async function startGeneration(
   providerKey: ProviderKey,
   resolvedModel: string,
   input: GenerationStartInput,
 ): Promise<GenerationStartResult> {
   const apiKey = getProviderApiKey(providerKey);
+
+  if (providerKey === "local") {
+    return await startLocalVideo(resolvedModel, input);
+  }
 
   if (providerKey === "wan" && apiKey) {
     if (isWanTextToVideoModel(resolvedModel)) {
@@ -1014,6 +1324,10 @@ async function pollGeneration(
       duration: 5,
       progressPercent: 100,
     };
+  }
+
+  if (providerKey === "local") {
+    return await pollLocalVideo(providerJobId);
   }
 
   if (providerKey === "wan" && apiKey) {

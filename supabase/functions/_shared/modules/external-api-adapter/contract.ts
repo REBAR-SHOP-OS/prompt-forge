@@ -1,7 +1,7 @@
 // External API Adapter — contract.
 import type { SupabaseClient } from "../../core/supabase.ts";
 
-export type ProviderKey = "flow" | "wan";
+export type ProviderKey = "flow" | "wan" | "local";
 
 export interface ResolvedRoute {
   providerKey: ProviderKey;
