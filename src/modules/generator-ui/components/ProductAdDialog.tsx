@@ -750,13 +750,13 @@ export default function ProductAdDialog({
           {/* Camera movement notes */}
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              Camera movement notes <span className="text-zinc-600">(optional)</span>
+              {t.cameraNotes} <span className="text-zinc-600">{t.optional}</span>
             </div>
             <Textarea
               value={cameraMovement}
               onChange={(e) => setCameraMovement(e.target.value)}
               rows={2}
-              placeholder="Describe how the camera should move, e.g. slow rise then fast push-in on the label…"
+              placeholder={t.cameraNotesPlaceholder}
               className="min-h-[56px] border-white/10 bg-black/30 text-zinc-100"
             />
           </div>
