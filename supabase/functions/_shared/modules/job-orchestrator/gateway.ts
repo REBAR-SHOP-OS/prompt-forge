@@ -422,16 +422,31 @@ export const jobOrchestratorGateway = {
               aspectRatio: chosenAspectRatio,
             });
           } catch (e) {
+            const genErr = (e as Error).message ?? "";
             // Refund credits + mark failed atomically.
             try {
               await jobService.failJob(svc, {
                 userId: auth.userId,
                 jobId,
-                reason: (e as Error).message,
+                reason: genErr,
                 refundCredits: true,
               });
             } catch (_) { /* best-effort */ }
-            logError("startGeneration failed", { error: (e as Error).message, jobId });
+            logError("startGeneration failed", { error: genErr, jobId });
+
+            // Surface a precise, user-readable message when the Local router
+            // isn't set up — instead of a generic provider error. Credits are
+            // already refunded above. No secrets/URLs are leaked here.
+            if (route.providerKey === "local" || /local video generation is not configured|LOCAL_VIDEO_BASE_URL/i.test(genErr)) {
+              await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 503, latencyMs: Date.now() - ctx.startedAt, errorCode: "LOCAL_NOT_CONFIGURED" });
+              return errorResponse(
+                "LOCAL_NOT_CONFIGURED",
+                "Local generation isn't set up on this project yet. Pick a cloud model (Veo or Wan) to generate now. Credits were refunded.",
+                503,
+                ctx.requestId,
+              );
+            }
+
             return errorResponse("PROVIDER_ERROR", "The video provider could not start generation. Please try again.", 502, ctx.requestId);
           }
 
