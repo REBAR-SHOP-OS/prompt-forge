@@ -135,6 +135,122 @@ const SCENE_TEMPLATES: SceneTemplate[] = [
 
 const SCENE_GROUPS = Array.from(new Set(SCENE_TEMPLATES.map((s) => s.group)))
 
+type VideoTemplate = {
+  id: string
+  label: string
+  labelFa: string
+  icon: string
+  group: string
+  groupFa: string
+  prompt: string
+}
+
+const VIDEO_TEMPLATES: VideoTemplate[] = [
+  // 1. Sports & Action
+  { id: 'football-team', label: 'Football / Team Sports', labelFa: 'فوتبال و ورزش‌های تیمی', icon: '⚽', group: 'Sports & Action', groupFa: 'ورزشی و پرتحرک', prompt: 'Sports broadcast template: team line-up reveals, player profile cards, animated live-score lower thirds and refereeing graphics with energetic stadium atmosphere.' },
+  { id: 'sports-highlights', label: 'Sports Highlights', labelFa: 'هایلایت‌های ورزشی', icon: '🏆', group: 'Sports & Action', groupFa: 'ورزشی و پرتحرک', prompt: 'Sports highlights template: fast transitions, high-energy effects and jump cuts to showcase goals and decisive match moments.' },
+  { id: 'fitness', label: 'Fitness & Bodybuilding', labelFa: 'فیتنس و بدنسازی', icon: '💪', group: 'Sports & Action', groupFa: 'ورزشی و پرتحرک', prompt: 'Fitness template: motivational footage cut to a fast music tempo, promoting gyms or training programs with dynamic energy.' },
+  { id: 'gaming-esports', label: 'Gaming / Esports', labelFa: 'گیمینگ و ورزش‌های الکترونیک', icon: '🎮', group: 'Sports & Action', groupFa: 'ورزشی و پرتحرک', prompt: 'Gaming and esports template: stream channel intros, on-screen overlays and team reveals with neon glowing effects.' },
+  // 2. Animation & Motion Graphics
+  { id: 'explainer', label: 'Explainer Video', labelFa: 'ویدئوی آموزشی/توضیحی', icon: '🧩', group: 'Animation & Motion Graphics', groupFa: 'انیمیشن و موشن گرافیک', prompt: '2D/3D explainer template: animated characters explaining a system, product or service with clean motion graphics.' },
+  { id: 'logo-reveal', label: 'Logo Reveal', labelFa: 'لوگو موشن', icon: '✨', group: 'Animation & Motion Graphics', groupFa: 'انیمیشن و موشن گرافیک', prompt: 'Logo reveal template: short, eye-catching few-second animation introducing a brand logo at the start of videos.' },
+  { id: 'kinetic-typography', label: 'Kinetic Typography', labelFa: 'تایپوگرافی متحرک', icon: '🔤', group: 'Animation & Motion Graphics', groupFa: 'انیمیشن و موشن گرافیک', prompt: 'Kinetic typography template: built entirely on creative, rhythmic animated text synced to the beat.' },
+  { id: 'motion-comic', label: 'Motion Comics', labelFa: 'موشن کمیک', icon: '💥', group: 'Animation & Motion Graphics', groupFa: 'انیمیشن و موشن گرافیک', prompt: 'Motion comic template: animated comic-book panels and visual storytelling with painterly comic effects.' },
+  // 3. Social Media
+  { id: 'youtube-intro-outro', label: 'YouTube Intro & Outro', labelFa: 'اینترو و اوترو یوتیوب', icon: '▶️', group: 'Social Media', groupFa: 'شبکه‌های اجتماعی و تولید محتوا', prompt: 'YouTube intro/outro template: opening sequences and end screens with animated like and subscribe button prompts.' },
+  { id: 'instagram-reels', label: 'Instagram Story / Reels', labelFa: 'استوری و ریلز اینستاگرام', icon: '📱', group: 'Social Media', groupFa: 'شبکه‌های اجتماعی و تولید محتوا', prompt: 'Vertical 9:16 template: minimal, e-commerce or lifestyle designs for quick product showcases in stories and reels.' },
+  { id: 'tiktok-trends', label: 'TikTok & Trends', labelFa: 'تیک‌تاک و ترندها', icon: '🎵', group: 'Social Media', groupFa: 'شبکه‌های اجتماعی و تولید محتوا', prompt: 'TikTok trend template: beat-synced edits and viral transitions matched to the music.' },
+  { id: 'vodcast', label: 'Video Podcast (Vodcast)', labelFa: 'پادکست ویدئویی', icon: '🎙️', group: 'Social Media', groupFa: 'شبکه‌های اجتماعی و تولید محتوا', prompt: 'Video podcast template: audio spectrum visualizer and timer overlays for publishing podcasts.' },
+  // 4. Corporate & Business
+  { id: 'company-profile', label: 'Company Profile', labelFa: 'معرفی شرکت', icon: '🏢', group: 'Corporate & Business', groupFa: 'شرکتی و کسب‌وکار', prompt: 'Company profile template: history and goals timeline, leadership team introductions and business vision presentation.' },
+  { id: 'infographic', label: 'Presentation / Infographic', labelFa: 'ارائه‌ها و اینفوگرافیک', icon: '📊', group: 'Corporate & Business', groupFa: 'شرکتی و کسب‌وکار', prompt: 'Infographic template: animated charts, city or country maps and attractive visual presentation of statistical data.' },
+  { id: 'real-estate', label: 'Real Estate', labelFa: 'املاک و مستغلات', icon: '🏠', group: 'Corporate & Business', groupFa: 'شرکتی و کسب‌وکار', prompt: 'Real estate template: clean professional slideshows with text info to present home details and architecture projects.' },
+  { id: 'product-promo', label: 'Product Promo', labelFa: 'تبلیغات محصول', icon: '🛍️', group: 'Corporate & Business', groupFa: 'شرکتی و کسب‌وکار', prompt: 'Product promo template: 3D or video showcase of features, price and multiple angles of a new product.' },
+  // 5. Cinematic & Creative
+  { id: 'movie-trailer', label: 'Movie Trailer / Teaser', labelFa: 'تریلر فیلم و تیزر', icon: '🎬', group: 'Cinematic & Creative', groupFa: 'سینمایی و خلاقانه', prompt: 'Cinematic trailer template: epic dramatic titles, light effects and dark atmospheric mood.' },
+  { id: 'photo-slideshow', label: 'Photo / Video Slideshow', labelFa: 'اسلایدشوی عکس و ویدئو', icon: '🖼️', group: 'Cinematic & Creative', groupFa: 'سینمایی و خلاقانه', prompt: 'Slideshow template: artistic blend of images with soft music, suited for portfolios or travel memories.' },
+  { id: 'glitch-retro', label: 'Glitch & Retro', labelFa: 'افکت‌های گلیچ و رترو', icon: '📼', group: 'Cinematic & Creative', groupFa: 'سینمایی و خلاقانه', prompt: 'Glitch and retro template: VHS tape simulation, old TV noise and 80s/90s visual styling.' },
+  { id: 'vfx', label: 'VFX / Special Effects', labelFa: 'جلوه‌های ویژه', icon: '🌩️', group: 'Cinematic & Creative', groupFa: 'سینمایی و خلاقانه', prompt: 'VFX template: ready-made explosions, magic, smoke, fire and weather changes layered over raw footage.' },
+  // 6. Events & Occasions
+  { id: 'wedding', label: 'Wedding & Formal', labelFa: 'عروسی و فرمالیته', icon: '💍', group: 'Events & Occasions', groupFa: 'رویدادها و مناسبت‌ها', prompt: 'Wedding template: romantic slideshows with warm color grading, floral frames, delicate typography and soft light leaks.' },
+  { id: 'birthday-party', label: 'Birthday & Party', labelFa: 'تولد و مهمانی', icon: '🎉', group: 'Events & Occasions', groupFa: 'رویدادها و مناسبت‌ها', prompt: 'Birthday and party template: colorful, joyful video invitations with balloon and confetti animations.' },
+  { id: 'calendar-campaigns', label: 'Holidays & Campaigns', labelFa: 'مناسبت‌های تقویمی و کمپین‌ها', icon: '🎄', group: 'Events & Occasions', groupFa: 'رویدادها و مناسبت‌ها', prompt: 'Seasonal campaign template: tailored for Christmas, Halloween, Nowruz, Ramadan, Black Friday and seasonal discount sales.' },
+]
+
+const VIDEO_GROUPS = Array.from(new Set(VIDEO_TEMPLATES.map((v) => v.group)))
+const VIDEO_GROUP_FA: Record<string, string> = Object.fromEntries(
+  VIDEO_TEMPLATES.map((v) => [v.group, v.groupFa]),
+)
+
+type Lang = 'en' | 'fa'
+
+const T = {
+  en: {
+    title: 'Product Ad Scenario',
+    description:
+      'Add your product photo and name, answer a few questions, and get a cinematic advertising scenario tuned to your chosen camera style.',
+    photo: 'Photo',
+    productName: 'Product name',
+    productNamePlaceholder: 'e.g. AuraGlow Serum',
+    descriptionLabel: 'Description',
+    optional: '(optional)',
+    descriptionPlaceholder: 'Key features, vibe, target audience…',
+    yourPrompt: 'Your prompt',
+    yourPromptPlaceholder:
+      'Write your own prompt / idea — it will be rewritten for your selected duration and camera style…',
+    duration: 'Duration',
+    cameraStyle: 'Camera style',
+    genre: 'Genre & atmosphere',
+    scene: 'Scene & environment',
+    videoTemplates: 'Video templates',
+    cameraNotes: 'Camera movement notes',
+    cameraNotesPlaceholder:
+      'Describe how the camera should move, e.g. slow rise then fast push-in on the label…',
+    adScenario: 'Ad scenario',
+    scene_: 'Scene',
+    copy: 'Copy',
+    copyAll: 'Copy all',
+    copied: 'Copied',
+    regenerate: 'Regenerate',
+    sendAll: 'Send all to Pending',
+    useAsPrompt: 'Use as prompt',
+    generate: 'Generate ad scenario',
+    translate: 'نمایش به فارسی',
+  },
+  fa: {
+    title: 'سناریوی تبلیغ محصول',
+    description:
+      'عکس و نام محصول را اضافه کنید، به چند سؤال پاسخ دهید و یک سناریوی تبلیغاتی سینمایی متناسب با سبک دوربین انتخابی‌تان دریافت کنید.',
+    photo: 'عکس',
+    productName: 'نام محصول',
+    productNamePlaceholder: 'مثلاً سرم آوراگلو',
+    descriptionLabel: 'توضیحات',
+    optional: '(اختیاری)',
+    descriptionPlaceholder: 'ویژگی‌های کلیدی، حال‌وهوا، مخاطب هدف…',
+    yourPrompt: 'پرامت شما',
+    yourPromptPlaceholder:
+      'پرامت یا ایده‌ی خودتان را بنویسید — برای مدت‌زمان و سبک دوربین انتخابی بازنویسی می‌شود…',
+    duration: 'مدت‌زمان',
+    cameraStyle: 'سبک دوربین',
+    genre: 'ژانر و حال‌وهوا',
+    scene: 'صحنه و محیط',
+    videoTemplates: 'تمپلیت‌های ویدئویی',
+    cameraNotes: 'یادداشت‌های حرکت دوربین',
+    cameraNotesPlaceholder:
+      'توضیح دهید دوربین چطور حرکت کند، مثلاً بالا آمدن آرام سپس پوش‌این سریع روی برچسب…',
+    adScenario: 'سناریوی تبلیغ',
+    scene_: 'صحنه',
+    copy: 'کپی',
+    copyAll: 'کپی همه',
+    copied: 'کپی شد',
+    regenerate: 'تولید دوباره',
+    sendAll: 'ارسال همه به Pending',
+    useAsPrompt: 'استفاده به‌عنوان پرامت',
+    generate: 'تولید سناریوی تبلیغ',
+    translate: 'Show in English',
+  },
+} as const
+
 export default function ProductAdDialog({
   open,
   onOpenChange,
