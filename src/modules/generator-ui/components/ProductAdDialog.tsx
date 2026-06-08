@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Package, LoaderCircle, RefreshCw, Copy, Check, Wand2, Send, ImagePlus, X } from 'lucide-react'
+import { Package, LoaderCircle, RefreshCw, Copy, Check, Wand2, Send, ImagePlus, X, Languages } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -135,6 +135,122 @@ const SCENE_TEMPLATES: SceneTemplate[] = [
 
 const SCENE_GROUPS = Array.from(new Set(SCENE_TEMPLATES.map((s) => s.group)))
 
+type VideoTemplate = {
+  id: string
+  label: string
+  labelFa: string
+  icon: string
+  group: string
+  groupFa: string
+  prompt: string
+}
+
+const VIDEO_TEMPLATES: VideoTemplate[] = [
+  // 1. Sports & Action
+  { id: 'football-team', label: 'Football / Team Sports', labelFa: 'فوتبال و ورزش‌های تیمی', icon: '⚽', group: 'Sports & Action', groupFa: 'ورزشی و پرتحرک', prompt: 'Sports broadcast template: team line-up reveals, player profile cards, animated live-score lower thirds and refereeing graphics with energetic stadium atmosphere.' },
+  { id: 'sports-highlights', label: 'Sports Highlights', labelFa: 'هایلایت‌های ورزشی', icon: '🏆', group: 'Sports & Action', groupFa: 'ورزشی و پرتحرک', prompt: 'Sports highlights template: fast transitions, high-energy effects and jump cuts to showcase goals and decisive match moments.' },
+  { id: 'fitness', label: 'Fitness & Bodybuilding', labelFa: 'فیتنس و بدنسازی', icon: '💪', group: 'Sports & Action', groupFa: 'ورزشی و پرتحرک', prompt: 'Fitness template: motivational footage cut to a fast music tempo, promoting gyms or training programs with dynamic energy.' },
+  { id: 'gaming-esports', label: 'Gaming / Esports', labelFa: 'گیمینگ و ورزش‌های الکترونیک', icon: '🎮', group: 'Sports & Action', groupFa: 'ورزشی و پرتحرک', prompt: 'Gaming and esports template: stream channel intros, on-screen overlays and team reveals with neon glowing effects.' },
+  // 2. Animation & Motion Graphics
+  { id: 'explainer', label: 'Explainer Video', labelFa: 'ویدئوی آموزشی/توضیحی', icon: '🧩', group: 'Animation & Motion Graphics', groupFa: 'انیمیشن و موشن گرافیک', prompt: '2D/3D explainer template: animated characters explaining a system, product or service with clean motion graphics.' },
+  { id: 'logo-reveal', label: 'Logo Reveal', labelFa: 'لوگو موشن', icon: '✨', group: 'Animation & Motion Graphics', groupFa: 'انیمیشن و موشن گرافیک', prompt: 'Logo reveal template: short, eye-catching few-second animation introducing a brand logo at the start of videos.' },
+  { id: 'kinetic-typography', label: 'Kinetic Typography', labelFa: 'تایپوگرافی متحرک', icon: '🔤', group: 'Animation & Motion Graphics', groupFa: 'انیمیشن و موشن گرافیک', prompt: 'Kinetic typography template: built entirely on creative, rhythmic animated text synced to the beat.' },
+  { id: 'motion-comic', label: 'Motion Comics', labelFa: 'موشن کمیک', icon: '💥', group: 'Animation & Motion Graphics', groupFa: 'انیمیشن و موشن گرافیک', prompt: 'Motion comic template: animated comic-book panels and visual storytelling with painterly comic effects.' },
+  // 3. Social Media
+  { id: 'youtube-intro-outro', label: 'YouTube Intro & Outro', labelFa: 'اینترو و اوترو یوتیوب', icon: '▶️', group: 'Social Media', groupFa: 'شبکه‌های اجتماعی و تولید محتوا', prompt: 'YouTube intro/outro template: opening sequences and end screens with animated like and subscribe button prompts.' },
+  { id: 'instagram-reels', label: 'Instagram Story / Reels', labelFa: 'استوری و ریلز اینستاگرام', icon: '📱', group: 'Social Media', groupFa: 'شبکه‌های اجتماعی و تولید محتوا', prompt: 'Vertical 9:16 template: minimal, e-commerce or lifestyle designs for quick product showcases in stories and reels.' },
+  { id: 'tiktok-trends', label: 'TikTok & Trends', labelFa: 'تیک‌تاک و ترندها', icon: '🎵', group: 'Social Media', groupFa: 'شبکه‌های اجتماعی و تولید محتوا', prompt: 'TikTok trend template: beat-synced edits and viral transitions matched to the music.' },
+  { id: 'vodcast', label: 'Video Podcast (Vodcast)', labelFa: 'پادکست ویدئویی', icon: '🎙️', group: 'Social Media', groupFa: 'شبکه‌های اجتماعی و تولید محتوا', prompt: 'Video podcast template: audio spectrum visualizer and timer overlays for publishing podcasts.' },
+  // 4. Corporate & Business
+  { id: 'company-profile', label: 'Company Profile', labelFa: 'معرفی شرکت', icon: '🏢', group: 'Corporate & Business', groupFa: 'شرکتی و کسب‌وکار', prompt: 'Company profile template: history and goals timeline, leadership team introductions and business vision presentation.' },
+  { id: 'infographic', label: 'Presentation / Infographic', labelFa: 'ارائه‌ها و اینفوگرافیک', icon: '📊', group: 'Corporate & Business', groupFa: 'شرکتی و کسب‌وکار', prompt: 'Infographic template: animated charts, city or country maps and attractive visual presentation of statistical data.' },
+  { id: 'real-estate', label: 'Real Estate', labelFa: 'املاک و مستغلات', icon: '🏠', group: 'Corporate & Business', groupFa: 'شرکتی و کسب‌وکار', prompt: 'Real estate template: clean professional slideshows with text info to present home details and architecture projects.' },
+  { id: 'product-promo', label: 'Product Promo', labelFa: 'تبلیغات محصول', icon: '🛍️', group: 'Corporate & Business', groupFa: 'شرکتی و کسب‌وکار', prompt: 'Product promo template: 3D or video showcase of features, price and multiple angles of a new product.' },
+  // 5. Cinematic & Creative
+  { id: 'movie-trailer', label: 'Movie Trailer / Teaser', labelFa: 'تریلر فیلم و تیزر', icon: '🎬', group: 'Cinematic & Creative', groupFa: 'سینمایی و خلاقانه', prompt: 'Cinematic trailer template: epic dramatic titles, light effects and dark atmospheric mood.' },
+  { id: 'photo-slideshow', label: 'Photo / Video Slideshow', labelFa: 'اسلایدشوی عکس و ویدئو', icon: '🖼️', group: 'Cinematic & Creative', groupFa: 'سینمایی و خلاقانه', prompt: 'Slideshow template: artistic blend of images with soft music, suited for portfolios or travel memories.' },
+  { id: 'glitch-retro', label: 'Glitch & Retro', labelFa: 'افکت‌های گلیچ و رترو', icon: '📼', group: 'Cinematic & Creative', groupFa: 'سینمایی و خلاقانه', prompt: 'Glitch and retro template: VHS tape simulation, old TV noise and 80s/90s visual styling.' },
+  { id: 'vfx', label: 'VFX / Special Effects', labelFa: 'جلوه‌های ویژه', icon: '🌩️', group: 'Cinematic & Creative', groupFa: 'سینمایی و خلاقانه', prompt: 'VFX template: ready-made explosions, magic, smoke, fire and weather changes layered over raw footage.' },
+  // 6. Events & Occasions
+  { id: 'wedding', label: 'Wedding & Formal', labelFa: 'عروسی و فرمالیته', icon: '💍', group: 'Events & Occasions', groupFa: 'رویدادها و مناسبت‌ها', prompt: 'Wedding template: romantic slideshows with warm color grading, floral frames, delicate typography and soft light leaks.' },
+  { id: 'birthday-party', label: 'Birthday & Party', labelFa: 'تولد و مهمانی', icon: '🎉', group: 'Events & Occasions', groupFa: 'رویدادها و مناسبت‌ها', prompt: 'Birthday and party template: colorful, joyful video invitations with balloon and confetti animations.' },
+  { id: 'calendar-campaigns', label: 'Holidays & Campaigns', labelFa: 'مناسبت‌های تقویمی و کمپین‌ها', icon: '🎄', group: 'Events & Occasions', groupFa: 'رویدادها و مناسبت‌ها', prompt: 'Seasonal campaign template: tailored for Christmas, Halloween, Nowruz, Ramadan, Black Friday and seasonal discount sales.' },
+]
+
+const VIDEO_GROUPS = Array.from(new Set(VIDEO_TEMPLATES.map((v) => v.group)))
+const VIDEO_GROUP_FA: Record<string, string> = Object.fromEntries(
+  VIDEO_TEMPLATES.map((v) => [v.group, v.groupFa]),
+)
+
+type Lang = 'en' | 'fa'
+
+const T = {
+  en: {
+    title: 'Product Ad Scenario',
+    description:
+      'Add your product photo and name, answer a few questions, and get a cinematic advertising scenario tuned to your chosen camera style.',
+    photo: 'Photo',
+    productName: 'Product name',
+    productNamePlaceholder: 'e.g. AuraGlow Serum',
+    descriptionLabel: 'Description',
+    optional: '(optional)',
+    descriptionPlaceholder: 'Key features, vibe, target audience…',
+    yourPrompt: 'Your prompt',
+    yourPromptPlaceholder:
+      'Write your own prompt / idea — it will be rewritten for your selected duration and camera style…',
+    duration: 'Duration',
+    cameraStyle: 'Camera style',
+    genre: 'Genre & atmosphere',
+    scene: 'Scene & environment',
+    videoTemplates: 'Video templates',
+    cameraNotes: 'Camera movement notes',
+    cameraNotesPlaceholder:
+      'Describe how the camera should move, e.g. slow rise then fast push-in on the label…',
+    adScenario: 'Ad scenario',
+    scene_: 'Scene',
+    copy: 'Copy',
+    copyAll: 'Copy all',
+    copied: 'Copied',
+    regenerate: 'Regenerate',
+    sendAll: 'Send all to Pending',
+    useAsPrompt: 'Use as prompt',
+    generate: 'Generate ad scenario',
+    translate: 'نمایش به فارسی',
+  },
+  fa: {
+    title: 'سناریوی تبلیغ محصول',
+    description:
+      'عکس و نام محصول را اضافه کنید، به چند سؤال پاسخ دهید و یک سناریوی تبلیغاتی سینمایی متناسب با سبک دوربین انتخابی‌تان دریافت کنید.',
+    photo: 'عکس',
+    productName: 'نام محصول',
+    productNamePlaceholder: 'مثلاً سرم آوراگلو',
+    descriptionLabel: 'توضیحات',
+    optional: '(اختیاری)',
+    descriptionPlaceholder: 'ویژگی‌های کلیدی، حال‌وهوا، مخاطب هدف…',
+    yourPrompt: 'پرامت شما',
+    yourPromptPlaceholder:
+      'پرامت یا ایده‌ی خودتان را بنویسید — برای مدت‌زمان و سبک دوربین انتخابی بازنویسی می‌شود…',
+    duration: 'مدت‌زمان',
+    cameraStyle: 'سبک دوربین',
+    genre: 'ژانر و حال‌وهوا',
+    scene: 'صحنه و محیط',
+    videoTemplates: 'تمپلیت‌های ویدئویی',
+    cameraNotes: 'یادداشت‌های حرکت دوربین',
+    cameraNotesPlaceholder:
+      'توضیح دهید دوربین چطور حرکت کند، مثلاً بالا آمدن آرام سپس پوش‌این سریع روی برچسب…',
+    adScenario: 'سناریوی تبلیغ',
+    scene_: 'صحنه',
+    copy: 'کپی',
+    copyAll: 'کپی همه',
+    copied: 'کپی شد',
+    regenerate: 'تولید دوباره',
+    sendAll: 'ارسال همه به Pending',
+    useAsPrompt: 'استفاده به‌عنوان پرامت',
+    generate: 'تولید سناریوی تبلیغ',
+    translate: 'Show in English',
+  },
+} as const
+
 export default function ProductAdDialog({
   open,
   onOpenChange,
@@ -151,6 +267,8 @@ export default function ProductAdDialog({
   const [cameraMovement, setCameraMovement] = useState('')
   const [genre, setGenre] = useState<string>('')
   const [scene, setScene] = useState<string>('')
+  const [templateIds, setTemplateIds] = useState<Set<string>>(new Set())
+  const [lang, setLang] = useState<Lang>('en')
   const [isWriting, setIsWriting] = useState(false)
   const [scenes, setScenes] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -231,13 +349,19 @@ export default function ProductAdDialog({
     try {
       const trimmedPrompt = userPrompt.trim()
       const trimmedName = productName.trim()
-      const idea = trimmedPrompt
+      const templatePrompts = VIDEO_TEMPLATES.filter((v) => templateIds.has(v.id))
+        .map((v) => v.prompt)
+        .join(' ')
+      let idea = trimmedPrompt
         ? trimmedName
           ? `${trimmedPrompt}\n\nThis is an advertisement for the product "${trimmedName}".`
           : trimmedPrompt
         : trimmedName
           ? `Advertisement for the product "${trimmedName}".`
           : 'Advertisement for the attached product.'
+      if (templatePrompts) {
+        idea += `\n\nFollow these video template styles and conventions: ${templatePrompts}`
+      }
       const { data, error: invokeErr } = await supabase.functions.invoke('scenario-write', {
         body: {
           mode: 'product-ad',
@@ -302,6 +426,15 @@ export default function ProductAdDialog({
     }
   }
 
+  function toggleTemplate(id: string) {
+    setTemplateIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
   function reset() {
     setProductName('')
     setProductDescription('')
@@ -310,6 +443,7 @@ export default function ProductAdDialog({
     setCameraMovement('')
     setGenre('')
     setScene('')
+    setTemplateIds(new Set())
     setScenes([])
     setError(null)
     setCopiedIndex(null)
@@ -320,6 +454,8 @@ export default function ProductAdDialog({
   const isSplit = SPLIT_DURATIONS.includes(duration) && scenes.length > 1
   const concatenated = scenes.join('\n\n')
   const canGenerate = (userPrompt.trim().length > 0 || productName.trim().length > 0 || Boolean(uploadedImageUrl)) && !isUploadingImage
+  const t = T[lang]
+  const dir = lang === 'fa' ? 'rtl' : 'ltr'
 
   return (
     <Dialog
@@ -329,15 +465,24 @@ export default function ProductAdDialog({
         if (!o) reset()
       }}
     >
-      <DialogContent className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+      <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Package className="h-5 w-5 text-amber-300" aria-hidden="true" />
-            Product Ad Scenario
+            {t.title}
+            <button
+              type="button"
+              onClick={() => setLang((l) => (l === 'en' ? 'fa' : 'en'))}
+              title={t.translate}
+              aria-label={t.translate}
+              className="ms-auto inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[11px] font-semibold text-zinc-300 transition hover:border-amber-300/40 hover:text-amber-100"
+            >
+              <Languages className="h-3.5 w-3.5 text-sky-300" aria-hidden="true" />
+              {lang === 'en' ? 'فارسی' : 'EN'}
+            </button>
           </DialogTitle>
           <DialogDescription className="text-zinc-400">
-            Add your product photo and name, answer a few questions, and get a cinematic
-            advertising scenario tuned to your chosen camera style.
+            {t.description}
           </DialogDescription>
         </DialogHeader>
 
@@ -382,31 +527,31 @@ export default function ProductAdDialog({
                   ) : (
                     <ImagePlus className="h-5 w-5" aria-hidden="true" />
                   )}
-                  <span className="text-[10px]">Photo</span>
+                  <span className="text-[10px]">{t.photo}</span>
                 </button>
               )}
             </div>
             <div className="flex-1 space-y-2">
               <div>
                 <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                  Product name
+                  {t.productName}
                 </div>
                 <Input
                   value={productName}
                   onChange={(e) => setProductName(e.target.value)}
-                  placeholder="e.g. AuraGlow Serum"
+                  placeholder={t.productNamePlaceholder}
                   className="border-white/10 bg-black/30 text-zinc-100"
                 />
               </div>
               <div>
                 <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                  Description <span className="text-zinc-600">(optional)</span>
+                  {t.descriptionLabel} <span className="text-zinc-600">{t.optional}</span>
                 </div>
                 <Textarea
                   value={productDescription}
                   onChange={(e) => setProductDescription(e.target.value)}
                   rows={2}
-                  placeholder="Key features, vibe, target audience…"
+                  placeholder={t.descriptionPlaceholder}
                   className="min-h-[56px] border-white/10 bg-black/30 text-zinc-100"
                 />
               </div>
@@ -416,13 +561,13 @@ export default function ProductAdDialog({
           {/* Your prompt */}
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              Your prompt <span className="text-zinc-600">(optional)</span>
+              {t.yourPrompt} <span className="text-zinc-600">{t.optional}</span>
             </div>
             <Textarea
               value={userPrompt}
               onChange={(e) => setUserPrompt(e.target.value)}
               rows={3}
-              placeholder="Write your own prompt / idea — it will be rewritten for your selected duration and camera style…"
+              placeholder={t.yourPromptPlaceholder}
               className="min-h-[72px] border-white/10 bg-black/30 text-zinc-100"
             />
           </div>
@@ -430,7 +575,7 @@ export default function ProductAdDialog({
 
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              Duration
+              {t.duration}
             </div>
             <div
               role="radiogroup"
@@ -465,7 +610,7 @@ export default function ProductAdDialog({
           {/* Camera style */}
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              Camera style
+              {t.cameraStyle}
             </div>
             <div role="radiogroup" aria-label="Camera style" className="flex flex-wrap gap-2">
               {CAMERA_STYLES.map((style) => {
@@ -494,7 +639,7 @@ export default function ProductAdDialog({
           {/* Genre & atmosphere */}
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              Genre &amp; atmosphere <span className="text-zinc-600">(optional)</span>
+              {t.genre} <span className="text-zinc-600">{t.optional}</span>
             </div>
             <div role="radiogroup" aria-label="Genre and atmosphere" className="flex flex-wrap gap-2">
               {GENRE_TEMPLATES.map((g) => {
@@ -524,7 +669,7 @@ export default function ProductAdDialog({
           {/* Scene & environment */}
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              Scene &amp; environment <span className="text-zinc-600">(optional)</span>
+              {t.scene} <span className="text-zinc-600">{t.optional}</span>
             </div>
             <div className="space-y-2.5">
               {SCENE_GROUPS.map((group) => (
@@ -560,18 +705,58 @@ export default function ProductAdDialog({
             </div>
           </div>
 
+          {/* Video templates */}
+          <div>
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+              {t.videoTemplates} <span className="text-zinc-600">{t.optional}</span>
+            </div>
+            <div className="space-y-2.5">
+              {VIDEO_GROUPS.map((group) => (
+                <div key={group}>
+                  <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                    {lang === 'fa' ? VIDEO_GROUP_FA[group] : group}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {VIDEO_TEMPLATES.filter((v) => v.group === group).map((v) => {
+                      const active = templateIds.has(v.id)
+                      return (
+                        <button
+                          key={v.id}
+                          type="button"
+                          aria-pressed={active}
+                          title={v.prompt}
+                          onClick={() => toggleTemplate(v.id)}
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                            active
+                              ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
+                              : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
+                          }`}
+                        >
+                          <span className="text-sm leading-none">{v.icon}</span>
+                          {lang === 'fa' ? v.labelFa : v.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+
+
 
 
           {/* Camera movement notes */}
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              Camera movement notes <span className="text-zinc-600">(optional)</span>
+              {t.cameraNotes} <span className="text-zinc-600">{t.optional}</span>
             </div>
             <Textarea
               value={cameraMovement}
               onChange={(e) => setCameraMovement(e.target.value)}
               rows={2}
-              placeholder="Describe how the camera should move, e.g. slow rise then fast push-in on the label…"
+              placeholder={t.cameraNotesPlaceholder}
               className="min-h-[56px] border-white/10 bg-black/30 text-zinc-100"
             />
           </div>
@@ -585,7 +770,7 @@ export default function ProductAdDialog({
                 <div key={i} className="rounded-md border border-white/10 bg-black/30 p-3">
                   <div className="mb-1.5 flex items-center justify-between">
                     <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                      Scene {i + 1} ({sceneRange(i)})
+                      {t.scene_} {i + 1} ({sceneRange(i)})
                     </div>
                     <Button
                       variant="ghost"
@@ -599,7 +784,7 @@ export default function ProductAdDialog({
                       ) : (
                         <Copy className="h-3.5 w-3.5 mr-1" aria-hidden="true" />
                       )}
-                      {copiedIndex === i ? 'Copied' : 'Copy'}
+                      {copiedIndex === i ? t.copied : t.copy}
                     </Button>
                   </div>
                   <p dir="ltr" className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
@@ -611,7 +796,7 @@ export default function ProductAdDialog({
           ) : scenes.length > 0 ? (
             <div className="rounded-md border border-white/10 bg-black/30 p-3">
               <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                Ad scenario ({duration}s)
+                {t.adScenario} ({duration}s)
               </div>
               <p dir="ltr" className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
                 {scenes[0]}
@@ -634,7 +819,7 @@ export default function ProductAdDialog({
                 ) : (
                   <Copy className="h-4 w-4 mr-2" aria-hidden="true" />
                 )}
-                {copiedIndex === -1 ? 'Copied' : isSplit ? 'Copy all' : 'Copy'}
+                {copiedIndex === -1 ? t.copied : isSplit ? t.copyAll : t.copy}
               </Button>
               <Button
                 variant="ghost"
@@ -647,7 +832,7 @@ export default function ProductAdDialog({
                 ) : (
                   <RefreshCw className="h-4 w-4 mr-2" aria-hidden="true" />
                 )}
-                Regenerate
+                {t.regenerate}
               </Button>
               {isSplit && onSendScenes ? (
                 <Button size="sm" onClick={handleSendAll} disabled={isWriting || isSending}>
@@ -656,12 +841,12 @@ export default function ProductAdDialog({
                   ) : (
                     <Send className="h-4 w-4 mr-2" aria-hidden="true" />
                   )}
-                  Send all to Pending
+                  {t.sendAll}
                 </Button>
               ) : (
                 <Button size="sm" onClick={handleUseAsPrompt} disabled={isWriting || isSending}>
                   <Wand2 className="h-4 w-4 mr-2" aria-hidden="true" />
-                  Use as prompt
+                  {t.useAsPrompt}
                 </Button>
               )}
             </>
@@ -672,7 +857,7 @@ export default function ProductAdDialog({
               ) : (
                 <Wand2 className="h-4 w-4 mr-2" aria-hidden="true" />
               )}
-              Generate ad scenario
+              {t.generate}
             </Button>
           )}
         </div>

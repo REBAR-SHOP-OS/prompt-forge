@@ -1,34 +1,34 @@
-# Fix: Final Film quality drops on merge
+# افزودن دسته‌بندی تمپلیت‌های ویدئویی + آیکون ترجمه
 
-## Root cause
-When you press "Final Film", the project clips are concatenated in the browser by painting each clip onto a canvas and recording that canvas with `MediaRecorder` (`src/modules/generator-ui/lib/mergeVideos.ts`, line 735):
+تمام تغییرات در یک فایل انجام می‌شود: `src/modules/generator-ui/components/ProductAdDialog.tsx`. هیچ تغییری در بک‌اند لازم نیست (پرامت تمپلیت‌های انتخاب‌شده به همان فیلد `scenario-write` تزریق می‌شود).
 
-```ts
-const recorder = new MediaRecorder(outStream, { mimeType: chosenMime })
+## ۱) بخش جدید «تمپلیت‌های ویدئویی» (چند انتخابی)
+
+یک ساختار داده جدید مثل `SCENE_TEMPLATES` اضافه می‌شود با ۶ دسته اصلی و زیرمجموعه‌ها:
+
+```text
+۱. ورزشی و پرتحرک  → فوتبال/تیمی، هایلایت، فیتنس، گیمینگ/Esports
+۲. انیمیشن و موشن گرافیک → اکسپلینر، لوگو موشن، تایپوگرافی متحرک، موشن کمیک
+۳. شبکه‌های اجتماعی → اینترو/اوترو یوتیوب، استوری/ریلز، تیک‌تاک، ودکست
+۴. شرکتی و کسب‌وکار → معرفی شرکت، اینفوگرافیک، املاک، تبلیغ محصول
+۵. سینمایی و خلاقانه → تریلر/تیزر، اسلایدشو، گلیچ/رترو، VFX
+۶. رویدادها و مناسبت‌ها → عروسی، تولد/مهمانی، مناسبت‌های تقویمی
 ```
 
-No bitrate is specified, so the browser falls back to its default canvas-capture bitrate (~2.5 Mbps). For 1080p / vertical HD clips that is far too low, so the merged film looks softer/blockier than the original cards — exactly the "quality drops" you see. The drop is intermittent because it only becomes obvious on higher-resolution or more detailed scenes.
+- هر آیتم: `id`، `label` (انگلیسی)، `labelFa` (فارسی)، `icon` (ایموجی رنگی)، `group`/`groupFa`، و `prompt` (راهنمای کارگردانی انگلیسی برای موتور هوش مصنوعی).
+- رندر مشابه «Scene & environment»: گروه‌بندی‌شده، دکمه‌های چیپ‌مانند با آیکون.
+- **چند انتخابی**: state جدید `templateIds: Set<string>`؛ کلیک روی هر چیپ آن را اضافه/حذف می‌کند و چیپ‌های فعال هایلایت می‌شوند.
+- در تابع `generate()` پرامت تمام تمپلیت‌های انتخاب‌شده با هم ترکیب و در بدنه‌ی درخواست `scenario-write` ارسال می‌شود (به فیلد موجود مثل `genre`/`scene` افزوده یا در یک فیلد جدید `templates` که با بقیه‌ی متن ترکیب می‌شود). در `reset()` هم پاک می‌شود.
 
-## The fix
-Set an explicit, resolution-aware high bitrate on the recorder so the output preserves source quality.
+## ۲) آیکون/دکمه ترجمه (کل دیالوگ → فارسی)
 
-### `src/modules/generator-ui/lib/mergeVideos.ts`
-1. After the canvas `width`/`height` are known, compute a target video bitrate proportional to resolution and frame rate, e.g.:
-   - `videoBitsPerSecond ≈ width * height * fps * 0.18`, clamped to a sensible range (about 8 Mbps min, 40 Mbps max). This yields roughly 12–16 Mbps for 1080p — visually lossless for this pipeline.
-   - `audioBitsPerSecond` set to 192 kbps.
-2. Pass these into the `MediaRecorder` constructor:
-   ```ts
-   const recorder = new MediaRecorder(outStream, {
-     mimeType: chosenMime,
-     videoBitsPerSecond,
-     audioBitsPerSecond: 192_000,
-   })
-   ```
-   Wrap in a try/catch that falls back to the bitrate-less constructor if a browser rejects the options, so nothing can break the merge.
-3. (Quality safeguard) Ensure the merge canvas isn't downscaled below the source: the current `Math.max(640, …)` / `Math.max(360, …)` only raise tiny inputs and are fine, so the canvas already records at full source resolution — no change needed there beyond the bitrate.
+- state جدید `lang: 'en' | 'fa'` و یک دکمه آیکونی (`Languages` از lucide-react) کنار دکمه‌ی بستن در هدر دیالوگ که بین انگلیسی و فارسی سوئیچ می‌کند.
+- یک نگاشت ترجمه `T = { en: {...}, fa: {...} }` برای تمام متن‌های ثابت دیالوگ (عنوان، توضیح، برچسب‌ها مثل Product name / Description / Your prompt / Duration / Camera style / Genre & atmosphere / Scene & environment / Camera movement notes، دکمه‌ها، و پیام‌ها).
+- برای چیپ‌ها از `labelFa`/`groupFa` استفاده می‌شود وقتی `lang === 'fa'`.
+- وقتی `lang === 'fa'` روی محتوای دیالوگ `dir="rtl"` ست می‌شود تا چیدمان راست‌به‌چپ شود (خروجی سناریوی تولیدشده با `dir="ltr"` باقی می‌ماند چون انگلیسی است).
+- زبان فقط نمایش UI را عوض می‌کند؛ پرامتی که به موتور هوش مصنوعی می‌رود همچنان انگلیسی است تا کیفیت خروجی حفظ شود.
 
-## Notes on the MP4 export
-The optional MP4 transcode (`transcodeToMp4.ts`) re-encodes with `-crf 23` and caps width at 1920px, which is already good quality and unaffected here. The visible quality loss originates at the recording step, which this change fixes.
-
-## Result
-The merged Final Film keeps the sharpness of the original clip cards instead of being re-recorded at a low default bitrate, permanently fixing the quality drop.
+## جزئیات فنی
+- فقط `ProductAdDialog.tsx` ویرایش می‌شود؛ افزودن import آیکون `Languages`.
+- آیکون‌ها ایموجی رنگی هستند (مطابق درخواست «رنگی و شکلک‌دار»).
+- بدون تغییر اسکیمای دیتابیس یا توابع لبه.
