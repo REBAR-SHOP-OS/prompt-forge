@@ -17,6 +17,15 @@ import { fetchFile, toBlobURL } from '@ffmpeg/util'
 import coreUrl from '@ffmpeg/core?url'
 // eslint-disable-next-line import/no-unresolved
 import wasmUrl from '@ffmpeg/core/wasm?url'
+// The engine's worker. `?worker&url` makes Vite compile worker.js + its
+// internal imports (const.js / errors.js) into OUR build graph and return a
+// stable, served URL. Without this, @ffmpeg/ffmpeg falls back to an implicit
+// `new URL('./worker.js', import.meta.url)` which is NOT reliably emitted in
+// production (the package is excluded from optimizeDeps), so the worker never
+// starts and load() hangs until the 45s timeout. Passing this as
+// `classWorkerURL` removes that fragility.
+// eslint-disable-next-line import/no-unresolved
+import ffmpegWorkerUrl from '@ffmpeg/ffmpeg/worker?worker&url'
 
 export interface Mp4Result {
   blob: Blob
