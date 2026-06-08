@@ -819,7 +819,7 @@ export default function ProductAdDialog({
                 ) : (
                   <Copy className="h-4 w-4 mr-2" aria-hidden="true" />
                 )}
-                {copiedIndex === -1 ? 'Copied' : isSplit ? 'Copy all' : 'Copy'}
+                {copiedIndex === -1 ? t.copied : isSplit ? t.copyAll : t.copy}
               </Button>
               <Button
                 variant="ghost"
