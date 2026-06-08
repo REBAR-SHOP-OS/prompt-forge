@@ -125,6 +125,9 @@ export function VoiceoverDialog({
       lastUrlRef.current = url
       setAudioUrl(url)
       if (payload.warning) toast.warning(payload.warning)
+      // Persist to Storage › Audio so every generated voiceover is saved.
+      void persistVoiceover(blob)
+
 
     } catch (err) {
       console.error('Voiceover generation failed', err)
