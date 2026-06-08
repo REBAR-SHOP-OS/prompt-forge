@@ -770,7 +770,7 @@ export default function ProductAdDialog({
                 <div key={i} className="rounded-md border border-white/10 bg-black/30 p-3">
                   <div className="mb-1.5 flex items-center justify-between">
                     <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                      Scene {i + 1} ({sceneRange(i)})
+                      {t.scene_} {i + 1} ({sceneRange(i)})
                     </div>
                     <Button
                       variant="ghost"
@@ -784,7 +784,7 @@ export default function ProductAdDialog({
                       ) : (
                         <Copy className="h-3.5 w-3.5 mr-1" aria-hidden="true" />
                       )}
-                      {copiedIndex === i ? 'Copied' : 'Copy'}
+                      {copiedIndex === i ? t.copied : t.copy}
                     </Button>
                   </div>
                   <p dir="ltr" className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
