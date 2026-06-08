@@ -426,6 +426,15 @@ export default function ProductAdDialog({
     }
   }
 
+  function toggleTemplate(id: string) {
+    setTemplateIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
   function reset() {
     setProductName('')
     setProductDescription('')
@@ -434,6 +443,7 @@ export default function ProductAdDialog({
     setCameraMovement('')
     setGenre('')
     setScene('')
+    setTemplateIds(new Set())
     setScenes([])
     setError(null)
     setCopiedIndex(null)
