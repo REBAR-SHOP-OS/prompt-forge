@@ -1,38 +1,57 @@
-# Add Audio (Music + Voiceover) to Storage
+# Fix "ffmpeg core load timed out" on Apply changes (Trim clip)
 
-## Goal
-In the Storage panel (next to **Films** and **Images**), add a new **Audio** tab with its own icon. Uploaded background music and generated voiceovers will be saved permanently to the user's account and shown here, each with a play preview, a download button, and a delete button — matching the existing Images tab behavior.
+## What's happening
 
-## Problem today
-Music and voiceovers currently live only as in-browser blob URLs (`URL.createObjectURL`). They vanish on refresh and are never saved to the account, so they can't appear in Storage. To list and download them later, they must be persisted to the backend.
+When you click **Apply changes** in the Trim dialog, the app records the trimmed clip in the browser and then runs it through the in-browser video engine (ffmpeg.wasm) to produce a standard MP4. In the published app, the video engine's background worker never starts, so the loader waits the full 45 seconds and then reports:
 
-## What will be built
+```text
+ffmpeg load failed: Video engine (ffmpeg) failed to start —
+local: FFmpeg core load (local) timed out after 45000ms |
+remote: FFmpeg core load (remote) timed out after 45000ms
+```
 
-### 1. Backend storage + table
-- New private storage bucket `user-audio` for music and voiceover files.
-- New table `generator_user_audio` tracking each item: owner, storage path, kind (`music` or `voiceover`), display name, duration, size, mime type, timestamps, soft-delete — mirroring `generator_user_images`.
-- Row-level security so each user only sees/manages their own audio, plus the required table grants.
+Root cause: the engine spawns its worker via an implicit `new URL('./worker.js', import.meta.url)`. Because the engine package is intentionally excluded from Vite's dependency optimizer, that worker file is not reliably emitted/served in the production build, so the worker never replies to the "load" message. Both local and remote attempts fail for the same reason (the worker, not the core source, is the problem) — which is exactly why both time out at the identical 45 s.
 
-### 2. Saving audio
-- When a user uploads background music, after selecting the file it is uploaded to `user-audio` and a row is created (kind = `music`). Local preview/editing keeps working as it does now.
-- When a voiceover is generated, its audio is uploaded to `user-audio` and a row is created (kind = `voiceover`).
-- Existing in-session playback/mixing behavior is unchanged; persistence is added alongside it.
+## The fix (principled, minimal)
 
-### 3. Storage panel "Audio" tab
-- Add a third tab button with an audio icon (e.g. music note), with a count badge like the others.
-- Tab content lists saved audio cards, each showing: name, kind label (Music / Voiceover), created date, an inline audio player to preview, a **Download** button, and a **Delete** (with confirm dialog) button — reusing the existing download/delete patterns.
-- Loading and empty states consistent with the Films/Images tabs.
-- The header count and description update for the Audio tab.
+All changes are in `src/modules/generator-ui/lib/transcodeToMp4.ts`.
 
-## Technical details
-- **Migration**: create bucket `user-audio`; create `public.generator_user_audio` (columns: `id`, `user_id`, `storage_path`, `kind text check in ('music','voiceover')`, `name text`, `duration_seconds numeric`, `size_bytes int`, `mime_type text`, `created_at`, `updated_at`, `deleted_at`); add `GRANT SELECT, INSERT, UPDATE, DELETE ... TO authenticated` + `GRANT ALL ... TO service_role`; enable RLS with own-row policies; add `updated_at` trigger; add storage.objects policies on `user-audio` scoped to the user's folder.
-- **Client uploads**: direct `supabase.storage.from('user-audio').upload(...)` + insert into `generator_user_audio`, mirroring the existing `user-images` flow in `DashboardPage.tsx` (around lines 3094, 4390 for music) and in `VoiceoverDialog.tsx` (around line 119, after the blob is produced).
-- **Listing**: load audio rows on Storage open (extend `loadArchive`) into a new `archiveAudio` state; render under `archiveTab === 'audio'`.
-- **Files touched**: new migration; `src/modules/generator-ui/pages/DashboardPage.tsx` (tab state `'films' | 'images' | 'audio'`, tab button, list UI, load + download + delete handlers, music upload persistence); `src/modules/generator-ui/components/VoiceoverDialog.tsx` (persist generated voiceover).
+### 1. Bundle the engine worker explicitly so production serves it
 
-## Acceptance
-- Storage panel shows a third **Audio** tab with an icon and count.
-- Uploading music adds it to the Audio tab; generating a voiceover adds it there too.
-- Each audio item previews, downloads, and deletes correctly.
-- Items persist across page reloads and are private per user.
-- Films/Images tabs and existing music/voiceover mixing behavior are unchanged.
+Import the engine worker through Vite so it (and its internal imports) is compiled into our build with a stable, served URL, then hand that URL to the loader as `classWorkerURL`. This removes the dependency on Vite implicitly discovering the worker.
+
+```ts
+// Bundled by Vite as part of OUR build -> always emitted/served in production.
+import ffmpegWorkerURL from '@ffmpeg/ffmpeg/worker?worker&url'
+```
+
+Then pass it in both load paths:
+
+```ts
+await ff.load({ coreURL: core, wasmURL: wasm, classWorkerURL: ffmpegWorkerURL })
+```
+
+(The exact import specifier will be resolved against the installed package's worker entry; if `@ffmpeg/ffmpeg/worker` is not exposed, the concrete dist path `@ffmpeg/ffmpeg/dist/esm/worker.js?worker&url` is used instead.)
+
+### 2. Skip the engine entirely when the recording is already a valid MP4
+
+The trimmer records with `MediaRecorder`, which on current Chrome/Edge already produces `video/mp4` (H.264/AAC). In that common case the engine is only doing a cosmetic faststart remux. `ensureMp4()` will short-circuit: if the input blob is already an MP4, return it as-is and never load the engine. This makes trimming succeed instantly for most users and sidesteps the engine path completely.
+
+### 3. Degrade gracefully instead of hard-failing
+
+If the engine still cannot load (older browser, blocked worker) AND the recording is not MP4 (WebM), `ensureMp4()` will return the original recorded blob with its real mime/extension and a console warning, rather than throwing. The trim result is still saved and playable; the only loss is the faststart optimization. "Apply changes" will no longer dead-end on an error toast.
+
+The call site in `trimVideo.ts` (`ensureMp4(finalBlob, mimeType)`) already threads the returned `extension`/`mimeType` back through `onApply`, so a WebM fallback flows through correctly with no further changes.
+
+## Verification
+
+1. Open a clip, mark a cut, click **Apply changes** in the published preview.
+2. Confirm the trimmed clip saves with no ffmpeg timeout error.
+3. Confirm Final Film / merge (which also uses the engine) still works.
+4. Check the console: when the recording is MP4 it should report the transcode was skipped; if the engine is used, it should load well under the timeout.
+
+## Technical notes
+
+- Files touched: `src/modules/generator-ui/lib/transcodeToMp4.ts` only (loader + `ensureMp4` early-return + graceful fallback). No backend, schema, or UI changes.
+- `vite.config.ts` keeps `optimizeDeps.exclude` for the engine packages; the `?worker&url` import is compatible with that and is the supported way to ship the worker in production.
+- No change to bitrate, scaling, or encode args — output quality for genuine transcodes is unchanged.

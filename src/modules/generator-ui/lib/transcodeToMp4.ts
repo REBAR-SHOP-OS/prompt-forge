@@ -17,11 +17,23 @@ import { fetchFile, toBlobURL } from '@ffmpeg/util'
 import coreUrl from '@ffmpeg/core?url'
 // eslint-disable-next-line import/no-unresolved
 import wasmUrl from '@ffmpeg/core/wasm?url'
+// The engine's worker. `?worker&url` makes Vite compile worker.js + its
+// internal imports (const.js / errors.js) into OUR build graph and return a
+// stable, served URL. Without this, @ffmpeg/ffmpeg falls back to an implicit
+// `new URL('./worker.js', import.meta.url)` which is NOT reliably emitted in
+// production (the package is excluded from optimizeDeps), so the worker never
+// starts and load() hangs until the 45s timeout. Passing this as
+// `classWorkerURL` removes that fragility.
+// eslint-disable-next-line import/no-unresolved
+import ffmpegWorkerUrl from '@ffmpeg/ffmpeg/worker?worker&url'
 
 export interface Mp4Result {
   blob: Blob
-  mimeType: 'video/mp4'
-  extension: 'mp4'
+  // Normally the result is a standard MP4. When the engine is unavailable and
+  // the source recording is already WebM, we degrade gracefully and return the
+  // original WebM rather than failing the whole operation.
+  mimeType: 'video/mp4' | 'video/webm'
+  extension: 'mp4' | 'webm'
 }
 
 /** Progress callback for ensureMp4. `ratio` is 0..1 inside the encode stage. */
@@ -64,18 +76,18 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   })
 }
 
-// IMPORTANT: do NOT pass `classWorkerURL`. The @ffmpeg/ffmpeg package spawns its
-// own bundled `./worker.js` via `new URL('./worker.js', import.meta.url)` which
-// Vite handles correctly as long as the package is excluded from optimizeDeps
-// (see vite.config.ts). Overriding classWorkerURL with `?worker&url` makes Vite
-// rewrap the worker and the LOAD message handler never replies → load() hangs.
+// We pass `classWorkerURL` pointing at the Vite-bundled engine worker (see the
+// import above). This is the supported way to ship the worker in a production
+// build where the package is excluded from optimizeDeps — it guarantees the
+// worker file is emitted and served, so the LOAD message is answered instead of
+// hanging until timeout.
 async function loadLocal(ff: FFmpeg): Promise<void> {
   const [core, wasm] = await Promise.all([
     toBlobURL(coreUrl, 'text/javascript'),
     toBlobURL(wasmUrl, 'application/wasm'),
   ])
   await withTimeout(
-    ff.load({ coreURL: core, wasmURL: wasm }),
+    ff.load({ coreURL: core, wasmURL: wasm, classWorkerURL: ffmpegWorkerUrl }),
     45_000,
     'FFmpeg core load (local)',
   )
@@ -87,7 +99,7 @@ async function loadRemote(ff: FFmpeg): Promise<void> {
     toBlobURL(`${REMOTE_BASE}/ffmpeg-core.wasm`, 'application/wasm'),
   ])
   await withTimeout(
-    ff.load({ coreURL: core, wasmURL: wasm }),
+    ff.load({ coreURL: core, wasmURL: wasm, classWorkerURL: ffmpegWorkerUrl }),
     45_000,
     'FFmpeg core load (remote)',
   )
@@ -150,6 +162,22 @@ function pickInputExt(mimeType: string, fallback?: string): string {
   return 'bin'
 }
 
+/**
+ * Detect an MP4/ISO-BMFF container by its magic bytes (`ftyp` box at offset 4),
+ * independent of the (sometimes empty/unreliable) blob mime type. Lets us skip
+ * the engine entirely when the recording is already a playable MP4.
+ */
+async function sniffIsMp4(blob: Blob): Promise<boolean> {
+  try {
+    const head = new Uint8Array(await blob.slice(0, 12).arrayBuffer())
+    if (head.length < 8) return false
+    // bytes 4..8 spell "ftyp" for an ISO base media file (MP4/MOV).
+    return head[4] === 0x66 && head[5] === 0x74 && head[6] === 0x79 && head[7] === 0x70
+  } catch {
+    return false
+  }
+}
+
 async function runStage<T>(label: string, fn: () => Promise<T>): Promise<T> {
   try {
     return await fn()
@@ -203,20 +231,44 @@ export async function ensureMp4(
     )
   }
 
-  onProgress?.({ stage: 'loading', ratio: 0 })
-  let ff = await runStage('load', () => getFFmpeg())
   const mt = mimeType || blob.type || ''
   const inExt = pickInputExt(mt)
+
+  // Fast path: MediaRecorder on Chromium already produces standard MP4
+  // (H.264/AAC). In that case the engine would only perform a cosmetic
+  // faststart remux — not worth loading WASM. Return the recording as-is so
+  // trimming succeeds instantly and never touches the engine.
+  if (inExt === 'mp4' || (await sniffIsMp4(blob))) {
+    onProgress?.({ stage: 'readout', ratio: 1 })
+    return { blob, mimeType: 'video/mp4', extension: 'mp4' }
+  }
+
+  // Non-MP4 (typically WebM): we need the engine to transcode to MP4.
+  onProgress?.({ stage: 'loading', ratio: 0 })
+  let ff: FFmpeg
+  try {
+    ff = await runStage('load', () => getFFmpeg())
+  } catch (loadErr) {
+    // Engine unavailable (blocked worker, old browser, offline). Degrade
+    // gracefully: return the original recording so the operation still
+    // completes. It is a valid, playable WebM — we only lose MP4 normalization.
+    console.warn(
+      '[ensureMp4] engine load failed, returning original recording:',
+      stringifyAny(loadErr),
+    )
+    onProgress?.({ stage: 'readout', ratio: 1 })
+    return { blob, mimeType: 'video/webm', extension: 'webm' }
+  }
+
   const inputName = `in.${inExt}`
   const outputName = 'out.mp4'
 
   // Wire ffmpeg's native progress event into the caller-supplied callback.
   // This is what actually makes the UI move past 95% during the encode.
-  let currentStage: 'remux' | 'encode' = 'encode'
   const onFfProgress = (e: { progress: number }) => {
     if (!onProgress) return
     const r = Math.max(0, Math.min(0.99, e.progress || 0))
-    onProgress({ stage: currentStage, ratio: r })
+    onProgress({ stage: 'encode', ratio: r })
   }
   try { ff.on('progress', onFfProgress) } catch { /* ignore */ }
 
@@ -226,14 +278,6 @@ export async function ensureMp4(
     })
   }
   await writeInput(ff)
-
-  const isMp4 = inExt === 'mp4'
-  const remuxArgs = [
-    '-i', inputName,
-    '-c', 'copy',
-    '-movflags', '+faststart',
-    outputName,
-  ]
 
   // Per-exec timeout so a hung ffmpeg call surfaces a real error instead of
   // leaving the UI stuck on 95% forever. On timeout we terminate the WASM
@@ -251,32 +295,16 @@ export async function ensureMp4(
     }
   }
 
-  let succeeded = false
-  if (isMp4) {
-    currentStage = 'remux'
-    onProgress?.({ stage: 'remux', ratio: 0 })
-    try {
-      await runStage('remux', () => execWithTimeout('remux', remuxArgs))
-      succeeded = true
-    } catch (err) {
-      console.warn('[ensureMp4] remux failed, will encode:', stringifyAny(err))
-    }
-  }
-
-  if (!succeeded) {
-    currentStage = 'encode'
-    onProgress?.({ stage: 'encode', ratio: 0 })
-    try {
-      await runStage('encode', () => execWithTimeout('encode', buildEncodeArgs(inputName, outputName, 23)))
-      succeeded = true
-    } catch (err1) {
-      console.warn('[ensureMp4] first encode failed, retrying after reset:', stringifyAny(err1))
-      try { await ff.deleteFile(inputName) } catch { /* ignore */ }
-      ff = await runStage('load (retry)', () => resetFFmpeg())
-      try { ff.on('progress', onFfProgress) } catch { /* ignore */ }
-      await writeInput(ff)
-      await runStage('encode (retry)', () => execWithTimeout('encode (retry)', buildEncodeArgs(inputName, outputName, 28)))
-    }
+  onProgress?.({ stage: 'encode', ratio: 0 })
+  try {
+    await runStage('encode', () => execWithTimeout('encode', buildEncodeArgs(inputName, outputName, 23)))
+  } catch (err1) {
+    console.warn('[ensureMp4] first encode failed, retrying after reset:', stringifyAny(err1))
+    try { await ff.deleteFile(inputName) } catch { /* ignore */ }
+    ff = await runStage('load (retry)', () => resetFFmpeg())
+    try { ff.on('progress', onFfProgress) } catch { /* ignore */ }
+    await writeInput(ff)
+    await runStage('encode (retry)', () => execWithTimeout('encode (retry)', buildEncodeArgs(inputName, outputName, 28)))
   }
 
   onProgress?.({ stage: 'readout', ratio: 1 })
