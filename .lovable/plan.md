@@ -1,24 +1,47 @@
 ## Goal
 
-Move the **Product Ad** icon (currently the cube/package icon in the small top toolbar row) down into the main action row, placing it next to the **Prompt** button, and restyle it as a large, colorful, lively, prominent icon — since it launches an important prompt UI.
+Expand the Product Ad Scenario dialog from a 2-language (English/Persian) toggle to a **6-language** selector — adding **Arabic, Turkish, Spanish, French** alongside the existing English & Persian — and translate **everything**: UI strings plus all option labels (camera styles, genres, scenes, video templates and their group headers). Replace the single toggle button with a **dropdown** language picker.
 
-## Current state
+All changes are confined to `src/modules/generator-ui/components/ProductAdDialog.tsx`. No backend/prompt logic changes — the scenario request still sends English `prompt` values to the AI; only the displayed text changes.
 
-- The Product Ad button lives in the top toolbar row (`DashboardPage.tsx`, ~line 7650) alongside Crop, AI image (Sparkles), and Scenario (Clapperboard) buttons. It's a small, muted `h-8 w-8` circular icon-only button using the `Package` icon and `onClick={() => setIsProductAdOpen(true)}`.
-- The main action row (~lines 7759-7928) contains: cost chip, model selector, the **Prompt** enhance button, and the submit/arrow button.
+## Language model
 
-## Changes
+- Extend the `Lang` type: `'en' | 'fa' | 'ar' | 'tr' | 'es' | 'fr'`.
+- RTL handling: `dir = (lang === 'fa' || lang === 'ar') ? 'rtl' : 'ltr'`.
 
-1. **Remove** the Product Ad button block from the top toolbar row (lines ~7650-7658).
+## Data label refactor
 
-2. **Add** a new, prominent Product Ad button into the main action row, placed immediately to the left of the **Prompt** button (before the Prompt `Popover` at ~line 7815). It will:
-   - Keep the same behavior: `onClick={() => setIsProductAdOpen(true)}`.
-   - Be visually large and colorful/lively: a filled gradient (amber/brand accent) pill button at `h-11`, with the `Package` icon at a larger size plus a short label (e.g. "Product Ad"), so it reads as an important call-to-action rather than a muted icon.
-   - Match Persian behavior already used elsewhere (label switches with `lang` if applicable in this area).
+The current data arrays store labels as flat `label` + `labelFa` fields, with JSX doing `lang === 'fa' ? labelFa : label`. Adding four more languages this way is unmanageable. I'll refactor each translatable label to a localized map and add a tiny helper.
 
-3. No backend, logic, or dialog changes — only the location and styling of the trigger button.
+- Add a helper:
+  ```ts
+  type Loc = Partial<Record<Lang, string>> & { en: string }
+  const tr = (m: Loc, lang: Lang) => m[lang] ?? m.en
+  ```
+- Convert label/group fields on `CAMERA_STYLES`, `GENRE_TEMPLATES`, `SCENE_TEMPLATES`, and `VIDEO_TEMPLATES` from `label`/`labelFa` (+ `group`/`groupFa`) into:
+  - `label: Loc` (en/fa/ar/tr/es/fr)
+  - `group: Loc` for scenes and video templates (the English `group` string also stays as a stable grouping key, so grouping logic keys off `group.en`).
+- The stable `id` and English `prompt` stay exactly as-is (selection state and the AI request keep using `id`/`label.en`/`prompt`).
+- Update `SCENE_GROUPS`/`VIDEO_GROUPS` and the group-name lookups to use `group.en` as the key and `tr(group, lang)` for display.
+
+## UI strings (`T`)
+
+Extend the `T` object with full translations for all ~24 keys in `ar`, `tr`, `es`, `fr` (title, description, photo, productName + placeholder, description label/placeholder, yourPrompt + placeholder, duration, cameraStyle, genre, scene, videoTemplates, cameraNotes + placeholder, adScenario, scene_, copy, copyAll, copied, regenerate, sendAll, useAsPrompt, generate). The `translate` key becomes unused (replaced by dropdown) and will be removed.
+
+## Language selector (dropdown)
+
+Replace the single toggle button (lines ~484-493) with a dropdown using the existing `@/components/ui/select` (or `dropdown-menu`) component already in the project:
+
+- Trigger: compact pill showing the `Languages` icon + current language's native name.
+- Options (native names): English, فارسی, العربية, Türkçe, Español, Français.
+- Selecting an option calls `setLang(value)`.
+
+## JSX updates
+
+Replace every `lang === 'fa' ? x.labelFa : x.label` and group ternary with `tr(x.label, lang)` / `tr(x.group, lang)`. Keep `dir` applied on `DialogContent`.
 
 ## Technical notes
 
-- Single file: `src/modules/generator-ui/pages/DashboardPage.tsx`.
-- Reuse existing semantic/brand color classes (amber accent + gradient) consistent with the design system already used in this composer.
+- Single file edit: `src/modules/generator-ui/components/ProductAdDialog.tsx`.
+- Translations authored for UI strings and every option label/group across the four new languages.
+- Selection comparisons that currently use `style.label` will switch to comparing against `style.label.en` (and similarly `CAMERA_STYLES[0].label.en` for the default), so state values stay language-independent.
