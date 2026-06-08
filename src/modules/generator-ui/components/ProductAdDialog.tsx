@@ -610,7 +610,7 @@ export default function ProductAdDialog({
           {/* Camera style */}
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              Camera style
+              {t.cameraStyle}
             </div>
             <div role="radiogroup" aria-label="Camera style" className="flex flex-wrap gap-2">
               {CAMERA_STYLES.map((style) => {
