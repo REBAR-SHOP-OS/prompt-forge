@@ -162,6 +162,22 @@ function pickInputExt(mimeType: string, fallback?: string): string {
   return 'bin'
 }
 
+/**
+ * Detect an MP4/ISO-BMFF container by its magic bytes (`ftyp` box at offset 4),
+ * independent of the (sometimes empty/unreliable) blob mime type. Lets us skip
+ * the engine entirely when the recording is already a playable MP4.
+ */
+async function sniffIsMp4(blob: Blob): Promise<boolean> {
+  try {
+    const head = new Uint8Array(await blob.slice(0, 12).arrayBuffer())
+    if (head.length < 8) return false
+    // bytes 4..8 spell "ftyp" for an ISO base media file (MP4/MOV).
+    return head[4] === 0x66 && head[5] === 0x74 && head[6] === 0x79 && head[7] === 0x70
+  } catch {
+    return false
+  }
+}
+
 async function runStage<T>(label: string, fn: () => Promise<T>): Promise<T> {
   try {
     return await fn()
