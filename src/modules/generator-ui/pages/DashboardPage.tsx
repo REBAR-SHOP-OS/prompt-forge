@@ -5567,7 +5567,107 @@ export default function DashboardPage() {
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto px-6 py-5">
-            {archiveTab === 'images' ? (() => {
+            {archiveTab === 'audio' ? (() => {
+              if (archiveLoading && archiveAudio.length === 0) {
+                return (
+                  <div className="grid min-h-[10rem] place-items-center text-zinc-500">
+                    <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
+                  </div>
+                )
+              }
+              if (archiveAudio.length === 0) {
+                return (
+                  <div className="grid min-h-[10rem] place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
+                    <div>
+                      <Music2 className="mx-auto h-8 w-8 text-zinc-600" aria-hidden="true" />
+                      <p className="mt-3 text-sm font-medium text-zinc-300">No audio yet</p>
+                      <p className="mt-2 text-xs leading-5 text-zinc-600">
+                        Music you upload and voiceovers you generate are saved here for download.
+                      </p>
+                    </div>
+                  </div>
+                )
+              }
+              return (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {archiveAudio.map((a) => (
+                    <article
+                      key={a.id}
+                      className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-4"
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/[0.04] text-emerald-200">
+                          {a.kind === 'voiceover'
+                            ? <Mic className="h-4 w-4" aria-hidden="true" />
+                            : <Music2 className="h-4 w-4" aria-hidden="true" />}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-zinc-200" title={a.name ?? undefined}>
+                            {a.name || (a.kind === 'voiceover' ? 'Voiceover' : 'Music')}
+                          </p>
+                          <span className="mt-0.5 inline-flex items-center rounded-full border border-white/10 bg-black/30 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-zinc-400">
+                            {a.kind === 'voiceover' ? 'Voiceover' : 'Music'}
+                          </span>
+                        </div>
+                      </div>
+                      {a.url ? (
+                        <audio controls preload="none" src={a.url} className="w-full" />
+                      ) : (
+                        <p className="text-[11px] text-zinc-600">Preview unavailable</p>
+                      )}
+                      <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
+                        <span className="tabular-nums">{formatCreatedAt(a.created_at)}</span>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={downloadingId === a.id || !a.url}
+                            onClick={() => { void downloadAudioFile(a.id, a.url, a.name) }}
+                            aria-label="Download audio"
+                            title="Download audio"
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                          >
+                            {downloadingId === a.id ? (
+                              <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                            ) : (
+                              <Download className="h-3 w-3" aria-hidden="true" />
+                            )}
+                          </button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <button
+                                type="button"
+                                aria-label="Delete audio permanently"
+                                title="Delete permanently"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                              >
+                                <Trash2 className="h-3 w-3" aria-hidden="true" />
+                              </button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete this audio permanently?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will permanently remove the audio file. This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => { void handleDeleteUserAudio(a) }}
+                                  className="bg-rose-600 text-white hover:bg-rose-700"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )
+            })() : archiveTab === 'images' ? (() => {
               if (archiveLoading && archiveImages.length === 0) {
                 return (
                   <div className="grid min-h-[10rem] place-items-center text-zinc-500">
