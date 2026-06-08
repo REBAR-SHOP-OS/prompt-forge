@@ -527,7 +527,7 @@ export default function ProductAdDialog({
                   ) : (
                     <ImagePlus className="h-5 w-5" aria-hidden="true" />
                   )}
-                  <span className="text-[10px]">Photo</span>
+                  <span className="text-[10px]">{t.photo}</span>
                 </button>
               )}
             </div>
