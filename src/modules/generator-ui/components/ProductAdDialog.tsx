@@ -705,6 +705,46 @@ export default function ProductAdDialog({
             </div>
           </div>
 
+          {/* Video templates */}
+          <div>
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+              {t.videoTemplates} <span className="text-zinc-600">{t.optional}</span>
+            </div>
+            <div className="space-y-2.5">
+              {VIDEO_GROUPS.map((group) => (
+                <div key={group}>
+                  <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                    {lang === 'fa' ? VIDEO_GROUP_FA[group] : group}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {VIDEO_TEMPLATES.filter((v) => v.group === group).map((v) => {
+                      const active = templateIds.has(v.id)
+                      return (
+                        <button
+                          key={v.id}
+                          type="button"
+                          aria-pressed={active}
+                          title={v.prompt}
+                          onClick={() => toggleTemplate(v.id)}
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                            active
+                              ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
+                              : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
+                          }`}
+                        >
+                          <span className="text-sm leading-none">{v.icon}</span>
+                          {lang === 'fa' ? v.labelFa : v.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+
+
 
 
           {/* Camera movement notes */}
