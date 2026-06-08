@@ -143,21 +143,21 @@ function readLocalVideoConfig(): LocalVideoConfig {
   ).trim();
 
   if (!rawBaseUrl) {
-    return { ok: false, error: "Local video generation is not configured. Set LOCAL_VIDEO_BASE_URL to your HTTPS router /v1 URL." };
+    return { ok: false, error: "Local video generation is not configured yet. Configure the RTX video router or choose a cloud model." };
   }
 
   let parsed: URL;
   try {
     parsed = new URL(rawBaseUrl);
   } catch {
-    return { ok: false, error: "LOCAL_VIDEO_BASE_URL is not a valid URL." };
+    return { ok: false, error: "Local video generation is not configured yet. Configure the RTX video router or choose a cloud model." };
   }
 
   if (isLoopbackHost(parsed.hostname) && Deno.env.get("ALLOW_LOCAL_VIDEO_LOOPBACK") !== "true") {
-    return { ok: false, error: "LOCAL_VIDEO_BASE_URL must be public HTTPS for deployed edge functions, not localhost." };
+    return { ok: false, error: "Local video generation is not configured yet. Configure the RTX video router or choose a cloud model." };
   }
   if (parsed.protocol !== "https:" && Deno.env.get("ALLOW_LOCAL_VIDEO_HTTP") !== "true") {
-    return { ok: false, error: "LOCAL_VIDEO_BASE_URL must use HTTPS." };
+    return { ok: false, error: "Local video generation is not configured yet. Configure the RTX video router or choose a cloud model." };
   }
 
   const withoutTrailingSlash = parsed.toString().replace(/\/+$/, "");
