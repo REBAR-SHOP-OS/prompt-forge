@@ -215,20 +215,44 @@ export async function ensureMp4(
     )
   }
 
-  onProgress?.({ stage: 'loading', ratio: 0 })
-  let ff = await runStage('load', () => getFFmpeg())
   const mt = mimeType || blob.type || ''
   const inExt = pickInputExt(mt)
+
+  // Fast path: MediaRecorder on Chromium already produces standard MP4
+  // (H.264/AAC). In that case the engine would only perform a cosmetic
+  // faststart remux — not worth loading WASM. Return the recording as-is so
+  // trimming succeeds instantly and never touches the engine.
+  if (inExt === 'mp4' || (await sniffIsMp4(blob))) {
+    onProgress?.({ stage: 'readout', ratio: 1 })
+    return { blob, mimeType: 'video/mp4', extension: 'mp4' }
+  }
+
+  // Non-MP4 (typically WebM): we need the engine to transcode to MP4.
+  onProgress?.({ stage: 'loading', ratio: 0 })
+  let ff: FFmpeg
+  try {
+    ff = await runStage('load', () => getFFmpeg())
+  } catch (loadErr) {
+    // Engine unavailable (blocked worker, old browser, offline). Degrade
+    // gracefully: return the original recording so the operation still
+    // completes. It is a valid, playable WebM — we only lose MP4 normalization.
+    console.warn(
+      '[ensureMp4] engine load failed, returning original recording:',
+      stringifyAny(loadErr),
+    )
+    onProgress?.({ stage: 'readout', ratio: 1 })
+    return { blob, mimeType: 'video/webm', extension: 'webm' }
+  }
+
   const inputName = `in.${inExt}`
   const outputName = 'out.mp4'
 
   // Wire ffmpeg's native progress event into the caller-supplied callback.
   // This is what actually makes the UI move past 95% during the encode.
-  let currentStage: 'remux' | 'encode' = 'encode'
   const onFfProgress = (e: { progress: number }) => {
     if (!onProgress) return
     const r = Math.max(0, Math.min(0.99, e.progress || 0))
-    onProgress({ stage: currentStage, ratio: r })
+    onProgress({ stage: 'encode', ratio: r })
   }
   try { ff.on('progress', onFfProgress) } catch { /* ignore */ }
 
@@ -238,14 +262,6 @@ export async function ensureMp4(
     })
   }
   await writeInput(ff)
-
-  const isMp4 = inExt === 'mp4'
-  const remuxArgs = [
-    '-i', inputName,
-    '-c', 'copy',
-    '-movflags', '+faststart',
-    outputName,
-  ]
 
   // Per-exec timeout so a hung ffmpeg call surfaces a real error instead of
   // leaving the UI stuck on 95% forever. On timeout we terminate the WASM
@@ -263,32 +279,16 @@ export async function ensureMp4(
     }
   }
 
-  let succeeded = false
-  if (isMp4) {
-    currentStage = 'remux'
-    onProgress?.({ stage: 'remux', ratio: 0 })
-    try {
-      await runStage('remux', () => execWithTimeout('remux', remuxArgs))
-      succeeded = true
-    } catch (err) {
-      console.warn('[ensureMp4] remux failed, will encode:', stringifyAny(err))
-    }
-  }
-
-  if (!succeeded) {
-    currentStage = 'encode'
-    onProgress?.({ stage: 'encode', ratio: 0 })
-    try {
-      await runStage('encode', () => execWithTimeout('encode', buildEncodeArgs(inputName, outputName, 23)))
-      succeeded = true
-    } catch (err1) {
-      console.warn('[ensureMp4] first encode failed, retrying after reset:', stringifyAny(err1))
-      try { await ff.deleteFile(inputName) } catch { /* ignore */ }
-      ff = await runStage('load (retry)', () => resetFFmpeg())
-      try { ff.on('progress', onFfProgress) } catch { /* ignore */ }
-      await writeInput(ff)
-      await runStage('encode (retry)', () => execWithTimeout('encode (retry)', buildEncodeArgs(inputName, outputName, 28)))
-    }
+  onProgress?.({ stage: 'encode', ratio: 0 })
+  try {
+    await runStage('encode', () => execWithTimeout('encode', buildEncodeArgs(inputName, outputName, 23)))
+  } catch (err1) {
+    console.warn('[ensureMp4] first encode failed, retrying after reset:', stringifyAny(err1))
+    try { await ff.deleteFile(inputName) } catch { /* ignore */ }
+    ff = await runStage('load (retry)', () => resetFFmpeg())
+    try { ff.on('progress', onFfProgress) } catch { /* ignore */ }
+    await writeInput(ff)
+    await runStage('encode (retry)', () => execWithTimeout('encode (retry)', buildEncodeArgs(inputName, outputName, 28)))
   }
 
   onProgress?.({ stage: 'readout', ratio: 1 })
