@@ -5506,7 +5506,11 @@ export default function DashboardPage() {
                   Storage
                 </DialogTitle>
                 <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
-                  {archiveTab === 'films' ? archiveJobs.length : archiveImages.length}
+                  {archiveTab === 'films'
+                    ? archiveJobs.length
+                    : archiveTab === 'images'
+                      ? archiveImages.length
+                      : archiveAudio.length}
                 </span>
               </div>
             </div>
@@ -5514,7 +5518,9 @@ export default function DashboardPage() {
             <DialogDescription className="mt-1 text-left text-xs text-zinc-500">
               {archiveTab === 'films'
                 ? "All films — everything you've created"
-                : "All images — everything you've created"}
+                : archiveTab === 'images'
+                  ? "All images — everything you've created"
+                  : "All audio — uploaded music and generated voiceovers"}
             </DialogDescription>
 
             <div className="mt-3 inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-1">
@@ -5543,6 +5549,19 @@ export default function DashboardPage() {
                 <ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />
                 Images
                 <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{archiveImages.length}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setArchiveTab('audio')}
+                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                  archiveTab === 'audio'
+                    ? 'bg-white/[0.08] text-zinc-100'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <Music2 className="h-3.5 w-3.5" aria-hidden="true" />
+                Audio
+                <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{archiveAudio.length}</span>
               </button>
             </div>
           </DialogHeader>
