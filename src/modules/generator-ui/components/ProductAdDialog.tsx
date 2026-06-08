@@ -639,7 +639,7 @@ export default function ProductAdDialog({
           {/* Genre & atmosphere */}
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              Genre &amp; atmosphere <span className="text-zinc-600">(optional)</span>
+              {t.genre} <span className="text-zinc-600">{t.optional}</span>
             </div>
             <div role="radiogroup" aria-label="Genre and atmosphere" className="flex flex-wrap gap-2">
               {GENRE_TEMPLATES.map((g) => {
