@@ -6083,37 +6083,58 @@ export default function DashboardPage() {
         className="hidden"
         onChange={handleMusicFileChange}
       />
-      <button
-        type="button"
-        onClick={handleMusicButtonClick}
-        className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-amber-300/30 hover:bg-amber-300/[0.06] hover:text-amber-100"
-        aria-label={musicUrl ? 'Edit soundtrack' : 'Add soundtrack'}
-        title={musicUrl ? 'Edit soundtrack' : 'Add a music file as soundtrack for the Final Film'}
-      >
-        {musicUrl ? (
-          <>
-            <Music2 className="h-[14px] w-[14px]" aria-hidden="true" />
-            <span className="truncate normal-case tracking-normal">
-              {musicName ?? 'Soundtrack'}
-            </span>
-            <span
-              role="button"
-              tabIndex={0}
-              aria-label="Remove soundtrack"
-              onClick={(ev) => { ev.stopPropagation(); handleClearMusic() }}
-              onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ev.stopPropagation(); handleClearMusic() } }}
-              className="-mr-1 grid h-5 w-5 cursor-pointer place-items-center rounded-full text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+      {musicUrl ? (
+        <button
+          type="button"
+          onClick={handleMusicButtonClick}
+          className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-amber-300/30 hover:bg-amber-300/[0.06] hover:text-amber-100"
+          aria-label="Edit soundtrack"
+          title="Edit soundtrack"
+        >
+          <Music2 className="h-[14px] w-[14px]" aria-hidden="true" />
+          <span className="truncate normal-case tracking-normal">
+            {musicName ?? 'Soundtrack'}
+          </span>
+          <span
+            role="button"
+            tabIndex={0}
+            aria-label="Remove soundtrack"
+            onClick={(ev) => { ev.stopPropagation(); handleClearMusic() }}
+            onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ev.stopPropagation(); handleClearMusic() } }}
+            className="-mr-1 grid h-5 w-5 cursor-pointer place-items-center rounded-full text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+          >
+            <X className="h-3 w-3" aria-hidden="true" />
+          </span>
+        </button>
+      ) : (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-amber-300/30 hover:bg-amber-300/[0.06] hover:text-amber-100"
+              aria-label="Add soundtrack"
+              title="Add a music file as soundtrack for the Final Film"
             >
-              <X className="h-3 w-3" aria-hidden="true" />
-            </span>
-          </>
-        ) : (
-          <>
-            <Music className="h-[14px] w-[14px]" aria-hidden="true" />
-            <span>Music</span>
-          </>
-        )}
-      </button>
+              <Music className="h-[14px] w-[14px]" aria-hidden="true" />
+              <span>Music</span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="center" className="w-56">
+            <DropdownMenuItem onSelect={() => musicFileInputRef.current?.click()}>
+              <Music2 className="mr-2 h-4 w-4" aria-hidden="true" />
+              <span>آپلود موزیک از کامپیوتر</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() =>
+                window.open('https://pixabay.com/', '_blank', 'noopener,noreferrer')
+              }
+            >
+              <Music className="mr-2 h-4 w-4" aria-hidden="true" />
+              <span>جستجوی موزیک</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
 
       <button
         type="button"
