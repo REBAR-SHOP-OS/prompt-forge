@@ -73,18 +73,18 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   })
 }
 
-// IMPORTANT: do NOT pass `classWorkerURL`. The @ffmpeg/ffmpeg package spawns its
-// own bundled `./worker.js` via `new URL('./worker.js', import.meta.url)` which
-// Vite handles correctly as long as the package is excluded from optimizeDeps
-// (see vite.config.ts). Overriding classWorkerURL with `?worker&url` makes Vite
-// rewrap the worker and the LOAD message handler never replies → load() hangs.
+// We pass `classWorkerURL` pointing at the Vite-bundled engine worker (see the
+// import above). This is the supported way to ship the worker in a production
+// build where the package is excluded from optimizeDeps — it guarantees the
+// worker file is emitted and served, so the LOAD message is answered instead of
+// hanging until timeout.
 async function loadLocal(ff: FFmpeg): Promise<void> {
   const [core, wasm] = await Promise.all([
     toBlobURL(coreUrl, 'text/javascript'),
     toBlobURL(wasmUrl, 'application/wasm'),
   ])
   await withTimeout(
-    ff.load({ coreURL: core, wasmURL: wasm }),
+    ff.load({ coreURL: core, wasmURL: wasm, classWorkerURL: ffmpegWorkerUrl }),
     45_000,
     'FFmpeg core load (local)',
   )
@@ -96,7 +96,7 @@ async function loadRemote(ff: FFmpeg): Promise<void> {
     toBlobURL(`${REMOTE_BASE}/ffmpeg-core.wasm`, 'application/wasm'),
   ])
   await withTimeout(
-    ff.load({ coreURL: core, wasmURL: wasm }),
+    ff.load({ coreURL: core, wasmURL: wasm, classWorkerURL: ffmpegWorkerUrl }),
     45_000,
     'FFmpeg core load (remote)',
   )
