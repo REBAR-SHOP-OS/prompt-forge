@@ -2127,7 +2127,7 @@ export default function DashboardPage() {
   const hasUploadingFiles = uploadedFiles.some((file) => file.status === 'uploading')
   const hasAnyReadyFrame = Boolean(readyStartFrame?.url || readyEndFrame?.url)
   const framesSatisfied = isTextToVideo ? true : hasAnyReadyFrame
-  const [isPlanningPrompt, setIsPlanningPrompt] = useState(false)
+  const isPlanningPrompt = false
   const canSubmit = promptText.trim().length > 0 && framesSatisfied && !hasUploadingFiles && !isSubmitting && !isPlanningPrompt
   const blockedReason = useMemo(() => {
     if (isSubmitting || isPlanningPrompt) return null
