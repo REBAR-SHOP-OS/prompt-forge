@@ -454,6 +454,8 @@ export default function ProductAdDialog({
   const isSplit = SPLIT_DURATIONS.includes(duration) && scenes.length > 1
   const concatenated = scenes.join('\n\n')
   const canGenerate = (userPrompt.trim().length > 0 || productName.trim().length > 0 || Boolean(uploadedImageUrl)) && !isUploadingImage
+  const t = T[lang]
+  const dir = lang === 'fa' ? 'rtl' : 'ltr'
 
   return (
     <Dialog
@@ -463,15 +465,24 @@ export default function ProductAdDialog({
         if (!o) reset()
       }}
     >
-      <DialogContent className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+      <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Package className="h-5 w-5 text-amber-300" aria-hidden="true" />
-            Product Ad Scenario
+            {t.title}
+            <button
+              type="button"
+              onClick={() => setLang((l) => (l === 'en' ? 'fa' : 'en'))}
+              title={t.translate}
+              aria-label={t.translate}
+              className="ms-auto inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[11px] font-semibold text-zinc-300 transition hover:border-amber-300/40 hover:text-amber-100"
+            >
+              <Languages className="h-3.5 w-3.5 text-sky-300" aria-hidden="true" />
+              {lang === 'en' ? 'فارسی' : 'EN'}
+            </button>
           </DialogTitle>
           <DialogDescription className="text-zinc-400">
-            Add your product photo and name, answer a few questions, and get a cinematic
-            advertising scenario tuned to your chosen camera style.
+            {t.description}
           </DialogDescription>
         </DialogHeader>
 
