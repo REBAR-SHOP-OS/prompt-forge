@@ -732,7 +732,23 @@ export async function mergeVideoUrls(
   }
 
   const chosenMime = pickMimeType()
-  const recorder = new MediaRecorder(outStream, { mimeType: chosenMime })
+  // Default MediaRecorder canvas-capture bitrate (~2.5 Mbps) is far too low for
+  // 1080p / vertical HD clips and visibly softened the Final Film. Pick a
+  // resolution-aware target (~0.18 bits/px/frame) clamped to a sane range so
+  // the merged film keeps the sharpness of the source cards.
+  const targetVideoBitrate = Math.round(width * height * fps * 0.18)
+  const videoBitsPerSecond = Math.max(8_000_000, Math.min(40_000_000, targetVideoBitrate))
+  let recorder: MediaRecorder
+  try {
+    recorder = new MediaRecorder(outStream, {
+      mimeType: chosenMime,
+      videoBitsPerSecond,
+      audioBitsPerSecond: 192_000,
+    })
+  } catch (err) {
+    console.warn('[mergeVideoUrls] high-bitrate recorder rejected, falling back:', err)
+    recorder = new MediaRecorder(outStream, { mimeType: chosenMime })
+  }
   const chunks: Blob[] = []
   recorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) chunks.push(e.data)
