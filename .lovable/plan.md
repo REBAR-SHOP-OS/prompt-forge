@@ -1,31 +1,24 @@
 ## Goal
 
-In the Product Ad dialog (`ProductAdDialog.tsx`), when the language is set to Persian, every option chip and its category header must display in Persian — matching what the Video templates section already does. Today three sections stay in English even in Persian mode:
+Move the **Product Ad** icon (currently the cube/package icon in the small top toolbar row) down into the main action row, placing it next to the **Prompt** button, and restyle it as a large, colorful, lively, prominent icon — since it launches an important prompt UI.
 
-- **Camera styles** (سبک دوربین): "Whip Pan", "Orbit Shot", "FPV Drone", …
-- **Genre & atmosphere** (ژانر و حال‌وهوا): "Epic Fantasy", "Sci-Fi Minimalist", …
-- **Scene & environment** (صحنه و محیط): chips like "Construction Site" plus the group headers "INDUSTRIAL & CONSTRUCTION", "URBAN & MODERN", etc.
+## Current state
 
-## Changes (single file: `src/modules/generator-ui/components/ProductAdDialog.tsx`)
+- The Product Ad button lives in the top toolbar row (`DashboardPage.tsx`, ~line 7650) alongside Crop, AI image (Sparkles), and Scenario (Clapperboard) buttons. It's a small, muted `h-8 w-8` circular icon-only button using the `Package` icon and `onClick={() => setIsProductAdOpen(true)}`.
+- The main action row (~lines 7759-7928) contains: cost chip, model selector, the **Prompt** enhance button, and the submit/arrow button.
 
-1. **Add Persian labels to the data arrays** (mirroring the existing `labelFa` pattern used by `VIDEO_TEMPLATES`):
-   - `CAMERA_STYLES`: add `labelFa` to each entry (e.g. Whip Pan → «پن سریع», Orbit Shot → «نمای مداری», FPV Drone → «پهپاد FPV», Tracking Shot → «نمای تعقیبی», Push In Cinematic → «پوش‌این سینمایی», Fly Through → «عبور پروازی», Crash Zoom → «زوم ضربه‌ای», Handheld Dynamic → «دوربین‌روی‌دست پویا», Dolly Zoom → «دالی زوم», Parallax Motion → «حرکت پارالاکس»).
-   - `GENRE_TEMPLATES`: add `labelFa` to each (e.g. Epic Fantasy → «فانتزی حماسی», Sci-Fi Minimalist → «علمی‌تخیلی مینیمال», Post-Apocalyptic → «پساآخرالزمانی», Horror Jump-Scare → «وحشت ناگهانی», High-Octane Action → «اکشن پرتحرک», Romantic Dreamscape → «رؤیای رمانتیک», Documentary / Realism → «مستند/واقع‌گرا», Anime / Manga Style → «سبک انیمه/مانگا»).
-   - `SCENE_TEMPLATES`: add `labelFa` for each chip and `groupFa` for its category (Industrial & Construction → «صنعتی و ساخت‌وساز», Urban & Modern → «شهری و مدرن», Natural & Epic Landscapes → «مناظر طبیعی و حماسی», Historical & Fantasy → «تاریخی و فانتزی», Interior & Moody → «فضای داخلی و حسی»). Persian chip labels e.g. Construction Site → «کارگاه ساختمانی», Heavy Industry Factory → «کارخانه صنایع سنگین», etc.
+## Changes
 
-2. **Add a Persian group lookup** for scenes, like the existing `VIDEO_GROUP_FA`:
-   - `const SCENE_GROUP_FA: Record<string,string>` built from `SCENE_TEMPLATES` `group → groupFa`.
+1. **Remove** the Product Ad button block from the top toolbar row (lines ~7650-7658).
 
-3. **Update the render (JSX) to switch on `lang`:**
-   - Camera chips (line ~632): `{lang === 'fa' ? style.labelFa : style.label}`.
-   - Genre chips (line ~662): `{lang === 'fa' ? g.labelFa : g.label}`.
-   - Scene group header (line ~675 area): show `{lang === 'fa' ? SCENE_GROUP_FA[group] : group}`.
-   - Scene chips (line ~698): `{lang === 'fa' ? s.labelFa : s.label}`.
+2. **Add** a new, prominent Product Ad button into the main action row, placed immediately to the left of the **Prompt** button (before the Prompt `Popover` at ~line 7815). It will:
+   - Keep the same behavior: `onClick={() => setIsProductAdOpen(true)}`.
+   - Be visually large and colorful/lively: a filled gradient (amber/brand accent) pill button at `h-11`, with the `Package` icon at a larger size plus a short label (e.g. "Product Ad"), so it reads as an important call-to-action rather than a muted icon.
+   - Match Persian behavior already used elsewhere (label switches with `lang` if applicable in this area).
 
-4. **Type updates:** extend the inline types for `CAMERA_STYLES`, `GenreTemplate`, and `SceneTemplate` to include the new `labelFa` (and `groupFa` for scenes).
+3. No backend, logic, or dialog changes — only the location and styling of the trigger button.
 
-## Notes
+## Technical notes
 
-- Selection state continues to key off the English `label`/`id` and the English `prompt` is still what gets sent to the AI, so generation behavior is unchanged — only the displayed text becomes Persian.
-- Emojis/icons stay the same in both languages.
-- Scope is limited to this dialog (the section shown in the screenshot). If you also want the Scenario Writer dialog or other panels translated, that can be a follow-up.
+- Single file: `src/modules/generator-ui/pages/DashboardPage.tsx`.
+- Reuse existing semantic/brand color classes (amber accent + gradient) consistent with the design system already used in this composer.

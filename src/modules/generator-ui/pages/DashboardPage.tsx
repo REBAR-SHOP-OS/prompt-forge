@@ -7646,16 +7646,6 @@ export default function DashboardPage() {
           >
             <Clapperboard className="h-4 w-4" aria-hidden="true" />
           </button>
-
-          <button
-            type="button"
-            onClick={() => setIsProductAdOpen(true)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/20 text-zinc-300 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100"
-            aria-label="Create a product advertising scenario"
-            title="Create a product advertising scenario"
-          >
-            <Package className="h-4 w-4" aria-hidden="true" />
-          </button>
         </div>
 
 
@@ -7810,6 +7800,16 @@ export default function DashboardPage() {
               </PopoverContent>
             </Popover>
 
+            <button
+              type="button"
+              onClick={() => setIsProductAdOpen(true)}
+              aria-label="Create a product advertising scenario"
+              title="Create a product advertising scenario"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-amber-400 via-orange-400 to-pink-500 px-4 text-sm font-bold text-zinc-950 shadow-[0_8px_24px_rgba(251,146,60,0.35)] transition hover:from-amber-300 hover:via-orange-300 hover:to-pink-400 hover:shadow-[0_10px_28px_rgba(251,146,60,0.5)]"
+            >
+              <Package className="h-5 w-5" aria-hidden="true" />
+              Product Ad
+            </button>
 
 
             <Popover
