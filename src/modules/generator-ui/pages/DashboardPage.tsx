@@ -4551,17 +4551,10 @@ export default function DashboardPage() {
     setVoiceoverUrl(url)
     setVoiceoverName(name)
     setIsVoiceoverOpen(false)
-    // Persist the generated voiceover so it appears in Storage › Audio.
-    void (async () => {
-      try {
-        const res = await fetch(url)
-        const blob = await res.blob()
-        await persistUserAudio(blob, 'voiceover', name)
-      } catch (err) {
-        console.error('Failed to persist voiceover', err)
-      }
-    })()
+    // Voiceover persistence to Storage › Audio happens at generation time
+    // inside VoiceoverDialog, so no extra save is needed here.
   }
+
 
 
   function handleClearVoiceover() {
