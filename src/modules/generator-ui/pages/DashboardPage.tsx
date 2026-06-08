@@ -4518,6 +4518,8 @@ export default function DashboardPage() {
     setMusicDuration(0)
     setMusicRange([0, 0])
     setIsMusicDialogOpen(true)
+    // Persist the uploaded track so it appears in Storage › Audio.
+    void persistUserAudio(file, 'music', file.name)
   }
 
   function handleMusicLoadedMetadata(e: SyntheticEvent<HTMLAudioElement>) {
