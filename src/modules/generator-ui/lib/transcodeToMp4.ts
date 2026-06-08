@@ -29,8 +29,11 @@ import ffmpegWorkerUrl from '@ffmpeg/ffmpeg/worker?worker&url'
 
 export interface Mp4Result {
   blob: Blob
-  mimeType: 'video/mp4'
-  extension: 'mp4'
+  // Normally the result is a standard MP4. When the engine is unavailable and
+  // the source recording is already WebM, we degrade gracefully and return the
+  // original WebM rather than failing the whole operation.
+  mimeType: 'video/mp4' | 'video/webm'
+  extension: 'mp4' | 'webm'
 }
 
 /** Progress callback for ensureMp4. `ratio` is 0..1 inside the encode stage. */
