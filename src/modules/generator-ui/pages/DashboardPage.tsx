@@ -248,39 +248,6 @@ const MODEL_CHOICES: ModelChoice[] = [
   },
 ]
 
-type PlannerChoice = {
-  id: string
-  label: string
-  description: string
-  model: string | null
-}
-
-const PLANNER_CHOICES: PlannerChoice[] = [
-  {
-    id: 'none',
-    label: 'No planner',
-    description: 'Send the prompt exactly as written.',
-    model: null,
-  },
-  {
-    id: 'gpt-oss-20b',
-    label: 'GPT-OSS 20B',
-    description: 'Local RTX planner for clean video prompts.',
-    model: 'gpt-oss:20b',
-  },
-  {
-    id: 'qwen-35-27b',
-    label: 'Qwen 3.5 27B',
-    description: 'Local planner for detailed story and motion.',
-    model: 'qwen3.5:27b',
-  },
-  {
-    id: 'qwen-3-14b',
-    label: 'Qwen 3 14B',
-    description: 'Fast local planner for concise motion prompts.',
-    model: 'qwen3:14b',
-  },
-]
 
 // Mirrors backend pricing in supabase/functions/_shared/modules/external-api-adapter/service.ts.
 // 1 USD = 100 credits. Keep in sync with COST_MAP_USD.
@@ -2160,7 +2127,7 @@ export default function DashboardPage() {
   const hasUploadingFiles = uploadedFiles.some((file) => file.status === 'uploading')
   const hasAnyReadyFrame = Boolean(readyStartFrame?.url || readyEndFrame?.url)
   const framesSatisfied = isTextToVideo ? true : hasAnyReadyFrame
-  const [isPlanningPrompt, setIsPlanningPrompt] = useState(false)
+  const isPlanningPrompt = false
   const canSubmit = promptText.trim().length > 0 && framesSatisfied && !hasUploadingFiles && !isSubmitting && !isPlanningPrompt
   const blockedReason = useMemo(() => {
     if (isSubmitting || isPlanningPrompt) return null
@@ -2178,14 +2145,9 @@ export default function DashboardPage() {
   const [composerError, setComposerError] = useState<string | null>(null)
   const [isPromptMenuOpen, setIsPromptMenuOpen] = useState(false)
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false)
-  const [isPlannerMenuOpen, setIsPlannerMenuOpen] = useState(false)
   const [selectedModelId, setSelectedModelId] = useState<string>(() => {
     if (typeof window === 'undefined') return 'wan-i2v'
     return window.localStorage.getItem('ui:preferred-model') ?? 'wan-i2v'
-  })
-  const [selectedPlannerId, setSelectedPlannerId] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'none'
-    return window.localStorage.getItem('ui:preferred-planner-llm') ?? 'none'
   })
   const [narratorMode, setNarratorMode] = useState<'idle' | 'input'>('idle')
   const [narratorScript, setNarratorScript] = useState('')
@@ -2197,19 +2159,11 @@ export default function DashboardPage() {
     return MODEL_CHOICES.find((m) => m.supports.includes(needed)) ?? MODEL_CHOICES[0]
   }, [selectedModelId, isTextToVideo])
 
-  const selectedPlanner = useMemo<PlannerChoice>(() => {
-    return PLANNER_CHOICES.find((p) => p.id === selectedPlannerId) ?? PLANNER_CHOICES[0]
-  }, [selectedPlannerId])
-
   useEffect(() => {
     if (typeof window === 'undefined') return
     window.localStorage.setItem('ui:preferred-model', selectedModelId)
   }, [selectedModelId])
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem('ui:preferred-planner-llm', selectedPlannerId)
-  }, [selectedPlannerId])
 
   // Cost preview / confirm dialog state
   const [confirmCostOpen, setConfirmCostOpen] = useState(false)
@@ -2277,55 +2231,6 @@ export default function DashboardPage() {
     }
   }
 
-  const planPromptWithLocalLlm = async (
-    basePrompt: string,
-    options: { sceneLabel?: string } = {},
-  ): Promise<string> => {
-    const plannerModel = selectedPlanner.model
-    const current = basePrompt.trim()
-    if (!plannerModel || current.length < 3) return current
-
-    setIsPlanningPrompt(true)
-    setVideoColumnMessage(
-      options.sceneLabel
-        ? `Planning ${options.sceneLabel} with ${selectedPlanner.label}...`
-        : `Planning prompt with ${selectedPlanner.label}...`,
-    )
-
-    try {
-      const imageUrls = [readyStartFrame?.url, readyEndFrame?.url].filter(
-        (u): u is string => typeof u === 'string' && u.length > 0,
-      )
-      const { data, error } = await supabase.functions.invoke('local-llm-plan-video', {
-        body: {
-          prompt: current,
-          model: plannerModel,
-          mode: isTextToVideo ? 'text-to-video' : 'image-to-video',
-          videoModel: selectedModel.label,
-          durationSeconds,
-          aspectRatio,
-          imageUrls,
-        },
-      })
-      if (error) {
-        setComposerError('Local planner is unavailable; continuing with the original prompt.')
-        return current
-      }
-
-      const planned = (
-        (data as { plannedPrompt?: string; prompt?: string } | null)?.plannedPrompt ??
-        (data as { plannedPrompt?: string; prompt?: string } | null)?.prompt ??
-        ''
-      ).trim()
-      return planned.length >= 3 ? planned : current
-    } catch {
-      setComposerError('Local planner is unavailable; continuing with the original prompt.')
-      return current
-    } finally {
-      setIsPlanningPrompt(false)
-      setVideoColumnMessage((message) => message?.startsWith('Planning ') ? null : message)
-    }
-  }
   const startUploadCount = uploadedFiles.filter((file) => file.target === 'Start').length
   const endUploadCount = uploadedFiles.filter((file) => file.target === 'End').length
   const visibleVideos = useMemo(() => {
@@ -3909,7 +3814,7 @@ export default function DashboardPage() {
     }
 
     try {
-      const plannedPrompt = await planPromptWithLocalLlm(nextPrompt)
+      const plannedPrompt = nextPrompt
 
       // 45s auto-split: ask scenario-write to break the user's single prompt into
       // three sequential 15s scenes, then chain them via submitScenesAsJobs so each
@@ -4142,7 +4047,7 @@ export default function DashboardPage() {
         const sourcePrompt = scenes[i].trim()
         if (!sourcePrompt) continue
         const sceneLabel = `Scene ${i + 1}`
-        const prompt = await planPromptWithLocalLlm(sourcePrompt, { sceneLabel })
+        const prompt = sourcePrompt
 
         let startFrameUrl: string | undefined
         if (i === 0) {
@@ -7905,52 +7810,7 @@ export default function DashboardPage() {
               </PopoverContent>
             </Popover>
 
-            <Popover open={isPlannerMenuOpen} onOpenChange={setIsPlannerMenuOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  disabled={isSubmitting || isPlanningPrompt}
-                  aria-label="Choose local planner LLM"
-                  title={`Planner LLM: ${selectedPlanner.label}`}
-                  className="inline-flex h-10 max-w-[13rem] items-center justify-center gap-2 truncate rounded-full border border-[#2a2d32] bg-black/20 px-3 text-xs font-semibold text-zinc-200/80 transition hover:border-cyan-300/60 hover:bg-white/[0.05] hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#2a2d32] disabled:hover:bg-black/20 disabled:hover:text-zinc-200/80"
-                >
-                  {isPlanningPrompt ? (
-                    <LoaderCircle className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
-                  ) : (
-                    <Wand2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  )}
-                  <span className="truncate">{selectedPlanner.label}</span>
-                </button>
-              </PopoverTrigger>
-              <PopoverContent
-                side="top"
-                align="end"
-                className="w-72 border-white/10 bg-[#0b0c0e]/95 p-2 text-zinc-200 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl"
-              >
-                {PLANNER_CHOICES.map((choice) => {
-                  const isActive = choice.id === selectedPlanner.id
-                  return (
-                    <button
-                      key={choice.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedPlannerId(choice.id)
-                        setIsPlannerMenuOpen(false)
-                      }}
-                      className={`flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/[0.05] ${isActive ? 'bg-white/[0.05]' : ''}`}
-                    >
-                      <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-zinc-300">
-                        {isActive ? <Check className="h-4 w-4" aria-hidden="true" /> : <Wand2 className="h-4 w-4" aria-hidden="true" />}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-semibold text-zinc-100">{choice.label}</span>
-                        <span className="block text-xs leading-5 text-zinc-500">{choice.description}</span>
-                      </span>
-                    </button>
-                  )
-                })}
-              </PopoverContent>
-            </Popover>
+
 
             <Popover
               open={isPromptMenuOpen}
