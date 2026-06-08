@@ -441,7 +441,7 @@ export const jobOrchestratorGateway = {
               await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 503, latencyMs: Date.now() - ctx.startedAt, errorCode: "LOCAL_NOT_CONFIGURED" });
               return errorResponse(
                 "LOCAL_NOT_CONFIGURED",
-                "Local generation isn't set up on this project yet. Pick a cloud model (Veo or Wan) to generate now. Credits were refunded.",
+                "Local video generation is not configured yet. Configure the RTX video router or choose a cloud model.",
                 503,
                 ctx.requestId,
               );
