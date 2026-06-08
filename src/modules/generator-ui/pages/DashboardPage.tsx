@@ -726,15 +726,16 @@ export default function DashboardPage() {
   // ----- Storage archive: every film the user ever made, read live from the
   // server (independent of drafts/library local state). -----
   const [isArchiveOpen, setIsArchiveOpen] = useState(false)
-  const [archiveTab, setArchiveTab] = useState<'films' | 'images'>('films')
+  const [archiveTab, setArchiveTab] = useState<'films' | 'images' | 'audio'>('films')
   const [archiveJobs, setArchiveJobs] = useState<JobSummary[]>([])
   const [archiveVideos, setArchiveVideos] = useState<VideoSummary[]>([])
   const [archiveImages, setArchiveImages] = useState<UserImageItem[]>([])
+  const [archiveAudio, setArchiveAudio] = useState<UserAudioItem[]>([])
   const [archiveLoading, setArchiveLoading] = useState(false)
   const loadArchive = async () => {
     setArchiveLoading(true)
     try {
-      const [jobs, videos, imagesRes] = await Promise.all([
+      const [jobs, videos, imagesRes, audioRes] = await Promise.all([
         jobOrchestratorGateway.listMyJobs(200).catch(() => [] as JobSummary[]),
         videoLibraryGateway.listMyVideos(200).catch(() => [] as VideoSummary[]),
         userId
@@ -745,10 +746,33 @@ export default function DashboardPage() {
               .is('deleted_at', null)
               .order('created_at', { ascending: false })
           : Promise.resolve({ data: [] as UserImageItem[] }),
+        userId
+          ? supabase
+              .from('generator_user_audio')
+              .select('id, storage_path, kind, name, duration_seconds, created_at')
+              .eq('user_id', userId)
+              .is('deleted_at', null)
+              .order('created_at', { ascending: false })
+          : Promise.resolve({ data: [] as UserAudioItem[] }),
       ])
       setArchiveJobs(jobs)
       setArchiveVideos(videos)
       setArchiveImages(((imagesRes as { data?: UserImageItem[] }).data ?? []) as UserImageItem[])
+      const audioRows = ((audioRes as { data?: UserAudioItem[] }).data ?? []) as UserAudioItem[]
+      // Generate short-lived signed URLs for private-bucket playback.
+      const withUrls = await Promise.all(
+        audioRows.map(async (a) => {
+          try {
+            const { data } = await supabase.storage
+              .from(USER_AUDIO_BUCKET)
+              .createSignedUrl(a.storage_path, 60 * 60)
+            return { ...a, url: data?.signedUrl ?? null }
+          } catch {
+            return { ...a, url: null }
+          }
+        }),
+      )
+      setArchiveAudio(withUrls)
     } finally {
       setArchiveLoading(false)
     }
