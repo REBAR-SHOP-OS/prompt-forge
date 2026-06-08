@@ -841,7 +841,7 @@ export default function ProductAdDialog({
                   ) : (
                     <Send className="h-4 w-4 mr-2" aria-hidden="true" />
                   )}
-                  Send all to Pending
+                  {t.sendAll}
                 </Button>
               ) : (
                 <Button size="sm" onClick={handleUseAsPrompt} disabled={isWriting || isSending}>
