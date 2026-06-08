@@ -534,24 +534,24 @@ export default function ProductAdDialog({
             <div className="flex-1 space-y-2">
               <div>
                 <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                  Product name
+                  {t.productName}
                 </div>
                 <Input
                   value={productName}
                   onChange={(e) => setProductName(e.target.value)}
-                  placeholder="e.g. AuraGlow Serum"
+                  placeholder={t.productNamePlaceholder}
                   className="border-white/10 bg-black/30 text-zinc-100"
                 />
               </div>
               <div>
                 <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                  Description <span className="text-zinc-600">(optional)</span>
+                  {t.descriptionLabel} <span className="text-zinc-600">{t.optional}</span>
                 </div>
                 <Textarea
                   value={productDescription}
                   onChange={(e) => setProductDescription(e.target.value)}
                   rows={2}
-                  placeholder="Key features, vibe, target audience…"
+                  placeholder={t.descriptionPlaceholder}
                   className="min-h-[56px] border-white/10 bg-black/30 text-zinc-100"
                 />
               </div>
@@ -561,13 +561,13 @@ export default function ProductAdDialog({
           {/* Your prompt */}
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              Your prompt <span className="text-zinc-600">(optional)</span>
+              {t.yourPrompt} <span className="text-zinc-600">{t.optional}</span>
             </div>
             <Textarea
               value={userPrompt}
               onChange={(e) => setUserPrompt(e.target.value)}
               rows={3}
-              placeholder="Write your own prompt / idea — it will be rewritten for your selected duration and camera style…"
+              placeholder={t.yourPromptPlaceholder}
               className="min-h-[72px] border-white/10 bg-black/30 text-zinc-100"
             />
           </div>
@@ -575,7 +575,7 @@ export default function ProductAdDialog({
 
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              Duration
+              {t.duration}
             </div>
             <div
               role="radiogroup"
