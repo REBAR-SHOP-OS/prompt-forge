@@ -6122,7 +6122,7 @@ export default function DashboardPage() {
           <DropdownMenuContent align="center" className="w-56">
             <DropdownMenuItem onSelect={() => musicFileInputRef.current?.click()}>
               <Music2 className="mr-2 h-4 w-4" aria-hidden="true" />
-              <span>آپلود موزیک از کامپیوتر</span>
+              <span>Upload music from computer</span>
             </DropdownMenuItem>
             <DropdownMenuItem
               onSelect={() =>
@@ -6130,7 +6130,7 @@ export default function DashboardPage() {
               }
             >
               <Music className="mr-2 h-4 w-4" aria-hidden="true" />
-              <span>جستجوی موزیک</span>
+              <span>Search music</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
