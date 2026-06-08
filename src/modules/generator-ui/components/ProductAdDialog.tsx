@@ -29,173 +29,190 @@ const FRAMES_BUCKET = 'wan-frames'
 const SPLIT_DURATIONS = [30, 45, 135]
 const sceneRange = (i: number) => `${i * 15}–${(i + 1) * 15}s`
 
-const CAMERA_STYLES: { label: string; labelFa: string; icon: string }[] = [
-  { label: 'Whip Pan', labelFa: 'پن سریع', icon: '💫' },
-  { label: 'Orbit Shot', labelFa: 'نمای مداری', icon: '🛰️' },
-  { label: 'FPV Drone', labelFa: 'پهپاد FPV', icon: '🚁' },
-  { label: 'Tracking Shot', labelFa: 'نمای تعقیبی', icon: '🎯' },
-  { label: 'Push In Cinematic', labelFa: 'پوش‌این سینمایی', icon: '🎬' },
-  { label: 'Fly Through', labelFa: 'عبور پروازی', icon: '🕊️' },
-  { label: 'Crash Zoom', labelFa: 'زوم ضربه‌ای', icon: '💥' },
-  { label: 'Handheld Dynamic', labelFa: 'دوربین‌روی‌دست پویا', icon: '🤳' },
-  { label: 'Dolly Zoom', labelFa: 'دالی زوم', icon: '🌀' },
-  { label: 'Parallax Motion', labelFa: 'حرکت پارالاکس', icon: '🧊' },
+type Lang = 'en' | 'fa' | 'ar' | 'tr' | 'es' | 'fr'
+
+type Loc = Partial<Record<Lang, string>> & { en: string }
+const tr = (m: Loc, lang: Lang) => m[lang] ?? m.en
+
+const RTL_LANGS: Lang[] = ['fa', 'ar']
+
+const LANG_OPTIONS: { value: Lang; native: string }[] = [
+  { value: 'en', native: 'English' },
+  { value: 'fa', native: 'فارسی' },
+  { value: 'ar', native: 'العربية' },
+  { value: 'tr', native: 'Türkçe' },
+  { value: 'es', native: 'Español' },
+  { value: 'fr', native: 'Français' },
 ]
 
-type GenreTemplate = { id: string; label: string; labelFa: string; icon: string; prompt: string }
+const CAMERA_STYLES: { label: Loc; icon: string }[] = [
+  { label: { en: 'Whip Pan', fa: 'پن سریع', ar: 'بان سريع', tr: 'Hızlı Kaydırma', es: 'Barrido Rápido', fr: 'Filé Rapide' }, icon: '💫' },
+  { label: { en: 'Orbit Shot', fa: 'نمای مداری', ar: 'لقطة مدارية', tr: 'Yörünge Çekimi', es: 'Toma Orbital', fr: 'Plan Orbital' }, icon: '🛰️' },
+  { label: { en: 'FPV Drone', fa: 'پهپاد FPV', ar: 'درون FPV', tr: 'FPV Drone', es: 'Dron FPV', fr: 'Drone FPV' }, icon: '🚁' },
+  { label: { en: 'Tracking Shot', fa: 'نمای تعقیبی', ar: 'لقطة تتبع', tr: 'Takip Çekimi', es: 'Toma de Seguimiento', fr: 'Plan de Suivi' }, icon: '🎯' },
+  { label: { en: 'Push In Cinematic', fa: 'پوش‌این سینمایی', ar: 'دفع سينمائي', tr: 'Sinematik Yaklaşma', es: 'Acercamiento Cinematográfico', fr: 'Travelling Avant Cinématique' }, icon: '🎬' },
+  { label: { en: 'Fly Through', fa: 'عبور پروازی', ar: 'تحليق عبر', tr: 'İçinden Uçuş', es: 'Vuelo a Través', fr: 'Survol Traversant' }, icon: '🕊️' },
+  { label: { en: 'Crash Zoom', fa: 'زوم ضربه‌ای', ar: 'تكبير مفاجئ', tr: 'Ani Zoom', es: 'Zoom Brusco', fr: 'Zoom Brutal' }, icon: '💥' },
+  { label: { en: 'Handheld Dynamic', fa: 'دوربین‌روی‌دست پویا', ar: 'كاميرا محمولة ديناميكية', tr: 'Dinamik Elde Çekim', es: 'Cámara en Mano Dinámica', fr: "Caméra à l'Épaule Dynamique" }, icon: '🤳' },
+  { label: { en: 'Dolly Zoom', fa: 'دالی زوم', ar: 'دوللي زوم', tr: 'Dolly Zoom', es: 'Dolly Zoom', fr: 'Travelling Compensé' }, icon: '🌀' },
+  { label: { en: 'Parallax Motion', fa: 'حرکت پارالاکس', ar: 'حركة بارالاكس', tr: 'Paralaks Hareketi', es: 'Movimiento Parallax', fr: 'Mouvement Parallaxe' }, icon: '🧊' },
+]
+
+type GenreTemplate = { id: string; label: Loc; icon: string; prompt: string }
 
 const GENRE_TEMPLATES: GenreTemplate[] = [
   {
     id: 'epic-fantasy',
-    label: 'Epic Fantasy',
-    labelFa: 'فانتزی حماسی',
+    label: { en: 'Epic Fantasy', fa: 'فانتزی حماسی', ar: 'فانتازيا ملحمية', tr: 'Epik Fantezi', es: 'Fantasía Épica', fr: 'Fantaisie Épique' },
     icon: '🐉',
     prompt:
       'Epic fantasy directing: sweeping wide vistas of dreamlike landscapes, castles and mythical creatures, magical glowing lighting and an awe-inspiring heroic mood.',
   },
   {
     id: 'sci-fi-minimalist',
-    label: 'Sci-Fi Minimalist',
-    labelFa: 'علمی‌تخیلی مینیمال',
+    label: { en: 'Sci-Fi Minimalist', fa: 'علمی‌تخیلی مینیمال', ar: 'خيال علمي بسيط', tr: 'Minimalist Bilim Kurgu', es: 'Ciencia Ficción Minimalista', fr: 'Science-Fiction Minimaliste' },
     icon: '🛸',
     prompt:
       'Minimalist sci-fi directing: clean white spaces, straight lines, hidden seamless technology and a calm, sleek futuristic atmosphere.',
   },
   {
     id: 'post-apocalyptic',
-    label: 'Post-Apocalyptic',
-    labelFa: 'پساآخرالزمانی',
+    label: { en: 'Post-Apocalyptic', fa: 'پساآخرالزمانی', ar: 'ما بعد الكارثة', tr: 'Kıyamet Sonrası', es: 'Post-Apocalíptico', fr: 'Post-Apocalyptique' },
     icon: '☢️',
     prompt:
       'Post-apocalyptic directing: ruined cities, nature overgrowing buildings, ash, dust and a desolate abandoned atmosphere with muted desaturated tones.',
   },
   {
     id: 'horror-jump-scare',
-    label: 'Horror Jump-Scare',
-    labelFa: 'وحشت ناگهانی',
+    label: { en: 'Horror Jump-Scare', fa: 'وحشت ناگهانی', ar: 'رعب مفاجئ', tr: 'Ani Korku', es: 'Terror de Susto', fr: 'Horreur à Sursaut' },
     icon: '👻',
     prompt:
       'Sudden-horror directing: deep darkness, harsh localized light (like a flashlight), tense silence and abrupt movement changes that create dread and fear.',
   },
   {
     id: 'high-octane-action',
-    label: 'High-Octane Action',
-    labelFa: 'اکشن پرتحرک',
+    label: { en: 'High-Octane Action', fa: 'اکشن پرتحرک', ar: 'أكشن عالي الإثارة', tr: 'Yüksek Tempolu Aksiyon', es: 'Acción Trepidante', fr: 'Action à Haute Tension' },
     icon: '🔥',
     prompt:
       'High-octane action directing: rapid cuts, camera shake, explosions, high speed and motion blur for an intense adrenaline-fueled feel.',
   },
   {
     id: 'romantic-dreamscape',
-    label: 'Romantic Dreamscape',
-    labelFa: 'رؤیای رمانتیک',
+    label: { en: 'Romantic Dreamscape', fa: 'رؤیای رمانتیک', ar: 'حلم رومانسي', tr: 'Romantik Rüya', es: 'Ensueño Romántico', fr: 'Rêverie Romantique' },
     icon: '💗',
     prompt:
       'Romantic dreamscape directing: soft golden-hour sunlight, gentle soft focus on the subjects and warm dreamy colors for an intimate emotional mood.',
   },
   {
     id: 'documentary-realism',
-    label: 'Documentary / Realism',
-    labelFa: 'مستند/واقع‌گرا',
+    label: { en: 'Documentary / Realism', fa: 'مستند/واقع‌گرا', ar: 'وثائقي / واقعي', tr: 'Belgesel / Gerçekçilik', es: 'Documental / Realismo', fr: 'Documentaire / Réalisme' },
     icon: '🎥',
     prompt:
       'Documentary realism directing: natural light, no stylized grading, true-to-life colors and simple unobtrusive camera movements for an authentic real feel.',
   },
   {
     id: 'anime-manga',
-    label: 'Anime / Manga Style',
-    labelFa: 'سبک انیمه/مانگا',
+    label: { en: 'Anime / Manga Style', fa: 'سبک انیمه/مانگا', ar: 'نمط أنمي / مانغا', tr: 'Anime / Manga Tarzı', es: 'Estilo Anime / Manga', fr: 'Style Anime / Manga' },
     icon: '🌸',
     prompt:
       'Anime/manga style directing: bold outline lines, saturated flat 2D colors and exaggerated dynamic motion effects with expressive energetic action.',
   },
 ]
 
-type SceneTemplate = { id: string; label: string; labelFa: string; icon: string; group: string; groupFa: string; prompt: string }
+type SceneTemplate = { id: string; label: Loc; icon: string; group: Loc; prompt: string }
+
+const G_INDUSTRIAL: Loc = { en: 'Industrial & Construction', fa: 'صنعتی و ساخت‌وساز', ar: 'صناعي وإنشاءات', tr: 'Endüstriyel ve İnşaat', es: 'Industrial y Construcción', fr: 'Industriel et Construction' }
+const G_URBAN: Loc = { en: 'Urban & Modern', fa: 'شهری و مدرن', ar: 'حضري وحديث', tr: 'Kentsel ve Modern', es: 'Urbano y Moderno', fr: 'Urbain et Moderne' }
+const G_NATURE: Loc = { en: 'Natural & Epic Landscapes', fa: 'مناظر طبیعی و حماسی', ar: 'مناظر طبيعية ملحمية', tr: 'Doğal ve Epik Manzaralar', es: 'Paisajes Naturales y Épicos', fr: 'Paysages Naturels et Épiques' }
+const G_HISTORICAL: Loc = { en: 'Historical & Fantasy', fa: 'تاریخی و فانتزی', ar: 'تاريخي وخيالي', tr: 'Tarihi ve Fantastik', es: 'Histórico y Fantasía', fr: 'Historique et Fantastique' }
+const G_INTERIOR: Loc = { en: 'Interior & Moody', fa: 'فضای داخلی و حسی', ar: 'داخلي وأجواء', tr: 'İç Mekan ve Atmosferik', es: 'Interior y Atmosférico', fr: 'Intérieur et Atmosphérique' }
 
 const SCENE_TEMPLATES: SceneTemplate[] = [
   // Industrial & Construction
-  { id: 'construction-site', label: 'Construction Site', labelFa: 'کارگاه ساختمانی', icon: '🏗️', group: 'Industrial & Construction', groupFa: 'صنعتی و ساخت‌وساز', prompt: 'Construction site environment: steel building skeletons, giant moving cranes, dust and dirt, hard-hat workers at sunset.' },
-  { id: 'heavy-industry', label: 'Heavy Industry Factory', labelFa: 'کارخانه صنایع سنگین', icon: '🏭', group: 'Industrial & Construction', groupFa: 'صنعتی و ساخت‌وساز', prompt: 'Heavy industry factory environment: molten iron, welding sparks, large gear machinery and huge smokestacks.' },
-  { id: 'abandoned-warehouse', label: 'Abandoned Warehouse', labelFa: 'انبار متروکه', icon: '🕸️', group: 'Industrial & Construction', groupFa: 'صنعتی و ساخت‌وساز', prompt: 'Abandoned warehouse environment: large empty space, broken windows, light beams piercing from the roof and dust floating in the air.' },
-  { id: 'shipyard-dock', label: 'Shipyard / Dock', labelFa: 'کشتی‌سازی و اسکله', icon: '🚢', group: 'Industrial & Construction', groupFa: 'صنعتی و ساخت‌وساز', prompt: 'Shipyard and dock environment: giant container ships, coastal cranes, seawater and rusty steel structures.' },
-  { id: 'high-tech-lab', label: 'High-Tech Laboratory', labelFa: 'آزمایشگاه پیشرفته', icon: '🔬', group: 'Industrial & Construction', groupFa: 'صنعتی و ساخت‌وساز', prompt: 'High-tech laboratory environment: clean white walls, blinking computer server racks, glass chambers and cold blue or laser lighting.' },
+  { id: 'construction-site', label: { en: 'Construction Site', fa: 'کارگاه ساختمانی', ar: 'موقع بناء', tr: 'İnşaat Sahası', es: 'Obra de Construcción', fr: 'Chantier de Construction' }, icon: '🏗️', group: G_INDUSTRIAL, prompt: 'Construction site environment: steel building skeletons, giant moving cranes, dust and dirt, hard-hat workers at sunset.' },
+  { id: 'heavy-industry', label: { en: 'Heavy Industry Factory', fa: 'کارخانه صنایع سنگین', ar: 'مصنع صناعات ثقيلة', tr: 'Ağır Sanayi Fabrikası', es: 'Fábrica de Industria Pesada', fr: "Usine d'Industrie Lourde" }, icon: '🏭', group: G_INDUSTRIAL, prompt: 'Heavy industry factory environment: molten iron, welding sparks, large gear machinery and huge smokestacks.' },
+  { id: 'abandoned-warehouse', label: { en: 'Abandoned Warehouse', fa: 'انبار متروکه', ar: 'مستودع مهجور', tr: 'Terk Edilmiş Depo', es: 'Almacén Abandonado', fr: 'Entrepôt Abandonné' }, icon: '🕸️', group: G_INDUSTRIAL, prompt: 'Abandoned warehouse environment: large empty space, broken windows, light beams piercing from the roof and dust floating in the air.' },
+  { id: 'shipyard-dock', label: { en: 'Shipyard / Dock', fa: 'کشتی‌سازی و اسکله', ar: 'حوض سفن / رصيف', tr: 'Tersane / İskele', es: 'Astillero / Muelle', fr: 'Chantier Naval / Quai' }, icon: '🚢', group: G_INDUSTRIAL, prompt: 'Shipyard and dock environment: giant container ships, coastal cranes, seawater and rusty steel structures.' },
+  { id: 'high-tech-lab', label: { en: 'High-Tech Laboratory', fa: 'آزمایشگاه پیشرفته', ar: 'مختبر عالي التقنية', tr: 'Yüksek Teknoloji Laboratuvarı', es: 'Laboratorio de Alta Tecnología', fr: 'Laboratoire High-Tech' }, icon: '🔬', group: G_INDUSTRIAL, prompt: 'High-tech laboratory environment: clean white walls, blinking computer server racks, glass chambers and cold blue or laser lighting.' },
   // Urban & Modern
-  { id: 'megacity-corporate', label: 'Megacity Corporate', labelFa: 'کلان‌شهر اداری', icon: '🏙️', group: 'Urban & Modern', groupFa: 'شهری و مدرن', prompt: 'Megacity corporate environment: giant glass skyscrapers, clouds reflecting on the glass and a sleek upscale business atmosphere.' },
-  { id: 'cyberpunk-alleyway', label: 'Cyberpunk Alleyway', labelFa: 'کوچه سایبرپانک', icon: '🌃', group: 'Urban & Modern', groupFa: 'شهری و مدرن', prompt: 'Cyberpunk alleyway environment: crowded narrow streets at night, multilingual neon signs, hanging wires and street-food kiosks.' },
-  { id: 'subway-station', label: 'Subway / Underground Station', labelFa: 'ایستگاه مترو', icon: '🚇', group: 'Urban & Modern', groupFa: 'شهری و مدرن', prompt: 'Subway station environment: dark tunnels, fast moving trains with motion blur and concrete platforms under fluorescent light.' },
-  { id: 'rooftop-overlook', label: 'Rooftop Overlook', labelFa: 'منظره از پشت‌بام', icon: '🌆', group: 'Urban & Modern', groupFa: 'شهری و مدرن', prompt: 'Rooftop overlook environment: the edge of a tall tower rooftop at night while the whole city lights glow in the background with cinematic bokeh.' },
+  { id: 'megacity-corporate', label: { en: 'Megacity Corporate', fa: 'کلان‌شهر اداری', ar: 'مدينة شركات عملاقة', tr: 'Megakent Kurumsal', es: 'Megaciudad Corporativa', fr: "Mégapole d'Affaires" }, icon: '🏙️', group: G_URBAN, prompt: 'Megacity corporate environment: giant glass skyscrapers, clouds reflecting on the glass and a sleek upscale business atmosphere.' },
+  { id: 'cyberpunk-alleyway', label: { en: 'Cyberpunk Alleyway', fa: 'کوچه سایبرپانک', ar: 'زقاق سايبربانك', tr: 'Siberpunk Ara Sokak', es: 'Callejón Cyberpunk', fr: 'Ruelle Cyberpunk' }, icon: '🌃', group: G_URBAN, prompt: 'Cyberpunk alleyway environment: crowded narrow streets at night, multilingual neon signs, hanging wires and street-food kiosks.' },
+  { id: 'subway-station', label: { en: 'Subway / Underground Station', fa: 'ایستگاه مترو', ar: 'محطة مترو', tr: 'Metro İstasyonu', es: 'Estación de Metro', fr: 'Station de Métro' }, icon: '🚇', group: G_URBAN, prompt: 'Subway station environment: dark tunnels, fast moving trains with motion blur and concrete platforms under fluorescent light.' },
+  { id: 'rooftop-overlook', label: { en: 'Rooftop Overlook', fa: 'منظره از پشت‌بام', ar: 'إطلالة من السطح', tr: 'Çatı Manzarası', es: 'Mirador en la Azotea', fr: 'Vue depuis le Toit' }, icon: '🌆', group: G_URBAN, prompt: 'Rooftop overlook environment: the edge of a tall tower rooftop at night while the whole city lights glow in the background with cinematic bokeh.' },
   // Natural & Epic Landscapes
-  { id: 'epic-mountain', label: 'Epic Mountain Range', labelFa: 'رشته‌کوه حماسی', icon: '🏔️', group: 'Natural & Epic Landscapes', groupFa: 'مناظر طبیعی و حماسی', prompt: 'Epic mountain range environment: sharp snowy peaks, thick fog in the valleys and steep cliffs.' },
-  { id: 'apocalyptic-wasteland', label: 'Post-Apocalyptic Wasteland', labelFa: 'بیابان پساآخرالزمانی', icon: '🏜️', group: 'Natural & Epic Landscapes', groupFa: 'مناظر طبیعی و حماسی', prompt: 'Post-apocalyptic wasteland environment: endless sand plains, abandoned worn vehicles, dusty sky and a scorching sun.' },
-  { id: 'mystical-forest', label: 'Deep Mystical Forest', labelFa: 'جنگل اسرارآمیز', icon: '🌲', group: 'Natural & Epic Landscapes', groupFa: 'مناظر طبیعی و حماسی', prompt: 'Deep mystical forest environment: ancient tall trees, dense foliage, light filtered through leaves reaching the ground and a misty atmosphere.' },
-  { id: 'arctic-tundra', label: 'Arctic Tundra / Ice Landscape', labelFa: 'تاندرای قطبی و یخی', icon: '❄️', group: 'Natural & Epic Landscapes', groupFa: 'مناظر طبیعی و حماسی', prompt: 'Arctic tundra ice landscape environment: endless white plains, ice caves with blue light reflections and a snowstorm.' },
+  { id: 'epic-mountain', label: { en: 'Epic Mountain Range', fa: 'رشته‌کوه حماسی', ar: 'سلسلة جبال ملحمية', tr: 'Epik Dağ Silsilesi', es: 'Cordillera Épica', fr: 'Chaîne de Montagnes Épique' }, icon: '🏔️', group: G_NATURE, prompt: 'Epic mountain range environment: sharp snowy peaks, thick fog in the valleys and steep cliffs.' },
+  { id: 'apocalyptic-wasteland', label: { en: 'Post-Apocalyptic Wasteland', fa: 'بیابان پساآخرالزمانی', ar: 'أرض قاحلة ما بعد الكارثة', tr: 'Kıyamet Sonrası Çorak Toprak', es: 'Páramo Post-Apocalíptico', fr: 'Terre Désolée Post-Apocalyptique' }, icon: '🏜️', group: G_NATURE, prompt: 'Post-apocalyptic wasteland environment: endless sand plains, abandoned worn vehicles, dusty sky and a scorching sun.' },
+  { id: 'mystical-forest', label: { en: 'Deep Mystical Forest', fa: 'جنگل اسرارآمیز', ar: 'غابة غامضة عميقة', tr: 'Derin Gizemli Orman', es: 'Bosque Místico Profundo', fr: 'Forêt Mystique Profonde' }, icon: '🌲', group: G_NATURE, prompt: 'Deep mystical forest environment: ancient tall trees, dense foliage, light filtered through leaves reaching the ground and a misty atmosphere.' },
+  { id: 'arctic-tundra', label: { en: 'Arctic Tundra / Ice Landscape', fa: 'تاندرای قطبی و یخی', ar: 'تندرا قطبية / منظر جليدي', tr: 'Arktik Tundra / Buz Manzarası', es: 'Tundra Ártica / Paisaje Helado', fr: 'Toundra Arctique / Paysage Glacé' }, icon: '❄️', group: G_NATURE, prompt: 'Arctic tundra ice landscape environment: endless white plains, ice caves with blue light reflections and a snowstorm.' },
   // Historical & Fantasy
-  { id: 'medieval-castle', label: 'Medieval Castle / Citadel', labelFa: 'قلعه قرون‌وسطایی', icon: '🏰', group: 'Historical & Fantasy', groupFa: 'تاریخی و فانتزی', prompt: 'Medieval castle environment: large stone walls, lit torches on the walls and dark halls with long wooden tables.' },
-  { id: 'ancient-ruins', label: 'Ancient Ruins', labelFa: 'ویرانه‌های باستانی', icon: '🏛️', group: 'Historical & Fantasy', groupFa: 'تاریخی و فانتزی', prompt: 'Ancient ruins environment: cracked Greek or Egyptian stone columns covered in vines, set in a desert or forest.' },
-  { id: 'gothic-cathedral', label: 'Gothic Cathedral', labelFa: 'کلیسای گوتیک', icon: '⛪', group: 'Historical & Fantasy', groupFa: 'تاریخی و فانتزی', prompt: 'Gothic cathedral environment: pointed architecture and large stained-glass windows casting colorful light into a vast dark hall.' },
-  { id: 'steampunk-workshop', label: 'Steampunk Workshop', labelFa: 'کارگاه استیم‌پانک', icon: '⚙️', group: 'Historical & Fantasy', groupFa: 'تاریخی و فانتزی', prompt: 'Steampunk workshop environment: copper pipes, gauge dials, steam and intricate 19th-century mechanical tools.' },
+  { id: 'medieval-castle', label: { en: 'Medieval Castle / Citadel', fa: 'قلعه قرون‌وسطایی', ar: 'قلعة من العصور الوسطى', tr: 'Ortaçağ Kalesi', es: 'Castillo Medieval', fr: 'Château Médiéval' }, icon: '🏰', group: G_HISTORICAL, prompt: 'Medieval castle environment: large stone walls, lit torches on the walls and dark halls with long wooden tables.' },
+  { id: 'ancient-ruins', label: { en: 'Ancient Ruins', fa: 'ویرانه‌های باستانی', ar: 'أطلال قديمة', tr: 'Antik Harabeler', es: 'Ruinas Antiguas', fr: 'Ruines Antiques' }, icon: '🏛️', group: G_HISTORICAL, prompt: 'Ancient ruins environment: cracked Greek or Egyptian stone columns covered in vines, set in a desert or forest.' },
+  { id: 'gothic-cathedral', label: { en: 'Gothic Cathedral', fa: 'کلیسای گوتیک', ar: 'كاتدرائية قوطية', tr: 'Gotik Katedral', es: 'Catedral Gótica', fr: 'Cathédrale Gothique' }, icon: '⛪', group: G_HISTORICAL, prompt: 'Gothic cathedral environment: pointed architecture and large stained-glass windows casting colorful light into a vast dark hall.' },
+  { id: 'steampunk-workshop', label: { en: 'Steampunk Workshop', fa: 'کارگاه استیم‌پانک', ar: 'ورشة ستيمبانك', tr: 'Steampunk Atölyesi', es: 'Taller Steampunk', fr: 'Atelier Steampunk' }, icon: '⚙️', group: G_HISTORICAL, prompt: 'Steampunk workshop environment: copper pipes, gauge dials, steam and intricate 19th-century mechanical tools.' },
   // Interior & Moody
-  { id: 'jazz-club', label: 'Dimly Lit Jazz Club', labelFa: 'کلوب جاز کم‌نور', icon: '🎷', group: 'Interior & Moody', groupFa: 'فضای داخلی و حسی', prompt: 'Dimly lit jazz club environment: a cozy space, cigarette smoke hanging in spot lighting, shiny brass instruments and dark leather furniture.' },
-  { id: 'dark-academia-library', label: 'Dark Academia Library', labelFa: 'کتابخانه کلاسیک', icon: '📚', group: 'Interior & Moody', groupFa: 'فضای داخلی و حسی', prompt: 'Dark academia library environment: tall wooden shelves full of old leather books, study desks with green lamps and the scent of old paper.' },
-  { id: 'retro-diner', label: 'Retro Diner', labelFa: 'رستوران رترو', icon: '🍔', group: 'Interior & Moody', groupFa: 'فضای داخلی و حسی', prompt: 'Retro 80s diner environment: red leather booths, neon interior decor, a jukebox and rain-streaked windows at night.' },
+  { id: 'jazz-club', label: { en: 'Dimly Lit Jazz Club', fa: 'کلوب جاز کم‌نور', ar: 'نادي جاز خافت الإضاءة', tr: 'Loş Caz Kulübü', es: 'Club de Jazz Tenue', fr: 'Club de Jazz Tamisé' }, icon: '🎷', group: G_INTERIOR, prompt: 'Dimly lit jazz club environment: a cozy space, cigarette smoke hanging in spot lighting, shiny brass instruments and dark leather furniture.' },
+  { id: 'dark-academia-library', label: { en: 'Dark Academia Library', fa: 'کتابخانه کلاسیک', ar: 'مكتبة أكاديمية داكنة', tr: 'Dark Academia Kütüphanesi', es: 'Biblioteca Dark Academia', fr: 'Bibliothèque Dark Academia' }, icon: '📚', group: G_INTERIOR, prompt: 'Dark academia library environment: tall wooden shelves full of old leather books, study desks with green lamps and the scent of old paper.' },
+  { id: 'retro-diner', label: { en: 'Retro Diner', fa: 'رستوران رترو', ar: 'مطعم ريترو', tr: 'Retro Lokanta', es: 'Restaurante Retro', fr: 'Diner Rétro' }, icon: '🍔', group: G_INTERIOR, prompt: 'Retro 80s diner environment: red leather booths, neon interior decor, a jukebox and rain-streaked windows at night.' },
 ]
 
-const SCENE_GROUPS = Array.from(new Set(SCENE_TEMPLATES.map((s) => s.group)))
-const SCENE_GROUP_FA: Record<string, string> = Object.fromEntries(
-  SCENE_TEMPLATES.map((s) => [s.group, s.groupFa]),
+const SCENE_GROUPS = Array.from(new Set(SCENE_TEMPLATES.map((s) => s.group.en)))
+const SCENE_GROUP_LOC: Record<string, Loc> = Object.fromEntries(
+  SCENE_TEMPLATES.map((s) => [s.group.en, s.group]),
 )
 
 type VideoTemplate = {
   id: string
-  label: string
-  labelFa: string
+  label: Loc
   icon: string
-  group: string
-  groupFa: string
+  group: Loc
   prompt: string
 }
 
+const VG_SPORTS: Loc = { en: 'Sports & Action', fa: 'ورزشی و پرتحرک', ar: 'رياضة وأكشن', tr: 'Spor ve Aksiyon', es: 'Deportes y Acción', fr: 'Sport et Action' }
+const VG_ANIMATION: Loc = { en: 'Animation & Motion Graphics', fa: 'انیمیشن و موشن گرافیک', ar: 'رسوم متحركة وموشن جرافيك', tr: 'Animasyon ve Hareketli Grafik', es: 'Animación y Motion Graphics', fr: 'Animation et Motion Design' }
+const VG_SOCIAL: Loc = { en: 'Social Media', fa: 'شبکه‌های اجتماعی و تولید محتوا', ar: 'وسائل التواصل الاجتماعي', tr: 'Sosyal Medya', es: 'Redes Sociales', fr: 'Réseaux Sociaux' }
+const VG_CORPORATE: Loc = { en: 'Corporate & Business', fa: 'شرکتی و کسب‌وکار', ar: 'شركات وأعمال', tr: 'Kurumsal ve İş', es: 'Corporativo y Negocios', fr: 'Entreprise et Business' }
+const VG_CINEMATIC: Loc = { en: 'Cinematic & Creative', fa: 'سینمایی و خلاقانه', ar: 'سينمائي وإبداعي', tr: 'Sinematik ve Yaratıcı', es: 'Cinematográfico y Creativo', fr: 'Cinématique et Créatif' }
+const VG_EVENTS: Loc = { en: 'Events & Occasions', fa: 'رویدادها و مناسبت‌ها', ar: 'فعاليات ومناسبات', tr: 'Etkinlikler ve Özel Günler', es: 'Eventos y Ocasiones', fr: 'Événements et Occasions' }
+
 const VIDEO_TEMPLATES: VideoTemplate[] = [
   // 1. Sports & Action
-  { id: 'football-team', label: 'Football / Team Sports', labelFa: 'فوتبال و ورزش‌های تیمی', icon: '⚽', group: 'Sports & Action', groupFa: 'ورزشی و پرتحرک', prompt: 'Sports broadcast template: team line-up reveals, player profile cards, animated live-score lower thirds and refereeing graphics with energetic stadium atmosphere.' },
-  { id: 'sports-highlights', label: 'Sports Highlights', labelFa: 'هایلایت‌های ورزشی', icon: '🏆', group: 'Sports & Action', groupFa: 'ورزشی و پرتحرک', prompt: 'Sports highlights template: fast transitions, high-energy effects and jump cuts to showcase goals and decisive match moments.' },
-  { id: 'fitness', label: 'Fitness & Bodybuilding', labelFa: 'فیتنس و بدنسازی', icon: '💪', group: 'Sports & Action', groupFa: 'ورزشی و پرتحرک', prompt: 'Fitness template: motivational footage cut to a fast music tempo, promoting gyms or training programs with dynamic energy.' },
-  { id: 'gaming-esports', label: 'Gaming / Esports', labelFa: 'گیمینگ و ورزش‌های الکترونیک', icon: '🎮', group: 'Sports & Action', groupFa: 'ورزشی و پرتحرک', prompt: 'Gaming and esports template: stream channel intros, on-screen overlays and team reveals with neon glowing effects.' },
+  { id: 'football-team', label: { en: 'Football / Team Sports', fa: 'فوتبال و ورزش‌های تیمی', ar: 'كرة القدم / رياضات جماعية', tr: 'Futbol / Takım Sporları', es: 'Fútbol / Deportes de Equipo', fr: "Football / Sports d'Équipe" }, icon: '⚽', group: VG_SPORTS, prompt: 'Sports broadcast template: team line-up reveals, player profile cards, animated live-score lower thirds and refereeing graphics with energetic stadium atmosphere.' },
+  { id: 'sports-highlights', label: { en: 'Sports Highlights', fa: 'هایلایت‌های ورزشی', ar: 'أبرز اللقطات الرياضية', tr: 'Spor Özetleri', es: 'Resúmenes Deportivos', fr: 'Résumés Sportifs' }, icon: '🏆', group: VG_SPORTS, prompt: 'Sports highlights template: fast transitions, high-energy effects and jump cuts to showcase goals and decisive match moments.' },
+  { id: 'fitness', label: { en: 'Fitness & Bodybuilding', fa: 'فیتنس و بدنسازی', ar: 'لياقة وكمال أجسام', tr: 'Fitness ve Vücut Geliştirme', es: 'Fitness y Culturismo', fr: 'Fitness et Musculation' }, icon: '💪', group: VG_SPORTS, prompt: 'Fitness template: motivational footage cut to a fast music tempo, promoting gyms or training programs with dynamic energy.' },
+  { id: 'gaming-esports', label: { en: 'Gaming / Esports', fa: 'گیمینگ و ورزش‌های الکترونیک', ar: 'ألعاب / رياضات إلكترونية', tr: 'Oyun / E-spor', es: 'Gaming / Esports', fr: 'Jeux Vidéo / Esport' }, icon: '🎮', group: VG_SPORTS, prompt: 'Gaming and esports template: stream channel intros, on-screen overlays and team reveals with neon glowing effects.' },
   // 2. Animation & Motion Graphics
-  { id: 'explainer', label: 'Explainer Video', labelFa: 'ویدئوی آموزشی/توضیحی', icon: '🧩', group: 'Animation & Motion Graphics', groupFa: 'انیمیشن و موشن گرافیک', prompt: '2D/3D explainer template: animated characters explaining a system, product or service with clean motion graphics.' },
-  { id: 'logo-reveal', label: 'Logo Reveal', labelFa: 'لوگو موشن', icon: '✨', group: 'Animation & Motion Graphics', groupFa: 'انیمیشن و موشن گرافیک', prompt: 'Logo reveal template: short, eye-catching few-second animation introducing a brand logo at the start of videos.' },
-  { id: 'kinetic-typography', label: 'Kinetic Typography', labelFa: 'تایپوگرافی متحرک', icon: '🔤', group: 'Animation & Motion Graphics', groupFa: 'انیمیشن و موشن گرافیک', prompt: 'Kinetic typography template: built entirely on creative, rhythmic animated text synced to the beat.' },
-  { id: 'motion-comic', label: 'Motion Comics', labelFa: 'موشن کمیک', icon: '💥', group: 'Animation & Motion Graphics', groupFa: 'انیمیشن و موشن گرافیک', prompt: 'Motion comic template: animated comic-book panels and visual storytelling with painterly comic effects.' },
+  { id: 'explainer', label: { en: 'Explainer Video', fa: 'ویدئوی آموزشی/توضیحی', ar: 'فيديو توضيحي', tr: 'Açıklayıcı Video', es: 'Vídeo Explicativo', fr: 'Vidéo Explicative' }, icon: '🧩', group: VG_ANIMATION, prompt: '2D/3D explainer template: animated characters explaining a system, product or service with clean motion graphics.' },
+  { id: 'logo-reveal', label: { en: 'Logo Reveal', fa: 'لوگو موشن', ar: 'ظهور الشعار', tr: 'Logo Tanıtımı', es: 'Revelación de Logo', fr: 'Révélation de Logo' }, icon: '✨', group: VG_ANIMATION, prompt: 'Logo reveal template: short, eye-catching few-second animation introducing a brand logo at the start of videos.' },
+  { id: 'kinetic-typography', label: { en: 'Kinetic Typography', fa: 'تایپوگرافی متحرک', ar: 'تايبوغرافي حركي', tr: 'Kinetik Tipografi', es: 'Tipografía Cinética', fr: 'Typographie Cinétique' }, icon: '🔤', group: VG_ANIMATION, prompt: 'Kinetic typography template: built entirely on creative, rhythmic animated text synced to the beat.' },
+  { id: 'motion-comic', label: { en: 'Motion Comics', fa: 'موشن کمیک', ar: 'كوميكس متحرك', tr: 'Hareketli Çizgi Roman', es: 'Cómics en Movimiento', fr: 'Bande Dessinée Animée' }, icon: '💥', group: VG_ANIMATION, prompt: 'Motion comic template: animated comic-book panels and visual storytelling with painterly comic effects.' },
   // 3. Social Media
-  { id: 'youtube-intro-outro', label: 'YouTube Intro & Outro', labelFa: 'اینترو و اوترو یوتیوب', icon: '▶️', group: 'Social Media', groupFa: 'شبکه‌های اجتماعی و تولید محتوا', prompt: 'YouTube intro/outro template: opening sequences and end screens with animated like and subscribe button prompts.' },
-  { id: 'instagram-reels', label: 'Instagram Story / Reels', labelFa: 'استوری و ریلز اینستاگرام', icon: '📱', group: 'Social Media', groupFa: 'شبکه‌های اجتماعی و تولید محتوا', prompt: 'Vertical 9:16 template: minimal, e-commerce or lifestyle designs for quick product showcases in stories and reels.' },
-  { id: 'tiktok-trends', label: 'TikTok & Trends', labelFa: 'تیک‌تاک و ترندها', icon: '🎵', group: 'Social Media', groupFa: 'شبکه‌های اجتماعی و تولید محتوا', prompt: 'TikTok trend template: beat-synced edits and viral transitions matched to the music.' },
-  { id: 'vodcast', label: 'Video Podcast (Vodcast)', labelFa: 'پادکست ویدئویی', icon: '🎙️', group: 'Social Media', groupFa: 'شبکه‌های اجتماعی و تولید محتوا', prompt: 'Video podcast template: audio spectrum visualizer and timer overlays for publishing podcasts.' },
+  { id: 'youtube-intro-outro', label: { en: 'YouTube Intro & Outro', fa: 'اینترو و اوترو یوتیوب', ar: 'مقدمة وخاتمة يوتيوب', tr: 'YouTube Intro ve Outro', es: 'Intro y Outro de YouTube', fr: 'Intro et Outro YouTube' }, icon: '▶️', group: VG_SOCIAL, prompt: 'YouTube intro/outro template: opening sequences and end screens with animated like and subscribe button prompts.' },
+  { id: 'instagram-reels', label: { en: 'Instagram Story / Reels', fa: 'استوری و ریلز اینستاگرام', ar: 'ستوري / ريلز إنستغرام', tr: 'Instagram Hikaye / Reels', es: 'Historia / Reels de Instagram', fr: 'Story / Reels Instagram' }, icon: '📱', group: VG_SOCIAL, prompt: 'Vertical 9:16 template: minimal, e-commerce or lifestyle designs for quick product showcases in stories and reels.' },
+  { id: 'tiktok-trends', label: { en: 'TikTok & Trends', fa: 'تیک‌تاک و ترندها', ar: 'تيك توك والترندات', tr: 'TikTok ve Trendler', es: 'TikTok y Tendencias', fr: 'TikTok et Tendances' }, icon: '🎵', group: VG_SOCIAL, prompt: 'TikTok trend template: beat-synced edits and viral transitions matched to the music.' },
+  { id: 'vodcast', label: { en: 'Video Podcast (Vodcast)', fa: 'پادکست ویدئویی', ar: 'بودكاست فيديو', tr: 'Video Podcast', es: 'Vídeo Podcast', fr: 'Podcast Vidéo' }, icon: '🎙️', group: VG_SOCIAL, prompt: 'Video podcast template: audio spectrum visualizer and timer overlays for publishing podcasts.' },
   // 4. Corporate & Business
-  { id: 'company-profile', label: 'Company Profile', labelFa: 'معرفی شرکت', icon: '🏢', group: 'Corporate & Business', groupFa: 'شرکتی و کسب‌وکار', prompt: 'Company profile template: history and goals timeline, leadership team introductions and business vision presentation.' },
-  { id: 'infographic', label: 'Presentation / Infographic', labelFa: 'ارائه‌ها و اینفوگرافیک', icon: '📊', group: 'Corporate & Business', groupFa: 'شرکتی و کسب‌وکار', prompt: 'Infographic template: animated charts, city or country maps and attractive visual presentation of statistical data.' },
-  { id: 'real-estate', label: 'Real Estate', labelFa: 'املاک و مستغلات', icon: '🏠', group: 'Corporate & Business', groupFa: 'شرکتی و کسب‌وکار', prompt: 'Real estate template: clean professional slideshows with text info to present home details and architecture projects.' },
-  { id: 'product-promo', label: 'Product Promo', labelFa: 'تبلیغات محصول', icon: '🛍️', group: 'Corporate & Business', groupFa: 'شرکتی و کسب‌وکار', prompt: 'Product promo template: 3D or video showcase of features, price and multiple angles of a new product.' },
+  { id: 'company-profile', label: { en: 'Company Profile', fa: 'معرفی شرکت', ar: 'ملف الشركة', tr: 'Şirket Tanıtımı', es: 'Perfil de Empresa', fr: "Présentation d'Entreprise" }, icon: '🏢', group: VG_CORPORATE, prompt: 'Company profile template: history and goals timeline, leadership team introductions and business vision presentation.' },
+  { id: 'infographic', label: { en: 'Presentation / Infographic', fa: 'ارائه‌ها و اینفوگرافیک', ar: 'عرض تقديمي / إنفوجرافيك', tr: 'Sunum / İnfografik', es: 'Presentación / Infografía', fr: 'Présentation / Infographie' }, icon: '📊', group: VG_CORPORATE, prompt: 'Infographic template: animated charts, city or country maps and attractive visual presentation of statistical data.' },
+  { id: 'real-estate', label: { en: 'Real Estate', fa: 'املاک و مستغلات', ar: 'عقارات', tr: 'Emlak', es: 'Bienes Raíces', fr: 'Immobilier' }, icon: '🏠', group: VG_CORPORATE, prompt: 'Real estate template: clean professional slideshows with text info to present home details and architecture projects.' },
+  { id: 'product-promo', label: { en: 'Product Promo', fa: 'تبلیغات محصول', ar: 'ترويج منتج', tr: 'Ürün Tanıtımı', es: 'Promoción de Producto', fr: 'Promotion de Produit' }, icon: '🛍️', group: VG_CORPORATE, prompt: 'Product promo template: 3D or video showcase of features, price and multiple angles of a new product.' },
   // 5. Cinematic & Creative
-  { id: 'movie-trailer', label: 'Movie Trailer / Teaser', labelFa: 'تریلر فیلم و تیزر', icon: '🎬', group: 'Cinematic & Creative', groupFa: 'سینمایی و خلاقانه', prompt: 'Cinematic trailer template: epic dramatic titles, light effects and dark atmospheric mood.' },
-  { id: 'photo-slideshow', label: 'Photo / Video Slideshow', labelFa: 'اسلایدشوی عکس و ویدئو', icon: '🖼️', group: 'Cinematic & Creative', groupFa: 'سینمایی و خلاقانه', prompt: 'Slideshow template: artistic blend of images with soft music, suited for portfolios or travel memories.' },
-  { id: 'glitch-retro', label: 'Glitch & Retro', labelFa: 'افکت‌های گلیچ و رترو', icon: '📼', group: 'Cinematic & Creative', groupFa: 'سینمایی و خلاقانه', prompt: 'Glitch and retro template: VHS tape simulation, old TV noise and 80s/90s visual styling.' },
-  { id: 'vfx', label: 'VFX / Special Effects', labelFa: 'جلوه‌های ویژه', icon: '🌩️', group: 'Cinematic & Creative', groupFa: 'سینمایی و خلاقانه', prompt: 'VFX template: ready-made explosions, magic, smoke, fire and weather changes layered over raw footage.' },
+  { id: 'movie-trailer', label: { en: 'Movie Trailer / Teaser', fa: 'تریلر فیلم و تیزر', ar: 'إعلان فيلم / تشويقي', tr: 'Film Fragmanı', es: 'Tráiler de Película', fr: 'Bande-Annonce de Film' }, icon: '🎬', group: VG_CINEMATIC, prompt: 'Cinematic trailer template: epic dramatic titles, light effects and dark atmospheric mood.' },
+  { id: 'photo-slideshow', label: { en: 'Photo / Video Slideshow', fa: 'اسلایدشوی عکس و ویدئو', ar: 'عرض شرائح صور / فيديو', tr: 'Foto / Video Slayt Gösterisi', es: 'Presentación de Fotos / Vídeo', fr: 'Diaporama Photo / Vidéo' }, icon: '🖼️', group: VG_CINEMATIC, prompt: 'Slideshow template: artistic blend of images with soft music, suited for portfolios or travel memories.' },
+  { id: 'glitch-retro', label: { en: 'Glitch & Retro', fa: 'افکت‌های گلیچ و رترو', ar: 'غليتش وريترو', tr: 'Glitch ve Retro', es: 'Glitch y Retro', fr: 'Glitch et Rétro' }, icon: '📼', group: VG_CINEMATIC, prompt: 'Glitch and retro template: VHS tape simulation, old TV noise and 80s/90s visual styling.' },
+  { id: 'vfx', label: { en: 'VFX / Special Effects', fa: 'جلوه‌های ویژه', ar: 'مؤثرات بصرية', tr: 'VFX / Özel Efektler', es: 'VFX / Efectos Especiales', fr: 'VFX / Effets Spéciaux' }, icon: '🌩️', group: VG_CINEMATIC, prompt: 'VFX template: ready-made explosions, magic, smoke, fire and weather changes layered over raw footage.' },
   // 6. Events & Occasions
-  { id: 'wedding', label: 'Wedding & Formal', labelFa: 'عروسی و فرمالیته', icon: '💍', group: 'Events & Occasions', groupFa: 'رویدادها و مناسبت‌ها', prompt: 'Wedding template: romantic slideshows with warm color grading, floral frames, delicate typography and soft light leaks.' },
-  { id: 'birthday-party', label: 'Birthday & Party', labelFa: 'تولد و مهمانی', icon: '🎉', group: 'Events & Occasions', groupFa: 'رویدادها و مناسبت‌ها', prompt: 'Birthday and party template: colorful, joyful video invitations with balloon and confetti animations.' },
-  { id: 'calendar-campaigns', label: 'Holidays & Campaigns', labelFa: 'مناسبت‌های تقویمی و کمپین‌ها', icon: '🎄', group: 'Events & Occasions', groupFa: 'رویدادها و مناسبت‌ها', prompt: 'Seasonal campaign template: tailored for Christmas, Halloween, Nowruz, Ramadan, Black Friday and seasonal discount sales.' },
+  { id: 'wedding', label: { en: 'Wedding & Formal', fa: 'عروسی و فرمالیته', ar: 'زفاف ورسمي', tr: 'Düğün ve Resmi', es: 'Boda y Formal', fr: 'Mariage et Cérémonie' }, icon: '💍', group: VG_EVENTS, prompt: 'Wedding template: romantic slideshows with warm color grading, floral frames, delicate typography and soft light leaks.' },
+  { id: 'birthday-party', label: { en: 'Birthday & Party', fa: 'تولد و مهمانی', ar: 'عيد ميلاد وحفلة', tr: 'Doğum Günü ve Parti', es: 'Cumpleaños y Fiesta', fr: 'Anniversaire et Fête' }, icon: '🎉', group: VG_EVENTS, prompt: 'Birthday and party template: colorful, joyful video invitations with balloon and confetti animations.' },
+  { id: 'calendar-campaigns', label: { en: 'Holidays & Campaigns', fa: 'مناسبت‌های تقویمی و کمپین‌ها', ar: 'أعياد وحملات', tr: 'Tatiller ve Kampanyalar', es: 'Festividades y Campañas', fr: 'Fêtes et Campagnes' }, icon: '🎄', group: VG_EVENTS, prompt: 'Seasonal campaign template: tailored for Christmas, Halloween, Nowruz, Ramadan, Black Friday and seasonal discount sales.' },
 ]
 
-const VIDEO_GROUPS = Array.from(new Set(VIDEO_TEMPLATES.map((v) => v.group)))
-const VIDEO_GROUP_FA: Record<string, string> = Object.fromEntries(
-  VIDEO_TEMPLATES.map((v) => [v.group, v.groupFa]),
+const VIDEO_GROUPS = Array.from(new Set(VIDEO_TEMPLATES.map((v) => v.group.en)))
+const VIDEO_GROUP_LOC: Record<string, Loc> = Object.fromEntries(
+  VIDEO_TEMPLATES.map((v) => [v.group.en, v.group]),
 )
 
-type Lang = 'en' | 'fa'
-
-const T = {
+const T: Record<Lang, Record<string, string>> = {
   en: {
     title: 'Product Ad Scenario',
     description:
@@ -226,7 +243,7 @@ const T = {
     sendAll: 'Send all to Pending',
     useAsPrompt: 'Use as prompt',
     generate: 'Generate ad scenario',
-    translate: 'نمایش به فارسی',
+    language: 'Language',
   },
   fa: {
     title: 'سناریوی تبلیغ محصول',
@@ -258,9 +275,137 @@ const T = {
     sendAll: 'ارسال همه به Pending',
     useAsPrompt: 'استفاده به‌عنوان پرامت',
     generate: 'تولید سناریوی تبلیغ',
-    translate: 'Show in English',
+    language: 'زبان',
   },
-} as const
+  ar: {
+    title: 'سيناريو إعلان المنتج',
+    description:
+      'أضف صورة واسم منتجك، أجب عن بعض الأسئلة، واحصل على سيناريو إعلاني سينمائي متوافق مع أسلوب الكاميرا الذي تختاره.',
+    photo: 'صورة',
+    productName: 'اسم المنتج',
+    productNamePlaceholder: 'مثال: سيروم أوراغلو',
+    descriptionLabel: 'الوصف',
+    optional: '(اختياري)',
+    descriptionPlaceholder: 'الميزات الرئيسية، الأجواء، الجمهور المستهدف…',
+    yourPrompt: 'موجّهك',
+    yourPromptPlaceholder:
+      'اكتب موجّهك أو فكرتك — ستتم إعادة صياغتها حسب المدة وأسلوب الكاميرا المختار…',
+    duration: 'المدة',
+    cameraStyle: 'أسلوب الكاميرا',
+    genre: 'النوع والأجواء',
+    scene: 'المشهد والبيئة',
+    videoTemplates: 'قوالب الفيديو',
+    cameraNotes: 'ملاحظات حركة الكاميرا',
+    cameraNotesPlaceholder:
+      'صف كيف ينبغي أن تتحرك الكاميرا، مثلاً ارتفاع بطيء ثم دفع سريع نحو الملصق…',
+    adScenario: 'سيناريو الإعلان',
+    scene_: 'مشهد',
+    copy: 'نسخ',
+    copyAll: 'نسخ الكل',
+    copied: 'تم النسخ',
+    regenerate: 'إعادة التوليد',
+    sendAll: 'إرسال الكل إلى قائمة الانتظار',
+    useAsPrompt: 'استخدام كموجّه',
+    generate: 'توليد سيناريو الإعلان',
+    language: 'اللغة',
+  },
+  tr: {
+    title: 'Ürün Reklam Senaryosu',
+    description:
+      'Ürün fotoğrafınızı ve adını ekleyin, birkaç soruyu yanıtlayın ve seçtiğiniz kamera stiline uygun sinematik bir reklam senaryosu alın.',
+    photo: 'Fotoğraf',
+    productName: 'Ürün adı',
+    productNamePlaceholder: 'örn. AuraGlow Serum',
+    descriptionLabel: 'Açıklama',
+    optional: '(isteğe bağlı)',
+    descriptionPlaceholder: 'Temel özellikler, atmosfer, hedef kitle…',
+    yourPrompt: 'İsteminiz',
+    yourPromptPlaceholder:
+      'Kendi isteminizi / fikrinizi yazın — seçtiğiniz süre ve kamera stiline göre yeniden yazılacaktır…',
+    duration: 'Süre',
+    cameraStyle: 'Kamera stili',
+    genre: 'Tür ve atmosfer',
+    scene: 'Sahne ve ortam',
+    videoTemplates: 'Video şablonları',
+    cameraNotes: 'Kamera hareketi notları',
+    cameraNotesPlaceholder:
+      'Kameranın nasıl hareket etmesi gerektiğini açıklayın, örn. yavaş yükseliş ardından etikete hızlı yaklaşma…',
+    adScenario: 'Reklam senaryosu',
+    scene_: 'Sahne',
+    copy: 'Kopyala',
+    copyAll: 'Tümünü kopyala',
+    copied: 'Kopyalandı',
+    regenerate: 'Yeniden oluştur',
+    sendAll: 'Tümünü Bekleyenlere gönder',
+    useAsPrompt: 'İstem olarak kullan',
+    generate: 'Reklam senaryosu oluştur',
+    language: 'Dil',
+  },
+  es: {
+    title: 'Guion de Anuncio de Producto',
+    description:
+      'Añade la foto y el nombre de tu producto, responde unas preguntas y obtén un guion publicitario cinematográfico ajustado al estilo de cámara que elijas.',
+    photo: 'Foto',
+    productName: 'Nombre del producto',
+    productNamePlaceholder: 'p. ej. Sérum AuraGlow',
+    descriptionLabel: 'Descripción',
+    optional: '(opcional)',
+    descriptionPlaceholder: 'Características clave, ambiente, público objetivo…',
+    yourPrompt: 'Tu prompt',
+    yourPromptPlaceholder:
+      'Escribe tu propio prompt / idea — se reescribirá según la duración y el estilo de cámara seleccionados…',
+    duration: 'Duración',
+    cameraStyle: 'Estilo de cámara',
+    genre: 'Género y atmósfera',
+    scene: 'Escena y entorno',
+    videoTemplates: 'Plantillas de vídeo',
+    cameraNotes: 'Notas de movimiento de cámara',
+    cameraNotesPlaceholder:
+      'Describe cómo debe moverse la cámara, p. ej. subida lenta y luego acercamiento rápido a la etiqueta…',
+    adScenario: 'Guion del anuncio',
+    scene_: 'Escena',
+    copy: 'Copiar',
+    copyAll: 'Copiar todo',
+    copied: 'Copiado',
+    regenerate: 'Regenerar',
+    sendAll: 'Enviar todo a Pendientes',
+    useAsPrompt: 'Usar como prompt',
+    generate: 'Generar guion del anuncio',
+    language: 'Idioma',
+  },
+  fr: {
+    title: 'Scénario de Publicité Produit',
+    description:
+      'Ajoutez la photo et le nom de votre produit, répondez à quelques questions et obtenez un scénario publicitaire cinématographique adapté au style de caméra choisi.',
+    photo: 'Photo',
+    productName: 'Nom du produit',
+    productNamePlaceholder: 'p. ex. Sérum AuraGlow',
+    descriptionLabel: 'Description',
+    optional: '(optionnel)',
+    descriptionPlaceholder: 'Caractéristiques clés, ambiance, public cible…',
+    yourPrompt: 'Votre prompt',
+    yourPromptPlaceholder:
+      'Écrivez votre propre prompt / idée — il sera réécrit selon la durée et le style de caméra sélectionnés…',
+    duration: 'Durée',
+    cameraStyle: 'Style de caméra',
+    genre: 'Genre et atmosphère',
+    scene: 'Scène et environnement',
+    videoTemplates: 'Modèles vidéo',
+    cameraNotes: 'Notes de mouvement de caméra',
+    cameraNotesPlaceholder:
+      "Décrivez comment la caméra doit bouger, p. ex. montée lente puis travelling avant rapide sur l'étiquette…",
+    adScenario: 'Scénario publicitaire',
+    scene_: 'Scène',
+    copy: 'Copier',
+    copyAll: 'Tout copier',
+    copied: 'Copié',
+    regenerate: 'Régénérer',
+    sendAll: 'Tout envoyer en attente',
+    useAsPrompt: 'Utiliser comme prompt',
+    generate: 'Générer le scénario publicitaire',
+    language: 'Langue',
+  },
+}
 
 export default function ProductAdDialog({
   open,
