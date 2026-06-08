@@ -155,10 +155,22 @@ type UnifiedClip =
   | { kind: 'video'; id: string; createdAt: string; job: JobDetail }
   | { kind: 'image'; id: string; createdAt: string; image: UserImageItem }
 
+type UserAudioItem = {
+  id: string
+  storage_path: string
+  kind: 'music' | 'voiceover'
+  name: string | null
+  duration_seconds: number | null
+  created_at: string
+  /** Signed URL for playback/download (private bucket). */
+  url?: string | null
+}
+
 
 const FRAMES_BUCKET = 'wan-frames'
 const MERGED_BUCKET = 'merged-videos'
 const USER_IMAGES_BUCKET = 'user-images'
+const USER_AUDIO_BUCKET = 'user-audio'
 
 type ModelChoice = {
   id: string
