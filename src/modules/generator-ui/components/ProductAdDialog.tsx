@@ -686,7 +686,7 @@ export default function ProductAdDialog({
               {SCENE_GROUPS.map((group) => (
                 <div key={group}>
                   <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                    {group}
+                    {lang === 'fa' ? SCENE_GROUP_FA[group] : group}
                   </div>
                   <div role="radiogroup" aria-label={group} className="flex flex-wrap gap-2">
                     {SCENE_TEMPLATES.filter((s) => s.group === group).map((s) => {
