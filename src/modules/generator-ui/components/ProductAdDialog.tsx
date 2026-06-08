@@ -29,25 +29,26 @@ const FRAMES_BUCKET = 'wan-frames'
 const SPLIT_DURATIONS = [30, 45, 135]
 const sceneRange = (i: number) => `${i * 15}–${(i + 1) * 15}s`
 
-const CAMERA_STYLES: { label: string; icon: string }[] = [
-  { label: 'Whip Pan', icon: '💫' },
-  { label: 'Orbit Shot', icon: '🛰️' },
-  { label: 'FPV Drone', icon: '🚁' },
-  { label: 'Tracking Shot', icon: '🎯' },
-  { label: 'Push In Cinematic', icon: '🎬' },
-  { label: 'Fly Through', icon: '🕊️' },
-  { label: 'Crash Zoom', icon: '💥' },
-  { label: 'Handheld Dynamic', icon: '🤳' },
-  { label: 'Dolly Zoom', icon: '🌀' },
-  { label: 'Parallax Motion', icon: '🧊' },
+const CAMERA_STYLES: { label: string; labelFa: string; icon: string }[] = [
+  { label: 'Whip Pan', labelFa: 'پن سریع', icon: '💫' },
+  { label: 'Orbit Shot', labelFa: 'نمای مداری', icon: '🛰️' },
+  { label: 'FPV Drone', labelFa: 'پهپاد FPV', icon: '🚁' },
+  { label: 'Tracking Shot', labelFa: 'نمای تعقیبی', icon: '🎯' },
+  { label: 'Push In Cinematic', labelFa: 'پوش‌این سینمایی', icon: '🎬' },
+  { label: 'Fly Through', labelFa: 'عبور پروازی', icon: '🕊️' },
+  { label: 'Crash Zoom', labelFa: 'زوم ضربه‌ای', icon: '💥' },
+  { label: 'Handheld Dynamic', labelFa: 'دوربین‌روی‌دست پویا', icon: '🤳' },
+  { label: 'Dolly Zoom', labelFa: 'دالی زوم', icon: '🌀' },
+  { label: 'Parallax Motion', labelFa: 'حرکت پارالاکس', icon: '🧊' },
 ]
 
-type GenreTemplate = { id: string; label: string; icon: string; prompt: string }
+type GenreTemplate = { id: string; label: string; labelFa: string; icon: string; prompt: string }
 
 const GENRE_TEMPLATES: GenreTemplate[] = [
   {
     id: 'epic-fantasy',
     label: 'Epic Fantasy',
+    labelFa: 'فانتزی حماسی',
     icon: '🐉',
     prompt:
       'Epic fantasy directing: sweeping wide vistas of dreamlike landscapes, castles and mythical creatures, magical glowing lighting and an awe-inspiring heroic mood.',
@@ -55,6 +56,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
   {
     id: 'sci-fi-minimalist',
     label: 'Sci-Fi Minimalist',
+    labelFa: 'علمی‌تخیلی مینیمال',
     icon: '🛸',
     prompt:
       'Minimalist sci-fi directing: clean white spaces, straight lines, hidden seamless technology and a calm, sleek futuristic atmosphere.',
@@ -62,6 +64,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
   {
     id: 'post-apocalyptic',
     label: 'Post-Apocalyptic',
+    labelFa: 'پساآخرالزمانی',
     icon: '☢️',
     prompt:
       'Post-apocalyptic directing: ruined cities, nature overgrowing buildings, ash, dust and a desolate abandoned atmosphere with muted desaturated tones.',
@@ -69,6 +72,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
   {
     id: 'horror-jump-scare',
     label: 'Horror Jump-Scare',
+    labelFa: 'وحشت ناگهانی',
     icon: '👻',
     prompt:
       'Sudden-horror directing: deep darkness, harsh localized light (like a flashlight), tense silence and abrupt movement changes that create dread and fear.',
@@ -76,6 +80,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
   {
     id: 'high-octane-action',
     label: 'High-Octane Action',
+    labelFa: 'اکشن پرتحرک',
     icon: '🔥',
     prompt:
       'High-octane action directing: rapid cuts, camera shake, explosions, high speed and motion blur for an intense adrenaline-fueled feel.',
@@ -83,6 +88,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
   {
     id: 'romantic-dreamscape',
     label: 'Romantic Dreamscape',
+    labelFa: 'رؤیای رمانتیک',
     icon: '💗',
     prompt:
       'Romantic dreamscape directing: soft golden-hour sunlight, gentle soft focus on the subjects and warm dreamy colors for an intimate emotional mood.',
@@ -90,6 +96,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
   {
     id: 'documentary-realism',
     label: 'Documentary / Realism',
+    labelFa: 'مستند/واقع‌گرا',
     icon: '🎥',
     prompt:
       'Documentary realism directing: natural light, no stylized grading, true-to-life colors and simple unobtrusive camera movements for an authentic real feel.',
@@ -97,43 +104,47 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
   {
     id: 'anime-manga',
     label: 'Anime / Manga Style',
+    labelFa: 'سبک انیمه/مانگا',
     icon: '🌸',
     prompt:
       'Anime/manga style directing: bold outline lines, saturated flat 2D colors and exaggerated dynamic motion effects with expressive energetic action.',
   },
 ]
 
-type SceneTemplate = { id: string; label: string; icon: string; group: string; prompt: string }
+type SceneTemplate = { id: string; label: string; labelFa: string; icon: string; group: string; groupFa: string; prompt: string }
 
 const SCENE_TEMPLATES: SceneTemplate[] = [
   // Industrial & Construction
-  { id: 'construction-site', label: 'Construction Site', icon: '🏗️', group: 'Industrial & Construction', prompt: 'Construction site environment: steel building skeletons, giant moving cranes, dust and dirt, hard-hat workers at sunset.' },
-  { id: 'heavy-industry', label: 'Heavy Industry Factory', icon: '🏭', group: 'Industrial & Construction', prompt: 'Heavy industry factory environment: molten iron, welding sparks, large gear machinery and huge smokestacks.' },
-  { id: 'abandoned-warehouse', label: 'Abandoned Warehouse', icon: '🕸️', group: 'Industrial & Construction', prompt: 'Abandoned warehouse environment: large empty space, broken windows, light beams piercing from the roof and dust floating in the air.' },
-  { id: 'shipyard-dock', label: 'Shipyard / Dock', icon: '🚢', group: 'Industrial & Construction', prompt: 'Shipyard and dock environment: giant container ships, coastal cranes, seawater and rusty steel structures.' },
-  { id: 'high-tech-lab', label: 'High-Tech Laboratory', icon: '🔬', group: 'Industrial & Construction', prompt: 'High-tech laboratory environment: clean white walls, blinking computer server racks, glass chambers and cold blue or laser lighting.' },
+  { id: 'construction-site', label: 'Construction Site', labelFa: 'کارگاه ساختمانی', icon: '🏗️', group: 'Industrial & Construction', groupFa: 'صنعتی و ساخت‌وساز', prompt: 'Construction site environment: steel building skeletons, giant moving cranes, dust and dirt, hard-hat workers at sunset.' },
+  { id: 'heavy-industry', label: 'Heavy Industry Factory', labelFa: 'کارخانه صنایع سنگین', icon: '🏭', group: 'Industrial & Construction', groupFa: 'صنعتی و ساخت‌وساز', prompt: 'Heavy industry factory environment: molten iron, welding sparks, large gear machinery and huge smokestacks.' },
+  { id: 'abandoned-warehouse', label: 'Abandoned Warehouse', labelFa: 'انبار متروکه', icon: '🕸️', group: 'Industrial & Construction', groupFa: 'صنعتی و ساخت‌وساز', prompt: 'Abandoned warehouse environment: large empty space, broken windows, light beams piercing from the roof and dust floating in the air.' },
+  { id: 'shipyard-dock', label: 'Shipyard / Dock', labelFa: 'کشتی‌سازی و اسکله', icon: '🚢', group: 'Industrial & Construction', groupFa: 'صنعتی و ساخت‌وساز', prompt: 'Shipyard and dock environment: giant container ships, coastal cranes, seawater and rusty steel structures.' },
+  { id: 'high-tech-lab', label: 'High-Tech Laboratory', labelFa: 'آزمایشگاه پیشرفته', icon: '🔬', group: 'Industrial & Construction', groupFa: 'صنعتی و ساخت‌وساز', prompt: 'High-tech laboratory environment: clean white walls, blinking computer server racks, glass chambers and cold blue or laser lighting.' },
   // Urban & Modern
-  { id: 'megacity-corporate', label: 'Megacity Corporate', icon: '🏙️', group: 'Urban & Modern', prompt: 'Megacity corporate environment: giant glass skyscrapers, clouds reflecting on the glass and a sleek upscale business atmosphere.' },
-  { id: 'cyberpunk-alleyway', label: 'Cyberpunk Alleyway', icon: '🌃', group: 'Urban & Modern', prompt: 'Cyberpunk alleyway environment: crowded narrow streets at night, multilingual neon signs, hanging wires and street-food kiosks.' },
-  { id: 'subway-station', label: 'Subway / Underground Station', icon: '🚇', group: 'Urban & Modern', prompt: 'Subway station environment: dark tunnels, fast moving trains with motion blur and concrete platforms under fluorescent light.' },
-  { id: 'rooftop-overlook', label: 'Rooftop Overlook', icon: '🌆', group: 'Urban & Modern', prompt: 'Rooftop overlook environment: the edge of a tall tower rooftop at night while the whole city lights glow in the background with cinematic bokeh.' },
+  { id: 'megacity-corporate', label: 'Megacity Corporate', labelFa: 'کلان‌شهر اداری', icon: '🏙️', group: 'Urban & Modern', groupFa: 'شهری و مدرن', prompt: 'Megacity corporate environment: giant glass skyscrapers, clouds reflecting on the glass and a sleek upscale business atmosphere.' },
+  { id: 'cyberpunk-alleyway', label: 'Cyberpunk Alleyway', labelFa: 'کوچه سایبرپانک', icon: '🌃', group: 'Urban & Modern', groupFa: 'شهری و مدرن', prompt: 'Cyberpunk alleyway environment: crowded narrow streets at night, multilingual neon signs, hanging wires and street-food kiosks.' },
+  { id: 'subway-station', label: 'Subway / Underground Station', labelFa: 'ایستگاه مترو', icon: '🚇', group: 'Urban & Modern', groupFa: 'شهری و مدرن', prompt: 'Subway station environment: dark tunnels, fast moving trains with motion blur and concrete platforms under fluorescent light.' },
+  { id: 'rooftop-overlook', label: 'Rooftop Overlook', labelFa: 'منظره از پشت‌بام', icon: '🌆', group: 'Urban & Modern', groupFa: 'شهری و مدرن', prompt: 'Rooftop overlook environment: the edge of a tall tower rooftop at night while the whole city lights glow in the background with cinematic bokeh.' },
   // Natural & Epic Landscapes
-  { id: 'epic-mountain', label: 'Epic Mountain Range', icon: '🏔️', group: 'Natural & Epic Landscapes', prompt: 'Epic mountain range environment: sharp snowy peaks, thick fog in the valleys and steep cliffs.' },
-  { id: 'apocalyptic-wasteland', label: 'Post-Apocalyptic Wasteland', icon: '🏜️', group: 'Natural & Epic Landscapes', prompt: 'Post-apocalyptic wasteland environment: endless sand plains, abandoned worn vehicles, dusty sky and a scorching sun.' },
-  { id: 'mystical-forest', label: 'Deep Mystical Forest', icon: '🌲', group: 'Natural & Epic Landscapes', prompt: 'Deep mystical forest environment: ancient tall trees, dense foliage, light filtered through leaves reaching the ground and a misty atmosphere.' },
-  { id: 'arctic-tundra', label: 'Arctic Tundra / Ice Landscape', icon: '❄️', group: 'Natural & Epic Landscapes', prompt: 'Arctic tundra ice landscape environment: endless white plains, ice caves with blue light reflections and a snowstorm.' },
+  { id: 'epic-mountain', label: 'Epic Mountain Range', labelFa: 'رشته‌کوه حماسی', icon: '🏔️', group: 'Natural & Epic Landscapes', groupFa: 'مناظر طبیعی و حماسی', prompt: 'Epic mountain range environment: sharp snowy peaks, thick fog in the valleys and steep cliffs.' },
+  { id: 'apocalyptic-wasteland', label: 'Post-Apocalyptic Wasteland', labelFa: 'بیابان پساآخرالزمانی', icon: '🏜️', group: 'Natural & Epic Landscapes', groupFa: 'مناظر طبیعی و حماسی', prompt: 'Post-apocalyptic wasteland environment: endless sand plains, abandoned worn vehicles, dusty sky and a scorching sun.' },
+  { id: 'mystical-forest', label: 'Deep Mystical Forest', labelFa: 'جنگل اسرارآمیز', icon: '🌲', group: 'Natural & Epic Landscapes', groupFa: 'مناظر طبیعی و حماسی', prompt: 'Deep mystical forest environment: ancient tall trees, dense foliage, light filtered through leaves reaching the ground and a misty atmosphere.' },
+  { id: 'arctic-tundra', label: 'Arctic Tundra / Ice Landscape', labelFa: 'تاندرای قطبی و یخی', icon: '❄️', group: 'Natural & Epic Landscapes', groupFa: 'مناظر طبیعی و حماسی', prompt: 'Arctic tundra ice landscape environment: endless white plains, ice caves with blue light reflections and a snowstorm.' },
   // Historical & Fantasy
-  { id: 'medieval-castle', label: 'Medieval Castle / Citadel', icon: '🏰', group: 'Historical & Fantasy', prompt: 'Medieval castle environment: large stone walls, lit torches on the walls and dark halls with long wooden tables.' },
-  { id: 'ancient-ruins', label: 'Ancient Ruins', icon: '🏛️', group: 'Historical & Fantasy', prompt: 'Ancient ruins environment: cracked Greek or Egyptian stone columns covered in vines, set in a desert or forest.' },
-  { id: 'gothic-cathedral', label: 'Gothic Cathedral', icon: '⛪', group: 'Historical & Fantasy', prompt: 'Gothic cathedral environment: pointed architecture and large stained-glass windows casting colorful light into a vast dark hall.' },
-  { id: 'steampunk-workshop', label: 'Steampunk Workshop', icon: '⚙️', group: 'Historical & Fantasy', prompt: 'Steampunk workshop environment: copper pipes, gauge dials, steam and intricate 19th-century mechanical tools.' },
+  { id: 'medieval-castle', label: 'Medieval Castle / Citadel', labelFa: 'قلعه قرون‌وسطایی', icon: '🏰', group: 'Historical & Fantasy', groupFa: 'تاریخی و فانتزی', prompt: 'Medieval castle environment: large stone walls, lit torches on the walls and dark halls with long wooden tables.' },
+  { id: 'ancient-ruins', label: 'Ancient Ruins', labelFa: 'ویرانه‌های باستانی', icon: '🏛️', group: 'Historical & Fantasy', groupFa: 'تاریخی و فانتزی', prompt: 'Ancient ruins environment: cracked Greek or Egyptian stone columns covered in vines, set in a desert or forest.' },
+  { id: 'gothic-cathedral', label: 'Gothic Cathedral', labelFa: 'کلیسای گوتیک', icon: '⛪', group: 'Historical & Fantasy', groupFa: 'تاریخی و فانتزی', prompt: 'Gothic cathedral environment: pointed architecture and large stained-glass windows casting colorful light into a vast dark hall.' },
+  { id: 'steampunk-workshop', label: 'Steampunk Workshop', labelFa: 'کارگاه استیم‌پانک', icon: '⚙️', group: 'Historical & Fantasy', groupFa: 'تاریخی و فانتزی', prompt: 'Steampunk workshop environment: copper pipes, gauge dials, steam and intricate 19th-century mechanical tools.' },
   // Interior & Moody
-  { id: 'jazz-club', label: 'Dimly Lit Jazz Club', icon: '🎷', group: 'Interior & Moody', prompt: 'Dimly lit jazz club environment: a cozy space, cigarette smoke hanging in spot lighting, shiny brass instruments and dark leather furniture.' },
-  { id: 'dark-academia-library', label: 'Dark Academia Library', icon: '📚', group: 'Interior & Moody', prompt: 'Dark academia library environment: tall wooden shelves full of old leather books, study desks with green lamps and the scent of old paper.' },
-  { id: 'retro-diner', label: 'Retro Diner', icon: '🍔', group: 'Interior & Moody', prompt: 'Retro 80s diner environment: red leather booths, neon interior decor, a jukebox and rain-streaked windows at night.' },
+  { id: 'jazz-club', label: 'Dimly Lit Jazz Club', labelFa: 'کلوب جاز کم‌نور', icon: '🎷', group: 'Interior & Moody', groupFa: 'فضای داخلی و حسی', prompt: 'Dimly lit jazz club environment: a cozy space, cigarette smoke hanging in spot lighting, shiny brass instruments and dark leather furniture.' },
+  { id: 'dark-academia-library', label: 'Dark Academia Library', labelFa: 'کتابخانه کلاسیک', icon: '📚', group: 'Interior & Moody', groupFa: 'فضای داخلی و حسی', prompt: 'Dark academia library environment: tall wooden shelves full of old leather books, study desks with green lamps and the scent of old paper.' },
+  { id: 'retro-diner', label: 'Retro Diner', labelFa: 'رستوران رترو', icon: '🍔', group: 'Interior & Moody', groupFa: 'فضای داخلی و حسی', prompt: 'Retro 80s diner environment: red leather booths, neon interior decor, a jukebox and rain-streaked windows at night.' },
 ]
 
 const SCENE_GROUPS = Array.from(new Set(SCENE_TEMPLATES.map((s) => s.group)))
+const SCENE_GROUP_FA: Record<string, string> = Object.fromEntries(
+  SCENE_TEMPLATES.map((s) => [s.group, s.groupFa]),
+)
 
 type VideoTemplate = {
   id: string
@@ -629,7 +640,7 @@ export default function ProductAdDialog({
                     }`}
                   >
                     <span className="text-sm leading-none">{style.icon}</span>
-                    {style.label}
+                    {lang === 'fa' ? style.labelFa : style.label}
                   </button>
                 )
               })}
@@ -659,7 +670,7 @@ export default function ProductAdDialog({
                     }`}
                   >
                     <span className="text-sm leading-none">{g.icon}</span>
-                    {g.label}
+                    {lang === 'fa' ? g.labelFa : g.label}
                   </button>
                 )
               })}
@@ -675,7 +686,7 @@ export default function ProductAdDialog({
               {SCENE_GROUPS.map((group) => (
                 <div key={group}>
                   <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                    {group}
+                    {lang === 'fa' ? SCENE_GROUP_FA[group] : group}
                   </div>
                   <div role="radiogroup" aria-label={group} className="flex flex-wrap gap-2">
                     {SCENE_TEMPLATES.filter((s) => s.group === group).map((s) => {
@@ -695,7 +706,7 @@ export default function ProductAdDialog({
                           }`}
                         >
                           <span className="text-sm leading-none">{s.icon}</span>
-                          {s.label}
+                          {lang === 'fa' ? s.labelFa : s.label}
                         </button>
                       )
                     })}
