@@ -123,6 +123,9 @@ export function VoiceoverDialog({
     }
   }
 
+  async function handleGenerate() {
+
+
 
     const trimmed = text.trim()
     if (!trimmed) {
