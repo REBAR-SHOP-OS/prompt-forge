@@ -796,7 +796,7 @@ export default function ProductAdDialog({
           ) : scenes.length > 0 ? (
             <div className="rounded-md border border-white/10 bg-black/30 p-3">
               <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                Ad scenario ({duration}s)
+                {t.adScenario} ({duration}s)
               </div>
               <p dir="ltr" className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
                 {scenes[0]}
