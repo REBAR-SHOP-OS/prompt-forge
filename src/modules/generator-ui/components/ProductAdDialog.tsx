@@ -640,7 +640,7 @@ export default function ProductAdDialog({
                     }`}
                   >
                     <span className="text-sm leading-none">{style.icon}</span>
-                    {style.label}
+                    {lang === 'fa' ? style.labelFa : style.label}
                   </button>
                 )
               })}
