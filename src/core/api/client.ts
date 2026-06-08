@@ -79,7 +79,15 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
 
   if (!res.ok) {
     const code = body?.error?.code ?? `HTTP_${res.status}`;
-    const msg = body?.error?.message ?? res.statusText ?? "Request failed";
+    const details = body?.error?.details;
+    const detailText = details && typeof details === "object"
+      ? Object.entries(details as Record<string, unknown>)
+        .flatMap(([field, messages]) => Array.isArray(messages)
+          ? messages.map((message) => `${field}: ${String(message)}`)
+          : [`${field}: ${String(messages)}`])
+        .join("; ")
+      : null;
+    const msg = body?.error?.message ?? detailText ?? res.statusText ?? "Request failed";
     throw new ApiError(res.status, code, msg, body?.requestId);
   }
   return body as T;

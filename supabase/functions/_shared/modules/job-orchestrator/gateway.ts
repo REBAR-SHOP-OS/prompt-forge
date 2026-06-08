@@ -367,8 +367,9 @@ export const jobOrchestratorGateway = {
             hasLastFrame: Boolean(lastFrameUrl),
           });
 
-          // Convert USD cost to credits (1 credit = $0.01). Minimum 1 credit.
-          const costCredits = Math.max(1, Math.ceil(route.estimatedCost * 100));
+          // Convert USD cost to credits (1 credit = $0.01). Local models are
+          // allowed to cost 0 because they run on the RTX box, not a cloud API.
+          const costCredits = Math.max(0, Math.ceil(route.estimatedCost * 100));
 
           // Atomic: duplicate-guard + quota check + balance debit + create pending job.
           const chosenAspectRatio = parsed.data.aspectRatio ?? "16:9";
