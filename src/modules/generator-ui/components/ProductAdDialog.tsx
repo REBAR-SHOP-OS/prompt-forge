@@ -846,7 +846,7 @@ export default function ProductAdDialog({
               ) : (
                 <Button size="sm" onClick={handleUseAsPrompt} disabled={isWriting || isSending}>
                   <Wand2 className="h-4 w-4 mr-2" aria-hidden="true" />
-                  Use as prompt
+                  {t.useAsPrompt}
                 </Button>
               )}
             </>
