@@ -663,7 +663,88 @@ export default function DashboardPage() {
       setDownloadingId(null)
     }
   }
-  // Tracks card IDs currently re-submitting a Regenerate. Used to disable the
+  // Persist an audio item (uploaded music or generated voiceover) to the
+  // private user-audio bucket and track it in generator_user_audio so it shows
+  // up in Storage › Audio with download/delete support.
+  const persistUserAudio = async (
+    blob: Blob,
+    kind: 'music' | 'voiceover',
+    name: string,
+    durationSeconds?: number | null,
+  ) => {
+    if (!userId) return
+    try {
+      const type = (blob.type || '').toLowerCase()
+      const ext = type.includes('mpeg') || type.includes('mp3') ? 'mp3'
+        : type.includes('wav') ? 'wav'
+        : type.includes('ogg') ? 'ogg'
+        : type.includes('webm') ? 'webm'
+        : type.includes('aac') ? 'aac'
+        : type.includes('m4a') || type.includes('mp4') ? 'm4a'
+        : 'audio'
+      const path = `${userId}/${crypto.randomUUID()}.${ext}`
+      const { error: upErr } = await supabase.storage
+        .from(USER_AUDIO_BUCKET)
+        .upload(path, blob, { contentType: blob.type || 'audio/mpeg', upsert: false })
+      if (upErr) throw upErr
+      await supabase.from('generator_user_audio').insert({
+        user_id: userId,
+        storage_path: path,
+        kind,
+        name,
+        duration_seconds: durationSeconds && Number.isFinite(durationSeconds) ? durationSeconds : null,
+        size_bytes: blob.size,
+        mime_type: blob.type || null,
+      })
+    } catch (err) {
+      console.error('Failed to save audio to storage', err)
+    }
+  }
+  const downloadAudioFile = async (audioId: string, url: string | null | undefined, name: string | null) => {
+    if (downloadingId || !url) return
+    setDownloadingId(audioId)
+    try {
+      const response = await fetch(url)
+      if (!response.ok) throw new Error('Download failed')
+      const blob = await response.blob()
+      const t = (blob.type || '').toLowerCase()
+      const ext = t.includes('mpeg') || t.includes('mp3') ? 'mp3'
+        : t.includes('wav') ? 'wav'
+        : t.includes('ogg') ? 'ogg'
+        : t.includes('webm') ? 'webm'
+        : t.includes('aac') ? 'aac'
+        : t.includes('m4a') || t.includes('mp4') ? 'm4a'
+        : (url.toLowerCase().split('?')[0].split('.').pop() || 'mp3')
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const base = (name || `audio-${audioId.slice(0, 8)}`).replace(/\.[^.]+$/, '')
+      a.href = blobUrl
+      a.download = `${base}.${ext}`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(blobUrl)
+    } catch (err) {
+      console.error('Audio download failed', err)
+      window.open(url, '_blank')
+    } finally {
+      setDownloadingId(null)
+    }
+  }
+  const handleDeleteUserAudio = async (item: UserAudioItem) => {
+    if (!userId) return
+    setArchiveAudio((curr) => curr.filter((a) => a.id !== item.id))
+    try {
+      await supabase
+        .from('generator_user_audio')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', item.id)
+        .eq('user_id', userId)
+      await supabase.storage.from(USER_AUDIO_BUCKET).remove([item.storage_path])
+    } catch (err) {
+      console.error('Failed to delete audio', err)
+    }
+  }
   // per-card regenerate button while its new Job is being created so the user
   // can't queue duplicates with rapid clicks.
   const [regeneratingIds, setRegeneratingIds] = useState<Set<string>>(new Set())
