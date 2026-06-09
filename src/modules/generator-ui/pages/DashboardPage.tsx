@@ -5601,9 +5601,15 @@ export default function DashboardPage() {
                   {archiveAudio.map((a) => (
                     <article
                       key={a.id}
-                      className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-4"
+                      className={`flex flex-col gap-3 rounded-2xl border bg-white/[0.035] p-4 ${selectedArchiveIds.has(a.id) ? 'border-sky-400/60 ring-1 ring-sky-400/40' : 'border-white/10'}`}
                     >
                       <div className="flex items-start gap-3">
+                        <Checkbox
+                          checked={selectedArchiveIds.has(a.id)}
+                          onCheckedChange={() => toggleArchiveSelection(a.id)}
+                          aria-label="Select audio"
+                          className="mt-0.5 h-4 w-4 shrink-0"
+                        />
                         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/[0.04] text-emerald-200">
                           {a.kind === 'voiceover'
                             ? <Mic className="h-4 w-4" aria-hidden="true" />
