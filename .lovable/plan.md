@@ -1,41 +1,46 @@
-# Add Product Name to Product Photos
+# انتخاب محصول از انبار در Product Ad Scenario
 
-Let users type a product name next to the Upload button, save it with the photo, display it on each card, and rename existing photos inline.
+افزودن یک آیکون به دیالوگ «Product Ad Scenario» که عکس‌های محصول ذخیره‌شده را نمایش می‌دهد تا کاربر یکی را انتخاب کند. پیش از انتخاب، ابعاد تصویر از کاربر پرسیده می‌شود و عکس انتخابی با همان قابلیت Reframe موجود برای آن ابعاد آماده می‌شود.
 
-## Database
-
-Add a `title` text column to `public.generator_user_images` (nullable). Existing rows stay `NULL`. RLS/grants already exist — no change needed.
-
-## Upload flow (Product Photos tab)
-
-- Add a text input for the product name in the "Upload a product photo" panel, placed next to the existing **Upload product photo** button.
-- On upload, the typed name is trimmed and saved into the new `title` column alongside the image. The field is cleared after a successful upload.
-- Validation: optional name, max 100 characters, trimmed. No name is allowed (saved as `NULL`).
-
-## Card display & rename
-
-- Each product photo card shows its `title` under the thumbnail (above the date). Cards with no name show a subtle "Untitled" placeholder.
-- Add an inline rename control on each card (edit icon → small input / save) that updates `title` for that photo and refreshes it in the list.
-
-## Technical details
-
-Files: `src/modules/generator-ui/pages/DashboardPage.tsx` (+ one SQL migration; `src/integrations/supabase/types.ts` regenerated after migration).
-
-- Migration: `ALTER TABLE public.generator_user_images ADD COLUMN title text;`
-- Extend the `UserImageItem` type with `title?: string | null`.
-- Add `title` to the two `.select(...)` lists in `loadArchive` and `handleProductPhotoSelected`.
-- Add state: `productName` (input value) and per-card rename state.
-- `handleProductPhotoSelected`: include `title: productName.trim() || null` in the insert; clear `productName` on success.
-- Add a `renameProductPhoto(id, title)` helper that runs an `update` on `generator_user_images` (RLS scopes to owner) and updates `archiveProductImages` state.
-- Render the name + rename UI inside the existing product card markup (around lines 5684–5740).
+## جریان کاربری
 
 ```text
-┌─ Upload a product photo ───────────────────────────────┐
-│ JPG/PNG/WEBP up to 10 MB        [ Product name ] [Upload]│
-└────────────────────────────────────────────────────────┘
-┌────────────┐
-│  [image]   │
-│ Rebar Ring ✎│
-│ Jun 9 …  ⬇ 🗑│
-└────────────┘
+[آیکون انتخاب محصول]  ←  کنار دکمه آپلود عکس
+        │
+        ▼
+  ۱) انتخاب ابعاد:  9:16  |  1:1  |  16:9
+        │
+        ▼
+  ۲) گرید عکس‌های محصول (تصویر + نام)
+        │
+        ▼ (کلیک روی یک محصول)
+  Reframe با هوش مصنوعی برای ابعاد انتخابی
+        │
+        ▼
+  عکس آماده‌شده به‌عنوان عکس تبلیغ ثبت می‌شود
+  (و نام محصول از عنوان ذخیره‌شده پر می‌شود)
 ```
+
+## جزئیات پیاده‌سازی
+
+تمام تغییرات در `src/modules/generator-ui/components/ProductAdDialog.tsx`:
+
+1. **آیکون جدید**: کنار دکمه آپلود عکس فعلی، یک دکمه با آیکون `Boxes`/`Package` با عنوان «انتخاب از محصولات» اضافه می‌شود.
+
+2. **پنل انتخاب محصول** (یک overlay/بخش داخل همان دیالوگ یا یک `Dialog` تو در تو):
+   - **مرحله ابعاد**: سه دکمه `9:16`، `1:1`، `16:9` (همان الگوی موجود در `ImageReframeDialog`). تا وقتی ابعاد انتخاب نشده، امکان انتخاب محصول نیست.
+   - **مرحله انتخاب**: گرید عکس‌های محصول. داده‌ها با کوئری از `generator_user_images` خوانده می‌شوند:
+     `select id, storage_path, title` با شرط `user_id = userId`، `category = 'product'`، `deleted_at is null`، مرتب بر اساس جدیدترین. URL هر عکس با `supabase.storage.from('user-images').getPublicUrl(storage_path)` ساخته می‌شود (باکت عمومی است).
+   - هر کارت: تصویر + نام محصول (در نبود نام، «Untitled»).
+
+3. **آماده‌سازی برای ابعاد (Reframe)**: با کلیک روی یک محصول، همان قابلیت Reframe برنامه فراخوانی می‌شود — `POST` به edge function `image-reframe` با `{ imageUrl: <publicUrl محصول>, aspectRatio: <ابعاد انتخابی> }` (دقیقاً مثل `ImageReframeDialog`). در حین پردازش، اسپینر نمایش داده می‌شود.
+
+4. **ثبت نتیجه**: `publicUrl` بازگشتی در `imagePreviewUrl` و `uploadedImageUrl` قرار می‌گیرد (همان state‌های موجود برای عکس تبلیغ). اگر فیلد نام محصول خالی باشد، با `title` محصول پر می‌شود. سپس پنل بسته می‌شود.
+
+5. **حالت‌ها و خطاها**: state‌های جدید برای باز/بسته بودن پنل، لیست محصولات، وضعیت بارگذاری لیست، ابعاد انتخابی، و وضعیت در حال Reframe. پیام خطا از طریق همان `setError` فعلی نمایش داده می‌شود. ترجمه برچسب‌ها برای زبان‌های موجود دیالوگ (en/fa/ar/tr/es/fr) اضافه می‌شود.
+
+## نکات فنی
+
+- نیازی به مهاجرت دیتابیس یا تغییر بک‌اند نیست؛ ستون `title` و edge function `image-reframe` و باکت عمومی `user-images` همگی موجودند.
+- `userId` از قبل به‌عنوان prop به دیالوگ داده شده و برای کوئری و احراز هویت فراخوانی Reframe استفاده می‌شود.
+- token احراز هویت برای فراخوانی `image-reframe` از `supabase.auth.getSession()` گرفته می‌شود (مطابق الگوی `ImageReframeDialog`).
