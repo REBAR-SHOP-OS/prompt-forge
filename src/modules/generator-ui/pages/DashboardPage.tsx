@@ -5906,6 +5906,18 @@ export default function DashboardPage() {
                               <Clapperboard className="h-6 w-6" aria-hidden="true" />
                             </div>
                           )}
+                          <span
+                            role="presentation"
+                            onClick={(e) => { e.stopPropagation(); toggleArchiveSelection(job.id) }}
+                            onKeyDown={(e) => e.stopPropagation()}
+                            className="absolute left-2 top-2 grid place-items-center rounded-md bg-black/50 p-1 backdrop-blur-sm"
+                          >
+                            <Checkbox
+                              checked={selectedArchiveIds.has(job.id)}
+                              aria-label="Select film"
+                              className="pointer-events-none h-4 w-4"
+                            />
+                          </span>
                         </div>
                         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                           <div className="flex items-start justify-between gap-2">
