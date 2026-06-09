@@ -6123,33 +6123,16 @@ export default function DashboardPage() {
           </span>
         </button>
       ) : (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-amber-300/30 hover:bg-amber-300/[0.06] hover:text-amber-100"
-              aria-label="Add soundtrack"
-              title="Add a music file as soundtrack for the Final Film"
-            >
-              <Music className="h-[14px] w-[14px]" aria-hidden="true" />
-              <span>Music</span>
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="center" className="w-56">
-            <DropdownMenuItem onSelect={() => musicFileInputRef.current?.click()}>
-              <Music2 className="mr-2 h-4 w-4" aria-hidden="true" />
-              <span>Upload music from computer</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() =>
-                window.open('https://pixabay.com/', '_blank', 'noopener,noreferrer')
-              }
-            >
-              <Music className="mr-2 h-4 w-4" aria-hidden="true" />
-              <span>Search music</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <button
+          type="button"
+          onClick={() => musicFileInputRef.current?.click()}
+          className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-amber-300/30 hover:bg-amber-300/[0.06] hover:text-amber-100"
+          aria-label="Add soundtrack"
+          title="Upload a music file as soundtrack for the Final Film"
+        >
+          <Music className="h-[14px] w-[14px]" aria-hidden="true" />
+          <span>Music</span>
+        </button>
       )}
 
       <button
