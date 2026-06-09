@@ -193,6 +193,7 @@ const VG_SOCIAL: Loc = { en: 'Social Media', fa: 'شبکه‌های اجتماع
 const VG_CORPORATE: Loc = { en: 'Corporate & Business', fa: 'شرکتی و کسب‌وکار', ar: 'شركات وأعمال', tr: 'Kurumsal ve İş', es: 'Corporativo y Negocios', fr: 'Entreprise et Business' }
 const VG_CINEMATIC: Loc = { en: 'Cinematic & Creative', fa: 'سینمایی و خلاقانه', ar: 'سينمائي وإبداعي', tr: 'Sinematik ve Yaratıcı', es: 'Cinematográfico y Creativo', fr: 'Cinématique et Créatif' }
 const VG_EVENTS: Loc = { en: 'Events & Occasions', fa: 'رویدادها و مناسبت‌ها', ar: 'فعاليات ومناسبات', tr: 'Etkinlikler ve Özel Günler', es: 'Eventos y Ocasiones', fr: 'Événements et Occasions' }
+const VG_EXPLAINER: Loc = { en: 'Explainer & Educational', fa: 'توضیح‌دهنده و آموزشی', ar: 'توضيحي وتعليمي', tr: 'Açıklayıcı ve Eğitici', es: 'Explicativo y Educativo', fr: 'Explicatif et Éducatif' }
 
 const VIDEO_TEMPLATES: VideoTemplate[] = [
   // 1. Sports & Action
