@@ -785,48 +785,66 @@ export default function DashboardPage() {
   const loadArchive = async () => {
     setArchiveLoading(true)
     try {
-      const [jobs, videos, imagesRes, audioRes] = await Promise.all([
-        jobOrchestratorGateway.listMyJobs(200).catch(() => [] as JobSummary[]),
-        videoLibraryGateway.listMyVideos(200).catch(() => [] as VideoSummary[]),
-        userId
-          ? supabase
-              .from('generator_user_images')
-              .select('id, storage_path, created_at, still_duration_seconds, width, height')
-              .eq('user_id', userId)
-              .is('deleted_at', null)
-              .order('created_at', { ascending: false })
-          : Promise.resolve({ data: [] as UserImageItem[] }),
-        userId
-          ? supabase
-              .from('generator_user_audio')
-              .select('id, storage_path, kind, name, duration_seconds, created_at')
-              .eq('user_id', userId)
-              .is('deleted_at', null)
-              .order('created_at', { ascending: false })
-          : Promise.resolve({ data: [] as UserAudioItem[] }),
-      ])
-      setArchiveJobs(jobs)
-      setArchiveVideos(videos)
-      setArchiveImages(((imagesRes as { data?: UserImageItem[] }).data ?? []) as UserImageItem[])
-      const audioRows = ((audioRes as { data?: UserAudioItem[] }).data ?? []) as UserAudioItem[]
-      // Generate short-lived signed URLs for private-bucket playback.
-      const withUrls = await Promise.all(
-        audioRows.map(async (a) => {
-          try {
-            const { data } = await supabase.storage
-              .from(USER_AUDIO_BUCKET)
-              .createSignedUrl(a.storage_path, 60 * 60)
-            return { ...a, url: data?.signedUrl ?? null }
-          } catch {
-            return { ...a, url: null }
-          }
-        }),
-      )
-      setArchiveAudio(withUrls)
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      if (!token) {
+        setArchiveJobs([]); setArchiveVideos([]); setArchiveImages([]); setArchiveAudio([])
+        return
+      }
+      const res = await fetch(`${FUNCTIONS_BASE}/nas-storage?action=list`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`NAS list failed: ${res.status}`)
+      const body = (await res.json()) as {
+        files: Array<{ path: string; name: string; size: number; mtime: number; ext: string; kind: 'film' | 'image' | 'audio' }>
+      }
+      const files = body.files ?? []
+      const streamUrl = (path: string) =>
+        `${FUNCTIONS_BASE}/nas-storage?action=stream&path=${encodeURIComponent(path)}&token=${encodeURIComponent(token)}`
+
+      const films = files.filter((f) => f.kind === 'film')
+      const images = files.filter((f) => f.kind === 'image')
+      const audio = files.filter((f) => f.kind === 'audio')
+
+      setArchiveJobs(films.map((f) => ({
+        id: f.path,
+        status: 'completed',
+        input_prompt: f.name,
+        provider_key: null,
+        model_key: null,
+        created_at: new Date(f.mtime).toISOString(),
+      })) as unknown as JobSummary[])
+      setArchiveVideos(films.map((f) => ({
+        id: f.path,
+        job_id: f.path,
+        storage_path: streamUrl(f.path),
+        thumbnail_url: null,
+        aspect_ratio: null,
+        duration: null,
+        created_at: new Date(f.mtime).toISOString(),
+      })) as unknown as VideoSummary[])
+      setArchiveImages(images.map((f) => ({
+        id: f.path,
+        storage_path: streamUrl(f.path),
+        created_at: new Date(f.mtime).toISOString(),
+        still_duration_seconds: 0,
+      })) as UserImageItem[])
+      setArchiveAudio(audio.map((f) => ({
+        id: f.path,
+        storage_path: f.path,
+        kind: 'music',
+        name: f.name,
+        duration_seconds: null,
+        created_at: new Date(f.mtime).toISOString(),
+        url: streamUrl(f.path),
+      })) as UserAudioItem[])
+    } catch {
+      setArchiveJobs([]); setArchiveVideos([]); setArchiveImages([]); setArchiveAudio([])
     } finally {
       setArchiveLoading(false)
     }
   }
+
   const [deletingArchiveId, setDeletingArchiveId] = useState<string | null>(null)
   const [playerFilm, setPlayerFilm] = useState<{ jobId: string; storagePath: string; poster: string | null; title: string } | null>(null)
   const handleDeleteArchiveJob = async (jobId: string) => {
