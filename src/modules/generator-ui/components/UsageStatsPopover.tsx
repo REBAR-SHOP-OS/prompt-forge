@@ -144,6 +144,33 @@ export default function UsageStatsPopover({ triggerClassName }: { triggerClassNa
     if (open) { void loadStats(); void loadCalendar(viewMonth) }
   }, [open, loadStats, loadCalendar, viewMonth])
 
+  // Live updates: refresh stats + calendar whenever the user's credits, quota,
+  // transactions or generation jobs change. Debounced to avoid bursts.
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!user) return
+    const scheduleRefresh = () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current)
+      refreshTimer.current = setTimeout(() => {
+        void loadStats()
+        void loadCalendar(viewMonth)
+      }, 300)
+    }
+
+    const channel = supabase
+      .channel(`usage-stats-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'core_user_profiles', filter: `id=eq.${user.id}` }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'billing_user_quotas', filter: `user_id=eq.${user.id}` }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'billing_credit_transactions', filter: `user_id=eq.${user.id}` }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'generator_generation_jobs', filter: `user_id=eq.${user.id}` }, scheduleRefresh)
+      .subscribe()
+
+    return () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current)
+      void supabase.removeChannel(channel)
+    }
+  }, [user, loadStats, loadCalendar, viewMonth])
+
   const dailyLeft = stats ? Math.max(0, stats.dailyLimit - stats.usedToday) : 0
   const dailyPct = stats && stats.dailyLimit > 0 ? Math.min(100, (stats.usedToday / stats.dailyLimit) * 100) : 0
   const monthPct = stats && stats.monthlyLimit > 0 ? Math.min(100, (stats.usedMonth / stats.monthlyLimit) * 100) : 0
