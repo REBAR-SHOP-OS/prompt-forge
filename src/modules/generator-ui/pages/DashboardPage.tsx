@@ -220,38 +220,6 @@ const MODEL_CHOICES: ModelChoice[] = [
     model: 'wan2.7-t2v-2026-04-25',
     supports: ['t2v'],
   },
-  {
-    id: 'local-wan21-i2v',
-    label: 'Local Wan 2.1 — Image to Video',
-    description: 'RTX 4090 local generation through your video router. $0 cloud spend.',
-    providerKey: 'local',
-    model: 'local/wan-2.1-i2v',
-    supports: ['i2v'],
-  },
-  {
-    id: 'local-wan21-t2v',
-    label: 'Local Wan 2.1 — Text to Video',
-    description: 'RTX 4090 local text-to-video. $0 cloud spend.',
-    providerKey: 'local',
-    model: 'local/wan-2.1-t2v',
-    supports: ['t2v'],
-  },
-  {
-    id: 'local-ltx-i2v',
-    label: 'Local LTX Video — Image to Video',
-    description: 'Fast local fallback for animating a Start or End frame.',
-    providerKey: 'local',
-    model: 'local/ltx-video-i2v',
-    supports: ['i2v'],
-  },
-  {
-    id: 'local-ltx-t2v',
-    label: 'Local LTX Video — Text to Video',
-    description: 'Fast local text-to-video fallback on the RTX 4090.',
-    providerKey: 'local',
-    model: 'local/ltx-video-t2v',
-    supports: ['t2v'],
-  },
 ]
 
 
