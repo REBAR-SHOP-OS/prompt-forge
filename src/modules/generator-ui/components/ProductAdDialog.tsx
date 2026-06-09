@@ -479,6 +479,7 @@ const T: Record<Lang, Record<string, string>> = {
     generate: 'Generar guion del anuncio',
     language: 'Idioma',
     chooseFromProducts: 'Elegir de productos',
+    generateWithAi: 'Generar con IA',
     pickAspect: 'Elige las dimensiones de la imagen',
     pickProduct: 'Elige un producto',
     aspectHint: 'Elige primero las dimensiones y luego el producto.',
