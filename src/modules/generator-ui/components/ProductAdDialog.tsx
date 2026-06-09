@@ -1044,22 +1044,28 @@ export default function ProductAdDialog({
                     {SCENE_TEMPLATES.filter((s) => s.group.en === group).map((s) => {
                       const active = scene === s.id
                       return (
-                        <button
+                        <StylePreviewCard
                           key={s.id}
-                          type="button"
-                          role="radio"
-                          aria-checked={active}
-                          title={s.prompt}
-                          onClick={() => setScene((cur) => (cur === s.id ? '' : s.id))}
-                          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                            active
-                              ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
-                              : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
-                          }`}
+                          title={tr(s.label, lang)}
+                          description={s.prompt}
+                          preview={s.preview}
+                          rtl={RTL_LANGS.includes(lang)}
                         >
-                          <span className="text-sm leading-none">{s.icon}</span>
-                          {tr(s.label, lang)}
-                        </button>
+                          <button
+                            type="button"
+                            role="radio"
+                            aria-checked={active}
+                            onClick={() => setScene((cur) => (cur === s.id ? '' : s.id))}
+                            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                              active
+                                ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
+                                : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
+                            }`}
+                          >
+                            <span className="text-sm leading-none">{s.icon}</span>
+                            {tr(s.label, lang)}
+                          </button>
+                        </StylePreviewCard>
                       )
                     })}
                   </div>
