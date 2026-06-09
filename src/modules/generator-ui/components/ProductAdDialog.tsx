@@ -800,7 +800,9 @@ export default function ProductAdDialog({
               className="hidden"
               onChange={(e) => handlePickImage(e.target.files?.[0])}
             />
-            <div className="relative shrink-0">
+            <div className="flex shrink-0 flex-col items-center gap-1.5">
+            <div className="relative">
+              {/* spacer wrapper */}
               {imagePreviewUrl ? (
                 <div className="relative">
                   <img
