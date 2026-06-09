@@ -5491,7 +5491,9 @@ export default function DashboardPage() {
                     ? archiveJobs.length
                     : archiveTab === 'images'
                       ? archiveImages.length
-                      : archiveAudio.length}
+                      : archiveTab === 'products'
+                        ? archiveProductImages.length
+                        : archiveAudio.length}
                 </span>
               </div>
             </div>
@@ -5501,7 +5503,9 @@ export default function DashboardPage() {
                 ? "All films — everything you've created"
                 : archiveTab === 'images'
                   ? "All images — everything you've created"
-                  : "All audio — uploaded music and generated voiceovers"}
+                  : archiveTab === 'products'
+                    ? "Product photos — upload and store your product images"
+                    : "All audio — uploaded music and generated voiceovers"}
             </DialogDescription>
 
             <div className="mt-3 inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-1">
