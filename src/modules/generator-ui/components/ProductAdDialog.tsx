@@ -307,6 +307,7 @@ const T: Record<Lang, Record<string, string>> = {
     generate: 'Generate ad scenario',
     language: 'Language',
     chooseFromProducts: 'Choose from products',
+    generateWithAi: 'Generate with AI',
     pickAspect: 'Choose image dimensions',
     pickProduct: 'Choose a product',
     aspectHint: 'Pick the dimensions first, then choose a product.',
