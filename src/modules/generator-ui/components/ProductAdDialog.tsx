@@ -770,14 +770,14 @@ export default function ProductAdDialog({
             </div>
             <div role="radiogroup" aria-label="Camera style" className="flex flex-wrap gap-2">
               {CAMERA_STYLES.map((style) => {
-                const active = cameraStyle === style.label
+                const active = cameraStyle === style.label.en
                 return (
                   <button
-                    key={style.label}
+                    key={style.label.en}
                     type="button"
                     role="radio"
                     aria-checked={active}
-                    onClick={() => setCameraStyle(style.label)}
+                    onClick={() => setCameraStyle(style.label.en)}
                     className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                       active
                         ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
@@ -785,7 +785,7 @@ export default function ProductAdDialog({
                     }`}
                   >
                     <span className="text-sm leading-none">{style.icon}</span>
-                    {lang === 'fa' ? style.labelFa : style.label}
+                    {tr(style.label, lang)}
                   </button>
                 )
               })}
