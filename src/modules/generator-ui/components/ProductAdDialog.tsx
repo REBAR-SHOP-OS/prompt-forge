@@ -536,7 +536,10 @@ export default function ProductAdDialog({
       const photos: ProductPhoto[] = rows.map((r) => ({
         id: r.id,
         title: r.title ?? null,
-        url: supabase.storage.from(PRODUCTS_BUCKET).getPublicUrl(r.storage_path).data.publicUrl,
+        // storage_path already holds the full public URL when the product was uploaded.
+        url: /^https?:\/\//i.test(r.storage_path)
+          ? r.storage_path
+          : supabase.storage.from(PRODUCTS_BUCKET).getPublicUrl(r.storage_path).data.publicUrl,
       }))
       setProductPhotos(photos)
     } catch (e) {
