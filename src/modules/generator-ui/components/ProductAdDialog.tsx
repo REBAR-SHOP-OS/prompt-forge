@@ -64,7 +64,7 @@ const LANG_OPTIONS: { value: Lang; native: string }[] = [
   { value: 'fr', native: 'Français' },
 ]
 
-const CAMERA_STYLES: { label: Loc; icon: string }[] = [
+const CAMERA_STYLES: { label: Loc; icon: string; desc?: Loc; preview?: string }[] = [
   { label: { en: 'Whip Pan', fa: 'پن سریع', ar: 'بان سريع', tr: 'Hızlı Kaydırma', es: 'Barrido Rápido', fr: 'Filé Rapide' }, icon: '💫' },
   { label: { en: 'Orbit Shot', fa: 'نمای مداری', ar: 'لقطة مدارية', tr: 'Yörünge Çekimi', es: 'Toma Orbital', fr: 'Plan Orbital' }, icon: '🛰️' },
   { label: { en: 'FPV Drone', fa: 'پهپاد FPV', ar: 'درون FPV', tr: 'FPV Drone', es: 'Dron FPV', fr: 'Drone FPV' }, icon: '🚁' },
