@@ -815,11 +815,19 @@ export default function ProductAdDialog({
               {/* spacer wrapper */}
               {imagePreviewUrl ? (
                 <div className="relative">
-                  <img
-                    src={imagePreviewUrl}
-                    alt="Product"
-                    className="h-20 w-20 rounded-md border border-white/10 object-cover"
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setPreviewLightboxOpen(true)}
+                    title={t.viewImage}
+                    aria-label={t.viewImage}
+                    className="block cursor-zoom-in rounded-md"
+                  >
+                    <img
+                      src={imagePreviewUrl}
+                      alt="Product"
+                      className="h-20 w-20 rounded-md border border-white/10 object-cover transition hover:border-white/30"
+                    />
+                  </button>
                   <button
                     type="button"
                     onClick={clearImage}
