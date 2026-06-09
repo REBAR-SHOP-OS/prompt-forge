@@ -32,6 +32,18 @@ type Props = {
 
 const DURATIONS: ProductAdDuration[] = [5, 10, 15, 30, 45, 135]
 const FRAMES_BUCKET = 'wan-frames'
+const PRODUCTS_BUCKET = 'user-images'
+const PROJECT_ID = 'sacxoanuyetjfrfllkzx'
+const FUNCTIONS_BASE = `https://${PROJECT_ID}.supabase.co/functions/v1`
+
+type ProductAspect = '9:16' | '1:1' | '16:9'
+const PRODUCT_ASPECTS: { value: ProductAspect; cls: string }[] = [
+  { value: '9:16', cls: 'aspect-[9/16]' },
+  { value: '1:1', cls: 'aspect-square' },
+  { value: '16:9', cls: 'aspect-video' },
+]
+
+type ProductPhoto = { id: string; title: string | null; url: string }
 
 const SPLIT_DURATIONS = [30, 45, 135]
 const sceneRange = (i: number) => `${i * 15}–${(i + 1) * 15}s`
