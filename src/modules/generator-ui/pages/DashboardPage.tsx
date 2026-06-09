@@ -930,7 +930,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const today = new Date()
     const dayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-    const cacheKey = `occasion-today:${dayKey}`
+    const cacheKey = `occasion-today-v2:${dayKey}`
     try {
       const cached = window.localStorage.getItem(cacheKey)
       if (cached === '1' || cached === '0') {
