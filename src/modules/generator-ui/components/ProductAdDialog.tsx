@@ -837,6 +837,16 @@ export default function ProductAdDialog({
                 </button>
               )}
             </div>
+              <button
+                type="button"
+                onClick={openProductPicker}
+                title={t.chooseFromProducts}
+                className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-white/10 bg-black/30 px-1 py-1 text-[10px] text-zinc-300 transition hover:border-amber-300/40 hover:text-amber-100"
+              >
+                <Boxes className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="truncate">{t.chooseFromProducts}</span>
+              </button>
+            </div>
             <div className="flex-1 space-y-2">
               <div>
                 <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
