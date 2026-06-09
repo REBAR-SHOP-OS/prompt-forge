@@ -5709,7 +5709,7 @@ export default function DashboardPage() {
                               <AlertDialogFooter>
                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                                 <AlertDialogAction
-                                  onClick={() => { void handleDeleteUserAudio(a) }}
+                                  onClick={() => { void handleDeleteArchiveFile(a.id) }}
                                   className="bg-rose-600 text-white hover:bg-rose-700"
                                 >
                                   Delete
@@ -5814,7 +5814,7 @@ export default function DashboardPage() {
                               <AlertDialogFooter>
                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                                 <AlertDialogAction
-                                  onClick={() => { void handleDeleteUserImage(img.id) }}
+                                  onClick={() => { void handleDeleteArchiveFile(img.id) }}
                                   className="bg-rose-600 text-white hover:bg-rose-700"
                                 >
                                   Delete
