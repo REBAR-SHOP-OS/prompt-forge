@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/select'
 import { supabase } from '@/integrations/supabase/client'
 import { StylePreviewCard } from './StylePreviewCard'
+import AiImageDialog, { type AiImageSavedRow } from './AiImageDialog'
 import camWhipPan from '@/assets/style-previews/cam-whip-pan.mp4.asset.json'
 import camOrbit from '@/assets/style-previews/cam-orbit.mp4.asset.json'
 import camFpvDrone from '@/assets/style-previews/cam-fpv-drone.mp4.asset.json'
