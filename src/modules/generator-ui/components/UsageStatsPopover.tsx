@@ -3,7 +3,7 @@
 // per model, and a per-day spend calendar for the selected month.
 //
 // Read-only. All queries are RLS-scoped to auth.uid().
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BarChart3, RefreshCw, Loader2, Film, Coins, CalendarClock, Gauge,
   ChevronLeft, ChevronRight,
