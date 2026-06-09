@@ -508,6 +508,73 @@ export default function ProductAdDialog({
   const [isUploadingImage, setIsUploadingImage] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
+  // Product picker (choose a saved product photo + reframe to chosen dimensions)
+  const [productPickerOpen, setProductPickerOpen] = useState(false)
+  const [pickedAspect, setPickedAspect] = useState<ProductAspect | null>(null)
+  const [productPhotos, setProductPhotos] = useState<ProductPhoto[]>([])
+  const [loadingProducts, setLoadingProducts] = useState(false)
+  const [preparingId, setPreparingId] = useState<string | null>(null)
+
+  async function openProductPicker() {
+    if (!userId) {
+      setError('Please sign in to choose a product.')
+      return
+    }
+    setError(null)
+    setPickedAspect(null)
+    setProductPickerOpen(true)
+    setLoadingProducts(true)
+    try {
+      const { data, error: qErr } = await supabase
+        .from('generator_user_images')
+        .select('id, storage_path, title, category')
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+      if (qErr) throw new Error(qErr.message)
+      const rows = (data ?? []).filter((r) => (r.category ?? 'general') === 'product')
+      const photos: ProductPhoto[] = rows.map((r) => ({
+        id: r.id,
+        title: r.title ?? null,
+        url: supabase.storage.from(PRODUCTS_BUCKET).getPublicUrl(r.storage_path).data.publicUrl,
+      }))
+      setProductPhotos(photos)
+    } catch (e) {
+      setError((e as Error).message ?? 'Failed to load products')
+    } finally {
+      setLoadingProducts(false)
+    }
+  }
+
+  async function pickProduct(photo: ProductPhoto) {
+    if (!pickedAspect || preparingId) return
+    setError(null)
+    setPreparingId(photo.id)
+    try {
+      const { data: sess } = await supabase.auth.getSession()
+      const token = sess.session?.access_token
+      if (!token) throw new Error('You are signed out. Please sign in again.')
+      const resp = await fetch(`${FUNCTIONS_BASE}/image-reframe`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: photo.url, aspectRatio: pickedAspect }),
+      })
+      const json = await resp.json().catch(() => ({}))
+      if (!resp.ok) throw new Error(json?.error || `Request failed (${resp.status})`)
+      const reframedUrl = json.publicUrl as string
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
+      setImagePreviewUrl(reframedUrl)
+      setUploadedImageUrl(reframedUrl)
+      if (!productName.trim() && photo.title) setProductName(photo.title)
+      setProductPickerOpen(false)
+    } catch (e) {
+      setError((e as Error).message ?? 'Failed to prepare image')
+    } finally {
+      setPreparingId(null)
+    }
+  }
+
+
   useEffect(() => {
     if (open) {
       setDuration(defaultDuration)
