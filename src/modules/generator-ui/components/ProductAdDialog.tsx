@@ -1002,22 +1002,28 @@ export default function ProductAdDialog({
               {GENRE_TEMPLATES.map((g) => {
                 const active = genre === g.id
                 return (
-                  <button
+                  <StylePreviewCard
                     key={g.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    title={g.prompt}
-                    onClick={() => setGenre((cur) => (cur === g.id ? '' : g.id))}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                      active
-                        ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
-                        : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
-                    }`}
+                    title={tr(g.label, lang)}
+                    description={g.prompt}
+                    preview={g.preview}
+                    rtl={RTL_LANGS.includes(lang)}
                   >
-                    <span className="text-sm leading-none">{g.icon}</span>
-                    {tr(g.label, lang)}
-                  </button>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setGenre((cur) => (cur === g.id ? '' : g.id))}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                        active
+                          ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
+                          : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
+                      }`}
+                    >
+                      <span className="text-sm leading-none">{g.icon}</span>
+                      {tr(g.label, lang)}
+                    </button>
+                  </StylePreviewCard>
                 )
               })}
             </div>
