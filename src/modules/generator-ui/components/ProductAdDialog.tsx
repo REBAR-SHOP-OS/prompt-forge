@@ -611,7 +611,7 @@ export default function ProductAdDialog({
   const concatenated = scenes.join('\n\n')
   const canGenerate = (userPrompt.trim().length > 0 || productName.trim().length > 0 || Boolean(uploadedImageUrl)) && !isUploadingImage
   const t = T[lang]
-  const dir = lang === 'fa' ? 'rtl' : 'ltr'
+  const dir = RTL_LANGS.includes(lang) ? 'rtl' : 'ltr'
 
   return (
     <Dialog
@@ -626,16 +626,24 @@ export default function ProductAdDialog({
           <DialogTitle className="flex items-center gap-2">
             <Package className="h-5 w-5 text-amber-300" aria-hidden="true" />
             {t.title}
-            <button
-              type="button"
-              onClick={() => setLang((l) => (l === 'en' ? 'fa' : 'en'))}
-              title={t.translate}
-              aria-label={t.translate}
-              className="ms-auto inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[11px] font-semibold text-zinc-300 transition hover:border-amber-300/40 hover:text-amber-100"
-            >
-              <Languages className="h-3.5 w-3.5 text-sky-300" aria-hidden="true" />
-              {lang === 'en' ? 'فارسی' : 'EN'}
-            </button>
+            <div className="ms-auto">
+              <Select value={lang} onValueChange={(v) => setLang(v as Lang)}>
+                <SelectTrigger
+                  className="h-7 w-auto gap-1.5 rounded-full border-white/10 bg-black/20 px-2.5 text-[11px] font-semibold text-zinc-300"
+                  aria-label="Language"
+                >
+                  <Languages className="h-3.5 w-3.5 text-sky-300" aria-hidden="true" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LANG_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.native}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </DialogTitle>
           <DialogDescription className="text-zinc-400">
             {t.description}
