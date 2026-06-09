@@ -922,6 +922,15 @@ export default function ProductAdDialog({
                 <Boxes className="h-3.5 w-3.5" aria-hidden="true" />
                 <span className="truncate">{t.chooseFromProducts}</span>
               </button>
+              <button
+                type="button"
+                onClick={() => setAiImageOpen(true)}
+                title={t.generateWithAi}
+                className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-amber-300/30 bg-amber-300/10 px-1 py-1 text-[10px] text-amber-100 transition hover:border-amber-300/60 hover:bg-amber-300/20"
+              >
+                <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="truncate">{t.generateWithAi}</span>
+              </button>
             </div>
             <div className="flex-1 space-y-2">
               <div>
