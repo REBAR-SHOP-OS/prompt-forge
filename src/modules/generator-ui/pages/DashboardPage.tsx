@@ -5630,7 +5630,140 @@ export default function DashboardPage() {
                 </div>
               )
             })()}
-            {archiveTab === 'audio' ? (() => {
+            {archiveTab === 'products' ? (() => {
+              return (
+                <div className="space-y-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-zinc-200">Upload a product photo</p>
+                      <p className="mt-0.5 text-xs text-zinc-500">JPG, PNG or WEBP — up to 10 MB. Saved here for reuse.</p>
+                      {productUploadError ? (
+                        <p className="mt-1 text-xs text-rose-300">{productUploadError}</p>
+                      ) : null}
+                    </div>
+                    <input
+                      ref={productPhotoInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => { void handleProductPhotoSelected(e) }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handlePickProductPhoto}
+                      disabled={isUploadingProductPhoto || !userId}
+                      className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-sky-300/30 bg-sky-500/10 px-3 py-2 text-xs font-semibold text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isUploadingProductPhoto ? (
+                        <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Package className="h-4 w-4" aria-hidden="true" />
+                      )}
+                      {isUploadingProductPhoto ? 'Uploading…' : 'Upload product photo'}
+                    </button>
+                  </div>
+
+                  {archiveLoading && archiveProductImages.length === 0 ? (
+                    <div className="grid min-h-[10rem] place-items-center text-zinc-500">
+                      <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
+                    </div>
+                  ) : archiveProductImages.length === 0 ? (
+                    <div className="grid min-h-[10rem] place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
+                      <div>
+                        <Package className="mx-auto h-8 w-8 text-zinc-600" aria-hidden="true" />
+                        <p className="mt-3 text-sm font-medium text-zinc-300">No product photos yet</p>
+                        <p className="mt-2 text-xs leading-5 text-zinc-600">
+                          Upload a product image to store it here.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                      {archiveProductImages.map((img) => (
+                        <article
+                          key={img.id}
+                          className={`flex flex-col gap-3 rounded-2xl border bg-white/[0.035] p-3 ${selectedArchiveIds.has(img.id) ? 'border-sky-400/60 ring-1 ring-sky-400/40' : 'border-white/10'}`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setPreviewImageUrl(img.storage_path)}
+                            aria-label="View image"
+                            title="Click to view"
+                            className="group relative aspect-square w-full shrink-0 cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-[#15171a] transition hover:border-white/30"
+                          >
+                            <img
+                              src={img.storage_path}
+                              alt="Product"
+                              loading="lazy"
+                              className="h-full w-full object-cover transition group-hover:scale-[1.03]"
+                            />
+                            <span
+                              role="presentation"
+                              onClick={(e) => { e.stopPropagation(); toggleArchiveSelection(img.id) }}
+                              className="absolute left-2 top-2 grid place-items-center rounded-md bg-black/50 p-1 backdrop-blur-sm"
+                            >
+                              <Checkbox
+                                checked={selectedArchiveIds.has(img.id)}
+                                aria-label="Select image"
+                                className="pointer-events-none h-4 w-4"
+                              />
+                            </span>
+                          </button>
+                          <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
+                            <span className="tabular-nums">{formatCreatedAt(img.created_at)}</span>
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              <button
+                                type="button"
+                                disabled={downloadingId === img.id}
+                                onClick={() => { void downloadImageFile(img.id, img.storage_path) }}
+                                aria-label="Download image"
+                                title="Download image"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                              >
+                                {downloadingId === img.id ? (
+                                  <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                ) : (
+                                  <Download className="h-3 w-3" aria-hidden="true" />
+                                )}
+                              </button>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <button
+                                    type="button"
+                                    aria-label="Delete image permanently"
+                                    title="Delete permanently"
+                                    className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                                  >
+                                    <Trash2 className="h-3 w-3" aria-hidden="true" />
+                                  </button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete this image permanently?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      This will permanently remove the image. This action cannot be undone.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => { void handleDeleteUserImage(img.id) }}
+                                      className="bg-rose-600 text-white hover:bg-rose-700"
+                                    >
+                                      Delete
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </div>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })() : archiveTab === 'audio' ? (() => {
               if (archiveLoading && archiveAudio.length === 0) {
                 return (
                   <div className="grid min-h-[10rem] place-items-center text-zinc-500">
