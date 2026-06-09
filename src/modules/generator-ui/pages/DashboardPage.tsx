@@ -152,6 +152,7 @@ type UserImageItem = {
   width?: number | null
   height?: number | null
   category?: string | null
+  title?: string | null
 }
 
 type UnifiedClip =
