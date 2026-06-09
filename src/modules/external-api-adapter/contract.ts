@@ -11,5 +11,7 @@ export interface RoutePreviewResult {
   providerKey: string;
   resolvedModel: string;
   estimatedCost: number;
+  /** Whether the local RTX video router is configured server-side. */
+  localConfigured?: boolean;
   requestId: string;
 }
