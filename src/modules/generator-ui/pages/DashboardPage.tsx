@@ -220,6 +220,38 @@ const MODEL_CHOICES: ModelChoice[] = [
     model: 'wan2.7-t2v-2026-04-25',
     supports: ['t2v'],
   },
+  {
+    id: 'local-wan21-i2v',
+    label: 'Local Wan 2.1 — Image to Video',
+    description: 'Runs on your local RTX router. Free (no cloud cost). Requires the local video router to be configured.',
+    providerKey: 'local',
+    model: 'local/wan-2.1-i2v',
+    supports: ['i2v'],
+  },
+  {
+    id: 'local-wan21-t2v',
+    label: 'Local Wan 2.1 — Text to Video',
+    description: 'Runs on your local RTX router. Free (no cloud cost). Requires the local video router to be configured.',
+    providerKey: 'local',
+    model: 'local/wan-2.1-t2v',
+    supports: ['t2v'],
+  },
+  {
+    id: 'local-ltx-i2v',
+    label: 'Local LTX Video — Image to Video',
+    description: 'Runs on your local RTX router. Free (no cloud cost). Requires the local video router to be configured.',
+    providerKey: 'local',
+    model: 'local/ltx-video-i2v',
+    supports: ['i2v'],
+  },
+  {
+    id: 'local-ltx-t2v',
+    label: 'Local LTX Video — Text to Video',
+    description: 'Runs on your local RTX router. Free (no cloud cost). Requires the local video router to be configured.',
+    providerKey: 'local',
+    model: 'local/ltx-video-t2v',
+    supports: ['t2v'],
+  },
 ]
 
 
