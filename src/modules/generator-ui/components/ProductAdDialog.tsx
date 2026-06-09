@@ -1089,21 +1089,27 @@ export default function ProductAdDialog({
                     {VIDEO_TEMPLATES.filter((v) => v.group.en === group).map((v) => {
                       const active = templateIds.has(v.id)
                       return (
-                        <button
+                        <StylePreviewCard
                           key={v.id}
-                          type="button"
-                          aria-pressed={active}
-                          title={v.prompt}
-                          onClick={() => toggleTemplate(v.id)}
-                          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                            active
-                              ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
-                              : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
-                          }`}
+                          title={tr(v.label, lang)}
+                          description={v.prompt}
+                          preview={v.preview}
+                          rtl={RTL_LANGS.includes(lang)}
                         >
-                          <span className="text-sm leading-none">{v.icon}</span>
-                          {tr(v.label, lang)}
-                        </button>
+                          <button
+                            type="button"
+                            aria-pressed={active}
+                            onClick={() => toggleTemplate(v.id)}
+                            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                              active
+                                ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
+                                : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
+                            }`}
+                          >
+                            <span className="text-sm leading-none">{v.icon}</span>
+                            {tr(v.label, lang)}
+                          </button>
+                        </StylePreviewCard>
                       )
                     })}
                   </div>
