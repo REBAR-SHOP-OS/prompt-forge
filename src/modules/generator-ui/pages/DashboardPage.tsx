@@ -842,6 +842,45 @@ export default function DashboardPage() {
       setDeletingArchiveId(null)
     }
   }
+  // ----- Storage bulk selection (Select All + delete selected) -----
+  const [selectedArchiveIds, setSelectedArchiveIds] = useState<Set<string>>(new Set())
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false)
+  // Clear selection whenever the tab changes or the dialog opens/closes.
+  useEffect(() => {
+    setSelectedArchiveIds(new Set())
+  }, [archiveTab, isArchiveOpen])
+  const toggleArchiveSelection = (id: string) => {
+    setSelectedArchiveIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const handleBulkDeleteArchive = async () => {
+    const ids = Array.from(selectedArchiveIds)
+    if (ids.length === 0) return
+    setIsBulkDeleting(true)
+    try {
+      for (const id of ids) {
+        try {
+          if (archiveTab === 'films') {
+            await handleDeleteArchiveJob(id)
+          } else if (archiveTab === 'images') {
+            await handleDeleteUserImage(id)
+          } else {
+            const item = archiveAudio.find((a) => a.id === id)
+            if (item) await handleDeleteUserAudio(item)
+          }
+        } catch {
+          /* keep going with the rest */
+        }
+      }
+      setSelectedArchiveIds(new Set())
+    } finally {
+      setIsBulkDeleting(false)
+    }
+  }
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [hasOccasionToday, setHasOccasionToday] = useState(false)
 
