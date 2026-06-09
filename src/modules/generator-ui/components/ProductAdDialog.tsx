@@ -522,6 +522,7 @@ const T: Record<Lang, Record<string, string>> = {
     generate: 'Générer le scénario publicitaire',
     language: 'Langue',
     chooseFromProducts: 'Choisir parmi les produits',
+    generateWithAi: 'Générer avec l\'IA',
     pickAspect: 'Choisissez les dimensions de l’image',
     pickProduct: 'Choisissez un produit',
     aspectHint: 'Choisissez d’abord les dimensions, puis le produit.',
