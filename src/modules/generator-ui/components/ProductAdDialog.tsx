@@ -76,16 +76,16 @@ const LANG_OPTIONS: { value: Lang; native: string }[] = [
 ]
 
 const CAMERA_STYLES: { label: Loc; icon: string; desc?: Loc; preview?: string }[] = [
-  { label: { en: 'Whip Pan', fa: 'پن سریع', ar: 'بان سريع', tr: 'Hızlı Kaydırma', es: 'Barrido Rápido', fr: 'Filé Rapide' }, icon: '💫' },
-  { label: { en: 'Orbit Shot', fa: 'نمای مداری', ar: 'لقطة مدارية', tr: 'Yörünge Çekimi', es: 'Toma Orbital', fr: 'Plan Orbital' }, icon: '🛰️' },
-  { label: { en: 'FPV Drone', fa: 'پهپاد FPV', ar: 'درون FPV', tr: 'FPV Drone', es: 'Dron FPV', fr: 'Drone FPV' }, icon: '🚁' },
-  { label: { en: 'Tracking Shot', fa: 'نمای تعقیبی', ar: 'لقطة تتبع', tr: 'Takip Çekimi', es: 'Toma de Seguimiento', fr: 'Plan de Suivi' }, icon: '🎯' },
-  { label: { en: 'Push In Cinematic', fa: 'پوش‌این سینمایی', ar: 'دفع سينمائي', tr: 'Sinematik Yaklaşma', es: 'Acercamiento Cinematográfico', fr: 'Travelling Avant Cinématique' }, icon: '🎬' },
-  { label: { en: 'Fly Through', fa: 'عبور پروازی', ar: 'تحليق عبر', tr: 'İçinden Uçuş', es: 'Vuelo a Través', fr: 'Survol Traversant' }, icon: '🕊️' },
-  { label: { en: 'Crash Zoom', fa: 'زوم ضربه‌ای', ar: 'تكبير مفاجئ', tr: 'Ani Zoom', es: 'Zoom Brusco', fr: 'Zoom Brutal' }, icon: '💥' },
-  { label: { en: 'Handheld Dynamic', fa: 'دوربین‌روی‌دست پویا', ar: 'كاميرا محمولة ديناميكية', tr: 'Dinamik Elde Çekim', es: 'Cámara en Mano Dinámica', fr: "Caméra à l'Épaule Dynamique" }, icon: '🤳' },
-  { label: { en: 'Dolly Zoom', fa: 'دالی زوم', ar: 'دوللي زوم', tr: 'Dolly Zoom', es: 'Dolly Zoom', fr: 'Travelling Compensé' }, icon: '🌀' },
-  { label: { en: 'Parallax Motion', fa: 'حرکت پارالاکس', ar: 'حركة بارالاكس', tr: 'Paralaks Hareketi', es: 'Movimiento Parallax', fr: 'Mouvement Parallaxe' }, icon: '🧊' },
+  { label: { en: 'Whip Pan', fa: 'پن سریع', ar: 'بان سريع', tr: 'Hızlı Kaydırma', es: 'Barrido Rápido', fr: 'Filé Rapide' }, icon: '💫', preview: camWhipPan.url },
+  { label: { en: 'Orbit Shot', fa: 'نمای مداری', ar: 'لقطة مدارية', tr: 'Yörünge Çekimi', es: 'Toma Orbital', fr: 'Plan Orbital' }, icon: '🛰️', preview: camOrbit.url },
+  { label: { en: 'FPV Drone', fa: 'پهپاد FPV', ar: 'درون FPV', tr: 'FPV Drone', es: 'Dron FPV', fr: 'Drone FPV' }, icon: '🚁', preview: camFpvDrone.url },
+  { label: { en: 'Tracking Shot', fa: 'نمای تعقیبی', ar: 'لقطة تتبع', tr: 'Takip Çekimi', es: 'Toma de Seguimiento', fr: 'Plan de Suivi' }, icon: '🎯', preview: camTracking.url },
+  { label: { en: 'Push In Cinematic', fa: 'پوش‌این سینمایی', ar: 'دفع سينمائي', tr: 'Sinematik Yaklaşma', es: 'Acercamiento Cinematográfico', fr: 'Travelling Avant Cinématique' }, icon: '🎬', preview: camPushIn.url },
+  { label: { en: 'Fly Through', fa: 'عبور پروازی', ar: 'تحليق عبر', tr: 'İçinden Uçuş', es: 'Vuelo a Través', fr: 'Survol Traversant' }, icon: '🕊️', preview: camFlyThrough.url },
+  { label: { en: 'Crash Zoom', fa: 'زوم ضربه‌ای', ar: 'تكبير مفاجئ', tr: 'Ani Zoom', es: 'Zoom Brusco', fr: 'Zoom Brutal' }, icon: '💥', preview: camCrashZoom.url },
+  { label: { en: 'Handheld Dynamic', fa: 'دوربین‌روی‌دست پویا', ar: 'كاميرا محمولة ديناميكية', tr: 'Dinamik Elde Çekim', es: 'Cámara en Mano Dinámica', fr: "Caméra à l'Épaule Dynamique" }, icon: '🤳', preview: camHandheld.url },
+  { label: { en: 'Dolly Zoom', fa: 'دالی زوم', ar: 'دوللي زوم', tr: 'Dolly Zoom', es: 'Dolly Zoom', fr: 'Travelling Compensé' }, icon: '🌀', preview: camDollyZoom.url },
+  { label: { en: 'Parallax Motion', fa: 'حرکت پارالاکس', ar: 'حركة بارالاكس', tr: 'Paralaks Hareketi', es: 'Movimiento Parallax', fr: 'Mouvement Parallaxe' }, icon: '🧊', preview: camParallax.url },
 ]
 
 type GenreTemplate = { id: string; label: Loc; icon: string; prompt: string; preview?: string }
