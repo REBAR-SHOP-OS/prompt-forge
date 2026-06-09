@@ -562,6 +562,7 @@ export default function ProductAdDialog({
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null)
   const [previewLightboxOpen, setPreviewLightboxOpen] = useState(false)
   const [isUploadingImage, setIsUploadingImage] = useState(false)
+  const [aiImageOpen, setAiImageOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   // Product picker (choose a saved product photo + reframe to chosen dimensions)
