@@ -433,6 +433,7 @@ export type Database = {
           size_bytes: number | null
           still_duration_seconds: number
           storage_path: string
+          title: string | null
           updated_at: string
           user_id: string
           width: number | null
@@ -447,6 +448,7 @@ export type Database = {
           size_bytes?: number | null
           still_duration_seconds?: number
           storage_path: string
+          title?: string | null
           updated_at?: string
           user_id: string
           width?: number | null
@@ -461,6 +463,7 @@ export type Database = {
           size_bytes?: number | null
           still_duration_seconds?: number
           storage_path?: string
+          title?: string | null
           updated_at?: string
           user_id?: string
           width?: number | null

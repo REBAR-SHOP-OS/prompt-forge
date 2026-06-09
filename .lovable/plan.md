@@ -1,37 +1,41 @@
-## Goal
-Add a new "Product Photos" (عکس محصولات) tab/icon inside the Storage panel where the user can upload product images, which are then saved and listed in that section — separate from the auto-generated Images.
+# Add Product Name to Product Photos
 
-## Approach
-Product photos are stored in the same image table and bucket as existing images, but tagged with a `category` so they show only in the new tab.
+Let users type a product name next to the Upload button, save it with the photo, display it on each card, and rename existing photos inline.
 
-### 1. Database (migration)
-- Add column to `public.generator_user_images`:
-  - `category text not null default 'general'`
-- Existing rows stay `'general'`; uploaded product photos will be `'product'`.
-- (RLS/grants already exist on this table — no changes needed.)
+## Database
 
-### 2. Storage modal — new tab (`DashboardPage.tsx`)
-- Extend `archiveTab` union: `'films' | 'images' | 'audio' | 'products'`.
-- Add a fourth tab button next to "Audio" (the circled empty spot) labeled **Product Photos**, using a `Package`/`ShoppingBag` lucide icon, with a live count badge.
-- Update the header count + description switch statements to handle `'products'`.
+Add a `title` text column to `public.generator_user_images` (nullable). Existing rows stay `NULL`. RLS/grants already exist — no change needed.
 
-### 3. Data loading
-- In `loadArchive`, select `category` from `generator_user_images`.
-- Split results into:
-  - `archiveImages` → rows where category = `'general'`
-  - `archiveProductImages` → rows where category = `'product'`
-- Add `archiveProductImages` state.
+## Upload flow (Product Photos tab)
 
-### 4. Upload in the Product Photos tab
-- Add an "Upload product photo" button (with hidden file input) shown at the top of the products tab.
-- Reuse the existing upload flow (`USER_IMAGES_BUCKET` upload → `getPublicUrl` → insert row), but insert with `category: 'product'`, then prepend to `archiveProductImages`.
-- Same validation as current image upload (image type, max 10 MB).
+- Add a text input for the product name in the "Upload a product photo" panel, placed next to the existing **Upload product photo** button.
+- On upload, the typed name is trimmed and saved into the new `title` column alongside the image. The field is cleared after a successful upload.
+- Validation: optional name, max 100 characters, trimmed. No name is allowed (saved as `NULL`).
 
-### 5. Rendering, download, delete
-- Render the products grid by reusing the existing Images-tab card markup (thumbnail, date, download, delete), driven by `archiveProductImages`.
-- Wire select-all / bulk-delete and single delete to include product image ids (delete uses existing `handleDeleteUserImage`, which works by id regardless of category).
-- Empty state: icon + "No product photos yet — upload a product image to store it here."
+## Card display & rename
 
-## Technical notes
-- Files touched: `src/modules/generator-ui/pages/DashboardPage.tsx` + one SQL migration.
-- No backend/edge-function changes; uses existing client-side Supabase upload + insert pattern already used for images.
+- Each product photo card shows its `title` under the thumbnail (above the date). Cards with no name show a subtle "Untitled" placeholder.
+- Add an inline rename control on each card (edit icon → small input / save) that updates `title` for that photo and refreshes it in the list.
+
+## Technical details
+
+Files: `src/modules/generator-ui/pages/DashboardPage.tsx` (+ one SQL migration; `src/integrations/supabase/types.ts` regenerated after migration).
+
+- Migration: `ALTER TABLE public.generator_user_images ADD COLUMN title text;`
+- Extend the `UserImageItem` type with `title?: string | null`.
+- Add `title` to the two `.select(...)` lists in `loadArchive` and `handleProductPhotoSelected`.
+- Add state: `productName` (input value) and per-card rename state.
+- `handleProductPhotoSelected`: include `title: productName.trim() || null` in the insert; clear `productName` on success.
+- Add a `renameProductPhoto(id, title)` helper that runs an `update` on `generator_user_images` (RLS scopes to owner) and updates `archiveProductImages` state.
+- Render the name + rename UI inside the existing product card markup (around lines 5684–5740).
+
+```text
+┌─ Upload a product photo ───────────────────────────────┐
+│ JPG/PNG/WEBP up to 10 MB        [ Product name ] [Upload]│
+└────────────────────────────────────────────────────────┘
+┌────────────┐
+│  [image]   │
+│ Rebar Ring ✎│
+│ Jun 9 …  ⬇ 🗑│
+└────────────┘
+```
