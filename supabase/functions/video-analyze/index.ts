@@ -125,7 +125,7 @@ Deno.serve(async (req) => {
     });
   } catch (e) {
     console.error("video-analyze unhandled", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Internal error" }), {
+    return new Response(JSON.stringify({ error: "Internal error" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
