@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Package, LoaderCircle, RefreshCw, Copy, Check, Wand2, Send, ImagePlus, X, Languages, Boxes, ArrowLeft } from 'lucide-react'
+import { Package, LoaderCircle, RefreshCw, Copy, Check, Wand2, Send, ImagePlus, X, Languages, Boxes, ArrowLeft, Sparkles } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/select'
 import { supabase } from '@/integrations/supabase/client'
 import { StylePreviewCard } from './StylePreviewCard'
+import AiImageDialog, { type AiImageSavedRow } from './AiImageDialog'
 import camWhipPan from '@/assets/style-previews/cam-whip-pan.mp4.asset.json'
 import camOrbit from '@/assets/style-previews/cam-orbit.mp4.asset.json'
 import camFpvDrone from '@/assets/style-previews/cam-fpv-drone.mp4.asset.json'
@@ -306,6 +307,7 @@ const T: Record<Lang, Record<string, string>> = {
     generate: 'Generate ad scenario',
     language: 'Language',
     chooseFromProducts: 'Choose from products',
+    generateWithAi: 'Generate with AI',
     pickAspect: 'Choose image dimensions',
     pickProduct: 'Choose a product',
     aspectHint: 'Pick the dimensions first, then choose a product.',
@@ -348,6 +350,7 @@ const T: Record<Lang, Record<string, string>> = {
     generate: 'تولید سناریوی تبلیغ',
     language: 'زبان',
     chooseFromProducts: 'انتخاب از محصولات',
+    generateWithAi: 'ساخت با هوش مصنوعی',
     pickAspect: 'انتخاب ابعاد تصویر',
     pickProduct: 'یک محصول را انتخاب کنید',
     aspectHint: 'ابتدا ابعاد را انتخاب کنید، سپس محصول را برگزینید.',
@@ -390,6 +393,7 @@ const T: Record<Lang, Record<string, string>> = {
     generate: 'توليد سيناريو الإعلان',
     language: 'اللغة',
     chooseFromProducts: 'اختر من المنتجات',
+    generateWithAi: 'إنشاء بالذكاء الاصطناعي',
     pickAspect: 'اختر أبعاد الصورة',
     pickProduct: 'اختر منتجًا',
     aspectHint: 'اختر الأبعاد أولاً ثم اختر المنتج.',
@@ -432,6 +436,7 @@ const T: Record<Lang, Record<string, string>> = {
     generate: 'Reklam senaryosu oluştur',
     language: 'Dil',
     chooseFromProducts: 'Ürünlerden seç',
+    generateWithAi: 'Yapay zeka ile oluştur',
     pickAspect: 'Görüntü boyutlarını seç',
     pickProduct: 'Bir ürün seç',
     aspectHint: 'Önce boyutları, sonra ürünü seçin.',
@@ -474,6 +479,7 @@ const T: Record<Lang, Record<string, string>> = {
     generate: 'Generar guion del anuncio',
     language: 'Idioma',
     chooseFromProducts: 'Elegir de productos',
+    generateWithAi: 'Generar con IA',
     pickAspect: 'Elige las dimensiones de la imagen',
     pickProduct: 'Elige un producto',
     aspectHint: 'Elige primero las dimensiones y luego el producto.',
@@ -516,6 +522,7 @@ const T: Record<Lang, Record<string, string>> = {
     generate: 'Générer le scénario publicitaire',
     language: 'Langue',
     chooseFromProducts: 'Choisir parmi les produits',
+    generateWithAi: 'Générer avec l\'IA',
     pickAspect: 'Choisissez les dimensions de l’image',
     pickProduct: 'Choisissez un produit',
     aspectHint: 'Choisissez d’abord les dimensions, puis le produit.',
@@ -555,6 +562,7 @@ export default function ProductAdDialog({
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null)
   const [previewLightboxOpen, setPreviewLightboxOpen] = useState(false)
   const [isUploadingImage, setIsUploadingImage] = useState(false)
+  const [aiImageOpen, setAiImageOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   // Product picker (choose a saved product photo + reframe to chosen dimensions)
@@ -682,6 +690,14 @@ export default function ProductAdDialog({
     if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
     setImagePreviewUrl(null)
     setUploadedImageUrl(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  function handleAiImageSaved(row: AiImageSavedRow) {
+    if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
+    setError(null)
+    setImagePreviewUrl(row.storage_path)
+    setUploadedImageUrl(row.storage_path)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -905,6 +921,15 @@ export default function ProductAdDialog({
               >
                 <Boxes className="h-3.5 w-3.5" aria-hidden="true" />
                 <span className="truncate">{t.chooseFromProducts}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAiImageOpen(true)}
+                title={t.generateWithAi}
+                className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-amber-300/30 bg-amber-300/10 px-1 py-1 text-[10px] text-amber-100 transition hover:border-amber-300/60 hover:bg-amber-300/20"
+              >
+                <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="truncate">{t.generateWithAi}</span>
               </button>
             </div>
             <div className="flex-1 space-y-2">
@@ -1354,6 +1379,14 @@ export default function ProductAdDialog({
             ) : null}
           </DialogContent>
         </Dialog>
+
+        <AiImageDialog
+          open={aiImageOpen}
+          onOpenChange={setAiImageOpen}
+          userId={userId}
+          defaultAspect="1:1"
+          onSaved={handleAiImageSaved}
+        />
       </DialogContent>
     </Dialog>
   )
