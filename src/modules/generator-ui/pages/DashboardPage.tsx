@@ -6224,14 +6224,6 @@ export default function DashboardPage() {
               <Music2 className="mr-2 h-4 w-4" aria-hidden="true" />
               <span>Upload music from computer</span>
             </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() =>
-                window.open('https://pixabay.com/', '_blank', 'noopener,noreferrer')
-              }
-            >
-              <Music className="mr-2 h-4 w-4" aria-hidden="true" />
-              <span>Search music</span>
-            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       )}
