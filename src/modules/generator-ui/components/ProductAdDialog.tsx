@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { supabase } from '@/integrations/supabase/client'
+import { StylePreviewCard } from './StylePreviewCard'
 
 export type ProductAdDuration = 5 | 10 | 15 | 30 | 45 | 135
 
