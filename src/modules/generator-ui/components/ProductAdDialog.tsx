@@ -966,21 +966,28 @@ export default function ProductAdDialog({
               {CAMERA_STYLES.map((style) => {
                 const active = cameraStyle === style.label.en
                 return (
-                  <button
+                  <StylePreviewCard
                     key={style.label.en}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    onClick={() => setCameraStyle(style.label.en)}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                      active
-                        ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
-                        : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
-                    }`}
+                    title={tr(style.label, lang)}
+                    description={style.desc ? tr(style.desc, lang) : undefined}
+                    preview={style.preview}
+                    rtl={RTL_LANGS.includes(lang)}
                   >
-                    <span className="text-sm leading-none">{style.icon}</span>
-                    {tr(style.label, lang)}
-                  </button>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setCameraStyle(style.label.en)}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                        active
+                          ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
+                          : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
+                      }`}
+                    >
+                      <span className="text-sm leading-none">{style.icon}</span>
+                      {tr(style.label, lang)}
+                    </button>
+                  </StylePreviewCard>
                 )
               })}
             </div>
