@@ -1177,6 +1177,81 @@ export default function ProductAdDialog({
             </Button>
           )}
         </div>
+
+        <Dialog open={productPickerOpen} onOpenChange={(o) => { if (!preparingId) setProductPickerOpen(o) }}>
+          <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Boxes className="h-4 w-4" aria-hidden="true" /> {t.chooseFromProducts}
+              </DialogTitle>
+              <DialogDescription className="text-zinc-400">{t.aspectHint}</DialogDescription>
+            </DialogHeader>
+
+            {/* Step 1: aspect ratio */}
+            <div>
+              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.pickAspect}</div>
+              <div role="radiogroup" className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
+                {PRODUCT_ASPECTS.map((opt) => {
+                  const active = pickedAspect === opt.value
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setPickedAspect(opt.value)}
+                      className={`rounded-full px-3 py-1.5 transition ${active ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+                    >
+                      {opt.value}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Step 2: product grid */}
+            <div className="mt-3">
+              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.pickProduct}</div>
+              {loadingProducts ? (
+                <div className="flex items-center justify-center py-10 text-sm text-zinc-400">
+                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> {t.loadingProducts}
+                </div>
+              ) : productPhotos.length === 0 ? (
+                <div className="py-10 text-center text-sm text-zinc-500">{t.noProducts}</div>
+              ) : (
+                <div className="grid max-h-[50vh] grid-cols-3 gap-3 overflow-y-auto pr-1 sm:grid-cols-4">
+                  {productPhotos.map((photo) => {
+                    const busy = preparingId === photo.id
+                    return (
+                      <button
+                        key={photo.id}
+                        type="button"
+                        disabled={!pickedAspect || Boolean(preparingId)}
+                        onClick={() => pickProduct(photo)}
+                        className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-amber-300/40 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <img src={photo.url} alt={photo.title ?? 'Product'} className="aspect-square w-full object-cover" />
+                        <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || t.untitled}</div>
+                        {busy ? (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/60 text-xs text-zinc-100">
+                            <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+                            {t.preparing}
+                          </div>
+                        ) : null}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end pt-2">
+              <Button variant="ghost" size="sm" onClick={() => { if (!preparingId) setProductPickerOpen(false) }} disabled={Boolean(preparingId)}>
+                <ArrowLeft className="mr-1.5 h-4 w-4" aria-hidden="true" /> {t.back}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   )
