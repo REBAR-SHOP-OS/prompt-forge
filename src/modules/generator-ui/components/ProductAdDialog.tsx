@@ -29,6 +29,14 @@ import camCrashZoom from '@/assets/style-previews/cam-crash-zoom.mp4.asset.json'
 import camHandheld from '@/assets/style-previews/cam-handheld.mp4.asset.json'
 import camDollyZoom from '@/assets/style-previews/cam-dolly-zoom.mp4.asset.json'
 import camParallax from '@/assets/style-previews/cam-parallax.mp4.asset.json'
+import genreEpicFantasy from '@/assets/style-previews/genre-epic-fantasy.mp4.asset.json'
+import genreScifiMinimal from '@/assets/style-previews/genre-scifi-minimal.mp4.asset.json'
+import genrePostApocalyptic from '@/assets/style-previews/genre-post-apocalyptic.mp4.asset.json'
+import genreHorror from '@/assets/style-previews/genre-horror.mp4.asset.json'
+import genreAction from '@/assets/style-previews/genre-action.mp4.asset.json'
+import genreRomantic from '@/assets/style-previews/genre-romantic.mp4.asset.json'
+import genreDocumentary from '@/assets/style-previews/genre-documentary.mp4.asset.json'
+import genreAnime from '@/assets/style-previews/genre-anime.mp4.asset.json'
 
 export type ProductAdDuration = 5 | 10 | 15 | 30 | 45 | 135
 
