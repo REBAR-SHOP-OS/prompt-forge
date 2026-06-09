@@ -350,6 +350,7 @@ const T: Record<Lang, Record<string, string>> = {
     generate: 'تولید سناریوی تبلیغ',
     language: 'زبان',
     chooseFromProducts: 'انتخاب از محصولات',
+    generateWithAi: 'ساخت با هوش مصنوعی',
     pickAspect: 'انتخاب ابعاد تصویر',
     pickProduct: 'یک محصول را انتخاب کنید',
     aspectHint: 'ابتدا ابعاد را انتخاب کنید، سپس محصول را برگزینید.',
