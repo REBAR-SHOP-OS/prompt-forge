@@ -272,6 +272,7 @@ const T: Record<Lang, Record<string, string>> = {
     preparing: 'Preparing image…',
     loadingProducts: 'Loading products…',
     back: 'Back',
+    viewImage: 'View image',
   },
   fa: {
     title: 'سناریوی تبلیغ محصول',
@@ -313,6 +314,7 @@ const T: Record<Lang, Record<string, string>> = {
     preparing: 'در حال آماده‌سازی تصویر…',
     loadingProducts: 'در حال بارگذاری محصولات…',
     back: 'بازگشت',
+    viewImage: 'نمایش تصویر',
   },
   ar: {
     title: 'سيناريو إعلان المنتج',
@@ -354,6 +356,7 @@ const T: Record<Lang, Record<string, string>> = {
     preparing: 'جارٍ تحضير الصورة…',
     loadingProducts: 'جارٍ تحميل المنتجات…',
     back: 'رجوع',
+    viewImage: 'عرض الصورة',
   },
   tr: {
     title: 'Ürün Reklam Senaryosu',
@@ -395,6 +398,7 @@ const T: Record<Lang, Record<string, string>> = {
     preparing: 'Görüntü hazırlanıyor…',
     loadingProducts: 'Ürünler yükleniyor…',
     back: 'Geri',
+    viewImage: 'Görseli görüntüle',
   },
   es: {
     title: 'Guion de Anuncio de Producto',
@@ -436,6 +440,7 @@ const T: Record<Lang, Record<string, string>> = {
     preparing: 'Preparando imagen…',
     loadingProducts: 'Cargando productos…',
     back: 'Atrás',
+    viewImage: 'Ver imagen',
   },
   fr: {
     title: 'Scénario de Publicité Produit',
@@ -477,6 +482,7 @@ const T: Record<Lang, Record<string, string>> = {
     preparing: 'Préparation de l’image…',
     loadingProducts: 'Chargement des produits…',
     back: 'Retour',
+    viewImage: "Voir l'image",
   },
 }
 
