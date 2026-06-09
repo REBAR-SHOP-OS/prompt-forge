@@ -77,7 +77,7 @@ const CAMERA_STYLES: { label: Loc; icon: string; desc?: Loc; preview?: string }[
   { label: { en: 'Parallax Motion', fa: 'حرکت پارالاکس', ar: 'حركة بارالاكس', tr: 'Paralaks Hareketi', es: 'Movimiento Parallax', fr: 'Mouvement Parallaxe' }, icon: '🧊' },
 ]
 
-type GenreTemplate = { id: string; label: Loc; icon: string; prompt: string }
+type GenreTemplate = { id: string; label: Loc; icon: string; prompt: string; preview?: string }
 
 const GENRE_TEMPLATES: GenreTemplate[] = [
   {
