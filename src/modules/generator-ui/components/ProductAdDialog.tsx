@@ -105,6 +105,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
     icon: '🐉',
     prompt:
       'Epic fantasy directing: sweeping wide vistas of dreamlike landscapes, castles and mythical creatures, magical glowing lighting and an awe-inspiring heroic mood.',
+    preview: genreEpicFantasy.url,
   },
   {
     id: 'sci-fi-minimalist',
@@ -112,6 +113,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
     icon: '🛸',
     prompt:
       'Minimalist sci-fi directing: clean white spaces, straight lines, hidden seamless technology and a calm, sleek futuristic atmosphere.',
+    preview: genreScifiMinimal.url,
   },
   {
     id: 'post-apocalyptic',
@@ -119,6 +121,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
     icon: '☢️',
     prompt:
       'Post-apocalyptic directing: ruined cities, nature overgrowing buildings, ash, dust and a desolate abandoned atmosphere with muted desaturated tones.',
+    preview: genrePostApocalyptic.url,
   },
   {
     id: 'horror-jump-scare',
@@ -126,6 +129,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
     icon: '👻',
     prompt:
       'Sudden-horror directing: deep darkness, harsh localized light (like a flashlight), tense silence and abrupt movement changes that create dread and fear.',
+    preview: genreHorror.url,
   },
   {
     id: 'high-octane-action',
@@ -133,6 +137,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
     icon: '🔥',
     prompt:
       'High-octane action directing: rapid cuts, camera shake, explosions, high speed and motion blur for an intense adrenaline-fueled feel.',
+    preview: genreAction.url,
   },
   {
     id: 'romantic-dreamscape',
@@ -140,6 +145,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
     icon: '💗',
     prompt:
       'Romantic dreamscape directing: soft golden-hour sunlight, gentle soft focus on the subjects and warm dreamy colors for an intimate emotional mood.',
+    preview: genreRomantic.url,
   },
   {
     id: 'documentary-realism',
@@ -147,6 +153,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
     icon: '🎥',
     prompt:
       'Documentary realism directing: natural light, no stylized grading, true-to-life colors and simple unobtrusive camera movements for an authentic real feel.',
+    preview: genreDocumentary.url,
   },
   {
     id: 'anime-manga',
@@ -154,6 +161,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
     icon: '🌸',
     prompt:
       'Anime/manga style directing: bold outline lines, saturated flat 2D colors and exaggerated dynamic motion effects with expressive energetic action.',
+    preview: genreAnime.url,
   },
 ]
 
