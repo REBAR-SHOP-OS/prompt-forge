@@ -3221,6 +3221,37 @@ export default function DashboardPage() {
     }
   }
 
+  const startRenameProduct = (img: UserImageItem) => {
+    setRenamingProductId(img.id)
+    setRenameProductValue(img.title ?? '')
+  }
+
+  const cancelRenameProduct = () => {
+    setRenamingProductId(null)
+    setRenameProductValue('')
+  }
+
+  const renameProductPhoto = async (imageId: string) => {
+    if (!userId) return
+    const nextTitle = renameProductValue.trim().slice(0, 100) || null
+    try {
+      const { error } = await supabase
+        .from('generator_user_images')
+        .update({ title: nextTitle })
+        .eq('id', imageId)
+        .eq('user_id', userId)
+      if (error) throw error
+      setArchiveProductImages((prev) =>
+        prev.map((i) => (i.id === imageId ? { ...i, title: nextTitle } : i)),
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Could not rename.'
+      setProductUploadError(`Rename failed: ${msg}`)
+    } finally {
+      cancelRenameProduct()
+    }
+  }
+
   const handleDeleteUserImage = async (imageId: string) => {
     unmarkActiveImages([imageId])
     if (!userId) return
