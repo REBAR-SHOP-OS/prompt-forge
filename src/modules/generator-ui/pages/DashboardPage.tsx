@@ -5760,6 +5760,53 @@ export default function DashboardPage() {
                               />
                             </span>
                           </button>
+                          {renamingProductId === img.id ? (
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                value={renameProductValue}
+                                onChange={(e) => setRenameProductValue(e.target.value)}
+                                maxLength={100}
+                                autoFocus
+                                placeholder="Product name"
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') { void renameProductPhoto(img.id) }
+                                  if (e.key === 'Escape') cancelRenameProduct()
+                                }}
+                                className="min-w-0 flex-1 rounded-md border border-white/10 bg-white/[0.05] px-2 py-1 text-xs text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-sky-300/40"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => { void renameProductPhoto(img.id) }}
+                                aria-label="Save name"
+                                title="Save"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                              >
+                                <Check className="h-3 w-3" aria-hidden="true" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelRenameProduct}
+                                aria-label="Cancel"
+                                title="Cancel"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                              >
+                                <X className="h-3 w-3" aria-hidden="true" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => startRenameProduct(img)}
+                              title="Rename product"
+                              className="group flex items-center gap-1.5 text-left"
+                            >
+                              <span className={`truncate text-xs font-medium ${img.title ? 'text-zinc-200' : 'italic text-zinc-500'}`}>
+                                {img.title || 'Untitled'}
+                              </span>
+                              <Pencil className="h-3 w-3 shrink-0 text-zinc-500 opacity-0 transition group-hover:opacity-100" aria-hidden="true" />
+                            </button>
+                          )}
                           <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
                             <span className="tabular-nums">{formatCreatedAt(img.created_at)}</span>
                             <div className="flex shrink-0 items-center gap-1.5">
