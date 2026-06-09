@@ -195,7 +195,7 @@ Be exhaustive but strict — include every qualifying observance in the month, b
     })
   } catch (e) {
     console.error('day-info error:', e)
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Unknown error' }), {
+    return new Response(JSON.stringify({ error: 'Internal error' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
