@@ -272,6 +272,7 @@ const T: Record<Lang, Record<string, string>> = {
     preparing: 'Preparing image…',
     loadingProducts: 'Loading products…',
     back: 'Back',
+    viewImage: 'View image',
   },
   fa: {
     title: 'سناریوی تبلیغ محصول',
@@ -313,6 +314,7 @@ const T: Record<Lang, Record<string, string>> = {
     preparing: 'در حال آماده‌سازی تصویر…',
     loadingProducts: 'در حال بارگذاری محصولات…',
     back: 'بازگشت',
+    viewImage: 'نمایش تصویر',
   },
   ar: {
     title: 'سيناريو إعلان المنتج',
@@ -354,6 +356,7 @@ const T: Record<Lang, Record<string, string>> = {
     preparing: 'جارٍ تحضير الصورة…',
     loadingProducts: 'جارٍ تحميل المنتجات…',
     back: 'رجوع',
+    viewImage: 'عرض الصورة',
   },
   tr: {
     title: 'Ürün Reklam Senaryosu',
@@ -395,6 +398,7 @@ const T: Record<Lang, Record<string, string>> = {
     preparing: 'Görüntü hazırlanıyor…',
     loadingProducts: 'Ürünler yükleniyor…',
     back: 'Geri',
+    viewImage: 'Görseli görüntüle',
   },
   es: {
     title: 'Guion de Anuncio de Producto',
@@ -436,6 +440,7 @@ const T: Record<Lang, Record<string, string>> = {
     preparing: 'Preparando imagen…',
     loadingProducts: 'Cargando productos…',
     back: 'Atrás',
+    viewImage: 'Ver imagen',
   },
   fr: {
     title: 'Scénario de Publicité Produit',
@@ -477,6 +482,7 @@ const T: Record<Lang, Record<string, string>> = {
     preparing: 'Préparation de l’image…',
     loadingProducts: 'Chargement des produits…',
     back: 'Retour',
+    viewImage: "Voir l'image",
   },
 }
 
@@ -505,6 +511,7 @@ export default function ProductAdDialog({
   const [isSending, setIsSending] = useState(false)
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null)
+  const [previewLightboxOpen, setPreviewLightboxOpen] = useState(false)
   const [isUploadingImage, setIsUploadingImage] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -808,11 +815,19 @@ export default function ProductAdDialog({
               {/* spacer wrapper */}
               {imagePreviewUrl ? (
                 <div className="relative">
-                  <img
-                    src={imagePreviewUrl}
-                    alt="Product"
-                    className="h-20 w-20 rounded-md border border-white/10 object-cover"
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setPreviewLightboxOpen(true)}
+                    title={t.viewImage}
+                    aria-label={t.viewImage}
+                    className="block cursor-zoom-in rounded-md"
+                  >
+                    <img
+                      src={imagePreviewUrl}
+                      alt="Product"
+                      className="h-20 w-20 rounded-md border border-white/10 object-cover transition hover:border-white/30"
+                    />
+                  </button>
                   <button
                     type="button"
                     onClick={clearImage}
@@ -1253,6 +1268,23 @@ export default function ProductAdDialog({
                 <ArrowLeft className="mr-1.5 h-4 w-4" aria-hidden="true" /> {t.back}
               </Button>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={previewLightboxOpen && Boolean(imagePreviewUrl)} onOpenChange={setPreviewLightboxOpen}>
+          <DialogContent dir={dir} className="max-w-3xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+            <DialogHeader>
+              <DialogTitle className="text-base">{t.viewImage}</DialogTitle>
+            </DialogHeader>
+            {imagePreviewUrl ? (
+              <div className="flex max-h-[80vh] items-center justify-center">
+                <img
+                  src={imagePreviewUrl}
+                  alt="Product preview"
+                  className="max-h-[80vh] w-auto max-w-full rounded-lg object-contain"
+                />
+              </div>
+            ) : null}
           </DialogContent>
         </Dialog>
       </DialogContent>
