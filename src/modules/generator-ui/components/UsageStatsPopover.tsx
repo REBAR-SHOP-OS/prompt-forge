@@ -245,6 +245,13 @@ export default function UsageStatsPopover({ triggerClassName }: { triggerClassNa
           <div className="flex items-center gap-2 text-sm font-medium">
             <Gauge className="h-4 w-4 text-amber-300" />
             <span>Usage & credits</span>
+            <span className="ml-1 inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-emerald-300">
+              <span className="relative grid h-1.5 w-1.5 place-items-center">
+                <span className="absolute inline-flex h-1.5 w-1.5 animate-ping rounded-full bg-emerald-400/70" />
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              </span>
+              Live
+            </span>
           </div>
           <Button
             size="icon" variant="ghost" className="h-7 w-7"
