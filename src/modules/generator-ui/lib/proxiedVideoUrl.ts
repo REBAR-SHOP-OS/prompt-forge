@@ -13,6 +13,27 @@
 import { supabase } from "@/integrations/supabase/client";
 import { FUNCTIONS_BASE } from "@/core/api/client";
 
+// Storage buckets that are now PRIVATE. Any stored URL pointing at one of these
+// (whether saved in the old `…/object/public/<bucket>/…` form, the
+// authenticated `…/object/<bucket>/…` form, or a previous `…/object/sign/…`
+// form) must be re-signed on demand so the bytes load. Owners can sign their
+// own files via RLS; the resulting signed URL is CORS-enabled and Range-capable
+// and needs no auth header, so it can feed a <video> element directly.
+const PRIVATE_STORAGE_BUCKETS = ["merged-videos", "user-videos"];
+const SIGNED_URL_TTL_SECONDS = 60 * 60 * 2; // 2 hours
+
+function parseOwnStorage(parsed: URL): { bucket: string; path: string } | null {
+  const m = parsed.pathname.match(
+    /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/,
+  );
+  if (!m) return null;
+  try {
+    return { bucket: m[1], path: decodeURIComponent(m[2]) };
+  } catch {
+    return { bucket: m[1], path: m[2] };
+  }
+}
+
 export async function proxiedVideoUrl(url: string): Promise<string> {
   if (!url) return url;
   if (url.startsWith("blob:") || url.startsWith("data:")) return url;
@@ -29,13 +50,23 @@ export async function proxiedVideoUrl(url: string): Promise<string> {
     return url;
   }
 
-  // Our own Supabase Storage PUBLIC objects are already CORS-enabled and
-  // Range-capable, and crucially require NO auth token. Routing them through
-  // the auth'd video-proxy would bake a short-lived access token into the URL;
-  // once that token expires (tab left open a while, sign-out/in) the proxied
-  // URL starts returning 401 and the card goes blank. Public Final Film output
-  // (merged-videos) and other public buckets must be played directly so they
-  // keep working indefinitely.
+  // Our own Supabase Storage objects in a PRIVATE bucket: mint a fresh signed
+  // URL. This covers playback, downloads, and merge inputs that go through this
+  // helper. If signing fails (not signed in / not owner), fall back to the raw
+  // URL so behavior degrades gracefully rather than throwing.
+  const own = parseOwnStorage(parsed);
+  if (own && PRIVATE_STORAGE_BUCKETS.includes(own.bucket)) {
+    const { data, error } = await supabase.storage
+      .from(own.bucket)
+      .createSignedUrl(own.path, SIGNED_URL_TTL_SECONDS);
+    if (!error && data?.signedUrl) return data.signedUrl;
+    return url;
+  }
+
+  // Other own-storage PUBLIC objects (e.g. user-images, wan-frames) are already
+  // CORS-enabled and Range-capable, and crucially require NO auth token. Routing
+  // them through the auth'd video-proxy would bake a short-lived access token
+  // into the URL; once that expires the card goes blank. Play directly.
   if (parsed.pathname.includes("/storage/v1/object/public/")) {
     return url;
   }
