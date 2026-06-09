@@ -847,12 +847,44 @@ export default function DashboardPage() {
 
   const [deletingArchiveId, setDeletingArchiveId] = useState<string | null>(null)
   const [playerFilm, setPlayerFilm] = useState<{ jobId: string; storagePath: string; poster: string | null; title: string } | null>(null)
+  // Delete one or more files from the NAS storage folder (id === file path).
+  const deleteNasPaths = async (paths: string[]): Promise<string[]> => {
+    const { data: sessionData } = await supabase.auth.getSession()
+    const token = sessionData.session?.access_token
+    if (!token) throw new Error('Not signed in')
+    const res = await fetch(`${FUNCTIONS_BASE}/nas-storage?action=delete`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths }),
+    })
+    if (!res.ok) throw new Error(`Delete failed: ${res.status}`)
+    const body = (await res.json()) as { deleted?: string[] }
+    return body.deleted ?? []
+  }
+  const removeArchiveByPaths = (paths: string[]) => {
+    const gone = new Set(paths)
+    setArchiveJobs((prev) => prev.filter((j) => !gone.has(j.id)))
+    setArchiveVideos((prev) => prev.filter((v) => !gone.has(v.job_id)))
+    setArchiveImages((prev) => prev.filter((i) => !gone.has(i.id)))
+    setArchiveAudio((prev) => prev.filter((a) => !gone.has(a.id)))
+  }
   const handleDeleteArchiveJob = async (jobId: string) => {
     setDeletingArchiveId(jobId)
     try {
-      await jobOrchestratorGateway.deleteJob(jobId)
-      setArchiveJobs((prev) => prev.filter((j) => j.id !== jobId))
-      setArchiveVideos((prev) => prev.filter((v) => v.job_id !== jobId))
+      const deleted = await deleteNasPaths([jobId])
+      removeArchiveByPaths(deleted.length ? deleted : [jobId])
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : (err as Error).message
+      if (typeof window !== 'undefined') window.alert(`Delete failed: ${msg}`)
+    } finally {
+      setDeletingArchiveId(null)
+    }
+  }
+  const handleDeleteArchiveFile = async (path: string) => {
+    setDeletingArchiveId(path)
+    try {
+      const deleted = await deleteNasPaths([path])
+      removeArchiveByPaths(deleted.length ? deleted : [path])
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : (err as Error).message
       if (typeof window !== 'undefined') window.alert(`Delete failed: ${msg}`)
@@ -880,25 +912,17 @@ export default function DashboardPage() {
     if (ids.length === 0) return
     setIsBulkDeleting(true)
     try {
-      for (const id of ids) {
-        try {
-          if (archiveTab === 'films') {
-            await handleDeleteArchiveJob(id)
-          } else if (archiveTab === 'images') {
-            await handleDeleteUserImage(id)
-          } else {
-            const item = archiveAudio.find((a) => a.id === id)
-            if (item) await handleDeleteUserAudio(item)
-          }
-        } catch {
-          /* keep going with the rest */
-        }
-      }
+      const deleted = await deleteNasPaths(ids)
+      removeArchiveByPaths(deleted.length ? deleted : ids)
       setSelectedArchiveIds(new Set())
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : (err as Error).message
+      if (typeof window !== 'undefined') window.alert(`Delete failed: ${msg}`)
     } finally {
       setIsBulkDeleting(false)
     }
   }
+
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [hasOccasionToday, setHasOccasionToday] = useState(false)
 
