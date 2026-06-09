@@ -226,10 +226,11 @@ export const jobOrchestratorGateway = {
                 hasVideo: Boolean(poll.videoUrl),
               });
               if (poll.status === "completed" && poll.videoUrl) {
+                const storagePath = await materializeVideoUrl(svc, auth.userId, poll.videoUrl);
                 await jobService.completeJob(svc, {
                   userId: auth.userId,
                   jobId: detail.id,
-                  storagePath: poll.videoUrl,
+                  storagePath,
                   thumbnailUrl: poll.thumbnailUrl,
                   aspectRatio: poll.aspectRatio,
                   duration: poll.duration,
