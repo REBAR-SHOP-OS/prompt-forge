@@ -19,6 +19,16 @@ import {
 } from '@/components/ui/select'
 import { supabase } from '@/integrations/supabase/client'
 import { StylePreviewCard } from './StylePreviewCard'
+import camWhipPan from '@/assets/style-previews/cam-whip-pan.mp4.asset.json'
+import camOrbit from '@/assets/style-previews/cam-orbit.mp4.asset.json'
+import camFpvDrone from '@/assets/style-previews/cam-fpv-drone.mp4.asset.json'
+import camTracking from '@/assets/style-previews/cam-tracking.mp4.asset.json'
+import camPushIn from '@/assets/style-previews/cam-push-in.mp4.asset.json'
+import camFlyThrough from '@/assets/style-previews/cam-fly-through.mp4.asset.json'
+import camCrashZoom from '@/assets/style-previews/cam-crash-zoom.mp4.asset.json'
+import camHandheld from '@/assets/style-previews/cam-handheld.mp4.asset.json'
+import camDollyZoom from '@/assets/style-previews/cam-dolly-zoom.mp4.asset.json'
+import camParallax from '@/assets/style-previews/cam-parallax.mp4.asset.json'
 
 export type ProductAdDuration = 5 | 10 | 15 | 30 | 45 | 135
 
