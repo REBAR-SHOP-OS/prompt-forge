@@ -58,6 +58,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -839,6 +840,45 @@ export default function DashboardPage() {
       if (typeof window !== 'undefined') window.alert(`Delete failed: ${msg}`)
     } finally {
       setDeletingArchiveId(null)
+    }
+  }
+  // ----- Storage bulk selection (Select All + delete selected) -----
+  const [selectedArchiveIds, setSelectedArchiveIds] = useState<Set<string>>(new Set())
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false)
+  // Clear selection whenever the tab changes or the dialog opens/closes.
+  useEffect(() => {
+    setSelectedArchiveIds(new Set())
+  }, [archiveTab, isArchiveOpen])
+  const toggleArchiveSelection = (id: string) => {
+    setSelectedArchiveIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const handleBulkDeleteArchive = async () => {
+    const ids = Array.from(selectedArchiveIds)
+    if (ids.length === 0) return
+    setIsBulkDeleting(true)
+    try {
+      for (const id of ids) {
+        try {
+          if (archiveTab === 'films') {
+            await handleDeleteArchiveJob(id)
+          } else if (archiveTab === 'images') {
+            await handleDeleteUserImage(id)
+          } else {
+            const item = archiveAudio.find((a) => a.id === id)
+            if (item) await handleDeleteUserAudio(item)
+          }
+        } catch {
+          /* keep going with the rest */
+        }
+      }
+      setSelectedArchiveIds(new Set())
+    } finally {
+      setIsBulkDeleting(false)
     }
   }
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
@@ -5472,6 +5512,69 @@ export default function DashboardPage() {
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto px-6 py-5">
+            {(() => {
+              const currentIds =
+                archiveTab === 'films'
+                  ? archiveJobs.map((j) => j.id)
+                  : archiveTab === 'images'
+                    ? archiveImages.map((i) => i.id)
+                    : archiveAudio.map((a) => a.id)
+              if (currentIds.length === 0) return null
+              const selectedCount = currentIds.filter((id) => selectedArchiveIds.has(id)).length
+              const allSelected = selectedCount === currentIds.length && currentIds.length > 0
+              return (
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSelectedArchiveIds(allSelected ? new Set() : new Set(currentIds))
+                    }
+                    className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:bg-white/[0.07]"
+                  >
+                    <Checkbox checked={allSelected} className="pointer-events-none h-4 w-4" />
+                    {allSelected ? 'Deselect all' : 'Select all'}
+                  </button>
+                  <div className="flex items-center gap-3">
+                    {selectedCount > 0 ? (
+                      <span className="text-xs text-zinc-400">{selectedCount} selected</span>
+                    ) : null}
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <button
+                          type="button"
+                          disabled={selectedCount === 0 || isBulkDeleting}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300/30 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {isBulkDeleting ? (
+                            <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                          )}
+                          Delete selected
+                        </button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete {selectedCount} selected item{selectedCount === 1 ? '' : 's'}?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will permanently remove the selected items and their files. This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => { void handleBulkDeleteArchive() }}
+                            className="bg-rose-600 text-white hover:bg-rose-700"
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </div>
+              )
+            })()}
             {archiveTab === 'audio' ? (() => {
               if (archiveLoading && archiveAudio.length === 0) {
                 return (
@@ -5498,9 +5601,15 @@ export default function DashboardPage() {
                   {archiveAudio.map((a) => (
                     <article
                       key={a.id}
-                      className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-4"
+                      className={`flex flex-col gap-3 rounded-2xl border bg-white/[0.035] p-4 ${selectedArchiveIds.has(a.id) ? 'border-sky-400/60 ring-1 ring-sky-400/40' : 'border-white/10'}`}
                     >
                       <div className="flex items-start gap-3">
+                        <Checkbox
+                          checked={selectedArchiveIds.has(a.id)}
+                          onCheckedChange={() => toggleArchiveSelection(a.id)}
+                          aria-label="Select audio"
+                          className="mt-0.5 h-4 w-4 shrink-0"
+                        />
                         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/[0.04] text-emerald-200">
                           {a.kind === 'voiceover'
                             ? <Mic className="h-4 w-4" aria-hidden="true" />
@@ -5598,7 +5707,7 @@ export default function DashboardPage() {
                   {archiveImages.map((img) => (
                     <article
                       key={img.id}
-                      className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3"
+                      className={`flex flex-col gap-3 rounded-2xl border bg-white/[0.035] p-3 ${selectedArchiveIds.has(img.id) ? 'border-sky-400/60 ring-1 ring-sky-400/40' : 'border-white/10'}`}
                     >
                       <button
                         type="button"
@@ -5613,6 +5722,17 @@ export default function DashboardPage() {
                           loading="lazy"
                           className="h-full w-full object-cover transition group-hover:scale-[1.03]"
                         />
+                        <span
+                          role="presentation"
+                          onClick={(e) => { e.stopPropagation(); toggleArchiveSelection(img.id) }}
+                          className="absolute left-2 top-2 grid place-items-center rounded-md bg-black/50 p-1 backdrop-blur-sm"
+                        >
+                          <Checkbox
+                            checked={selectedArchiveIds.has(img.id)}
+                            aria-label="Select image"
+                            className="pointer-events-none h-4 w-4"
+                          />
+                        </span>
                       </button>
                       <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
                         <span className="tabular-nums">{formatCreatedAt(img.created_at)}</span>
@@ -5727,7 +5847,7 @@ export default function DashboardPage() {
                     return (
                       <article
                         key={job.id}
-                        className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3"
+                        className={`flex flex-col gap-3 rounded-2xl border bg-white/[0.035] p-3 ${selectedArchiveIds.has(job.id) ? 'border-sky-400/60 ring-1 ring-sky-400/40' : 'border-white/10'}`}
                       >
                         <div
                           className={`group relative aspect-video w-full shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a] ${video?.storage_path ? 'cursor-pointer' : ''}`}
@@ -5786,6 +5906,18 @@ export default function DashboardPage() {
                               <Clapperboard className="h-6 w-6" aria-hidden="true" />
                             </div>
                           )}
+                          <span
+                            role="presentation"
+                            onClick={(e) => { e.stopPropagation(); toggleArchiveSelection(job.id) }}
+                            onKeyDown={(e) => e.stopPropagation()}
+                            className="absolute left-2 top-2 grid place-items-center rounded-md bg-black/50 p-1 backdrop-blur-sm"
+                          >
+                            <Checkbox
+                              checked={selectedArchiveIds.has(job.id)}
+                              aria-label="Select film"
+                              className="pointer-events-none h-4 w-4"
+                            />
+                          </span>
                         </div>
                         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                           <div className="flex items-start justify-between gap-2">
