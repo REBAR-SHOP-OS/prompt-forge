@@ -3517,8 +3517,9 @@ export default function DashboardPage() {
             .upload(stillPath, stillClipBlob, { contentType: 'video/webm', upsert: false })
           if (stillErr) throw new Error(stillErr.message)
           const stillPublic = supabase.storage.from(MERGED_BUCKET).getPublicUrl(stillPath).data.publicUrl
+          const stillPlayable = await proxiedVideoUrl(stillPublic)
 
-          const mergeRes = await mergeVideoUrls([proxiedSrc, stillPublic])
+          const mergeRes = await mergeVideoUrls([proxiedSrc, stillPlayable])
           const mergedPath = `${userId}/with-end-${Date.now()}-${crypto.randomUUID()}.${mergeRes.extension}`
           const { error: upErr } = await supabase.storage
             .from(MERGED_BUCKET)
