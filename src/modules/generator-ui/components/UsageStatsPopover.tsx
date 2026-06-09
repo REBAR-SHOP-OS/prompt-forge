@@ -144,6 +144,38 @@ export default function UsageStatsPopover({ triggerClassName }: { triggerClassNa
     if (open) { void loadStats(); void loadCalendar(viewMonth) }
   }, [open, loadStats, loadCalendar, viewMonth])
 
+  // Live updates: while the popover is open, subscribe to changes on the
+  // user's billing/usage rows and refresh (debounced) so figures update
+  // instantly as credits are consumed — no manual refresh needed.
+  useEffect(() => {
+    if (!open || !user) return
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const scheduleStats = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => { void loadStats() }, 300)
+    }
+    let calTimer: ReturnType<typeof setTimeout> | null = null
+    const scheduleAll = () => {
+      scheduleStats()
+      if (calTimer) clearTimeout(calTimer)
+      calTimer = setTimeout(() => { void loadCalendar(viewMonth) }, 300)
+    }
+
+    const channel = supabase
+      .channel(`usage-stats-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'billing_user_quotas', filter: `user_id=eq.${user.id}` }, scheduleStats)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'core_user_profiles', filter: `id=eq.${user.id}` }, scheduleStats)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'billing_credit_transactions', filter: `user_id=eq.${user.id}` }, scheduleAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'generator_generation_jobs', filter: `user_id=eq.${user.id}` }, scheduleStats)
+      .subscribe()
+
+    return () => {
+      if (timer) clearTimeout(timer)
+      if (calTimer) clearTimeout(calTimer)
+      void supabase.removeChannel(channel)
+    }
+  }, [open, user, viewMonth, loadStats, loadCalendar])
+
   const dailyLeft = stats ? Math.max(0, stats.dailyLimit - stats.usedToday) : 0
   const dailyPct = stats && stats.dailyLimit > 0 ? Math.min(100, (stats.usedToday / stats.dailyLimit) * 100) : 0
   const monthPct = stats && stats.monthlyLimit > 0 ? Math.min(100, (stats.usedMonth / stats.monthlyLimit) * 100) : 0
