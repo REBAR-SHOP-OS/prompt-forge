@@ -138,7 +138,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
   },
 ]
 
-type SceneTemplate = { id: string; label: Loc; icon: string; group: Loc; prompt: string }
+type SceneTemplate = { id: string; label: Loc; icon: string; group: Loc; prompt: string; preview?: string }
 
 const G_INDUSTRIAL: Loc = { en: 'Industrial & Construction', fa: 'صنعتی و ساخت‌وساز', ar: 'صناعي وإنشاءات', tr: 'Endüstriyel ve İnşaat', es: 'Industrial y Construcción', fr: 'Industriel et Construction' }
 const G_URBAN: Loc = { en: 'Urban & Modern', fa: 'شهری و مدرن', ar: 'حضري وحديث', tr: 'Kentsel ve Modern', es: 'Urbano y Moderno', fr: 'Urbain et Moderne' }
