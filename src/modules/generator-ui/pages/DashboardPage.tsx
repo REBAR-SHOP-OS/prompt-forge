@@ -2246,6 +2246,27 @@ export default function DashboardPage() {
     window.localStorage.setItem('ui:preferred-model', selectedModelId)
   }, [selectedModelId])
 
+  // Whether the local RTX video router is configured server-side. null = unknown
+  // (still checking). When false, local models are shown as "Not configured" and
+  // disabled so users don't hit a runtime error after selecting them.
+  const [localConfigured, setLocalConfigured] = useState<boolean | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    generatorUiGateway
+      .routePreview({ providerKey: 'local', requestedModel: 'local/wan-2.1-i2v', prompt: '.' })
+      .then((res) => {
+        if (!cancelled) setLocalConfigured(res.localConfigured ?? false)
+      })
+      .catch(() => {
+        if (!cancelled) setLocalConfigured(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+
+
 
   // Cost preview / confirm dialog state
   const [confirmCostOpen, setConfirmCostOpen] = useState(false)
