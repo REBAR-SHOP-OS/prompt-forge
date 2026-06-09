@@ -5548,7 +5548,19 @@ export default function DashboardPage() {
                 Audio
                 <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{archiveAudio.length}</span>
               </button>
-            </div>
+              <button
+                type="button"
+                onClick={() => setArchiveTab('products')}
+                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                  archiveTab === 'products'
+                    ? 'bg-white/[0.08] text-zinc-100'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <Package className="h-3.5 w-3.5" aria-hidden="true" />
+                Product Photos
+                <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{archiveProductImages.length}</span>
+              </button>
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto px-6 py-5">
