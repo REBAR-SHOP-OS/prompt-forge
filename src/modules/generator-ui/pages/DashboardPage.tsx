@@ -5707,7 +5707,7 @@ export default function DashboardPage() {
                   {archiveImages.map((img) => (
                     <article
                       key={img.id}
-                      className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3"
+                      className={`flex flex-col gap-3 rounded-2xl border bg-white/[0.035] p-3 ${selectedArchiveIds.has(img.id) ? 'border-sky-400/60 ring-1 ring-sky-400/40' : 'border-white/10'}`}
                     >
                       <button
                         type="button"
@@ -5722,6 +5722,17 @@ export default function DashboardPage() {
                           loading="lazy"
                           className="h-full w-full object-cover transition group-hover:scale-[1.03]"
                         />
+                        <span
+                          role="presentation"
+                          onClick={(e) => { e.stopPropagation(); toggleArchiveSelection(img.id) }}
+                          className="absolute left-2 top-2 grid place-items-center rounded-md bg-black/50 p-1 backdrop-blur-sm"
+                        >
+                          <Checkbox
+                            checked={selectedArchiveIds.has(img.id)}
+                            aria-label="Select image"
+                            className="pointer-events-none h-4 w-4"
+                          />
+                        </span>
                       </button>
                       <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
                         <span className="tabular-nums">{formatCreatedAt(img.created_at)}</span>
