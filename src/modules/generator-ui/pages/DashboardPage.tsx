@@ -5571,7 +5571,9 @@ export default function DashboardPage() {
                   ? archiveJobs.map((j) => j.id)
                   : archiveTab === 'images'
                     ? archiveImages.map((i) => i.id)
-                    : archiveAudio.map((a) => a.id)
+                    : archiveTab === 'products'
+                      ? archiveProductImages.map((i) => i.id)
+                      : archiveAudio.map((a) => a.id)
               if (currentIds.length === 0) return null
               const selectedCount = currentIds.filter((id) => selectedArchiveIds.has(id)).length
               const allSelected = selectedCount === currentIds.length && currentIds.length > 0
