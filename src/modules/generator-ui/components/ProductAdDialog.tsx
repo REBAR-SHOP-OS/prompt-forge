@@ -1379,6 +1379,14 @@ export default function ProductAdDialog({
             ) : null}
           </DialogContent>
         </Dialog>
+
+        <AiImageDialog
+          open={aiImageOpen}
+          onOpenChange={setAiImageOpen}
+          userId={userId}
+          defaultAspect="1:1"
+          onSaved={handleAiImageSaved}
+        />
       </DialogContent>
     </Dialog>
   )
