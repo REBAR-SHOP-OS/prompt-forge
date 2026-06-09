@@ -185,6 +185,7 @@ type VideoTemplate = {
   icon: string
   group: Loc
   prompt: string
+  preview?: string
 }
 
 const VG_SPORTS: Loc = { en: 'Sports & Action', fa: 'ورزشی و پرتحرک', ar: 'رياضة وأكشن', tr: 'Spor ve Aksiyon', es: 'Deportes y Acción', fr: 'Sport et Action' }
