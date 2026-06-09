@@ -436,6 +436,7 @@ const T: Record<Lang, Record<string, string>> = {
     generate: 'Reklam senaryosu oluştur',
     language: 'Dil',
     chooseFromProducts: 'Ürünlerden seç',
+    generateWithAi: 'Yapay zeka ile oluştur',
     pickAspect: 'Görüntü boyutlarını seç',
     pickProduct: 'Bir ürün seç',
     aspectHint: 'Önce boyutları, sonra ürünü seçin.',
