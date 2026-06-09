@@ -525,10 +525,11 @@ export const jobOrchestratorGateway = {
           let finalStatus: "processing" | "completed" = "processing";
           if (gen.isComplete && gen.videoUrl) {
             try {
+              const storagePath = await materializeVideoUrl(svc, auth.userId, gen.videoUrl);
               videoAssetId = await jobService.completeJob(svc, {
                 userId: auth.userId,
                 jobId,
-                storagePath: gen.videoUrl,
+                storagePath,
                 thumbnailUrl: gen.thumbnailUrl,
                 aspectRatio: gen.aspectRatio,
                 duration: gen.duration,
