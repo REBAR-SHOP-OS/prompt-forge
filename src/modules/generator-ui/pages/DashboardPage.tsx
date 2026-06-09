@@ -7968,12 +7968,18 @@ export default function DashboardPage() {
                 {MODEL_CHOICES.map((choice) => {
                   const needed: 't2v' | 'i2v' = isTextToVideo ? 't2v' : 'i2v'
                   const compatible = choice.supports.includes(needed)
+                  const isLocal = choice.providerKey === 'local'
+                  // Local models need the RTX router configured. Disable while
+                  // unconfigured (localConfigured === false). While unknown
+                  // (null), keep them enabled to avoid a flash of "unavailable".
+                  const localUnavailable = isLocal && localConfigured === false
+                  const disabled = !compatible || localUnavailable
                   const isActive = choice.id === selectedModel.id
                   return (
                     <button
                       key={choice.id}
                       type="button"
-                      disabled={!compatible}
+                      disabled={disabled}
                       onClick={() => {
                         setSelectedModelId(choice.id)
                         setIsModelMenuOpen(false)
@@ -7984,9 +7990,20 @@ export default function DashboardPage() {
                         {isActive ? <Check className="h-4 w-4" aria-hidden="true" /> : <Cpu className="h-4 w-4" aria-hidden="true" />}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-semibold text-zinc-100">{choice.label}</span>
+                        <span className="flex items-center gap-1.5 text-sm font-semibold text-zinc-100">
+                          {choice.label}
+                          {localUnavailable ? (
+                            <span className="rounded-full border border-amber-300/30 bg-amber-300/[0.08] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-200/90">
+                              Not configured
+                            </span>
+                          ) : null}
+                        </span>
                         <span className="block text-xs leading-5 text-zinc-500">
-                          {compatible ? choice.description : `Not available in ${isTextToVideo ? 'Text to Video' : 'Image to Video'} mode.`}
+                          {!compatible
+                            ? `Not available in ${isTextToVideo ? 'Text to Video' : 'Image to Video'} mode.`
+                            : localUnavailable
+                              ? 'RTX video router not set up yet. Configure LOCAL_VIDEO_BASE_URL or pick a cloud model.'
+                              : choice.description}
                         </span>
                       </span>
                     </button>
