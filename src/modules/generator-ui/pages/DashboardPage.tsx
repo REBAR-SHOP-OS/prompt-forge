@@ -5561,6 +5561,7 @@ export default function DashboardPage() {
                 Product Photos
                 <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{archiveProductImages.length}</span>
               </button>
+            </div>
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto px-6 py-5">
