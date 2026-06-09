@@ -5512,6 +5512,69 @@ export default function DashboardPage() {
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto px-6 py-5">
+            {(() => {
+              const currentIds =
+                archiveTab === 'films'
+                  ? archiveJobs.map((j) => j.id)
+                  : archiveTab === 'images'
+                    ? archiveImages.map((i) => i.id)
+                    : archiveAudio.map((a) => a.id)
+              if (currentIds.length === 0) return null
+              const selectedCount = currentIds.filter((id) => selectedArchiveIds.has(id)).length
+              const allSelected = selectedCount === currentIds.length && currentIds.length > 0
+              return (
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSelectedArchiveIds(allSelected ? new Set() : new Set(currentIds))
+                    }
+                    className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:bg-white/[0.07]"
+                  >
+                    <Checkbox checked={allSelected} className="pointer-events-none h-4 w-4" />
+                    {allSelected ? 'Deselect all' : 'Select all'}
+                  </button>
+                  <div className="flex items-center gap-3">
+                    {selectedCount > 0 ? (
+                      <span className="text-xs text-zinc-400">{selectedCount} selected</span>
+                    ) : null}
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <button
+                          type="button"
+                          disabled={selectedCount === 0 || isBulkDeleting}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300/30 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {isBulkDeleting ? (
+                            <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                          )}
+                          Delete selected
+                        </button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete {selectedCount} selected item{selectedCount === 1 ? '' : 's'}?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will permanently remove the selected items and their files. This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => { void handleBulkDeleteArchive() }}
+                            className="bg-rose-600 text-white hover:bg-rose-700"
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </div>
+              )
+            })()}
             {archiveTab === 'audio' ? (() => {
               if (archiveLoading && archiveAudio.length === 0) {
                 return (
