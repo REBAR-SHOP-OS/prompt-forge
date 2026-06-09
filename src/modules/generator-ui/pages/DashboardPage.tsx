@@ -797,7 +797,7 @@ export default function DashboardPage() {
         userId
           ? supabase
               .from('generator_user_images')
-              .select('id, storage_path, created_at, still_duration_seconds, width, height')
+              .select('id, storage_path, created_at, still_duration_seconds, width, height, category')
               .eq('user_id', userId)
               .is('deleted_at', null)
               .order('created_at', { ascending: false })
