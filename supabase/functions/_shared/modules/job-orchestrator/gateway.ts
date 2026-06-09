@@ -43,6 +43,47 @@ const GetJobSchema = z.object({ jobId: z.string().uuid() });
 const DeleteJobSchema = z.object({ jobId: z.string().uuid() });
 
 const SUPABASE_PUBLIC_STORAGE_PREFIX = `${new URL(getEnv("SUPABASE_URL")).origin}/storage/v1/object/public/wan-frames/`;
+
+// Local video routers (ComfyUI/Wan/LTX on the RTX box) often return the clip
+// inline as a `data:video/mp4;base64,...` URL instead of a hosted link. Storing
+// that multi-MB string in the asset row bloats the DB and the preview fails to
+// load it. Decode such payloads once and upload to our video bucket, returning a
+// real URL — mirroring the Veo download/re-upload path. Non-data URLs pass
+// through unchanged.
+async function materializeVideoUrl(
+  svc: ReturnType<typeof getServiceClient>,
+  userId: string,
+  videoUrl: string,
+): Promise<string> {
+  if (!videoUrl.startsWith("data:")) return videoUrl;
+
+  const match = videoUrl.match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
+  if (!match) throw new Error("Local router returned an unparseable data URL");
+  const contentType = match[1] || "video/mp4";
+  const isBase64 = Boolean(match[2]);
+  const rawData = match[3] ?? "";
+
+  let bytes: Uint8Array;
+  if (isBase64) {
+    const binary = atob(rawData);
+    bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  } else {
+    bytes = new TextEncoder().encode(decodeURIComponent(rawData));
+  }
+
+  const ext = contentType.includes("webm") ? "webm" : "mp4";
+  const path = `${userId}/local-${crypto.randomUUID()}.${ext}`;
+  const { error: upErr } = await svc.storage
+    .from("merged-videos")
+    .upload(path, bytes, { contentType, upsert: false });
+  if (upErr) {
+    logError("local video upload failed", { error: upErr.message, path });
+    throw new Error(`Local video upload failed: ${upErr.message}`);
+  }
+  const { data: pub } = svc.storage.from("merged-videos").getPublicUrl(path);
+  return pub.publicUrl;
+}
 const EXTRA_PUBLIC_FRAME_HOSTS = getEnv("ALLOWED_PUBLIC_FRAME_HOSTS", false)
   .split(",")
   .map((value) => value.trim().toLowerCase())
@@ -185,10 +226,11 @@ export const jobOrchestratorGateway = {
                 hasVideo: Boolean(poll.videoUrl),
               });
               if (poll.status === "completed" && poll.videoUrl) {
+                const storagePath = await materializeVideoUrl(svc, auth.userId, poll.videoUrl);
                 await jobService.completeJob(svc, {
                   userId: auth.userId,
                   jobId: detail.id,
-                  storagePath: poll.videoUrl,
+                  storagePath,
                   thumbnailUrl: poll.thumbnailUrl,
                   aspectRatio: poll.aspectRatio,
                   duration: poll.duration,
@@ -483,10 +525,11 @@ export const jobOrchestratorGateway = {
           let finalStatus: "processing" | "completed" = "processing";
           if (gen.isComplete && gen.videoUrl) {
             try {
+              const storagePath = await materializeVideoUrl(svc, auth.userId, gen.videoUrl);
               videoAssetId = await jobService.completeJob(svc, {
                 userId: auth.userId,
                 jobId,
-                storagePath: gen.videoUrl,
+                storagePath,
                 thumbnailUrl: gen.thumbnailUrl,
                 aspectRatio: gen.aspectRatio,
                 duration: gen.duration,
