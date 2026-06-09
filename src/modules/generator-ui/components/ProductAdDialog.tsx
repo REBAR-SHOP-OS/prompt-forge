@@ -18,6 +18,25 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { supabase } from '@/integrations/supabase/client'
+import { StylePreviewCard } from './StylePreviewCard'
+import camWhipPan from '@/assets/style-previews/cam-whip-pan.mp4.asset.json'
+import camOrbit from '@/assets/style-previews/cam-orbit.mp4.asset.json'
+import camFpvDrone from '@/assets/style-previews/cam-fpv-drone.mp4.asset.json'
+import camTracking from '@/assets/style-previews/cam-tracking.mp4.asset.json'
+import camPushIn from '@/assets/style-previews/cam-push-in.mp4.asset.json'
+import camFlyThrough from '@/assets/style-previews/cam-fly-through.mp4.asset.json'
+import camCrashZoom from '@/assets/style-previews/cam-crash-zoom.mp4.asset.json'
+import camHandheld from '@/assets/style-previews/cam-handheld.mp4.asset.json'
+import camDollyZoom from '@/assets/style-previews/cam-dolly-zoom.mp4.asset.json'
+import camParallax from '@/assets/style-previews/cam-parallax.mp4.asset.json'
+import genreEpicFantasy from '@/assets/style-previews/genre-epic-fantasy.mp4.asset.json'
+import genreScifiMinimal from '@/assets/style-previews/genre-scifi-minimal.mp4.asset.json'
+import genrePostApocalyptic from '@/assets/style-previews/genre-post-apocalyptic.mp4.asset.json'
+import genreHorror from '@/assets/style-previews/genre-horror.mp4.asset.json'
+import genreAction from '@/assets/style-previews/genre-action.mp4.asset.json'
+import genreRomantic from '@/assets/style-previews/genre-romantic.mp4.asset.json'
+import genreDocumentary from '@/assets/style-previews/genre-documentary.mp4.asset.json'
+import genreAnime from '@/assets/style-previews/genre-anime.mp4.asset.json'
 
 export type ProductAdDuration = 5 | 10 | 15 | 30 | 45 | 135
 
@@ -64,20 +83,20 @@ const LANG_OPTIONS: { value: Lang; native: string }[] = [
   { value: 'fr', native: 'Français' },
 ]
 
-const CAMERA_STYLES: { label: Loc; icon: string }[] = [
-  { label: { en: 'Whip Pan', fa: 'پن سریع', ar: 'بان سريع', tr: 'Hızlı Kaydırma', es: 'Barrido Rápido', fr: 'Filé Rapide' }, icon: '💫' },
-  { label: { en: 'Orbit Shot', fa: 'نمای مداری', ar: 'لقطة مدارية', tr: 'Yörünge Çekimi', es: 'Toma Orbital', fr: 'Plan Orbital' }, icon: '🛰️' },
-  { label: { en: 'FPV Drone', fa: 'پهپاد FPV', ar: 'درون FPV', tr: 'FPV Drone', es: 'Dron FPV', fr: 'Drone FPV' }, icon: '🚁' },
-  { label: { en: 'Tracking Shot', fa: 'نمای تعقیبی', ar: 'لقطة تتبع', tr: 'Takip Çekimi', es: 'Toma de Seguimiento', fr: 'Plan de Suivi' }, icon: '🎯' },
-  { label: { en: 'Push In Cinematic', fa: 'پوش‌این سینمایی', ar: 'دفع سينمائي', tr: 'Sinematik Yaklaşma', es: 'Acercamiento Cinematográfico', fr: 'Travelling Avant Cinématique' }, icon: '🎬' },
-  { label: { en: 'Fly Through', fa: 'عبور پروازی', ar: 'تحليق عبر', tr: 'İçinden Uçuş', es: 'Vuelo a Través', fr: 'Survol Traversant' }, icon: '🕊️' },
-  { label: { en: 'Crash Zoom', fa: 'زوم ضربه‌ای', ar: 'تكبير مفاجئ', tr: 'Ani Zoom', es: 'Zoom Brusco', fr: 'Zoom Brutal' }, icon: '💥' },
-  { label: { en: 'Handheld Dynamic', fa: 'دوربین‌روی‌دست پویا', ar: 'كاميرا محمولة ديناميكية', tr: 'Dinamik Elde Çekim', es: 'Cámara en Mano Dinámica', fr: "Caméra à l'Épaule Dynamique" }, icon: '🤳' },
-  { label: { en: 'Dolly Zoom', fa: 'دالی زوم', ar: 'دوللي زوم', tr: 'Dolly Zoom', es: 'Dolly Zoom', fr: 'Travelling Compensé' }, icon: '🌀' },
-  { label: { en: 'Parallax Motion', fa: 'حرکت پارالاکس', ar: 'حركة بارالاكس', tr: 'Paralaks Hareketi', es: 'Movimiento Parallax', fr: 'Mouvement Parallaxe' }, icon: '🧊' },
+const CAMERA_STYLES: { label: Loc; icon: string; desc?: Loc; preview?: string }[] = [
+  { label: { en: 'Whip Pan', fa: 'پن سریع', ar: 'بان سريع', tr: 'Hızlı Kaydırma', es: 'Barrido Rápido', fr: 'Filé Rapide' }, icon: '💫', preview: camWhipPan.url },
+  { label: { en: 'Orbit Shot', fa: 'نمای مداری', ar: 'لقطة مدارية', tr: 'Yörünge Çekimi', es: 'Toma Orbital', fr: 'Plan Orbital' }, icon: '🛰️', preview: camOrbit.url },
+  { label: { en: 'FPV Drone', fa: 'پهپاد FPV', ar: 'درون FPV', tr: 'FPV Drone', es: 'Dron FPV', fr: 'Drone FPV' }, icon: '🚁', preview: camFpvDrone.url },
+  { label: { en: 'Tracking Shot', fa: 'نمای تعقیبی', ar: 'لقطة تتبع', tr: 'Takip Çekimi', es: 'Toma de Seguimiento', fr: 'Plan de Suivi' }, icon: '🎯', preview: camTracking.url },
+  { label: { en: 'Push In Cinematic', fa: 'پوش‌این سینمایی', ar: 'دفع سينمائي', tr: 'Sinematik Yaklaşma', es: 'Acercamiento Cinematográfico', fr: 'Travelling Avant Cinématique' }, icon: '🎬', preview: camPushIn.url },
+  { label: { en: 'Fly Through', fa: 'عبور پروازی', ar: 'تحليق عبر', tr: 'İçinden Uçuş', es: 'Vuelo a Través', fr: 'Survol Traversant' }, icon: '🕊️', preview: camFlyThrough.url },
+  { label: { en: 'Crash Zoom', fa: 'زوم ضربه‌ای', ar: 'تكبير مفاجئ', tr: 'Ani Zoom', es: 'Zoom Brusco', fr: 'Zoom Brutal' }, icon: '💥', preview: camCrashZoom.url },
+  { label: { en: 'Handheld Dynamic', fa: 'دوربین‌روی‌دست پویا', ar: 'كاميرا محمولة ديناميكية', tr: 'Dinamik Elde Çekim', es: 'Cámara en Mano Dinámica', fr: "Caméra à l'Épaule Dynamique" }, icon: '🤳', preview: camHandheld.url },
+  { label: { en: 'Dolly Zoom', fa: 'دالی زوم', ar: 'دوللي زوم', tr: 'Dolly Zoom', es: 'Dolly Zoom', fr: 'Travelling Compensé' }, icon: '🌀', preview: camDollyZoom.url },
+  { label: { en: 'Parallax Motion', fa: 'حرکت پارالاکس', ar: 'حركة بارالاكس', tr: 'Paralaks Hareketi', es: 'Movimiento Parallax', fr: 'Mouvement Parallaxe' }, icon: '🧊', preview: camParallax.url },
 ]
 
-type GenreTemplate = { id: string; label: Loc; icon: string; prompt: string }
+type GenreTemplate = { id: string; label: Loc; icon: string; prompt: string; preview?: string }
 
 const GENRE_TEMPLATES: GenreTemplate[] = [
   {
@@ -86,6 +105,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
     icon: '🐉',
     prompt:
       'Epic fantasy directing: sweeping wide vistas of dreamlike landscapes, castles and mythical creatures, magical glowing lighting and an awe-inspiring heroic mood.',
+    preview: genreEpicFantasy.url,
   },
   {
     id: 'sci-fi-minimalist',
@@ -93,6 +113,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
     icon: '🛸',
     prompt:
       'Minimalist sci-fi directing: clean white spaces, straight lines, hidden seamless technology and a calm, sleek futuristic atmosphere.',
+    preview: genreScifiMinimal.url,
   },
   {
     id: 'post-apocalyptic',
@@ -100,6 +121,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
     icon: '☢️',
     prompt:
       'Post-apocalyptic directing: ruined cities, nature overgrowing buildings, ash, dust and a desolate abandoned atmosphere with muted desaturated tones.',
+    preview: genrePostApocalyptic.url,
   },
   {
     id: 'horror-jump-scare',
@@ -107,6 +129,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
     icon: '👻',
     prompt:
       'Sudden-horror directing: deep darkness, harsh localized light (like a flashlight), tense silence and abrupt movement changes that create dread and fear.',
+    preview: genreHorror.url,
   },
   {
     id: 'high-octane-action',
@@ -114,6 +137,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
     icon: '🔥',
     prompt:
       'High-octane action directing: rapid cuts, camera shake, explosions, high speed and motion blur for an intense adrenaline-fueled feel.',
+    preview: genreAction.url,
   },
   {
     id: 'romantic-dreamscape',
@@ -121,6 +145,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
     icon: '💗',
     prompt:
       'Romantic dreamscape directing: soft golden-hour sunlight, gentle soft focus on the subjects and warm dreamy colors for an intimate emotional mood.',
+    preview: genreRomantic.url,
   },
   {
     id: 'documentary-realism',
@@ -128,6 +153,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
     icon: '🎥',
     prompt:
       'Documentary realism directing: natural light, no stylized grading, true-to-life colors and simple unobtrusive camera movements for an authentic real feel.',
+    preview: genreDocumentary.url,
   },
   {
     id: 'anime-manga',
@@ -135,10 +161,11 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
     icon: '🌸',
     prompt:
       'Anime/manga style directing: bold outline lines, saturated flat 2D colors and exaggerated dynamic motion effects with expressive energetic action.',
+    preview: genreAnime.url,
   },
 ]
 
-type SceneTemplate = { id: string; label: Loc; icon: string; group: Loc; prompt: string }
+type SceneTemplate = { id: string; label: Loc; icon: string; group: Loc; prompt: string; preview?: string }
 
 const G_INDUSTRIAL: Loc = { en: 'Industrial & Construction', fa: 'صنعتی و ساخت‌وساز', ar: 'صناعي وإنشاءات', tr: 'Endüstriyel ve İnşaat', es: 'Industrial y Construcción', fr: 'Industriel et Construction' }
 const G_URBAN: Loc = { en: 'Urban & Modern', fa: 'شهری و مدرن', ar: 'حضري وحديث', tr: 'Kentsel ve Modern', es: 'Urbano y Moderno', fr: 'Urbain et Moderne' }
@@ -185,6 +212,7 @@ type VideoTemplate = {
   icon: string
   group: Loc
   prompt: string
+  preview?: string
 }
 
 const VG_SPORTS: Loc = { en: 'Sports & Action', fa: 'ورزشی و پرتحرک', ar: 'رياضة وأكشن', tr: 'Spor ve Aksiyon', es: 'Deportes y Acción', fr: 'Sport et Action' }
@@ -964,21 +992,28 @@ export default function ProductAdDialog({
               {CAMERA_STYLES.map((style) => {
                 const active = cameraStyle === style.label.en
                 return (
-                  <button
+                  <StylePreviewCard
                     key={style.label.en}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    onClick={() => setCameraStyle(style.label.en)}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                      active
-                        ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
-                        : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
-                    }`}
+                    title={tr(style.label, lang)}
+                    description={style.desc ? tr(style.desc, lang) : undefined}
+                    preview={style.preview}
+                    rtl={RTL_LANGS.includes(lang)}
                   >
-                    <span className="text-sm leading-none">{style.icon}</span>
-                    {tr(style.label, lang)}
-                  </button>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setCameraStyle(style.label.en)}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                        active
+                          ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
+                          : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
+                      }`}
+                    >
+                      <span className="text-sm leading-none">{style.icon}</span>
+                      {tr(style.label, lang)}
+                    </button>
+                  </StylePreviewCard>
                 )
               })}
             </div>
@@ -993,22 +1028,28 @@ export default function ProductAdDialog({
               {GENRE_TEMPLATES.map((g) => {
                 const active = genre === g.id
                 return (
-                  <button
+                  <StylePreviewCard
                     key={g.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    title={g.prompt}
-                    onClick={() => setGenre((cur) => (cur === g.id ? '' : g.id))}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                      active
-                        ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
-                        : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
-                    }`}
+                    title={tr(g.label, lang)}
+                    description={g.prompt}
+                    preview={g.preview}
+                    rtl={RTL_LANGS.includes(lang)}
                   >
-                    <span className="text-sm leading-none">{g.icon}</span>
-                    {tr(g.label, lang)}
-                  </button>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setGenre((cur) => (cur === g.id ? '' : g.id))}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                        active
+                          ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
+                          : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
+                      }`}
+                    >
+                      <span className="text-sm leading-none">{g.icon}</span>
+                      {tr(g.label, lang)}
+                    </button>
+                  </StylePreviewCard>
                 )
               })}
             </div>
@@ -1029,22 +1070,28 @@ export default function ProductAdDialog({
                     {SCENE_TEMPLATES.filter((s) => s.group.en === group).map((s) => {
                       const active = scene === s.id
                       return (
-                        <button
+                        <StylePreviewCard
                           key={s.id}
-                          type="button"
-                          role="radio"
-                          aria-checked={active}
-                          title={s.prompt}
-                          onClick={() => setScene((cur) => (cur === s.id ? '' : s.id))}
-                          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                            active
-                              ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
-                              : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
-                          }`}
+                          title={tr(s.label, lang)}
+                          description={s.prompt}
+                          preview={s.preview}
+                          rtl={RTL_LANGS.includes(lang)}
                         >
-                          <span className="text-sm leading-none">{s.icon}</span>
-                          {tr(s.label, lang)}
-                        </button>
+                          <button
+                            type="button"
+                            role="radio"
+                            aria-checked={active}
+                            onClick={() => setScene((cur) => (cur === s.id ? '' : s.id))}
+                            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                              active
+                                ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
+                                : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
+                            }`}
+                          >
+                            <span className="text-sm leading-none">{s.icon}</span>
+                            {tr(s.label, lang)}
+                          </button>
+                        </StylePreviewCard>
                       )
                     })}
                   </div>
@@ -1068,21 +1115,27 @@ export default function ProductAdDialog({
                     {VIDEO_TEMPLATES.filter((v) => v.group.en === group).map((v) => {
                       const active = templateIds.has(v.id)
                       return (
-                        <button
+                        <StylePreviewCard
                           key={v.id}
-                          type="button"
-                          aria-pressed={active}
-                          title={v.prompt}
-                          onClick={() => toggleTemplate(v.id)}
-                          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                            active
-                              ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
-                              : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
-                          }`}
+                          title={tr(v.label, lang)}
+                          description={v.prompt}
+                          preview={v.preview}
+                          rtl={RTL_LANGS.includes(lang)}
                         >
-                          <span className="text-sm leading-none">{v.icon}</span>
-                          {tr(v.label, lang)}
-                        </button>
+                          <button
+                            type="button"
+                            aria-pressed={active}
+                            onClick={() => toggleTemplate(v.id)}
+                            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                              active
+                                ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
+                                : 'border-white/10 bg-black/20 text-zinc-400 hover:text-zinc-200'
+                            }`}
+                          >
+                            <span className="text-sm leading-none">{v.icon}</span>
+                            {tr(v.label, lang)}
+                          </button>
+                        </StylePreviewCard>
                       )
                     })}
                   </div>
