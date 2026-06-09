@@ -10,6 +10,13 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { supabase } from '@/integrations/supabase/client'
 
 export type ProductAdDuration = 5 | 10 | 15 | 30 | 45 | 135
@@ -419,7 +426,7 @@ export default function ProductAdDialog({
   const [productName, setProductName] = useState('')
   const [productDescription, setProductDescription] = useState('')
   const [userPrompt, setUserPrompt] = useState('')
-  const [cameraStyle, setCameraStyle] = useState<string>(CAMERA_STYLES[0].label)
+  const [cameraStyle, setCameraStyle] = useState<string>(CAMERA_STYLES[0].label.en)
   const [cameraMovement, setCameraMovement] = useState('')
   const [genre, setGenre] = useState<string>('')
   const [scene, setScene] = useState<string>('')
@@ -595,7 +602,7 @@ export default function ProductAdDialog({
     setProductName('')
     setProductDescription('')
     setUserPrompt('')
-    setCameraStyle(CAMERA_STYLES[0].label)
+    setCameraStyle(CAMERA_STYLES[0].label.en)
     setCameraMovement('')
     setGenre('')
     setScene('')
@@ -611,7 +618,7 @@ export default function ProductAdDialog({
   const concatenated = scenes.join('\n\n')
   const canGenerate = (userPrompt.trim().length > 0 || productName.trim().length > 0 || Boolean(uploadedImageUrl)) && !isUploadingImage
   const t = T[lang]
-  const dir = lang === 'fa' ? 'rtl' : 'ltr'
+  const dir = RTL_LANGS.includes(lang) ? 'rtl' : 'ltr'
 
   return (
     <Dialog
@@ -626,16 +633,24 @@ export default function ProductAdDialog({
           <DialogTitle className="flex items-center gap-2">
             <Package className="h-5 w-5 text-amber-300" aria-hidden="true" />
             {t.title}
-            <button
-              type="button"
-              onClick={() => setLang((l) => (l === 'en' ? 'fa' : 'en'))}
-              title={t.translate}
-              aria-label={t.translate}
-              className="ms-auto inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[11px] font-semibold text-zinc-300 transition hover:border-amber-300/40 hover:text-amber-100"
-            >
-              <Languages className="h-3.5 w-3.5 text-sky-300" aria-hidden="true" />
-              {lang === 'en' ? 'فارسی' : 'EN'}
-            </button>
+            <div className="ms-auto">
+              <Select value={lang} onValueChange={(v) => setLang(v as Lang)}>
+                <SelectTrigger
+                  className="h-7 w-auto gap-1.5 rounded-full border-white/10 bg-black/20 px-2.5 text-[11px] font-semibold text-zinc-300"
+                  aria-label="Language"
+                >
+                  <Languages className="h-3.5 w-3.5 text-sky-300" aria-hidden="true" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LANG_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.native}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </DialogTitle>
           <DialogDescription className="text-zinc-400">
             {t.description}
@@ -770,14 +785,14 @@ export default function ProductAdDialog({
             </div>
             <div role="radiogroup" aria-label="Camera style" className="flex flex-wrap gap-2">
               {CAMERA_STYLES.map((style) => {
-                const active = cameraStyle === style.label
+                const active = cameraStyle === style.label.en
                 return (
                   <button
-                    key={style.label}
+                    key={style.label.en}
                     type="button"
                     role="radio"
                     aria-checked={active}
-                    onClick={() => setCameraStyle(style.label)}
+                    onClick={() => setCameraStyle(style.label.en)}
                     className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                       active
                         ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
@@ -785,7 +800,7 @@ export default function ProductAdDialog({
                     }`}
                   >
                     <span className="text-sm leading-none">{style.icon}</span>
-                    {lang === 'fa' ? style.labelFa : style.label}
+                    {tr(style.label, lang)}
                   </button>
                 )
               })}
@@ -815,7 +830,7 @@ export default function ProductAdDialog({
                     }`}
                   >
                     <span className="text-sm leading-none">{g.icon}</span>
-                    {lang === 'fa' ? g.labelFa : g.label}
+                    {tr(g.label, lang)}
                   </button>
                 )
               })}
@@ -831,10 +846,10 @@ export default function ProductAdDialog({
               {SCENE_GROUPS.map((group) => (
                 <div key={group}>
                   <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                    {lang === 'fa' ? SCENE_GROUP_FA[group] : group}
+                    {tr(SCENE_GROUP_LOC[group], lang)}
                   </div>
                   <div role="radiogroup" aria-label={group} className="flex flex-wrap gap-2">
-                    {SCENE_TEMPLATES.filter((s) => s.group === group).map((s) => {
+                    {SCENE_TEMPLATES.filter((s) => s.group.en === group).map((s) => {
                       const active = scene === s.id
                       return (
                         <button
@@ -851,7 +866,7 @@ export default function ProductAdDialog({
                           }`}
                         >
                           <span className="text-sm leading-none">{s.icon}</span>
-                          {lang === 'fa' ? s.labelFa : s.label}
+                          {tr(s.label, lang)}
                         </button>
                       )
                     })}
@@ -870,10 +885,10 @@ export default function ProductAdDialog({
               {VIDEO_GROUPS.map((group) => (
                 <div key={group}>
                   <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                    {lang === 'fa' ? VIDEO_GROUP_FA[group] : group}
+                    {tr(VIDEO_GROUP_LOC[group], lang)}
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {VIDEO_TEMPLATES.filter((v) => v.group === group).map((v) => {
+                    {VIDEO_TEMPLATES.filter((v) => v.group.en === group).map((v) => {
                       const active = templateIds.has(v.id)
                       return (
                         <button
@@ -889,7 +904,7 @@ export default function ProductAdDialog({
                           }`}
                         >
                           <span className="text-sm leading-none">{v.icon}</span>
-                          {lang === 'fa' ? v.labelFa : v.label}
+                          {tr(v.label, lang)}
                         </button>
                       )
                     })}
