@@ -1270,6 +1270,23 @@ export default function ProductAdDialog({
             </div>
           </DialogContent>
         </Dialog>
+
+        <Dialog open={previewLightboxOpen && Boolean(imagePreviewUrl)} onOpenChange={setPreviewLightboxOpen}>
+          <DialogContent dir={dir} className="max-w-3xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+            <DialogHeader>
+              <DialogTitle className="text-base">{t.viewImage}</DialogTitle>
+            </DialogHeader>
+            {imagePreviewUrl ? (
+              <div className="flex max-h-[80vh] items-center justify-center">
+                <img
+                  src={imagePreviewUrl}
+                  alt="Product preview"
+                  className="max-h-[80vh] w-auto max-w-full rounded-lg object-contain"
+                />
+              </div>
+            ) : null}
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   )
