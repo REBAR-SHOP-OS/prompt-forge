@@ -693,6 +693,14 @@ export default function ProductAdDialog({
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
+  function handleAiImageSaved(row: AiImageSavedRow) {
+    if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
+    setError(null)
+    setImagePreviewUrl(row.storage_path)
+    setUploadedImageUrl(row.storage_path)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
   async function generate() {
     if (isWriting) return
     if (!userPrompt.trim() && !productName.trim() && !uploadedImageUrl) {
