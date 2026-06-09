@@ -778,11 +778,15 @@ export default function DashboardPage() {
   // ----- Storage archive: every film the user ever made, read live from the
   // server (independent of drafts/library local state). -----
   const [isArchiveOpen, setIsArchiveOpen] = useState(false)
-  const [archiveTab, setArchiveTab] = useState<'films' | 'images' | 'audio'>('films')
+  const [archiveTab, setArchiveTab] = useState<'films' | 'images' | 'audio' | 'products'>('films')
   const [archiveJobs, setArchiveJobs] = useState<JobSummary[]>([])
   const [archiveVideos, setArchiveVideos] = useState<VideoSummary[]>([])
   const [archiveImages, setArchiveImages] = useState<UserImageItem[]>([])
+  const [archiveProductImages, setArchiveProductImages] = useState<UserImageItem[]>([])
   const [archiveAudio, setArchiveAudio] = useState<UserAudioItem[]>([])
+  const productPhotoInputRef = useRef<HTMLInputElement | null>(null)
+  const [isUploadingProductPhoto, setIsUploadingProductPhoto] = useState(false)
+  const [productUploadError, setProductUploadError] = useState<string | null>(null)
   const [archiveLoading, setArchiveLoading] = useState(false)
   const loadArchive = async () => {
     setArchiveLoading(true)
