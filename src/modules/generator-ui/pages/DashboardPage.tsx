@@ -787,6 +787,9 @@ export default function DashboardPage() {
   const productPhotoInputRef = useRef<HTMLInputElement | null>(null)
   const [isUploadingProductPhoto, setIsUploadingProductPhoto] = useState(false)
   const [productUploadError, setProductUploadError] = useState<string | null>(null)
+  const [productName, setProductName] = useState('')
+  const [renamingProductId, setRenamingProductId] = useState<string | null>(null)
+  const [renameProductValue, setRenameProductValue] = useState('')
   const [archiveLoading, setArchiveLoading] = useState(false)
   const loadArchive = async () => {
     setArchiveLoading(true)
