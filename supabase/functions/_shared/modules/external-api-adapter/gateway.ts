@@ -86,6 +86,7 @@ export const externalApiAdapterGateway = {
             providerKey: resolved.providerKey,
             resolvedModel: resolved.resolvedModel,
             estimatedCost: resolved.estimatedCost,
+            localConfigured: aiGateway.isLocalVideoConfigured(),
             requestId: ctx.requestId,
           });
         }
