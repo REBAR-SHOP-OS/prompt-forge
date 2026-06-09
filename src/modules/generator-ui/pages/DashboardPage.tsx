@@ -83,7 +83,7 @@ import {
 import { Slider } from '@/components/ui/slider'
 import { Button } from '@/components/ui/button'
 
-import { ApiError } from '@/core/api/client'
+import { ApiError, FUNCTIONS_BASE } from '@/core/api/client'
 import { useAuth } from '@/core/auth/AuthProvider'
 import { supabase } from '@/integrations/supabase/client'
 import WelcomeVideoOverlay from '@/modules/generator-ui/components/WelcomeVideoOverlay'
@@ -785,56 +785,106 @@ export default function DashboardPage() {
   const loadArchive = async () => {
     setArchiveLoading(true)
     try {
-      const [jobs, videos, imagesRes, audioRes] = await Promise.all([
-        jobOrchestratorGateway.listMyJobs(200).catch(() => [] as JobSummary[]),
-        videoLibraryGateway.listMyVideos(200).catch(() => [] as VideoSummary[]),
-        userId
-          ? supabase
-              .from('generator_user_images')
-              .select('id, storage_path, created_at, still_duration_seconds, width, height')
-              .eq('user_id', userId)
-              .is('deleted_at', null)
-              .order('created_at', { ascending: false })
-          : Promise.resolve({ data: [] as UserImageItem[] }),
-        userId
-          ? supabase
-              .from('generator_user_audio')
-              .select('id, storage_path, kind, name, duration_seconds, created_at')
-              .eq('user_id', userId)
-              .is('deleted_at', null)
-              .order('created_at', { ascending: false })
-          : Promise.resolve({ data: [] as UserAudioItem[] }),
-      ])
-      setArchiveJobs(jobs)
-      setArchiveVideos(videos)
-      setArchiveImages(((imagesRes as { data?: UserImageItem[] }).data ?? []) as UserImageItem[])
-      const audioRows = ((audioRes as { data?: UserAudioItem[] }).data ?? []) as UserAudioItem[]
-      // Generate short-lived signed URLs for private-bucket playback.
-      const withUrls = await Promise.all(
-        audioRows.map(async (a) => {
-          try {
-            const { data } = await supabase.storage
-              .from(USER_AUDIO_BUCKET)
-              .createSignedUrl(a.storage_path, 60 * 60)
-            return { ...a, url: data?.signedUrl ?? null }
-          } catch {
-            return { ...a, url: null }
-          }
-        }),
-      )
-      setArchiveAudio(withUrls)
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      if (!token) {
+        setArchiveJobs([]); setArchiveVideos([]); setArchiveImages([]); setArchiveAudio([])
+        return
+      }
+      const res = await fetch(`${FUNCTIONS_BASE}/nas-storage?action=list`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`NAS list failed: ${res.status}`)
+      const body = (await res.json()) as {
+        files: Array<{ path: string; name: string; size: number; mtime: number; ext: string; kind: 'film' | 'image' | 'audio' }>
+      }
+      const files = body.files ?? []
+      const streamUrl = (path: string) =>
+        `${FUNCTIONS_BASE}/nas-storage?action=stream&path=${encodeURIComponent(path)}&token=${encodeURIComponent(token)}`
+
+      const films = files.filter((f) => f.kind === 'film')
+      const images = files.filter((f) => f.kind === 'image')
+      const audio = files.filter((f) => f.kind === 'audio')
+
+      setArchiveJobs(films.map((f) => ({
+        id: f.path,
+        status: 'completed',
+        input_prompt: f.name,
+        provider_key: null,
+        model_key: null,
+        created_at: new Date(f.mtime).toISOString(),
+      })) as unknown as JobSummary[])
+      setArchiveVideos(films.map((f) => ({
+        id: f.path,
+        job_id: f.path,
+        storage_path: streamUrl(f.path),
+        thumbnail_url: null,
+        aspect_ratio: null,
+        duration: null,
+        created_at: new Date(f.mtime).toISOString(),
+      })) as unknown as VideoSummary[])
+      setArchiveImages(images.map((f) => ({
+        id: f.path,
+        storage_path: streamUrl(f.path),
+        created_at: new Date(f.mtime).toISOString(),
+        still_duration_seconds: 0,
+      })) as UserImageItem[])
+      setArchiveAudio(audio.map((f) => ({
+        id: f.path,
+        storage_path: f.path,
+        kind: 'music',
+        name: f.name,
+        duration_seconds: null,
+        created_at: new Date(f.mtime).toISOString(),
+        url: streamUrl(f.path),
+      })) as UserAudioItem[])
+    } catch {
+      setArchiveJobs([]); setArchiveVideos([]); setArchiveImages([]); setArchiveAudio([])
     } finally {
       setArchiveLoading(false)
     }
   }
+
   const [deletingArchiveId, setDeletingArchiveId] = useState<string | null>(null)
   const [playerFilm, setPlayerFilm] = useState<{ jobId: string; storagePath: string; poster: string | null; title: string } | null>(null)
+  // Delete one or more files from the NAS storage folder (id === file path).
+  const deleteNasPaths = async (paths: string[]): Promise<string[]> => {
+    const { data: sessionData } = await supabase.auth.getSession()
+    const token = sessionData.session?.access_token
+    if (!token) throw new Error('Not signed in')
+    const res = await fetch(`${FUNCTIONS_BASE}/nas-storage?action=delete`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths }),
+    })
+    if (!res.ok) throw new Error(`Delete failed: ${res.status}`)
+    const body = (await res.json()) as { deleted?: string[] }
+    return body.deleted ?? []
+  }
+  const removeArchiveByPaths = (paths: string[]) => {
+    const gone = new Set(paths)
+    setArchiveJobs((prev) => prev.filter((j) => !gone.has(j.id)))
+    setArchiveVideos((prev) => prev.filter((v) => !gone.has(v.job_id)))
+    setArchiveImages((prev) => prev.filter((i) => !gone.has(i.id)))
+    setArchiveAudio((prev) => prev.filter((a) => !gone.has(a.id)))
+  }
   const handleDeleteArchiveJob = async (jobId: string) => {
     setDeletingArchiveId(jobId)
     try {
-      await jobOrchestratorGateway.deleteJob(jobId)
-      setArchiveJobs((prev) => prev.filter((j) => j.id !== jobId))
-      setArchiveVideos((prev) => prev.filter((v) => v.job_id !== jobId))
+      const deleted = await deleteNasPaths([jobId])
+      removeArchiveByPaths(deleted.length ? deleted : [jobId])
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : (err as Error).message
+      if (typeof window !== 'undefined') window.alert(`Delete failed: ${msg}`)
+    } finally {
+      setDeletingArchiveId(null)
+    }
+  }
+  const handleDeleteArchiveFile = async (path: string) => {
+    setDeletingArchiveId(path)
+    try {
+      const deleted = await deleteNasPaths([path])
+      removeArchiveByPaths(deleted.length ? deleted : [path])
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : (err as Error).message
       if (typeof window !== 'undefined') window.alert(`Delete failed: ${msg}`)
@@ -862,25 +912,17 @@ export default function DashboardPage() {
     if (ids.length === 0) return
     setIsBulkDeleting(true)
     try {
-      for (const id of ids) {
-        try {
-          if (archiveTab === 'films') {
-            await handleDeleteArchiveJob(id)
-          } else if (archiveTab === 'images') {
-            await handleDeleteUserImage(id)
-          } else {
-            const item = archiveAudio.find((a) => a.id === id)
-            if (item) await handleDeleteUserAudio(item)
-          }
-        } catch {
-          /* keep going with the rest */
-        }
-      }
+      const deleted = await deleteNasPaths(ids)
+      removeArchiveByPaths(deleted.length ? deleted : ids)
       setSelectedArchiveIds(new Set())
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : (err as Error).message
+      if (typeof window !== 'undefined') window.alert(`Delete failed: ${msg}`)
     } finally {
       setIsBulkDeleting(false)
     }
   }
+
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [hasOccasionToday, setHasOccasionToday] = useState(false)
 
@@ -5667,7 +5709,7 @@ export default function DashboardPage() {
                               <AlertDialogFooter>
                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                                 <AlertDialogAction
-                                  onClick={() => { void handleDeleteUserAudio(a) }}
+                                  onClick={() => { void handleDeleteArchiveFile(a.id) }}
                                   className="bg-rose-600 text-white hover:bg-rose-700"
                                 >
                                   Delete
@@ -5772,7 +5814,7 @@ export default function DashboardPage() {
                               <AlertDialogFooter>
                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                                 <AlertDialogAction
-                                  onClick={() => { void handleDeleteUserImage(img.id) }}
+                                  onClick={() => { void handleDeleteArchiveFile(img.id) }}
                                   className="bg-rose-600 text-white hover:bg-rose-700"
                                 >
                                   Delete
