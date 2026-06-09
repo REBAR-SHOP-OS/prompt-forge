@@ -3197,6 +3197,7 @@ export default function DashboardPage() {
       if (up.error) throw up.error
       const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
       const publicUrl = pub.publicUrl
+      const trimmedName = productName.trim().slice(0, 100)
       const { data: row, error: insErr } = await supabase
         .from('generator_user_images')
         .insert({
@@ -3205,11 +3206,13 @@ export default function DashboardPage() {
           size_bytes: file.size,
           mime_type: file.type,
           category: 'product',
+          title: trimmedName || null,
         })
-        .select('id, storage_path, created_at, still_duration_seconds, width, height, category')
+        .select('id, storage_path, created_at, still_duration_seconds, width, height, category, title')
         .single()
       if (insErr) throw insErr
       setArchiveProductImages((prev) => [row as UserImageItem, ...prev])
+      setProductName('')
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Upload failed.'
       setProductUploadError(`Upload failed: ${msg}`)
