@@ -1,51 +1,63 @@
-## Goal
+# حل ریشه‌ای ارور LOCAL_NOT_CONFIGURED
 
-1. The calendar/"Occasion today" icon must turn **red only on days that genuinely have an occasion** — no more AI false positives like the bogus "Eid al-Adha" shown today.
-2. The calendar must **always list all occasions accurately**, especially **Canadian holidays**, with correct dates.
+## ریشه‌ی واقعی مشکل
+کد اپ کاملاً درست و کامل است. وقتی مدل «Local Wan 2.1» انتخاب می‌شود، تابع `readLocalVideoConfig()` در
+`supabase/functions/_shared/modules/external-api-adapter/service.ts` دنبال متغیر محیطی
+`LOCAL_VIDEO_BASE_URL` می‌گردد. چون این secret وجود ندارد، پیام
+«Local video generation is not configured yet…» برمی‌گردد. این خطا = «هنوز تنظیم نشده»، نه باگ.
 
-## Root cause
+سه چیز برای اجرای واقعی لازم است که **هیچ‌کدام هنوز فراهم نیست**:
 
-`supabase/functions/day-info/index.ts` asks an AI model to both *find* occasions and *compute their dates*. The model hallucinates and misplaces movable holidays (confirmed: it returned Eid al-Adha on 2026-06-09, which is wrong). The red dot in `DashboardPage.tsx` (`hasOccasionToday`) and the calendar lists both consume this unreliable output directly.
+1. روی باکس RTX 4090 یک سرور HTTP باید این دو endpoint سبک (OpenAI-style) را ارائه دهد:
+   - `POST {BASE}/v1/videos/generations`
+   - `GET  {BASE}/v1/videos/generations/{id}`
+2. این سرور باید از اینترنت قابل دسترسی باشد (edge functionها در ابر اجرا می‌شوند).
+3. مقدار `LOCAL_VIDEO_BASE_URL` باید به آدرس عمومی همان سرور تنظیم شود.
 
-## Approach
+آدرسی که در history داده شده (`rebarshop.tail669f65.ts.net`) فقط هاست **SSH روی Tailnet** برای NAS است؛
+نه API ویدیو است و نه از ابر resolve می‌شود. پس قابل استفاده برای این کار نیست.
 
-Make occasion **presence and dates deterministic**, and use AI only to write the descriptive text. This removes hallucinated red dots and guarantees Canadian accuracy.
+## قرارداد API که باکس RTX باید رعایت کند
+درخواست ساخت (همان چیزی که کد ارسال می‌کند):
+```text
+POST {BASE}/v1/videos/generations
+{
+  "model": "local/wan-2.1-i2v",
+  "prompt": "...",
+  "image_url": "<first frame or null>",
+  "first_frame_url": "...", "last_frame_url": "...",
+  "duration": 5, "duration_seconds": 5,
+  "aspect_ratio": "16:9",
+  "response_format": "url"
+}
+```
+پاسخ قابل قبول (هرکدام): یا `{"video_url": "..."}` (همگام) یا یک شناسه‌ی job مثل
+`{"id": "..."}` / `{"task_id": "..."}` و سپس poll روی
+`GET {BASE}/v1/videos/generations/{id}` که در نهایت `video_url` و وضعیت برمی‌گرداند.
+اگر هدر احراز هویت می‌خواهد، در secret جداگانه‌ی `LOCAL_VIDEO_API_KEY` گذاشته می‌شود
+(به صورت `Authorization: Bearer ...` ارسال می‌شود).
 
-### 1. New deterministic occasions dataset (edge side)
+## روش پیشنهادی برای دسترسی عمومی: Tailscale Funnel
+چون از قبل Tailscale دارید، تمیزترین راه (بدون باز کردن پورت روی روتر) این است:
+روی باکس RTX سرور ویدیو را مثلاً روی پورت `8080` اجرا کنید، سپس:
+```text
+tailscale funnel 8080
+```
+این یک URL عمومی HTTPS می‌دهد مثل
+`https://<machine>.tail669f65.ts.net` که از ابر قابل دسترسی است (برخلاف SSH، Funnel برای HTTP عالی کار می‌کند).
+مقدار `LOCAL_VIDEO_BASE_URL` همان URL خواهد بود (کد به‌صورت خودکار `/v1` را اضافه می‌کند، پس فقط ریشه را بدهید).
+جایگزین: DDNS + Port Forward روی روتر و دادن `https://your-ddns:port`.
 
-Add `supabase/functions/_shared/occasions.ts` that, given a year, returns a typed list `{ date, title, category }`:
+## کارهایی که در این پروژه انجام می‌دهم
+1. **secret تنظیم می‌کنم:** `LOCAL_VIDEO_BASE_URL` (و در صورت نیاز `LOCAL_VIDEO_API_KEY`) را با ابزار secret اضافه می‌کنم — به محض اینکه URL عمومی RTX را بدهید.
+2. **تست end-to-end:** با `supabase--curl_edge_functions` یک job مدل `local/wan-2.1-i2v` می‌سازم و لاگ‌های edge function را بررسی می‌کنم تا اتصال و قرارداد API تأیید شود.
+3. **بهبود UX حالت پیکربندی‌نشده (`DashboardPage.tsx`):** تا وقتی local پیکربندی نشده، آیتم‌های Local Wan/LTX در منو به‌صورت واضح «Not configured» نشان داده شوند (disabled + توضیح کوتاه) به‌جای اینکه کاربر کلیک کند و به ارور بخورد. وقتی secret ست شد، خودکار فعال می‌شوند.
 
-- **Canada (computed each year):** New Year's Day, Family Day (3rd Mon Feb), Good Friday (computus), Victoria Day (Mon before May 25), Canada Day (Jul 1), Civic Holiday (1st Mon Aug), Labour Day (1st Mon Sep), National Day for Truth and Reconciliation (Sep 30), Thanksgiving (2nd Mon Oct), Remembrance Day (Nov 11), Christmas (Dec 25), Boxing Day (Dec 26). Plus Saint-Jean-Baptiste (Jun 24) tagged Canada.
-- **International (fixed/computed):** New Year, Valentine's Day, International Women's Day, Earth Day, World Health/Environment Day, International Day of Peace, Human Rights Day, Halloween, Mother's Day (2nd Sun May), Father's Day (3rd Sun Jun).
-- **Religious:** Easter & related (Ash Wednesday, Good Friday, Easter, Pentecost) via the computus algorithm; Christmas/Epiphany/All Saints fixed. For lunar-calendar holidays (Eid al-Fitr, Eid al-Adha, Ramadan start, Rosh Hashanah, Yom Kippur, Hanukkah, Passover, Diwali, Holi, Vesak, Vaisakhi) use a **maintained lookup table for 2025–2028** with verified Gregorian dates (no AI guessing). Years outside the table simply omit those movable entries rather than guess.
+## بخش فنی
+- فایل‌های دخیل: `service.ts` (فقط خواندن config — بدون تغییر منطق)، `gateway.ts` (مسیر local درست است)، `DashboardPage.tsx` (فقط بهبود نمایش منو).
+- بدون تغییر دیتابیس؛ مدل‌های local هزینه‌ی صفر دارند و قبلاً در migration مجاز شده‌اند.
+- مدل‌ها در `LOCAL_VIDEO_MODELS` با id های فرانت‌اند یکی هستند؛ مشکل mapping وجود ندارد.
 
-### 2. Rework `day-info` to be data-driven
-
-- **Day mode** (`{ date }`): filter the dataset to that exact date. If none → return empty (icon stays not-red). If matches exist, call the AI **only** to generate `whatItIs` + `history` for those specific, named occasions (so it can't invent or move dates).
-- **Month mode** (`{ month }`): filter the dataset to that month, return all entries (with a short AI-written one-liner each, or a fast static blurb). Dates come from the dataset, never the model.
-- Keep the existing response shape (`{ occasions: [...] , lang }`) so the frontend needs no contract change.
-
-### 3. Frontend red-dot correctness
-
-In `DashboardPage.tsx` (`hasOccasionToday` effect):
-- Keep the per-day localStorage cache but **bump the cache key version** (e.g. `occasion-today-v2:<date>`) so today's stale `'1'` is discarded for every user.
-- Logic stays: red only when `occasions.length > 0` — now reliable because the source is deterministic.
-
-No visual/styling changes to the button itself.
-
-## Files touched
-
-- `supabase/functions/_shared/occasions.ts` (new — deterministic dataset + helpers)
-- `supabase/functions/day-info/index.ts` (rewrite to use the dataset; AI only for prose)
-- `src/modules/generator-ui/pages/DashboardPage.tsx` (bump occasion-today cache key)
-
-## Verification
-
-- Call `day-info` for 2026-06-09 → expect **empty** occasions (icon not red).
-- Call for 2026-07-01 → expect **Canada Day**.
-- Call month mode for 2026-07 → expect Canada Day on the 1st; spot-check other Canadian months (Feb Family Day, May Victoria Day, Oct Thanksgiving).
-- Reload preview and confirm the calendar icon is no longer red today.
-
-## Note / tradeoff
-
-Lunar-calendar religious holidays are only accurate for the years in the maintained table (2025–2028). When a new year approaches, that table needs a quick update. This is the price of eliminating AI date hallucinations — fixed/computed holidays (all Canadian ones) are always correct.
+## چیزی که از شما لازم است
+URL عمومی HTTPS سرور ویدیوی RTX (مثلاً خروجی `tailscale funnel`).
+بدون این آدرس قابل دسترس از اینترنت، اجرای واقعی local از ابر ممکن نیست — این محدودیت زیرساخت است، نه کد.

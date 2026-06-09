@@ -91,4 +91,10 @@ export interface AiGateway {
     providerJobId: string,
     ctx?: { client: SupabaseClient; userId: string },
   ): Promise<GenerationPollResult>;
+  /**
+   * Whether the local RTX video router is configured (LOCAL_VIDEO_BASE_URL set
+   * and valid). Lets the UI surface a clear "not configured" state up front
+   * instead of letting users hit a runtime error after selecting a local model.
+   */
+  isLocalVideoConfigured(): boolean;
 }
