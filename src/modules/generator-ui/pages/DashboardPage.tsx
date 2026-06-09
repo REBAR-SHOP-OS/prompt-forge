@@ -5688,19 +5688,30 @@ export default function DashboardPage() {
                       className="hidden"
                       onChange={(e) => { void handleProductPhotoSelected(e) }}
                     />
-                    <button
-                      type="button"
-                      onClick={handlePickProductPhoto}
-                      disabled={isUploadingProductPhoto || !userId}
-                      className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-sky-300/30 bg-sky-500/10 px-3 py-2 text-xs font-semibold text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {isUploadingProductPhoto ? (
-                        <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
-                      ) : (
-                        <Package className="h-4 w-4" aria-hidden="true" />
-                      )}
-                      {isUploadingProductPhoto ? 'Uploading…' : 'Upload product photo'}
-                    </button>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <input
+                        type="text"
+                        value={productName}
+                        onChange={(e) => setProductName(e.target.value)}
+                        maxLength={100}
+                        placeholder="Product name (optional)"
+                        disabled={isUploadingProductPhoto || !userId}
+                        className="w-44 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 outline-none transition focus:border-sky-300/40 disabled:cursor-not-allowed disabled:opacity-50"
+                      />
+                      <button
+                        type="button"
+                        onClick={handlePickProductPhoto}
+                        disabled={isUploadingProductPhoto || !userId}
+                        className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-sky-300/30 bg-sky-500/10 px-3 py-2 text-xs font-semibold text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isUploadingProductPhoto ? (
+                          <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Package className="h-4 w-4" aria-hidden="true" />
+                        )}
+                        {isUploadingProductPhoto ? 'Uploading…' : 'Upload product photo'}
+                      </button>
+                    </div>
                   </div>
 
                   {archiveLoading && archiveProductImages.length === 0 ? (
