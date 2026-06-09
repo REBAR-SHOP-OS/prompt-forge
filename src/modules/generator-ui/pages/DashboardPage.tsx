@@ -874,7 +874,7 @@ export default function DashboardPage() {
         try {
           if (archiveTab === 'films') {
             await handleDeleteArchiveJob(id)
-          } else if (archiveTab === 'images') {
+          } else if (archiveTab === 'images' || archiveTab === 'products') {
             await handleDeleteUserImage(id)
           } else {
             const item = archiveAudio.find((a) => a.id === id)
