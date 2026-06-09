@@ -1342,15 +1342,10 @@ async function pollGeneration(
   return { status: "processing", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null, progressPercent: 25 };
 }
 
-export function isLocalVideoConfigured(): boolean {
-  return readLocalVideoConfig().ok;
-}
-
 export const aiGateway: AiGateway = {
   resolveRoute,
   sanitizePrompt,
   getProviderApiKey,
   startGeneration,
   pollGeneration,
-  isLocalVideoConfigured,
 };

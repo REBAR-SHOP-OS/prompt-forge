@@ -40,12 +40,6 @@ export async function proxiedVideoUrl(url: string): Promise<string> {
     return url;
   }
 
-  // The nas-storage edge function already serves bytes with CORS + Range and
-  // carries its own token in the query string — never double-proxy it.
-  if (parsed.pathname.includes("/functions/v1/nas-storage")) {
-    return url;
-  }
-
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) {
