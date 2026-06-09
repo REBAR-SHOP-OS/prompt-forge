@@ -152,6 +152,7 @@ type UserImageItem = {
   width?: number | null
   height?: number | null
   category?: string | null
+  title?: string | null
 }
 
 type UnifiedClip =
@@ -787,6 +788,9 @@ export default function DashboardPage() {
   const productPhotoInputRef = useRef<HTMLInputElement | null>(null)
   const [isUploadingProductPhoto, setIsUploadingProductPhoto] = useState(false)
   const [productUploadError, setProductUploadError] = useState<string | null>(null)
+  const [productName, setProductName] = useState('')
+  const [renamingProductId, setRenamingProductId] = useState<string | null>(null)
+  const [renameProductValue, setRenameProductValue] = useState('')
   const [archiveLoading, setArchiveLoading] = useState(false)
   const loadArchive = async () => {
     setArchiveLoading(true)
@@ -797,7 +801,7 @@ export default function DashboardPage() {
         userId
           ? supabase
               .from('generator_user_images')
-              .select('id, storage_path, created_at, still_duration_seconds, width, height, category')
+              .select('id, storage_path, created_at, still_duration_seconds, width, height, category, title')
               .eq('user_id', userId)
               .is('deleted_at', null)
               .order('created_at', { ascending: false })
@@ -3193,6 +3197,7 @@ export default function DashboardPage() {
       if (up.error) throw up.error
       const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
       const publicUrl = pub.publicUrl
+      const trimmedName = productName.trim().slice(0, 100)
       const { data: row, error: insErr } = await supabase
         .from('generator_user_images')
         .insert({
@@ -3201,16 +3206,49 @@ export default function DashboardPage() {
           size_bytes: file.size,
           mime_type: file.type,
           category: 'product',
+          title: trimmedName || null,
         })
-        .select('id, storage_path, created_at, still_duration_seconds, width, height, category')
+        .select('id, storage_path, created_at, still_duration_seconds, width, height, category, title')
         .single()
       if (insErr) throw insErr
       setArchiveProductImages((prev) => [row as UserImageItem, ...prev])
+      setProductName('')
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Upload failed.'
       setProductUploadError(`Upload failed: ${msg}`)
     } finally {
       setIsUploadingProductPhoto(false)
+    }
+  }
+
+  const startRenameProduct = (img: UserImageItem) => {
+    setRenamingProductId(img.id)
+    setRenameProductValue(img.title ?? '')
+  }
+
+  const cancelRenameProduct = () => {
+    setRenamingProductId(null)
+    setRenameProductValue('')
+  }
+
+  const renameProductPhoto = async (imageId: string) => {
+    if (!userId) return
+    const nextTitle = renameProductValue.trim().slice(0, 100) || null
+    try {
+      const { error } = await supabase
+        .from('generator_user_images')
+        .update({ title: nextTitle })
+        .eq('id', imageId)
+        .eq('user_id', userId)
+      if (error) throw error
+      setArchiveProductImages((prev) =>
+        prev.map((i) => (i.id === imageId ? { ...i, title: nextTitle } : i)),
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Could not rename.'
+      setProductUploadError(`Rename failed: ${msg}`)
+    } finally {
+      cancelRenameProduct()
     }
   }
 
@@ -5650,19 +5688,30 @@ export default function DashboardPage() {
                       className="hidden"
                       onChange={(e) => { void handleProductPhotoSelected(e) }}
                     />
-                    <button
-                      type="button"
-                      onClick={handlePickProductPhoto}
-                      disabled={isUploadingProductPhoto || !userId}
-                      className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-sky-300/30 bg-sky-500/10 px-3 py-2 text-xs font-semibold text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {isUploadingProductPhoto ? (
-                        <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
-                      ) : (
-                        <Package className="h-4 w-4" aria-hidden="true" />
-                      )}
-                      {isUploadingProductPhoto ? 'Uploading…' : 'Upload product photo'}
-                    </button>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <input
+                        type="text"
+                        value={productName}
+                        onChange={(e) => setProductName(e.target.value)}
+                        maxLength={100}
+                        placeholder="Product name (optional)"
+                        disabled={isUploadingProductPhoto || !userId}
+                        className="w-44 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 outline-none transition focus:border-sky-300/40 disabled:cursor-not-allowed disabled:opacity-50"
+                      />
+                      <button
+                        type="button"
+                        onClick={handlePickProductPhoto}
+                        disabled={isUploadingProductPhoto || !userId}
+                        className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-sky-300/30 bg-sky-500/10 px-3 py-2 text-xs font-semibold text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isUploadingProductPhoto ? (
+                          <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Package className="h-4 w-4" aria-hidden="true" />
+                        )}
+                        {isUploadingProductPhoto ? 'Uploading…' : 'Upload product photo'}
+                      </button>
+                    </div>
                   </div>
 
                   {archiveLoading && archiveProductImages.length === 0 ? (
@@ -5711,6 +5760,53 @@ export default function DashboardPage() {
                               />
                             </span>
                           </button>
+                          {renamingProductId === img.id ? (
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                value={renameProductValue}
+                                onChange={(e) => setRenameProductValue(e.target.value)}
+                                maxLength={100}
+                                autoFocus
+                                placeholder="Product name"
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') { void renameProductPhoto(img.id) }
+                                  if (e.key === 'Escape') cancelRenameProduct()
+                                }}
+                                className="min-w-0 flex-1 rounded-md border border-white/10 bg-white/[0.05] px-2 py-1 text-xs text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-sky-300/40"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => { void renameProductPhoto(img.id) }}
+                                aria-label="Save name"
+                                title="Save"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                              >
+                                <Check className="h-3 w-3" aria-hidden="true" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelRenameProduct}
+                                aria-label="Cancel"
+                                title="Cancel"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                              >
+                                <X className="h-3 w-3" aria-hidden="true" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => startRenameProduct(img)}
+                              title="Rename product"
+                              className="group flex items-center gap-1.5 text-left"
+                            >
+                              <span className={`truncate text-xs font-medium ${img.title ? 'text-zinc-200' : 'italic text-zinc-500'}`}>
+                                {img.title || 'Untitled'}
+                              </span>
+                              <Pencil className="h-3 w-3 shrink-0 text-zinc-500 opacity-0 transition group-hover:opacity-100" aria-hidden="true" />
+                            </button>
+                          )}
                           <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
                             <span className="tabular-nums">{formatCreatedAt(img.created_at)}</span>
                             <div className="flex shrink-0 items-center gap-1.5">
