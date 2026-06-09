@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Package, LoaderCircle, RefreshCw, Copy, Check, Wand2, Send, ImagePlus, X, Languages } from 'lucide-react'
+import { Package, LoaderCircle, RefreshCw, Copy, Check, Wand2, Send, ImagePlus, X, Languages, Boxes, ArrowLeft } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -32,6 +32,18 @@ type Props = {
 
 const DURATIONS: ProductAdDuration[] = [5, 10, 15, 30, 45, 135]
 const FRAMES_BUCKET = 'wan-frames'
+const PRODUCTS_BUCKET = 'user-images'
+const PROJECT_ID = 'sacxoanuyetjfrfllkzx'
+const FUNCTIONS_BASE = `https://${PROJECT_ID}.supabase.co/functions/v1`
+
+type ProductAspect = '9:16' | '1:1' | '16:9'
+const PRODUCT_ASPECTS: { value: ProductAspect; cls: string }[] = [
+  { value: '9:16', cls: 'aspect-[9/16]' },
+  { value: '1:1', cls: 'aspect-square' },
+  { value: '16:9', cls: 'aspect-video' },
+]
+
+type ProductPhoto = { id: string; title: string | null; url: string }
 
 const SPLIT_DURATIONS = [30, 45, 135]
 const sceneRange = (i: number) => `${i * 15}–${(i + 1) * 15}s`
@@ -251,6 +263,15 @@ const T: Record<Lang, Record<string, string>> = {
     useAsPrompt: 'Use as prompt',
     generate: 'Generate ad scenario',
     language: 'Language',
+    chooseFromProducts: 'Choose from products',
+    pickAspect: 'Choose image dimensions',
+    pickProduct: 'Choose a product',
+    aspectHint: 'Pick the dimensions first, then choose a product.',
+    noProducts: 'No saved product photos yet.',
+    untitled: 'Untitled',
+    preparing: 'Preparing image…',
+    loadingProducts: 'Loading products…',
+    back: 'Back',
   },
   fa: {
     title: 'سناریوی تبلیغ محصول',
@@ -283,6 +304,15 @@ const T: Record<Lang, Record<string, string>> = {
     useAsPrompt: 'استفاده به‌عنوان پرامت',
     generate: 'تولید سناریوی تبلیغ',
     language: 'زبان',
+    chooseFromProducts: 'انتخاب از محصولات',
+    pickAspect: 'انتخاب ابعاد تصویر',
+    pickProduct: 'یک محصول را انتخاب کنید',
+    aspectHint: 'ابتدا ابعاد را انتخاب کنید، سپس محصول را برگزینید.',
+    noProducts: 'هنوز عکس محصولی ذخیره نشده است.',
+    untitled: 'بدون نام',
+    preparing: 'در حال آماده‌سازی تصویر…',
+    loadingProducts: 'در حال بارگذاری محصولات…',
+    back: 'بازگشت',
   },
   ar: {
     title: 'سيناريو إعلان المنتج',
@@ -315,6 +345,15 @@ const T: Record<Lang, Record<string, string>> = {
     useAsPrompt: 'استخدام كموجّه',
     generate: 'توليد سيناريو الإعلان',
     language: 'اللغة',
+    chooseFromProducts: 'اختر من المنتجات',
+    pickAspect: 'اختر أبعاد الصورة',
+    pickProduct: 'اختر منتجًا',
+    aspectHint: 'اختر الأبعاد أولاً ثم اختر المنتج.',
+    noProducts: 'لا توجد صور منتجات محفوظة بعد.',
+    untitled: 'بدون اسم',
+    preparing: 'جارٍ تحضير الصورة…',
+    loadingProducts: 'جارٍ تحميل المنتجات…',
+    back: 'رجوع',
   },
   tr: {
     title: 'Ürün Reklam Senaryosu',
@@ -347,6 +386,15 @@ const T: Record<Lang, Record<string, string>> = {
     useAsPrompt: 'İstem olarak kullan',
     generate: 'Reklam senaryosu oluştur',
     language: 'Dil',
+    chooseFromProducts: 'Ürünlerden seç',
+    pickAspect: 'Görüntü boyutlarını seç',
+    pickProduct: 'Bir ürün seç',
+    aspectHint: 'Önce boyutları, sonra ürünü seçin.',
+    noProducts: 'Henüz kayıtlı ürün fotoğrafı yok.',
+    untitled: 'Adsız',
+    preparing: 'Görüntü hazırlanıyor…',
+    loadingProducts: 'Ürünler yükleniyor…',
+    back: 'Geri',
   },
   es: {
     title: 'Guion de Anuncio de Producto',
@@ -379,6 +427,15 @@ const T: Record<Lang, Record<string, string>> = {
     useAsPrompt: 'Usar como prompt',
     generate: 'Generar guion del anuncio',
     language: 'Idioma',
+    chooseFromProducts: 'Elegir de productos',
+    pickAspect: 'Elige las dimensiones de la imagen',
+    pickProduct: 'Elige un producto',
+    aspectHint: 'Elige primero las dimensiones y luego el producto.',
+    noProducts: 'Aún no hay fotos de productos guardadas.',
+    untitled: 'Sin título',
+    preparing: 'Preparando imagen…',
+    loadingProducts: 'Cargando productos…',
+    back: 'Atrás',
   },
   fr: {
     title: 'Scénario de Publicité Produit',
@@ -411,6 +468,15 @@ const T: Record<Lang, Record<string, string>> = {
     useAsPrompt: 'Utiliser comme prompt',
     generate: 'Générer le scénario publicitaire',
     language: 'Langue',
+    chooseFromProducts: 'Choisir parmi les produits',
+    pickAspect: 'Choisissez les dimensions de l’image',
+    pickProduct: 'Choisissez un produit',
+    aspectHint: 'Choisissez d’abord les dimensions, puis le produit.',
+    noProducts: 'Aucune photo de produit enregistrée.',
+    untitled: 'Sans titre',
+    preparing: 'Préparation de l’image…',
+    loadingProducts: 'Chargement des produits…',
+    back: 'Retour',
   },
 }
 
@@ -441,6 +507,73 @@ export default function ProductAdDialog({
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null)
   const [isUploadingImage, setIsUploadingImage] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Product picker (choose a saved product photo + reframe to chosen dimensions)
+  const [productPickerOpen, setProductPickerOpen] = useState(false)
+  const [pickedAspect, setPickedAspect] = useState<ProductAspect | null>(null)
+  const [productPhotos, setProductPhotos] = useState<ProductPhoto[]>([])
+  const [loadingProducts, setLoadingProducts] = useState(false)
+  const [preparingId, setPreparingId] = useState<string | null>(null)
+
+  async function openProductPicker() {
+    if (!userId) {
+      setError('Please sign in to choose a product.')
+      return
+    }
+    setError(null)
+    setPickedAspect(null)
+    setProductPickerOpen(true)
+    setLoadingProducts(true)
+    try {
+      const { data, error: qErr } = await supabase
+        .from('generator_user_images')
+        .select('id, storage_path, title, category')
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+      if (qErr) throw new Error(qErr.message)
+      const rows = (data ?? []).filter((r) => (r.category ?? 'general') === 'product')
+      const photos: ProductPhoto[] = rows.map((r) => ({
+        id: r.id,
+        title: r.title ?? null,
+        url: supabase.storage.from(PRODUCTS_BUCKET).getPublicUrl(r.storage_path).data.publicUrl,
+      }))
+      setProductPhotos(photos)
+    } catch (e) {
+      setError((e as Error).message ?? 'Failed to load products')
+    } finally {
+      setLoadingProducts(false)
+    }
+  }
+
+  async function pickProduct(photo: ProductPhoto) {
+    if (!pickedAspect || preparingId) return
+    setError(null)
+    setPreparingId(photo.id)
+    try {
+      const { data: sess } = await supabase.auth.getSession()
+      const token = sess.session?.access_token
+      if (!token) throw new Error('You are signed out. Please sign in again.')
+      const resp = await fetch(`${FUNCTIONS_BASE}/image-reframe`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: photo.url, aspectRatio: pickedAspect }),
+      })
+      const json = await resp.json().catch(() => ({}))
+      if (!resp.ok) throw new Error(json?.error || `Request failed (${resp.status})`)
+      const reframedUrl = json.publicUrl as string
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
+      setImagePreviewUrl(reframedUrl)
+      setUploadedImageUrl(reframedUrl)
+      if (!productName.trim() && photo.title) setProductName(photo.title)
+      setProductPickerOpen(false)
+    } catch (e) {
+      setError((e as Error).message ?? 'Failed to prepare image')
+    } finally {
+      setPreparingId(null)
+    }
+  }
+
 
   useEffect(() => {
     if (open) {
@@ -667,7 +800,9 @@ export default function ProductAdDialog({
               className="hidden"
               onChange={(e) => handlePickImage(e.target.files?.[0])}
             />
-            <div className="relative shrink-0">
+            <div className="flex shrink-0 flex-col items-center gap-1.5">
+            <div className="relative">
+              {/* spacer wrapper */}
               {imagePreviewUrl ? (
                 <div className="relative">
                   <img
@@ -701,6 +836,16 @@ export default function ProductAdDialog({
                   <span className="text-[10px]">{t.photo}</span>
                 </button>
               )}
+            </div>
+              <button
+                type="button"
+                onClick={openProductPicker}
+                title={t.chooseFromProducts}
+                className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-white/10 bg-black/30 px-1 py-1 text-[10px] text-zinc-300 transition hover:border-amber-300/40 hover:text-amber-100"
+              >
+                <Boxes className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="truncate">{t.chooseFromProducts}</span>
+              </button>
             </div>
             <div className="flex-1 space-y-2">
               <div>
@@ -1032,6 +1177,81 @@ export default function ProductAdDialog({
             </Button>
           )}
         </div>
+
+        <Dialog open={productPickerOpen} onOpenChange={(o) => { if (!preparingId) setProductPickerOpen(o) }}>
+          <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Boxes className="h-4 w-4" aria-hidden="true" /> {t.chooseFromProducts}
+              </DialogTitle>
+              <DialogDescription className="text-zinc-400">{t.aspectHint}</DialogDescription>
+            </DialogHeader>
+
+            {/* Step 1: aspect ratio */}
+            <div>
+              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.pickAspect}</div>
+              <div role="radiogroup" className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
+                {PRODUCT_ASPECTS.map((opt) => {
+                  const active = pickedAspect === opt.value
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setPickedAspect(opt.value)}
+                      className={`rounded-full px-3 py-1.5 transition ${active ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+                    >
+                      {opt.value}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Step 2: product grid */}
+            <div className="mt-3">
+              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">{t.pickProduct}</div>
+              {loadingProducts ? (
+                <div className="flex items-center justify-center py-10 text-sm text-zinc-400">
+                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> {t.loadingProducts}
+                </div>
+              ) : productPhotos.length === 0 ? (
+                <div className="py-10 text-center text-sm text-zinc-500">{t.noProducts}</div>
+              ) : (
+                <div className="grid max-h-[50vh] grid-cols-3 gap-3 overflow-y-auto pr-1 sm:grid-cols-4">
+                  {productPhotos.map((photo) => {
+                    const busy = preparingId === photo.id
+                    return (
+                      <button
+                        key={photo.id}
+                        type="button"
+                        disabled={!pickedAspect || Boolean(preparingId)}
+                        onClick={() => pickProduct(photo)}
+                        className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-amber-300/40 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <img src={photo.url} alt={photo.title ?? 'Product'} className="aspect-square w-full object-cover" />
+                        <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || t.untitled}</div>
+                        {busy ? (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/60 text-xs text-zinc-100">
+                            <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+                            {t.preparing}
+                          </div>
+                        ) : null}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end pt-2">
+              <Button variant="ghost" size="sm" onClick={() => { if (!preparingId) setProductPickerOpen(false) }} disabled={Boolean(preparingId)}>
+                <ArrowLeft className="mr-1.5 h-4 w-4" aria-hidden="true" /> {t.back}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   )
