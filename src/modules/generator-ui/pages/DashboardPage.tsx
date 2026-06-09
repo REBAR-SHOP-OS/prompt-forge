@@ -129,6 +129,7 @@ const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.red
 )
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
+import { getMajorOccasionForDate } from '@/modules/generator-ui/lib/majorOccasions'
 
 type VideoJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
 type UploadTarget = 'Start' | 'End'
@@ -884,32 +885,10 @@ export default function DashboardPage() {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [hasOccasionToday, setHasOccasionToday] = useState(false)
 
-  // Lightweight daily check: does today have any occasion? Cached once per day.
+  // Deterministic daily check: is today a curated MAJOR occasion?
+  // No AI / network — avoids false positives from hallucinated dates.
   useEffect(() => {
-    const today = new Date()
-    const dayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-    const cacheKey = `occasion-today:${dayKey}`
-    try {
-      const cached = window.localStorage.getItem(cacheKey)
-      if (cached === '1' || cached === '0') {
-        setHasOccasionToday(cached === '1')
-        return
-      }
-    } catch { /* ignore */ }
-    let cancelled = false
-    ;(async () => {
-      try {
-        const { data, error } = await supabase.functions.invoke('day-info', { body: { date: dayKey, lang: 'en' } })
-        if (cancelled || error) return
-        const list = Array.isArray((data as { occasions?: unknown[] })?.occasions)
-          ? (data as { occasions: unknown[] }).occasions
-          : []
-        const has = list.length > 0
-        setHasOccasionToday(has)
-        try { window.localStorage.setItem(cacheKey, has ? '1' : '0') } catch { /* ignore */ }
-      } catch { /* keep default green */ }
-    })()
-    return () => { cancelled = true }
+    setHasOccasionToday(getMajorOccasionForDate(new Date()) !== null)
   }, [])
 
 
