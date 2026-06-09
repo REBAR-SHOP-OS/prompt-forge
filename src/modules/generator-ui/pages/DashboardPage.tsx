@@ -151,6 +151,7 @@ type UserImageItem = {
   still_duration_seconds: number
   width?: number | null
   height?: number | null
+  category?: string | null
 }
 
 type UnifiedClip =
