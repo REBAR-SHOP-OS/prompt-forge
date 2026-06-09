@@ -83,7 +83,7 @@ import {
 import { Slider } from '@/components/ui/slider'
 import { Button } from '@/components/ui/button'
 
-import { ApiError } from '@/core/api/client'
+import { ApiError, FUNCTIONS_BASE } from '@/core/api/client'
 import { useAuth } from '@/core/auth/AuthProvider'
 import { supabase } from '@/integrations/supabase/client'
 import WelcomeVideoOverlay from '@/modules/generator-ui/components/WelcomeVideoOverlay'
