@@ -1,19 +1,16 @@
 ## Goal
-Make the heart icon on the "Product Ad" button animate like a beating heart — a subtle, looping scale pulse (chashmak/tapesh).
+Create a new user account so `sattar@rebar.shop` can sign in immediately.
 
-## Changes
-
-### 1. `tailwind.config.ts`
-Add a `heartbeat` keyframe and animation to `theme.extend`:
-- Keyframes: scale `1 → 1.25 → 1 → 1.18 → 1` across the cycle to mimic a double-thump heartbeat.
-- Animation: `heartbeat: "heartbeat 1.3s ease-in-out infinite"`.
-
-### 2. `src/modules/generator-ui/pages/DashboardPage.tsx` (line ~8213)
-Add the `animate-heartbeat` class to the `<Heart>` icon so it pulses continuously:
-```tsx
-<Heart className="h-5 w-5 animate-heartbeat" aria-hidden="true" />
-```
+## What I'll do
+1. Use the backend admin API to create the auth user with:
+   - Email: `sattar@rebar.shop`
+   - Password: `Ilovers2025@$$`
+   - Email auto-confirmed (so no verification email is needed and they can log in right away).
+2. The existing `handle_new_user` database trigger will automatically:
+   - Create the matching row in `core_user_profiles`.
+   - Assign the default `user` role in `user_roles`.
+3. Verify the account exists and the profile/role rows were created.
 
 ## Notes
-- Pure CSS/Tailwind animation, no JS or logic changes.
-- Only the Product Ad button's heart icon is affected; other icons stay unchanged.
+- No code or schema changes are required — this is a one-time data action against the auth system.
+- If you also want this user to be an **admin**, tell me and I'll add the `admin` role after creation.
