@@ -1,15 +1,35 @@
 // Edge function: returns notable occasions for a Gregorian date OR a whole month.
-// Supports two modes:
-//   { date: 'YYYY-MM-DD', lang } -> day mode (full detail)
-//   { month: 'YYYY-MM', lang }   -> month mode (list items with date+title+category, brief detail)
+// Presence + dates are DETERMINISTIC (see _shared/occasions.ts) — AI is used only
+// to write the descriptive prose for occasions that we already know exist.
+//   { date: 'YYYY-MM-DD', lang } -> day mode (full detail: whatItIs + history)
+//   { month: 'YYYY-MM', lang }   -> month mode (brief one-liner each)
 import { authenticate } from '../_shared/core/auth.ts'
+import { occasionsForDate, occasionsForMonth, type DatasetOccasion } from '../_shared/occasions.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 }
 
-const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
+const CATEGORY_LABELS: Record<string, { en: string; fa: string }> = {
+  canada: { en: 'Canadian holiday', fa: 'مناسبت کانادا' },
+  international: { en: 'International day', fa: 'روز بین‌المللی' },
+  religious: { en: 'Religious holiday', fa: 'مناسبت دینی' },
+}
+
+function fallbackBlurb(o: DatasetOccasion, lang: 'en' | 'fa') {
+  const label = CATEGORY_LABELS[o.category]?.[lang] ?? ''
+  if (lang === 'fa') {
+    return {
+      whatItIs: `${o.title} یک ${label} است که در این تاریخ گرامی داشته می‌شود.`,
+      history: `${o.title} به‌طور سنتی در این روز هر سال جشن گرفته می‌شود.`,
+    }
+  }
+  return {
+    whatItIs: `${o.title} is a ${label} observed on this date.`,
+    history: `${o.title} is traditionally marked on this day each year.`,
+  }
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
@@ -21,7 +41,6 @@ Deno.serve(async (req) => {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
-
 
     const body = await req.json().catch(() => ({}))
     const lang: 'en' | 'fa' = body?.lang === 'fa' ? 'fa' : 'en'
@@ -36,159 +55,112 @@ Deno.serve(async (req) => {
       })
     }
 
+    // Deterministic occasion list — this is the single source of truth.
+    const matches: DatasetOccasion[] = isDayMode
+      ? occasionsForDate(date)
+      : occasionsForMonth(month)
+
+    // No occasions -> return empty immediately (keeps the red dot off).
+    if (matches.length === 0) {
+      return new Response(JSON.stringify({ occasions: [], lang }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Try to enrich descriptions with AI. If anything fails, fall back to blurbs
+    // so the deterministic dates always render.
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')
-    if (!LOVABLE_API_KEY) {
-      return new Response(JSON.stringify({ error: 'LOVABLE_API_KEY not configured' }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
+    let descriptions: Record<string, { whatItIs: string; history: string }> = {}
 
-    const baseRules = `You are a strict calendar assistant. Return ONLY occasions that fall into one of these three allowed categories:
+    if (LOVABLE_API_KEY) {
+      try {
+        const titles = matches.map((m) => m.title)
+        const detailRule = isMonthMode
+          ? 'For each, write a "whatItIs" of ONE concise sentence and a "history" of ONE concise sentence.'
+          : 'For each, write a "whatItIs" paragraph (2-3 sentences) and a "history" paragraph (3-5 sentences about origin and evolution).'
+        const langRule = lang === 'fa'
+          ? 'Write whatItIs and history in fluent Persian (Farsi).'
+          : 'Write whatItIs and history in clear English.'
+        const systemPrompt = `You are a factual calendar assistant. You are given a FIXED list of occasion titles. Do NOT add, remove, rename, or change dates of any occasion. Only write descriptions. ${detailRule} ${langRule} You MUST respond by calling return_descriptions with one entry per provided title, echoing the title exactly.`
+        const userPrompt = `Occasion titles:\n${titles.map((t) => `- ${t}`).join('\n')}`
 
-1) CANADIAN HOLIDAYS (category: "canada") — Canadian federal statutory holidays and widely-recognized provincial holidays (Canada Day, Victoria Day, Canadian Thanksgiving, Remembrance Day, Labour Day, Family Day, Civic Holiday, National Day for Truth and Reconciliation, Saint-Jean-Baptiste Day, etc.).
-
-2) MAJOR INTERNATIONAL DAYS (category: "international") — Officially proclaimed UN / UNESCO / WHO international days, plus globally recognized observances (New Year's Day, International Women's Day, Earth Day, World Health Day, World Environment Day, Human Rights Day, International Day of Peace, Mother's Day, Father's Day, Valentine's Day, Halloween).
-
-3) MAJOR RELIGIOUS HOLIDAYS (category: "religious") — Important holy days of the world's major religions: Christianity (Christmas, Easter, Good Friday, Ash Wednesday, Pentecost, Epiphany, All Saints' Day…), Islam (Eid al-Fitr, Eid al-Adha, start of Ramadan, Ashura, Mawlid…), Judaism (Rosh Hashanah, Yom Kippur, Hanukkah, Passover, Sukkot, Purim…), Hinduism (Diwali, Holi, Navaratri…), Buddhism (Vesak/Buddha Day…), Sikhism (Vaisakhi, Guru Nanak Gurpurab…). For movable dates, use the actual Gregorian date for the given year.
-
-STRICTLY EXCLUDE:
-- "National ___ Day" novelty/food/fun days.
-- National holidays of countries other than Canada (unless internationally observed).
-- Local, commercial, brand-driven, or minor awareness days.
-- Birthdays/deaths of individuals (unless the day is officially named after them and fits 1–3).
-
-If nothing fits, return an empty occasions array — do NOT invent.`
-
-    const langInstruction = lang === 'fa'
-      ? `همه فیلدهای متنی (title, whatItIs, history) را به فارسی روان بنویس. در title نام بین‌المللی را در پرانتز انگلیسی بیاور.`
-      : `Write all text fields (title, whatItIs, history) in clear English.`
-
-    let userPrompt: string
-    let detailInstruction: string
-
-    if (isDayMode) {
-      const [y, m, d] = date.split('-').map(Number)
-      const dt = new Date(Date.UTC(y, m - 1, d))
-      const longDate = dt.toLocaleDateString('en-US', {
-        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC',
-      })
-      detailInstruction = `For EACH occasion provide:
-- "category": one of "canada" | "international" | "religious".
-- "date": "${date}" (the same date).
-- "whatItIs": short paragraph (2-3 sentences).
-- "history": paragraph (3-5 sentences) about origin, year founded, evolution.`
-      userPrompt = lang === 'fa'
-        ? `مناسبت‌های این تاریخ را با تاریخچه‌شان بده: ${longDate} (${date}).`
-        : `Provide notable occasions and their history for: ${longDate} (${date}).`
-    } else {
-      const [y, m] = month.split('-').map(Number)
-      const monthName = MONTH_NAMES[m - 1]
-      detailInstruction = `Return EVERY qualifying occasion in ${monthName} ${y}. For EACH provide:
-- "date": "YYYY-MM-DD" (the actual Gregorian date in ${monthName} ${y}; for movable holidays, compute the correct date for ${y}).
-- "category": "canada" | "international" | "religious".
-- "title": official name.
-- "whatItIs": ONE concise sentence (max ~25 words).
-- "history": ONE concise sentence (max ~30 words) — origin/year only.
-
-Be exhaustive but strict — include every qualifying observance in the month, but nothing outside the three categories.`
-      userPrompt = lang === 'fa'
-        ? `همهٔ مناسبت‌های واجد شرایط در ماه ${monthName} ${y} را برگردان.`
-        : `Return all qualifying occasions across ${monthName} ${y}.`
-    }
-
-    const systemPrompt = `${baseRules}\n\n${detailInstruction}\n\n${langInstruction}\n\nYou MUST respond by calling the return_occasions function.`
-
-    const itemProperties: Record<string, unknown> = {
-      title: { type: 'string', description: 'Official occasion name.' },
-      category: { type: 'string', enum: ['canada', 'international', 'religious'], description: 'Which of the three allowed categories.' },
-      whatItIs: { type: 'string' },
-      history: { type: 'string' },
-    }
-    const requiredFields = ['title', 'category', 'whatItIs', 'history']
-    if (isMonthMode) {
-      itemProperties.date = { type: 'string', description: 'Gregorian date YYYY-MM-DD within the requested month.' }
-      requiredFields.push('date')
-    }
-
-    const tools = [
-      {
-        type: 'function',
-        function: {
-          name: 'return_occasions',
-          description: 'Return occasions list.',
-          parameters: {
-            type: 'object',
-            properties: {
-              occasions: {
-                type: 'array',
+        const tools = [{
+          type: 'function',
+          function: {
+            name: 'return_descriptions',
+            description: 'Return descriptions for each occasion title.',
+            parameters: {
+              type: 'object',
+              properties: {
                 items: {
-                  type: 'object',
-                  properties: itemProperties,
-                  required: requiredFields,
-                  additionalProperties: false,
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      title: { type: 'string' },
+                      whatItIs: { type: 'string' },
+                      history: { type: 'string' },
+                    },
+                    required: ['title', 'whatItIs', 'history'],
+                    additionalProperties: false,
+                  },
                 },
               },
+              required: ['items'],
+              additionalProperties: false,
             },
-            required: ['occasions'],
-            additionalProperties: false,
           },
-        },
-      },
-    ]
+        }]
 
-    const aiResp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-3-flash-preview',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        tools,
-        tool_choice: { type: 'function', function: { name: 'return_occasions' } },
-      }),
+        const aiResp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'google/gemini-3-flash-preview',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            tools,
+            tool_choice: { type: 'function', function: { name: 'return_descriptions' } },
+          }),
+        })
+
+        if (aiResp.ok) {
+          const data = await aiResp.json()
+          const toolCall = data?.choices?.[0]?.message?.tool_calls?.[0]
+          const args = toolCall?.function?.arguments
+          const parsed = typeof args === 'string' ? JSON.parse(args) : args
+          const items: Array<{ title?: string; whatItIs?: string; history?: string }> =
+            Array.isArray(parsed?.items) ? parsed.items : []
+          for (const it of items) {
+            if (it?.title) {
+              descriptions[String(it.title)] = {
+                whatItIs: String(it.whatItIs ?? ''),
+                history: String(it.history ?? ''),
+              }
+            }
+          }
+        } else {
+          console.error('AI gateway error:', aiResp.status, await aiResp.text())
+        }
+      } catch (err) {
+        console.error('AI enrichment failed, using fallbacks:', err)
+      }
+    }
+
+    const occasions = matches.map((m) => {
+      const ai = descriptions[m.title]
+      const fb = fallbackBlurb(m, lang)
+      const result: Record<string, unknown> = {
+        title: m.title,
+        category: m.category,
+        whatItIs: ai?.whatItIs?.trim() || fb.whatItIs,
+        history: ai?.history?.trim() || fb.history,
+      }
+      if (isMonthMode) result.date = m.date
+      return result
     })
-
-    if (!aiResp.ok) {
-      if (aiResp.status === 429) {
-        return new Response(JSON.stringify({ error: 'Rate limit exceeded. Try again shortly.' }), {
-          status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
-      }
-      if (aiResp.status === 402) {
-        return new Response(JSON.stringify({ error: 'AI credits exhausted. Add credits in Workspace settings.' }), {
-          status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
-      }
-      const txt = await aiResp.text()
-      console.error('AI gateway error:', aiResp.status, txt)
-      return new Response(JSON.stringify({ error: 'AI gateway error' }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    const data = await aiResp.json()
-    const toolCall = data?.choices?.[0]?.message?.tool_calls?.[0]
-    let occasions: Array<Record<string, unknown>> = []
-    try {
-      const args = toolCall?.function?.arguments
-      const parsed = typeof args === 'string' ? JSON.parse(args) : args
-      occasions = Array.isArray(parsed?.occasions) ? parsed.occasions : []
-    } catch (err) {
-      console.error('Failed to parse tool call:', err)
-    }
-
-    // Normalize: ensure category fallback
-    occasions = occasions.map((o) => ({
-      ...o,
-      category: ['canada', 'international', 'religious'].includes(String(o.category))
-        ? o.category
-        : 'international',
-    }))
 
     return new Response(JSON.stringify({ occasions, lang }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
