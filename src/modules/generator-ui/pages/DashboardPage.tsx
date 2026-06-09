@@ -3165,6 +3165,55 @@ export default function DashboardPage() {
     }
   }
 
+  const handlePickProductPhoto = () => {
+    if (isUploadingProductPhoto) return
+    productPhotoInputRef.current?.click()
+  }
+
+  const handleProductPhotoSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || !userId) return
+    setProductUploadError(null)
+    if (!file.type.startsWith('image/')) {
+      setProductUploadError('Please choose an image file.')
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setProductUploadError('Image must be smaller than 10 MB.')
+      return
+    }
+    setIsUploadingProductPhoto(true)
+    try {
+      const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png'
+      const path = `${userId}/${crypto.randomUUID()}.${ext}`
+      const up = await supabase.storage
+        .from(USER_IMAGES_BUCKET)
+        .upload(path, file, { contentType: file.type, upsert: false })
+      if (up.error) throw up.error
+      const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
+      const publicUrl = pub.publicUrl
+      const { data: row, error: insErr } = await supabase
+        .from('generator_user_images')
+        .insert({
+          user_id: userId,
+          storage_path: publicUrl,
+          size_bytes: file.size,
+          mime_type: file.type,
+          category: 'product',
+        })
+        .select('id, storage_path, created_at, still_duration_seconds, width, height, category')
+        .single()
+      if (insErr) throw insErr
+      setArchiveProductImages((prev) => [row as UserImageItem, ...prev])
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Upload failed.'
+      setProductUploadError(`Upload failed: ${msg}`)
+    } finally {
+      setIsUploadingProductPhoto(false)
+    }
+  }
+
   const handleDeleteUserImage = async (imageId: string) => {
     unmarkActiveImages([imageId])
     if (!userId) return
