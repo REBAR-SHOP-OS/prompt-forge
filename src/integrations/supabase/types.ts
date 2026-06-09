@@ -424,6 +424,7 @@ export type Database = {
       }
       generator_user_images: {
         Row: {
+          category: string
           created_at: string
           deleted_at: string | null
           height: number | null
@@ -437,6 +438,7 @@ export type Database = {
           width: number | null
         }
         Insert: {
+          category?: string
           created_at?: string
           deleted_at?: string | null
           height?: number | null
@@ -450,6 +452,7 @@ export type Database = {
           width?: number | null
         }
         Update: {
+          category?: string
           created_at?: string
           deleted_at?: string | null
           height?: number | null

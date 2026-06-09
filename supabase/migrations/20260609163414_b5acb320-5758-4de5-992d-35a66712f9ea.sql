@@ -1,0 +1,1 @@
+ALTER TABLE public.generator_user_images ADD COLUMN IF NOT EXISTS category text NOT NULL DEFAULT 'general';
