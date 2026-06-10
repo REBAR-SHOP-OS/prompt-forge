@@ -1,16 +1,22 @@
-## Goal
-Create a new user account so `sattar@rebar.shop` can sign in immediately.
+## Why this happens
 
-## What I'll do
-1. Use the backend admin API to create the auth user with:
-   - Email: `sattar@rebar.shop`
-   - Password: `Ilovers2025@$$`
-   - Email auto-confirmed (so no verification email is needed and they can log in right away).
-2. The existing `handle_new_user` database trigger will automatically:
-   - Create the matching row in `core_user_profiles`.
-   - Assign the default `user` role in `user_roles`.
-3. Verify the account exists and the profile/role rows were created.
+Local models (Wan 2.1 / LTX) finish **synchronously** — the backend renders the clip, uploads it, and returns `status: "completed"` directly from the create call. The database is correct (I verified your last 5 local clips are completed with real video URLs in storage).
 
-## Notes
-- No code or schema changes are required — this is a one-time data action against the auth system.
-- If you also want this user to be an **admin**, tell me and I'll add the `admin` role after creation.
+The bug is in the frontend:
+
+1. When a clip is created, the UI seeds a card with `video: null` (the create response doesn't carry the video URL).
+2. The status-polling loop **skips jobs that are already terminal** (`completed`), so it never fetches the job detail that contains the video URL.
+3. Result: the card says "Ready" but the preview is stuck on "Waiting for render output" forever — until you reload the page, which re-hydrates everything.
+
+Cloud models don't hit this because they return `processing`, so the polling loop runs and eventually delivers the video.
+
+## Fix (frontend only — `src/modules/generator-ui/pages/DashboardPage.tsx`)
+
+1. **Immediate hydration after create**: when `createJob` returns `status === "completed"`, immediately call `getJob(jobId)` and merge the full detail (including the video URL) into the card list. Apply at all three `createJob` call sites.
+2. **Safety net in the polling loop**: treat jobs that are `completed` but missing `video.storage_path` as still "active" (with a short retry cap) so they get hydrated even if the immediate fetch fails transiently.
+
+No backend changes needed — the data-URL → storage upload fix from earlier is already working.
+
+## Result
+
+Selecting a local model will show the rendered clip in the preview right away, with no page reload required.
