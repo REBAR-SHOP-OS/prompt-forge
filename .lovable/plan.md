@@ -1,22 +1,40 @@
-## Why this happens
+## مشکل
+هنگام انتخاب مدل لوکال (Local Wan 2.1 / Local LTX) مدت‌زمان انتخاب‌شده (مثلاً ۱۵ ثانیه) اعمال نمی‌شود و خروجی همیشه ~۱ ثانیه است. مدل‌های ابری (Veo) سالم هستند.
 
-Local models (Wan 2.1 / LTX) finish **synchronously** — the backend renders the clip, uploads it, and returns `status: "completed"` directly from the create call. The database is correct (I verified your last 5 local clips are completed with real video URLs in storage).
+## ریشه مشکل
+در `startLocalVideo` (در `supabase/functions/_shared/modules/external-api-adapter/service.ts`) فقط فیلدهای `duration` و `duration_seconds` به روتر RTX ارسال می‌شوند. روترهای Wan/LTX طول کلیپ را با **`num_frames` و `fps`** کنترل می‌کنند؛ چون این پارامترها فرستاده نمی‌شوند، روتر به مقدار پیش‌فرض خودش (یک کلیپ بسیار کوتاه) برمی‌گردد و مدت‌زمان نادیده گرفته می‌شود.
 
-The bug is in the frontend:
+## راه‌حل
+محاسبه‌ی تعداد فریم از روی مدت‌زمان و fps، و افزودن آن به بدنه‌ی درخواست روتر لوکال — بدون نیاز به تغییر روتر RTX.
 
-1. When a clip is created, the UI seeds a card with `video: null` (the create response doesn't carry the video URL).
-2. The status-polling loop **skips jobs that are already terminal** (`completed`), so it never fetches the job detail that contains the video URL.
-3. Result: the card says "Ready" but the preview is stuck on "Waiting for render output" forever — until you reload the page, which re-hydrates everything.
+### تغییرات بک‌اند (`service.ts` → `startLocalVideo`)
+1. افزودن یک ثابت پیش‌فرض fps:
+   - `LOCAL_VIDEO_FPS` با مقدار پیش‌فرض **16**، قابل override با متغیر محیطی `LOCAL_VIDEO_FPS` (در صورت وجود).
+2. محاسبه‌ی فریم‌ها:
+   ```
+   const fps = LOCAL_VIDEO_FPS;
+   const seconds = input.durationSeconds ?? 5;
+   const numFrames = Math.max(1, Math.round(seconds * fps));
+   ```
+3. افزودن این فیلدها به `body` ارسالی (در کنار فیلدهای موجود برای سازگاری):
+   ```
+   num_frames: numFrames,
+   frames: numFrames,
+   fps: fps,
+   length: seconds,
+   seconds: seconds,
+   ```
+   فیلدهای فعلی `duration` و `duration_seconds` حفظ می‌شوند تا روترهای متفاوت همگی پشتیبانی شوند.
 
-Cloud models don't hit this because they return `processing`, so the polling loop runs and eventually delivers the video.
+### هم‌سوسازی مدت‌زمان مجاز برای مدل‌های لوکال
+- بک‌اند فقط `5 | 10 | 15` را می‌پذیرد ولی UI برای لوکال گزینه‌های 30/45/135 را نشان می‌دهد. این باعث می‌شود انتخاب‌های بزرگ‌تر بی‌اثر/کلمپ شوند.
+- در فرانت‌اند (`DashboardPage.tsx`) وقتی مدل لوکال انتخاب است، گزینه‌های مدت‌زمان به `5/10/15` محدود شوند (یا گزینه‌های غیرمجاز غیرفعال شوند) تا کاربر گمراه نشود.
 
-## Fix (frontend only — `src/modules/generator-ui/pages/DashboardPage.tsx`)
+## تست و تأیید
+1. استقرار توابع edge مربوطه (`jobs-create` و وابسته‌ها).
+2. ساخت یک کلیپ ۱۵ ثانیه‌ای با Local Wan 2.1 و بررسی اینکه خروجی واقعاً ~۱۵ ثانیه است.
+3. بررسی لاگ‌های edge function برای تأیید ارسال `num_frames`/`fps` در بدنه‌ی درخواست.
 
-1. **Immediate hydration after create**: when `createJob` returns `status === "completed"`, immediately call `getJob(jobId)` and merge the full detail (including the video URL) into the card list. Apply at all three `createJob` call sites.
-2. **Safety net in the polling loop**: treat jobs that are `completed` but missing `video.storage_path` as still "active" (with a short retry cap) so they get hydrated even if the immediate fetch fails transiently.
-
-No backend changes needed — the data-URL → storage upload fix from earlier is already working.
-
-## Result
-
-Selecting a local model will show the rendered clip in the preview right away, with no page reload required.
+## ریسک‌ها
+- اگر روتر RTX نام فیلد متفاوتی بخواهد، ارسال همزمان چند نام رایج (`num_frames`/`frames`/`fps`/`length`/`seconds`) احتمال سازگاری را به حداکثر می‌رساند بدون شکستن چیزی.
+- مقدار fps قابل تنظیم با متغیر محیطی است تا برای LTX (که معمولاً 24fps است) قابل تطبیق باشد.
