@@ -1128,14 +1128,30 @@ async function startLocalVideo(
   const config = readLocalVideoConfig();
   if (!config.ok) throw new Error(config.error);
 
+  // Local routers (Wan/LTX on ComfyUI) drive clip length via num_frames + fps,
+  // not seconds. Without these they fall back to their default (~1s) clip and
+  // silently ignore the requested duration. Compute frames from the selected
+  // duration and a configurable fps (default 16, Wan 2.1's native rate).
+  const fpsRaw = Number(Deno.env.get("LOCAL_VIDEO_FPS"));
+  const fps = Number.isFinite(fpsRaw) && fpsRaw > 0 ? Math.round(fpsRaw) : 16;
+  const seconds = input.durationSeconds && input.durationSeconds > 0 ? input.durationSeconds : 5;
+  const numFrames = Math.max(1, Math.round(seconds * fps));
+
   const body = {
     model: resolvedModel,
     prompt: input.prompt,
     image_url: input.firstFrameUrl ?? input.lastFrameUrl ?? null,
     first_frame_url: input.firstFrameUrl ?? null,
     last_frame_url: input.lastFrameUrl ?? null,
-    duration: input.durationSeconds ?? 5,
-    duration_seconds: input.durationSeconds ?? 5,
+    duration: seconds,
+    duration_seconds: seconds,
+    // Frame-count fields — send several common aliases so different local
+    // routers all honor the requested length.
+    num_frames: numFrames,
+    frames: numFrames,
+    fps: fps,
+    length: seconds,
+    seconds: seconds,
     aspect_ratio: input.aspectRatio ?? "16:9",
     response_format: "url",
   };

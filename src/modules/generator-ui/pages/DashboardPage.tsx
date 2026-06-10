@@ -2231,6 +2231,14 @@ export default function DashboardPage() {
     () => estimateGenerationCost(selectedModel, durationSeconds),
     [selectedModel, durationSeconds],
   )
+  // Local RTX models only support 5/10/15s clips — clamp if a longer duration
+  // was selected before switching to a local model.
+  useEffect(() => {
+    if (selectedModel?.providerKey === 'local' && durationSeconds > 15) {
+      setDurationSeconds(15)
+    }
+  }, [selectedModel?.providerKey, durationSeconds])
+
 
 
 
@@ -7994,20 +8002,25 @@ export default function DashboardPage() {
           <div role="radiogroup" aria-label="Clip duration" className="inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
             {([5, 10, 15, 30, 45, 135] as const).map((sec) => {
               const active = durationSeconds === sec
+              // Local RTX models (Wan 2.1 / LTX) only support 5/10/15s clips.
+              const disabled = selectedModel?.providerKey === 'local' && sec > 15
               return (
                 <button
                   key={sec}
                   type="button"
                   role="radio"
                   aria-checked={active}
+                  disabled={disabled}
+                  title={disabled ? 'Local models support up to 15s clips' : undefined}
                   onClick={() => setDurationSeconds(sec)}
-                  className={`rounded-full px-3 py-1.5 transition ${active ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+                  className={`rounded-full px-3 py-1.5 transition ${active ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'} ${disabled ? 'cursor-not-allowed opacity-30' : ''}`}
                 >
                   {sec}s
                 </button>
               )
             })}
           </div>
+
           <div role="radiogroup" aria-label="Aspect ratio" className="inline-flex items-center rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
             {([
               { value: '9:16', label: '9:16', hint: 'Reels' },
