@@ -1490,6 +1490,19 @@ export default function DashboardPage() {
     stampJobDraft(id, did)
     markActiveJob(id)
   }
+  // Synchronous local models (Wan 2.1 / LTX) return status "completed" straight
+  // from createJob, but the seeded card has video: null. Fetch the full detail
+  // immediately so the preview shows the rendered clip without waiting for the
+  // polling loop (or a page reload). Failures are harmless — polling will retry.
+  function hydrateIfComplete(result: CreateJobResult) {
+    if (result.status !== 'completed') return
+    void jobOrchestratorGateway
+      .getJob(result.jobId)
+      .then((detail) => {
+        setGeneratedVideos((curr) => mergeJob(curr, detail))
+      })
+      .catch(() => {})
+  }
   function markNewImage(id: string) {
     const did = ensureActiveDraftId()
     stampImageDraft(id, did)
