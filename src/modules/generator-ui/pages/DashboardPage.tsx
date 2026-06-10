@@ -3447,7 +3447,7 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
-    const activeJobs = generatedVideos.filter((job) => !isTerminalStatus(job.status))
+    const activeJobs = generatedVideos.filter((job) => isJobAwaitingResolution(job))
 
     if (activeJobs.length === 0) {
       if (pollTimerRef.current) {
