@@ -4515,6 +4515,7 @@ export default function DashboardPage() {
         return next
       })
       markDerivedClip(job.id, seededJob.id)
+      hydrateIfComplete(createdJob)
       // Keep the old version on the server (Storage is the permanent archive)
       // and only hide it from the workspace so the regenerated card replaces it.
       setWorkspaceHiddenJobIds((curr) => {
