@@ -330,6 +330,16 @@ function isTerminalStatus(status: string) {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
 }
 
+// A job needs more polling when it isn't terminal, OR when it reports
+// "completed" but hasn't yet delivered its video asset. The latter happens with
+// synchronous local models (Wan 2.1 / LTX): createJob returns "completed" but
+// the seeded card has video: null, so we must fetch the full detail to get the
+// rendered clip URL.
+function isJobAwaitingResolution(job: JobDetail) {
+  if (!isTerminalStatus(job.status)) return true
+  return job.status === 'completed' && !job.video?.storage_path
+}
+
 function normalizeStatus(status: string): VideoJobStatus {
   if (status === 'completed' || status === 'failed' || status === 'cancelled' || status === 'processing') {
     return status
