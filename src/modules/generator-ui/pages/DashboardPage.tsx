@@ -330,6 +330,16 @@ function isTerminalStatus(status: string) {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
 }
 
+// A job needs more polling when it isn't terminal, OR when it reports
+// "completed" but hasn't yet delivered its video asset. The latter happens with
+// synchronous local models (Wan 2.1 / LTX): createJob returns "completed" but
+// the seeded card has video: null, so we must fetch the full detail to get the
+// rendered clip URL.
+function isJobAwaitingResolution(job: JobDetail) {
+  if (!isTerminalStatus(job.status)) return true
+  return job.status === 'completed' && !job.video?.storage_path
+}
+
 function normalizeStatus(status: string): VideoJobStatus {
   if (status === 'completed' || status === 'failed' || status === 'cancelled' || status === 'processing') {
     return status
@@ -1479,6 +1489,19 @@ export default function DashboardPage() {
     const did = ensureActiveDraftId()
     stampJobDraft(id, did)
     markActiveJob(id)
+  }
+  // Synchronous local models (Wan 2.1 / LTX) return status "completed" straight
+  // from createJob, but the seeded card has video: null. Fetch the full detail
+  // immediately so the preview shows the rendered clip without waiting for the
+  // polling loop (or a page reload). Failures are harmless — polling will retry.
+  function hydrateIfComplete(result: CreateJobResult) {
+    if (result.status !== 'completed') return
+    void jobOrchestratorGateway
+      .getJob(result.jobId)
+      .then((detail) => {
+        setGeneratedVideos((curr) => mergeJob(curr, detail))
+      })
+      .catch(() => {})
   }
   function markNewImage(id: string) {
     const did = ensureActiveDraftId()
@@ -3437,7 +3460,7 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
-    const activeJobs = generatedVideos.filter((job) => !isTerminalStatus(job.status))
+    const activeJobs = generatedVideos.filter((job) => isJobAwaitingResolution(job))
 
     if (activeJobs.length === 0) {
       if (pollTimerRef.current) {
@@ -4058,6 +4081,7 @@ export default function DashboardPage() {
         setPreviewVideoId(seededJob.id)
         setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
         markNewClip(seededJob.id)
+        hydrateIfComplete(createdJob)
       }
       setPromptText('')
       setUploadedFiles([])
@@ -4192,6 +4216,7 @@ export default function DashboardPage() {
         setPreviewVideoId(seededJob.id)
         setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
         markNewClip(seededJob.id)
+        hydrateIfComplete(createdJob)
         previousJobId = seededJob.id
       }
       setVideoColumnMessage(null)
@@ -4490,6 +4515,7 @@ export default function DashboardPage() {
         return next
       })
       markDerivedClip(job.id, seededJob.id)
+      hydrateIfComplete(createdJob)
       // Keep the old version on the server (Storage is the permanent archive)
       // and only hide it from the workspace so the regenerated card replaces it.
       setWorkspaceHiddenJobIds((curr) => {
