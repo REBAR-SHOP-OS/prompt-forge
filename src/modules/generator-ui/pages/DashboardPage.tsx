@@ -2231,6 +2231,14 @@ export default function DashboardPage() {
     () => estimateGenerationCost(selectedModel, durationSeconds),
     [selectedModel, durationSeconds],
   )
+  // Local RTX models only support 5/10/15s clips — clamp if a longer duration
+  // was selected before switching to a local model.
+  useEffect(() => {
+    if (selectedModel?.providerKey === 'local' && durationSeconds > 15) {
+      setDurationSeconds(15)
+    }
+  }, [selectedModel?.providerKey, durationSeconds])
+
 
 
 
