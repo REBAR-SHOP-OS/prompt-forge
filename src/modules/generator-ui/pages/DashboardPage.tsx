@@ -4081,6 +4081,7 @@ export default function DashboardPage() {
         setPreviewVideoId(seededJob.id)
         setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
         markNewClip(seededJob.id)
+        hydrateIfComplete(createdJob)
       }
       setPromptText('')
       setUploadedFiles([])
