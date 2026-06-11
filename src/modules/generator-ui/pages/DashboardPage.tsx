@@ -3118,9 +3118,12 @@ export default function DashboardPage() {
           jobOrchestratorGateway.listMyJobs().catch(() => [] as JobSummary[]),
           supabase
             .from('generator_user_images')
-            .select('id, storage_path, created_at, still_duration_seconds, width, height')
+            .select('id, storage_path, created_at, still_duration_seconds, width, height, category')
             .eq('user_id', userId)
-            .is('deleted_at', null),
+            .is('deleted_at', null)
+            // Product photos live only in the Storage > Product Photos tab.
+            // They must never leak into the workspace/drafts/library.
+            .or('category.is.null,category.neq.product'),
         ])
         if (cancelled) return
 
