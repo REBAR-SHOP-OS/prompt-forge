@@ -4232,6 +4232,8 @@ export default function DashboardPage() {
     const perClipDuration: 5 | 10 | 15 = 15
 
     let previousJobId: string | null = null
+    // One durable project group id for every scene clip in this scenario.
+    const draftGroupId = ensureActiveDraftGroupId()
     try {
       for (let i = 0; i < scenes.length; i++) {
         const sourcePrompt = scenes[i].trim()
@@ -4254,6 +4256,7 @@ export default function DashboardPage() {
           durationSeconds: perClipDuration,
           aspectRatio: effectiveRatio,
           firstFrameUrl: startFrameUrl,
+          draftGroupId,
         })
         const seededJob = buildSeededJob(prompt, createdJob, startFrameUrl ? { firstFrameUrl: startFrameUrl } : {})
         rememberClipRatio(seededJob.id, effectiveRatio)
