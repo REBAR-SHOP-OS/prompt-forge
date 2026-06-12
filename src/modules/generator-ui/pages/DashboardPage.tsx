@@ -165,7 +165,7 @@ function StyleSection({
       <div className="flex flex-wrap gap-1.5">
         {items.map((item) => {
           const active = selectedIds.includes(item.id)
-          return (
+          const chip = (
             <button
               key={item.id}
               type="button"
@@ -179,6 +179,16 @@ function StyleSection({
               <span aria-hidden="true">{item.icon}</span>
               <span>{item.label}</span>
             </button>
+          )
+          return (
+            <StylePreviewCard
+              key={item.id}
+              title={item.label}
+              description={item.prompt}
+              preview={item.preview}
+            >
+              {chip}
+            </StylePreviewCard>
           )
         })}
       </div>
