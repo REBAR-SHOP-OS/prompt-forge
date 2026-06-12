@@ -1,33 +1,24 @@
 ## Goal
 
-Two changes to the image cards (uploaded-image clips in the Pending panel, and product-image cards in the Archive):
+When an uploaded image is opened in the large preview (lightbox), the preview box should match the image's real aspect ratio (9:16 / 16:9 / 1:1) instead of always showing a wide box with big black side margins around a portrait image.
 
-1. Display each image card in its **real aspect ratio** (9:16, 16:9, or 1:1) instead of being forced into a square.
-2. Add a small **icon button** on each image card that, when clicked, sends that image into the composer's **Start** frame slot (image-to-video), exactly like the existing reframe → Start flow.
+## Current behavior
 
-## Background (current behavior)
+In `src/modules/generator-ui/pages/DashboardPage.tsx` (~line 9094-9107), the preview modal:
+- `DialogContent` has a fixed wide width: `className="max-w-3xl ... p-3"`.
+- The `<img>` uses `max-h-[80vh] w-auto object-contain mx-auto`.
 
-- The uploaded-image clip card (`DashboardPage.tsx`, ~line 7782-7798) hardcodes `style={{ aspectRatio: '1 / 1' }}` with `object-cover`, so portrait/landscape images get cropped into a square. Video cards right below already use `ratioToCss(getRatioFor(video))` correctly.
-- An existing handler `handleReframeAsStart(url, ratio)` (~line 3909) stages a URL as the `Start` upload, switches to image-to-video, and sets the aspect ratio. This is exactly the action the new icon needs.
+Because the dialog width is fixed wide (max-w-3xl) but the image is constrained by height, a portrait image renders narrow inside a wide black box — large empty margins on both sides (exactly what the screenshot shows).
 
-## Changes
+## Change (frontend / presentation only)
 
-### 1. Real aspect ratio for image cards
+In the preview `DialogContent`:
+- Replace the fixed `max-w-3xl` with a shrink-to-fit width so the dialog box hugs the image: use `w-fit max-w-[95vw]` (and keep `p-3`, border, background).
+- Keep the `<img>` height-driven (`max-h-[80vh] w-auto object-contain`) so the width follows the image's natural ratio. The dialog then sizes to that width — portrait images get a narrow box, landscape gets a wide box, square gets a square box.
 
-In the uploaded-image clip card image wrapper (~line 7782-7785):
-- Replace `style={{ aspectRatio: '1 / 1' }}` with the project ratio: `style={{ aspectRatio: ratioToCss(lockedProjectRatio ?? aspectRatio) }}`.
-- Change the `<img>` class from `object-cover` to `object-contain` so the full frame shows in its true ratio without cropping (background stays `#15171a`).
+Net result: the preview frame always matches the actual image dimensions, with no oversized black side margins.
 
-(Image clips carry the project's locked ratio; there is no separate per-image ratio field, so the project ratio is the correct source — the same one used for the cover card just above.)
+## Scope
 
-### 2. "Use as Start frame" icon on image cards
-
-- Add a small reusable handler `handleUseImageAsStart(url: string)` that mirrors `handleReframeAsStart` but keeps the current locked/aspect ratio: set generation mode to `image-to-video`, push a ready `Start` upload entry with the given `url`, and (best-effort) scroll the composer Start input into view so the user sees it land.
-- Add an icon button (lucide `ImagePlus` or `MoveRight`/`SquarePlus`) to the image clip card action row (~line 7803-7826), next to the drag/delete controls, with `title`/`aria-label` "Use as Start frame". On click: `event.stopPropagation()` then `handleUseImageAsStart(img.storage_path)`. Hidden when `isReadOnlyProject` (same as delete).
-- Apply the same icon button to the Archive product-image cards (~line 6291-6337 action row) so those image cards can also be sent to Start.
-
-## Technical notes
-
-- Reuse `ratioToCss`, `lockedProjectRatio`, `aspectRatio`, and the `uploadedFiles`/`setUploadedFiles` + `setGenerationMode` patterns already in the file — no new state or backend work.
-- No edge function, schema, or business-logic changes; this is frontend/presentation only.
-- Scope: `src/modules/generator-ui/pages/DashboardPage.tsx` only.
+- Single file: `src/modules/generator-ui/pages/DashboardPage.tsx`, only the `previewImageUrl` `Dialog`/`DialogContent` block (~line 9094-9107).
+- No backend, schema, state, or business-logic changes.

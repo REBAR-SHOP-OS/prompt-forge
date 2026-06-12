@@ -9092,7 +9092,7 @@ export default function DashboardPage() {
       )}
 
       <Dialog open={!!previewImageUrl} onOpenChange={(o) => { if (!o) setPreviewImageUrl(null) }}>
-        <DialogContent className="max-w-3xl border-white/10 bg-black/90 p-3">
+        <DialogContent className="w-fit max-w-[95vw] border-white/10 bg-black/90 p-3">
           <DialogHeader className="sr-only">
             <DialogTitle>Image preview</DialogTitle>
           </DialogHeader>
