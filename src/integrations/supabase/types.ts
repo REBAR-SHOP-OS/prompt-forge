@@ -319,6 +319,7 @@ export type Database = {
         Row: {
           created_at: string
           deleted_at: string | null
+          draft_group_id: string | null
           first_frame_url: string | null
           id: string
           input_prompt: string
@@ -337,6 +338,7 @@ export type Database = {
         Insert: {
           created_at?: string
           deleted_at?: string | null
+          draft_group_id?: string | null
           first_frame_url?: string | null
           id?: string
           input_prompt: string
@@ -355,6 +357,7 @@ export type Database = {
         Update: {
           created_at?: string
           deleted_at?: string | null
+          draft_group_id?: string | null
           first_frame_url?: string | null
           id?: string
           input_prompt?: string
@@ -427,6 +430,7 @@ export type Database = {
           category: string
           created_at: string
           deleted_at: string | null
+          draft_group_id: string | null
           height: number | null
           id: string
           mime_type: string | null
@@ -442,6 +446,7 @@ export type Database = {
           category?: string
           created_at?: string
           deleted_at?: string | null
+          draft_group_id?: string | null
           height?: number | null
           id?: string
           mime_type?: string | null
@@ -457,6 +462,7 @@ export type Database = {
           category?: string
           created_at?: string
           deleted_at?: string | null
+          draft_group_id?: string | null
           height?: number | null
           id?: string
           mime_type?: string | null
