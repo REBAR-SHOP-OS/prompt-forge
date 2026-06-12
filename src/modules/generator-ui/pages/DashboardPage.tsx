@@ -5343,7 +5343,70 @@ export default function DashboardPage() {
           persistProjectSourceImages(nextImgMap)
         }
       }
-      // The in-progress chain just became a Final video — retire any draft
+      // Snapshot the project's own music / voiceover into the public
+      // MERGED_BUCKET so the finalized card can play + download the exact audio
+      // that this project used, surviving refresh. Best-effort: never block
+      // finalization if an audio copy fails.
+      if ((hasMusic || hasVoiceover) && userId) {
+        try {
+          const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
+            Promise.race([
+              p,
+              new Promise<T>((_, reject) =>
+                setTimeout(() => reject(new Error('audio snapshot timed out')), ms),
+              ),
+            ])
+          const snapshotAudio = async (
+            src: string,
+            kind: 'music' | 'voice',
+          ): Promise<ProjectAudioTrack | null> => {
+            try {
+              const resp = await withTimeout(fetch(src), 60_000)
+              if (!resp.ok) throw new Error(`fetch ${resp.status}`)
+              const blob = await withTimeout(resp.blob(), 60_000)
+              const ct = (blob.type || 'audio/mpeg').toLowerCase()
+              const ext = ct.includes('mpeg') || ct.includes('mp3') ? 'mp3'
+                : ct.includes('wav') ? 'wav'
+                : ct.includes('ogg') ? 'ogg'
+                : ct.includes('webm') ? 'webm'
+                : ct.includes('aac') ? 'aac'
+                : ct.includes('m4a') || ct.includes('mp4') ? 'm4a'
+                : 'mp3'
+              const path = `${userId}/project-${kind}-${mergedId}.${ext}`
+              const up = await withTimeout(
+                supabase.storage
+                  .from(MERGED_BUCKET)
+                  .upload(path, blob, { contentType: blob.type || 'audio/mpeg', upsert: true }),
+                90_000,
+              )
+              if (up.error) throw new Error(up.error.message)
+              return supabase.storage.from(MERGED_BUCKET).getPublicUrl(path).data.publicUrl
+                ? { url: supabase.storage.from(MERGED_BUCKET).getPublicUrl(path).data.publicUrl, name: '' }
+                : null
+            } catch (err) {
+              console.warn(`[audio-snapshot] ${kind} persist failed`, err)
+              return null
+            }
+          }
+          const entry: ProjectAudio = {}
+          if (hasMusic && musicUrl) {
+            const t = await snapshotAudio(musicUrl, 'music')
+            if (t) entry.music = { url: t.url, name: musicName ?? 'Music' }
+          }
+          if (hasVoiceover && voiceoverUrl) {
+            const t = await snapshotAudio(voiceoverUrl, 'voice')
+            if (t) entry.voiceover = { url: t.url, name: voiceoverName ?? 'Voiceover' }
+          }
+          if (entry.music || entry.voiceover) {
+            const nextAudio = { ...projectAudio, [mergedId]: entry }
+            setProjectAudio(nextAudio)
+            persistProjectAudio(nextAudio)
+          }
+        } catch (err) {
+          console.warn('[audio-snapshot] failed', err)
+        }
+      }
+
       // entries tied to this finalization so they disappear from the Drafts
       // section. Source clips are already claimed under
       // projectSourceJobs[mergedId], so they remain visible inside the new
