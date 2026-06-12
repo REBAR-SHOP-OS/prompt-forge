@@ -3964,6 +3964,14 @@ export default function DashboardPage() {
       persistProjectSourceImages(rest)
       return rest
     })
+    setProjectAudio((prev) => {
+      if (!(finalId in prev)) return prev
+      const { [finalId]: _dropAudio, ...rest } = prev
+      persistProjectAudio(rest)
+      return rest
+    })
+
+
 
     // 4. Un-tombstone the draft id and per-image orphan ids so the draft lives.
     setDeletedDraftIds((prev) => {
