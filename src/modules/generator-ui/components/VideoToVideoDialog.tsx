@@ -218,6 +218,7 @@ export default function VideoToVideoDialog({
         firstFrameUrl,
         aspectRatio: ratio,
         durationSeconds: 5,
+        draftGroupId,
       })
 
       // Seed a JobDetail so the parent can append it to Pending right away.
