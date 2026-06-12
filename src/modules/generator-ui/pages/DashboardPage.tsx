@@ -2538,6 +2538,7 @@ export default function DashboardPage() {
 
     const jobStamps: Record<string, string> = {}
     for (const job of generatedVideos) {
+      if (job.draft_group_id) continue // durably owned by a server draft group
       if (jobDraftMap[job.id]) continue // already owned by a draft
       if (claimedJobIds.has(job.id)) continue
       if (job.id.startsWith('merged-')) continue
