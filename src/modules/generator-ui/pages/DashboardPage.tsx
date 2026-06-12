@@ -8810,7 +8810,7 @@ export default function DashboardPage() {
               <PopoverContent
                 side="top"
                 align="end"
-                className="w-80 border-white/10 bg-[#0b0c0e]/95 p-2 text-zinc-200 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl"
+                className={`${styleMode === 'input' ? 'w-[min(26rem,calc(100vw-2rem))]' : 'w-80'} border-white/10 bg-[#0b0c0e]/95 p-2 text-zinc-200 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl`}
               >
                 <button
                   type="button"
