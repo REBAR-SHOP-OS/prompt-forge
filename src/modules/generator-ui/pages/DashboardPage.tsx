@@ -147,6 +147,46 @@ import {
   type StyleSelection,
 } from '@/modules/generator-ui/lib/promptStyles'
 
+function StyleSection({
+  title,
+  items,
+  selectedIds,
+  onToggle,
+}: {
+  title: string
+  items: StyleItem[]
+  selectedIds: string[]
+  onToggle: (id: string) => void
+}) {
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">{title}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {items.map((item) => {
+          const active = selectedIds.includes(item.id)
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onToggle(item.id)}
+              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition ${
+                active
+                  ? 'border-amber-300 bg-amber-300/15 text-amber-100'
+                  : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:border-white/25 hover:bg-white/[0.06]'
+              }`}
+            >
+              <span aria-hidden="true">{item.icon}</span>
+              <span>{item.label}</span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+
+
 type VideoJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
 type UploadTarget = 'Start' | 'End'
 type UploadedFile = {
