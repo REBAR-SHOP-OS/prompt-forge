@@ -429,6 +429,7 @@ export const jobOrchestratorGateway = {
               lastFrameUrl,
               aspectRatio: chosenAspectRatio,
               durationSeconds: parsed.data.durationSeconds ?? null,
+              draftGroupId: parsed.data.draftGroupId ?? null,
             });
           } catch (e) {
             const msg = (e as Error).message ?? "";
