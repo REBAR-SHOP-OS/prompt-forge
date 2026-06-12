@@ -1,43 +1,36 @@
 ## Goal
 
-Add an icon button on each **Final Film** project card that converts it back into an editable **Draft** project, so the user can reopen a finished film, make changes, and finalize it again. This is the deliberate inverse of finalization (where a draft becomes read-only).
+On each finalized **Final Film** card, add an audio icon that reveals the music and/or voiceover used in *that specific project*, with play + download for each. If the project has no music and no voiceover, the panel shows an empty state.
 
-## Where
+## Background (current behavior)
 
 `src/modules/generator-ui/pages/DashboardPage.tsx`
+- Music/voiceover are workspace-global state: `musicUrl`/`musicName` and `voiceoverUrl`/`voiceoverName` (lines ~1846–1858). They are object/remote URLs and are mixed into the Final Film WebM at finalize.
+- Finalization (lines ~5126–5320) builds the merged film entry (`mergedId`) and snapshots source clips into `projectSourceJobs[mergedId]`, but **does not** store the project's separate audio anywhere durable.
+- An audio download helper already exists: `downloadAudioFile(audioId, url, name)` (line ~688). `Popover`/`PopoverContent`/`PopoverTrigger` and `Music2` icon are already imported. `MERGED_BUCKET = 'merged-videos'` is a public bucket already used for durable snapshots.
 
-- `renderCard(video, variant)` (around line 7907) renders Library cards. For `variant === 'final'` it currently shows only **Download** and **Delete** icon buttons (lines ~7965–8000).
-- Finalization (lines ~5150–5290) creates the final by: storing source clips/images in `projectSourceJobs[mergedId]` / `projectSourceImages[mergedId]`, adding the merged entry to `mergedEntries` + `approvedIds`, deleting the draft, tombstoning draft ids, stripping `jobDraftMap`/`imageDraftMap`, and moving the cover to `coverImages[mergedId]`.
+## The change (frontend only)
 
-## The change
+### 1. New persisted per-project audio map
+Add `projectAudio` state: `Record<string, { music?: { url: string; name: string }; voiceover?: { url: string; name: string } }>`, persisted to `localStorage` under key `project-audio:${userId}`, with hydrate effect + `persistProjectAudio` helper — mirroring the existing `projectSourceJobs` pattern.
 
-### 1. New icon button on final cards
+### 2. Snapshot the project's audio at finalize
+In the finalize flow, right after `mergedId` is created and when `hasMusic`/`hasVoiceover` are known, persist durable public copies into `MERGED_BUCKET` so they survive refresh and are downloadable from a public URL:
+- If music present: `fetch(musicUrl)` -> blob -> upload to `${userId}/project-music-${mergedId}.<ext>` -> `getPublicUrl` -> store `{ url, name: musicName ?? 'Music' }`.
+- If voiceover present: same into `${userId}/project-voice-${mergedId}.<ext>` -> store `{ url, name: voiceoverName ?? 'Voiceover' }`.
+- Set and persist `projectAudio[mergedId]` with whichever exist. Wrapped in try/catch with timeouts (reuse the pattern already used for source-clip snapshots) so a failed audio upload never blocks finalization.
 
-In `renderCard`, inside the `variant === 'final'` action group (next to Download/Delete), add a third icon button — an **"Edit / reopen as draft"** control (e.g. `Pencil` / `Undo2` lucide icon, with `title` and `aria-label` "Reopen for editing"). On click: `event.stopPropagation()` then call a new `reopenFinalAsDraft(video)`.
+### 3. Audio icon + popover on final cards
+In `renderCard` for `variant === 'final'`, add a `Music2` icon button (next to Download/Reopen/Delete) wrapped in a `Popover`. The `PopoverContent` lists, for `projectAudio[video.id]`:
+- A **Music** row (if present): name + a play control (inline `<audio controls>` or a play button) + a Download button calling `downloadAudioFile('music-'+video.id, music.url, music.name)`.
+- A **Voiceover** row (if present): same pattern with `voiceover.url`.
+- If neither exists: a muted "No music or voiceover for this project" empty state.
+Use `event.stopPropagation()` on the trigger/buttons so clicks don't open the project preview.
 
-### 2. New handler `reopenFinalAsDraft(video)`
+### 4. Cleanup on delete / reopen
+When a final film is deleted (`deleteCard`) or reopened as a draft (`reopenFinalAsDraft`), drop `projectAudio[finalId]` (+ persist) so stale audio doesn't linger.
 
-This reverses finalization for that film, reusing the existing durable grouping mechanics:
-
-1. Read the film's source snapshot: `projectSourceJobs[video.id]` (clips) and `projectSourceImages[video.id]` (images).
-2. Pick the draft id from the clips' durable `draft_group_id` (`draftIdForGroupUuid(...)`) when present; otherwise mint a fresh `draft-<uuid>` via the same pattern used by `ensureActiveDraftId`.
-3. Remove the final film so it no longer appears in the Library "Final" section: drop it from `mergedEntries` (+ `persistMerged`), remove its id from `approvedIds` (+ persist), and delete `projectSourceJobs[video.id]` / `projectSourceImages[video.id]` (+ persist).
-4. Un-tombstone: remove the draft id and any `draft-orphan-img-*` ids for these items from `deletedDraftIds` so the draft is allowed to live again.
-5. Recreate the draft snapshot: set `draftSourceJobs[draftId]` / `draftSourceImages[draftId]` from the source snapshot, and add a draft entry to `draftEntries` (persist all three).
-6. Re-stamp ownership back to the draft: `jobDraftMap`/`imageDraftMap` entries for each clip/image -> `draftId`.
-7. Restore the clips/images into the live workspace (mirror `resumeSelectedProject`): `mergeJob` clips into `generatedVideos`, add images to `userImages`, clear them from `workspaceHiddenJobIds`/`workspaceHiddenImageIds`, and add to `activeJobIds`/`activeImageIds` (persist).
-8. Move the cover: if `coverImages[video.id]` exists, move it to `coverImages[draftId]` (persist).
-9. Activate edit mode: `setActiveDraftId(draftId)` + persist, `setSelectedProjectId(null)`, clear preview/selection — this exits read-only snapshot view and lets the existing edit toolbar and Final Film flow operate on the draft again.
-
-Optionally guard with a `window.confirm` ("Reopen this final film for editing? It will move back to Drafts.").
-
-## Behavior summary
-
-- Final card gets a new "reopen/edit" icon alongside Download and Delete.
-- Clicking it removes the film from the Final section, recreates an editable Draft from the exact clips/images that produced it (cover included), restores them to the workspace, and selects that draft so the user can edit and re-finalize.
-- No backend/schema changes — purely the existing localStorage-backed draft/library state machine, reusing durable `draft_group_id` grouping.
-
-## Scope
-
-- Single frontend file: `DashboardPage.tsx` (one new button in `renderCard`, one new handler).
-- No backend, migrations, or business-logic-engine changes.
+## Notes / scope
+- Single file: `DashboardPage.tsx`. No backend, schema, or business-logic changes.
+- Only the project's own audio is shown; absence => empty state, exactly as requested.
+- Existing finalized films created before this change won't have `projectAudio` entries (their audio wasn't snapshotted), so they show the empty state; this only affects already-finalized legacy items.
