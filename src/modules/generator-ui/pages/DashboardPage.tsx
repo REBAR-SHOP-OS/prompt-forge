@@ -2274,6 +2274,18 @@ export default function DashboardPage() {
   })
   const [narratorMode, setNarratorMode] = useState<'idle' | 'input'>('idle')
   const [narratorScript, setNarratorScript] = useState('')
+  const [styleMode, setStyleMode] = useState<'idle' | 'input'>('idle')
+  const [selectedStyles, setSelectedStyles] = useState<StyleSelection>(emptyStyleSelection)
+  const selectedStyleCount = useMemo(() => countSelectedStyles(selectedStyles), [selectedStyles])
+  const toggleStyle = (kind: keyof StyleSelection, id: string) => {
+    setSelectedStyles((prev) => {
+      const has = prev[kind].includes(id)
+      return {
+        ...prev,
+        [kind]: has ? prev[kind].filter((x) => x !== id) : [...prev[kind], id],
+      }
+    })
+  }
 
   const selectedModel = useMemo<ModelChoice>(() => {
     const needed: 't2v' | 'i2v' = isTextToVideo ? 't2v' : 'i2v'
