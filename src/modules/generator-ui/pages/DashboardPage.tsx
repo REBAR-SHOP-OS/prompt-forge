@@ -2095,6 +2095,14 @@ export default function DashboardPage() {
         persistProjectSourceImages(nextImgMap)
       }
     }
+    // Drop the per-project audio snapshot for a deleted final film.
+    if (isMerged && jobId in projectAudio) {
+      const { [jobId]: _dropAudio, ...rest } = projectAudio
+      setProjectAudio(rest)
+      persistProjectAudio(rest)
+    }
+
+
 
     // Also prune draft snapshots so deleted clips/images cannot be revived
     // when a draft project is currently selected (the right-side Working
