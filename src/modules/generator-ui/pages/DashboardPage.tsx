@@ -4091,7 +4091,11 @@ export default function DashboardPage() {
           })
         }
 
-        setPreviewVideoId(seededJob.id)
+        // Don't pin the preview to this not-yet-ready clip — let it fall
+        // through to the sequential auto-stitched preview so the user always
+        // sees the full project playing in order.
+        setPreviewVideoId(null)
+        setPreviewDismissed(false)
         setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
         markNewClip(seededJob.id)
         hydrateIfComplete(createdJob)
@@ -4226,7 +4230,10 @@ export default function DashboardPage() {
           setLockedProjectRatio(effectiveRatio)
           persistLockedRatio(effectiveRatio)
         }
-        setPreviewVideoId(seededJob.id)
+        // Keep the preview on the full sequential auto-stitch instead of
+        // pinning to each pending clip as it's queued.
+        setPreviewVideoId(null)
+        setPreviewDismissed(false)
         setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
         markNewClip(seededJob.id)
         hydrateIfComplete(createdJob)
