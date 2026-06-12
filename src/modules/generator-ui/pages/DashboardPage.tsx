@@ -133,6 +133,19 @@ const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.red
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 import { getMajorOccasionForDate } from '@/modules/generator-ui/lib/majorOccasions'
+import {
+  CAMERA_STYLES,
+  GENRE_STYLES,
+  SCENE_STYLES,
+  TEMPLATE_STYLES,
+  SCENE_GROUP_ORDER,
+  TEMPLATE_GROUP_ORDER,
+  buildStyleHints,
+  countSelectedStyles,
+  emptyStyleSelection,
+  type StyleItem,
+  type StyleSelection,
+} from '@/modules/generator-ui/lib/promptStyles'
 
 type VideoJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
 type UploadTarget = 'Start' | 'End'
