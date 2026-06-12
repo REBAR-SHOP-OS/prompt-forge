@@ -251,10 +251,6 @@ export function SequentialClipPlayer({
   // Choose the chrome ratio from the first clip so the frame stays stable.
   const frameRatio = clips[0]?.ratio ?? current?.ratio ?? '16:9'
 
-  const { url: resolvedVideoSrc, loading: srcLoading } = usePlayableVideoUrl(
-    current && current.kind === 'video' ? current.src : null,
-  )
-
   if (!current) return null
 
   return (
