@@ -108,6 +108,10 @@ export function SequentialClipPlayer({
   const musicRef = useRef<HTMLAudioElement | null>(null)
   const voiceRef = useRef<HTMLAudioElement | null>(null)
   const imageTimerRef = useRef<number | null>(null)
+  // Tracks whether we've already attempted a one-time reload for the current
+  // clip's source after a playback error, so a permanently-bad source skips
+  // instead of looping forever.
+  const erroredOnceRef = useRef<string | null>(null)
 
   // Keep index inside bounds when clips change.
   useEffect(() => {
@@ -119,6 +123,15 @@ export function SequentialClipPlayer({
   }, [clips.length, index])
 
   const current = clips[index] ?? null
+
+  const { url: resolvedVideoSrc, loading: srcLoading, reload } = usePlayableVideoUrl(
+    current && current.kind === 'video' ? current.src : null,
+  )
+
+  // Reset the per-clip error guard whenever the active clip changes.
+  useEffect(() => {
+    erroredOnceRef.current = null
+  }, [current?.id])
 
   useEffect(() => {
     if (current) onActiveClipChange?.(current.id)
@@ -146,10 +159,13 @@ export function SequentialClipPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id, current?.kind, isPlaying])
 
-  // Try to autoplay videos when the active clip is a video.
+  // Try to autoplay videos when the active clip is a video. Re-runs when the
+  // resolved (proxied) source becomes available so playback starts as soon as
+  // the URL is ready, not only when the clip index changes.
   useEffect(() => {
     const v = videoRef.current
     if (!v || !current || current.kind !== 'video') return
+    if (!resolvedVideoSrc) return
     v.currentTime = 0
     if (isPlaying) {
       v.play().catch(() => {
@@ -158,7 +174,7 @@ export function SequentialClipPlayer({
     } else {
       v.pause()
     }
-  }, [current?.id, current?.kind, isPlaying])
+  }, [current?.id, current?.kind, isPlaying, resolvedVideoSrc])
 
   // Apply clip volume to the active video element.
   useEffect(() => {
@@ -238,10 +254,6 @@ export function SequentialClipPlayer({
   // Choose the chrome ratio from the first clip so the frame stays stable.
   const frameRatio = clips[0]?.ratio ?? current?.ratio ?? '16:9'
 
-  const { url: resolvedVideoSrc, loading: srcLoading } = usePlayableVideoUrl(
-    current && current.kind === 'video' ? current.src : null,
-  )
-
   if (!current) return null
 
   return (
@@ -297,6 +309,17 @@ export function SequentialClipPlayer({
                   el.muted = clipVolume <= 0
                 }}
                 onEnded={goNext}
+                onError={() => {
+                  // A clip's source failed to load/play (e.g. expired proxy
+                  // token). Retry resolution once; if it fails again, skip to
+                  // the next clip so the sequence never stalls.
+                  if (current && erroredOnceRef.current !== current.id) {
+                    erroredOnceRef.current = current.id
+                    reload()
+                  } else {
+                    goNext()
+                  }
+                }}
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => {
                   // Only mirror pauses that came from the user (not from src swap).

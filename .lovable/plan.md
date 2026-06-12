@@ -1,24 +1,45 @@
-## مشکل
+## Problem
 
-عکس‌های محصول (Product Photos) که در بخش Storage آپلود می‌شوند، نباید به‌عنوان «Draft project» در کتابخانه/درفت‌ها ظاهر شوند. این بخش فقط برای آموزش محصولات به سیستم است تا هنگام ساخت ویدئو استفاده شوند.
+When a new clip/film is generated, the central preview pins itself to that single new clip and shows a blank/grey player that plays nothing (see screenshot). The user wants the preview to **always** play all clips together, in playback order (the sequential auto-stitch).
 
-## ریشهٔ مشکل
+## Root cause
 
-عکس‌های محصول در جدول `generator_user_images` با `category: 'product'` ذخیره می‌شوند. بخش Storage این‌ها را درست تفکیک می‌کند (خطوط ۸۳۳–۸۳۴ در `DashboardPage.tsx`: محصول از عمومی جدا می‌شود).
+In `DashboardPage.tsx`, the preview source is chosen by the `previewItem` memo (line ~3024). Its priority order is:
 
-اما افکت hydration در زمان لود/رفرش صفحه (خطوط ~۳۱۱۷–۳۱۴۶) همهٔ ردیف‌های `generator_user_images` کاربر را **بدون فیلتر category** می‌خواند و در state اصلی `userImages` می‌ریزد. این state منبعِ ساخت کارت‌های درفت/ستون Pending است. به همین دلیل پس از رفرش، هر عکس محصول به‌صورت یک «Draft project» در کتابخانه نمایان می‌شود.
+1. `lastMergedPreview` (Final Film)
+2. `previewVideoId` → a single pinned clip
+3. sequence preview (when 2+ playable clips exist)
+4. single-clip fallback
 
-## راه‌حل
+On every generation the code calls `setPreviewVideoId(seededJob.id)` (lines ~4094 and ~4229). The seeded job is still **pending** (no `video.storage_path` yet, or its proxied URL isn't playable). Because `previewVideoId` has higher priority than the sequence, the preview gets locked onto this not-yet-ready clip → blank player, nothing plays, and the full sequence is never shown.
 
-در همان افکت hydration:
+Secondary issue: `SequentialClipPlayer` has no error handling on the `<video>`. If one clip's source fails to resolve/play, it stalls on the loading spinner forever instead of advancing to the next clip.
 
-1. کوئری `generator_user_images` (خط ~۳۱۲۰) را طوری اصلاح کنیم که ستون `category` هم انتخاب شود و ردیف‌های `category = 'product'` حذف شوند (مثلاً با `.or('category.is.null,category.neq.product')` تا تصاویر عمومی با category خالی هم بمانند).
-2. به‌صورت ایمنی، در فیلتر سمت کلاینت (`visibleImages`, خط ~۳۱۳۶) هم تصاویری که `category === 'product'` هستند از `setUserImages` کنار گذاشته شوند.
+## Fix
 
-این تغییر باعث می‌شود عکس‌های محصول فقط در تب Product Photos (که از `archiveProductImages` تغذیه می‌شود) باقی بمانند و دیگر هرگز در درفت‌ها/کتابخانه ظاهر نشوند. عکس‌های عمومی و سایر رفتارها بدون تغییر می‌مانند.
+### 1. Stop pinning the preview to a freshly created clip (`DashboardPage.tsx`)
+- In both generation flows (single-clip create ~line 4094 and multi-scene create ~line 4229), replace `setPreviewVideoId(seededJob.id)` with `setPreviewVideoId(null)` and ensure `previewDismissed` is false.
+- Effect: after creating clips, `previewItem` naturally falls through to the **sequence preview** whenever 2+ playable clips exist, so the preview always plays every ready clip in order. With only one clip it still shows that single clip via the existing fallback.
+- Clicking a card to focus a single clip still works (those `setPreviewVideoId(clip.id)` calls at ~7323/7456 are untouched).
 
-## بخش فنی
+### 2. Keep the auto-pin from re-locking elsewhere
+- Verify no other create path re-pins after merge. Leave `lastMergedPreview` (Final Film) behavior unchanged — it should still take top priority when the user explicitly renders Final Film.
 
-- فایل: `src/modules/generator-ui/pages/DashboardPage.tsx`
-- فقط منطق frontend تغییر می‌کند؛ هیچ تغییری در دیتابیس/جدول/بک‌اند لازم نیست.
-- تأیید درستی: پس از تغییر، یک عکس محصول آپلود می‌کنیم، صفحه را رفرش می‌کنیم و بررسی می‌کنیم که در درفت‌ها ظاهر نشود ولی در تب Product Photos بماند.
+### 3. Make the sequential player self-healing (`SequentialClipPlayer.tsx`)
+- Add an `onError` handler to the `<video>` that advances to the next clip (`goNext`) so a single bad/expired source never freezes playback.
+- On error of a proxied URL, also call the hook's `reload()` once before skipping, so an expired-token URL gets re-resolved rather than permanently skipped. (Use the `reload` returned by `usePlayableVideoUrl`.)
+- Ensure that when `resolvedVideoSrc` finishes loading the active video actually starts playing (re-trigger play in the autoplay effect on `resolvedVideoSrc` change, not just `current.id`).
+
+## Outcome
+
+- After generating new clips the preview immediately shows the full project as a sequential auto-stitched playback, in order — no more blank single-clip lock.
+- A single failed/expired clip source no longer halts the preview; it retries once then continues.
+- Manual single-clip preview (clicking a card) and Final Film preview are unchanged.
+
+## Technical notes
+
+Files touched:
+- `src/modules/generator-ui/pages/DashboardPage.tsx` — change the two post-create `setPreviewVideoId(seededJob.id)` calls to clear the pin so the sequence preview becomes the default.
+- `src/modules/generator-ui/components/SequentialClipPlayer.tsx` — add `onError` → reload-once-then-`goNext`; re-trigger play on resolved-src change.
+
+No backend, schema, or business-logic changes.
