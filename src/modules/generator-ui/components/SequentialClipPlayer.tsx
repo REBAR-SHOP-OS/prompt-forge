@@ -124,6 +124,15 @@ export function SequentialClipPlayer({
 
   const current = clips[index] ?? null
 
+  const { url: resolvedVideoSrc, loading: srcLoading, reload } = usePlayableVideoUrl(
+    current && current.kind === 'video' ? current.src : null,
+  )
+
+  // Reset the per-clip error guard whenever the active clip changes.
+  useEffect(() => {
+    erroredOnceRef.current = null
+  }, [current?.id])
+
   useEffect(() => {
     if (current) onActiveClipChange?.(current.id)
   }, [current?.id, onActiveClipChange])
