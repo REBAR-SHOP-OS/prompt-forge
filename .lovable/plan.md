@@ -1,53 +1,33 @@
-# افزودن انتخاب «سبک‌ها» به منوی Prompt
+## Goal
 
-## هدف
-داخل دکمه **Prompt** (همان منویی که الان «No narrator» و «With narrator» دارد) یک گزینهٔ سوم به نام **Styles / سبک‌ها** اضافه شود. کاربر می‌تواند از میان همهٔ سبک‌های آماده انتخاب کند و وقتی روی «Apply» بزند، پرامت او بر اساس سبک‌های انتخاب‌شده بهینه (optimize) می‌شود.
+Two changes to the image cards (uploaded-image clips in the Pending panel, and product-image cards in the Archive):
 
-دسته‌بندی‌ها دقیقاً همان‌هایی هستند که کاربر فهرست کرده و خوشبختانه همگی از قبل در پروژه (داخل `ProductAdDialog.tsx`) با لیبل چندزبانه، آیکون و متن پرامت تعریف شده‌اند:
-- **Camera style** (۱۰ مورد: Whip Pan, Orbit, FPV Drone, …)
-- **Genre & atmosphere** (۸ مورد: Epic Fantasy, Sci-Fi Minimalist, …)
-- **Scene & environment** (گروه‌بندی‌شده: Industrial، Urban، Nature، Historical، Interior)
-- **Video templates** (گروه‌بندی‌شده: Sports، Animation، Social Media، Corporate، Cinematic، Events، Explainer)
+1. Display each image card in its **real aspect ratio** (9:16, 16:9, or 1:1) instead of being forced into a square.
+2. Add a small **icon button** on each image card that, when clicked, sends that image into the composer's **Start** frame slot (image-to-video), exactly like the existing reframe → Start flow.
 
-## رفتار مورد انتظار
-1. کاربر یک ایدهٔ کوتاه در باکس پرامت می‌نویسد.
-2. منوی Prompt را باز می‌کند و وارد بخش Styles می‌شود.
-3. سبک‌ها را به‌صورت چیپ‌های قابل انتخاب می‌بیند (دوربین/ژانر/صحنه/قالب). انتخاب چندتایی مجاز است.
-4. روی **Apply / بهینه‌سازی** می‌زند → پرامت با ترکیب ایدهٔ کاربر و سبک‌های انتخابی بازنویسی و بهینه می‌شود و در باکس می‌نشیند.
-5. اگر هیچ ایده‌ای ننوشته باشد، پیام راهنما نشان داده می‌شود (مثل حالت No narrator).
+## Background (current behavior)
 
-## مراحل پیاده‌سازی
+- The uploaded-image clip card (`DashboardPage.tsx`, ~line 7782-7798) hardcodes `style={{ aspectRatio: '1 / 1' }}` with `object-cover`, so portrait/landscape images get cropped into a square. Video cards right below already use `ratioToCss(getRatioFor(video))` correctly.
+- An existing handler `handleReframeAsStart(url, ratio)` (~line 3909) stages a URL as the `Start` upload, switches to image-to-video, and sets the aspect ratio. This is exactly the action the new icon needs.
 
-### ۱) استخراج دیتاست سبک‌ها به یک ماژول مشترک
-ساخت فایل جدید `src/modules/generator-ui/lib/promptStyles.ts` و انتقال این تعریف‌ها از `ProductAdDialog.tsx` به آن (بدون تغییر محتوا):
-- `CAMERA_STYLES`, `GENRE_TEMPLATES`, `SCENE_TEMPLATES`, `VIDEO_TEMPLATES` و گروه‌بندی‌های مربوطه و تایپ `Loc`.
-- یک تابع کمکی `buildStyleHints(selection)` که از روی شناسه‌های انتخاب‌شده، متن‌های `prompt` مربوط به دوربین/ژانر/صحنه/قالب را جمع می‌کند و یک رشتهٔ راهنمای سبک برمی‌گرداند.
+## Changes
 
-`ProductAdDialog.tsx` به‌جای تعریف محلی، از این ماژول import می‌کند (رفتار فعلی‌اش تغییر نمی‌کند — تغییر non-breaking).
+### 1. Real aspect ratio for image cards
 
-### ۲) افزودن گزینهٔ Styles به منوی Prompt در composer
-در `DashboardPage.tsx` داخل `PopoverContent` دکمهٔ Prompt:
-- افزودن یک ردیف سوم «Styles / سبک‌ها» شبیه دو گزینهٔ موجود.
-- با کلیک، یک حالت `styleMode === 'input'` فعال می‌شود (هم‌سبک `narratorMode`) و یک پنل اسکرول‌شوندهٔ جمع‌وجور باز می‌شود که دسته‌ها را به‌صورت بخش‌های قابل‌جمع‌شدن (Camera / Genre / Scene / Templates) با چیپ‌های آیکون‌دار نشان می‌دهد.
-- state جدید: `selectedStyles` (مجموعه‌ای از شناسه‌ها به تفکیک نوع) با `useState`.
-- یک دکمهٔ «Apply» در انتهای پنل.
+In the uploaded-image clip card image wrapper (~line 7782-7785):
+- Replace `style={{ aspectRatio: '1 / 1' }}` with the project ratio: `style={{ aspectRatio: ratioToCss(lockedProjectRatio ?? aspectRatio) }}`.
+- Change the `<img>` class from `object-cover` to `object-contain` so the full frame shows in its true ratio without cropping (background stays `#15171a`).
 
-### ۳) بهینه‌سازی پرامت بر اساس انتخاب
-- تعمیم تابع موجود `runEnhancePrompt` (یا افزودن مسیر `mode: 'styles'`) تا علاوه بر پرامت، رشتهٔ `styleHints` حاصل از `buildStyleHints` را هم به edge function بفرستد.
-- پس از دریافت پاسخ، نتیجه در `promptText` می‌نشیند، منو بسته و انتخاب‌ها ریست می‌شوند (مثل رفتار فعلی).
+(Image clips carry the project's locked ratio; there is no separate per-image ratio field, so the project ratio is the correct source — the same one used for the cover card just above.)
 
-### ۴) به‌روزرسانی edge function `enhance-prompt`
-در `supabase/functions/enhance-prompt/index.ts`:
-- پذیرش یک فیلد اختیاری جدید `styleHints: string` (با محدودیت طول، مثلاً تا ۴۰۰۰ کاراکتر).
-- وقتی موجود باشد، به system/​user prompt افزوده می‌شود با این مضمون: «بازنویسی باید این سبک‌های بصری و قواعد را اعمال کند: …» ضمن حفظ زبان اصلی کاربر و سایر قیدهای موجود (no narration و …).
-- این تغییر backward-compatible است؛ نبودِ `styleHints` رفتار فعلی را تغییر نمی‌دهد.
+### 2. "Use as Start frame" icon on image cards
 
-## بخش فنی (جزئیات)
-- منبع داده: همان آرایه‌های موجود در `ProductAdDialog.tsx` (خطوط ~۱۴۲–۳۲۴) که عیناً منتقل می‌شوند؛ هیچ متن سبکی بازنویسی نمی‌شود.
-- نمایش لیبل‌ها در composer از فیلد `label.en` + `icon` استفاده می‌کند (composer فعلاً انگلیسی است). امکان توسعهٔ چندزبانه بعداً وجود دارد چون دیتاست `Loc` است.
-- بهینه‌سازی از همان مسیر `supabase.functions.invoke('enhance-prompt')` انجام می‌شود؛ سرویس یا منطق کسب‌وکار جدیدی اضافه نمی‌شود.
-- محدودهٔ تغییرات: `DashboardPage.tsx`، فایل جدید `lib/promptStyles.ts`، `ProductAdDialog.tsx` (فقط import)، و `enhance-prompt/index.ts`.
+- Add a small reusable handler `handleUseImageAsStart(url: string)` that mirrors `handleReframeAsStart` but keeps the current locked/aspect ratio: set generation mode to `image-to-video`, push a ready `Start` upload entry with the given `url`, and (best-effort) scroll the composer Start input into view so the user sees it land.
+- Add an icon button (lucide `ImagePlus` or `MoveRight`/`SquarePlus`) to the image clip card action row (~line 7803-7826), next to the drag/delete controls, with `title`/`aria-label` "Use as Start frame". On click: `event.stopPropagation()` then `handleUseImageAsStart(img.storage_path)`. Hidden when `isReadOnlyProject` (same as delete).
+- Apply the same icon button to the Archive product-image cards (~line 6291-6337 action row) so those image cards can also be sent to Start.
 
-## خارج از محدوده
-- تغییر در ظاهر کلی composer یا منطق ساخت ویدئو.
-- پیش‌نمایش ویدئویی سبک‌ها در منو (برای سبکی و سرعت فقط چیپ آیکون+نام؛ در صورت تمایل بعداً اضافه می‌شود).
+## Technical notes
+
+- Reuse `ratioToCss`, `lockedProjectRatio`, `aspectRatio`, and the `uploadedFiles`/`setUploadedFiles` + `setGenerationMode` patterns already in the file — no new state or backend work.
+- No edge function, schema, or business-logic changes; this is frontend/presentation only.
+- Scope: `src/modules/generator-ui/pages/DashboardPage.tsx` only.
