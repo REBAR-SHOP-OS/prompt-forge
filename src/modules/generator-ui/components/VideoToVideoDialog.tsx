@@ -127,6 +127,7 @@ export default function VideoToVideoDialog({
   userId,
   sourceAspectRatio,
   title,
+  draftGroupId,
   onJobCreated,
 }: VideoToVideoDialogProps) {
   const [prompt, setPrompt] = useState('')
