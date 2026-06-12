@@ -9,6 +9,7 @@ import {
   ChevronDown,
   Cpu,
   Camera,
+  ListChecks,
   Clapperboard,
   Package,
   Heart,
@@ -2025,11 +2026,50 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [approvedStorageKey, mergedEntries, librarySavedJobs])
 
+  // ---- Library bulk selection (Drafts / Final videos) ----
+  const [draftSelectMode, setDraftSelectMode] = useState(false)
+  const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(new Set())
+  const [finalSelectMode, setFinalSelectMode] = useState(false)
+  const [selectedFinalIds, setSelectedFinalIds] = useState<Set<string>>(new Set())
+
+  function toggleSelectId(variant: 'final' | 'draft', id: string) {
+    const setIds = variant === 'final' ? setSelectedFinalIds : setSelectedDraftIds
+    setIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  async function bulkDeleteSelected(variant: 'final' | 'draft') {
+    const ids = Array.from(variant === 'final' ? selectedFinalIds : selectedDraftIds)
+    if (ids.length === 0) return
+    const label = variant === 'final' ? 'final video' : 'draft'
+    const confirmMsg = `Delete ${ids.length} selected ${label}${ids.length === 1 ? '' : 's'} permanently?`
+    if (typeof window !== 'undefined' && !window.confirm(confirmMsg)) return
+    for (const id of ids) {
+      // eslint-disable-next-line no-await-in-loop
+      await deleteCardConfirmed(id)
+    }
+    if (variant === 'final') {
+      setSelectedFinalIds(new Set())
+      setFinalSelectMode(false)
+    } else {
+      setSelectedDraftIds(new Set())
+      setDraftSelectMode(false)
+    }
+  }
+
   async function deleteCard(jobId: string) {
     const confirmMsg = jobId.startsWith('draft-')
       ? 'Delete this draft and all its clips permanently?'
       : 'Delete this video card permanently?'
     if (typeof window !== 'undefined' && !window.confirm(confirmMsg)) return
+    await deleteCardConfirmed(jobId)
+  }
+
+  async function deleteCardConfirmed(jobId: string) {
 
     // Draft project card: permanently delete the underlying clips/images
     // server-side, then drop the local snapshot, and tombstone the ids so
@@ -8342,23 +8382,43 @@ export default function DashboardPage() {
                 variant === 'draft'
                   ? resolveDraftDisplay(video.id, video).video
                   : video.video
+              const selectMode = variant === 'final' ? finalSelectMode : draftSelectMode
+              const isChecked = (variant === 'final' ? selectedFinalIds : selectedDraftIds).has(video.id)
               return (
                 <article
                   key={video.id}
                   className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-2.5 transition hover:border-white/20 hover:bg-white/[0.055] ${
-                    isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : 'border-white/10 bg-white/[0.035]'
+                    selectMode && isChecked
+                      ? 'border-rose-300/40 bg-rose-300/[0.06]'
+                      : isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : 'border-white/10 bg-white/[0.035]'
                   }`}
                   role="button"
                   tabIndex={0}
                   aria-label={`Preview ${video.input_prompt}`}
-                  onClick={() => openLibraryEntry(video)}
+                  onClick={() => {
+                    if (selectMode) toggleSelectId(variant, video.id)
+                    else openLibraryEntry(video)
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault()
-                      openLibraryEntry(video)
+                      if (selectMode) toggleSelectId(variant, video.id)
+                      else openLibraryEntry(video)
                     }
                   }}
                 >
+                  {selectMode ? (
+                    <button
+                      type="button"
+                      onClick={(event) => { event.stopPropagation(); toggleSelectId(variant, video.id) }}
+                      aria-label={isChecked ? 'Deselect' : 'Select'}
+                      className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border transition ${
+                        isChecked ? 'border-rose-300/60 bg-rose-300/20 text-rose-200' : 'border-white/20 text-zinc-500'
+                      }`}
+                    >
+                      {isChecked ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+                    </button>
+                  ) : null}
                   <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
                     {display?.storage_path ? (
                       <PlayableVideo
@@ -8579,6 +8639,48 @@ export default function DashboardPage() {
                     <span className="grid h-5 min-w-5 place-items-center rounded-full border border-white/10 px-1.5 text-[10px] font-semibold text-zinc-300">
                       {finalizedItems.length}
                     </span>
+                    {finalizedItems.length > 0 ? (
+                      <div className="ml-auto flex items-center gap-1.5">
+                        {finalSelectMode ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedFinalIds((prev) => prev.size === finalizedItems.length ? new Set() : new Set(finalizedItems.map((v) => v.id)))}
+                              className="rounded-full border border-white/10 px-2 py-1 text-[10px] font-semibold text-zinc-300 transition hover:border-white/20 hover:text-zinc-100"
+                            >
+                              {selectedFinalIds.size === finalizedItems.length ? 'Deselect all' : 'Select all'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={selectedFinalIds.size === 0}
+                              onClick={() => void bulkDeleteSelected('final')}
+                              className="inline-flex items-center gap-1 rounded-full border border-rose-300/30 bg-rose-300/10 px-2 py-1 text-[10px] font-semibold text-rose-200 transition hover:bg-rose-300/20 disabled:opacity-40"
+                            >
+                              <Trash2 className="h-3 w-3" aria-hidden="true" />
+                              Delete ({selectedFinalIds.size})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setFinalSelectMode(false); setSelectedFinalIds(new Set()) }}
+                              aria-label="Cancel selection"
+                              className="grid h-6 w-6 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:text-zinc-100"
+                            >
+                              <X className="h-3 w-3" aria-hidden="true" />
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setFinalSelectMode(true)}
+                            aria-label="Select final videos"
+                            title="Select multiple to delete"
+                            className="grid h-6 w-6 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:text-zinc-100"
+                          >
+                            <ListChecks className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                   {finalizedItems.length === 0 ? (
                     <p className="rounded-xl border border-dashed border-white/10 px-3 py-3 text-[11px] text-zinc-500">
@@ -8597,6 +8699,48 @@ export default function DashboardPage() {
                     <span className="grid h-5 min-w-5 place-items-center rounded-full border border-white/10 px-1.5 text-[10px] font-semibold text-zinc-300">
                       {draftItems.length}
                     </span>
+                    {draftItems.length > 0 ? (
+                      <div className="ml-auto flex items-center gap-1.5">
+                        {draftSelectMode ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedDraftIds((prev) => prev.size === draftItems.length ? new Set() : new Set(draftItems.map((v) => v.id)))}
+                              className="rounded-full border border-white/10 px-2 py-1 text-[10px] font-semibold text-zinc-300 transition hover:border-white/20 hover:text-zinc-100"
+                            >
+                              {selectedDraftIds.size === draftItems.length ? 'Deselect all' : 'Select all'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={selectedDraftIds.size === 0}
+                              onClick={() => void bulkDeleteSelected('draft')}
+                              className="inline-flex items-center gap-1 rounded-full border border-rose-300/30 bg-rose-300/10 px-2 py-1 text-[10px] font-semibold text-rose-200 transition hover:bg-rose-300/20 disabled:opacity-40"
+                            >
+                              <Trash2 className="h-3 w-3" aria-hidden="true" />
+                              Delete ({selectedDraftIds.size})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setDraftSelectMode(false); setSelectedDraftIds(new Set()) }}
+                              aria-label="Cancel selection"
+                              className="grid h-6 w-6 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:text-zinc-100"
+                            >
+                              <X className="h-3 w-3" aria-hidden="true" />
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setDraftSelectMode(true)}
+                            aria-label="Select drafts"
+                            title="Select multiple to delete"
+                            className="grid h-6 w-6 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:text-zinc-100"
+                          >
+                            <ListChecks className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                   {draftItems.length === 0 ? (
                     <p className="rounded-xl border border-dashed border-white/10 px-3 py-3 text-[11px] text-zinc-500">
