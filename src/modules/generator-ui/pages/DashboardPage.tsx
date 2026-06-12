@@ -7804,12 +7804,12 @@ export default function DashboardPage() {
                       >
                         <div
                           className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
-                          style={{ aspectRatio: '1 / 1' }}
+                          style={{ aspectRatio: ratioToCss(lockedProjectRatio ?? aspectRatio) }}
                         >
                           <img
                             src={img.storage_path}
                             alt="Uploaded reference"
-                            className="h-full w-full object-cover"
+                            className="h-full w-full object-contain"
                             loading="lazy"
                           />
                           <span
