@@ -8787,6 +8787,8 @@ export default function DashboardPage() {
                 if (!open) {
                   setNarratorMode('idle')
                   setNarratorScript('')
+                  setStyleMode('idle')
+                  setSelectedStyles(emptyStyleSelection())
                 }
               }}
             >
