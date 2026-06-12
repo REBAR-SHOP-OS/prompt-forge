@@ -45,6 +45,8 @@ export interface CreateJobInput {
   durationSeconds?: 5 | 10 | 15;
   /** Requested output aspect ratio. Defaults to 16:9 server-side. */
   aspectRatio?: AspectRatio;
+  /** Durable per-project group id so all clips in one session stay one draft. */
+  draftGroupId?: string;
 }
 
 export interface CreateJobResult {
