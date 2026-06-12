@@ -3888,7 +3888,161 @@ export default function DashboardPage() {
     setUploadedFiles((currentFiles) => currentFiles.filter((file) => file.id !== fileId))
   }
 
-  // When the user is viewing a finalized project (selectedProjectId set) and
+  // Reopen a finalized Final Film as an editable Draft. This is the deliberate
+  // inverse of finalization: it removes the film from the Library "Final"
+  // section and recreates a Draft from the exact clips/images (and cover) that
+  // produced it, restores them into the live workspace, and activates that
+  // draft so the user can edit and re-finalize.
+  function reopenFinalAsDraft(video: JobDetail) {
+    const finalId = video.id
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm('Reopen this final film for editing? It will move back to Drafts.')
+    ) {
+      return
+    }
+
+    // 1. Source snapshot that produced this final film.
+    const sourceJobs = projectSourceJobs[finalId] ?? []
+    const sourceImages = projectSourceImages[finalId] ?? []
+
+    // 2. Reuse the original durable draft id from the clips' draft_group_id when
+    //    present; otherwise mint a fresh draft id.
+    const groupUuid =
+      sourceJobs.map((j) => j.draft_group_id).find((g): g is string => !!g) ??
+      sourceImages.map((i) => i.draft_group_id).find((g): g is string => !!g)
+    const draftId = groupUuid
+      ? draftIdForGroupUuid(groupUuid)
+      : `draft-${typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`
+
+    // 3. Remove the final film from the Library.
+    setMergedEntries((prev) => {
+      const next = prev.filter((m) => m.id !== finalId)
+      persistMerged(next)
+      return next
+    })
+    setApprovedIds((prev) => {
+      if (!prev.has(finalId)) return prev
+      const next = new Set(prev)
+      next.delete(finalId)
+      if (approvedStorageKey) {
+        try { window.localStorage.setItem(approvedStorageKey, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
+      }
+      return next
+    })
+    setProjectSourceJobs((prev) => {
+      if (!(finalId in prev)) return prev
+      const { [finalId]: _dropJobs, ...rest } = prev
+      persistProjectSourceJobs(rest)
+      return rest
+    })
+    setProjectSourceImages((prev) => {
+      if (!(finalId in prev)) return prev
+      const { [finalId]: _dropImgs, ...rest } = prev
+      persistProjectSourceImages(rest)
+      return rest
+    })
+
+    // 4. Un-tombstone the draft id and per-image orphan ids so the draft lives.
+    setDeletedDraftIds((prev) => {
+      const next = new Set(prev)
+      next.delete(draftId)
+      for (const img of sourceImages) next.delete(`draft-orphan-img-${img.id}`)
+      persistDeletedDraftIds(next)
+      return next
+    })
+
+    // 5. Recreate the draft snapshot + entry.
+    setDraftSourceJobs((prev) => {
+      const next = { ...prev, [draftId]: sourceJobs }
+      persistDraftSourceJobs(next)
+      return next
+    })
+    setDraftSourceImages((prev) => {
+      const next = { ...prev, [draftId]: sourceImages }
+      persistDraftSourceImages(next)
+      return next
+    })
+    setDraftEntries((prev) => {
+      const next = [{ ...video, id: draftId }, ...prev.filter((d) => d.id !== draftId)]
+      persistDraftEntries(next)
+      return next
+    })
+
+    // 6. Re-stamp ownership back to the draft.
+    if (sourceJobs.length > 0) {
+      setJobDraftMap((prev) => {
+        const next = { ...prev }
+        for (const j of sourceJobs) next[j.id] = draftId
+        persistJobDraftMap(next)
+        return next
+      })
+    }
+    if (sourceImages.length > 0) {
+      setImageDraftMap((prev) => {
+        const next = { ...prev }
+        for (const i of sourceImages) next[i.id] = draftId
+        persistImageDraftMap(next)
+        return next
+      })
+    }
+
+    // 7. Restore clips/images into the live workspace.
+    if (sourceJobs.length > 0) {
+      setGeneratedVideos((current) => sourceJobs.reduce((acc, j) => mergeJob(acc, j), current))
+      setWorkspaceHiddenJobIds((curr) => {
+        const next = new Set(curr)
+        for (const j of sourceJobs) next.delete(j.id)
+        persistWorkspaceHiddenJobIds(next)
+        return next
+      })
+      setActiveJobIds((curr) => {
+        const next = new Set(curr)
+        for (const j of sourceJobs) next.add(j.id)
+        persistActiveJobIds(next)
+        return next
+      })
+    }
+    if (sourceImages.length > 0) {
+      setUserImages((current) => {
+        const byId = new Map(current.map((i) => [i.id, i] as const))
+        for (const img of sourceImages) if (!byId.has(img.id)) byId.set(img.id, img)
+        return Array.from(byId.values())
+      })
+      setWorkspaceHiddenImageIds((curr) => {
+        const next = new Set(curr)
+        for (const i of sourceImages) next.delete(i.id)
+        persistWorkspaceHiddenImageIds(next)
+        return next
+      })
+      setActiveImageIds((curr) => {
+        const next = new Set(curr)
+        for (const i of sourceImages) next.add(i.id)
+        persistActiveImageIds(next)
+        return next
+      })
+    }
+
+    // 8. Move the film cover over to the draft scope.
+    setCoverImages((prev) => {
+      const cover = prev[finalId]
+      if (!cover) return prev
+      const { [finalId]: _dropCover, ...rest } = prev
+      const next = { ...rest, [draftId]: cover }
+      persistCoverImages(next)
+      return next
+    })
+
+    // 9. Activate edit mode on the draft.
+    setActiveDraftId(draftId)
+    persistActiveDraftId(draftId)
+    setSelectedProjectId(null)
+    setPreviewVideoId(null)
+    setLastMergedPreview(null)
+    setPreviewDismissed(true)
+  }
+
+
   // wants to extend it — add a new card or run Final Film again — restore the
   // project's source clips into the live workspace so they appear in HISTORY
   // alongside the new card, then exit project-snapshot mode.
