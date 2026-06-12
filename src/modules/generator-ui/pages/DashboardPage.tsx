@@ -7271,6 +7271,7 @@ export default function DashboardPage() {
             <p className="text-xs font-medium text-zinc-500">Working clips</p>
             <h2 className="text-sm font-semibold text-zinc-100">Pending</h2>
           </div>
+          {!isReadOnlyProject && (
           <div className="flex items-center gap-2">
             <input
               ref={imageUploadInputRef}
