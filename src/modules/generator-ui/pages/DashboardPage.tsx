@@ -8641,6 +8641,48 @@ export default function DashboardPage() {
                     <span className="grid h-5 min-w-5 place-items-center rounded-full border border-white/10 px-1.5 text-[10px] font-semibold text-zinc-300">
                       {finalizedItems.length}
                     </span>
+                    {finalizedItems.length > 0 ? (
+                      <div className="ml-auto flex items-center gap-1.5">
+                        {finalSelectMode ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedFinalIds((prev) => prev.size === finalizedItems.length ? new Set() : new Set(finalizedItems.map((v) => v.id)))}
+                              className="rounded-full border border-white/10 px-2 py-1 text-[10px] font-semibold text-zinc-300 transition hover:border-white/20 hover:text-zinc-100"
+                            >
+                              {selectedFinalIds.size === finalizedItems.length ? 'Deselect all' : 'Select all'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={selectedFinalIds.size === 0}
+                              onClick={() => void bulkDeleteSelected('final')}
+                              className="inline-flex items-center gap-1 rounded-full border border-rose-300/30 bg-rose-300/10 px-2 py-1 text-[10px] font-semibold text-rose-200 transition hover:bg-rose-300/20 disabled:opacity-40"
+                            >
+                              <Trash2 className="h-3 w-3" aria-hidden="true" />
+                              Delete ({selectedFinalIds.size})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setFinalSelectMode(false); setSelectedFinalIds(new Set()) }}
+                              aria-label="Cancel selection"
+                              className="grid h-6 w-6 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:text-zinc-100"
+                            >
+                              <X className="h-3 w-3" aria-hidden="true" />
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setFinalSelectMode(true)}
+                            aria-label="Select final videos"
+                            title="Select multiple to delete"
+                            className="grid h-6 w-6 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:text-zinc-100"
+                          >
+                            <ListChecks className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                   {finalizedItems.length === 0 ? (
                     <p className="rounded-xl border border-dashed border-white/10 px-3 py-3 text-[11px] text-zinc-500">
@@ -8659,6 +8701,48 @@ export default function DashboardPage() {
                     <span className="grid h-5 min-w-5 place-items-center rounded-full border border-white/10 px-1.5 text-[10px] font-semibold text-zinc-300">
                       {draftItems.length}
                     </span>
+                    {draftItems.length > 0 ? (
+                      <div className="ml-auto flex items-center gap-1.5">
+                        {draftSelectMode ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedDraftIds((prev) => prev.size === draftItems.length ? new Set() : new Set(draftItems.map((v) => v.id)))}
+                              className="rounded-full border border-white/10 px-2 py-1 text-[10px] font-semibold text-zinc-300 transition hover:border-white/20 hover:text-zinc-100"
+                            >
+                              {selectedDraftIds.size === draftItems.length ? 'Deselect all' : 'Select all'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={selectedDraftIds.size === 0}
+                              onClick={() => void bulkDeleteSelected('draft')}
+                              className="inline-flex items-center gap-1 rounded-full border border-rose-300/30 bg-rose-300/10 px-2 py-1 text-[10px] font-semibold text-rose-200 transition hover:bg-rose-300/20 disabled:opacity-40"
+                            >
+                              <Trash2 className="h-3 w-3" aria-hidden="true" />
+                              Delete ({selectedDraftIds.size})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setDraftSelectMode(false); setSelectedDraftIds(new Set()) }}
+                              aria-label="Cancel selection"
+                              className="grid h-6 w-6 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:text-zinc-100"
+                            >
+                              <X className="h-3 w-3" aria-hidden="true" />
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setDraftSelectMode(true)}
+                            aria-label="Select drafts"
+                            title="Select multiple to delete"
+                            className="grid h-6 w-6 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-white/20 hover:text-zinc-100"
+                          >
+                            <ListChecks className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                   {draftItems.length === 0 ? (
                     <p className="rounded-xl border border-dashed border-white/10 px-3 py-3 text-[11px] text-zinc-500">
