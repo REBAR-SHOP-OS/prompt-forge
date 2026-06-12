@@ -9,8 +9,6 @@ import {
   ChevronDown,
   Cpu,
   Camera,
-  CheckSquare,
-  Square,
   ListChecks,
   Clapperboard,
   Package,
