@@ -3927,25 +3927,56 @@ export default function DashboardPage() {
 
   // Stage an existing image (clip or archive) as the composer Start frame,
   // switch to image-to-video, and scroll the composer into view.
-  function handleUseImageAsStart(url: string) {
+  // The image must be re-staged into the wan-frames bucket because the
+  // jobs-create validator only accepts firstFrameUrl under wan-frames/{userId}/.
+  async function handleUseImageAsStart(url: string) {
     if (!url) return
     setGenerationMode('image-to-video')
+    const seedId = Date.now()
     setUploadedFiles((cur) => [
       ...cur.filter((f) => f.target !== 'Start'),
       {
-        id: Date.now(),
-        name: `start-${Date.now()}.png`,
+        id: seedId,
+        name: `start-${seedId}.png`,
         size: 0,
         target: 'Start',
         type: 'image/png',
-        status: 'ready',
-        url,
+        status: 'uploading',
+        url: null,
         error: null,
       },
     ])
     try {
       document.getElementById('composer-start-frame')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     } catch { /* ignore */ }
+
+    const userId = session?.user?.id
+    try {
+      if (!userId) throw new Error('Sign in before using an image as a frame')
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(`Could not read image (HTTP ${res.status})`)
+      const blob = await res.blob()
+      const storagePath = `${userId}/start-${Date.now()}-${crypto.randomUUID()}.png`
+      const { error: upErr } = await supabase.storage
+        .from(FRAMES_BUCKET)
+        .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false })
+      if (upErr) throw new Error(upErr.message)
+      const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+      setUploadedFiles((current) =>
+        current.map((f) =>
+          f.id === seedId
+            ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size, error: null }
+            : f,
+        ),
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Could not stage image as frame'
+      setUploadedFiles((current) =>
+        current.map((f) =>
+          f.id === seedId ? { ...f, status: 'failed', error: msg } : f,
+        ),
+      )
+    }
   }
 
   async function uploadFrameFile(file: File, target: UploadTarget, fileId: number) {
