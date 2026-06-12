@@ -12,6 +12,7 @@ export interface JobSummary {
   last_frame_url?: string | null;
   requested_duration?: number | null;
   requested_aspect_ratio?: string | null;
+  draft_group_id?: string | null;
   created_at: string;
   updated_at?: string;
   /** 0-100 estimated render progress; null when unknown/terminal-failed. */
@@ -40,6 +41,7 @@ export interface CreateJobInput {
   lastFrameUrl?: string | null;
   aspectRatio?: "9:16" | "1:1" | "16:9" | null;
   durationSeconds?: 5 | 10 | 15 | null;
+  draftGroupId?: string | null;
 }
 
 export interface JobService {

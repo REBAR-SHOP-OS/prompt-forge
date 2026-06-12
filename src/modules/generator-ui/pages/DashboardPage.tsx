@@ -155,6 +155,8 @@ type UserImageItem = {
   height?: number | null
   category?: string | null
   title?: string | null
+  /** Durable per-project group id; mirrors job draft_group_id. */
+  draft_group_id?: string | null
 }
 
 type UnifiedClip =
@@ -813,7 +815,7 @@ export default function DashboardPage() {
         userId
           ? supabase
               .from('generator_user_images')
-              .select('id, storage_path, created_at, still_duration_seconds, width, height, category, title')
+              .select('id, storage_path, created_at, still_duration_seconds, width, height, category, title, draft_group_id')
               .eq('user_id', userId)
               .is('deleted_at', null)
               .order('created_at', { ascending: false })
@@ -1332,6 +1334,28 @@ export default function DashboardPage() {
       persistActiveDraftId(did)
     }
     return did
+  }
+  // The durable server-side group id is the bare uuid embedded in a
+  // `draft-<uuid>` draft id. New sessions always use that format, so every
+  // clip/image created together is stamped with the same uuid server-side and
+  // regroups into ONE draft project after refresh / on any device.
+  function draftGroupUuid(draftId: string | null | undefined): string | undefined {
+    if (!draftId) return undefined
+    const m = draftId.match(
+      /^draft-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i,
+    )
+    return m ? m[1] : undefined
+  }
+  // Returns the active session's server group id (uuid), creating the active
+  // draft if needed. Call right before createJob so the new clip is owned by
+  // the same project as its siblings.
+  function ensureActiveDraftGroupId(): string | undefined {
+    return draftGroupUuid(ensureActiveDraftId())
+  }
+  // Canonical draft id form for a server group uuid. Equals the activeDraftId
+  // that originally created the clips, so server + local grouping never clash.
+  function draftIdForGroupUuid(uuid: string): string {
+    return `draft-${uuid}`
   }
   function stampJobDraft(jobId: string, draftId: string) {
     setJobDraftMap((prev) => {
@@ -2354,12 +2378,15 @@ export default function DashboardPage() {
       for (const i of imgs) finalClaimedImages.add(i.id)
     }
 
-    // Group every mapped clip / image by its owning draft id.
+    // Group every mapped clip / image by its owning draft id. The DURABLE
+    // server `draft_group_id` wins: it survives refresh / cross-device, so all
+    // clips made in one session always regroup into ONE draft. The local
+    // jobDraftMap is only a fallback for legacy rows that predate the column.
     const clipsByDraft = new Map<string, JobDetail[]>()
     for (const v of generatedVideos) {
       if (v.id.startsWith('merged-')) continue
       if (finalClaimedJobs.has(v.id)) continue
-      const did = jobDraftMap[v.id]
+      const did = v.draft_group_id ? draftIdForGroupUuid(v.draft_group_id) : jobDraftMap[v.id]
       if (!did || deletedDraftIds.has(did)) continue
       const arr = clipsByDraft.get(did) ?? []
       arr.push(v)
@@ -2373,12 +2400,13 @@ export default function DashboardPage() {
     for (const img of userImages) {
       if (finalClaimedImages.has(img.id)) continue
       if (coverImageIds.has(img.id)) continue
-      const did = imageDraftMap[img.id]
+      const did = img.draft_group_id ? draftIdForGroupUuid(img.draft_group_id) : imageDraftMap[img.id]
       if (!did || deletedDraftIds.has(did)) continue
       const arr = imagesByDraft.get(did) ?? []
       arr.push(img)
       imagesByDraft.set(did, arr)
     }
+
 
     const involvedDraftIds = new Set<string>([...clipsByDraft.keys(), ...imagesByDraft.keys()])
     if (involvedDraftIds.size === 0) return
@@ -2510,6 +2538,7 @@ export default function DashboardPage() {
 
     const jobStamps: Record<string, string> = {}
     for (const job of generatedVideos) {
+      if (job.draft_group_id) continue // durably owned by a server draft group
       if (jobDraftMap[job.id]) continue // already owned by a draft
       if (claimedJobIds.has(job.id)) continue
       if (job.id.startsWith('merged-')) continue
@@ -2527,6 +2556,7 @@ export default function DashboardPage() {
     for (const ci of Object.values(coverImages)) coverImageIds.add(ci.id)
     const imageStamps: Record<string, string> = {}
     for (const img of userImages) {
+      if (img.draft_group_id) continue // durably owned by a server draft group
       if (imageDraftMap[img.id]) continue
       if (claimedImageIds.has(img.id)) continue
       if (coverImageIds.has(img.id)) continue
@@ -2562,6 +2592,57 @@ export default function DashboardPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, generatedVideos, userImages, mergedEntries, librarySavedJobs, projectSourceJobs, projectSourceImages, jobDraftMap, imageDraftMap, deletedDraftIds, coverImages])
+
+
+  // ----- One-time legacy regroup -----
+  // Older clips/images grouped only in localStorage (jobDraftMap as
+  // `draft-<uuid>`) but with no durable server `draft_group_id` get stamped
+  // server-side once, so the grouping that exists now becomes permanent and
+  // never fragments on future refreshes / other devices.
+  const legacyRegroupedRef = useRef(false)
+  useEffect(() => {
+    if (!userId) return
+    if (legacyRegroupedRef.current) return
+    if (generatedVideos.length === 0 && userImages.length === 0) return
+    legacyRegroupedRef.current = true
+
+    const groups = new Map<string, { jobs: string[]; images: string[] }>()
+    const ensure = (uuid: string) => {
+      let g = groups.get(uuid)
+      if (!g) { g = { jobs: [], images: [] }; groups.set(uuid, g) }
+      return g
+    }
+    for (const v of generatedVideos) {
+      if (v.draft_group_id) continue
+      const uuid = draftGroupUuid(jobDraftMap[v.id])
+      if (uuid) ensure(uuid).jobs.push(v.id)
+    }
+    for (const img of userImages) {
+      if (img.draft_group_id) continue
+      const uuid = draftGroupUuid(imageDraftMap[img.id])
+      if (uuid) ensure(uuid).images.push(img.id)
+    }
+    if (groups.size === 0) return
+
+    void (async () => {
+      for (const [uuid, g] of groups) {
+        if (g.jobs.length === 0 && g.images.length === 0) continue
+        try {
+          await supabase.rpc('generator_set_draft_group', {
+            _user_id: userId,
+            _group_id: uuid,
+            _job_ids: g.jobs,
+            _image_ids: g.images,
+          })
+        } catch (err) {
+          console.warn('[legacy regroup] failed for group', uuid, err)
+        }
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, generatedVideos, userImages, jobDraftMap, imageDraftMap])
+
+
 
 
   // One-time dedupe: older builds could create both an active `draft-<uuid>`
@@ -3186,6 +3267,7 @@ export default function DashboardPage() {
       if (up.error) throw up.error
       const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
       const publicUrl = pub.publicUrl
+      const imageGroupId = ensureActiveDraftGroupId() ?? null
       const { data: row, error: insErr } = await supabase
         .from('generator_user_images')
         .insert({
@@ -3193,8 +3275,9 @@ export default function DashboardPage() {
           storage_path: publicUrl,
           size_bytes: file.size,
           mime_type: file.type,
+          draft_group_id: imageGroupId,
         })
-        .select('id, storage_path, created_at, still_duration_seconds, width, height')
+        .select('id, storage_path, created_at, still_duration_seconds, width, height, draft_group_id')
         .single()
       if (insErr) throw insErr
       setUserImages((prev) => [row as UserImageItem, ...prev])
@@ -4017,6 +4100,9 @@ export default function DashboardPage() {
       // (lockedProjectRatio still controls Final Film merge/preview only.)
       const effectiveRatio: Ratio = aspectRatio
 
+      // One durable project group id for every clip created in this batch.
+      const draftGroupId = ensureActiveDraftGroupId()
+
       for (let i = 0; i < iterations; i++) {
         let createdJob
         let seedFrames: { firstFrameUrl?: string; lastFrameUrl?: string } = {}
@@ -4030,6 +4116,7 @@ export default function DashboardPage() {
             prompt: plannedPrompt,
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
+            draftGroupId,
           })
         } else if (readyStartFrame?.url && readyEndFrame?.url) {
           createdJob = await jobOrchestratorGateway.createJob({
@@ -4040,6 +4127,7 @@ export default function DashboardPage() {
             lastFrameUrl: readyEndFrame.url,
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
+            draftGroupId,
           })
           seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
         } else if (readyStartFrame?.url) {
@@ -4050,6 +4138,7 @@ export default function DashboardPage() {
             firstFrameUrl: readyStartFrame.url,
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
+            draftGroupId,
           })
           seedFrames = { firstFrameUrl: readyStartFrame.url }
         } else if (readyEndFrame?.url) {
@@ -4060,6 +4149,7 @@ export default function DashboardPage() {
             lastFrameUrl: readyEndFrame.url,
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
+            draftGroupId,
           })
           seedFrames = { lastFrameUrl: readyEndFrame.url }
         } else {
@@ -4201,6 +4291,8 @@ export default function DashboardPage() {
     const perClipDuration: 5 | 10 | 15 = 15
 
     let previousJobId: string | null = null
+    // One durable project group id for every scene clip in this scenario.
+    const draftGroupId = ensureActiveDraftGroupId()
     try {
       for (let i = 0; i < scenes.length; i++) {
         const sourcePrompt = scenes[i].trim()
@@ -4223,6 +4315,7 @@ export default function DashboardPage() {
           durationSeconds: perClipDuration,
           aspectRatio: effectiveRatio,
           firstFrameUrl: startFrameUrl,
+          draftGroupId,
         })
         const seededJob = buildSeededJob(prompt, createdJob, startFrameUrl ? { firstFrameUrl: startFrameUrl } : {})
         rememberClipRatio(seededJob.id, effectiveRatio)
@@ -4501,6 +4594,9 @@ export default function DashboardPage() {
     setVideoColumnMessage(null)
 
     let newJobId: string | null = null
+    // A regenerated clip stays in the SAME project as its source clip.
+    const draftGroupId =
+      job.draft_group_id ?? draftGroupUuid(jobDraftMap[job.id]) ?? ensureActiveDraftGroupId()
     try {
       const createdJob = await jobOrchestratorGateway.createJob({
         providerKey,
@@ -4510,6 +4606,7 @@ export default function DashboardPage() {
         lastFrameUrl,
         durationSeconds,
         aspectRatio: ratio,
+        draftGroupId,
       })
       const seededJob = buildSeededJob(prompt, createdJob, {
         firstFrameUrl,
@@ -5452,6 +5549,7 @@ export default function DashboardPage() {
             userId={userId}
             sourceAspectRatio={sourceRatio}
             title={job?.input_prompt ?? undefined}
+            draftGroupId={job.draft_group_id ?? draftGroupUuid(jobDraftMap[job.id]) ?? ensureActiveDraftGroupId()}
             onJobCreated={(seeded, ratio) => {
               setGeneratedVideos((curr) => mergeJob(curr, seeded))
               rememberClipRatio(seeded.id, ratio)
@@ -6614,6 +6712,15 @@ export default function DashboardPage() {
 
           setUserImages((prev) => [row as UserImageItem, ...prev])
           markNewImage((row as UserImageItem).id)
+          {
+            const gid = ensureActiveDraftGroupId()
+            if (gid) {
+              void supabase
+                .from('generator_user_images')
+                .update({ draft_group_id: gid })
+                .eq('id', (row as UserImageItem).id)
+            }
+          }
           setGenerationMode('image-to-video')
           setUploadTarget('Start')
           const seedId = Date.now()

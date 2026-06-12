@@ -3,7 +3,7 @@ import type { SupabaseClient } from "../../core/supabase.ts";
 import type { CreateJobInput, JobDetail, JobService, JobSummary } from "./contract.ts";
 
 const JOB_COLUMNS =
-  "id, status, input_prompt, provider_key, model_key, provider_job_id, first_frame_url, last_frame_url, requested_duration, requested_aspect_ratio, created_at, updated_at";
+  "id, status, input_prompt, provider_key, model_key, provider_job_id, first_frame_url, last_frame_url, requested_duration, requested_aspect_ratio, draft_group_id, created_at, updated_at";
 
 export const jobService: JobService = {
   async listMyJobs(userId, client, limit = 20) {
@@ -56,6 +56,7 @@ export const jobService: JobService = {
     if (input.lastFrameUrl !== undefined) updates.last_frame_url = input.lastFrameUrl ?? null;
     if (input.aspectRatio) updates.requested_aspect_ratio = input.aspectRatio;
     if (input.durationSeconds) updates.requested_duration = input.durationSeconds;
+    if (input.draftGroupId) updates.draft_group_id = input.draftGroupId;
     if (Object.keys(updates).length > 0) {
       const { error: updErr } = await svc
         .from("generator_generation_jobs")

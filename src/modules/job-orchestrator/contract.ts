@@ -10,6 +10,8 @@ export interface JobSummary {
   last_frame_url?: string | null;
   requested_duration?: number | null;
   requested_aspect_ratio?: string | null;
+  /** Durable per-project group id; all clips in one draft project share it. */
+  draft_group_id?: string | null;
   created_at: string;
   updated_at?: string;
   /** 0-100 estimated render progress; null when unknown/terminal-failed. */
@@ -43,6 +45,8 @@ export interface CreateJobInput {
   durationSeconds?: 5 | 10 | 15;
   /** Requested output aspect ratio. Defaults to 16:9 server-side. */
   aspectRatio?: AspectRatio;
+  /** Durable per-project group id so all clips in one session stay one draft. */
+  draftGroupId?: string;
 }
 
 export interface CreateJobResult {

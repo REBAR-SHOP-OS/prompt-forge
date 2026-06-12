@@ -37,6 +37,8 @@ const CreateJobSchema = z.object({
   lastFrameUrl: z.string().url().max(2048).optional(),
   durationSeconds: z.union([z.literal(5), z.literal(10), z.literal(15)]).optional(),
   aspectRatio: z.enum(["9:16", "1:1", "16:9"]).optional(),
+  /** Durable per-project group id so all clips in one session stay one draft. */
+  draftGroupId: z.string().uuid().optional(),
 });
 
 const GetJobSchema = z.object({ jobId: z.string().uuid() });
@@ -427,6 +429,7 @@ export const jobOrchestratorGateway = {
               lastFrameUrl,
               aspectRatio: chosenAspectRatio,
               durationSeconds: parsed.data.durationSeconds ?? null,
+              draftGroupId: parsed.data.draftGroupId ?? null,
             });
           } catch (e) {
             const msg = (e as Error).message ?? "";
