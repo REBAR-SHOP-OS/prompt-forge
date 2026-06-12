@@ -12,6 +12,7 @@ export interface JobSummary {
   last_frame_url?: string | null;
   requested_duration?: number | null;
   requested_aspect_ratio?: string | null;
+  draft_group_id?: string | null;
   created_at: string;
   updated_at?: string;
   /** 0-100 estimated render progress; null when unknown/terminal-failed. */
