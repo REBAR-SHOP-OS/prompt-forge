@@ -3210,6 +3210,7 @@ export default function DashboardPage() {
       if (up.error) throw up.error
       const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
       const publicUrl = pub.publicUrl
+      const imageGroupId = ensureActiveDraftGroupId() ?? null
       const { data: row, error: insErr } = await supabase
         .from('generator_user_images')
         .insert({
@@ -3217,8 +3218,9 @@ export default function DashboardPage() {
           storage_path: publicUrl,
           size_bytes: file.size,
           mime_type: file.type,
+          draft_group_id: imageGroupId,
         })
-        .select('id, storage_path, created_at, still_duration_seconds, width, height')
+        .select('id, storage_path, created_at, still_duration_seconds, width, height, draft_group_id')
         .single()
       if (insErr) throw insErr
       setUserImages((prev) => [row as UserImageItem, ...prev])
