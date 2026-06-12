@@ -1,43 +1,32 @@
 ## Goal
+Add the same hover/tap video preview that already exists in the Product Ad dialog to the composer's **Styles** picker (the "Prompt" panel chips for Camera / Genre / Scene / Template). Hovering (or tapping on mobile) any style chip will show a small looping muted preview clip plus its name — exactly like the Product Ad screen.
 
-Fix the `INVALID_FIRST_FRAME_URL` error that appears when generating a video after using an existing/uploaded image as the Start frame, without breaking any other flow.
+## Current state
+- `StylePreviewCard` (already built) wraps a chip and shows a `HoverCard` with a looping muted `<video>` + title/description. Works on touch (opens on tap).
+- The Product Ad dialog (`ProductAdDialog.tsx`) imports all the `style-previews/*.mp4.asset.json` clips and maps each style to a `preview` URL, then wraps each chip in `StylePreviewCard`.
+- The composer Styles picker in `DashboardPage.tsx` renders chips via the local `StyleSection` component using the shared datasets in `promptStyles.ts` (`CAMERA_STYLES`, `GENRE_STYLES`, `SCENE_STYLES`, `TEMPLATE_STYLES`). These chips currently have **no** preview.
+- The shared `StyleItem` type has no `preview` field. Each style `id` maps cleanly to an existing preview asset file (e.g. `whip-pan` → `cam-whip-pan.mp4`, `construction-site` → `scene-construction-site.mp4`, `football-team` → `vid-football-team.mp4`).
 
-## Root cause
+## Changes
 
-The backend validator (`isAllowedFrameUrl` in `supabase/functions/_shared/modules/job-orchestrator/gateway.ts`) only accepts first/last frame URLs that point to `wan-frames/{userId}/...`. The frontend handler `handleUseImageAsStart(url)` in `src/modules/generator-ui/pages/DashboardPage.tsx` (line ~3930) sets the source image's public URL directly as the Start frame. That URL lives in the `user-images` bucket, so the backend correctly rejects it.
+### 1. `src/modules/generator-ui/lib/promptStyles.ts`
+- Add an optional `preview?: string` field to the `StyleItem` type.
+- Import the existing `@/assets/style-previews/*.mp4.asset.json` pointers (the same ones already used by `ProductAdDialog`) and attach the matching clip `.url` to each entry in `CAMERA_STYLES`, `GENRE_STYLES`, `SCENE_STYLES`, and `TEMPLATE_STYLES`.
+- No logic changes — `preview` is metadata only; prompt-building functions stay untouched.
 
-The AI-image flow already handles this (lines ~7117–7136) by re-uploading the image into the `wan-frames` bucket before staging it. The "Use as Start" handler does not.
+This makes the previews reusable from one shared source (no duplicated mapping), so both the composer and any future caller use the same clips.
 
-## Fix (frontend only, minimal change)
+### 2. `src/modules/generator-ui/pages/DashboardPage.tsx` (`StyleSection`)
+- Wrap each chip `<button>` in `StylePreviewCard`, passing `title={item.label}`, `description={…}` (short text — can reuse the chip label, or omit), and `preview={item.preview}`.
+- Set `rtl` appropriately so alignment matches the rest of the composer.
+- Keep all existing chip styling, selection state, and `onToggle` behavior identical. The `StylePreviewCard` trigger uses `asChild`, so the button keeps working as before; chips without a `preview` simply show a text-only card (graceful fallback).
 
-Rewrite `handleUseImageAsStart` to **re-stage** the chosen image into the `wan-frames` bucket, mirroring the existing, proven AI-image staging pattern:
-
-1. Switch to `image-to-video` mode.
-2. Insert a Start-frame entry with `status: 'uploading'` (placeholder) so the UI shows progress and the Generate button stays disabled until the frame is ready.
-3. `fetch()` the source image URL → `blob()`.
-4. Upload to `FRAMES_BUCKET` at `${userId}/start-${Date.now()}-${crypto.randomUUID()}.png`.
-5. Get its public URL via `getPublicUrl` and mark the entry `status: 'ready'` with that URL.
-6. On any failure, mark the entry `status: 'failed'` with a clear message.
-7. Keep the existing scroll-into-view of `#composer-start-frame`.
-8. Guard for missing `userId` (signed-out) with a failed state, consistent with `uploadFrameFile`.
-
-This reuses the existing `FRAMES_BUCKET` constant and the same upload/validation path the backend already trusts. No backend, schema, or business-logic changes are required.
-
-## Why this is safe
-
-- Single function changed in one file; no shared logic altered.
-- No edits to the backend validator (security boundary stays intact — frames still must live under `wan-frames/{userId}/`).
-- Other entry points that already stage into `wan-frames` (manual upload, AI image, reframe) are untouched.
-- Failure is surfaced in-UI rather than failing silently at generate time.
-
-## Technical details
-
-- File: `src/modules/generator-ui/pages/DashboardPage.tsx`
-- Function: `handleUseImageAsStart` (~line 3930), called from the archive image cards (~6319, ~6541) and the pending-clip image action (~7858) — all pass `img.storage_path` (a public URL), which the new async logic fetches and re-stages.
-- Pattern to copy: AI-image staging block at lines ~7117–7136 (fetch → upload to `FRAMES_BUCKET` → `getPublicUrl` → mark ready/failed).
+## Out of scope / safety
+- No backend, schema, or prompt-generation changes.
+- No change to Product Ad dialog (it keeps its own working setup).
+- Purely presentational; selection/optimize flow is unchanged.
 
 ## Verification
-
-- Click "Use as Start" on an archive image and on a pending-clip image → confirm the Start frame shows uploading then ready.
-- Generate a video → confirm the `INVALID_FIRST_FRAME_URL` error no longer occurs.
-- Confirm signed-out users get a clear failed state instead of a silent error.
+- Open the composer → Prompt → Styles, hover a Camera/Genre/Scene/Template chip → looping muted preview appears, matching the Product Ad behavior.
+- On mobile width, tapping a chip shows the preview; selection still toggles.
+- Chips with no matching clip still render and toggle without errors.
