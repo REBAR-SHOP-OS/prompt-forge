@@ -2594,6 +2594,57 @@ export default function DashboardPage() {
   }, [userId, generatedVideos, userImages, mergedEntries, librarySavedJobs, projectSourceJobs, projectSourceImages, jobDraftMap, imageDraftMap, deletedDraftIds, coverImages])
 
 
+  // ----- One-time legacy regroup -----
+  // Older clips/images grouped only in localStorage (jobDraftMap as
+  // `draft-<uuid>`) but with no durable server `draft_group_id` get stamped
+  // server-side once, so the grouping that exists now becomes permanent and
+  // never fragments on future refreshes / other devices.
+  const legacyRegroupedRef = useRef(false)
+  useEffect(() => {
+    if (!userId) return
+    if (legacyRegroupedRef.current) return
+    if (generatedVideos.length === 0 && userImages.length === 0) return
+    legacyRegroupedRef.current = true
+
+    const groups = new Map<string, { jobs: string[]; images: string[] }>()
+    const ensure = (uuid: string) => {
+      let g = groups.get(uuid)
+      if (!g) { g = { jobs: [], images: [] }; groups.set(uuid, g) }
+      return g
+    }
+    for (const v of generatedVideos) {
+      if (v.draft_group_id) continue
+      const uuid = draftGroupUuid(jobDraftMap[v.id])
+      if (uuid) ensure(uuid).jobs.push(v.id)
+    }
+    for (const img of userImages) {
+      if (img.draft_group_id) continue
+      const uuid = draftGroupUuid(imageDraftMap[img.id])
+      if (uuid) ensure(uuid).images.push(img.id)
+    }
+    if (groups.size === 0) return
+
+    void (async () => {
+      for (const [uuid, g] of groups) {
+        if (g.jobs.length === 0 && g.images.length === 0) continue
+        try {
+          await supabase.rpc('generator_set_draft_group', {
+            _user_id: userId,
+            _group_id: uuid,
+            _job_ids: g.jobs,
+            _image_ids: g.images,
+          })
+        } catch (err) {
+          console.warn('[legacy regroup] failed for group', uuid, err)
+        }
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, generatedVideos, userImages, jobDraftMap, imageDraftMap])
+
+
+
+
   // One-time dedupe: older builds could create both an active `draft-<uuid>`
   // and a `draft-orphan-<jobId>` entry for the same underlying clip/image.
   // On mount, drop any orphan twin whose source id is already owned by
