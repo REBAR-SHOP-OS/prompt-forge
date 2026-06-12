@@ -5490,6 +5490,7 @@ export default function DashboardPage() {
             userId={userId}
             sourceAspectRatio={sourceRatio}
             title={job?.input_prompt ?? undefined}
+            draftGroupId={job.draft_group_id ?? draftGroupUuid(jobDraftMap[job.id]) ?? ensureActiveDraftGroupId()}
             onJobCreated={(seeded, ratio) => {
               setGeneratedVideos((curr) => mergeJob(curr, seeded))
               rememberClipRatio(seeded.id, ratio)
