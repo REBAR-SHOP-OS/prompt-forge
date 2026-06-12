@@ -1224,7 +1224,29 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
-  // ----- Draft projects -----
+  // Per-project snapshot of the music / voiceover used in each Final Film.
+  // Stores durable public URLs (copied into MERGED_BUCKET at finalize time) so
+  // the finalized card can play + download the exact audio that project used.
+  type ProjectAudioTrack = { url: string; name: string }
+  type ProjectAudio = { music?: ProjectAudioTrack; voiceover?: ProjectAudioTrack }
+  const [projectAudio, setProjectAudio] = useState<Record<string, ProjectAudio>>({})
+  const projectAudioKey = userId ? `project-audio:${userId}` : null
+  useEffect(() => {
+    if (!projectAudioKey) { setProjectAudio({}); return }
+    try {
+      const raw = window.localStorage.getItem(projectAudioKey)
+      const obj = raw ? (JSON.parse(raw) as Record<string, ProjectAudio>) : {}
+      setProjectAudio(obj && typeof obj === 'object' ? obj : {})
+    } catch { setProjectAudio({}) }
+  }, [projectAudioKey])
+  function persistProjectAudio(next: Record<string, ProjectAudio>) {
+    if (!projectAudioKey) return
+    try {
+      window.localStorage.setItem(projectAudioKey, JSON.stringify(next))
+    } catch { /* ignore */ }
+  }
+
+
   // The in-progress workspace (clips + images that haven't been merged into a
   // Final Film yet) is auto-snapshotted into a Draft project so it survives
   // refresh / Start Over. One active draft id per user session; closes (is
