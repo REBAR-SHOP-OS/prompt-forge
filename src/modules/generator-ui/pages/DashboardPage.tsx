@@ -133,6 +133,7 @@ const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.red
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 import { getMajorOccasionForDate } from '@/modules/generator-ui/lib/majorOccasions'
+import { StylePreviewCard } from '@/modules/generator-ui/components/StylePreviewCard'
 import {
   CAMERA_STYLES,
   GENRE_STYLES,
@@ -164,7 +165,7 @@ function StyleSection({
       <div className="flex flex-wrap gap-1.5">
         {items.map((item) => {
           const active = selectedIds.includes(item.id)
-          return (
+          const chip = (
             <button
               key={item.id}
               type="button"
@@ -178,6 +179,16 @@ function StyleSection({
               <span aria-hidden="true">{item.icon}</span>
               <span>{item.label}</span>
             </button>
+          )
+          return (
+            <StylePreviewCard
+              key={item.id}
+              title={item.label}
+              description={item.prompt}
+              preview={item.preview}
+            >
+              {chip}
+            </StylePreviewCard>
           )
         })}
       </div>

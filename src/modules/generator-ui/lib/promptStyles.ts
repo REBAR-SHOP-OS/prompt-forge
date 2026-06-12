@@ -3,6 +3,82 @@
 // that are sent to the enhance-prompt edge function so the rewritten prompt is
 // optimized around the user's chosen camera/genre/scene/template styles.
 
+// Preview clips (same assets used by the Product Ad dialog) so the composer's
+// Styles picker can show the exact same hover/tap preview.
+import camWhipPan from '@/assets/style-previews/cam-whip-pan.mp4.asset.json'
+import camOrbit from '@/assets/style-previews/cam-orbit.mp4.asset.json'
+import camFpvDrone from '@/assets/style-previews/cam-fpv-drone.mp4.asset.json'
+import camTracking from '@/assets/style-previews/cam-tracking.mp4.asset.json'
+import camPushIn from '@/assets/style-previews/cam-push-in.mp4.asset.json'
+import camFlyThrough from '@/assets/style-previews/cam-fly-through.mp4.asset.json'
+import camCrashZoom from '@/assets/style-previews/cam-crash-zoom.mp4.asset.json'
+import camHandheld from '@/assets/style-previews/cam-handheld.mp4.asset.json'
+import camDollyZoom from '@/assets/style-previews/cam-dolly-zoom.mp4.asset.json'
+import camParallax from '@/assets/style-previews/cam-parallax.mp4.asset.json'
+import genreEpicFantasy from '@/assets/style-previews/genre-epic-fantasy.mp4.asset.json'
+import genreScifiMinimal from '@/assets/style-previews/genre-scifi-minimal.mp4.asset.json'
+import genrePostApocalyptic from '@/assets/style-previews/genre-post-apocalyptic.mp4.asset.json'
+import genreHorror from '@/assets/style-previews/genre-horror.mp4.asset.json'
+import genreAction from '@/assets/style-previews/genre-action.mp4.asset.json'
+import genreRomantic from '@/assets/style-previews/genre-romantic.mp4.asset.json'
+import genreDocumentary from '@/assets/style-previews/genre-documentary.mp4.asset.json'
+import genreAnime from '@/assets/style-previews/genre-anime.mp4.asset.json'
+import scConstructionSite from '@/assets/style-previews/scene-construction-site.mp4.asset.json'
+import scHeavyIndustry from '@/assets/style-previews/scene-heavy-industry.mp4.asset.json'
+import scAbandonedWarehouse from '@/assets/style-previews/scene-abandoned-warehouse.mp4.asset.json'
+import scShipyardDock from '@/assets/style-previews/scene-shipyard-dock.mp4.asset.json'
+import scHighTechLab from '@/assets/style-previews/scene-high-tech-lab.mp4.asset.json'
+import scMegacityCorporate from '@/assets/style-previews/scene-megacity-corporate.mp4.asset.json'
+import scCyberpunkAlleyway from '@/assets/style-previews/scene-cyberpunk-alleyway.mp4.asset.json'
+import scSubwayStation from '@/assets/style-previews/scene-subway-station.mp4.asset.json'
+import scRooftopOverlook from '@/assets/style-previews/scene-rooftop-overlook.mp4.asset.json'
+import scEpicMountain from '@/assets/style-previews/scene-epic-mountain.mp4.asset.json'
+import scApocalypticWasteland from '@/assets/style-previews/scene-apocalyptic-wasteland.mp4.asset.json'
+import scMysticalForest from '@/assets/style-previews/scene-mystical-forest.mp4.asset.json'
+import scArcticTundra from '@/assets/style-previews/scene-arctic-tundra.mp4.asset.json'
+import scMedievalCastle from '@/assets/style-previews/scene-medieval-castle.mp4.asset.json'
+import scAncientRuins from '@/assets/style-previews/scene-ancient-ruins.mp4.asset.json'
+import scGothicCathedral from '@/assets/style-previews/scene-gothic-cathedral.mp4.asset.json'
+import scSteampunkWorkshop from '@/assets/style-previews/scene-steampunk-workshop.mp4.asset.json'
+import scJazzClub from '@/assets/style-previews/scene-jazz-club.mp4.asset.json'
+import scDarkAcademiaLibrary from '@/assets/style-previews/scene-dark-academia-library.mp4.asset.json'
+import scRetroDiner from '@/assets/style-previews/scene-retro-diner.mp4.asset.json'
+import vtFootballTeam from '@/assets/style-previews/vid-football-team.mp4.asset.json'
+import vtSportsHighlights from '@/assets/style-previews/vid-sports-highlights.mp4.asset.json'
+import vtFitness from '@/assets/style-previews/vid-fitness.mp4.asset.json'
+import vtGamingEsports from '@/assets/style-previews/vid-gaming-esports.mp4.asset.json'
+import vtExplainer from '@/assets/style-previews/vid-explainer.mp4.asset.json'
+import vtLogoReveal from '@/assets/style-previews/vid-logo-reveal.mp4.asset.json'
+import vtKineticTypography from '@/assets/style-previews/vid-kinetic-typography.mp4.asset.json'
+import vtMotionComic from '@/assets/style-previews/vid-motion-comic.mp4.asset.json'
+import vtYoutubeIntroOutro from '@/assets/style-previews/vid-youtube-intro-outro.mp4.asset.json'
+import vtInstagramReels from '@/assets/style-previews/vid-instagram-reels.mp4.asset.json'
+import vtTiktokTrends from '@/assets/style-previews/vid-tiktok-trends.mp4.asset.json'
+import vtVodcast from '@/assets/style-previews/vid-vodcast.mp4.asset.json'
+import vtCompanyProfile from '@/assets/style-previews/vid-company-profile.mp4.asset.json'
+import vtInfographic from '@/assets/style-previews/vid-infographic.mp4.asset.json'
+import vtRealEstate from '@/assets/style-previews/vid-real-estate.mp4.asset.json'
+import vtProductPromo from '@/assets/style-previews/vid-product-promo.mp4.asset.json'
+import vtMovieTrailer from '@/assets/style-previews/vid-movie-trailer.mp4.asset.json'
+import vtPhotoSlideshow from '@/assets/style-previews/vid-photo-slideshow.mp4.asset.json'
+import vtGlitchRetro from '@/assets/style-previews/vid-glitch-retro.mp4.asset.json'
+import vtVfx from '@/assets/style-previews/vid-vfx.mp4.asset.json'
+import vtWedding from '@/assets/style-previews/vid-wedding.mp4.asset.json'
+import vtBirthdayParty from '@/assets/style-previews/vid-birthday-party.mp4.asset.json'
+import vtCalendarCampaigns from '@/assets/style-previews/vid-calendar-campaigns.mp4.asset.json'
+import vtWhiteboard from '@/assets/style-previews/vid-whiteboard.mp4.asset.json'
+import vtBlackboard from '@/assets/style-previews/vid-blackboard.mp4.asset.json'
+import vtGlassboard from '@/assets/style-previews/vid-glassboard.mp4.asset.json'
+import vtLineArt from '@/assets/style-previews/vid-line-art.mp4.asset.json'
+import vtInfographicMotion from '@/assets/style-previews/vid-infographic-motion.mp4.asset.json'
+import vtFlat2d from '@/assets/style-previews/vid-flat-2d.mp4.asset.json'
+import vtIsometric from '@/assets/style-previews/vid-isometric.mp4.asset.json'
+import vtCharacter2d from '@/assets/style-previews/vid-character-2d.mp4.asset.json'
+import vtCutOut from '@/assets/style-previews/vid-cut-out.mp4.asset.json'
+import vtStopMotion from '@/assets/style-previews/vid-stop-motion.mp4.asset.json'
+import vtScreencastUi from '@/assets/style-previews/vid-screencast-ui.mp4.asset.json'
+import vtLiveActionTracked from '@/assets/style-previews/vid-live-action-tracked.mp4.asset.json'
+
 export type StyleItem = {
   id: string
   label: string
@@ -11,6 +87,8 @@ export type StyleItem = {
   prompt: string
   /** Optional grouping label (for scene & template categories). */
   group?: string
+  /** Optional looping preview clip URL shown on hover/tap in the Styles picker. */
+  preview?: string
 }
 
 export type StyleSelection = {
@@ -162,4 +240,92 @@ export function buildStyleHints(sel: StyleSelection): string {
   if (scene.length) parts.push(`Scene & environment: ${scene.join(' ')}`)
   if (template.length) parts.push(`Video template: ${template.join(' ')}`)
   return parts.join('\n')
+}
+
+// ---------------- Preview clip attachment ----------------
+// Map each style id to its looping preview clip (same assets as the Product Ad
+// dialog) and attach it to the shared datasets so the composer's Styles picker
+// shows identical hover/tap previews. Ids without a clip simply have no preview.
+const STYLE_PREVIEWS: Record<string, string> = {
+  // Camera
+  'whip-pan': camWhipPan.url,
+  orbit: camOrbit.url,
+  'fpv-drone': camFpvDrone.url,
+  tracking: camTracking.url,
+  'push-in': camPushIn.url,
+  'fly-through': camFlyThrough.url,
+  'crash-zoom': camCrashZoom.url,
+  handheld: camHandheld.url,
+  'dolly-zoom': camDollyZoom.url,
+  parallax: camParallax.url,
+  // Genre
+  'epic-fantasy': genreEpicFantasy.url,
+  'sci-fi-minimalist': genreScifiMinimal.url,
+  'post-apocalyptic': genrePostApocalyptic.url,
+  'horror-jump-scare': genreHorror.url,
+  'high-octane-action': genreAction.url,
+  'romantic-dreamscape': genreRomantic.url,
+  'documentary-realism': genreDocumentary.url,
+  'anime-manga': genreAnime.url,
+  // Scene
+  'construction-site': scConstructionSite.url,
+  'heavy-industry': scHeavyIndustry.url,
+  'abandoned-warehouse': scAbandonedWarehouse.url,
+  'shipyard-dock': scShipyardDock.url,
+  'high-tech-lab': scHighTechLab.url,
+  'megacity-corporate': scMegacityCorporate.url,
+  'cyberpunk-alleyway': scCyberpunkAlleyway.url,
+  'subway-station': scSubwayStation.url,
+  'rooftop-overlook': scRooftopOverlook.url,
+  'epic-mountain': scEpicMountain.url,
+  'apocalyptic-wasteland': scApocalypticWasteland.url,
+  'mystical-forest': scMysticalForest.url,
+  'arctic-tundra': scArcticTundra.url,
+  'medieval-castle': scMedievalCastle.url,
+  'ancient-ruins': scAncientRuins.url,
+  'gothic-cathedral': scGothicCathedral.url,
+  'steampunk-workshop': scSteampunkWorkshop.url,
+  'jazz-club': scJazzClub.url,
+  'dark-academia-library': scDarkAcademiaLibrary.url,
+  'retro-diner': scRetroDiner.url,
+  // Template
+  'football-team': vtFootballTeam.url,
+  'sports-highlights': vtSportsHighlights.url,
+  fitness: vtFitness.url,
+  'gaming-esports': vtGamingEsports.url,
+  explainer: vtExplainer.url,
+  'logo-reveal': vtLogoReveal.url,
+  'kinetic-typography': vtKineticTypography.url,
+  'motion-comic': vtMotionComic.url,
+  'youtube-intro-outro': vtYoutubeIntroOutro.url,
+  'instagram-reels': vtInstagramReels.url,
+  'tiktok-trends': vtTiktokTrends.url,
+  vodcast: vtVodcast.url,
+  'company-profile': vtCompanyProfile.url,
+  infographic: vtInfographic.url,
+  'real-estate': vtRealEstate.url,
+  'product-promo': vtProductPromo.url,
+  'movie-trailer': vtMovieTrailer.url,
+  'photo-slideshow': vtPhotoSlideshow.url,
+  'glitch-retro': vtGlitchRetro.url,
+  vfx: vtVfx.url,
+  wedding: vtWedding.url,
+  'birthday-party': vtBirthdayParty.url,
+  'calendar-campaigns': vtCalendarCampaigns.url,
+  whiteboard: vtWhiteboard.url,
+  blackboard: vtBlackboard.url,
+  glassboard: vtGlassboard.url,
+  'line-art': vtLineArt.url,
+  'infographic-motion': vtInfographicMotion.url,
+  'flat-2d': vtFlat2d.url,
+  isometric: vtIsometric.url,
+  'character-2d': vtCharacter2d.url,
+  'cut-out': vtCutOut.url,
+  'stop-motion': vtStopMotion.url,
+  'screencast-ui': vtScreencastUi.url,
+  'live-action-tracked': vtLiveActionTracked.url,
+}
+
+for (const it of [...CAMERA_STYLES, ...GENRE_STYLES, ...SCENE_STYLES, ...TEMPLATE_STYLES]) {
+  if (!it.preview && STYLE_PREVIEWS[it.id]) it.preview = STYLE_PREVIEWS[it.id]
 }
