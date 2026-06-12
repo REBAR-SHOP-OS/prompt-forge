@@ -66,6 +66,8 @@ Deno.serve(async (req) => {
       body?.mode === "silent" || body?.mode === "narrated" ? body.mode : null;
     const narratorScript: string =
       typeof body?.narratorScript === "string" ? body.narratorScript.trim() : "";
+    const styleHints: string =
+      typeof body?.styleHints === "string" ? body.styleHints.trim().slice(0, 4000) : "";
     const rawUrls: unknown = body?.imageUrls;
     // SSRF protection: only allow https URLs from our own Supabase storage host
     // (user-images, wan-frames, merged-videos buckets) and known public CDNs.
