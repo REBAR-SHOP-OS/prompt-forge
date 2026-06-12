@@ -4041,6 +4041,9 @@ export default function DashboardPage() {
       // (lockedProjectRatio still controls Final Film merge/preview only.)
       const effectiveRatio: Ratio = aspectRatio
 
+      // One durable project group id for every clip created in this batch.
+      const draftGroupId = ensureActiveDraftGroupId()
+
       for (let i = 0; i < iterations; i++) {
         let createdJob
         let seedFrames: { firstFrameUrl?: string; lastFrameUrl?: string } = {}
