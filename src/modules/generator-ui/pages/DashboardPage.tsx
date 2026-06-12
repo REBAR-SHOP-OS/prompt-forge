@@ -7345,6 +7345,7 @@ export default function DashboardPage() {
               <Play className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
+          )}
         </div>
 
         {videoColumnMessage ? (
