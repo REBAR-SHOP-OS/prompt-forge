@@ -1335,6 +1335,28 @@ export default function DashboardPage() {
     }
     return did
   }
+  // The durable server-side group id is the bare uuid embedded in a
+  // `draft-<uuid>` draft id. New sessions always use that format, so every
+  // clip/image created together is stamped with the same uuid server-side and
+  // regroups into ONE draft project after refresh / on any device.
+  function draftGroupUuid(draftId: string | null | undefined): string | undefined {
+    if (!draftId) return undefined
+    const m = draftId.match(
+      /^draft-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i,
+    )
+    return m ? m[1] : undefined
+  }
+  // Returns the active session's server group id (uuid), creating the active
+  // draft if needed. Call right before createJob so the new clip is owned by
+  // the same project as its siblings.
+  function ensureActiveDraftGroupId(): string | undefined {
+    return draftGroupUuid(ensureActiveDraftId())
+  }
+  // Canonical draft id form for a server group uuid. Equals the activeDraftId
+  // that originally created the clips, so server + local grouping never clash.
+  function draftIdForGroupUuid(uuid: string): string {
+    return `draft-${uuid}`
+  }
   function stampJobDraft(jobId: string, draftId: string) {
     setJobDraftMap((prev) => {
       if (prev[jobId] === draftId) return prev
