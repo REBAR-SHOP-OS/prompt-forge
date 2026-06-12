@@ -2556,6 +2556,7 @@ export default function DashboardPage() {
     for (const ci of Object.values(coverImages)) coverImageIds.add(ci.id)
     const imageStamps: Record<string, string> = {}
     for (const img of userImages) {
+      if (img.draft_group_id) continue // durably owned by a server draft group
       if (imageDraftMap[img.id]) continue
       if (claimedImageIds.has(img.id)) continue
       if (coverImageIds.has(img.id)) continue
