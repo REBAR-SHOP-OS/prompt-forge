@@ -4535,6 +4535,9 @@ export default function DashboardPage() {
     setVideoColumnMessage(null)
 
     let newJobId: string | null = null
+    // A regenerated clip stays in the SAME project as its source clip.
+    const draftGroupId =
+      job.draft_group_id ?? draftGroupUuid(jobDraftMap[job.id]) ?? ensureActiveDraftGroupId()
     try {
       const createdJob = await jobOrchestratorGateway.createJob({
         providerKey,
@@ -4544,6 +4547,7 @@ export default function DashboardPage() {
         lastFrameUrl,
         durationSeconds,
         aspectRatio: ratio,
+        draftGroupId,
       })
       const seededJob = buildSeededJob(prompt, createdJob, {
         firstFrameUrl,
