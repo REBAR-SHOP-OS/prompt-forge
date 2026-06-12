@@ -5359,7 +5359,7 @@ export default function DashboardPage() {
           const snapshotAudio = async (
             src: string,
             kind: 'music' | 'voice',
-          ): Promise<ProjectAudioTrack | null> => {
+          ): Promise<string | null> => {
             try {
               const resp = await withTimeout(fetch(src), 60_000)
               if (!resp.ok) throw new Error(`fetch ${resp.status}`)
@@ -5380,9 +5380,7 @@ export default function DashboardPage() {
                 90_000,
               )
               if (up.error) throw new Error(up.error.message)
-              return supabase.storage.from(MERGED_BUCKET).getPublicUrl(path).data.publicUrl
-                ? { url: supabase.storage.from(MERGED_BUCKET).getPublicUrl(path).data.publicUrl, name: '' }
-                : null
+              return supabase.storage.from(MERGED_BUCKET).getPublicUrl(path).data.publicUrl ?? null
             } catch (err) {
               console.warn(`[audio-snapshot] ${kind} persist failed`, err)
               return null
@@ -5390,12 +5388,12 @@ export default function DashboardPage() {
           }
           const entry: ProjectAudio = {}
           if (hasMusic && musicUrl) {
-            const t = await snapshotAudio(musicUrl, 'music')
-            if (t) entry.music = { url: t.url, name: musicName ?? 'Music' }
+            const url = await snapshotAudio(musicUrl, 'music')
+            if (url) entry.music = { url, name: musicName ?? 'Music' }
           }
           if (hasVoiceover && voiceoverUrl) {
-            const t = await snapshotAudio(voiceoverUrl, 'voice')
-            if (t) entry.voiceover = { url: t.url, name: voiceoverName ?? 'Voiceover' }
+            const url = await snapshotAudio(voiceoverUrl, 'voice')
+            if (url) entry.voiceover = { url, name: voiceoverName ?? 'Voiceover' }
           }
           if (entry.music || entry.voiceover) {
             const nextAudio = { ...projectAudio, [mergedId]: entry }
