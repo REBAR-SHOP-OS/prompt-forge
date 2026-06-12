@@ -241,3 +241,91 @@ export function buildStyleHints(sel: StyleSelection): string {
   if (template.length) parts.push(`Video template: ${template.join(' ')}`)
   return parts.join('\n')
 }
+
+// ---------------- Preview clip attachment ----------------
+// Map each style id to its looping preview clip (same assets as the Product Ad
+// dialog) and attach it to the shared datasets so the composer's Styles picker
+// shows identical hover/tap previews. Ids without a clip simply have no preview.
+const STYLE_PREVIEWS: Record<string, string> = {
+  // Camera
+  'whip-pan': camWhipPan.url,
+  orbit: camOrbit.url,
+  'fpv-drone': camFpvDrone.url,
+  tracking: camTracking.url,
+  'push-in': camPushIn.url,
+  'fly-through': camFlyThrough.url,
+  'crash-zoom': camCrashZoom.url,
+  handheld: camHandheld.url,
+  'dolly-zoom': camDollyZoom.url,
+  parallax: camParallax.url,
+  // Genre
+  'epic-fantasy': genreEpicFantasy.url,
+  'sci-fi-minimalist': genreScifiMinimal.url,
+  'post-apocalyptic': genrePostApocalyptic.url,
+  'horror-jump-scare': genreHorror.url,
+  'high-octane-action': genreAction.url,
+  'romantic-dreamscape': genreRomantic.url,
+  'documentary-realism': genreDocumentary.url,
+  'anime-manga': genreAnime.url,
+  // Scene
+  'construction-site': scConstructionSite.url,
+  'heavy-industry': scHeavyIndustry.url,
+  'abandoned-warehouse': scAbandonedWarehouse.url,
+  'shipyard-dock': scShipyardDock.url,
+  'high-tech-lab': scHighTechLab.url,
+  'megacity-corporate': scMegacityCorporate.url,
+  'cyberpunk-alleyway': scCyberpunkAlleyway.url,
+  'subway-station': scSubwayStation.url,
+  'rooftop-overlook': scRooftopOverlook.url,
+  'epic-mountain': scEpicMountain.url,
+  'apocalyptic-wasteland': scApocalypticWasteland.url,
+  'mystical-forest': scMysticalForest.url,
+  'arctic-tundra': scArcticTundra.url,
+  'medieval-castle': scMedievalCastle.url,
+  'ancient-ruins': scAncientRuins.url,
+  'gothic-cathedral': scGothicCathedral.url,
+  'steampunk-workshop': scSteampunkWorkshop.url,
+  'jazz-club': scJazzClub.url,
+  'dark-academia-library': scDarkAcademiaLibrary.url,
+  'retro-diner': scRetroDiner.url,
+  // Template
+  'football-team': vtFootballTeam.url,
+  'sports-highlights': vtSportsHighlights.url,
+  fitness: vtFitness.url,
+  'gaming-esports': vtGamingEsports.url,
+  explainer: vtExplainer.url,
+  'logo-reveal': vtLogoReveal.url,
+  'kinetic-typography': vtKineticTypography.url,
+  'motion-comic': vtMotionComic.url,
+  'youtube-intro-outro': vtYoutubeIntroOutro.url,
+  'instagram-reels': vtInstagramReels.url,
+  'tiktok-trends': vtTiktokTrends.url,
+  vodcast: vtVodcast.url,
+  'company-profile': vtCompanyProfile.url,
+  infographic: vtInfographic.url,
+  'real-estate': vtRealEstate.url,
+  'product-promo': vtProductPromo.url,
+  'movie-trailer': vtMovieTrailer.url,
+  'photo-slideshow': vtPhotoSlideshow.url,
+  'glitch-retro': vtGlitchRetro.url,
+  vfx: vtVfx.url,
+  wedding: vtWedding.url,
+  'birthday-party': vtBirthdayParty.url,
+  'calendar-campaigns': vtCalendarCampaigns.url,
+  whiteboard: vtWhiteboard.url,
+  blackboard: vtBlackboard.url,
+  glassboard: vtGlassboard.url,
+  'line-art': vtLineArt.url,
+  'infographic-motion': vtInfographicMotion.url,
+  'flat-2d': vtFlat2d.url,
+  isometric: vtIsometric.url,
+  'character-2d': vtCharacter2d.url,
+  'cut-out': vtCutOut.url,
+  'stop-motion': vtStopMotion.url,
+  'screencast-ui': vtScreencastUi.url,
+  'live-action-tracked': vtLiveActionTracked.url,
+}
+
+for (const it of [...CAMERA_STYLES, ...GENRE_STYLES, ...SCENE_STYLES, ...TEMPLATE_STYLES]) {
+  if (!it.preview && STYLE_PREVIEWS[it.id]) it.preview = STYLE_PREVIEWS[it.id]
+}
