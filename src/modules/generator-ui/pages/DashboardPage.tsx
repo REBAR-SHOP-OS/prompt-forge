@@ -6316,6 +6316,15 @@ export default function DashboardPage() {
                             <div className="flex shrink-0 items-center gap-1.5">
                               <button
                                 type="button"
+                                onClick={() => handleUseImageAsStart(img.storage_path)}
+                                aria-label="Use as Start frame"
+                                title="Use as Start frame"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200"
+                              >
+                                <ImagePlus className="h-3 w-3" aria-hidden="true" />
+                              </button>
+                              <button
+                                type="button"
                                 disabled={downloadingId === img.id}
                                 onClick={() => { void downloadImageFile(img.id, img.storage_path) }}
                                 aria-label="Download image"
