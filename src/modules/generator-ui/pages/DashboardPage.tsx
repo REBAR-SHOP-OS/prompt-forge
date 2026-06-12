@@ -3925,6 +3925,29 @@ export default function DashboardPage() {
     setIsReframeOpen(false)
   }
 
+  // Stage an existing image (clip or archive) as the composer Start frame,
+  // switch to image-to-video, and scroll the composer into view.
+  function handleUseImageAsStart(url: string) {
+    if (!url) return
+    setGenerationMode('image-to-video')
+    setUploadedFiles((cur) => [
+      ...cur.filter((f) => f.target !== 'Start'),
+      {
+        id: Date.now(),
+        name: `start-${Date.now()}.png`,
+        size: 0,
+        target: 'Start',
+        type: 'image/png',
+        status: 'ready',
+        url,
+        error: null,
+      },
+    ])
+    try {
+      document.getElementById('composer-start-frame')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    } catch { /* ignore */ }
+  }
+
   async function uploadFrameFile(file: File, target: UploadTarget, fileId: number) {
     const userId = session?.user?.id
     if (!userId) {
@@ -6293,6 +6316,15 @@ export default function DashboardPage() {
                             <div className="flex shrink-0 items-center gap-1.5">
                               <button
                                 type="button"
+                                onClick={() => handleUseImageAsStart(img.storage_path)}
+                                aria-label="Use as Start frame"
+                                title="Use as Start frame"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200"
+                              >
+                                <ImagePlus className="h-3 w-3" aria-hidden="true" />
+                              </button>
+                              <button
+                                type="button"
                                 disabled={downloadingId === img.id}
                                 onClick={() => { void downloadImageFile(img.id, img.storage_path) }}
                                 aria-label="Download image"
@@ -6504,6 +6536,15 @@ export default function DashboardPage() {
                       <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
                         <span className="tabular-nums">{formatCreatedAt(img.created_at)}</span>
                         <div className="flex shrink-0 items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleUseImageAsStart(img.storage_path)}
+                            aria-label="Use as Start frame"
+                            title="Use as Start frame"
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200"
+                          >
+                            <ImagePlus className="h-3 w-3" aria-hidden="true" />
+                          </button>
                           <button
                             type="button"
                             disabled={downloadingId === img.id}
@@ -7781,12 +7822,12 @@ export default function DashboardPage() {
                       >
                         <div
                           className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
-                          style={{ aspectRatio: '1 / 1' }}
+                          style={{ aspectRatio: ratioToCss(lockedProjectRatio ?? aspectRatio) }}
                         >
                           <img
                             src={img.storage_path}
                             alt="Uploaded reference"
-                            className="h-full w-full object-cover"
+                            className="h-full w-full object-contain"
                             loading="lazy"
                           />
                           <span
@@ -7810,6 +7851,18 @@ export default function DashboardPage() {
                             >
                               <GripVertical className="h-4 w-4" aria-hidden="true" />
                             </span>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                handleUseImageAsStart(img.storage_path)
+                              }}
+                              aria-label="Use as Start frame"
+                              title="Use as Start frame"
+                              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200"
+                            >
+                              <ImagePlus className="h-3.5 w-3.5" aria-hidden="true" />
+                            </button>
                             <button
                               type="button"
                               onClick={(event) => {
@@ -8658,7 +8711,7 @@ export default function DashboardPage() {
 
 
         {!isTextToVideo ? (
-          <div className="flex min-h-11 items-center gap-2 sm:min-h-12 sm:gap-3" aria-label="Prompt path">
+          <div id="composer-start-frame" className="flex min-h-11 items-center gap-2 sm:min-h-12 sm:gap-3" aria-label="Prompt path">
             <button
               className="inline-flex h-11 min-w-12 items-center justify-center gap-2 rounded-md border border-[#2a2d32] bg-black/10 px-3 text-xs font-semibold text-zinc-200/70 transition hover:border-white/20 hover:bg-white/[0.045] sm:h-12 sm:min-w-[3.25rem]"
               type="button"
