@@ -8384,23 +8384,43 @@ export default function DashboardPage() {
                 variant === 'draft'
                   ? resolveDraftDisplay(video.id, video).video
                   : video.video
+              const selectMode = variant === 'final' ? finalSelectMode : draftSelectMode
+              const isChecked = (variant === 'final' ? selectedFinalIds : selectedDraftIds).has(video.id)
               return (
                 <article
                   key={video.id}
                   className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-2.5 transition hover:border-white/20 hover:bg-white/[0.055] ${
-                    isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : 'border-white/10 bg-white/[0.035]'
+                    selectMode && isChecked
+                      ? 'border-rose-300/40 bg-rose-300/[0.06]'
+                      : isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : 'border-white/10 bg-white/[0.035]'
                   }`}
                   role="button"
                   tabIndex={0}
                   aria-label={`Preview ${video.input_prompt}`}
-                  onClick={() => openLibraryEntry(video)}
+                  onClick={() => {
+                    if (selectMode) toggleSelectId(variant, video.id)
+                    else openLibraryEntry(video)
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault()
-                      openLibraryEntry(video)
+                      if (selectMode) toggleSelectId(variant, video.id)
+                      else openLibraryEntry(video)
                     }
                   }}
                 >
+                  {selectMode ? (
+                    <button
+                      type="button"
+                      onClick={(event) => { event.stopPropagation(); toggleSelectId(variant, video.id) }}
+                      aria-label={isChecked ? 'Deselect' : 'Select'}
+                      className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border transition ${
+                        isChecked ? 'border-rose-300/60 bg-rose-300/20 text-rose-200' : 'border-white/20 text-zinc-500'
+                      }`}
+                    >
+                      {isChecked ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+                    </button>
+                  ) : null}
                   <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]">
                     {display?.storage_path ? (
                       <PlayableVideo
