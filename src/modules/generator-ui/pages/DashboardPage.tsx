@@ -1224,7 +1224,29 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
-  // ----- Draft projects -----
+  // Per-project snapshot of the music / voiceover used in each Final Film.
+  // Stores durable public URLs (copied into MERGED_BUCKET at finalize time) so
+  // the finalized card can play + download the exact audio that project used.
+  type ProjectAudioTrack = { url: string; name: string }
+  type ProjectAudio = { music?: ProjectAudioTrack; voiceover?: ProjectAudioTrack }
+  const [projectAudio, setProjectAudio] = useState<Record<string, ProjectAudio>>({})
+  const projectAudioKey = userId ? `project-audio:${userId}` : null
+  useEffect(() => {
+    if (!projectAudioKey) { setProjectAudio({}); return }
+    try {
+      const raw = window.localStorage.getItem(projectAudioKey)
+      const obj = raw ? (JSON.parse(raw) as Record<string, ProjectAudio>) : {}
+      setProjectAudio(obj && typeof obj === 'object' ? obj : {})
+    } catch { setProjectAudio({}) }
+  }, [projectAudioKey])
+  function persistProjectAudio(next: Record<string, ProjectAudio>) {
+    if (!projectAudioKey) return
+    try {
+      window.localStorage.setItem(projectAudioKey, JSON.stringify(next))
+    } catch { /* ignore */ }
+  }
+
+
   // The in-progress workspace (clips + images that haven't been merged into a
   // Final Film yet) is auto-snapshotted into a Draft project so it survives
   // refresh / Start Over. One active draft id per user session; closes (is
@@ -2073,6 +2095,14 @@ export default function DashboardPage() {
         persistProjectSourceImages(nextImgMap)
       }
     }
+    // Drop the per-project audio snapshot for a deleted final film.
+    if (isMerged && jobId in projectAudio) {
+      const { [jobId]: _dropAudio, ...rest } = projectAudio
+      setProjectAudio(rest)
+      persistProjectAudio(rest)
+    }
+
+
 
     // Also prune draft snapshots so deleted clips/images cannot be revived
     // when a draft project is currently selected (the right-side Working
@@ -3942,6 +3972,14 @@ export default function DashboardPage() {
       persistProjectSourceImages(rest)
       return rest
     })
+    setProjectAudio((prev) => {
+      if (!(finalId in prev)) return prev
+      const { [finalId]: _dropAudio, ...rest } = prev
+      persistProjectAudio(rest)
+      return rest
+    })
+
+
 
     // 4. Un-tombstone the draft id and per-image orphan ids so the draft lives.
     setDeletedDraftIds((prev) => {
@@ -5321,6 +5359,68 @@ export default function DashboardPage() {
           persistProjectSourceImages(nextImgMap)
         }
       }
+      // Snapshot the project's own music / voiceover into the public
+      // MERGED_BUCKET so the finalized card can play + download the exact audio
+      // that this project used, surviving refresh. Best-effort: never block
+      // finalization if an audio copy fails.
+      if ((hasMusic || hasVoiceover) && userId) {
+        try {
+          const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
+            Promise.race([
+              p,
+              new Promise<T>((_, reject) =>
+                setTimeout(() => reject(new Error('audio snapshot timed out')), ms),
+              ),
+            ])
+          const snapshotAudio = async (
+            src: string,
+            kind: 'music' | 'voice',
+          ): Promise<string | null> => {
+            try {
+              const resp = await withTimeout(fetch(src), 60_000)
+              if (!resp.ok) throw new Error(`fetch ${resp.status}`)
+              const blob = await withTimeout(resp.blob(), 60_000)
+              const ct = (blob.type || 'audio/mpeg').toLowerCase()
+              const ext = ct.includes('mpeg') || ct.includes('mp3') ? 'mp3'
+                : ct.includes('wav') ? 'wav'
+                : ct.includes('ogg') ? 'ogg'
+                : ct.includes('webm') ? 'webm'
+                : ct.includes('aac') ? 'aac'
+                : ct.includes('m4a') || ct.includes('mp4') ? 'm4a'
+                : 'mp3'
+              const path = `${userId}/project-${kind}-${mergedId}.${ext}`
+              const up = await withTimeout(
+                supabase.storage
+                  .from(MERGED_BUCKET)
+                  .upload(path, blob, { contentType: blob.type || 'audio/mpeg', upsert: true }),
+                90_000,
+              )
+              if (up.error) throw new Error(up.error.message)
+              return supabase.storage.from(MERGED_BUCKET).getPublicUrl(path).data.publicUrl ?? null
+            } catch (err) {
+              console.warn(`[audio-snapshot] ${kind} persist failed`, err)
+              return null
+            }
+          }
+          const entry: ProjectAudio = {}
+          if (hasMusic && musicUrl) {
+            const url = await snapshotAudio(musicUrl, 'music')
+            if (url) entry.music = { url, name: musicName ?? 'Music' }
+          }
+          if (hasVoiceover && voiceoverUrl) {
+            const url = await snapshotAudio(voiceoverUrl, 'voice')
+            if (url) entry.voiceover = { url, name: voiceoverName ?? 'Voiceover' }
+          }
+          if (entry.music || entry.voiceover) {
+            const nextAudio = { ...projectAudio, [mergedId]: entry }
+            setProjectAudio(nextAudio)
+            persistProjectAudio(nextAudio)
+          }
+        } catch (err) {
+          console.warn('[audio-snapshot] failed', err)
+        }
+      }
+
       // The in-progress chain just became a Final video — retire any draft
       // entries tied to this finalization so they disappear from the Drafts
       // section. Source clips are already claimed under
@@ -8136,6 +8236,102 @@ export default function DashboardPage() {
                             )}
                           </button>
                         ) : null}
+                        {variant === 'final' ? (() => {
+                          const audio = projectAudio[video.id]
+                          const hasAny = Boolean(audio?.music || audio?.voiceover)
+                          return (
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <button
+                                  type="button"
+                                  onClick={(event) => event.stopPropagation()}
+                                  aria-label="Project audio"
+                                  title="Music & voiceover"
+                                  className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border transition ${
+                                    hasAny
+                                      ? 'border-white/10 text-zinc-400 hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200'
+                                      : 'border-white/10 text-zinc-600 hover:border-white/20 hover:text-zinc-400'
+                                  }`}
+                                >
+                                  <Music2 className="h-3 w-3" aria-hidden="true" />
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent
+                                align="end"
+                                className="w-72 space-y-3"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                                  Project audio
+                                </p>
+                                {!hasAny ? (
+                                  <p className="text-xs text-zinc-500">
+                                    No music or voiceover for this project.
+                                  </p>
+                                ) : (
+                                  <div className="space-y-3">
+                                    {audio?.music ? (
+                                      <div className="space-y-1.5">
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-sky-200">
+                                            <Music2 className="h-3 w-3" aria-hidden="true" /> Music
+                                          </span>
+                                          <button
+                                            type="button"
+                                            disabled={downloadingId === `music-${video.id}`}
+                                            onClick={(event) => {
+                                              event.stopPropagation()
+                                              void downloadAudioFile(`music-${video.id}`, audio.music!.url, audio.music!.name)
+                                            }}
+                                            aria-label="Download music"
+                                            title="Download music"
+                                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                          >
+                                            {downloadingId === `music-${video.id}` ? (
+                                              <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                            ) : (
+                                              <Download className="h-3 w-3" aria-hidden="true" />
+                                            )}
+                                          </button>
+                                        </div>
+                                        <p className="truncate text-[11px] text-zinc-500">{audio.music.name}</p>
+                                        <audio controls preload="none" src={audio.music.url} className="h-8 w-full" />
+                                      </div>
+                                    ) : null}
+                                    {audio?.voiceover ? (
+                                      <div className="space-y-1.5">
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-200">
+                                            <Mic className="h-3 w-3" aria-hidden="true" /> Voiceover
+                                          </span>
+                                          <button
+                                            type="button"
+                                            disabled={downloadingId === `voice-${video.id}`}
+                                            onClick={(event) => {
+                                              event.stopPropagation()
+                                              void downloadAudioFile(`voice-${video.id}`, audio.voiceover!.url, audio.voiceover!.name)
+                                            }}
+                                            aria-label="Download voiceover"
+                                            title="Download voiceover"
+                                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                          >
+                                            {downloadingId === `voice-${video.id}` ? (
+                                              <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                            ) : (
+                                              <Download className="h-3 w-3" aria-hidden="true" />
+                                            )}
+                                          </button>
+                                        </div>
+                                        <p className="truncate text-[11px] text-zinc-500">{audio.voiceover.name}</p>
+                                        <audio controls preload="none" src={audio.voiceover.url} className="h-8 w-full" />
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                )}
+                              </PopoverContent>
+                            </Popover>
+                          )
+                        })() : null}
                         {variant === 'final' ? (
                           <button
                             type="button"
