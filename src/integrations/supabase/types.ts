@@ -383,6 +383,30 @@ export type Database = {
           },
         ]
       }
+      generator_library_state: {
+        Row: {
+          created_at: string
+          state: Json
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          state?: Json
+          updated_at?: string
+          user_id: string
+          version?: number
+        }
+        Update: {
+          created_at?: string
+          state?: Json
+          updated_at?: string
+          user_id?: string
+          version?: number
+        }
+        Relationships: []
+      }
       generator_user_audio: {
         Row: {
           created_at: string

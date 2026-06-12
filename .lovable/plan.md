@@ -1,32 +1,51 @@
-## Goal
-Add the same hover/tap video preview that already exists in the Product Ad dialog to the composer's **Styles** picker (the "Prompt" panel chips for Camera / Genre / Scene / Template). Hovering (or tapping on mobile) any style chip will show a small looping muted preview clip plus its name — exactly like the Product Ad screen.
+# همگام‌سازی کامل کتابخانه با بک‌اند
 
-## Current state
-- `StylePreviewCard` (already built) wraps a chip and shows a `HoverCard` with a looping muted `<video>` + title/description. Works on touch (opens on tap).
-- The Product Ad dialog (`ProductAdDialog.tsx`) imports all the `style-previews/*.mp4.asset.json` clips and maps each style to a `preview` URL, then wraps each chip in `StylePreviewCard`.
-- The composer Styles picker in `DashboardPage.tsx` renders chips via the local `StyleSection` component using the shared datasets in `promptStyles.ts` (`CAMERA_STYLES`, `GENRE_STYLES`, `SCENE_STYLES`, `TEMPLATE_STYLES`). These chips currently have **no** preview.
-- The shared `StyleItem` type has no `preview` field. Each style `id` maps cleanly to an existing preview asset file (e.g. `whip-pan` → `cam-whip-pan.mp4`, `construction-site` → `scene-construction-site.mp4`, `football-team` → `vid-football-team.mp4`).
+## مشکل (علت ریشه‌ای)
+ویدیوها و jobها در بک‌اند ذخیره می‌شوند، اما کل «چینش و سازماندهی کتابخانه» فقط در `localStorage` مرورگر و با کلید کاربر نگه‌داری می‌شود. در `DashboardPage.tsx` بیش از ۲۰ کلید محلی وجود دارد، از جمله:
 
-## Changes
+- `library-saved-jobs:{userId}` → بخش **Final Videos**
+- `draft-entries:{userId}`, `draft-source-jobs`, `draft-source-images`, `active-draft-id` → **Drafts**
+- `project-cover-images`, `job-draft-map`, `image-draft-map`
+- `approved-videos`, `merged-videos`, `workspace-hidden-jobs/images`, `workspace-active-jobs/images`, `deleted-draft-ids`, `pending-end-appends/start-prepends`, `project-source-jobs/images`, `project-audio`, `selected-project`, `preview-state`
 
-### 1. `src/modules/generator-ui/lib/promptStyles.ts`
-- Add an optional `preview?: string` field to the `StyleItem` type.
-- Import the existing `@/assets/style-previews/*.mp4.asset.json` pointers (the same ones already used by `ProductAdDialog`) and attach the matching clip `.url` to each entry in `CAMERA_STYLES`, `GENRE_STYLES`, `SCENE_STYLES`, and `TEMPLATE_STYLES`.
-- No logic changes — `preview` is metadata only; prompt-building functions stay untouched.
+به همین دلیل در مرورگر ناشناس (localStorage خالی) بخش Final Videos خالی است و Drafts فقط از روی jobهای خام بازسازی می‌شود و بهم‌ریخته دیده می‌شود؛ اما در مرورگر عادی که این کلیدها قبلاً ذخیره شده‌اند درست است. یعنی کتابخانه بین دستگاه‌ها/مرورگرها همگام نیست.
 
-This makes the previews reusable from one shared source (no duplicated mapping), so both the composer and any future caller use the same clips.
+## راه‌حل
+این «وضعیت چینش کتابخانه» در دیتابیس ذخیره شود تا روی هر دستگاه/مرورگر یکسان بارگیری شود. به‌جای مهاجرت تک‌تک ۲۰ کلید، یک سند JSON واحد per-user نگه می‌داریم که آینهٔ همین کلیدهاست. `localStorage` به‌عنوان کش سریع باقی می‌ماند، اما منبع حقیقت سرور است.
 
-### 2. `src/modules/generator-ui/pages/DashboardPage.tsx` (`StyleSection`)
-- Wrap each chip `<button>` in `StylePreviewCard`, passing `title={item.label}`, `description={…}` (short text — can reuse the chip label, or omit), and `preview={item.preview}`.
-- Set `rtl` appropriately so alignment matches the rest of the composer.
-- Keep all existing chip styling, selection state, and `onToggle` behavior identical. The `StylePreviewCard` trigger uses `asChild`, so the button keeps working as before; chips without a `preview` simply show a text-only card (graceful fallback).
+این رویکرد کم‌ریسک است: منطق رندر فعلی و jobهای بک‌اند دست نمی‌خورند؛ فقط لایهٔ ذخیره/بارگیری همین stateها سرور-محور می‌شود.
 
-## Out of scope / safety
-- No backend, schema, or prompt-generation changes.
-- No change to Product Ad dialog (it keeps its own working setup).
-- Purely presentational; selection/optimize flow is unchanged.
+## مراحل
 
-## Verification
-- Open the composer → Prompt → Styles, hover a Camera/Genre/Scene/Template chip → looping muted preview appears, matching the Product Ad behavior.
-- On mobile width, tapping a chip shows the preview; selection still toggles.
-- Chips with no matching clip still render and toggle without errors.
+### ۱) جدول بک‌اند (migration)
+ساخت جدول `generator_library_state`:
+- `user_id uuid PRIMARY KEY` (ارجاع به auth.users)
+- `state jsonb NOT NULL DEFAULT '{}'` → کل نگاشت کلید→مقدار
+- `version int NOT NULL DEFAULT 0` → برای جلوگیری از overwrite قدیمی/کنترل همزمانی
+- `updated_at timestamptz`
+- GRANT برای `authenticated` و `service_role`؛ RLS فقط روی ردیف خودِ کاربر (`auth.uid() = user_id`)؛ تریگر `set_updated_at`.
+
+### ۲) گیت‌وی/خواندن‌نوشتن
+- استفاده از همان کلاینت Supabase موجود (`@/integrations/supabase/client`) برای `select`/`upsert` روی این جدول (با RLS امن است؛ نیازی به edge function جدید نیست).
+- افزودن یک هوک کوچک `useLibraryState(userId)` در `src/modules/generator-ui/lib/`:
+  - **بارگیری**: هنگام ورود، ابتدا state سرور را می‌گیرد. اگر سرور خالی بود ولی localStorage داده داشت → یک‌بار مهاجرت (push به سرور). سپس localStorage را از روی state سرور هیدریت می‌کند تا نمایش یکسان شود.
+  - **ذخیره**: یک تابع `persist(key, value)` که هم localStorage را آپدیت می‌کند و هم با debounce (مثلاً ۸۰۰ms) کل سند را به سرور `upsert` می‌کند (افزایش `version`).
+
+### ۳) اتصال در DashboardPage
+- توابع موجود `persistLibrarySavedJobs`, `persistDraftEntries`, `persistCoverImages` و سایر `setItem`ها به‌جای نوشتن مستقیم در localStorage، از `persist(key, value)` هوک استفاده کنند (تغییر نقطه‌ای، بدون تغییر منطق رندر).
+- خواندن اولیهٔ هر state از مقدار هیدریت‌شدهٔ هوک خوانده شود.
+- کلیدهای صرفاً مخصوص دستگاه (`generator:aspectRatio`, `generator:clipAspectRatios`, `generator:lockedProjectRatio`, `ui:preferred-model`) **محلی** می‌مانند و همگام نمی‌شوند (ترجیح هر دستگاه).
+
+### ۴) حالت خالی تمیز
+وقتی نه سرور و نه localStorage داده دارند (کاربر کاملاً جدید)، Drafts/Final Videos به‌جای نمایش بهم‌ریخته، خالیِ تمیز نشان داده شوند (بازسازی محتاطانه از jobها فقط وقتی متادیتای معتبر هست).
+
+## بخش فنی
+- منبع حقیقت: جدول `generator_library_state` (یک ردیف per-user، ستون `jsonb`).
+- همگام‌سازی: load-on-login + upsert با debounce روی هر تغییر؛ کنترل نسخه با `version` برای جلوگیری از بازنویسی توسط تب قدیمی.
+- سازگاری عقب‌رو: مهاجرت یک‌بارهٔ localStorage موجود به سرور تا کاربران فعلی داده‌شان را از دست ندهند.
+- امنیت: RLS محدود به `auth.uid() = user_id`؛ بدون دسترسی anon.
+- بدون تغییر در jobها، ویدیوها، کردیت‌ها یا منطق رندر فعلی — صرفاً لایهٔ persistence.
+
+## خارج از دامنه
+- تغییر در ساختار jobها/asssetها یا فلو ساخت ویدیو.
+- همگام‌سازی ترجیحات مخصوص دستگاه (aspect ratio/مدل).
