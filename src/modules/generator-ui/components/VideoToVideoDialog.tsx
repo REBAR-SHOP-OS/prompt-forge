@@ -26,6 +26,8 @@ interface VideoToVideoDialogProps {
   /** Source job; used to inherit the original aspect ratio. */
   sourceAspectRatio?: AspectRatio | '1:1' | null
   title?: string
+  /** Durable project group id so the edited clip stays in the same draft. */
+  draftGroupId?: string
   /** Called when the new Veo job has been created and added to Pending. */
   onJobCreated: (seeded: JobDetail, ratio: '9:16' | '16:9') => void
 }
