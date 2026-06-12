@@ -2324,13 +2324,23 @@ export default function DashboardPage() {
 
 
   const runEnhancePrompt = async (
-    options: { mode: 'silent' | 'narrated'; narratorScript?: string },
+    options: { mode: 'silent' | 'narrated' | 'styles'; narratorScript?: string; styleHints?: string },
   ) => {
     if (isEnhancingPrompt || isSubmitting) return
     const current = promptText.trim()
     if (options.mode === 'silent' && !current) {
       setComposerError('Type a short idea first, then choose No narrator.')
       return
+    }
+    if (options.mode === 'styles') {
+      if (!current) {
+        setComposerError('Type a short idea first, then pick styles.')
+        return
+      }
+      if (!(options.styleHints ?? '').trim()) {
+        setComposerError('Pick at least one style to optimize the prompt.')
+        return
+      }
     }
     if (options.mode === 'narrated' && !(options.narratorScript ?? '').trim()) {
       setComposerError('Please write the narrator script.')
@@ -2342,12 +2352,15 @@ export default function DashboardPage() {
       const imageUrls = [readyStartFrame?.url, readyEndFrame?.url].filter(
         (u): u is string => typeof u === 'string' && u.length > 0,
       )
+      // 'styles' optimization is a silent rewrite that incorporates style hints.
+      const invokeMode = options.mode === 'styles' ? 'silent' : options.mode
       const { data, error } = await supabase.functions.invoke('enhance-prompt', {
         body: {
           prompt: current,
           imageUrls,
-          mode: options.mode,
+          mode: invokeMode,
           narratorScript: options.narratorScript ?? '',
+          styleHints: options.styleHints ?? '',
         },
       })
       if (error) {
@@ -2367,6 +2380,8 @@ export default function DashboardPage() {
       setIsPromptMenuOpen(false)
       setNarratorMode('idle')
       setNarratorScript('')
+      setStyleMode('idle')
+      setSelectedStyles(emptyStyleSelection())
     } catch {
       setComposerError('Could not enhance prompt. Please try again.')
     } finally {
