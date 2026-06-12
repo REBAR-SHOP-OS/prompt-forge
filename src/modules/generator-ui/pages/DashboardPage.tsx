@@ -2378,12 +2378,15 @@ export default function DashboardPage() {
       for (const i of imgs) finalClaimedImages.add(i.id)
     }
 
-    // Group every mapped clip / image by its owning draft id.
+    // Group every mapped clip / image by its owning draft id. The DURABLE
+    // server `draft_group_id` wins: it survives refresh / cross-device, so all
+    // clips made in one session always regroup into ONE draft. The local
+    // jobDraftMap is only a fallback for legacy rows that predate the column.
     const clipsByDraft = new Map<string, JobDetail[]>()
     for (const v of generatedVideos) {
       if (v.id.startsWith('merged-')) continue
       if (finalClaimedJobs.has(v.id)) continue
-      const did = jobDraftMap[v.id]
+      const did = v.draft_group_id ? draftIdForGroupUuid(v.draft_group_id) : jobDraftMap[v.id]
       if (!did || deletedDraftIds.has(did)) continue
       const arr = clipsByDraft.get(did) ?? []
       arr.push(v)
@@ -2397,12 +2400,13 @@ export default function DashboardPage() {
     for (const img of userImages) {
       if (finalClaimedImages.has(img.id)) continue
       if (coverImageIds.has(img.id)) continue
-      const did = imageDraftMap[img.id]
+      const did = img.draft_group_id ? draftIdForGroupUuid(img.draft_group_id) : imageDraftMap[img.id]
       if (!did || deletedDraftIds.has(did)) continue
       const arr = imagesByDraft.get(did) ?? []
       arr.push(img)
       imagesByDraft.set(did, arr)
     }
+
 
     const involvedDraftIds = new Set<string>([...clipsByDraft.keys(), ...imagesByDraft.keys()])
     if (involvedDraftIds.size === 0) return
