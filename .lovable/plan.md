@@ -1,37 +1,43 @@
 ## Goal
 
-When a project is a finalized **Final Film** (read-only), the editing action icons in the "Working clips / Pending" header must never be shown — because a finalized film can no longer be edited.
+Add an icon button on each **Final Film** project card that converts it back into an editable **Draft** project, so the user can reopen a finished film, make changes, and finalize it again. This is the deliberate inverse of finalization (where a draft becomes read-only).
 
-## What the icons are
+## Where
 
-In `src/modules/generator-ui/pages/DashboardPage.tsx`, the header row (around lines 7269–7347) contains an action toolbar `<div className="flex items-center gap-2">` with four controls:
-- Upload image (`ImagePlus`)
-- Generate film cover with AI (`Camera`)
-- Upload film (`Upload`)
-- Live preview all cards (`Play`)
+`src/modules/generator-ui/pages/DashboardPage.tsx`
 
-These are the icons circled in the screenshot. They are edit/creation actions that make no sense on a finalized, read-only film.
+- `renderCard(video, variant)` (around line 7907) renders Library cards. For `variant === 'final'` it currently shows only **Download** and **Delete** icon buttons (lines ~7965–8000).
+- Finalization (lines ~5150–5290) creates the final by: storing source clips/images in `projectSourceJobs[mergedId]` / `projectSourceImages[mergedId]`, adding the merged entry to `mergedEntries` + `approvedIds`, deleting the draft, tombstoning draft ids, stripping `jobDraftMap`/`imageDraftMap`, and moving the cover to `coverImages[mergedId]`.
 
-## The fix
+## The change
 
-The component already derives `isReadOnlyProject` (line 1554):
-`const isReadOnlyProject = !!selectedProjectId && !selectedProjectId.startsWith('draft-')` — true for finalized Final Film projects, false for drafts/active workspace.
+### 1. New icon button on final cards
 
-Wrap the action toolbar so it only renders when the project is **not** read-only:
+In `renderCard`, inside the `variant === 'final'` action group (next to Download/Delete), add a third icon button — an **"Edit / reopen as draft"** control (e.g. `Pencil` / `Undo2` lucide icon, with `title` and `aria-label` "Reopen for editing"). On click: `event.stopPropagation()` then call a new `reopenFinalAsDraft(video)`.
 
-```text
-{!isReadOnlyProject && (
-  <div className="flex items-center gap-2"> ... the 4 buttons ... </div>
-)}
-```
+### 2. New handler `reopenFinalAsDraft(video)`
 
-This guarantees the icons are completely hidden (not just disabled) for any finalized film, while leaving them fully available for drafts and the active workspace. The existing "This final video is read-only" banner (line 8498) already communicates the read-only state.
+This reverses finalization for that film, reusing the existing durable grouping mechanics:
+
+1. Read the film's source snapshot: `projectSourceJobs[video.id]` (clips) and `projectSourceImages[video.id]` (images).
+2. Pick the draft id from the clips' durable `draft_group_id` (`draftIdForGroupUuid(...)`) when present; otherwise mint a fresh `draft-<uuid>` via the same pattern used by `ensureActiveDraftId`.
+3. Remove the final film so it no longer appears in the Library "Final" section: drop it from `mergedEntries` (+ `persistMerged`), remove its id from `approvedIds` (+ persist), and delete `projectSourceJobs[video.id]` / `projectSourceImages[video.id]` (+ persist).
+4. Un-tombstone: remove the draft id and any `draft-orphan-img-*` ids for these items from `deletedDraftIds` so the draft is allowed to live again.
+5. Recreate the draft snapshot: set `draftSourceJobs[draftId]` / `draftSourceImages[draftId]` from the source snapshot, and add a draft entry to `draftEntries` (persist all three).
+6. Re-stamp ownership back to the draft: `jobDraftMap`/`imageDraftMap` entries for each clip/image -> `draftId`.
+7. Restore the clips/images into the live workspace (mirror `resumeSelectedProject`): `mergeJob` clips into `generatedVideos`, add images to `userImages`, clear them from `workspaceHiddenJobIds`/`workspaceHiddenImageIds`, and add to `activeJobIds`/`activeImageIds` (persist).
+8. Move the cover: if `coverImages[video.id]` exists, move it to `coverImages[draftId]` (persist).
+9. Activate edit mode: `setActiveDraftId(draftId)` + persist, `setSelectedProjectId(null)`, clear preview/selection — this exits read-only snapshot view and lets the existing edit toolbar and Final Film flow operate on the draft again.
+
+Optionally guard with a `window.confirm` ("Reopen this final film for editing? It will move back to Drafts.").
+
+## Behavior summary
+
+- Final card gets a new "reopen/edit" icon alongside Download and Delete.
+- Clicking it removes the film from the Final section, recreates an editable Draft from the exact clips/images that produced it (cover included), restores them to the workspace, and selects that draft so the user can edit and re-finalize.
+- No backend/schema changes — purely the existing localStorage-backed draft/library state machine, reusing durable `draft_group_id` grouping.
 
 ## Scope
 
-- Single frontend edit in `DashboardPage.tsx` (wrap the toolbar div conditionally).
-- No backend, data, or business-logic changes.
-- The Live preview action stays available implicitly through the read-only preview path already present elsewhere; only the header edit toolbar is hidden.
-</content>
-<summary>Hide the edit action icons in the project header whenever a finalized Final Film (read-only) project is shown.</summary>
-</invoke>
+- Single frontend file: `DashboardPage.tsx` (one new button in `renderCard`, one new handler).
+- No backend, migrations, or business-logic-engine changes.
