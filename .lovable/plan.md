@@ -1,51 +1,28 @@
-# همگام‌سازی کامل کتابخانه با بک‌اند
+## Goal
+Add bulk-selection to the Library so users can select multiple **Draft** projects (and likewise multiple **Final video** projects) at once and delete them together, via a "select all" toggle plus per-card checkboxes.
 
-## مشکل (علت ریشه‌ای)
-ویدیوها و jobها در بک‌اند ذخیره می‌شوند، اما کل «چینش و سازماندهی کتابخانه» فقط در `localStorage` مرورگر و با کلید کاربر نگه‌داری می‌شود. در `DashboardPage.tsx` بیش از ۲۰ کلید محلی وجود دارد، از جمله:
+## Where
+All changes are in `src/modules/generator-ui/pages/DashboardPage.tsx`, inside the Library aside (Final videos section ~line 8576, Drafts section ~line 8594, and the card renderer `renderCard` ~line 8511–8556). Deletion reuses the existing `deleteCard(jobId)` logic — no backend or business-logic changes.
 
-- `library-saved-jobs:{userId}` → بخش **Final Videos**
-- `draft-entries:{userId}`, `draft-source-jobs`, `draft-source-images`, `active-draft-id` → **Drafts**
-- `project-cover-images`, `job-draft-map`, `image-draft-map`
-- `approved-videos`, `merged-videos`, `workspace-hidden-jobs/images`, `workspace-active-jobs/images`, `deleted-draft-ids`, `pending-end-appends/start-prepends`, `project-source-jobs/images`, `project-audio`, `selected-project`, `preview-state`
+## Behavior
+- Each section header (Final videos / Drafts) gets a small **select icon** (e.g. `CheckSquare`/`ListChecks`) that toggles a "selection mode" for that section.
+- In selection mode:
+  - Each card in that section shows a checkbox in its corner.
+  - A header **"Select all"** toggle selects/deselects every card in that section.
+  - A **trash / "Delete selected (N)"** button appears; clicking it asks for one confirmation and deletes all selected cards.
+  - An **X / Cancel** exits selection mode and clears the selection.
+- Final videos and Drafts have independent selection state, so selecting in one section does not affect the other.
 
-به همین دلیل در مرورگر ناشناس (localStorage خالی) بخش Final Videos خالی است و Drafts فقط از روی jobهای خام بازسازی می‌شود و بهم‌ریخته دیده می‌شود؛ اما در مرورگر عادی که این کلیدها قبلاً ذخیره شده‌اند درست است. یعنی کتابخانه بین دستگاه‌ها/مرورگرها همگام نیست.
+## Technical details
+- Add component state:
+  - `draftSelectMode: boolean`, `selectedDraftIds: Set<string>`
+  - `finalSelectMode: boolean`, `selectedFinalIds: Set<string>`
+- In `renderCard(video, variant)`, when the matching section's select mode is on, render a checkbox overlay bound to the matching selection set (toggle add/remove of `video.id`). Clicking a card in select mode toggles its checkbox instead of opening it.
+- Header controls per section:
+  - Toggle-select-mode icon button.
+  - When active: "Select all" button (fills the set with the section's item ids), "Delete (N)" button, and "Cancel".
+- Bulk delete handler: a single `window.confirm` (e.g. "Delete N selected drafts permanently?"), then run the existing per-item delete sequentially/`Promise.allSettled` by calling the current `deleteCard` flow logic for each selected id. To avoid N confirm dialogs, factor the confirm out: add an internal `deleteCardConfirmed(jobId)` (current `deleteCard` body without the `window.confirm`) and have both single-delete and bulk-delete call it; `deleteCard` keeps its single confirm.
+- Reset each section's select mode + selection when its list becomes empty or after a successful bulk delete.
 
-## راه‌حل
-این «وضعیت چینش کتابخانه» در دیتابیس ذخیره شود تا روی هر دستگاه/مرورگر یکسان بارگیری شود. به‌جای مهاجرت تک‌تک ۲۰ کلید، یک سند JSON واحد per-user نگه می‌داریم که آینهٔ همین کلیدهاست. `localStorage` به‌عنوان کش سریع باقی می‌ماند، اما منبع حقیقت سرور است.
-
-این رویکرد کم‌ریسک است: منطق رندر فعلی و jobهای بک‌اند دست نمی‌خورند؛ فقط لایهٔ ذخیره/بارگیری همین stateها سرور-محور می‌شود.
-
-## مراحل
-
-### ۱) جدول بک‌اند (migration)
-ساخت جدول `generator_library_state`:
-- `user_id uuid PRIMARY KEY` (ارجاع به auth.users)
-- `state jsonb NOT NULL DEFAULT '{}'` → کل نگاشت کلید→مقدار
-- `version int NOT NULL DEFAULT 0` → برای جلوگیری از overwrite قدیمی/کنترل همزمانی
-- `updated_at timestamptz`
-- GRANT برای `authenticated` و `service_role`؛ RLS فقط روی ردیف خودِ کاربر (`auth.uid() = user_id`)؛ تریگر `set_updated_at`.
-
-### ۲) گیت‌وی/خواندن‌نوشتن
-- استفاده از همان کلاینت Supabase موجود (`@/integrations/supabase/client`) برای `select`/`upsert` روی این جدول (با RLS امن است؛ نیازی به edge function جدید نیست).
-- افزودن یک هوک کوچک `useLibraryState(userId)` در `src/modules/generator-ui/lib/`:
-  - **بارگیری**: هنگام ورود، ابتدا state سرور را می‌گیرد. اگر سرور خالی بود ولی localStorage داده داشت → یک‌بار مهاجرت (push به سرور). سپس localStorage را از روی state سرور هیدریت می‌کند تا نمایش یکسان شود.
-  - **ذخیره**: یک تابع `persist(key, value)` که هم localStorage را آپدیت می‌کند و هم با debounce (مثلاً ۸۰۰ms) کل سند را به سرور `upsert` می‌کند (افزایش `version`).
-
-### ۳) اتصال در DashboardPage
-- توابع موجود `persistLibrarySavedJobs`, `persistDraftEntries`, `persistCoverImages` و سایر `setItem`ها به‌جای نوشتن مستقیم در localStorage، از `persist(key, value)` هوک استفاده کنند (تغییر نقطه‌ای، بدون تغییر منطق رندر).
-- خواندن اولیهٔ هر state از مقدار هیدریت‌شدهٔ هوک خوانده شود.
-- کلیدهای صرفاً مخصوص دستگاه (`generator:aspectRatio`, `generator:clipAspectRatios`, `generator:lockedProjectRatio`, `ui:preferred-model`) **محلی** می‌مانند و همگام نمی‌شوند (ترجیح هر دستگاه).
-
-### ۴) حالت خالی تمیز
-وقتی نه سرور و نه localStorage داده دارند (کاربر کاملاً جدید)، Drafts/Final Videos به‌جای نمایش بهم‌ریخته، خالیِ تمیز نشان داده شوند (بازسازی محتاطانه از jobها فقط وقتی متادیتای معتبر هست).
-
-## بخش فنی
-- منبع حقیقت: جدول `generator_library_state` (یک ردیف per-user، ستون `jsonb`).
-- همگام‌سازی: load-on-login + upsert با debounce روی هر تغییر؛ کنترل نسخه با `version` برای جلوگیری از بازنویسی توسط تب قدیمی.
-- سازگاری عقب‌رو: مهاجرت یک‌بارهٔ localStorage موجود به سرور تا کاربران فعلی داده‌شان را از دست ندهند.
-- امنیت: RLS محدود به `auth.uid() = user_id`؛ بدون دسترسی anon.
-- بدون تغییر در jobها، ویدیوها، کردیت‌ها یا منطق رندر فعلی — صرفاً لایهٔ persistence.
-
-## خارج از دامنه
-- تغییر در ساختار jobها/asssetها یا فلو ساخت ویدیو.
-- همگام‌سازی ترجیحات مخصوص دستگاه (aspect ratio/مدل).
+## Out of scope
+No changes to backend, deletion semantics, draft/final data model, or the localStorage/backend sync logic — only UI selection + reusing existing delete.
