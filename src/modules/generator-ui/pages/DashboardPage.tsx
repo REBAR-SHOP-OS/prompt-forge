@@ -7837,6 +7837,18 @@ export default function DashboardPage() {
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation()
+                                handleUseImageAsStart(img.storage_path)
+                              }}
+                              aria-label="Use as Start frame"
+                              title="Use as Start frame"
+                              className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.03] text-zinc-400 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200"
+                            >
+                              <ImagePlus className="h-3.5 w-3.5" aria-hidden="true" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
                                 handleDeleteUserImage(img.id)
                               }}
                               aria-label="Delete image"
