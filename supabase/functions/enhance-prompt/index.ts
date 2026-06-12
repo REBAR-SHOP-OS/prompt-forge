@@ -128,13 +128,24 @@ Deno.serve(async (req) => {
     }
 
 
+    const styleSuffix = styleHints
+      ? [
+          "\n\nThe user has chosen the following visual styles. The rewritten prompt MUST",
+          "incorporate and optimize for these style directions while keeping the user's",
+          "core idea and original language intact:",
+          `\n${styleHints}`,
+        ].join(" ")
+      : "";
+
     const systemPrompt = `${BASE_SYSTEM_PROMPT}\n\n${
       mode === "silent"
         ? SILENT_SUFFIX
         : mode === "narrated"
           ? narratedSuffix(narratorScript)
           : DEFAULT_SUFFIX
-    }`;
+    }${styleSuffix}`;
+
+
 
     // For narrated mode with no user prompt, seed with the script so the model
     // has something to anchor the visual scene to.
