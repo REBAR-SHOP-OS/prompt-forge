@@ -352,7 +352,8 @@ Deno.serve(async (req) => {
     const svc = getServiceClient();
     // Upload into wan-frames so the resulting URL is accepted by the
     // jobs-create validator (which only allows public wan-frames/{userId}/...).
-    const path = `${auth.userId}/reframed-${Date.now()}-${aspectRatio.replace(":", "x")}.${ext}`;
+    // Include an unguessable random component so public object URLs cannot be enumerated.
+    const path = `${auth.userId}/reframed-${Date.now()}-${aspectRatio.replace(":", "x")}-${crypto.randomUUID()}.${ext}`;
     const { error: upErr } = await svc.storage.from("wan-frames").upload(path, lastBytes, {
       contentType: lastMime, upsert: false,
     });
