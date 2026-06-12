@@ -8220,6 +8220,102 @@ export default function DashboardPage() {
                             )}
                           </button>
                         ) : null}
+                        {variant === 'final' ? (() => {
+                          const audio = projectAudio[video.id]
+                          const hasAny = Boolean(audio?.music || audio?.voiceover)
+                          return (
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <button
+                                  type="button"
+                                  onClick={(event) => event.stopPropagation()}
+                                  aria-label="Project audio"
+                                  title="Music & voiceover"
+                                  className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border transition ${
+                                    hasAny
+                                      ? 'border-white/10 text-zinc-400 hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200'
+                                      : 'border-white/10 text-zinc-600 hover:border-white/20 hover:text-zinc-400'
+                                  }`}
+                                >
+                                  <Music2 className="h-3 w-3" aria-hidden="true" />
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent
+                                align="end"
+                                className="w-72 space-y-3"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                                  Project audio
+                                </p>
+                                {!hasAny ? (
+                                  <p className="text-xs text-zinc-500">
+                                    No music or voiceover for this project.
+                                  </p>
+                                ) : (
+                                  <div className="space-y-3">
+                                    {audio?.music ? (
+                                      <div className="space-y-1.5">
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-sky-200">
+                                            <Music2 className="h-3 w-3" aria-hidden="true" /> Music
+                                          </span>
+                                          <button
+                                            type="button"
+                                            disabled={downloadingId === `music-${video.id}`}
+                                            onClick={(event) => {
+                                              event.stopPropagation()
+                                              void downloadAudioFile(`music-${video.id}`, audio.music!.url, audio.music!.name)
+                                            }}
+                                            aria-label="Download music"
+                                            title="Download music"
+                                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                          >
+                                            {downloadingId === `music-${video.id}` ? (
+                                              <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                            ) : (
+                                              <Download className="h-3 w-3" aria-hidden="true" />
+                                            )}
+                                          </button>
+                                        </div>
+                                        <p className="truncate text-[11px] text-zinc-500">{audio.music.name}</p>
+                                        <audio controls preload="none" src={audio.music.url} className="h-8 w-full" />
+                                      </div>
+                                    ) : null}
+                                    {audio?.voiceover ? (
+                                      <div className="space-y-1.5">
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-200">
+                                            <Mic className="h-3 w-3" aria-hidden="true" /> Voiceover
+                                          </span>
+                                          <button
+                                            type="button"
+                                            disabled={downloadingId === `voice-${video.id}`}
+                                            onClick={(event) => {
+                                              event.stopPropagation()
+                                              void downloadAudioFile(`voice-${video.id}`, audio.voiceover!.url, audio.voiceover!.name)
+                                            }}
+                                            aria-label="Download voiceover"
+                                            title="Download voiceover"
+                                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                          >
+                                            {downloadingId === `voice-${video.id}` ? (
+                                              <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                            ) : (
+                                              <Download className="h-3 w-3" aria-hidden="true" />
+                                            )}
+                                          </button>
+                                        </div>
+                                        <p className="truncate text-[11px] text-zinc-500">{audio.voiceover.name}</p>
+                                        <audio controls preload="none" src={audio.voiceover.url} className="h-8 w-full" />
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                )}
+                              </PopoverContent>
+                            </Popover>
+                          )
+                        })() : null}
                         {variant === 'final' ? (
                           <button
                             type="button"
