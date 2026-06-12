@@ -4,12 +4,19 @@ import DashboardPage from './modules/generator-ui/pages/DashboardPage'
 import LoginPage from './pages/auth/LoginPage'
 import LoadingScreen from '@/core/ui/LoadingScreen'
 import RootErrorBoundary from '@/core/ui/RootErrorBoundary'
+import LibrarySyncGate from '@/modules/generator-ui/components/LibrarySyncGate'
 
 function Gate() {
   const { session, loading } = useAuth()
 
   if (loading) return <LoadingScreen />
-  return session ? <DashboardPage /> : <LoginPage />
+  return session ? (
+    <LibrarySyncGate>
+      <DashboardPage />
+    </LibrarySyncGate>
+  ) : (
+    <LoginPage />
+  )
 }
 
 function App() {
