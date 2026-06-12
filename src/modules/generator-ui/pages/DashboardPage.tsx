@@ -6,6 +6,7 @@ import {
   CalendarDays,
   ChevronsRight,
   Check,
+  ChevronDown,
   Cpu,
   Camera,
   Clapperboard,
@@ -132,6 +133,59 @@ const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.red
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 import { getMajorOccasionForDate } from '@/modules/generator-ui/lib/majorOccasions'
+import {
+  CAMERA_STYLES,
+  GENRE_STYLES,
+  SCENE_STYLES,
+  TEMPLATE_STYLES,
+  SCENE_GROUP_ORDER,
+  TEMPLATE_GROUP_ORDER,
+  buildStyleHints,
+  countSelectedStyles,
+  emptyStyleSelection,
+  type StyleItem,
+  type StyleSelection,
+} from '@/modules/generator-ui/lib/promptStyles'
+
+function StyleSection({
+  title,
+  items,
+  selectedIds,
+  onToggle,
+}: {
+  title: string
+  items: StyleItem[]
+  selectedIds: string[]
+  onToggle: (id: string) => void
+}) {
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">{title}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {items.map((item) => {
+          const active = selectedIds.includes(item.id)
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onToggle(item.id)}
+              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition ${
+                active
+                  ? 'border-amber-300 bg-amber-300/15 text-amber-100'
+                  : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:border-white/25 hover:bg-white/[0.06]'
+              }`}
+            >
+              <span aria-hidden="true">{item.icon}</span>
+              <span>{item.label}</span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+
 
 type VideoJobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
 type UploadTarget = 'Start' | 'End'
@@ -2260,6 +2314,18 @@ export default function DashboardPage() {
   })
   const [narratorMode, setNarratorMode] = useState<'idle' | 'input'>('idle')
   const [narratorScript, setNarratorScript] = useState('')
+  const [styleMode, setStyleMode] = useState<'idle' | 'input'>('idle')
+  const [selectedStyles, setSelectedStyles] = useState<StyleSelection>(emptyStyleSelection)
+  const selectedStyleCount = useMemo(() => countSelectedStyles(selectedStyles), [selectedStyles])
+  const toggleStyle = (kind: keyof StyleSelection, id: string) => {
+    setSelectedStyles((prev) => {
+      const has = prev[kind].includes(id)
+      return {
+        ...prev,
+        [kind]: has ? prev[kind].filter((x) => x !== id) : [...prev[kind], id],
+      }
+    })
+  }
 
   const selectedModel = useMemo<ModelChoice>(() => {
     const needed: 't2v' | 'i2v' = isTextToVideo ? 't2v' : 'i2v'
@@ -2298,13 +2364,23 @@ export default function DashboardPage() {
 
 
   const runEnhancePrompt = async (
-    options: { mode: 'silent' | 'narrated'; narratorScript?: string },
+    options: { mode: 'silent' | 'narrated' | 'styles'; narratorScript?: string; styleHints?: string },
   ) => {
     if (isEnhancingPrompt || isSubmitting) return
     const current = promptText.trim()
     if (options.mode === 'silent' && !current) {
       setComposerError('Type a short idea first, then choose No narrator.')
       return
+    }
+    if (options.mode === 'styles') {
+      if (!current) {
+        setComposerError('Type a short idea first, then pick styles.')
+        return
+      }
+      if (!(options.styleHints ?? '').trim()) {
+        setComposerError('Pick at least one style to optimize the prompt.')
+        return
+      }
     }
     if (options.mode === 'narrated' && !(options.narratorScript ?? '').trim()) {
       setComposerError('Please write the narrator script.')
@@ -2316,12 +2392,15 @@ export default function DashboardPage() {
       const imageUrls = [readyStartFrame?.url, readyEndFrame?.url].filter(
         (u): u is string => typeof u === 'string' && u.length > 0,
       )
+      // 'styles' optimization is a silent rewrite that incorporates style hints.
+      const invokeMode = options.mode === 'styles' ? 'silent' : options.mode
       const { data, error } = await supabase.functions.invoke('enhance-prompt', {
         body: {
           prompt: current,
           imageUrls,
-          mode: options.mode,
+          mode: invokeMode,
           narratorScript: options.narratorScript ?? '',
+          styleHints: options.styleHints ?? '',
         },
       })
       if (error) {
@@ -2341,6 +2420,8 @@ export default function DashboardPage() {
       setIsPromptMenuOpen(false)
       setNarratorMode('idle')
       setNarratorScript('')
+      setStyleMode('idle')
+      setSelectedStyles(emptyStyleSelection())
     } catch {
       setComposerError('Could not enhance prompt. Please try again.')
     } finally {
@@ -8746,6 +8827,8 @@ export default function DashboardPage() {
                 if (!open) {
                   setNarratorMode('idle')
                   setNarratorScript('')
+                  setStyleMode('idle')
+                  setSelectedStyles(emptyStyleSelection())
                 }
               }}
             >
@@ -8767,7 +8850,7 @@ export default function DashboardPage() {
               <PopoverContent
                 side="top"
                 align="end"
-                className="w-80 border-white/10 bg-[#0b0c0e]/95 p-2 text-zinc-200 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl"
+                className={`${styleMode === 'input' ? 'w-[min(26rem,calc(100vw-2rem))]' : 'w-80'} border-white/10 bg-[#0b0c0e]/95 p-2 text-zinc-200 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl`}
               >
                 <button
                   type="button"
@@ -8833,6 +8916,96 @@ export default function DashboardPage() {
                           <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
                         )}
                         Apply
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => setStyleMode((m) => (m === 'input' ? 'idle' : 'input'))}
+                  disabled={isEnhancingPrompt}
+                  className={`mt-1 flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40 ${
+                    styleMode === 'input' ? 'bg-white/[0.04]' : ''
+                  }`}
+                >
+                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-amber-300/30 bg-amber-300/10 text-amber-200">
+                    <Wand2 className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+                      Styles
+                      {selectedStyleCount > 0 ? (
+                        <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-300 px-1 text-[10px] font-bold text-zinc-950">
+                          {selectedStyleCount}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="block text-xs leading-5 text-zinc-500">
+                      Pick camera, genre, scene or template styles — the prompt is optimized for them.
+                    </span>
+                  </span>
+                  <ChevronDown
+                    className={`mt-1 h-4 w-4 shrink-0 text-zinc-500 transition ${styleMode === 'input' ? 'rotate-180' : ''}`}
+                    aria-hidden="true"
+                  />
+                </button>
+
+                {styleMode === 'input' ? (
+                  <div className="mt-2 space-y-3 border-t border-white/10 px-1 pt-3">
+                    <div className="max-h-[44vh] space-y-3 overflow-y-auto pr-1">
+                      <StyleSection
+                        title="Camera style"
+                        items={CAMERA_STYLES}
+                        selectedIds={selectedStyles.camera}
+                        onToggle={(id) => toggleStyle('camera', id)}
+                      />
+                      <StyleSection
+                        title="Genre & atmosphere"
+                        items={GENRE_STYLES}
+                        selectedIds={selectedStyles.genre}
+                        onToggle={(id) => toggleStyle('genre', id)}
+                      />
+                      {SCENE_GROUP_ORDER.map((group) => (
+                        <StyleSection
+                          key={group}
+                          title={`Scene · ${group}`}
+                          items={SCENE_STYLES.filter((s) => s.group === group)}
+                          selectedIds={selectedStyles.scene}
+                          onToggle={(id) => toggleStyle('scene', id)}
+                        />
+                      ))}
+                      {TEMPLATE_GROUP_ORDER.map((group) => (
+                        <StyleSection
+                          key={group}
+                          title={`Template · ${group}`}
+                          items={TEMPLATE_STYLES.filter((t) => t.group === group)}
+                          selectedIds={selectedStyles.template}
+                          onToggle={(id) => toggleStyle('template', id)}
+                        />
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between gap-2 border-t border-white/10 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedStyles(emptyStyleSelection())}
+                        disabled={isEnhancingPrompt || selectedStyleCount === 0}
+                        className="text-[11px] text-zinc-500 transition hover:text-zinc-300 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Clear
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => runEnhancePrompt({ mode: 'styles', styleHints: buildStyleHints(selectedStyles) })}
+                        disabled={isEnhancingPrompt || selectedStyleCount === 0 || promptText.trim().length === 0}
+                        className="inline-flex h-8 items-center gap-2 rounded-full bg-amber-300 px-3 text-xs font-semibold text-zinc-950 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {isEnhancingPrompt ? (
+                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                        )}
+                        Optimize
                       </button>
                     </div>
                   </div>

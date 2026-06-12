@@ -66,6 +66,8 @@ Deno.serve(async (req) => {
       body?.mode === "silent" || body?.mode === "narrated" ? body.mode : null;
     const narratorScript: string =
       typeof body?.narratorScript === "string" ? body.narratorScript.trim() : "";
+    const styleHints: string =
+      typeof body?.styleHints === "string" ? body.styleHints.trim().slice(0, 4000) : "";
     const rawUrls: unknown = body?.imageUrls;
     // SSRF protection: only allow https URLs from our own Supabase storage host
     // (user-images, wan-frames, merged-videos buckets) and known public CDNs.
@@ -126,13 +128,24 @@ Deno.serve(async (req) => {
     }
 
 
+    const styleSuffix = styleHints
+      ? [
+          "\n\nThe user has chosen the following visual styles. The rewritten prompt MUST",
+          "incorporate and optimize for these style directions while keeping the user's",
+          "core idea and original language intact:",
+          `\n${styleHints}`,
+        ].join(" ")
+      : "";
+
     const systemPrompt = `${BASE_SYSTEM_PROMPT}\n\n${
       mode === "silent"
         ? SILENT_SUFFIX
         : mode === "narrated"
           ? narratedSuffix(narratorScript)
           : DEFAULT_SUFFIX
-    }`;
+    }${styleSuffix}`;
+
+
 
     // For narrated mode with no user prompt, seed with the script so the model
     // has something to anchor the visual scene to.

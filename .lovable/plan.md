@@ -1,36 +1,53 @@
-## Goal
+# افزودن انتخاب «سبک‌ها» به منوی Prompt
 
-On each finalized **Final Film** card, add an audio icon that reveals the music and/or voiceover used in *that specific project*, with play + download for each. If the project has no music and no voiceover, the panel shows an empty state.
+## هدف
+داخل دکمه **Prompt** (همان منویی که الان «No narrator» و «With narrator» دارد) یک گزینهٔ سوم به نام **Styles / سبک‌ها** اضافه شود. کاربر می‌تواند از میان همهٔ سبک‌های آماده انتخاب کند و وقتی روی «Apply» بزند، پرامت او بر اساس سبک‌های انتخاب‌شده بهینه (optimize) می‌شود.
 
-## Background (current behavior)
+دسته‌بندی‌ها دقیقاً همان‌هایی هستند که کاربر فهرست کرده و خوشبختانه همگی از قبل در پروژه (داخل `ProductAdDialog.tsx`) با لیبل چندزبانه، آیکون و متن پرامت تعریف شده‌اند:
+- **Camera style** (۱۰ مورد: Whip Pan, Orbit, FPV Drone, …)
+- **Genre & atmosphere** (۸ مورد: Epic Fantasy, Sci-Fi Minimalist, …)
+- **Scene & environment** (گروه‌بندی‌شده: Industrial، Urban، Nature، Historical، Interior)
+- **Video templates** (گروه‌بندی‌شده: Sports، Animation، Social Media، Corporate، Cinematic، Events، Explainer)
 
-`src/modules/generator-ui/pages/DashboardPage.tsx`
-- Music/voiceover are workspace-global state: `musicUrl`/`musicName` and `voiceoverUrl`/`voiceoverName` (lines ~1846–1858). They are object/remote URLs and are mixed into the Final Film WebM at finalize.
-- Finalization (lines ~5126–5320) builds the merged film entry (`mergedId`) and snapshots source clips into `projectSourceJobs[mergedId]`, but **does not** store the project's separate audio anywhere durable.
-- An audio download helper already exists: `downloadAudioFile(audioId, url, name)` (line ~688). `Popover`/`PopoverContent`/`PopoverTrigger` and `Music2` icon are already imported. `MERGED_BUCKET = 'merged-videos'` is a public bucket already used for durable snapshots.
+## رفتار مورد انتظار
+1. کاربر یک ایدهٔ کوتاه در باکس پرامت می‌نویسد.
+2. منوی Prompt را باز می‌کند و وارد بخش Styles می‌شود.
+3. سبک‌ها را به‌صورت چیپ‌های قابل انتخاب می‌بیند (دوربین/ژانر/صحنه/قالب). انتخاب چندتایی مجاز است.
+4. روی **Apply / بهینه‌سازی** می‌زند → پرامت با ترکیب ایدهٔ کاربر و سبک‌های انتخابی بازنویسی و بهینه می‌شود و در باکس می‌نشیند.
+5. اگر هیچ ایده‌ای ننوشته باشد، پیام راهنما نشان داده می‌شود (مثل حالت No narrator).
 
-## The change (frontend only)
+## مراحل پیاده‌سازی
 
-### 1. New persisted per-project audio map
-Add `projectAudio` state: `Record<string, { music?: { url: string; name: string }; voiceover?: { url: string; name: string } }>`, persisted to `localStorage` under key `project-audio:${userId}`, with hydrate effect + `persistProjectAudio` helper — mirroring the existing `projectSourceJobs` pattern.
+### ۱) استخراج دیتاست سبک‌ها به یک ماژول مشترک
+ساخت فایل جدید `src/modules/generator-ui/lib/promptStyles.ts` و انتقال این تعریف‌ها از `ProductAdDialog.tsx` به آن (بدون تغییر محتوا):
+- `CAMERA_STYLES`, `GENRE_TEMPLATES`, `SCENE_TEMPLATES`, `VIDEO_TEMPLATES` و گروه‌بندی‌های مربوطه و تایپ `Loc`.
+- یک تابع کمکی `buildStyleHints(selection)` که از روی شناسه‌های انتخاب‌شده، متن‌های `prompt` مربوط به دوربین/ژانر/صحنه/قالب را جمع می‌کند و یک رشتهٔ راهنمای سبک برمی‌گرداند.
 
-### 2. Snapshot the project's audio at finalize
-In the finalize flow, right after `mergedId` is created and when `hasMusic`/`hasVoiceover` are known, persist durable public copies into `MERGED_BUCKET` so they survive refresh and are downloadable from a public URL:
-- If music present: `fetch(musicUrl)` -> blob -> upload to `${userId}/project-music-${mergedId}.<ext>` -> `getPublicUrl` -> store `{ url, name: musicName ?? 'Music' }`.
-- If voiceover present: same into `${userId}/project-voice-${mergedId}.<ext>` -> store `{ url, name: voiceoverName ?? 'Voiceover' }`.
-- Set and persist `projectAudio[mergedId]` with whichever exist. Wrapped in try/catch with timeouts (reuse the pattern already used for source-clip snapshots) so a failed audio upload never blocks finalization.
+`ProductAdDialog.tsx` به‌جای تعریف محلی، از این ماژول import می‌کند (رفتار فعلی‌اش تغییر نمی‌کند — تغییر non-breaking).
 
-### 3. Audio icon + popover on final cards
-In `renderCard` for `variant === 'final'`, add a `Music2` icon button (next to Download/Reopen/Delete) wrapped in a `Popover`. The `PopoverContent` lists, for `projectAudio[video.id]`:
-- A **Music** row (if present): name + a play control (inline `<audio controls>` or a play button) + a Download button calling `downloadAudioFile('music-'+video.id, music.url, music.name)`.
-- A **Voiceover** row (if present): same pattern with `voiceover.url`.
-- If neither exists: a muted "No music or voiceover for this project" empty state.
-Use `event.stopPropagation()` on the trigger/buttons so clicks don't open the project preview.
+### ۲) افزودن گزینهٔ Styles به منوی Prompt در composer
+در `DashboardPage.tsx` داخل `PopoverContent` دکمهٔ Prompt:
+- افزودن یک ردیف سوم «Styles / سبک‌ها» شبیه دو گزینهٔ موجود.
+- با کلیک، یک حالت `styleMode === 'input'` فعال می‌شود (هم‌سبک `narratorMode`) و یک پنل اسکرول‌شوندهٔ جمع‌وجور باز می‌شود که دسته‌ها را به‌صورت بخش‌های قابل‌جمع‌شدن (Camera / Genre / Scene / Templates) با چیپ‌های آیکون‌دار نشان می‌دهد.
+- state جدید: `selectedStyles` (مجموعه‌ای از شناسه‌ها به تفکیک نوع) با `useState`.
+- یک دکمهٔ «Apply» در انتهای پنل.
 
-### 4. Cleanup on delete / reopen
-When a final film is deleted (`deleteCard`) or reopened as a draft (`reopenFinalAsDraft`), drop `projectAudio[finalId]` (+ persist) so stale audio doesn't linger.
+### ۳) بهینه‌سازی پرامت بر اساس انتخاب
+- تعمیم تابع موجود `runEnhancePrompt` (یا افزودن مسیر `mode: 'styles'`) تا علاوه بر پرامت، رشتهٔ `styleHints` حاصل از `buildStyleHints` را هم به edge function بفرستد.
+- پس از دریافت پاسخ، نتیجه در `promptText` می‌نشیند، منو بسته و انتخاب‌ها ریست می‌شوند (مثل رفتار فعلی).
 
-## Notes / scope
-- Single file: `DashboardPage.tsx`. No backend, schema, or business-logic changes.
-- Only the project's own audio is shown; absence => empty state, exactly as requested.
-- Existing finalized films created before this change won't have `projectAudio` entries (their audio wasn't snapshotted), so they show the empty state; this only affects already-finalized legacy items.
+### ۴) به‌روزرسانی edge function `enhance-prompt`
+در `supabase/functions/enhance-prompt/index.ts`:
+- پذیرش یک فیلد اختیاری جدید `styleHints: string` (با محدودیت طول، مثلاً تا ۴۰۰۰ کاراکتر).
+- وقتی موجود باشد، به system/​user prompt افزوده می‌شود با این مضمون: «بازنویسی باید این سبک‌های بصری و قواعد را اعمال کند: …» ضمن حفظ زبان اصلی کاربر و سایر قیدهای موجود (no narration و …).
+- این تغییر backward-compatible است؛ نبودِ `styleHints` رفتار فعلی را تغییر نمی‌دهد.
+
+## بخش فنی (جزئیات)
+- منبع داده: همان آرایه‌های موجود در `ProductAdDialog.tsx` (خطوط ~۱۴۲–۳۲۴) که عیناً منتقل می‌شوند؛ هیچ متن سبکی بازنویسی نمی‌شود.
+- نمایش لیبل‌ها در composer از فیلد `label.en` + `icon` استفاده می‌کند (composer فعلاً انگلیسی است). امکان توسعهٔ چندزبانه بعداً وجود دارد چون دیتاست `Loc` است.
+- بهینه‌سازی از همان مسیر `supabase.functions.invoke('enhance-prompt')` انجام می‌شود؛ سرویس یا منطق کسب‌وکار جدیدی اضافه نمی‌شود.
+- محدودهٔ تغییرات: `DashboardPage.tsx`، فایل جدید `lib/promptStyles.ts`، `ProductAdDialog.tsx` (فقط import)، و `enhance-prompt/index.ts`.
+
+## خارج از محدوده
+- تغییر در ظاهر کلی composer یا منطق ساخت ویدئو.
+- پیش‌نمایش ویدئویی سبک‌ها در منو (برای سبکی و سرعت فقط چیپ آیکون+نام؛ در صورت تمایل بعداً اضافه می‌شود).
