@@ -8136,6 +8136,20 @@ export default function DashboardPage() {
                             )}
                           </button>
                         ) : null}
+                        {variant === 'final' ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              reopenFinalAsDraft(video)
+                            }}
+                            aria-label="Reopen for editing"
+                            title="Reopen for editing"
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-200"
+                          >
+                            <Pencil className="h-3 w-3" aria-hidden="true" />
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={(event) => {
