@@ -68,7 +68,7 @@ export default function ImageReframeDialog({ open, onOpenChange, onUseAsStartFra
     setResultUrl(null)
     try {
       const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace('jpeg', 'jpg')
-      const inputPath = `${user.id}/reframe-input-${Date.now()}.${ext}`
+      const inputPath = `${user.id}/reframe-input-${Date.now()}-${crypto.randomUUID()}.${ext}`
       const up = await supabase.storage
         .from('user-images')
         .upload(inputPath, file, { contentType: file.type, upsert: false })
