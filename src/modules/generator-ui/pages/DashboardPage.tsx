@@ -5407,6 +5407,7 @@ export default function DashboardPage() {
         }
       }
 
+      // The in-progress chain just became a Final video — retire any draft
       // entries tied to this finalization so they disappear from the Drafts
       // section. Source clips are already claimed under
       // projectSourceJobs[mergedId], so they remain visible inside the new
