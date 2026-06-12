@@ -606,6 +606,15 @@ export type Database = {
         Args: { _job_id: string; _provider_job_id: string; _user_id: string }
         Returns: undefined
       }
+      generator_set_draft_group: {
+        Args: {
+          _group_id: string
+          _image_ids: string[]
+          _job_ids: string[]
+          _user_id: string
+        }
+        Returns: undefined
+      }
       generator_start_job: {
         Args: {
           _cost: number
