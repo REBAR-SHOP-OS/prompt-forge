@@ -8880,6 +8880,96 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => setStyleMode((m) => (m === 'input' ? 'idle' : 'input'))}
+                  disabled={isEnhancingPrompt}
+                  className={`mt-1 flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40 ${
+                    styleMode === 'input' ? 'bg-white/[0.04]' : ''
+                  }`}
+                >
+                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-amber-300/30 bg-amber-300/10 text-amber-200">
+                    <Wand2 className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+                      Styles
+                      {selectedStyleCount > 0 ? (
+                        <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-300 px-1 text-[10px] font-bold text-zinc-950">
+                          {selectedStyleCount}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="block text-xs leading-5 text-zinc-500">
+                      Pick camera, genre, scene or template styles — the prompt is optimized for them.
+                    </span>
+                  </span>
+                  <ChevronDown
+                    className={`mt-1 h-4 w-4 shrink-0 text-zinc-500 transition ${styleMode === 'input' ? 'rotate-180' : ''}`}
+                    aria-hidden="true"
+                  />
+                </button>
+
+                {styleMode === 'input' ? (
+                  <div className="mt-2 space-y-3 border-t border-white/10 px-1 pt-3">
+                    <div className="max-h-[44vh] space-y-3 overflow-y-auto pr-1">
+                      <StyleSection
+                        title="Camera style"
+                        items={CAMERA_STYLES}
+                        selectedIds={selectedStyles.camera}
+                        onToggle={(id) => toggleStyle('camera', id)}
+                      />
+                      <StyleSection
+                        title="Genre & atmosphere"
+                        items={GENRE_STYLES}
+                        selectedIds={selectedStyles.genre}
+                        onToggle={(id) => toggleStyle('genre', id)}
+                      />
+                      {SCENE_GROUP_ORDER.map((group) => (
+                        <StyleSection
+                          key={group}
+                          title={`Scene · ${group}`}
+                          items={SCENE_STYLES.filter((s) => s.group === group)}
+                          selectedIds={selectedStyles.scene}
+                          onToggle={(id) => toggleStyle('scene', id)}
+                        />
+                      ))}
+                      {TEMPLATE_GROUP_ORDER.map((group) => (
+                        <StyleSection
+                          key={group}
+                          title={`Template · ${group}`}
+                          items={TEMPLATE_STYLES.filter((t) => t.group === group)}
+                          selectedIds={selectedStyles.template}
+                          onToggle={(id) => toggleStyle('template', id)}
+                        />
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between gap-2 border-t border-white/10 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedStyles(emptyStyleSelection())}
+                        disabled={isEnhancingPrompt || selectedStyleCount === 0}
+                        className="text-[11px] text-zinc-500 transition hover:text-zinc-300 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Clear
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => runEnhancePrompt({ mode: 'styles', styleHints: buildStyleHints(selectedStyles) })}
+                        disabled={isEnhancingPrompt || selectedStyleCount === 0 || promptText.trim().length === 0}
+                        className="inline-flex h-8 items-center gap-2 rounded-full bg-amber-300 px-3 text-xs font-semibold text-zinc-950 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {isEnhancingPrompt ? (
+                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                        )}
+                        Optimize
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </PopoverContent>
             </Popover>
 
