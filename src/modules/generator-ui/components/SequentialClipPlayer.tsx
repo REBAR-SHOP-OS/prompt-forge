@@ -108,6 +108,10 @@ export function SequentialClipPlayer({
   const musicRef = useRef<HTMLAudioElement | null>(null)
   const voiceRef = useRef<HTMLAudioElement | null>(null)
   const imageTimerRef = useRef<number | null>(null)
+  // Tracks whether we've already attempted a one-time reload for the current
+  // clip's source after a playback error, so a permanently-bad source skips
+  // instead of looping forever.
+  const erroredOnceRef = useRef<string | null>(null)
 
   // Keep index inside bounds when clips change.
   useEffect(() => {
