@@ -2028,6 +2028,41 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [approvedStorageKey, mergedEntries, librarySavedJobs])
 
+  // ---- Library bulk selection (Drafts / Final videos) ----
+  const [draftSelectMode, setDraftSelectMode] = useState(false)
+  const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(new Set())
+  const [finalSelectMode, setFinalSelectMode] = useState(false)
+  const [selectedFinalIds, setSelectedFinalIds] = useState<Set<string>>(new Set())
+
+  function toggleSelectId(variant: 'final' | 'draft', id: string) {
+    const setIds = variant === 'final' ? setSelectedFinalIds : setSelectedDraftIds
+    setIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  async function bulkDeleteSelected(variant: 'final' | 'draft') {
+    const ids = Array.from(variant === 'final' ? selectedFinalIds : selectedDraftIds)
+    if (ids.length === 0) return
+    const label = variant === 'final' ? 'final video' : 'draft'
+    const confirmMsg = `Delete ${ids.length} selected ${label}${ids.length === 1 ? '' : 's'} permanently?`
+    if (typeof window !== 'undefined' && !window.confirm(confirmMsg)) return
+    for (const id of ids) {
+      // eslint-disable-next-line no-await-in-loop
+      await deleteCardConfirmed(id)
+    }
+    if (variant === 'final') {
+      setSelectedFinalIds(new Set())
+      setFinalSelectMode(false)
+    } else {
+      setSelectedDraftIds(new Set())
+      setDraftSelectMode(false)
+    }
+  }
+
   async function deleteCard(jobId: string) {
     const confirmMsg = jobId.startsWith('draft-')
       ? 'Delete this draft and all its clips permanently?'
