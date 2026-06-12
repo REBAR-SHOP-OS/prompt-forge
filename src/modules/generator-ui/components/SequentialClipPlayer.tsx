@@ -309,6 +309,17 @@ export function SequentialClipPlayer({
                   el.muted = clipVolume <= 0
                 }}
                 onEnded={goNext}
+                onError={() => {
+                  // A clip's source failed to load/play (e.g. expired proxy
+                  // token). Retry resolution once; if it fails again, skip to
+                  // the next clip so the sequence never stalls.
+                  if (current && erroredOnceRef.current !== current.id) {
+                    erroredOnceRef.current = current.id
+                    reload()
+                  } else {
+                    goNext()
+                  }
+                }}
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => {
                   // Only mirror pauses that came from the user (not from src swap).
