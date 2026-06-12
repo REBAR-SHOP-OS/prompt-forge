@@ -6655,6 +6655,15 @@ export default function DashboardPage() {
 
           setUserImages((prev) => [row as UserImageItem, ...prev])
           markNewImage((row as UserImageItem).id)
+          {
+            const gid = ensureActiveDraftGroupId()
+            if (gid) {
+              void supabase
+                .from('generator_user_images')
+                .update({ draft_group_id: gid })
+                .eq('id', (row as UserImageItem).id)
+            }
+          }
           setGenerationMode('image-to-video')
           setUploadTarget('Start')
           const seedId = Date.now()
