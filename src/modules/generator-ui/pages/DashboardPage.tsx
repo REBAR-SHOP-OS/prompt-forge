@@ -3925,6 +3925,29 @@ export default function DashboardPage() {
     setIsReframeOpen(false)
   }
 
+  // Stage an existing image (clip or archive) as the composer Start frame,
+  // switch to image-to-video, and scroll the composer into view.
+  function handleUseImageAsStart(url: string) {
+    if (!url) return
+    setGenerationMode('image-to-video')
+    setUploadedFiles((cur) => [
+      ...cur.filter((f) => f.target !== 'Start'),
+      {
+        id: Date.now(),
+        name: `start-${Date.now()}.png`,
+        size: 0,
+        target: 'Start',
+        type: 'image/png',
+        status: 'ready',
+        url,
+        error: null,
+      },
+    ])
+    try {
+      document.getElementById('composer-start-frame')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    } catch { /* ignore */ }
+  }
+
   async function uploadFrameFile(file: File, target: UploadTarget, fileId: number) {
     const userId = session?.user?.id
     if (!userId) {
