@@ -159,10 +159,13 @@ export function SequentialClipPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id, current?.kind, isPlaying])
 
-  // Try to autoplay videos when the active clip is a video.
+  // Try to autoplay videos when the active clip is a video. Re-runs when the
+  // resolved (proxied) source becomes available so playback starts as soon as
+  // the URL is ready, not only when the clip index changes.
   useEffect(() => {
     const v = videoRef.current
     if (!v || !current || current.kind !== 'video') return
+    if (!resolvedVideoSrc) return
     v.currentTime = 0
     if (isPlaying) {
       v.play().catch(() => {
@@ -171,7 +174,7 @@ export function SequentialClipPlayer({
     } else {
       v.pause()
     }
-  }, [current?.id, current?.kind, isPlaying])
+  }, [current?.id, current?.kind, isPlaying, resolvedVideoSrc])
 
   // Apply clip volume to the active video element.
   useEffect(() => {
