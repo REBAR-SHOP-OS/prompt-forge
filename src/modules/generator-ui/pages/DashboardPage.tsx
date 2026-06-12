@@ -2033,6 +2033,10 @@ export default function DashboardPage() {
       ? 'Delete this draft and all its clips permanently?'
       : 'Delete this video card permanently?'
     if (typeof window !== 'undefined' && !window.confirm(confirmMsg)) return
+    await deleteCardConfirmed(jobId)
+  }
+
+  async function deleteCardConfirmed(jobId: string) {
 
     // Draft project card: permanently delete the underlying clips/images
     // server-side, then drop the local snapshot, and tombstone the ids so
