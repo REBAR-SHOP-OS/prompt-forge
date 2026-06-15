@@ -6076,7 +6076,7 @@ export default function DashboardPage() {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className="fixed left-4 top-4 z-50 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-5 sm:top-5"
+            className={`fixed left-4 top-4 grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100 sm:left-5 sm:top-5 ${isApprovedPanelOpen ? 'z-30' : 'z-50'}`}
             type="button"
             aria-label="Open menu"
           >
@@ -6103,7 +6103,7 @@ export default function DashboardPage() {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <div className="fixed left-14 top-4 z-50 flex items-center gap-2 sm:left-16 sm:top-5">
+      <div className={`fixed left-14 top-4 flex items-center gap-2 sm:left-16 sm:top-5 ${isApprovedPanelOpen ? 'z-30' : 'z-50'}`}>
         <button
           type="button"
           onClick={() => { setIsCalendarOpen(true) }}
