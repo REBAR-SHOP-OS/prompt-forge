@@ -364,13 +364,15 @@ export function SequentialClipPlayer({
           </p>
         </div>
 
-        {/* Hidden audio overlays for live preview only — not part of Final Film. */}
-        {musicUrl ? (
-          <audio ref={musicRef} src={musicUrl} preload="auto" loop={!musicRange || musicRange[1] <= musicRange[0]} />
-        ) : null}
-        {voiceoverUrl ? (
-          <audio ref={voiceRef} src={voiceoverUrl} preload="auto" />
-        ) : null}
+        {/* Synced soundtrack waveforms (live preview only — not part of Final Film). */}
+        <PreviewSoundtrackWaveforms
+          ref={soundtrackRef}
+          musicUrl={musicUrl}
+          musicRange={musicRange}
+          musicVolume={musicVolume}
+          voiceoverUrl={voiceoverUrl}
+          voiceoverVolume={voiceoverVolume}
+        />
       </div>
     </div>
   )
