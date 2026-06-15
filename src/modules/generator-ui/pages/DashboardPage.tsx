@@ -3349,6 +3349,12 @@ export default function DashboardPage() {
     // When the user is viewing a Library project, lock the preview to that
     // exact merged project. Never substitute another Library entry.
     if (selectedProjectId) {
+      // Clicking empty space (previewVideoId cleared, not dismissed) should
+      // always return to the "connected cards" sequence preview — uniformly
+      // for both Final and Draft projects — when 2+ playable clips exist.
+      if (playableSequenceClips.length >= 2) {
+        return { kind: 'sequence', clips: playableSequenceClips }
+      }
       const proj = visibleVideos.find((v) => v.id === selectedProjectId)
       if (proj && proj.video?.storage_path) return { kind: 'video', job: proj }
       // Fall through: if the project's merged asset isn't ready, prefer the
