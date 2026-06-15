@@ -1,37 +1,12 @@
-## هدف
+تغییر z-index آیکون‌های بالا-چپ هنگام باز شدن کشوی لایبرری
 
-در همه‌ی پروژه‌ها (چه فاینال ویدئو و چه درفت)، وقتی روی فضای خالی اطراف پلیر کلیک می‌شود، باید همیشه همان پریوو نهاییِ ساخته‌شده از اتصال کارت‌ها (sequence preview) دیده شود — نه فقط یک کلیپ تکی یا ویدئوی merged قفل‌شده.
+وقتی کشوی لایبرری (`isApprovedPanelOpen === true`) باز می‌شود، آیکون‌های ثابت (fixed) بالا-چپ صفحه — شامل دکمه منو (LayoutGrid)، دکمه Calendar/No Occasion، Storage و UsageStats — باید پشت کشو قرار بگیرند و مخفی شوند.
 
-## وضعیت فعلی
+**تغییرات:**
+1. در `src/modules/generator-ui/pages/DashboardPage.tsx`، کلاس `z-50` دکمه منو (خط ~6079) به صورت شرطی تغییر کند: وقتی `isApprovedPanelOpen` true است `z-30`، در غیر این صورت `z-50`.
+2. همین تغییر برای div گروه آیکون‌های سمت راست دکمه منو (خط ~6106) که شامل Calendar/No Occasion، Storage و UsageStats است.
 
-- کلیک روی فضای خالیِ `<main>` (خطوط ۷۵۳۹–۷۵۴۶) مقدار `previewVideoId` را `null` و `previewDismissed` را `false` می‌کند. این برای پروژه‌های درفت درست کار می‌کند.
-- اما در `previewItem` (خطوط ۳۳۵۱–۳۳۵۳)، وقتی پروژه‌ای از کتابخانه باز است (`selectedProjectId`)، پریوو به ویدئوی merged همان پروژه قفل می‌شود و دیگر به نمای «اتصال کارت‌ها» برنمی‌گردد.
+**نحوه کار:** کشوی لایبرری `z-40` دارد. با کاهش z-index آیکون‌ها از `z-50` به `z-30` هنگام باز بودن کشو، آن‌ها پشت لایه کشو می‌روند و با توجه به پس‌زمینه opaque کشو، از دید کاربر پنهان می‌شوند. وقتی کشو بسته است، z-index به `z-50` برمی‌گردد و آیکون‌ها دوباره روی کشو دیده می‌شوند.
 
-## تغییر
-
-فقط در فایل `src/modules/generator-ui/pages/DashboardPage.tsx` (تغییر صرفاً UI/presentation):
-
-در منطق `previewItem`، شاخه‌ی `selectedProjectId`:
-
-- اگر کاربر فضای خالی را کلیک کرده باشد (یعنی `previewVideoId` خالی و `previewDismissed` برابر `false`) و تعداد کلیپ‌های قابل‌پخش (`playableSequenceClips.length >= 2`) باشد، به‌جای قفل‌شدن روی ویدئوی merged، نمای دنباله‌ای اتصال کارت‌ها (`{ kind: 'sequence', clips: playableSequenceClips }`) نمایش داده شود.
-- در غیر این صورت (کمتر از ۲ کلیپ یا عدم آمادگی دنباله)، رفتار فعلی حفظ شود: ابتدا ویدئوی merged پروژه، و اگر آماده نبود، fallback موجود.
-
-به این ترتیب رفتار در پروژه‌های فاینال و درفت یکسان می‌شود و کلیک روی فضای خالی همیشه پریوو نهایی اتصال کارت‌ها را نشان می‌دهد.
-
-## جزئیات فنی
-
-```text
-previewItem (useMemo):
-  if lastMergedPreview -> final film  (بدون تغییر)
-  if previewVideoId -> همان کارت        (بدون تغییر)
-  if previewDismissed -> null           (بدون تغییر)
-  if selectedProjectId:
-      // جدید:
-      if playableSequenceClips.length >= 2 -> { kind:'sequence', clips }
-      else if proj.video.storage_path     -> { kind:'video', job: proj }
-  ... بقیه fallbackها بدون تغییر
-```
-
-## بررسی صحت
-
-یک پروژه‌ی فاینال را باز کنید، روی یک کارت کلیک کنید، سپس روی فضای خالی کلیک کنید — باید پریوو به نمای «اتصال کارت‌ها» برگردد. همین را روی یک درفت هم تأیید کنید.
+**فایل تغییر یافته:**
+- `src/modules/generator-ui/pages/DashboardPage.tsx`
