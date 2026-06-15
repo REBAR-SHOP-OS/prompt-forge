@@ -18,6 +18,12 @@ export type PreviewSoundtrackHandle = {
    * always re-clamped into its selection window.
    */
   handleSeek: (videoCurrentTime: number) => void
+  /**
+   * Continuous, gentle re-sync used during playback (driven by the video's
+   * `timeupdate`). Only corrects when drift exceeds a small threshold so the
+   * audio doesn't stutter while it's already in sync.
+   */
+  syncTime: (videoCurrentTime: number) => void
 }
 
 type Props = {
