@@ -7436,10 +7436,39 @@ export default function DashboardPage() {
       </div>
 
       <main
-        className="grid place-items-center px-4"
+        className="relative grid place-items-center px-4"
         aria-live="polite"
         style={{ minHeight: `${previewMaxHeightPx + 56}px`, paddingTop: '56px' }}
       >
+        {playableSequenceClips.length >= 2 ? (
+          <div className="absolute inset-x-0 top-3 z-20 flex justify-center px-4">
+            <button
+              type="button"
+              onClick={() => {
+                setVideoColumnMessage(null)
+                setPreviewVideoId(null)
+                setPreviewDismissed(false)
+              }}
+              aria-label="Live preview — play all cards stitched together"
+              title="Live preview — play all cards stitched together"
+              className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold transition ${
+                previewItem?.kind === 'sequence'
+                  ? 'border-emerald-300/40 bg-emerald-300/15 text-emerald-100 shadow-[0_0_0_1px_rgba(110,231,183,0.15)]'
+                  : 'border-white/15 bg-[#141518]/95 text-zinc-200 hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-100'
+              }`}
+            >
+              {previewItem?.kind === 'sequence' ? (
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+                </span>
+              ) : (
+                <Play className="h-3.5 w-3.5" aria-hidden="true" />
+              )}
+              {previewItem?.kind === 'sequence' ? 'Live preview — playing all cards' : 'Live preview — play all cards'}
+            </button>
+          </div>
+        ) : null}
         {previewItem ? (
           previewItem.kind === 'sequence' ? (
             <SequentialClipPlayer
