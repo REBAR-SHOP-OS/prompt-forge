@@ -235,6 +235,8 @@ export function SequentialClipPlayer({
   }, [current?.id, onActiveClipChange])
 
   // Drive image clips with a timer; videos drive themselves via onEnded.
+  // The film-wide playhead is advanced with rAF so the scrub bar moves while
+  // an image clip is on screen.
   useEffect(() => {
     if (imageTimerRef.current) {
       window.clearTimeout(imageTimerRef.current)
@@ -242,12 +244,28 @@ export function SequentialClipPlayer({
     }
     if (!current) return
     if (current.kind !== 'image') return
+
+    const startLocal = Math.min(pendingLocalRef.current || 0, current.durationSec)
+    pendingLocalRef.current = 0
+    const base = offsetBeforeIndex(index)
+    if (!scrubbingRef.current) setGlobalTime(base + startLocal)
+
     if (!isPlaying) return
-    const ms = Math.max(500, Math.round(current.durationSec * 1000))
-    imageTimerRef.current = window.setTimeout(() => {
-      goNext()
-    }, ms)
+
+    const remainingMs = Math.max(200, Math.round((current.durationSec - startLocal) * 1000))
+    const startTs = performance.now()
+    let raf = 0
+    const tick = (now: number) => {
+      if (scrubbingRef.current) { raf = requestAnimationFrame(tick); return }
+      const elapsed = (now - startTs) / 1000
+      const local = Math.min(current.durationSec, startLocal + elapsed)
+      setGlobalTime(base + local)
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    imageTimerRef.current = window.setTimeout(() => { goNext() }, remainingMs)
     return () => {
+      cancelAnimationFrame(raf)
       if (imageTimerRef.current) {
         window.clearTimeout(imageTimerRef.current)
         imageTimerRef.current = null
@@ -263,7 +281,9 @@ export function SequentialClipPlayer({
     const v = videoRef.current
     if (!v || !current || current.kind !== 'video') return
     if (!resolvedVideoSrc) return
-    v.currentTime = 0
+    const startLocal = pendingLocalRef.current || 0
+    pendingLocalRef.current = 0
+    try { v.currentTime = startLocal } catch { v.currentTime = 0 }
     if (isPlaying) {
       v.play().catch(() => {
         /* autoplay may be blocked — user can click play */
@@ -272,6 +292,7 @@ export function SequentialClipPlayer({
       v.pause()
     }
   }, [current?.id, current?.kind, isPlaying, resolvedVideoSrc])
+
 
   // Apply clip volume to the active video element.
   useEffect(() => {
