@@ -364,14 +364,7 @@ export function SequentialClipPlayer({
           </div>
         </div>
 
-        <div className="flex flex-col gap-1 border-t border-white/10 px-4 py-3">
-          <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
-            {current.label ?? (current.kind === 'video' ? 'Clip' : 'Image')}
-          </p>
-          <p className="text-[11px] leading-5 text-zinc-500">
-            Live preview includes your music & voiceover. Final Film saves to Library.
-          </p>
-        </div>
+
 
         {/* Synced soundtrack waveforms (live preview only — not part of Final Film). */}
         <PreviewSoundtrackWaveforms
