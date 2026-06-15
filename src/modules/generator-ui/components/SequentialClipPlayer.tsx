@@ -353,7 +353,7 @@ export function SequentialClipPlayer({
       <div
         className="overflow-hidden rounded-[22px] border border-white/10 bg-[#07080a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur"
         style={{
-          width: ratioToWidth(frameRatio),
+          width: 'fit-content',
           maxWidth: 'calc(100vw - 56rem)',
           maxHeight: `${maxHeightPx}px`,
         }}
