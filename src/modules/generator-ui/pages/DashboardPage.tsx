@@ -7554,7 +7554,7 @@ export default function DashboardPage() {
                       videoBoxStyle={{
                         aspectRatio: ratioToCss(getRatioFor(previewItem.job)),
                         height: ratioToHeight(getRatioFor(previewItem.job)),
-                        maxHeight: `${Math.max(160, previewMaxHeightPx - (64 + (musicUrl ? 52 : 0) + (voiceoverUrl ? 52 : 0)))}px`,
+                        maxHeight: `${Math.max(160, previewMaxHeightPx - ((musicUrl ? 52 : 0) + (voiceoverUrl ? 52 : 0)))}px`,
                         maxWidth: 'calc(100vw - 56rem)',
                       }}
                       className="h-full w-full bg-black object-contain"
@@ -7676,34 +7676,6 @@ export default function DashboardPage() {
                   </div>
                 </div>
               )}
-              <div className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
-                  {previewItem.job.input_prompt}
-                </p>
-                <div className="flex shrink-0 items-center gap-2">
-                  {previewItem.job.video?.storage_path && !isReadOnlyProject ? (
-                    <button
-                      type="button"
-                      onClick={() => setTrimmingJobId(previewItem.job.id)}
-                      aria-label="Trim clip"
-                      title="Trim clip"
-                      className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-zinc-300 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-200"
-                    >
-                      <Scissors className="h-4 w-4" aria-hidden="true" />
-                    </button>
-                  ) : null}
-                  <span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-zinc-400">
-                    <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(previewItem.job.status)}`} />
-                    {formatStatusLabel(previewItem.job.status)}
-                    {(() => {
-                      const status = normalizeStatus(previewItem.job.status)
-                      if (status !== 'processing' && status !== 'pending') return null
-                      const pct = getJobProgressPercent(previewItem.job)
-                      return pct !== null ? <span className="tabular-nums text-amber-300">{pct}%</span> : null
-                    })()}
-                  </span>
-                </div>
-              </div>
             </div>
           </div>
           )
