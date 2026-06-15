@@ -218,6 +218,36 @@ export const PreviewSoundtrackWaveforms = forwardRef<
         } catch { /* ignore */ }
       }
     },
+    syncTime: (videoCurrentTime: number) => {
+      const t = Math.max(0, videoCurrentTime)
+      const DRIFT = 0.25
+      // Voiceover follows the video 1:1; only correct when it drifts.
+      const v = voiceWsRef.current
+      if (v && voiceReadyRef.current) {
+        try {
+          const dur = v.getDuration()
+          const target = dur > 0 ? Math.min(t, Math.max(0, dur - 0.05)) : t
+          if (Math.abs(v.getCurrentTime() - target) > DRIFT) v.setTime(target)
+        } catch { /* ignore */ }
+      }
+      // Music maps into its window; correct only on meaningful drift.
+      const m = musicWsRef.current
+      const range = rangeRef.current
+      if (m && musicReadyRef.current) {
+        try {
+          let target: number
+          if (range && range[1] > range[0]) {
+            const [start, end] = range
+            const win = end - start
+            target = start + (t % win)
+          } else {
+            const dur = m.getDuration()
+            target = dur > 0 ? t % dur : t
+          }
+          if (Math.abs(m.getCurrentTime() - target) > DRIFT) m.setTime(target)
+        } catch { /* ignore */ }
+      }
+    },
   }))
 
   if (!musicUrl && !voiceoverUrl) return null
