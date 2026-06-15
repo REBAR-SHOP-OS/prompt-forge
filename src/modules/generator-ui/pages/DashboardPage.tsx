@@ -687,6 +687,56 @@ export default function DashboardPage() {
       setDownloadingId(null)
     }
   }
+  // Fast, direct download: hands the browser a signed URL with a download
+  // Content-Disposition so it streams the file natively — no in-browser fetch
+  // into memory and no ffmpeg transcode. Falls back gracefully on failure.
+  const downloadDirect = async (cardId: string, url: string, namePrefix: string) => {
+    if (downloadingId) return
+    setDownloadingId(cardId)
+    try {
+      const lower = url.toLowerCase().split('?')[0]
+      const ext = lower.endsWith('.mp4') ? 'mp4'
+        : lower.endsWith('.webm') ? 'webm'
+        : lower.endsWith('.mov') ? 'mov'
+        : 'mp4'
+      const filename = `${namePrefix}-${cardId.slice(0, 8)}.${ext}`
+
+      // For our own private merged-videos / user-videos objects, mint a signed
+      // URL with the `download` option so the server sets Content-Disposition.
+      let href: string | null = null
+      try {
+        const parsed = new URL(url)
+        const m = parsed.pathname.match(
+          /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/,
+        )
+        if (m) {
+          const bucket = m[1]
+          let path = m[2]
+          try { path = decodeURIComponent(path) } catch { /* keep raw */ }
+          if (bucket === MERGED_BUCKET || bucket === 'user-videos') {
+            const { data, error } = await supabase.storage
+              .from(bucket)
+              .createSignedUrl(path, 60 * 60, { download: filename })
+            if (!error && data?.signedUrl) href = data.signedUrl
+          }
+        }
+      } catch { /* fall through to proxied URL */ }
+
+      if (!href) href = await proxiedVideoUrl(url)
+
+      const a = document.createElement('a')
+      a.href = href
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+    } catch (err) {
+      console.error('Direct download failed', err)
+      window.open(url, '_blank')
+    } finally {
+      setDownloadingId(null)
+    }
+  }
   const downloadImageFile = async (imageId: string, url: string) => {
     if (downloadingId) return
     setDownloadingId(imageId)
