@@ -7366,18 +7366,8 @@ export default function DashboardPage() {
         onUseAsPrompt={(text, imageUrl) => {
           setPromptText(text)
           if (imageUrl) {
-            setGenerationMode('image-to-video')
             setUploadTarget('Start')
-            setUploadedFiles([{
-              id: Date.now(),
-              name: 'product-ad-reference.png',
-              size: 0,
-              target: 'Start',
-              type: 'image/png',
-              status: 'ready',
-              url: imageUrl,
-              error: null,
-            }])
+            void handleUseImageAsStart(imageUrl)
           }
         }}
         onSendScenes={async (scenes, imageUrl) => {
@@ -7386,18 +7376,8 @@ export default function DashboardPage() {
             .join('\n\n')
           setPromptText(tagged)
           if (imageUrl) {
-            setGenerationMode('image-to-video')
             setUploadTarget('Start')
-            setUploadedFiles([{
-              id: Date.now(),
-              name: 'product-ad-reference.png',
-              size: 0,
-              target: 'Start',
-              type: 'image/png',
-              status: 'ready',
-              url: imageUrl,
-              error: null,
-            }])
+            await handleUseImageAsStart(imageUrl)
           }
         }}
       />
