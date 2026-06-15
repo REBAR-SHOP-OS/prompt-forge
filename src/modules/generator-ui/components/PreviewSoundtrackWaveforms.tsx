@@ -18,6 +18,12 @@ export type PreviewSoundtrackHandle = {
    * always re-clamped into its selection window.
    */
   handleSeek: (videoCurrentTime: number) => void
+  /**
+   * Continuous, gentle re-sync used during playback (driven by the video's
+   * `timeupdate`). Only corrects when drift exceeds a small threshold so the
+   * audio doesn't stutter while it's already in sync.
+   */
+  syncTime: (videoCurrentTime: number) => void
 }
 
 type Props = {
@@ -209,6 +215,36 @@ export const PreviewSoundtrackWaveforms = forwardRef<
             const target = dur > 0 ? t % dur : t
             m.setTime(target)
           }
+        } catch { /* ignore */ }
+      }
+    },
+    syncTime: (videoCurrentTime: number) => {
+      const t = Math.max(0, videoCurrentTime)
+      const DRIFT = 0.25
+      // Voiceover follows the video 1:1; only correct when it drifts.
+      const v = voiceWsRef.current
+      if (v && voiceReadyRef.current) {
+        try {
+          const dur = v.getDuration()
+          const target = dur > 0 ? Math.min(t, Math.max(0, dur - 0.05)) : t
+          if (Math.abs(v.getCurrentTime() - target) > DRIFT) v.setTime(target)
+        } catch { /* ignore */ }
+      }
+      // Music maps into its window; correct only on meaningful drift.
+      const m = musicWsRef.current
+      const range = rangeRef.current
+      if (m && musicReadyRef.current) {
+        try {
+          let target: number
+          if (range && range[1] > range[0]) {
+            const [start, end] = range
+            const win = end - start
+            target = start + (t % win)
+          } else {
+            const dur = m.getDuration()
+            target = dur > 0 ? t % dur : t
+          }
+          if (Math.abs(m.getCurrentTime() - target) > DRIFT) m.setTime(target)
         } catch { /* ignore */ }
       }
     },
