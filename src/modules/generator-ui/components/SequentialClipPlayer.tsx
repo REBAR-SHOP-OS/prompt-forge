@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Clock, LoaderCircle, Pause, Play, X } from 'lucide-react'
 import { usePlayableVideoUrl } from '@/modules/generator-ui/lib/usePlayableVideoUrl'
+import {
+  PreviewSoundtrackWaveforms,
+  type PreviewSoundtrackHandle,
+} from '@/modules/generator-ui/components/PreviewSoundtrackWaveforms'
 
 function formatDuration(sec: number): string {
   if (!Number.isFinite(sec) || sec <= 0) return '--:--'
@@ -105,8 +109,7 @@ export function SequentialClipPlayer({
   const totalDuration = useTotalDuration(clips)
   const [isPlaying, setIsPlaying] = useState(true)
   const videoRef = useRef<HTMLVideoElement | null>(null)
-  const musicRef = useRef<HTMLAudioElement | null>(null)
-  const voiceRef = useRef<HTMLAudioElement | null>(null)
+  const soundtrackRef = useRef<PreviewSoundtrackHandle | null>(null)
   const imageTimerRef = useRef<number | null>(null)
   // Tracks whether we've already attempted a one-time reload for the current
   // clip's source after a playback error, so a permanently-bad source skips
@@ -184,50 +187,16 @@ export function SequentialClipPlayer({
     v.muted = clipVolume <= 0
   }, [current?.id, clipVolume])
 
-  // Music: play/pause + loop within range; restarts when src changes.
+  // Drive the soundtrack waveforms (music + voiceover) from the player's
+  // play state so the audio stays locked to the picture. The waveform
+  // component owns volume/range/looping internally.
   useEffect(() => {
-    const a = musicRef.current
-    if (!a) return
-    a.volume = Math.max(0, Math.min(1, musicVolume))
-    if (!musicUrl) {
-      a.pause()
-      return
-    }
-    const start = musicRange?.[0] ?? 0
-    const end = musicRange?.[1] ?? 0
-    const onTime = () => {
-      if (end > start && a.currentTime >= end) {
-        a.currentTime = start
-      }
-    }
-    a.addEventListener('timeupdate', onTime)
-    if (isPlaying) {
-      // Only seek to start if we're outside the window.
-      if (end > start && (a.currentTime < start || a.currentTime >= end)) {
-        a.currentTime = start
-      }
-      a.play().catch(() => { /* ignore autoplay block */ })
-    } else {
-      a.pause()
-    }
-    return () => { a.removeEventListener('timeupdate', onTime) }
-  }, [musicUrl, musicRange?.[0], musicRange?.[1], musicVolume, isPlaying])
+    const s = soundtrackRef.current
+    if (!s) return
+    if (isPlaying) s.play()
+    else s.pause()
+  }, [isPlaying, musicUrl, voiceoverUrl, current?.id])
 
-  // Voiceover: plays once per session; restart when src changes or user toggles play.
-  useEffect(() => {
-    const a = voiceRef.current
-    if (!a) return
-    a.volume = Math.max(0, Math.min(1, voiceoverVolume))
-    if (!voiceoverUrl) {
-      a.pause()
-      return
-    }
-    if (isPlaying) {
-      a.play().catch(() => { /* ignore */ })
-    } else {
-      a.pause()
-    }
-  }, [voiceoverUrl, voiceoverVolume, isPlaying])
 
   function goNext() {
     if (clips.length === 0) return
@@ -395,13 +364,15 @@ export function SequentialClipPlayer({
           </p>
         </div>
 
-        {/* Hidden audio overlays for live preview only — not part of Final Film. */}
-        {musicUrl ? (
-          <audio ref={musicRef} src={musicUrl} preload="auto" loop={!musicRange || musicRange[1] <= musicRange[0]} />
-        ) : null}
-        {voiceoverUrl ? (
-          <audio ref={voiceRef} src={voiceoverUrl} preload="auto" />
-        ) : null}
+        {/* Synced soundtrack waveforms (live preview only — not part of Final Film). */}
+        <PreviewSoundtrackWaveforms
+          ref={soundtrackRef}
+          musicUrl={musicUrl}
+          musicRange={musicRange}
+          musicVolume={musicVolume}
+          voiceoverUrl={voiceoverUrl}
+          voiceoverVolume={voiceoverVolume}
+        />
       </div>
     </div>
   )
