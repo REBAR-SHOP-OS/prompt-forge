@@ -4988,13 +4988,13 @@ export default function DashboardPage() {
    */
   async function regenerateCard(
     job: JobDetail,
-    override?: { providerKey: 'wan' | 'flow' | 'local'; requestedModel: string },
+    override?: { providerKey?: 'wan' | 'flow' | 'local'; requestedModel?: string; prompt?: string },
   ) {
     if (regeneratingIds.has(job.id)) return
 
-    const prompt = (job.input_prompt ?? '').trim()
+    const prompt = (override?.prompt ?? job.input_prompt ?? '').trim()
     if (!prompt) {
-      setVideoColumnMessage('Cannot regenerate: original prompt is empty.')
+      setVideoColumnMessage('Cannot regenerate: prompt is empty.')
       return
     }
 
