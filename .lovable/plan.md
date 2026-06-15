@@ -1,28 +1,23 @@
 ## Goal
+Two fixes in the preview area of `src/modules/generator-ui/pages/DashboardPage.tsx`:
 
-Move the "Live preview all cards" action from the right-side Pending panel header to the marked spot at the top of the preview area, give it a clear label so the user understands what it does, and make live preview the always-on default that auto-runs.
+1. The "Live preview — playing all cards" pill currently overlaps the fixed top toolbar (Start over / Final film / Music / Voiceover). Make it a clearly separate control that no longer sits on top of those buttons.
+2. Clicking on the empty (black) space around the preview should start the full live preview of all cards stitched together.
 
-## Changes (all in `src/modules/generator-ui/pages/DashboardPage.tsx`)
+## Changes
 
-### 1. Add a labeled control at the top of the preview area
-In the `<main>` preview region (the 56px top zone at line ~7438-7442), add a centered, clearly-labeled button placed in the marked area above the video. Instead of a bare icon, it shows an icon + text so its purpose is obvious:
+### 1. Stop the preview pill from overlapping the toolbar
+The toolbar is `fixed top-4` and horizontally centered. The preview pill (lines 7443-7471) is also centered and sits at `top-3` of `<main>`, so they collide.
 
-```text
-[ ▷  Live preview — play all cards ]
-```
+- Reposition the pill so it sits clearly **below** the fixed toolbar (move from `top-3` to roughly `top-16`, i.e. below the ~52px toolbar row), keeping it centered and visually distinct.
+- Adjust `<main>`'s `paddingTop` (line 7441) if needed so the lowered pill doesn't overlap the player.
+- Keep all existing styling/states (emerald "live" state vs. default Play icon) and its onClick (`setVideoColumnMessage(null)`, `setPreviewVideoId(null)`, `setPreviewDismissed(false)`).
 
-- Uses the existing `Play` icon plus a visible text label (not just a tooltip), with `title`/`aria-label` for accessibility.
-- Clicking it runs the full live sequence: `setPreviewVideoId(null)`, `setPreviewDismissed(false)`, and clears any `videoColumnMessage`.
-- It is shown whenever `playableSequenceClips.length >= 2` (i.e. whenever a live preview is possible).
-- It is styled as "active/live" by default (e.g. emerald accent) when the current `previewItem.kind === 'sequence'`, so the user can see the live preview is the running default.
-
-### 2. Remove the duplicate icon from the Pending panel header
-Remove the bare `Play` "Live preview all cards" button (lines ~7779-7795) from the working-clips header, since the action now lives at the marked location above the preview.
-
-### 3. Keep live preview as the default that always runs
-The default already resolves to the sequential live preview when 2+ clips exist (`previewItem` logic, lines ~3307-3312) and `SequentialClipPlayer` auto-plays (`isPlaying` defaults to true). No logic change needed beyond making the new control reflect/return to that default state. The new labeled button guarantees the user can always re-trigger the live default in one click.
+### 2. Click empty space → play all cards
+On the `<main>` background element (line 7438), add an `onClick` that triggers the same live-preview action used by the pill, but only when the click lands on the empty background itself (guard with `e.target === e.currentTarget`) so clicks on the player/controls are not hijacked. Only active when `playableSequenceClips.length >= 2`. Add `cursor`/`title` affordance so users understand the empty area is clickable.
 
 ## Verification
-- With 2+ ready cards, open the workspace → the labeled "Live preview" control appears centered above the video and the full sequence auto-plays.
-- Click a single card → preview switches to that card; the labeled control stays visible and, when clicked, returns to the live sequence and plays.
-- The old icon no longer appears in the Pending panel header.
+- With 2+ ready cards: the pill renders below the toolbar with no overlap; clicking it plays the full sequence.
+- Clicking the black empty area around the player starts the all-cards live preview; clicking the player itself does not reset it.
+
+This is a frontend/presentation-only change — no business logic or backend changes.
