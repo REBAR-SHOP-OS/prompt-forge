@@ -205,6 +205,25 @@ export default function ClipTrimmerDialog({
   const playheadPct = duration > 0 ? (currentTime / duration) * 100 : 0
   const pendingPct = pendingStart !== null && duration > 0 ? (pendingStart / duration) * 100 : null
 
+  // Build ruler ticks: major ticks get a label, minor ticks (half interval) are short.
+  const ticks = useMemo(() => {
+    if (!duration || duration <= 0) return [] as { pct: number; major: boolean; label?: string }[]
+    const major = chooseTickInterval(duration)
+    const minor = major / 2
+    const out: { pct: number; major: boolean; label?: string }[] = []
+    const seen = new Set<number>()
+    for (let t = 0; t <= duration + 1e-6; t += minor) {
+      const tt = Math.min(t, duration)
+      const key = Math.round(tt * 100)
+      if (seen.has(key)) continue
+      seen.add(key)
+      const isMajor = Math.abs(tt / major - Math.round(tt / major)) < 1e-3
+      out.push({ pct: (tt / duration) * 100, major: isMajor, label: isMajor ? fmtClock(tt) : undefined })
+    }
+    return out
+  }, [duration])
+
+
   return (
     <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
       <DialogContent className="max-w-3xl">
