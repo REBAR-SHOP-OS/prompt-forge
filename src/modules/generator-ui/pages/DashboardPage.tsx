@@ -7436,47 +7436,10 @@ export default function DashboardPage() {
       </div>
 
       <main
-        className={`relative grid place-items-center px-4 ${playableSequenceClips.length >= 2 ? 'cursor-pointer' : ''}`}
+        className="grid place-items-center px-4"
         aria-live="polite"
-        style={{ minHeight: `${previewMaxHeightPx + 96}px`, paddingTop: '96px' }}
-        onClick={(e) => {
-          if (e.target !== e.currentTarget) return
-          if (playableSequenceClips.length < 2) return
-          setVideoColumnMessage(null)
-          setPreviewVideoId(null)
-          setPreviewDismissed(false)
-        }}
-        title={playableSequenceClips.length >= 2 ? 'Click the empty area to play all cards' : undefined}
+        style={{ minHeight: `${previewMaxHeightPx + 56}px`, paddingTop: '56px' }}
       >
-        {playableSequenceClips.length >= 2 ? (
-          <div className="absolute inset-x-0 top-[68px] z-20 flex justify-center px-4">
-            <button
-              type="button"
-              onClick={() => {
-                setVideoColumnMessage(null)
-                setPreviewVideoId(null)
-                setPreviewDismissed(false)
-              }}
-              aria-label="Live preview — play all cards stitched together"
-              title="Live preview — play all cards stitched together"
-              className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold transition ${
-                previewItem?.kind === 'sequence'
-                  ? 'border-emerald-300/40 bg-emerald-300/15 text-emerald-100 shadow-[0_0_0_1px_rgba(110,231,183,0.15)]'
-                  : 'border-white/15 bg-[#141518]/95 text-zinc-200 hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-100'
-              }`}
-            >
-              {previewItem?.kind === 'sequence' ? (
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
-                </span>
-              ) : (
-                <Play className="h-3.5 w-3.5" aria-hidden="true" />
-              )}
-              {previewItem?.kind === 'sequence' ? 'Live preview — playing all cards' : 'Live preview — play all cards'}
-            </button>
-          </div>
-        ) : null}
         {previewItem ? (
           previewItem.kind === 'sequence' ? (
             <SequentialClipPlayer
@@ -7813,6 +7776,23 @@ export default function DashboardPage() {
                 <Upload className="h-4 w-4" aria-hidden="true" />
               )}
             </label>
+            <button
+              type="button"
+              onClick={() => {
+                if (playableSequenceClips.length === 0) {
+                  setVideoColumnMessage('No ready clips to live-preview yet.')
+                  return
+                }
+                setVideoColumnMessage(null)
+                setPreviewVideoId(null)
+                setPreviewDismissed(false)
+              }}
+              className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100"
+              aria-label="Live preview all cards"
+              title="Live preview all cards"
+            >
+              <Play className="h-4 w-4" aria-hidden="true" />
+            </button>
           </div>
           )}
         </div>
