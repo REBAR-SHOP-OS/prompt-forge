@@ -274,9 +274,9 @@ export function SequentialClipPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id, current?.kind, isPlaying])
 
-  // Try to autoplay videos when the active clip is a video. Re-runs when the
-  // resolved (proxied) source becomes available so playback starts as soon as
-  // the URL is ready, not only when the clip index changes.
+  // Load / seek the active video clip. Runs only when the active clip or its
+  // resolved (proxied) source changes — NOT on play/pause toggles — so pausing
+  // and resuming never rewrites currentTime (the playhead stays put).
   useEffect(() => {
     const v = videoRef.current
     if (!v || !current || current.kind !== 'video') return
@@ -288,10 +288,24 @@ export function SequentialClipPlayer({
       v.play().catch(() => {
         /* autoplay may be blocked — user can click play */
       })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.id, current?.kind, resolvedVideoSrc])
+
+  // Mirror the play/pause state onto the active video WITHOUT touching
+  // currentTime, so clicking the icon stops exactly at the current frame.
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v || !current || current.kind !== 'video') return
+    if (!resolvedVideoSrc) return
+    if (isPlaying) {
+      v.play().catch(() => {
+        /* autoplay may be blocked — user can click play */
+      })
     } else {
       v.pause()
     }
-  }, [current?.id, current?.kind, isPlaying, resolvedVideoSrc])
+  }, [isPlaying, current?.id, current?.kind, resolvedVideoSrc])
 
 
   // Apply clip volume to the active video element.
