@@ -114,16 +114,8 @@ export default function ClipTrimmerDialog({
   const norm = useMemo(() => normalizeCuts(cuts, duration), [cuts, duration])
   const newDuration = useMemo(() => totalKeptDuration(norm, duration), [norm, duration])
 
-  const onTrackClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    const track = trackRef.current
-    const v = videoRef.current
-    if (!track || !v || !duration) return
-    const rect = track.getBoundingClientRect()
-    const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width))
-    const t = ratio * duration
-    try { v.currentTime = t } catch { /* noop */ }
-    setCurrentTime(t)
-  }
+
+
 
   const markFromHere = () => {
     if (!duration) return
