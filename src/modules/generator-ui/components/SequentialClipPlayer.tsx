@@ -216,9 +216,13 @@ export function SequentialClipPlayer({
   useEffect(() => {
     const s = soundtrackRef.current
     if (!s) return
+    // Re-align the soundtrack to where this clip starts in the overall film,
+    // then start/stop it to match the player's play state.
+    s.handleSeek(offsetBeforeIndex(index))
     if (isPlaying) s.play()
     else s.pause()
-  }, [isPlaying, musicUrl, voiceoverUrl, current?.id])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying, musicUrl, voiceoverUrl, current?.id, index])
 
 
   function goNext() {
