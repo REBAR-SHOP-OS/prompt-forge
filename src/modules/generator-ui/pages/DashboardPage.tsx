@@ -7535,28 +7535,27 @@ export default function DashboardPage() {
                 maxHeight: `${previewMaxHeightPx}px`,
               }}
             >
-              <div
-                className="relative overflow-hidden bg-black"
-                style={{
-                  aspectRatio: ratioToCss(getRatioFor(previewItem.job)),
-                  height: ratioToHeight(getRatioFor(previewItem.job)),
-                  maxWidth: 'calc(100vw - 56rem)',
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={closePreview}
-                  aria-label="Close preview"
-                  title="Close preview"
-                  className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
-                >
-                  <X className="h-4 w-4" aria-hidden="true" />
-                </button>
-                {previewItem.job.video?.storage_path ? (() => {
-                  const src = getCardVideoSrc(previewItem.job.id, previewItem.job.video.storage_path) ?? previewItem.job.video.storage_path
-                  return (
+              {previewItem.job.video?.storage_path ? (() => {
+                const src = getCardVideoSrc(previewItem.job.id, previewItem.job.video.storage_path) ?? previewItem.job.video.storage_path
+                return (
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={closePreview}
+                      aria-label="Close preview"
+                      title="Close preview"
+                      className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+                    >
+                      <X className="h-4 w-4" aria-hidden="true" />
+                    </button>
                     <VideoWithSoundtrack
                       videoKey={`${previewItem.job.id}:${src}`}
+                      videoBoxClassName="overflow-hidden bg-black"
+                      videoBoxStyle={{
+                        aspectRatio: ratioToCss(getRatioFor(previewItem.job)),
+                        height: ratioToHeight(getRatioFor(previewItem.job)),
+                        maxWidth: 'calc(100vw - 56rem)',
+                      }}
                       className="h-full w-full bg-black object-contain"
                       src={src}
                       controls
@@ -7573,8 +7572,26 @@ export default function DashboardPage() {
                       voiceoverUrl={voiceoverUrl}
                       voiceoverVolume={voiceoverVolume}
                     />
-                  )
-                })() : (
+                  </div>
+                )
+              })() : (
+                <div
+                  className="relative overflow-hidden bg-black"
+                  style={{
+                    aspectRatio: ratioToCss(getRatioFor(previewItem.job)),
+                    height: ratioToHeight(getRatioFor(previewItem.job)),
+                    maxWidth: 'calc(100vw - 56rem)',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={closePreview}
+                    aria-label="Close preview"
+                    title="Close preview"
+                    className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+                  >
+                    <X className="h-4 w-4" aria-hidden="true" />
+                  </button>
                   <div className="grid h-full place-items-center px-6 text-center">
                     {(() => {
                       const status = normalizeStatus(previewItem.job.status)
@@ -7656,8 +7673,8 @@ export default function DashboardPage() {
                       )
                     })()}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
               <div className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="max-h-12 min-w-0 flex-1 overflow-hidden whitespace-normal break-words text-sm font-medium leading-6 text-zinc-200">
                   {previewItem.job.input_prompt}
