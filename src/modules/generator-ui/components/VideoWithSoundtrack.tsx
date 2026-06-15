@@ -1,6 +1,10 @@
 import { useEffect, useRef, type VideoHTMLAttributes } from 'react'
 import { LoaderCircle } from 'lucide-react'
 import { usePlayableVideoUrl } from '@/modules/generator-ui/lib/usePlayableVideoUrl'
+import {
+  PreviewSoundtrackWaveforms,
+  type PreviewSoundtrackHandle,
+} from '@/modules/generator-ui/components/PreviewSoundtrackWaveforms'
 
 type VideoBaseProps = Omit<VideoHTMLAttributes<HTMLVideoElement>, 'src' | 'muted'>
 
@@ -17,9 +21,9 @@ export interface VideoWithSoundtrackProps extends VideoBaseProps {
 
 /**
  * A <video> element that automatically synchronises a music track and a
- * voiceover track with the video's playback state. Used by the single-clip
- * preview so the user hears the same mix as the Final Film preview without
- * any extra controls.
+ * voiceover track with the video's playback state. The tracks are rendered as
+ * waveforms underneath the video and are driven entirely by the video element,
+ * so the audio stays locked to the picture and can never play separately.
  */
 export function VideoWithSoundtrack({
   src,
@@ -33,8 +37,7 @@ export function VideoWithSoundtrack({
   ...videoProps
 }: VideoWithSoundtrackProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
-  const musicRef = useRef<HTMLAudioElement | null>(null)
-  const voiceRef = useRef<HTMLAudioElement | null>(null)
+  const soundtrackRef = useRef<PreviewSoundtrackHandle | null>(null)
 
   // Apply clip volume / mute to the video element.
   useEffect(() => {
@@ -44,69 +47,24 @@ export function VideoWithSoundtrack({
     v.muted = clipVolume <= 0
   }, [clipVolume])
 
-  // Live volume updates for music / voiceover.
-  useEffect(() => {
-    const a = musicRef.current
-    if (a) a.volume = Math.max(0, Math.min(1, musicVolume))
-  }, [musicVolume])
-  useEffect(() => {
-    const a = voiceRef.current
-    if (a) a.volume = Math.max(0, Math.min(1, voiceoverVolume))
-  }, [voiceoverVolume])
-
-  // Sync audios with the video's play / pause / seek / end events.
+  // Sync the soundtrack waveforms with the video's play / pause / seek / end.
   useEffect(() => {
     const v = videoRef.current
     if (!v) return
 
-    const start = musicRange?.[0] ?? 0
-    const end = musicRange?.[1] ?? 0
-    const hasMusicWindow = end > start
-
-    const playMusic = () => {
-      const a = musicRef.current
-      if (!a || !musicUrl) return
-      if (hasMusicWindow && (a.currentTime < start || a.currentTime >= end)) {
-        a.currentTime = start
-      }
-      a.play().catch(() => { /* autoplay block — ignore */ })
-    }
-    const playVoice = () => {
-      const a = voiceRef.current
-      if (!a || !voiceoverUrl) return
-      a.play().catch(() => { /* ignore */ })
-    }
-    const pauseAll = () => {
-      musicRef.current?.pause()
-      voiceRef.current?.pause()
-    }
-
-    const onPlay = () => { playMusic(); playVoice() }
-    const onPause = () => { pauseAll() }
-    const onEnded = () => { pauseAll() }
-    const onSeeked = () => {
-      // Restart voiceover if user scrubbed back to the beginning.
-      if (voiceRef.current && v.currentTime <= 0.05) {
-        voiceRef.current.currentTime = 0
-      }
-      // Re-clamp music to its window.
-      const a = musicRef.current
-      if (a && hasMusicWindow && (a.currentTime < start || a.currentTime >= end)) {
-        a.currentTime = start
-      }
-    }
+    const onPlay = () => soundtrackRef.current?.play()
+    const onPause = () => soundtrackRef.current?.pause()
+    const onEnded = () => soundtrackRef.current?.pause()
+    const onSeeked = () => soundtrackRef.current?.handleSeek(v.currentTime)
 
     v.addEventListener('play', onPlay)
     v.addEventListener('pause', onPause)
     v.addEventListener('ended', onEnded)
     v.addEventListener('seeked', onSeeked)
 
-    // If video is already playing when this effect re-runs (e.g. URL changes
-    // for music/voice while playing), restart the audios in sync.
-    if (!v.paused && !v.ended) {
-      playMusic()
-      playVoice()
-    }
+    // If video is already playing when this effect re-runs (e.g. soundtrack URL
+    // changed while playing), restart the audios in sync.
+    if (!v.paused && !v.ended) soundtrackRef.current?.play()
 
     return () => {
       v.removeEventListener('play', onPlay)
@@ -114,72 +72,48 @@ export function VideoWithSoundtrack({
       v.removeEventListener('ended', onEnded)
       v.removeEventListener('seeked', onSeeked)
     }
-  }, [musicUrl, voiceoverUrl, musicRange?.[0], musicRange?.[1]])
-
-  // Loop music inside its window.
-  useEffect(() => {
-    const a = musicRef.current
-    if (!a || !musicUrl) return
-    const start = musicRange?.[0] ?? 0
-    const end = musicRange?.[1] ?? 0
-    if (!(end > start)) return
-    const onTime = () => {
-      if (a.currentTime >= end) a.currentTime = start
-    }
-    a.addEventListener('timeupdate', onTime)
-    return () => { a.removeEventListener('timeupdate', onTime) }
-  }, [musicUrl, musicRange?.[0], musicRange?.[1]])
-
-  // Pause audios when their URL is removed or component unmounts.
-  useEffect(() => {
-    return () => {
-      try { musicRef.current?.pause() } catch { /* ignore */ }
-      try { voiceRef.current?.pause() } catch { /* ignore */ }
-    }
-  }, [])
+  }, [musicUrl, voiceoverUrl])
 
   const { className: videoClassName, style: videoStyle, ...restVideoProps } = videoProps
 
   const { url: resolvedSrc, loading: srcLoading } = usePlayableVideoUrl(src)
 
   return (
-    <div className="relative inline-block h-full w-full">
-      {srcLoading ? (
-        <div className={`grid h-full w-full place-items-center bg-black text-zinc-500 ${videoClassName ?? ''}`} style={videoStyle}>
-          <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
-        </div>
-      ) : (
-        <video
-          {...restVideoProps}
-          key={videoKey}
-          ref={videoRef}
-          src={resolvedSrc}
-          className={videoClassName}
-          style={videoStyle}
-          onLoadedMetadata={(e) => {
-            // Apply clip volume as soon as the element is ready — the volume
-            // effect may have run while the <video> was still loading.
-            const el = e.currentTarget
-            el.volume = Math.max(0, Math.min(1, clipVolume))
-            el.muted = clipVolume <= 0
-          }}
-        />
-
-      )}
-      <span className="pointer-events-none absolute bottom-2 right-2 z-10 rounded-full border border-emerald-300/30 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-200 backdrop-blur">
-        Live preview
-      </span>
-      {musicUrl ? (
-        <audio
-          ref={musicRef}
-          src={musicUrl}
-          preload="auto"
-          loop={!musicRange || musicRange[1] <= musicRange[0]}
-        />
-      ) : null}
-      {voiceoverUrl ? (
-        <audio ref={voiceRef} src={voiceoverUrl} preload="auto" />
-      ) : null}
+    <div className="flex h-full w-full flex-col">
+      <div className="relative min-h-0 flex-1">
+        {srcLoading ? (
+          <div className={`grid h-full w-full place-items-center bg-black text-zinc-500 ${videoClassName ?? ''}`} style={videoStyle}>
+            <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
+          </div>
+        ) : (
+          <video
+            {...restVideoProps}
+            key={videoKey}
+            ref={videoRef}
+            src={resolvedSrc}
+            className={videoClassName}
+            style={videoStyle}
+            onLoadedMetadata={(e) => {
+              // Apply clip volume as soon as the element is ready — the volume
+              // effect may have run while the <video> was still loading.
+              const el = e.currentTarget
+              el.volume = Math.max(0, Math.min(1, clipVolume))
+              el.muted = clipVolume <= 0
+            }}
+          />
+        )}
+        <span className="pointer-events-none absolute bottom-2 right-2 z-10 rounded-full border border-emerald-300/30 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-200 backdrop-blur">
+          Live preview
+        </span>
+      </div>
+      <PreviewSoundtrackWaveforms
+        ref={soundtrackRef}
+        musicUrl={musicUrl}
+        musicRange={musicRange}
+        musicVolume={musicVolume}
+        voiceoverUrl={voiceoverUrl}
+        voiceoverVolume={voiceoverVolume}
+      />
     </div>
   )
 }
