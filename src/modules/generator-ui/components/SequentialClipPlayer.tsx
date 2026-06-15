@@ -246,6 +246,7 @@ export function SequentialClipPlayer({
           style={{
             aspectRatio: ratioToCss(frameRatio),
             height: ratioToHeight(frameRatio),
+            maxHeight: `${videoMaxHeightPx}px`,
             maxWidth: 'calc(100vw - 56rem)',
           }}
         >
