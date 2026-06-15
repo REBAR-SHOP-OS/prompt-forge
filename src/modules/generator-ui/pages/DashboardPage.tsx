@@ -6941,7 +6941,38 @@ export default function DashboardPage() {
 
 
       <div className="fixed left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-2 sm:top-5">
+      {(() => {
+        const hasReadyClips = playableSequenceClips.length > 0
+        return (
+          <button
+            type="button"
+            onClick={() => {
+              if (playableSequenceClips.length === 0) {
+                setVideoColumnMessage('No ready clips to live-preview yet.')
+                return
+              }
+              setVideoColumnMessage(null)
+              setPreviewVideoId(null)
+              setPreviewDismissed(false)
+            }}
+            className={`relative flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs uppercase tracking-[0.18em] transition ${
+              hasReadyClips
+                ? 'border-emerald-400/40 bg-emerald-400/15 text-emerald-100 shadow-[0_0_18px_-4px_rgba(16,185,129,0.7)] hover:border-emerald-300/60 hover:bg-emerald-400/25'
+                : 'border-white/10 bg-white/[0.04] text-zinc-400/70'
+            }`}
+            aria-label="Connect all cards into one continuous preview"
+            title="Connect all cards into one continuous preview"
+          >
+            {hasReadyClips ? (
+              <span className="pointer-events-none absolute inset-0 rounded-md ring-2 ring-emerald-400/50 animate-ping" aria-hidden="true" />
+            ) : null}
+            <Play className={`relative h-[14px] w-[14px] ${hasReadyClips ? 'animate-pulse' : ''}`} aria-hidden="true" />
+            <span className="relative">Preview</span>
+          </button>
+        )
+      })()}
       <AlertDialog>
+
         <AlertDialogTrigger asChild>
           <button
             className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100"
