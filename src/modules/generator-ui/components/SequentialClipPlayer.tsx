@@ -407,8 +407,14 @@ export function SequentialClipPlayer({
                   // Record this clip's true duration so cumulative film time
                   // (and the soundtrack sync) stays accurate.
                   if (current && Number.isFinite(el.duration) && el.duration > 0) {
-                    clipDurationsRef.current.set(current.id, el.duration)
+                    setClipDurations((prev) =>
+                      prev[current.id] === el.duration ? prev : { ...prev, [current.id]: el.duration },
+                    )
                   }
+                }}
+                onTimeUpdate={(e) => {
+                  if (scrubbingRef.current) return
+                  setGlobalTime(offsetBeforeIndex(index) + e.currentTarget.currentTime)
                 }}
                 onSeeking={(e) => syncSoundtrackToFilmTime(e.currentTarget.currentTime)}
                 onSeeked={(e) => syncSoundtrackToFilmTime(e.currentTarget.currentTime)}
