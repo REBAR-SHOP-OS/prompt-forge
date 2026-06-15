@@ -9360,6 +9360,60 @@ export default function DashboardPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={editPromptJob !== null}
+        onOpenChange={(o) => {
+          if (!o) {
+            setEditPromptJob(null)
+            setEditPromptText('')
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl border-white/10 bg-[#0b0c0e]/95">
+          <DialogHeader>
+            <DialogTitle>Edit prompt & regenerate</DialogTitle>
+            <DialogDescription className="text-zinc-400">
+              Change the prompt and regenerate. The old card is permanently replaced by the new one.
+            </DialogDescription>
+          </DialogHeader>
+          <textarea
+            value={editPromptText}
+            onChange={(e) => setEditPromptText(e.target.value)}
+            rows={8}
+            className="w-full resize-y rounded-lg border border-white/10 bg-black/40 p-3 text-sm leading-6 text-zinc-100 outline-none focus:border-sky-300/40"
+            placeholder="Describe what you want to generate…"
+          />
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setEditPromptJob(null)
+                setEditPromptText('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={
+                !editPromptText.trim() ||
+                (editPromptJob ? regeneratingIds.has(editPromptJob.id) : true)
+              }
+              onClick={() => {
+                const target = editPromptJob
+                if (!target) return
+                const nextPrompt = editPromptText.trim()
+                setEditPromptJob(null)
+                setEditPromptText('')
+                regenerateCard(target, { prompt: nextPrompt })
+              }}
+            >
+              Regenerate
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+
       <Dialog open={confirmCostOpen} onOpenChange={setConfirmCostOpen}>
         <DialogContent className="max-w-md border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
           <DialogHeader>
