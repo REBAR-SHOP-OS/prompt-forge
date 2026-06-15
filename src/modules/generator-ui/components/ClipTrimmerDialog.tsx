@@ -34,6 +34,28 @@ function fmtTime(sec: number): string {
   return `${m}:${s.toFixed(1).padStart(4, '0')}`
 }
 
+/** Short clock label (no decimals) for ruler ticks: 0:00, 1:05, … */
+function fmtClock(sec: number): string {
+  if (!Number.isFinite(sec) || sec < 0) sec = 0
+  const m = Math.floor(sec / 60)
+  const s = Math.round(sec - m * 60)
+  const mm = s === 60 ? m + 1 : m
+  const ss = s === 60 ? 0 : s
+  return `${mm}:${String(ss).padStart(2, '0')}`
+}
+
+/** Pick a readable major-tick interval (seconds) for the given duration. */
+function chooseTickInterval(duration: number): number {
+  if (!Number.isFinite(duration) || duration <= 0) return 1
+  const candidates = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300]
+  // Aim for ~8 major ticks across the timeline.
+  const ideal = duration / 8
+  for (const c of candidates) {
+    if (c >= ideal) return c
+  }
+  return candidates[candidates.length - 1]
+}
+
 export default function ClipTrimmerDialog({
   open,
   onOpenChange,
@@ -92,16 +114,8 @@ export default function ClipTrimmerDialog({
   const norm = useMemo(() => normalizeCuts(cuts, duration), [cuts, duration])
   const newDuration = useMemo(() => totalKeptDuration(norm, duration), [norm, duration])
 
-  const onTrackClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    const track = trackRef.current
-    const v = videoRef.current
-    if (!track || !v || !duration) return
-    const rect = track.getBoundingClientRect()
-    const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width))
-    const t = ratio * duration
-    try { v.currentTime = t } catch { /* noop */ }
-    setCurrentTime(t)
-  }
+
+
 
   const markFromHere = () => {
     if (!duration) return
@@ -117,9 +131,44 @@ export default function ClipTrimmerDialog({
     }
   }
 
+  const [scrubbing, setScrubbing] = useState(false)
+
+  const seekToClientX = (clientX: number) => {
+    const track = trackRef.current
+    const v = videoRef.current
+    if (!track || !v || !duration) return
+    const rect = track.getBoundingClientRect()
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+    const t = ratio * duration
+    try { v.currentTime = t } catch { /* noop */ }
+    setCurrentTime(t)
+  }
+
+  const onTrackPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!duration) return
+    event.preventDefault()
+    try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* noop */ }
+    setScrubbing(true)
+    seekToClientX(event.clientX)
+  }
+
+  const onTrackPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!scrubbing) return
+    seekToClientX(event.clientX)
+  }
+
+  const endScrub = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!scrubbing) return
+    try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* noop */ }
+    setScrubbing(false)
+  }
+
   const removeCut = (idx: number) => {
     setCuts((prev) => prev.filter((_, i) => i !== idx))
   }
+
+
+
 
   const apply = async () => {
     setError(null)
@@ -147,6 +196,25 @@ export default function ClipTrimmerDialog({
 
   const playheadPct = duration > 0 ? (currentTime / duration) * 100 : 0
   const pendingPct = pendingStart !== null && duration > 0 ? (pendingStart / duration) * 100 : null
+
+  // Build ruler ticks: major ticks get a label, minor ticks (half interval) are short.
+  const ticks = useMemo(() => {
+    if (!duration || duration <= 0) return [] as { pct: number; major: boolean; label?: string }[]
+    const major = chooseTickInterval(duration)
+    const minor = major / 2
+    const out: { pct: number; major: boolean; label?: string }[] = []
+    const seen = new Set<number>()
+    for (let t = 0; t <= duration + 1e-6; t += minor) {
+      const tt = Math.min(t, duration)
+      const key = Math.round(tt * 100)
+      if (seen.has(key)) continue
+      seen.add(key)
+      const isMajor = Math.abs(tt / major - Math.round(tt / major)) < 1e-3
+      out.push({ pct: (tt / duration) * 100, major: isMajor, label: isMajor ? fmtClock(tt) : undefined })
+    }
+    return out
+  }, [duration])
+
 
   return (
     <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
@@ -189,19 +257,47 @@ export default function ClipTrimmerDialog({
               <span>{fmtTime(currentTime)} / {fmtTime(duration)}</span>
               <span>New length: <span className="font-medium text-zinc-200">{fmtTime(newDuration)}</span></span>
             </div>
+
+            {/* Seconds ruler */}
+            <div className="relative mb-1 h-5 w-full select-none">
+              {ticks.map((tk, i) => (
+                <div
+                  key={i}
+                  className="absolute bottom-0 flex -translate-x-1/2 flex-col items-center"
+                  style={{ left: `${tk.pct}%` }}
+                >
+                  {tk.label ? (
+                    <span className="mb-0.5 text-[10px] leading-none text-zinc-400 tabular-nums">{tk.label}</span>
+                  ) : null}
+                  <span className={tk.major ? 'h-2 w-px bg-zinc-500' : 'h-1 w-px bg-zinc-700'} />
+                </div>
+              ))}
+            </div>
+
             <div
               ref={trackRef}
-              onClick={onTrackClick}
+              onPointerDown={onTrackPointerDown}
+              onPointerMove={onTrackPointerMove}
+              onPointerUp={endScrub}
+              onPointerCancel={endScrub}
               role="slider"
               aria-label="Timeline"
               aria-valuemin={0}
               aria-valuemax={duration}
               aria-valuenow={currentTime}
-              className="relative h-8 w-full cursor-pointer overflow-hidden rounded-full bg-white/10"
+              className="relative h-10 w-full touch-none cursor-pointer overflow-hidden rounded-md border border-white/10 bg-white/5"
             >
+              {/* tick grid lines */}
+              {ticks.map((tk, i) => (
+                <div
+                  key={i}
+                  className={tk.major ? 'absolute inset-y-0 w-px bg-white/10' : 'absolute inset-y-2 w-px bg-white/[0.04]'}
+                  style={{ left: `${tk.pct}%` }}
+                />
+              ))}
               {/* progress */}
               <div
-                className="absolute inset-y-0 left-0 bg-emerald-400/30"
+                className="absolute inset-y-0 left-0 bg-emerald-400/25"
                 style={{ width: `${playheadPct}%` }}
               />
               {/* cut ranges */}
@@ -226,10 +322,18 @@ export default function ClipTrimmerDialog({
               ) : null}
               {/* playhead */}
               <div
-                className="absolute inset-y-0 w-0.5 bg-white"
+                className="absolute inset-y-0 z-10 w-0.5 bg-white shadow-[0_0_4px_rgba(255,255,255,0.6)]"
                 style={{ left: `${playheadPct}%` }}
-              />
+              >
+                <span className="absolute -top-0.5 left-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" />
+                {scrubbing ? (
+                  <span className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] tabular-nums text-zinc-100 ring-1 ring-white/15">
+                    {fmtTime(currentTime)}
+                  </span>
+                ) : null}
+              </div>
             </div>
+
           </div>
 
           <div className="flex flex-wrap items-center gap-2">

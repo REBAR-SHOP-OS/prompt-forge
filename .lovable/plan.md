@@ -1,12 +1,27 @@
-تغییر z-index آیکون‌های بالا-چپ هنگام باز شدن کشوی لایبرری
+## Goal
+Make the trim timeline in `ClipTrimmerDialog.tsx` more professional and add a seconds ruler with tick marks and time labels, so every part of the clip is precisely controllable.
 
-وقتی کشوی لایبرری (`isApprovedPanelOpen === true`) باز می‌شود، آیکون‌های ثابت (fixed) بالا-چپ صفحه — شامل دکمه منو (LayoutGrid)، دکمه Calendar/No Occasion، Storage و UsageStats — باید پشت کشو قرار بگیرند و مخفی شوند.
+## What will change (frontend only, `src/modules/generator-ui/components/ClipTrimmerDialog.tsx`)
 
-**تغییرات:**
-1. در `src/modules/generator-ui/pages/DashboardPage.tsx`، کلاس `z-50` دکمه منو (خط ~6079) به صورت شرطی تغییر کند: وقتی `isApprovedPanelOpen` true است `z-30`، در غیر این صورت `z-50`.
-2. همین تغییر برای div گروه آیکون‌های سمت راست دکمه منو (خط ~6106) که شامل Calendar/No Occasion، Storage و UsageStats است.
+1. **Seconds ruler above the track**
+   - Add a thin tick row aligned to the track width.
+   - Compute a smart tick interval based on duration (e.g. 0.5s for short clips, 1s/2s/5s/10s for longer clips) so labels never crowd.
+   - Major ticks get a time label (`0:00`, `0:05`, …) using the existing `fmtTime`; minor ticks are short lines.
 
-**نحوه کار:** کشوی لایبرری `z-40` دارد. با کاهش z-index آیکون‌ها از `z-50` به `z-30` هنگام باز بودن کشو، آن‌ها پشت لایه کشو می‌روند و با توجه به پس‌زمینه opaque کشو، از دید کاربر پنهان می‌شوند. وقتی کشو بسته است، z-index به `z-50` برمی‌گردد و آیکون‌ها دوباره روی کشو دیده می‌شوند.
+2. **More precise scrubbing**
+   - Keep click-to-seek, and add drag (pointer down + move) on the track so the playhead can be dragged smoothly.
+   - Show a live time tooltip/label at the playhead position while scrubbing.
 
-**فایل تغییر یافته:**
-- `src/modules/generator-ui/pages/DashboardPage.tsx`
+3. **Cleaner, taller track styling**
+   - Slightly refined track look (rounded, subtle grid lines at tick positions) so it reads like an editor timeline.
+   - Keep existing colors: progress (emerald), cut ranges (rose), pending marker (amber), playhead (white).
+
+4. **Frame-accurate readout**
+   - Display current time with one decimal (e.g. `0:10.4`) near the playhead and in the existing top readout, since the underlying values are already fractional.
+
+## Out of scope
+- No backend, trim logic, or `trimVideoLocally` changes.
+- No new dependencies; pure layout/markup/Tailwind within the existing component.
+
+## Notes
+All work stays inside the single component file using existing state (`duration`, `currentTime`, `cuts`, `pendingStart`) and the existing `fmtTime` helper.
