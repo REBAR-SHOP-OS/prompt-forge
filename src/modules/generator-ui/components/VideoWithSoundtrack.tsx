@@ -1,4 +1,4 @@
-import { useEffect, useRef, type VideoHTMLAttributes } from 'react'
+import { useEffect, useRef, type CSSProperties, type VideoHTMLAttributes } from 'react'
 import { LoaderCircle } from 'lucide-react'
 import { usePlayableVideoUrl } from '@/modules/generator-ui/lib/usePlayableVideoUrl'
 import {
@@ -17,6 +17,9 @@ export interface VideoWithSoundtrackProps extends VideoBaseProps {
   musicVolume?: number
   voiceoverUrl?: string | null
   voiceoverVolume?: number
+  /** Styling for the video's aspect-ratio box (the area that holds the <video>). */
+  videoBoxClassName?: string
+  videoBoxStyle?: CSSProperties
 }
 
 /**
@@ -34,6 +37,8 @@ export function VideoWithSoundtrack({
   musicVolume = 1,
   voiceoverUrl,
   voiceoverVolume = 1,
+  videoBoxClassName,
+  videoBoxStyle,
   ...videoProps
 }: VideoWithSoundtrackProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -79,8 +84,8 @@ export function VideoWithSoundtrack({
   const { url: resolvedSrc, loading: srcLoading } = usePlayableVideoUrl(src)
 
   return (
-    <div className="flex h-full w-full flex-col">
-      <div className="relative min-h-0 flex-1">
+    <div className="flex w-full flex-col">
+      <div className={`relative ${videoBoxClassName ?? ''}`} style={videoBoxStyle}>
         {srcLoading ? (
           <div className={`grid h-full w-full place-items-center bg-black text-zinc-500 ${videoClassName ?? ''}`} style={videoStyle}>
             <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
