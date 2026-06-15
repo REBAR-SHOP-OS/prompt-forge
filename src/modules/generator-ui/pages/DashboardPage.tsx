@@ -4333,9 +4333,16 @@ export default function DashboardPage() {
     // For a finalized project there is no draft yet, so clear activeDraftId
     // and let the effect create a fresh draft as before.
     if (isDraft) {
+      // Sync the ref synchronously so ensureActiveDraftGroupId() (which reads
+      // ensureActiveDraftIdRef.current) sees the resumed draft in the SAME tick,
+      // before the async setActiveDraftId state update has flushed. Without this,
+      // a new clip submitted right after resuming gets a fresh UUID and lands in
+      // a brand-new project instead of the one the user opened.
+      ensureActiveDraftIdRef.current = pid
       setActiveDraftId(pid)
       persistActiveDraftId(pid)
     } else {
+      ensureActiveDraftIdRef.current = null
       setActiveDraftId(null)
       persistActiveDraftId(null)
     }
@@ -4398,6 +4405,9 @@ export default function DashboardPage() {
     // split into per-scene cards and chain them with continuity instead of a single job.
     const parsedScenes = parseScenarioScenes(promptText)
     if (parsedScenes && parsedScenes.length >= 2) {
+      // Resume the open draft FIRST so the multi-scene clips join the current
+      // project instead of spawning a new one (same fix as the single-job path).
+      resumeSelectedProject()
       const firstSceneImageUrl = readyStartFrame?.url ?? undefined
       setPromptText('')
       setUploadedFiles([])
