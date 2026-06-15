@@ -7554,7 +7554,7 @@ export default function DashboardPage() {
                       videoBoxStyle={{
                         aspectRatio: ratioToCss(getRatioFor(previewItem.job)),
                         height: ratioToHeight(getRatioFor(previewItem.job)),
-                        maxHeight: `${Math.max(160, previewMaxHeightPx - ((musicUrl ? 52 : 0) + (voiceoverUrl ? 52 : 0)))}px`,
+                        maxHeight: `${previewMaxHeightPx}px`,
                         maxWidth: 'calc(100vw - 56rem)',
                       }}
                       className="h-full w-full bg-black object-contain"
@@ -7562,16 +7562,7 @@ export default function DashboardPage() {
                       controls
                       playsInline
                       preload="metadata"
-                      clipVolume={
-                        musicUrl && musicRange[1] > musicRange[0]
-                          ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
-                          : (voiceoverUrl ? voiceoverClipVolume : 1)
-                      }
-                      musicUrl={musicUrl}
-                      musicRange={musicRange}
-                      musicVolume={musicVolume}
-                      voiceoverUrl={voiceoverUrl}
-                      voiceoverVolume={voiceoverVolume}
+                      clipVolume={1}
                     />
                   </div>
                 )
