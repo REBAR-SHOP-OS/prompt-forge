@@ -81,6 +81,7 @@ export function VideoWithSoundtrack({
       v.removeEventListener('ended', onEnded)
       v.removeEventListener('seeking', onSeeking)
       v.removeEventListener('seeked', onSeeked)
+      v.removeEventListener('timeupdate', onTimeUpdate)
     }
   }, [musicUrl, voiceoverUrl])
 
