@@ -7776,24 +7776,8 @@ export default function DashboardPage() {
                 <Upload className="h-4 w-4" aria-hidden="true" />
               )}
             </label>
-            <button
-              type="button"
-              onClick={() => {
-                if (playableSequenceClips.length === 0) {
-                  setVideoColumnMessage('No ready clips to live-preview yet.')
-                  return
-                }
-                setVideoColumnMessage(null)
-                setPreviewVideoId(null)
-                setPreviewDismissed(false)
-              }}
-              className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100"
-              aria-label="Live preview all cards"
-              title="Live preview all cards"
-            >
-              <Play className="h-4 w-4" aria-hidden="true" />
-            </button>
           </div>
+
           )}
         </div>
 
