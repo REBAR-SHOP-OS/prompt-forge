@@ -62,12 +62,14 @@ export function VideoWithSoundtrack({
     const onEnded = () => soundtrackRef.current?.pause()
     const onSeeking = () => soundtrackRef.current?.handleSeek(v.currentTime)
     const onSeeked = () => soundtrackRef.current?.handleSeek(v.currentTime)
+    const onTimeUpdate = () => soundtrackRef.current?.syncTime(v.currentTime)
 
     v.addEventListener('play', onPlay)
     v.addEventListener('pause', onPause)
     v.addEventListener('ended', onEnded)
     v.addEventListener('seeking', onSeeking)
     v.addEventListener('seeked', onSeeked)
+    v.addEventListener('timeupdate', onTimeUpdate)
 
     // If video is already playing when this effect re-runs (e.g. soundtrack URL
     // changed while playing), restart the audios in sync.
