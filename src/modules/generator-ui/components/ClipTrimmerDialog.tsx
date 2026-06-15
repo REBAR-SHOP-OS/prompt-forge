@@ -171,6 +171,12 @@ export default function ClipTrimmerDialog({
     setScrubbing(false)
   }
 
+  const removeCut = (idx: number) => {
+    setCuts((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+
+
 
   const apply = async () => {
     setError(null)
