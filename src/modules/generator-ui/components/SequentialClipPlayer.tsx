@@ -223,10 +223,12 @@ export function SequentialClipPlayer({
   // Choose the chrome ratio from the first clip so the frame stays stable.
   const frameRatio = clips[0]?.ratio ?? current?.ratio ?? '16:9'
 
-  // Reserve vertical space for the caption footer + soundtrack waveforms so the
-  // video doesn't consume the entire height budget and clip them away.
-  const reservedFooterPx =
-    64 + (musicUrl ? 52 : 0) + (voiceoverUrl ? 52 : 0)
+  // Reserve vertical space only for the soundtrack waveforms (no prompt
+  // caption) so the video shrinks just enough to keep them fully visible.
+  const hasSoundtrack = Boolean(musicUrl) || Boolean(voiceoverUrl)
+  const reservedFooterPx = hasSoundtrack
+    ? 24 + (musicUrl ? 52 : 0) + (voiceoverUrl ? 52 : 0)
+    : 0
   const videoMaxHeightPx = Math.max(160, maxHeightPx - reservedFooterPx)
 
   if (!current) return null
