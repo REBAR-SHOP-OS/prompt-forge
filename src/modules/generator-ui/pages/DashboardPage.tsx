@@ -5071,14 +5071,18 @@ export default function DashboardPage() {
       })
       markDerivedClip(job.id, seededJob.id)
       hydrateIfComplete(createdJob)
-      // Keep the old version on the server (Storage is the permanent archive)
-      // and only hide it from the workspace so the regenerated card replaces it.
-      setWorkspaceHiddenJobIds((curr) => {
-        const next = new Set(curr)
-        next.add(job.id)
-        persistWorkspaceHiddenJobIds(next)
-        return next
-      })
+      // Permanently delete the old card now that the regenerated card has
+      // replaced it: removes the DB row, the Storage video file, and every
+      // local reference (workspace, project/archive, library, preview).
+      // The new card uses a different id, so it is untouched. A cleanup
+      // failure must not roll back or hide the freshly created card.
+      try {
+        await deleteCardConfirmed(job.id)
+      } catch (cleanupError) {
+        const cleanupMsg =
+          cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+        setVideoColumnMessage(`Regenerated, but could not remove the old card: ${cleanupMsg}`)
+      }
     } catch (error) {
       const message = generationStartErrorMessage(error, 'Could not regenerate this card.')
       setVideoColumnMessage(message)
