@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Clock, LoaderCircle, Pause, Play, X } from 'lucide-react'
+import { LoaderCircle, Pause, Play, X } from 'lucide-react'
 import { usePlayableVideoUrl } from '@/modules/generator-ui/lib/usePlayableVideoUrl'
 import {
   PreviewSoundtrackWaveforms,
