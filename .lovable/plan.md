@@ -1,36 +1,38 @@
-## Goal
+# رفع کندی دانلود فیلم نهایی
 
-Move the "Live preview all cards" play button out of the Pending panel header and into the top center toolbar (the spot highlighted in yellow), give it a distinct color, an explanatory tooltip, and a dynamic/animated state — purely a UI change.
+## مشکل
+کندی دانلود مربوط به دکمهٔ دانلودِ فیلم نهایی (Final Film) است. فیلم نهایی به‌صورت WebM ذخیره می‌شود و قبل از دانلود، **داخل مرورگر** با ffmpeg.wasm به MP4 تبدیل می‌شود. این تبدیل سنگین است: کل فایل اول در حافظه خوانده می‌شود و بعد ترنسکد می‌شود (روی دسکتاپ همیشه؛ روی موبایل اصلاً انجام نمی‌شود). همین باعث می‌شود کاربر مدت زیادی اسپینر ببیند.
 
-## Current state
+دانلود تصویر و صدا مستقیم هستند و تغییری لازم ندارند.
 
-- The play button lives in the Pending panel header at `src/modules/generator-ui/pages/DashboardPage.tsx` lines 7779–7795. It is a plain neutral icon button (`Play` icon) with title "Live preview all cards" that triggers the connected full-sequence preview (`SequentialClipPlayer`).
-- The top centered toolbar is the fixed bar at lines 6943+ (`<div className="fixed left-1/2 top-4 ...">`) containing Start over, Final film, Music, Voiceover.
+## راه‌حل (مطابق انتخاب کاربر: دانلود سریع + نگه‌داشتن گزینهٔ MP4)
+دکمهٔ دانلودِ فعلیِ فیلم نهایی به دو حالت تبدیل می‌شود:
 
-## Changes
+1. **دکمهٔ اصلی دانلود (سریع):** دانلود مستقیم فایل از سرور با لینک امضاشده و بدون تبدیل در مرورگر. مرورگر خودش فایل را به‌صورت استریم و سریع دانلود می‌کند (بدون بارگذاری کامل در حافظه و بدون ffmpeg). نام فایل با پسوند واقعی (mp4/webm) تنظیم می‌شود.
+2. **دکمهٔ کوچک کناری «MP4»:** همان مسیر فعلی (تبدیل به MP4 با ffmpeg.wasm) برای کاربرانی که نسخهٔ کاملاً سازگار MP4 می‌خواهند. رفتار فعلی دست‌نخورده باقی می‌ماند، فقط دیگر مسیر پیش‌فرض نیست.
 
-### 1. Remove the play button from the Pending header
-Delete the `<button>` block at lines 7779–7795 (the neutral `Play` icon button) so the Pending header keeps only Upload image / AI cover / Upload film.
+به این ترتیب حالت پیش‌فرض سریع می‌شود و هیچ قابلیتی حذف نمی‌شود.
 
-### 2. Add a distinct, animated play button to the top toolbar
-Insert a new button as the first child of the fixed toolbar (line ~6944, before the Start over `AlertDialog`), so it appears at the highlighted left position. It reuses the same click handler logic currently on the old button:
-- If `playableSequenceClips.length === 0` → set message "No ready clips to live-preview yet."
-- Otherwise clear message, `setPreviewVideoId(null)`, `setPreviewDismissed(false)`.
+## بهینه‌سازی جزئی اضافه
+در همان تابع دانلود، اگر فایل از قبل MP4 باشد، به‌جای fetchِ کامل بلاب، از همان مسیر دانلود مستقیم استفاده می‌شود (سریع‌تر، بدون کپی اضافی در حافظه).
 
-Visual treatment (distinct color + dynamic):
-- Use an accent/emerald gradient or emerald-tinted style so it stands out from the neutral white/[0.04] tabs, e.g. emerald border + emerald background tint + emerald text, matching the existing semantic accent pattern used elsewhere (Final film hover uses emerald).
-- Add a dynamic state: a soft pulsing glow / `animate-pulse` ring (or animated emerald ring) that activates when there are ready clips (`playableSequenceClips.length > 0`), so it visually invites the user to play. When no clips are ready, render it dimmed/disabled-looking without the animation.
-- Keep the `Play` icon, plus a short label like "Preview" so it reads as a toolbar action consistent with the other labeled tabs.
+## جزئیات فنی
+- فایل: `src/modules/generator-ui/pages/DashboardPage.tsx`
+  - افزودن یک تابع `downloadDirect(cardId, url, namePrefix)` که:
+    - برای باکت خصوصی `merged-videos` یک signed URL با گزینهٔ `download` (تنظیم `Content-Disposition`) می‌سازد و آن را روی یک `<a download>` ست می‌کند (دانلود نیتیو مرورگر، بدون fetch بلاب).
+    - در صورت شکست، fallback به رفتار فعلی (`window.open`).
+  - دکمهٔ خط ۸۴۶۰–۸۴۸۰ به دکمهٔ «دانلود سریع» تبدیل می‌شود که `downloadDirect` را صدا می‌زند.
+  - افزودن یک دکمهٔ کوچک «MP4» کنار آن که همان `downloadAsMp4` فعلی را صدا می‌زند.
+- مسیر دانلود لیست/کتابخانه (`variant === 'final'`) هم همین رفتار را می‌گیرد.
+- تابع `downloadAsMp4` و منطق ترنسکد **بدون تغییر** باقی می‌ماند (فقط دیگر در دکمهٔ اصلی استفاده نمی‌شود).
+- بدون تغییر در بک‌اند، RLS، یا edge functionها. لینک امضاشده با همان دسترسی فعلیِ مالک ساخته می‌شود.
 
-Tooltip / message to the user:
-- Set `title` (and `aria-label`) to clearly state it stitches the cards together, e.g. "Connect all cards into one continuous preview". This communicates that it links the cards together in the preview.
+## ریسک‌ها
+- فایل دانلودیِ سریع ممکن است WebM باشد (نه MP4). کاربر برای MP4 سازگار از دکمهٔ «MP4» استفاده می‌کند. این دقیقاً مطابق انتخاب کاربر است.
+- بدون تأثیر روی پخش، پیش‌نمایش، صدا یا سایر بخش‌ها.
 
-### 3. Keep behavior identical
-No change to preview logic, audio sync, or `SequentialClipPlayer`. Only relocation + styling + tooltip + animation.
-
-## Technical details
-
-- File touched: `src/modules/generator-ui/pages/DashboardPage.tsx` only.
-- Reuse existing state setters: `playableSequenceClips`, `setVideoColumnMessage`, `setPreviewVideoId`, `setPreviewDismissed`.
-- Animation via Tailwind utility classes (`animate-pulse` / ring + shadow), no new dependencies.
-- Place the button inside the `fixed left-1/2 top-4` toolbar; if it should remain visible in read-only projects, keep it outside the `!isReadOnlyProject` wrapper (preview is non-destructive, so showing it always is reasonable).
+## چک‌لیست تست
+1. روی دکمهٔ دانلودِ فیلم نهایی بزن → فایل بلافاصله و سریع دانلود شود.
+2. روی دکمهٔ «MP4» بزن → مثل قبل اسپینر و سپس فایل MP4.
+3. دانلود از کتابخانه (Final Videos) هم سریع باشد.
+4. دانلود تصویر و صدا مثل قبل کار کند.
