@@ -262,7 +262,10 @@ Deno.serve(async (req) => {
     const paceHint = targetDurationSec
       ? ` Pace the delivery naturally so the entire line lasts about ${targetDurationSec} seconds.`
       : ''
-    const styledPrompt = `${STYLE_INSTRUCTION[tone]}${paceHint}: ${text}`
+    const childHint = gender === 'child'
+      ? ' Use the bright, light, youthful voice of a young child'
+      : ''
+    const styledPrompt = `${STYLE_INSTRUCTION[tone]}${childHint}${paceHint}: ${text}`
 
     const url =
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${encodeURIComponent(apiKey)}`
