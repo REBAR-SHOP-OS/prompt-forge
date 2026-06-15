@@ -34,6 +34,28 @@ function fmtTime(sec: number): string {
   return `${m}:${s.toFixed(1).padStart(4, '0')}`
 }
 
+/** Short clock label (no decimals) for ruler ticks: 0:00, 1:05, … */
+function fmtClock(sec: number): string {
+  if (!Number.isFinite(sec) || sec < 0) sec = 0
+  const m = Math.floor(sec / 60)
+  const s = Math.round(sec - m * 60)
+  const mm = s === 60 ? m + 1 : m
+  const ss = s === 60 ? 0 : s
+  return `${mm}:${String(ss).padStart(2, '0')}`
+}
+
+/** Pick a readable major-tick interval (seconds) for the given duration. */
+function chooseTickInterval(duration: number): number {
+  if (!Number.isFinite(duration) || duration <= 0) return 1
+  const candidates = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300]
+  // Aim for ~8 major ticks across the timeline.
+  const ideal = duration / 8
+  for (const c of candidates) {
+    if (c >= ideal) return c
+  }
+  return candidates[candidates.length - 1]
+}
+
 export default function ClipTrimmerDialog({
   open,
   onOpenChange,
