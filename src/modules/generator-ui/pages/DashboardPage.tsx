@@ -7554,7 +7554,7 @@ export default function DashboardPage() {
                       videoBoxStyle={{
                         aspectRatio: ratioToCss(getRatioFor(previewItem.job)),
                         height: ratioToHeight(getRatioFor(previewItem.job)),
-                        maxHeight: `${Math.max(160, previewMaxHeightPx - (64 + (musicUrl ? 52 : 0) + (voiceoverUrl ? 52 : 0)))}px`,
+                        maxHeight: `${Math.max(160, previewMaxHeightPx - ((musicUrl ? 52 : 0) + (voiceoverUrl ? 52 : 0)))}px`,
                         maxWidth: 'calc(100vw - 56rem)',
                       }}
                       className="h-full w-full bg-black object-contain"
