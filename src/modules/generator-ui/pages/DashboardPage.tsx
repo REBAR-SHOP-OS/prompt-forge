@@ -8127,9 +8127,14 @@ export default function DashboardPage() {
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation()
-                          setPromptViewer(video.input_prompt)
+                          if (isReadOnlyProject || video.id.startsWith('merged-')) {
+                            setPromptViewer(video.input_prompt)
+                          } else {
+                            setEditPromptText(video.input_prompt ?? '')
+                            setEditPromptJob(video)
+                          }
                         }}
-                        title={video.input_prompt}
+                        title={isReadOnlyProject ? video.input_prompt : 'Edit prompt & regenerate'}
                         className="max-h-12 min-w-0 flex-1 cursor-pointer overflow-hidden whitespace-normal break-words text-left text-sm font-medium leading-6 text-zinc-200 transition hover:text-zinc-50"
                       >
                         {video.input_prompt}
