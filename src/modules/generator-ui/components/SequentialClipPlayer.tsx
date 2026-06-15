@@ -111,25 +111,64 @@ export function SequentialClipPlayer({
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const soundtrackRef = useRef<PreviewSoundtrackHandle | null>(null)
   const imageTimerRef = useRef<number | null>(null)
-  // Cache of each clip's duration (seconds), keyed by clip id, so we can
-  // compute the cumulative film time and keep the soundtrack in sync as the
-  // active clip changes or the active video scrubs.
-  const clipDurationsRef = useRef<Map<string, number>>(new Map())
+  // Per-clip duration (seconds) keyed by clip id, used to map a position on the
+  // film-wide scrub bar to the right clip + local time. Preloaded for videos
+  // and refreshed once each clip's metadata loads.
+  const [clipDurations, setClipDurations] = useState<Record<string, number>>({})
+  // The live film-wide playhead (seconds across all clips).
+  const [globalTime, setGlobalTime] = useState(0)
+  // True while the user is dragging the scrub bar (suppresses live updates).
+  const scrubbingRef = useRef(false)
+  // Local time (seconds) to seek the next active clip to once its video loads.
+  const pendingLocalRef = useRef(0)
   // Tracks whether we've already attempted a one-time reload for the current
   // clip's source after a playback error, so a permanently-bad source skips
   // instead of looping forever.
   const erroredOnceRef = useRef<string | null>(null)
 
+  const durationOf = (clip: SeqClip): number => {
+    if (clip.kind === 'image') return Math.max(0, clip.durationSec || 0)
+    return clipDurations[clip.id] ?? 0
+  }
+
   // Cumulative film time before the given clip index (sum of prior durations).
   const offsetBeforeIndex = (i: number): number => {
     let total = 0
-    for (let k = 0; k < i && k < clips.length; k++) {
-      const c = clips[k]
-      if (c.kind === 'image') total += Math.max(0, c.durationSec || 0)
-      else total += clipDurationsRef.current.get(c.id) ?? 0
-    }
+    for (let k = 0; k < i && k < clips.length; k++) total += durationOf(clips[k])
     return total
   }
+
+  const filmTotal = useMemo(() => {
+    let total = 0
+    for (const c of clips) total += durationOf(c)
+    return total
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clips, clipDurations])
+
+  // Preload every video clip's duration so the scrub bar math is accurate even
+  // before a clip has been played.
+  useEffect(() => {
+    let cancelled = false
+    const videos = clips.filter((c): c is SeqVideoClip => c.kind === 'video')
+    const missing = videos.filter((v) => !(v.id in clipDurations))
+    if (missing.length === 0) return
+    missing.forEach((v) => {
+      const el = document.createElement('video')
+      el.preload = 'metadata'
+      el.muted = true
+      el.src = v.src
+      const done = (dur: number) => {
+        if (cancelled) return
+        if (Number.isFinite(dur) && dur > 0) {
+          setClipDurations((prev) => (prev[v.id] === dur ? prev : { ...prev, [v.id]: dur }))
+        }
+      }
+      el.addEventListener('loadedmetadata', () => done(el.duration), { once: true })
+      el.addEventListener('error', () => done(0), { once: true })
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clips.map((c) => `${c.kind}:${c.id}`).join('|')])
 
   // Push the cumulative film time to the soundtrack so music/voiceover follow
   // the picture when the active clip changes or the active video seeks.
@@ -138,6 +177,38 @@ export function SequentialClipPlayer({
     if (!s) return
     s.handleSeek(offsetBeforeIndex(index) + Math.max(0, localTime))
   }
+
+  // Seek the whole film to an absolute time (seconds): pick the clip that owns
+  // that moment, activate it, and seek the video (or position an image) there.
+  const seekToFilmTime = (target: number) => {
+    if (clips.length === 0) return
+    const t = Math.max(0, Math.min(target, filmTotal || target))
+    let acc = 0
+    let targetIndex = clips.length - 1
+    for (let k = 0; k < clips.length; k++) {
+      const d = durationOf(clips[k]) || 0
+      if (t < acc + d || k === clips.length - 1) {
+        targetIndex = k
+        break
+      }
+      acc += d
+    }
+    const local = Math.max(0, t - acc)
+    setGlobalTime(t)
+    soundtrackRef.current?.handleSeek(t)
+    if (targetIndex === index) {
+      const v = videoRef.current
+      if (v && clips[targetIndex]?.kind === 'video') {
+        try { v.currentTime = local } catch { /* ignore */ }
+      } else {
+        pendingLocalRef.current = local
+      }
+    } else {
+      pendingLocalRef.current = local
+      setIndex(targetIndex)
+    }
+  }
+
 
   // Keep index inside bounds when clips change.
   useEffect(() => {
