@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Clock, LoaderCircle, Pause, Play, X } from 'lucide-react'
+import { LoaderCircle, Pause, Play, X } from 'lucide-react'
 import { usePlayableVideoUrl } from '@/modules/generator-ui/lib/usePlayableVideoUrl'
 import {
   PreviewSoundtrackWaveforms,
@@ -111,25 +111,64 @@ export function SequentialClipPlayer({
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const soundtrackRef = useRef<PreviewSoundtrackHandle | null>(null)
   const imageTimerRef = useRef<number | null>(null)
-  // Cache of each clip's duration (seconds), keyed by clip id, so we can
-  // compute the cumulative film time and keep the soundtrack in sync as the
-  // active clip changes or the active video scrubs.
-  const clipDurationsRef = useRef<Map<string, number>>(new Map())
+  // Per-clip duration (seconds) keyed by clip id, used to map a position on the
+  // film-wide scrub bar to the right clip + local time. Preloaded for videos
+  // and refreshed once each clip's metadata loads.
+  const [clipDurations, setClipDurations] = useState<Record<string, number>>({})
+  // The live film-wide playhead (seconds across all clips).
+  const [globalTime, setGlobalTime] = useState(0)
+  // True while the user is dragging the scrub bar (suppresses live updates).
+  const scrubbingRef = useRef(false)
+  // Local time (seconds) to seek the next active clip to once its video loads.
+  const pendingLocalRef = useRef(0)
   // Tracks whether we've already attempted a one-time reload for the current
   // clip's source after a playback error, so a permanently-bad source skips
   // instead of looping forever.
   const erroredOnceRef = useRef<string | null>(null)
 
+  const durationOf = (clip: SeqClip): number => {
+    if (clip.kind === 'image') return Math.max(0, clip.durationSec || 0)
+    return clipDurations[clip.id] ?? 0
+  }
+
   // Cumulative film time before the given clip index (sum of prior durations).
   const offsetBeforeIndex = (i: number): number => {
     let total = 0
-    for (let k = 0; k < i && k < clips.length; k++) {
-      const c = clips[k]
-      if (c.kind === 'image') total += Math.max(0, c.durationSec || 0)
-      else total += clipDurationsRef.current.get(c.id) ?? 0
-    }
+    for (let k = 0; k < i && k < clips.length; k++) total += durationOf(clips[k])
     return total
   }
+
+  const filmTotal = useMemo(() => {
+    let total = 0
+    for (const c of clips) total += durationOf(c)
+    return total
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clips, clipDurations])
+
+  // Preload every video clip's duration so the scrub bar math is accurate even
+  // before a clip has been played.
+  useEffect(() => {
+    let cancelled = false
+    const videos = clips.filter((c): c is SeqVideoClip => c.kind === 'video')
+    const missing = videos.filter((v) => !(v.id in clipDurations))
+    if (missing.length === 0) return
+    missing.forEach((v) => {
+      const el = document.createElement('video')
+      el.preload = 'metadata'
+      el.muted = true
+      el.src = v.src
+      const done = (dur: number) => {
+        if (cancelled) return
+        if (Number.isFinite(dur) && dur > 0) {
+          setClipDurations((prev) => (prev[v.id] === dur ? prev : { ...prev, [v.id]: dur }))
+        }
+      }
+      el.addEventListener('loadedmetadata', () => done(el.duration), { once: true })
+      el.addEventListener('error', () => done(0), { once: true })
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clips.map((c) => `${c.kind}:${c.id}`).join('|')])
 
   // Push the cumulative film time to the soundtrack so music/voiceover follow
   // the picture when the active clip changes or the active video seeks.
@@ -138,6 +177,38 @@ export function SequentialClipPlayer({
     if (!s) return
     s.handleSeek(offsetBeforeIndex(index) + Math.max(0, localTime))
   }
+
+  // Seek the whole film to an absolute time (seconds): pick the clip that owns
+  // that moment, activate it, and seek the video (or position an image) there.
+  const seekToFilmTime = (target: number) => {
+    if (clips.length === 0) return
+    const t = Math.max(0, Math.min(target, filmTotal || target))
+    let acc = 0
+    let targetIndex = clips.length - 1
+    for (let k = 0; k < clips.length; k++) {
+      const d = durationOf(clips[k]) || 0
+      if (t < acc + d || k === clips.length - 1) {
+        targetIndex = k
+        break
+      }
+      acc += d
+    }
+    const local = Math.max(0, t - acc)
+    setGlobalTime(t)
+    soundtrackRef.current?.handleSeek(t)
+    if (targetIndex === index) {
+      const v = videoRef.current
+      if (v && clips[targetIndex]?.kind === 'video') {
+        try { v.currentTime = local } catch { /* ignore */ }
+      } else {
+        pendingLocalRef.current = local
+      }
+    } else {
+      pendingLocalRef.current = local
+      setIndex(targetIndex)
+    }
+  }
+
 
   // Keep index inside bounds when clips change.
   useEffect(() => {
@@ -164,6 +235,8 @@ export function SequentialClipPlayer({
   }, [current?.id, onActiveClipChange])
 
   // Drive image clips with a timer; videos drive themselves via onEnded.
+  // The film-wide playhead is advanced with rAF so the scrub bar moves while
+  // an image clip is on screen.
   useEffect(() => {
     if (imageTimerRef.current) {
       window.clearTimeout(imageTimerRef.current)
@@ -171,12 +244,28 @@ export function SequentialClipPlayer({
     }
     if (!current) return
     if (current.kind !== 'image') return
+
+    const startLocal = Math.min(pendingLocalRef.current || 0, current.durationSec)
+    pendingLocalRef.current = 0
+    const base = offsetBeforeIndex(index)
+    if (!scrubbingRef.current) setGlobalTime(base + startLocal)
+
     if (!isPlaying) return
-    const ms = Math.max(500, Math.round(current.durationSec * 1000))
-    imageTimerRef.current = window.setTimeout(() => {
-      goNext()
-    }, ms)
+
+    const remainingMs = Math.max(200, Math.round((current.durationSec - startLocal) * 1000))
+    const startTs = performance.now()
+    let raf = 0
+    const tick = (now: number) => {
+      if (scrubbingRef.current) { raf = requestAnimationFrame(tick); return }
+      const elapsed = (now - startTs) / 1000
+      const local = Math.min(current.durationSec, startLocal + elapsed)
+      setGlobalTime(base + local)
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    imageTimerRef.current = window.setTimeout(() => { goNext() }, remainingMs)
     return () => {
+      cancelAnimationFrame(raf)
       if (imageTimerRef.current) {
         window.clearTimeout(imageTimerRef.current)
         imageTimerRef.current = null
@@ -192,7 +281,9 @@ export function SequentialClipPlayer({
     const v = videoRef.current
     if (!v || !current || current.kind !== 'video') return
     if (!resolvedVideoSrc) return
-    v.currentTime = 0
+    const startLocal = pendingLocalRef.current || 0
+    pendingLocalRef.current = 0
+    try { v.currentTime = startLocal } catch { v.currentTime = 0 }
     if (isPlaying) {
       v.play().catch(() => {
         /* autoplay may be blocked — user can click play */
@@ -201,6 +292,7 @@ export function SequentialClipPlayer({
       v.pause()
     }
   }, [current?.id, current?.kind, isPlaying, resolvedVideoSrc])
+
 
   // Apply clip volume to the active video element.
   useEffect(() => {
@@ -232,15 +324,11 @@ export function SequentialClipPlayer({
       if (next >= clips.length) {
         // Loop back and pause at the start so user can replay.
         setIsPlaying(false)
+        setGlobalTime(0)
         return 0
       }
       return next
     })
-  }
-
-  function goPrev() {
-    if (clips.length === 0) return
-    setIndex((i) => Math.max(0, i - 1))
   }
 
   function togglePlay() {
@@ -315,8 +403,14 @@ export function SequentialClipPlayer({
                   // Record this clip's true duration so cumulative film time
                   // (and the soundtrack sync) stays accurate.
                   if (current && Number.isFinite(el.duration) && el.duration > 0) {
-                    clipDurationsRef.current.set(current.id, el.duration)
+                    setClipDurations((prev) =>
+                      prev[current.id] === el.duration ? prev : { ...prev, [current.id]: el.duration },
+                    )
                   }
+                }}
+                onTimeUpdate={(e) => {
+                  if (scrubbingRef.current) return
+                  setGlobalTime(offsetBeforeIndex(index) + e.currentTarget.currentTime)
                 }}
                 onSeeking={(e) => syncSoundtrackToFilmTime(e.currentTarget.currentTime)}
                 onSeeked={(e) => syncSoundtrackToFilmTime(e.currentTarget.currentTime)}
@@ -350,51 +444,75 @@ export function SequentialClipPlayer({
             />
           )}
 
-          {/* Bottom overlay controls */}
-          <div className="absolute inset-x-0 bottom-0 z-10 flex items-center justify-between gap-2 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3 py-2">
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={goPrev}
-                disabled={index === 0}
-                aria-label="Previous clip"
-                className="grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 transition hover:border-white/30 hover:bg-white/10 disabled:opacity-40"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={togglePlay}
-                aria-label={isPlaying ? 'Pause' : 'Play'}
-                className="grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/70 text-zinc-100 transition hover:border-white/30 hover:bg-white/10"
-              >
-                {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-              </button>
-              <button
-                type="button"
-                onClick={goNext}
-                disabled={index >= clips.length - 1}
-                aria-label="Next clip"
-                className="grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 transition hover:border-white/30 hover:bg-white/10 disabled:opacity-40"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
+          {/* Bottom overlay controls: play/pause + film-wide scrub bar */}
+          <div className="absolute inset-x-0 bottom-0 z-10 flex items-center gap-3 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3 py-2">
+            <button
+              type="button"
+              onClick={togglePlay}
+              aria-label={isPlaying ? 'Pause' : 'Play'}
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-white/15 bg-black/70 text-zinc-100 transition hover:border-white/30 hover:bg-white/10"
+            >
+              {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+            </button>
+
+            <span className="shrink-0 text-[11px] font-semibold tabular-nums text-zinc-200">
+              {formatDuration(globalTime)}
+            </span>
+
+            <div
+              role="slider"
+              aria-label="Seek film"
+              aria-valuemin={0}
+              aria-valuemax={Math.round(filmTotal)}
+              aria-valuenow={Math.round(globalTime)}
+              tabIndex={0}
+              onPointerDown={(e) => {
+                if (filmTotal <= 0) return
+                e.currentTarget.setPointerCapture(e.pointerId)
+                scrubbingRef.current = true
+                const rect = e.currentTarget.getBoundingClientRect()
+                const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+                seekToFilmTime(frac * filmTotal)
+              }}
+              onPointerMove={(e) => {
+                if (!scrubbingRef.current || filmTotal <= 0) return
+                const rect = e.currentTarget.getBoundingClientRect()
+                const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+                setGlobalTime(frac * filmTotal)
+              }}
+              onPointerUp={(e) => {
+                if (filmTotal <= 0) return
+                const rect = e.currentTarget.getBoundingClientRect()
+                const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+                scrubbingRef.current = false
+                seekToFilmTime(frac * filmTotal)
+                try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
+              }}
+              onKeyDown={(e) => {
+                if (filmTotal <= 0) return
+                if (e.key === 'ArrowRight') { e.preventDefault(); seekToFilmTime(Math.min(filmTotal, globalTime + 1)) }
+                else if (e.key === 'ArrowLeft') { e.preventDefault(); seekToFilmTime(Math.max(0, globalTime - 1)) }
+              }}
+              className="group relative flex h-6 flex-1 cursor-pointer items-center"
+            >
+              <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-white/20">
+                <div
+                  className="absolute inset-y-0 left-0 rounded-full bg-emerald-400"
+                  style={{ width: `${filmTotal > 0 ? Math.min(100, (globalTime / filmTotal) * 100) : 0}%` }}
+                />
+              </div>
+              <div
+                className="pointer-events-none absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow"
+                style={{ left: `${filmTotal > 0 ? Math.min(100, (globalTime / filmTotal) * 100) : 0}%` }}
+              />
             </div>
-            <div className="flex items-center gap-2 text-xs font-semibold text-zinc-200">
-              <span
-                title="Total film duration"
-                className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/60 px-2 py-0.5 tabular-nums"
-              >
-                <Clock className="h-3 w-3" aria-hidden="true" />
-                {formatDuration(totalDuration)}
-              </span>
-              <span className="rounded-full border border-white/15 bg-black/60 px-2 py-0.5 tabular-nums">
-                {index + 1} / {clips.length}
-              </span>
-              <span className="inline rounded-full border border-emerald-300/30 bg-emerald-400/10 px-2 py-0.5 text-emerald-200">
-                Live preview
-              </span>
-            </div>
+
+            <span className="shrink-0 text-[11px] font-semibold tabular-nums text-zinc-200">
+              {formatDuration(filmTotal || totalDuration)}
+            </span>
+            <span className="hidden shrink-0 rounded-full border border-emerald-300/30 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-200 sm:inline">
+              Live preview
+            </span>
           </div>
         </div>
 
