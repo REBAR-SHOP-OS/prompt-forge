@@ -1,28 +1,32 @@
 ## Goal
-Add bulk-selection to the Library so users can select multiple **Draft** projects (and likewise multiple **Final video** projects) at once and delete them together, via a "select all" toggle plus per-card checkboxes.
+Add a **Child** voice option (alongside Female/Male) and **more tone themes** to the Voiceover dialog, wired end-to-end to the TTS edge function.
 
-## Where
-All changes are in `src/modules/generator-ui/pages/DashboardPage.tsx`, inside the Library aside (Final videos section ~line 8576, Drafts section ~line 8594, and the card renderer `renderCard` ~line 8511–8556). Deletion reuses the existing `deleteCard(jobId)` logic — no backend or business-logic changes.
+## Current state
+- Gender = `female | male`; Tone has 6 values (advertising, excited, calm, narrative, friendly, serious).
+- `VoiceoverDialog.tsx` defines these locally; the `tts-generate` edge function defines them again with a `VOICE_MAP[gender][tone]` (Gemini prebuilt voice names) and `STYLE_INSTRUCTION[tone]` prompts.
+- Both sides must stay in sync (gender×tone matrix).
 
-## Behavior
-- Each section header (Final videos / Drafts) gets a small **select icon** (e.g. `CheckSquare`/`ListChecks`) that toggles a "selection mode" for that section.
-- In selection mode:
-  - Each card in that section shows a checkbox in its corner.
-  - A header **"Select all"** toggle selects/deselects every card in that section.
-  - A **trash / "Delete selected (N)"** button appears; clicking it asks for one confirmation and deletes all selected cards.
-  - An **X / Cancel** exits selection mode and clears the selection.
-- Final videos and Drafts have independent selection state, so selecting in one section does not affect the other.
+## Changes
 
-## Technical details
-- Add component state:
-  - `draftSelectMode: boolean`, `selectedDraftIds: Set<string>`
-  - `finalSelectMode: boolean`, `selectedFinalIds: Set<string>`
-- In `renderCard(video, variant)`, when the matching section's select mode is on, render a checkbox overlay bound to the matching selection set (toggle add/remove of `video.id`). Clicking a card in select mode toggles its checkbox instead of opening it.
-- Header controls per section:
-  - Toggle-select-mode icon button.
-  - When active: "Select all" button (fills the set with the section's item ids), "Delete (N)" button, and "Cancel".
-- Bulk delete handler: a single `window.confirm` (e.g. "Delete N selected drafts permanently?"), then run the existing per-item delete sequentially/`Promise.allSettled` by calling the current `deleteCard` flow logic for each selected id. To avoid N confirm dialogs, factor the confirm out: add an internal `deleteCardConfirmed(jobId)` (current `deleteCard` body without the `window.confirm`) and have both single-delete and bulk-delete call it; `deleteCard` keeps its single confirm.
-- Reset each section's select mode + selection when its list becomes empty or after a successful bulk delete.
+### 1. Frontend — `src/modules/generator-ui/components/VoiceoverDialog.tsx`
+- Extend `Gender` type → add `'child'`; add Select option **Child** under Gender.
+- Extend `Tone` type and `TONE_LABELS` with new themes:
+  - `dramatic` (Dramatic), `whisper` (Whisper / Soft), `news` (News Anchor), `storytelling` (Storytelling), `cheerful` (Cheerful), `sad` (Sad / Emotional), `angry` (Angry / Intense)
+  - (kept alongside the existing 6)
+- No other UI logic changes; the existing Select renders new options automatically.
 
-## Out of scope
-No changes to backend, deletion semantics, draft/final data model, or the localStorage/backend sync logic — only UI selection + reusing existing delete.
+### 2. Backend — `supabase/functions/tts-generate/index.ts`
+- Add `'child'` to `Gender` type + `isGender` guard.
+- Add new tones to `Tone` type + `isTone` guard + `STYLE_INSTRUCTION` (one natural-language style prompt per new tone).
+- Extend `VOICE_MAP` to a full `gender × tone` matrix for all 3 genders and all tones.
+  - Child has no dedicated Gemini prebuilt "kid" voice, so map child to the brightest/youngest-sounding prebuilt voices (e.g. `Leda`, `Kore`, `Autonoe`) **and** prepend a style instruction like *"in the bright, youthful voice of a young child"* so Gemini renders a child-like delivery. This is the safe, deterministic way to approximate a child voice with Gemini TTS.
+- Keep defaults/validation; fall back to a safe voice if a combination is missing.
+
+## Technical notes
+- Gemini TTS (`gemini-2.5-flash-preview-tts`) only exposes a fixed set of prebuilt voices and no true "child" voice — child timbre is achieved via voice choice + style prompting, so results are an approximation, not a real child recording.
+- Edge function will be redeployed after the edit so the new options work at runtime.
+- No DB/schema/security changes.
+
+## Files
+- `src/modules/generator-ui/components/VoiceoverDialog.tsx`
+- `supabase/functions/tts-generate/index.ts` (+ redeploy)

@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/select'
 import { toast } from 'sonner'
 
-type Gender = 'female' | 'male'
+type Gender = 'female' | 'male' | 'child'
 type Tone =
   | 'advertising'
   | 'excited'
@@ -30,6 +30,13 @@ type Tone =
   | 'narrative'
   | 'friendly'
   | 'serious'
+  | 'dramatic'
+  | 'whisper'
+  | 'news'
+  | 'storytelling'
+  | 'cheerful'
+  | 'sad'
+  | 'angry'
 
 const TONE_LABELS: { value: Tone; label: string }[] = [
   { value: 'advertising', label: 'Advertising' },
@@ -38,6 +45,13 @@ const TONE_LABELS: { value: Tone; label: string }[] = [
   { value: 'narrative', label: 'Narrative' },
   { value: 'friendly', label: 'Friendly' },
   { value: 'serious', label: 'Serious' },
+  { value: 'dramatic', label: 'Dramatic' },
+  { value: 'whisper', label: 'Whisper / Soft' },
+  { value: 'news', label: 'News Anchor' },
+  { value: 'storytelling', label: 'Storytelling' },
+  { value: 'cheerful', label: 'Cheerful' },
+  { value: 'sad', label: 'Sad / Emotional' },
+  { value: 'angry', label: 'Angry / Intense' },
 ]
 
 interface VoiceoverDialogProps {
@@ -240,6 +254,7 @@ export function VoiceoverDialog({
                 <SelectContent>
                   <SelectItem value="female">Female</SelectItem>
                   <SelectItem value="male">Male</SelectItem>
+                  <SelectItem value="child">Child</SelectItem>
                 </SelectContent>
               </Select>
             </div>

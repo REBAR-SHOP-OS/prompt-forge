@@ -9,7 +9,7 @@ const corsHeaders = {
     'authorization, x-client-info, apikey, content-type',
 }
 
-type Gender = 'female' | 'male'
+type Gender = 'female' | 'male' | 'child'
 type Tone =
   | 'advertising'
   | 'excited'
@@ -17,6 +17,13 @@ type Tone =
   | 'narrative'
   | 'friendly'
   | 'serious'
+  | 'dramatic'
+  | 'whisper'
+  | 'news'
+  | 'storytelling'
+  | 'cheerful'
+  | 'sad'
+  | 'angry'
 
 // Prebuilt Gemini voices. See: https://ai.google.dev/gemini-api/docs/speech-generation
 const VOICE_MAP: Record<Gender, Record<Tone, string>> = {
@@ -27,6 +34,13 @@ const VOICE_MAP: Record<Gender, Record<Tone, string>> = {
     narrative: 'Callirrhoe',
     friendly: 'Autonoe',
     serious: 'Despina',
+    dramatic: 'Callirrhoe',
+    whisper: 'Aoede',
+    news: 'Despina',
+    storytelling: 'Callirrhoe',
+    cheerful: 'Kore',
+    sad: 'Aoede',
+    angry: 'Despina',
   },
   male: {
     advertising: 'Puck',
@@ -35,6 +49,30 @@ const VOICE_MAP: Record<Gender, Record<Tone, string>> = {
     narrative: 'Algieba',
     friendly: 'Achird',
     serious: 'Orus',
+    dramatic: 'Algieba',
+    whisper: 'Charon',
+    news: 'Orus',
+    storytelling: 'Algieba',
+    cheerful: 'Fenrir',
+    sad: 'Charon',
+    angry: 'Fenrir',
+  },
+  // Gemini has no dedicated "kid" voice; use bright, youthful-sounding prebuilt
+  // voices combined with a child-style instruction (see STYLE_INSTRUCTION/child prompt).
+  child: {
+    advertising: 'Leda',
+    excited: 'Kore',
+    calm: 'Autonoe',
+    narrative: 'Leda',
+    friendly: 'Autonoe',
+    serious: 'Leda',
+    dramatic: 'Kore',
+    whisper: 'Autonoe',
+    news: 'Leda',
+    storytelling: 'Kore',
+    cheerful: 'Kore',
+    sad: 'Autonoe',
+    angry: 'Kore',
   },
 }
 
@@ -46,20 +84,26 @@ const STYLE_INSTRUCTION: Record<Tone, string> = {
   narrative: 'Say the following as a clear, engaging narrator',
   friendly: 'Say the following in a warm, friendly, conversational tone',
   serious: 'Say the following in a serious, authoritative tone',
+  dramatic: 'Say the following in a dramatic, intense and expressive tone with emotional weight',
+  whisper: 'Say the following in a soft, gentle, hushed whisper',
+  news: 'Say the following in a clear, professional news-anchor broadcast tone',
+  storytelling: 'Say the following like a captivating storyteller, warm and expressive',
+  cheerful: 'Say the following in a cheerful, bright and happy tone',
+  sad: 'Say the following in a sad, melancholic and emotional tone',
+  angry: 'Say the following in an angry, intense and forceful tone',
 }
 
+const GENDERS: Gender[] = ['female', 'male', 'child']
+const TONES: Tone[] = [
+  'advertising', 'excited', 'calm', 'narrative', 'friendly', 'serious',
+  'dramatic', 'whisper', 'news', 'storytelling', 'cheerful', 'sad', 'angry',
+]
+
 function isGender(v: unknown): v is Gender {
-  return v === 'female' || v === 'male'
+  return typeof v === 'string' && (GENDERS as string[]).includes(v)
 }
 function isTone(v: unknown): v is Tone {
-  return (
-    v === 'advertising' ||
-    v === 'excited' ||
-    v === 'calm' ||
-    v === 'narrative' ||
-    v === 'friendly' ||
-    v === 'serious'
-  )
+  return typeof v === 'string' && (TONES as string[]).includes(v)
 }
 
 // Build a WAV file (PCM 16-bit) from raw PCM bytes.
@@ -218,7 +262,10 @@ Deno.serve(async (req) => {
     const paceHint = targetDurationSec
       ? ` Pace the delivery naturally so the entire line lasts about ${targetDurationSec} seconds.`
       : ''
-    const styledPrompt = `${STYLE_INSTRUCTION[tone]}${paceHint}: ${text}`
+    const childHint = gender === 'child'
+      ? ' Use the bright, light, youthful voice of a young child'
+      : ''
+    const styledPrompt = `${STYLE_INSTRUCTION[tone]}${childHint}${paceHint}: ${text}`
 
     const url =
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${encodeURIComponent(apiKey)}`
