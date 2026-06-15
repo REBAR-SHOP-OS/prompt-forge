@@ -7436,7 +7436,7 @@ export default function DashboardPage() {
       </div>
 
       <main
-        className="relative grid place-items-center px-4"
+        className={`relative grid place-items-center px-4 ${playableSequenceClips.length >= 2 ? 'cursor-pointer' : ''}`}
         aria-live="polite"
         style={{ minHeight: `${previewMaxHeightPx + 96}px`, paddingTop: '96px' }}
         onClick={(e) => {
@@ -7447,7 +7447,6 @@ export default function DashboardPage() {
           setPreviewDismissed(false)
         }}
         title={playableSequenceClips.length >= 2 ? 'Click the empty area to play all cards' : undefined}
-        style-cursor=""
       >
         {playableSequenceClips.length >= 2 ? (
           <div className="absolute inset-x-0 top-[68px] z-20 flex justify-center px-4">
