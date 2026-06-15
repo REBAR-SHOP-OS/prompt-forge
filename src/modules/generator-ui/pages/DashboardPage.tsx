@@ -8508,25 +8508,40 @@ export default function DashboardPage() {
                       </p>
                       <div className="flex shrink-0 items-center gap-1">
                         {variant === 'final' && video.video?.storage_path ? (
-                          <button
-                            type="button"
-                            disabled={downloadingId === video.id}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              // Always hand the user a standard, broadly
-                              // compatible MP4 (Final Film output is WebM).
-                              void downloadAsMp4(video.id, video.video!.storage_path, 'final-film')
-                            }}
-                            aria-label="Download video"
-                            title="Download video"
-                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
-                          >
-                            {downloadingId === video.id ? (
-                              <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
-                            ) : (
-                              <Download className="h-3 w-3" aria-hidden="true" />
-                            )}
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              disabled={downloadingId === video.id}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                // Fast direct download (no in-browser transcode).
+                                void downloadDirect(video.id, video.video!.storage_path, 'final-film')
+                              }}
+                              aria-label="Download video (fast)"
+                              title="Download (fast)"
+                              className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                            >
+                              {downloadingId === video.id ? (
+                                <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                              ) : (
+                                <Download className="h-3 w-3" aria-hidden="true" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={downloadingId === video.id}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                // Compatibility path: transcode WebM → standard MP4.
+                                void downloadAsMp4(video.id, video.video!.storage_path, 'final-film')
+                              }}
+                              aria-label="Download as MP4 (converted)"
+                              title="Download as MP4"
+                              className="grid h-6 shrink-0 place-items-center rounded-full border border-white/10 px-1.5 text-[9px] font-semibold leading-none text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                            >
+                              MP4
+                            </button>
+                          </>
                         ) : null}
                         {variant === 'final' ? (() => {
                           const audio = projectAudio[video.id]
