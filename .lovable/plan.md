@@ -1,22 +1,17 @@
-## Plan: Remove prompt/status footer from single-clip preview
+هدف: وقتی کاربر ویدئو را جلو/عقب می‌برد یا روی تایم‌لاین seek می‌کند، موزیک و ویس هم به همان موقعیت زمانی منتقل شوند و با تصویر هماهنگ بمانند.
 
-### What to build
-Remove the prompt + status footer from the single-clip video preview in `DashboardPage.tsx`, matching the earlier removal done in `SequentialClipPlayer.tsx`.
+محدوده تغییرات:
+- فقط منطق پیش‌نمایش frontend تغییر می‌کند.
+- ظاهر UI و روند ساخت Final Film تغییر نمی‌کند.
+- پرامپت/متن‌های حذف‌شده دوباره برنمی‌گردند.
 
-### Why
-The user previously asked that the preview should only show the video and the music/voiceover waveforms — the prompt text and status badge are unnecessary and take up vertical space that can clip the waveform.
+برنامه اجرا:
+1. `PreviewSoundtrackWaveforms` را اصلاح می‌کنم تا `handleSeek(videoCurrentTime)` واقعاً زمان موزیک و ویس را بر اساس زمان ویدئو تنظیم کند، نه فقط شروع یا clamp ساده.
+2. برای موزیک، زمان ویدئو به بازه انتخاب‌شده موزیک map می‌شود و اگر ویدئو از طول بازه موزیک عبور کند، داخل همان بازه loop می‌شود.
+3. برای ویس، زمان ویس برابر زمان ویدئو می‌شود و اگر از طول ویس بیشتر شد، در انتهای قابل پخش نگه داشته می‌شود.
+4. در `VideoWithSoundtrack` رویدادهای `seeking` و `seeked` هر دو به صدا وصل می‌شوند تا هنگام drag کردن تایم‌لاین و بعد از رها کردن، صدا دقیقاً sync شود.
+5. در `SequentialClipPlayer` نیز برای پیش‌نمایش چندکلیپی، هنگام تغییر کلیپ/پخش/seek، زمان کلی فیلم محاسبه و به waveforms داده می‌شود تا موزیک و ویس با کل فیلم هماهنگ بمانند.
 
-### Changes
-1. **`src/modules/generator-ui/pages/DashboardPage.tsx`** (lines ~7679–7706)
-   - Delete the footer `<div>` containing:
-     - `previewItem.job.input_prompt` text
-     - Trim (scissors) button
-     - Status dot + "Ready"/"Rendering" badge
-   - Adjust the `maxHeight` reserved space for the video box (line ~7557) — remove the `64px` footer reservation so the video uses the recovered space.
-
-2. Keep the `VideoWithSoundtrack` component and its waveform unchanged — only remove the outer footer.
-
-### Verification
-- Open a single completed clip with music — confirm no prompt/status bar shows under the video, waveforms render fully, and nothing is clipped.
-- Confirm a clip with no soundtrack shows no footer and the video fills the frame.
-- Check at small and large preview heights that the entire stack stays inside the viewport.
+اعتبارسنجی:
+- بررسی می‌کنم که مسیر single-clip و multi-clip هر دو از `handleSeek` استفاده کنند.
+- تایید می‌کنم که play/pause قبلی خراب نشود و waveforms فقط همراه ویدئو پخش شوند.

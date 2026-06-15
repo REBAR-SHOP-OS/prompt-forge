@@ -111,10 +111,33 @@ export function SequentialClipPlayer({
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const soundtrackRef = useRef<PreviewSoundtrackHandle | null>(null)
   const imageTimerRef = useRef<number | null>(null)
+  // Cache of each clip's duration (seconds), keyed by clip id, so we can
+  // compute the cumulative film time and keep the soundtrack in sync as the
+  // active clip changes or the active video scrubs.
+  const clipDurationsRef = useRef<Map<string, number>>(new Map())
   // Tracks whether we've already attempted a one-time reload for the current
   // clip's source after a playback error, so a permanently-bad source skips
   // instead of looping forever.
   const erroredOnceRef = useRef<string | null>(null)
+
+  // Cumulative film time before the given clip index (sum of prior durations).
+  const offsetBeforeIndex = (i: number): number => {
+    let total = 0
+    for (let k = 0; k < i && k < clips.length; k++) {
+      const c = clips[k]
+      if (c.kind === 'image') total += Math.max(0, c.durationSec || 0)
+      else total += clipDurationsRef.current.get(c.id) ?? 0
+    }
+    return total
+  }
+
+  // Push the cumulative film time to the soundtrack so music/voiceover follow
+  // the picture when the active clip changes or the active video seeks.
+  const syncSoundtrackToFilmTime = (localTime: number) => {
+    const s = soundtrackRef.current
+    if (!s) return
+    s.handleSeek(offsetBeforeIndex(index) + Math.max(0, localTime))
+  }
 
   // Keep index inside bounds when clips change.
   useEffect(() => {
@@ -193,9 +216,13 @@ export function SequentialClipPlayer({
   useEffect(() => {
     const s = soundtrackRef.current
     if (!s) return
+    // Re-align the soundtrack to where this clip starts in the overall film,
+    // then start/stop it to match the player's play state.
+    s.handleSeek(offsetBeforeIndex(index))
     if (isPlaying) s.play()
     else s.pause()
-  }, [isPlaying, musicUrl, voiceoverUrl, current?.id])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying, musicUrl, voiceoverUrl, current?.id, index])
 
 
   function goNext() {
@@ -285,7 +312,14 @@ export function SequentialClipPlayer({
                   const el = e.currentTarget
                   el.volume = Math.max(0, Math.min(1, clipVolume))
                   el.muted = clipVolume <= 0
+                  // Record this clip's true duration so cumulative film time
+                  // (and the soundtrack sync) stays accurate.
+                  if (current && Number.isFinite(el.duration) && el.duration > 0) {
+                    clipDurationsRef.current.set(current.id, el.duration)
+                  }
                 }}
+                onSeeking={(e) => syncSoundtrackToFilmTime(e.currentTarget.currentTime)}
+                onSeeked={(e) => syncSoundtrackToFilmTime(e.currentTarget.currentTime)}
                 onEnded={goNext}
                 onError={() => {
                   // A clip's source failed to load/play (e.g. expired proxy

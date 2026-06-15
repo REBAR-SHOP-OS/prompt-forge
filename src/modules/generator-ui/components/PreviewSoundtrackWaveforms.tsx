@@ -184,20 +184,32 @@ export const PreviewSoundtrackWaveforms = forwardRef<
       try { voiceWsRef.current?.pause() } catch { /* ignore */ }
     },
     handleSeek: (videoCurrentTime: number) => {
-      // Restart voiceover when the video scrubs back to the start.
+      const t = Math.max(0, videoCurrentTime)
+      // Voiceover follows the video's playhead 1:1 (clamped to its length).
       const v = voiceWsRef.current
-      if (v && voiceReadyRef.current && videoCurrentTime <= 0.05) {
-        try { v.setTime(0) } catch { /* ignore */ }
+      if (v && voiceReadyRef.current) {
+        try {
+          const dur = v.getDuration()
+          const target = dur > 0 ? Math.min(t, Math.max(0, dur - 0.05)) : t
+          v.setTime(target)
+        } catch { /* ignore */ }
       }
-      // Re-clamp music into its window.
+      // Music maps the video time into its selected window and loops inside it.
       const m = musicWsRef.current
       const range = rangeRef.current
-      if (m && musicReadyRef.current && range) {
-        const [start, end] = range
-        const t = m.getCurrentTime()
-        if (end > start && (t < start || t >= end)) {
-          try { m.setTime(start) } catch { /* ignore */ }
-        }
+      if (m && musicReadyRef.current) {
+        try {
+          if (range && range[1] > range[0]) {
+            const [start, end] = range
+            const win = end - start
+            const target = start + (t % win)
+            m.setTime(target)
+          } else {
+            const dur = m.getDuration()
+            const target = dur > 0 ? t % dur : t
+            m.setTime(target)
+          }
+        } catch { /* ignore */ }
       }
     },
   }))
