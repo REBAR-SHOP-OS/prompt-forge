@@ -312,7 +312,14 @@ export function SequentialClipPlayer({
                   const el = e.currentTarget
                   el.volume = Math.max(0, Math.min(1, clipVolume))
                   el.muted = clipVolume <= 0
+                  // Record this clip's true duration so cumulative film time
+                  // (and the soundtrack sync) stays accurate.
+                  if (current && Number.isFinite(el.duration) && el.duration > 0) {
+                    clipDurationsRef.current.set(current.id, el.duration)
+                  }
                 }}
+                onSeeking={(e) => syncSoundtrackToFilmTime(e.currentTarget.currentTime)}
+                onSeeked={(e) => syncSoundtrackToFilmTime(e.currentTarget.currentTime)}
                 onEnded={goNext}
                 onError={() => {
                   // A clip's source failed to load/play (e.g. expired proxy
