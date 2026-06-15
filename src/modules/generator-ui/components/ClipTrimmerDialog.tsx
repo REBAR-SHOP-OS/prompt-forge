@@ -139,9 +139,38 @@ export default function ClipTrimmerDialog({
     }
   }
 
-  const removeCut = (idx: number) => {
-    setCuts((prev) => prev.filter((_, i) => i !== idx))
+  const [scrubbing, setScrubbing] = useState(false)
+
+  const seekToClientX = (clientX: number) => {
+    const track = trackRef.current
+    const v = videoRef.current
+    if (!track || !v || !duration) return
+    const rect = track.getBoundingClientRect()
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+    const t = ratio * duration
+    try { v.currentTime = t } catch { /* noop */ }
+    setCurrentTime(t)
   }
+
+  const onTrackPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!duration) return
+    event.preventDefault()
+    try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* noop */ }
+    setScrubbing(true)
+    seekToClientX(event.clientX)
+  }
+
+  const onTrackPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!scrubbing) return
+    seekToClientX(event.clientX)
+  }
+
+  const endScrub = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!scrubbing) return
+    try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* noop */ }
+    setScrubbing(false)
+  }
+
 
   const apply = async () => {
     setError(null)
