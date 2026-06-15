@@ -1,29 +1,28 @@
-## Problem
+## Goal
 
-In the sequential preview player, clicking the play/pause icon resets the video to the beginning instead of stopping at the current frame.
+Move the "Live preview all cards" action from the right-side Pending panel header to the marked spot at the top of the preview area, give it a clear label so the user understands what it does, and make live preview the always-on default that auto-runs.
 
-## Cause
+## Changes (all in `src/modules/generator-ui/pages/DashboardPage.tsx`)
 
-In `src/modules/generator-ui/components/SequentialClipPlayer.tsx`, one effect (lines ~280-294) handles both seeking and play/pause, and it depends on `isPlaying`. Every time the user toggles play/pause, the effect runs and executes:
+### 1. Add a labeled control at the top of the preview area
+In the `<main>` preview region (the 56px top zone at line ~7438-7442), add a centered, clearly-labeled button placed in the marked area above the video. Instead of a bare icon, it shows an icon + text so its purpose is obvious:
 
 ```text
-const startLocal = pendingLocalRef.current || 0   // 0 when no pending seek
-v.currentTime = startLocal                         // jumps video back to 0
+[ ▷  Live preview — play all cards ]
 ```
 
-So a simple pause (or resume) snaps the playhead to the start.
+- Uses the existing `Play` icon plus a visible text label (not just a tooltip), with `title`/`aria-label` for accessibility.
+- Clicking it runs the full live sequence: `setPreviewVideoId(null)`, `setPreviewDismissed(false)`, and clears any `videoColumnMessage`.
+- It is shown whenever `playableSequenceClips.length >= 2` (i.e. whenever a live preview is possible).
+- It is styled as "active/live" by default (e.g. emerald accent) when the current `previewItem.kind === 'sequence'`, so the user can see the live preview is the running default.
 
-## Fix
+### 2. Remove the duplicate icon from the Pending panel header
+Remove the bare `Play` "Live preview all cards" button (lines ~7779-7795) from the working-clips header, since the action now lives at the marked location above the preview.
 
-Split the single effect into two concerns so a play/pause toggle never rewrites `currentTime`:
-
-1. **Seek/load effect** — runs only when the active clip or its resolved source changes (deps: `current?.id`, `current?.kind`, `resolvedVideoSrc`). This applies the pending local seek position (`pendingLocalRef`) and starts playback if `isPlaying`.
-2. **Play/pause effect** — runs only when `isPlaying` changes (deps: `isPlaying`). It calls `v.play()` or `v.pause()` and does NOT touch `currentTime`, so the video stops exactly where it is.
-
-The soundtrack sync effect stays as-is. After the change, clicking the icon pauses at the current position and resuming continues from the same spot.
+### 3. Keep live preview as the default that always runs
+The default already resolves to the sequential live preview when 2+ clips exist (`previewItem` logic, lines ~3307-3312) and `SequentialClipPlayer` auto-plays (`isPlaying` defaults to true). No logic change needed beyond making the new control reflect/return to that default state. The new labeled button guarantees the user can always re-trigger the live default in one click.
 
 ## Verification
-
-- Play the sequential preview, click pause mid-clip → video freezes at the current frame, time stays the same.
-- Click play again → playback resumes from that frame, music/voiceover stay in sync.
-- Scrubbing and clip-to-clip transitions still seek correctly.
+- With 2+ ready cards, open the workspace → the labeled "Live preview" control appears centered above the video and the full sequence auto-plays.
+- Click a single card → preview switches to that card; the labeled control stays visible and, when clicked, returns to the live sequence and plays.
+- The old icon no longer appears in the Pending panel header.
