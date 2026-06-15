@@ -448,51 +448,75 @@ export function SequentialClipPlayer({
             />
           )}
 
-          {/* Bottom overlay controls */}
-          <div className="absolute inset-x-0 bottom-0 z-10 flex items-center justify-between gap-2 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3 py-2">
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={goPrev}
-                disabled={index === 0}
-                aria-label="Previous clip"
-                className="grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 transition hover:border-white/30 hover:bg-white/10 disabled:opacity-40"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={togglePlay}
-                aria-label={isPlaying ? 'Pause' : 'Play'}
-                className="grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/70 text-zinc-100 transition hover:border-white/30 hover:bg-white/10"
-              >
-                {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-              </button>
-              <button
-                type="button"
-                onClick={goNext}
-                disabled={index >= clips.length - 1}
-                aria-label="Next clip"
-                className="grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 transition hover:border-white/30 hover:bg-white/10 disabled:opacity-40"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
+          {/* Bottom overlay controls: play/pause + film-wide scrub bar */}
+          <div className="absolute inset-x-0 bottom-0 z-10 flex items-center gap-3 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3 py-2">
+            <button
+              type="button"
+              onClick={togglePlay}
+              aria-label={isPlaying ? 'Pause' : 'Play'}
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-white/15 bg-black/70 text-zinc-100 transition hover:border-white/30 hover:bg-white/10"
+            >
+              {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+            </button>
+
+            <span className="shrink-0 text-[11px] font-semibold tabular-nums text-zinc-200">
+              {formatDuration(globalTime)}
+            </span>
+
+            <div
+              role="slider"
+              aria-label="Seek film"
+              aria-valuemin={0}
+              aria-valuemax={Math.round(filmTotal)}
+              aria-valuenow={Math.round(globalTime)}
+              tabIndex={0}
+              onPointerDown={(e) => {
+                if (filmTotal <= 0) return
+                e.currentTarget.setPointerCapture(e.pointerId)
+                scrubbingRef.current = true
+                const rect = e.currentTarget.getBoundingClientRect()
+                const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+                seekToFilmTime(frac * filmTotal)
+              }}
+              onPointerMove={(e) => {
+                if (!scrubbingRef.current || filmTotal <= 0) return
+                const rect = e.currentTarget.getBoundingClientRect()
+                const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+                setGlobalTime(frac * filmTotal)
+              }}
+              onPointerUp={(e) => {
+                if (filmTotal <= 0) return
+                const rect = e.currentTarget.getBoundingClientRect()
+                const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+                scrubbingRef.current = false
+                seekToFilmTime(frac * filmTotal)
+                try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
+              }}
+              onKeyDown={(e) => {
+                if (filmTotal <= 0) return
+                if (e.key === 'ArrowRight') { e.preventDefault(); seekToFilmTime(Math.min(filmTotal, globalTime + 1)) }
+                else if (e.key === 'ArrowLeft') { e.preventDefault(); seekToFilmTime(Math.max(0, globalTime - 1)) }
+              }}
+              className="group relative flex h-6 flex-1 cursor-pointer items-center"
+            >
+              <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-white/20">
+                <div
+                  className="absolute inset-y-0 left-0 rounded-full bg-emerald-400"
+                  style={{ width: `${filmTotal > 0 ? Math.min(100, (globalTime / filmTotal) * 100) : 0}%` }}
+                />
+              </div>
+              <div
+                className="pointer-events-none absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow"
+                style={{ left: `${filmTotal > 0 ? Math.min(100, (globalTime / filmTotal) * 100) : 0}%` }}
+              />
             </div>
-            <div className="flex items-center gap-2 text-xs font-semibold text-zinc-200">
-              <span
-                title="Total film duration"
-                className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/60 px-2 py-0.5 tabular-nums"
-              >
-                <Clock className="h-3 w-3" aria-hidden="true" />
-                {formatDuration(totalDuration)}
-              </span>
-              <span className="rounded-full border border-white/15 bg-black/60 px-2 py-0.5 tabular-nums">
-                {index + 1} / {clips.length}
-              </span>
-              <span className="inline rounded-full border border-emerald-300/30 bg-emerald-400/10 px-2 py-0.5 text-emerald-200">
-                Live preview
-              </span>
-            </div>
+
+            <span className="shrink-0 text-[11px] font-semibold tabular-nums text-zinc-200">
+              {formatDuration(filmTotal || totalDuration)}
+            </span>
+            <span className="hidden shrink-0 rounded-full border border-emerald-300/30 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-200 sm:inline">
+              Live preview
+            </span>
           </div>
         </div>
 
