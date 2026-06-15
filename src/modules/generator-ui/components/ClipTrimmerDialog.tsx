@@ -265,19 +265,47 @@ export default function ClipTrimmerDialog({
               <span>{fmtTime(currentTime)} / {fmtTime(duration)}</span>
               <span>New length: <span className="font-medium text-zinc-200">{fmtTime(newDuration)}</span></span>
             </div>
+
+            {/* Seconds ruler */}
+            <div className="relative mb-1 h-5 w-full select-none">
+              {ticks.map((tk, i) => (
+                <div
+                  key={i}
+                  className="absolute bottom-0 flex -translate-x-1/2 flex-col items-center"
+                  style={{ left: `${tk.pct}%` }}
+                >
+                  {tk.label ? (
+                    <span className="mb-0.5 text-[10px] leading-none text-zinc-400 tabular-nums">{tk.label}</span>
+                  ) : null}
+                  <span className={tk.major ? 'h-2 w-px bg-zinc-500' : 'h-1 w-px bg-zinc-700'} />
+                </div>
+              ))}
+            </div>
+
             <div
               ref={trackRef}
-              onClick={onTrackClick}
+              onPointerDown={onTrackPointerDown}
+              onPointerMove={onTrackPointerMove}
+              onPointerUp={endScrub}
+              onPointerCancel={endScrub}
               role="slider"
               aria-label="Timeline"
               aria-valuemin={0}
               aria-valuemax={duration}
               aria-valuenow={currentTime}
-              className="relative h-8 w-full cursor-pointer overflow-hidden rounded-full bg-white/10"
+              className="relative h-10 w-full touch-none cursor-pointer overflow-hidden rounded-md border border-white/10 bg-white/5"
             >
+              {/* tick grid lines */}
+              {ticks.map((tk, i) => (
+                <div
+                  key={i}
+                  className={tk.major ? 'absolute inset-y-0 w-px bg-white/10' : 'absolute inset-y-2 w-px bg-white/[0.04]'}
+                  style={{ left: `${tk.pct}%` }}
+                />
+              ))}
               {/* progress */}
               <div
-                className="absolute inset-y-0 left-0 bg-emerald-400/30"
+                className="absolute inset-y-0 left-0 bg-emerald-400/25"
                 style={{ width: `${playheadPct}%` }}
               />
               {/* cut ranges */}
@@ -302,10 +330,18 @@ export default function ClipTrimmerDialog({
               ) : null}
               {/* playhead */}
               <div
-                className="absolute inset-y-0 w-0.5 bg-white"
+                className="absolute inset-y-0 z-10 w-0.5 bg-white shadow-[0_0_4px_rgba(255,255,255,0.6)]"
                 style={{ left: `${playheadPct}%` }}
-              />
+              >
+                <span className="absolute -top-0.5 left-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" />
+                {scrubbing ? (
+                  <span className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-zinc-900 px-1.5 py-0.5 text-[10px] tabular-nums text-zinc-100 ring-1 ring-white/15">
+                    {fmtTime(currentTime)}
+                  </span>
+                ) : null}
+              </div>
             </div>
+
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
