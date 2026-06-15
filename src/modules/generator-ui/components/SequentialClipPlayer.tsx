@@ -109,8 +109,7 @@ export function SequentialClipPlayer({
   const totalDuration = useTotalDuration(clips)
   const [isPlaying, setIsPlaying] = useState(true)
   const videoRef = useRef<HTMLVideoElement | null>(null)
-  const musicRef = useRef<HTMLAudioElement | null>(null)
-  const voiceRef = useRef<HTMLAudioElement | null>(null)
+  const soundtrackRef = useRef<PreviewSoundtrackHandle | null>(null)
   const imageTimerRef = useRef<number | null>(null)
   // Tracks whether we've already attempted a one-time reload for the current
   // clip's source after a playback error, so a permanently-bad source skips
