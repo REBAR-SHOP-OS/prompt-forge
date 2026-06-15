@@ -4405,6 +4405,9 @@ export default function DashboardPage() {
     // split into per-scene cards and chain them with continuity instead of a single job.
     const parsedScenes = parseScenarioScenes(promptText)
     if (parsedScenes && parsedScenes.length >= 2) {
+      // Resume the open draft FIRST so the multi-scene clips join the current
+      // project instead of spawning a new one (same fix as the single-job path).
+      resumeSelectedProject()
       const firstSceneImageUrl = readyStartFrame?.url ?? undefined
       setPromptText('')
       setUploadedFiles([])
