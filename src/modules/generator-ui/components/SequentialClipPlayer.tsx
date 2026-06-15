@@ -324,15 +324,11 @@ export function SequentialClipPlayer({
       if (next >= clips.length) {
         // Loop back and pause at the start so user can replay.
         setIsPlaying(false)
+        setGlobalTime(0)
         return 0
       }
       return next
     })
-  }
-
-  function goPrev() {
-    if (clips.length === 0) return
-    setIndex((i) => Math.max(0, i - 1))
   }
 
   function togglePlay() {
