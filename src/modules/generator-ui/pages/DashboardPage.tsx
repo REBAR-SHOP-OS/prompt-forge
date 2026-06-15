@@ -7536,6 +7536,14 @@ export default function DashboardPage() {
         className="grid place-items-center px-4"
         aria-live="polite"
         style={{ minHeight: `${previewMaxHeightPx + 56}px`, paddingTop: '56px' }}
+        onClick={(event) => {
+          // Clicking the empty space around the player always returns to the
+          // final preview built from connecting all cards (sequence preview).
+          if (event.target === event.currentTarget) {
+            setPreviewVideoId(null)
+            setPreviewDismissed(false)
+          }
+        }}
       >
         {previewItem ? (
           previewItem.kind === 'sequence' ? (
