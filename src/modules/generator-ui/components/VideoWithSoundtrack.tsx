@@ -113,9 +113,6 @@ export function VideoWithSoundtrack({
             }}
           />
         )}
-        <span className="pointer-events-none absolute bottom-2 right-2 z-10 rounded-full border border-emerald-300/30 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-200 backdrop-blur">
-          Live preview
-        </span>
       </div>
       <PreviewSoundtrackWaveforms
         ref={soundtrackRef}

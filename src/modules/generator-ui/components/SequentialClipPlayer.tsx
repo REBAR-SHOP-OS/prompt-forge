@@ -510,9 +510,6 @@ export function SequentialClipPlayer({
             <span className="shrink-0 text-[11px] font-semibold tabular-nums text-zinc-200">
               {formatDuration(filmTotal || totalDuration)}
             </span>
-            <span className="hidden shrink-0 rounded-full border border-emerald-300/30 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-200 sm:inline">
-              Live preview
-            </span>
           </div>
         </div>
 
