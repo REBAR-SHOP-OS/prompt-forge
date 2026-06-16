@@ -553,9 +553,40 @@ export function SequentialClipPlayer({
           musicUrl={musicUrl}
           musicRange={musicRange}
           musicVolume={musicVolume}
+          musicStartInVideo={musicPlacement?.startInVideo ?? 0}
           voiceoverUrl={voiceoverUrl}
           voiceoverVolume={voiceoverVolume}
+          voiceoverStartInVideo={voiceoverPlacement?.startInVideo ?? 0}
+          voiceoverRange={
+            voiceoverPlacement && voiceoverPlacement.trimEnd > voiceoverPlacement.trimStart
+              ? [voiceoverPlacement.trimStart, voiceoverPlacement.trimEnd]
+              : undefined
+          }
         />
+
+        {/* Draggable placement bars: position + trim each track on the timeline. */}
+        {(showMusicPlacement || showVoicePlacement) ? (
+          <div className="flex flex-col gap-2 border-t border-white/10 px-4 py-3">
+            {showMusicPlacement && musicPlacement ? (
+              <AudioPlacementTrack
+                url={musicUrl as string}
+                kind="music"
+                filmDuration={filmTotal || totalDuration}
+                placement={musicPlacement}
+                onChange={onMusicPlacementChange!}
+              />
+            ) : null}
+            {showVoicePlacement && voiceoverPlacement ? (
+              <AudioPlacementTrack
+                url={voiceoverUrl as string}
+                kind="voiceover"
+                filmDuration={filmTotal || totalDuration}
+                placement={voiceoverPlacement}
+                onChange={onVoiceoverPlacementChange!}
+              />
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   )
