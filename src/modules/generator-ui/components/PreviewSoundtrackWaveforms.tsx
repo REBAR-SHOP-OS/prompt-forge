@@ -186,23 +186,74 @@ export const PreviewSoundtrackWaveforms = forwardRef<
     if (ws && voiceReadyRef.current) ws.setVolume(Math.max(0, Math.min(1, voiceoverVolume)))
   }, [voiceoverVolume])
 
+  // Apply music gating + source mapping for a given video playhead.
+  const applyMusic = (t: number, forceSeek: boolean) => {
+    const m = musicWsRef.current
+    if (!m || !musicReadyRef.current) return
+    const tl = musicTimelineRef.current
+    const tlStart = tl?.[0] ?? 0
+    const tlEnd = tl && tl[1] > tl[0] ? tl[1] : Number.POSITIVE_INFINITY
+    const inWin = t >= tlStart && t < tlEnd
+    try {
+      if (!inWin) {
+        m.setVolume(0)
+        if (m.isPlaying()) m.pause()
+        return
+      }
+      m.setVolume(Math.max(0, Math.min(1, musicVolumeRef.current)))
+      const range = rangeRef.current
+      const rel = t - tlStart
+      let target: number
+      if (range && range[1] > range[0]) {
+        const [start, end] = range
+        const win = end - start
+        target = start + (rel % win)
+      } else {
+        const dur = m.getDuration()
+        target = dur > 0 ? rel % dur : rel
+      }
+      if (forceSeek || Math.abs(m.getCurrentTime() - target) > 0.25) m.setTime(target)
+      if (wantPlayingRef.current && !m.isPlaying()) m.play().catch(() => { /* ignore */ })
+    } catch { /* ignore */ }
+  }
+
+  // Apply voiceover gating + source mapping for a given video playhead.
+  const applyVoice = (t: number, forceSeek: boolean) => {
+    const v = voiceWsRef.current
+    if (!v || !voiceReadyRef.current) return
+    const tl = voiceTimelineRef.current
+    const tlStart = tl?.[0] ?? 0
+    const tlEnd = tl && tl[1] > tl[0] ? tl[1] : Number.POSITIVE_INFINITY
+    const inWin = t >= tlStart && t < tlEnd
+    try {
+      if (!inWin) {
+        v.setVolume(0)
+        if (v.isPlaying()) v.pause()
+        return
+      }
+      const range = voiceRangeRef.current
+      const dur = v.getDuration()
+      const srcStart = range && range[1] > range[0] ? range[0] : 0
+      const srcEnd = range && range[1] > range[0] ? range[1] : (dur > 0 ? dur : Number.POSITIVE_INFINITY)
+      const target = srcStart + (t - tlStart)
+      if (target >= srcEnd) {
+        v.setVolume(0)
+        if (v.isPlaying()) v.pause()
+        return
+      }
+      v.setVolume(Math.max(0, Math.min(1, voiceVolumeRef.current)))
+      if (forceSeek || Math.abs(v.getCurrentTime() - target) > 0.25) {
+        v.setTime(Math.max(0, Math.min(target, dur > 0 ? dur - 0.05 : target)))
+      }
+      if (wantPlayingRef.current && !v.isPlaying()) v.play().catch(() => { /* ignore */ })
+    } catch { /* ignore */ }
+  }
+
   useImperativeHandle(ref, () => ({
     play: () => {
       wantPlayingRef.current = true
-      const m = musicWsRef.current
-      if (m && musicReadyRef.current) {
-        const range = rangeRef.current
-        if (range) {
-          const [start, end] = range
-          const t = m.getCurrentTime()
-          if (end > start && (t < start || t >= end)) {
-            try { m.setTime(start) } catch { /* ignore */ }
-          }
-        }
-        m.play().catch(() => { /* ignore */ })
-      }
-      const v = voiceWsRef.current
-      if (v && voiceReadyRef.current) v.play().catch(() => { /* ignore */ })
+      applyMusic(0, true)
+      applyVoice(0, true)
     },
     pause: () => {
       wantPlayingRef.current = false
@@ -211,62 +262,13 @@ export const PreviewSoundtrackWaveforms = forwardRef<
     },
     handleSeek: (videoCurrentTime: number) => {
       const t = Math.max(0, videoCurrentTime)
-      // Voiceover follows the video's playhead 1:1 (clamped to its length).
-      const v = voiceWsRef.current
-      if (v && voiceReadyRef.current) {
-        try {
-          const dur = v.getDuration()
-          const target = dur > 0 ? Math.min(t, Math.max(0, dur - 0.05)) : t
-          v.setTime(target)
-        } catch { /* ignore */ }
-      }
-      // Music maps the video time into its selected window and loops inside it.
-      const m = musicWsRef.current
-      const range = rangeRef.current
-      if (m && musicReadyRef.current) {
-        try {
-          if (range && range[1] > range[0]) {
-            const [start, end] = range
-            const win = end - start
-            const target = start + (t % win)
-            m.setTime(target)
-          } else {
-            const dur = m.getDuration()
-            const target = dur > 0 ? t % dur : t
-            m.setTime(target)
-          }
-        } catch { /* ignore */ }
-      }
+      applyVoice(t, true)
+      applyMusic(t, true)
     },
     syncTime: (videoCurrentTime: number) => {
       const t = Math.max(0, videoCurrentTime)
-      const DRIFT = 0.25
-      // Voiceover follows the video 1:1; only correct when it drifts.
-      const v = voiceWsRef.current
-      if (v && voiceReadyRef.current) {
-        try {
-          const dur = v.getDuration()
-          const target = dur > 0 ? Math.min(t, Math.max(0, dur - 0.05)) : t
-          if (Math.abs(v.getCurrentTime() - target) > DRIFT) v.setTime(target)
-        } catch { /* ignore */ }
-      }
-      // Music maps into its window; correct only on meaningful drift.
-      const m = musicWsRef.current
-      const range = rangeRef.current
-      if (m && musicReadyRef.current) {
-        try {
-          let target: number
-          if (range && range[1] > range[0]) {
-            const [start, end] = range
-            const win = end - start
-            target = start + (t % win)
-          } else {
-            const dur = m.getDuration()
-            target = dur > 0 ? t % dur : t
-          }
-          if (Math.abs(m.getCurrentTime() - target) > DRIFT) m.setTime(target)
-        } catch { /* ignore */ }
-      }
+      applyVoice(t, false)
+      applyMusic(t, false)
     },
   }))
 
