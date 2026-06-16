@@ -2139,6 +2139,45 @@ export default function DashboardPage() {
   const processingEndAppendRef = useRef<Set<string>>(new Set())
   const processingStartPrependRef = useRef<Set<string>>(new Set())
 
+  // Per-draft snapshot of the music/voiceover currently applied. Persists the
+  // active draft's audio into durable storage (and projectAudio) so it is NOT
+  // lost on refresh, when switching to another draft, or on Start Over.
+  const draftAudioSnapshotRef = useRef<Record<string, { music?: string; voice?: string }>>({})
+  useEffect(() => {
+    if (!userId || !activeDraftId) return
+    const draftId = activeDraftId
+    if (!musicUrl && !voiceoverUrl) return
+    const seen = draftAudioSnapshotRef.current[draftId] ?? {}
+    const needMusic = Boolean(musicUrl) && seen.music !== musicUrl
+    const needVoice = Boolean(voiceoverUrl) && seen.voice !== voiceoverUrl
+    if (!needMusic && !needVoice) return
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      const musicSnap = needMusic && musicUrl
+        ? await persistAudioToStorage(musicUrl, 'music', draftId)
+        : null
+      const voiceSnap = needVoice && voiceoverUrl
+        ? await persistAudioToStorage(voiceoverUrl, 'voice', draftId)
+        : null
+      if (cancelled) return
+      draftAudioSnapshotRef.current[draftId] = {
+        music: musicUrl ?? seen.music,
+        voice: voiceoverUrl ?? seen.voice,
+      }
+      if (!musicSnap && !voiceSnap) return
+      setProjectAudio((prev) => {
+        const entry: ProjectAudio = { ...(prev[draftId] ?? {}) }
+        if (musicSnap) entry.music = { url: musicSnap, name: musicName ?? 'Music' }
+        if (voiceSnap) entry.voiceover = { url: voiceSnap, name: voiceoverName ?? 'Voiceover' }
+        const next = { ...prev, [draftId]: entry }
+        persistProjectAudio(next)
+        return next
+      })
+    }, 1200)
+    return () => { cancelled = true; clearTimeout(timer) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, activeDraftId, musicUrl, voiceoverUrl, musicName, voiceoverName, persistAudioToStorage])
+
   useEffect(() => {
     setPendingEndAppends({})
   }, [pendingEndAppendsKey])
