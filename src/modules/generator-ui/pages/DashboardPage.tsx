@@ -7362,6 +7362,14 @@ export default function DashboardPage() {
                 onValueChange={(v) => setVoiceoverVolume((v[0] ?? 0) / 100)}
               />
             </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => setIsVoiceoverTimingOpen(true)}
+            >
+              Set timing on video…
+            </Button>
           </PopoverContent>
         </Popover>
       ) : null}
