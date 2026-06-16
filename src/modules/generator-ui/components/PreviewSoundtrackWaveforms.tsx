@@ -68,6 +68,7 @@ export const PreviewSoundtrackWaveforms = forwardRef<
     musicRange,
     musicVolume = 1,
     musicStartInVideo = 0,
+    musicLoop = true,
     voiceoverUrl,
     voiceoverVolume = 1,
     voiceoverStartInVideo = 0,
