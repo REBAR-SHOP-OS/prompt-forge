@@ -5,6 +5,10 @@ import {
   PreviewSoundtrackWaveforms,
   type PreviewSoundtrackHandle,
 } from '@/modules/generator-ui/components/PreviewSoundtrackWaveforms'
+import {
+  AudioPlacementTrack,
+  type AudioPlacement,
+} from '@/modules/generator-ui/components/AudioPlacementTrack'
 
 function formatDuration(sec: number): string {
   if (!Number.isFinite(sec) || sec <= 0) return '--:--'
@@ -88,6 +92,12 @@ type Props = {
   voiceoverVolume?: number
   /** Volume of the clip's own audio track in preview (0..1). */
   clipVolume?: number
+  /** Placement (start offset + trim) of the music track along the film. */
+  musicPlacement?: AudioPlacement
+  onMusicPlacementChange?: (next: AudioPlacement) => void
+  /** Placement (start offset + trim) of the voiceover track along the film. */
+  voiceoverPlacement?: AudioPlacement
+  onVoiceoverPlacementChange?: (next: AudioPlacement) => void
 }
 
 export function SequentialClipPlayer({
@@ -104,6 +114,10 @@ export function SequentialClipPlayer({
   voiceoverUrl,
   voiceoverVolume = 1,
   clipVolume = 1,
+  musicPlacement,
+  onMusicPlacementChange,
+  voiceoverPlacement,
+  onVoiceoverPlacementChange,
 }: Props) {
   const [index, setIndex] = useState(0)
   const totalDuration = useTotalDuration(clips)
@@ -355,8 +369,12 @@ export function SequentialClipPlayer({
   // Reserve vertical space only for the soundtrack waveforms (no prompt
   // caption) so the video shrinks just enough to keep them fully visible.
   const hasSoundtrack = Boolean(musicUrl) || Boolean(voiceoverUrl)
+  const showMusicPlacement = Boolean(musicUrl && musicPlacement && onMusicPlacementChange)
+  const showVoicePlacement = Boolean(voiceoverUrl && voiceoverPlacement && onVoiceoverPlacementChange)
   const reservedFooterPx = hasSoundtrack
-    ? 24 + (musicUrl ? 52 : 0) + (voiceoverUrl ? 52 : 0)
+    ? 24
+      + (musicUrl ? 52 : 0) + (voiceoverUrl ? 52 : 0)
+      + (showMusicPlacement ? 56 : 0) + (showVoicePlacement ? 56 : 0)
     : 0
   const videoMaxHeightPx = Math.max(160, maxHeightPx - reservedFooterPx)
 
@@ -535,9 +553,40 @@ export function SequentialClipPlayer({
           musicUrl={musicUrl}
           musicRange={musicRange}
           musicVolume={musicVolume}
+          musicStartInVideo={musicPlacement?.startInVideo ?? 0}
           voiceoverUrl={voiceoverUrl}
           voiceoverVolume={voiceoverVolume}
+          voiceoverStartInVideo={voiceoverPlacement?.startInVideo ?? 0}
+          voiceoverRange={
+            voiceoverPlacement && voiceoverPlacement.trimEnd > voiceoverPlacement.trimStart
+              ? [voiceoverPlacement.trimStart, voiceoverPlacement.trimEnd]
+              : undefined
+          }
         />
+
+        {/* Draggable placement bars: position + trim each track on the timeline. */}
+        {(showMusicPlacement || showVoicePlacement) ? (
+          <div className="flex flex-col gap-2 border-t border-white/10 px-4 py-3">
+            {showMusicPlacement && musicPlacement ? (
+              <AudioPlacementTrack
+                url={musicUrl as string}
+                kind="music"
+                filmDuration={filmTotal || totalDuration}
+                placement={musicPlacement}
+                onChange={onMusicPlacementChange!}
+              />
+            ) : null}
+            {showVoicePlacement && voiceoverPlacement ? (
+              <AudioPlacementTrack
+                url={voiceoverUrl as string}
+                kind="voiceover"
+                filmDuration={filmTotal || totalDuration}
+                placement={voiceoverPlacement}
+                onChange={onVoiceoverPlacementChange!}
+              />
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   )

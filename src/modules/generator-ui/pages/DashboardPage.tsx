@@ -99,6 +99,7 @@ import { SoundtrackWaveform, type SoundtrackWaveformHandle } from '@/modules/gen
 import { TransitionPreview } from '@/modules/generator-ui/components/TransitionPreview'
 import { SequentialClipPlayer } from '@/modules/generator-ui/components/SequentialClipPlayer'
 import { VideoWithSoundtrack } from '@/modules/generator-ui/components/VideoWithSoundtrack'
+import type { AudioPlacement } from '@/modules/generator-ui/components/AudioPlacementTrack'
 import { PlayableVideo } from '@/modules/generator-ui/components/PlayableVideo'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
@@ -2078,6 +2079,13 @@ export default function DashboardPage() {
   const [voiceoverName, setVoiceoverName] = useState<string | null>(null)
   const [voiceoverVolume, setVoiceoverVolume] = useState<number>(1)
   const [voiceoverClipVolume, setVoiceoverClipVolume] = useState<number>(0.3)
+  // Placement (start offset + trim) of each track along the film timeline.
+  // Reset whenever the underlying track changes so a new track starts clean.
+  const DEFAULT_PLACEMENT: AudioPlacement = { startInVideo: 0, trimStart: 0, trimEnd: 0, duration: 0 }
+  const [musicPlacement, setMusicPlacement] = useState<AudioPlacement>(DEFAULT_PLACEMENT)
+  const [voiceoverPlacement, setVoiceoverPlacement] = useState<AudioPlacement>(DEFAULT_PLACEMENT)
+  useEffect(() => { setMusicPlacement({ ...DEFAULT_PLACEMENT }) }, [musicUrl])
+  useEffect(() => { setVoiceoverPlacement({ ...DEFAULT_PLACEMENT }) }, [voiceoverUrl])
   const musicFileInputRef = useRef<HTMLInputElement | null>(null)
   const musicPreviewAudioRef = useRef<HTMLAudioElement | null>(null)
   const musicWaveformRef = useRef<SoundtrackWaveformHandle | null>(null)
@@ -5508,10 +5516,17 @@ export default function DashboardPage() {
                   startSec: musicRange[0],
                   endSec: musicRange[1],
                   musicVolume,
+                  startInVideo: musicPlacement.startInVideo,
                 }
               : undefined,
             voiceover: hasVoiceover
-              ? { src: voiceoverUrl as string, volume: voiceoverVolume }
+              ? {
+                  src: voiceoverUrl as string,
+                  volume: voiceoverVolume,
+                  startInVideo: voiceoverPlacement.startInVideo,
+                  trimStart: voiceoverPlacement.trimStart,
+                  trimEnd: voiceoverPlacement.trimEnd,
+                }
               : undefined,
             clipVolume: mixedClipVolume,
           }
@@ -7624,6 +7639,10 @@ export default function DashboardPage() {
                   ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
                   : (voiceoverUrl ? voiceoverClipVolume : 1)
               }
+              musicPlacement={musicPlacement}
+              onMusicPlacementChange={setMusicPlacement}
+              voiceoverPlacement={voiceoverPlacement}
+              onVoiceoverPlacementChange={setVoiceoverPlacement}
             />
           ) : previewItem.kind === 'image' ? (
             <div className="flex w-full justify-center">
