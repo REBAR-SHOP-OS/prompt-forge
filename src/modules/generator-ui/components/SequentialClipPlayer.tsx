@@ -88,6 +88,12 @@ type Props = {
   voiceoverVolume?: number
   /** Volume of the clip's own audio track in preview (0..1). */
   clipVolume?: number
+  /** Start offset (seconds) of the music track on the film timeline. */
+  musicOffset?: number
+  /** Start offset (seconds) of the voiceover track on the film timeline. */
+  voiceOffset?: number
+  onMusicOffsetChange?: (seconds: number) => void
+  onVoiceOffsetChange?: (seconds: number) => void
 }
 
 export function SequentialClipPlayer({
