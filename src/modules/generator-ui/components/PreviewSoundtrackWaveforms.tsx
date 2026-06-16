@@ -28,10 +28,17 @@ export type PreviewSoundtrackHandle = {
 
 type Props = {
   musicUrl?: string | null
+  /** Source window inside the music file. */
   musicRange?: [number, number]
   musicVolume?: number
+  /** Placement on the video timeline [start, end] in seconds. */
+  musicTimeline?: [number, number]
   voiceoverUrl?: string | null
   voiceoverVolume?: number
+  /** Source window inside the voiceover file. */
+  voiceoverRange?: [number, number]
+  /** Placement on the video timeline [start, end] in seconds. */
+  voiceoverTimeline?: [number, number]
   /** Waveform height in px (compact under the preview). */
   height?: number
 }
