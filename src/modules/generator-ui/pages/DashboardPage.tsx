@@ -8708,6 +8708,20 @@ export default function DashboardPage() {
                             </Popover>
                           )
                         })() : null}
+                        {variant === 'final' && video.video?.storage_path ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void runCopyrightCheck(video)
+                            }}
+                            aria-label="Copyright check"
+                            title="Copyright check"
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-violet-300/40 hover:bg-violet-300/10 hover:text-violet-200"
+                          >
+                            <Shield className="h-3 w-3" aria-hidden="true" />
+                          </button>
+                        ) : null}
                         {variant === 'final' ? (
                           <button
                             type="button"
