@@ -14,6 +14,24 @@ function formatDuration(sec: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+/** Choose a "nice" ruler step (seconds) so labels never crowd each other. */
+function rulerStep(total: number): number {
+  if (total <= 0) return 1
+  const candidates = [1, 2, 5, 10, 15, 30, 60, 120, 300]
+  // Aim for ~8 labels across the bar.
+  const ideal = total / 8
+  for (const c of candidates) if (c >= ideal) return c
+  return candidates[candidates.length - 1]
+}
+
+function buildTicks(total: number): number[] {
+  if (total <= 0) return []
+  const step = rulerStep(total)
+  const ticks: number[] = []
+  for (let t = 0; t <= total + 0.0001; t += step) ticks.push(Math.round(t))
+  return ticks
+}
+
 function useTotalDuration(clips: SeqClip[]): number {
   const cacheRef = useRef<Map<string, number>>(new Map())
   const [, force] = useState(0)
