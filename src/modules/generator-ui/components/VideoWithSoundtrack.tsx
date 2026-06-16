@@ -38,8 +38,11 @@ export function VideoWithSoundtrack({
   musicUrl,
   musicRange,
   musicVolume = 1,
+  musicTimeline,
   voiceoverUrl,
   voiceoverVolume = 1,
+  voiceoverRange,
+  voiceoverTimeline,
   videoBoxClassName,
   videoBoxStyle,
   ...videoProps
