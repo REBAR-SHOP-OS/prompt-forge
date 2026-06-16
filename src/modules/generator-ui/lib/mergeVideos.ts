@@ -472,8 +472,8 @@ export async function mergeVideoUrls(
   }
 
   let soundtrackEl: HTMLAudioElement | null = null
-  let soundtrackEndedHandler: (() => void) | null = null
-  let soundtrackClampRaf = 0
+  let soundtrackGain: GainNode | null = null
+  let gateRaf = 0
   if (musicTrack && audioCtx && audioDest) {
     try {
       soundtrackEl = document.createElement('audio')
@@ -494,14 +494,16 @@ export async function mergeVideoUrls(
       gain.gain.value = musicVolume
       source.connect(gain)
       gain.connect(audioDest)
+      soundtrackGain = gain
     } catch (err) {
       console.warn('[mergeVideoUrls] soundtrack disabled:', err)
       soundtrackEl = null
     }
   }
 
-  // Voiceover: plays once from t=0, mixed alongside music + clip audio.
+  // Voiceover: plays inside its timeline window, mixed alongside music + clip audio.
   let voiceoverEl: HTMLAudioElement | null = null
+  let voiceoverGain: GainNode | null = null
   if (voiceoverTrack && audioCtx && audioDest) {
     try {
       voiceoverEl = document.createElement('audio')
@@ -515,12 +517,13 @@ export async function mergeVideoUrls(
         voiceoverEl!.addEventListener('loadedmetadata', onReady)
         voiceoverEl!.addEventListener('error', onErr)
       })
-      voiceoverEl.currentTime = 0
+      voiceoverEl.currentTime = Math.max(0, voiceoverTrack.sourceStartSec ?? 0)
       const vSource = audioCtx.createMediaElementSource(voiceoverEl)
       const vGain = audioCtx.createGain()
       vGain.gain.value = voiceoverVolume
       vSource.connect(vGain)
       vGain.connect(audioDest)
+      voiceoverGain = vGain
     } catch (err) {
       console.warn('[mergeVideoUrls] voiceover disabled:', err)
       voiceoverEl = null
