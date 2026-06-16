@@ -125,8 +125,11 @@ export function VideoWithSoundtrack({
         musicUrl={musicUrl}
         musicRange={musicRange}
         musicVolume={musicVolume}
+        musicTimeline={musicTimeline}
         voiceoverUrl={voiceoverUrl}
         voiceoverVolume={voiceoverVolume}
+        voiceoverRange={voiceoverRange}
+        voiceoverTimeline={voiceoverTimeline}
       />
     </div>
   )
