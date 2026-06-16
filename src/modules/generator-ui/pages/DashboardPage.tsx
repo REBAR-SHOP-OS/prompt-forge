@@ -4524,8 +4524,8 @@ export default function DashboardPage() {
   // Restore a draft's persisted music/voiceover back into the live audio state
   // so the soundtrack chip reappears and applies to the exact same film. Audio
   // durations are loaded so the music range is set to the full track.
-  const restoreDraftAudio = useCallback((draftId: string) => {
-    const audio = projectAudio[draftId]
+  const restoreDraftAudio = useCallback((draftId: string, override?: ProjectAudio) => {
+    const audio = override ?? projectAudio[draftId]
     if (!audio) return
     if (audio.music?.url) {
       const url = audio.music.url
