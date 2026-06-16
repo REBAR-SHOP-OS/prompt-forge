@@ -4508,6 +4508,52 @@ export default function DashboardPage() {
     setPreviewDismissed(true)
   }
 
+  // Restore a draft's persisted music/voiceover back into the live audio state
+  // so the soundtrack chip reappears and applies to the exact same film. Audio
+  // durations are loaded so the music range is set to the full track.
+  const restoreDraftAudio = useCallback((draftId: string) => {
+    const audio = projectAudio[draftId]
+    if (!audio) return
+    if (audio.music?.url) {
+      const url = audio.music.url
+      setMusicName(audio.music.name)
+      setMusicUrl(url)
+      setMusicTimeline([0, mergedDurationSec])
+      try {
+        const a = new Audio()
+        a.src = url
+        a.addEventListener('loadedmetadata', () => {
+          const d = a.duration
+          if (Number.isFinite(d) && d > 0) { setMusicDuration(d); setMusicRange([0, d]) }
+        })
+      } catch { /* ignore */ }
+      draftAudioSnapshotRef.current[draftId] = {
+        ...(draftAudioSnapshotRef.current[draftId] ?? {}),
+        music: url,
+      }
+    }
+    if (audio.voiceover?.url) {
+      const url = audio.voiceover.url
+      setVoiceoverName(audio.voiceover.name)
+      setVoiceoverUrl(url)
+      setVoiceoverTimeline([0, mergedDurationSec])
+      try {
+        const a = new Audio()
+        a.src = url
+        a.addEventListener('loadedmetadata', () => {
+          const d = a.duration
+          if (Number.isFinite(d) && d > 0) { setVoiceoverDuration(d); setVoiceoverRange([0, d]) }
+        })
+      } catch { /* ignore */ }
+      draftAudioSnapshotRef.current[draftId] = {
+        ...(draftAudioSnapshotRef.current[draftId] ?? {}),
+        voice: url,
+      }
+    }
+  }, [projectAudio, mergedDurationSec])
+
+
+
 
   // wants to extend it — add a new card or run Final Film again — restore the
   // project's source clips into the live workspace so they appear in HISTORY
