@@ -266,6 +266,7 @@ export function SequentialClipPlayer({
       const elapsed = (now - startTs) / 1000
       const local = Math.min(current.durationSec, startLocal + elapsed)
       setGlobalTime(base + local)
+      soundtrackRef.current?.syncTime(base + local)
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
