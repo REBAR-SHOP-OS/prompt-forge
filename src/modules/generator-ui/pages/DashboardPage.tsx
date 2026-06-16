@@ -7329,26 +7329,7 @@ export default function DashboardPage() {
               <SlidersHorizontal className="h-[14px] w-[14px]" aria-hidden="true" />
             </button>
           </PopoverTrigger>
-          <PopoverContent className="w-72 space-y-4 border-white/10 bg-zinc-950 text-zinc-100" align="end">
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                <span>Original clip audio</span>
-                <span className="tabular-nums text-zinc-200">{Math.round(voiceoverClipVolume * 100)}%</span>
-              </div>
-              <Slider
-                value={[Math.round(voiceoverClipVolume * 100)]}
-                min={0}
-                max={100}
-                step={1}
-                disabled={Boolean(musicUrl && musicRange[1] > musicRange[0])}
-                onValueChange={(v) => setVoiceoverClipVolume((v[0] ?? 0) / 100)}
-              />
-              {musicUrl && musicRange[1] > musicRange[0] ? (
-                <p className="text-[10px] leading-relaxed text-zinc-500">
-                  Clip audio is controlled from the Soundtrack dialog while music is active.
-                </p>
-              ) : null}
-            </div>
+          <PopoverContent className="w-96 space-y-4 border-white/10 bg-zinc-950 text-zinc-100" align="end">
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-[11px] text-zinc-400">
                 <span>Voiceover</span>
@@ -7362,14 +7343,61 @@ export default function DashboardPage() {
                 onValueChange={(v) => setVoiceoverVolume((v[0] ?? 0) / 100)}
               />
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              onClick={() => setIsVoiceoverTimingOpen(true)}
-            >
-              Set timing on video…
-            </Button>
+
+            {voiceoverUrl ? (
+              <SoundtrackWaveform
+                ref={voiceoverWaveformRef}
+                url={voiceoverUrl}
+                range={voiceoverRange[1] > voiceoverRange[0] ? voiceoverRange : [0, Math.max(0.1, voiceoverDuration)]}
+                onReady={(d) => {
+                  setVoiceoverDuration(d)
+                  if (voiceoverRange[1] <= voiceoverRange[0]) setVoiceoverRange([0, d])
+                }}
+                onRangeChange={(r) => { if (r[1] > r[0]) setVoiceoverRange([r[0], r[1]]) }}
+              />
+            ) : null}
+
+            <div className="space-y-3 rounded-md border border-white/10 bg-black/40 p-3">
+              <div className="flex items-center justify-between text-xs text-zinc-300">
+                <span className="font-medium">Play on video from … to</span>
+                <span className="tabular-nums text-zinc-200">
+                  {formatTimeMS(voiceoverTimeline[0])} – {formatTimeMS(voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[1] : mergedDurationSec)}
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                  <span>Start</span>
+                  <span className="tabular-nums text-zinc-200">{formatTimeMS(voiceoverTimeline[0])}</span>
+                </div>
+                <Slider
+                  value={[Math.round(voiceoverTimeline[0])]}
+                  min={0}
+                  max={mergedDurationSec}
+                  step={1}
+                  onValueChange={(v) => {
+                    const s = Math.min(v[0] ?? 0, (voiceoverTimeline[1] || mergedDurationSec) - 1)
+                    setVoiceoverTimeline([Math.max(0, s), voiceoverTimeline[1] || mergedDurationSec])
+                  }}
+                />
+                <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                  <span>End</span>
+                  <span className="tabular-nums text-zinc-200">{formatTimeMS(voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[1] : mergedDurationSec)}</span>
+                </div>
+                <Slider
+                  value={[Math.round(voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[1] : mergedDurationSec)]}
+                  min={0}
+                  max={mergedDurationSec}
+                  step={1}
+                  onValueChange={(v) => {
+                    const e = Math.max(v[0] ?? mergedDurationSec, voiceoverTimeline[0] + 1)
+                    setVoiceoverTimeline([voiceoverTimeline[0], Math.min(mergedDurationSec, e)])
+                  }}
+                />
+              </div>
+              <p className="text-[11px] leading-relaxed text-zinc-500">
+                Outside this window the voiceover is silent. Total film ≈ {formatTimeMS(mergedDurationSec)}.
+              </p>
+            </div>
           </PopoverContent>
         </Popover>
       ) : null}
