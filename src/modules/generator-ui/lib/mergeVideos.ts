@@ -472,6 +472,11 @@ export async function mergeVideoUrls(
   let soundtrackEl: HTMLAudioElement | null = null
   let soundtrackEndedHandler: (() => void) | null = null
   let soundtrackClampRaf = 0
+  // Placement timers: delay each track's start so it begins at its chosen point
+  // on the film timeline (mirrors the live preview's `startInVideo` offset).
+  let musicStartTimer: ReturnType<typeof setTimeout> | null = null
+  let voiceStartTimer: ReturnType<typeof setTimeout> | null = null
+  let voiceClampRaf = 0
   if (musicTrack && audioCtx && audioDest) {
     try {
       soundtrackEl = document.createElement('audio')
