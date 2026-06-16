@@ -92,6 +92,12 @@ type Props = {
   voiceoverVolume?: number
   /** Volume of the clip's own audio track in preview (0..1). */
   clipVolume?: number
+  /** Placement (start offset + trim) of the music track along the film. */
+  musicPlacement?: AudioPlacement
+  onMusicPlacementChange?: (next: AudioPlacement) => void
+  /** Placement (start offset + trim) of the voiceover track along the film. */
+  voiceoverPlacement?: AudioPlacement
+  onVoiceoverPlacementChange?: (next: AudioPlacement) => void
 }
 
 export function SequentialClipPlayer({
@@ -108,6 +114,10 @@ export function SequentialClipPlayer({
   voiceoverUrl,
   voiceoverVolume = 1,
   clipVolume = 1,
+  musicPlacement,
+  onMusicPlacementChange,
+  voiceoverPlacement,
+  onVoiceoverPlacementChange,
 }: Props) {
   const [index, setIndex] = useState(0)
   const totalDuration = useTotalDuration(clips)
