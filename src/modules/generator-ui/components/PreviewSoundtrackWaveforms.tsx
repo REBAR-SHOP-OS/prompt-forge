@@ -74,6 +74,9 @@ export const PreviewSoundtrackWaveforms = forwardRef<
   const musicReadyRef = useRef(false)
   const voiceReadyRef = useRef(false)
   const wantPlayingRef = useRef(false)
+  // Last film playhead (seconds) pushed from the player, so play() resumes at
+  // the correct film position instead of resetting to 0.
+  const lastFilmTimeRef = useRef(0)
 
   // Keep latest range/timeline/volume in refs so the handlers always read fresh
   // values without re-creating WaveSurfer.
