@@ -5543,26 +5543,31 @@ export default function DashboardPage() {
           return { id, durationMs: TRANSITION_DURATION[id] ?? 0 }
         })
 
-      const hasMusic = Boolean(musicUrl && musicRange[1] > musicRange[0])
+      const hasMusic = Boolean(musicUrl && musicTrimRange[1] > musicTrimRange[0])
       const hasVoiceover = Boolean(voiceoverUrl)
       const mixedClipVolume = hasMusic
         ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
         : (hasVoiceover ? voiceoverClipVolume : 1)
+      const musicRegionLen = Math.max(0.05, musicTrimRange[1] - musicTrimRange[0])
+      const effMusicVolume = musicPlacement.muted ? 0 : musicVolume * musicPlacement.volume
+      const effVoiceVolume = voiceoverPlacement.muted ? 0 : voiceoverVolume * voiceoverPlacement.volume
       const audioOpt = hasMusic || hasVoiceover
         ? {
             music: hasMusic
               ? {
                   src: musicUrl as string,
-                  startSec: musicRange[0],
-                  endSec: musicRange[1],
-                  musicVolume,
+                  startSec: musicTrimRange[0],
+                  endSec: musicTrimRange[1],
+                  musicVolume: effMusicVolume,
                   startInVideo: musicPlacement.startInVideo,
+                  endInVideo: musicPlacement.startInVideo + musicRegionLen,
+                  loop: false,
                 }
               : undefined,
             voiceover: hasVoiceover
               ? {
                   src: voiceoverUrl as string,
-                  volume: voiceoverVolume,
+                  volume: effVoiceVolume,
                   startInVideo: voiceoverPlacement.startInVideo,
                   trimStart: voiceoverPlacement.trimStart,
                   trimEnd: voiceoverPlacement.trimEnd,
