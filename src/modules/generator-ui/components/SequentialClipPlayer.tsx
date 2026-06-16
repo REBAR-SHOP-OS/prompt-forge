@@ -541,8 +541,11 @@ export function SequentialClipPlayer({
           musicUrl={musicUrl}
           musicRange={musicRange}
           musicVolume={musicVolume}
+          musicTimeline={musicTimeline}
           voiceoverUrl={voiceoverUrl}
           voiceoverVolume={voiceoverVolume}
+          voiceoverRange={voiceoverRange}
+          voiceoverTimeline={voiceoverTimeline}
         />
       </div>
     </div>
