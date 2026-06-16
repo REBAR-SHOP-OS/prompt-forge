@@ -5428,10 +5428,11 @@ export default function DashboardPage() {
                   startSec: musicRange[0],
                   endSec: musicRange[1],
                   musicVolume,
+                  delaySec: musicOffsetSec,
                 }
               : undefined,
             voiceover: hasVoiceover
-              ? { src: voiceoverUrl as string, volume: voiceoverVolume }
+              ? { src: voiceoverUrl as string, volume: voiceoverVolume, delaySec: voiceOffsetSec }
               : undefined,
             clipVolume: mixedClipVolume,
           }
