@@ -198,8 +198,9 @@ export const PreviewSoundtrackWaveforms = forwardRef<
       ws.setVolume(Math.max(0, Math.min(1, musicVolume)))
       tick(lastTimeRef.current, true)
     }
-    // Loop the music inside the selected window.
+    // Loop the music inside the selected window (only when looping is enabled).
     const onAudioProcess = () => {
+      if (!musicLoopRef.current) return
       const range = rangeRef.current
       if (!range) return
       const [start, end] = range
