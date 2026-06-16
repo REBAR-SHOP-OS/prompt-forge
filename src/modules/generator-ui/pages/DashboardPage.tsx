@@ -5271,6 +5271,9 @@ export default function DashboardPage() {
     }
     setVoiceoverUrl(url)
     setVoiceoverName(name)
+    setVoiceoverDuration(0)
+    setVoiceoverRange([0, 0])
+    setVoiceoverTimeline([0, mergedDurationSec])
     setIsVoiceoverOpen(false)
     // Voiceover persistence to Storage › Audio happens at generation time
     // inside VoiceoverDialog, so no extra save is needed here.
@@ -5286,6 +5289,9 @@ export default function DashboardPage() {
     setVoiceoverName(null)
     setVoiceoverVolume(1)
     setVoiceoverClipVolume(0.3)
+    setVoiceoverDuration(0)
+    setVoiceoverRange([0, 0])
+    setVoiceoverTimeline([0, 0])
   }
 
   function handlePreviewMusicRange() {
