@@ -27,12 +27,16 @@ export interface MergeMusicTrack {
   endSec: number
   /** 0..1, default 1 */
   musicVolume?: number
+  /** Start offset (seconds) on the film timeline; music is silent before it. */
+  delaySec?: number
 }
 
 export interface MergeVoiceoverTrack {
   src: string
   /** 0..1, default 1 */
   volume?: number
+  /** Start offset (seconds) on the film timeline; voiceover is silent before it. */
+  delaySec?: number
 }
 
 export interface MergeAudioOptions {
