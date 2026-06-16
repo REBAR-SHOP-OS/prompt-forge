@@ -5,6 +5,10 @@ import {
   PreviewSoundtrackWaveforms,
   type PreviewSoundtrackHandle,
 } from '@/modules/generator-ui/components/PreviewSoundtrackWaveforms'
+import {
+  AudioPlacementTrack,
+  type AudioPlacement,
+} from '@/modules/generator-ui/components/AudioPlacementTrack'
 
 function formatDuration(sec: number): string {
   if (!Number.isFinite(sec) || sec <= 0) return '--:--'
