@@ -979,6 +979,8 @@ export async function mergeVideoUrls(
       try { c.video.pause() } catch { /* ignore */ }
     }
   }
+  if (musicDelayTimer) { clearTimeout(musicDelayTimer); musicDelayTimer = null }
+  if (voiceDelayTimer) { clearTimeout(voiceDelayTimer); voiceDelayTimer = null }
   if (soundtrackEl) {
     if (soundtrackClampRaf) cancelAnimationFrame(soundtrackClampRaf)
     if (soundtrackEndedHandler) soundtrackEl.removeEventListener('ended', soundtrackEndedHandler)
