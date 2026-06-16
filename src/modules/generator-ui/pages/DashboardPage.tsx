@@ -5236,6 +5236,7 @@ export default function DashboardPage() {
     setMusicUrl(url)
     setMusicDuration(0)
     setMusicRange([0, 0])
+    setMusicTimeline([0, mergedDurationSec])
     setIsMusicDialogOpen(true)
     // Persist the uploaded track so it appears in Storage › Audio.
     void persistUserAudio(file, 'music', file.name)
