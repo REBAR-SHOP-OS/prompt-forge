@@ -32,6 +32,11 @@ type Props = {
   musicVolume?: number
   /** Seconds into the film where the music begins (placement offset). */
   musicStartInVideo?: number
+  /**
+   * When true, the music plays once across its range and is silent after the
+   * range length elapses (matches placement bar timing). When false, it loops.
+   */
+  musicLoop?: boolean
   voiceoverUrl?: string | null
   voiceoverVolume?: number
   /** Seconds into the film where the voiceover begins (placement offset). */
