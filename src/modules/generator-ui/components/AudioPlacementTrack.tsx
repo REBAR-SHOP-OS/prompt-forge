@@ -115,7 +115,7 @@ export function AudioPlacementTrack({
   }, [url])
 
   const onPointerDown = useCallback(
-    (mode: Exclude<DragMode, null>) => (e: React.PointerEvent) => {
+    (mode: Exclude<DragMode, null>) => (e: ReactPointerEvent) => {
       e.stopPropagation()
       e.preventDefault()
       ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
@@ -126,7 +126,7 @@ export function AudioPlacementTrack({
   )
 
   const onPointerMove = useCallback(
-    (e: React.PointerEvent) => {
+    (e: ReactPointerEvent) => {
       const drag = dragRef.current
       const track = trackRef.current
       if (!drag || !track) return
@@ -158,7 +158,7 @@ export function AudioPlacementTrack({
     [film, regionLen, onChange],
   )
 
-  const endDrag = useCallback((e: React.PointerEvent) => {
+  const endDrag = useCallback((e: ReactPointerEvent) => {
     try { (e.target as HTMLElement).releasePointerCapture?.(e.pointerId) } catch { /* ignore */ }
     dragRef.current = null
     setDragging(null)
