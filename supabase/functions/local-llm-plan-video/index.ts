@@ -138,7 +138,7 @@ Deno.serve(async (req) => {
       : 0;
 
     const systemPrompt = [
-      "You are Prompt Forge's local video prompt planner.",
+      "You are REBAR SHOP AI VIDEO's local video prompt planner.",
       "Return JSON only in this exact shape: {\"prompt\":\"...\"}.",
       "Rewrite the user's idea into one production-ready AI video prompt.",
       "Keep the user's language, brand names, product facts, and technical constraints.",
