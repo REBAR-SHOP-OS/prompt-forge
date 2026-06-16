@@ -1,47 +1,31 @@
 # هدف
-همه‌ی کنترل‌های مربوط به Voiceover — یعنی تنظیم صدا (volume)، انتخاب بازه‌ی صوتی روی waveform (PLAY SELECTION)، و «Play on video from … to» (Start/End) — به داخل پنجره‌ی Voiceover منتقل شوند تا کاربر همه‌چیز را در یک‌جا (همان دیالوگ Voiceover) انجام دهد. پاپ‌اوور جداگانه‌ی کنار تب Voiceover حذف می‌شود.
+صفحه‌ی ورود (Welcome back / Sign in) از حالت ساده و بی‌روح خارج شده و یک طراحی گرافیکی برند با استفاده از لوگوی شرکت (سکه‌ی طلایی) پیدا کند.
 
 # وضعیت فعلی
-- تب «Voiceover» دیالوگ تولید را باز می‌کند: متن، Gender، Tone، Duration، Generate، Download، Use as soundtrack (تصویر سوم).
-- یک پاپ‌اوور جداگانه با آیکون اسلایدر (تصویر اول) شامل این موارد است و در `DashboardPage.tsx` خطوط ۷۴۲۶–۷۵۰۹ قرار دارد:
-  - اسلایدر صدای Voiceover
-  - `SoundtrackWaveform` برای انتخاب بازه‌ی منبع صدا (PLAY SELECTION)
-  - بخش «Play on video from … to» با اسلایدرهای Start/End
-- این کنترل‌ها به state موجود در `DashboardPage` وابسته‌اند: `voiceoverVolume`, `voiceoverRange`, `voiceoverTimeline`, `voiceoverDuration`, `mergedDurationSec`, `voiceoverWaveformRef`.
+- `src/pages/auth/LoginPage.tsx`: یک باکس مرکزی ساده با تیتر «Welcome back» و فرم.
+- `src/components/auth/AuthForm.tsx`: فیلدهای Email/Password و دکمه‌ی Sign in (منطق آن دست‌نخورده می‌ماند).
+- لوگوی شرکت هنوز به‌صورت asset در پروژه موجود نیست (فقط فایل آپلودشده‌ی `LOGO-under-500kb.webp`).
 
-# تغییرات (فقط فرانت‌اند/UI)
+# تغییرات (فقط UI/فرانت‌اند)
 
-## ۱) افزودن کنترل‌ها به `VoiceoverDialog`
-به `VoiceoverDialog` پراپ‌های جدید اضافه می‌شود تا کنترل‌های تایمینگ/صدا را برای voiceover فعال نمایش دهد:
-- `activeVoiceoverUrl`, `activeVoiceoverName`
-- `voiceoverVolume` + `onVoiceoverVolumeChange`
-- `voiceoverRange` + `onVoiceoverRangeChange`
-- `voiceoverTimeline` + `onVoiceoverTimelineChange`
-- `voiceoverDuration` + `onVoiceoverDurationChange`
-- `mergedDurationSec`
-- `waveformRef` (همان `SoundtrackWaveformHandle`)
-- `onClearVoiceover`
+## ۱) افزودن لوگو به‌عنوان asset
+فایل آپلودشده‌ی لوگو از طریق `lovable-assets` به یک asset CDN تبدیل می‌شود و pointer آن در `src/assets/brand-logo.webp.asset.json` ذخیره می‌شود تا در صفحه‌ی ورود import شود.
 
-داخل دیالوگ، هرگاه `activeVoiceoverUrl` وجود داشته باشد، یک بخش «تنظیمات روی فیلم» زیر بخش تولید نمایش داده می‌شود که دقیقاً همان UI پاپ‌اوور فعلی را دارد:
-- اسلایدر صدای Voiceover
-- `SoundtrackWaveform` (انتخاب بازه‌ی منبع + PLAY SELECTION)
-- اسلایدرهای Start/End برای «Play on video from … to» با محدودیت `mergedDurationSec`
-- متن راهنما «Outside this window the voiceover is silent…»
+## ۲) بازطراحی گرافیکی `LoginPage`
+چیدمان دو ستونی (split-screen) ریسپانسیو با حال‌وهوای دارک پریمیوم و لهجه‌ی طلایی لوگو:
+- **ستون چپ (نمایشی، فقط دسکتاپ):** پس‌زمینه‌ی تیره با گرادیان navy، افکت‌های نور/درخشش طلایی ملایم (radial glow پشت لوگو)، نمایش بزرگ لوگوی سکه با سایه و یک هاله‌ی نرم، به‌همراه نام/شعار برند. یک حرکت ظریف (شناور/تنفسی) با CSS برای لوگو.
+- **ستون راست (فرم):** کارت شیشه‌ای (glass/blur) با بوردر ظریف، لوگوی کوچک بالای فرم برای موبایل، تیتر «Welcome back»، زیرنویس، و فرم `AuthForm` بدون تغییر منطق.
+- در موبایل: تک‌ستونی؛ لوگوی کوچک بالای کارت فرم، پس‌زمینه‌ی گرادیان + glow.
+- همه‌ی رنگ‌ها از توکن‌های سمنتیک موجود (`background`, `muted`, `primary`, …) استفاده می‌کنند؛ در صورت نیاز یک توکن لهجه‌ی طلایی به‌صورت محلی/CSS اضافه می‌شود تا با دارک‌مود سازگار بماند (بدون hardcode رنگ خام در کامپوننت).
 
-`SoundtrackWaveform`، `Slider` و helper `formatTimeMS` در همان فایل دیالوگ import/تعریف می‌شوند.
-
-## ۲) رفتار دیالوگ پس از اعمال
-- پس از «Use as soundtrack»، به‌جای بستن کامل، دیالوگ باز می‌ماند تا کاربر بلافاصله تایمینگ/صدا را در همان‌جا تنظیم کند (بستن از طریق دکمه‌ی Close).
-- وقتی voiceover از قبل اعمال شده باشد، باز کردن تب Voiceover مستقیماً بخش تنظیمات را هم نشان می‌دهد.
-
-## ۳) حذف پاپ‌اوور جداگانه از `DashboardPage`
-بلوک پاپ‌اوور آیکون اسلایدر (خطوط ۷۴۲۶–۷۵۰۹) حذف می‌شود. تب Voiceover و `<VoiceoverDialog .../>` باقی می‌مانند و پراپ‌های جدید (state و setterها و `voiceoverWaveformRef` و `mergedDurationSec` و `handleClearVoiceover`) به دیالوگ پاس داده می‌شوند.
+## ۳) صیقل ظاهری فرم
+- فاصله‌گذاری، گردی گوشه‌ها و حالت focus فیلدها هماهنگ با کارت جدید (بدون تغییر در اعتبارسنجی/زاد/منطق Supabase).
 
 # خارج از محدوده
-- بخش Music و پاپ‌اوور آن بدون تغییر می‌ماند (درخواست فقط درباره‌ی Voiceover است).
-- منطق merge/render (`mergeVideos.ts`) و نحوه‌ی استفاده از `voiceoverRange`/`voiceoverTimeline` در ساخت فیلم تغییری نمی‌کند؛ فقط محل کنترل‌ها جابه‌جا می‌شود.
+- منطق احراز هویت، مسیرها، و رفتار `AuthForm` تغییری نمی‌کند.
+- بقیه‌ی صفحات اپ بدون تغییر می‌مانند.
 
 # اعتبارسنجی
-- باز کردن تب Voiceover ← تولید voiceover ← همان دیالوگ بدون بسته‌شدن، اسلایدر صدا، waveform و Start/End را نشان می‌دهد.
-- تنظیم Start/End و بازه‌ی منبع داخل دیالوگ ← ساخت Final Film: voiceover دقیقاً در همان بازه اعمال می‌شود (رفتار قبلی حفظ شود).
-- دیگر هیچ آیکون/پاپ‌اوور جداگانه‌ای کنار تب Voiceover وجود ندارد.
+- باز کردن مسیر ورود در دسکتاپ ← چیدمان دو ستونی با لوگوی برند و glow طلایی.
+- موبایل ← تک‌ستونی تمیز با لوگوی بالای فرم.
+- ورود/خطاها همان رفتار قبلی را دارند.
