@@ -120,6 +120,7 @@ export function SequentialClipPlayer({
   onVoiceoverPlacementChange,
 }: Props) {
   const [index, setIndex] = useState(0)
+  const [selectedLane, setSelectedLane] = useState<'music' | 'voice'>('music')
   const totalDuration = useTotalDuration(clips)
   const [isPlaying, setIsPlaying] = useState(true)
   const videoRef = useRef<HTMLVideoElement | null>(null)
