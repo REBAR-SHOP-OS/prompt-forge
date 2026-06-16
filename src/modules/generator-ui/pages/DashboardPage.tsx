@@ -7564,6 +7564,50 @@ export default function DashboardPage() {
               </div>
             ) : null}
 
+            {/* Placement on the video timeline */}
+            <div className="space-y-3 rounded-md border border-white/10 bg-black/40 p-3">
+              <div className="flex items-center justify-between text-xs text-zinc-300">
+                <span className="font-medium">Play on video from … to</span>
+                <span className="tabular-nums text-zinc-200">
+                  {formatTimeMS(musicTimeline[0])} – {formatTimeMS(musicTimeline[1] > musicTimeline[0] ? musicTimeline[1] : mergedDurationSec)}
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                  <span>Start</span>
+                  <span className="tabular-nums text-zinc-200">{formatTimeMS(musicTimeline[0])}</span>
+                </div>
+                <Slider
+                  value={[Math.round(musicTimeline[0])]}
+                  min={0}
+                  max={mergedDurationSec}
+                  step={1}
+                  onValueChange={(v) => {
+                    const s = Math.min(v[0] ?? 0, (musicTimeline[1] || mergedDurationSec) - 1)
+                    setMusicTimeline([Math.max(0, s), musicTimeline[1] || mergedDurationSec])
+                  }}
+                />
+                <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                  <span>End</span>
+                  <span className="tabular-nums text-zinc-200">{formatTimeMS(musicTimeline[1] > musicTimeline[0] ? musicTimeline[1] : mergedDurationSec)}</span>
+                </div>
+                <Slider
+                  value={[Math.round(musicTimeline[1] > musicTimeline[0] ? musicTimeline[1] : mergedDurationSec)]}
+                  min={0}
+                  max={mergedDurationSec}
+                  step={1}
+                  onValueChange={(v) => {
+                    const e = Math.max(v[0] ?? mergedDurationSec, musicTimeline[0] + 1)
+                    setMusicTimeline([musicTimeline[0], Math.min(mergedDurationSec, e)])
+                  }}
+                />
+              </div>
+              <p className="text-[11px] leading-relaxed text-zinc-500">
+                Outside this window the music is silent. Total film ≈ {formatTimeMS(mergedDurationSec)}.
+              </p>
+            </div>
+
+
             {/* Audio mode: music-only vs mix */}
             <div className="space-y-3 rounded-md border border-white/10 bg-black/40 p-3">
               <div className="flex items-center">
