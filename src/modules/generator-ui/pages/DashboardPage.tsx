@@ -3407,7 +3407,7 @@ export default function DashboardPage() {
       if (c.kind === 'image') {
         total += Math.max(1, Math.min(15, c.image.still_duration_seconds || 3))
       } else {
-        const d = c.job.duration_seconds
+        const d = c.job.video?.duration ?? c.job.requested_duration ?? null
         total += d && Number.isFinite(d) && d > 0 ? d : 8
       }
     }
