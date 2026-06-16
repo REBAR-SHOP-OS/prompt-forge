@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type VideoHTMLAttributes } from 'react'
+import { useEffect, useRef, type CSSProperties, type VideoHTMLAttributes } from 'react'
 import { LoaderCircle } from 'lucide-react'
 import { usePlayableVideoUrl } from '@/modules/generator-ui/lib/usePlayableVideoUrl'
 import {
@@ -17,12 +17,6 @@ export interface VideoWithSoundtrackProps extends VideoBaseProps {
   musicVolume?: number
   voiceoverUrl?: string | null
   voiceoverVolume?: number
-  /** Start offset (seconds) of the music track on the video timeline. */
-  musicOffset?: number
-  /** Start offset (seconds) of the voiceover track on the video timeline. */
-  voiceOffset?: number
-  onMusicOffsetChange?: (seconds: number) => void
-  onVoiceOffsetChange?: (seconds: number) => void
   /** Styling for the video's aspect-ratio box (the area that holds the <video>). */
   videoBoxClassName?: string
   videoBoxStyle?: CSSProperties
@@ -43,17 +37,12 @@ export function VideoWithSoundtrack({
   musicVolume = 1,
   voiceoverUrl,
   voiceoverVolume = 1,
-  musicOffset = 0,
-  voiceOffset = 0,
-  onMusicOffsetChange,
-  onVoiceOffsetChange,
   videoBoxClassName,
   videoBoxStyle,
   ...videoProps
 }: VideoWithSoundtrackProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const soundtrackRef = useRef<PreviewSoundtrackHandle | null>(null)
-  const [videoDuration, setVideoDuration] = useState(0)
 
   // Apply clip volume / mute to the video element.
   useEffect(() => {
@@ -121,7 +110,6 @@ export function VideoWithSoundtrack({
               const el = e.currentTarget
               el.volume = Math.max(0, Math.min(1, clipVolume))
               el.muted = clipVolume <= 0
-              if (Number.isFinite(el.duration) && el.duration > 0) setVideoDuration(el.duration)
             }}
           />
         )}
@@ -133,13 +121,7 @@ export function VideoWithSoundtrack({
         musicVolume={musicVolume}
         voiceoverUrl={voiceoverUrl}
         voiceoverVolume={voiceoverVolume}
-        filmDuration={videoDuration}
-        musicOffset={musicOffset}
-        voiceOffset={voiceOffset}
-        onMusicOffsetChange={onMusicOffsetChange}
-        onVoiceOffsetChange={onVoiceOffsetChange}
       />
-
     </div>
   )
 }

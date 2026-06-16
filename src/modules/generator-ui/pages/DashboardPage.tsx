@@ -44,10 +44,6 @@ import {
   RefreshCw,
   RotateCcw,
   Scissors,
-  Shield,
-  ShieldAlert,
-  ShieldCheck,
-  ShieldX,
   Sparkles,
   Trash2,
   Upload,
@@ -621,61 +617,6 @@ export default function DashboardPage() {
   // Tracks which card's download is currently being prepared (fetched +
   // transcoded to standard MP4) so we can show a spinner on that button.
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
-
-  // --- Copyright risk check (Final videos) ---
-  type CopyrightSection = { verdict?: string; reason?: string; signals?: string }
-  type CopyrightReport = {
-    verdict?: string
-    video?: CopyrightSection
-    audio?: CopyrightSection
-    overallReason?: string
-    recommendations?: string
-  }
-  const [copyrightJobId, setCopyrightJobId] = useState<string | null>(null)
-  const [copyrightLoading, setCopyrightLoading] = useState(false)
-  const [copyrightError, setCopyrightError] = useState<string | null>(null)
-  const [copyrightReport, setCopyrightReport] = useState<CopyrightReport | null>(null)
-  // Cached last verdict per card id, used to tint the shield icon.
-  const [copyrightVerdicts, setCopyrightVerdicts] = useState<Record<string, string>>({})
-
-  const runCopyrightCheck = async (video: JobDetail) => {
-    const videoUrl = getCardVideoSrc(video.id, video.video?.storage_path)
-    if (!videoUrl) {
-      setCopyrightError('This video has no playable file to analyze.')
-      return
-    }
-    setCopyrightLoading(true)
-    setCopyrightError(null)
-    setCopyrightReport(null)
-    try {
-      const audio = projectAudio[video.id]
-      const { data, error } = await supabase.functions.invoke('copyright-check', {
-        body: {
-          videoUrl,
-          musicUrl: audio?.music?.url ?? undefined,
-          musicName: audio?.music?.name ?? undefined,
-          voiceoverUrl: audio?.voiceover?.url ?? undefined,
-          voiceoverName: audio?.voiceover?.name ?? undefined,
-        },
-      })
-      if (error) throw error
-      const report = (data?.report ?? null) as CopyrightReport | null
-      if (!report) throw new Error('Empty analysis result')
-      setCopyrightReport(report)
-      if (report.verdict) {
-        setCopyrightVerdicts((prev) => ({ ...prev, [video.id]: report.verdict! }))
-      }
-    } catch (err) {
-      console.error('copyright-check failed', err)
-      setCopyrightError(
-        err instanceof Error ? err.message : 'Could not complete the copyright check. Please try again.',
-      )
-    } finally {
-      setCopyrightLoading(false)
-    }
-  }
-
-
 
   // Download a film as a standard, broadly-compatible MP4. Final Film output
   // is WebM (MediaRecorder), which fails in QuickTime / WMP / mobile galleries.
@@ -2045,8 +1986,6 @@ export default function DashboardPage() {
   const [musicUrl, setMusicUrl] = useState<string | null>(null)
   const [musicDuration, setMusicDuration] = useState<number>(0)
   const [musicRange, setMusicRange] = useState<[number, number]>([0, 0])
-  const [musicOffsetSec, setMusicOffsetSec] = useState<number>(0)
-  const [voiceOffsetSec, setVoiceOffsetSec] = useState<number>(0)
   const [soundtrackMode, setSoundtrackMode] = useState<'music-only' | 'mix'>('mix')
   const [clipVolume, setClipVolume] = useState<number>(1)
   const [musicVolume, setMusicVolume] = useState<number>(1)
@@ -5212,7 +5151,6 @@ export default function DashboardPage() {
     setMusicUrl(null)
     setMusicDuration(0)
     setMusicRange([0, 0])
-    setMusicOffsetSec(0)
     setIsMusicDialogOpen(false)
   }
 
@@ -5237,7 +5175,6 @@ export default function DashboardPage() {
     setVoiceoverName(null)
     setVoiceoverVolume(1)
     setVoiceoverClipVolume(0.3)
-    setVoiceOffsetSec(0)
   }
 
   function handlePreviewMusicRange() {
@@ -5489,11 +5426,10 @@ export default function DashboardPage() {
                   startSec: musicRange[0],
                   endSec: musicRange[1],
                   musicVolume,
-                  delaySec: musicOffsetSec,
                 }
               : undefined,
             voiceover: hasVoiceover
-              ? { src: voiceoverUrl as string, volume: voiceoverVolume, delaySec: voiceOffsetSec }
+              ? { src: voiceoverUrl as string, volume: voiceoverVolume }
               : undefined,
             clipVolume: mixedClipVolume,
           }
@@ -5924,7 +5860,6 @@ export default function DashboardPage() {
     setMusicUrl(null)
     setMusicDuration(0)
     setMusicRange([0, 0])
-    setMusicOffsetSec(0)
     setIsMusicDialogOpen(false)
     if (voiceoverUrl) {
       try { URL.revokeObjectURL(voiceoverUrl) } catch { /* ignore */ }
@@ -5933,7 +5868,6 @@ export default function DashboardPage() {
     setVoiceoverName(null)
     setVoiceoverVolume(1)
     setVoiceoverClipVolume(0.3)
-    setVoiceOffsetSec(0)
     // Reset any in-flight merge progress UI.
     setIsMerging(false)
     setMergeProgress(0)
@@ -7608,10 +7542,6 @@ export default function DashboardPage() {
                   ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
                   : (voiceoverUrl ? voiceoverClipVolume : 1)
               }
-              musicOffset={musicOffsetSec}
-              voiceOffset={voiceOffsetSec}
-              onMusicOffsetChange={setMusicOffsetSec}
-              onVoiceOffsetChange={setVoiceOffsetSec}
             />
           ) : previewItem.kind === 'image' ? (
             <div className="flex w-full justify-center">
@@ -8600,38 +8530,6 @@ export default function DashboardPage() {
                             </button>
                           </>
                         ) : null}
-                        {variant === 'final' && video.video?.storage_path ? (() => {
-                          const v = copyrightVerdicts[video.id]
-                          const ShieldIcon =
-                            v === 'approved' ? ShieldCheck
-                              : v === 'caution' ? ShieldAlert
-                              : v === 'rejected' ? ShieldX
-                              : Shield
-                          const tint =
-                            v === 'approved'
-                              ? 'border-emerald-300/40 text-emerald-300 hover:bg-emerald-300/10'
-                              : v === 'caution'
-                              ? 'border-amber-300/40 text-amber-300 hover:bg-amber-300/10'
-                              : v === 'rejected'
-                              ? 'border-rose-300/40 text-rose-300 hover:bg-rose-300/10'
-                              : 'border-white/10 text-zinc-400 hover:border-indigo-300/40 hover:bg-indigo-300/10 hover:text-indigo-200'
-                          return (
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                setCopyrightJobId(video.id)
-                                void runCopyrightCheck(video)
-                              }}
-                              aria-label="Copyright check"
-                              title="Copyright risk check"
-                              className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border transition ${tint}`}
-                            >
-                              <ShieldIcon className="h-3 w-3" aria-hidden="true" />
-                            </button>
-                          )
-                        })() : null}
-
                         {variant === 'final' ? (() => {
                           const audio = projectAudio[video.id]
                           const hasAny = Boolean(audio?.music || audio?.voiceover)
@@ -9588,102 +9486,6 @@ export default function DashboardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <Dialog
-        open={copyrightJobId !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setCopyrightJobId(null)
-            setCopyrightReport(null)
-            setCopyrightError(null)
-            setCopyrightLoading(false)
-          }
-        }}
-      >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Shield className="h-4 w-4 text-indigo-300" aria-hidden="true" />
-              Copyright risk check
-            </DialogTitle>
-            <DialogDescription>
-              An AI risk review of the final video and its music / voiceover. This is guidance, not a legal guarantee.
-            </DialogDescription>
-          </DialogHeader>
-
-          {copyrightLoading ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-10 text-zinc-400">
-              <LoaderCircle className="h-6 w-6 animate-spin" aria-hidden="true" />
-              <p className="text-xs">Analyzing video and audio…</p>
-            </div>
-          ) : copyrightError ? (
-            <div className="space-y-4 py-2">
-              <p className="text-sm text-rose-300">{copyrightError}</p>
-              <button
-                type="button"
-                onClick={() => {
-                  const v = finalizedItems.find((f) => f.id === copyrightJobId)
-                  if (v) void runCopyrightCheck(v)
-                }}
-                className="inline-flex h-9 items-center justify-center rounded-full border border-white/10 px-4 text-xs font-semibold text-zinc-200 hover:bg-white/[0.05]"
-              >
-                Try again
-              </button>
-            </div>
-          ) : copyrightReport ? (() => {
-            const verdictMeta = (v?: string) =>
-              v === 'approved'
-                ? { label: 'Approved', cls: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200', Icon: ShieldCheck }
-                : v === 'rejected'
-                ? { label: 'Rejected', cls: 'border-rose-400/30 bg-rose-400/10 text-rose-200', Icon: ShieldX }
-                : { label: 'Caution', cls: 'border-amber-400/30 bg-amber-400/10 text-amber-200', Icon: ShieldAlert }
-            const overall = verdictMeta(copyrightReport.verdict)
-            const section = (title: string, data?: CopyrightSection) => {
-              if (!data) return null
-              const m = verdictMeta(data.verdict)
-              return (
-                <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">{title}</span>
-                    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${m.cls}`}>
-                      <m.Icon className="h-3 w-3" aria-hidden="true" /> {m.label}
-                    </span>
-                  </div>
-                  {data.reason ? <p className="mt-1.5 text-xs leading-5 text-zinc-300">{data.reason}</p> : null}
-                  {data.signals && data.signals.toLowerCase() !== 'none' ? (
-                    <p className="mt-1 text-[11px] text-zinc-500">Signals: {data.signals}</p>
-                  ) : null}
-                </div>
-              )
-            }
-            return (
-              <div className="space-y-3">
-                <div className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${overall.cls}`}>
-                  <overall.Icon className="h-5 w-5" aria-hidden="true" />
-                  <div>
-                    <p className="text-sm font-bold">{overall.label}</p>
-                    {copyrightReport.overallReason ? (
-                      <p className="text-xs opacity-90">{copyrightReport.overallReason}</p>
-                    ) : null}
-                  </div>
-                </div>
-                {section('Video', copyrightReport.video)}
-                {section('Music / voiceover', copyrightReport.audio)}
-                {copyrightReport.recommendations && copyrightReport.recommendations.toLowerCase() !== 'none' ? (
-                  <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">Recommendations</p>
-                    <p className="mt-1.5 text-xs leading-5 text-zinc-300">{copyrightReport.recommendations}</p>
-                  </div>
-                ) : null}
-                <p className="text-[10px] leading-4 text-zinc-600">
-                  Heuristic AI assessment — it cannot match against any copyright database and is not legal advice.
-                </p>
-              </div>
-            )
-          })() : null}
-        </DialogContent>
-      </Dialog>
     </section>
-
   )
 }
