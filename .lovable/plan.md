@@ -1,31 +1,23 @@
-# هدف
-صفحه‌ی ورود (Welcome back / Sign in) از حالت ساده و بی‌روح خارج شده و یک طراحی گرافیکی برند با استفاده از لوگوی شرکت (سکه‌ی طلایی) پیدا کند.
+## Plan: Rename brand to "REBAR SHOP AI VIDEO"
 
-# وضعیت فعلی
-- `src/pages/auth/LoginPage.tsx`: یک باکس مرکزی ساده با تیتر «Welcome back» و فرم.
-- `src/components/auth/AuthForm.tsx`: فیلدهای Email/Password و دکمه‌ی Sign in (منطق آن دست‌نخورده می‌ماند).
-- لوگوی شرکت هنوز به‌صورت asset در پروژه موجود نیست (فقط فایل آپلودشده‌ی `LOGO-under-500kb.webp`).
+Replace all occurrences of "Prompt Forge" with the new brand name "REBAR SHOP AI VIDEO" across the project.
 
-# تغییرات (فقط UI/فرانت‌اند)
+### Files to change
 
-## ۱) افزودن لوگو به‌عنوان asset
-فایل آپلودشده‌ی لوگو از طریق `lovable-assets` به یک asset CDN تبدیل می‌شود و pointer آن در `src/assets/brand-logo.webp.asset.json` ذخیره می‌شود تا در صفحه‌ی ورود import شود.
+1. **index.html**
+   - `<title>` tag
+   - `og:title` meta tag
+   - `twitter:title` meta tag
+   - Update `description`, `og:description`, and `twitter:description` to match the new brand identity
 
-## ۲) بازطراحی گرافیکی `LoginPage`
-چیدمان دو ستونی (split-screen) ریسپانسیو با حال‌وهوای دارک پریمیوم و لهجه‌ی طلایی لوگو:
-- **ستون چپ (نمایشی، فقط دسکتاپ):** پس‌زمینه‌ی تیره با گرادیان navy، افکت‌های نور/درخشش طلایی ملایم (radial glow پشت لوگو)، نمایش بزرگ لوگوی سکه با سایه و یک هاله‌ی نرم، به‌همراه نام/شعار برند. یک حرکت ظریف (شناور/تنفسی) با CSS برای لوگو.
-- **ستون راست (فرم):** کارت شیشه‌ای (glass/blur) با بوردر ظریف، لوگوی کوچک بالای فرم برای موبایل، تیتر «Welcome back»، زیرنویس، و فرم `AuthForm` بدون تغییر منطق.
-- در موبایل: تک‌ستونی؛ لوگوی کوچک بالای کارت فرم، پس‌زمینه‌ی گرادیان + glow.
-- همه‌ی رنگ‌ها از توکن‌های سمنتیک موجود (`background`, `muted`, `primary`, …) استفاده می‌کنند؛ در صورت نیاز یک توکن لهجه‌ی طلایی به‌صورت محلی/CSS اضافه می‌شود تا با دارک‌مود سازگار بماند (بدون hardcode رنگ خام در کامپوننت).
+2. **src/pages/auth/LoginPage.tsx**
+   - Showcase heading (line ~27)
+   - `alt` attributes on logo images (lines ~22 and ~43)
 
-## ۳) صیقل ظاهری فرم
-- فاصله‌گذاری، گردی گوشه‌ها و حالت focus فیلدها هماهنگ با کارت جدید (بدون تغییر در اعتبارسنجی/زاد/منطق Supabase).
+3. **supabase/functions/local-llm-plan-video/index.ts**
+   - System prompt identity line (line ~141): "You are Prompt Forge's local video prompt planner." → "You are REBAR SHOP AI VIDEO's local video prompt planner."
 
-# خارج از محدوده
-- منطق احراز هویت، مسیرها، و رفتار `AuthForm` تغییری نمی‌کند.
-- بقیه‌ی صفحات اپ بدون تغییر می‌مانند.
-
-# اعتبارسنجی
-- باز کردن مسیر ورود در دسکتاپ ← چیدمان دو ستونی با لوگوی برند و glow طلایی.
-- موبایل ← تک‌ستونی تمیز با لوگوی بالای فرم.
-- ورود/خطاها همان رفتار قبلی را دارند.
+### No other changes
+- No functional/logic changes.
+- No backend schema or auth changes.
+- No design/ layout changes beyond text replacement.

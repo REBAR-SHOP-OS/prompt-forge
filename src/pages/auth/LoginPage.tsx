@@ -18,13 +18,13 @@ export default function LoginPage() {
             <div className="absolute inset-0 -z-10 animate-pulse rounded-full bg-amber-400/25 blur-3xl" />
             <img
               src={brandLogo.url}
-              alt="Prompt Forge"
+              alt="REBAR SHOP AI VIDEO"
               className="h-56 w-56 animate-[float_6s_ease-in-out_infinite] drop-shadow-[0_25px_60px_rgba(0,0,0,0.55)] xl:h-72 xl:w-72"
             />
           </div>
           <div className="space-y-3">
             <h2 className="bg-gradient-to-r from-amber-200 via-amber-400 to-amber-200 bg-clip-text text-4xl font-bold tracking-tight text-transparent">
-              Prompt Forge
+              REBAR SHOP AI VIDEO
             </h2>
             <p className="max-w-sm text-balance text-sm leading-relaxed text-muted-foreground">
               Forge cinematic AI videos, soundtracks, and voiceovers — all in one studio.
@@ -40,7 +40,7 @@ export default function LoginPage() {
           <div className="flex flex-col items-center gap-4 text-center">
             <img
               src={brandLogo.url}
-              alt="Prompt Forge"
+              alt="REBAR SHOP AI VIDEO"
               className="h-16 w-16 drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)] lg:hidden"
             />
             <div className="space-y-1.5">
