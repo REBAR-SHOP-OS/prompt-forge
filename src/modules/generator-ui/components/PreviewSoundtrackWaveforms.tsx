@@ -119,17 +119,8 @@ export const PreviewSoundtrackWaveforms = forwardRef<
         ws.play().catch(() => { /* autoplay block — ignore */ })
       }
     }
-    // Loop the music inside the selected window.
-    const onAudioProcess = () => {
-      const range = rangeRef.current
-      if (!range) return
-      const [start, end] = range
-      if (end > start && ws.getCurrentTime() >= end) {
-        try { ws.setTime(start) } catch { /* ignore */ }
-      }
-    }
     ws.on('ready', onReady)
-    ws.on('audioprocess', onAudioProcess)
+
 
     return () => {
       musicReadyRef.current = false
