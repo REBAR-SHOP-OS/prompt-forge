@@ -8600,6 +8600,38 @@ export default function DashboardPage() {
                             </button>
                           </>
                         ) : null}
+                        {variant === 'final' && video.video?.storage_path ? (() => {
+                          const v = copyrightVerdicts[video.id]
+                          const ShieldIcon =
+                            v === 'approved' ? ShieldCheck
+                              : v === 'caution' ? ShieldAlert
+                              : v === 'rejected' ? ShieldX
+                              : Shield
+                          const tint =
+                            v === 'approved'
+                              ? 'border-emerald-300/40 text-emerald-300 hover:bg-emerald-300/10'
+                              : v === 'caution'
+                              ? 'border-amber-300/40 text-amber-300 hover:bg-amber-300/10'
+                              : v === 'rejected'
+                              ? 'border-rose-300/40 text-rose-300 hover:bg-rose-300/10'
+                              : 'border-white/10 text-zinc-400 hover:border-indigo-300/40 hover:bg-indigo-300/10 hover:text-indigo-200'
+                          return (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                setCopyrightJobId(video.id)
+                                void runCopyrightCheck(video)
+                              }}
+                              aria-label="Copyright check"
+                              title="Copyright risk check"
+                              className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border transition ${tint}`}
+                            >
+                              <ShieldIcon className="h-3 w-3" aria-hidden="true" />
+                            </button>
+                          )
+                        })() : null}
+
                         {variant === 'final' ? (() => {
                           const audio = projectAudio[video.id]
                           const hasAny = Boolean(audio?.music || audio?.voiceover)
