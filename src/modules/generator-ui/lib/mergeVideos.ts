@@ -816,7 +816,7 @@ export async function mergeVideoUrls(
       : (totalDuration > 0 ? totalDuration : Number.POSITIVE_INFINITY)
 
     const gateTick = () => {
-      const gt = (performance.now() - recordStartMs) / 1000
+      const gt = currentFilmTime()
 
       if (soundtrackEl && soundtrackGain) {
         const inWin = gt >= musicTlStart && gt < musicTlEnd
