@@ -785,16 +785,24 @@ export async function mergeVideoUrls(
     const winStart = Math.max(0, musicTrack.startSec)
     const winEnd = Math.max(winStart + 0.05, musicTrack.endSec)
     const musicStartInVideo = Math.max(0, musicTrack.startInVideo ?? 0)
+    const musicLoop = musicTrack.loop !== false
     try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
     const clampTick = () => {
       if (!soundtrackEl) return
       if (soundtrackEl.currentTime >= winEnd) {
-        try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
+        if (musicLoop) {
+          try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
+        } else {
+          // Play once across the window, then stay silent.
+          try { soundtrackEl.pause() } catch { /* ignore */ }
+          return
+        }
       }
       soundtrackClampRaf = requestAnimationFrame(clampTick)
     }
     soundtrackEndedHandler = () => {
       if (!soundtrackEl) return
+      if (!musicLoop) return
       try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
       void soundtrackEl.play().catch(() => { /* ignore */ })
     }
