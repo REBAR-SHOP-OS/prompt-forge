@@ -5543,10 +5543,19 @@ export default function DashboardPage() {
                   startSec: musicRange[0],
                   endSec: musicRange[1],
                   musicVolume,
+                  timelineStartSec: musicTimeline[1] > musicTimeline[0] ? musicTimeline[0] : undefined,
+                  timelineEndSec: musicTimeline[1] > musicTimeline[0] ? musicTimeline[1] : undefined,
                 }
               : undefined,
             voiceover: hasVoiceover
-              ? { src: voiceoverUrl as string, volume: voiceoverVolume }
+              ? {
+                  src: voiceoverUrl as string,
+                  volume: voiceoverVolume,
+                  sourceStartSec: voiceoverRange[1] > voiceoverRange[0] ? voiceoverRange[0] : undefined,
+                  sourceEndSec: voiceoverRange[1] > voiceoverRange[0] ? voiceoverRange[1] : undefined,
+                  timelineStartSec: voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[0] : undefined,
+                  timelineEndSec: voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[1] : undefined,
+                }
               : undefined,
             clipVolume: mixedClipVolume,
           }
