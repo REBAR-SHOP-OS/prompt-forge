@@ -1,4 +1,4 @@
-import { Fragment, type ChangeEvent, type FormEvent, type SyntheticEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, type ChangeEvent, type FormEvent, type SyntheticEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowRight,
   BookmarkCheck,
@@ -1446,6 +1446,48 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  // Persist a music/voiceover source into the public MERGED_BUCKET so it
+  // survives refresh and project switches. Returns a durable public URL, or
+  // null on failure. Reused by both Final Film finalize and Draft snapshots.
+  const persistAudioToStorage = useCallback(
+    async (src: string, kind: 'music' | 'voice', id: string): Promise<string | null> => {
+      if (!userId) return null
+      const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
+        Promise.race([
+          p,
+          new Promise<T>((_, reject) =>
+            setTimeout(() => reject(new Error('audio snapshot timed out')), ms),
+          ),
+        ])
+      try {
+        const resp = await withTimeout(fetch(src), 60_000)
+        if (!resp.ok) throw new Error(`fetch ${resp.status}`)
+        const blob = await withTimeout(resp.blob(), 60_000)
+        const ct = (blob.type || 'audio/mpeg').toLowerCase()
+        const ext = ct.includes('mpeg') || ct.includes('mp3') ? 'mp3'
+          : ct.includes('wav') ? 'wav'
+          : ct.includes('ogg') ? 'ogg'
+          : ct.includes('webm') ? 'webm'
+          : ct.includes('aac') ? 'aac'
+          : ct.includes('m4a') || ct.includes('mp4') ? 'm4a'
+          : 'mp3'
+        const path = `${userId}/project-${kind}-${id}.${ext}`
+        const up = await withTimeout(
+          supabase.storage
+            .from(MERGED_BUCKET)
+            .upload(path, blob, { contentType: blob.type || 'audio/mpeg', upsert: true }),
+          90_000,
+        )
+        if (up.error) throw new Error(up.error.message)
+        return supabase.storage.from(MERGED_BUCKET).getPublicUrl(path).data.publicUrl ?? null
+      } catch (err) {
+        console.warn(`[audio-snapshot] ${kind} persist failed`, err)
+        return null
+      }
+    },
+    [userId],
+  )
+
 
   // The in-progress workspace (clips + images that haven't been merged into a
   // Final Film yet) is auto-snapshotted into a Draft project so it survives
@@ -2096,6 +2138,45 @@ export default function DashboardPage() {
   const [pendingStartPrepends, setPendingStartPrepends] = useState<Record<string, string>>({})
   const processingEndAppendRef = useRef<Set<string>>(new Set())
   const processingStartPrependRef = useRef<Set<string>>(new Set())
+
+  // Per-draft snapshot of the music/voiceover currently applied. Persists the
+  // active draft's audio into durable storage (and projectAudio) so it is NOT
+  // lost on refresh, when switching to another draft, or on Start Over.
+  const draftAudioSnapshotRef = useRef<Record<string, { music?: string; voice?: string }>>({})
+  useEffect(() => {
+    if (!userId || !activeDraftId) return
+    const draftId = activeDraftId
+    if (!musicUrl && !voiceoverUrl) return
+    const seen = draftAudioSnapshotRef.current[draftId] ?? {}
+    const needMusic = Boolean(musicUrl) && seen.music !== musicUrl
+    const needVoice = Boolean(voiceoverUrl) && seen.voice !== voiceoverUrl
+    if (!needMusic && !needVoice) return
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      const musicSnap = needMusic && musicUrl
+        ? await persistAudioToStorage(musicUrl, 'music', draftId)
+        : null
+      const voiceSnap = needVoice && voiceoverUrl
+        ? await persistAudioToStorage(voiceoverUrl, 'voice', draftId)
+        : null
+      if (cancelled) return
+      draftAudioSnapshotRef.current[draftId] = {
+        music: musicUrl ?? seen.music,
+        voice: voiceoverUrl ?? seen.voice,
+      }
+      if (!musicSnap && !voiceSnap) return
+      setProjectAudio((prev) => {
+        const entry: ProjectAudio = { ...(prev[draftId] ?? {}) }
+        if (musicSnap) entry.music = { url: musicSnap, name: musicName ?? 'Music' }
+        if (voiceSnap) entry.voiceover = { url: voiceSnap, name: voiceoverName ?? 'Voiceover' }
+        const next = { ...prev, [draftId]: entry }
+        persistProjectAudio(next)
+        return next
+      })
+    }, 1200)
+    return () => { cancelled = true; clearTimeout(timer) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, activeDraftId, musicUrl, voiceoverUrl, musicName, voiceoverName, persistAudioToStorage])
 
   useEffect(() => {
     setPendingEndAppends({})
@@ -4418,14 +4499,74 @@ export default function DashboardPage() {
       return next
     })
 
+    // 8b. Move the film's persisted audio over to the draft scope so the
+    // soundtrack stays attached and is restored into the live audio state.
+    const movedAudio = projectAudio[finalId]
+    setProjectAudio((prev) => {
+      const audio = prev[finalId]
+      if (!audio) return prev
+      const { [finalId]: _dropAudio, ...rest } = prev
+      const next = { ...rest, [draftId]: audio }
+      persistProjectAudio(next)
+      return next
+    })
+
     // 9. Activate edit mode on the draft.
     setActiveDraftId(draftId)
     persistActiveDraftId(draftId)
+    restoreDraftAudio(draftId, movedAudio)
     setSelectedProjectId(null)
     setPreviewVideoId(null)
     setLastMergedPreview(null)
     setPreviewDismissed(true)
   }
+
+
+  // Restore a draft's persisted music/voiceover back into the live audio state
+  // so the soundtrack chip reappears and applies to the exact same film. Audio
+  // durations are loaded so the music range is set to the full track.
+  const restoreDraftAudio = useCallback((draftId: string, override?: ProjectAudio) => {
+    const audio = override ?? projectAudio[draftId]
+    if (!audio) return
+    if (audio.music?.url) {
+      const url = audio.music.url
+      setMusicName(audio.music.name)
+      setMusicUrl(url)
+      setMusicTimeline([0, mergedDurationSec])
+      try {
+        const a = new Audio()
+        a.src = url
+        a.addEventListener('loadedmetadata', () => {
+          const d = a.duration
+          if (Number.isFinite(d) && d > 0) { setMusicDuration(d); setMusicRange([0, d]) }
+        })
+      } catch { /* ignore */ }
+      draftAudioSnapshotRef.current[draftId] = {
+        ...(draftAudioSnapshotRef.current[draftId] ?? {}),
+        music: url,
+      }
+    }
+    if (audio.voiceover?.url) {
+      const url = audio.voiceover.url
+      setVoiceoverName(audio.voiceover.name)
+      setVoiceoverUrl(url)
+      setVoiceoverTimeline([0, mergedDurationSec])
+      try {
+        const a = new Audio()
+        a.src = url
+        a.addEventListener('loadedmetadata', () => {
+          const d = a.duration
+          if (Number.isFinite(d) && d > 0) { setVoiceoverDuration(d); setVoiceoverRange([0, d]) }
+        })
+      } catch { /* ignore */ }
+      draftAudioSnapshotRef.current[draftId] = {
+        ...(draftAudioSnapshotRef.current[draftId] ?? {}),
+        voice: url,
+      }
+    }
+  }, [projectAudio, mergedDurationSec])
+
+
 
 
   // wants to extend it — add a new card or run Final Film again — restore the
@@ -4502,6 +4643,7 @@ export default function DashboardPage() {
       ensureActiveDraftIdRef.current = pid
       setActiveDraftId(pid)
       persistActiveDraftId(pid)
+      restoreDraftAudio(pid)
     } else {
       ensureActiveDraftIdRef.current = null
       setActiveDraftId(null)
@@ -4543,6 +4685,7 @@ export default function DashboardPage() {
 
       setSelectedProjectId(did)
       setPreviewVideoId(firstPlayableId)
+      restoreDraftAudio(did)
       return
     }
 
@@ -5743,50 +5886,13 @@ export default function DashboardPage() {
       // finalization if an audio copy fails.
       if ((hasMusic || hasVoiceover) && userId) {
         try {
-          const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
-            Promise.race([
-              p,
-              new Promise<T>((_, reject) =>
-                setTimeout(() => reject(new Error('audio snapshot timed out')), ms),
-              ),
-            ])
-          const snapshotAudio = async (
-            src: string,
-            kind: 'music' | 'voice',
-          ): Promise<string | null> => {
-            try {
-              const resp = await withTimeout(fetch(src), 60_000)
-              if (!resp.ok) throw new Error(`fetch ${resp.status}`)
-              const blob = await withTimeout(resp.blob(), 60_000)
-              const ct = (blob.type || 'audio/mpeg').toLowerCase()
-              const ext = ct.includes('mpeg') || ct.includes('mp3') ? 'mp3'
-                : ct.includes('wav') ? 'wav'
-                : ct.includes('ogg') ? 'ogg'
-                : ct.includes('webm') ? 'webm'
-                : ct.includes('aac') ? 'aac'
-                : ct.includes('m4a') || ct.includes('mp4') ? 'm4a'
-                : 'mp3'
-              const path = `${userId}/project-${kind}-${mergedId}.${ext}`
-              const up = await withTimeout(
-                supabase.storage
-                  .from(MERGED_BUCKET)
-                  .upload(path, blob, { contentType: blob.type || 'audio/mpeg', upsert: true }),
-                90_000,
-              )
-              if (up.error) throw new Error(up.error.message)
-              return supabase.storage.from(MERGED_BUCKET).getPublicUrl(path).data.publicUrl ?? null
-            } catch (err) {
-              console.warn(`[audio-snapshot] ${kind} persist failed`, err)
-              return null
-            }
-          }
           const entry: ProjectAudio = {}
           if (hasMusic && musicUrl) {
-            const url = await snapshotAudio(musicUrl, 'music')
+            const url = await persistAudioToStorage(musicUrl, 'music', mergedId)
             if (url) entry.music = { url, name: musicName ?? 'Music' }
           }
           if (hasVoiceover && voiceoverUrl) {
-            const url = await snapshotAudio(voiceoverUrl, 'voice')
+            const url = await persistAudioToStorage(voiceoverUrl, 'voice', mergedId)
             if (url) entry.voiceover = { url, name: voiceoverName ?? 'Voiceover' }
           }
           if (entry.music || entry.voiceover) {
@@ -8742,7 +8848,7 @@ export default function DashboardPage() {
                             </button>
                           </>
                         ) : null}
-                        {variant === 'final' ? (() => {
+                        {(() => {
                           const audio = projectAudio[video.id]
                           const hasAny = Boolean(audio?.music || audio?.voiceover)
                           return (
@@ -8837,7 +8943,7 @@ export default function DashboardPage() {
                               </PopoverContent>
                             </Popover>
                           )
-                        })() : null}
+                        })()}
                         {variant === 'final' && video.video?.storage_path ? (
                           <button
                             type="button"
