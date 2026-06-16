@@ -1,57 +1,43 @@
-## هدف
+# قابلیت تنظیم زمان شروع/پایان موزیک و وُیس روی فیلم نهایی
 
-افزودن یک دکمه‌ی «سپر» (Shield) روی کارت‌های ویدئوی نهایی (Final videos) در پنل Library. با کلیک روی آن، یک بررسی واقعی کپی‌رایت با هوش مصنوعی روی ویدئو و موزیک پروژه اجرا می‌شود و نتیجه (تایید / هشدار / رد) به‌همراه علت دقیق برای هر بخش نمایش داده می‌شود.
+هدف: کاربر بتواند برای هر دو تِرَک (موزیک و وُیس) دو چیز را انتخاب کند:
+1. **بازه روی تایم‌لاین ویدئو** — اینکه صدا از چه ثانیه‌ای از فیلم شروع و در چه ثانیه‌ای تمام شود.
+2. **بخش صدا** — کدام قسمت از خود فایل صوتی پخش شود (مثل قابلیت فعلی موزیک، که حالا برای وُیس هم اضافه می‌شود).
 
-## رفتار کاربری
+بیرون از بازه روی ویدئو، صدا کاملاً ساکت است (بدون لوپ تا انتهای فیلم).
 
-```text
-[Download] [MP4] [🎵 Music] [🛡 Shield ← جدید] [✏ Reopen] [🗑 Delete]
-```
+## تغییرات اصلی
 
-1. کاربر روی آیکون سپر کلیک می‌کند → دیالوگ «بررسی کپی‌رایت» باز می‌شود.
-2. اسپینر «در حال تحلیل ویدئو و موزیک…» نشان داده می‌شود.
-3. بک‌اند ویدئوی نهایی + فایل موزیک پروژه را با AI تحلیل می‌کند.
-4. نتیجه نمایش داده می‌شود:
-   - **حکم کلی**: تایید (سبز) / هشدار (زرد) / رد (قرمز)
-   - **بخش ویدئو**: وضعیت + علت (مثلاً وجود لوگو/برند/شخصیت/اثر شناخته‌شده)
-   - **بخش موزیک**: وضعیت + علت (مثلاً شباهت به آهنگ تجاری شناخته‌شده، یا امن بودن صدای تولیدشده)
-   - یادداشت: این ارزیابی هوشمند تخمینی است و جایگزین مشاوره‌ی حقوقی نیست.
+### ۱) مدل داده — افزودن بازهٔ تایم‌لاین ویدئو
+- `mergeVideos.ts`: به `MergeMusicTrack` و `MergeVoiceoverTrack` فیلدهای اختیاری `timelineStartSec` و `timelineEndSec` (جای‌گذاری روی طول کل ویدئو) اضافه می‌شود. برای وُیس هم `sourceStartSec`/`sourceEndSec` (بخش انتخابی فایل صوتی) اضافه می‌شود.
+- `DashboardPage.tsx`: stateهای جدید:
+  - `musicTimeline: [number, number]` و `voiceoverTimeline: [number, number]` (بازه روی ویدئو)
+  - `voiceoverRange: [number, number]` و `voiceoverDuration` (بخش صدای وُیس، مشابه `musicRange` موجود)
 
-## اجزای فنی
+### ۲) دیالوگ تنظیمات
+- **دیالوگ موزیک موجود** (Soundtrack for Final Film): افزودن یک بخش «زمان روی ویدئو» با دو اسلایدر/هندل start و end نسبت به `mergedDurationSec` (طول کل فیلم نهایی). بخش «انتخاب قسمت صدا» (waveform فعلی) حفظ می‌شود.
+- **دیالوگ مشابه برای وُیس**: همان ساختار — یک `SoundtrackWaveform` برای انتخاب بخش صدای وُیس + اسلایدر بازهٔ روی ویدئو. از طریق آیکن/دکمهٔ موجود وُیس باز می‌شود.
 
-### ۱) Edge Function جدید: `copyright-check`
-فایل: `supabase/functions/copyright-check/index.ts`
+### ۳) پخش هم‌زمان در پیش‌نمایش
+- `PreviewSoundtrackWaveforms.tsx`: props جدید `musicTimeline`، `voiceoverTimeline`، `voiceoverRange` دریافت می‌کند.
+  - در `play`/`handleSeek`/`syncTime`: هر تِرَک فقط وقتی پخش می‌شود که `videoCurrentTime` داخل بازهٔ تایم‌لاین آن باشد؛ بیرون از بازه pause و ساکت.
+  - نگاشت زمان ویدئو به زمان صدا: `audioTime = sourceStart + (videoTime - timelineStart)`، محدود به `sourceEnd`.
+  - رفتار لوپ فعلی موزیک با حالت «سکوت بیرون از بازه» جایگزین می‌شود.
+- `VideoWithSoundtrack.tsx` و `SequentialClipPlayer`: عبور دادن propهای جدید.
 
-- ورودی: `{ videoUrl: string, musicUrl?: string, voiceoverUrl?: string }`
-- اعتبارسنجی URLها فقط مجاز بودن دامنه‌ی storage (مثل `video-analyze`).
-- احراز هویت با `authenticate(req)` مانند توابع موجود.
-- ویدئو را دانلود می‌کند (سقف ~25MB، مثل `video-analyze`) و به‌صورت multimodal به Gemini می‌فرستد تا ریسک کپی‌رایت بصری را بررسی کند (برند/لوگو، شخصیت‌های دارای حق‌چاپ، صحنه‌های فیلم/سریال شناخته‌شده، واترمارک).
-- اگر `musicUrl` وجود داشت، فایل صوتی را هم دانلود و به‌صورت `input_audio` به مدل می‌فرستد تا ریسک موزیک ارزیابی شود (شباهت به آهنگ تجاری، صدای ساخته‌شده‌ی امن، گفتار).
-- خروجی ساختاریافته‌ی JSON با شِما:
-  ```json
-  {
-    "verdict": "approved | caution | rejected",
-    "video": { "status": "...", "reason": "...", "risks": ["..."] },
-    "music": { "status": "...", "reason": "...", "risks": ["..."] },
-    "summary": "..."
-  }
-  ```
-- پاسخ‌های خطا با CORS و کدهای مناسب (مثل `video-analyze`).
-- مدل: یکی از مدل‌های multimodal Gemini از طریق همان مسیر فعلی پروژه (`GEMINI_API_KEY`) یا Lovable AI Gateway. (از کلید موجود `GEMINI_API_KEY` که `video-analyze` استفاده می‌کند بهره می‌بریم تا قابلیت ویدئو+صوت inline حفظ شود.)
+### ۴) رندر نهایی (mergeVideos)
+- منطق `soundtrackEl`/`voiceoverEl`: به‌جای شروع از t=0 و لوپ، با کنترل `requestAnimationFrame` بر اساس playhead کل فیلم، هر تِرَک را فقط داخل بازهٔ `timelineStart..timelineEnd` پخش و گِین آن را بیرون از بازه صفر می‌کند (سکوت). نگاشت source range مثل پیش‌نمایش.
 
-### ۲) UI در `DashboardPage.tsx`
-- آیکون `ShieldCheck` از `lucide-react` در ردیف دکمه‌های کارت `variant === 'final'` (بعد از دکمه‌ی موزیک).
-- State جدید: `copyrightJob` (کارت در حال بررسی)، `copyrightLoading`، `copyrightResult`، `copyrightError`.
-- تابع `runCopyrightCheck(video)`:
-  - منبع ویدئو: `video.video.storage_path` → ساخت URL امضاشده/عمومی مثل مسیر دانلود موجود.
-  - منبع موزیک/وویس‌اوور: از `projectAudio[video.id]`.
-  - فراخوانی `supabase.functions.invoke('copyright-check', …)`.
-- دیالوگ نتیجه با `Dialog` موجود؛ نمایش حکم کلی با رنگ معنایی، و دو بخش جدا برای ویدئو و موزیک با علت و ریسک‌ها.
-- مدیریت خطا (۴۲۹/۴۰۲/سایر) با پیام واضح در دیالوگ.
+### ۵) ساخت پارامترها هنگام Save/Merge
+- در محل ساخت `audio` برای merge (حدود خط ۵۵۰۰ در `DashboardPage.tsx`)، مقادیر timeline و range وُیس به `music`/`voiceover` اضافه می‌شوند.
 
-## محدوده
-- فقط افزودن قابلیت جدید: یک Edge Function تازه + UI در `DashboardPage.tsx`.
-- بدون تغییر در منطق موجود، schema یا حذف/ادیت کارت‌ها.
+## نکات
+- مقدار پیش‌فرض بازهٔ تایم‌لاین = کل طول فیلم (`[0, mergedDurationSec]`) تا رفتار فعلی برای کاربرانی که چیزی تنظیم نمی‌کنند حفظ شود (بدون شکستن پروژه‌های موجود).
+- back-compat: نبودِ فیلدهای جدید = پخش روی کل ویدئو (مثل قبل).
+- فقط کد فرانت‌اند و منطق پخش/رندر سمت کلاینت تغییر می‌کند؛ هیچ تغییری در بک‌اند/اسکیما لازم نیست.
 
-## نکته‌ی دقت
-این بررسی یک ارزیابی هوشمند مبتنی بر AI است (نه اثرانگشت صوتی واقعی مثل Shazam). دقیق و چندبُعدی است اما تخمینی؛ در صورت نیاز به تشخیص قطعی آهنگ تجاری، بعداً می‌توان سرویس fingerprint (ACRCloud/AudD) را اضافه کرد.
+## فایل‌های تحت تأثیر
+- `src/modules/generator-ui/lib/mergeVideos.ts`
+- `src/modules/generator-ui/components/PreviewSoundtrackWaveforms.tsx`
+- `src/modules/generator-ui/components/VideoWithSoundtrack.tsx`
+- `src/modules/generator-ui/pages/DashboardPage.tsx` (و در صورت نیاز `SequentialClipPlayer`)
