@@ -4501,6 +4501,7 @@ export default function DashboardPage() {
 
     // 8b. Move the film's persisted audio over to the draft scope so the
     // soundtrack stays attached and is restored into the live audio state.
+    const movedAudio = projectAudio[finalId]
     setProjectAudio((prev) => {
       const audio = prev[finalId]
       if (!audio) return prev
@@ -4513,7 +4514,7 @@ export default function DashboardPage() {
     // 9. Activate edit mode on the draft.
     setActiveDraftId(draftId)
     persistActiveDraftId(draftId)
-    restoreDraftAudio(draftId)
+    restoreDraftAudio(draftId, movedAudio)
     setSelectedProjectId(null)
     setPreviewVideoId(null)
     setLastMergedPreview(null)
