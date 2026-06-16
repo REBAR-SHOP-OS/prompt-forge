@@ -110,6 +110,10 @@ export function SequentialClipPlayer({
   voiceoverUrl,
   voiceoverVolume = 1,
   clipVolume = 1,
+  musicOffset = 0,
+  voiceOffset = 0,
+  onMusicOffsetChange,
+  onVoiceOffsetChange,
 }: Props) {
   const [index, setIndex] = useState(0)
   const totalDuration = useTotalDuration(clips)
