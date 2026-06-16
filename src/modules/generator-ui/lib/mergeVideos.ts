@@ -23,22 +23,32 @@ export type MergeProgressCallback = (p: MergeProgress) => void
 
 export interface MergeMusicTrack {
   src: string
+  /** Source window inside the audio file. */
   startSec: number
   endSec: number
   /** 0..1, default 1 */
   musicVolume?: number
+  /** Placement on the final video timeline (seconds). Defaults to whole video. */
+  timelineStartSec?: number
+  timelineEndSec?: number
 }
 
 export interface MergeVoiceoverTrack {
   src: string
   /** 0..1, default 1 */
   volume?: number
+  /** Source window inside the voiceover file. Defaults to whole file. */
+  sourceStartSec?: number
+  sourceEndSec?: number
+  /** Placement on the final video timeline (seconds). Defaults to whole video. */
+  timelineStartSec?: number
+  timelineEndSec?: number
 }
 
 export interface MergeAudioOptions {
-  /** Looping background music with a selected window. */
+  /** Background music with a selected window. */
   music?: MergeMusicTrack
-  /** Voiceover playing once from t=0. */
+  /** Voiceover playing within its timeline window. */
   voiceover?: MergeVoiceoverTrack
   /** 0..1. Defaults to 0 when music or voiceover is present, 1 otherwise. */
   clipVolume?: number
