@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type PointerEvent as ReactPointerEvent,
 } from 'react'
 import WaveSurfer from 'wavesurfer.js'
 import { Music, Mic } from 'lucide-react'
