@@ -2068,16 +2068,25 @@ export default function DashboardPage() {
   const [musicUrl, setMusicUrl] = useState<string | null>(null)
   const [musicDuration, setMusicDuration] = useState<number>(0)
   const [musicRange, setMusicRange] = useState<[number, number]>([0, 0])
+  // Placement of the music on the video timeline [start, end] in seconds.
+  const [musicTimeline, setMusicTimeline] = useState<[number, number]>([0, 0])
   const [soundtrackMode, setSoundtrackMode] = useState<'music-only' | 'mix'>('mix')
   const [clipVolume, setClipVolume] = useState<number>(1)
   const [musicVolume, setMusicVolume] = useState<number>(1)
   const [isMusicDialogOpen, setIsMusicDialogOpen] = useState(false)
   const [isVoiceoverOpen, setIsVoiceoverOpen] = useState(false)
+  const [isVoiceoverTimingOpen, setIsVoiceoverTimingOpen] = useState(false)
   const [isReframeOpen, setIsReframeOpen] = useState(false)
   const [voiceoverUrl, setVoiceoverUrl] = useState<string | null>(null)
   const [voiceoverName, setVoiceoverName] = useState<string | null>(null)
   const [voiceoverVolume, setVoiceoverVolume] = useState<number>(1)
   const [voiceoverClipVolume, setVoiceoverClipVolume] = useState<number>(0.3)
+  const [voiceoverDuration, setVoiceoverDuration] = useState<number>(0)
+  // Source window inside the voiceover file [start, end] in seconds.
+  const [voiceoverRange, setVoiceoverRange] = useState<[number, number]>([0, 0])
+  // Placement of the voiceover on the video timeline [start, end] in seconds.
+  const [voiceoverTimeline, setVoiceoverTimeline] = useState<[number, number]>([0, 0])
+  const voiceoverWaveformRef = useRef<SoundtrackWaveformHandle | null>(null)
   const musicFileInputRef = useRef<HTMLInputElement | null>(null)
   const musicPreviewAudioRef = useRef<HTMLAudioElement | null>(null)
   const musicWaveformRef = useRef<SoundtrackWaveformHandle | null>(null)
@@ -3397,6 +3406,24 @@ export default function DashboardPage() {
       return status === 'completed' && !!c.job.video?.storage_path
     })
   }, [displayedClips])
+
+  // Approximate total length of the Final Film, used to place music / voiceover
+  // on the video timeline. Falls back to sensible per-clip defaults when a
+  // clip's exact duration isn't known yet.
+  const mergedDurationSec = useMemo(() => {
+    let total = 0
+    for (const c of playableSequenceClips) {
+      if (c.kind === 'image') {
+        total += Math.max(1, Math.min(15, c.image.still_duration_seconds || 3))
+      } else {
+        const d = c.job.video?.duration ?? c.job.requested_duration ?? null
+        total += d && Number.isFinite(d) && d > 0 ? d : 8
+      }
+    }
+    return Math.max(1, Math.round(total))
+  }, [playableSequenceClips])
+
+
 
   const previewItem = useMemo<PreviewItem | null>(() => {
     // Highest priority: the transient Final Film output (not a card).
@@ -5209,6 +5236,7 @@ export default function DashboardPage() {
     setMusicUrl(url)
     setMusicDuration(0)
     setMusicRange([0, 0])
+    setMusicTimeline([0, mergedDurationSec])
     setIsMusicDialogOpen(true)
     // Persist the uploaded track so it appears in Storage › Audio.
     void persistUserAudio(file, 'music', file.name)
@@ -5233,6 +5261,7 @@ export default function DashboardPage() {
     setMusicUrl(null)
     setMusicDuration(0)
     setMusicRange([0, 0])
+    setMusicTimeline([0, 0])
     setIsMusicDialogOpen(false)
   }
 
@@ -5242,6 +5271,9 @@ export default function DashboardPage() {
     }
     setVoiceoverUrl(url)
     setVoiceoverName(name)
+    setVoiceoverDuration(0)
+    setVoiceoverRange([0, 0])
+    setVoiceoverTimeline([0, mergedDurationSec])
     setIsVoiceoverOpen(false)
     // Voiceover persistence to Storage › Audio happens at generation time
     // inside VoiceoverDialog, so no extra save is needed here.
@@ -5257,6 +5289,9 @@ export default function DashboardPage() {
     setVoiceoverName(null)
     setVoiceoverVolume(1)
     setVoiceoverClipVolume(0.3)
+    setVoiceoverDuration(0)
+    setVoiceoverRange([0, 0])
+    setVoiceoverTimeline([0, 0])
   }
 
   function handlePreviewMusicRange() {
@@ -5508,10 +5543,19 @@ export default function DashboardPage() {
                   startSec: musicRange[0],
                   endSec: musicRange[1],
                   musicVolume,
+                  timelineStartSec: musicTimeline[1] > musicTimeline[0] ? musicTimeline[0] : undefined,
+                  timelineEndSec: musicTimeline[1] > musicTimeline[0] ? musicTimeline[1] : undefined,
                 }
               : undefined,
             voiceover: hasVoiceover
-              ? { src: voiceoverUrl as string, volume: voiceoverVolume }
+              ? {
+                  src: voiceoverUrl as string,
+                  volume: voiceoverVolume,
+                  sourceStartSec: voiceoverRange[1] > voiceoverRange[0] ? voiceoverRange[0] : undefined,
+                  sourceEndSec: voiceoverRange[1] > voiceoverRange[0] ? voiceoverRange[1] : undefined,
+                  timelineStartSec: voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[0] : undefined,
+                  timelineEndSec: voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[1] : undefined,
+                }
               : undefined,
             clipVolume: mixedClipVolume,
           }
@@ -7318,6 +7362,14 @@ export default function DashboardPage() {
                 onValueChange={(v) => setVoiceoverVolume((v[0] ?? 0) / 100)}
               />
             </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => setIsVoiceoverTimingOpen(true)}
+            >
+              Set timing on video…
+            </Button>
           </PopoverContent>
         </Popover>
       ) : null}
@@ -7328,6 +7380,79 @@ export default function DashboardPage() {
         onOpenChange={setIsVoiceoverOpen}
         onUseAsSoundtrack={handleVoiceoverAsSoundtrack}
       />
+
+      <Dialog open={isVoiceoverTimingOpen} onOpenChange={setIsVoiceoverTimingOpen}>
+        <DialogContent className="border-white/10 bg-black text-zinc-100 sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Voiceover timing</DialogTitle>
+            <DialogDescription>
+              Choose which part of the voiceover plays and where on the video it appears.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {voiceoverUrl ? (
+              <SoundtrackWaveform
+                ref={voiceoverWaveformRef}
+                url={voiceoverUrl}
+                range={voiceoverRange[1] > voiceoverRange[0] ? voiceoverRange : [0, Math.max(0.1, voiceoverDuration)]}
+                onReady={(d) => {
+                  setVoiceoverDuration(d)
+                  if (voiceoverRange[1] <= voiceoverRange[0]) setVoiceoverRange([0, d])
+                }}
+                onRangeChange={(r) => { if (r[1] > r[0]) setVoiceoverRange([r[0], r[1]]) }}
+              />
+            ) : null}
+
+            <div className="space-y-3 rounded-md border border-white/10 bg-black/40 p-3">
+              <div className="flex items-center justify-between text-xs text-zinc-300">
+                <span className="font-medium">Play on video from … to</span>
+                <span className="tabular-nums text-zinc-200">
+                  {formatTimeMS(voiceoverTimeline[0])} – {formatTimeMS(voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[1] : mergedDurationSec)}
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                  <span>Start</span>
+                  <span className="tabular-nums text-zinc-200">{formatTimeMS(voiceoverTimeline[0])}</span>
+                </div>
+                <Slider
+                  value={[Math.round(voiceoverTimeline[0])]}
+                  min={0}
+                  max={mergedDurationSec}
+                  step={1}
+                  onValueChange={(v) => {
+                    const s = Math.min(v[0] ?? 0, (voiceoverTimeline[1] || mergedDurationSec) - 1)
+                    setVoiceoverTimeline([Math.max(0, s), voiceoverTimeline[1] || mergedDurationSec])
+                  }}
+                />
+                <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                  <span>End</span>
+                  <span className="tabular-nums text-zinc-200">{formatTimeMS(voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[1] : mergedDurationSec)}</span>
+                </div>
+                <Slider
+                  value={[Math.round(voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[1] : mergedDurationSec)]}
+                  min={0}
+                  max={mergedDurationSec}
+                  step={1}
+                  onValueChange={(v) => {
+                    const e = Math.max(v[0] ?? mergedDurationSec, voiceoverTimeline[0] + 1)
+                    setVoiceoverTimeline([voiceoverTimeline[0], Math.min(mergedDurationSec, e)])
+                  }}
+                />
+              </div>
+              <p className="text-[11px] leading-relaxed text-zinc-500">
+                Outside this window the voiceover is silent. Total film ≈ {formatTimeMS(mergedDurationSec)}.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" onClick={() => setIsVoiceoverTimingOpen(false)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
 
       <ImageReframeDialog
         open={isReframeOpen}
@@ -7520,6 +7645,50 @@ export default function DashboardPage() {
               </div>
             ) : null}
 
+            {/* Placement on the video timeline */}
+            <div className="space-y-3 rounded-md border border-white/10 bg-black/40 p-3">
+              <div className="flex items-center justify-between text-xs text-zinc-300">
+                <span className="font-medium">Play on video from … to</span>
+                <span className="tabular-nums text-zinc-200">
+                  {formatTimeMS(musicTimeline[0])} – {formatTimeMS(musicTimeline[1] > musicTimeline[0] ? musicTimeline[1] : mergedDurationSec)}
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                  <span>Start</span>
+                  <span className="tabular-nums text-zinc-200">{formatTimeMS(musicTimeline[0])}</span>
+                </div>
+                <Slider
+                  value={[Math.round(musicTimeline[0])]}
+                  min={0}
+                  max={mergedDurationSec}
+                  step={1}
+                  onValueChange={(v) => {
+                    const s = Math.min(v[0] ?? 0, (musicTimeline[1] || mergedDurationSec) - 1)
+                    setMusicTimeline([Math.max(0, s), musicTimeline[1] || mergedDurationSec])
+                  }}
+                />
+                <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                  <span>End</span>
+                  <span className="tabular-nums text-zinc-200">{formatTimeMS(musicTimeline[1] > musicTimeline[0] ? musicTimeline[1] : mergedDurationSec)}</span>
+                </div>
+                <Slider
+                  value={[Math.round(musicTimeline[1] > musicTimeline[0] ? musicTimeline[1] : mergedDurationSec)]}
+                  min={0}
+                  max={mergedDurationSec}
+                  step={1}
+                  onValueChange={(v) => {
+                    const e = Math.max(v[0] ?? mergedDurationSec, musicTimeline[0] + 1)
+                    setMusicTimeline([musicTimeline[0], Math.min(mergedDurationSec, e)])
+                  }}
+                />
+              </div>
+              <p className="text-[11px] leading-relaxed text-zinc-500">
+                Outside this window the music is silent. Total film ≈ {formatTimeMS(mergedDurationSec)}.
+              </p>
+            </div>
+
+
             {/* Audio mode: music-only vs mix */}
             <div className="space-y-3 rounded-md border border-white/10 bg-black/40 p-3">
               <div className="flex items-center">
@@ -7617,8 +7786,11 @@ export default function DashboardPage() {
               musicUrl={musicUrl}
               musicRange={musicRange}
               musicVolume={musicVolume}
+              musicTimeline={musicTimeline}
               voiceoverUrl={voiceoverUrl}
               voiceoverVolume={voiceoverVolume}
+              voiceoverRange={voiceoverRange}
+              voiceoverTimeline={voiceoverTimeline}
               clipVolume={
                 musicUrl && musicRange[1] > musicRange[0]
                   ? (soundtrackMode === 'music-only' ? 0 : clipVolume)

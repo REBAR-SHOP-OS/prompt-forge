@@ -28,10 +28,17 @@ export type PreviewSoundtrackHandle = {
 
 type Props = {
   musicUrl?: string | null
+  /** Source window inside the music file. */
   musicRange?: [number, number]
   musicVolume?: number
+  /** Placement on the video timeline [start, end] in seconds. */
+  musicTimeline?: [number, number]
   voiceoverUrl?: string | null
   voiceoverVolume?: number
+  /** Source window inside the voiceover file. */
+  voiceoverRange?: [number, number]
+  /** Placement on the video timeline [start, end] in seconds. */
+  voiceoverTimeline?: [number, number]
   /** Waveform height in px (compact under the preview). */
   height?: number
 }
@@ -51,8 +58,11 @@ export const PreviewSoundtrackWaveforms = forwardRef<
     musicUrl,
     musicRange,
     musicVolume = 1,
+    musicTimeline,
     voiceoverUrl,
     voiceoverVolume = 1,
+    voiceoverRange,
+    voiceoverTimeline,
     height = 40,
   },
   ref,
@@ -65,10 +75,20 @@ export const PreviewSoundtrackWaveforms = forwardRef<
   const voiceReadyRef = useRef(false)
   const wantPlayingRef = useRef(false)
 
-  // Keep latest range/volume in refs so the audioprocess handler and the
-  // imperative handle always read fresh values without re-creating WaveSurfer.
+  // Keep latest range/timeline/volume in refs so the handlers always read fresh
+  // values without re-creating WaveSurfer.
   const rangeRef = useRef<[number, number] | undefined>(musicRange)
   rangeRef.current = musicRange
+  const musicTimelineRef = useRef<[number, number] | undefined>(musicTimeline)
+  musicTimelineRef.current = musicTimeline
+  const voiceRangeRef = useRef<[number, number] | undefined>(voiceoverRange)
+  voiceRangeRef.current = voiceoverRange
+  const voiceTimelineRef = useRef<[number, number] | undefined>(voiceoverTimeline)
+  voiceTimelineRef.current = voiceoverTimeline
+  const musicVolumeRef = useRef<number>(musicVolume)
+  musicVolumeRef.current = musicVolume
+  const voiceVolumeRef = useRef<number>(voiceoverVolume)
+  voiceVolumeRef.current = voiceoverVolume
 
   // Build the music waveform when its URL changes.
   useEffect(() => {
@@ -99,17 +119,8 @@ export const PreviewSoundtrackWaveforms = forwardRef<
         ws.play().catch(() => { /* autoplay block — ignore */ })
       }
     }
-    // Loop the music inside the selected window.
-    const onAudioProcess = () => {
-      const range = rangeRef.current
-      if (!range) return
-      const [start, end] = range
-      if (end > start && ws.getCurrentTime() >= end) {
-        try { ws.setTime(start) } catch { /* ignore */ }
-      }
-    }
     ws.on('ready', onReady)
-    ws.on('audioprocess', onAudioProcess)
+
 
     return () => {
       musicReadyRef.current = false
@@ -166,23 +177,74 @@ export const PreviewSoundtrackWaveforms = forwardRef<
     if (ws && voiceReadyRef.current) ws.setVolume(Math.max(0, Math.min(1, voiceoverVolume)))
   }, [voiceoverVolume])
 
+  // Apply music gating + source mapping for a given video playhead.
+  const applyMusic = (t: number, forceSeek: boolean) => {
+    const m = musicWsRef.current
+    if (!m || !musicReadyRef.current) return
+    const tl = musicTimelineRef.current
+    const tlStart = tl?.[0] ?? 0
+    const tlEnd = tl && tl[1] > tl[0] ? tl[1] : Number.POSITIVE_INFINITY
+    const inWin = t >= tlStart && t < tlEnd
+    try {
+      if (!inWin) {
+        m.setVolume(0)
+        if (m.isPlaying()) m.pause()
+        return
+      }
+      m.setVolume(Math.max(0, Math.min(1, musicVolumeRef.current)))
+      const range = rangeRef.current
+      const rel = t - tlStart
+      let target: number
+      if (range && range[1] > range[0]) {
+        const [start, end] = range
+        const win = end - start
+        target = start + (rel % win)
+      } else {
+        const dur = m.getDuration()
+        target = dur > 0 ? rel % dur : rel
+      }
+      if (forceSeek || Math.abs(m.getCurrentTime() - target) > 0.25) m.setTime(target)
+      if (wantPlayingRef.current && !m.isPlaying()) m.play().catch(() => { /* ignore */ })
+    } catch { /* ignore */ }
+  }
+
+  // Apply voiceover gating + source mapping for a given video playhead.
+  const applyVoice = (t: number, forceSeek: boolean) => {
+    const v = voiceWsRef.current
+    if (!v || !voiceReadyRef.current) return
+    const tl = voiceTimelineRef.current
+    const tlStart = tl?.[0] ?? 0
+    const tlEnd = tl && tl[1] > tl[0] ? tl[1] : Number.POSITIVE_INFINITY
+    const inWin = t >= tlStart && t < tlEnd
+    try {
+      if (!inWin) {
+        v.setVolume(0)
+        if (v.isPlaying()) v.pause()
+        return
+      }
+      const range = voiceRangeRef.current
+      const dur = v.getDuration()
+      const srcStart = range && range[1] > range[0] ? range[0] : 0
+      const srcEnd = range && range[1] > range[0] ? range[1] : (dur > 0 ? dur : Number.POSITIVE_INFINITY)
+      const target = srcStart + (t - tlStart)
+      if (target >= srcEnd) {
+        v.setVolume(0)
+        if (v.isPlaying()) v.pause()
+        return
+      }
+      v.setVolume(Math.max(0, Math.min(1, voiceVolumeRef.current)))
+      if (forceSeek || Math.abs(v.getCurrentTime() - target) > 0.25) {
+        v.setTime(Math.max(0, Math.min(target, dur > 0 ? dur - 0.05 : target)))
+      }
+      if (wantPlayingRef.current && !v.isPlaying()) v.play().catch(() => { /* ignore */ })
+    } catch { /* ignore */ }
+  }
+
   useImperativeHandle(ref, () => ({
     play: () => {
       wantPlayingRef.current = true
-      const m = musicWsRef.current
-      if (m && musicReadyRef.current) {
-        const range = rangeRef.current
-        if (range) {
-          const [start, end] = range
-          const t = m.getCurrentTime()
-          if (end > start && (t < start || t >= end)) {
-            try { m.setTime(start) } catch { /* ignore */ }
-          }
-        }
-        m.play().catch(() => { /* ignore */ })
-      }
-      const v = voiceWsRef.current
-      if (v && voiceReadyRef.current) v.play().catch(() => { /* ignore */ })
+      applyMusic(0, true)
+      applyVoice(0, true)
     },
     pause: () => {
       wantPlayingRef.current = false
@@ -191,62 +253,13 @@ export const PreviewSoundtrackWaveforms = forwardRef<
     },
     handleSeek: (videoCurrentTime: number) => {
       const t = Math.max(0, videoCurrentTime)
-      // Voiceover follows the video's playhead 1:1 (clamped to its length).
-      const v = voiceWsRef.current
-      if (v && voiceReadyRef.current) {
-        try {
-          const dur = v.getDuration()
-          const target = dur > 0 ? Math.min(t, Math.max(0, dur - 0.05)) : t
-          v.setTime(target)
-        } catch { /* ignore */ }
-      }
-      // Music maps the video time into its selected window and loops inside it.
-      const m = musicWsRef.current
-      const range = rangeRef.current
-      if (m && musicReadyRef.current) {
-        try {
-          if (range && range[1] > range[0]) {
-            const [start, end] = range
-            const win = end - start
-            const target = start + (t % win)
-            m.setTime(target)
-          } else {
-            const dur = m.getDuration()
-            const target = dur > 0 ? t % dur : t
-            m.setTime(target)
-          }
-        } catch { /* ignore */ }
-      }
+      applyVoice(t, true)
+      applyMusic(t, true)
     },
     syncTime: (videoCurrentTime: number) => {
       const t = Math.max(0, videoCurrentTime)
-      const DRIFT = 0.25
-      // Voiceover follows the video 1:1; only correct when it drifts.
-      const v = voiceWsRef.current
-      if (v && voiceReadyRef.current) {
-        try {
-          const dur = v.getDuration()
-          const target = dur > 0 ? Math.min(t, Math.max(0, dur - 0.05)) : t
-          if (Math.abs(v.getCurrentTime() - target) > DRIFT) v.setTime(target)
-        } catch { /* ignore */ }
-      }
-      // Music maps into its window; correct only on meaningful drift.
-      const m = musicWsRef.current
-      const range = rangeRef.current
-      if (m && musicReadyRef.current) {
-        try {
-          let target: number
-          if (range && range[1] > range[0]) {
-            const [start, end] = range
-            const win = end - start
-            target = start + (t % win)
-          } else {
-            const dur = m.getDuration()
-            target = dur > 0 ? t % dur : t
-          }
-          if (Math.abs(m.getCurrentTime() - target) > DRIFT) m.setTime(target)
-        } catch { /* ignore */ }
-      }
+      applyVoice(t, false)
+      applyMusic(t, false)
     },
   }))
 

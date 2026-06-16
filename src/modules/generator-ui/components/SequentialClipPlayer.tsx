@@ -84,8 +84,11 @@ type Props = {
   musicUrl?: string | null
   musicRange?: [number, number]
   musicVolume?: number
+  musicTimeline?: [number, number]
   voiceoverUrl?: string | null
   voiceoverVolume?: number
+  voiceoverRange?: [number, number]
+  voiceoverTimeline?: [number, number]
   /** Volume of the clip's own audio track in preview (0..1). */
   clipVolume?: number
 }
@@ -101,8 +104,11 @@ export function SequentialClipPlayer({
   musicUrl,
   musicRange,
   musicVolume = 1,
+  musicTimeline,
   voiceoverUrl,
   voiceoverVolume = 1,
+  voiceoverRange,
+  voiceoverTimeline,
   clipVolume = 1,
 }: Props) {
   const [index, setIndex] = useState(0)
@@ -535,8 +541,11 @@ export function SequentialClipPlayer({
           musicUrl={musicUrl}
           musicRange={musicRange}
           musicVolume={musicVolume}
+          musicTimeline={musicTimeline}
           voiceoverUrl={voiceoverUrl}
           voiceoverVolume={voiceoverVolume}
+          voiceoverRange={voiceoverRange}
+          voiceoverTimeline={voiceoverTimeline}
         />
       </div>
     </div>

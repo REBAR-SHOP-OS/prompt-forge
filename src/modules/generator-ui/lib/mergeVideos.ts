@@ -23,22 +23,32 @@ export type MergeProgressCallback = (p: MergeProgress) => void
 
 export interface MergeMusicTrack {
   src: string
+  /** Source window inside the audio file. */
   startSec: number
   endSec: number
   /** 0..1, default 1 */
   musicVolume?: number
+  /** Placement on the final video timeline (seconds). Defaults to whole video. */
+  timelineStartSec?: number
+  timelineEndSec?: number
 }
 
 export interface MergeVoiceoverTrack {
   src: string
   /** 0..1, default 1 */
   volume?: number
+  /** Source window inside the voiceover file. Defaults to whole file. */
+  sourceStartSec?: number
+  sourceEndSec?: number
+  /** Placement on the final video timeline (seconds). Defaults to whole video. */
+  timelineStartSec?: number
+  timelineEndSec?: number
 }
 
 export interface MergeAudioOptions {
-  /** Looping background music with a selected window. */
+  /** Background music with a selected window. */
   music?: MergeMusicTrack
-  /** Voiceover playing once from t=0. */
+  /** Voiceover playing within its timeline window. */
   voiceover?: MergeVoiceoverTrack
   /** 0..1. Defaults to 0 when music or voiceover is present, 1 otherwise. */
   clipVolume?: number
@@ -462,8 +472,8 @@ export async function mergeVideoUrls(
   }
 
   let soundtrackEl: HTMLAudioElement | null = null
-  let soundtrackEndedHandler: (() => void) | null = null
-  let soundtrackClampRaf = 0
+  let soundtrackGain: GainNode | null = null
+  let gateRaf = 0
   if (musicTrack && audioCtx && audioDest) {
     try {
       soundtrackEl = document.createElement('audio')
@@ -484,14 +494,16 @@ export async function mergeVideoUrls(
       gain.gain.value = musicVolume
       source.connect(gain)
       gain.connect(audioDest)
+      soundtrackGain = gain
     } catch (err) {
       console.warn('[mergeVideoUrls] soundtrack disabled:', err)
       soundtrackEl = null
     }
   }
 
-  // Voiceover: plays once from t=0, mixed alongside music + clip audio.
+  // Voiceover: plays inside its timeline window, mixed alongside music + clip audio.
   let voiceoverEl: HTMLAudioElement | null = null
+  let voiceoverGain: GainNode | null = null
   if (voiceoverTrack && audioCtx && audioDest) {
     try {
       voiceoverEl = document.createElement('audio')
@@ -505,12 +517,13 @@ export async function mergeVideoUrls(
         voiceoverEl!.addEventListener('loadedmetadata', onReady)
         voiceoverEl!.addEventListener('error', onErr)
       })
-      voiceoverEl.currentTime = 0
+      voiceoverEl.currentTime = Math.max(0, voiceoverTrack.sourceStartSec ?? 0)
       const vSource = audioCtx.createMediaElementSource(voiceoverEl)
       const vGain = audioCtx.createGain()
       vGain.gain.value = voiceoverVolume
       vSource.connect(vGain)
       vGain.connect(audioDest)
+      voiceoverGain = vGain
     } catch (err) {
       console.warn('[mergeVideoUrls] voiceover disabled:', err)
       voiceoverEl = null
@@ -764,31 +777,71 @@ export async function mergeVideoUrls(
   })
   recorder.start(250)
 
-  if (soundtrackEl && musicTrack) {
-    const winStart = Math.max(0, musicTrack.startSec)
-    const winEnd = Math.max(winStart + 0.05, musicTrack.endSec)
-    try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
-    const clampTick = () => {
-      if (!soundtrackEl) return
-      if (soundtrackEl.currentTime >= winEnd) {
-        try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
+  // Unified timeline gating: each track only plays while the global playhead is
+  // inside its timeline window. Outside the window the track is silenced and
+  // paused. Inside the window each track maps the global time into its source
+  // window (music loops inside its window; voiceover plays once through it).
+  {
+    const recordStartMs = performance.now()
+
+    const musicWinStart = Math.max(0, musicTrack?.startSec ?? 0)
+    const musicWinEnd = Math.max(musicWinStart + 0.05, musicTrack?.endSec ?? 0)
+    const musicTlStart = Math.max(0, musicTrack?.timelineStartSec ?? 0)
+    const musicTlEnd = musicTrack?.timelineEndSec != null && musicTrack.timelineEndSec > musicTlStart
+      ? musicTrack.timelineEndSec
+      : (totalDuration > 0 ? totalDuration : Number.POSITIVE_INFINITY)
+
+    const voiceSrcStart = Math.max(0, voiceoverTrack?.sourceStartSec ?? 0)
+    const voiceSrcEnd = voiceoverTrack?.sourceEndSec != null && voiceoverTrack.sourceEndSec > voiceSrcStart
+      ? voiceoverTrack.sourceEndSec
+      : (voiceoverEl ? voiceoverEl.duration : 0)
+    const voiceTlStart = Math.max(0, voiceoverTrack?.timelineStartSec ?? 0)
+    const voiceTlEnd = voiceoverTrack?.timelineEndSec != null && voiceoverTrack.timelineEndSec > voiceTlStart
+      ? voiceoverTrack.timelineEndSec
+      : (totalDuration > 0 ? totalDuration : Number.POSITIVE_INFINITY)
+
+    const gateTick = () => {
+      const gt = (performance.now() - recordStartMs) / 1000
+
+      if (soundtrackEl && soundtrackGain) {
+        const inWin = gt >= musicTlStart && gt < musicTlEnd
+        if (inWin) {
+          soundtrackGain.gain.value = musicVolume
+          if (soundtrackEl.currentTime >= musicWinEnd || soundtrackEl.currentTime < musicWinStart) {
+            try { soundtrackEl.currentTime = musicWinStart } catch { /* ignore */ }
+          }
+          if (soundtrackEl.paused) void soundtrackEl.play().catch(() => { /* ignore */ })
+        } else {
+          soundtrackGain.gain.value = 0
+          if (!soundtrackEl.paused) { try { soundtrackEl.pause() } catch { /* ignore */ } }
+        }
       }
-      soundtrackClampRaf = requestAnimationFrame(clampTick)
+
+      if (voiceoverEl && voiceoverGain) {
+        const inWin = gt >= voiceTlStart && gt < voiceTlEnd
+        if (inWin) {
+          voiceoverGain.gain.value = voiceoverVolume
+          const target = voiceSrcStart + (gt - voiceTlStart)
+          if (voiceSrcEnd > voiceSrcStart && target >= voiceSrcEnd) {
+            voiceoverGain.gain.value = 0
+            if (!voiceoverEl.paused) { try { voiceoverEl.pause() } catch { /* ignore */ } }
+          } else {
+            if (Math.abs(voiceoverEl.currentTime - target) > 0.3) {
+              try { voiceoverEl.currentTime = Math.max(0, target) } catch { /* ignore */ }
+            }
+            if (voiceoverEl.paused) void voiceoverEl.play().catch(() => { /* ignore */ })
+          }
+        } else {
+          voiceoverGain.gain.value = 0
+          if (!voiceoverEl.paused) { try { voiceoverEl.pause() } catch { /* ignore */ } }
+        }
+      }
+
+      gateRaf = requestAnimationFrame(gateTick)
     }
-    soundtrackClampRaf = requestAnimationFrame(clampTick)
-    soundtrackEndedHandler = () => {
-      if (!soundtrackEl) return
-      try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
-      void soundtrackEl.play().catch(() => { /* ignore */ })
-    }
-    soundtrackEl.addEventListener('ended', soundtrackEndedHandler)
-    try { await soundtrackEl.play() } catch { /* ignore autoplay reject */ }
+    gateRaf = requestAnimationFrame(gateTick)
   }
 
-  if (voiceoverEl) {
-    try { voiceoverEl.currentTime = 0 } catch { /* ignore */ }
-    try { await voiceoverEl.play() } catch { /* ignore autoplay reject */ }
-  }
 
   let elapsedDuration = 0
   let prevClip: ClipItem | null = null
@@ -952,9 +1005,8 @@ export async function mergeVideoUrls(
       try { c.video.pause() } catch { /* ignore */ }
     }
   }
+  if (gateRaf) cancelAnimationFrame(gateRaf)
   if (soundtrackEl) {
-    if (soundtrackClampRaf) cancelAnimationFrame(soundtrackClampRaf)
-    if (soundtrackEndedHandler) soundtrackEl.removeEventListener('ended', soundtrackEndedHandler)
     try { soundtrackEl.pause() } catch { /* ignore */ }
   }
   if (voiceoverEl) {

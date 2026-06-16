@@ -15,8 +15,11 @@ export interface VideoWithSoundtrackProps extends VideoBaseProps {
   musicUrl?: string | null
   musicRange?: [number, number]
   musicVolume?: number
+  musicTimeline?: [number, number]
   voiceoverUrl?: string | null
   voiceoverVolume?: number
+  voiceoverRange?: [number, number]
+  voiceoverTimeline?: [number, number]
   /** Styling for the video's aspect-ratio box (the area that holds the <video>). */
   videoBoxClassName?: string
   videoBoxStyle?: CSSProperties
@@ -35,8 +38,11 @@ export function VideoWithSoundtrack({
   musicUrl,
   musicRange,
   musicVolume = 1,
+  musicTimeline,
   voiceoverUrl,
   voiceoverVolume = 1,
+  voiceoverRange,
+  voiceoverTimeline,
   videoBoxClassName,
   videoBoxStyle,
   ...videoProps
@@ -119,8 +125,11 @@ export function VideoWithSoundtrack({
         musicUrl={musicUrl}
         musicRange={musicRange}
         musicVolume={musicVolume}
+        musicTimeline={musicTimeline}
         voiceoverUrl={voiceoverUrl}
         voiceoverVolume={voiceoverVolume}
+        voiceoverRange={voiceoverRange}
+        voiceoverTimeline={voiceoverTimeline}
       />
     </div>
   )
