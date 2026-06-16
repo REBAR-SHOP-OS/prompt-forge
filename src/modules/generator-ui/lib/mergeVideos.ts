@@ -871,6 +871,10 @@ export async function mergeVideoUrls(
     stage: MergeProgress['stage'],
     imageStartMs?: number,
   ) => {
+    // Expose the currently playing clip to the audio gate so it can compute the
+    // exact film playhead (elapsed + this clip's position).
+    activeClip = clip
+    activeImageStartMs = imageStartMs ?? null
     if (liveTicker) clearInterval(liveTicker)
     liveTicker = setInterval(() => {
       let ct = 0
