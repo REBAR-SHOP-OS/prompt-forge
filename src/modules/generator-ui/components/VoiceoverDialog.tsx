@@ -97,6 +97,19 @@ export function VoiceoverDialog({
   open,
   onOpenChange,
   onUseAsSoundtrack,
+  activeVoiceoverUrl,
+  activeVoiceoverName,
+  voiceoverVolume = 1,
+  onVoiceoverVolumeChange,
+  voiceoverRange = [0, 0],
+  onVoiceoverRangeChange,
+  voiceoverTimeline = [0, 0],
+  onVoiceoverTimelineChange,
+  voiceoverDuration = 0,
+  onVoiceoverDurationChange,
+  mergedDurationSec = 0,
+  waveformRef,
+  onClearVoiceover,
 }: VoiceoverDialogProps) {
   const [text, setText] = useState('')
   const [gender, setGender] = useState<Gender>('female')
