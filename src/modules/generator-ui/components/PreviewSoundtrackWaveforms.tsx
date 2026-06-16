@@ -92,6 +92,8 @@ export const PreviewSoundtrackWaveforms = forwardRef<
   rangeRef.current = musicRange
   const musicStartRef = useRef(musicStartInVideo)
   musicStartRef.current = musicStartInVideo
+  const musicLoopRef = useRef(musicLoop)
+  musicLoopRef.current = musicLoop
   const voiceStartRef = useRef(voiceoverStartInVideo)
   voiceStartRef.current = voiceoverStartInVideo
   const voiceRangeRef = useRef<[number, number] | undefined>(voiceoverRange)
@@ -105,12 +107,21 @@ export const PreviewSoundtrackWaveforms = forwardRef<
     const winStart = range && range[1] > range[0] ? range[0] : 0
     if (t < start - 0.02) return { active: false, target: winStart }
     const local = t - start
+    const dur = musicWsRef.current?.getDuration() ?? 0
     if (range && range[1] > range[0]) {
       const [s, e] = range
       const win = e - s
+      if (!musicLoopRef.current) {
+        // Play once across the trimmed window, then stay silent.
+        if (local >= win) return { active: false, target: e }
+        return { active: true, target: s + local }
+      }
       return { active: true, target: s + (local % win) }
     }
-    const dur = musicWsRef.current?.getDuration() ?? 0
+    if (!musicLoopRef.current) {
+      if (dur > 0 && local >= dur) return { active: false, target: dur }
+      return { active: true, target: local }
+    }
     return { active: true, target: dur > 0 ? local % dur : local }
   }
 
