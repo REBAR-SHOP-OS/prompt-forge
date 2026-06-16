@@ -5865,6 +5865,7 @@ export default function DashboardPage() {
     setMusicUrl(null)
     setMusicDuration(0)
     setMusicRange([0, 0])
+    setMusicOffsetSec(0)
     setIsMusicDialogOpen(false)
     if (voiceoverUrl) {
       try { URL.revokeObjectURL(voiceoverUrl) } catch { /* ignore */ }
@@ -5873,6 +5874,7 @@ export default function DashboardPage() {
     setVoiceoverName(null)
     setVoiceoverVolume(1)
     setVoiceoverClipVolume(0.3)
+    setVoiceOffsetSec(0)
     // Reset any in-flight merge progress UI.
     setIsMerging(false)
     setMergeProgress(0)
