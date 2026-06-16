@@ -63,6 +63,20 @@ interface VoiceoverDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onUseAsSoundtrack?: (url: string, name: string) => void
+  // Active voiceover applied to the film + its timing/volume controls.
+  activeVoiceoverUrl?: string | null
+  activeVoiceoverName?: string | null
+  voiceoverVolume?: number
+  onVoiceoverVolumeChange?: (v: number) => void
+  voiceoverRange?: [number, number]
+  onVoiceoverRangeChange?: (r: [number, number]) => void
+  voiceoverTimeline?: [number, number]
+  onVoiceoverTimelineChange?: (r: [number, number]) => void
+  voiceoverDuration?: number
+  onVoiceoverDurationChange?: (d: number) => void
+  mergedDurationSec?: number
+  waveformRef?: MutableRefObject<SoundtrackWaveformHandle | null>
+  onClearVoiceover?: () => void
 }
 
 function base64ToBlob(b64: string, mime: string): Blob {
@@ -70,6 +84,13 @@ function base64ToBlob(b64: string, mime: string): Blob {
   const bytes = new Uint8Array(bin.length)
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
   return new Blob([bytes], { type: mime })
+}
+
+function formatTimeMS(s: number): string {
+  if (!Number.isFinite(s) || s < 0) s = 0
+  const m = Math.floor(s / 60)
+  const ss = Math.floor(s % 60)
+  return `${m}:${ss.toString().padStart(2, '0')}`
 }
 
 export function VoiceoverDialog({
