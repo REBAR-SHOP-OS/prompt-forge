@@ -2079,6 +2079,13 @@ export default function DashboardPage() {
   const [voiceoverName, setVoiceoverName] = useState<string | null>(null)
   const [voiceoverVolume, setVoiceoverVolume] = useState<number>(1)
   const [voiceoverClipVolume, setVoiceoverClipVolume] = useState<number>(0.3)
+  // Placement (start offset + trim) of each track along the film timeline.
+  // Reset whenever the underlying track changes so a new track starts clean.
+  const DEFAULT_PLACEMENT: AudioPlacement = { startInVideo: 0, trimStart: 0, trimEnd: 0, duration: 0 }
+  const [musicPlacement, setMusicPlacement] = useState<AudioPlacement>(DEFAULT_PLACEMENT)
+  const [voiceoverPlacement, setVoiceoverPlacement] = useState<AudioPlacement>(DEFAULT_PLACEMENT)
+  useEffect(() => { setMusicPlacement({ ...DEFAULT_PLACEMENT }) }, [musicUrl])
+  useEffect(() => { setVoiceoverPlacement({ ...DEFAULT_PLACEMENT }) }, [voiceoverUrl])
   const musicFileInputRef = useRef<HTMLInputElement | null>(null)
   const musicPreviewAudioRef = useRef<HTMLAudioElement | null>(null)
   const musicWaveformRef = useRef<SoundtrackWaveformHandle | null>(null)
