@@ -7639,6 +7639,10 @@ export default function DashboardPage() {
                   ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
                   : (voiceoverUrl ? voiceoverClipVolume : 1)
               }
+              musicPlacement={musicPlacement}
+              onMusicPlacementChange={setMusicPlacement}
+              voiceoverPlacement={voiceoverPlacement}
+              onVoiceoverPlacementChange={setVoiceoverPlacement}
             />
           ) : previewItem.kind === 'image' ? (
             <div className="flex w-full justify-center">
