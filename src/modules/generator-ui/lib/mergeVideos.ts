@@ -29,6 +29,10 @@ export interface MergeMusicTrack {
   musicVolume?: number
   /** Seconds into the film where the music begins (placement offset). Default 0. */
   startInVideo?: number
+  /** Seconds into the film where the music stops (0 = never, play/loop on). */
+  endInVideo?: number
+  /** When false, play once across [startSec,endSec] then stay silent. Default true. */
+  loop?: boolean
 }
 
 export interface MergeVoiceoverTrack {
