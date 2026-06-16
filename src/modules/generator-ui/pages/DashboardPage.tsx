@@ -4629,6 +4629,7 @@ export default function DashboardPage() {
       ensureActiveDraftIdRef.current = pid
       setActiveDraftId(pid)
       persistActiveDraftId(pid)
+      restoreDraftAudio(pid)
     } else {
       ensureActiveDraftIdRef.current = null
       setActiveDraftId(null)
