@@ -246,8 +246,9 @@ export const PreviewSoundtrackWaveforms = forwardRef<
   useImperativeHandle(ref, () => ({
     play: () => {
       wantPlayingRef.current = true
-      applyMusic(0, true)
-      applyVoice(0, true)
+      const t = lastFilmTimeRef.current
+      applyMusic(t, true)
+      applyVoice(t, true)
     },
     pause: () => {
       wantPlayingRef.current = false
@@ -256,11 +257,13 @@ export const PreviewSoundtrackWaveforms = forwardRef<
     },
     handleSeek: (videoCurrentTime: number) => {
       const t = Math.max(0, videoCurrentTime)
+      lastFilmTimeRef.current = t
       applyVoice(t, true)
       applyMusic(t, true)
     },
     syncTime: (videoCurrentTime: number) => {
       const t = Math.max(0, videoCurrentTime)
+      lastFilmTimeRef.current = t
       applyVoice(t, false)
       applyMusic(t, false)
     },
