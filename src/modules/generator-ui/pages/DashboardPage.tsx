@@ -1986,6 +1986,8 @@ export default function DashboardPage() {
   const [musicUrl, setMusicUrl] = useState<string | null>(null)
   const [musicDuration, setMusicDuration] = useState<number>(0)
   const [musicRange, setMusicRange] = useState<[number, number]>([0, 0])
+  const [musicOffsetSec, setMusicOffsetSec] = useState<number>(0)
+  const [voiceOffsetSec, setVoiceOffsetSec] = useState<number>(0)
   const [soundtrackMode, setSoundtrackMode] = useState<'music-only' | 'mix'>('mix')
   const [clipVolume, setClipVolume] = useState<number>(1)
   const [musicVolume, setMusicVolume] = useState<number>(1)
@@ -5151,6 +5153,7 @@ export default function DashboardPage() {
     setMusicUrl(null)
     setMusicDuration(0)
     setMusicRange([0, 0])
+    setMusicOffsetSec(0)
     setIsMusicDialogOpen(false)
   }
 
@@ -5175,6 +5178,7 @@ export default function DashboardPage() {
     setVoiceoverName(null)
     setVoiceoverVolume(1)
     setVoiceoverClipVolume(0.3)
+    setVoiceOffsetSec(0)
   }
 
   function handlePreviewMusicRange() {
@@ -5426,10 +5430,11 @@ export default function DashboardPage() {
                   startSec: musicRange[0],
                   endSec: musicRange[1],
                   musicVolume,
+                  delaySec: musicOffsetSec,
                 }
               : undefined,
             voiceover: hasVoiceover
-              ? { src: voiceoverUrl as string, volume: voiceoverVolume }
+              ? { src: voiceoverUrl as string, volume: voiceoverVolume, delaySec: voiceOffsetSec }
               : undefined,
             clipVolume: mixedClipVolume,
           }
@@ -5860,6 +5865,7 @@ export default function DashboardPage() {
     setMusicUrl(null)
     setMusicDuration(0)
     setMusicRange([0, 0])
+    setMusicOffsetSec(0)
     setIsMusicDialogOpen(false)
     if (voiceoverUrl) {
       try { URL.revokeObjectURL(voiceoverUrl) } catch { /* ignore */ }
@@ -5868,6 +5874,7 @@ export default function DashboardPage() {
     setVoiceoverName(null)
     setVoiceoverVolume(1)
     setVoiceoverClipVolume(0.3)
+    setVoiceOffsetSec(0)
     // Reset any in-flight merge progress UI.
     setIsMerging(false)
     setMergeProgress(0)
@@ -7542,6 +7549,10 @@ export default function DashboardPage() {
                   ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
                   : (voiceoverUrl ? voiceoverClipVolume : 1)
               }
+              musicOffset={musicOffsetSec}
+              voiceOffset={voiceOffsetSec}
+              onMusicOffsetChange={setMusicOffsetSec}
+              onVoiceOffsetChange={setVoiceOffsetSec}
             />
           ) : previewItem.kind === 'image' ? (
             <div className="flex w-full justify-center">

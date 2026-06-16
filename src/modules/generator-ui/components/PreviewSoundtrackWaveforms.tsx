@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -34,6 +35,24 @@ type Props = {
   voiceoverVolume?: number
   /** Waveform height in px (compact under the preview). */
   height?: number
+  /** Total film duration (seconds) used to convert drag pixels into seconds. */
+  filmDuration?: number
+  /** Start offset (seconds) for the music track on the film timeline. */
+  musicOffset?: number
+  /** Start offset (seconds) for the voiceover track on the film timeline. */
+  voiceOffset?: number
+  /** Called while/after dragging the music waveform to a new start offset. */
+  onMusicOffsetChange?: (seconds: number) => void
+  /** Called while/after dragging the voiceover waveform to a new start offset. */
+  onVoiceOffsetChange?: (seconds: number) => void
+}
+
+function fmtOffset(t: number): string {
+  const sign = t > 0 ? '+' : ''
+  const total = Math.abs(Math.round(t))
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${sign}${m}:${s.toString().padStart(2, '0')}`
 }
 
 /**
@@ -42,6 +61,10 @@ type Props = {
  * These waveforms NEVER play on their own — `interact` is disabled and there
  * are no transport controls. Playback is driven entirely by the parent video
  * through the imperative handle, so the audio stays locked to the picture.
+ *
+ * Each waveform can be dragged horizontally to set a *start offset*: the moment
+ * on the film timeline at which that track begins to play. Dragging right pushes
+ * the start later; dragging left pulls it earlier (clamped to 0).
  */
 export const PreviewSoundtrackWaveforms = forwardRef<
   PreviewSoundtrackHandle,
@@ -54,6 +77,11 @@ export const PreviewSoundtrackWaveforms = forwardRef<
     voiceoverUrl,
     voiceoverVolume = 1,
     height = 40,
+    filmDuration = 0,
+    musicOffset = 0,
+    voiceOffset = 0,
+    onMusicOffsetChange,
+    onVoiceOffsetChange,
   },
   ref,
 ) {
@@ -65,10 +93,16 @@ export const PreviewSoundtrackWaveforms = forwardRef<
   const voiceReadyRef = useRef(false)
   const wantPlayingRef = useRef(false)
 
-  // Keep latest range/volume in refs so the audioprocess handler and the
+  // Keep latest range/offsets in refs so the audioprocess handler and the
   // imperative handle always read fresh values without re-creating WaveSurfer.
   const rangeRef = useRef<[number, number] | undefined>(musicRange)
   rangeRef.current = musicRange
+  const musicOffsetRef = useRef(musicOffset)
+  musicOffsetRef.current = musicOffset
+  const voiceOffsetRef = useRef(voiceOffset)
+  voiceOffsetRef.current = voiceOffset
+  const filmDurationRef = useRef(filmDuration)
+  filmDurationRef.current = filmDuration
 
   // Build the music waveform when its URL changes.
   useEffect(() => {
@@ -171,18 +205,23 @@ export const PreviewSoundtrackWaveforms = forwardRef<
       wantPlayingRef.current = true
       const m = musicWsRef.current
       if (m && musicReadyRef.current) {
-        const range = rangeRef.current
-        if (range) {
-          const [start, end] = range
-          const t = m.getCurrentTime()
-          if (end > start && (t < start || t >= end)) {
-            try { m.setTime(start) } catch { /* ignore */ }
+        // Only start music if the playhead has already reached its offset.
+        if (musicOffsetRef.current <= 0) {
+          const range = rangeRef.current
+          if (range) {
+            const [start, end] = range
+            const t = m.getCurrentTime()
+            if (end > start && (t < start || t >= end)) {
+              try { m.setTime(start) } catch { /* ignore */ }
+            }
           }
+          m.play().catch(() => { /* ignore */ })
         }
-        m.play().catch(() => { /* ignore */ })
       }
       const v = voiceWsRef.current
-      if (v && voiceReadyRef.current) v.play().catch(() => { /* ignore */ })
+      if (v && voiceReadyRef.current && voiceOffsetRef.current <= 0) {
+        v.play().catch(() => { /* ignore */ })
+      }
     },
     pause: () => {
       wantPlayingRef.current = false
@@ -190,67 +229,134 @@ export const PreviewSoundtrackWaveforms = forwardRef<
       try { voiceWsRef.current?.pause() } catch { /* ignore */ }
     },
     handleSeek: (videoCurrentTime: number) => {
-      const t = Math.max(0, videoCurrentTime)
-      // Voiceover follows the video's playhead 1:1 (clamped to its length).
+      const raw = Math.max(0, videoCurrentTime)
+      // Voiceover: shifted by its start offset and clamped to its length.
       const v = voiceWsRef.current
       if (v && voiceReadyRef.current) {
+        const eff = raw - voiceOffsetRef.current
         try {
-          const dur = v.getDuration()
-          const target = dur > 0 ? Math.min(t, Math.max(0, dur - 0.05)) : t
-          v.setTime(target)
+          if (eff < 0) {
+            try { v.setTime(0) } catch { /* ignore */ }
+            try { v.pause() } catch { /* ignore */ }
+          } else {
+            const dur = v.getDuration()
+            const target = dur > 0 ? Math.min(eff, Math.max(0, dur - 0.05)) : eff
+            v.setTime(target)
+            if (wantPlayingRef.current) v.play().catch(() => { /* ignore */ })
+          }
         } catch { /* ignore */ }
       }
-      // Music maps the video time into its selected window and loops inside it.
+      // Music maps the (offset-shifted) video time into its selected window.
       const m = musicWsRef.current
       const range = rangeRef.current
       if (m && musicReadyRef.current) {
+        const eff = raw - musicOffsetRef.current
         try {
-          if (range && range[1] > range[0]) {
-            const [start, end] = range
-            const win = end - start
-            const target = start + (t % win)
-            m.setTime(target)
+          if (eff < 0) {
+            const start = range && range[1] > range[0] ? range[0] : 0
+            try { m.setTime(start) } catch { /* ignore */ }
+            try { m.pause() } catch { /* ignore */ }
           } else {
-            const dur = m.getDuration()
-            const target = dur > 0 ? t % dur : t
-            m.setTime(target)
+            if (range && range[1] > range[0]) {
+              const [start, end] = range
+              const win = end - start
+              m.setTime(start + (eff % win))
+            } else {
+              const dur = m.getDuration()
+              m.setTime(dur > 0 ? eff % dur : eff)
+            }
+            if (wantPlayingRef.current) m.play().catch(() => { /* ignore */ })
           }
         } catch { /* ignore */ }
       }
     },
     syncTime: (videoCurrentTime: number) => {
-      const t = Math.max(0, videoCurrentTime)
+      const raw = Math.max(0, videoCurrentTime)
       const DRIFT = 0.25
-      // Voiceover follows the video 1:1; only correct when it drifts.
+      // Voiceover follows the video 1:1 (shifted by offset); correct on drift.
       const v = voiceWsRef.current
       if (v && voiceReadyRef.current) {
+        const eff = raw - voiceOffsetRef.current
         try {
-          const dur = v.getDuration()
-          const target = dur > 0 ? Math.min(t, Math.max(0, dur - 0.05)) : t
-          if (Math.abs(v.getCurrentTime() - target) > DRIFT) v.setTime(target)
+          if (eff < 0) {
+            if (!v.isPlaying || v.getCurrentTime() > 0.05) { /* keep silent */ }
+            try { v.pause() } catch { /* ignore */ }
+          } else {
+            const dur = v.getDuration()
+            const target = dur > 0 ? Math.min(eff, Math.max(0, dur - 0.05)) : eff
+            if (Math.abs(v.getCurrentTime() - target) > DRIFT) v.setTime(target)
+            if (wantPlayingRef.current && !v.isPlaying) v.play().catch(() => { /* ignore */ })
+          }
         } catch { /* ignore */ }
       }
-      // Music maps into its window; correct only on meaningful drift.
+      // Music maps into its window (shifted by offset); correct on drift.
       const m = musicWsRef.current
       const range = rangeRef.current
       if (m && musicReadyRef.current) {
+        const eff = raw - musicOffsetRef.current
         try {
-          let target: number
-          if (range && range[1] > range[0]) {
-            const [start, end] = range
-            const win = end - start
-            target = start + (t % win)
+          if (eff < 0) {
+            try { m.pause() } catch { /* ignore */ }
           } else {
-            const dur = m.getDuration()
-            target = dur > 0 ? t % dur : t
+            let target: number
+            if (range && range[1] > range[0]) {
+              const [start, end] = range
+              const win = end - start
+              target = start + (eff % win)
+            } else {
+              const dur = m.getDuration()
+              target = dur > 0 ? eff % dur : eff
+            }
+            if (Math.abs(m.getCurrentTime() - target) > DRIFT) m.setTime(target)
+            if (wantPlayingRef.current && !m.isPlaying) m.play().catch(() => { /* ignore */ })
           }
-          if (Math.abs(m.getCurrentTime() - target) > DRIFT) m.setTime(target)
         } catch { /* ignore */ }
       }
     },
   }))
 
+  // ---- Drag-to-offset handling --------------------------------------------
+  const makeDragHandler = useCallback(
+    (
+      containerRef: React.RefObject<HTMLDivElement | null>,
+      currentOffset: number,
+      onChange?: (seconds: number) => void,
+    ) =>
+      (e: React.PointerEvent<HTMLDivElement>) => {
+        if (!onChange) return
+        const el = containerRef.current
+        const film = filmDurationRef.current
+        if (!el || film <= 0) return
+        const width = el.clientWidth
+        if (width <= 0) return
+        const secondsPerPixel = film / width
+        const startX = e.clientX
+        const startOffset = currentOffset
+        e.preventDefault()
+        try { el.setPointerCapture(e.pointerId) } catch { /* ignore */ }
+
+        const onMove = (ev: PointerEvent) => {
+          const dx = ev.clientX - startX
+          let next = startOffset + dx * secondsPerPixel
+          next = Math.max(0, Math.min(next, film))
+          onChange(Number(next.toFixed(2)))
+        }
+        const onUp = (ev: PointerEvent) => {
+          window.removeEventListener('pointermove', onMove)
+          window.removeEventListener('pointerup', onUp)
+          try { el.releasePointerCapture(ev.pointerId) } catch { /* ignore */ }
+        }
+        window.addEventListener('pointermove', onMove)
+        window.addEventListener('pointerup', onUp)
+      },
+    [],
+  )
+
   if (!musicUrl && !voiceoverUrl) return null
+
+  const canDrag = filmDuration > 0
+  const offsetToPct = (off: number) =>
+    filmDuration > 0 ? Math.max(0, Math.min(100, (off / filmDuration) * 100)) : 0
 
   return (
     <div className="flex flex-col gap-2 border-t border-white/10 px-4 py-3">
@@ -262,7 +368,21 @@ export const PreviewSoundtrackWaveforms = forwardRef<
           >
             <Music className="h-3 w-3" aria-hidden="true" />
           </span>
-          <div ref={musicContainerRef} className="min-w-0 flex-1 overflow-hidden" />
+          <div className="relative min-w-0 flex-1">
+            <div
+              onPointerDown={makeDragHandler(musicContainerRef, musicOffset, onMusicOffsetChange)}
+              className={`min-w-0 overflow-hidden transition-transform ${canDrag && onMusicOffsetChange ? 'cursor-grab active:cursor-grabbing' : ''}`}
+              style={{ transform: `translateX(${offsetToPct(musicOffset)}%)` }}
+              title={canDrag ? 'Drag to set where the music starts on the video' : undefined}
+            >
+              <div ref={musicContainerRef} />
+            </div>
+            {musicOffset > 0 ? (
+              <span className="pointer-events-none absolute right-0 top-0 rounded bg-emerald-500/80 px-1.5 py-0.5 text-[10px] font-medium text-emerald-50">
+                {fmtOffset(musicOffset)}
+              </span>
+            ) : null}
+          </div>
         </div>
       ) : null}
       {voiceoverUrl ? (
@@ -273,7 +393,21 @@ export const PreviewSoundtrackWaveforms = forwardRef<
           >
             <Mic className="h-3 w-3" aria-hidden="true" />
           </span>
-          <div ref={voiceContainerRef} className="min-w-0 flex-1 overflow-hidden" />
+          <div className="relative min-w-0 flex-1">
+            <div
+              onPointerDown={makeDragHandler(voiceContainerRef, voiceOffset, onVoiceOffsetChange)}
+              className={`min-w-0 overflow-hidden transition-transform ${canDrag && onVoiceOffsetChange ? 'cursor-grab active:cursor-grabbing' : ''}`}
+              style={{ transform: `translateX(${offsetToPct(voiceOffset)}%)` }}
+              title={canDrag ? 'Drag to set where the voiceover starts on the video' : undefined}
+            >
+              <div ref={voiceContainerRef} />
+            </div>
+            {voiceOffset > 0 ? (
+              <span className="pointer-events-none absolute right-0 top-0 rounded bg-indigo-500/80 px-1.5 py-0.5 text-[10px] font-medium text-indigo-50">
+                {fmtOffset(voiceOffset)}
+              </span>
+            ) : null}
+          </div>
         </div>
       ) : null}
     </div>
