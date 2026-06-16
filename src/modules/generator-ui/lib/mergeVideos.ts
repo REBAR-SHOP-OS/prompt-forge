@@ -1005,9 +1005,8 @@ export async function mergeVideoUrls(
       try { c.video.pause() } catch { /* ignore */ }
     }
   }
+  if (gateRaf) cancelAnimationFrame(gateRaf)
   if (soundtrackEl) {
-    if (soundtrackClampRaf) cancelAnimationFrame(soundtrackClampRaf)
-    if (soundtrackEndedHandler) soundtrackEl.removeEventListener('ended', soundtrackEndedHandler)
     try { soundtrackEl.pause() } catch { /* ignore */ }
   }
   if (voiceoverEl) {
