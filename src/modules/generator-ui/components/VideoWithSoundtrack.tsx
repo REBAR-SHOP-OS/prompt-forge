@@ -1,4 +1,4 @@
-import { useEffect, useRef, type CSSProperties, type VideoHTMLAttributes } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type VideoHTMLAttributes } from 'react'
 import { LoaderCircle } from 'lucide-react'
 import { usePlayableVideoUrl } from '@/modules/generator-ui/lib/usePlayableVideoUrl'
 import {
@@ -17,6 +17,12 @@ export interface VideoWithSoundtrackProps extends VideoBaseProps {
   musicVolume?: number
   voiceoverUrl?: string | null
   voiceoverVolume?: number
+  /** Start offset (seconds) of the music track on the video timeline. */
+  musicOffset?: number
+  /** Start offset (seconds) of the voiceover track on the video timeline. */
+  voiceOffset?: number
+  onMusicOffsetChange?: (seconds: number) => void
+  onVoiceOffsetChange?: (seconds: number) => void
   /** Styling for the video's aspect-ratio box (the area that holds the <video>). */
   videoBoxClassName?: string
   videoBoxStyle?: CSSProperties
