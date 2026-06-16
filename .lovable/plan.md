@@ -1,79 +1,57 @@
-## Goal
+## هدف
 
-Let users place, drag, and trim a music/voiceover track along the video timeline so it starts at an exact point. Preview playback and the Final Film export must use the same timing.
+افزودن یک دکمه‌ی «سپر» (Shield) روی کارت‌های ویدئوی نهایی (Final videos) در پنل Library. با کلیک روی آن، یک بررسی واقعی کپی‌رایت با هوش مصنوعی روی ویدئو و موزیک پروژه اجرا می‌شود و نتیجه (تایید / هشدار / رد) به‌همراه علت دقیق برای هر بخش نمایش داده می‌شود.
 
-## Current behavior (what exists today)
-
-- Music: a selection window (`musicRange`) that loops across the whole film, always starting at film time 0.
-- Voiceover: plays once, always from film time 0.
-- Preview sync lives in `PreviewSoundtrackWaveforms.tsx` (driven by `SequentialClipPlayer.tsx` and `VideoWithSoundtrack.tsx`).
-- Export mixing lives in `lib/mergeVideos.ts` (`music.startSec/endSec`, voiceover from 0).
-
-There is currently **no concept of "where on the video the audio begins."** That is the core gap this feature fills.
-
-## New placement metadata
-
-Introduce a per-track placement object (kept in component state + persisted to `localStorage`, same pattern as `projectAudio`):
+## رفتار کاربری
 
 ```text
-audioPlacement = {
-  startTimeInVideo   // seconds into the film where the track begins
-  trimStart          // seconds trimmed from the head of the source
-  trimEnd            // seconds trimmed from the tail of the source
-  duration           // source duration (read from waveform)
-}
+[Download] [MP4] [🎵 Music] [🛡 Shield ← جدید] [✏ Reopen] [🗑 Delete]
 ```
 
-Stored separately for music and voiceover. Clamped so the placed region never exceeds the film duration.
+1. کاربر روی آیکون سپر کلیک می‌کند → دیالوگ «بررسی کپی‌رایت» باز می‌شود.
+2. اسپینر «در حال تحلیل ویدئو و موزیک…» نشان داده می‌شود.
+3. بک‌اند ویدئوی نهایی + فایل موزیک پروژه را با AI تحلیل می‌کند.
+4. نتیجه نمایش داده می‌شود:
+   - **حکم کلی**: تایید (سبز) / هشدار (زرد) / رد (قرمز)
+   - **بخش ویدئو**: وضعیت + علت (مثلاً وجود لوگو/برند/شخصیت/اثر شناخته‌شده)
+   - **بخش موزیک**: وضعیت + علت (مثلاً شباهت به آهنگ تجاری شناخته‌شده، یا امن بودن صدای تولیدشده)
+   - یادداشت: این ارزیابی هوشمند تخمینی است و جایگزین مشاوره‌ی حقوقی نیست.
 
-## UI — draggable placement bar (under the preview timeline)
+## اجزای فنی
 
-New component `AudioPlacementTrack.tsx`:
+### ۱) Edge Function جدید: `copyright-check`
+فایل: `supabase/functions/copyright-check/index.ts`
 
-- Renders the existing waveform inside a region whose **left edge = `startTimeInVideo`** and **width = trimmed duration**, both mapped to the full film width.
-- Drag the whole region horizontally → updates `startTimeInVideo` (pointer events, works for mouse + touch). Clamped to `[0, filmDuration - regionLength]`.
-- Drag left/right edge handles → updates `trimStart` / `trimEnd`.
-- While dragging, show a small floating label with start time + duration (e.g. `0:05 · 0:12`).
-- Visual style matches the current emerald music / indigo voiceover waveform look.
-- Used in the preview area in `DashboardPage.tsx` below the scrub bar.
+- ورودی: `{ videoUrl: string, musicUrl?: string, voiceoverUrl?: string }`
+- اعتبارسنجی URLها فقط مجاز بودن دامنه‌ی storage (مثل `video-analyze`).
+- احراز هویت با `authenticate(req)` مانند توابع موجود.
+- ویدئو را دانلود می‌کند (سقف ~25MB، مثل `video-analyze`) و به‌صورت multimodal به Gemini می‌فرستد تا ریسک کپی‌رایت بصری را بررسی کند (برند/لوگو، شخصیت‌های دارای حق‌چاپ، صحنه‌های فیلم/سریال شناخته‌شده، واترمارک).
+- اگر `musicUrl` وجود داشت، فایل صوتی را هم دانلود و به‌صورت `input_audio` به مدل می‌فرستد تا ریسک موزیک ارزیابی شود (شباهت به آهنگ تجاری، صدای ساخته‌شده‌ی امن، گفتار).
+- خروجی ساختاریافته‌ی JSON با شِما:
+  ```json
+  {
+    "verdict": "approved | caution | rejected",
+    "video": { "status": "...", "reason": "...", "risks": ["..."] },
+    "music": { "status": "...", "reason": "...", "risks": ["..."] },
+    "summary": "..."
+  }
+  ```
+- پاسخ‌های خطا با CORS و کدهای مناسب (مثل `video-analyze`).
+- مدل: یکی از مدل‌های multimodal Gemini از طریق همان مسیر فعلی پروژه (`GEMINI_API_KEY`) یا Lovable AI Gateway. (از کلید موجود `GEMINI_API_KEY` که `video-analyze` استفاده می‌کند بهره می‌بریم تا قابلیت ویدئو+صوت inline حفظ شود.)
 
-## Preview sync changes
+### ۲) UI در `DashboardPage.tsx`
+- آیکون `ShieldCheck` از `lucide-react` در ردیف دکمه‌های کارت `variant === 'final'` (بعد از دکمه‌ی موزیک).
+- State جدید: `copyrightJob` (کارت در حال بررسی)، `copyrightLoading`، `copyrightResult`، `copyrightError`.
+- تابع `runCopyrightCheck(video)`:
+  - منبع ویدئو: `video.video.storage_path` → ساخت URL امضاشده/عمومی مثل مسیر دانلود موجود.
+  - منبع موزیک/وویس‌اوور: از `projectAudio[video.id]`.
+  - فراخوانی `supabase.functions.invoke('copyright-check', …)`.
+- دیالوگ نتیجه با `Dialog` موجود؛ نمایش حکم کلی با رنگ معنایی، و دو بخش جدا برای ویدئو و موزیک با علت و ریسک‌ها.
+- مدیریت خطا (۴۲۹/۴۰۲/سایر) با پیام واضح در دیالوگ.
 
-Update `PreviewSoundtrackWaveforms.tsx` so playback honors the offset:
+## محدوده
+- فقط افزودن قابلیت جدید: یک Edge Function تازه + UI در `DashboardPage.tsx`.
+- بدون تغییر در منطق موجود، schema یا حذف/ادیت کارت‌ها.
 
-- Add props `musicStartInVideo`, `voiceoverStartInVideo`, plus trim values.
-- In `handleSeek` / `syncTime`, given the film time `t`:
-  - if `t < startTimeInVideo` → keep the track paused/silent.
-  - else → audio position = `trimStart + (t - startTimeInVideo)`, stop at `trimEnd` (or loop within window for music if a loop window is set).
-- `play()` only starts a track once the playhead has passed its start; otherwise it waits.
-
-`SequentialClipPlayer.tsx` and `VideoWithSoundtrack.tsx` pass the new props through (they already forward the film time).
-
-## Export changes (`lib/mergeVideos.ts`)
-
-- Extend `MergeMusicTrack` / `MergeVoiceoverTrack` with `startInVideo`, `trimStart`, `trimEnd` (all optional, default 0 → fully backward compatible).
-- In the recording loop, start each audio element only when the recorded timeline reaches `startInVideo`, seek it to `trimStart`, and stop at `trimEnd`. This mirrors the preview math exactly so exported timing matches.
-- `DashboardPage.tsx` passes the placement metadata into `audioOpt`.
-
-## Persistence
-
-- Save `audioPlacement` per project in `localStorage` (extend the existing `project-audio:*` storage), so it survives refresh / reopening.
-
-## Backward compatibility / safety
-
-- All new fields are optional and default to `0` (= today's behavior). Existing projects, previews, and exports keep working unchanged when no placement is set.
-- No backend, schema, or generation-flow changes.
-
-## Verification
-
-- Build passes.
-- Manual preview check: add a track, drag it to start at ~5s, confirm silence before 5s and correct start after; refresh and confirm placement persists; run a Final Film and confirm audio starts at the same point as preview.
-
-## Technical notes (files touched)
-
-- `src/modules/generator-ui/components/AudioPlacementTrack.tsx` (new)
-- `src/modules/generator-ui/components/PreviewSoundtrackWaveforms.tsx`
-- `src/modules/generator-ui/components/SequentialClipPlayer.tsx`
-- `src/modules/generator-ui/components/VideoWithSoundtrack.tsx`
-- `src/modules/generator-ui/pages/DashboardPage.tsx`
-- `src/modules/generator-ui/lib/mergeVideos.ts`
+## نکته‌ی دقت
+این بررسی یک ارزیابی هوشمند مبتنی بر AI است (نه اثرانگشت صوتی واقعی مثل Shazam). دقیق و چندبُعدی است اما تخمینی؛ در صورت نیاز به تشخیص قطعی آهنگ تجاری، بعداً می‌توان سرویس fingerprint (ACRCloud/AudD) را اضافه کرد.

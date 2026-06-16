@@ -27,24 +27,12 @@ export interface MergeMusicTrack {
   endSec: number
   /** 0..1, default 1 */
   musicVolume?: number
-  /** Seconds into the film where the music begins (placement offset). Default 0. */
-  startInVideo?: number
-  /** Seconds into the film where the music stops (0 = never, play/loop on). */
-  endInVideo?: number
-  /** When false, play once across [startSec,endSec] then stay silent. Default true. */
-  loop?: boolean
 }
 
 export interface MergeVoiceoverTrack {
   src: string
   /** 0..1, default 1 */
   volume?: number
-  /** Seconds into the film where the voiceover begins (placement offset). Default 0. */
-  startInVideo?: number
-  /** Seconds trimmed from the head of the source. Default 0. */
-  trimStart?: number
-  /** Seconds at which playback stops (0 = play to natural end). Default 0. */
-  trimEnd?: number
 }
 
 export interface MergeAudioOptions {
@@ -476,11 +464,6 @@ export async function mergeVideoUrls(
   let soundtrackEl: HTMLAudioElement | null = null
   let soundtrackEndedHandler: (() => void) | null = null
   let soundtrackClampRaf = 0
-  // Placement timers: delay each track's start so it begins at its chosen point
-  // on the film timeline (mirrors the live preview's `startInVideo` offset).
-  let musicStartTimer: ReturnType<typeof setTimeout> | null = null
-  let voiceStartTimer: ReturnType<typeof setTimeout> | null = null
-  let voiceClampRaf = 0
   if (musicTrack && audioCtx && audioDest) {
     try {
       soundtrackEl = document.createElement('audio')
@@ -784,70 +767,27 @@ export async function mergeVideoUrls(
   if (soundtrackEl && musicTrack) {
     const winStart = Math.max(0, musicTrack.startSec)
     const winEnd = Math.max(winStart + 0.05, musicTrack.endSec)
-    const musicStartInVideo = Math.max(0, musicTrack.startInVideo ?? 0)
-    const musicLoop = musicTrack.loop !== false
     try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
     const clampTick = () => {
       if (!soundtrackEl) return
       if (soundtrackEl.currentTime >= winEnd) {
-        if (musicLoop) {
-          try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
-        } else {
-          // Play once across the window, then stay silent.
-          try { soundtrackEl.pause() } catch { /* ignore */ }
-          return
-        }
+        try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
       }
       soundtrackClampRaf = requestAnimationFrame(clampTick)
     }
+    soundtrackClampRaf = requestAnimationFrame(clampTick)
     soundtrackEndedHandler = () => {
       if (!soundtrackEl) return
-      if (!musicLoop) return
       try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
       void soundtrackEl.play().catch(() => { /* ignore */ })
     }
     soundtrackEl.addEventListener('ended', soundtrackEndedHandler)
-    const startMusic = () => {
-      if (!soundtrackEl) return
-      try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
-      soundtrackClampRaf = requestAnimationFrame(clampTick)
-      void soundtrackEl.play().catch(() => { /* ignore */ })
-    }
-    if (musicStartInVideo > 0.05) {
-      musicStartTimer = setTimeout(startMusic, Math.round(musicStartInVideo * 1000))
-    } else {
-      startMusic()
-    }
+    try { await soundtrackEl.play() } catch { /* ignore autoplay reject */ }
   }
 
-  if (voiceoverEl && voiceoverTrack) {
-    const vStartInVideo = Math.max(0, voiceoverTrack.startInVideo ?? 0)
-    const vTrimStart = Math.max(0, voiceoverTrack.trimStart ?? 0)
-    const vTrimEnd =
-      voiceoverTrack.trimEnd && voiceoverTrack.trimEnd > vTrimStart
-        ? voiceoverTrack.trimEnd
-        : 0
-    const startVoice = () => {
-      if (!voiceoverEl) return
-      try { voiceoverEl.currentTime = vTrimStart } catch { /* ignore */ }
-      if (vTrimEnd > 0) {
-        const vClampTick = () => {
-          if (!voiceoverEl) return
-          if (voiceoverEl.currentTime >= vTrimEnd) {
-            try { voiceoverEl.pause() } catch { /* ignore */ }
-            return
-          }
-          voiceClampRaf = requestAnimationFrame(vClampTick)
-        }
-        voiceClampRaf = requestAnimationFrame(vClampTick)
-      }
-      void voiceoverEl.play().catch(() => { /* ignore */ })
-    }
-    if (vStartInVideo > 0.05) {
-      voiceStartTimer = setTimeout(startVoice, Math.round(vStartInVideo * 1000))
-    } else {
-      startVoice()
-    }
+  if (voiceoverEl) {
+    try { voiceoverEl.currentTime = 0 } catch { /* ignore */ }
+    try { await voiceoverEl.play() } catch { /* ignore autoplay reject */ }
   }
 
   let elapsedDuration = 0
@@ -1012,9 +952,6 @@ export async function mergeVideoUrls(
       try { c.video.pause() } catch { /* ignore */ }
     }
   }
-  if (musicStartTimer) { clearTimeout(musicStartTimer); musicStartTimer = null }
-  if (voiceStartTimer) { clearTimeout(voiceStartTimer); voiceStartTimer = null }
-  if (voiceClampRaf) cancelAnimationFrame(voiceClampRaf)
   if (soundtrackEl) {
     if (soundtrackClampRaf) cancelAnimationFrame(soundtrackClampRaf)
     if (soundtrackEndedHandler) soundtrackEl.removeEventListener('ended', soundtrackEndedHandler)

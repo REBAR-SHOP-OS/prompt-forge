@@ -99,11 +99,6 @@ import { SoundtrackWaveform, type SoundtrackWaveformHandle } from '@/modules/gen
 import { TransitionPreview } from '@/modules/generator-ui/components/TransitionPreview'
 import { SequentialClipPlayer } from '@/modules/generator-ui/components/SequentialClipPlayer'
 import { VideoWithSoundtrack } from '@/modules/generator-ui/components/VideoWithSoundtrack'
-import {
-  type AudioPlacement,
-  DEFAULT_PLACEMENT as DEFAULT_AUDIO_PLACEMENT,
-  normalizePlacement,
-} from '@/modules/generator-ui/components/AudioPlacementTrack'
 import { PlayableVideo } from '@/modules/generator-ui/components/PlayableVideo'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
@@ -2083,62 +2078,6 @@ export default function DashboardPage() {
   const [voiceoverName, setVoiceoverName] = useState<string | null>(null)
   const [voiceoverVolume, setVoiceoverVolume] = useState<number>(1)
   const [voiceoverClipVolume, setVoiceoverClipVolume] = useState<number>(0.3)
-  // Placement (start offset + trim + volume) of each track along the film
-  // timeline. Persisted per track name to localStorage so positions/trims
-  // survive remounts, clip switches, and reopening the editor.
-  const DEFAULT_PLACEMENT: AudioPlacement = DEFAULT_AUDIO_PLACEMENT
-  const placementKey = (kind: 'music' | 'voice', name: string | null) =>
-    `audioPlacement:${kind}:${name ?? 'untitled'}`
-  const loadPlacement = (kind: 'music' | 'voice', name: string | null): AudioPlacement => {
-    try {
-      const raw = localStorage.getItem(placementKey(kind, name))
-      if (raw) return normalizePlacement(JSON.parse(raw))
-    } catch { /* ignore */ }
-    return { ...DEFAULT_PLACEMENT }
-  }
-  const savePlacement = (kind: 'music' | 'voice', name: string | null, p: AudioPlacement) => {
-    try { localStorage.setItem(placementKey(kind, name), JSON.stringify(p)) } catch { /* ignore */ }
-  }
-  const [musicPlacement, setMusicPlacement] = useState<AudioPlacement>(DEFAULT_PLACEMENT)
-  const [voiceoverPlacement, setVoiceoverPlacement] = useState<AudioPlacement>(DEFAULT_PLACEMENT)
-  // Restore saved placement whenever the active track changes.
-  useEffect(() => {
-    setMusicPlacement(musicUrl ? loadPlacement('music', musicName) : { ...DEFAULT_PLACEMENT })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [musicUrl, musicName])
-  useEffect(() => {
-    setVoiceoverPlacement(voiceoverUrl ? loadPlacement('voice', voiceoverName) : { ...DEFAULT_PLACEMENT })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voiceoverUrl, voiceoverName])
-  // Persist on every change so reopening restores the exact timing.
-  useEffect(() => {
-    if (musicUrl) savePlacement('music', musicName, musicPlacement)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [musicPlacement])
-  useEffect(() => {
-    if (voiceoverUrl) savePlacement('voice', voiceoverName, voiceoverPlacement)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voiceoverPlacement])
-  // Effective music source window from placement trim (falls back to full).
-  const musicTrimRange = useMemo<[number, number]>(() => {
-    const end = musicPlacement.trimEnd > musicPlacement.trimStart
-      ? musicPlacement.trimEnd
-      : (musicPlacement.duration || musicDuration)
-    return [Math.max(0, musicPlacement.trimStart), Math.max(musicPlacement.trimStart + 0.05, end)]
-  }, [musicPlacement, musicDuration])
-  // Keep the legacy music-range slider working: mirror its window into the
-  // placement trim (the source of truth for preview + export).
-  useEffect(() => {
-    if (!musicUrl) return
-    if (!(musicRange[1] > musicRange[0])) return
-    setMusicPlacement((prev) => {
-      if (Math.abs(prev.trimStart - musicRange[0]) < 0.02 && Math.abs(prev.trimEnd - musicRange[1]) < 0.02) {
-        return prev
-      }
-      return { ...prev, trimStart: musicRange[0], trimEnd: musicRange[1] }
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [musicRange[0], musicRange[1], musicUrl])
   const musicFileInputRef = useRef<HTMLInputElement | null>(null)
   const musicPreviewAudioRef = useRef<HTMLAudioElement | null>(null)
   const musicWaveformRef = useRef<SoundtrackWaveformHandle | null>(null)
@@ -5556,35 +5495,23 @@ export default function DashboardPage() {
           return { id, durationMs: TRANSITION_DURATION[id] ?? 0 }
         })
 
-      const hasMusic = Boolean(musicUrl && musicTrimRange[1] > musicTrimRange[0])
+      const hasMusic = Boolean(musicUrl && musicRange[1] > musicRange[0])
       const hasVoiceover = Boolean(voiceoverUrl)
       const mixedClipVolume = hasMusic
         ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
         : (hasVoiceover ? voiceoverClipVolume : 1)
-      const musicRegionLen = Math.max(0.05, musicTrimRange[1] - musicTrimRange[0])
-      const effMusicVolume = musicPlacement.muted ? 0 : musicVolume * musicPlacement.volume
-      const effVoiceVolume = voiceoverPlacement.muted ? 0 : voiceoverVolume * voiceoverPlacement.volume
       const audioOpt = hasMusic || hasVoiceover
         ? {
             music: hasMusic
               ? {
                   src: musicUrl as string,
-                  startSec: musicTrimRange[0],
-                  endSec: musicTrimRange[1],
-                  musicVolume: effMusicVolume,
-                  startInVideo: musicPlacement.startInVideo,
-                  endInVideo: musicPlacement.startInVideo + musicRegionLen,
-                  loop: false,
+                  startSec: musicRange[0],
+                  endSec: musicRange[1],
+                  musicVolume,
                 }
               : undefined,
             voiceover: hasVoiceover
-              ? {
-                  src: voiceoverUrl as string,
-                  volume: effVoiceVolume,
-                  startInVideo: voiceoverPlacement.startInVideo,
-                  trimStart: voiceoverPlacement.trimStart,
-                  trimEnd: voiceoverPlacement.trimEnd,
-                }
+              ? { src: voiceoverUrl as string, volume: voiceoverVolume }
               : undefined,
             clipVolume: mixedClipVolume,
           }
@@ -7688,19 +7615,15 @@ export default function DashboardPage() {
               onClose={closePreview}
               onActiveClipChange={(id) => { /* highlight handled by HISTORY via previewVideoId on click */ void id }}
               musicUrl={musicUrl}
-              musicRange={musicTrimRange}
-              musicVolume={musicPlacement.muted ? 0 : musicVolume * musicPlacement.volume}
+              musicRange={musicRange}
+              musicVolume={musicVolume}
               voiceoverUrl={voiceoverUrl}
-              voiceoverVolume={voiceoverPlacement.muted ? 0 : voiceoverVolume * voiceoverPlacement.volume}
+              voiceoverVolume={voiceoverVolume}
               clipVolume={
-                musicUrl && musicTrimRange[1] > musicTrimRange[0]
+                musicUrl && musicRange[1] > musicRange[0]
                   ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
                   : (voiceoverUrl ? voiceoverClipVolume : 1)
               }
-              musicPlacement={musicPlacement}
-              onMusicPlacementChange={setMusicPlacement}
-              voiceoverPlacement={voiceoverPlacement}
-              onVoiceoverPlacementChange={setVoiceoverPlacement}
             />
           ) : previewItem.kind === 'image' ? (
             <div className="flex w-full justify-center">
