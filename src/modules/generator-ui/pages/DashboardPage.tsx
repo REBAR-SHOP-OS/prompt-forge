@@ -821,6 +821,7 @@ export default function DashboardPage() {
       setCopyrightLoading(false)
     }
   }
+  const downloadImageFile = async (imageId: string, url: string) => {
     if (downloadingId) return
     setDownloadingId(imageId)
     try {
