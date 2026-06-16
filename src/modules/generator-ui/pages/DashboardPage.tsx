@@ -7430,7 +7430,21 @@ export default function DashboardPage() {
         open={isVoiceoverOpen}
         onOpenChange={setIsVoiceoverOpen}
         onUseAsSoundtrack={handleVoiceoverAsSoundtrack}
+        activeVoiceoverUrl={voiceoverUrl}
+        activeVoiceoverName={voiceoverName}
+        voiceoverVolume={voiceoverVolume}
+        onVoiceoverVolumeChange={setVoiceoverVolume}
+        voiceoverRange={voiceoverRange}
+        onVoiceoverRangeChange={setVoiceoverRange}
+        voiceoverTimeline={voiceoverTimeline}
+        onVoiceoverTimelineChange={setVoiceoverTimeline}
+        voiceoverDuration={voiceoverDuration}
+        onVoiceoverDurationChange={setVoiceoverDuration}
+        mergedDurationSec={mergedDurationSec}
+        waveformRef={voiceoverWaveformRef}
+        onClearVoiceover={handleClearVoiceover}
       />
+
 
 
 
