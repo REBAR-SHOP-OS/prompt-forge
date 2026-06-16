@@ -1,50 +1,62 @@
-# قابلیت درگ نوار موزیک و ویس برای تعیین نقطه‌ی شروع
+# بررسی کپی‌رایت ویدئوهای نهایی (آیکون سپر)
 
 ## هدف
-هر یک از نوارهای موزیک و ویس‌اوور باید به‌صورت افقی قابل درگ باشند تا کاربر نقطه‌ی شروعِ پخشِ آن صدا را روی تایم‌لاین ویدیو جابه‌جا کند (آفست شروع). درگ به راست = شروع دیرتر، درگ به چپ = شروع زودتر (حداقل ثانیه صفر). این آفست هم در پیش‌نمایش زنده و هم در فیلم نهایی اعمال می‌شود.
+روی هر کارت در بخش **Final videos** کتابخانه، یک آیکون سپر (Shield) اضافه می‌شود. با کلیک روی آن، ویدئوی نهایی + موزیک/ویس آن از نظر ریسک کپی‌رایت بررسی می‌شود و نتیجه به‌صورت **تایید (سبز) / احتیاط (زرد) / رد (قرمز)** همراه با دلیل برای هر بخش (ویدئو و موزیک) نمایش داده می‌شود. نتیجه فقط موقت است (تا بستن صفحه/پاپ‌آپ نگه داشته می‌شود، ذخیره‌ی ماندگار ندارد).
 
 ## رفتار مورد انتظار
-- کشیدن نوار موزیک به سمت راست تا ثانیه ۳ ⇒ موزیک از ثانیه ۳ ویدیو شروع به پخش می‌کند؛ قبل از آن سکوت.
-- کشیدن به چپ ⇒ شروع زودتر، کف صفر (نمی‌توان قبل از شروع ویدیو پخش کرد).
-- هر نوار آفست مستقل خودش را دارد (موزیک جدا، ویس جدا).
-- یک نشانگر/برچسب کوچک مقدار آفست را به‌صورت `m:ss` نشان می‌دهد.
+- کلیک روی سپر ⇒ باز شدن یک دیالوگ و شروع تحلیل (اسپینر).
+- خروجی شامل:
+  - برچسب کلی: تایید / احتیاط / رد.
+  - بخش «ویدئو»: وضعیت + دلیل (مثلاً وجود لوگو/برند/شخصیت یا واترمارک قابل‌تشخیص).
+  - بخش «موزیک/ویس»: وضعیت + دلیل (شباهت به اثر تجاری شناخته‌شده، صدای برند و…).
+  - دلیل کلی و چند توصیه برای رفع ریسک.
+- اگر پروژه موزیک/ویس نداشته باشد، فقط ویدئو بررسی می‌شود و بخش صوت «موردی یافت نشد» نشان داده می‌شود.
+
+> توضیح فنی صادقانه: مدل هوش مصنوعی نمی‌تواند تطبیق قطعی با پایگاه آثار دارای حق‌نشر انجام دهد؛ این ابزار یک **ارزیابی ریسک** است (تشخیص نشانه‌های برند/لوگو/واترمارک/شخصیت مشهور در تصویر و شباهت‌های آشکار صوتی) و نتیجه باید به‌عنوان راهنما تلقی شود، نه تضمین حقوقی. این موضوع در متن دیالوگ هم به‌صورت کوتاه ذکر می‌شود.
 
 ## تغییرات
 
-### ۱) State آفست در DashboardPage
-- افزودن دو state جدید: `musicOffsetSec` و `voiceOffsetSec` (پیش‌فرض ۰).
-- پاس دادن آن‌ها به `SequentialClipPlayer` و `VideoWithSoundtrack` و به مسیر ساخت فیلم نهایی.
-- ریست آفست‌ها هنگام حذف/تعویض موزیک یا ویس.
+### ۱) Edge Function جدید: `copyright-check`
+- مسیر: `supabase/functions/copyright-check/index.ts` (مدل‌گرفته از `video-analyze` موجود).
+- احراز هویت با `authenticate(req)`؛ CORS کامل.
+- ورودی (با اعتبارسنجی): `{ videoUrl: string, musicUrl?: string, musicName?: string, voiceoverName?: string }`.
+- اعتبارسنجی URLها با همان `isAllowedVideoUrl` (فقط هاست Storage پروژه؛ https).
+- دانلود ویدئو (سقف ۲۵MB) و در صورت وجود، دانلود فایل موزیک (سقف ~۱۵MB)، تبدیل به base64.
+- فراخوانی Gemini چندوجهی (`gemini-2.5-flash`) با پرامپت ارزیابی ریسک کپی‌رایت و `responseMimeType: application/json`.
+- خروجی JSON با شِمای ثابت:
+  ```text
+  {
+    "verdict": "approved" | "caution" | "rejected",
+    "video":  { "verdict": "...", "reason": "...", "signals": "..." },
+    "audio":  { "verdict": "...", "reason": "...", "signals": "..." },
+    "overallReason": "...",
+    "recommendations": "comma-separated"
+  }
+  ```
+- پاسخ: `{ report }`. مدیریت خطاها (۴۰۰/۴۰۱/۴۱۳/۵۰۲/۵۰۰) مانند تابع موجود.
+- نکته کلید: `GEMINI_API_KEY` از قبل برای `video-analyze` پیکربندی شده و نیازی به افزودن سکرت جدید نیست.
 
-### ۲) درگ روی نوارها — `PreviewSoundtrackWaveforms.tsx`
-- افزودن propهای `musicOffset`, `voiceOffset` و callbackهای `onMusicOffsetChange`, `onVoiceOffsetChange`.
-- روی هر کانتینر نوار، هندلر درگ (pointer down/move/up) اضافه می‌شود که جابه‌جایی افقی پیکسلی را با نسبت «طول فیلم بر عرض نوار» به ثانیه تبدیل می‌کند و آفست را به‌روزرسانی می‌کند (clamp به ≥ ۰).
-- در حین درگ، نوار با `transform: translateX` به‌صورت بصری جابه‌جا می‌شود و یک برچسب آفست نمایش داده می‌شود (مثل `+0:03`).
-- نگه‌داری آفست‌ها در ref تا منطق sync بدون بازسازی WaveSurfer مقدار تازه بخواند.
+### ۲) فرانت‌اند — DashboardPage (`renderCard`، حالت `final`)
+- افزودن دکمه‌ی **Shield** (از `lucide-react`) در همان ردیف دکمه‌های دانلود/MP4/صدا.
+- State موقت جدید:
+  - `copyrightJobId: string | null` (کارت در حال بررسی / باز بودن دیالوگ)
+  - `copyrightLoading: boolean`
+  - `copyrightReport: Report | null`
+  - `copyrightError: string | null`
+- با کلیک: ست‌کردن `copyrightJobId`، فراخوانی `supabase.functions.invoke('copyright-check', { body })` با:
+  - `videoUrl = getCardVideoSrc(video.id, video.video.storage_path)`
+  - `musicUrl/musicName` و `voiceoverName` از `projectAudio[video.id]`.
+- رنگ سپر بر اساس آخرین نتیجه‌ی همان کارت (خنثی/سبز/زرد/قرمز) به‌صورت سرنخ بصری.
 
-### ۳) منطق همگام‌سازی پخش با آفست
-- در `handleSeek` و `syncTime`: زمان مؤثر هر تراک = `videoCurrentTime - offset`.
-  - اگر منفی بود (هنوز به نقطه‌ی شروع نرسیده) ⇒ تراک pause/سکوت و در ابتدای خودش نگه داشته شود.
-  - در غیر این صورت همان نگاشت فعلی با زمان مؤثر انجام شود (ویس ۱:۱، موزیک داخل پنجره‌ی انتخاب‌شده با loop).
-- در `play`: اگر آفست هنوز فرا نرسیده، آن تراک فعلاً پخش نشود؛ با پیشرفت `syncTime` به‌صورت خودکار وارد پخش شود.
-
-### ۴) اعمال در فیلم نهایی — `mergeVideos.ts`
-- افزودن `delaySec` به `MergeMusicTrack` و `MergeVoiceoverTrack`.
-- هنگام شروع ضبط (بعد از `recorder.start`)، به‌جای پخش فوری، پخش هر تراک با `setTimeout(delaySec * 1000)` نسبت به شروع فیلم زمان‌بندی شود؛ تا قبل از آن صدای آن تراک در میکس نباشد (سکوت).
-- پاکسازی تایمرها در مسیر پایان/abort.
-
-### ۵) اتصال در DashboardPage
-- در ساخت `audioOpt`: `delaySec: musicOffsetSec` برای موزیک و `delaySec: voiceOffsetSec` برای ویس.
-- پاس دادن آفست‌ها به هر دو محل رندر `SequentialClipPlayer` و `VideoWithSoundtrack`.
-
-## جزئیات فنی
-- تبدیل پیکسل↔ثانیه: `secondsPerPixel = filmDuration / waveformWidthPx`. طول فیلم از مجموع کلیپ‌ها (در SequentialClipPlayer موجود است) یا duration ویدیو (در VideoWithSoundtrack) گرفته می‌شود.
-- آفست همیشه clamp به بازه‌ی `[0, filmDuration]`.
-- درگ با Pointer Events پیاده می‌شود تا روی موبایل/دسکتاپ کار کند؛ `interact:false` روی WaveSurfer دست‌نخورده می‌ماند (خود ویوفرم نباید seek مستقل کند).
+### ۳) دیالوگ نتیجه
+- یک `Dialog` (از `@/components/ui/dialog`) که با `open={copyrightJobId !== null}` کنترل می‌شود.
+- حالت‌ها: در حال بررسی (اسپینر)، خطا (پیام + دکمه تلاش مجدد)، نتیجه.
+- نمایش: برچسب کلی رنگی + دو بخش «ویدئو» و «موزیک/ویس» با وضعیت و دلیل + دلیل کلی + توصیه‌ها + یک نوار کوچک سلب‌مسئولیت.
 
 ## فایل‌های درگیر
-- `src/modules/generator-ui/components/PreviewSoundtrackWaveforms.tsx`
-- `src/modules/generator-ui/components/VideoWithSoundtrack.tsx` (پاس‌دادن props)
-- `src/modules/generator-ui/components/SequentialClipPlayer.tsx` (پاس‌دادن props)
-- `src/modules/generator-ui/lib/mergeVideos.ts` (delaySec)
-- `src/modules/generator-ui/pages/DashboardPage.tsx` (state + اتصال)
+- `supabase/functions/copyright-check/index.ts` (جدید)
+- `src/modules/generator-ui/pages/DashboardPage.tsx` (دکمه سپر + state + دیالوگ + invoke)
+
+## اعتبارسنجی
+- تست تابع با `supabase--curl_edge_functions` روی یک URL ویدئوی نهایی واقعی پس از دیپلوی.
+- بررسی بصری دیالوگ در پیش‌نمایش برای سه حالت نتیجه.
