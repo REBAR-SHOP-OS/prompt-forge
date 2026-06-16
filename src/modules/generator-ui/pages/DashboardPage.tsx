@@ -1446,6 +1446,48 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  // Persist a music/voiceover source into the public MERGED_BUCKET so it
+  // survives refresh and project switches. Returns a durable public URL, or
+  // null on failure. Reused by both Final Film finalize and Draft snapshots.
+  const persistAudioToStorage = useCallback(
+    async (src: string, kind: 'music' | 'voice', id: string): Promise<string | null> => {
+      if (!userId) return null
+      const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
+        Promise.race([
+          p,
+          new Promise<T>((_, reject) =>
+            setTimeout(() => reject(new Error('audio snapshot timed out')), ms),
+          ),
+        ])
+      try {
+        const resp = await withTimeout(fetch(src), 60_000)
+        if (!resp.ok) throw new Error(`fetch ${resp.status}`)
+        const blob = await withTimeout(resp.blob(), 60_000)
+        const ct = (blob.type || 'audio/mpeg').toLowerCase()
+        const ext = ct.includes('mpeg') || ct.includes('mp3') ? 'mp3'
+          : ct.includes('wav') ? 'wav'
+          : ct.includes('ogg') ? 'ogg'
+          : ct.includes('webm') ? 'webm'
+          : ct.includes('aac') ? 'aac'
+          : ct.includes('m4a') || ct.includes('mp4') ? 'm4a'
+          : 'mp3'
+        const path = `${userId}/project-${kind}-${id}.${ext}`
+        const up = await withTimeout(
+          supabase.storage
+            .from(MERGED_BUCKET)
+            .upload(path, blob, { contentType: blob.type || 'audio/mpeg', upsert: true }),
+          90_000,
+        )
+        if (up.error) throw new Error(up.error.message)
+        return supabase.storage.from(MERGED_BUCKET).getPublicUrl(path).data.publicUrl ?? null
+      } catch (err) {
+        console.warn(`[audio-snapshot] ${kind} persist failed`, err)
+        return null
+      }
+    },
+    [userId],
+  )
+
 
   // The in-progress workspace (clips + images that haven't been merged into a
   // Final Film yet) is auto-snapshotted into a Draft project so it survives
