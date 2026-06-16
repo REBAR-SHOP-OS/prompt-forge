@@ -3398,6 +3398,24 @@ export default function DashboardPage() {
     })
   }, [displayedClips])
 
+  // Approximate total length of the Final Film, used to place music / voiceover
+  // on the video timeline. Falls back to sensible per-clip defaults when a
+  // clip's exact duration isn't known yet.
+  const mergedDurationSec = useMemo(() => {
+    let total = 0
+    for (const c of playableSequenceClips) {
+      if (c.kind === 'image') {
+        total += Math.max(1, Math.min(15, c.image.still_duration_seconds || 3))
+      } else {
+        const d = c.job.duration_seconds
+        total += d && Number.isFinite(d) && d > 0 ? d : 8
+      }
+    }
+    return Math.max(1, Math.round(total))
+  }, [playableSequenceClips])
+
+
+
   const previewItem = useMemo<PreviewItem | null>(() => {
     // Highest priority: the transient Final Film output (not a card).
     if (lastMergedPreview) {
