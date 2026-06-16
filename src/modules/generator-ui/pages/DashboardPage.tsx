@@ -7409,77 +7409,7 @@ export default function DashboardPage() {
         onUseAsSoundtrack={handleVoiceoverAsSoundtrack}
       />
 
-      <Dialog open={isVoiceoverTimingOpen} onOpenChange={setIsVoiceoverTimingOpen}>
-        <DialogContent className="border-white/10 bg-black text-zinc-100 sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Voiceover timing</DialogTitle>
-            <DialogDescription>
-              Choose which part of the voiceover plays and where on the video it appears.
-            </DialogDescription>
-          </DialogHeader>
 
-          <div className="space-y-4">
-            {voiceoverUrl ? (
-              <SoundtrackWaveform
-                ref={voiceoverWaveformRef}
-                url={voiceoverUrl}
-                range={voiceoverRange[1] > voiceoverRange[0] ? voiceoverRange : [0, Math.max(0.1, voiceoverDuration)]}
-                onReady={(d) => {
-                  setVoiceoverDuration(d)
-                  if (voiceoverRange[1] <= voiceoverRange[0]) setVoiceoverRange([0, d])
-                }}
-                onRangeChange={(r) => { if (r[1] > r[0]) setVoiceoverRange([r[0], r[1]]) }}
-              />
-            ) : null}
-
-            <div className="space-y-3 rounded-md border border-white/10 bg-black/40 p-3">
-              <div className="flex items-center justify-between text-xs text-zinc-300">
-                <span className="font-medium">Play on video from … to</span>
-                <span className="tabular-nums text-zinc-200">
-                  {formatTimeMS(voiceoverTimeline[0])} – {formatTimeMS(voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[1] : mergedDurationSec)}
-                </span>
-              </div>
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                  <span>Start</span>
-                  <span className="tabular-nums text-zinc-200">{formatTimeMS(voiceoverTimeline[0])}</span>
-                </div>
-                <Slider
-                  value={[Math.round(voiceoverTimeline[0])]}
-                  min={0}
-                  max={mergedDurationSec}
-                  step={1}
-                  onValueChange={(v) => {
-                    const s = Math.min(v[0] ?? 0, (voiceoverTimeline[1] || mergedDurationSec) - 1)
-                    setVoiceoverTimeline([Math.max(0, s), voiceoverTimeline[1] || mergedDurationSec])
-                  }}
-                />
-                <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                  <span>End</span>
-                  <span className="tabular-nums text-zinc-200">{formatTimeMS(voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[1] : mergedDurationSec)}</span>
-                </div>
-                <Slider
-                  value={[Math.round(voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[1] : mergedDurationSec)]}
-                  min={0}
-                  max={mergedDurationSec}
-                  step={1}
-                  onValueChange={(v) => {
-                    const e = Math.max(v[0] ?? mergedDurationSec, voiceoverTimeline[0] + 1)
-                    setVoiceoverTimeline([voiceoverTimeline[0], Math.min(mergedDurationSec, e)])
-                  }}
-                />
-              </div>
-              <p className="text-[11px] leading-relaxed text-zinc-500">
-                Outside this window the voiceover is silent. Total film ≈ {formatTimeMS(mergedDurationSec)}.
-              </p>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button type="button" onClick={() => setIsVoiceoverTimingOpen(false)}>Done</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
 
       <ImageReframeDialog
