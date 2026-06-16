@@ -7675,12 +7675,12 @@ export default function DashboardPage() {
               onClose={closePreview}
               onActiveClipChange={(id) => { /* highlight handled by HISTORY via previewVideoId on click */ void id }}
               musicUrl={musicUrl}
-              musicRange={musicRange}
-              musicVolume={musicVolume}
+              musicRange={musicTrimRange}
+              musicVolume={musicPlacement.muted ? 0 : musicVolume * musicPlacement.volume}
               voiceoverUrl={voiceoverUrl}
-              voiceoverVolume={voiceoverVolume}
+              voiceoverVolume={voiceoverPlacement.muted ? 0 : voiceoverVolume * voiceoverPlacement.volume}
               clipVolume={
-                musicUrl && musicRange[1] > musicRange[0]
+                musicUrl && musicTrimRange[1] > musicTrimRange[0]
                   ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
                   : (voiceoverUrl ? voiceoverClipVolume : 1)
               }
