@@ -44,6 +44,10 @@ import {
   RefreshCw,
   RotateCcw,
   Scissors,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldX,
   Sparkles,
   Trash2,
   Upload,
@@ -618,6 +622,19 @@ export default function DashboardPage() {
   // transcoded to standard MP4) so we can show a spinner on that button.
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
 
+  // --- Copyright shield: AI review of the final video + music/voiceover ---
+  type CopyrightSection = { status: string; reason?: string; risks?: string[] }
+  type CopyrightResult = {
+    verdict: string
+    summary?: string
+    video?: CopyrightSection
+    music?: CopyrightSection
+  }
+  const [copyrightJob, setCopyrightJob] = useState<JobDetail | null>(null)
+  const [copyrightLoading, setCopyrightLoading] = useState(false)
+  const [copyrightResult, setCopyrightResult] = useState<CopyrightResult | null>(null)
+  const [copyrightError, setCopyrightError] = useState<string | null>(null)
+
   // Download a film as a standard, broadly-compatible MP4. Final Film output
   // is WebM (MediaRecorder), which fails in QuickTime / WMP / mobile galleries.
   // We fetch the stored file and run it through ensureMp4 (ffmpeg.wasm) so the
@@ -737,6 +754,71 @@ export default function DashboardPage() {
       window.open(url, '_blank')
     } finally {
       setDownloadingId(null)
+    }
+  }
+
+  // Resolve a fetchable, signed Supabase-storage URL from either a raw storage
+  // path or a (possibly public) storage URL so the edge function can fetch
+  // private merged-videos / user objects.
+  const signStorageUrl = async (input: string): Promise<string | null> => {
+    if (!input) return null
+    try {
+      let bucket = MERGED_BUCKET
+      let path = input
+      if (/^https?:\/\//i.test(input)) {
+        const parsed = new URL(input)
+        const m = parsed.pathname.match(
+          /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/,
+        )
+        if (!m) return input // unknown shape; let the function try as-is
+        bucket = m[1]
+        try { path = decodeURIComponent(m[2]) } catch { path = m[2] }
+      }
+      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 30)
+      if (!error && data?.signedUrl) return data.signedUrl
+      return null
+    } catch {
+      return null
+    }
+  }
+
+  // Run a real AI copyright review of the final video + its music/voiceover.
+  const runCopyrightCheck = async (video: JobDetail) => {
+    const storagePath = video.video?.storage_path
+    if (!storagePath) return
+    setCopyrightJob(video)
+    setCopyrightResult(null)
+    setCopyrightError(null)
+    setCopyrightLoading(true)
+    try {
+      const audio = projectAudio[video.id]
+      const [videoUrl, musicUrl, voiceoverUrl] = await Promise.all([
+        signStorageUrl(storagePath),
+        audio?.music?.url ? signStorageUrl(audio.music.url) : Promise.resolve(null),
+        audio?.voiceover?.url ? signStorageUrl(audio.voiceover.url) : Promise.resolve(null),
+      ])
+      if (!videoUrl) throw new Error('Could not prepare the video for analysis.')
+
+      const { data, error } = await supabase.functions.invoke('copyright-check', {
+        body: {
+          videoUrl,
+          musicUrl: musicUrl ?? undefined,
+          voiceoverUrl: voiceoverUrl ?? undefined,
+        },
+      })
+      if (error) {
+        const status = (error as { context?: { status?: number } })?.context?.status
+        if (status === 429) throw new Error('Rate limit reached. Please try again in a moment.')
+        if (status === 402) throw new Error('AI credits exhausted. Add credits to continue.')
+        throw new Error(error.message || 'Copyright analysis failed.')
+      }
+      const result = (data as { result?: CopyrightResult } | null)?.result
+      if (!result) throw new Error('No analysis result returned.')
+      setCopyrightResult(result)
+    } catch (err) {
+      setCopyrightError(err instanceof Error ? err.message : 'Copyright analysis failed.')
+    } finally {
+      setCopyrightLoading(false)
     }
   }
   const downloadImageFile = async (imageId: string, url: string) => {
@@ -8626,6 +8708,20 @@ export default function DashboardPage() {
                             </Popover>
                           )
                         })() : null}
+                        {variant === 'final' && video.video?.storage_path ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void runCopyrightCheck(video)
+                            }}
+                            aria-label="Copyright check"
+                            title="Copyright check"
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-violet-300/40 hover:bg-violet-300/10 hover:text-violet-200"
+                          >
+                            <Shield className="h-3 w-3" aria-hidden="true" />
+                          </button>
+                        ) : null}
                         {variant === 'final' ? (
                           <button
                             type="button"
@@ -9412,6 +9508,102 @@ export default function DashboardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={copyrightJob !== null}
+        onOpenChange={(o) => {
+          if (!o) {
+            setCopyrightJob(null)
+            setCopyrightResult(null)
+            setCopyrightError(null)
+            setCopyrightLoading(false)
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="h-4 w-4 text-violet-300" aria-hidden="true" />
+              Copyright check
+            </DialogTitle>
+            <DialogDescription className="text-zinc-400">
+              An AI review of the final video and its music/voiceover for copyright risk.
+            </DialogDescription>
+          </DialogHeader>
+
+          {copyrightLoading ? (
+            <div className="flex flex-col items-center gap-3 py-8 text-center">
+              <LoaderCircle className="h-7 w-7 animate-spin text-violet-300" aria-hidden="true" />
+              <p className="text-sm text-zinc-300">Analyzing video and music…</p>
+              <p className="text-xs text-zinc-500">This can take up to a minute.</p>
+            </div>
+          ) : copyrightError ? (
+            <div className="space-y-3 py-2">
+              <p className="text-sm text-rose-300">{copyrightError}</p>
+              <Button
+                variant="outline"
+                className="border-white/10"
+                onClick={() => { if (copyrightJob) void runCopyrightCheck(copyrightJob) }}
+              >
+                Try again
+              </Button>
+            </div>
+          ) : copyrightResult ? (
+            (() => {
+              const tone = (status: string | undefined) =>
+                status === 'approved'
+                  ? { text: 'text-emerald-300', bg: 'bg-emerald-300/10 border-emerald-300/30', Icon: ShieldCheck, label: 'Approved' }
+                  : status === 'rejected'
+                    ? { text: 'text-rose-300', bg: 'bg-rose-300/10 border-rose-300/30', Icon: ShieldX, label: 'Rejected' }
+                    : status === 'not_provided'
+                      ? { text: 'text-zinc-400', bg: 'bg-white/5 border-white/10', Icon: Shield, label: 'Not provided' }
+                      : { text: 'text-amber-300', bg: 'bg-amber-300/10 border-amber-300/30', Icon: ShieldAlert, label: 'Caution' }
+              const Section = ({ title, section }: { title: string; section?: CopyrightSection }) => {
+                const t = tone(section?.status)
+                return (
+                  <div className={`rounded-xl border p-3 ${t.bg}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-zinc-300">{title}</span>
+                      <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${t.text}`}>
+                        <t.Icon className="h-3.5 w-3.5" aria-hidden="true" /> {t.label}
+                      </span>
+                    </div>
+                    {section?.reason ? (
+                      <p className="mt-2 text-xs leading-5 text-zinc-300">{section.reason}</p>
+                    ) : null}
+                    {section?.risks && section.risks.length > 0 ? (
+                      <ul className="mt-2 list-disc space-y-0.5 pl-4 text-[11px] text-zinc-400">
+                        {section.risks.map((r, i) => <li key={i}>{r}</li>)}
+                      </ul>
+                    ) : null}
+                  </div>
+                )
+              }
+              const overall = tone(copyrightResult.verdict)
+              return (
+                <div className="space-y-3">
+                  <div className={`flex items-center gap-3 rounded-xl border p-3 ${overall.bg}`}>
+                    <overall.Icon className={`h-6 w-6 ${overall.text}`} aria-hidden="true" />
+                    <div>
+                      <p className={`text-sm font-semibold ${overall.text}`}>{overall.label}</p>
+                      {copyrightResult.summary ? (
+                        <p className="text-xs leading-5 text-zinc-300">{copyrightResult.summary}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <Section title="Video" section={copyrightResult.video} />
+                  <Section title="Music & voiceover" section={copyrightResult.music} />
+                  <p className="text-[11px] leading-5 text-zinc-500">
+                    This is an AI-based estimate, not legal advice or definitive song matching.
+                  </p>
+                </div>
+              )
+            })()
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+
 
 
       <Dialog open={confirmCostOpen} onOpenChange={setConfirmCostOpen}>
