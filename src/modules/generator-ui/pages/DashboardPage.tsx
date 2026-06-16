@@ -2083,13 +2083,49 @@ export default function DashboardPage() {
   const [voiceoverName, setVoiceoverName] = useState<string | null>(null)
   const [voiceoverVolume, setVoiceoverVolume] = useState<number>(1)
   const [voiceoverClipVolume, setVoiceoverClipVolume] = useState<number>(0.3)
-  // Placement (start offset + trim) of each track along the film timeline.
-  // Reset whenever the underlying track changes so a new track starts clean.
-  const DEFAULT_PLACEMENT: AudioPlacement = { startInVideo: 0, trimStart: 0, trimEnd: 0, duration: 0 }
+  // Placement (start offset + trim + volume) of each track along the film
+  // timeline. Persisted per track name to localStorage so positions/trims
+  // survive remounts, clip switches, and reopening the editor.
+  const DEFAULT_PLACEMENT: AudioPlacement = DEFAULT_AUDIO_PLACEMENT
+  const placementKey = (kind: 'music' | 'voice', name: string | null) =>
+    `audioPlacement:${kind}:${name ?? 'untitled'}`
+  const loadPlacement = (kind: 'music' | 'voice', name: string | null): AudioPlacement => {
+    try {
+      const raw = localStorage.getItem(placementKey(kind, name))
+      if (raw) return normalizePlacement(JSON.parse(raw))
+    } catch { /* ignore */ }
+    return { ...DEFAULT_PLACEMENT }
+  }
+  const savePlacement = (kind: 'music' | 'voice', name: string | null, p: AudioPlacement) => {
+    try { localStorage.setItem(placementKey(kind, name), JSON.stringify(p)) } catch { /* ignore */ }
+  }
   const [musicPlacement, setMusicPlacement] = useState<AudioPlacement>(DEFAULT_PLACEMENT)
   const [voiceoverPlacement, setVoiceoverPlacement] = useState<AudioPlacement>(DEFAULT_PLACEMENT)
-  useEffect(() => { setMusicPlacement({ ...DEFAULT_PLACEMENT }) }, [musicUrl])
-  useEffect(() => { setVoiceoverPlacement({ ...DEFAULT_PLACEMENT }) }, [voiceoverUrl])
+  // Restore saved placement whenever the active track changes.
+  useEffect(() => {
+    setMusicPlacement(musicUrl ? loadPlacement('music', musicName) : { ...DEFAULT_PLACEMENT })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [musicUrl, musicName])
+  useEffect(() => {
+    setVoiceoverPlacement(voiceoverUrl ? loadPlacement('voice', voiceoverName) : { ...DEFAULT_PLACEMENT })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceoverUrl, voiceoverName])
+  // Persist on every change so reopening restores the exact timing.
+  useEffect(() => {
+    if (musicUrl) savePlacement('music', musicName, musicPlacement)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [musicPlacement])
+  useEffect(() => {
+    if (voiceoverUrl) savePlacement('voice', voiceoverName, voiceoverPlacement)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceoverPlacement])
+  // Effective music source window from placement trim (falls back to full).
+  const musicTrimRange = useMemo<[number, number]>(() => {
+    const end = musicPlacement.trimEnd > musicPlacement.trimStart
+      ? musicPlacement.trimEnd
+      : (musicPlacement.duration || musicDuration)
+    return [Math.max(0, musicPlacement.trimStart), Math.max(musicPlacement.trimStart + 0.05, end)]
+  }, [musicPlacement, musicDuration])
   const musicFileInputRef = useRef<HTMLInputElement | null>(null)
   const musicPreviewAudioRef = useRef<HTMLAudioElement | null>(null)
   const musicWaveformRef = useRef<SoundtrackWaveformHandle | null>(null)
