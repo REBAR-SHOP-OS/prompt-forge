@@ -622,6 +622,61 @@ export default function DashboardPage() {
   // transcoded to standard MP4) so we can show a spinner on that button.
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
 
+  // --- Copyright risk check (Final videos) ---
+  type CopyrightSection = { verdict?: string; reason?: string; signals?: string }
+  type CopyrightReport = {
+    verdict?: string
+    video?: CopyrightSection
+    audio?: CopyrightSection
+    overallReason?: string
+    recommendations?: string
+  }
+  const [copyrightJobId, setCopyrightJobId] = useState<string | null>(null)
+  const [copyrightLoading, setCopyrightLoading] = useState(false)
+  const [copyrightError, setCopyrightError] = useState<string | null>(null)
+  const [copyrightReport, setCopyrightReport] = useState<CopyrightReport | null>(null)
+  // Cached last verdict per card id, used to tint the shield icon.
+  const [copyrightVerdicts, setCopyrightVerdicts] = useState<Record<string, string>>({})
+
+  const runCopyrightCheck = async (video: JobDetail) => {
+    const videoUrl = getCardVideoSrc(video.id, video.video?.storage_path)
+    if (!videoUrl) {
+      setCopyrightError('This video has no playable file to analyze.')
+      return
+    }
+    setCopyrightLoading(true)
+    setCopyrightError(null)
+    setCopyrightReport(null)
+    try {
+      const audio = projectAudio[video.id]
+      const { data, error } = await supabase.functions.invoke('copyright-check', {
+        body: {
+          videoUrl,
+          musicUrl: audio?.music?.url ?? undefined,
+          musicName: audio?.music?.name ?? undefined,
+          voiceoverUrl: audio?.voiceover?.url ?? undefined,
+          voiceoverName: audio?.voiceover?.name ?? undefined,
+        },
+      })
+      if (error) throw error
+      const report = (data?.report ?? null) as CopyrightReport | null
+      if (!report) throw new Error('Empty analysis result')
+      setCopyrightReport(report)
+      if (report.verdict) {
+        setCopyrightVerdicts((prev) => ({ ...prev, [video.id]: report.verdict! }))
+      }
+    } catch (err) {
+      console.error('copyright-check failed', err)
+      setCopyrightError(
+        err instanceof Error ? err.message : 'Could not complete the copyright check. Please try again.',
+      )
+    } finally {
+      setCopyrightLoading(false)
+    }
+  }
+
+
+
   // Download a film as a standard, broadly-compatible MP4. Final Film output
   // is WebM (MediaRecorder), which fails in QuickTime / WMP / mobile galleries.
   // We fetch the stored file and run it through ensureMp4 (ffmpeg.wasm) so the
