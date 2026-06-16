@@ -575,6 +575,8 @@ export function SequentialClipPlayer({
                 filmDuration={filmTotal || totalDuration}
                 placement={musicPlacement}
                 onChange={onMusicPlacementChange!}
+                selected={selectedLane === 'music'}
+                onSelect={() => setSelectedLane('music')}
               />
             ) : null}
             {showVoicePlacement && voiceoverPlacement ? (
@@ -584,6 +586,8 @@ export function SequentialClipPlayer({
                 filmDuration={filmTotal || totalDuration}
                 placement={voiceoverPlacement}
                 onChange={onVoiceoverPlacementChange!}
+                selected={selectedLane === 'voice'}
+                onSelect={() => setSelectedLane('voice')}
               />
             ) : null}
           </div>
