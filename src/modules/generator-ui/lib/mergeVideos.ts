@@ -781,20 +781,41 @@ export async function mergeVideoUrls(
       }
       soundtrackClampRaf = requestAnimationFrame(clampTick)
     }
-    soundtrackClampRaf = requestAnimationFrame(clampTick)
     soundtrackEndedHandler = () => {
       if (!soundtrackEl) return
       try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
       void soundtrackEl.play().catch(() => { /* ignore */ })
     }
     soundtrackEl.addEventListener('ended', soundtrackEndedHandler)
-    try { await soundtrackEl.play() } catch { /* ignore autoplay reject */ }
+    const startMusic = () => {
+      if (!soundtrackEl) return
+      soundtrackClampRaf = requestAnimationFrame(clampTick)
+      try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
+      void soundtrackEl.play().catch(() => { /* ignore autoplay reject */ })
+    }
+    const musicDelayMs = Math.max(0, (musicTrack.delaySec ?? 0)) * 1000
+    if (musicDelayMs > 0) {
+      musicDelayTimer = setTimeout(startMusic, musicDelayMs)
+    } else {
+      startMusic()
+    }
   }
 
   if (voiceoverEl) {
     try { voiceoverEl.currentTime = 0 } catch { /* ignore */ }
-    try { await voiceoverEl.play() } catch { /* ignore autoplay reject */ }
+    const startVoice = () => {
+      if (!voiceoverEl) return
+      try { voiceoverEl.currentTime = 0 } catch { /* ignore */ }
+      void voiceoverEl.play().catch(() => { /* ignore autoplay reject */ })
+    }
+    const voiceDelayMs = Math.max(0, (voiceoverTrack?.delaySec ?? 0)) * 1000
+    if (voiceDelayMs > 0) {
+      voiceDelayTimer = setTimeout(startVoice, voiceDelayMs)
+    } else {
+      startVoice()
+    }
   }
+
 
   let elapsedDuration = 0
   let prevClip: ClipItem | null = null
