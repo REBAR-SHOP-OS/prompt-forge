@@ -58,8 +58,11 @@ export const PreviewSoundtrackWaveforms = forwardRef<
     musicUrl,
     musicRange,
     musicVolume = 1,
+    musicTimeline,
     voiceoverUrl,
     voiceoverVolume = 1,
+    voiceoverRange,
+    voiceoverTimeline,
     height = 40,
   },
   ref,
@@ -72,10 +75,20 @@ export const PreviewSoundtrackWaveforms = forwardRef<
   const voiceReadyRef = useRef(false)
   const wantPlayingRef = useRef(false)
 
-  // Keep latest range/volume in refs so the audioprocess handler and the
-  // imperative handle always read fresh values without re-creating WaveSurfer.
+  // Keep latest range/timeline/volume in refs so the handlers always read fresh
+  // values without re-creating WaveSurfer.
   const rangeRef = useRef<[number, number] | undefined>(musicRange)
   rangeRef.current = musicRange
+  const musicTimelineRef = useRef<[number, number] | undefined>(musicTimeline)
+  musicTimelineRef.current = musicTimeline
+  const voiceRangeRef = useRef<[number, number] | undefined>(voiceoverRange)
+  voiceRangeRef.current = voiceoverRange
+  const voiceTimelineRef = useRef<[number, number] | undefined>(voiceoverTimeline)
+  voiceTimelineRef.current = voiceoverTimeline
+  const musicVolumeRef = useRef<number>(musicVolume)
+  musicVolumeRef.current = musicVolume
+  const voiceVolumeRef = useRef<number>(voiceoverVolume)
+  voiceVolumeRef.current = voiceoverVolume
 
   // Build the music waveform when its URL changes.
   useEffect(() => {
