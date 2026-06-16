@@ -553,6 +553,7 @@ export function SequentialClipPlayer({
           musicUrl={musicUrl}
           musicRange={musicRange}
           musicVolume={musicVolume}
+          musicLoop={false}
           musicStartInVideo={musicPlacement?.startInVideo ?? 0}
           voiceoverUrl={voiceoverUrl}
           voiceoverVolume={voiceoverVolume}
