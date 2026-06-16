@@ -756,7 +756,71 @@ export default function DashboardPage() {
       setDownloadingId(null)
     }
   }
-  const downloadImageFile = async (imageId: string, url: string) => {
+
+  // Resolve a fetchable, signed Supabase-storage URL from either a raw storage
+  // path or a (possibly public) storage URL so the edge function can fetch
+  // private merged-videos / user objects.
+  const signStorageUrl = async (input: string): Promise<string | null> => {
+    if (!input) return null
+    try {
+      let bucket = MERGED_BUCKET
+      let path = input
+      if (/^https?:\/\//i.test(input)) {
+        const parsed = new URL(input)
+        const m = parsed.pathname.match(
+          /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/,
+        )
+        if (!m) return input // unknown shape; let the function try as-is
+        bucket = m[1]
+        try { path = decodeURIComponent(m[2]) } catch { path = m[2] }
+      }
+      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 30)
+      if (!error && data?.signedUrl) return data.signedUrl
+      return null
+    } catch {
+      return null
+    }
+  }
+
+  // Run a real AI copyright review of the final video + its music/voiceover.
+  const runCopyrightCheck = async (video: JobDetail) => {
+    const storagePath = video.video?.storage_path
+    if (!storagePath) return
+    setCopyrightJob(video)
+    setCopyrightResult(null)
+    setCopyrightError(null)
+    setCopyrightLoading(true)
+    try {
+      const audio = projectAudio[video.id]
+      const [videoUrl, musicUrl, voiceoverUrl] = await Promise.all([
+        signStorageUrl(storagePath),
+        audio?.music?.url ? signStorageUrl(audio.music.url) : Promise.resolve(null),
+        audio?.voiceover?.url ? signStorageUrl(audio.voiceover.url) : Promise.resolve(null),
+      ])
+      if (!videoUrl) throw new Error('Could not prepare the video for analysis.')
+
+      const { data, error } = await supabase.functions.invoke('copyright-check', {
+        body: {
+          videoUrl,
+          musicUrl: musicUrl ?? undefined,
+          voiceoverUrl: voiceoverUrl ?? undefined,
+        },
+      })
+      if (error) {
+        const status = (error as { context?: { status?: number } })?.context?.status
+        if (status === 429) throw new Error('Rate limit reached. Please try again in a moment.')
+        if (status === 402) throw new Error('AI credits exhausted. Add credits to continue.')
+        throw new Error(error.message || 'Copyright analysis failed.')
+      }
+      const result = (data as { result?: CopyrightResult } | null)?.result
+      if (!result) throw new Error('No analysis result returned.')
+      setCopyrightResult(result)
+    } catch (err) {
+      setCopyrightError(err instanceof Error ? err.message : 'Copyright analysis failed.')
+    } finally {
+      setCopyrightLoading(false)
+    }
+  }
     if (downloadingId) return
     setDownloadingId(imageId)
     try {
