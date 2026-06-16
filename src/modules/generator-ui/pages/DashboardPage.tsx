@@ -5261,6 +5261,7 @@ export default function DashboardPage() {
     setMusicUrl(null)
     setMusicDuration(0)
     setMusicRange([0, 0])
+    setMusicTimeline([0, 0])
     setIsMusicDialogOpen(false)
   }
 
