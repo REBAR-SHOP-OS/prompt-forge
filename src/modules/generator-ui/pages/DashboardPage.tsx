@@ -2126,6 +2126,19 @@ export default function DashboardPage() {
       : (musicPlacement.duration || musicDuration)
     return [Math.max(0, musicPlacement.trimStart), Math.max(musicPlacement.trimStart + 0.05, end)]
   }, [musicPlacement, musicDuration])
+  // Keep the legacy music-range slider working: mirror its window into the
+  // placement trim (the source of truth for preview + export).
+  useEffect(() => {
+    if (!musicUrl) return
+    if (!(musicRange[1] > musicRange[0])) return
+    setMusicPlacement((prev) => {
+      if (Math.abs(prev.trimStart - musicRange[0]) < 0.02 && Math.abs(prev.trimEnd - musicRange[1]) < 0.02) {
+        return prev
+      }
+      return { ...prev, trimStart: musicRange[0], trimEnd: musicRange[1] }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [musicRange[0], musicRange[1], musicUrl])
   const musicFileInputRef = useRef<HTMLInputElement | null>(null)
   const musicPreviewAudioRef = useRef<HTMLAudioElement | null>(null)
   const musicWaveformRef = useRef<SoundtrackWaveformHandle | null>(null)
