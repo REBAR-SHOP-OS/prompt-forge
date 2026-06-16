@@ -781,9 +781,24 @@ export async function mergeVideoUrls(
   // inside its timeline window. Outside the window the track is silenced and
   // paused. Inside the window each track maps the global time into its source
   // window (music loops inside its window; voiceover plays once through it).
-  {
-    const recordStartMs = performance.now()
+  // Shared real film playhead, updated by the clip loop below. The audio gate
+  // reads this (NOT wall-clock) so music/voiceover apply at the exact film
+  // second the user selected, regardless of clip loading/stall/transition time.
+  let filmElapsed = 0
+  let activeClip: ClipItem | null = null
+  let activeImageStartMs: number | null = null
+  const currentFilmTime = (): number => {
+    if (activeClip?.kind === 'video') {
+      const ct = Number.isFinite(activeClip.video.currentTime) ? activeClip.video.currentTime : 0
+      return filmElapsed + Math.max(0, ct)
+    }
+    if (activeImageStartMs != null) {
+      return filmElapsed + Math.max(0, (performance.now() - activeImageStartMs) / 1000)
+    }
+    return filmElapsed
+  }
 
+  {
     const musicWinStart = Math.max(0, musicTrack?.startSec ?? 0)
     const musicWinEnd = Math.max(musicWinStart + 0.05, musicTrack?.endSec ?? 0)
     const musicTlStart = Math.max(0, musicTrack?.timelineStartSec ?? 0)
@@ -801,7 +816,7 @@ export async function mergeVideoUrls(
       : (totalDuration > 0 ? totalDuration : Number.POSITIVE_INFINITY)
 
     const gateTick = () => {
-      const gt = (performance.now() - recordStartMs) / 1000
+      const gt = currentFilmTime()
 
       if (soundtrackEl && soundtrackGain) {
         const inWin = gt >= musicTlStart && gt < musicTlEnd
@@ -856,6 +871,10 @@ export async function mergeVideoUrls(
     stage: MergeProgress['stage'],
     imageStartMs?: number,
   ) => {
+    // Expose the currently playing clip to the audio gate so it can compute the
+    // exact film playhead (elapsed + this clip's position).
+    activeClip = clip
+    activeImageStartMs = imageStartMs ?? null
     if (liveTicker) clearInterval(liveTicker)
     liveTicker = setInterval(() => {
       let ct = 0
@@ -981,6 +1000,9 @@ export async function mergeVideoUrls(
 
     stopLiveProgress()
     elapsedDuration += dur
+    filmElapsed = elapsedDuration
+    activeClip = null
+    activeImageStartMs = null
     onProgress?.({
       ratio: totalDuration > 0 ? Math.min(0.99, elapsedDuration / totalDuration) : (i + 1) / totalClips,
       clipIndex: i + 1,

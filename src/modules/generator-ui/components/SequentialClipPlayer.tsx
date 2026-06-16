@@ -266,6 +266,7 @@ export function SequentialClipPlayer({
       const elapsed = (now - startTs) / 1000
       const local = Math.min(current.durationSec, startLocal + elapsed)
       setGlobalTime(base + local)
+      soundtrackRef.current?.syncTime(base + local)
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
@@ -430,7 +431,11 @@ export function SequentialClipPlayer({
                 }}
                 onTimeUpdate={(e) => {
                   if (scrubbingRef.current) return
-                  setGlobalTime(offsetBeforeIndex(index) + e.currentTarget.currentTime)
+                  const ft = offsetBeforeIndex(index) + e.currentTarget.currentTime
+                  setGlobalTime(ft)
+                  // Continuously re-gate the soundtrack so music/voiceover start
+                  // and stop at the exact film second the user selected.
+                  soundtrackRef.current?.syncTime(ft)
                 }}
                 onSeeking={(e) => syncSoundtrackToFilmTime(e.currentTarget.currentTime)}
                 onSeeked={(e) => syncSoundtrackToFilmTime(e.currentTarget.currentTime)}

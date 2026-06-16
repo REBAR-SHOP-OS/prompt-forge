@@ -74,6 +74,9 @@ export const PreviewSoundtrackWaveforms = forwardRef<
   const musicReadyRef = useRef(false)
   const voiceReadyRef = useRef(false)
   const wantPlayingRef = useRef(false)
+  // Last film playhead (seconds) pushed from the player, so play() resumes at
+  // the correct film position instead of resetting to 0.
+  const lastFilmTimeRef = useRef(0)
 
   // Keep latest range/timeline/volume in refs so the handlers always read fresh
   // values without re-creating WaveSurfer.
@@ -243,8 +246,9 @@ export const PreviewSoundtrackWaveforms = forwardRef<
   useImperativeHandle(ref, () => ({
     play: () => {
       wantPlayingRef.current = true
-      applyMusic(0, true)
-      applyVoice(0, true)
+      const t = lastFilmTimeRef.current
+      applyMusic(t, true)
+      applyVoice(t, true)
     },
     pause: () => {
       wantPlayingRef.current = false
@@ -253,11 +257,13 @@ export const PreviewSoundtrackWaveforms = forwardRef<
     },
     handleSeek: (videoCurrentTime: number) => {
       const t = Math.max(0, videoCurrentTime)
+      lastFilmTimeRef.current = t
       applyVoice(t, true)
       applyMusic(t, true)
     },
     syncTime: (videoCurrentTime: number) => {
       const t = Math.max(0, videoCurrentTime)
+      lastFilmTimeRef.current = t
       applyVoice(t, false)
       applyMusic(t, false)
     },
