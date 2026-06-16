@@ -27,12 +27,20 @@ export interface MergeMusicTrack {
   endSec: number
   /** 0..1, default 1 */
   musicVolume?: number
+  /** Seconds into the film where the music begins (placement offset). Default 0. */
+  startInVideo?: number
 }
 
 export interface MergeVoiceoverTrack {
   src: string
   /** 0..1, default 1 */
   volume?: number
+  /** Seconds into the film where the voiceover begins (placement offset). Default 0. */
+  startInVideo?: number
+  /** Seconds trimmed from the head of the source. Default 0. */
+  trimStart?: number
+  /** Seconds at which playback stops (0 = play to natural end). Default 0. */
+  trimEnd?: number
 }
 
 export interface MergeAudioOptions {
