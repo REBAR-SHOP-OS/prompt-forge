@@ -1,7 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
-import { Download, LoaderCircle, Mic, Music2, Sparkles } from 'lucide-react'
+import { useEffect, useRef, useState, type MutableRefObject } from 'react'
+import { Download, LoaderCircle, Mic, Music2, Sparkles, X } from 'lucide-react'
 import { supabase } from '@/integrations/supabase/client'
 import { Button } from '@/components/ui/button'
+import { Slider } from '@/components/ui/slider'
+import {
+  SoundtrackWaveform,
+  type SoundtrackWaveformHandle,
+} from '@/modules/generator-ui/components/SoundtrackWaveform'
 import {
   Dialog,
   DialogContent,
