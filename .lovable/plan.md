@@ -1,36 +1,47 @@
 # هدف
-هر پروژه «درفت» باید مثل پروژه‌های Final، آیکون موزیک خودش را داشته باشد و موزیک آپلودشده یا ویس ساخته‌شده را به‌صورت پایدار نگه دارد تا با رفرش، باز کردن درفت دیگر، یا Start Over حذف نشود.
+همه‌ی کنترل‌های مربوط به Voiceover — یعنی تنظیم صدا (volume)، انتخاب بازه‌ی صوتی روی waveform (PLAY SELECTION)، و «Play on video from … to» (Start/End) — به داخل پنجره‌ی Voiceover منتقل شوند تا کاربر همه‌چیز را در یک‌جا (همان دیالوگ Voiceover) انجام دهد. پاپ‌اوور جداگانه‌ی کنار تب Voiceover حذف می‌شود.
 
-# وضعیت فعلی (مشکل)
-- صدا (`musicUrl` / `voiceoverUrl`) به‌صورت state سراسری نگهداری می‌شود و فقط هنگام ساخت «Final Film» در `projectAudio[mergedId]` به storage عمومی snapshot می‌شود (خط ۵۷۴۰–۵۸۰۰).
-- درفت‌ها (`draft-...`) هیچ snapshot صوتی نمی‌گیرند. وقتی کاربر یک درفت را باز/رزوم می‌کند، صدا بازیابی نمی‌شود و با رفرش یا تعویض پروژه از بین می‌رود.
-- آیکون موزیک در کارت کتابخانه فقط برای `variant === 'final'` رندر می‌شود (خط ۸۷۴۵).
+# وضعیت فعلی
+- تب «Voiceover» دیالوگ تولید را باز می‌کند: متن، Gender، Tone، Duration، Generate، Download، Use as soundtrack (تصویر سوم).
+- یک پاپ‌اوور جداگانه با آیکون اسلایدر (تصویر اول) شامل این موارد است و در `DashboardPage.tsx` خطوط ۷۴۲۶–۷۵۰۹ قرار دارد:
+  - اسلایدر صدای Voiceover
+  - `SoundtrackWaveform` برای انتخاب بازه‌ی منبع صدا (PLAY SELECTION)
+  - بخش «Play on video from … to» با اسلایدرهای Start/End
+- این کنترل‌ها به state موجود در `DashboardPage` وابسته‌اند: `voiceoverVolume`, `voiceoverRange`, `voiceoverTimeline`, `voiceoverDuration`, `mergedDurationSec`, `voiceoverWaveformRef`.
 
-# تغییرات (فقط فرانت‌اند / presentation و state محلی)
+# تغییرات (فقط فرانت‌اند/UI)
 
-## ۱) استخراج helper پایدارسازی صدا
-منطق `snapshotAudio` داخل بلوک finalize (خط ۵۷۵۳) به یک تابع قابل‌استفاده‌مجدد در سطح کامپوننت تبدیل می‌شود، مثلاً `persistAudioToStorage(src, kind, id)` که فایل را در `MERGED_BUCKET` با مسیر یکتا بر اساس `id` آپلود کرده و URL عمومی برمی‌گرداند. مسیر finalize از همین helper استفاده می‌کند (بدون تغییر رفتار فعلی).
+## ۱) افزودن کنترل‌ها به `VoiceoverDialog`
+به `VoiceoverDialog` پراپ‌های جدید اضافه می‌شود تا کنترل‌های تایمینگ/صدا را برای voiceover فعال نمایش دهد:
+- `activeVoiceoverUrl`, `activeVoiceoverName`
+- `voiceoverVolume` + `onVoiceoverVolumeChange`
+- `voiceoverRange` + `onVoiceoverRangeChange`
+- `voiceoverTimeline` + `onVoiceoverTimelineChange`
+- `voiceoverDuration` + `onVoiceoverDurationChange`
+- `mergedDurationSec`
+- `waveformRef` (همان `SoundtrackWaveformHandle`)
+- `onClearVoiceover`
 
-## ۲) snapshot صدا روی درفت فعال
-هنگامی که درفتی فعال است و موزیک/ویس روی آن اعمال شده، صدا در `projectAudio[draftId]` ذخیره می‌شود:
-- نقطه‌ی اتصال: همان effectی که کلیپ‌های درفت را snapshot می‌کند (`persistDraftEntries` / draft snapshot effect)، به‌علاوه‌ی زمانی که `musicUrl`/`voiceoverUrl` تغییر می‌کند و `activeDraftId` ست است.
-- صدا با helper بند ۱ در storage عمومی آپلود و سپس در `projectAudio[draftId]` و localStorage ذخیره می‌شود (best-effort، بدون بلاک‌کردن UI).
+داخل دیالوگ، هرگاه `activeVoiceoverUrl` وجود داشته باشد، یک بخش «تنظیمات روی فیلم» زیر بخش تولید نمایش داده می‌شود که دقیقاً همان UI پاپ‌اوور فعلی را دارد:
+- اسلایدر صدای Voiceover
+- `SoundtrackWaveform` (انتخاب بازه‌ی منبع + PLAY SELECTION)
+- اسلایدرهای Start/End برای «Play on video from … to» با محدودیت `mergedDurationSec`
+- متن راهنما «Outside this window the voiceover is silent…»
 
-## ۳) بازیابی صدا هنگام باز/رزوم کردن درفت
-در `openLibraryEntry` و `resumeSelectedProject` (مسیر `isDraft`)، اگر `projectAudio[draftId]` موجود بود:
-- `musicUrl`/`musicName` و `voiceoverUrl`/`voiceoverName` از snapshot بازگردانده می‌شوند تا چیپ صدا در نوار بالا دوباره ظاهر شود و دقیقاً روی همان فیلم اعمال شود.
-- مقادیر مرتبط (`musicRange`/`voiceoverRange`/timeline) با مقادیر پیش‌فرض ایمن مقداردهی می‌شوند تا playback/merge درست بماند.
+`SoundtrackWaveform`، `Slider` و helper `formatTimeMS` در همان فایل دیالوگ import/تعریف می‌شوند.
 
-## ۴) آیکون موزیک روی کارت درفت
-بلوک popover آیکون موزیک (خط ۸۷۴۵، الان `variant === 'final'`) طوری گسترش می‌یابد که برای `variant === 'draft'` هم رندر شود و `projectAudio[video.id]` همان درفت را نشان دهد (دانلود/نمایش موزیک و ویس).
+## ۲) رفتار دیالوگ پس از اعمال
+- پس از «Use as soundtrack»، به‌جای بستن کامل، دیالوگ باز می‌ماند تا کاربر بلافاصله تایمینگ/صدا را در همان‌جا تنظیم کند (بستن از طریق دکمه‌ی Close).
+- وقتی voiceover از قبل اعمال شده باشد، باز کردن تب Voiceover مستقیماً بخش تنظیمات را هم نشان می‌دهد.
 
-## ۵) محافظت در حذف
-کلید `projectAudio` همچنان per-id می‌ماند؛ هنگام حذف یک درفت فقط ورودی صوتی همان درفت پاک می‌شود (مطابق منطق فعلی خط ۴۳۲۲)، بنابراین حذف یک پروژه روی صدای درفت‌های دیگر اثری ندارد.
+## ۳) حذف پاپ‌اوور جداگانه از `DashboardPage`
+بلوک پاپ‌اوور آیکون اسلایدر (خطوط ۷۴۲۶–۷۵۰۹) حذف می‌شود. تب Voiceover و `<VoiceoverDialog .../>` باقی می‌مانند و پراپ‌های جدید (state و setterها و `voiceoverWaveformRef` و `mergedDurationSec` و `handleClearVoiceover`) به دیالوگ پاس داده می‌شوند.
 
 # خارج از محدوده
-بدون تغییر در منطق رندر/merge (`mergeVideos.ts`)، بدون تغییر بک‌اند یا schema، بدون تغییر در نحوه‌ی پخش.
+- بخش Music و پاپ‌اوور آن بدون تغییر می‌ماند (درخواست فقط درباره‌ی Voiceover است).
+- منطق merge/render (`mergeVideos.ts`) و نحوه‌ی استفاده از `voiceoverRange`/`voiceoverTimeline` در ساخت فیلم تغییری نمی‌کند؛ فقط محل کنترل‌ها جابه‌جا می‌شود.
 
 # اعتبارسنجی
-- آپلود موزیک روی یک درفت ← رفرش صفحه ← باز کردن درفت: چیپ صدا و آیکون موزیک کارت باید باقی بمانند.
-- ساخت ویس روی درفت ← باز کردن یک درفت دیگر ← برگشت: صدا نباید حذف شده باشد.
-- ساخت Final Film از درفت: همان صدا باید دقیقاً اعمال شود (رفتار فعلی حفظ شود).
+- باز کردن تب Voiceover ← تولید voiceover ← همان دیالوگ بدون بسته‌شدن، اسلایدر صدا، waveform و Start/End را نشان می‌دهد.
+- تنظیم Start/End و بازه‌ی منبع داخل دیالوگ ← ساخت Final Film: voiceover دقیقاً در همان بازه اعمال می‌شود (رفتار قبلی حفظ شود).
+- دیگر هیچ آیکون/پاپ‌اوور جداگانه‌ای کنار تب Voiceover وجود ندارد.

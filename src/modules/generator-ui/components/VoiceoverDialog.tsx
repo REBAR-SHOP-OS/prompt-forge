@@ -1,7 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
-import { Download, LoaderCircle, Mic, Music2, Sparkles } from 'lucide-react'
+import { useEffect, useRef, useState, type MutableRefObject } from 'react'
+import { Download, LoaderCircle, Mic, Music2, Sparkles, X } from 'lucide-react'
 import { supabase } from '@/integrations/supabase/client'
 import { Button } from '@/components/ui/button'
+import { Slider } from '@/components/ui/slider'
+import {
+  SoundtrackWaveform,
+  type SoundtrackWaveformHandle,
+} from '@/modules/generator-ui/components/SoundtrackWaveform'
 import {
   Dialog,
   DialogContent,
@@ -58,6 +63,20 @@ interface VoiceoverDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onUseAsSoundtrack?: (url: string, name: string) => void
+  // Active voiceover applied to the film + its timing/volume controls.
+  activeVoiceoverUrl?: string | null
+  activeVoiceoverName?: string | null
+  voiceoverVolume?: number
+  onVoiceoverVolumeChange?: (v: number) => void
+  voiceoverRange?: [number, number]
+  onVoiceoverRangeChange?: (r: [number, number]) => void
+  voiceoverTimeline?: [number, number]
+  onVoiceoverTimelineChange?: (r: [number, number]) => void
+  voiceoverDuration?: number
+  onVoiceoverDurationChange?: (d: number) => void
+  mergedDurationSec?: number
+  waveformRef?: MutableRefObject<SoundtrackWaveformHandle | null>
+  onClearVoiceover?: () => void
 }
 
 function base64ToBlob(b64: string, mime: string): Blob {
@@ -67,10 +86,30 @@ function base64ToBlob(b64: string, mime: string): Blob {
   return new Blob([bytes], { type: mime })
 }
 
+function formatTimeMS(s: number): string {
+  if (!Number.isFinite(s) || s < 0) s = 0
+  const m = Math.floor(s / 60)
+  const ss = Math.floor(s % 60)
+  return `${m}:${ss.toString().padStart(2, '0')}`
+}
+
 export function VoiceoverDialog({
   open,
   onOpenChange,
   onUseAsSoundtrack,
+  activeVoiceoverUrl,
+  activeVoiceoverName,
+  voiceoverVolume = 1,
+  onVoiceoverVolumeChange,
+  voiceoverRange = [0, 0],
+  onVoiceoverRangeChange,
+  voiceoverTimeline = [0, 0],
+  onVoiceoverTimelineChange,
+  voiceoverDuration = 0,
+  onVoiceoverDurationChange,
+  mergedDurationSec = 0,
+  waveformRef,
+  onClearVoiceover,
 }: VoiceoverDialogProps) {
   const [text, setText] = useState('')
   const [gender, setGender] = useState<Gender>('female')
@@ -205,7 +244,7 @@ export function VoiceoverDialog({
     lastUrlRef.current = null
     setAudioUrl(null)
     setText('')
-    onOpenChange(false)
+    // Keep the dialog open so the user can adjust timing/volume right here.
     toast.success('Voiceover set as soundtrack')
   }
 
@@ -361,6 +400,94 @@ export function VoiceoverDialog({
                   </Button>
                 </div>
               ) : null}
+            </div>
+          ) : null}
+
+          {activeVoiceoverUrl ? (
+            <div className="space-y-4 rounded-md border border-white/10 bg-white/[0.03] p-3">
+              <div className="flex items-center justify-between">
+                <div className="flex min-w-0 items-center gap-2 text-xs text-zinc-300">
+                  <Mic className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span className="truncate">{activeVoiceoverName ?? 'Voiceover'}</span>
+                </div>
+                {onClearVoiceover ? (
+                  <button
+                    type="button"
+                    onClick={onClearVoiceover}
+                    aria-label="Remove voiceover"
+                    className="grid h-6 w-6 place-items-center rounded-full text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+                  >
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                ) : null}
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                  <span>Voiceover volume</span>
+                  <span className="tabular-nums text-zinc-200">{Math.round(voiceoverVolume * 100)}%</span>
+                </div>
+                <Slider
+                  value={[Math.round(voiceoverVolume * 100)]}
+                  min={0}
+                  max={100}
+                  step={1}
+                  onValueChange={(v) => onVoiceoverVolumeChange?.((v[0] ?? 0) / 100)}
+                />
+              </div>
+
+              <SoundtrackWaveform
+                ref={waveformRef}
+                url={activeVoiceoverUrl}
+                range={voiceoverRange[1] > voiceoverRange[0] ? voiceoverRange : [0, Math.max(0.1, voiceoverDuration)]}
+                onReady={(d) => {
+                  onVoiceoverDurationChange?.(d)
+                  if (voiceoverRange[1] <= voiceoverRange[0]) onVoiceoverRangeChange?.([0, d])
+                }}
+                onRangeChange={(r) => { if (r[1] > r[0]) onVoiceoverRangeChange?.([r[0], r[1]]) }}
+              />
+
+              <div className="space-y-3 rounded-md border border-white/10 bg-black/40 p-3">
+                <div className="flex items-center justify-between text-xs text-zinc-300">
+                  <span className="font-medium">Play on video from … to</span>
+                  <span className="tabular-nums text-zinc-200">
+                    {formatTimeMS(voiceoverTimeline[0])} – {formatTimeMS(voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[1] : mergedDurationSec)}
+                  </span>
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                    <span>Start</span>
+                    <span className="tabular-nums text-zinc-200">{formatTimeMS(voiceoverTimeline[0])}</span>
+                  </div>
+                  <Slider
+                    value={[Math.round(voiceoverTimeline[0])]}
+                    min={0}
+                    max={mergedDurationSec}
+                    step={1}
+                    onValueChange={(v) => {
+                      const s = Math.min(v[0] ?? 0, (voiceoverTimeline[1] || mergedDurationSec) - 1)
+                      onVoiceoverTimelineChange?.([Math.max(0, s), voiceoverTimeline[1] || mergedDurationSec])
+                    }}
+                  />
+                  <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                    <span>End</span>
+                    <span className="tabular-nums text-zinc-200">{formatTimeMS(voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[1] : mergedDurationSec)}</span>
+                  </div>
+                  <Slider
+                    value={[Math.round(voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[1] : mergedDurationSec)]}
+                    min={0}
+                    max={mergedDurationSec}
+                    step={1}
+                    onValueChange={(v) => {
+                      const e = Math.max(v[0] ?? mergedDurationSec, voiceoverTimeline[0] + 1)
+                      onVoiceoverTimelineChange?.([voiceoverTimeline[0], Math.min(mergedDurationSec, e)])
+                    }}
+                  />
+                </div>
+                <p className="text-[11px] leading-relaxed text-zinc-500">
+                  Outside this window the voiceover is silent. Total film ≈ {formatTimeMS(mergedDurationSec)}.
+                </p>
+              </div>
             </div>
           ) : null}
         </div>
