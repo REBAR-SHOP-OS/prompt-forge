@@ -1,23 +1,23 @@
-## Plan: Rename brand to "REBAR SHOP AI VIDEO"
+## هدف
+افزایش کریدیت فقط برای یوزر `radin@rebar.shop` تا پیام «Not enough credits» برطرف شود.
 
-Replace all occurrences of "Prompt Forge" with the new brand name "REBAR SHOP AI VIDEO" across the project.
+## وضعیت فعلی
+- یوزر `radin@rebar.shop` (id: `55779da2…`) فقط **۱۳ کریدیت** در `credits_balance` دارد.
+- همین موجودیِ پایین باعث خطای «Not enough credits for this generation» می‌شود (سهمیه روزانه ۴۵/۱۵۰۰ و ماهانه ۴۴۲۰/۳۰۰۰۰ مشکلی ندارند).
 
-### Files to change
+## تغییر
+یک عملیات داده‌ای امن و محدود فقط روی همین یک ردیف:
 
-1. **index.html**
-   - `<title>` tag
-   - `og:title` meta tag
-   - `twitter:title` meta tag
-   - Update `description`, `og:description`, and `twitter:description` to match the new brand identity
+```text
+UPDATE core_user_profiles
+SET credits_balance = 50000
+WHERE id = '55779da2-1d7d-4ce2-b5bb-19e3dc8cfd40'   -- radin@rebar.shop
+```
 
-2. **src/pages/auth/LoginPage.tsx**
-   - Showcase heading (line ~27)
-   - `alt` attributes on logo images (lines ~22 and ~43)
+- مقدار `credits_balance` این یوزر روی **۵۰٬۰۰۰** تنظیم می‌شود.
+- هیچ یوزر دیگری تحت تأثیر قرار نمی‌گیرد.
+- سهمیه روزانه/ماهانه دست‌نخورده می‌ماند (در صورت نیاز بعداً قابل افزایش است).
 
-3. **supabase/functions/local-llm-plan-video/index.ts**
-   - System prompt identity line (line ~141): "You are Prompt Forge's local video prompt planner." → "You are REBAR SHOP AI VIDEO's local video prompt planner."
-
-### No other changes
-- No functional/logic changes.
-- No backend schema or auth changes.
-- No design/ layout changes beyond text replacement.
+## یادداشت فنی
+- این فقط تغییر داده است، نه تغییر اسکیما یا کد. از طریق ابزار درج/به‌روزرسانی دیتابیس اجرا می‌شود.
+- بعد از اجرا با یک کوئری خواندنی صحت مقدار جدید تأیید می‌شود.
