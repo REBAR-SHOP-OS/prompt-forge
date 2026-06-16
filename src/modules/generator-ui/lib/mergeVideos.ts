@@ -780,6 +780,7 @@ export async function mergeVideoUrls(
   if (soundtrackEl && musicTrack) {
     const winStart = Math.max(0, musicTrack.startSec)
     const winEnd = Math.max(winStart + 0.05, musicTrack.endSec)
+    const musicStartInVideo = Math.max(0, musicTrack.startInVideo ?? 0)
     try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
     const clampTick = () => {
       if (!soundtrackEl) return
@@ -788,19 +789,53 @@ export async function mergeVideoUrls(
       }
       soundtrackClampRaf = requestAnimationFrame(clampTick)
     }
-    soundtrackClampRaf = requestAnimationFrame(clampTick)
     soundtrackEndedHandler = () => {
       if (!soundtrackEl) return
       try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
       void soundtrackEl.play().catch(() => { /* ignore */ })
     }
     soundtrackEl.addEventListener('ended', soundtrackEndedHandler)
-    try { await soundtrackEl.play() } catch { /* ignore autoplay reject */ }
+    const startMusic = () => {
+      if (!soundtrackEl) return
+      try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
+      soundtrackClampRaf = requestAnimationFrame(clampTick)
+      void soundtrackEl.play().catch(() => { /* ignore */ })
+    }
+    if (musicStartInVideo > 0.05) {
+      musicStartTimer = setTimeout(startMusic, Math.round(musicStartInVideo * 1000))
+    } else {
+      startMusic()
+    }
   }
 
-  if (voiceoverEl) {
-    try { voiceoverEl.currentTime = 0 } catch { /* ignore */ }
-    try { await voiceoverEl.play() } catch { /* ignore autoplay reject */ }
+  if (voiceoverEl && voiceoverTrack) {
+    const vStartInVideo = Math.max(0, voiceoverTrack.startInVideo ?? 0)
+    const vTrimStart = Math.max(0, voiceoverTrack.trimStart ?? 0)
+    const vTrimEnd =
+      voiceoverTrack.trimEnd && voiceoverTrack.trimEnd > vTrimStart
+        ? voiceoverTrack.trimEnd
+        : 0
+    const startVoice = () => {
+      if (!voiceoverEl) return
+      try { voiceoverEl.currentTime = vTrimStart } catch { /* ignore */ }
+      if (vTrimEnd > 0) {
+        const vClampTick = () => {
+          if (!voiceoverEl) return
+          if (voiceoverEl.currentTime >= vTrimEnd) {
+            try { voiceoverEl.pause() } catch { /* ignore */ }
+            return
+          }
+          voiceClampRaf = requestAnimationFrame(vClampTick)
+        }
+        voiceClampRaf = requestAnimationFrame(vClampTick)
+      }
+      void voiceoverEl.play().catch(() => { /* ignore */ })
+    }
+    if (vStartInVideo > 0.05) {
+      voiceStartTimer = setTimeout(startVoice, Math.round(vStartInVideo * 1000))
+    } else {
+      startVoice()
+    }
   }
 
   let elapsedDuration = 0
