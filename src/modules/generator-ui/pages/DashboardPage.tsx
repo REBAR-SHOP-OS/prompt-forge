@@ -7661,8 +7661,11 @@ export default function DashboardPage() {
               musicUrl={musicUrl}
               musicRange={musicRange}
               musicVolume={musicVolume}
+              musicTimeline={musicTimeline}
               voiceoverUrl={voiceoverUrl}
               voiceoverVolume={voiceoverVolume}
+              voiceoverRange={voiceoverRange}
+              voiceoverTimeline={voiceoverTimeline}
               clipVolume={
                 musicUrl && musicRange[1] > musicRange[0]
                   ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
