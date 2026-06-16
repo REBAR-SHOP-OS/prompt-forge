@@ -8834,7 +8834,7 @@ export default function DashboardPage() {
                             </button>
                           </>
                         ) : null}
-                        {variant === 'final' ? (() => {
+                        {(() => {
                           const audio = projectAudio[video.id]
                           const hasAny = Boolean(audio?.music || audio?.voiceover)
                           return (
