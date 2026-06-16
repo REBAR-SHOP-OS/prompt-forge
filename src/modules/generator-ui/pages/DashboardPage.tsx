@@ -5516,10 +5516,17 @@ export default function DashboardPage() {
                   startSec: musicRange[0],
                   endSec: musicRange[1],
                   musicVolume,
+                  startInVideo: musicPlacement.startInVideo,
                 }
               : undefined,
             voiceover: hasVoiceover
-              ? { src: voiceoverUrl as string, volume: voiceoverVolume }
+              ? {
+                  src: voiceoverUrl as string,
+                  volume: voiceoverVolume,
+                  startInVideo: voiceoverPlacement.startInVideo,
+                  trimStart: voiceoverPlacement.trimStart,
+                  trimEnd: voiceoverPlacement.trimEnd,
+                }
               : undefined,
             clipVolume: mixedClipVolume,
           }
