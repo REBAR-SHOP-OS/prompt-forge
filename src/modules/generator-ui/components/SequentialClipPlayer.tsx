@@ -369,8 +369,12 @@ export function SequentialClipPlayer({
   // Reserve vertical space only for the soundtrack waveforms (no prompt
   // caption) so the video shrinks just enough to keep them fully visible.
   const hasSoundtrack = Boolean(musicUrl) || Boolean(voiceoverUrl)
+  const showMusicPlacement = Boolean(musicUrl && musicPlacement && onMusicPlacementChange)
+  const showVoicePlacement = Boolean(voiceoverUrl && voiceoverPlacement && onVoiceoverPlacementChange)
   const reservedFooterPx = hasSoundtrack
-    ? 24 + (musicUrl ? 52 : 0) + (voiceoverUrl ? 52 : 0)
+    ? 24
+      + (musicUrl ? 52 : 0) + (voiceoverUrl ? 52 : 0)
+      + (showMusicPlacement ? 56 : 0) + (showVoicePlacement ? 56 : 0)
     : 0
   const videoMaxHeightPx = Math.max(160, maxHeightPx - reservedFooterPx)
 
