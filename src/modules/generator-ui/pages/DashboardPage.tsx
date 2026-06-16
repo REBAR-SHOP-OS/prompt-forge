@@ -4671,6 +4671,7 @@ export default function DashboardPage() {
 
       setSelectedProjectId(did)
       setPreviewVideoId(firstPlayableId)
+      restoreDraftAudio(did)
       return
     }
 
