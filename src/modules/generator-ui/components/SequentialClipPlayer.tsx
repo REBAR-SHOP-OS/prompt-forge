@@ -547,6 +547,11 @@ export function SequentialClipPlayer({
           musicVolume={musicVolume}
           voiceoverUrl={voiceoverUrl}
           voiceoverVolume={voiceoverVolume}
+          filmDuration={filmTotal || totalDuration}
+          musicOffset={musicOffset}
+          voiceOffset={voiceOffset}
+          onMusicOffsetChange={onMusicOffsetChange}
+          onVoiceOffsetChange={onVoiceOffsetChange}
         />
       </div>
     </div>
