@@ -121,6 +121,7 @@ export function VideoWithSoundtrack({
               const el = e.currentTarget
               el.volume = Math.max(0, Math.min(1, clipVolume))
               el.muted = clipVolume <= 0
+              if (Number.isFinite(el.duration) && el.duration > 0) setVideoDuration(el.duration)
             }}
           />
         )}
@@ -132,7 +133,13 @@ export function VideoWithSoundtrack({
         musicVolume={musicVolume}
         voiceoverUrl={voiceoverUrl}
         voiceoverVolume={voiceoverVolume}
+        filmDuration={videoDuration}
+        musicOffset={musicOffset}
+        voiceOffset={voiceOffset}
+        onMusicOffsetChange={onMusicOffsetChange}
+        onVoiceOffsetChange={onVoiceOffsetChange}
       />
+
     </div>
   )
 }
