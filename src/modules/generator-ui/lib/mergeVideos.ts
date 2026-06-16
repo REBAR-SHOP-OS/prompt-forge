@@ -1000,6 +1000,9 @@ export async function mergeVideoUrls(
       try { c.video.pause() } catch { /* ignore */ }
     }
   }
+  if (musicStartTimer) { clearTimeout(musicStartTimer); musicStartTimer = null }
+  if (voiceStartTimer) { clearTimeout(voiceStartTimer); voiceStartTimer = null }
+  if (voiceClampRaf) cancelAnimationFrame(voiceClampRaf)
   if (soundtrackEl) {
     if (soundtrackClampRaf) cancelAnimationFrame(soundtrackClampRaf)
     if (soundtrackEndedHandler) soundtrackEl.removeEventListener('ended', soundtrackEndedHandler)
