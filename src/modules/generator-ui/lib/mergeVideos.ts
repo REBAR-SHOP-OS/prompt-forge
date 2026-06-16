@@ -1000,6 +1000,9 @@ export async function mergeVideoUrls(
 
     stopLiveProgress()
     elapsedDuration += dur
+    filmElapsed = elapsedDuration
+    activeClip = null
+    activeImageStartMs = null
     onProgress?.({
       ratio: totalDuration > 0 ? Math.min(0.99, elapsedDuration / totalDuration) : (i + 1) / totalClips,
       clipIndex: i + 1,
