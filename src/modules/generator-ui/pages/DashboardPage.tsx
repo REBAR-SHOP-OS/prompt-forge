@@ -622,6 +622,19 @@ export default function DashboardPage() {
   // transcoded to standard MP4) so we can show a spinner on that button.
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
 
+  // --- Copyright shield: AI review of the final video + music/voiceover ---
+  type CopyrightSection = { status: string; reason?: string; risks?: string[] }
+  type CopyrightResult = {
+    verdict: string
+    summary?: string
+    video?: CopyrightSection
+    music?: CopyrightSection
+  }
+  const [copyrightJob, setCopyrightJob] = useState<JobDetail | null>(null)
+  const [copyrightLoading, setCopyrightLoading] = useState(false)
+  const [copyrightResult, setCopyrightResult] = useState<CopyrightResult | null>(null)
+  const [copyrightError, setCopyrightError] = useState<string | null>(null)
+
   // Download a film as a standard, broadly-compatible MP4. Final Film output
   // is WebM (MediaRecorder), which fails in QuickTime / WMP / mobile galleries.
   // We fetch the stored file and run it through ensureMp4 (ffmpeg.wasm) so the
