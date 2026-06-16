@@ -120,6 +120,7 @@ export function SequentialClipPlayer({
   onVoiceoverPlacementChange,
 }: Props) {
   const [index, setIndex] = useState(0)
+  const [selectedLane, setSelectedLane] = useState<'music' | 'voice'>('music')
   const totalDuration = useTotalDuration(clips)
   const [isPlaying, setIsPlaying] = useState(true)
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -553,6 +554,7 @@ export function SequentialClipPlayer({
           musicUrl={musicUrl}
           musicRange={musicRange}
           musicVolume={musicVolume}
+          musicLoop={false}
           musicStartInVideo={musicPlacement?.startInVideo ?? 0}
           voiceoverUrl={voiceoverUrl}
           voiceoverVolume={voiceoverVolume}
@@ -574,6 +576,8 @@ export function SequentialClipPlayer({
                 filmDuration={filmTotal || totalDuration}
                 placement={musicPlacement}
                 onChange={onMusicPlacementChange!}
+                selected={selectedLane === 'music'}
+                onSelect={() => setSelectedLane('music')}
               />
             ) : null}
             {showVoicePlacement && voiceoverPlacement ? (
@@ -583,6 +587,8 @@ export function SequentialClipPlayer({
                 filmDuration={filmTotal || totalDuration}
                 placement={voiceoverPlacement}
                 onChange={onVoiceoverPlacementChange!}
+                selected={selectedLane === 'voice'}
+                onSelect={() => setSelectedLane('voice')}
               />
             ) : null}
           </div>

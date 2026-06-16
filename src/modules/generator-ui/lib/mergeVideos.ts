@@ -29,6 +29,10 @@ export interface MergeMusicTrack {
   musicVolume?: number
   /** Seconds into the film where the music begins (placement offset). Default 0. */
   startInVideo?: number
+  /** Seconds into the film where the music stops (0 = never, play/loop on). */
+  endInVideo?: number
+  /** When false, play once across [startSec,endSec] then stay silent. Default true. */
+  loop?: boolean
 }
 
 export interface MergeVoiceoverTrack {
@@ -781,16 +785,24 @@ export async function mergeVideoUrls(
     const winStart = Math.max(0, musicTrack.startSec)
     const winEnd = Math.max(winStart + 0.05, musicTrack.endSec)
     const musicStartInVideo = Math.max(0, musicTrack.startInVideo ?? 0)
+    const musicLoop = musicTrack.loop !== false
     try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
     const clampTick = () => {
       if (!soundtrackEl) return
       if (soundtrackEl.currentTime >= winEnd) {
-        try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
+        if (musicLoop) {
+          try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
+        } else {
+          // Play once across the window, then stay silent.
+          try { soundtrackEl.pause() } catch { /* ignore */ }
+          return
+        }
       }
       soundtrackClampRaf = requestAnimationFrame(clampTick)
     }
     soundtrackEndedHandler = () => {
       if (!soundtrackEl) return
+      if (!musicLoop) return
       try { soundtrackEl.currentTime = winStart } catch { /* ignore */ }
       void soundtrackEl.play().catch(() => { /* ignore */ })
     }
