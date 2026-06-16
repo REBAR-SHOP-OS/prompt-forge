@@ -43,12 +43,17 @@ export function VideoWithSoundtrack({
   musicVolume = 1,
   voiceoverUrl,
   voiceoverVolume = 1,
+  musicOffset = 0,
+  voiceOffset = 0,
+  onMusicOffsetChange,
+  onVoiceOffsetChange,
   videoBoxClassName,
   videoBoxStyle,
   ...videoProps
 }: VideoWithSoundtrackProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const soundtrackRef = useRef<PreviewSoundtrackHandle | null>(null)
+  const [videoDuration, setVideoDuration] = useState(0)
 
   // Apply clip volume / mute to the video element.
   useEffect(() => {
