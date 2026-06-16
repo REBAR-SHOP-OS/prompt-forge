@@ -8929,7 +8929,7 @@ export default function DashboardPage() {
                               </PopoverContent>
                             </Popover>
                           )
-                        })() : null}
+                        })()}
                         {variant === 'final' && video.video?.storage_path ? (
                           <button
                             type="button"
