@@ -4499,14 +4499,27 @@ export default function DashboardPage() {
       return next
     })
 
+    // 8b. Move the film's persisted audio over to the draft scope so the
+    // soundtrack stays attached and is restored into the live audio state.
+    setProjectAudio((prev) => {
+      const audio = prev[finalId]
+      if (!audio) return prev
+      const { [finalId]: _dropAudio, ...rest } = prev
+      const next = { ...rest, [draftId]: audio }
+      persistProjectAudio(next)
+      return next
+    })
+
     // 9. Activate edit mode on the draft.
     setActiveDraftId(draftId)
     persistActiveDraftId(draftId)
+    restoreDraftAudio(draftId)
     setSelectedProjectId(null)
     setPreviewVideoId(null)
     setLastMergedPreview(null)
     setPreviewDismissed(true)
   }
+
 
   // Restore a draft's persisted music/voiceover back into the live audio state
   // so the soundtrack chip reappears and applies to the exact same film. Audio
