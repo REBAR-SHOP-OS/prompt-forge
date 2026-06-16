@@ -2075,7 +2075,7 @@ export default function DashboardPage() {
   const [musicVolume, setMusicVolume] = useState<number>(1)
   const [isMusicDialogOpen, setIsMusicDialogOpen] = useState(false)
   const [isVoiceoverOpen, setIsVoiceoverOpen] = useState(false)
-  const [isVoiceoverTimingOpen, setIsVoiceoverTimingOpen] = useState(false)
+  
   const [isReframeOpen, setIsReframeOpen] = useState(false)
   const [voiceoverUrl, setVoiceoverUrl] = useState<string | null>(null)
   const [voiceoverName, setVoiceoverName] = useState<string | null>(null)
@@ -7329,26 +7329,7 @@ export default function DashboardPage() {
               <SlidersHorizontal className="h-[14px] w-[14px]" aria-hidden="true" />
             </button>
           </PopoverTrigger>
-          <PopoverContent className="w-72 space-y-4 border-white/10 bg-zinc-950 text-zinc-100" align="end">
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                <span>Original clip audio</span>
-                <span className="tabular-nums text-zinc-200">{Math.round(voiceoverClipVolume * 100)}%</span>
-              </div>
-              <Slider
-                value={[Math.round(voiceoverClipVolume * 100)]}
-                min={0}
-                max={100}
-                step={1}
-                disabled={Boolean(musicUrl && musicRange[1] > musicRange[0])}
-                onValueChange={(v) => setVoiceoverClipVolume((v[0] ?? 0) / 100)}
-              />
-              {musicUrl && musicRange[1] > musicRange[0] ? (
-                <p className="text-[10px] leading-relaxed text-zinc-500">
-                  Clip audio is controlled from the Soundtrack dialog while music is active.
-                </p>
-              ) : null}
-            </div>
+          <PopoverContent className="w-96 space-y-4 border-white/10 bg-zinc-950 text-zinc-100" align="end">
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-[11px] text-zinc-400">
                 <span>Voiceover</span>
@@ -7362,35 +7343,7 @@ export default function DashboardPage() {
                 onValueChange={(v) => setVoiceoverVolume((v[0] ?? 0) / 100)}
               />
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              onClick={() => setIsVoiceoverTimingOpen(true)}
-            >
-              Set timing on video…
-            </Button>
-          </PopoverContent>
-        </Popover>
-      ) : null}
-      </>
-      )}
-      <VoiceoverDialog
-        open={isVoiceoverOpen}
-        onOpenChange={setIsVoiceoverOpen}
-        onUseAsSoundtrack={handleVoiceoverAsSoundtrack}
-      />
 
-      <Dialog open={isVoiceoverTimingOpen} onOpenChange={setIsVoiceoverTimingOpen}>
-        <DialogContent className="border-white/10 bg-black text-zinc-100 sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Voiceover timing</DialogTitle>
-            <DialogDescription>
-              Choose which part of the voiceover plays and where on the video it appears.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
             {voiceoverUrl ? (
               <SoundtrackWaveform
                 ref={voiceoverWaveformRef}
@@ -7445,13 +7398,18 @@ export default function DashboardPage() {
                 Outside this window the voiceover is silent. Total film ≈ {formatTimeMS(mergedDurationSec)}.
               </p>
             </div>
-          </div>
+          </PopoverContent>
+        </Popover>
+      ) : null}
+      </>
+      )}
+      <VoiceoverDialog
+        open={isVoiceoverOpen}
+        onOpenChange={setIsVoiceoverOpen}
+        onUseAsSoundtrack={handleVoiceoverAsSoundtrack}
+      />
 
-          <DialogFooter>
-            <Button type="button" onClick={() => setIsVoiceoverTimingOpen(false)}>Done</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+
 
 
       <ImageReframeDialog
