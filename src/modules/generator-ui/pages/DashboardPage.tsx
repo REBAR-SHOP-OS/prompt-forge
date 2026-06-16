@@ -99,7 +99,11 @@ import { SoundtrackWaveform, type SoundtrackWaveformHandle } from '@/modules/gen
 import { TransitionPreview } from '@/modules/generator-ui/components/TransitionPreview'
 import { SequentialClipPlayer } from '@/modules/generator-ui/components/SequentialClipPlayer'
 import { VideoWithSoundtrack } from '@/modules/generator-ui/components/VideoWithSoundtrack'
-import type { AudioPlacement } from '@/modules/generator-ui/components/AudioPlacementTrack'
+import {
+  type AudioPlacement,
+  DEFAULT_PLACEMENT as DEFAULT_AUDIO_PLACEMENT,
+  normalizePlacement,
+} from '@/modules/generator-ui/components/AudioPlacementTrack'
 import { PlayableVideo } from '@/modules/generator-ui/components/PlayableVideo'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
