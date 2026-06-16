@@ -468,6 +468,8 @@ export async function mergeVideoUrls(
   let soundtrackEl: HTMLAudioElement | null = null
   let soundtrackEndedHandler: (() => void) | null = null
   let soundtrackClampRaf = 0
+  let musicDelayTimer: ReturnType<typeof setTimeout> | null = null
+  let voiceDelayTimer: ReturnType<typeof setTimeout> | null = null
   if (musicTrack && audioCtx && audioDest) {
     try {
       soundtrackEl = document.createElement('audio')
