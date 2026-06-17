@@ -33,18 +33,14 @@ Deno.serve(async (req) => {
     if (!userId) return json({ error: "Unauthorized" }, 401);
 
     const svc = createClient(SUPABASE_URL, SERVICE_ROLE);
-    const { data: isAdmin } = await svc.rpc("has_role", {
-      _user_id: userId,
-      _role: "admin",
-    });
-    if (!isAdmin) return json({ error: "Admin only" }, 403);
 
     const ownStoragePrefix = `${new URL(SUPABASE_URL).origin}/storage/v1/object/`;
 
-    // Find all non-durable assets (external provider URLs).
+    // Find the caller's own non-durable assets (external provider URLs).
     const { data: rows, error } = await svc
       .from("generator_video_assets")
       .select("id, user_id, storage_path")
+      .eq("user_id", userId)
       .is("deleted_at", null)
       .not("storage_path", "like", `${ownStoragePrefix}%`);
     if (error) return json({ error: error.message }, 500);
