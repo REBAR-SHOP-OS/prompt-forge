@@ -95,7 +95,8 @@ async function materializeVideoUrl(
   }
 
   // 2) Anything that already lives in our own Supabase storage is durable.
-  if (videoUrl.startsWith(SUPABASE_PUBLIC_STORAGE_PREFIX)) return videoUrl;
+  const ownStoragePrefix = `${new URL(getEnv("SUPABASE_URL")).origin}/storage/v1/object/`;
+  if (videoUrl.startsWith(ownStoragePrefix)) return videoUrl;
 
   // 3) External provider URL (e.g. DashScope/WAN): these are short-lived and
   //    expire, leaving blank cards. Download the bytes and re-host in our own
