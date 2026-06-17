@@ -3657,9 +3657,10 @@ export default function DashboardPage() {
     videoUrlExists: boolean
     videoUrlSource: string
     scheduledAt: string
-    targetOrigin: string
-    sentToParent: boolean
-    sentToTop: boolean
+    detectedParentOrigin: string
+    targetOrigins: string[]
+    sentToParent: Record<string, boolean>
+    sentToTop: Record<string, boolean>
     error: string
   } | null>(null)
   // True only when this app is embedded in an iframe (i.e. inside Rebar OS).
