@@ -251,9 +251,64 @@ type UserAudioItem = {
 const FRAMES_BUCKET = 'wan-frames'
 const MERGED_BUCKET = 'merged-videos'
 // Locked parent origin for the "Schedule to Social Media" hand-off. The Final
-// Film card posts to this exact origin only (never "*") so the schedule payload
-// can only ever be received by the Rebar OS shell that embeds this app.
+// Film card posts to this exact origin in production (never "*") so the schedule
+// payload can only ever be received by the Rebar OS shell that embeds this app.
 const SOCIAL_PARENT_ORIGIN = 'https://os.rebar.shop'
+
+// Temporary debug flag. When true, a last-resort "*" broadcast is allowed if no
+// allow-listed parent origin could be detected. MUST stay false in production.
+const SOCIAL_ALLOW_WILDCARD_FALLBACK = true
+
+// Is `origin` a trusted target we are allowed to postMessage to?
+// Allowed: the production Rebar OS origin, and any https *.lovable.app preview
+// origin (Rebar OS may be tested inside a Lovable preview).
+function isAllowedSocialOrigin(origin: string | null | undefined): boolean {
+  if (!origin) return false
+  try {
+    const u = new URL(origin)
+    if (u.protocol !== 'https:') return false
+    if (u.origin === SOCIAL_PARENT_ORIGIN) return true
+    const host = u.hostname.toLowerCase()
+    if (host === 'lovable.app' || host.endsWith('.lovable.app')) return true
+    return false
+  } catch {
+    return false
+  }
+}
+
+// Best-effort detection of the real parent origin when embedded. Cross-origin
+// iframes cannot read window.parent.location, so we fall back to document.referrer
+// (the embedding page's URL). Returns a validated origin or null.
+function detectParentOrigin(): string | null {
+  // 1) Same-origin parent (rare in practice) — read directly.
+  try {
+    if (window.parent && window.parent !== window && window.parent.location?.origin) {
+      const o = window.parent.location.origin
+      if (isAllowedSocialOrigin(o)) return o
+    }
+  } catch {
+    /* cross-origin: expected, fall through to referrer */
+  }
+  // 2) Referrer of the embedding page.
+  try {
+    if (document.referrer) {
+      const o = new URL(document.referrer).origin
+      if (isAllowedSocialOrigin(o)) return o
+    }
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
+// Build the list of target origins to post the schedule hand-off to. Production
+// always includes os.rebar.shop; a detected, allow-listed preview origin is added
+// so the Rebar OS Diagnostic HUD can receive the message inside a Lovable preview.
+function buildSocialTargetOrigins(detected: string | null): string[] {
+  const origins = new Set<string>([SOCIAL_PARENT_ORIGIN])
+  if (detected && isAllowedSocialOrigin(detected)) origins.add(detected)
+  return Array.from(origins)
+}
 const USER_IMAGES_BUCKET = 'user-images'
 const USER_AUDIO_BUCKET = 'user-audio'
 
