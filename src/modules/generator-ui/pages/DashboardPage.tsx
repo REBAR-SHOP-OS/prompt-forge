@@ -27,8 +27,9 @@ import {
   History,
   Image as ImageIcon,
   ImagePlus,
-  LayoutGrid,
-  Library,
+   CalendarPlus,
+   LayoutGrid,
+   Library,
   LoaderCircle,
   Lock,
   LogOut,
@@ -90,6 +91,8 @@ import {
 } from '@/components/ui/popover'
 import { Slider } from '@/components/ui/slider'
 import { Button } from '@/components/ui/button'
+import { Calendar } from '@/components/ui/calendar'
+import { toast } from 'sonner'
 
 import { ApiError } from '@/core/api/client'
 import { useAuth } from '@/core/auth/AuthProvider'
@@ -247,6 +250,10 @@ type UserAudioItem = {
 
 const FRAMES_BUCKET = 'wan-frames'
 const MERGED_BUCKET = 'merged-videos'
+// Locked parent origin for the "Schedule to Social Media" hand-off. The Final
+// Film card posts to this exact origin only (never "*") so the schedule payload
+// can only ever be received by the Rebar OS shell that embeds this app.
+const SOCIAL_PARENT_ORIGIN = 'https://os.rebar.shop'
 const USER_IMAGES_BUCKET = 'user-images'
 const USER_AUDIO_BUCKET = 'user-audio'
 
@@ -3576,6 +3583,87 @@ export default function DashboardPage() {
 
   // Backwards-compat alias used by existing card highlight + start-frame code paths
   const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
+
+  // --- Schedule the Final Film to the Rebar OS Social Media Manager ---
+  // Frontend-only hand-off: posts a durable signed video URL + schedule time to
+  // the embedding Rebar OS shell via postMessage (origin-locked). No backend or
+  // merge logic is touched here.
+  const [scheduleOpen, setScheduleOpen] = useState(false)
+  const [scheduleDate, setScheduleDate] = useState<Date | undefined>(undefined)
+  const [scheduleTime, setScheduleTime] = useState('10:00')
+  const [scheduleSending, setScheduleSending] = useState(false)
+
+  const handleScheduleToSocial = useCallback(async () => {
+    if (window.parent === window) {
+      toast.error('Open this app inside Rebar OS to schedule to Social Media Manager.')
+      return
+    }
+    if (!scheduleDate) {
+      toast.error('Pick a date first.')
+      return
+    }
+    const rawPath = previewVideo?.video?.storage_path
+    if (!rawPath) {
+      toast.error('No final video is available to schedule.')
+      return
+    }
+    setScheduleSending(true)
+    try {
+      // Durable, fetchable URL the other app can read. merged-videos is a
+      // private bucket, so mint a long-lived signed URL (1 year) instead of a
+      // public URL that would 403.
+      let videoUrl = rawPath
+      try {
+        let bucket = MERGED_BUCKET
+        let path = rawPath
+        if (/^https?:\/\//i.test(rawPath)) {
+          const parsed = new URL(rawPath)
+          const m = parsed.pathname.match(
+            /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/,
+          )
+          if (m) {
+            bucket = m[1]
+            try { path = decodeURIComponent(m[2]) } catch { path = m[2] }
+          }
+        }
+        const { data, error } = await supabase.storage
+          .from(bucket)
+          .createSignedUrl(path, 60 * 60 * 24 * 365)
+        if (!error && data?.signedUrl) videoUrl = data.signedUrl
+      } catch {
+        /* fall back to the raw storage_path */
+      }
+
+      const [hh, mm] = scheduleTime.split(':').map((n) => parseInt(n, 10))
+      const when = new Date(scheduleDate)
+      when.setHours(Number.isFinite(hh) ? hh : 10, Number.isFinite(mm) ? mm : 0, 0, 0)
+
+      const posterUrl = previewVideo?.video?.thumbnail_url ?? undefined
+      const durationSec = previewVideo?.video?.duration ?? undefined
+      const caption = previewVideo?.input_prompt ?? ''
+
+      window.parent.postMessage(
+        {
+          type: 'rebar.finalFilm.scheduleToSocial',
+          payload: {
+            videoUrl,
+            ...(posterUrl ? { posterUrl } : {}),
+            mimeType: 'video/mp4',
+            ...(durationSec ? { durationSec } : {}),
+            caption,
+            scheduledAt: when.toISOString(),
+          },
+        },
+        SOCIAL_PARENT_ORIGIN,
+      )
+
+      toast.success('Sent to Social Media Manager')
+      setScheduleOpen(false)
+    } finally {
+      setScheduleSending(false)
+    }
+  }, [scheduleDate, scheduleTime, previewVideo])
+
 
   // Live progress tick is handled by the global setProgressTick effect below
   // (re-renders once per second while any job is active), so the preview's
@@ -7337,6 +7425,58 @@ export default function DashboardPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {isReadOnlyProject && (
+        <Popover open={scheduleOpen} onOpenChange={setScheduleOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="flex h-9 items-center gap-1.5 rounded-md border border-sky-400/40 bg-sky-400/15 px-3 text-xs uppercase tracking-[0.18em] text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-400/25"
+              aria-label="Schedule to Social Media Manager"
+              title="Schedule to Social Media Manager"
+            >
+              <CalendarPlus className="h-[14px] w-[14px]" aria-hidden="true" />
+              <span>Schedule</span>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="center" className="w-auto p-3">
+            <div className="space-y-3">
+              <div>
+                <p className="mb-1 text-xs font-medium text-zinc-200">Date</p>
+                <Calendar
+                  mode="single"
+                  selected={scheduleDate}
+                  onSelect={setScheduleDate}
+                  initialFocus
+                  className="pointer-events-auto rounded-md border"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-200" htmlFor="schedule-time">
+                  Time
+                </label>
+                <input
+                  id="schedule-time"
+                  type="time"
+                  value={scheduleTime}
+                  onChange={(e) => setScheduleTime(e.target.value)}
+                  className="h-9 w-full rounded-md border border-white/10 bg-white/[0.04] px-3 text-sm text-zinc-100 outline-none focus:border-white/20"
+                />
+              </div>
+              <Button
+                type="button"
+                className="w-full"
+                disabled={!scheduleDate || scheduleSending}
+                onClick={handleScheduleToSocial}
+              >
+                {scheduleSending ? 'Sending…' : 'Send to Social Media Manager'}
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
+      )}
+
+
 
       {!isReadOnlyProject && (
       <>
