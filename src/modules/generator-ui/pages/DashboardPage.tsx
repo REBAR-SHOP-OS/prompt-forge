@@ -250,6 +250,10 @@ type UserAudioItem = {
 
 const FRAMES_BUCKET = 'wan-frames'
 const MERGED_BUCKET = 'merged-videos'
+// Locked parent origin for the "Schedule to Social Media" hand-off. The Final
+// Film card posts to this exact origin only (never "*") so the schedule payload
+// can only ever be received by the Rebar OS shell that embeds this app.
+const SOCIAL_PARENT_ORIGIN = 'https://os.rebar.shop'
 const USER_IMAGES_BUCKET = 'user-images'
 const USER_AUDIO_BUCKET = 'user-audio'
 
