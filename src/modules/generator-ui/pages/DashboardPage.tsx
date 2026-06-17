@@ -3618,16 +3618,30 @@ export default function DashboardPage() {
   }, [])
 
   const handleScheduleToSocial = useCallback(async () => {
+    const dbg = {
+      clicked: true,
+      isInIframe,
+      videoUrlExists: false,
+      videoUrlSource: '',
+      scheduledAt: '',
+      targetOrigin: SOCIAL_PARENT_ORIGIN,
+      sentToParent: false,
+      sentToTop: false,
+      error: '',
+    }
+    setScheduleDebug(dbg)
     console.log('[Schedule→Social] schedule button clicked')
     console.log('[Schedule→Social] isInIframe:', isInIframe)
-    console.log('[Schedule→Social] window.parent exists:', !!window.parent)
-    console.log('[Schedule→Social] window.top exists:', !!window.top)
     console.log('[Schedule→Social] targetOrigin:', SOCIAL_PARENT_ORIGIN)
     if (!isInIframe) {
+      dbg.error = 'Not inside Rebar OS iframe'
+      setScheduleDebug({ ...dbg })
       toast.error('Open this app inside Rebar OS to schedule to Social Media Manager.')
       return
     }
     if (!scheduleDate) {
+      dbg.error = 'No date selected'
+      setScheduleDebug({ ...dbg })
       toast.error('Pick a date first.')
       return
     }
@@ -3640,6 +3654,9 @@ export default function DashboardPage() {
       // private bucket, so mint a long-lived signed URL (1 year) instead of a
       // public URL that would 403.
       let videoUrl = rawPath ?? ''
+      dbg.videoUrlSource = rawPath
+        ? 'previewVideo.video.storage_path (signed)'
+        : 'previewVideo.video.storage_path (empty)'
       if (rawPath) {
         try {
           let bucket = MERGED_BUCKET
@@ -3681,15 +3698,27 @@ export default function DashboardPage() {
         scheduledAt,
       }
 
+      dbg.videoUrlExists = !!videoUrl
+      dbg.scheduledAt = scheduledAt
+      setScheduleDebug({ ...dbg })
+
       console.log('[Schedule→Social] videoUrl exists:', !!videoUrl)
       console.log('[Schedule→Social] scheduledAt:', scheduledAt)
       console.log('[Schedule→Social] payload:', payload)
 
       // Hard validation: never silently send an empty hand-off.
-      if (!videoUrl || !scheduledAt) {
-        console.warn('[Schedule→Social] missing videoUrl or scheduledAt — aborting send')
-        toast.error('Cannot send: missing videoUrl or scheduledAt')
-        setScheduleStatus({ kind: 'error', message: 'Missing videoUrl or scheduledAt' })
+      if (!videoUrl) {
+        dbg.error = 'Final video URL is missing'
+        setScheduleDebug({ ...dbg })
+        toast.error('Final video URL is missing')
+        setScheduleStatus({ kind: 'error', message: 'Final video URL is missing' })
+        return
+      }
+      if (!scheduledAt) {
+        dbg.error = 'scheduledAt is missing'
+        setScheduleDebug({ ...dbg })
+        toast.error('Cannot send: missing scheduledAt')
+        setScheduleStatus({ kind: 'error', message: 'Missing scheduledAt' })
         return
       }
 
@@ -3701,23 +3730,30 @@ export default function DashboardPage() {
       try {
         window.parent?.postMessage(message, SOCIAL_PARENT_ORIGIN)
         posted = true
+        dbg.sentToParent = true
         console.log('[Schedule→Social] postMessage sent to window.parent', SOCIAL_PARENT_ORIGIN)
       } catch (err) {
+        dbg.error = `parent.postMessage: ${String((err as Error)?.message ?? err)}`
         console.error('[Schedule→Social] window.parent.postMessage failed', err)
       }
       try {
         if (window.top && window.top !== window.parent) {
           window.top.postMessage(message, SOCIAL_PARENT_ORIGIN)
           posted = true
+          dbg.sentToTop = true
           console.log('[Schedule→Social] postMessage also sent to window.top', SOCIAL_PARENT_ORIGIN)
         }
       } catch (err) {
+        dbg.error = `top.postMessage: ${String((err as Error)?.message ?? err)}`
         console.error('[Schedule→Social] window.top.postMessage failed', err)
       }
 
+      setScheduleDebug({ ...dbg })
       console.log('[Schedule→Social] postMessage executed:', posted, '| scheduledAt:', scheduledAt)
 
       if (!posted) {
+        if (!dbg.error) dbg.error = 'postMessage failed'
+        setScheduleDebug({ ...dbg })
         toast.error('Failed to send message to Rebar OS')
         setScheduleStatus({ kind: 'error', message: 'postMessage failed' })
         return
@@ -3725,8 +3761,10 @@ export default function DashboardPage() {
 
       toast.success(`Sent to Social Media Manager • ${scheduledAt}`)
       setScheduleStatus({ kind: 'sent', message: `Message sent to Rebar OS • ${scheduledAt}` })
-      setTimeout(() => setScheduleOpen(false), 1200)
+      setTimeout(() => setScheduleOpen(false), 1800)
     } catch (err) {
+      dbg.error = String((err as Error)?.message ?? err)
+      setScheduleDebug({ ...dbg })
       console.error('[Schedule→Social] unexpected error', err)
       toast.error('Failed to send to Social Media Manager')
       setScheduleStatus({ kind: 'error', message: String((err as Error)?.message ?? err) })
