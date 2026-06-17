@@ -6873,6 +6873,7 @@ export default function DashboardPage() {
                       ref={productPhotoInputRef}
                       type="file"
                       accept="image/*"
+                      multiple
                       className="hidden"
                       onChange={(e) => { void handleProductPhotoSelected(e) }}
                     />
