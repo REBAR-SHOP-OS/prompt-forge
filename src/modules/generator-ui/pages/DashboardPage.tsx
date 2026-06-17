@@ -4161,6 +4161,20 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
+    // Read-only projects (e.g. a finalized Film opened inside the Rebar OS
+    // iframe) are already terminal — never poll. A finalized/merged clip can
+    // report a non-standard status or a "completed" status without a
+    // storage_path, which would otherwise keep getJob() firing forever and
+    // freeze the page.
+    if (isReadOnlyProject) {
+      if (pollTimerRef.current) {
+        window.clearTimeout(pollTimerRef.current)
+        pollTimerRef.current = null
+      }
+      pollFailureCountRef.current = 0
+      return
+    }
+
     const activeJobs = generatedVideos.filter((job) => isJobAwaitingResolution(job))
 
     if (activeJobs.length === 0) {
