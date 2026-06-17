@@ -7604,7 +7604,34 @@ export default function DashboardPage() {
                       : scheduleStatus.message ?? 'Failed to send'}
                 </p>
               )}
+              {scheduleDebug && (
+                <div className="space-y-0.5 rounded-md border border-white/10 bg-black/40 p-2 font-mono text-[10px] leading-relaxed text-zinc-300">
+                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                    Debug
+                  </p>
+                  <p>clicked: {scheduleDebug.clicked ? 'yes' : 'no'}</p>
+                  <p>isInIframe: {String(scheduleDebug.isInIframe)}</p>
+                  <p>
+                    videoUrl exists:{' '}
+                    <span className={scheduleDebug.videoUrlExists ? 'text-emerald-300' : 'text-red-300'}>
+                      {String(scheduleDebug.videoUrlExists)}
+                    </span>
+                  </p>
+                  <p className="break-all">videoUrl source: {scheduleDebug.videoUrlSource || '—'}</p>
+                  {!scheduleDebug.videoUrlExists && (
+                    <p className="text-red-300">Final video URL is missing</p>
+                  )}
+                  <p className="break-all">scheduledAt: {scheduleDebug.scheduledAt || '—'}</p>
+                  <p className="break-all">targetOrigin: {scheduleDebug.targetOrigin}</p>
+                  <p>postMessage → parent: {scheduleDebug.sentToParent ? 'yes' : 'no'}</p>
+                  <p>postMessage → top: {scheduleDebug.sentToTop ? 'yes' : 'no'}</p>
+                  {scheduleDebug.error && (
+                    <p className="break-all text-red-300">error: {scheduleDebug.error}</p>
+                  )}
+                </div>
+              )}
             </div>
+
           </PopoverContent>
         </Popover>
       )}
