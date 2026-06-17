@@ -7725,9 +7725,23 @@ export default function DashboardPage() {
                     <p className="text-red-300">Final video URL is missing</p>
                   )}
                   <p className="break-all">scheduledAt: {scheduleDebug.scheduledAt || '—'}</p>
-                  <p className="break-all">targetOrigin: {scheduleDebug.targetOrigin}</p>
-                  <p>postMessage → parent: {scheduleDebug.sentToParent ? 'yes' : 'no'}</p>
-                  <p>postMessage → top: {scheduleDebug.sentToTop ? 'yes' : 'no'}</p>
+                  <p className="break-all">detectedParentOrigin: {scheduleDebug.detectedParentOrigin || '— (none detected)'}</p>
+                  <p className="break-all">
+                    targetOrigins:{' '}
+                    {scheduleDebug.targetOrigins.length
+                      ? scheduleDebug.targetOrigins.join(', ')
+                      : '—'}
+                  </p>
+                  {scheduleDebug.targetOrigins.length > 0 ? (
+                    scheduleDebug.targetOrigins.map((o) => (
+                      <p key={o} className="break-all">
+                        {o} → parent: {scheduleDebug.sentToParent[o] ? 'yes' : 'no'} | top:{' '}
+                        {scheduleDebug.sentToTop[o] ? 'yes' : 'no'}
+                      </p>
+                    ))
+                  ) : (
+                    <p>postMessage → parent/top: not sent</p>
+                  )}
                   {scheduleDebug.error && (
                     <p className="break-all text-red-300">error: {scheduleDebug.error}</p>
                   )}
