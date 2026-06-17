@@ -3674,21 +3674,23 @@ export default function DashboardPage() {
   }, [])
 
   const handleScheduleToSocial = useCallback(async () => {
+    const detectedParentOrigin = detectParentOrigin()
     const dbg = {
       clicked: true,
       isInIframe,
       videoUrlExists: false,
       videoUrlSource: '',
       scheduledAt: '',
-      targetOrigin: SOCIAL_PARENT_ORIGIN,
-      sentToParent: false,
-      sentToTop: false,
+      detectedParentOrigin: detectedParentOrigin ?? '',
+      targetOrigins: [] as string[],
+      sentToParent: {} as Record<string, boolean>,
+      sentToTop: {} as Record<string, boolean>,
       error: '',
     }
-    setScheduleDebug(dbg)
+    setScheduleDebug({ ...dbg })
     console.log('[Schedule→Social] schedule button clicked')
     console.log('[Schedule→Social] isInIframe:', isInIframe)
-    console.log('[Schedule→Social] targetOrigin:', SOCIAL_PARENT_ORIGIN)
+    console.log('[Schedule→Social] detectedParentOrigin:', detectedParentOrigin)
     if (!isInIframe) {
       dbg.error = 'Not inside Rebar OS iframe'
       setScheduleDebug({ ...dbg })
@@ -3780,28 +3782,55 @@ export default function DashboardPage() {
 
       const message = { type: 'rebar.finalFilm.scheduleToSocial', payload }
 
+      // Resolve every allow-listed target origin. Production always includes
+      // os.rebar.shop; a detected, allow-listed Lovable preview origin is added
+      // so the Rebar OS Diagnostic HUD can receive the message in preview/test.
+      const targetOrigins = buildSocialTargetOrigins(detectedParentOrigin)
+      dbg.targetOrigins = [...targetOrigins]
+      console.log('[Schedule→Social] targetOrigins:', targetOrigins)
+
       // Post to the embedding shell. In nested-iframe setups window.parent and
-      // window.top can differ, so post to both (origin-locked) to be safe.
+      // window.top can differ, so post to both for every allow-listed origin.
       let posted = false
-      try {
-        window.parent?.postMessage(message, SOCIAL_PARENT_ORIGIN)
-        posted = true
-        dbg.sentToParent = true
-        console.log('[Schedule→Social] postMessage sent to window.parent', SOCIAL_PARENT_ORIGIN)
-      } catch (err) {
-        dbg.error = `parent.postMessage: ${String((err as Error)?.message ?? err)}`
-        console.error('[Schedule→Social] window.parent.postMessage failed', err)
-      }
-      try {
-        if (window.top && window.top !== window.parent) {
-          window.top.postMessage(message, SOCIAL_PARENT_ORIGIN)
+      for (const origin of targetOrigins) {
+        try {
+          window.parent?.postMessage(message, origin)
           posted = true
-          dbg.sentToTop = true
-          console.log('[Schedule→Social] postMessage also sent to window.top', SOCIAL_PARENT_ORIGIN)
+          dbg.sentToParent[origin] = true
+          console.log('[Schedule→Social] postMessage sent to window.parent', origin)
+        } catch (err) {
+          dbg.sentToParent[origin] = false
+          dbg.error = `parent.postMessage(${origin}): ${String((err as Error)?.message ?? err)}`
+          console.error('[Schedule→Social] window.parent.postMessage failed', origin, err)
         }
-      } catch (err) {
-        dbg.error = `top.postMessage: ${String((err as Error)?.message ?? err)}`
-        console.error('[Schedule→Social] window.top.postMessage failed', err)
+        try {
+          if (window.top && window.top !== window.parent) {
+            window.top.postMessage(message, origin)
+            posted = true
+            dbg.sentToTop[origin] = true
+            console.log('[Schedule→Social] postMessage also sent to window.top', origin)
+          }
+        } catch (err) {
+          dbg.sentToTop[origin] = false
+          dbg.error = `top.postMessage(${origin}): ${String((err as Error)?.message ?? err)}`
+          console.error('[Schedule→Social] window.top.postMessage failed', origin, err)
+        }
+      }
+
+      // Last-resort wildcard fallback — only behind the temporary debug flag, and
+      // only when no allow-listed parent origin could be detected. Never in prod.
+      if (!detectedParentOrigin && SOCIAL_ALLOW_WILDCARD_FALLBACK) {
+        try {
+          window.parent?.postMessage(message, '*')
+          window.top?.postMessage(message, '*')
+          posted = true
+          dbg.sentToParent['*'] = true
+          dbg.sentToTop['*'] = true
+          dbg.targetOrigins = [...dbg.targetOrigins, '* (debug fallback)']
+          console.warn('[Schedule→Social] wildcard fallback used (debug only)')
+        } catch (err) {
+          console.error('[Schedule→Social] wildcard fallback failed', err)
+        }
       }
 
       setScheduleDebug({ ...dbg })
