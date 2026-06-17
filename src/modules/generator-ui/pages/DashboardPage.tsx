@@ -7536,6 +7536,24 @@ export default function DashboardPage() {
               >
                 {scheduleSending ? 'Sending…' : 'Send to Social Media Manager'}
               </Button>
+              {scheduleStatus.kind !== 'idle' && (
+                <p
+                  className={
+                    'text-xs ' +
+                    (scheduleStatus.kind === 'error'
+                      ? 'text-red-300'
+                      : scheduleStatus.kind === 'sent'
+                        ? 'text-emerald-300'
+                        : 'text-sky-200')
+                  }
+                >
+                  {scheduleStatus.kind === 'sending'
+                    ? 'Sending…'
+                    : scheduleStatus.kind === 'sent'
+                      ? scheduleStatus.message ?? 'Message sent to Rebar OS'
+                      : scheduleStatus.message ?? 'Failed to send'}
+                </p>
+              )}
             </div>
           </PopoverContent>
         </Popover>
