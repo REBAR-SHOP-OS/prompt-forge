@@ -3592,9 +3592,19 @@ export default function DashboardPage() {
   const [scheduleDate, setScheduleDate] = useState<Date | undefined>(undefined)
   const [scheduleTime, setScheduleTime] = useState('10:00')
   const [scheduleSending, setScheduleSending] = useState(false)
+  // True only when this app is embedded in an iframe (i.e. inside Rebar OS).
+  const isInIframe = useMemo(() => {
+    try {
+      return window.parent !== window
+    } catch {
+      // Cross-origin access throws -> we are definitely inside an iframe.
+      return true
+    }
+  }, [])
 
   const handleScheduleToSocial = useCallback(async () => {
-    if (window.parent === window) {
+    console.log('[Schedule→Social] isInIframe:', isInIframe)
+    if (!isInIframe) {
       toast.error('Open this app inside Rebar OS to schedule to Social Media Manager.')
       return
     }
