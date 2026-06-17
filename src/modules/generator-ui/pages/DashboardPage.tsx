@@ -251,9 +251,64 @@ type UserAudioItem = {
 const FRAMES_BUCKET = 'wan-frames'
 const MERGED_BUCKET = 'merged-videos'
 // Locked parent origin for the "Schedule to Social Media" hand-off. The Final
-// Film card posts to this exact origin only (never "*") so the schedule payload
-// can only ever be received by the Rebar OS shell that embeds this app.
+// Film card posts to this exact origin in production (never "*") so the schedule
+// payload can only ever be received by the Rebar OS shell that embeds this app.
 const SOCIAL_PARENT_ORIGIN = 'https://os.rebar.shop'
+
+// Temporary debug flag. When true, a last-resort "*" broadcast is allowed if no
+// allow-listed parent origin could be detected. MUST stay false in production.
+const SOCIAL_ALLOW_WILDCARD_FALLBACK = true
+
+// Is `origin` a trusted target we are allowed to postMessage to?
+// Allowed: the production Rebar OS origin, and any https *.lovable.app preview
+// origin (Rebar OS may be tested inside a Lovable preview).
+function isAllowedSocialOrigin(origin: string | null | undefined): boolean {
+  if (!origin) return false
+  try {
+    const u = new URL(origin)
+    if (u.protocol !== 'https:') return false
+    if (u.origin === SOCIAL_PARENT_ORIGIN) return true
+    const host = u.hostname.toLowerCase()
+    if (host === 'lovable.app' || host.endsWith('.lovable.app')) return true
+    return false
+  } catch {
+    return false
+  }
+}
+
+// Best-effort detection of the real parent origin when embedded. Cross-origin
+// iframes cannot read window.parent.location, so we fall back to document.referrer
+// (the embedding page's URL). Returns a validated origin or null.
+function detectParentOrigin(): string | null {
+  // 1) Same-origin parent (rare in practice) — read directly.
+  try {
+    if (window.parent && window.parent !== window && window.parent.location?.origin) {
+      const o = window.parent.location.origin
+      if (isAllowedSocialOrigin(o)) return o
+    }
+  } catch {
+    /* cross-origin: expected, fall through to referrer */
+  }
+  // 2) Referrer of the embedding page.
+  try {
+    if (document.referrer) {
+      const o = new URL(document.referrer).origin
+      if (isAllowedSocialOrigin(o)) return o
+    }
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
+// Build the list of target origins to post the schedule hand-off to. Production
+// always includes os.rebar.shop; a detected, allow-listed preview origin is added
+// so the Rebar OS Diagnostic HUD can receive the message inside a Lovable preview.
+function buildSocialTargetOrigins(detected: string | null): string[] {
+  const origins = new Set<string>([SOCIAL_PARENT_ORIGIN])
+  if (detected && isAllowedSocialOrigin(detected)) origins.add(detected)
+  return Array.from(origins)
+}
 const USER_IMAGES_BUCKET = 'user-images'
 const USER_AUDIO_BUCKET = 'user-audio'
 
@@ -3602,9 +3657,10 @@ export default function DashboardPage() {
     videoUrlExists: boolean
     videoUrlSource: string
     scheduledAt: string
-    targetOrigin: string
-    sentToParent: boolean
-    sentToTop: boolean
+    detectedParentOrigin: string
+    targetOrigins: string[]
+    sentToParent: Record<string, boolean>
+    sentToTop: Record<string, boolean>
     error: string
   } | null>(null)
   // True only when this app is embedded in an iframe (i.e. inside Rebar OS).
@@ -3618,21 +3674,23 @@ export default function DashboardPage() {
   }, [])
 
   const handleScheduleToSocial = useCallback(async () => {
+    const detectedParentOrigin = detectParentOrigin()
     const dbg = {
       clicked: true,
       isInIframe,
       videoUrlExists: false,
       videoUrlSource: '',
       scheduledAt: '',
-      targetOrigin: SOCIAL_PARENT_ORIGIN,
-      sentToParent: false,
-      sentToTop: false,
+      detectedParentOrigin: detectedParentOrigin ?? '',
+      targetOrigins: [] as string[],
+      sentToParent: {} as Record<string, boolean>,
+      sentToTop: {} as Record<string, boolean>,
       error: '',
     }
-    setScheduleDebug(dbg)
+    setScheduleDebug({ ...dbg })
     console.log('[Schedule→Social] schedule button clicked')
     console.log('[Schedule→Social] isInIframe:', isInIframe)
-    console.log('[Schedule→Social] targetOrigin:', SOCIAL_PARENT_ORIGIN)
+    console.log('[Schedule→Social] detectedParentOrigin:', detectedParentOrigin)
     if (!isInIframe) {
       dbg.error = 'Not inside Rebar OS iframe'
       setScheduleDebug({ ...dbg })
@@ -3724,28 +3782,55 @@ export default function DashboardPage() {
 
       const message = { type: 'rebar.finalFilm.scheduleToSocial', payload }
 
+      // Resolve every allow-listed target origin. Production always includes
+      // os.rebar.shop; a detected, allow-listed Lovable preview origin is added
+      // so the Rebar OS Diagnostic HUD can receive the message in preview/test.
+      const targetOrigins = buildSocialTargetOrigins(detectedParentOrigin)
+      dbg.targetOrigins = [...targetOrigins]
+      console.log('[Schedule→Social] targetOrigins:', targetOrigins)
+
       // Post to the embedding shell. In nested-iframe setups window.parent and
-      // window.top can differ, so post to both (origin-locked) to be safe.
+      // window.top can differ, so post to both for every allow-listed origin.
       let posted = false
-      try {
-        window.parent?.postMessage(message, SOCIAL_PARENT_ORIGIN)
-        posted = true
-        dbg.sentToParent = true
-        console.log('[Schedule→Social] postMessage sent to window.parent', SOCIAL_PARENT_ORIGIN)
-      } catch (err) {
-        dbg.error = `parent.postMessage: ${String((err as Error)?.message ?? err)}`
-        console.error('[Schedule→Social] window.parent.postMessage failed', err)
-      }
-      try {
-        if (window.top && window.top !== window.parent) {
-          window.top.postMessage(message, SOCIAL_PARENT_ORIGIN)
+      for (const origin of targetOrigins) {
+        try {
+          window.parent?.postMessage(message, origin)
           posted = true
-          dbg.sentToTop = true
-          console.log('[Schedule→Social] postMessage also sent to window.top', SOCIAL_PARENT_ORIGIN)
+          dbg.sentToParent[origin] = true
+          console.log('[Schedule→Social] postMessage sent to window.parent', origin)
+        } catch (err) {
+          dbg.sentToParent[origin] = false
+          dbg.error = `parent.postMessage(${origin}): ${String((err as Error)?.message ?? err)}`
+          console.error('[Schedule→Social] window.parent.postMessage failed', origin, err)
         }
-      } catch (err) {
-        dbg.error = `top.postMessage: ${String((err as Error)?.message ?? err)}`
-        console.error('[Schedule→Social] window.top.postMessage failed', err)
+        try {
+          if (window.top && window.top !== window.parent) {
+            window.top.postMessage(message, origin)
+            posted = true
+            dbg.sentToTop[origin] = true
+            console.log('[Schedule→Social] postMessage also sent to window.top', origin)
+          }
+        } catch (err) {
+          dbg.sentToTop[origin] = false
+          dbg.error = `top.postMessage(${origin}): ${String((err as Error)?.message ?? err)}`
+          console.error('[Schedule→Social] window.top.postMessage failed', origin, err)
+        }
+      }
+
+      // Last-resort wildcard fallback — only behind the temporary debug flag, and
+      // only when no allow-listed parent origin could be detected. Never in prod.
+      if (!detectedParentOrigin && SOCIAL_ALLOW_WILDCARD_FALLBACK) {
+        try {
+          window.parent?.postMessage(message, '*')
+          window.top?.postMessage(message, '*')
+          posted = true
+          dbg.sentToParent['*'] = true
+          dbg.sentToTop['*'] = true
+          dbg.targetOrigins = [...dbg.targetOrigins, '* (debug fallback)']
+          console.warn('[Schedule→Social] wildcard fallback used (debug only)')
+        } catch (err) {
+          console.error('[Schedule→Social] wildcard fallback failed', err)
+        }
       }
 
       setScheduleDebug({ ...dbg })
@@ -7640,9 +7725,23 @@ export default function DashboardPage() {
                     <p className="text-red-300">Final video URL is missing</p>
                   )}
                   <p className="break-all">scheduledAt: {scheduleDebug.scheduledAt || '—'}</p>
-                  <p className="break-all">targetOrigin: {scheduleDebug.targetOrigin}</p>
-                  <p>postMessage → parent: {scheduleDebug.sentToParent ? 'yes' : 'no'}</p>
-                  <p>postMessage → top: {scheduleDebug.sentToTop ? 'yes' : 'no'}</p>
+                  <p className="break-all">detectedParentOrigin: {scheduleDebug.detectedParentOrigin || '— (none detected)'}</p>
+                  <p className="break-all">
+                    targetOrigins:{' '}
+                    {scheduleDebug.targetOrigins.length
+                      ? scheduleDebug.targetOrigins.join(', ')
+                      : '—'}
+                  </p>
+                  {scheduleDebug.targetOrigins.length > 0 ? (
+                    scheduleDebug.targetOrigins.map((o) => (
+                      <p key={o} className="break-all">
+                        {o} → parent: {scheduleDebug.sentToParent[o] ? 'yes' : 'no'} | top:{' '}
+                        {scheduleDebug.sentToTop[o] ? 'yes' : 'no'}
+                      </p>
+                    ))
+                  ) : (
+                    <p>postMessage → parent/top: not sent</p>
+                  )}
                   {scheduleDebug.error && (
                     <p className="break-all text-red-300">error: {scheduleDebug.error}</p>
                   )}
