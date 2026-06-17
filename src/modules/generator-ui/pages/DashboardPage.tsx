@@ -1093,7 +1093,9 @@ export default function DashboardPage() {
       for (const id of ids) {
         try {
           if (archiveTab === 'films') {
-            await handleDeleteArchiveJob(id)
+            // Final videos live client-side (merged-*); drafts are server jobs.
+            if (filmsCategory === 'final') await deleteCardConfirmed(id)
+            else await handleDeleteArchiveJob(id)
           } else if (archiveTab === 'images' || archiveTab === 'products') {
             await handleDeleteUserImage(id)
           } else {
