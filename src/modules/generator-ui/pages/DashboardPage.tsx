@@ -3592,6 +3592,9 @@ export default function DashboardPage() {
   const [scheduleDate, setScheduleDate] = useState<Date | undefined>(undefined)
   const [scheduleTime, setScheduleTime] = useState('10:00')
   const [scheduleSending, setScheduleSending] = useState(false)
+  const [scheduleStatus, setScheduleStatus] = useState<
+    { kind: 'idle' | 'sending' | 'sent' | 'error'; message?: string }
+  >({ kind: 'idle' })
   // True only when this app is embedded in an iframe (i.e. inside Rebar OS).
   const isInIframe = useMemo(() => {
     try {
