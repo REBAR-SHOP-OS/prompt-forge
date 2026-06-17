@@ -4263,7 +4263,7 @@ export default function DashboardPage() {
         pollTimerRef.current = null
       }
     }
-  }, [generatedVideos])
+  }, [generatedVideos, isReadOnlyProject])
 
   // When a job that has a pending end-frame append completes, merge a 2s
   // still clip of the End image to the end of the video and replace the
