@@ -994,6 +994,8 @@ export default function DashboardPage() {
   // server (independent of drafts/library local state). -----
   const [isArchiveOpen, setIsArchiveOpen] = useState(false)
   const [archiveTab, setArchiveTab] = useState<'films' | 'images' | 'audio' | 'products'>('films')
+  // Sub-category within the Films tab: finalized merged films vs raw draft clips.
+  const [filmsCategory, setFilmsCategory] = useState<'final' | 'drafts'>('drafts')
   const [archiveJobs, setArchiveJobs] = useState<JobSummary[]>([])
   const [archiveVideos, setArchiveVideos] = useState<VideoSummary[]>([])
   const [archiveImages, setArchiveImages] = useState<UserImageItem[]>([])
