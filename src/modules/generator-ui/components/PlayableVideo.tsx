@@ -46,14 +46,20 @@ export function PlayableVideo({ src, fallbackClassName, controls, poster, thumbn
   const [retryToken, setRetryToken] = useState(0);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Reset retry/paint state every time the resolved URL changes.
+  // Reset retry/paint state only when the SOURCE changes (a genuinely new clip).
+  // Keying this on `src` instead of the resolved `url` is critical: our own
+  // recovery path calls reload(), which changes `url` for the SAME `src`. If we
+  // reset on every `url` change, the retry + reload budget would be wiped after
+  // each reload, producing an infinite error -> retry(×3) -> reload -> repeat
+  // loop that remounts the <video> forever and freezes the page (especially
+  // inside the Rebar OS iframe, where private merged-videos URLs can fail).
   useEffect(() => {
     retriesRef.current = 0;
     reloadedRef.current = false;
     setErrored(false);
     setRetryToken(0);
     setPainted(false);
-  }, [url]);
+  }, [src]);
 
   const handleLoadedMetadata: VideoHTMLAttributes<HTMLVideoElement>["onLoadedMetadata"] = (e) => {
     if (errored) setErrored(false);
