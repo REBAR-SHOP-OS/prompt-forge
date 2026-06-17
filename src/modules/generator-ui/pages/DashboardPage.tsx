@@ -4403,11 +4403,15 @@ export default function DashboardPage() {
   // so the time-based progress bar advances visibly between API polls.
   const [, setProgressTick] = useState(0)
   useEffect(() => {
+    // Read-only projects are terminal — no live progress to animate, so never
+    // run the 1s re-render loop (it would re-render every PlayableVideo each
+    // second inside the iframe and make the page feel frozen).
+    if (isReadOnlyProject) return
     const hasActive = generatedVideos.some((job) => !isTerminalStatus(job.status))
     if (!hasActive) return
     const id = window.setInterval(() => setProgressTick((tick) => tick + 1), 1000)
     return () => window.clearInterval(id)
-  }, [generatedVideos])
+  }, [generatedVideos, isReadOnlyProject])
 
   function openFileUpload(target: UploadTarget) {
     setUploadTarget(target)
