@@ -1,47 +1,22 @@
-# افزودن «Schedule to Social Media» به فیلم نهایی
+## Goal
+Allow uploading several product photos at once in the STORAGE → "Upload a product photo" panel, instead of one file at a time.
 
-بله، این کار کاملاً شدنی است و یک تغییر فقط فرانت‌اند در `DashboardPage.tsx` است. کد سمت Rebar OS از قبل listener را آماده کرده؛ ما فقط باید آیکون تقویم + Popover + ارسال پیام postMessage را اضافه کنیم.
+## Changes (all in `src/modules/generator-ui/pages/DashboardPage.tsx`)
 
-## رفتار نهایی
+### 1. Product photo `<input>` (around line 6875)
+Add `multiple` to the file input so the OS file picker allows selecting several images.
 
-- در نوار بالای صفحه (کنار `Preview` و `Start over`) یک دکمه‌ی آیکون تقویم (`CalendarPlus` از lucide) اضافه می‌شود.
-- این دکمه **فقط وقتی یک فیلم نهایی read-only باز است** نمایش داده می‌شود (شرط `isReadOnlyProject`).
-- کلیک روی آن یک `Popover` باز می‌کند شامل:
-  - Date picker (shadcn Calendar داخل Popover با `pointer-events-auto`)
-  - Time picker (input `type="time"`، پیش‌فرض `10:00`)
-  - دکمه‌ی «Send to Social Media Manager»
-- با کلیک دکمه، پیام زیر به parent ارسال می‌شود (origin قفل‌شده روی Rebar OS، نه `"*"`):
+### 2. `handleProductPhotoSelected` (lines 3988–4033)
+Rewrite to process all selected files instead of only `files?.[0]`:
+- Read `event.target.files` into an array; return if empty / no `userId`.
+- Set uploading state once.
+- Loop over each file:
+  - Validate type is `image/*` and size ≤ 10 MB; skip invalid files and collect a per-file error message (e.g. "name.png: must be smaller than 10 MB") rather than aborting the whole batch.
+  - Upload to storage, insert the `generator_user_images` row (`category: 'product'`), and prepend the returned row to `archiveProductImages`.
+- After the loop: clear `productName`, reset the input value, and show a combined error string only if some files failed. Successfully uploaded files still appear.
+- Keep the existing single-file behavior intact (one file still works).
 
-```text
-window.parent.postMessage({
-  type: "rebar.finalFilm.scheduleToSocial",
-  payload: {
-    videoUrl, posterUrl, mimeType: "video/mp4",
-    durationSec, caption, scheduledAt   // ISO ترکیب date + time
-  }
-}, "https://os.rebar.shop");
-```
-
-- سپس toast «Sent to Social Media Manager» نمایش داده می‌شود و Popover بسته می‌شود.
-
-## منبع داده‌ی payload
-
-از همان فیلم نهایی read-only که نمایش داده می‌شود استخراج می‌شود:
-- `videoUrl`: لینک **عمومی پایدار** فایل از باکت `merged-videos` با `getPublicUrl(storage_path)` — تا اپ مقصد بتواند مستقل آن را fetch کند (نه blob موقت یا signed URL کوتاه‌عمر).
-- `posterUrl`: `thumbnail_url` همان entry در صورت وجود (در غیر این صورت حذف می‌شود).
-- `durationSec`: `duration` / `duration_seconds` همان entry در صورت وجود.
-- `caption`: متن brief / `input_prompt` پروژه‌ی انتخاب‌شده در صورت وجود.
-- `scheduledAt`: ترکیب تاریخ انتخابی + ساعت به‌صورت ISO محلی.
-
-## جزئیات فنی
-
-- **محل کد:** بلوک نوار دکمه‌ها در `src/modules/generator-ui/pages/DashboardPage.tsx` (حوالی خط ۷۳۴۱، داخل `{!isReadOnlyProject && ...}` نه — بلکه یک بلوک جدید `{isReadOnlyProject && (...)}`).
-- **import ها:** `CalendarPlus` از `lucide-react`، `Popover/PopoverTrigger/PopoverContent`، `Calendar`، `Button` از کامپوننت‌های موجود ui؛ `toast` از `sonner`.
-- **ثابت origin:** یک ثابت ماژول‌سطح `const SOCIAL_PARENT_ORIGIN = "https://os.rebar.shop"` تعریف می‌شود و در `postMessage` به‌جای `"*"` استفاده می‌شود.
-- **state محلی:** `scheduleDate` (Date) و `scheduleTime` (string، پیش‌فرض `"10:00"`).
-- **محافظت:** اگر `window.parent === window` (اپ خارج از iframe باز شده) دکمه کار نمی‌کند و یک toast راهنما نشان می‌دهد؛ هیچ تغییری در منطق merge/storage داده نمی‌شود.
-
-## بدون تغییر در
-
-- منطق backend، edge functions، schema، یا فرآیند merge/finalize.
-- رفتار دکمه‌های موجود Preview / Start over.
+## Notes
+- Same product-name field applies to the batch (current behavior reuses one name field); each uploaded photo gets that title. No new UI needed beyond enabling multi-select.
+- No backend/schema changes — uses the existing bucket and table.
+- Verify after build that selecting multiple images uploads all of them and the count badge updates.
