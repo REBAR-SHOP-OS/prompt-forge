@@ -6416,7 +6416,7 @@ export default function DashboardPage() {
                 </DialogTitle>
                 <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
                   {archiveTab === 'films'
-                    ? archiveJobs.length
+                    ? archiveJobs.length + finalizedItems.length
                     : archiveTab === 'images'
                       ? archiveImages.length
                       : archiveTab === 'products'
