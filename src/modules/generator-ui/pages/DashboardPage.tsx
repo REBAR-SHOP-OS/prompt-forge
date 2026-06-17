@@ -6496,7 +6496,7 @@ export default function DashboardPage() {
             {(() => {
               const currentIds =
                 archiveTab === 'films'
-                  ? archiveJobs.map((j) => j.id)
+                  ? (filmsCategory === 'final' ? finalizedItems.map((j) => j.id) : archiveJobs.map((j) => j.id))
                   : archiveTab === 'images'
                     ? archiveImages.map((i) => i.id)
                     : archiveTab === 'products'
