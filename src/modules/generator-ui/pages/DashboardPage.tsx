@@ -4021,7 +4021,7 @@ export default function DashboardPage() {
               size_bytes: file.size,
               mime_type: file.type,
               category: 'product',
-              title: trimmedName || null,
+              title: trimmedName || file.name.replace(/\.[^/.]+$/, '').slice(0, 100) || null,
             })
             .select('id, storage_path, created_at, still_duration_seconds, width, height, category, title')
             .single()
