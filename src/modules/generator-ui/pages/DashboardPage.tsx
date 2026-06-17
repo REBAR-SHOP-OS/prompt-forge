@@ -7205,7 +7205,7 @@ export default function DashboardPage() {
                                   <AlertDialogFooter>
                                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                                     <AlertDialogAction
-                                      onClick={() => { void handleDeleteArchiveJob(job.id) }}
+                                      onClick={() => { void (filmsCategory === 'final' ? deleteCardConfirmed(job.id) : handleDeleteArchiveJob(job.id)) }}
                                       className="bg-rose-600 text-white hover:bg-rose-700"
                                     >
                                       Delete
