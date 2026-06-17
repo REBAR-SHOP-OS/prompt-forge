@@ -3584,6 +3584,87 @@ export default function DashboardPage() {
   // Backwards-compat alias used by existing card highlight + start-frame code paths
   const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
 
+  // --- Schedule the Final Film to the Rebar OS Social Media Manager ---
+  // Frontend-only hand-off: posts a durable signed video URL + schedule time to
+  // the embedding Rebar OS shell via postMessage (origin-locked). No backend or
+  // merge logic is touched here.
+  const [scheduleOpen, setScheduleOpen] = useState(false)
+  const [scheduleDate, setScheduleDate] = useState<Date | undefined>(undefined)
+  const [scheduleTime, setScheduleTime] = useState('10:00')
+  const [scheduleSending, setScheduleSending] = useState(false)
+
+  const handleScheduleToSocial = useCallback(async () => {
+    if (window.parent === window) {
+      toast.error('Open this app inside Rebar OS to schedule to Social Media Manager.')
+      return
+    }
+    if (!scheduleDate) {
+      toast.error('Pick a date first.')
+      return
+    }
+    const rawPath = previewVideo?.video?.storage_path
+    if (!rawPath) {
+      toast.error('No final video is available to schedule.')
+      return
+    }
+    setScheduleSending(true)
+    try {
+      // Durable, fetchable URL the other app can read. merged-videos is a
+      // private bucket, so mint a long-lived signed URL (1 year) instead of a
+      // public URL that would 403.
+      let videoUrl = rawPath
+      try {
+        let bucket = MERGED_BUCKET
+        let path = rawPath
+        if (/^https?:\/\//i.test(rawPath)) {
+          const parsed = new URL(rawPath)
+          const m = parsed.pathname.match(
+            /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/,
+          )
+          if (m) {
+            bucket = m[1]
+            try { path = decodeURIComponent(m[2]) } catch { path = m[2] }
+          }
+        }
+        const { data, error } = await supabase.storage
+          .from(bucket)
+          .createSignedUrl(path, 60 * 60 * 24 * 365)
+        if (!error && data?.signedUrl) videoUrl = data.signedUrl
+      } catch {
+        /* fall back to the raw storage_path */
+      }
+
+      const [hh, mm] = scheduleTime.split(':').map((n) => parseInt(n, 10))
+      const when = new Date(scheduleDate)
+      when.setHours(Number.isFinite(hh) ? hh : 10, Number.isFinite(mm) ? mm : 0, 0, 0)
+
+      const posterUrl = previewVideo?.video?.thumbnail_url ?? undefined
+      const durationSec = previewVideo?.video?.duration ?? undefined
+      const caption = previewVideo?.input_prompt ?? ''
+
+      window.parent.postMessage(
+        {
+          type: 'rebar.finalFilm.scheduleToSocial',
+          payload: {
+            videoUrl,
+            ...(posterUrl ? { posterUrl } : {}),
+            mimeType: 'video/mp4',
+            ...(durationSec ? { durationSec } : {}),
+            caption,
+            scheduledAt: when.toISOString(),
+          },
+        },
+        SOCIAL_PARENT_ORIGIN,
+      )
+
+      toast.success('Sent to Social Media Manager')
+      setScheduleOpen(false)
+    } finally {
+      setScheduleSending(false)
+    }
+  }, [scheduleDate, scheduleTime, previewVideo])
+
+
   // Live progress tick is handled by the global setProgressTick effect below
   // (re-renders once per second while any job is active), so the preview's
   // time-based pct advances naturally between API polls.
