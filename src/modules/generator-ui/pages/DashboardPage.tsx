@@ -3986,51 +3986,64 @@ export default function DashboardPage() {
   }
 
   const handleProductPhotoSelected = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
+    const files = Array.from(event.target.files ?? [])
     event.target.value = ''
-    if (!file || !userId) return
+    if (files.length === 0 || !userId) return
     setProductUploadError(null)
-    if (!file.type.startsWith('image/')) {
-      setProductUploadError('Please choose an image file.')
-      return
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      setProductUploadError('Image must be smaller than 10 MB.')
-      return
-    }
     setIsUploadingProductPhoto(true)
+    const errors: string[] = []
+    let uploadedCount = 0
     try {
-      const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png'
-      const path = `${userId}/${crypto.randomUUID()}.${ext}`
-      const up = await supabase.storage
-        .from(USER_IMAGES_BUCKET)
-        .upload(path, file, { contentType: file.type, upsert: false })
-      if (up.error) throw up.error
-      const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
-      const publicUrl = pub.publicUrl
       const trimmedName = productName.trim().slice(0, 100)
-      const { data: row, error: insErr } = await supabase
-        .from('generator_user_images')
-        .insert({
-          user_id: userId,
-          storage_path: publicUrl,
-          size_bytes: file.size,
-          mime_type: file.type,
-          category: 'product',
-          title: trimmedName || null,
-        })
-        .select('id, storage_path, created_at, still_duration_seconds, width, height, category, title')
-        .single()
-      if (insErr) throw insErr
-      setArchiveProductImages((prev) => [row as UserImageItem, ...prev])
-      setProductName('')
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Upload failed.'
-      setProductUploadError(`Upload failed: ${msg}`)
+      for (const file of files) {
+        if (!file.type.startsWith('image/')) {
+          errors.push(`${file.name}: not an image`)
+          continue
+        }
+        if (file.size > 10 * 1024 * 1024) {
+          errors.push(`${file.name}: must be smaller than 10 MB`)
+          continue
+        }
+        try {
+          const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png'
+          const path = `${userId}/${crypto.randomUUID()}.${ext}`
+          const up = await supabase.storage
+            .from(USER_IMAGES_BUCKET)
+            .upload(path, file, { contentType: file.type, upsert: false })
+          if (up.error) throw up.error
+          const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
+          const publicUrl = pub.publicUrl
+          const { data: row, error: insErr } = await supabase
+            .from('generator_user_images')
+            .insert({
+              user_id: userId,
+              storage_path: publicUrl,
+              size_bytes: file.size,
+              mime_type: file.type,
+              category: 'product',
+              title: trimmedName || null,
+            })
+            .select('id, storage_path, created_at, still_duration_seconds, width, height, category, title')
+            .single()
+          if (insErr) throw insErr
+          setArchiveProductImages((prev) => [row as UserImageItem, ...prev])
+          uploadedCount += 1
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'upload failed'
+          errors.push(`${file.name}: ${msg}`)
+        }
+      }
+      if (uploadedCount > 0) setProductName('')
+      if (errors.length > 0) {
+        setProductUploadError(
+          `${uploadedCount} uploaded, ${errors.length} failed: ${errors.join('; ')}`,
+        )
+      }
     } finally {
       setIsUploadingProductPhoto(false)
     }
   }
+
 
   const startRenameProduct = (img: UserImageItem) => {
     setRenamingProductId(img.id)
@@ -6873,6 +6886,7 @@ export default function DashboardPage() {
                       ref={productPhotoInputRef}
                       type="file"
                       accept="image/*"
+                      multiple
                       className="hidden"
                       onChange={(e) => { void handleProductPhotoSelected(e) }}
                     />
