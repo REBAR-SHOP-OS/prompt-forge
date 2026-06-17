@@ -3592,6 +3592,9 @@ export default function DashboardPage() {
   const [scheduleDate, setScheduleDate] = useState<Date | undefined>(undefined)
   const [scheduleTime, setScheduleTime] = useState('10:00')
   const [scheduleSending, setScheduleSending] = useState(false)
+  const [scheduleStatus, setScheduleStatus] = useState<
+    { kind: 'idle' | 'sending' | 'sent' | 'error'; message?: string }
+  >({ kind: 'idle' })
   // True only when this app is embedded in an iframe (i.e. inside Rebar OS).
   const isInIframe = useMemo(() => {
     try {
@@ -3603,7 +3606,11 @@ export default function DashboardPage() {
   }, [])
 
   const handleScheduleToSocial = useCallback(async () => {
+    console.log('[Schedule→Social] schedule button clicked')
     console.log('[Schedule→Social] isInIframe:', isInIframe)
+    console.log('[Schedule→Social] window.parent exists:', !!window.parent)
+    console.log('[Schedule→Social] window.top exists:', !!window.top)
+    console.log('[Schedule→Social] targetOrigin:', SOCIAL_PARENT_ORIGIN)
     if (!isInIframe) {
       toast.error('Open this app inside Rebar OS to schedule to Social Media Manager.')
       return
@@ -3612,36 +3619,36 @@ export default function DashboardPage() {
       toast.error('Pick a date first.')
       return
     }
-    const rawPath = previewVideo?.video?.storage_path
-    if (!rawPath) {
-      toast.error('No final video is available to schedule.')
-      return
-    }
     setScheduleSending(true)
+    setScheduleStatus({ kind: 'sending' })
     try {
+      const rawPath = previewVideo?.video?.storage_path
+
       // Durable, fetchable URL the other app can read. merged-videos is a
       // private bucket, so mint a long-lived signed URL (1 year) instead of a
       // public URL that would 403.
-      let videoUrl = rawPath
-      try {
-        let bucket = MERGED_BUCKET
-        let path = rawPath
-        if (/^https?:\/\//i.test(rawPath)) {
-          const parsed = new URL(rawPath)
-          const m = parsed.pathname.match(
-            /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/,
-          )
-          if (m) {
-            bucket = m[1]
-            try { path = decodeURIComponent(m[2]) } catch { path = m[2] }
+      let videoUrl = rawPath ?? ''
+      if (rawPath) {
+        try {
+          let bucket = MERGED_BUCKET
+          let path = rawPath
+          if (/^https?:\/\//i.test(rawPath)) {
+            const parsed = new URL(rawPath)
+            const m = parsed.pathname.match(
+              /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/,
+            )
+            if (m) {
+              bucket = m[1]
+              try { path = decodeURIComponent(m[2]) } catch { path = m[2] }
+            }
           }
+          const { data, error } = await supabase.storage
+            .from(bucket)
+            .createSignedUrl(path, 60 * 60 * 24 * 365)
+          if (!error && data?.signedUrl) videoUrl = data.signedUrl
+        } catch {
+          /* fall back to the raw storage_path */
         }
-        const { data, error } = await supabase.storage
-          .from(bucket)
-          .createSignedUrl(path, 60 * 60 * 24 * 365)
-        if (!error && data?.signedUrl) videoUrl = data.signedUrl
-      } catch {
-        /* fall back to the raw storage_path */
       }
 
       const [hh, mm] = scheduleTime.split(':').map((n) => parseInt(n, 10))
@@ -3651,29 +3658,66 @@ export default function DashboardPage() {
       const posterUrl = previewVideo?.video?.thumbnail_url ?? undefined
       const durationSec = previewVideo?.video?.duration ?? undefined
       const caption = previewVideo?.input_prompt ?? ''
-
       const scheduledAt = when.toISOString()
-      console.log('[Schedule→Social] targetOrigin:', SOCIAL_PARENT_ORIGIN)
+
+      const payload = {
+        videoUrl,
+        ...(posterUrl ? { posterUrl } : {}),
+        mimeType: 'video/mp4',
+        ...(durationSec ? { durationSec } : {}),
+        caption,
+        scheduledAt,
+      }
+
+      console.log('[Schedule→Social] videoUrl exists:', !!videoUrl)
       console.log('[Schedule→Social] scheduledAt:', scheduledAt)
+      console.log('[Schedule→Social] payload:', payload)
 
-      window.parent.postMessage(
-        {
-          type: 'rebar.finalFilm.scheduleToSocial',
-          payload: {
-            videoUrl,
-            ...(posterUrl ? { posterUrl } : {}),
-            mimeType: 'video/mp4',
-            ...(durationSec ? { durationSec } : {}),
-            caption,
-            scheduledAt,
-          },
-        },
-        SOCIAL_PARENT_ORIGIN,
-      )
-      console.log('[Schedule→Social] postMessage sent to', SOCIAL_PARENT_ORIGIN)
+      // Hard validation: never silently send an empty hand-off.
+      if (!videoUrl || !scheduledAt) {
+        console.warn('[Schedule→Social] missing videoUrl or scheduledAt — aborting send')
+        toast.error('Cannot send: missing videoUrl or scheduledAt')
+        setScheduleStatus({ kind: 'error', message: 'Missing videoUrl or scheduledAt' })
+        return
+      }
 
-      toast.success('Sent to Social Media Manager')
-      setScheduleOpen(false)
+      const message = { type: 'rebar.finalFilm.scheduleToSocial', payload }
+
+      // Post to the embedding shell. In nested-iframe setups window.parent and
+      // window.top can differ, so post to both (origin-locked) to be safe.
+      let posted = false
+      try {
+        window.parent?.postMessage(message, SOCIAL_PARENT_ORIGIN)
+        posted = true
+        console.log('[Schedule→Social] postMessage sent to window.parent', SOCIAL_PARENT_ORIGIN)
+      } catch (err) {
+        console.error('[Schedule→Social] window.parent.postMessage failed', err)
+      }
+      try {
+        if (window.top && window.top !== window.parent) {
+          window.top.postMessage(message, SOCIAL_PARENT_ORIGIN)
+          posted = true
+          console.log('[Schedule→Social] postMessage also sent to window.top', SOCIAL_PARENT_ORIGIN)
+        }
+      } catch (err) {
+        console.error('[Schedule→Social] window.top.postMessage failed', err)
+      }
+
+      console.log('[Schedule→Social] postMessage executed:', posted, '| scheduledAt:', scheduledAt)
+
+      if (!posted) {
+        toast.error('Failed to send message to Rebar OS')
+        setScheduleStatus({ kind: 'error', message: 'postMessage failed' })
+        return
+      }
+
+      toast.success(`Sent to Social Media Manager • ${scheduledAt}`)
+      setScheduleStatus({ kind: 'sent', message: `Message sent to Rebar OS • ${scheduledAt}` })
+      setTimeout(() => setScheduleOpen(false), 1200)
+    } catch (err) {
+      console.error('[Schedule→Social] unexpected error', err)
+      toast.error('Failed to send to Social Media Manager')
+      setScheduleStatus({ kind: 'error', message: String((err as Error)?.message ?? err) })
     } finally {
       setScheduleSending(false)
     }
@@ -7492,6 +7536,24 @@ export default function DashboardPage() {
               >
                 {scheduleSending ? 'Sending…' : 'Send to Social Media Manager'}
               </Button>
+              {scheduleStatus.kind !== 'idle' && (
+                <p
+                  className={
+                    'text-xs ' +
+                    (scheduleStatus.kind === 'error'
+                      ? 'text-red-300'
+                      : scheduleStatus.kind === 'sent'
+                        ? 'text-emerald-300'
+                        : 'text-sky-200')
+                  }
+                >
+                  {scheduleStatus.kind === 'sending'
+                    ? 'Sending…'
+                    : scheduleStatus.kind === 'sent'
+                      ? scheduleStatus.message ?? 'Message sent to Rebar OS'
+                      : scheduleStatus.message ?? 'Failed to send'}
+                </p>
+              )}
             </div>
           </PopoverContent>
         </Popover>
