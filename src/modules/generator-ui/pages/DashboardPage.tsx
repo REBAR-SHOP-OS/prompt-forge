@@ -6983,9 +6983,32 @@ export default function DashboardPage() {
               for (const v of archiveVideos) {
                 if (!videoByJob.has(v.job_id)) videoByJob.set(v.job_id, v)
               }
-              const entries = [...archiveJobs].sort(
-                (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
+              const draftCount = archiveJobs.length
+              const finalCount = finalizedItems.length
+              const entries: (JobSummary | JobDetail)[] = (
+                filmsCategory === 'final' ? [...finalizedItems] : [...archiveJobs]
+              ).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+              const subTab = (cat: 'final' | 'drafts', label: string, count: number) => (
+                <button
+                  type="button"
+                  onClick={() => setFilmsCategory(cat)}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                    filmsCategory === cat
+                      ? 'bg-white/[0.08] text-zinc-100'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  {label}
+                  <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{count}</span>
+                </button>
               )
+              return (
+                <div className="space-y-4">
+                  <div className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-1">
+                    {subTab('final', 'Final Videos', finalCount)}
+                    {subTab('drafts', 'Drafts', draftCount)}
+                  </div>
+                  {(() => {
 
               if (archiveLoading && entries.length === 0) {
                 return (
