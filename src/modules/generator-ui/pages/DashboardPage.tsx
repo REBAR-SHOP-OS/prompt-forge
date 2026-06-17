@@ -3595,6 +3595,18 @@ export default function DashboardPage() {
   const [scheduleStatus, setScheduleStatus] = useState<
     { kind: 'idle' | 'sending' | 'sent' | 'error'; message?: string }
   >({ kind: 'idle' })
+  // On-screen debug snapshot of the last Send attempt (visible inside the popover).
+  const [scheduleDebug, setScheduleDebug] = useState<{
+    clicked: boolean
+    isInIframe: boolean
+    videoUrlExists: boolean
+    videoUrlSource: string
+    scheduledAt: string
+    targetOrigin: string
+    sentToParent: boolean
+    sentToTop: boolean
+    error: string
+  } | null>(null)
   // True only when this app is embedded in an iframe (i.e. inside Rebar OS).
   const isInIframe = useMemo(() => {
     try {
