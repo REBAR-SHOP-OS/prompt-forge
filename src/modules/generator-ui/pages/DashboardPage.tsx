@@ -1073,10 +1073,10 @@ export default function DashboardPage() {
   // ----- Storage bulk selection (Select All + delete selected) -----
   const [selectedArchiveIds, setSelectedArchiveIds] = useState<Set<string>>(new Set())
   const [isBulkDeleting, setIsBulkDeleting] = useState(false)
-  // Clear selection whenever the tab changes or the dialog opens/closes.
+  // Clear selection whenever the tab/sub-category changes or the dialog opens/closes.
   useEffect(() => {
     setSelectedArchiveIds(new Set())
-  }, [archiveTab, isArchiveOpen])
+  }, [archiveTab, filmsCategory, isArchiveOpen])
   const toggleArchiveSelection = (id: string) => {
     setSelectedArchiveIds((prev) => {
       const next = new Set(prev)
