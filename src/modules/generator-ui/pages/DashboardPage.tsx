@@ -3652,6 +3652,10 @@ export default function DashboardPage() {
       const durationSec = previewVideo?.video?.duration ?? undefined
       const caption = previewVideo?.input_prompt ?? ''
 
+      const scheduledAt = when.toISOString()
+      console.log('[Schedule→Social] targetOrigin:', SOCIAL_PARENT_ORIGIN)
+      console.log('[Schedule→Social] scheduledAt:', scheduledAt)
+
       window.parent.postMessage(
         {
           type: 'rebar.finalFilm.scheduleToSocial',
@@ -3661,18 +3665,19 @@ export default function DashboardPage() {
             mimeType: 'video/mp4',
             ...(durationSec ? { durationSec } : {}),
             caption,
-            scheduledAt: when.toISOString(),
+            scheduledAt,
           },
         },
         SOCIAL_PARENT_ORIGIN,
       )
+      console.log('[Schedule→Social] postMessage sent to', SOCIAL_PARENT_ORIGIN)
 
       toast.success('Sent to Social Media Manager')
       setScheduleOpen(false)
     } finally {
       setScheduleSending(false)
     }
-  }, [scheduleDate, scheduleTime, previewVideo])
+  }, [scheduleDate, scheduleTime, previewVideo, isInIframe])
 
 
   // Live progress tick is handled by the global setProgressTick effect below
