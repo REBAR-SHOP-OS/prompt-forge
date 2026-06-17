@@ -7023,9 +7023,13 @@ export default function DashboardPage() {
                   <div className="grid min-h-[10rem] place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
                     <div>
                       <Database className="mx-auto h-8 w-8 text-zinc-600" aria-hidden="true" />
-                      <p className="mt-3 text-sm font-medium text-zinc-300">No films yet</p>
+                      <p className="mt-3 text-sm font-medium text-zinc-300">
+                        {filmsCategory === 'final' ? 'No final videos yet' : 'No drafts yet'}
+                      </p>
                       <p className="mt-2 text-xs leading-5 text-zinc-600">
-                        Every film you generate will be archived here with its date.
+                        {filmsCategory === 'final'
+                          ? 'Finalized films you merge will appear here.'
+                          : 'Every clip you generate will be archived here with its date.'}
                       </p>
                     </div>
                   </div>
