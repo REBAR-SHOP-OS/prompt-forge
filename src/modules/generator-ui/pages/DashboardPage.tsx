@@ -3595,6 +3595,18 @@ export default function DashboardPage() {
   const [scheduleStatus, setScheduleStatus] = useState<
     { kind: 'idle' | 'sending' | 'sent' | 'error'; message?: string }
   >({ kind: 'idle' })
+  // On-screen debug snapshot of the last Send attempt (visible inside the popover).
+  const [scheduleDebug, setScheduleDebug] = useState<{
+    clicked: boolean
+    isInIframe: boolean
+    videoUrlExists: boolean
+    videoUrlSource: string
+    scheduledAt: string
+    targetOrigin: string
+    sentToParent: boolean
+    sentToTop: boolean
+    error: string
+  } | null>(null)
   // True only when this app is embedded in an iframe (i.e. inside Rebar OS).
   const isInIframe = useMemo(() => {
     try {
@@ -3606,16 +3618,30 @@ export default function DashboardPage() {
   }, [])
 
   const handleScheduleToSocial = useCallback(async () => {
+    const dbg = {
+      clicked: true,
+      isInIframe,
+      videoUrlExists: false,
+      videoUrlSource: '',
+      scheduledAt: '',
+      targetOrigin: SOCIAL_PARENT_ORIGIN,
+      sentToParent: false,
+      sentToTop: false,
+      error: '',
+    }
+    setScheduleDebug(dbg)
     console.log('[Schedule→Social] schedule button clicked')
     console.log('[Schedule→Social] isInIframe:', isInIframe)
-    console.log('[Schedule→Social] window.parent exists:', !!window.parent)
-    console.log('[Schedule→Social] window.top exists:', !!window.top)
     console.log('[Schedule→Social] targetOrigin:', SOCIAL_PARENT_ORIGIN)
     if (!isInIframe) {
+      dbg.error = 'Not inside Rebar OS iframe'
+      setScheduleDebug({ ...dbg })
       toast.error('Open this app inside Rebar OS to schedule to Social Media Manager.')
       return
     }
     if (!scheduleDate) {
+      dbg.error = 'No date selected'
+      setScheduleDebug({ ...dbg })
       toast.error('Pick a date first.')
       return
     }
@@ -3628,6 +3654,9 @@ export default function DashboardPage() {
       // private bucket, so mint a long-lived signed URL (1 year) instead of a
       // public URL that would 403.
       let videoUrl = rawPath ?? ''
+      dbg.videoUrlSource = rawPath
+        ? 'previewVideo.video.storage_path (signed)'
+        : 'previewVideo.video.storage_path (empty)'
       if (rawPath) {
         try {
           let bucket = MERGED_BUCKET
@@ -3669,15 +3698,27 @@ export default function DashboardPage() {
         scheduledAt,
       }
 
+      dbg.videoUrlExists = !!videoUrl
+      dbg.scheduledAt = scheduledAt
+      setScheduleDebug({ ...dbg })
+
       console.log('[Schedule→Social] videoUrl exists:', !!videoUrl)
       console.log('[Schedule→Social] scheduledAt:', scheduledAt)
       console.log('[Schedule→Social] payload:', payload)
 
       // Hard validation: never silently send an empty hand-off.
-      if (!videoUrl || !scheduledAt) {
-        console.warn('[Schedule→Social] missing videoUrl or scheduledAt — aborting send')
-        toast.error('Cannot send: missing videoUrl or scheduledAt')
-        setScheduleStatus({ kind: 'error', message: 'Missing videoUrl or scheduledAt' })
+      if (!videoUrl) {
+        dbg.error = 'Final video URL is missing'
+        setScheduleDebug({ ...dbg })
+        toast.error('Final video URL is missing')
+        setScheduleStatus({ kind: 'error', message: 'Final video URL is missing' })
+        return
+      }
+      if (!scheduledAt) {
+        dbg.error = 'scheduledAt is missing'
+        setScheduleDebug({ ...dbg })
+        toast.error('Cannot send: missing scheduledAt')
+        setScheduleStatus({ kind: 'error', message: 'Missing scheduledAt' })
         return
       }
 
@@ -3689,23 +3730,30 @@ export default function DashboardPage() {
       try {
         window.parent?.postMessage(message, SOCIAL_PARENT_ORIGIN)
         posted = true
+        dbg.sentToParent = true
         console.log('[Schedule→Social] postMessage sent to window.parent', SOCIAL_PARENT_ORIGIN)
       } catch (err) {
+        dbg.error = `parent.postMessage: ${String((err as Error)?.message ?? err)}`
         console.error('[Schedule→Social] window.parent.postMessage failed', err)
       }
       try {
         if (window.top && window.top !== window.parent) {
           window.top.postMessage(message, SOCIAL_PARENT_ORIGIN)
           posted = true
+          dbg.sentToTop = true
           console.log('[Schedule→Social] postMessage also sent to window.top', SOCIAL_PARENT_ORIGIN)
         }
       } catch (err) {
+        dbg.error = `top.postMessage: ${String((err as Error)?.message ?? err)}`
         console.error('[Schedule→Social] window.top.postMessage failed', err)
       }
 
+      setScheduleDebug({ ...dbg })
       console.log('[Schedule→Social] postMessage executed:', posted, '| scheduledAt:', scheduledAt)
 
       if (!posted) {
+        if (!dbg.error) dbg.error = 'postMessage failed'
+        setScheduleDebug({ ...dbg })
         toast.error('Failed to send message to Rebar OS')
         setScheduleStatus({ kind: 'error', message: 'postMessage failed' })
         return
@@ -3713,8 +3761,10 @@ export default function DashboardPage() {
 
       toast.success(`Sent to Social Media Manager • ${scheduledAt}`)
       setScheduleStatus({ kind: 'sent', message: `Message sent to Rebar OS • ${scheduledAt}` })
-      setTimeout(() => setScheduleOpen(false), 1200)
+      setTimeout(() => setScheduleOpen(false), 1800)
     } catch (err) {
+      dbg.error = String((err as Error)?.message ?? err)
+      setScheduleDebug({ ...dbg })
       console.error('[Schedule→Social] unexpected error', err)
       toast.error('Failed to send to Social Media Manager')
       setScheduleStatus({ kind: 'error', message: String((err as Error)?.message ?? err) })
@@ -4111,6 +4161,20 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
+    // Read-only projects (e.g. a finalized Film opened inside the Rebar OS
+    // iframe) are already terminal — never poll. A finalized/merged clip can
+    // report a non-standard status or a "completed" status without a
+    // storage_path, which would otherwise keep getJob() firing forever and
+    // freeze the page.
+    if (isReadOnlyProject) {
+      if (pollTimerRef.current) {
+        window.clearTimeout(pollTimerRef.current)
+        pollTimerRef.current = null
+      }
+      pollFailureCountRef.current = 0
+      return
+    }
+
     const activeJobs = generatedVideos.filter((job) => isJobAwaitingResolution(job))
 
     if (activeJobs.length === 0) {
@@ -4199,7 +4263,7 @@ export default function DashboardPage() {
         pollTimerRef.current = null
       }
     }
-  }, [generatedVideos])
+  }, [generatedVideos, isReadOnlyProject])
 
   // When a job that has a pending end-frame append completes, merge a 2s
   // still clip of the End image to the end of the video and replace the
@@ -4339,11 +4403,15 @@ export default function DashboardPage() {
   // so the time-based progress bar advances visibly between API polls.
   const [, setProgressTick] = useState(0)
   useEffect(() => {
+    // Read-only projects are terminal — no live progress to animate, so never
+    // run the 1s re-render loop (it would re-render every PlayableVideo each
+    // second inside the iframe and make the page feel frozen).
+    if (isReadOnlyProject) return
     const hasActive = generatedVideos.some((job) => !isTerminalStatus(job.status))
     if (!hasActive) return
     const id = window.setInterval(() => setProgressTick((tick) => tick + 1), 1000)
     return () => window.clearInterval(id)
-  }, [generatedVideos])
+  }, [generatedVideos, isReadOnlyProject])
 
   function openFileUpload(target: UploadTarget) {
     setUploadTarget(target)
@@ -7554,7 +7622,34 @@ export default function DashboardPage() {
                       : scheduleStatus.message ?? 'Failed to send'}
                 </p>
               )}
+              {scheduleDebug && (
+                <div className="space-y-0.5 rounded-md border border-white/10 bg-black/40 p-2 font-mono text-[10px] leading-relaxed text-zinc-300">
+                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                    Debug
+                  </p>
+                  <p>clicked: {scheduleDebug.clicked ? 'yes' : 'no'}</p>
+                  <p>isInIframe: {String(scheduleDebug.isInIframe)}</p>
+                  <p>
+                    videoUrl exists:{' '}
+                    <span className={scheduleDebug.videoUrlExists ? 'text-emerald-300' : 'text-red-300'}>
+                      {String(scheduleDebug.videoUrlExists)}
+                    </span>
+                  </p>
+                  <p className="break-all">videoUrl source: {scheduleDebug.videoUrlSource || '—'}</p>
+                  {!scheduleDebug.videoUrlExists && (
+                    <p className="text-red-300">Final video URL is missing</p>
+                  )}
+                  <p className="break-all">scheduledAt: {scheduleDebug.scheduledAt || '—'}</p>
+                  <p className="break-all">targetOrigin: {scheduleDebug.targetOrigin}</p>
+                  <p>postMessage → parent: {scheduleDebug.sentToParent ? 'yes' : 'no'}</p>
+                  <p>postMessage → top: {scheduleDebug.sentToTop ? 'yes' : 'no'}</p>
+                  {scheduleDebug.error && (
+                    <p className="break-all text-red-300">error: {scheduleDebug.error}</p>
+                  )}
+                </div>
+              )}
             </div>
+
           </PopoverContent>
         </Popover>
       )}
