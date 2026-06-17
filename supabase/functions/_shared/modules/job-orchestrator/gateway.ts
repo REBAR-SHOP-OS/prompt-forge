@@ -52,39 +52,83 @@ const SUPABASE_PUBLIC_STORAGE_PREFIX = `${new URL(getEnv("SUPABASE_URL")).origin
 // load it. Decode such payloads once and upload to our video bucket, returning a
 // real URL — mirroring the Veo download/re-upload path. Non-data URLs pass
 // through unchanged.
+// Persist a completed video into our own durable storage so playback never
+// breaks when a provider's temporary URL expires.
+//   - data:        -> decode + upload (local-LLM router path)
+//   - our storage  -> return as-is (already durable; no needless re-copy)
+//   - http(s) other -> download provider bytes + re-host, with a safe fallback
+//                      to the original URL if the download/upload fails (so a
+//                      job never falsely fails or refunds credits).
 async function materializeVideoUrl(
   svc: ReturnType<typeof getServiceClient>,
   userId: string,
   videoUrl: string,
 ): Promise<string> {
-  if (!videoUrl.startsWith("data:")) return videoUrl;
+  // 1) Local-LLM router data URLs — decode and upload.
+  if (videoUrl.startsWith("data:")) {
+    const match = videoUrl.match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
+    if (!match) throw new Error("Local router returned an unparseable data URL");
+    const contentType = match[1] || "video/mp4";
+    const isBase64 = Boolean(match[2]);
+    const rawData = match[3] ?? "";
 
-  const match = videoUrl.match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
-  if (!match) throw new Error("Local router returned an unparseable data URL");
-  const contentType = match[1] || "video/mp4";
-  const isBase64 = Boolean(match[2]);
-  const rawData = match[3] ?? "";
+    let bytes: Uint8Array;
+    if (isBase64) {
+      const binary = atob(rawData);
+      bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    } else {
+      bytes = new TextEncoder().encode(decodeURIComponent(rawData));
+    }
 
-  let bytes: Uint8Array;
-  if (isBase64) {
-    const binary = atob(rawData);
-    bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  } else {
-    bytes = new TextEncoder().encode(decodeURIComponent(rawData));
+    const ext = contentType.includes("webm") ? "webm" : "mp4";
+    const path = `${userId}/local-${crypto.randomUUID()}.${ext}`;
+    const { error: upErr } = await svc.storage
+      .from("merged-videos")
+      .upload(path, bytes, { contentType, upsert: false });
+    if (upErr) {
+      logError("local video upload failed", { error: upErr.message, path });
+      throw new Error(`Local video upload failed: ${upErr.message}`);
+    }
+    const { data: pub } = svc.storage.from("merged-videos").getPublicUrl(path);
+    return pub.publicUrl;
   }
 
-  const ext = contentType.includes("webm") ? "webm" : "mp4";
-  const path = `${userId}/local-${crypto.randomUUID()}.${ext}`;
-  const { error: upErr } = await svc.storage
-    .from("merged-videos")
-    .upload(path, bytes, { contentType, upsert: false });
-  if (upErr) {
-    logError("local video upload failed", { error: upErr.message, path });
-    throw new Error(`Local video upload failed: ${upErr.message}`);
+  // 2) Anything that already lives in our own Supabase storage is durable.
+  const ownStoragePrefix = `${new URL(getEnv("SUPABASE_URL")).origin}/storage/v1/object/`;
+  if (videoUrl.startsWith(ownStoragePrefix)) return videoUrl;
+
+  // 3) External provider URL (e.g. DashScope/WAN): these are short-lived and
+  //    expire, leaving blank cards. Download the bytes and re-host in our own
+  //    private bucket so playback stays durable.
+  try {
+    const res = await fetch(videoUrl);
+    if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`);
+    const contentType = res.headers.get("content-type") || "video/mp4";
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.byteLength === 0) throw new Error("download returned 0 bytes");
+
+    const ext = contentType.includes("webm")
+      ? "webm"
+      : (videoUrl.split("?")[0].toLowerCase().endsWith(".webm") ? "webm" : "mp4");
+    const uploadType = ext === "webm" ? "video/webm" : "video/mp4";
+    const path = `${userId}/job-${crypto.randomUUID()}.${ext}`;
+    const { error: upErr } = await svc.storage
+      .from("merged-videos")
+      .upload(path, bytes, { contentType: uploadType, upsert: false });
+    if (upErr) throw new Error(`upload failed: ${upErr.message}`);
+
+    const { data: pub } = svc.storage.from("merged-videos").getPublicUrl(path);
+    logInfo("provider video re-hosted", { userId, bytes: bytes.byteLength, path });
+    return pub.publicUrl;
+  } catch (e) {
+    // Non-fatal: keep the provider URL so the job still completes and is
+    // playable short-term. We never fail/refund a job over re-hosting.
+    logError("provider video re-host failed, keeping provider URL", {
+      error: (e as Error).message,
+    });
+    return videoUrl;
   }
-  const { data: pub } = svc.storage.from("merged-videos").getPublicUrl(path);
-  return pub.publicUrl;
 }
 const EXTRA_PUBLIC_FRAME_HOSTS = getEnv("ALLOWED_PUBLIC_FRAME_HOSTS", false)
   .split(",")

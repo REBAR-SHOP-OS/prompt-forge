@@ -1,40 +1,46 @@
-## هدف
+## Problem
 
-تب **Films** در پنجره‌ی Storage به دو دسته تقسیم می‌شود تا مدیریت استوریج منظم‌تر شود:
+In the Storage modal, some film cards turn into blank black tiles (play button, no thumbnail, no playback) even though they are marked **READY**. The four circled cards in the screenshot are all affected films.
 
-- **Final Videos** — فیلم‌های نهایی (خروجی‌های merge/فاینال‌شده)
-- **Drafts** — کلیپ‌های تکی تولیدشده که هنوز نهایی نشده‌اند
+## Root cause (verified against the database)
 
-این یک تغییر کاملاً فرانت‌اند است؛ هیچ تغییری در دیتابیس یا منطق بک‌اند لازم نیست.
+Each film's playable source is stored in `generator_video_assets.storage_path`. Looking at the actual rows for the affected user:
 
-## منبع داده‌ی هر دسته
+- Working cards → `https://<project>.supabase.co/storage/v1/object/...` (our own durable storage)
+- Blank cards → `https://dashscope-463f.oss-accelerate.aliyuncs.com/...` (the WAN / Alibaba DashScope provider's **temporary** URL)
 
-از بررسی کد مشخص شد:
+The provider URL is a short-lived signed link that expires after roughly a day. Once it expires, the browser can no longer load the video, so the card renders black with just a play overlay — exactly what is circled.
 
-- فیلم‌های **نهایی** بعد از merge به‌صورت کلاینت‌ساید در `mergedEntries` نگهداری می‌شوند (با `provider_key === 'final-film'`، ذخیره در باکت `merged-videos` و localStorage). این‌ها داخل `archiveJobs` سرور وجود ندارند.
-- تب Films فعلی فقط `archiveJobs` (جاب‌های خام سرور = کلیپ‌های **درفت**) را نشان می‌دهد.
+Why it happens: when a job completes, the backend calls `materializeVideoUrl()` to persist the result. But that function only downloads and re-hosts `data:` URLs (used by the local-LLM path):
 
-پس:
-- دسته‌ی **Final Videos** ← از `mergedEntries`
-- دسته‌ی **Drafts** ← از `archiveJobs` (رفتار فعلی)
+```text
+if (!videoUrl.startsWith("data:")) return videoUrl;   // ← provider URL stored as-is
+```
 
-## تغییرات UI
+For external providers (WAN/DashScope) it stores the expiring provider URL directly. So those films break as soon as the link expires. This is intermittent because it only shows up after expiry, which is why "sometimes" the films disappear.
 
-داخل `src/modules/generator-ui/pages/DashboardPage.tsx`، بخش رندر تب Films در پنجره‌ی Storage:
+## Fix (safe, centralized, non-destructive)
 
-1. یک ساب‌فیلتر سگمنتی (دو دکمه) زیر تب‌های اصلی اضافه می‌شود: **Final Videos** و **Drafts**، هرکدام با شمارنده.
-2. یک state جدید مثل `filmsCategory: 'final' | 'drafts'` (پیش‌فرض `drafts` که داده‌ی موجود را حفظ می‌کند) اضافه می‌شود.
-3. لیست نمایش‌داده‌شده بر اساس دسته‌ی انتخابی سوییچ می‌کند:
-   - حالت Drafts: همان گرید فعلی روی `archiveJobs`.
-   - حالت Final Videos: همان طرح کارت، اما روی `mergedEntries` و ویدئوی متصل آن.
-4. شمارنده‌ی بالای پنجره و بَج تب Films مجموع دو دسته را نشان می‌دهد؛ هر دکمه‌ی ساب‌فیلتر شمارنده‌ی مخصوص خودش را دارد.
-5. منطق Select all / Delete selected بر اساس دسته‌ی فعال کار می‌کند:
-   - Drafts → مسیر فعلی حذف جاب سرور (`handleDeleteArchiveJob`).
-   - Final Videos → مسیر حذف فیلم نهایی کلاینت‌ساید (همان منطق `merged-` که localStorage و باکت `merged-videos` را پاک می‌کند).
-6. Empty state مناسب برای هر دسته (مثلاً «هنوز فیلم نهایی نساخته‌اید» در مقابل «هنوز درفتی ندارید»).
+Extend `materializeVideoUrl()` in `supabase/functions/_shared/modules/job-orchestrator/gateway.ts` so every completed video is persisted into our own private `merged-videos` storage bucket and a durable URL is stored. Both completion call sites (inline poll at line ~231 and synchronous complete at line ~531) already route through this one function, so a single change fixes all future films.
 
-## جزئیات فنی
+New behavior inside `materializeVideoUrl`:
+1. `data:` URLs → unchanged (current logic).
+2. URLs already pointing at our own Supabase storage → return as-is (no needless re-copy).
+3. Any other `http(s)` provider URL (DashScope/WAN/etc.) → `fetch()` the bytes, upload to `merged-videos/<userId>/job-<uuid>.mp4`, and return the durable URL.
+4. If the external download fails for any reason → log and **fall back to returning the original provider URL** (so the job still completes and stays playable short-term, and credits are never wrongly refunded). This preserves current stability; the change can only improve durability, never break a working flow.
 
-- تغییر فقط در `DashboardPage.tsx` در محدوده‌ی رندر پنجره‌ی Storage (تب films) و state/handlerهای انتخاب و حذف مرتبط.
-- ساختار کارت، پخش‌کننده و دکمه‌های دانلود بدون تغییر باقی می‌مانند و بین دو دسته بازاستفاده می‌شوند.
-- بدون migration، بدون تغییر edge function، بدون تغییر قرارداد API.
+This is fully server-side and changes only how the durable path is produced — no schema change, no client change, no destructive action.
+
+### Existing already-broken films
+Films whose provider URL has **already expired** cannot be recovered — the source no longer exists anywhere. Those blank cards can only be deleted by the user. The fix prevents any new film from suffering this and rescues any film whose provider URL is still valid the next time it is completed.
+
+Optional follow-up (only if you want it): a one-time repair pass that re-downloads provider URLs that are *still valid* into our storage. Expired ones are unrecoverable, so this only helps very recent films. I can add this on request.
+
+## Technical changes
+- `supabase/functions/_shared/modules/job-orchestrator/gateway.ts` — rewrite `materializeVideoUrl()` to download and re-host external provider videos into `merged-videos`, with a same-origin short-circuit and a safe fallback to the original URL on failure.
+- Deploy the updated `jobs-get` / `jobs-create` edge functions (they share this gateway).
+
+## Validation
+- Generate (or re-poll) a WAN film and confirm the stored `storage_path` is a `supabase.co/storage/.../merged-videos/...` URL, not a `dashscope` URL.
+- Confirm the new card shows a thumbnail and plays in the Storage modal.
+- Confirm a film still completes (no false failure/refund) if the download step is forced to fail.
