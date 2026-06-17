@@ -3592,9 +3592,19 @@ export default function DashboardPage() {
   const [scheduleDate, setScheduleDate] = useState<Date | undefined>(undefined)
   const [scheduleTime, setScheduleTime] = useState('10:00')
   const [scheduleSending, setScheduleSending] = useState(false)
+  // True only when this app is embedded in an iframe (i.e. inside Rebar OS).
+  const isInIframe = useMemo(() => {
+    try {
+      return window.parent !== window
+    } catch {
+      // Cross-origin access throws -> we are definitely inside an iframe.
+      return true
+    }
+  }, [])
 
   const handleScheduleToSocial = useCallback(async () => {
-    if (window.parent === window) {
+    console.log('[Schedule→Social] isInIframe:', isInIframe)
+    if (!isInIframe) {
       toast.error('Open this app inside Rebar OS to schedule to Social Media Manager.')
       return
     }
@@ -3642,6 +3652,10 @@ export default function DashboardPage() {
       const durationSec = previewVideo?.video?.duration ?? undefined
       const caption = previewVideo?.input_prompt ?? ''
 
+      const scheduledAt = when.toISOString()
+      console.log('[Schedule→Social] targetOrigin:', SOCIAL_PARENT_ORIGIN)
+      console.log('[Schedule→Social] scheduledAt:', scheduledAt)
+
       window.parent.postMessage(
         {
           type: 'rebar.finalFilm.scheduleToSocial',
@@ -3651,18 +3665,19 @@ export default function DashboardPage() {
             mimeType: 'video/mp4',
             ...(durationSec ? { durationSec } : {}),
             caption,
-            scheduledAt: when.toISOString(),
+            scheduledAt,
           },
         },
         SOCIAL_PARENT_ORIGIN,
       )
+      console.log('[Schedule→Social] postMessage sent to', SOCIAL_PARENT_ORIGIN)
 
       toast.success('Sent to Social Media Manager')
       setScheduleOpen(false)
     } finally {
       setScheduleSending(false)
     }
-  }, [scheduleDate, scheduleTime, previewVideo])
+  }, [scheduleDate, scheduleTime, previewVideo, isInIframe])
 
 
   // Live progress tick is handled by the global setProgressTick effect below
@@ -7427,13 +7442,19 @@ export default function DashboardPage() {
       </AlertDialog>
 
       {isReadOnlyProject && (
-        <Popover open={scheduleOpen} onOpenChange={setScheduleOpen}>
+        <Popover open={scheduleOpen} onOpenChange={(o) => isInIframe && setScheduleOpen(o)}>
           <PopoverTrigger asChild>
             <button
               type="button"
-              className="flex h-9 items-center gap-1.5 rounded-md border border-sky-400/40 bg-sky-400/15 px-3 text-xs uppercase tracking-[0.18em] text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-400/25"
+              disabled={!isInIframe}
+              onClick={() => {
+                if (!isInIframe) {
+                  toast.error('Open this app inside Rebar OS to schedule to Social Media Manager.')
+                }
+              }}
+              className="flex h-9 items-center gap-1.5 rounded-md border border-sky-400/40 bg-sky-400/15 px-3 text-xs uppercase tracking-[0.18em] text-sky-100 transition hover:border-sky-300/60 hover:bg-sky-400/25 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-sky-400/40 disabled:hover:bg-sky-400/15"
               aria-label="Schedule to Social Media Manager"
-              title="Schedule to Social Media Manager"
+              title={isInIframe ? 'Schedule to Social Media Manager' : 'Open inside Rebar OS to schedule'}
             >
               <CalendarPlus className="h-[14px] w-[14px]" aria-hidden="true" />
               <span>Schedule</span>
