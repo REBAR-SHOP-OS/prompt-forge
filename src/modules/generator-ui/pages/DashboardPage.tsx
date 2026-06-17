@@ -994,6 +994,8 @@ export default function DashboardPage() {
   // server (independent of drafts/library local state). -----
   const [isArchiveOpen, setIsArchiveOpen] = useState(false)
   const [archiveTab, setArchiveTab] = useState<'films' | 'images' | 'audio' | 'products'>('films')
+  // Sub-category within the Films tab: finalized merged films vs raw draft clips.
+  const [filmsCategory, setFilmsCategory] = useState<'final' | 'drafts'>('drafts')
   const [archiveJobs, setArchiveJobs] = useState<JobSummary[]>([])
   const [archiveVideos, setArchiveVideos] = useState<VideoSummary[]>([])
   const [archiveImages, setArchiveImages] = useState<UserImageItem[]>([])
@@ -1071,10 +1073,10 @@ export default function DashboardPage() {
   // ----- Storage bulk selection (Select All + delete selected) -----
   const [selectedArchiveIds, setSelectedArchiveIds] = useState<Set<string>>(new Set())
   const [isBulkDeleting, setIsBulkDeleting] = useState(false)
-  // Clear selection whenever the tab changes or the dialog opens/closes.
+  // Clear selection whenever the tab/sub-category changes or the dialog opens/closes.
   useEffect(() => {
     setSelectedArchiveIds(new Set())
-  }, [archiveTab, isArchiveOpen])
+  }, [archiveTab, filmsCategory, isArchiveOpen])
   const toggleArchiveSelection = (id: string) => {
     setSelectedArchiveIds((prev) => {
       const next = new Set(prev)
@@ -1091,7 +1093,9 @@ export default function DashboardPage() {
       for (const id of ids) {
         try {
           if (archiveTab === 'films') {
-            await handleDeleteArchiveJob(id)
+            // Final videos live client-side (merged-*); drafts are server jobs.
+            if (filmsCategory === 'final') await deleteCardConfirmed(id)
+            else await handleDeleteArchiveJob(id)
           } else if (archiveTab === 'images' || archiveTab === 'products') {
             await handleDeleteUserImage(id)
           } else {
@@ -6412,7 +6416,7 @@ export default function DashboardPage() {
                 </DialogTitle>
                 <span className="grid h-6 min-w-6 place-items-center rounded-full border border-white/10 px-2 text-xs font-semibold text-zinc-300">
                   {archiveTab === 'films'
-                    ? archiveJobs.length
+                    ? archiveJobs.length + finalizedItems.length
                     : archiveTab === 'images'
                       ? archiveImages.length
                       : archiveTab === 'products'
@@ -6444,7 +6448,7 @@ export default function DashboardPage() {
               >
                 <Clapperboard className="h-3.5 w-3.5" aria-hidden="true" />
                 Films
-                <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{archiveJobs.length}</span>
+                <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{archiveJobs.length + finalizedItems.length}</span>
               </button>
               <button
                 type="button"
@@ -6492,7 +6496,7 @@ export default function DashboardPage() {
             {(() => {
               const currentIds =
                 archiveTab === 'films'
-                  ? archiveJobs.map((j) => j.id)
+                  ? (filmsCategory === 'final' ? finalizedItems.map((j) => j.id) : archiveJobs.map((j) => j.id))
                   : archiveTab === 'images'
                     ? archiveImages.map((i) => i.id)
                     : archiveTab === 'products'
@@ -6979,9 +6983,32 @@ export default function DashboardPage() {
               for (const v of archiveVideos) {
                 if (!videoByJob.has(v.job_id)) videoByJob.set(v.job_id, v)
               }
-              const entries = [...archiveJobs].sort(
-                (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
+              const draftCount = archiveJobs.length
+              const finalCount = finalizedItems.length
+              const entries: (JobSummary | JobDetail)[] = (
+                filmsCategory === 'final' ? [...finalizedItems] : [...archiveJobs]
+              ).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+              const subTab = (cat: 'final' | 'drafts', label: string, count: number) => (
+                <button
+                  type="button"
+                  onClick={() => setFilmsCategory(cat)}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                    filmsCategory === cat
+                      ? 'bg-white/[0.08] text-zinc-100'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  {label}
+                  <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{count}</span>
+                </button>
               )
+              return (
+                <div className="space-y-4">
+                  <div className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-1">
+                    {subTab('final', 'Final Videos', finalCount)}
+                    {subTab('drafts', 'Drafts', draftCount)}
+                  </div>
+                  {(() => {
 
               if (archiveLoading && entries.length === 0) {
                 return (
@@ -6996,9 +7023,13 @@ export default function DashboardPage() {
                   <div className="grid min-h-[10rem] place-items-center rounded-2xl border border-dashed border-white/10 px-5 text-center">
                     <div>
                       <Database className="mx-auto h-8 w-8 text-zinc-600" aria-hidden="true" />
-                      <p className="mt-3 text-sm font-medium text-zinc-300">No films yet</p>
+                      <p className="mt-3 text-sm font-medium text-zinc-300">
+                        {filmsCategory === 'final' ? 'No final videos yet' : 'No drafts yet'}
+                      </p>
                       <p className="mt-2 text-xs leading-5 text-zinc-600">
-                        Every film you generate will be archived here with its date.
+                        {filmsCategory === 'final'
+                          ? 'Finalized films you merge will appear here.'
+                          : 'Every clip you generate will be archived here with its date.'}
                       </p>
                     </div>
                   </div>
@@ -7031,7 +7062,9 @@ export default function DashboardPage() {
               return (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {entries.map((job) => {
-                    const video = videoByJob.get(job.id)
+                    const video = filmsCategory === 'final'
+                      ? ((job as JobDetail).video ?? undefined)
+                      : videoByJob.get(job.id)
                     return (
                       <article
                         key={job.id}
@@ -7176,7 +7209,7 @@ export default function DashboardPage() {
                                   <AlertDialogFooter>
                                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                                     <AlertDialogAction
-                                      onClick={() => { void handleDeleteArchiveJob(job.id) }}
+                                      onClick={() => { void (filmsCategory === 'final' ? deleteCardConfirmed(job.id) : handleDeleteArchiveJob(job.id)) }}
                                       className="bg-rose-600 text-white hover:bg-rose-700"
                                     >
                                       Delete
@@ -7195,6 +7228,9 @@ export default function DashboardPage() {
                       </article>
                     )
                   })}
+                </div>
+              )
+                  })()}
                 </div>
               )
             })()}
