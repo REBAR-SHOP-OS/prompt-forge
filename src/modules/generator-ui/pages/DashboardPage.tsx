@@ -6448,7 +6448,7 @@ export default function DashboardPage() {
               >
                 <Clapperboard className="h-3.5 w-3.5" aria-hidden="true" />
                 Films
-                <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{archiveJobs.length}</span>
+                <span className="ml-1 rounded-full bg-black/30 px-1.5 text-[10px] tabular-nums">{archiveJobs.length + finalizedItems.length}</span>
               </button>
               <button
                 type="button"
