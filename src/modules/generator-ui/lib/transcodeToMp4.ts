@@ -44,8 +44,14 @@ export type Mp4ProgressCallback = (info: {
 
 /** Hard cap per ffmpeg exec call (5 min) — anything longer means hung. */
 const FFMPEG_EXEC_TIMEOUT_MS = 5 * 60_000
-/** Skip transcode for blobs bigger than this — ffmpeg.wasm OOMs silently otherwise. */
-const MAX_TRANSCODE_BLOB_BYTES = 800 * 1024 * 1024
+/**
+ * Skip transcode for blobs bigger than this. ffmpeg.wasm holds the whole input
+ * in the WASM heap AND fetchFile/writeFile create transient copies, so peak
+ * memory is several times the file size. Above this the browser tab OOMs and
+ * reloads mid-encode (no file produced). 350 MB keeps a realistic safety margin
+ * for typical Final Films; larger ones fall back to a clearly-labeled original.
+ */
+const MAX_TRANSCODE_BLOB_BYTES = 350 * 1024 * 1024
 
 let ffmpegSingleton: FFmpeg | null = null
 let loadingPromise: Promise<FFmpeg> | null = null
