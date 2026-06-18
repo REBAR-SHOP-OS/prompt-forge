@@ -567,6 +567,16 @@ export function VoiceoverDialog({
         </div>
 
         <DialogFooter className="gap-2 sm:gap-2">
+          {onUseAsSoundtrack ? (
+            <Button
+              type="button"
+              onClick={handleUseAsSoundtrack}
+              disabled={!audioUrl}
+            >
+              <Music2 className="mr-2 h-4 w-4" />
+              Use as soundtrack
+            </Button>
+          ) : null}
           <Button
             type="button"
             variant="secondary"
