@@ -9281,7 +9281,6 @@ export default function DashboardPage() {
                       </p>
                       <div className="flex shrink-0 items-center gap-1">
                         {variant === 'final' && video.video?.storage_path ? (
-                          <>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <button
