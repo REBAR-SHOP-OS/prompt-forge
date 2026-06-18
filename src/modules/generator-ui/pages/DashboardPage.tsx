@@ -9348,7 +9348,10 @@ export default function DashboardPage() {
                               title="Download as MP4"
                               className="grid h-6 shrink-0 place-items-center rounded-full border border-white/10 px-1.5 text-[9px] font-semibold leading-none text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                             >
-                              MP4
+                              {downloadingId === video.id
+                                ? (downloadProgress != null ? `${downloadProgress}%` : '…')
+                                : 'MP4'}
+
                             </button>
                           </>
                         ) : null}
