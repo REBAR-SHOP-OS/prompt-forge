@@ -687,6 +687,14 @@ export default function DashboardPage() {
   // feels "stuck". null means no percentage to show (e.g. fetching / remux).
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null)
 
+  // Pre-warm the ffmpeg.wasm core once so the first MP4 download doesn't pay the
+  // engine-load cost on click (and surfaces load failures early, off the path).
+  useEffect(() => {
+    preloadMp4Transcoder()
+  }, [])
+
+
+
 
   // --- Copyright shield: AI review of the final video + music/voiceover ---
   type CopyrightSection = { status: string; reason?: string; risks?: string[] }
