@@ -853,7 +853,7 @@ export default function DashboardPage() {
   function saveCopyrightStatus(jobId: string, status: CopyrightStatus) {
     setCopyrightStatuses((prev) => {
       const next = { ...prev, [jobId]: status }
-      const uid = sessionRef.current?.user?.id ?? null
+      const uid = session?.user?.id ?? null
       if (uid) {
         try { window.localStorage.setItem(`copyright-status:${uid}`, JSON.stringify(next)) } catch { /* ignore */ }
       }
