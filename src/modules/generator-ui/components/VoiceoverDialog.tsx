@@ -153,6 +153,13 @@ export function VoiceoverDialog({
     }
   }, [open])
 
+  function resetPreview() {
+    setPreviewVolume(1)
+    setPreviewRange([0, 0])
+    setPreviewTimeline([0, 0])
+    setPreviewDuration(0)
+  }
+
   async function persistVoiceover(blob: Blob) {
     try {
       const { data: userRes } = await supabase.auth.getUser()
