@@ -315,6 +315,42 @@ export type Database = {
         }
         Relationships: []
       }
+      generator_film_exports: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          id: string
+          mp4_storage_path: string | null
+          source_asset_id: string
+          source_storage_path: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          mp4_storage_path?: string | null
+          source_asset_id: string
+          source_storage_path: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          mp4_storage_path?: string | null
+          source_asset_id?: string
+          source_storage_path?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       generator_generation_jobs: {
         Row: {
           created_at: string
