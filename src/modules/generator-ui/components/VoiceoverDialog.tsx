@@ -609,15 +609,30 @@ export function VoiceoverDialog({
               Use as soundtrack
             </Button>
           ) : null}
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={handleDownload}
-            disabled={!audioUrl}
-          >
-            <Download className="mr-2 h-4 w-4" />
-            Download
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={!audioUrl || isExportingMp4}
+              >
+                {isExportingMp4 ? (
+                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                Download
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={handleDownloadWav}>
+                Download as WAV
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void handleDownloadMp4()}>
+                Download as MP4
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             Close
           </Button>
