@@ -1546,6 +1546,8 @@ export default function DashboardPage() {
       setCopyrightStatuses(obj && typeof obj === 'object' ? obj : {})
     } catch { setCopyrightStatuses({}) }
   }, [copyrightStatusKey])
+
+  // Persist a music/voiceover source into the public MERGED_BUCKET so it
   // survives refresh and project switches. Returns a durable public URL, or
   // null on failure. Reused by both Final Film finalize and Draft snapshots.
   const persistAudioToStorage = useCallback(
