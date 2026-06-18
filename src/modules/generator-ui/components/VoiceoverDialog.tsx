@@ -4,6 +4,13 @@ import { supabase } from '@/integrations/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { audioToMp4 } from '@/modules/generator-ui/lib/transcodeToMp4'
+import {
   SoundtrackWaveform,
   type SoundtrackWaveformHandle,
 } from '@/modules/generator-ui/components/SoundtrackWaveform'
@@ -124,6 +131,7 @@ export function VoiceoverDialog({
   const [previewRange, setPreviewRange] = useState<[number, number]>([0, 0])
   const [previewTimeline, setPreviewTimeline] = useState<[number, number]>([0, 0])
   const [previewDuration, setPreviewDuration] = useState(0)
+  const [isExportingMp4, setIsExportingMp4] = useState(false)
   const previewWaveformRef = useRef<SoundtrackWaveformHandle | null>(null)
 
   function resolveDurationSec(): number | undefined {
@@ -240,14 +248,38 @@ export function VoiceoverDialog({
     }
   }
 
-  function handleDownload() {
-    if (!audioUrl) return
+  function triggerDownload(url: string, filename: string) {
     const a = document.createElement('a')
-    a.href = audioUrl
-    a.download = `voiceover-${gender}-${tone}-${Date.now()}.wav`
+    a.href = url
+    a.download = filename
     document.body.appendChild(a)
     a.click()
     a.remove()
+  }
+
+  function handleDownloadWav() {
+    if (!audioUrl) return
+    triggerDownload(audioUrl, `voiceover-${gender}-${tone}-${Date.now()}.wav`)
+  }
+
+  async function handleDownloadMp4() {
+    if (!audioUrl || isExportingMp4) return
+    setIsExportingMp4(true)
+    const toastId = toast.loading('Preparing MP4…')
+    try {
+      const res = await fetch(audioUrl)
+      const blob = await res.blob()
+      const mp4 = await audioToMp4(blob, blob.type)
+      const url = URL.createObjectURL(mp4)
+      triggerDownload(url, `voiceover-${gender}-${tone}-${Date.now()}.mp4`)
+      setTimeout(() => { try { URL.revokeObjectURL(url) } catch { /* ignore */ } }, 10_000)
+      toast.success('MP4 ready', { id: toastId })
+    } catch (err) {
+      console.error('MP4 export failed', err)
+      toast.error('Could not create MP4', { id: toastId })
+    } finally {
+      setIsExportingMp4(false)
+    }
   }
 
   function handleUseAsSoundtrack() {
@@ -577,15 +609,30 @@ export function VoiceoverDialog({
               Use as soundtrack
             </Button>
           ) : null}
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={handleDownload}
-            disabled={!audioUrl}
-          >
-            <Download className="mr-2 h-4 w-4" />
-            Download
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={!audioUrl || isExportingMp4}
+              >
+                {isExportingMp4 ? (
+                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                Download
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={handleDownloadWav}>
+                Download as WAV
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void handleDownloadMp4()}>
+                Download as MP4
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             Close
           </Button>
