@@ -109,7 +109,7 @@ import { videoLibraryGateway } from '@/modules/video-library/gateway'
 import type { VideoSummary } from '@/modules/video-library/contract'
 import { generatorUiGateway } from '@/modules/generator-ui/gateway'
 import { mergeVideoUrls, MergeCancelledError, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
-import { ensureMp4 } from '@/modules/generator-ui/lib/transcodeToMp4'
+import { ensureMp4, preloadMp4Transcoder } from '@/modules/generator-ui/lib/transcodeToMp4'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
 import UsageStatsPopover from '@/modules/generator-ui/components/UsageStatsPopover'
 import VideoToVideoDialog from '@/modules/generator-ui/components/VideoToVideoDialog'
@@ -683,6 +683,18 @@ export default function DashboardPage() {
   // Tracks which card's download is currently being prepared (fetched +
   // transcoded to standard MP4) so we can show a spinner on that button.
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  // Transcode progress (0..100) for the MP4 button so a long conversion never
+  // feels "stuck". null means no percentage to show (e.g. fetching / remux).
+  const [downloadProgress, setDownloadProgress] = useState<number | null>(null)
+
+  // Pre-warm the ffmpeg.wasm core once so the first MP4 download doesn't pay the
+  // engine-load cost on click (and surfaces load failures early, off the path).
+  useEffect(() => {
+    preloadMp4Transcoder()
+  }, [])
+
+
+
 
   // --- Copyright shield: AI review of the final video + music/voiceover ---
   type CopyrightSection = { status: string; reason?: string; risks?: string[] }
@@ -709,6 +721,7 @@ export default function DashboardPage() {
   const downloadAsMp4 = async (cardId: string, url: string, namePrefix: string) => {
     if (downloadingId) return
     setDownloadingId(cardId)
+    setDownloadProgress(null)
     const triggerDownload = (blob: Blob, filename: string) => {
       const blobUrl = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -755,23 +768,51 @@ export default function DashboardPage() {
         return
       }
 
+      // Non-MP4 (WebM Final Film): transcode to a real H.264/AAC MP4.
+      // ensureMp4 reports progress so the button shows a percentage instead of
+      // looking frozen, and it returns the ACTUAL extension it produced — we
+      // honor that so a degraded WebM is never mislabeled as .mp4.
       try {
-        const mp4 = await ensureMp4(blob, blob.type)
-        triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.mp4`)
+        const mp4 = await ensureMp4(blob, blob.type, (info) => {
+          if (info.stage === 'encode') {
+            setDownloadProgress(Math.round(info.ratio * 100))
+          } else if (info.stage === 'loading') {
+            setDownloadProgress(0)
+          } else if (info.stage === 'readout') {
+            setDownloadProgress(100)
+          }
+        })
+        if (mp4.extension === 'mp4') {
+          triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.mp4`)
+        } else {
+          // Engine was unavailable — ensureMp4 degraded to the original WebM.
+          // Serve it with its TRUE extension and tell the user why.
+          triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.${mp4.extension}`)
+          toast.error('Could not convert to MP4 in your browser — downloaded the original video instead.')
+        }
       } catch (transErr) {
-        // Transcode failed (too large / OOM) — hand over the original file
-        // with its TRUE extension (never mislabel WebM as .mp4) so the user
-        // is never left without a download.
+        // Transcode failed (too large / OOM). Hand over the original file with
+        // its TRUE extension (never mislabel WebM as .mp4) and surface a clear
+        // message so the user is never left with a broken or missing file.
         console.warn('[download] MP4 transcode failed, serving original:', transErr)
         triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${extFromType(blob.type, url)}`)
+        const msg = transErr instanceof Error ? transErr.message : ''
+        toast.error(
+          /too large/i.test(msg)
+            ? 'This film is too large to convert in the browser — downloaded the original. Use the fast Download button.'
+            : 'MP4 conversion failed — downloaded the original video instead.',
+        )
       }
     } catch (err) {
       console.error('Film download failed', err)
+      toast.error('Download failed. Please try again.')
       window.open(url, '_blank')
     } finally {
       setDownloadingId(null)
+      setDownloadProgress(null)
     }
   }
+
   // Fast, direct download: hands the browser a signed URL with a download
   // Content-Disposition so it streams the file natively — no in-browser fetch
   // into memory and no ffmpeg transcode. Falls back gracefully on failure.
@@ -7554,7 +7595,10 @@ export default function DashboardPage() {
                                     title="Download as MP4"
                                     className="grid h-6 shrink-0 place-items-center rounded-full border border-white/10 px-1.5 text-[9px] font-semibold leading-none text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                                   >
-                                    MP4
+                                    {downloadingId === job.id
+                                      ? (downloadProgress != null ? `${downloadProgress}%` : '…')
+                                      : 'MP4'}
+
                                   </button>
                                 </>
                               ) : null}
@@ -9304,7 +9348,10 @@ export default function DashboardPage() {
                               title="Download as MP4"
                               className="grid h-6 shrink-0 place-items-center rounded-full border border-white/10 px-1.5 text-[9px] font-semibold leading-none text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                             >
-                              MP4
+                              {downloadingId === video.id
+                                ? (downloadProgress != null ? `${downloadProgress}%` : '…')
+                                : 'MP4'}
+
                             </button>
                           </>
                         ) : null}
