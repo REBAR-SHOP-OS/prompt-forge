@@ -320,6 +320,35 @@ export async function ensureMp4(
   return { blob: out, mimeType: 'video/mp4', extension: 'mp4' }
 }
 
+/**
+ * Convert an audio blob (WAV/MP3/OGG/etc.) into an audio-only MP4 container
+ * (AAC). Used to let users download a voiceover as a .mp4 file.
+ */
+export async function audioToMp4(blob: Blob, mimeType?: string): Promise<Blob> {
+  const mt = (mimeType || blob.type || '').toLowerCase()
+  const inExt = mt.includes('mp3') || mt.includes('mpeg') ? 'mp3'
+    : mt.includes('ogg') ? 'ogg'
+    : mt.includes('webm') ? 'webm'
+    : mt.includes('m4a') || mt.includes('mp4') ? 'm4a'
+    : 'wav'
+  const inputName = `vo-in.${inExt}`
+  const outputName = 'vo-out.mp4'
+  const ff = await getFFmpeg()
+  await ff.writeFile(inputName, await fetchFile(blob))
+  await withTimeout(
+    ff.exec(['-i', inputName, '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', outputName]),
+    FFMPEG_EXEC_TIMEOUT_MS,
+    'audio→mp4',
+  )
+  const data = await ff.readFile(outputName)
+  try { await ff.deleteFile(inputName) } catch { /* noop */ }
+  try { await ff.deleteFile(outputName) } catch { /* noop */ }
+  const u8 = data as Uint8Array
+  const ab = new ArrayBuffer(u8.byteLength)
+  new Uint8Array(ab).set(u8)
+  return new Blob([ab], { type: 'video/mp4' })
+}
+
 /** Pre-warm the ffmpeg core (optional). */
 export function preloadMp4Transcoder(): void {
   void getFFmpeg().catch(() => { /* noop — will retry on demand */ })
