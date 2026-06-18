@@ -119,6 +119,12 @@ export function VoiceoverDialog({
   const [isGenerating, setIsGenerating] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const lastUrlRef = useRef<string | null>(null)
+  // Local preview controls shown right after generation (before "Use as soundtrack").
+  const [previewVolume, setPreviewVolume] = useState(1)
+  const [previewRange, setPreviewRange] = useState<[number, number]>([0, 0])
+  const [previewTimeline, setPreviewTimeline] = useState<[number, number]>([0, 0])
+  const [previewDuration, setPreviewDuration] = useState(0)
+  const previewWaveformRef = useRef<SoundtrackWaveformHandle | null>(null)
 
   function resolveDurationSec(): number | undefined {
     if (durationMode === 'auto') return undefined
