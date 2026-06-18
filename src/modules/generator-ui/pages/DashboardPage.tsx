@@ -713,6 +713,7 @@ export default function DashboardPage() {
   const downloadAsMp4 = async (cardId: string, url: string, namePrefix: string) => {
     if (downloadingId) return
     setDownloadingId(cardId)
+    setDownloadProgress(null)
     const triggerDownload = (blob: Blob, filename: string) => {
       const blobUrl = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -759,23 +760,51 @@ export default function DashboardPage() {
         return
       }
 
+      // Non-MP4 (WebM Final Film): transcode to a real H.264/AAC MP4.
+      // ensureMp4 reports progress so the button shows a percentage instead of
+      // looking frozen, and it returns the ACTUAL extension it produced — we
+      // honor that so a degraded WebM is never mislabeled as .mp4.
       try {
-        const mp4 = await ensureMp4(blob, blob.type)
-        triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.mp4`)
+        const mp4 = await ensureMp4(blob, blob.type, (info) => {
+          if (info.stage === 'encode') {
+            setDownloadProgress(Math.round(info.ratio * 100))
+          } else if (info.stage === 'loading') {
+            setDownloadProgress(0)
+          } else if (info.stage === 'readout') {
+            setDownloadProgress(100)
+          }
+        })
+        if (mp4.extension === 'mp4') {
+          triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.mp4`)
+        } else {
+          // Engine was unavailable — ensureMp4 degraded to the original WebM.
+          // Serve it with its TRUE extension and tell the user why.
+          triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.${mp4.extension}`)
+          toast.error('Could not convert to MP4 in your browser — downloaded the original video instead.')
+        }
       } catch (transErr) {
-        // Transcode failed (too large / OOM) — hand over the original file
-        // with its TRUE extension (never mislabel WebM as .mp4) so the user
-        // is never left without a download.
+        // Transcode failed (too large / OOM). Hand over the original file with
+        // its TRUE extension (never mislabel WebM as .mp4) and surface a clear
+        // message so the user is never left with a broken or missing file.
         console.warn('[download] MP4 transcode failed, serving original:', transErr)
         triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${extFromType(blob.type, url)}`)
+        const msg = transErr instanceof Error ? transErr.message : ''
+        toast.error(
+          /too large/i.test(msg)
+            ? 'This film is too large to convert in the browser — downloaded the original. Use the fast Download button.'
+            : 'MP4 conversion failed — downloaded the original video instead.',
+        )
       }
     } catch (err) {
       console.error('Film download failed', err)
+      toast.error('Download failed. Please try again.')
       window.open(url, '_blank')
     } finally {
       setDownloadingId(null)
+      setDownloadProgress(null)
     }
   }
+
   // Fast, direct download: hands the browser a signed URL with a download
   // Content-Disposition so it streams the file natively — no in-browser fetch
   // into memory and no ffmpeg transcode. Falls back gracefully on failure.
