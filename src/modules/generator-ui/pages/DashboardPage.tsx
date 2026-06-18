@@ -848,14 +848,29 @@ export default function DashboardPage() {
     }
   }
 
+  // Persist a verdict into the per-video status map (and localStorage, which the
+  // library-sync layer mirrors to the backend so it survives refresh/devices).
+  const saveCopyrightStatus = useCallback((jobId: string, status: CopyrightStatus) => {
+    setCopyrightStatuses((prev) => {
+      const next = { ...prev, [jobId]: status }
+      if (userId) {
+        try { window.localStorage.setItem(`copyright-status:${userId}`, JSON.stringify(next)) } catch { /* ignore */ }
+      }
+      return next
+    })
+  }, [userId])
+
   // Run a real AI copyright review of the final video + its music/voiceover.
-  const runCopyrightCheck = async (video: JobDetail) => {
+  // `silent` runs the check in the background (auto check) without opening the dialog.
+  const runCopyrightCheck = async (video: JobDetail, silent = false) => {
     const storagePath = video.video?.storage_path
     if (!storagePath) return
-    setCopyrightJob(video)
-    setCopyrightResult(null)
-    setCopyrightError(null)
-    setCopyrightLoading(true)
+    if (!silent) {
+      setCopyrightJob(video)
+      setCopyrightResult(null)
+      setCopyrightError(null)
+      setCopyrightLoading(true)
+    }
     try {
       const audio = projectAudio[video.id]
       const [videoUrl, musicUrl, voiceoverUrl] = await Promise.all([
@@ -880,11 +895,15 @@ export default function DashboardPage() {
       }
       const result = (data as { result?: CopyrightResult } | null)?.result
       if (!result) throw new Error('No analysis result returned.')
-      setCopyrightResult(result)
+      if (!silent) setCopyrightResult(result)
+      const verdict = (['approved', 'caution', 'rejected'] as const).includes(result.verdict as 'approved')
+        ? (result.verdict as CopyrightStatus['verdict'])
+        : 'caution'
+      saveCopyrightStatus(video.id, { verdict, summary: result.summary, checkedAt: new Date().toISOString() })
     } catch (err) {
-      setCopyrightError(err instanceof Error ? err.message : 'Copyright analysis failed.')
+      if (!silent) setCopyrightError(err instanceof Error ? err.message : 'Copyright analysis failed.')
     } finally {
-      setCopyrightLoading(false)
+      if (!silent) setCopyrightLoading(false)
     }
   }
   const downloadImageFile = async (imageId: string, url: string) => {
