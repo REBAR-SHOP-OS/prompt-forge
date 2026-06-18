@@ -373,25 +373,29 @@ export async function ensureMp4(
   }
 
   onProgress?.({ stage: 'encode', ratio: 0 })
+  let data: unknown
   try {
-    await runStage('encode', () => execWithTimeout('encode', buildEncodeArgs(inputName, outputName, 23, 1920)))
-  } catch (err1) {
-    // First attempt stalled/failed (often a slow 1080p single-thread encode).
-    // Retry once at 720p — markedly faster and lighter, so it completes where
-    // 1080p timed out — re-attaching the progress listeners to the fresh core.
-    console.warn('[ensureMp4] 1080p encode failed, retrying at 720p:', stringifyAny(err1))
-    lastRatio = 0
-    try { await ff.deleteFile(inputName) } catch { /* ignore */ }
-    ff = await runStage('load (retry)', () => resetFFmpeg())
-    try { ff.on('progress', onFfProgress) } catch { /* ignore */ }
-    try { ff.on('log', onFfLog) } catch { /* ignore */ }
-    await writeInput(ff)
-    await runStage('encode (retry)', () => execWithTimeout('encode (retry)', buildEncodeArgs(inputName, outputName, 28, 1280)))
-  }
+    try {
+      await runStage('encode', () => execWithTimeout('encode', buildEncodeArgs(inputName, outputName, 23, 1920)))
+    } catch (err1) {
+      // First attempt stalled/failed (often a slow 1080p single-thread encode).
+      // Retry once at 720p — markedly faster and lighter, so it completes where
+      // 1080p timed out — re-attaching the progress listeners to the fresh core.
+      console.warn('[ensureMp4] 1080p encode failed, retrying at 720p:', stringifyAny(err1))
+      lastRatio = 0
+      try { await ff.deleteFile(inputName) } catch { /* ignore */ }
+      ff = await runStage('load (retry)', () => resetFFmpeg())
+      try { ff.on('progress', onFfProgress) } catch { /* ignore */ }
+      try { ff.on('log', onFfLog) } catch { /* ignore */ }
+      await writeInput(ff)
+      await runStage('encode (retry)', () => execWithTimeout('encode (retry)', buildEncodeArgs(inputName, outputName, 28, 1280)))
+    }
 
-  onProgress?.({ stage: 'readout', ratio: 1 })
-  const data = await runStage('readFile', () => ff.readFile(outputName))
-  detach()
+    onProgress?.({ stage: 'readout', ratio: 1 })
+    data = await runStage('readFile', () => ff.readFile(outputName))
+  } finally {
+    detach()
+  }
   try { await ff.deleteFile(inputName) } catch { /* noop */ }
   try { await ff.deleteFile(outputName) } catch { /* noop */ }
 
