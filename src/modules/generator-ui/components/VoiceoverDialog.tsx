@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
-import { Download, LoaderCircle, Mic, Music2, Sparkles, X } from 'lucide-react'
+import { Download, LoaderCircle, Mic, Sparkles, X } from 'lucide-react'
 import { supabase } from '@/integrations/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
@@ -567,16 +567,6 @@ export function VoiceoverDialog({
         </div>
 
         <DialogFooter className="gap-2 sm:gap-2">
-          {onUseAsSoundtrack ? (
-            <Button
-              type="button"
-              onClick={handleUseAsSoundtrack}
-              disabled={!audioUrl}
-            >
-              <Music2 className="mr-2 h-4 w-4" />
-              Use as soundtrack
-            </Button>
-          ) : null}
           <Button
             type="button"
             variant="secondary"
