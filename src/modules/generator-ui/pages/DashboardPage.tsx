@@ -738,6 +738,8 @@ export default function DashboardPage() {
       if (lower.endsWith('.mov')) return 'mov'
       return 'mp4'
     }
+    const toastId = `mp4-${cardId}`
+    toast.loading('Preparing MP4…', { id: toastId })
     try {
       const fetchUrl = await proxiedVideoUrl(url)
       const response = await fetch(fetchUrl)
@@ -751,22 +753,43 @@ export default function DashboardPage() {
       // in-browser transcode and serve the file directly with its real
       // extension so it always opens in the gallery / player.
       if (isMobile || sourceIsMp4) {
-        triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${extFromType(blob.type, url)}`)
+        const realExt = extFromType(blob.type, url)
+        triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${realExt}`)
+        toast.success(`Downloaded .${realExt}`, { id: toastId })
         return
       }
 
       try {
-        const mp4 = await ensureMp4(blob, blob.type)
-        triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.mp4`)
+        const mp4 = await ensureMp4(blob, blob.type, (info) => {
+          if (info.stage === 'loading') {
+            toast.loading('Starting video engine…', { id: toastId })
+          } else if (info.stage === 'encode') {
+            toast.loading(`Converting to MP4… ${Math.round(info.ratio * 100)}%`, { id: toastId })
+          } else if (info.stage === 'readout') {
+            toast.loading('Finishing MP4…', { id: toastId })
+          }
+        })
+        if (mp4.extension === 'mp4') {
+          triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.mp4`)
+          toast.success('MP4 downloaded', { id: toastId })
+        } else {
+          // Engine was unavailable — ensureMp4 degraded to the original WebM.
+          // Be honest: hand it over with its real extension and explain.
+          triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.${mp4.extension}`)
+          toast.error(`Couldn't convert to MP4 — downloaded original .${mp4.extension} instead`, { id: toastId })
+        }
       } catch (transErr) {
         // Transcode failed (too large / OOM) — hand over the original file
         // with its TRUE extension (never mislabel WebM as .mp4) so the user
         // is never left without a download.
         console.warn('[download] MP4 transcode failed, serving original:', transErr)
-        triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${extFromType(blob.type, url)}`)
+        const realExt = extFromType(blob.type, url)
+        triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${realExt}`)
+        toast.error(`Couldn't convert to MP4 — downloaded original .${realExt} instead`, { id: toastId })
       }
     } catch (err) {
       console.error('Film download failed', err)
+      toast.error('Download failed — opening in a new tab', { id: toastId })
       window.open(url, '_blank')
     } finally {
       setDownloadingId(null)
