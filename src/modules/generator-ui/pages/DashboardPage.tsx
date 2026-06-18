@@ -738,8 +738,6 @@ export default function DashboardPage() {
       if (lower.endsWith('.mov')) return 'mov'
       return 'mp4'
     }
-    const toastId = `mp4-${cardId}`
-    toast.loading('Preparing MP4…', { id: toastId })
     try {
       const fetchUrl = await proxiedVideoUrl(url)
       const response = await fetch(fetchUrl)
@@ -753,43 +751,22 @@ export default function DashboardPage() {
       // in-browser transcode and serve the file directly with its real
       // extension so it always opens in the gallery / player.
       if (isMobile || sourceIsMp4) {
-        const realExt = extFromType(blob.type, url)
-        triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${realExt}`)
-        toast.success(`Downloaded .${realExt}`, { id: toastId })
+        triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${extFromType(blob.type, url)}`)
         return
       }
 
       try {
-        const mp4 = await ensureMp4(blob, blob.type, (info) => {
-          if (info.stage === 'loading') {
-            toast.loading('Starting video engine…', { id: toastId })
-          } else if (info.stage === 'encode') {
-            toast.loading(`Converting to MP4… ${Math.round(info.ratio * 100)}%`, { id: toastId })
-          } else if (info.stage === 'readout') {
-            toast.loading('Finishing MP4…', { id: toastId })
-          }
-        })
-        if (mp4.extension === 'mp4') {
-          triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.mp4`)
-          toast.success('MP4 downloaded', { id: toastId })
-        } else {
-          // Engine was unavailable — ensureMp4 degraded to the original WebM.
-          // Be honest: hand it over with its real extension and explain.
-          triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.${mp4.extension}`)
-          toast.error(`Couldn't convert to MP4 — downloaded original .${mp4.extension} instead`, { id: toastId })
-        }
+        const mp4 = await ensureMp4(blob, blob.type)
+        triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.mp4`)
       } catch (transErr) {
         // Transcode failed (too large / OOM) — hand over the original file
         // with its TRUE extension (never mislabel WebM as .mp4) so the user
         // is never left without a download.
         console.warn('[download] MP4 transcode failed, serving original:', transErr)
-        const realExt = extFromType(blob.type, url)
-        triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${realExt}`)
-        toast.error(`Couldn't convert to MP4 — downloaded original .${realExt} instead`, { id: toastId })
+        triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${extFromType(blob.type, url)}`)
       }
     } catch (err) {
       console.error('Film download failed', err)
-      toast.error('Download failed — opening in a new tab', { id: toastId })
       window.open(url, '_blank')
     } finally {
       setDownloadingId(null)
@@ -798,14 +775,12 @@ export default function DashboardPage() {
   // Fast, direct download: hands the browser a signed URL with a download
   // Content-Disposition so it streams the file natively — no in-browser fetch
   // into memory and no ffmpeg transcode. Falls back gracefully on failure.
-  const downloadDirect = async (cardId: string, url: string, namePrefix: string, forcedExt?: string) => {
+  const downloadDirect = async (cardId: string, url: string, namePrefix: string) => {
     if (downloadingId) return
     setDownloadingId(cardId)
     try {
       const lower = url.toLowerCase().split('?')[0]
-      const ext = forcedExt
-        ? forcedExt
-        : lower.endsWith('.mp4') ? 'mp4'
+      const ext = lower.endsWith('.mp4') ? 'mp4'
         : lower.endsWith('.webm') ? 'webm'
         : lower.endsWith('.mov') ? 'mov'
         : 'mp4'
@@ -7548,46 +7523,40 @@ export default function DashboardPage() {
                             </p>
                             <div className="flex shrink-0 items-center gap-1.5">
                               {job.status === 'completed' && video?.storage_path ? (
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <button
-                                      type="button"
-                                      disabled={downloadingId === job.id}
-                                      onClick={(event) => event.stopPropagation()}
-                                      aria-label="Download video"
-                                      title="Download"
-                                      className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
-                                    >
-                                      {downloadingId === job.id ? (
-                                        <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
-                                      ) : (
-                                        <Download className="h-3 w-3" aria-hidden="true" />
-                                      )}
-                                    </button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end" className="min-w-[120px]">
-                                    <DropdownMenuItem
-                                      disabled={downloadingId === job.id}
-                                      onClick={(event) => {
-                                        event.stopPropagation()
-                                        if (!video) return
-                                        void downloadAsMp4(job.id, video.storage_path, 'film')
-                                      }}
-                                    >
-                                      Download as MP4
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      disabled={downloadingId === job.id}
-                                      onClick={(event) => {
-                                        event.stopPropagation()
-                                        if (!video) return
-                                        void downloadDirect(job.id, video.storage_path, 'film', 'webm')
-                                      }}
-                                    >
-                                      Download as WEBM
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
+                                <>
+                                  <button
+                                    type="button"
+                                    disabled={downloadingId === job.id}
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      if (!video) return
+                                      void downloadDirect(job.id, video.storage_path, 'film')
+                                    }}
+                                    aria-label="Download video (fast)"
+                                    title="Download (fast)"
+                                    className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                  >
+                                    {downloadingId === job.id ? (
+                                      <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                    ) : (
+                                      <Download className="h-3 w-3" aria-hidden="true" />
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={downloadingId === job.id}
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      if (!video) return
+                                      void downloadAsMp4(job.id, video.storage_path, 'film')
+                                    }}
+                                    aria-label="Download as MP4 (converted)"
+                                    title="Download as MP4"
+                                    className="grid h-6 shrink-0 place-items-center rounded-full border border-white/10 px-1.5 text-[9px] font-semibold leading-none text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                  >
+                                    MP4
+                                  </button>
+                                </>
                               ) : null}
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>
@@ -9304,44 +9273,40 @@ export default function DashboardPage() {
                       </p>
                       <div className="flex shrink-0 items-center gap-1">
                         {variant === 'final' && video.video?.storage_path ? (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button
-                                type="button"
-                                disabled={downloadingId === video.id}
-                                onClick={(event) => event.stopPropagation()}
-                                aria-label="Download video"
-                                title="Download"
-                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
-                              >
-                                {downloadingId === video.id ? (
-                                  <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
-                                ) : (
-                                  <Download className="h-3 w-3" aria-hidden="true" />
-                                )}
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="min-w-[120px]">
-                              <DropdownMenuItem
-                                disabled={downloadingId === video.id}
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  void downloadAsMp4(video.id, video.video!.storage_path, 'final-film')
-                                }}
-                              >
-                                Download as MP4
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                disabled={downloadingId === video.id}
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  void downloadDirect(video.id, video.video!.storage_path, 'final-film', 'webm')
-                                }}
-                              >
-                                Download as WEBM
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          <>
+                            <button
+                              type="button"
+                              disabled={downloadingId === video.id}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                // Fast direct download (no in-browser transcode).
+                                void downloadDirect(video.id, video.video!.storage_path, 'final-film')
+                              }}
+                              aria-label="Download video (fast)"
+                              title="Download (fast)"
+                              className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                            >
+                              {downloadingId === video.id ? (
+                                <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                              ) : (
+                                <Download className="h-3 w-3" aria-hidden="true" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={downloadingId === video.id}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                // Compatibility path: transcode WebM → standard MP4.
+                                void downloadAsMp4(video.id, video.video!.storage_path, 'final-film')
+                              }}
+                              aria-label="Download as MP4 (converted)"
+                              title="Download as MP4"
+                              className="grid h-6 shrink-0 place-items-center rounded-full border border-white/10 px-1.5 text-[9px] font-semibold leading-none text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                            >
+                              MP4
+                            </button>
+                          </>
                         ) : null}
                         {(() => {
                           const audio = projectAudio[video.id]
