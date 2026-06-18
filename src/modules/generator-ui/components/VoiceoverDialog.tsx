@@ -4,6 +4,13 @@ import { supabase } from '@/integrations/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { audioToMp4 } from '@/modules/generator-ui/lib/transcodeToMp4'
+import {
   SoundtrackWaveform,
   type SoundtrackWaveformHandle,
 } from '@/modules/generator-ui/components/SoundtrackWaveform'
