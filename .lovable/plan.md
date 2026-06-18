@@ -1,61 +1,35 @@
-# Reliable server-side MP4 export for Final Films
+## Problem
 
-## Goal
-"Download as MP4" must always produce a real, broadly-compatible MP4 (H.264 + AAC), without depending on the user's browser/device. Today it transcodes WebM → MP4 in the browser with ffmpeg.wasm, which is slow, can hang ~45–90s, and silently OOMs — so it looks like nothing happens. "Download as WEBM" works only because it streams the stored file directly.
+In **Library → Final Videos**, clicking the download icon → **Download as MP4** appears to do nothing.
 
-## Approach
-Move the conversion to the backend using an async job pattern: the client requests an MP4 export, the backend transcodes the stored WebM and saves a real `.mp4` next to it, then the client downloads that file directly. Re-downloads are instant because the MP4 is cached.
+Root cause (in `src/modules/generator-ui/pages/DashboardPage.tsx`, `downloadAsMp4`, lines ~709–774):
 
-```text
-Click "Download as MP4"
-   │
-   ▼
-edge fn: film-export-mp4 ── (already have mp4?) ──► return ready + path
-   │ no
-   ├─ create export row (status=processing), return 202
-   │
-   └─ background (EdgeRuntime.waitUntil):
-         fetch source webm from storage
-         transcode → H.264/AAC mp4 (+faststart)
-         upload mp4 to merged-videos
-         update row: status=completed, mp4_path  (or failed, error)
-   ▲
-client polls export row (RLS-protected) ──► when completed: signed-URL download of the mp4
-```
+1. Final films are **WebM** (produced by MediaRecorder). To make a real `.mp4`, the code runs the blob through `ensureMp4` → **ffmpeg.wasm**, which must download/boot a ~30 MB WASM core and then transcode.
+2. During this entire process there is **no visual feedback** — only the small spinner on the icon. Booting ffmpeg + transcoding can take 20–90s, so to the user it looks frozen / like nothing happened.
+3. On any ffmpeg failure (core blocked, OOM, timeout) `ensureMp4` **silently degrades** and returns the original WebM, or `downloadAsMp4`'s `catch` does `window.open(url)`. Either way the user never gets an MP4 and gets no explanation.
 
-## Steps
+So the feature is "working as coded" but is effectively broken UX: slow, silent, and silently falling back to non-MP4.
 
-### 1. Database (migration)
-- New table `public.generator_film_exports`:
-  - `user_id` (owner), `source_asset_id` (the Final Film `generator_video_assets.id`), `source_storage_path`, `mp4_storage_path` (nullable), `status` (`processing`/`completed`/`failed`), `error_message` (nullable), standard id/created_at/updated_at.
-  - Unique-ish lookup on `(user_id, source_asset_id)` so we reuse a finished export.
-- GRANTs: `authenticated` (select/insert/update/delete scoped to owner), `service_role` ALL. No `anon`.
-- RLS: users can only see/manage their own rows; the edge function writes via service role.
-- `updated_at` trigger.
+## Fix (frontend only, safe & non-destructive)
 
-### 2. Edge function `film-export-mp4`
-- Validate JWT in code, parse `{ assetId }` with zod.
-- Confirm the asset belongs to the caller and read its `storage_path`.
-- If a completed export already exists with a valid `mp4_storage_path`, return it immediately (`status: "completed"`).
-- Otherwise upsert a `processing` row, return **202** immediately, and run the transcode in `EdgeRuntime.waitUntil`:
-  - Download the source from the `merged-videos` bucket (service role).
-  - Transcode to standard MP4 (H.264 video, AAC audio, `+faststart`).
-  - Upload to `merged-videos` as `<original>-mp4/<id>.mp4`.
-  - Update the row to `completed` with the path, or `failed` with the error.
-- All responses include CORS headers.
+All changes confined to `downloadAsMp4` in `DashboardPage.tsx`. No backend, no ffmpeg-engine logic changes.
 
-### 3. Client (`DashboardPage.tsx`)
-- Rewrite `downloadAsMp4` to:
-  - Call `supabase.functions.invoke('film-export-mp4', { assetId })`.
-  - If `completed`, immediately download the MP4 via a signed URL (reuse existing `downloadDirect` logic).
-  - If `processing`, poll the `generator_film_exports` row every ~2s (with a sensible timeout) while showing live toast feedback ("Converting to MP4…"), then download when `completed`.
-  - On `failed`/timeout, show a clear error toast and offer the WEBM download as fallback.
-- Keep the existing spinner on the download icon during the wait.
-- Remove the in-browser ffmpeg.wasm path from the download flow (the `transcodeToMp4` lib stays in the repo but is no longer used for downloads).
-- "Download as WEBM" stays exactly as-is.
+1. **Immediate feedback** — on click, show a toast ("Preparing MP4…") so the user knows work started.
+2. **Live progress** — pass an `onProgress` callback into `ensureMp4` and update the toast text with the stage (loading engine / encoding %). This makes the long transcode visibly active instead of frozen.
+3. **Honest result reporting**:
+   - On real MP4 success → success toast ("MP4 downloaded").
+   - When ffmpeg is unavailable / transcode fails and we fall back to the original WebM → show a clear warning toast explaining the MP4 conversion failed and the original (WebM) was downloaded instead, rather than silently handing over a different format.
+   - On total failure (fetch error) → error toast instead of a silent `window.open`.
+4. **Keep the existing mobile / already-MP4 fast paths** unchanged (those already download correctly and instantly).
 
-## Technical notes / risks
-- Reels/Final Films are short, so file sizes are modest; transcoding fits within an edge function. If a very long/large film exceeds backend memory/time, the row is marked `failed` and the user is offered the WEBM download — never left with a broken/empty result.
-- The MP4 is cached per Final Film, so the first download does the work and later ones are instant.
-- No changes to the Final Film generation pipeline (still records WebM); only the download path changes.
-- Backend transcode runs as `service_role`; ownership is verified before any work starts.
+## Verification
+
+After the change I will:
+1. Run the build/typecheck.
+2. Open the live preview, go to Library → Final Videos, click the download icon → Download as MP4, and confirm: the toast appears, progress updates, and a `.mp4` file actually downloads (or a clear message if the source is too large to transcode in-browser).
+3. Confirm "Download as WEBM" still works (unchanged path).
+
+## Notes / risk
+
+- In-browser ffmpeg.wasm transcoding is inherently heavy; very large/long final films may still be too big to convert in the browser (`MAX_TRANSCODE_BLOB_BYTES` = 800 MB, plus practical RAM limits). For those cases the user will now get a clear message instead of silence. A fully reliable server-side transcode would be a larger, separate change — out of scope unless you want it.
+- No changes to business logic, storage, or the ffmpeg engine itself — purely UX/feedback hardening around the existing call.
