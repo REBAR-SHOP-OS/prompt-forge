@@ -247,14 +247,38 @@ export function VoiceoverDialog({
     }
   }
 
-  function handleDownload() {
-    if (!audioUrl) return
+  function triggerDownload(url: string, filename: string) {
     const a = document.createElement('a')
-    a.href = audioUrl
-    a.download = `voiceover-${gender}-${tone}-${Date.now()}.wav`
+    a.href = url
+    a.download = filename
     document.body.appendChild(a)
     a.click()
     a.remove()
+  }
+
+  function handleDownloadWav() {
+    if (!audioUrl) return
+    triggerDownload(audioUrl, `voiceover-${gender}-${tone}-${Date.now()}.wav`)
+  }
+
+  async function handleDownloadMp4() {
+    if (!audioUrl || isExportingMp4) return
+    setIsExportingMp4(true)
+    const toastId = toast.loading('Preparing MP4…')
+    try {
+      const res = await fetch(audioUrl)
+      const blob = await res.blob()
+      const mp4 = await audioToMp4(blob, blob.type)
+      const url = URL.createObjectURL(mp4)
+      triggerDownload(url, `voiceover-${gender}-${tone}-${Date.now()}.mp4`)
+      setTimeout(() => { try { URL.revokeObjectURL(url) } catch { /* ignore */ } }, 10_000)
+      toast.success('MP4 ready', { id: toastId })
+    } catch (err) {
+      console.error('MP4 export failed', err)
+      toast.error('Could not create MP4', { id: toastId })
+    } finally {
+      setIsExportingMp4(false)
+    }
   }
 
   function handleUseAsSoundtrack() {
