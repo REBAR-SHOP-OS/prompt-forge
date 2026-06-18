@@ -221,6 +221,7 @@ export function VoiceoverDialog({
       }
       const url = URL.createObjectURL(blob)
       lastUrlRef.current = url
+      resetPreview()
       setAudioUrl(url)
       if (payload.warning) toast.warning(payload.warning)
       // Persist to Storage › Audio so every generated voiceover is saved.
