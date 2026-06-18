@@ -775,12 +775,14 @@ export default function DashboardPage() {
   // Fast, direct download: hands the browser a signed URL with a download
   // Content-Disposition so it streams the file natively — no in-browser fetch
   // into memory and no ffmpeg transcode. Falls back gracefully on failure.
-  const downloadDirect = async (cardId: string, url: string, namePrefix: string) => {
+  const downloadDirect = async (cardId: string, url: string, namePrefix: string, forcedExt?: string) => {
     if (downloadingId) return
     setDownloadingId(cardId)
     try {
       const lower = url.toLowerCase().split('?')[0]
-      const ext = lower.endsWith('.mp4') ? 'mp4'
+      const ext = forcedExt
+        ? forcedExt
+        : lower.endsWith('.mp4') ? 'mp4'
         : lower.endsWith('.webm') ? 'webm'
         : lower.endsWith('.mov') ? 'mov'
         : 'mp4'
