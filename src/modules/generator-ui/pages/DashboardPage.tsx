@@ -9319,7 +9319,6 @@ export default function DashboardPage() {
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
-                          </>
                         ) : null}
                         {(() => {
                           const audio = projectAudio[video.id]
