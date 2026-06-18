@@ -197,7 +197,7 @@ async function runStage<T>(label: string, fn: () => Promise<T>): Promise<T> {
 // browser WASM encoder that has to fit in ~2 GB. The scale filter caps
 // width at 1920px so a 4K source can't blow the heap. yuv420p keeps the
 // output compatible with QuickTime / mobile gallery players.
-function buildEncodeArgs(input: string, output: string, crf: number): string[] {
+function buildEncodeArgs(input: string, output: string, crf: number, maxWidth = 1920): string[] {
   return [
     '-i', input,
     '-c:v', 'libx264',
@@ -207,12 +207,52 @@ function buildEncodeArgs(input: string, output: string, crf: number): string[] {
     '-g', '60',
     '-threads', '1',
     '-pix_fmt', 'yuv420p',
-    '-vf', "scale='min(1920,iw)':-2",
+    '-vf', `scale='min(${maxWidth},iw)':-2`,
     '-c:a', 'aac',
     '-b:a', '96k',
     '-movflags', '+faststart',
     output,
   ]
+}
+
+/**
+ * Probe a media blob's duration (seconds) via a hidden <video>. MediaRecorder
+ * WebM has no duration in its header, so ffmpeg can't compute a progress ratio;
+ * knowing the duration up front lets us derive real progress from ffmpeg's log
+ * `time=` lines. Returns null when the duration can't be determined.
+ */
+function probeDurationSeconds(blob: Blob): Promise<number | null> {
+  return new Promise((resolve) => {
+    try {
+      const url = URL.createObjectURL(blob)
+      const v = document.createElement('video')
+      v.preload = 'metadata'
+      v.muted = true
+      const done = (val: number | null) => {
+        try { URL.revokeObjectURL(url) } catch { /* ignore */ }
+        resolve(val)
+      }
+      const timer = setTimeout(() => done(null), 8_000)
+      v.onloadedmetadata = () => {
+        clearTimeout(timer)
+        const d = v.duration
+        done(Number.isFinite(d) && d > 0 ? d : null)
+      }
+      v.onerror = () => { clearTimeout(timer); done(null) }
+      v.src = url
+    } catch {
+      resolve(null)
+    }
+  })
+}
+
+/** Parse ffmpeg log line `time=HH:MM:SS.xx` into seconds, or null. */
+function parseFfmpegTimeSeconds(line: string): number | null {
+  const m = /time=(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(line)
+  if (!m) return null
+  const h = Number(m[1]), min = Number(m[2]), s = Number(m[3])
+  if (![h, min, s].every(Number.isFinite)) return null
+  return h * 3600 + min * 60 + s
 }
 
 /**
