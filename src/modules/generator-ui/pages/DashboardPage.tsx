@@ -696,6 +696,10 @@ export default function DashboardPage() {
   const [copyrightLoading, setCopyrightLoading] = useState(false)
   const [copyrightResult, setCopyrightResult] = useState<CopyrightResult | null>(null)
   const [copyrightError, setCopyrightError] = useState<string | null>(null)
+  // Persisted per-video copyright verdict (job id -> status). Drives the
+  // colored shield icon and lets the automatic one-time check skip done videos.
+  type CopyrightStatus = { verdict: 'approved' | 'caution' | 'rejected'; summary?: string; checkedAt: string }
+  const [copyrightStatuses, setCopyrightStatuses] = useState<Record<string, CopyrightStatus>>({})
 
   // Download a film as a standard, broadly-compatible MP4. Final Film output
   // is WebM (MediaRecorder), which fails in QuickTime / WMP / mobile galleries.
