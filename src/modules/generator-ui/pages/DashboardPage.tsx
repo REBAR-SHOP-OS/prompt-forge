@@ -2842,6 +2842,33 @@ export default function DashboardPage() {
     }
   }, [mergedEntries, draftEntries, generatedVideos, approvedIds])
 
+  // Automatic, one-time copyright review for every saved Final Film. Any final
+  // video that has a stored video but no persisted verdict yet is checked once
+  // (sequentially, to respect AI rate limits). Results persist, so a video is
+  // never re-checked automatically; the shield icon stays colored thereafter.
+  const autoCopyrightInFlight = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (!userId) return
+    const pending = finalizedItems.filter(
+      (v) => v.video?.storage_path && !copyrightStatuses[v.id] && !autoCopyrightInFlight.current.has(v.id),
+    )
+    if (pending.length === 0) return
+    let cancelled = false
+    void (async () => {
+      for (const v of pending) {
+        if (cancelled) break
+        autoCopyrightInFlight.current.add(v.id)
+        try {
+          await runCopyrightCheck(v, true)
+        } finally {
+          autoCopyrightInFlight.current.delete(v.id)
+        }
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finalizedItems, copyrightStatuses, userId])
+
   // ----- Auto-snapshot the active workspace into a Draft project -----
   // Any time the workspace has at least one live clip/image, mirror it to a
   // Draft entry + per-draft snapshot so the chain survives refresh & Start
