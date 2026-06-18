@@ -131,6 +131,7 @@ export function VoiceoverDialog({
   const [previewRange, setPreviewRange] = useState<[number, number]>([0, 0])
   const [previewTimeline, setPreviewTimeline] = useState<[number, number]>([0, 0])
   const [previewDuration, setPreviewDuration] = useState(0)
+  const [isExportingMp4, setIsExportingMp4] = useState(false)
   const previewWaveformRef = useRef<SoundtrackWaveformHandle | null>(null)
 
   function resolveDurationSec(): number | undefined {
