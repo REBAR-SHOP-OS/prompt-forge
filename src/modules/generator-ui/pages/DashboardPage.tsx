@@ -850,15 +850,16 @@ export default function DashboardPage() {
 
   // Persist a verdict into the per-video status map (and localStorage, which the
   // library-sync layer mirrors to the backend so it survives refresh/devices).
-  const saveCopyrightStatus = useCallback((jobId: string, status: CopyrightStatus) => {
+  function saveCopyrightStatus(jobId: string, status: CopyrightStatus) {
     setCopyrightStatuses((prev) => {
       const next = { ...prev, [jobId]: status }
-      if (userId) {
-        try { window.localStorage.setItem(`copyright-status:${userId}`, JSON.stringify(next)) } catch { /* ignore */ }
+      const uid = sessionRef.current?.user?.id ?? null
+      if (uid) {
+        try { window.localStorage.setItem(`copyright-status:${uid}`, JSON.stringify(next)) } catch { /* ignore */ }
       }
       return next
     })
-  }, [userId])
+  }
 
   // Run a real AI copyright review of the final video + its music/voiceover.
   // `silent` runs the check in the background (auto check) without opening the dialog.
