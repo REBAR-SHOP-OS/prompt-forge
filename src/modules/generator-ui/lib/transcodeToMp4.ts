@@ -309,14 +309,45 @@ export async function ensureMp4(
   const inputName = `in.${inExt}`
   const outputName = 'out.mp4'
 
-  // Wire ffmpeg's native progress event into the caller-supplied callback.
-  // This is what actually makes the UI move past 95% during the encode.
+  // Probe the real duration so we can derive progress from ffmpeg's log lines
+  // even when the WebM header carries no duration (the usual MediaRecorder case
+  // that left the UI frozen at 0%).
+  const durationSec = await probeDurationSeconds(blob)
+
+  // Aggregate progress from three sources and only ever move forward:
+  //  - native `progress` event (works when duration is known to ffmpeg)
+  //  - parsed `time=` from the log stream / duration probe (the reliable path)
+  //  - a slow heartbeat so a long single step never looks frozen.
+  let lastRatio = 0
+  const report = (r: number) => {
+    const clamped = Math.max(0, Math.min(0.99, r))
+    if (clamped <= lastRatio) return
+    lastRatio = clamped
+    onProgress?.({ stage: 'encode', ratio: clamped })
+  }
+
   const onFfProgress = (e: { progress: number }) => {
-    if (!onProgress) return
-    const r = Math.max(0, Math.min(0.99, e.progress || 0))
-    onProgress({ stage: 'encode', ratio: r })
+    if (Number.isFinite(e?.progress)) report(e.progress)
+  }
+  const onFfLog = (e: { message: string }) => {
+    if (!durationSec) return
+    const t = parseFfmpegTimeSeconds(e?.message || '')
+    if (t != null) report(t / durationSec)
   }
   try { ff.on('progress', onFfProgress) } catch { /* ignore */ }
+  try { ff.on('log', onFfLog) } catch { /* ignore */ }
+
+  // Heartbeat: nudge progress upward slowly while encoding, capped at 95%, so
+  // the percentage is never visually stuck even if both signals go quiet.
+  const heartbeat = setInterval(() => {
+    if (lastRatio < 0.95) report(lastRatio + 0.01)
+  }, 1_500)
+
+  const detach = () => {
+    clearInterval(heartbeat)
+    try { ff.off('progress', onFfProgress) } catch { /* ignore */ }
+    try { ff.off('log', onFfLog) } catch { /* ignore */ }
+  }
 
   const writeInput = async (instance: FFmpeg) => {
     await runStage('writeFile', async () => {
@@ -326,8 +357,8 @@ export async function ensureMp4(
   await writeInput(ff)
 
   // Per-exec timeout so a hung ffmpeg call surfaces a real error instead of
-  // leaving the UI stuck on 95% forever. On timeout we terminate the WASM
-  // instance to release its heap.
+  // leaving the UI stuck forever. On timeout we terminate the WASM instance to
+  // release its heap.
   const execWithTimeout = async (label: string, args: string[]) => {
     try {
       await withTimeout(ff.exec(args), FFMPEG_EXEC_TIMEOUT_MS, `ffmpeg ${label}`)
@@ -343,19 +374,24 @@ export async function ensureMp4(
 
   onProgress?.({ stage: 'encode', ratio: 0 })
   try {
-    await runStage('encode', () => execWithTimeout('encode', buildEncodeArgs(inputName, outputName, 23)))
+    await runStage('encode', () => execWithTimeout('encode', buildEncodeArgs(inputName, outputName, 23, 1920)))
   } catch (err1) {
-    console.warn('[ensureMp4] first encode failed, retrying after reset:', stringifyAny(err1))
+    // First attempt stalled/failed (often a slow 1080p single-thread encode).
+    // Retry once at 720p — markedly faster and lighter, so it completes where
+    // 1080p timed out — re-attaching the progress listeners to the fresh core.
+    console.warn('[ensureMp4] 1080p encode failed, retrying at 720p:', stringifyAny(err1))
+    lastRatio = 0
     try { await ff.deleteFile(inputName) } catch { /* ignore */ }
     ff = await runStage('load (retry)', () => resetFFmpeg())
     try { ff.on('progress', onFfProgress) } catch { /* ignore */ }
+    try { ff.on('log', onFfLog) } catch { /* ignore */ }
     await writeInput(ff)
-    await runStage('encode (retry)', () => execWithTimeout('encode (retry)', buildEncodeArgs(inputName, outputName, 28)))
+    await runStage('encode (retry)', () => execWithTimeout('encode (retry)', buildEncodeArgs(inputName, outputName, 28, 1280)))
   }
 
   onProgress?.({ stage: 'readout', ratio: 1 })
   const data = await runStage('readFile', () => ff.readFile(outputName))
-  try { ff.off('progress', onFfProgress) } catch { /* ignore */ }
+  detach()
   try { await ff.deleteFile(inputName) } catch { /* noop */ }
   try { await ff.deleteFile(outputName) } catch { /* noop */ }
 
