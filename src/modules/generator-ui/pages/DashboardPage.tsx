@@ -9404,20 +9404,36 @@ export default function DashboardPage() {
                             </Popover>
                           )
                         })()}
-                        {variant === 'final' && video.video?.storage_path ? (
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              void runCopyrightCheck(video)
-                            }}
-                            aria-label="Copyright check"
-                            title="Copyright check"
-                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-violet-300/40 hover:bg-violet-300/10 hover:text-violet-200"
-                          >
-                            <Shield className="h-3 w-3" aria-hidden="true" />
-                          </button>
-                        ) : null}
+                        {variant === 'final' && video.video?.storage_path ? (() => {
+                          const cr = copyrightStatuses[video.id]
+                          const checking = autoCopyrightInFlight.current.has(video.id) || (copyrightLoading && copyrightJob?.id === video.id)
+                          const tone = cr?.verdict === 'approved'
+                            ? 'border-emerald-300/50 bg-emerald-300/10 text-emerald-300 hover:border-emerald-300/70'
+                            : cr?.verdict === 'rejected'
+                            ? 'border-rose-400/50 bg-rose-400/10 text-rose-400 hover:border-rose-400/70'
+                            : cr?.verdict === 'caution'
+                            ? 'border-amber-300/50 bg-amber-300/10 text-amber-300 hover:border-amber-300/70'
+                            : 'border-white/10 text-zinc-400 hover:border-violet-300/40 hover:bg-violet-300/10 hover:text-violet-200'
+                          const label = cr ? `Copyright: ${cr.verdict}` : 'Copyright check'
+                          return (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                void runCopyrightCheck(video)
+                              }}
+                              aria-label={label}
+                              title={cr?.summary ? `${label} — ${cr.summary}` : label}
+                              className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border transition ${tone}`}
+                            >
+                              {checking ? (
+                                <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                              ) : (
+                                <Shield className="h-3 w-3" aria-hidden="true" />
+                              )}
+                            </button>
+                          )
+                        })() : null}
                         {variant === 'final' ? (
                           <button
                             type="button"
