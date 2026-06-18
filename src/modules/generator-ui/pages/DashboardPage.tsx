@@ -1536,7 +1536,16 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
-  // Persist a music/voiceover source into the public MERGED_BUCKET so it
+  // Hydrate persisted copyright verdicts (job id -> status) for the colored shield.
+  const copyrightStatusKey = userId ? `copyright-status:${userId}` : null
+  useEffect(() => {
+    if (!copyrightStatusKey) { setCopyrightStatuses({}); return }
+    try {
+      const raw = window.localStorage.getItem(copyrightStatusKey)
+      const obj = raw ? (JSON.parse(raw) as Record<string, CopyrightStatus>) : {}
+      setCopyrightStatuses(obj && typeof obj === 'object' ? obj : {})
+    } catch { setCopyrightStatuses({}) }
+  }, [copyrightStatusKey])
   // survives refresh and project switches. Returns a durable public URL, or
   // null on failure. Reused by both Final Film finalize and Draft snapshots.
   const persistAudioToStorage = useCallback(
