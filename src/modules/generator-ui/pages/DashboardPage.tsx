@@ -696,6 +696,10 @@ export default function DashboardPage() {
   const [copyrightLoading, setCopyrightLoading] = useState(false)
   const [copyrightResult, setCopyrightResult] = useState<CopyrightResult | null>(null)
   const [copyrightError, setCopyrightError] = useState<string | null>(null)
+  // Persisted per-video copyright verdict (job id -> status). Drives the
+  // colored shield icon and lets the automatic one-time check skip done videos.
+  type CopyrightStatus = { verdict: 'approved' | 'caution' | 'rejected'; summary?: string; checkedAt: string }
+  const [copyrightStatuses, setCopyrightStatuses] = useState<Record<string, CopyrightStatus>>({})
 
   // Download a film as a standard, broadly-compatible MP4. Final Film output
   // is WebM (MediaRecorder), which fails in QuickTime / WMP / mobile galleries.
@@ -844,14 +848,30 @@ export default function DashboardPage() {
     }
   }
 
+  // Persist a verdict into the per-video status map (and localStorage, which the
+  // library-sync layer mirrors to the backend so it survives refresh/devices).
+  function saveCopyrightStatus(jobId: string, status: CopyrightStatus) {
+    setCopyrightStatuses((prev) => {
+      const next = { ...prev, [jobId]: status }
+      const uid = session?.user?.id ?? null
+      if (uid) {
+        try { window.localStorage.setItem(`copyright-status:${uid}`, JSON.stringify(next)) } catch { /* ignore */ }
+      }
+      return next
+    })
+  }
+
   // Run a real AI copyright review of the final video + its music/voiceover.
-  const runCopyrightCheck = async (video: JobDetail) => {
+  // `silent` runs the check in the background (auto check) without opening the dialog.
+  const runCopyrightCheck = async (video: JobDetail, silent = false) => {
     const storagePath = video.video?.storage_path
     if (!storagePath) return
-    setCopyrightJob(video)
-    setCopyrightResult(null)
-    setCopyrightError(null)
-    setCopyrightLoading(true)
+    if (!silent) {
+      setCopyrightJob(video)
+      setCopyrightResult(null)
+      setCopyrightError(null)
+      setCopyrightLoading(true)
+    }
     try {
       const audio = projectAudio[video.id]
       const [videoUrl, musicUrl, voiceoverUrl] = await Promise.all([
@@ -876,11 +896,15 @@ export default function DashboardPage() {
       }
       const result = (data as { result?: CopyrightResult } | null)?.result
       if (!result) throw new Error('No analysis result returned.')
-      setCopyrightResult(result)
+      if (!silent) setCopyrightResult(result)
+      const verdict = (['approved', 'caution', 'rejected'] as const).includes(result.verdict as 'approved')
+        ? (result.verdict as CopyrightStatus['verdict'])
+        : 'caution'
+      saveCopyrightStatus(video.id, { verdict, summary: result.summary, checkedAt: new Date().toISOString() })
     } catch (err) {
-      setCopyrightError(err instanceof Error ? err.message : 'Copyright analysis failed.')
+      if (!silent) setCopyrightError(err instanceof Error ? err.message : 'Copyright analysis failed.')
     } finally {
-      setCopyrightLoading(false)
+      if (!silent) setCopyrightLoading(false)
     }
   }
   const downloadImageFile = async (imageId: string, url: string) => {
@@ -1511,6 +1535,17 @@ export default function DashboardPage() {
       window.localStorage.setItem(projectAudioKey, JSON.stringify(next))
     } catch { /* ignore */ }
   }
+
+  // Hydrate persisted copyright verdicts (job id -> status) for the colored shield.
+  const copyrightStatusKey = userId ? `copyright-status:${userId}` : null
+  useEffect(() => {
+    if (!copyrightStatusKey) { setCopyrightStatuses({}); return }
+    try {
+      const raw = window.localStorage.getItem(copyrightStatusKey)
+      const obj = raw ? (JSON.parse(raw) as Record<string, CopyrightStatus>) : {}
+      setCopyrightStatuses(obj && typeof obj === 'object' ? obj : {})
+    } catch { setCopyrightStatuses({}) }
+  }, [copyrightStatusKey])
 
   // Persist a music/voiceover source into the public MERGED_BUCKET so it
   // survives refresh and project switches. Returns a durable public URL, or
@@ -2806,6 +2841,33 @@ export default function DashboardPage() {
       draftItems: drafts,
     }
   }, [mergedEntries, draftEntries, generatedVideos, approvedIds])
+
+  // Automatic, one-time copyright review for every saved Final Film. Any final
+  // video that has a stored video but no persisted verdict yet is checked once
+  // (sequentially, to respect AI rate limits). Results persist, so a video is
+  // never re-checked automatically; the shield icon stays colored thereafter.
+  const autoCopyrightInFlight = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (!userId) return
+    const pending = finalizedItems.filter(
+      (v) => v.video?.storage_path && !copyrightStatuses[v.id] && !autoCopyrightInFlight.current.has(v.id),
+    )
+    if (pending.length === 0) return
+    let cancelled = false
+    void (async () => {
+      for (const v of pending) {
+        if (cancelled) break
+        autoCopyrightInFlight.current.add(v.id)
+        try {
+          await runCopyrightCheck(v, true)
+        } finally {
+          autoCopyrightInFlight.current.delete(v.id)
+        }
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finalizedItems, copyrightStatuses, userId])
 
   // ----- Auto-snapshot the active workspace into a Draft project -----
   // Any time the workspace has at least one live clip/image, mirror it to a
@@ -9342,20 +9404,36 @@ export default function DashboardPage() {
                             </Popover>
                           )
                         })()}
-                        {variant === 'final' && video.video?.storage_path ? (
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              void runCopyrightCheck(video)
-                            }}
-                            aria-label="Copyright check"
-                            title="Copyright check"
-                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-violet-300/40 hover:bg-violet-300/10 hover:text-violet-200"
-                          >
-                            <Shield className="h-3 w-3" aria-hidden="true" />
-                          </button>
-                        ) : null}
+                        {variant === 'final' && video.video?.storage_path ? (() => {
+                          const cr = copyrightStatuses[video.id]
+                          const checking = autoCopyrightInFlight.current.has(video.id) || (copyrightLoading && copyrightJob?.id === video.id)
+                          const tone = cr?.verdict === 'approved'
+                            ? 'border-emerald-300/50 bg-emerald-300/10 text-emerald-300 hover:border-emerald-300/70'
+                            : cr?.verdict === 'rejected'
+                            ? 'border-rose-400/50 bg-rose-400/10 text-rose-400 hover:border-rose-400/70'
+                            : cr?.verdict === 'caution'
+                            ? 'border-amber-300/50 bg-amber-300/10 text-amber-300 hover:border-amber-300/70'
+                            : 'border-white/10 text-zinc-400 hover:border-violet-300/40 hover:bg-violet-300/10 hover:text-violet-200'
+                          const label = cr ? `Copyright: ${cr.verdict}` : 'Copyright check'
+                          return (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                void runCopyrightCheck(video)
+                              }}
+                              aria-label={label}
+                              title={cr?.summary ? `${label} — ${cr.summary}` : label}
+                              className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border transition ${tone}`}
+                            >
+                              {checking ? (
+                                <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                              ) : (
+                                <Shield className="h-3 w-3" aria-hidden="true" />
+                              )}
+                            </button>
+                          )
+                        })() : null}
                         {variant === 'final' ? (
                           <button
                             type="button"
