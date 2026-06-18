@@ -78,6 +78,69 @@ async function fetchInline(url: string, cap: number, fallbackMime: string) {
   return { mimeType, data: toBase64(buf) };
 }
 
+// Upload large media to the Gemini File API (resumable upload) and wait until
+// it is processed (ACTIVE), returning a part referencing the uploaded file.
+async function uploadToGeminiFile(url: string, cap: number, fallbackMime: string, apiKey: string) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`fetch ${resp.status}`);
+  const mimeType = resp.headers.get("content-type") || fallbackMime;
+  const bytes = new Uint8Array(await resp.arrayBuffer());
+  if (bytes.byteLength > cap) throw new Error("too_large");
+
+  // 1) Start a resumable upload session.
+  const startResp = await fetch(
+    `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: {
+        "X-Goog-Upload-Protocol": "resumable",
+        "X-Goog-Upload-Command": "start",
+        "X-Goog-Upload-Header-Content-Length": String(bytes.byteLength),
+        "X-Goog-Upload-Header-Content-Type": mimeType,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ file: { display_name: "copyright-check-video" } }),
+    },
+  );
+  if (!startResp.ok) throw new Error(`upload_start ${startResp.status}`);
+  const uploadUrl = startResp.headers.get("x-goog-upload-url");
+  await startResp.text();
+  if (!uploadUrl) throw new Error("no_upload_url");
+
+  // 2) Upload the bytes and finalize.
+  const uploadResp = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      "X-Goog-Upload-Offset": "0",
+      "X-Goog-Upload-Command": "upload, finalize",
+      "Content-Length": String(bytes.byteLength),
+    },
+    body: bytes,
+  });
+  if (!uploadResp.ok) throw new Error(`upload_bytes ${uploadResp.status}`);
+  const uploaded = await uploadResp.json();
+  let fileName: string = uploaded?.file?.name ?? "";
+  let fileUri: string = uploaded?.file?.uri ?? "";
+  let state: string = uploaded?.file?.state ?? "PROCESSING";
+  if (!fileName || !fileUri) throw new Error("upload_no_file");
+
+  // 3) Poll until the file is ACTIVE (videos require processing).
+  for (let i = 0; i < 30 && state !== "ACTIVE"; i++) {
+    if (state === "FAILED") throw new Error("file_processing_failed");
+    await new Promise((r) => setTimeout(r, 2000));
+    const stat = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${apiKey}`,
+    );
+    if (!stat.ok) { await stat.text(); continue; }
+    const info = await stat.json();
+    state = info?.state ?? state;
+    fileUri = info?.uri ?? fileUri;
+  }
+  if (state !== "ACTIVE") throw new Error("file_not_ready");
+
+  return { mimeType, fileUri };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
