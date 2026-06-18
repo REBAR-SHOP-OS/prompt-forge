@@ -174,13 +174,21 @@ Deno.serve(async (req) => {
     const parts: Array<Record<string, unknown>> = [];
 
     try {
-      const v = await fetchInline(videoUrl, MAX_VIDEO_BYTES, "video/mp4");
-      parts.push({ inlineData: { mimeType: v.mimeType, data: v.data } });
+      // Small videos go inline; larger ones are uploaded via the Gemini File
+      // API (avoids the inline base64 request-size limit).
+      try {
+        const v = await fetchInline(videoUrl, MAX_VIDEO_INLINE_BYTES, "video/mp4");
+        parts.push({ inlineData: { mimeType: v.mimeType, data: v.data } });
+      } catch (inlineErr) {
+        if (!(inlineErr instanceof Error) || inlineErr.message !== "too_large") throw inlineErr;
+        const v = await uploadToGeminiFile(videoUrl, MAX_VIDEO_BYTES, "video/mp4", apiKey);
+        parts.push({ fileData: { mimeType: v.mimeType, fileUri: v.fileUri } });
+      }
       parts.push({ text: "The above is the VIDEO to review." });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const status = msg === "too_large" ? 413 : 502;
-      return new Response(JSON.stringify({ error: msg === "too_large" ? "Video too large to analyze (>25MB)" : "Could not fetch video" }), {
+      return new Response(JSON.stringify({ error: msg === "too_large" ? "Video too large to analyze (>200MB)" : "Could not fetch video" }), {
         status, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
