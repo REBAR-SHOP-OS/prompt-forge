@@ -474,18 +474,6 @@ export function VoiceoverDialog({
                 </p>
               </div>
 
-              {onUseAsSoundtrack ? (
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={handleUseAsSoundtrack}
-                  >
-                    <Music2 className="mr-2 h-3.5 w-3.5" />
-                    Use as soundtrack
-                  </Button>
-                </div>
-              ) : null}
             </div>
           ) : null}
 
