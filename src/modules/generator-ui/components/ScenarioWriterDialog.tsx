@@ -89,8 +89,8 @@ export default function ScenarioWriterDialog({
         .from(FRAMES_BUCKET)
         .upload(storagePath, file, { contentType: file.type, upsert: false })
       if (upErr) throw new Error(upErr.message)
-      const { data } = await supabase.storage.from(FRAMES_BUCKET).createSignedUrl(storagePath, 60 * 60 * 6)
-      setUploadedImageUrl(data?.signedUrl ?? null)
+      const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+      setUploadedImageUrl(data.publicUrl)
       // When an image is attached, default to auto-from-image mode.
       if (!idea.trim()) setIdeaMode('auto')
     } catch (e) {

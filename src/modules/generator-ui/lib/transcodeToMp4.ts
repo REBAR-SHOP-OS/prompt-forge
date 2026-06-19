@@ -42,22 +42,10 @@ export type Mp4ProgressCallback = (info: {
   ratio: number
 }) => void
 
-/**
- * Hard cap per ffmpeg exec call. A single-thread WASM encode of a long 1080p
- * film routinely blew past 5 min and then failed anyway, leaving the user
- * staring at a frozen percentage. We now encode at a lighter resolution that
- * actually finishes, and cap each attempt at 2.5 min so a genuine hang surfaces
- * a clear error fast instead of after 10 minutes.
- */
-const FFMPEG_EXEC_TIMEOUT_MS = 150_000
-/**
- * Skip transcode for blobs bigger than this. ffmpeg.wasm holds the whole input
- * in the WASM heap AND fetchFile/writeFile create transient copies, so peak
- * memory is several times the file size. Above this the browser tab OOMs and
- * reloads mid-encode (no file produced). 350 MB keeps a realistic safety margin
- * for typical Final Films; larger ones fall back to a clearly-labeled original.
- */
-const MAX_TRANSCODE_BLOB_BYTES = 250 * 1024 * 1024
+/** Hard cap per ffmpeg exec call (5 min) — anything longer means hung. */
+const FFMPEG_EXEC_TIMEOUT_MS = 5 * 60_000
+/** Skip transcode for blobs bigger than this — ffmpeg.wasm OOMs silently otherwise. */
+const MAX_TRANSCODE_BLOB_BYTES = 800 * 1024 * 1024
 
 let ffmpegSingleton: FFmpeg | null = null
 let loadingPromise: Promise<FFmpeg> | null = null
@@ -203,7 +191,7 @@ async function runStage<T>(label: string, fn: () => Promise<T>): Promise<T> {
 // browser WASM encoder that has to fit in ~2 GB. The scale filter caps
 // width at 1920px so a 4K source can't blow the heap. yuv420p keeps the
 // output compatible with QuickTime / mobile gallery players.
-function buildEncodeArgs(input: string, output: string, crf: number, maxWidth = 1920): string[] {
+function buildEncodeArgs(input: string, output: string, crf: number): string[] {
   return [
     '-i', input,
     '-c:v', 'libx264',
@@ -213,52 +201,12 @@ function buildEncodeArgs(input: string, output: string, crf: number, maxWidth = 
     '-g', '60',
     '-threads', '1',
     '-pix_fmt', 'yuv420p',
-    '-vf', `scale='min(${maxWidth},iw)':-2`,
+    '-vf', "scale='min(1920,iw)':-2",
     '-c:a', 'aac',
     '-b:a', '96k',
     '-movflags', '+faststart',
     output,
   ]
-}
-
-/**
- * Probe a media blob's duration (seconds) via a hidden <video>. MediaRecorder
- * WebM has no duration in its header, so ffmpeg can't compute a progress ratio;
- * knowing the duration up front lets us derive real progress from ffmpeg's log
- * `time=` lines. Returns null when the duration can't be determined.
- */
-function probeDurationSeconds(blob: Blob): Promise<number | null> {
-  return new Promise((resolve) => {
-    try {
-      const url = URL.createObjectURL(blob)
-      const v = document.createElement('video')
-      v.preload = 'metadata'
-      v.muted = true
-      const done = (val: number | null) => {
-        try { URL.revokeObjectURL(url) } catch { /* ignore */ }
-        resolve(val)
-      }
-      const timer = setTimeout(() => done(null), 8_000)
-      v.onloadedmetadata = () => {
-        clearTimeout(timer)
-        const d = v.duration
-        done(Number.isFinite(d) && d > 0 ? d : null)
-      }
-      v.onerror = () => { clearTimeout(timer); done(null) }
-      v.src = url
-    } catch {
-      resolve(null)
-    }
-  })
-}
-
-/** Parse ffmpeg log line `time=HH:MM:SS.xx` into seconds, or null. */
-function parseFfmpegTimeSeconds(line: string): number | null {
-  const m = /time=(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(line)
-  if (!m) return null
-  const h = Number(m[1]), min = Number(m[2]), s = Number(m[3])
-  if (![h, min, s].every(Number.isFinite)) return null
-  return h * 3600 + min * 60 + s
 }
 
 /**
@@ -315,45 +263,14 @@ export async function ensureMp4(
   const inputName = `in.${inExt}`
   const outputName = 'out.mp4'
 
-  // Probe the real duration so we can derive progress from ffmpeg's log lines
-  // even when the WebM header carries no duration (the usual MediaRecorder case
-  // that left the UI frozen at 0%).
-  const durationSec = await probeDurationSeconds(blob)
-
-  // Aggregate progress from three sources and only ever move forward:
-  //  - native `progress` event (works when duration is known to ffmpeg)
-  //  - parsed `time=` from the log stream / duration probe (the reliable path)
-  //  - a slow heartbeat so a long single step never looks frozen.
-  let lastRatio = 0
-  const report = (r: number) => {
-    const clamped = Math.max(0, Math.min(0.99, r))
-    if (clamped <= lastRatio) return
-    lastRatio = clamped
-    onProgress?.({ stage: 'encode', ratio: clamped })
-  }
-
+  // Wire ffmpeg's native progress event into the caller-supplied callback.
+  // This is what actually makes the UI move past 95% during the encode.
   const onFfProgress = (e: { progress: number }) => {
-    if (Number.isFinite(e?.progress)) report(e.progress)
-  }
-  const onFfLog = (e: { message: string }) => {
-    if (!durationSec) return
-    const t = parseFfmpegTimeSeconds(e?.message || '')
-    if (t != null) report(t / durationSec)
+    if (!onProgress) return
+    const r = Math.max(0, Math.min(0.99, e.progress || 0))
+    onProgress({ stage: 'encode', ratio: r })
   }
   try { ff.on('progress', onFfProgress) } catch { /* ignore */ }
-  try { ff.on('log', onFfLog) } catch { /* ignore */ }
-
-  // Heartbeat: nudge progress upward slowly while encoding, capped at 95%, so
-  // the percentage is never visually stuck even if both signals go quiet.
-  const heartbeat = setInterval(() => {
-    if (lastRatio < 0.95) report(lastRatio + 0.01)
-  }, 1_500)
-
-  const detach = () => {
-    clearInterval(heartbeat)
-    try { ff.off('progress', onFfProgress) } catch { /* ignore */ }
-    try { ff.off('log', onFfLog) } catch { /* ignore */ }
-  }
 
   const writeInput = async (instance: FFmpeg) => {
     await runStage('writeFile', async () => {
@@ -363,8 +280,8 @@ export async function ensureMp4(
   await writeInput(ff)
 
   // Per-exec timeout so a hung ffmpeg call surfaces a real error instead of
-  // leaving the UI stuck forever. On timeout we terminate the WASM instance to
-  // release its heap.
+  // leaving the UI stuck on 95% forever. On timeout we terminate the WASM
+  // instance to release its heap.
   const execWithTimeout = async (label: string, args: string[]) => {
     try {
       await withTimeout(ff.exec(args), FFMPEG_EXEC_TIMEOUT_MS, `ffmpeg ${label}`)
@@ -379,32 +296,20 @@ export async function ensureMp4(
   }
 
   onProgress?.({ stage: 'encode', ratio: 0 })
-  let data: unknown
   try {
-    try {
-      // Primary attempt: 720p, fast preset. This is the sweet spot that
-      // actually completes in-browser for typical Final Films, instead of the
-      // old 1080p encode that timed out.
-      await runStage('encode', () => execWithTimeout('encode', buildEncodeArgs(inputName, outputName, 26, 1280)))
-    } catch (err1) {
-      // First attempt stalled/failed. Retry once at 540p — markedly lighter, so
-      // it completes where 720p timed out — re-attaching the progress listeners
-      // to the fresh core.
-      console.warn('[ensureMp4] 720p encode failed, retrying at 540p:', stringifyAny(err1))
-      lastRatio = 0
-      try { await ff.deleteFile(inputName) } catch { /* ignore */ }
-      ff = await runStage('load (retry)', () => resetFFmpeg())
-      try { ff.on('progress', onFfProgress) } catch { /* ignore */ }
-      try { ff.on('log', onFfLog) } catch { /* ignore */ }
-      await writeInput(ff)
-      await runStage('encode (retry)', () => execWithTimeout('encode (retry)', buildEncodeArgs(inputName, outputName, 30, 960)))
-    }
-
-    onProgress?.({ stage: 'readout', ratio: 1 })
-    data = await runStage('readFile', () => ff.readFile(outputName))
-  } finally {
-    detach()
+    await runStage('encode', () => execWithTimeout('encode', buildEncodeArgs(inputName, outputName, 23)))
+  } catch (err1) {
+    console.warn('[ensureMp4] first encode failed, retrying after reset:', stringifyAny(err1))
+    try { await ff.deleteFile(inputName) } catch { /* ignore */ }
+    ff = await runStage('load (retry)', () => resetFFmpeg())
+    try { ff.on('progress', onFfProgress) } catch { /* ignore */ }
+    await writeInput(ff)
+    await runStage('encode (retry)', () => execWithTimeout('encode (retry)', buildEncodeArgs(inputName, outputName, 28)))
   }
+
+  onProgress?.({ stage: 'readout', ratio: 1 })
+  const data = await runStage('readFile', () => ff.readFile(outputName))
+  try { ff.off('progress', onFfProgress) } catch { /* ignore */ }
   try { await ff.deleteFile(inputName) } catch { /* noop */ }
   try { await ff.deleteFile(outputName) } catch { /* noop */ }
 

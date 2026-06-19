@@ -44,16 +44,7 @@ const CreateJobSchema = z.object({
 const GetJobSchema = z.object({ jobId: z.string().uuid() });
 const DeleteJobSchema = z.object({ jobId: z.string().uuid() });
 
-const SUPABASE_ORIGIN = new URL(getEnv("SUPABASE_URL")).origin;
-// wan-frames is now a PRIVATE bucket. Frame references arrive as signed URLs
-// (`…/object/sign/wan-frames/{userId}/…`) but we still accept the legacy public
-// form for backwards compatibility. Both are scoped to the caller's own folder.
-const SUPABASE_WAN_FRAMES_PREFIXES = [
-  `${SUPABASE_ORIGIN}/storage/v1/object/sign/wan-frames/`,
-  `${SUPABASE_ORIGIN}/storage/v1/object/public/wan-frames/`,
-  `${SUPABASE_ORIGIN}/storage/v1/object/authenticated/wan-frames/`,
-];
-
+const SUPABASE_PUBLIC_STORAGE_PREFIX = `${new URL(getEnv("SUPABASE_URL")).origin}/storage/v1/object/public/wan-frames/`;
 
 // Local video routers (ComfyUI/Wan/LTX on the RTX box) often return the clip
 // inline as a `data:video/mp4;base64,...` URL instead of a hosted link. Storing
@@ -156,58 +147,14 @@ function isAllowedFrameUrl(url: string, userId: string): boolean {
     return false;
   }
 
-  // Own wan-frames object (signed / public / authenticated form) scoped to the
-  // caller's own `{userId}/` folder.
-  if (SUPABASE_WAN_FRAMES_PREFIXES.some((prefix) => parsed.href.startsWith(prefix))) {
+  if (parsed.href.startsWith(SUPABASE_PUBLIC_STORAGE_PREFIX)) {
     const path = parsed.pathname;
-    return [
-      `/storage/v1/object/sign/wan-frames/${userId}/`,
-      `/storage/v1/object/public/wan-frames/${userId}/`,
-      `/storage/v1/object/authenticated/wan-frames/${userId}/`,
-    ].some((prefix) => path.startsWith(prefix));
+    const prefix = `/storage/v1/object/public/wan-frames/${userId}/`;
+    return path.startsWith(prefix);
   }
 
   return EXTRA_PUBLIC_FRAME_HOSTS.includes(parsed.hostname.toLowerCase());
 }
-
-// wan-frames is private, so the URL handed to an external provider must be a
-// fresh, valid signed URL. Re-mint one from the storage path using the service
-// client (bypasses RLS) so the provider can always fetch the frame regardless of
-// how stale the caller's URL is. Falls back to the original URL on any failure.
-async function resolveFrameUrlForProvider(
-  svc: ReturnType<typeof getServiceClient>,
-  userId: string,
-  url: string | null,
-): Promise<string | null> {
-  if (!url) return url;
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return url;
-  }
-  const m = parsed.pathname.match(
-    /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?wan-frames\/(.+)$/,
-  );
-  if (!m) return url; // External (allow-listed) host — leave as-is.
-  let path: string;
-  try {
-    path = decodeURIComponent(m[1].split("?")[0]);
-  } catch {
-    path = m[1].split("?")[0];
-  }
-  if (!path.startsWith(`${userId}/`)) return url;
-  try {
-    const { data, error } = await svc.storage
-      .from("wan-frames")
-      .createSignedUrl(path, 60 * 60 * 6); // 6h — comfortably covers provider render
-    if (error || !data?.signedUrl) return url;
-    return data.signedUrl;
-  } catch {
-    return url;
-  }
-}
-
 
 // Estimate render progress when the provider hasn't reported one yet.
 // Capped conservatively so the UI never falsely implies "almost done".
@@ -553,22 +500,16 @@ export const jobOrchestratorGateway = {
             return errorResponse("JOB_START_FAILED", "Could not start the job. Please try again.", 500, ctx.requestId);
           }
 
-          // Trigger generation through the adapter contract. wan-frames is a
-          // private bucket, so re-sign the frame references with the service
-          // client right before handing them to the external provider — this
-          // guarantees a valid, fetchable URL for the whole render window.
-          const providerFirstFrameUrl = await resolveFrameUrlForProvider(svc, auth.userId, firstFrameUrl);
-          const providerLastFrameUrl = await resolveFrameUrlForProvider(svc, auth.userId, lastFrameUrl);
+          // Trigger generation through the adapter contract.
           let gen;
           try {
             gen = await aiGateway.startGeneration(route.providerKey, route.resolvedModel, {
               prompt,
-              firstFrameUrl: providerFirstFrameUrl,
-              lastFrameUrl: providerLastFrameUrl,
+              firstFrameUrl,
+              lastFrameUrl,
               durationSeconds: parsed.data.durationSeconds ?? null,
               aspectRatio: chosenAspectRatio,
             });
-
           } catch (e) {
             const genErr = (e as Error).message ?? "";
             // Refund credits + mark failed atomically.

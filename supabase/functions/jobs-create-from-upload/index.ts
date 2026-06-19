@@ -18,22 +18,6 @@ interface UploadJobBody {
   prompt?: string;
 }
 
-// Buckets a user may legitimately upload finished/edited videos into.
-const OWN_UPLOAD_BUCKETS = ["user-videos", "merged-videos"];
-
-// Accept only paths inside the caller's own folder, in either the bare
-// `<bucket>/<userId>/…` form or a fully-qualified Storage object URL.
-function isOwnStoragePath(storagePath: string, userId: string): boolean {
-  return OWN_UPLOAD_BUCKETS.some(
-    (b) =>
-      storagePath.startsWith(`${b}/${userId}/`) ||
-      storagePath.includes(`/storage/v1/object/${b}/${userId}/`) ||
-      storagePath.includes(`/storage/v1/object/public/${b}/${userId}/`) ||
-      storagePath.includes(`/storage/v1/object/sign/${b}/${userId}/`) ||
-      storagePath.includes(`/storage/v1/object/authenticated/${b}/${userId}/`),
-  );
-}
-
 function validate(body: unknown): { ok: true; value: UploadJobBody } | { ok: false; message: string } {
   if (!body || typeof body !== "object") return { ok: false, message: "body must be an object" };
   const b = body as Record<string, unknown>;
@@ -76,13 +60,6 @@ Deno.serve(async (req) => {
   if (!parsed.ok) return errorResponse("VALIDATION_ERROR", parsed.message, 400, requestId);
 
   const { storagePath, durationSeconds, aspectRatio, prompt } = parsed.value;
-
-  // Ownership guard: the path must live inside the caller's own storage folder.
-  // Prevents DB pollution with other users' paths or arbitrary external URLs
-  // (which would otherwise feed an SSRF chain via repair-provider-videos).
-  if (!isOwnStoragePath(storagePath, auth.userId)) {
-    return errorResponse("VALIDATION_ERROR", "storagePath must be in your own storage folder", 400, requestId);
-  }
 
   const svc = getServiceClient();
   try {

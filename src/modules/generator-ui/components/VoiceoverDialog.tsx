@@ -119,12 +119,6 @@ export function VoiceoverDialog({
   const [isGenerating, setIsGenerating] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const lastUrlRef = useRef<string | null>(null)
-  // Local preview controls shown right after generation (before "Use as soundtrack").
-  const [previewVolume, setPreviewVolume] = useState(1)
-  const [previewRange, setPreviewRange] = useState<[number, number]>([0, 0])
-  const [previewTimeline, setPreviewTimeline] = useState<[number, number]>([0, 0])
-  const [previewDuration, setPreviewDuration] = useState(0)
-  const previewWaveformRef = useRef<SoundtrackWaveformHandle | null>(null)
 
   function resolveDurationSec(): number | undefined {
     if (durationMode === 'auto') return undefined
@@ -152,13 +146,6 @@ export function VoiceoverDialog({
       setIsGenerating(false)
     }
   }, [open])
-
-  function resetPreview() {
-    setPreviewVolume(1)
-    setPreviewRange([0, 0])
-    setPreviewTimeline([0, 0])
-    setPreviewDuration(0)
-  }
 
   async function persistVoiceover(blob: Blob) {
     try {
@@ -221,7 +208,6 @@ export function VoiceoverDialog({
       }
       const url = URL.createObjectURL(blob)
       lastUrlRef.current = url
-      resetPreview()
       setAudioUrl(url)
       if (payload.warning) toast.warning(payload.warning)
       // Persist to Storage › Audio so every generated voiceover is saved.
@@ -395,85 +381,25 @@ export function VoiceoverDialog({
           </Button>
 
           {audioUrl ? (
-            <div className="space-y-4 rounded-md border border-white/10 bg-white/[0.03] p-3">
-              <div className="flex items-center gap-2 text-xs text-zinc-300">
-                <Mic className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                <span className="truncate">{`Voiceover (${gender}, ${tone}).wav`}</span>
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                  <span>Voiceover volume</span>
-                  <span className="tabular-nums text-zinc-200">{Math.round(previewVolume * 100)}%</span>
-                </div>
-                <Slider
-                  value={[Math.round(previewVolume * 100)]}
-                  min={0}
-                  max={100}
-                  step={1}
-                  onValueChange={(v) => setPreviewVolume((v[0] ?? 0) / 100)}
-                />
-              </div>
-
-              <SoundtrackWaveform
-                ref={previewWaveformRef}
-                url={audioUrl}
-                range={previewRange[1] > previewRange[0] ? previewRange : [0, Math.max(0.1, previewDuration)]}
-                onReady={(d) => {
-                  setPreviewDuration(d)
-                  setPreviewRange((r) => (r[1] <= r[0] ? [0, d] : r))
-                  setPreviewTimeline((t) => (t[1] <= t[0] ? [0, d] : t))
-                }}
-                onRangeChange={(r) => { if (r[1] > r[0]) setPreviewRange([r[0], r[1]]) }}
+            <div className="space-y-3 rounded-md border border-white/10 bg-white/[0.03] p-3">
+              <audio
+                key={audioUrl}
+                src={audioUrl}
+                controls
+                className="w-full"
               />
-
-              <p className="text-[11px] leading-relaxed text-zinc-500">
-                Drag the edges of the green box to choose the section. That section will play across the entire Final Film.
-              </p>
-
-              <div className="space-y-3 rounded-md border border-white/10 bg-black/40 p-3">
-                <div className="flex items-center justify-between text-xs text-zinc-300">
-                  <span className="font-medium">Play on video from … to</span>
-                  <span className="tabular-nums text-zinc-200">
-                    {formatTimeMS(previewTimeline[0])} – {formatTimeMS(previewTimeline[1] > previewTimeline[0] ? previewTimeline[1] : previewDuration)}
-                  </span>
+              {onUseAsSoundtrack ? (
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleUseAsSoundtrack}
+                  >
+                    <Music2 className="mr-2 h-3.5 w-3.5" />
+                    Use as soundtrack
+                  </Button>
                 </div>
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                    <span>Start</span>
-                    <span className="tabular-nums text-zinc-200">{formatTimeMS(previewTimeline[0])}</span>
-                  </div>
-                  <Slider
-                    value={[Math.round(previewTimeline[0])]}
-                    min={0}
-                    max={Math.max(1, previewDuration)}
-                    step={1}
-                    onValueChange={(v) => {
-                      const end = previewTimeline[1] > previewTimeline[0] ? previewTimeline[1] : previewDuration
-                      const s = Math.min(v[0] ?? 0, end - 1)
-                      setPreviewTimeline([Math.max(0, s), end])
-                    }}
-                  />
-                  <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                    <span>End</span>
-                    <span className="tabular-nums text-zinc-200">{formatTimeMS(previewTimeline[1] > previewTimeline[0] ? previewTimeline[1] : previewDuration)}</span>
-                  </div>
-                  <Slider
-                    value={[Math.round(previewTimeline[1] > previewTimeline[0] ? previewTimeline[1] : previewDuration)]}
-                    min={0}
-                    max={Math.max(1, previewDuration)}
-                    step={1}
-                    onValueChange={(v) => {
-                      const e = Math.max(v[0] ?? previewDuration, previewTimeline[0] + 1)
-                      setPreviewTimeline([previewTimeline[0], Math.min(previewDuration, e)])
-                    }}
-                  />
-                </div>
-                <p className="text-[11px] leading-relaxed text-zinc-500">
-                  Outside this window the voiceover is silent. Total film ≈ {formatTimeMS(previewDuration)}.
-                </p>
-              </div>
-
+              ) : null}
             </div>
           ) : null}
 
@@ -567,16 +493,6 @@ export function VoiceoverDialog({
         </div>
 
         <DialogFooter className="gap-2 sm:gap-2">
-          {onUseAsSoundtrack ? (
-            <Button
-              type="button"
-              onClick={handleUseAsSoundtrack}
-              disabled={!audioUrl}
-            >
-              <Music2 className="mr-2 h-4 w-4" />
-              Use as soundtrack
-            </Button>
-          ) : null}
           <Button
             type="button"
             variant="secondary"

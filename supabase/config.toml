@@ -38,15 +38,3 @@ verify_jwt = false
 
 [functions.local-llm-plan-video]
 verify_jwt = false
-
-[functions.synology-storage-upload]
-verify_jwt = false
-
-[functions.synology-storage-stream]
-verify_jwt = false
-
-[functions.synology-storage-delete]
-verify_jwt = false
-
-[functions.synology-storage-migrate]
-verify_jwt = false

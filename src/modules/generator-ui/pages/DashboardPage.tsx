@@ -109,9 +109,8 @@ import { videoLibraryGateway } from '@/modules/video-library/gateway'
 import type { VideoSummary } from '@/modules/video-library/contract'
 import { generatorUiGateway } from '@/modules/generator-ui/gateway'
 import { mergeVideoUrls, MergeCancelledError, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
-
+import { ensureMp4 } from '@/modules/generator-ui/lib/transcodeToMp4'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
-import { DownloadFormatMenu } from '@/modules/generator-ui/components/DownloadFormatMenu'
 import UsageStatsPopover from '@/modules/generator-ui/components/UsageStatsPopover'
 import VideoToVideoDialog from '@/modules/generator-ui/components/VideoToVideoDialog'
 import { VoiceoverDialog } from '@/modules/generator-ui/components/VoiceoverDialog'
@@ -141,10 +140,6 @@ const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.red
 )
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
-import { resolveSignedUrl, resolveNasStreamUrl, parseStorageRef } from '@/modules/generator-ui/lib/signedStorageUrl'
-import { uploadAsset } from '@/modules/generator-ui/lib/uploadAsset'
-
-import { SignedImage } from '@/modules/generator-ui/components/SignedImage'
 import { getMajorOccasionForDate } from '@/modules/generator-ui/lib/majorOccasions'
 import { StylePreviewCard } from '@/modules/generator-ui/components/StylePreviewCard'
 import {
@@ -685,36 +680,9 @@ export default function DashboardPage() {
   const [startContext] = useState('Start')
   const [endGoal] = useState('End')
   const [generatedVideos, setGeneratedVideos] = useState<JobDetail[]>([])
-  // Tracks which cards' downloads are currently being prepared (fetched +
-  // transcoded to standard MP4) so we can show a spinner on each button.
-  // Per-id so several downloads can run at the same time.
-  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(() => new Set())
-  // Transcode progress (0..100) per card for the MP4 button so a long
-  // conversion never feels "stuck".
-  const [downloadProgressMap, setDownloadProgressMap] = useState<Record<string, number>>({})
-
-  const startDownloading = useCallback((id: string) => {
-    setDownloadingIds((prev) => { const next = new Set(prev); next.add(id); return next })
-  }, [])
-  const finishDownloading = useCallback((id: string) => {
-    setDownloadingIds((prev) => { const next = new Set(prev); next.delete(id); return next })
-    setDownloadProgressMap((prev) => { const next = { ...prev }; delete next[id]; return next })
-  }, [])
-  const setDownloadProgressFor = useCallback((id: string, pct: number) => {
-    setDownloadProgressMap((prev) => ({ ...prev, [id]: pct }))
-  }, [])
-
-
-
-
-  // NOTE: we intentionally do NOT pre-warm ffmpeg.wasm on mount. Loading the
-  // heavy WASM core (and holding its memory) without an explicit user action
-  // can destabilize the tab. The engine now loads lazily only when the user
-  // actually picks "Download as MP4".
-
-
-
-
+  // Tracks which card's download is currently being prepared (fetched +
+  // transcoded to standard MP4) so we can show a spinner on that button.
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
 
   // --- Copyright shield: AI review of the final video + music/voiceover ---
   type CopyrightSection = { status: string; reason?: string; risks?: string[] }
@@ -728,307 +696,128 @@ export default function DashboardPage() {
   const [copyrightLoading, setCopyrightLoading] = useState(false)
   const [copyrightResult, setCopyrightResult] = useState<CopyrightResult | null>(null)
   const [copyrightError, setCopyrightError] = useState<string | null>(null)
-  // Persisted per-video copyright verdict (job id -> status). Drives the
-  // colored shield icon and lets the automatic one-time check skip done videos.
-  type CopyrightStatus = { verdict: 'approved' | 'caution' | 'rejected'; summary?: string; checkedAt: string }
-  const [copyrightStatuses, setCopyrightStatuses] = useState<Record<string, CopyrightStatus>>({})
 
-  // Download a film as a GUARANTEED real MP4. Final Film output is WebM
-  // (MediaRecorder), which fails in QuickTime / WMP / mobile galleries. The
-  // conversion runs server-side (job-based) so the user ALWAYS gets a real .mp4
-  // or a clear error — a WebM is never silently downloaded in its place.
-  const triggerDownload = async (href: string, filename: string) => {
-    // Supabase signed URLs (and any HTTPS URL that carries
-    // Content-Disposition: attachment) reliably save the file via a top-level
-    // navigation, even after async work that Chrome would block for
-    // programmatic a.click()/window.open().
-    if (href.includes('supabase') || href.startsWith('https://')) {
-      window.location.href = href
-      return
-    }
-
-    // Non-HTTPS (e.g. relative URLs): fetch as a blob and save.
-    try {
-      const response = await fetch(href)
-      if (!response.ok) throw new Error(`Download failed (${response.status})`)
-      const blob = await response.blob()
+  // Download a film as a standard, broadly-compatible MP4. Final Film output
+  // is WebM (MediaRecorder), which fails in QuickTime / WMP / mobile galleries.
+  // We fetch the stored file and run it through ensureMp4 (ffmpeg.wasm) so the
+  // user always gets a .mp4. On any transcode failure (e.g. file too large to
+  // process in-browser) we fall back to downloading the original file as-is.
+  const downloadAsMp4 = async (cardId: string, url: string, namePrefix: string) => {
+    if (downloadingId) return
+    setDownloadingId(cardId)
+    const triggerDownload = (blob: Blob, filename: string) => {
       const blobUrl = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = blobUrl
       a.download = filename
-      a.style.display = 'none'
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
-    } catch (err) {
-      console.error('Download failed, falling back to new tab', err)
-      window.open(href, '_blank')
+      URL.revokeObjectURL(blobUrl)
     }
-  }
-
-  const downloadAsMp4 = async (cardId: string, url: string, namePrefix: string) => {
-    if (downloadingIds.has(cardId)) return
-    startDownloading(cardId)
-
-    // Resolve {bucket, path} from a raw storage path or a full storage URL.
-    const resolveSource = (input: string): { bucket: string; path: string } | null => {
-      if (/^https?:\/\//i.test(input)) {
-        try {
-          const parsed = new URL(input)
-          const m = parsed.pathname.match(
-            /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/,
-          )
-          if (!m) return null
-          let path = m[2]
-          try { path = decodeURIComponent(path) } catch { /* keep raw */ }
-          return { bucket: m[1], path }
-        } catch {
-          return null
-        }
-      }
-      // Bare `<bucket>/<path>` reference (the form we now persist).
-      const knownBuckets = ['user-videos', MERGED_BUCKET, 'mp4-exports']
-      const slash = input.indexOf('/')
-      if (slash > 0 && knownBuckets.includes(input.slice(0, slash))) {
-        return { bucket: input.slice(0, slash), path: input.slice(slash + 1) }
-      }
-      // Legacy raw storage path: final films live in merged-videos, clips in user-videos.
-      const bucket = namePrefix.includes('final') ? MERGED_BUCKET : 'user-videos'
-      return { bucket, path: input }
+    // ffmpeg.wasm transcode is heavy and routinely OOMs / fails to load on
+    // mobile browsers. When that happens we used to hand back a WebM file
+    // renamed .mp4, which iOS / the mobile gallery cannot play. So on mobile
+    // we skip the in-browser transcode entirely and download the original
+    // file with its TRUE extension based on the real blob MIME type.
+    const isMobile =
+      typeof navigator !== 'undefined' &&
+      /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+    const extFromType = (type: string, fallbackUrl: string): string => {
+      const t = (type || '').toLowerCase()
+      if (t.includes('mp4')) return 'mp4'
+      if (t.includes('webm')) return 'webm'
+      if (t.includes('quicktime') || t.includes('mov')) return 'mov'
+      const lower = fallbackUrl.toLowerCase().split('?')[0]
+      if (lower.endsWith('.mp4')) return 'mp4'
+      if (lower.endsWith('.webm')) return 'webm'
+      if (lower.endsWith('.mov')) return 'mov'
+      return 'mp4'
     }
+    try {
+      const fetchUrl = await proxiedVideoUrl(url)
+      const response = await fetch(fetchUrl)
+      if (!response.ok) throw new Error('Download failed')
+      const blob = await response.blob()
+      const sourceIsMp4 =
+        (blob.type || '').toLowerCase().includes('mp4') ||
+        url.toLowerCase().split('?')[0].endsWith('.mp4')
 
-    // Sign the (already-MP4) object with a download disposition and stream it.
-    const downloadSigned = async (bucket: string, path: string) => {
-      const filename = `${namePrefix}-${cardId.slice(0, 8)}.mp4`
-      // NAS-backed file? Download through the streaming proxy (sets disposition).
-      let href: string | null = null
+      // On mobile, or when the source is already a standard MP4, skip the
+      // in-browser transcode and serve the file directly with its real
+      // extension so it always opens in the gallery / player.
+      if (isMobile || sourceIsMp4) {
+        triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${extFromType(blob.type, url)}`)
+        return
+      }
+
       try {
-        const nas = await resolveNasStreamUrl(bucket, path, filename)
-        if (nas) href = nas
-      } catch { /* fall back to signed URL */ }
-      if (!href) {
-        const { data, error } = await supabase.storage
-          .from(bucket)
-          .createSignedUrl(path, 60 * 60, { download: filename })
-        if (error || !data?.signedUrl) throw new Error('Could not prepare the MP4 download')
-        href = data.signedUrl
+        const mp4 = await ensureMp4(blob, blob.type)
+        triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.mp4`)
+      } catch (transErr) {
+        // Transcode failed (too large / OOM) — hand over the original file
+        // with its TRUE extension (never mislabel WebM as .mp4) so the user
+        // is never left without a download.
+        console.warn('[download] MP4 transcode failed, serving original:', transErr)
+        triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${extFromType(blob.type, url)}`)
       }
-      await triggerDownload(href, filename)
-    }
-
-
-
-    // Chrome blocks programmatic downloads triggered long after the original
-    // user click (the conversion poll loop runs for seconds/minutes). When the
-    // export completes we surface a user-clickable link instead, which counts as
-    // a fresh user gesture and is allowed. This flag keeps the spinner up until
-    // the user clicks that link rather than clearing it in the finally block.
-    let downloadHandledByToast = false
-
-    try {
-      const src = resolveSource(url)
-      if (!src) throw new Error('Unrecognized video location')
-
-      // Already an MP4 → fast direct signed download, no conversion needed.
-      if (src.path.toLowerCase().split('?')[0].endsWith('.mp4')) {
-        await downloadSigned(src.bucket, src.path)
-        return
-      }
-
-      // The source is WebM. In-browser ffmpeg.wasm reliably timed out on real
-      // Final Films (single-thread WASM encode), so the percentage hit 100,
-      // restarted, and never produced a file. We now convert SERVER-SIDE: a
-      // dedicated export job transcodes to a real H.264/AAC MP4, and we only
-      // download once the job reports `completed` with a usable URL.
-      setDownloadProgressFor(cardId, 1)
-
-      // Resolve a downloadable URL for a server-export result {bucket, path|url}.
-      const downloadExportResult = async (
-        out: { url?: string | null; bucket?: string | null; path?: string | null },
-      ) => {
-        const filename = `${namePrefix}-${cardId.slice(0, 8)}.mp4`
-        let href: string | null = null
-        // Always prefer a signed URL with Content-Disposition: attachment so the browser
-        // triggers an actual file download rather than navigating to the cross-origin URL.
-        if (out.bucket && out.path) {
-          try {
-            const nas = await resolveNasStreamUrl(out.bucket, out.path, filename)
-            if (nas) href = nas
-          } catch { /* fall back to signed URL */ }
-          if (!href) {
-            const { data, error } = await supabase.storage
-              .from(out.bucket)
-              .createSignedUrl(out.path, 300, { download: filename })
-            if (!error && data?.signedUrl) href = data.signedUrl
-          }
-        }
-        // Fall back to whatever URL the server already returned
-        if (!href) href = out.url ?? null
-        if (!href) throw new Error('MP4 export did not return a downloadable file')
-        const downloadHref = href
-        setDownloadProgressFor(cardId, 100)
-        downloadHandledByToast = true
-        // The signed URL carries Content-Disposition: attachment. A hidden
-        // anchor with a download attribute saves the file without navigating the
-        // page away.
-        const a = document.createElement('a')
-        a.href = downloadHref
-        a.download = filename
-        a.style.display = 'none'
-        document.body.appendChild(a)
-        a.click()
-        setTimeout(() => document.body.removeChild(a), 2000)
-        // Fallback: if Chrome blocked the programmatic click (async user gesture),
-        // give the user a visible link to click themselves.
-        toast.success('MP4 ready', {
-          description: (
-            <a
-              href={downloadHref}
-              download={filename}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline font-medium"
-            >
-              Download didn’t start? Click here
-            </a>
-          ),
-        })
-        setTimeout(() => finishDownloading(cardId), 2000)
-      }
-
-      // 1) Kick off (or reuse a cached) server-side export.
-      const { data: created, error: createErr } = await supabase.functions.invoke('mp4-export-create', {
-        body: { bucket: src.bucket, storagePath: src.path },
-      })
-      if (createErr) throw new Error(createErr.message || 'Could not start MP4 export')
-      const createStatus = (created as { status?: string })?.status
-
-      // Immediate result (already MP4, NAS MP4, or a cached export).
-      if (createStatus === 'completed') {
-        if ((created as { nas?: boolean })?.nas) {
-          await downloadSigned(src.bucket, src.path)
-        } else {
-          await downloadExportResult(created as { url?: string; bucket?: string; path?: string })
-        }
-        return
-      }
-
-      const jobId = (created as { jobId?: string })?.jobId
-      if (createStatus !== 'processing' || !jobId) {
-        throw new Error('Could not start MP4 export')
-      }
-
-      // 2) Poll the job until it finishes. The server transcode runs in its own
-      //    invocation; we poll on a fixed cadence with a hard ceiling so the UI
-      //    never loops forever. Progress nudges upward but only reaches 100 on a
-      //    real completed URL.
-      const POLL_INTERVAL_MS = 3_000
-      const MAX_POLLS = 100 // ~5 minutes
-      let fakeProgress = 1
-      for (let i = 0; i < MAX_POLLS; i++) {
-        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
-        const { data: stat, error: statErr } = await supabase.functions.invoke('mp4-export-status', {
-          body: { jobId },
-        })
-        if (statErr) continue // transient; keep polling
-        const s = stat as { status?: string; url?: string; bucket?: string; path?: string; error?: string }
-        if (s?.status === 'completed') {
-          await downloadExportResult(s)
-          return
-        }
-        if (s?.status === 'failed') {
-          throw new Error(s?.error || 'MP4 conversion failed on the server')
-        }
-        // pending/processing → advance the visible percentage (cap < 95).
-        fakeProgress = Math.min(94, fakeProgress + 3)
-        setDownloadProgressFor(cardId, fakeProgress)
-      }
-      throw new Error('MP4 export is taking too long. Please try again in a moment.')
     } catch (err) {
-      // Never download a WebM in place of MP4 — only surface a clear error.
-      console.error('MP4 export failed', err)
-      const msg = err instanceof Error ? err.message : ''
-      toast.error(msg || 'Could not export MP4. Please try again.')
+      console.error('Film download failed', err)
+      window.open(url, '_blank')
     } finally {
-      if (!downloadHandledByToast) finishDownloading(cardId)
+      setDownloadingId(null)
     }
   }
-
-
-
-
-
-  // Direct download of the original file (e.g. WEBM). NAS-aware: resolves the
-  // stored value to {bucket, path}, then prefers the NAS stream proxy (with a
-  // download filename so the server sets Content-Disposition), falling back to
-  // a signed Cloud URL with the same download disposition. The final save goes
-  // through triggerDownload so cross-origin URLs reliably save instead of
-  // opening in a tab.
+  // Fast, direct download: hands the browser a signed URL with a download
+  // Content-Disposition so it streams the file natively — no in-browser fetch
+  // into memory and no ffmpeg transcode. Falls back gracefully on failure.
   const downloadDirect = async (cardId: string, url: string, namePrefix: string) => {
-    if (downloadingIds.has(cardId)) return
-    startDownloading(cardId)
-
+    if (downloadingId) return
+    setDownloadingId(cardId)
     try {
-      const ref = parseStorageRef(url)
-      const lower = (ref?.path || url).toLowerCase().split('?')[0]
+      const lower = url.toLowerCase().split('?')[0]
       const ext = lower.endsWith('.mp4') ? 'mp4'
         : lower.endsWith('.webm') ? 'webm'
         : lower.endsWith('.mov') ? 'mov'
         : 'mp4'
       const filename = `${namePrefix}-${cardId.slice(0, 8)}.${ext}`
 
+      // For our own private merged-videos / user-videos objects, mint a signed
+      // URL with the `download` option so the server sets Content-Disposition.
       let href: string | null = null
-      if (ref) {
-        // NAS-backed file? Stream through the proxy with a download disposition.
-        try {
-          const nas = await resolveNasStreamUrl(ref.bucket, ref.path, filename)
-          if (nas) href = nas
-        } catch { /* fall back to a signed Cloud URL */ }
-        // Cloud-backed file → mint a signed URL with the download disposition.
-        if (!href) {
-          const { data, error } = await supabase.storage
-            .from(ref.bucket)
-            .createSignedUrl(ref.path, 300, { download: filename })
-          if (!error && data?.signedUrl) href = data.signedUrl
+      try {
+        const parsed = new URL(url)
+        const m = parsed.pathname.match(
+          /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/,
+        )
+        if (m) {
+          const bucket = m[1]
+          let path = m[2]
+          try { path = decodeURIComponent(path) } catch { /* keep raw */ }
+          if (bucket === MERGED_BUCKET || bucket === 'user-videos') {
+            const { data, error } = await supabase.storage
+              .from(bucket)
+              .createSignedUrl(path, 60 * 60, { download: filename })
+            if (!error && data?.signedUrl) href = data.signedUrl
+          }
         }
-      }
+      } catch { /* fall through to proxied URL */ }
 
       if (!href) href = await proxiedVideoUrl(url)
 
-      const downloadHref = href
-      // Signed URL carries Content-Disposition: attachment. Trigger the save via
-      // a hidden anchor with a download attribute (no page navigation).
       const a = document.createElement('a')
-      a.href = downloadHref
+      a.href = href
       a.download = filename
-      a.style.display = 'none'
       document.body.appendChild(a)
       a.click()
-      setTimeout(() => document.body.removeChild(a), 2000)
-      // Fallback: if Chrome blocked the programmatic click, give the user a
-      // visible link to click themselves.
-      toast.success('Download ready', {
-        description: (
-          <a
-            href={downloadHref}
-            download={filename}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline font-medium"
-          >
-            Download didn’t start? Click here
-          </a>
-        ),
-      })
-      setTimeout(() => finishDownloading(cardId), 2000)
+      document.body.removeChild(a)
     } catch (err) {
       console.error('Direct download failed', err)
       window.open(url, '_blank')
-      finishDownloading(cardId)
+    } finally {
+      setDownloadingId(null)
     }
   }
-
 
   // Resolve a fetchable, signed Supabase-storage URL from either a raw storage
   // path or a (possibly public) storage URL so the edge function can fetch
@@ -1055,30 +844,14 @@ export default function DashboardPage() {
     }
   }
 
-  // Persist a verdict into the per-video status map (and localStorage, which the
-  // library-sync layer mirrors to the backend so it survives refresh/devices).
-  function saveCopyrightStatus(jobId: string, status: CopyrightStatus) {
-    setCopyrightStatuses((prev) => {
-      const next = { ...prev, [jobId]: status }
-      const uid = session?.user?.id ?? null
-      if (uid) {
-        try { window.localStorage.setItem(`copyright-status:${uid}`, JSON.stringify(next)) } catch { /* ignore */ }
-      }
-      return next
-    })
-  }
-
   // Run a real AI copyright review of the final video + its music/voiceover.
-  // `silent` runs the check in the background (auto check) without opening the dialog.
-  const runCopyrightCheck = async (video: JobDetail, silent = false) => {
+  const runCopyrightCheck = async (video: JobDetail) => {
     const storagePath = video.video?.storage_path
     if (!storagePath) return
-    if (!silent) {
-      setCopyrightJob(video)
-      setCopyrightResult(null)
-      setCopyrightError(null)
-      setCopyrightLoading(true)
-    }
+    setCopyrightJob(video)
+    setCopyrightResult(null)
+    setCopyrightError(null)
+    setCopyrightLoading(true)
     try {
       const audio = projectAudio[video.id]
       const [videoUrl, musicUrl, voiceoverUrl] = await Promise.all([
@@ -1103,21 +876,16 @@ export default function DashboardPage() {
       }
       const result = (data as { result?: CopyrightResult } | null)?.result
       if (!result) throw new Error('No analysis result returned.')
-      if (!silent) setCopyrightResult(result)
-      const verdict = (['approved', 'caution', 'rejected'] as const).includes(result.verdict as 'approved')
-        ? (result.verdict as CopyrightStatus['verdict'])
-        : 'caution'
-      saveCopyrightStatus(video.id, { verdict, summary: result.summary, checkedAt: new Date().toISOString() })
+      setCopyrightResult(result)
     } catch (err) {
-      if (!silent) setCopyrightError(err instanceof Error ? err.message : 'Copyright analysis failed.')
+      setCopyrightError(err instanceof Error ? err.message : 'Copyright analysis failed.')
     } finally {
-      if (!silent) setCopyrightLoading(false)
+      setCopyrightLoading(false)
     }
   }
   const downloadImageFile = async (imageId: string, url: string) => {
-    if (downloadingIds.has(imageId)) return
-    startDownloading(imageId)
-
+    if (downloadingId) return
+    setDownloadingId(imageId)
     try {
       const response = await fetch(url)
       if (!response.ok) throw new Error('Download failed')
@@ -1139,8 +907,7 @@ export default function DashboardPage() {
       console.error('Image download failed', err)
       window.open(url, '_blank')
     } finally {
-      finishDownloading(imageId)
-
+      setDownloadingId(null)
     }
   }
   // Persist an audio item (uploaded music or generated voiceover) to the
@@ -1181,9 +948,8 @@ export default function DashboardPage() {
     }
   }
   const downloadAudioFile = async (audioId: string, url: string | null | undefined, name: string | null) => {
-    if (downloadingIds.has(audioId) || !url) return
-    startDownloading(audioId)
-
+    if (downloadingId || !url) return
+    setDownloadingId(audioId)
     try {
       const response = await fetch(url)
       if (!response.ok) throw new Error('Download failed')
@@ -1209,7 +975,7 @@ export default function DashboardPage() {
       console.error('Audio download failed', err)
       window.open(url, '_blank')
     } finally {
-      finishDownloading(audioId)
+      setDownloadingId(null)
     }
   }
   const handleDeleteUserAudio = async (item: UserAudioItem) => {
@@ -1745,17 +1511,6 @@ export default function DashboardPage() {
       window.localStorage.setItem(projectAudioKey, JSON.stringify(next))
     } catch { /* ignore */ }
   }
-
-  // Hydrate persisted copyright verdicts (job id -> status) for the colored shield.
-  const copyrightStatusKey = userId ? `copyright-status:${userId}` : null
-  useEffect(() => {
-    if (!copyrightStatusKey) { setCopyrightStatuses({}); return }
-    try {
-      const raw = window.localStorage.getItem(copyrightStatusKey)
-      const obj = raw ? (JSON.parse(raw) as Record<string, CopyrightStatus>) : {}
-      setCopyrightStatuses(obj && typeof obj === 'object' ? obj : {})
-    } catch { setCopyrightStatuses({}) }
-  }, [copyrightStatusKey])
 
   // Persist a music/voiceover source into the public MERGED_BUCKET so it
   // survives refresh and project switches. Returns a durable public URL, or
@@ -3051,33 +2806,6 @@ export default function DashboardPage() {
       draftItems: drafts,
     }
   }, [mergedEntries, draftEntries, generatedVideos, approvedIds])
-
-  // Automatic, one-time copyright review for every saved Final Film. Any final
-  // video that has a stored video but no persisted verdict yet is checked once
-  // (sequentially, to respect AI rate limits). Results persist, so a video is
-  // never re-checked automatically; the shield icon stays colored thereafter.
-  const autoCopyrightInFlight = useRef<Set<string>>(new Set())
-  useEffect(() => {
-    if (!userId) return
-    const pending = finalizedItems.filter(
-      (v) => v.video?.storage_path && !copyrightStatuses[v.id] && !autoCopyrightInFlight.current.has(v.id),
-    )
-    if (pending.length === 0) return
-    let cancelled = false
-    void (async () => {
-      for (const v of pending) {
-        if (cancelled) break
-        autoCopyrightInFlight.current.add(v.id)
-        try {
-          await runCopyrightCheck(v, true)
-        } finally {
-          autoCopyrightInFlight.current.delete(v.id)
-        }
-      }
-    })()
-    return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [finalizedItems, copyrightStatuses, userId])
 
   // ----- Auto-snapshot the active workspace into a Draft project -----
   // Any time the workspace has at least one live clip/image, mirror it to a
@@ -4496,22 +4224,22 @@ export default function DashboardPage() {
     const path = `${userId}/upload-${Date.now()}-${crypto.randomUUID()}.${ext}`
     let uploadedPath: string | null = null
     try {
-      // Large videos go to the NAS, small ones stay in Cloud; both yield a
-      // `<bucket>/<path>` reference that the players know how to resolve.
-      const up = await uploadAsset('user-videos', path, file, {
-        contentType: file.type || 'video/mp4',
-      })
-      uploadedPath = up.backend === 'cloud' ? path : null
+      const up = await supabase.storage
+        .from('user-videos')
+        .upload(path, file, { contentType: file.type || 'video/mp4', upsert: false })
+      if (up.error) throw new Error(up.error.message)
+      uploadedPath = path
+      const { data } = supabase.storage.from('user-videos').getPublicUrl(path)
+      const publicUrl = data.publicUrl
 
       // Persist a real job + asset row server-side so the card shows up
       // through the same listMyJobs/getJob pipeline as generated videos.
       const detail = await jobOrchestratorGateway.createUploadedVideoJob({
-        storagePath: up.ref,
+        storagePath: publicUrl,
         durationSeconds,
         aspectRatio: pickedRatio,
         prompt: file.name,
       })
-
 
       // Drop into state immediately so the card appears without a refresh.
       // Stamp it into the active draft (like generated clips) so it shows as a
@@ -4835,7 +4563,7 @@ export default function DashboardPage() {
     const userId = session?.user?.id
     try {
       if (!userId) throw new Error('Sign in before using an image as a frame')
-      const res = await fetch(await resolveSignedUrl(url))
+      const res = await fetch(url)
       if (!res.ok) throw new Error(`Could not read image (HTTP ${res.status})`)
       const blob = await res.blob()
       const storagePath = `${userId}/start-${Date.now()}-${crypto.randomUUID()}.png`
@@ -4843,11 +4571,11 @@ export default function DashboardPage() {
         .from(FRAMES_BUCKET)
         .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false })
       if (upErr) throw new Error(upErr.message)
-      const { data } = await supabase.storage.from(FRAMES_BUCKET).createSignedUrl(storagePath, 60 * 60 * 6)
+      const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
       setUploadedFiles((current) =>
         current.map((f) =>
           f.id === seedId
-            ? { ...f, status: 'ready', url: data?.signedUrl ?? '', size: blob.size, error: null }
+            ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size, error: null }
             : f,
         ),
       )
@@ -4896,10 +4624,10 @@ export default function DashboardPage() {
       return
     }
 
-    const { data } = await supabase.storage.from(FRAMES_BUCKET).createSignedUrl(storagePath, 60 * 60 * 6)
+    const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
     setUploadedFiles((currentFiles) => currentFiles.map((uploadedFile) => (
       uploadedFile.id === fileId
-        ? { ...uploadedFile, status: 'ready', url: data?.signedUrl ?? '', error: null }
+        ? { ...uploadedFile, status: 'ready', url: data.publicUrl, error: null }
         : uploadedFile
     )))
   }
@@ -5544,8 +5272,8 @@ export default function DashboardPage() {
           console.error(`${sceneLabel}: storage upload failed`, error)
           throw new Error(`${sceneLabel}: could not upload seed frame (${error.message})`)
         }
-        const { data } = await supabase.storage.from(FRAMES_BUCKET).createSignedUrl(storagePath, 60 * 60 * 6)
-        return data?.signedUrl ?? ''
+        const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+        return data.publicUrl
       }
       await new Promise((r) => setTimeout(r, intervalMs))
     }
@@ -5698,11 +5426,11 @@ export default function DashboardPage() {
           .from(FRAMES_BUCKET)
           .upload(storagePath, blob, { contentType: 'image/png', upsert: false })
         if (error) throw new Error(error.message)
-        const { data } = await supabase.storage.from(FRAMES_BUCKET).createSignedUrl(storagePath, 60 * 60 * 6)
+        const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
         setUploadedFiles((current) =>
           current.map((f) =>
             f.id === seedId
-              ? { ...f, status: 'ready', url: data?.signedUrl ?? '', size: blob.size }
+              ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size }
               : f,
           ),
         )
@@ -5765,11 +5493,11 @@ export default function DashboardPage() {
           .from(FRAMES_BUCKET)
           .upload(storagePath, blob, { contentType: 'image/png', upsert: false })
         if (error) throw new Error(error.message)
-        const { data } = await supabase.storage.from(FRAMES_BUCKET).createSignedUrl(storagePath, 60 * 60 * 6)
+        const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
         setUploadedFiles((current) =>
           current.map((f) =>
             f.id === seedId
-              ? { ...f, status: 'ready', url: data?.signedUrl ?? '', size: blob.size }
+              ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size }
               : f,
           ),
         )
@@ -7216,7 +6944,7 @@ export default function DashboardPage() {
                             title="Click to view"
                             className="group relative aspect-square w-full shrink-0 cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-[#15171a] transition hover:border-white/30"
                           >
-                            <SignedImage
+                            <img
                               src={img.storage_path}
                               alt="Product"
                               loading="lazy"
@@ -7295,13 +7023,13 @@ export default function DashboardPage() {
                               </button>
                               <button
                                 type="button"
-                                disabled={downloadingIds.has(img.id)}
+                                disabled={downloadingId === img.id}
                                 onClick={() => { void downloadImageFile(img.id, img.storage_path) }}
                                 aria-label="Download image"
                                 title="Download image"
                                 className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                               >
-                                {downloadingIds.has(img.id) ? (
+                                {downloadingId === img.id ? (
                                   <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
                                 ) : (
                                   <Download className="h-3 w-3" aria-hidden="true" />
@@ -7403,13 +7131,13 @@ export default function DashboardPage() {
                         <div className="flex shrink-0 items-center gap-1.5">
                           <button
                             type="button"
-                            disabled={downloadingIds.has(a.id) || !a.url}
+                            disabled={downloadingId === a.id || !a.url}
                             onClick={() => { void downloadAudioFile(a.id, a.url, a.name) }}
                             aria-label="Download audio"
                             title="Download audio"
                             className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                           >
-                            {downloadingIds.has(a.id) ? (
+                            {downloadingId === a.id ? (
                               <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
                             ) : (
                               <Download className="h-3 w-3" aria-hidden="true" />
@@ -7485,7 +7213,7 @@ export default function DashboardPage() {
                         title="Click to view"
                         className="group relative aspect-square w-full shrink-0 cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-[#15171a] transition hover:border-white/30"
                       >
-                        <SignedImage
+                        <img
                           src={img.storage_path}
                           alt="Generated"
                           loading="lazy"
@@ -7517,13 +7245,13 @@ export default function DashboardPage() {
                           </button>
                           <button
                             type="button"
-                            disabled={downloadingIds.has(img.id)}
+                            disabled={downloadingId === img.id}
                             onClick={() => { void downloadImageFile(img.id, img.storage_path) }}
                             aria-label="Download image"
                             title="Download image"
                             className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                           >
-                            {downloadingIds.has(img.id) ? (
+                            {downloadingId === img.id ? (
                               <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
                             ) : (
                               <Download className="h-3 w-3" aria-hidden="true" />
@@ -7580,9 +7308,7 @@ export default function DashboardPage() {
                   onClick={() => setFilmsCategory(cat)}
                   className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
                     filmsCategory === cat
-                      ? cat === 'final'
-                        ? 'bg-green-500/15 text-green-400'
-                        : 'bg-white/[0.08] text-zinc-100'
+                      ? 'bg-white/[0.08] text-zinc-100'
                       : 'text-zinc-400 hover:text-zinc-200'
                   }`}
                 >
@@ -7656,13 +7382,7 @@ export default function DashboardPage() {
                     return (
                       <article
                         key={job.id}
-                        className={`flex flex-col gap-3 rounded-2xl border p-3 ${
-                          selectedArchiveIds.has(job.id)
-                            ? 'border-sky-400/60 ring-1 ring-sky-400/40'
-                            : filmsCategory === 'final'
-                              ? 'border-white/10 border-l-2 border-l-green-500 bg-green-950/60'
-                              : 'border-white/10 bg-white/[0.035]'
-                        }`}
+                        className={`flex flex-col gap-3 rounded-2xl border bg-white/[0.035] p-3 ${selectedArchiveIds.has(job.id) ? 'border-sky-400/60 ring-1 ring-sky-400/40' : 'border-white/10'}`}
                       >
                         <div
                           className={`group relative aspect-video w-full shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a] ${video?.storage_path ? 'cursor-pointer' : ''}`}
@@ -7741,19 +7461,40 @@ export default function DashboardPage() {
                             </p>
                             <div className="flex shrink-0 items-center gap-1.5">
                               {job.status === 'completed' && video?.storage_path ? (
-                                <DownloadFormatMenu
-                                  url={video.storage_path}
-                                  busy={downloadingIds.has(job.id)}
-                                  progress={downloadProgressMap[job.id] ?? null}
-                                  onDownloadOriginal={() => {
-                                    if (!video) return
-                                    void downloadDirect(job.id, video.storage_path, 'film')
-                                  }}
-                                  onDownloadMp4={() => {
-                                    if (!video) return
-                                    void downloadAsMp4(job.id, video.storage_path, 'film')
-                                  }}
-                                />
+                                <>
+                                  <button
+                                    type="button"
+                                    disabled={downloadingId === job.id}
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      if (!video) return
+                                      void downloadDirect(job.id, video.storage_path, 'film')
+                                    }}
+                                    aria-label="Download video (fast)"
+                                    title="Download (fast)"
+                                    className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                  >
+                                    {downloadingId === job.id ? (
+                                      <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                    ) : (
+                                      <Download className="h-3 w-3" aria-hidden="true" />
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={downloadingId === job.id}
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      if (!video) return
+                                      void downloadAsMp4(job.id, video.storage_path, 'film')
+                                    }}
+                                    aria-label="Download as MP4 (converted)"
+                                    title="Download as MP4"
+                                    className="grid h-6 shrink-0 place-items-center rounded-full border border-white/10 px-1.5 text-[9px] font-semibold leading-none text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                  >
+                                    MP4
+                                  </button>
+                                </>
                               ) : null}
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>
@@ -8241,7 +7982,7 @@ export default function DashboardPage() {
             if (!userId) throw new Error('Not signed in')
             // Re-stage the AI image into the wan-frames bucket so the jobs-create
             // validator (which only accepts wan-frames/{userId}/...) accepts it.
-            const res = await fetch(await resolveSignedUrl(row.storage_path))
+            const res = await fetch(row.storage_path)
             if (!res.ok) throw new Error(`Could not read AI image (HTTP ${res.status})`)
             const blob = await res.blob()
             const storagePath = `${userId}/start-ai-${Date.now()}-${crypto.randomUUID()}.png`
@@ -8249,11 +7990,11 @@ export default function DashboardPage() {
               .from(FRAMES_BUCKET)
               .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false })
             if (upErr) throw new Error(upErr.message)
-            const { data } = await supabase.storage.from(FRAMES_BUCKET).createSignedUrl(storagePath, 60 * 60 * 6)
+            const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
             setUploadedFiles((current) =>
               current.map((f) =>
                 f.id === seedId
-                  ? { ...f, status: 'ready', url: data?.signedUrl ?? '', size: blob.size, error: null }
+                  ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size, error: null }
                   : f,
               ),
             )
@@ -8536,7 +8277,7 @@ export default function DashboardPage() {
                     maxWidth: 'calc(100vw - 56rem)',
                   }}
                 >
-                  <SignedImage
+                  <img
                     key={previewItem.image.id}
                     src={previewItem.image.storage_path}
                     alt="Uploaded reference"
@@ -8836,7 +8577,7 @@ export default function DashboardPage() {
                   className="relative w-full min-w-0 overflow-hidden rounded-xl border border-amber-300/20 bg-[#15171a]"
                   style={{ aspectRatio: (lockedProjectRatio ?? aspectRatio) === '9:16' ? '9 / 16' : (lockedProjectRatio ?? aspectRatio) === '16:9' ? '16 / 9' : '1 / 1' }}
                 >
-                  <SignedImage
+                  <img
                     src={currentCover.storage_path}
                     alt="Film cover"
                     className="h-full w-full object-cover"
@@ -8919,7 +8660,7 @@ export default function DashboardPage() {
                           className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
                           style={{ aspectRatio: ratioToCss(lockedProjectRatio ?? aspectRatio) }}
                         >
-                          <SignedImage
+                          <img
                             src={img.storage_path}
                             alt="Uploaded reference"
                             className="h-full w-full object-contain"
@@ -9408,7 +9149,7 @@ export default function DashboardPage() {
                   className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-2.5 transition hover:border-white/20 hover:bg-white/[0.055] ${
                     selectMode && isChecked
                       ? 'border-rose-300/40 bg-rose-300/[0.06]'
-                      : isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : variant === 'final' ? 'border-white/10 border-l-2 border-l-green-500 bg-green-950/60' : 'border-white/10 border-l-2 border-l-yellow-500 bg-yellow-950/60'
+                      : isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : 'border-white/10 bg-white/[0.035]'
                   }`}
                   role="button"
                   tabIndex={0}
@@ -9470,17 +9211,40 @@ export default function DashboardPage() {
                       </p>
                       <div className="flex shrink-0 items-center gap-1">
                         {variant === 'final' && video.video?.storage_path ? (
-                          <DownloadFormatMenu
-                            url={video.video.storage_path}
-                            busy={downloadingIds.has(video.id)}
-                            progress={downloadProgressMap[video.id] ?? null}
-                            onDownloadOriginal={() => {
-                              void downloadDirect(video.id, video.video!.storage_path, 'final-film')
-                            }}
-                            onDownloadMp4={() => {
-                              void downloadAsMp4(video.id, video.video!.storage_path, 'final-film')
-                            }}
-                          />
+                          <>
+                            <button
+                              type="button"
+                              disabled={downloadingId === video.id}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                // Fast direct download (no in-browser transcode).
+                                void downloadDirect(video.id, video.video!.storage_path, 'final-film')
+                              }}
+                              aria-label="Download video (fast)"
+                              title="Download (fast)"
+                              className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                            >
+                              {downloadingId === video.id ? (
+                                <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                              ) : (
+                                <Download className="h-3 w-3" aria-hidden="true" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={downloadingId === video.id}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                // Compatibility path: transcode WebM → standard MP4.
+                                void downloadAsMp4(video.id, video.video!.storage_path, 'final-film')
+                              }}
+                              aria-label="Download as MP4 (converted)"
+                              title="Download as MP4"
+                              className="grid h-6 shrink-0 place-items-center rounded-full border border-white/10 px-1.5 text-[9px] font-semibold leading-none text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                            >
+                              MP4
+                            </button>
+                          </>
                         ) : null}
                         {(() => {
                           const audio = projectAudio[video.id]
@@ -9524,7 +9288,7 @@ export default function DashboardPage() {
                                           </span>
                                           <button
                                             type="button"
-                                            disabled={downloadingIds.has(`music-${video.id}`)}
+                                            disabled={downloadingId === `music-${video.id}`}
                                             onClick={(event) => {
                                               event.stopPropagation()
                                               void downloadAudioFile(`music-${video.id}`, audio.music!.url, audio.music!.name)
@@ -9533,7 +9297,7 @@ export default function DashboardPage() {
                                             title="Download music"
                                             className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                                           >
-                                            {downloadingIds.has(`music-${video.id}`) ? (
+                                            {downloadingId === `music-${video.id}` ? (
                                               <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
                                             ) : (
                                               <Download className="h-3 w-3" aria-hidden="true" />
@@ -9552,7 +9316,7 @@ export default function DashboardPage() {
                                           </span>
                                           <button
                                             type="button"
-                                            disabled={downloadingIds.has(`voice-${video.id}`)}
+                                            disabled={downloadingId === `voice-${video.id}`}
                                             onClick={(event) => {
                                               event.stopPropagation()
                                               void downloadAudioFile(`voice-${video.id}`, audio.voiceover!.url, audio.voiceover!.name)
@@ -9561,7 +9325,7 @@ export default function DashboardPage() {
                                             title="Download voiceover"
                                             className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                                           >
-                                            {downloadingIds.has(`voice-${video.id}`) ? (
+                                            {downloadingId === `voice-${video.id}` ? (
                                               <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
                                             ) : (
                                               <Download className="h-3 w-3" aria-hidden="true" />
@@ -9578,36 +9342,20 @@ export default function DashboardPage() {
                             </Popover>
                           )
                         })()}
-                        {variant === 'final' && video.video?.storage_path ? (() => {
-                          const cr = copyrightStatuses[video.id]
-                          const checking = autoCopyrightInFlight.current.has(video.id) || (copyrightLoading && copyrightJob?.id === video.id)
-                          const tone = cr?.verdict === 'approved'
-                            ? 'border-emerald-300/50 bg-emerald-300/10 text-emerald-300 hover:border-emerald-300/70'
-                            : cr?.verdict === 'rejected'
-                            ? 'border-rose-400/50 bg-rose-400/10 text-rose-400 hover:border-rose-400/70'
-                            : cr?.verdict === 'caution'
-                            ? 'border-amber-300/50 bg-amber-300/10 text-amber-300 hover:border-amber-300/70'
-                            : 'border-white/10 text-zinc-400 hover:border-violet-300/40 hover:bg-violet-300/10 hover:text-violet-200'
-                          const label = cr ? `Copyright: ${cr.verdict}` : 'Copyright check'
-                          return (
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                void runCopyrightCheck(video)
-                              }}
-                              aria-label={label}
-                              title={cr?.summary ? `${label} — ${cr.summary}` : label}
-                              className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border transition ${tone}`}
-                            >
-                              {checking ? (
-                                <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
-                              ) : (
-                                <Shield className="h-3 w-3" aria-hidden="true" />
-                              )}
-                            </button>
-                          )
-                        })() : null}
+                        {variant === 'final' && video.video?.storage_path ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void runCopyrightCheck(video)
+                            }}
+                            aria-label="Copyright check"
+                            title="Copyright check"
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-violet-300/40 hover:bg-violet-300/10 hover:text-violet-200"
+                          >
+                            <Shield className="h-3 w-3" aria-hidden="true" />
+                          </button>
+                        ) : null}
                         {variant === 'final' ? (
                           <button
                             type="button"
@@ -9675,7 +9423,7 @@ export default function DashboardPage() {
               <div className="grid gap-5">
                 <section className="grid gap-3">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-green-400">Final videos</h3>
+                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Final videos</h3>
                     <span className="grid h-5 min-w-5 place-items-center rounded-full border border-white/10 px-1.5 text-[10px] font-semibold text-zinc-300">
                       {finalizedItems.length}
                     </span>
@@ -9735,7 +9483,7 @@ export default function DashboardPage() {
 
                 <section className="grid gap-3">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-yellow-400">Drafts</h3>
+                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Drafts</h3>
                     <span className="grid h-5 min-w-5 place-items-center rounded-full border border-white/10 px-1.5 text-[10px] font-semibold text-zinc-300">
                       {draftItems.length}
                     </span>
@@ -10323,7 +10071,7 @@ export default function DashboardPage() {
             <DialogTitle>Image preview</DialogTitle>
           </DialogHeader>
           {previewImageUrl ? (
-            <SignedImage
+            <img
               src={previewImageUrl}
               alt="Attachment preview"
               className="mx-auto max-h-[80vh] w-auto object-contain"
