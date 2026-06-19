@@ -354,13 +354,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "generator_copyright_reviews_job_id_fkey"
-            columns: ["job_id"]
-            isOneToOne: true
-            referencedRelation: "generator_generation_jobs"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "generator_copyright_reviews_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
