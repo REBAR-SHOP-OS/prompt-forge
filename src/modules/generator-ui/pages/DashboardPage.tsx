@@ -893,13 +893,19 @@ export default function DashboardPage() {
   }
 
   // Run a real AI copyright review of the final video + its music/voiceover.
-  const runCopyrightCheck = async (video: JobDetail) => {
+  // `silent` runs the check in the background (no dialog) — used for the
+  // one-time automatic review fired right after a Final Film is produced.
+  const runCopyrightCheck = async (video: JobDetail, opts?: { silent?: boolean }) => {
     const storagePath = video.video?.storage_path
     if (!storagePath) return
-    setCopyrightJob(video)
-    setCopyrightResult(null)
-    setCopyrightError(null)
-    setCopyrightLoading(true)
+    const silent = opts?.silent === true
+    if (!silent) {
+      setCopyrightJob(video)
+      setCopyrightResult(null)
+      setCopyrightError(null)
+      setCopyrightLoading(true)
+    }
+    setCopyrightChecking((prev) => new Set(prev).add(video.id))
     try {
       const audio = projectAudio[video.id]
       const [videoUrl, musicUrl, voiceoverUrl] = await Promise.all([
@@ -914,6 +920,7 @@ export default function DashboardPage() {
           videoUrl,
           musicUrl: musicUrl ?? undefined,
           voiceoverUrl: voiceoverUrl ?? undefined,
+          jobId: video.id,
         },
       })
       if (error) {
@@ -924,13 +931,21 @@ export default function DashboardPage() {
       }
       const result = (data as { result?: CopyrightResult } | null)?.result
       if (!result) throw new Error('No analysis result returned.')
-      setCopyrightResult(result)
+      setCopyrightReviews((prev) => ({ ...prev, [video.id]: result }))
+      if (!silent) setCopyrightResult(result)
     } catch (err) {
-      setCopyrightError(err instanceof Error ? err.message : 'Copyright analysis failed.')
+      if (!silent) setCopyrightError(err instanceof Error ? err.message : 'Copyright analysis failed.')
+      else console.warn('[copyright] auto-check failed', err)
     } finally {
-      setCopyrightLoading(false)
+      if (!silent) setCopyrightLoading(false)
+      setCopyrightChecking((prev) => {
+        const next = new Set(prev)
+        next.delete(video.id)
+        return next
+      })
     }
   }
+
   const downloadImageFile = async (imageId: string, url: string) => {
     if (downloadingId) return
     setDownloadingId(imageId)
