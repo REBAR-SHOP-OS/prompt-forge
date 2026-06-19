@@ -156,14 +156,58 @@ function isAllowedFrameUrl(url: string, userId: string): boolean {
     return false;
   }
 
-  if (parsed.href.startsWith(SUPABASE_PUBLIC_STORAGE_PREFIX)) {
+  // Own wan-frames object (signed / public / authenticated form) scoped to the
+  // caller's own `{userId}/` folder.
+  if (SUPABASE_WAN_FRAMES_PREFIXES.some((prefix) => parsed.href.startsWith(prefix))) {
     const path = parsed.pathname;
-    const prefix = `/storage/v1/object/public/wan-frames/${userId}/`;
-    return path.startsWith(prefix);
+    return [
+      `/storage/v1/object/sign/wan-frames/${userId}/`,
+      `/storage/v1/object/public/wan-frames/${userId}/`,
+      `/storage/v1/object/authenticated/wan-frames/${userId}/`,
+    ].some((prefix) => path.startsWith(prefix));
   }
 
   return EXTRA_PUBLIC_FRAME_HOSTS.includes(parsed.hostname.toLowerCase());
 }
+
+// wan-frames is private, so the URL handed to an external provider must be a
+// fresh, valid signed URL. Re-mint one from the storage path using the service
+// client (bypasses RLS) so the provider can always fetch the frame regardless of
+// how stale the caller's URL is. Falls back to the original URL on any failure.
+async function resolveFrameUrlForProvider(
+  svc: ReturnType<typeof getServiceClient>,
+  userId: string,
+  url: string | null,
+): Promise<string | null> {
+  if (!url) return url;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+  const m = parsed.pathname.match(
+    /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?wan-frames\/(.+)$/,
+  );
+  if (!m) return url; // External (allow-listed) host — leave as-is.
+  let path: string;
+  try {
+    path = decodeURIComponent(m[1].split("?")[0]);
+  } catch {
+    path = m[1].split("?")[0];
+  }
+  if (!path.startsWith(`${userId}/`)) return url;
+  try {
+    const { data, error } = await svc.storage
+      .from("wan-frames")
+      .createSignedUrl(path, 60 * 60 * 6); // 6h — comfortably covers provider render
+    if (error || !data?.signedUrl) return url;
+    return data.signedUrl;
+  } catch {
+    return url;
+  }
+}
+
 
 // Estimate render progress when the provider hasn't reported one yet.
 // Capped conservatively so the UI never falsely implies "almost done".
