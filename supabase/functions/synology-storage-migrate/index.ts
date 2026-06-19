@@ -199,4 +199,3 @@ Deno.serve(async (req) => {
 
   return jsonResponse({ status: "started", cap });
 });
-});
