@@ -7558,7 +7558,13 @@ export default function DashboardPage() {
                     return (
                       <article
                         key={job.id}
-                        className={`flex flex-col gap-3 rounded-2xl border bg-white/[0.035] p-3 ${selectedArchiveIds.has(job.id) ? 'border-sky-400/60 ring-1 ring-sky-400/40' : 'border-white/10'}`}
+                        className={`flex flex-col gap-3 rounded-2xl border p-3 ${
+                          selectedArchiveIds.has(job.id)
+                            ? 'border-sky-400/60 ring-1 ring-sky-400/40'
+                            : filmsCategory === 'final'
+                              ? 'border-green-500/30 bg-green-950/40'
+                              : 'border-white/10 bg-white/[0.035]'
+                        }`}
                       >
                         <div
                           className={`group relative aspect-video w-full shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a] ${video?.storage_path ? 'cursor-pointer' : ''}`}
