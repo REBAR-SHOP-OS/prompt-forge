@@ -96,31 +96,38 @@ Deno.serve(async (req) => {
     'tmp="$(mktemp -d)"',
     'trap \'rm -rf "$tmp"\' EXIT',
     downloadCmd,
-    // The DSM bundled ffmpeg is stripped (no working H.264 / broken mpeg4).
-    // Discover every ffmpeg on the box and pick the first one that has a real
-    // H.264 encoder (libx264 / libopenh264 / h264_*). Fall back to the default
-    // ffmpeg with mpeg4 only if none is found.
+    // The DSM bundled ffmpeg may be stripped. Prefer a real software H.264
+    // encoder; hardware-only encoders need device setup and are not reliable in
+    // this SSH worker. If H.264 is missing, retry with a smaller MPEG-4 Part 2
+    // MP4 so oversized vertical WebM files still produce a downloadable .mp4.
     'CANDS="$(command -v ffmpeg || true)"',
     'for p in /var/packages/ffmpeg7/target/bin/ffmpeg /var/packages/ffmpeg6/target/bin/ffmpeg /var/packages/ffmpeg/target/bin/ffmpeg /var/packages/CodecPack/target/bin/ffmpeg /var/packages/VideoStation/target/bin/ffmpeg /usr/local/bin/ffmpeg /opt/bin/ffmpeg /usr/bin/ffmpeg; do [ -x "$p" ] && CANDS="$CANDS $p"; done',
     'FF=""; H264=""',
     'for c in $CANDS; do E="$("$c" -hide_banner -encoders 2>/dev/null)";',
-    '  if echo "$E" | grep -qE "[[:space:]](libx264|h264_synology|h264_vaapi|libopenh264)[[:space:]]"; then FF="$c";',
+    '  if echo "$E" | grep -qE "[[:space:]](libx264|h264_synology|libopenh264)[[:space:]]"; then FF="$c";',
     '    if echo "$E" | grep -q "[[:space:]]libx264[[:space:]]"; then H264="libx264";',
     '    elif echo "$E" | grep -q "[[:space:]]libopenh264[[:space:]]"; then H264="libopenh264";',
-    '    elif echo "$E" | grep -q "[[:space:]]h264_vaapi[[:space:]]"; then H264="h264_vaapi";',
     '    else H264="h264_synology"; fi; break; fi; done',
     'if [ -z "$FF" ]; then FF="$(command -v ffmpeg || echo /usr/local/bin/ffmpeg)"; fi',
     'ENC="$("$FF" -hide_banner -encoders 2>/dev/null)"',
     'if [ -n "$H264" ]; then VENC="$H264"; else VENC="mpeg4"; fi',
-    // Prefer the native AAC encoder; fall back to libmp3lame if AAC is missing.
+    // Prefer the native AAC encoder; fall back to MP3; drop audio only when the
+    // box cannot encode an MP4-compatible audio stream.
     'if echo "$ENC" | grep -q "[[:space:]]aac[[:space:]]"; then AENC="aac";',
     'elif echo "$ENC" | grep -q "[[:space:]]libmp3lame[[:space:]]"; then AENC="libmp3lame";',
-    'else AENC="copy"; fi',
-    'echo "USING FF=[$FF] VENC=[$VENC]"',
+    'else AENC="none"; fi',
+    'if [ "$AENC" = "none" ]; then AOPTS="-an"; else AOPTS="-c:a $AENC -b:a 192k -ac 2"; fi',
+    'echo "USING FF=[$FF] VENC=[$VENC] AENC=[$AENC]"',
     // MediaRecorder WebM has a 1000-fps timebase that breaks encoder init; force
     // a normal CFR framerate, yuv420p, and an explicit bitrate so the encoder
     // always opens. -r before output applies to the output stream.
-    '"$FF" -y -i "$tmp/in" -r 30 -vsync cfr -c:v $VENC -pix_fmt yuv420p -b:v 6M -c:a $AENC -b:a 192k -movflags +faststart "$tmp/out.mp4"',
+    'if [ "$VENC" = "libx264" ]; then VOPTS="-c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p"; else VOPTS="-c:v $VENC -pix_fmt yuv420p -b:v 6M"; fi',
+    'set +e',
+    '"$FF" -y -i "$tmp/in" -vf "fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p" -vsync cfr $VOPTS $AOPTS -movflags +faststart "$tmp/out.mp4"',
+    'RC=$?',
+    'if [ $RC -ne 0 ]; then echo "primary encode failed rc=$RC; retrying safe MPEG-4 fallback" >&2; "$FF" -y -i "$tmp/in" -vf "fps=30,scale=w=trunc(min(iw\\,720)/2)*2:h=trunc(ow/a/2)*2,format=yuv420p" -vsync cfr -c:v mpeg4 -vtag mp4v -q:v 5 $AOPTS -movflags +faststart "$tmp/out.mp4"; RC=$?; fi',
+    'set -e',
+    'if [ $RC -ne 0 ]; then exit $RC; fi',
     `curl -fsS -X PUT -H "content-type: video/mp4" --data-binary "@$tmp/out.mp4" "${uploadUrl}"`,
   ].join("\n");
 
