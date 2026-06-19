@@ -57,12 +57,18 @@ export async function proxiedVideoUrl(url: string): Promise<string> {
   // URL so behavior degrades gracefully rather than throwing.
   const own = parseOwnStorage(parsed);
   if (own && PRIVATE_STORAGE_BUCKETS.includes(own.bucket)) {
+    // Migrated to the NAS? Stream it through the storage proxy.
+    try {
+      const nas = await resolveNasStreamUrl(own.bucket, own.path);
+      if (nas) return nas;
+    } catch { /* fall back to signed URL */ }
     const { data, error } = await supabase.storage
       .from(own.bucket)
       .createSignedUrl(own.path, SIGNED_URL_TTL_SECONDS);
     if (!error && data?.signedUrl) return data.signedUrl;
     return url;
   }
+
 
   // Other own-storage PUBLIC objects (e.g. user-images, wan-frames) are already
   // CORS-enabled and Range-capable, and crucially require NO auth token. Routing
