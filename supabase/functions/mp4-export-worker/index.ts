@@ -116,7 +116,7 @@ Deno.serve(async (req) => {
     'if echo "$ENC" | grep -q "[[:space:]]aac[[:space:]]"; then AENC="aac";',
     'elif echo "$ENC" | grep -q "[[:space:]]libmp3lame[[:space:]]"; then AENC="libmp3lame";',
     'else AENC="copy"; fi',
-    'echo "USING FF=[$FF] VENC=[$VENC] AENC=[$AENC]"',
+    'echo "USING FF=[$FF] VENC=[$VENC]"',
     // MediaRecorder WebM has a 1000-fps timebase that breaks encoder init; force
     // a normal CFR framerate, yuv420p, and an explicit bitrate so the encoder
     // always opens. -r before output applies to the output stream.
