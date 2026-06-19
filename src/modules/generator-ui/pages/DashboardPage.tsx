@@ -737,6 +737,13 @@ export default function DashboardPage() {
   const [copyrightLoading, setCopyrightLoading] = useState(false)
   const [copyrightResult, setCopyrightResult] = useState<CopyrightResult | null>(null)
   const [copyrightError, setCopyrightError] = useState<string | null>(null)
+  // Persisted per-final-film verdicts so the Library shield icon can reflect
+  // approved (green) / rejected (red) / caution (amber) across reloads.
+  const [copyrightReviews, setCopyrightReviews] = useState<Record<string, CopyrightResult>>({})
+  // Jobs currently being checked (manual or auto) — drives the spinner and
+  // guarantees the automatic post-finalize check runs exactly once per film.
+  const [copyrightChecking, setCopyrightChecking] = useState<Set<string>>(new Set())
+  const copyrightAutoRunRef = useRef<Set<string>>(new Set())
 
   // Download a film as a standard, broadly-compatible MP4. Final Film output
   // is WebM (MediaRecorder), which fails in QuickTime / WMP / mobile galleries.
