@@ -109,7 +109,7 @@ import { videoLibraryGateway } from '@/modules/video-library/gateway'
 import type { VideoSummary } from '@/modules/video-library/contract'
 import { generatorUiGateway } from '@/modules/generator-ui/gateway'
 import { mergeVideoUrls, MergeCancelledError, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
-import { ensureMp4 } from '@/modules/generator-ui/lib/transcodeToMp4'
+
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
 import { DownloadFormatMenu } from '@/modules/generator-ui/components/DownloadFormatMenu'
 import UsageStatsPopover from '@/modules/generator-ui/components/UsageStatsPopover'
