@@ -844,36 +844,86 @@ export default function DashboardPage() {
         return
       }
 
-      // The source is WebM. The NAS box's ffmpeg cannot encode H.264, so we
-      // convert in the browser with ffmpeg.wasm (libx264 + AAC, +faststart).
-      setDownloadProgressFor(cardId, 0)
-      const href = await fetchableUrl(src.bucket, src.path)
-      const res = await fetch(href)
-      if (!res.ok) throw new Error(`Could not download the source video (${res.status})`)
-      const sourceBlob = await res.blob()
+      // The source is WebM. In-browser ffmpeg.wasm reliably timed out on real
+      // Final Films (single-thread WASM encode), so the percentage hit 100,
+      // restarted, and never produced a file. We now convert SERVER-SIDE: a
+      // dedicated export job transcodes to a real H.264/AAC MP4, and we only
+      // download once the job reports `completed` with a usable URL.
+      setDownloadProgressFor(cardId, 1)
 
-      const result = await ensureMp4(sourceBlob, sourceBlob.type || 'video/webm', (info) => {
-        if (info.stage === 'encode') setDownloadProgressFor(cardId, Math.round(info.ratio * 100))
-        else if (info.stage === 'readout') setDownloadProgressFor(cardId, 100)
-      })
-
-      if (result.mimeType !== 'video/mp4') {
-        // Engine unavailable in this browser — never silently save a WebM under
-        // an .mp4 name. Tell the user to use the WEBM option instead.
-        throw new Error('MP4 conversion is not available in this browser. Use “Download original (WEBM)”.')
+      // Resolve a downloadable URL for a server-export result {bucket, path|url}.
+      const downloadExportResult = async (
+        out: { url?: string | null; bucket?: string | null; path?: string | null },
+      ) => {
+        const filename = `${namePrefix}-${cardId.slice(0, 8)}.mp4`
+        let href = out.url ?? null
+        if (!href && out.bucket && out.path) {
+          // NAS-backed already-MP4 source streams through the proxy.
+          try {
+            const nas = await resolveNasStreamUrl(out.bucket, out.path, filename)
+            if (nas) href = nas
+          } catch { /* fall back to signed URL */ }
+          if (!href) {
+            const { data, error } = await supabase.storage
+              .from(out.bucket)
+              .createSignedUrl(out.path, 60 * 60, { download: filename })
+            if (error || !data?.signedUrl) throw new Error('Could not prepare the MP4 download')
+            href = data.signedUrl
+          }
+        }
+        if (!href) throw new Error('MP4 export did not return a downloadable file')
+        setDownloadProgressFor(cardId, 100)
+        await triggerDownload(href, filename)
       }
 
-      setDownloadProgressFor(cardId, 100)
-      const filename = `${namePrefix}-${cardId.slice(0, 8)}.mp4`
-      const blobUrl = URL.createObjectURL(result.blob)
-      const a = document.createElement('a')
-      a.href = blobUrl
-      a.download = filename
-      a.rel = 'noopener'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000)
+      // 1) Kick off (or reuse a cached) server-side export.
+      const { data: created, error: createErr } = await supabase.functions.invoke('mp4-export-create', {
+        body: { bucket: src.bucket, storagePath: src.path },
+      })
+      if (createErr) throw new Error(createErr.message || 'Could not start MP4 export')
+      const createStatus = (created as { status?: string })?.status
+
+      // Immediate result (already MP4, NAS MP4, or a cached export).
+      if (createStatus === 'completed') {
+        if ((created as { nas?: boolean })?.nas) {
+          await downloadSigned(src.bucket, src.path)
+        } else {
+          await downloadExportResult(created as { url?: string; bucket?: string; path?: string })
+        }
+        return
+      }
+
+      const jobId = (created as { jobId?: string })?.jobId
+      if (createStatus !== 'processing' || !jobId) {
+        throw new Error('Could not start MP4 export')
+      }
+
+      // 2) Poll the job until it finishes. The server transcode runs in its own
+      //    invocation; we poll on a fixed cadence with a hard ceiling so the UI
+      //    never loops forever. Progress nudges upward but only reaches 100 on a
+      //    real completed URL.
+      const POLL_INTERVAL_MS = 3_000
+      const MAX_POLLS = 100 // ~5 minutes
+      let fakeProgress = 1
+      for (let i = 0; i < MAX_POLLS; i++) {
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
+        const { data: stat, error: statErr } = await supabase.functions.invoke('mp4-export-status', {
+          body: { jobId },
+        })
+        if (statErr) continue // transient; keep polling
+        const s = stat as { status?: string; url?: string; bucket?: string; path?: string; error?: string }
+        if (s?.status === 'completed') {
+          await downloadExportResult(s)
+          return
+        }
+        if (s?.status === 'failed') {
+          throw new Error(s?.error || 'MP4 conversion failed on the server')
+        }
+        // pending/processing → advance the visible percentage (cap < 95).
+        fakeProgress = Math.min(94, fakeProgress + 3)
+        setDownloadProgressFor(cardId, fakeProgress)
+      }
+      throw new Error('MP4 export is taking too long. Please try again in a moment.')
     } catch (err) {
       // Never download a WebM in place of MP4 — only surface a clear error.
       console.error('MP4 export failed', err)
