@@ -113,8 +113,9 @@ Deno.serve(async (req) => {
   try {
     const res = await exec(conn, remoteCmd);
     if (res.code !== 0) {
+      const tail = res.stderr.replace(/\s+/g, " ").trim().slice(-200);
       console.error("[mp4-export-worker] conversion failed", res.code, res.stderr.slice(-500));
-      return await fail("MP4 conversion failed");
+      return await fail(tail ? `MP4 conversion failed: ${tail}` : "MP4 conversion failed");
     }
   } catch (e) {
     console.error("[mp4-export-worker] exec error", e instanceof Error ? e.message : e);
