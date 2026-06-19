@@ -93,22 +93,30 @@ Deno.serve(async (req) => {
   const remoteCmd = [
     "set -e",
     `export INTERNAL_TOKEN='${serviceKey}'`,
-    'FF="$(command -v ffmpeg || echo /usr/local/bin/ffmpeg)"',
     'tmp="$(mktemp -d)"',
     'trap \'rm -rf "$tmp"\' EXIT',
     downloadCmd,
-    // Pick an available H.264 encoder (Synology ffmpeg often lacks libx264 due
-    // to licensing). Fall back to libopenh264, then mpeg4 so we always produce a
-    // playable .mp4 instead of failing outright.
+    // The DSM bundled ffmpeg is stripped (no working H.264 / broken mpeg4).
+    // Discover every ffmpeg on the box and pick the first one that has a real
+    // H.264 encoder (libx264 / libopenh264 / h264_*). Fall back to the default
+    // ffmpeg with mpeg4 only if none is found.
+    'CANDS="$(command -v ffmpeg || true)"',
+    'for p in /var/packages/ffmpeg7/target/bin/ffmpeg /var/packages/ffmpeg6/target/bin/ffmpeg /var/packages/ffmpeg/target/bin/ffmpeg /var/packages/CodecPack/target/bin/ffmpeg /var/packages/VideoStation/target/bin/ffmpeg /usr/local/bin/ffmpeg /opt/bin/ffmpeg /usr/bin/ffmpeg; do [ -x "$p" ] && CANDS="$CANDS $p"; done',
+    'FF=""; H264=""',
+    'for c in $CANDS; do E="$("$c" -hide_banner -encoders 2>/dev/null)";',
+    '  if echo "$E" | grep -qE "[[:space:]](libx264|h264_synology|h264_vaapi|libopenh264)[[:space:]]"; then FF="$c";',
+    '    if echo "$E" | grep -q "[[:space:]]libx264[[:space:]]"; then H264="libx264";',
+    '    elif echo "$E" | grep -q "[[:space:]]libopenh264[[:space:]]"; then H264="libopenh264";',
+    '    elif echo "$E" | grep -q "[[:space:]]h264_vaapi[[:space:]]"; then H264="h264_vaapi";',
+    '    else H264="h264_synology"; fi; break; fi; done',
+    'if [ -z "$FF" ]; then FF="$(command -v ffmpeg || echo /usr/local/bin/ffmpeg)"; fi',
     'ENC="$("$FF" -hide_banner -encoders 2>/dev/null)"',
-    'if echo "$ENC" | grep -q "[[:space:]]libx264[[:space:]]"; then VENC="libx264";',
-    'elif echo "$ENC" | grep -q "[[:space:]]h264_synology[[:space:]]"; then VENC="h264_synology";',
-    'elif echo "$ENC" | grep -q "[[:space:]]libopenh264[[:space:]]"; then VENC="libopenh264";',
-    'else VENC="mpeg4"; fi',
+    'if [ -n "$H264" ]; then VENC="$H264"; else VENC="mpeg4"; fi',
     // Prefer the native AAC encoder; fall back to libmp3lame if AAC is missing.
     'if echo "$ENC" | grep -q "[[:space:]]aac[[:space:]]"; then AENC="aac";',
     'elif echo "$ENC" | grep -q "[[:space:]]libmp3lame[[:space:]]"; then AENC="libmp3lame";',
     'else AENC="copy"; fi',
+    'echo "USING FF=[$FF] VENC=[$VENC] AENC=[$AENC]"',
     // MediaRecorder WebM has a 1000-fps timebase that breaks encoder init; force
     // a normal CFR framerate, yuv420p, and an explicit bitrate so the encoder
     // always opens. -r before output applies to the output stream.
