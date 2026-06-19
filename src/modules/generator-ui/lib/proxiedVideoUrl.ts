@@ -12,6 +12,7 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import { FUNCTIONS_BASE } from "@/core/api/client";
+import { resolveNasStreamUrl } from "./signedStorageUrl";
 
 // Storage buckets that are now PRIVATE. Any stored URL pointing at one of these
 // (whether saved in the old `…/object/public/<bucket>/…` form, the
