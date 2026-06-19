@@ -989,29 +989,42 @@ export default function DashboardPage() {
         if (!href) {
           const { data, error } = await supabase.storage
             .from(ref.bucket)
-            .createSignedUrl(ref.path, 60 * 60, { download: filename })
+            .createSignedUrl(ref.path, 300, { download: filename })
           if (!error && data?.signedUrl) href = data.signedUrl
         }
       }
 
       if (!href) href = await proxiedVideoUrl(url)
 
+      const downloadHref = href
       // Signed URL carries Content-Disposition: attachment. Trigger the save via
       // a hidden anchor with a download attribute (no page navigation).
       const a = document.createElement('a')
-      a.href = href
+      a.href = downloadHref
       a.download = filename
       a.style.display = 'none'
       document.body.appendChild(a)
       a.click()
-      setTimeout(() => {
-        document.body.removeChild(a)
-        finishDownloading(cardId)
-      }, 1500)
+      setTimeout(() => document.body.removeChild(a), 2000)
+      // Fallback: if Chrome blocked the programmatic click, give the user a
+      // visible link to click themselves.
+      toast.success('Download ready', {
+        description: (
+          <a
+            href={downloadHref}
+            download={filename}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline font-medium"
+          >
+            Download didn’t start? Click here
+          </a>
+        ),
+      })
+      setTimeout(() => finishDownloading(cardId), 2000)
     } catch (err) {
       console.error('Direct download failed', err)
       window.open(url, '_blank')
-    } finally {
       finishDownloading(cardId)
     }
   }
