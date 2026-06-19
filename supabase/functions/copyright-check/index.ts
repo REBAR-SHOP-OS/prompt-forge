@@ -4,7 +4,8 @@
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 
-const MAX_VIDEO_BYTES = 25 * 1024 * 1024; // 25MB cap (inline base64)
+const INLINE_VIDEO_BYTES = 18 * 1024 * 1024; // inline only small videos (Gemini ~20MB request cap)
+const MAX_VIDEO_BYTES = 500 * 1024 * 1024; // larger videos go through the Files API (up to 2GB supported)
 const MAX_AUDIO_BYTES = 15 * 1024 * 1024; // 15MB cap for audio
 
 const ANALYSIS_PROMPT = `You are a strict copyright & content-rights reviewer for short marketing/social videos.
