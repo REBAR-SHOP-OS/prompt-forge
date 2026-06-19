@@ -702,11 +702,8 @@ export default function DashboardPage() {
     setDownloadProgressMap((prev) => ({ ...prev, [id]: pct }))
   }, [])
 
-  // The heavy in-browser MP4 transcode uses a single shared ffmpeg.wasm engine,
-  // so two transcodes at once would corrupt each other / risk an OOM page jump.
-  // We serialize ONLY the MP4 conversions through this promise chain; all other
-  // download types still start immediately and run fully in parallel.
-  const mp4QueueRef = useRef<Promise<unknown>>(Promise.resolve())
+
+
 
   // NOTE: we intentionally do NOT pre-warm ffmpeg.wasm on mount. Loading the
   // heavy WASM core (and holding its memory) without an explicit user action
