@@ -92,6 +92,7 @@ Deno.serve(async (req) => {
     const videoUrl: string = typeof body?.videoUrl === "string" ? body.videoUrl.trim() : "";
     const musicUrl: string = typeof body?.musicUrl === "string" ? body.musicUrl.trim() : "";
     const voiceoverUrl: string = typeof body?.voiceoverUrl === "string" ? body.voiceoverUrl.trim() : "";
+    const jobId: string = typeof body?.jobId === "string" ? body.jobId.trim() : "";
 
     if (!videoUrl || !isAllowedUrl(videoUrl)) {
       return new Response(JSON.stringify({ error: "videoUrl is required and must be a Supabase storage URL" }), {
