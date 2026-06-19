@@ -46,19 +46,27 @@ Deno.serve(async (req) => {
   if (req.method !== "GET") return errorResponse("METHOD_NOT_ALLOWED", "Use GET", 405);
 
   const url = new URL(req.url);
-  const userId = await resolveUserId(req, url);
-  if (!userId) return errorResponse("UNAUTHORIZED", "Sign in required", 401);
+
+  // Internal callers (e.g. mp4-export-worker on the NAS) authenticate with the
+  // service-role token and read any owner's file by id. Everyone else must be a
+  // signed-in user reading their own file.
+  const internal = req.headers.get("x-internal-token") === getEnv("SUPABASE_SERVICE_ROLE_KEY");
+  let userId: string | null = null;
+  if (!internal) {
+    userId = await resolveUserId(req, url);
+    if (!userId) return errorResponse("UNAUTHORIZED", "Sign in required", 401);
+  }
 
   const id = url.searchParams.get("id") ?? "";
   if (!id) return errorResponse("BAD_REQUEST", "id required", 400);
 
   const svc = getServiceClient();
-  const { data: row, error } = await svc
+  let query = svc
     .from("storage_objects")
     .select("user_id, nas_path, content_type, size_bytes, backend")
-    .eq("id", id)
-    .eq("user_id", userId)
-    .single();
+    .eq("id", id);
+  if (!internal) query = query.eq("user_id", userId as string);
+  const { data: row, error } = await query.single();
   if (error || !row) return errorResponse("NOT_FOUND", "File not found", 404);
   if (row.backend !== "synology" || !row.nas_path) {
     return errorResponse("WRONG_BACKEND", "File is not on the NAS", 409);
