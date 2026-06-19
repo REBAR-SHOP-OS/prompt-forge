@@ -97,7 +97,19 @@ Deno.serve(async (req) => {
     'tmp="$(mktemp -d)"',
     'trap \'rm -rf "$tmp"\' EXIT',
     downloadCmd,
-    `"$FF" -y -i "$tmp/in" -c:v libx264 -pix_fmt yuv420p -c:a aac -movflags +faststart "$tmp/out.mp4"`,
+    // Pick an available H.264 encoder (Synology ffmpeg often lacks libx264 due
+    // to licensing). Fall back to libopenh264, then mpeg4 so we always produce a
+    // playable .mp4 instead of failing outright.
+    'ENC="$("$FF" -hide_banner -encoders 2>/dev/null)"',
+    'if echo "$ENC" | grep -q "[[:space:]]libx264[[:space:]]"; then VENC="libx264 -pix_fmt yuv420p";',
+    'elif echo "$ENC" | grep -q "[[:space:]]h264_synology[[:space:]]"; then VENC="h264_synology";',
+    'elif echo "$ENC" | grep -q "[[:space:]]libopenh264[[:space:]]"; then VENC="libopenh264 -pix_fmt yuv420p";',
+    'else VENC="mpeg4 -q:v 3"; fi',
+    // Prefer the native AAC encoder; fall back to libmp3lame if AAC is missing.
+    'if echo "$ENC" | grep -q "[[:space:]]aac[[:space:]]"; then AENC="aac";',
+    'elif echo "$ENC" | grep -q "[[:space:]]libmp3lame[[:space:]]"; then AENC="libmp3lame";',
+    'else AENC="copy"; fi',
+    '"$FF" -y -i "$tmp/in" -c:v $VENC -c:a $AENC -movflags +faststart "$tmp/out.mp4"',
     `curl -fsS -X PUT -H "content-type: video/mp4" --data-binary "@$tmp/out.mp4" "${uploadUrl}"`,
   ].join("\n");
 
