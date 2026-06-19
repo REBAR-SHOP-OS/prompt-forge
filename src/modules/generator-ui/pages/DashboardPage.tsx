@@ -1374,6 +1374,30 @@ export default function DashboardPage() {
   // `lockedProjectRatio` is kept only for Final Film merge/preview consistency,
   // not to override the user's per-clip selection.
   const userId = session?.user?.id ?? null
+
+  // Load persisted copyright verdicts so Library shield icons show the right
+  // color (green/red/amber) immediately, surviving reloads.
+  useEffect(() => {
+    if (!userId) { setCopyrightReviews({}); return }
+    let cancelled = false
+    void (async () => {
+      try {
+        const { data } = await supabase
+          .from('generator_copyright_reviews')
+          .select('job_id, result')
+          .eq('user_id', userId)
+        if (cancelled || !data) return
+        const map: Record<string, CopyrightResult> = {}
+        for (const row of data as Array<{ job_id: string; result: CopyrightResult }>) {
+          if (row?.job_id && row.result) map[row.job_id] = row.result as CopyrightResult
+        }
+        setCopyrightReviews(map)
+      } catch (err) {
+        console.warn('[copyright] failed to load reviews', err)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [userId])
   const approvedStorageKey = userId ? `approved-videos:${userId}` : null
   const [approvedIds, setApprovedIds] = useState<Set<string>>(() => new Set())
   const [showWelcome, setShowWelcome] = useState(false)
