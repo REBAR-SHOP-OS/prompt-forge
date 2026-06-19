@@ -209,7 +209,13 @@ export function sftpPutStream(
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          if (value) ws.write(value);
+          if (value) {
+            // Respect backpressure so very large files don't buffer in memory.
+            const ok = ws.write(value);
+            if (!ok) {
+              await new Promise<void>((res) => ws.once("drain", res));
+            }
+          }
         }
         ws.end();
       } catch (err) {
