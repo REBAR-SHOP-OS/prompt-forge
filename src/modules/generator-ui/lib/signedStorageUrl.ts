@@ -98,17 +98,37 @@ export async function resolveSignedUrl(
 }
 
 /**
- * React hook: returns a freshly signed URL for a stored reference. Renders the
- * original value first (or empty) then swaps in the signed URL once resolved.
+ * Best initial value to render before the async sign resolves:
+ *  - a cached signed URL when we already have one (no flash),
+ *  - "" for a private-bucket reference we still need to sign (rendering the raw
+ *    public/bare URL would fire a doomed request and flash a broken image),
+ *  - the value unchanged for everything else (blob:, data:, external, public).
+ */
+function initialResolved(value: string | null | undefined): string {
+  if (!value) return "";
+  if (value.startsWith("blob:") || value.startsWith("data:")) return value;
+  const ref = parseStorageRef(value);
+  if (!ref || !PRIVATE_BUCKETS.includes(ref.bucket)) return value;
+  const cached = cache.get(`${ref.bucket}/${ref.path}`);
+  if (cached && cached.expiresAt > Date.now()) return cached.url;
+  return "";
+}
+
+/**
+ * React hook: returns a freshly signed URL for a stored reference. Renders a
+ * cached signed URL (or nothing for an unsigned private ref) first, then swaps
+ * in the freshly signed URL once resolved — never firing a doomed request for a
+ * private bucket's raw public/bare URL.
  */
 export function useSignedUrl(value: string | null | undefined): string {
-  const [resolved, setResolved] = useState<string>(value ?? "");
+  const [resolved, setResolved] = useState<string>(() => initialResolved(value));
   useEffect(() => {
     let active = true;
     if (!value) {
       setResolved("");
       return;
     }
+    setResolved(initialResolved(value));
     resolveSignedUrl(value)
       .then((url) => {
         if (active) setResolved(url);
