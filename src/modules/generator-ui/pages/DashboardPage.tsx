@@ -865,20 +865,18 @@ export default function DashboardPage() {
         setDownloadProgressFor(cardId, 100)
         downloadHandledByToast = true
         const downloadHref = href
-        toast.success(
-          (t) => (
-            <div className="flex flex-col gap-1">
-              <span className="font-medium">MP4 ready to download</span>
-              <a
-                href={downloadHref}
-                download={filename}
-                className="underline text-sm text-green-200 hover:text-green-100"
-                onClick={() => { toast.dismiss(t); finishDownloading(cardId) }}
-              >
-                ⬇ Save {filename}
-              </a>
-            </div>
-          ),
+        const toastId = toast.success(
+          <div className="flex flex-col gap-1">
+            <span className="font-medium">MP4 ready to download</span>
+            <a
+              href={downloadHref}
+              download={filename}
+              className="underline text-sm text-green-200 hover:text-green-100"
+              onClick={() => { toast.dismiss(toastId); finishDownloading(cardId) }}
+            >
+              ⬇ Save {filename}
+            </a>
+          </div>,
           { duration: 60000, icon: '✅' },
         )
       }
