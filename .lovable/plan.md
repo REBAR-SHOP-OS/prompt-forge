@@ -1,46 +1,37 @@
-# Fix: MP4 download stuck at 0% and never finishing
+نتیجه مورد انتظار:
+- در کارت ویدیو فقط یک آیکون دانلود دیده شود.
+- با کلیک روی آن یک کشوی انتخاب فرمت باز شود.
+- کاربر دقیقاً ببیند چه فرمتی دریافت می‌کند.
+- MP4 واقعی فقط وقتی ارائه شود که واقعاً قابل تولید/دسترسی باشد و دیگر روی تبدیل طولانی گیر نکند.
 
-## Problem
-When you click **MP4** on a Final Film, the button sits at `0%` and often never downloads.
+یافته فعلی:
+- دانلود سریع فعلی فرمت اصلی فایل را می‌دهد؛ برای Final Film معمولاً `WebM` است، و برای ویدیوهای آپلودی/تولیدی ممکن است `MP4` باشد.
+- دکمه `MP4` فعلی تلاش می‌کند WebM را داخل مرورگر با ffmpeg.wasm به MP4 تبدیل کند.
+- لاگ واقعی نشان می‌دهد تبدیل 1080p بعد از 5 دقیقه timeout شده و retry 720p هم بعد از 5 دقیقه timeout شده؛ پس مشکل اصلی این است که تبدیل MP4 در مرورگر برای این فایل‌ها قابل اتکا نیست و باید از مسیر امن‌تری استفاده شود.
 
-Root cause (verified in code):
-1. Final Films are stored as **WebM** (MediaRecorder). Streamed WebM has **no duration in its header**.
-2. The progress shown on the button comes only from ffmpeg.wasm's native `progress` event. Without a known duration, ffmpeg reports `progress = 0` for the whole encode → the button is frozen at `0%`.
-3. The single-thread `ultrafast` encode of a 1080p film is slow and can hit the 5-minute timeout, so sometimes **no file is produced at all** and the conversion silently ends.
+پلن اجرا:
+1. UI دانلود را در هر دو محل کارت‌های ویدیو/Final Film یکپارچه می‌کنم:
+   - دو دکمه فعلی دانلود + MP4 حذف می‌شود.
+   - فقط یک آیکون Download باقی می‌ماند.
+   - کلیک روی آن یک Dropdown باز می‌کند با گزینه‌های فرمت موجود.
 
-This is a frontend/presentation problem only — no backend or schema change is needed.
+2. گزینه‌های کشو:
+   - `Original` یا `Source format` با نمایش فرمت واقعی فایل مثل `WebM` / `MP4` / `MOV`.
+   - `MP4` فقط به‌عنوان گزینه جداگانه وقتی لازم است؛ اگر فایل از قبل MP4 باشد همان دانلود مستقیم انجام می‌شود.
+   - اگر منبع WebM باشد، گزینه MP4 به مسیر تبدیل می‌رود، اما وضعیت تبدیل داخل همان گزینه/دکمه نمایش داده می‌شود.
 
-## Goal
-- The percentage moves and reflects real progress (never stuck at 0).
-- A real, playable `.mp4` is always produced for WebM films.
-- If conversion genuinely can't finish, the user always still gets a valid file (with its true extension) plus a clear message — never a frozen button.
+3. رفع اصولی MP4:
+   - مسیر فعلی ffmpeg مرورگر را به‌جای 1080p→720p طولانی، به مسیر سبک‌تر و قابل اتمام تغییر می‌دهم: encode مستقیم با سقف پایین‌تر مثل 720p/540p و تنظیمات سریع‌تر برای خروجی واقعی H.264/AAC MP4.
+   - timeout را کوتاه‌تر و شفاف‌تر می‌کنم تا کاربر 10 دقیقه منتظر شکست نماند.
+   - اگر تبدیل در مرورگر شکست بخورد، فایل WebM را دیگر به‌جای MP4 جا نمی‌زنیم؛ پیام دقیق می‌دهیم که MP4 در این دستگاه/مرورگر ساخته نشد و گزینه Original قابل دانلود است.
 
-## Changes
+4. امنیت و پایداری:
+   - هیچ secret یا دسترسی جدیدی اضافه نمی‌شود.
+   - دانلود مستقیم از signed/proxied URL فعلی حفظ می‌شود.
+   - پسوند و MIME خروجی همیشه با فایل واقعی یکی می‌ماند.
+   - یک دانلود همزمان برای هر کارت حفظ می‌شود تا چند تبدیل سنگین همزمان مرورگر را خراب نکند.
 
-### 1. `transcodeToMp4.ts` — reliable progress (the core fix)
-- Before encoding, probe the **source duration** from the WebM blob using a hidden `<video>` element (`loadedmetadata`). This gives a known total time even though the container header lacks it.
-- Subscribe to ffmpeg's **log stream** (`ff.on('log', ...)`) and parse `time=HH:MM:SS.xx` lines from the encoder. Compute `ratio = currentTime / duration`. This produces real progress even when the native `progress` event reports 0.
-- Keep the existing native `progress` event as a secondary source; use whichever is higher so the bar only moves forward.
-- Add a low-rate **heartbeat** (small monotonic nudge, capped at ~95%) so the UI is never visually frozen during long single steps.
-
-### 2. `transcodeToMp4.ts` — guaranteed completion
-- On encode timeout/failure, retry once at **720p** (`scale='min(1280,iw)':-2`) which is markedly faster/lighter and usually completes where 1080p stalls.
-- Keep the existing graceful degrade: if the engine can't run at all, return the original WebM with its true extension (already implemented) — but now always surface a clear toast.
-
-### 3. `DashboardPage.tsx` — honest UI state
-- Initialize the button to a `…` / `0%` "preparing" state and update from the new real-ratio callback.
-- Ensure `downloadProgress` is reset in `finally` (already done) and that a download is always triggered on every code path (success → mp4; degrade → original with correct extension).
-
-## Out of scope (not changing now)
-- No server-side conversion / new edge function (edge runtime has no ffmpeg binary and payload limits — would be a larger, riskier change). The in-browser path is fixed to be reliable instead.
-- No change to how films are recorded/stored.
-
-## Validation
-- Open the preview, click **MP4** on a WebM Final Film, confirm the percentage climbs from 0 → 100 and a playable `.mp4` downloads.
-- Confirm a film already stored as MP4 downloads instantly.
-- Check console for ffmpeg log/progress and absence of timeouts.
-
-## Technical notes
-- Duration probe: `URL.createObjectURL(blob)` → `<video>.preload="metadata"` → read `video.duration`, then revoke. Guard `Infinity`/`NaN` (fallback to native-progress-only).
-- ffmpeg log parsing regex: `/time=(\d+):(\d+):(\d+\.\d+)/`.
-- All work stays in `src/modules/generator-ui/lib/transcodeToMp4.ts` and `src/modules/generator-ui/pages/DashboardPage.tsx`.
+5. تست:
+   - با لاگ و Preview بررسی می‌کنم که فقط یک آیکون دانلود دیده شود و کشو باز شود.
+   - روی یک Final Film تست می‌کنم گزینه Original دانلود را شروع کند.
+   - گزینه MP4 را تست می‌کنم و اگر تبدیل موفق نشد، باید شکست کنترل‌شده با پیام واضح داشته باشد، نه گیر کردن روی صفر یا چرخش بی‌پایان.

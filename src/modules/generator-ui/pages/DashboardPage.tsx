@@ -111,6 +111,7 @@ import { generatorUiGateway } from '@/modules/generator-ui/gateway'
 import { mergeVideoUrls, MergeCancelledError, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
 import { ensureMp4, preloadMp4Transcoder } from '@/modules/generator-ui/lib/transcodeToMp4'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
+import { DownloadFormatMenu } from '@/modules/generator-ui/components/DownloadFormatMenu'
 import UsageStatsPopover from '@/modules/generator-ui/components/UsageStatsPopover'
 import VideoToVideoDialog from '@/modules/generator-ui/components/VideoToVideoDialog'
 import { VoiceoverDialog } from '@/modules/generator-ui/components/VoiceoverDialog'
@@ -7564,43 +7565,19 @@ export default function DashboardPage() {
                             </p>
                             <div className="flex shrink-0 items-center gap-1.5">
                               {job.status === 'completed' && video?.storage_path ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    disabled={downloadingId === job.id}
-                                    onClick={(event) => {
-                                      event.stopPropagation()
-                                      if (!video) return
-                                      void downloadDirect(job.id, video.storage_path, 'film')
-                                    }}
-                                    aria-label="Download video (fast)"
-                                    title="Download (fast)"
-                                    className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
-                                  >
-                                    {downloadingId === job.id ? (
-                                      <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
-                                    ) : (
-                                      <Download className="h-3 w-3" aria-hidden="true" />
-                                    )}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={downloadingId === job.id}
-                                    onClick={(event) => {
-                                      event.stopPropagation()
-                                      if (!video) return
-                                      void downloadAsMp4(job.id, video.storage_path, 'film')
-                                    }}
-                                    aria-label="Download as MP4 (converted)"
-                                    title="Download as MP4"
-                                    className="grid h-6 shrink-0 place-items-center rounded-full border border-white/10 px-1.5 text-[9px] font-semibold leading-none text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
-                                  >
-                                    {downloadingId === job.id
-                                      ? (downloadProgress != null ? `${downloadProgress}%` : '…')
-                                      : 'MP4'}
-
-                                  </button>
-                                </>
+                                <DownloadFormatMenu
+                                  url={video.storage_path}
+                                  busy={downloadingId === job.id}
+                                  progress={downloadingId === job.id ? downloadProgress : null}
+                                  onDownloadOriginal={() => {
+                                    if (!video) return
+                                    void downloadDirect(job.id, video.storage_path, 'film')
+                                  }}
+                                  onDownloadMp4={() => {
+                                    if (!video) return
+                                    void downloadAsMp4(job.id, video.storage_path, 'film')
+                                  }}
+                                />
                               ) : null}
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>
@@ -9317,43 +9294,17 @@ export default function DashboardPage() {
                       </p>
                       <div className="flex shrink-0 items-center gap-1">
                         {variant === 'final' && video.video?.storage_path ? (
-                          <>
-                            <button
-                              type="button"
-                              disabled={downloadingId === video.id}
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                // Fast direct download (no in-browser transcode).
-                                void downloadDirect(video.id, video.video!.storage_path, 'final-film')
-                              }}
-                              aria-label="Download video (fast)"
-                              title="Download (fast)"
-                              className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
-                            >
-                              {downloadingId === video.id ? (
-                                <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
-                              ) : (
-                                <Download className="h-3 w-3" aria-hidden="true" />
-                              )}
-                            </button>
-                            <button
-                              type="button"
-                              disabled={downloadingId === video.id}
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                // Compatibility path: transcode WebM → standard MP4.
-                                void downloadAsMp4(video.id, video.video!.storage_path, 'final-film')
-                              }}
-                              aria-label="Download as MP4 (converted)"
-                              title="Download as MP4"
-                              className="grid h-6 shrink-0 place-items-center rounded-full border border-white/10 px-1.5 text-[9px] font-semibold leading-none text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
-                            >
-                              {downloadingId === video.id
-                                ? (downloadProgress != null ? `${downloadProgress}%` : '…')
-                                : 'MP4'}
-
-                            </button>
-                          </>
+                          <DownloadFormatMenu
+                            url={video.video.storage_path}
+                            busy={downloadingId === video.id}
+                            progress={downloadingId === video.id ? downloadProgress : null}
+                            onDownloadOriginal={() => {
+                              void downloadDirect(video.id, video.video!.storage_path, 'final-film')
+                            }}
+                            onDownloadMp4={() => {
+                              void downloadAsMp4(video.id, video.video!.storage_path, 'final-film')
+                            }}
+                          />
                         ) : null}
                         {(() => {
                           const audio = projectAudio[video.id]
