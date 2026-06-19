@@ -118,6 +118,7 @@ export function VoiceoverDialog({
   const [customDuration, setCustomDuration] = useState<string>('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const [showSettings, setShowSettings] = useState(false)
   const lastUrlRef = useRef<string | null>(null)
 
   function resolveDurationSec(): number | undefined {
