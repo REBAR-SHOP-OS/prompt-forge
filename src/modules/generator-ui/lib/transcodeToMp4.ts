@@ -382,19 +382,22 @@ export async function ensureMp4(
   let data: unknown
   try {
     try {
-      await runStage('encode', () => execWithTimeout('encode', buildEncodeArgs(inputName, outputName, 23, 1920)))
+      // Primary attempt: 720p, fast preset. This is the sweet spot that
+      // actually completes in-browser for typical Final Films, instead of the
+      // old 1080p encode that timed out.
+      await runStage('encode', () => execWithTimeout('encode', buildEncodeArgs(inputName, outputName, 26, 1280)))
     } catch (err1) {
-      // First attempt stalled/failed (often a slow 1080p single-thread encode).
-      // Retry once at 720p — markedly faster and lighter, so it completes where
-      // 1080p timed out — re-attaching the progress listeners to the fresh core.
-      console.warn('[ensureMp4] 1080p encode failed, retrying at 720p:', stringifyAny(err1))
+      // First attempt stalled/failed. Retry once at 540p — markedly lighter, so
+      // it completes where 720p timed out — re-attaching the progress listeners
+      // to the fresh core.
+      console.warn('[ensureMp4] 720p encode failed, retrying at 540p:', stringifyAny(err1))
       lastRatio = 0
       try { await ff.deleteFile(inputName) } catch { /* ignore */ }
       ff = await runStage('load (retry)', () => resetFFmpeg())
       try { ff.on('progress', onFfProgress) } catch { /* ignore */ }
       try { ff.on('log', onFfLog) } catch { /* ignore */ }
       await writeInput(ff)
-      await runStage('encode (retry)', () => execWithTimeout('encode (retry)', buildEncodeArgs(inputName, outputName, 28, 1280)))
+      await runStage('encode (retry)', () => execWithTimeout('encode (retry)', buildEncodeArgs(inputName, outputName, 30, 960)))
     }
 
     onProgress?.({ stage: 'readout', ratio: 1 })
