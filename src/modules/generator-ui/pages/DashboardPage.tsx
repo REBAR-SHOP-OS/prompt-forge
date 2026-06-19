@@ -9450,20 +9450,39 @@ export default function DashboardPage() {
                             </Popover>
                           )
                         })()}
-                        {variant === 'final' && video.video?.storage_path ? (
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              void runCopyrightCheck(video)
-                            }}
-                            aria-label="Copyright check"
-                            title="Copyright check"
-                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-violet-300/40 hover:bg-violet-300/10 hover:text-violet-200"
-                          >
-                            <Shield className="h-3 w-3" aria-hidden="true" />
-                          </button>
-                        ) : null}
+                        {variant === 'final' && video.video?.storage_path ? (() => {
+                          const review = copyrightReviews[video.id]
+                          const checking = copyrightChecking.has(video.id)
+                          const verdict = review?.verdict
+                          const tone = verdict === 'approved'
+                            ? { border: 'border-emerald-300/40 bg-emerald-300/10 text-emerald-300', Icon: ShieldCheck, label: 'Content check: Approved' }
+                            : verdict === 'rejected'
+                              ? { border: 'border-rose-300/40 bg-rose-300/10 text-rose-300', Icon: ShieldX, label: 'Content check: Rejected' }
+                              : verdict === 'caution'
+                                ? { border: 'border-amber-300/40 bg-amber-300/10 text-amber-300', Icon: ShieldAlert, label: 'Content check: Needs review' }
+                                : { border: 'border-white/10 text-zinc-400 hover:border-violet-300/40 hover:bg-violet-300/10 hover:text-violet-200', Icon: Shield, label: 'Run content check' }
+                          const Icon = tone.Icon
+                          return (
+                            <button
+                              type="button"
+                              disabled={checking}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                void runCopyrightCheck(video)
+                              }}
+                              aria-label={tone.label}
+                              title={tone.label}
+                              className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border transition disabled:opacity-70 ${tone.border}`}
+                            >
+                              {checking ? (
+                                <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                              ) : (
+                                <Icon className="h-3 w-3" aria-hidden="true" />
+                              )}
+                            </button>
+                          )
+                        })() : null}
+
                         {variant === 'final' ? (
                           <button
                             type="button"
