@@ -8707,7 +8707,7 @@ export default function DashboardPage() {
                   className="relative w-full min-w-0 overflow-hidden rounded-xl border border-amber-300/20 bg-[#15171a]"
                   style={{ aspectRatio: (lockedProjectRatio ?? aspectRatio) === '9:16' ? '9 / 16' : (lockedProjectRatio ?? aspectRatio) === '16:9' ? '16 / 9' : '1 / 1' }}
                 >
-                  <img
+                  <SignedImage
                     src={currentCover.storage_path}
                     alt="Film cover"
                     className="h-full w-full object-cover"
