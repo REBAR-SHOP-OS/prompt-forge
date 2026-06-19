@@ -4773,10 +4773,10 @@ export default function DashboardPage() {
       return
     }
 
-    const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+    const { data } = await supabase.storage.from(FRAMES_BUCKET).createSignedUrl(storagePath, 60 * 60 * 6)
     setUploadedFiles((currentFiles) => currentFiles.map((uploadedFile) => (
       uploadedFile.id === fileId
-        ? { ...uploadedFile, status: 'ready', url: data.publicUrl, error: null }
+        ? { ...uploadedFile, status: 'ready', url: data?.signedUrl ?? '', error: null }
         : uploadedFile
     )))
   }
