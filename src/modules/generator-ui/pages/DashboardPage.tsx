@@ -312,6 +312,47 @@ function buildSocialTargetOrigins(detected: string | null): string[] {
 const USER_IMAGES_BUCKET = 'user-images'
 const USER_AUDIO_BUCKET = 'user-audio'
 
+/**
+ * The `user-images` bucket is PRIVATE, so any persisted public URL
+ * (.../object/public/user-images/<key>) returns 400 when loaded in an <img>.
+ * Extract the bucket-relative object key from whatever form is stored.
+ */
+function userImageObjectKey(storagePath: string | null | undefined): string | null {
+  if (!storagePath) return null
+  const marker = `/${USER_IMAGES_BUCKET}/`
+  const idx = storagePath.indexOf(marker)
+  if (idx >= 0) return storagePath.slice(idx + marker.length)
+  // Already a bucket-relative key (no http origin, no signed/blob/data URL).
+  if (!/^https?:|^blob:|^data:/.test(storagePath)) return storagePath
+  return null
+}
+
+/** Resolve a displayable signed URL for a private-bucket image. Falls back to the raw value. */
+async function signUserImageUrl(storagePath: string | null | undefined): Promise<string> {
+  const raw = storagePath ?? ''
+  // Already a directly-usable URL that isn't a (broken) public-bucket URL.
+  if (/^blob:|^data:/.test(raw)) return raw
+  if (/\/object\/sign\//.test(raw)) return raw
+  const key = userImageObjectKey(raw)
+  if (!key) return raw
+  try {
+    const { data, error } = await supabase.storage
+      .from(USER_IMAGES_BUCKET)
+      .createSignedUrl(key, 60 * 60 * 24 * 365)
+    if (!error && data?.signedUrl) return data.signedUrl
+  } catch {
+    /* fall through */
+  }
+  return raw
+}
+
+/** Sign every image row's storage_path so private-bucket thumbnails render. */
+async function signUserImageRows<T extends { storage_path: string }>(rows: T[]): Promise<T[]> {
+  return Promise.all(
+    rows.map(async (row) => ({ ...row, storage_path: await signUserImageUrl(row.storage_path) })),
+  )
+}
+
 type ModelChoice = {
   id: string
   label: string
