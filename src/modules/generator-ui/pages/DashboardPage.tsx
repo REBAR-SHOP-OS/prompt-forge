@@ -815,6 +815,13 @@ export default function DashboardPage() {
 
 
 
+    // Chrome blocks programmatic downloads triggered long after the original
+    // user click (the conversion poll loop runs for seconds/minutes). When the
+    // export completes we surface a user-clickable link instead, which counts as
+    // a fresh user gesture and is allowed. This flag keeps the spinner up until
+    // the user clicks that link rather than clearing it in the finally block.
+    let downloadHandledByToast = false
+
     try {
       const src = resolveSource(url)
       if (!src) throw new Error('Unrecognized video location')
@@ -856,7 +863,24 @@ export default function DashboardPage() {
         if (!href) href = out.url ?? null
         if (!href) throw new Error('MP4 export did not return a downloadable file')
         setDownloadProgressFor(cardId, 100)
-        await triggerDownload(href, filename)
+        downloadHandledByToast = true
+        const downloadHref = href
+        toast.success(
+          (t) => (
+            <div className="flex flex-col gap-1">
+              <span className="font-medium">MP4 ready to download</span>
+              <a
+                href={downloadHref}
+                download={filename}
+                className="underline text-sm text-green-200 hover:text-green-100"
+                onClick={() => { toast.dismiss(t); finishDownloading(cardId) }}
+              >
+                ⬇ Save {filename}
+              </a>
+            </div>
+          ),
+          { duration: 60000, icon: '✅' },
+        )
       }
 
       // 1) Kick off (or reuse a cached) server-side export.
@@ -913,9 +937,12 @@ export default function DashboardPage() {
       const msg = err instanceof Error ? err.message : ''
       toast.error(msg || 'Could not export MP4. Please try again.')
     } finally {
-      finishDownloading(cardId)
+      if (!downloadHandledByToast) finishDownloading(cardId)
     }
   }
+
+
+
 
 
   // Direct download of the original file (e.g. WEBM). NAS-aware: resolves the
