@@ -42,8 +42,14 @@ export type Mp4ProgressCallback = (info: {
   ratio: number
 }) => void
 
-/** Hard cap per ffmpeg exec call (5 min) — anything longer means hung. */
-const FFMPEG_EXEC_TIMEOUT_MS = 5 * 60_000
+/**
+ * Hard cap per ffmpeg exec call. A single-thread WASM encode of a long 1080p
+ * film routinely blew past 5 min and then failed anyway, leaving the user
+ * staring at a frozen percentage. We now encode at a lighter resolution that
+ * actually finishes, and cap each attempt at 2.5 min so a genuine hang surfaces
+ * a clear error fast instead of after 10 minutes.
+ */
+const FFMPEG_EXEC_TIMEOUT_MS = 150_000
 /**
  * Skip transcode for blobs bigger than this. ffmpeg.wasm holds the whole input
  * in the WASM heap AND fetchFile/writeFile create transient copies, so peak
