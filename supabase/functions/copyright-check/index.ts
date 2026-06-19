@@ -184,6 +184,48 @@ Deno.serve(async (req) => {
       };
     }
 
+    // Persist the verdict so the Library icon can reflect it across reloads.
+    if (jobId) {
+      try {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+        if (supabaseUrl && serviceKey) {
+          const verdict = typeof result?.verdict === "string" ? result.verdict : "caution";
+          const videoStatus = (result?.video as Record<string, unknown> | undefined)?.status;
+          const musicStatus = (result?.music as Record<string, unknown> | undefined)?.status;
+          const summary = typeof result?.summary === "string" ? result.summary : null;
+          const row = {
+            job_id: jobId,
+            user_id: auth.userId,
+            verdict,
+            video_status: typeof videoStatus === "string" ? videoStatus : null,
+            music_status: typeof musicStatus === "string" ? musicStatus : null,
+            summary,
+            result,
+            updated_at: new Date().toISOString(),
+          };
+          const upsertResp = await fetch(
+            `${supabaseUrl}/rest/v1/generator_copyright_reviews?on_conflict=job_id`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                apikey: serviceKey,
+                Authorization: `Bearer ${serviceKey}`,
+                Prefer: "resolution=merge-duplicates,return=minimal",
+              },
+              body: JSON.stringify(row),
+            },
+          );
+          if (!upsertResp.ok) {
+            console.warn("copyright-check persist failed", upsertResp.status, await upsertResp.text().catch(() => ""));
+          }
+        }
+      } catch (persistErr) {
+        console.warn("copyright-check persist error", persistErr);
+      }
+    }
+
     return new Response(JSON.stringify({ result }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
