@@ -738,25 +738,28 @@ export default function DashboardPage() {
   // conversion runs server-side (job-based) so the user ALWAYS gets a real .mp4
   // or a clear error — a WebM is never silently downloaded in its place.
   const triggerDownload = async (href: string, filename: string) => {
-    try {
-      const hasServerDownloadDisposition = /[?&]download=/.test(href)
-      if (hasServerDownloadDisposition) {
-        const opened = window.open(href, '_blank')
-        if (opened) {
-          opened.opener = null
-          return
-        }
-      }
+    // Supabase signed URLs already carry Content-Disposition: attachment, so a
+    // top-level navigation reliably saves the file (even after async work that
+    // Chrome would block for programmatic a.click()/window.open()).
+    if (href.includes('supabase')) {
+      window.location.href = href
+      return
+    }
 
+    // Non-Supabase (e.g. NAS proxy / other origins): fetch as a blob and save.
+    try {
+      const response = await fetch(href)
+      if (!response.ok) throw new Error(`Download failed (${response.status})`)
+      const blob = await response.blob()
+      const blobUrl = URL.createObjectURL(blob)
       const a = document.createElement('a')
-      a.href = href
+      a.href = blobUrl
       a.download = filename
-      a.target = '_blank'
-      a.rel = 'noopener noreferrer'
       a.style.display = 'none'
       document.body.appendChild(a)
       a.click()
-      setTimeout(() => document.body.removeChild(a), 1000)
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
     } catch (err) {
       console.error('Download failed, falling back to new tab', err)
       window.open(href, '_blank')
