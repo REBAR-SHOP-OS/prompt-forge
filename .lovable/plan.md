@@ -1,20 +1,38 @@
-## Goal
-When uploading product photos, each item should automatically get its name from the source file name (instead of "Untitled"). The existing rename/edit capability stays exactly as it is, so the user can still change it.
+## مشکل ریشه‌ای (تأیید‌شده با شواهد)
 
-## Change
-In `src/modules/generator-ui/pages/DashboardPage.tsx`, inside `handleProductPhotoSelected`:
+آپلودها **سالم انجام می‌شوند** و فایل واقعاً ذخیره می‌شود — در لاگ شبکه، آپلود `rebar_hook_031` با وضعیت `200` و پاسخ `{"Key": "...", "Id": "..."}` ثبت شده. پس فایل‌ها گم نمی‌شوند.
 
-- For each uploaded file, derive a default title from `file.name` with the extension stripped (e.g. `mesh-roll.png` → `mesh-roll`).
-- Use the optional "Product name" field as an override when the user typed one; otherwise fall back to the per-file derived name.
-- Save that value into the `title` column on insert (replacing the current `trimmedName || null`).
+مشکل فقط در **نمایش** است:
 
-So:
-- If the user typed a name in the "Product name (optional)" field → all files in the batch use that name (current behavior preserved as an explicit override).
-- If the field is empty → each file gets its own file-name-based title instead of `null` (which currently renders as "Untitled").
+- باکت `user-images` به‌صورت **Private** ساخته شده.
+- اما کد هنگام ذخیره، آدرس را به شکل **Public URL** نگه می‌دارد:
+  `.../storage/v1/object/public/user-images/...`
+- چون باکت Private است، باز کردن این آدرس Public همیشه خطای `400` می‌دهد (تست شد: `GET => 400`).
+- نتیجه: `<img>` خالی می‌ماند و همه‌جا placeholderِ «Product» دیده می‌شود — دقیقاً همان چیزی که در اسکرین‌شات هست.
 
-## Editing
-No change needed — `renameProductPhoto` / the inline rename input (around lines 6960–7010) already lets the user click and edit the name. Since titles will now be non-null, they render in normal (non-italic) style, and remain fully editable.
+این هم دلیل قبلیِ «دیده‌نشدن تصاویر» در بقیه بخش‌ها (Images) است.
 
-## Notes
-- Pure frontend/presentation change in the upload handler; no schema or backend changes.
-- Title still trimmed/capped at 100 chars.
+## راه‌حل پیشنهادی (کم‌ریسک و قطعی)
+
+**باکت `user-images` را Public کن.** این کار:
+- بلافاصله همه تصاویر موجود + آینده را نمایش‌پذیر می‌کند (آدرس‌های Public ذخیره‌شده فوراً کار می‌کنند).
+- نیازی به migration روی داده‌ها یا تغییر گسترده کد ندارد.
+- مسیر fetch تصویر توسط بک‌اند تولید ویدئو (که همین Public URL را می‌گیرد) را هم سالم نگه می‌دارد — یعنی چیزی نمی‌شکند.
+
+سپس برای محکم‌کاری:
+- در دو هندلر آپلود (`handleProductPhotoSelected` و `handleImageSelected`)، بعد از `upload`، نتیجه را تأیید می‌کنیم و فقط در صورت موفقیت ردیف DB ساخته می‌شود (جلوگیری از ردیف‌های «بی‌فایل» در آینده).
+- یک fallback کوچک در رندر تصویر اضافه می‌شود تا اگر آدرسی خراب بود، به‌جای کادر سفید، حالت خطا/تلاش مجدد نشان دهد.
+
+### گزینه جایگزین (امن‌تر ولی پرتغییرتر)
+باکت Private بماند و همه‌جا از **Signed URL** استفاده شود (مثل کاری که الان برای فایل‌های صوتی انجام می‌شود). این امنیت بیشتری دارد اما باید همه نقاط رندر تصویر + مسیر تغذیه تصویر به موتور تولید ویدئو به Signed URL تبدیل شوند که ریسک شکستن تولید را دارد.
+
+پیشنهاد من گزینه اول (Public کردن باکت) است چون با طراحی فعلی کد (که همه‌جا Public URL ذخیره می‌کند) هماهنگ است و کمترین ریسک را دارد.
+
+## مراحل اجرا
+1. باکت `user-images` را به Public تغییر بده.
+2. تأیید کن که آدرس Public یک تصویر موجود حالا `200` برمی‌گرداند و در UI نمایش داده می‌شود.
+3. هاردنینگ هندلرهای آپلود: تأیید موفقیت `upload` پیش از insert.
+4. fallback نمایش تصویر برای آدرس‌های خراب.
+
+## نکته امنیتی
+Public شدن باکت یعنی هر کسی که آدرس کاملِ (با UUID غیرقابل‌حدس) یک تصویر را داشته باشد می‌تواند آن را ببیند. باکت‌های ویدئو (`user-videos`, `merged-videos`) همچنان Private می‌مانند. اگر این سطح دسترسی برای عکس‌های محصول قابل‌قبول نیست، به‌جایش گزینه جایگزین (Signed URL) را اجرا می‌کنیم.
