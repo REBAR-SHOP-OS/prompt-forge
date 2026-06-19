@@ -1137,8 +1137,9 @@ export default function DashboardPage() {
       setArchiveJobs(jobs)
       setArchiveVideos(videos)
       const allImages = ((imagesRes as { data?: UserImageItem[] }).data ?? []) as UserImageItem[]
-      setArchiveImages(allImages.filter((i) => (i.category ?? 'general') !== 'product'))
-      setArchiveProductImages(allImages.filter((i) => (i.category ?? 'general') === 'product'))
+      const signedImages = await signUserImageRows(allImages)
+      setArchiveImages(signedImages.filter((i) => (i.category ?? 'general') !== 'product'))
+      setArchiveProductImages(signedImages.filter((i) => (i.category ?? 'general') === 'product'))
       const audioRows = ((audioRes as { data?: UserAudioItem[] }).data ?? []) as UserAudioItem[]
       // Generate short-lived signed URLs for private-bucket playback.
       const withUrls = await Promise.all(
