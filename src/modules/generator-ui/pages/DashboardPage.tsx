@@ -142,6 +142,7 @@ const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.red
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 import { resolveSignedUrl } from '@/modules/generator-ui/lib/signedStorageUrl'
+import { uploadAsset } from '@/modules/generator-ui/lib/uploadAsset'
 import { SignedImage } from '@/modules/generator-ui/components/SignedImage'
 import { getMajorOccasionForDate } from '@/modules/generator-ui/lib/majorOccasions'
 import { StylePreviewCard } from '@/modules/generator-ui/components/StylePreviewCard'
