@@ -7095,7 +7095,7 @@ export default function DashboardPage() {
                             title="Click to view"
                             className="group relative aspect-square w-full shrink-0 cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-[#15171a] transition hover:border-white/30"
                           >
-                            <img
+                            <SignedImage
                               src={img.storage_path}
                               alt="Product"
                               loading="lazy"
