@@ -819,14 +819,9 @@ export default function DashboardPage() {
         if (error || !data?.signedUrl) throw new Error('Could not prepare the MP4 download')
         href = data.signedUrl
       }
-      const a = document.createElement('a')
-      a.href = href
-      a.download = filename
-      a.rel = 'noopener'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
+      await triggerDownload(href, filename)
     }
+
 
     try {
       const src = resolveSource(url)
