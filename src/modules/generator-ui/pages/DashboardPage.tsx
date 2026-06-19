@@ -9577,7 +9577,7 @@ export default function DashboardPage() {
               <div className="grid gap-5">
                 <section className="grid gap-3">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Final videos</h3>
+                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-green-400">Final videos</h3>
                     <span className="grid h-5 min-w-5 place-items-center rounded-full border border-white/10 px-1.5 text-[10px] font-semibold text-zinc-300">
                       {finalizedItems.length}
                     </span>
