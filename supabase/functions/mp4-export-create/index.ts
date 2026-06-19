@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
     .from("mp4-exports")
     .createSignedUrl(outputPath, SIGNED_TTL);
   if (cached?.signedUrl) {
-    return jsonResponse({ status: "completed", url: cached.signedUrl, cached: true });
+    return jsonResponse({ status: "completed", url: cached.signedUrl, bucket: "mp4-exports", path: outputPath, cached: true });
   }
 
   // 3) Create a job and trigger the worker.
