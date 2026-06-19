@@ -5421,8 +5421,8 @@ export default function DashboardPage() {
           console.error(`${sceneLabel}: storage upload failed`, error)
           throw new Error(`${sceneLabel}: could not upload seed frame (${error.message})`)
         }
-        const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
-        return data.publicUrl
+        const { data } = await supabase.storage.from(FRAMES_BUCKET).createSignedUrl(storagePath, 60 * 60 * 6)
+        return data?.signedUrl ?? ''
       }
       await new Promise((r) => setTimeout(r, intervalMs))
     }
