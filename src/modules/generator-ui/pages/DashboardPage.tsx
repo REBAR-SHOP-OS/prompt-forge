@@ -894,13 +894,31 @@ export default function DashboardPage() {
         return
       }
 
+      // Primary path: re-record the WebM into MP4 with MediaRecorder. This is
+      // fast, shows real-time progress, and never depends on ffmpeg.wasm (whose
+      // load/encode can hang and strand the button at 10%). Only Chromium-based
+      // browsers support MP4 recording; others fall through to ffmpeg.wasm.
+      setDownloadProgress(10)
+      if (canRecordMp4()) {
+        try {
+          const mp4Blob = await recordBlobToMp4(blob, ({ ratio }) => {
+            setDownloadProgress(Math.round(10 + ratio * 85))
+          })
+          if (mp4Blob && mp4Blob.size > 0) {
+            setDownloadProgress(100)
+            triggerDownload(mp4Blob, `${namePrefix}-${cardId.slice(0, 8)}.mp4`)
+            return
+          }
+        } catch (recErr) {
+          console.warn('[download] MediaRecorder MP4 path failed, trying ffmpeg:', recErr)
+        }
+      }
+
       try {
-        // Surface real progress to the button: loading band 1-10%,
-        // encode 10-95%, readout 100%.
-        setDownloadProgress(1)
+        // Fallback: ffmpeg.wasm. loading band 10-20%, encode 20-95%.
         const mp4 = await ensureMp4(blob, blob.type, ({ stage, ratio }) => {
-          if (stage === 'loading') setDownloadProgress(Math.round(1 + ratio * 9))
-          else if (stage === 'encode') setDownloadProgress(Math.round(10 + ratio * 85))
+          if (stage === 'loading') setDownloadProgress(Math.round(10 + ratio * 10))
+          else if (stage === 'encode') setDownloadProgress(Math.round(20 + ratio * 75))
           else if (stage === 'readout') setDownloadProgress(100)
         })
         triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.${mp4.extension}`)
