@@ -67,8 +67,28 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return errorResponse("METHOD_NOT_ALLOWED", "Use POST", 405);
 
-  const token = req.headers.get("x-internal-token");
-  if (!token || token !== getEnv("SUPABASE_SERVICE_ROLE_KEY")) {
+  // Authorize via internal service-role token OR an authenticated admin user.
+  const internalToken = req.headers.get("x-internal-token");
+  let authorized = !!internalToken && internalToken === getEnv("SUPABASE_SERVICE_ROLE_KEY");
+  if (!authorized) {
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const jwt = authHeader.replace(/^Bearer\s+/i, "").trim();
+    if (jwt) {
+      try {
+        const svcAuth = getServiceClient();
+        const { data: userData } = await svcAuth.auth.getUser(jwt);
+        const uid = userData?.user?.id;
+        if (uid) {
+          const { data: isAdmin } = await svcAuth.rpc("has_role", {
+            _user_id: uid,
+            _role: "admin",
+          });
+          authorized = isAdmin === true;
+        }
+      } catch (_e) { /* unauthorized */ }
+    }
+  }
+  if (!authorized) {
     return errorResponse("UNAUTHORIZED", "Internal only", 401);
   }
 
