@@ -847,9 +847,10 @@ export default function DashboardPage() {
         out: { url?: string | null; bucket?: string | null; path?: string | null },
       ) => {
         const filename = `${namePrefix}-${cardId.slice(0, 8)}.mp4`
-        let href = out.url ?? null
-        if (!href && out.bucket && out.path) {
-          // NAS-backed already-MP4 source streams through the proxy.
+        let href: string | null = null
+        // Always prefer a signed URL with Content-Disposition: attachment so the browser
+        // triggers an actual file download rather than navigating to the cross-origin URL.
+        if (out.bucket && out.path) {
           try {
             const nas = await resolveNasStreamUrl(out.bucket, out.path, filename)
             if (nas) href = nas
@@ -858,10 +859,11 @@ export default function DashboardPage() {
             const { data, error } = await supabase.storage
               .from(out.bucket)
               .createSignedUrl(out.path, 60 * 60, { download: filename })
-            if (error || !data?.signedUrl) throw new Error('Could not prepare the MP4 download')
-            href = data.signedUrl
+            if (!error && data?.signedUrl) href = data.signedUrl
           }
         }
+        // Fall back to whatever URL the server already returned
+        if (!href) href = out.url ?? null
         if (!href) throw new Error('MP4 export did not return a downloadable file')
         setDownloadProgressFor(cardId, 100)
         await triggerDownload(href, filename)
