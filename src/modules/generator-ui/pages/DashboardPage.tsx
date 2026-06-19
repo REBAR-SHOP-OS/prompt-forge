@@ -10194,7 +10194,7 @@ export default function DashboardPage() {
             <DialogTitle>Image preview</DialogTitle>
           </DialogHeader>
           {previewImageUrl ? (
-            <img
+            <SignedImage
               src={previewImageUrl}
               alt="Attachment preview"
               className="mx-auto max-h-[80vh] w-auto object-contain"
