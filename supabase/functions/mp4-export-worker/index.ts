@@ -49,19 +49,27 @@ Deno.serve(async (req) => {
 
   await svc.from("mp4_export_jobs").update({ status: "processing" }).eq("id", jobId);
 
-  // Is the source already on the NAS? If so ffmpeg can read it locally — no download.
+  // Is the source already on the NAS? If so, read it back through the SFTP-based
+  // stream endpoint over HTTPS. We must NOT `cp` the nas_path directly: the SSH
+  // shell and the SFTP subsystem do not share the same filesystem root on this
+  // DSM box, so a file written via SFTP is not visible to a shell `cp`/ffmpeg.
   const { data: srcObj } = await svc
     .from("storage_objects")
-    .select("backend, nas_path")
+    .select("id, backend, nas_path")
     .eq("logical_bucket", job.source_bucket)
     .eq("object_key", job.source_path)
     .maybeSingle();
-  const sourceNasPath = srcObj?.backend === "synology" ? (srcObj?.nas_path as string | null) : null;
+  const sourceOnNas = srcObj?.backend === "synology" && !!srcObj?.nas_path;
 
+  const serviceKey = getEnv("SUPABASE_SERVICE_ROLE_KEY");
   let downloadCmd: string;
-  if (sourceNasPath) {
-    // Read straight from the local NAS path.
-    downloadCmd = `cp "${sourceNasPath.replace(/"/g, "")}" "$tmp/in"`;
+  if (sourceOnNas) {
+    const streamUrl =
+      `${getEnv("SUPABASE_URL")}/functions/v1/synology-storage-stream?id=${srcObj!.id}`;
+    // Token passed via an env var (not argv) so it isn't visible in the box's
+    // process list. ffmpeg reads the downloaded file locally afterwards.
+    downloadCmd =
+      `curl -fsSL -H "x-internal-token: $INTERNAL_TOKEN" "${streamUrl}" -o "$tmp/in"`;
   } else {
     const { data: dl, error: dlErr } = await svc.storage
       .from(job.source_bucket)
@@ -80,13 +88,39 @@ Deno.serve(async (req) => {
     `${getEnv("SUPABASE_URL")}/storage/v1/object/upload/sign/mp4-exports/${outputPath}?token=${up.token}`;
 
   // Build the remote conversion command. URLs contain only URL-safe characters.
+  // INTERNAL_TOKEN is exported (never passed as an argv flag) so it is not
+  // exposed in the box's process list.
   const remoteCmd = [
     "set -e",
-    'FF="$(command -v ffmpeg || echo /usr/local/bin/ffmpeg)"',
+    `export INTERNAL_TOKEN='${serviceKey}'`,
     'tmp="$(mktemp -d)"',
     'trap \'rm -rf "$tmp"\' EXIT',
     downloadCmd,
-    `"$FF" -y -i "$tmp/in" -c:v libx264 -pix_fmt yuv420p -c:a aac -movflags +faststart "$tmp/out.mp4"`,
+    // The DSM bundled ffmpeg is stripped (no working H.264 / broken mpeg4).
+    // Discover every ffmpeg on the box and pick the first one that has a real
+    // H.264 encoder (libx264 / libopenh264 / h264_*). Fall back to the default
+    // ffmpeg with mpeg4 only if none is found.
+    'CANDS="$(command -v ffmpeg || true)"',
+    'for p in /var/packages/ffmpeg7/target/bin/ffmpeg /var/packages/ffmpeg6/target/bin/ffmpeg /var/packages/ffmpeg/target/bin/ffmpeg /var/packages/CodecPack/target/bin/ffmpeg /var/packages/VideoStation/target/bin/ffmpeg /usr/local/bin/ffmpeg /opt/bin/ffmpeg /usr/bin/ffmpeg; do [ -x "$p" ] && CANDS="$CANDS $p"; done',
+    'FF=""; H264=""',
+    'for c in $CANDS; do E="$("$c" -hide_banner -encoders 2>/dev/null)";',
+    '  if echo "$E" | grep -qE "[[:space:]](libx264|h264_synology|h264_vaapi|libopenh264)[[:space:]]"; then FF="$c";',
+    '    if echo "$E" | grep -q "[[:space:]]libx264[[:space:]]"; then H264="libx264";',
+    '    elif echo "$E" | grep -q "[[:space:]]libopenh264[[:space:]]"; then H264="libopenh264";',
+    '    elif echo "$E" | grep -q "[[:space:]]h264_vaapi[[:space:]]"; then H264="h264_vaapi";',
+    '    else H264="h264_synology"; fi; break; fi; done',
+    'if [ -z "$FF" ]; then FF="$(command -v ffmpeg || echo /usr/local/bin/ffmpeg)"; fi',
+    'ENC="$("$FF" -hide_banner -encoders 2>/dev/null)"',
+    'if [ -n "$H264" ]; then VENC="$H264"; else VENC="mpeg4"; fi',
+    // Prefer the native AAC encoder; fall back to libmp3lame if AAC is missing.
+    'if echo "$ENC" | grep -q "[[:space:]]aac[[:space:]]"; then AENC="aac";',
+    'elif echo "$ENC" | grep -q "[[:space:]]libmp3lame[[:space:]]"; then AENC="libmp3lame";',
+    'else AENC="copy"; fi',
+    'echo "USING FF=[$FF] VENC=[$VENC]"',
+    // MediaRecorder WebM has a 1000-fps timebase that breaks encoder init; force
+    // a normal CFR framerate, yuv420p, and an explicit bitrate so the encoder
+    // always opens. -r before output applies to the output stream.
+    '"$FF" -y -i "$tmp/in" -r 30 -vsync cfr -c:v $VENC -pix_fmt yuv420p -b:v 6M -c:a $AENC -b:a 192k -movflags +faststart "$tmp/out.mp4"',
     `curl -fsS -X PUT -H "content-type: video/mp4" --data-binary "@$tmp/out.mp4" "${uploadUrl}"`,
   ].join("\n");
 
@@ -102,8 +136,9 @@ Deno.serve(async (req) => {
   try {
     const res = await exec(conn, remoteCmd);
     if (res.code !== 0) {
-      console.error("[mp4-export-worker] conversion failed", res.code, res.stderr.slice(-500));
-      return await fail("MP4 conversion failed");
+      const tail = res.stderr.replace(/\s+/g, " ").trim().slice(-200);
+      console.error("[mp4-export-worker] conversion failed", res.code, "STDOUT:", res.stdout.slice(-500), "STDERR:", res.stderr.slice(-800));
+      return await fail(tail ? `MP4 conversion failed: ${tail}` : "MP4 conversion failed");
     }
   } catch (e) {
     console.error("[mp4-export-worker] exec error", e instanceof Error ? e.message : e);
