@@ -351,8 +351,8 @@ Deno.serve(async (req) => {
     const ext = lastMime.split("/")[1]?.replace("jpeg", "jpg") ?? "png";
     const svc = getServiceClient();
     // Upload into wan-frames so the resulting URL is accepted by the
-    // jobs-create validator (which only allows public wan-frames/{userId}/...).
-    // Include an unguessable random component so public object URLs cannot be enumerated.
+    // jobs-create validator (which only allows your own wan-frames/{userId}/...).
+    // Include an unguessable random component so object paths cannot be enumerated.
     const path = `${auth.userId}/reframed-${Date.now()}-${aspectRatio.replace(":", "x")}-${crypto.randomUUID()}.${ext}`;
     const { error: upErr } = await svc.storage.from("wan-frames").upload(path, lastBytes, {
       contentType: lastMime, upsert: false,
@@ -363,12 +363,23 @@ Deno.serve(async (req) => {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const { data: pub } = svc.storage.from("wan-frames").getPublicUrl(path);
+    // wan-frames is a PRIVATE bucket — return a signed URL the client can render
+    // and re-submit as a start frame.
+    const { data: signed, error: signErr } = await svc.storage
+      .from("wan-frames")
+      .createSignedUrl(path, 60 * 60 * 6);
+    if (signErr || !signed?.signedUrl) {
+      console.error("image-reframe sign failed", signErr?.message);
+      return new Response(JSON.stringify({ error: "Could not sign result" }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     return new Response(
-      JSON.stringify({ publicUrl: pub.publicUrl, path, aspectRatio }),
+      JSON.stringify({ publicUrl: signed.signedUrl, path, aspectRatio }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
+
   } catch (e) {
     console.error("image-reframe unhandled error", e);
     return new Response(JSON.stringify({ error: "Internal error" }), {
