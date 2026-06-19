@@ -7613,7 +7613,7 @@ export default function DashboardPage() {
                                 <DownloadFormatMenu
                                   url={video.storage_path}
                                   busy={downloadingIds.has(job.id)}
-                                  progress={downloadingIds.has(job.id) ? downloadProgress : null}
+                                  progress={downloadProgressMap[job.id] ?? null}
                                   onDownloadOriginal={() => {
                                     if (!video) return
                                     void downloadDirect(job.id, video.storage_path, 'film')
@@ -9342,7 +9342,7 @@ export default function DashboardPage() {
                           <DownloadFormatMenu
                             url={video.video.storage_path}
                             busy={downloadingIds.has(video.id)}
-                            progress={downloadingIds.has(video.id) ? downloadProgress : null}
+                            progress={downloadProgressMap[video.id] ?? null}
                             onDownloadOriginal={() => {
                               void downloadDirect(video.id, video.video!.storage_path, 'final-film')
                             }}
@@ -9393,7 +9393,7 @@ export default function DashboardPage() {
                                           </span>
                                           <button
                                             type="button"
-                                            disabled={downloadingIds.has()`music-${video.id}`}
+                                            disabled={downloadingIds.has(`music-${video.id}`)}
                                             onClick={(event) => {
                                               event.stopPropagation()
                                               void downloadAudioFile(`music-${video.id}`, audio.music!.url, audio.music!.name)
@@ -9402,7 +9402,7 @@ export default function DashboardPage() {
                                             title="Download music"
                                             className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                                           >
-                                            {downloadingIds.has()`music-${video.id}` ? (
+                                            {downloadingIds.has(`music-${video.id}`) ? (
                                               <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
                                             ) : (
                                               <Download className="h-3 w-3" aria-hidden="true" />
@@ -9421,7 +9421,7 @@ export default function DashboardPage() {
                                           </span>
                                           <button
                                             type="button"
-                                            disabled={downloadingIds.has()`voice-${video.id}`}
+                                            disabled={downloadingIds.has(`voice-${video.id}`)}
                                             onClick={(event) => {
                                               event.stopPropagation()
                                               void downloadAudioFile(`voice-${video.id}`, audio.voiceover!.url, audio.voiceover!.name)
@@ -9430,7 +9430,7 @@ export default function DashboardPage() {
                                             title="Download voiceover"
                                             className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                                           >
-                                            {downloadingIds.has()`voice-${video.id}` ? (
+                                            {downloadingIds.has(`voice-${video.id}`) ? (
                                               <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
                                             ) : (
                                               <Download className="h-3 w-3" aria-hidden="true" />
