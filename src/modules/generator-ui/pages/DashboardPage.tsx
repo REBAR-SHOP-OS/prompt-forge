@@ -858,8 +858,9 @@ export default function DashboardPage() {
   // Content-Disposition so it streams the file natively — no in-browser fetch
   // into memory and no ffmpeg transcode. Falls back gracefully on failure.
   const downloadDirect = async (cardId: string, url: string, namePrefix: string) => {
-    if (downloadingId) return
-    setDownloadingId(cardId)
+    if (downloadingIds.has(cardId)) return
+    startDownloading(cardId)
+
     try {
       const lower = url.toLowerCase().split('?')[0]
       const ext = lower.endsWith('.mp4') ? 'mp4'
