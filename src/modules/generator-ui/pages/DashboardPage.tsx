@@ -764,12 +764,21 @@ export default function DashboardPage() {
     // Sign the (already-MP4) object with a download disposition and stream it.
     const downloadSigned = async (bucket: string, path: string) => {
       const filename = `${namePrefix}-${cardId.slice(0, 8)}.mp4`
-      const { data, error } = await supabase.storage
-        .from(bucket)
-        .createSignedUrl(path, 60 * 60, { download: filename })
-      if (error || !data?.signedUrl) throw new Error('Could not prepare the MP4 download')
+      // NAS-backed file? Download through the streaming proxy (sets disposition).
+      let href: string | null = null
+      try {
+        const nas = await resolveNasStreamUrl(bucket, path, filename)
+        if (nas) href = nas
+      } catch { /* fall back to signed URL */ }
+      if (!href) {
+        const { data, error } = await supabase.storage
+          .from(bucket)
+          .createSignedUrl(path, 60 * 60, { download: filename })
+        if (error || !data?.signedUrl) throw new Error('Could not prepare the MP4 download')
+        href = data.signedUrl
+      }
       const a = document.createElement('a')
-      a.href = data.signedUrl
+      a.href = href
       a.download = filename
       a.rel = 'noopener'
       document.body.appendChild(a)
