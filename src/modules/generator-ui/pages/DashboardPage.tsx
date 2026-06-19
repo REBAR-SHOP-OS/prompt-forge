@@ -823,6 +823,16 @@ export default function DashboardPage() {
       await triggerDownload(href, filename)
     }
 
+    // Resolve a fetchable URL for a {bucket, path} (NAS stream or signed Cloud URL).
+    const fetchableUrl = async (bucket: string, path: string): Promise<string> => {
+      try {
+        const nas = await resolveNasStreamUrl(bucket, path)
+        if (nas) return nas
+      } catch { /* fall back to signed URL */ }
+      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60)
+      if (error || !data?.signedUrl) throw new Error('Could not access the source video')
+      return data.signedUrl
+    }
 
     try {
       const src = resolveSource(url)
@@ -834,36 +844,36 @@ export default function DashboardPage() {
         return
       }
 
+      // The source is WebM. The NAS box's ffmpeg cannot encode H.264, so we
+      // convert in the browser with ffmpeg.wasm (libx264 + AAC, +faststart).
       setDownloadProgressFor(cardId, 0)
-      // Request (or reuse a cached) server-side conversion.
-      const { data: createData, error: createErr } = await supabase.functions.invoke(
-        'mp4-export-create',
-        { body: { bucket: src.bucket, storagePath: src.path } },
-      )
-      if (createErr || !createData) throw new Error('MP4 export service unavailable')
+      const href = await fetchableUrl(src.bucket, src.path)
+      const res = await fetch(href)
+      if (!res.ok) throw new Error(`Could not download the source video (${res.status})`)
+      const sourceBlob = await res.blob()
 
-      // deno-lint-ignore no-explicit-any
-      let result: any = createData
-      if (result.status === 'processing' && result.jobId) {
-        const jobId = result.jobId as string
-        const deadline = Date.now() + 5 * 60 * 1000 // 5 min ceiling
-        for (;;) {
-          if (Date.now() > deadline) throw new Error('MP4 conversion timed out — please try again')
-          await new Promise((r) => setTimeout(r, 3000))
-          const { data: st } = await supabase.functions.invoke('mp4-export-status', {
-            body: { jobId },
-          })
-          if (!st) continue
-          if (st.status === 'completed') { result = st; break }
-          if (st.status === 'failed') throw new Error(st.error || 'MP4 conversion failed')
-        }
+      const result = await ensureMp4(sourceBlob, sourceBlob.type || 'video/webm', (info) => {
+        if (info.stage === 'encode') setDownloadProgressFor(cardId, Math.round(info.ratio * 100))
+        else if (info.stage === 'readout') setDownloadProgressFor(cardId, 100)
+      })
+
+      if (result.mimeType !== 'video/mp4') {
+        // Engine unavailable in this browser — never silently save a WebM under
+        // an .mp4 name. Tell the user to use the WEBM option instead.
+        throw new Error('MP4 conversion is not available in this browser. Use “Download original (WEBM)”.')
       }
 
-      if (result.status !== 'completed' || !result.path) {
-        throw new Error('MP4 conversion failed')
-      }
       setDownloadProgressFor(cardId, 100)
-      await downloadSigned(result.bucket || 'mp4-exports', result.path)
+      const filename = `${namePrefix}-${cardId.slice(0, 8)}.mp4`
+      const blobUrl = URL.createObjectURL(result.blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = filename
+      a.rel = 'noopener'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000)
     } catch (err) {
       // Never download a WebM in place of MP4 — only surface a clear error.
       console.error('MP4 export failed', err)
