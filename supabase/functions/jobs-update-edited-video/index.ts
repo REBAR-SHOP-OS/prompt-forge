@@ -64,6 +64,12 @@ Deno.serve(async (req) => {
   if (!parsed.ok) return errorResponse("VALIDATION_ERROR", parsed.message, 400, requestId);
 
   const { jobId, storagePath, durationSeconds, aspectRatio } = parsed.value;
+
+  // Ownership guard: the new path must live inside the caller's own storage
+  // folder. Prevents pollution with foreign paths or arbitrary external URLs.
+  if (!isOwnStoragePath(storagePath, auth.userId)) {
+    return errorResponse("VALIDATION_ERROR", "storagePath must be in your own storage folder", 400, requestId);
+  }
   const svc = getServiceClient();
 
   try {
