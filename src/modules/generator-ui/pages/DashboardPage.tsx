@@ -902,7 +902,8 @@ export default function DashboardPage() {
       console.error('Direct download failed', err)
       window.open(url, '_blank')
     } finally {
-      setDownloadingId(null)
+      finishDownloading(cardId)
+
     }
   }
 
