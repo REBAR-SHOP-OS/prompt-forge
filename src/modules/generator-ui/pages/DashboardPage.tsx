@@ -109,7 +109,7 @@ import { videoLibraryGateway } from '@/modules/video-library/gateway'
 import type { VideoSummary } from '@/modules/video-library/contract'
 import { generatorUiGateway } from '@/modules/generator-ui/gateway'
 import { mergeVideoUrls, MergeCancelledError, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
-import { ensureMp4, preloadMp4Transcoder } from '@/modules/generator-ui/lib/transcodeToMp4'
+import { ensureMp4 } from '@/modules/generator-ui/lib/transcodeToMp4'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
 import { DownloadFormatMenu } from '@/modules/generator-ui/components/DownloadFormatMenu'
 import UsageStatsPopover from '@/modules/generator-ui/components/UsageStatsPopover'
@@ -688,11 +688,10 @@ export default function DashboardPage() {
   // feels "stuck". null means no percentage to show (e.g. fetching / remux).
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null)
 
-  // Pre-warm the ffmpeg.wasm core once so the first MP4 download doesn't pay the
-  // engine-load cost on click (and surfaces load failures early, off the path).
-  useEffect(() => {
-    preloadMp4Transcoder()
-  }, [])
+  // NOTE: we intentionally do NOT pre-warm ffmpeg.wasm on mount. Loading the
+  // heavy WASM core (and holding its memory) without an explicit user action
+  // can destabilize the tab. The engine now loads lazily only when the user
+  // actually picks "Download as MP4".
 
 
 
