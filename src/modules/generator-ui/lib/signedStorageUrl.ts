@@ -10,6 +10,7 @@
 // or <video> element directly.
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { FUNCTIONS_BASE } from "@/core/api/client";
 
 const PRIVATE_BUCKETS = [
   "user-images",
@@ -20,12 +21,65 @@ const PRIVATE_BUCKETS = [
   "overlay-assets",
 ];
 
+// Buckets whose large objects may have been migrated to the Synology NAS.
+const NAS_BUCKETS = [
+  "user-videos",
+  "merged-videos",
+  "user-images",
+  "wan-frames",
+  "user-audio",
+  "mp4-exports",
+];
+
 const SIGNED_TTL_SECONDS = 60 * 60 * 2; // 2 hours
 // Re-sign a little before the real expiry so a long-lived card never goes blank.
 const CACHE_SAFETY_SECONDS = 300;
 
 type CacheEntry = { url: string; expiresAt: number };
 const cache = new Map<string, CacheEntry>();
+
+// Cache of (bucket/path) -> storage_objects pointer ('synology:<id>' | 'cloud' | null).
+type NasEntry = { value: string | null; checkedAt: number };
+const nasCache = new Map<string, NasEntry>();
+const NAS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Look up whether a (bucket, path) file lives on the Synology NAS. Returns a
+ * ready-to-use stream URL (with the caller's access token) when it does, or null
+ * when the file is Cloud-backed / untracked so callers fall back to signed URLs.
+ */
+export async function resolveNasStreamUrl(
+  bucket: string,
+  path: string,
+  download?: string,
+): Promise<string | null> {
+  if (!NAS_BUCKETS.includes(bucket)) return null;
+  const key = `${bucket}/${path}`;
+  let entry = nasCache.get(key);
+  if (!entry || Date.now() - entry.checkedAt > NAS_CACHE_TTL_MS) {
+    const { data } = await supabase
+      .from("storage_objects")
+      .select("id, backend")
+      .eq("logical_bucket", bucket)
+      .eq("object_key", path)
+      .maybeSingle();
+    entry = {
+      value: data && data.backend === "synology" ? `synology:${data.id}` : "cloud",
+      checkedAt: Date.now(),
+    };
+    nasCache.set(key, entry);
+  }
+  if (!entry.value || !entry.value.startsWith("synology:")) return null;
+
+  const id = entry.value.slice("synology:".length);
+  const { data: sess } = await supabase.auth.getSession();
+  const token = sess.session?.access_token;
+  if (!token) return null;
+  const qs = new URLSearchParams({ id, token });
+  if (download) qs.set("download", download);
+  return `${FUNCTIONS_BASE}/synology-storage-stream?${qs.toString()}`;
+}
+
 
 /**
  * Extract `{ bucket, path }` from any stored reference: a public/sign/authenticated
