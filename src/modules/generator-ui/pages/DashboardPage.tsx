@@ -805,6 +805,9 @@ export default function DashboardPage() {
   // Tracks which card's download is currently being prepared (fetched +
   // transcoded to standard MP4) so we can show a spinner on that button.
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  // 0-100 percent while a card's MP4 is being prepared/transcoded; null when
+  // we don't yet have a measurable stage (e.g. signing / fetching).
+  const [downloadProgress, setDownloadProgress] = useState<number | null>(null)
 
   // --- Copyright shield: AI review of the final video + music/voiceover ---
   type CopyrightSection = { status: string; reason?: string; risks?: string[] }
