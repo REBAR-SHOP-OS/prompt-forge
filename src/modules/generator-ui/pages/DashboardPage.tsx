@@ -6225,6 +6225,14 @@ export default function DashboardPage() {
         }
         return next
       })
+      // Final Film produced — run the copyright/content check ONCE in the
+      // background so the Library shield turns green (approved) or red
+      // (rejected) without any manual action. The verdict is persisted server
+      // side, so this never re-runs for the same film.
+      if (!copyrightAutoRunRef.current.has(mergedId)) {
+        copyrightAutoRunRef.current.add(mergedId)
+        void runCopyrightCheck(libraryEntry, { silent: true })
+      }
       // Snapshot the source clips (video jobs only) so opening this Library
       // card later shows the correct HISTORY in selected-project mode.
       {
