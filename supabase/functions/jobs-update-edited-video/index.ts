@@ -34,6 +34,22 @@ function validate(body: unknown): { ok: true; value: Body } | { ok: false; messa
   return { ok: true, value: { jobId: b.jobId, storagePath: b.storagePath, durationSeconds: duration, aspectRatio } };
 }
 
+// Buckets a user may legitimately upload edited videos into.
+const OWN_UPLOAD_BUCKETS = ["user-videos", "merged-videos"];
+
+// Accept only paths inside the caller's own folder, in either the bare
+// `<bucket>/<userId>/…` form or a fully-qualified Storage object URL.
+function isOwnStoragePath(storagePath: string, userId: string): boolean {
+  return OWN_UPLOAD_BUCKETS.some(
+    (b) =>
+      storagePath.startsWith(`${b}/${userId}/`) ||
+      storagePath.includes(`/storage/v1/object/${b}/${userId}/`) ||
+      storagePath.includes(`/storage/v1/object/public/${b}/${userId}/`) ||
+      storagePath.includes(`/storage/v1/object/sign/${b}/${userId}/`) ||
+      storagePath.includes(`/storage/v1/object/authenticated/${b}/${userId}/`),
+  );
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return errorResponse("METHOD_NOT_ALLOWED", "Use POST", 405);
