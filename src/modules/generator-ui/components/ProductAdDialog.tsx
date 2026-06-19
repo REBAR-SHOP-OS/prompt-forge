@@ -730,8 +730,8 @@ export default function ProductAdDialog({
         .from(FRAMES_BUCKET)
         .upload(storagePath, file, { contentType: file.type, upsert: false })
       if (upErr) throw new Error(upErr.message)
-      const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
-      setUploadedImageUrl(data.publicUrl)
+      const { data } = await supabase.storage.from(FRAMES_BUCKET).createSignedUrl(storagePath, 60 * 60 * 6)
+      setUploadedImageUrl(data?.signedUrl ?? null)
     } catch (e) {
       setError((e as Error).message ?? 'Image upload failed')
       setImagePreviewUrl(null)
