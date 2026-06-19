@@ -57,7 +57,7 @@ const FFMPEG_EXEC_TIMEOUT_MS = 150_000
  * reloads mid-encode (no file produced). 350 MB keeps a realistic safety margin
  * for typical Final Films; larger ones fall back to a clearly-labeled original.
  */
-const MAX_TRANSCODE_BLOB_BYTES = 350 * 1024 * 1024
+const MAX_TRANSCODE_BLOB_BYTES = 250 * 1024 * 1024
 
 let ffmpegSingleton: FFmpeg | null = null
 let loadingPromise: Promise<FFmpeg> | null = null

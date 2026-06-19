@@ -109,7 +109,7 @@ import { videoLibraryGateway } from '@/modules/video-library/gateway'
 import type { VideoSummary } from '@/modules/video-library/contract'
 import { generatorUiGateway } from '@/modules/generator-ui/gateway'
 import { mergeVideoUrls, MergeCancelledError, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
-import { ensureMp4, preloadMp4Transcoder } from '@/modules/generator-ui/lib/transcodeToMp4'
+import { ensureMp4 } from '@/modules/generator-ui/lib/transcodeToMp4'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
 import { DownloadFormatMenu } from '@/modules/generator-ui/components/DownloadFormatMenu'
 import UsageStatsPopover from '@/modules/generator-ui/components/UsageStatsPopover'
@@ -688,11 +688,10 @@ export default function DashboardPage() {
   // feels "stuck". null means no percentage to show (e.g. fetching / remux).
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null)
 
-  // Pre-warm the ffmpeg.wasm core once so the first MP4 download doesn't pay the
-  // engine-load cost on click (and surfaces load failures early, off the path).
-  useEffect(() => {
-    preloadMp4Transcoder()
-  }, [])
+  // NOTE: we intentionally do NOT pre-warm ffmpeg.wasm on mount. Loading the
+  // heavy WASM core (and holding its memory) without an explicit user action
+  // can destabilize the tab. The engine now loads lazily only when the user
+  // actually picks "Download as MP4".
 
 
 
@@ -728,11 +727,18 @@ export default function DashboardPage() {
       const a = document.createElement('a')
       a.href = blobUrl
       a.download = filename
+      a.rel = 'noopener'
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
-      URL.revokeObjectURL(blobUrl)
+      // Revoke after a delay — revoking immediately can abort the download in
+      // some browsers before the file has been handed to the download manager.
+      setTimeout(() => { try { URL.revokeObjectURL(blobUrl) } catch { /* ignore */ } }, 60_000)
     }
+    // Above this size, an in-browser ffmpeg.wasm transcode reliably OOMs the tab
+    // (which looks like the page "jumping"/reloading). We keep this comfortably
+    // below the engine's own hard cap so we never even start a doomed encode.
+    const SAFE_TRANSCODE_BYTES = 250 * 1024 * 1024
     // ffmpeg.wasm transcode is heavy and routinely OOMs / fails to load on
     // mobile browsers. When that happens we used to hand back a WebM file
     // renamed .mp4, which iOS / the mobile gallery cannot play. So on mobile
@@ -761,11 +767,16 @@ export default function DashboardPage() {
         (blob.type || '').toLowerCase().includes('mp4') ||
         url.toLowerCase().split('?')[0].endsWith('.mp4')
 
-      // On mobile, or when the source is already a standard MP4, skip the
-      // in-browser transcode and serve the file directly with its real
-      // extension so it always opens in the gallery / player.
-      if (isMobile || sourceIsMp4) {
+      // On mobile, when the source is already a standard MP4, or when the file
+      // is too large to transcode safely in-browser, skip the engine entirely
+      // and serve the file directly with its real extension. This is the key
+      // fix for the "page jumps and the download stops" report: a doomed encode
+      // could OOM the tab, so we never start one for oversized files.
+      if (isMobile || sourceIsMp4 || blob.size > SAFE_TRANSCODE_BYTES) {
         triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${extFromType(blob.type, url)}`)
+        if (!isMobile && !sourceIsMp4 && blob.size > SAFE_TRANSCODE_BYTES) {
+          toast.message('This film is too large to convert to MP4 in the browser — downloaded the original instead.')
+        }
         return
       }
 
@@ -805,9 +816,10 @@ export default function DashboardPage() {
         )
       }
     } catch (err) {
+      // Never navigate away (window.open) here — that is what made the page
+      // "jump". Just report the failure and keep the user on the page.
       console.error('Film download failed', err)
       toast.error('Download failed. Please try again.')
-      window.open(url, '_blank')
     } finally {
       setDownloadingId(null)
       setDownloadProgress(null)
