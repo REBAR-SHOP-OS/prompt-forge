@@ -9310,7 +9310,7 @@ export default function DashboardPage() {
                   className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-2.5 transition hover:border-white/20 hover:bg-white/[0.055] ${
                     selectMode && isChecked
                       ? 'border-rose-300/40 bg-rose-300/[0.06]'
-                      : isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : 'border-white/10 bg-white/[0.035]'
+                      : isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : variant === 'final' ? 'border-white/10 border-l-2 border-l-green-500 bg-green-950/60' : 'border-white/10 bg-white/[0.035]'
                   }`}
                   role="button"
                   tabIndex={0}
