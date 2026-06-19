@@ -4712,7 +4712,7 @@ export default function DashboardPage() {
     const userId = session?.user?.id
     try {
       if (!userId) throw new Error('Sign in before using an image as a frame')
-      const res = await fetch(url)
+      const res = await fetch(await resolveSignedUrl(url))
       if (!res.ok) throw new Error(`Could not read image (HTTP ${res.status})`)
       const blob = await res.blob()
       const storagePath = `${userId}/start-${Date.now()}-${crypto.randomUUID()}.png`
