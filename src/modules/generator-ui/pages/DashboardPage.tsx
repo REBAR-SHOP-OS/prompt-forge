@@ -738,25 +738,28 @@ export default function DashboardPage() {
   // conversion runs server-side (job-based) so the user ALWAYS gets a real .mp4
   // or a clear error — a WebM is never silently downloaded in its place.
   const triggerDownload = async (href: string, filename: string) => {
-    try {
-      const hasServerDownloadDisposition = /[?&]download=/.test(href)
-      if (hasServerDownloadDisposition) {
-        const opened = window.open(href, '_blank')
-        if (opened) {
-          opened.opener = null
-          return
-        }
-      }
+    // Supabase signed URLs already carry Content-Disposition: attachment, so a
+    // top-level navigation reliably saves the file (even after async work that
+    // Chrome would block for programmatic a.click()/window.open()).
+    if (href.includes('supabase')) {
+      window.location.href = href
+      return
+    }
 
+    // Non-Supabase (e.g. NAS proxy / other origins): fetch as a blob and save.
+    try {
+      const response = await fetch(href)
+      if (!response.ok) throw new Error(`Download failed (${response.status})`)
+      const blob = await response.blob()
+      const blobUrl = URL.createObjectURL(blob)
       const a = document.createElement('a')
-      a.href = href
+      a.href = blobUrl
       a.download = filename
-      a.target = '_blank'
-      a.rel = 'noopener noreferrer'
       a.style.display = 'none'
       document.body.appendChild(a)
       a.click()
-      setTimeout(() => document.body.removeChild(a), 1000)
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
     } catch (err) {
       console.error('Download failed, falling back to new tab', err)
       window.open(href, '_blank')
@@ -864,21 +867,12 @@ export default function DashboardPage() {
         if (!href) throw new Error('MP4 export did not return a downloadable file')
         setDownloadProgressFor(cardId, 100)
         downloadHandledByToast = true
-        const downloadHref = href
-        const toastId = toast.success(
-          <div className="flex flex-col gap-1">
-            <span className="font-medium">MP4 ready to download</span>
-            <a
-              href={downloadHref}
-              download={filename}
-              className="underline text-sm text-green-200 hover:text-green-100"
-              onClick={() => { toast.dismiss(toastId); finishDownloading(cardId) }}
-            >
-              ⬇ Save {filename}
-            </a>
-          </div>,
-          { duration: 60000, icon: '✅' },
-        )
+        toast.success('MP4 ready - downloading...')
+        // The signed URL carries Content-Disposition: attachment, so a top-level
+        // navigation saves the file even after the async conversion/poll loop
+        // (which Chrome would otherwise block for programmatic clicks).
+        window.location.href = href
+        setTimeout(() => finishDownloading(cardId), 2000)
       }
 
       // 1) Kick off (or reuse a cached) server-side export.
