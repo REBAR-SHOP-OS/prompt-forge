@@ -104,7 +104,7 @@ Deno.serve(async (req) => {
     'if echo "$ENC" | grep -q "[[:space:]]libx264[[:space:]]"; then VENC="libx264";',
     'elif echo "$ENC" | grep -q "[[:space:]]h264_synology[[:space:]]"; then VENC="h264_synology";',
     'elif echo "$ENC" | grep -q "[[:space:]]libopenh264[[:space:]]"; then VENC="libopenh264";',
-    'else VENC="mpeg4 -q:v 3"; fi',
+    'else VENC="mpeg4"; fi',
     // Prefer the native AAC encoder; fall back to libmp3lame if AAC is missing.
     'if echo "$ENC" | grep -q "[[:space:]]aac[[:space:]]"; then AENC="aac";',
     'elif echo "$ENC" | grep -q "[[:space:]]libmp3lame[[:space:]]"; then AENC="libmp3lame";',
