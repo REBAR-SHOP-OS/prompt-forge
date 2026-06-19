@@ -737,13 +737,25 @@ export default function DashboardPage() {
   // (MediaRecorder), which fails in QuickTime / WMP / mobile galleries. The
   // conversion runs server-side (job-based) so the user ALWAYS gets a real .mp4
   // or a clear error — a WebM is never silently downloaded in its place.
-  // Reliable cross-origin download. The browser ignores the <a download>
-  // attribute for cross-origin URLs (our NAS stream proxy lives on the
-  // functions domain), so it would otherwise open/play the video instead of
-  // saving it. Fetch the bytes into a Blob and save via an object URL; fall
-  // back to a plain anchor click and finally window.open on any failure.
   const triggerDownload = async (href: string, filename: string) => {
     try {
+      // Supabase signed URLs with ?download= already carry Content-Disposition: attachment
+      // from the storage server — navigate directly so the browser handles the download
+      // natively without loading the whole file into RAM first (which froze on large videos).
+      const isSupabaseSigned =
+        /supabase\.co\/storage/.test(href) &&
+        (/[?&]download=/.test(href))
+      if (isSupabaseSigned) {
+        const a = document.createElement('a')
+        a.href = href
+        a.download = filename
+        a.style.display = 'none'
+        document.body.appendChild(a)
+        a.click()
+        setTimeout(() => document.body.removeChild(a), 1000)
+        return
+      }
+      // Non-Supabase URLs (NAS proxy, blob URLs): fetch as blob so cross-origin download works.
       const res = await fetch(href)
       if (!res.ok) throw new Error(`download failed: ${res.status}`)
       const blob = await res.blob()
@@ -751,25 +763,18 @@ export default function DashboardPage() {
       const a = document.createElement('a')
       a.href = blobUrl
       a.download = filename
-      a.rel = 'noopener'
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
-      // Revoke after a tick so the download has a chance to start.
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000)
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 100)
     } catch (err) {
       console.error('Blob download failed, falling back to anchor', err)
-      try {
-        const a = document.createElement('a')
-        a.href = href
-        a.download = filename
-        a.rel = 'noopener'
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-      } catch {
-        window.open(href, '_blank')
-      }
+      const a = document.createElement('a')
+      a.href = href
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
     }
   }
 
