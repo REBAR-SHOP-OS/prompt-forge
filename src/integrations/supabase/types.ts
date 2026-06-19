@@ -315,6 +315,53 @@ export type Database = {
         }
         Relationships: []
       }
+      generator_copyright_reviews: {
+        Row: {
+          created_at: string
+          id: string
+          job_id: string
+          music_status: string | null
+          result: Json
+          summary: string | null
+          updated_at: string
+          user_id: string
+          verdict: string
+          video_status: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          job_id: string
+          music_status?: string | null
+          result?: Json
+          summary?: string | null
+          updated_at?: string
+          user_id: string
+          verdict: string
+          video_status?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          job_id?: string
+          music_status?: string | null
+          result?: Json
+          summary?: string | null
+          updated_at?: string
+          user_id?: string
+          verdict?: string
+          video_status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "generator_copyright_reviews_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "core_user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       generator_film_exports: {
         Row: {
           created_at: string

@@ -1,28 +1,61 @@
-## هدف
-در دیالوگ Voiceover، دکمه‌ها/قابلیت‌ها به ناحیه پایین (کنار دکمه Download) منتقل شوند:
-- آیکونِ **Use as soundtrack** کنار آیکون **Download** قرار بگیرد.
-- یک آیکونِ **Settings (تنظیمات)** هم در همان ردیف اضافه شود که با کلیک، پنل تنظیماتِ صدا (ولوم، موج صوتی/Waveform، و بازهٔ «Play on video from … to») را نشان/پنهان کند.
+## Goal
 
-## وضعیت فعلی
-در `src/modules/generator-ui/components/VoiceoverDialog.tsx`:
-- بعد از ساخت صدا، یک بلوک پلیر + دکمهٔ متنیِ «Use as soundtrack» نمایش داده می‌شود (خطوط ۳۸۳–۴۰۴).
-- پنل تنظیمات (ولوم/Waveform/تایم‌لاین) فقط وقتی `activeVoiceoverUrl` ست شده باشد نشان داده می‌شود (خطوط ۴۰۶–۴۹۲).
-- فوتر فقط شامل **Download** و **Close** است (خطوط ۴۹۵–۵۰۸).
+Make the copyright-check shield icon (next to Download in the Library → Final Videos row) a real, automatic content gate:
 
-## تغییرات
-1. **انتقال «Use as soundtrack» به فوتر:**
-   - دکمهٔ متنیِ داخل بلوک پلیر حذف می‌شود؛ به‌جای آن یک دکمهٔ آیکونی (آیکون `Music2`) درست کنار Download در `DialogFooter` اضافه می‌شود (با tooltip/aria-label «Use as soundtrack»). فقط وقتی `audioUrl` و `onUseAsSoundtrack` موجود باشند فعال است.
-   - خود بلوک پلیر صوتی (`<audio>`) باقی می‌ماند.
+- After a Final Film is produced, it is checked **once, automatically**.
+- The icon turns **green** when approved, **red** when rejected, **amber** for caution.
+- The verdict is **persisted** so it survives reloads (not recomputed every time).
+- Clicking the icon still opens the existing details dialog and offers a manual re-run.
 
-2. **افزودن آیکون Settings در فوتر:**
-   - یک دکمهٔ آیکونی تنظیمات (آیکون `Settings2` یا `SlidersHorizontal`) کنار Download اضافه می‌شود.
-   - یک state محلی مثل `showSettings` اضافه می‌شود؛ کلیک روی این آیکون پنل تنظیمات (ولوم + Waveform + بازهٔ پخش) را باز/بسته می‌کند.
-   - این آیکون فقط زمانی نمایش داده می‌شود که `activeVoiceoverUrl` وجود داشته باشد (یعنی صدایی به‌عنوان ساندترک ست شده).
-   - شرط نمایش پنل تنظیمات از `activeVoiceoverUrl ? ...` به `activeVoiceoverUrl && showSettings ? ...` تغییر می‌کند تا با آیکون کنترل شود.
+## Current behavior
 
-3. **چیدمان فوتر:**
-   - ترتیب از راست‌به‌چپ/در یک ردیف: آیکون Use as soundtrack، آیکون Settings، دکمهٔ Download، دکمهٔ Close — همگی در همان ناحیه.
+- `copyright-check` edge function already sends video + music + voiceover to Gemini and returns a structured verdict (`approved` / `caution` / `rejected`). This logic is solid and stays.
+- In `DashboardPage.tsx`, `runCopyrightCheck(video)` only runs on manual click and opens a dialog; the result lives in transient state and is lost on reload. The shield icon is always neutral grey.
+- No automatic run after finalize. No persistence.
 
-## نکات
-- هیچ تغییری در منطق تولید صدا یا بک‌اند داده نمی‌شود؛ فقط جانمایی و یک toggle نمایشی در UI.
-- رفتار فعلیِ ست‌شدن ساندترک و ذخیرهٔ تنظیمات دست‌نخورده می‌ماند.
+## Changes
+
+### 1. Persist verdicts (database)
+Add a new table `generator_copyright_reviews`:
+
+```text
+id uuid pk
+job_id uuid  (the final film job)
+user_id uuid
+verdict text          -- approved | caution | rejected
+video_status text
+music_status text
+summary text
+result jsonb          -- full structured result for the dialog
+created_at / updated_at
+unique (job_id)
+```
+
+- RLS: users `SELECT` own rows; client insert/update denied (writes only via edge function service role).
+- GRANTs: `SELECT` to `authenticated`, `ALL` to `service_role`.
+
+### 2. Edge function `copyright-check`
+- Accept an optional `jobId` in the body.
+- After computing the result, when `jobId` is present, upsert the row into `generator_copyright_reviews` (service-role client) with verdict/statuses/summary/full result.
+- Response shape unchanged (still returns `{ result }`), so the existing dialog keeps working.
+
+### 3. Frontend (`DashboardPage.tsx`)
+- **State:** add `copyrightReviews: Record<jobId, CopyrightResult>`.
+- **Load on open:** in `loadArchive`, fetch all `generator_copyright_reviews` for the user and populate the map so colors render immediately on reload.
+- **Pass `jobId`** in the `runCopyrightCheck` invoke body; on success also store the result into `copyrightReviews[video.id]`.
+- **Auto-run once after finalize:** when a Final Film finishes saving, trigger a silent `runCopyrightCheck` for that job (no dialog popup) only if no review exists yet. Guard with an in-flight set so it runs exactly once.
+- **Icon coloring:** replace the always-grey `Shield` button with verdict-driven rendering:
+  - loading/in-flight → spinner
+  - `approved` → `ShieldCheck`, emerald/green
+  - `rejected` → `ShieldX`, rose/red
+  - `caution` → `ShieldAlert`, amber
+  - no review yet → neutral `Shield` (click to check)
+- Click behavior unchanged: opens the dialog (now pre-filled from the stored result when available) with a re-run button.
+
+## Out of scope
+- No change to the Gemini prompt or verdict thresholds.
+- No change to merge/finalize logic beyond firing the one-time check.
+
+## Technical notes
+- Auto-run reuses the existing signed-URL preparation in `runCopyrightCheck`; a small variant flag suppresses opening the dialog during the automatic pass.
+- Videos over the 25MB inline cap will surface as an error/caution state on the icon, same as the current dialog behavior.
