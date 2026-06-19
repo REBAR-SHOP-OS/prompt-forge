@@ -33,10 +33,10 @@ function normalizePem(raw: string): string {
 }
 
 export function readSynologyConfig(): SynologyConfig | null {
-  const host = Deno.env.get("SYNOLOGY_SSH_HOST");
-  const username = Deno.env.get("SYNOLOGY_SSH_USER");
+  const host = Deno.env.get("SYNOLOGY_SSH_HOST")?.trim();
+  const username = Deno.env.get("SYNOLOGY_SSH_USER")?.trim();
   const privateKey = Deno.env.get("SYNOLOGY_SSH_PRIVATE_KEY");
-  const portRaw = Deno.env.get("SYNOLOGY_SSH_PORT");
+  const portRaw = Deno.env.get("SYNOLOGY_SSH_PORT")?.trim();
   const passphrase = Deno.env.get("SYNOLOGY_SSH_PASSPHRASE") || undefined;
   if (!host || !username || !privateKey) return null;
   const port = portRaw ? Number.parseInt(portRaw, 10) : 22;
