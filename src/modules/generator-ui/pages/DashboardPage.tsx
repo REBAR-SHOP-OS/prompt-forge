@@ -141,7 +141,7 @@ const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.red
 )
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
-import { resolveSignedUrl, resolveNasStreamUrl } from '@/modules/generator-ui/lib/signedStorageUrl'
+import { resolveSignedUrl, resolveNasStreamUrl, parseStorageRef } from '@/modules/generator-ui/lib/signedStorageUrl'
 import { uploadAsset } from '@/modules/generator-ui/lib/uploadAsset'
 import { SignedImage } from '@/modules/generator-ui/components/SignedImage'
 import { getMajorOccasionForDate } from '@/modules/generator-ui/lib/majorOccasions'
@@ -736,6 +736,42 @@ export default function DashboardPage() {
   // (MediaRecorder), which fails in QuickTime / WMP / mobile galleries. The
   // conversion runs server-side (job-based) so the user ALWAYS gets a real .mp4
   // or a clear error — a WebM is never silently downloaded in its place.
+  // Reliable cross-origin download. The browser ignores the <a download>
+  // attribute for cross-origin URLs (our NAS stream proxy lives on the
+  // functions domain), so it would otherwise open/play the video instead of
+  // saving it. Fetch the bytes into a Blob and save via an object URL; fall
+  // back to a plain anchor click and finally window.open on any failure.
+  const triggerDownload = async (href: string, filename: string) => {
+    try {
+      const res = await fetch(href)
+      if (!res.ok) throw new Error(`download failed: ${res.status}`)
+      const blob = await res.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = filename
+      a.rel = 'noopener'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      // Revoke after a tick so the download has a chance to start.
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000)
+    } catch (err) {
+      console.error('Blob download failed, falling back to anchor', err)
+      try {
+        const a = document.createElement('a')
+        a.href = href
+        a.download = filename
+        a.rel = 'noopener'
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+      } catch {
+        window.open(href, '_blank')
+      }
+    }
+  }
+
   const downloadAsMp4 = async (cardId: string, url: string, namePrefix: string) => {
     if (downloadingIds.has(cardId)) return
     startDownloading(cardId)
@@ -783,14 +819,9 @@ export default function DashboardPage() {
         if (error || !data?.signedUrl) throw new Error('Could not prepare the MP4 download')
         href = data.signedUrl
       }
-      const a = document.createElement('a')
-      a.href = href
-      a.download = filename
-      a.rel = 'noopener'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
+      await triggerDownload(href, filename)
     }
+
 
     try {
       const src = resolveSource(url)
@@ -843,58 +874,52 @@ export default function DashboardPage() {
   }
 
 
-  // Fast, direct download: hands the browser a signed URL with a download
-  // Content-Disposition so it streams the file natively — no in-browser fetch
-  // into memory and no ffmpeg transcode. Falls back gracefully on failure.
+  // Direct download of the original file (e.g. WEBM). NAS-aware: resolves the
+  // stored value to {bucket, path}, then prefers the NAS stream proxy (with a
+  // download filename so the server sets Content-Disposition), falling back to
+  // a signed Cloud URL with the same download disposition. The final save goes
+  // through triggerDownload so cross-origin URLs reliably save instead of
+  // opening in a tab.
   const downloadDirect = async (cardId: string, url: string, namePrefix: string) => {
     if (downloadingIds.has(cardId)) return
     startDownloading(cardId)
 
     try {
-      const lower = url.toLowerCase().split('?')[0]
+      const ref = parseStorageRef(url)
+      const lower = (ref?.path || url).toLowerCase().split('?')[0]
       const ext = lower.endsWith('.mp4') ? 'mp4'
         : lower.endsWith('.webm') ? 'webm'
         : lower.endsWith('.mov') ? 'mov'
         : 'mp4'
       const filename = `${namePrefix}-${cardId.slice(0, 8)}.${ext}`
 
-      // For our own private merged-videos / user-videos objects, mint a signed
-      // URL with the `download` option so the server sets Content-Disposition.
       let href: string | null = null
-      try {
-        const parsed = new URL(url)
-        const m = parsed.pathname.match(
-          /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/,
-        )
-        if (m) {
-          const bucket = m[1]
-          let path = m[2]
-          try { path = decodeURIComponent(path) } catch { /* keep raw */ }
-          if (bucket === MERGED_BUCKET || bucket === 'user-videos') {
-            const { data, error } = await supabase.storage
-              .from(bucket)
-              .createSignedUrl(path, 60 * 60, { download: filename })
-            if (!error && data?.signedUrl) href = data.signedUrl
-          }
+      if (ref) {
+        // NAS-backed file? Stream through the proxy with a download disposition.
+        try {
+          const nas = await resolveNasStreamUrl(ref.bucket, ref.path, filename)
+          if (nas) href = nas
+        } catch { /* fall back to a signed Cloud URL */ }
+        // Cloud-backed file → mint a signed URL with the download disposition.
+        if (!href) {
+          const { data, error } = await supabase.storage
+            .from(ref.bucket)
+            .createSignedUrl(ref.path, 60 * 60, { download: filename })
+          if (!error && data?.signedUrl) href = data.signedUrl
         }
-      } catch { /* fall through to proxied URL */ }
+      }
 
       if (!href) href = await proxiedVideoUrl(url)
 
-      const a = document.createElement('a')
-      a.href = href
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
+      await triggerDownload(href, filename)
     } catch (err) {
       console.error('Direct download failed', err)
       window.open(url, '_blank')
     } finally {
       finishDownloading(cardId)
-
     }
   }
+
 
   // Resolve a fetchable, signed Supabase-storage URL from either a raw storage
   // path or a (possibly public) storage URL so the edge function can fetch
