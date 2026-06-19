@@ -246,7 +246,6 @@ export function VoiceoverDialog({
     setAudioUrl(null)
     setText('')
     // Keep the dialog open so the user can adjust timing/volume right here.
-    setShowSettings(true)
     toast.success('Voiceover set as soundtrack')
   }
 
