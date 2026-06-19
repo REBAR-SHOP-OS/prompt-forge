@@ -7562,7 +7562,7 @@ export default function DashboardPage() {
                           selectedArchiveIds.has(job.id)
                             ? 'border-sky-400/60 ring-1 ring-sky-400/40'
                             : filmsCategory === 'final'
-                              ? 'border-green-500/30 bg-green-950/40'
+                              ? 'border-white/10 border-l-4 border-l-green-500 bg-green-950/40'
                               : 'border-white/10 bg-white/[0.035]'
                         }`}
                       >
