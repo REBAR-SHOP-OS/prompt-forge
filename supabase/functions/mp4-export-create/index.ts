@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
     if (error || !data?.signedUrl) {
       return errorResponse("SIGN_FAILED", "Could not sign source URL", 500);
     }
-    return jsonResponse({ status: "completed", url: data.signedUrl, alreadyMp4: true });
+    return jsonResponse({ status: "completed", url: data.signedUrl, bucket, path: storagePath, alreadyMp4: true });
   }
 
   // Deterministic cache key so re-exporting the same file is instant.
