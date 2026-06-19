@@ -49,11 +49,26 @@ Deno.serve(async (req) => {
 
   await svc.from("mp4_export_jobs").update({ status: "processing" }).eq("id", jobId);
 
-  // Signed download URL for the source video.
-  const { data: dl, error: dlErr } = await svc.storage
-    .from(job.source_bucket)
-    .createSignedUrl(job.source_path, DL_TTL);
-  if (dlErr || !dl?.signedUrl) return await fail("Could not access source video");
+  // Is the source already on the NAS? If so ffmpeg can read it locally — no download.
+  const { data: srcObj } = await svc
+    .from("storage_objects")
+    .select("backend, nas_path")
+    .eq("logical_bucket", job.source_bucket)
+    .eq("object_key", job.source_path)
+    .maybeSingle();
+  const sourceNasPath = srcObj?.backend === "synology" ? (srcObj?.nas_path as string | null) : null;
+
+  let downloadCmd: string;
+  if (sourceNasPath) {
+    // Read straight from the local NAS path.
+    downloadCmd = `cp "${sourceNasPath.replace(/"/g, "")}" "$tmp/in"`;
+  } else {
+    const { data: dl, error: dlErr } = await svc.storage
+      .from(job.source_bucket)
+      .createSignedUrl(job.source_path, DL_TTL);
+    if (dlErr || !dl?.signedUrl) return await fail("Could not access source video");
+    downloadCmd = `curl -fsSL "${dl.signedUrl}" -o "$tmp/in"`;
+  }
 
   // Signed upload URL for the converted MP4 (scoped, one-time token; no secrets on the box).
   const outputPath = job.output_path as string;
@@ -64,18 +79,17 @@ Deno.serve(async (req) => {
   const uploadUrl =
     `${getEnv("SUPABASE_URL")}/storage/v1/object/upload/sign/mp4-exports/${outputPath}?token=${up.token}`;
 
-  const dlUrl = dl.signedUrl;
-
   // Build the remote conversion command. URLs contain only URL-safe characters.
   const remoteCmd = [
     "set -e",
     'FF="$(command -v ffmpeg || echo /usr/local/bin/ffmpeg)"',
     'tmp="$(mktemp -d)"',
     'trap \'rm -rf "$tmp"\' EXIT',
-    `curl -fsSL "${dlUrl}" -o "$tmp/in"`,
+    downloadCmd,
     `"$FF" -y -i "$tmp/in" -c:v libx264 -pix_fmt yuv420p -c:a aac -movflags +faststart "$tmp/out.mp4"`,
     `curl -fsS -X PUT -H "content-type: video/mp4" --data-binary "@$tmp/out.mp4" "${uploadUrl}"`,
   ].join("\n");
+
 
   let conn;
   try {
