@@ -7482,7 +7482,9 @@ export default function DashboardPage() {
                   onClick={() => setFilmsCategory(cat)}
                   className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
                     filmsCategory === cat
-                      ? 'bg-white/[0.08] text-zinc-100'
+                      ? cat === 'final'
+                        ? 'bg-green-500/15 text-green-400'
+                        : 'bg-white/[0.08] text-zinc-100'
                       : 'text-zinc-400 hover:text-zinc-200'
                   }`}
                 >
