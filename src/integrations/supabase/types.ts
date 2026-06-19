@@ -626,6 +626,48 @@ export type Database = {
         }
         Relationships: []
       }
+      storage_objects: {
+        Row: {
+          backend: string
+          content_type: string | null
+          created_at: string
+          id: string
+          logical_bucket: string
+          nas_path: string | null
+          object_key: string
+          size_bytes: number | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          backend?: string
+          content_type?: string | null
+          created_at?: string
+          id?: string
+          logical_bucket: string
+          nas_path?: string | null
+          object_key: string
+          size_bytes?: number | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          backend?: string
+          content_type?: string | null
+          created_at?: string
+          id?: string
+          logical_bucket?: string
+          nas_path?: string | null
+          object_key?: string
+          size_bytes?: number | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string

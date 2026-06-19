@@ -141,7 +141,8 @@ const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.red
 )
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
-import { resolveSignedUrl } from '@/modules/generator-ui/lib/signedStorageUrl'
+import { resolveSignedUrl, resolveNasStreamUrl } from '@/modules/generator-ui/lib/signedStorageUrl'
+import { uploadAsset } from '@/modules/generator-ui/lib/uploadAsset'
 import { SignedImage } from '@/modules/generator-ui/components/SignedImage'
 import { getMajorOccasionForDate } from '@/modules/generator-ui/lib/majorOccasions'
 import { StylePreviewCard } from '@/modules/generator-ui/components/StylePreviewCard'
@@ -755,7 +756,13 @@ export default function DashboardPage() {
           return null
         }
       }
-      // Raw storage path: final films live in merged-videos, clips in user-videos.
+      // Bare `<bucket>/<path>` reference (the form we now persist).
+      const knownBuckets = ['user-videos', MERGED_BUCKET, 'mp4-exports']
+      const slash = input.indexOf('/')
+      if (slash > 0 && knownBuckets.includes(input.slice(0, slash))) {
+        return { bucket: input.slice(0, slash), path: input.slice(slash + 1) }
+      }
+      // Legacy raw storage path: final films live in merged-videos, clips in user-videos.
       const bucket = namePrefix.includes('final') ? MERGED_BUCKET : 'user-videos'
       return { bucket, path: input }
     }
@@ -763,12 +770,21 @@ export default function DashboardPage() {
     // Sign the (already-MP4) object with a download disposition and stream it.
     const downloadSigned = async (bucket: string, path: string) => {
       const filename = `${namePrefix}-${cardId.slice(0, 8)}.mp4`
-      const { data, error } = await supabase.storage
-        .from(bucket)
-        .createSignedUrl(path, 60 * 60, { download: filename })
-      if (error || !data?.signedUrl) throw new Error('Could not prepare the MP4 download')
+      // NAS-backed file? Download through the streaming proxy (sets disposition).
+      let href: string | null = null
+      try {
+        const nas = await resolveNasStreamUrl(bucket, path, filename)
+        if (nas) href = nas
+      } catch { /* fall back to signed URL */ }
+      if (!href) {
+        const { data, error } = await supabase.storage
+          .from(bucket)
+          .createSignedUrl(path, 60 * 60, { download: filename })
+        if (error || !data?.signedUrl) throw new Error('Could not prepare the MP4 download')
+        href = data.signedUrl
+      }
       const a = document.createElement('a')
-      a.href = data.signedUrl
+      a.href = href
       a.download = filename
       a.rel = 'noopener'
       document.body.appendChild(a)
@@ -4346,22 +4362,22 @@ export default function DashboardPage() {
     const path = `${userId}/upload-${Date.now()}-${crypto.randomUUID()}.${ext}`
     let uploadedPath: string | null = null
     try {
-      const up = await supabase.storage
-        .from('user-videos')
-        .upload(path, file, { contentType: file.type || 'video/mp4', upsert: false })
-      if (up.error) throw new Error(up.error.message)
-      uploadedPath = path
-      const { data } = supabase.storage.from('user-videos').getPublicUrl(path)
-      const publicUrl = data.publicUrl
+      // Large videos go to the NAS, small ones stay in Cloud; both yield a
+      // `<bucket>/<path>` reference that the players know how to resolve.
+      const up = await uploadAsset('user-videos', path, file, {
+        contentType: file.type || 'video/mp4',
+      })
+      uploadedPath = up.backend === 'cloud' ? path : null
 
       // Persist a real job + asset row server-side so the card shows up
       // through the same listMyJobs/getJob pipeline as generated videos.
       const detail = await jobOrchestratorGateway.createUploadedVideoJob({
-        storagePath: publicUrl,
+        storagePath: up.ref,
         durationSeconds,
         aspectRatio: pickedRatio,
         prompt: file.name,
       })
+
 
       // Drop into state immediately so the card appears without a refresh.
       // Stamp it into the active draft (like generated clips) so it shows as a
