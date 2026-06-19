@@ -4055,6 +4055,7 @@ export default function DashboardPage() {
             .from(USER_IMAGES_BUCKET)
             .upload(path, file, { contentType: file.type, upsert: false })
           if (up.error) throw up.error
+          if (!up.data?.path) throw new Error('upload did not persist')
           const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
           const publicUrl = pub.publicUrl
           const { data: row, error: insErr } = await supabase
@@ -4070,7 +4071,8 @@ export default function DashboardPage() {
             .select('id, storage_path, created_at, still_duration_seconds, width, height, category, title')
             .single()
           if (insErr) throw insErr
-          setArchiveProductImages((prev) => [row as UserImageItem, ...prev])
+          const signedRow = { ...(row as UserImageItem), storage_path: await signUserImageUrl((row as UserImageItem).storage_path) }
+          setArchiveProductImages((prev) => [signedRow, ...prev])
           uploadedCount += 1
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'upload failed'
