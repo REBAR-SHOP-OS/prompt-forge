@@ -738,15 +738,16 @@ export default function DashboardPage() {
   // conversion runs server-side (job-based) so the user ALWAYS gets a real .mp4
   // or a clear error — a WebM is never silently downloaded in its place.
   const triggerDownload = async (href: string, filename: string) => {
-    // Supabase signed URLs already carry Content-Disposition: attachment, so a
-    // top-level navigation reliably saves the file (even after async work that
-    // Chrome would block for programmatic a.click()/window.open()).
-    if (href.includes('supabase')) {
+    // Supabase signed URLs (and any HTTPS URL that carries
+    // Content-Disposition: attachment) reliably save the file via a top-level
+    // navigation, even after async work that Chrome would block for
+    // programmatic a.click()/window.open().
+    if (href.includes('supabase') || href.startsWith('https://')) {
       window.location.href = href
       return
     }
 
-    // Non-Supabase (e.g. NAS proxy / other origins): fetch as a blob and save.
+    // Non-HTTPS (e.g. relative URLs): fetch as a blob and save.
     try {
       const response = await fetch(href)
       if (!response.ok) throw new Error(`Download failed (${response.status})`)
@@ -867,7 +868,7 @@ export default function DashboardPage() {
         if (!href) throw new Error('MP4 export did not return a downloadable file')
         setDownloadProgressFor(cardId, 100)
         downloadHandledByToast = true
-        toast.success('MP4 ready - downloading...')
+        toast.success('MP4 download started')
         // The signed URL carries Content-Disposition: attachment, so a top-level
         // navigation saves the file even after the async conversion/poll loop
         // (which Chrome would otherwise block for programmatic clicks).
@@ -974,7 +975,8 @@ export default function DashboardPage() {
 
       if (!href) href = await proxiedVideoUrl(url)
 
-      await triggerDownload(href, filename)
+      window.location.href = href
+      setTimeout(() => finishDownloading(cardId), 1500)
     } catch (err) {
       console.error('Direct download failed', err)
       window.open(url, '_blank')
