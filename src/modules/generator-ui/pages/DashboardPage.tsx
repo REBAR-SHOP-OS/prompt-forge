@@ -890,7 +890,7 @@ export default function DashboardPage() {
     } catch {
       return null
     }
-  }
+  }, [])
 
   // Run a real AI copyright review of the final video + its music/voiceover.
   // `silent` runs the check in the background (no dialog) — used for the
