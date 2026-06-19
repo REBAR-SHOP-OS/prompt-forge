@@ -870,7 +870,7 @@ export default function DashboardPage() {
   // Resolve a fetchable, signed Supabase-storage URL from either a raw storage
   // path or a (possibly public) storage URL so the edge function can fetch
   // private merged-videos / user objects.
-  const signStorageUrl = async (input: string): Promise<string | null> => {
+  const signStorageUrl = useCallback(async (input: string): Promise<string | null> => {
     if (!input) return null
     try {
       let bucket = MERGED_BUCKET
