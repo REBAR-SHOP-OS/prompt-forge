@@ -1,39 +1,20 @@
 ## Goal
 
-Replace the current **two** download controls on each Final Film row (the download arrow + the separate small `MP4` badge button) with a **single download icon**. Clicking it opens a small menu listing the available formats; picking one downloads the video in that format.
+In the Voiceover dialog, the voiceover settings/player panel (volume, waveform, "Play on video from … to") is currently hidden behind a gear (`Settings2`) toggle, so it can collapse into the empty state shown in image 2. The user wants the panel (image 1) to **always** show whenever an active voiceover exists, and the collapsed state + gear toggle to no longer exist.
 
-## Current state
+## Changes — `src/modules/generator-ui/components/VoiceoverDialog.tsx`
 
-Each final-film row renders two buttons side by side:
-- A download arrow → `downloadDirect()` (fast, original file as stored — usually WebM/MP4)
-- An `MP4` text badge → `downloadAsMp4()` (transcodes WebM → broadly-compatible MP4)
+1. **Always render the panel when a voiceover exists**: change the condition at line 396 from `activeVoiceoverUrl && showSettings ?` to just `activeVoiceoverUrl ?`.
 
-This exists in two places with identical markup:
-- The **Library → Final videos** row (the one circled in the screenshot)
-- The **workspace "Pending" film** row
+2. **Remove the gear toggle button** from the `DialogFooter` (lines 499–510, the `activeVoiceoverUrl ? <Button …><Settings2/></Button> : null` block).
 
-## Change
+3. **Remove the now-unused `showSettings` state** (line 121) and the `setShowSettings(true)` call inside `handleUseAsSoundtrack` (line 249).
 
-In both places, collapse the two buttons into one `DropdownMenu` (already imported in this file):
+4. **Drop the now-unused `Settings2` import** from the lucide-react import (line 2).
 
-- **Trigger:** a single round download icon (`Download`, shows the `LoaderCircle` spinner while `downloadingId === <id>`), same styling as today's download button.
-- **Menu content** (shown on click, before any download happens):
-  - A small label: "Download as"
-  - **MP4 (compatible)** → calls `downloadAsMp4(id, storage_path, prefix)` — transcodes to standard MP4 for QuickTime / mobile / players.
-  - **Original (fast)** → calls `downloadDirect(id, storage_path, prefix)` — fastest, hands over the stored file via a signed download URL.
+## Result
+- Whenever there is an active voiceover, the full player/settings panel is shown automatically (image 1).
+- The collapsed view with the gear button (image 2) no longer exists.
+- The footer keeps "Use as soundtrack" (music icon), Download, and Close.
 
-Selecting an item triggers that format's existing download function. No download starts until the user picks a format.
-
-The underlying `downloadAsMp4` and `downloadDirect` functions are unchanged — only the UI that invokes them changes.
-
-## Out of scope
-- No change to transcode logic, storage, or which formats are technically producible (MP4 + original remain the two real options the app supports).
-- No backend changes.
-
-## Technical notes
-- File: `src/modules/generator-ui/pages/DashboardPage.tsx`.
-- Library row: the `<>...</>` block at ~lines 9402–9436.
-- Workspace pending row: the equivalent two-button block at ~lines 7650–7685.
-- Reuse `DropdownMenu`, `DropdownMenuTrigger`, `DropdownMenuContent`, `DropdownMenuItem`, `DropdownMenuLabel` (already imported).
-- Keep `event.stopPropagation()` so opening the menu / clicking an item does not trigger the row's click handler.
-- Disable the trigger while `downloadingId === <id>` to prevent concurrent downloads.
+No backend, data, or logic changes beyond removing the toggle.

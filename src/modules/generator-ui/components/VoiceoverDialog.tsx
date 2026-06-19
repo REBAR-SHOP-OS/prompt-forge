@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
-import { Download, LoaderCircle, Mic, Music2, Settings2, Sparkles, X } from 'lucide-react'
+import { Download, LoaderCircle, Mic, Music2, Sparkles, X } from 'lucide-react'
 import { supabase } from '@/integrations/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
@@ -118,7 +118,7 @@ export function VoiceoverDialog({
   const [customDuration, setCustomDuration] = useState<string>('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
-  const [showSettings, setShowSettings] = useState(false)
+  
   const lastUrlRef = useRef<string | null>(null)
 
   function resolveDurationSec(): number | undefined {
@@ -246,7 +246,6 @@ export function VoiceoverDialog({
     setAudioUrl(null)
     setText('')
     // Keep the dialog open so the user can adjust timing/volume right here.
-    setShowSettings(true)
     toast.success('Voiceover set as soundtrack')
   }
 
@@ -393,7 +392,7 @@ export function VoiceoverDialog({
             </div>
           ) : null}
 
-          {activeVoiceoverUrl && showSettings ? (
+          {activeVoiceoverUrl ? (
             <div className="space-y-4 rounded-md border border-white/10 bg-white/[0.03] p-3">
               <div className="flex items-center justify-between">
                 <div className="flex min-w-0 items-center gap-2 text-xs text-zinc-300">
@@ -494,18 +493,6 @@ export function VoiceoverDialog({
               title="Use as soundtrack"
             >
               <Music2 className="h-4 w-4" />
-            </Button>
-          ) : null}
-          {activeVoiceoverUrl ? (
-            <Button
-              type="button"
-              variant={showSettings ? 'default' : 'secondary'}
-              size="icon"
-              onClick={() => setShowSettings((v) => !v)}
-              aria-label="Voiceover settings"
-              title="Settings"
-            >
-              <Settings2 className="h-4 w-4" />
             </Button>
           ) : null}
           <Button
