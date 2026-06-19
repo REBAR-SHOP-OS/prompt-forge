@@ -9468,7 +9468,14 @@ export default function DashboardPage() {
                               disabled={checking}
                               onClick={(event) => {
                                 event.stopPropagation()
-                                void runCopyrightCheck(video)
+                                if (review) {
+                                  setCopyrightJob(video)
+                                  setCopyrightError(null)
+                                  setCopyrightLoading(false)
+                                  setCopyrightResult(review)
+                                } else {
+                                  void runCopyrightCheck(video)
+                                }
                               }}
                               aria-label={tone.label}
                               title={tone.label}
