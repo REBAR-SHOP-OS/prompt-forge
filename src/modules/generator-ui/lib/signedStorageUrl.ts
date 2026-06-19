@@ -135,6 +135,12 @@ export async function resolveSignedUrl(
   const ref = parseStorageRef(value);
   if (!ref || !PRIVATE_BUCKETS.includes(ref.bucket)) return value;
 
+  // If this large file was migrated to the NAS, serve it via the streaming proxy.
+  try {
+    const nas = await resolveNasStreamUrl(ref.bucket, ref.path);
+    if (nas) return nas;
+  } catch { /* fall back to signed URL */ }
+
   const cacheKey = `${ref.bucket}/${ref.path}`;
   const cached = cache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.url;
