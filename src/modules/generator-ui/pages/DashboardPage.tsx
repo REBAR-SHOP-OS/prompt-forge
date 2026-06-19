@@ -736,6 +736,42 @@ export default function DashboardPage() {
   // (MediaRecorder), which fails in QuickTime / WMP / mobile galleries. The
   // conversion runs server-side (job-based) so the user ALWAYS gets a real .mp4
   // or a clear error — a WebM is never silently downloaded in its place.
+  // Reliable cross-origin download. The browser ignores the <a download>
+  // attribute for cross-origin URLs (our NAS stream proxy lives on the
+  // functions domain), so it would otherwise open/play the video instead of
+  // saving it. Fetch the bytes into a Blob and save via an object URL; fall
+  // back to a plain anchor click and finally window.open on any failure.
+  const triggerDownload = async (href: string, filename: string) => {
+    try {
+      const res = await fetch(href)
+      if (!res.ok) throw new Error(`download failed: ${res.status}`)
+      const blob = await res.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = filename
+      a.rel = 'noopener'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      // Revoke after a tick so the download has a chance to start.
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000)
+    } catch (err) {
+      console.error('Blob download failed, falling back to anchor', err)
+      try {
+        const a = document.createElement('a')
+        a.href = href
+        a.download = filename
+        a.rel = 'noopener'
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+      } catch {
+        window.open(href, '_blank')
+      }
+    }
+  }
+
   const downloadAsMp4 = async (cardId: string, url: string, namePrefix: string) => {
     if (downloadingIds.has(cardId)) return
     startDownloading(cardId)
