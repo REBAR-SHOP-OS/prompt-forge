@@ -109,9 +109,9 @@ Deno.serve(async (req) => {
     'if echo "$ENC" | grep -q "[[:space:]]aac[[:space:]]"; then AENC="aac";',
     'elif echo "$ENC" | grep -q "[[:space:]]libmp3lame[[:space:]]"; then AENC="libmp3lame";',
     'else AENC="copy"; fi',
-    'echo "SELECTED VENC=[$VENC] AENC=[$AENC]" 1>&2',
-    'echo "H264ENC:" 1>&2; echo "$ENC" | grep -i 264 1>&2 || true',
-    'echo "AACENC:" 1>&2; echo "$ENC" | grep -iE "aac|mp3|mp4" 1>&2 || true',
+    'echo "SELECTED VENC=[$VENC] AENC=[$AENC]"',
+    'echo "H264ENC:"; echo "$ENC" | grep -i 264 || true',
+    'echo "AUDIOENC:"; echo "$ENC" | grep -iE "aac|mp3" || true',
     '"$FF" -y -i "$tmp/in" -c:v $VENC -c:a $AENC -movflags +faststart "$tmp/out.mp4"',
     `curl -fsS -X PUT -H "content-type: video/mp4" --data-binary "@$tmp/out.mp4" "${uploadUrl}"`,
   ].join("\n");
