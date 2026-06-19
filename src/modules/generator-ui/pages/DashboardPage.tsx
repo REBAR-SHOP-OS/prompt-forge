@@ -741,8 +741,11 @@ export default function DashboardPage() {
     try {
       const hasServerDownloadDisposition = /[?&]download=/.test(href)
       if (hasServerDownloadDisposition) {
-        const opened = window.open(href, '_blank', 'noopener,noreferrer')
-        if (opened) return
+        const opened = window.open(href, '_blank')
+        if (opened) {
+          opened.opener = null
+          return
+        }
       }
 
       const a = document.createElement('a')
@@ -756,7 +759,7 @@ export default function DashboardPage() {
       setTimeout(() => document.body.removeChild(a), 1000)
     } catch (err) {
       console.error('Download failed, falling back to new tab', err)
-      window.open(href, '_blank', 'noopener,noreferrer')
+      window.open(href, '_blank')
     }
   }
 
