@@ -34,6 +34,15 @@ Deno.serve(async (req) => {
 
     const svc = createClient(SUPABASE_URL, SERVICE_ROLE);
 
+    // Admin-only: this function performs outbound fetches to URLs stored in
+    // asset rows. Enforce the admin role server-side (never trust the client).
+    const { data: isAdmin, error: roleErr } = await svc.rpc("has_role", {
+      _user_id: userId,
+      _role: "admin",
+    });
+    if (roleErr) return json({ error: "Role check failed" }, 500);
+    if (!isAdmin) return json({ error: "Forbidden" }, 403);
+
     const ownStoragePrefix = `${new URL(SUPABASE_URL).origin}/storage/v1/object/`;
 
     // Find the caller's own non-durable assets (external provider URLs).
