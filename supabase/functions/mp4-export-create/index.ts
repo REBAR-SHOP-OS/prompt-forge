@@ -40,14 +40,31 @@ Deno.serve(async (req) => {
 
   const svc = getServiceClient();
 
-  // 1) Already an MP4 → no conversion needed, hand back a signed source URL.
-  if (storagePath.toLowerCase().split("?")[0].endsWith(".mp4")) {
+  // Is the source already on the NAS? (large files are migrated/uploaded there)
+  const { data: nasObj } = await svc
+    .from("storage_objects")
+    .select("backend, nas_path")
+    .eq("logical_bucket", bucket)
+    .eq("object_key", storagePath)
+    .eq("user_id", auth.userId)
+    .maybeSingle();
+  const sourceOnNas = nasObj?.backend === "synology" && !!nasObj?.nas_path;
+
+  const isMp4 = storagePath.toLowerCase().split("?")[0].endsWith(".mp4");
+
+  // 1) Already an MP4.
+  if (isMp4) {
+    if (sourceOnNas) {
+      // It already lives on the NAS as MP4 — the client streams it directly.
+      return jsonResponse({ status: "completed", bucket, path: storagePath, alreadyMp4: true, nas: true });
+    }
     const { data, error } = await svc.storage.from(bucket).createSignedUrl(storagePath, SIGNED_TTL);
     if (error || !data?.signedUrl) {
       return errorResponse("SIGN_FAILED", "Could not sign source URL", 500);
     }
     return jsonResponse({ status: "completed", url: data.signedUrl, bucket, path: storagePath, alreadyMp4: true });
   }
+
 
   // Deterministic cache key so re-exporting the same file is instant.
   const hash = await sha256Hex(`${bucket}:${storagePath}`);
