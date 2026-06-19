@@ -710,6 +710,87 @@ function buildSeededJob(
   }
 }
 
+// Plays a project audio track from the private merged-videos bucket. The stored
+// URL is a (non-working) public URL, so we resolve a short-lived signed URL on
+// mount before feeding it to the <audio> element and the download button.
+function ProjectAudioTrackRow({
+  id,
+  track,
+  accent,
+  Icon,
+  label,
+  signUrl,
+  onDownload,
+  downloading,
+}: {
+  id: string
+  track: { url: string; name: string }
+  accent: 'sky' | 'amber'
+  Icon: typeof Music2
+  label: string
+  signUrl: (input: string) => Promise<string | null>
+  onDownload: (id: string, url: string, name: string) => void
+  downloading: boolean
+}) {
+  const [signed, setSigned] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    setSigned(null)
+    setFailed(false)
+    void signUrl(track.url).then((u) => {
+      if (!active) return
+      if (u) setSigned(u)
+      else setFailed(true)
+    })
+    return () => {
+      active = false
+    }
+  }, [track.url, signUrl])
+
+  const accentText = accent === 'sky' ? 'text-sky-200' : 'text-amber-200'
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide ${accentText}`}>
+          <Icon className="h-3 w-3" aria-hidden="true" /> {label}
+        </span>
+        <button
+          type="button"
+          disabled={downloading || !signed}
+          onClick={(event) => {
+            event.stopPropagation()
+            if (signed) onDownload(id, signed, track.name)
+          }}
+          aria-label={`Download ${label.toLowerCase()}`}
+          title={`Download ${label.toLowerCase()}`}
+          className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+        >
+          {downloading ? (
+            <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+          ) : (
+            <Download className="h-3 w-3" aria-hidden="true" />
+          )}
+        </button>
+      </div>
+      <p className="truncate text-[11px] text-zinc-500">{track.name}</p>
+      {signed ? (
+        <audio controls preload="metadata" src={signed} className="h-8 w-full" />
+      ) : failed ? (
+        <p className="text-[11px] text-rose-300">Unable to load audio.</p>
+      ) : (
+        <p className="inline-flex items-center gap-1.5 text-[11px] text-zinc-500">
+          <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" /> Preparing…
+        </p>
+      )}
+    </div>
+  )
+}
+
+
+
 export default function DashboardPage() {
   const { session, profile, signOut, loading: authLoading } = useAuth()
   const [promptText, setPromptText] = useState('')
@@ -870,7 +951,7 @@ export default function DashboardPage() {
   // Resolve a fetchable, signed Supabase-storage URL from either a raw storage
   // path or a (possibly public) storage URL so the edge function can fetch
   // private merged-videos / user objects.
-  const signStorageUrl = async (input: string): Promise<string | null> => {
+  const signStorageUrl = useCallback(async (input: string): Promise<string | null> => {
     if (!input) return null
     try {
       let bucket = MERGED_BUCKET
@@ -890,7 +971,7 @@ export default function DashboardPage() {
     } catch {
       return null
     }
-  }
+  }, [])
 
   // Run a real AI copyright review of the final video + its music/voiceover.
   // `silent` runs the check in the background (no dialog) — used for the
@@ -9389,60 +9470,28 @@ export default function DashboardPage() {
                                 ) : (
                                   <div className="space-y-3">
                                     {audio?.music ? (
-                                      <div className="space-y-1.5">
-                                        <div className="flex items-center justify-between gap-2">
-                                          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-sky-200">
-                                            <Music2 className="h-3 w-3" aria-hidden="true" /> Music
-                                          </span>
-                                          <button
-                                            type="button"
-                                            disabled={downloadingId === `music-${video.id}`}
-                                            onClick={(event) => {
-                                              event.stopPropagation()
-                                              void downloadAudioFile(`music-${video.id}`, audio.music!.url, audio.music!.name)
-                                            }}
-                                            aria-label="Download music"
-                                            title="Download music"
-                                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
-                                          >
-                                            {downloadingId === `music-${video.id}` ? (
-                                              <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
-                                            ) : (
-                                              <Download className="h-3 w-3" aria-hidden="true" />
-                                            )}
-                                          </button>
-                                        </div>
-                                        <p className="truncate text-[11px] text-zinc-500">{audio.music.name}</p>
-                                        <audio controls preload="none" src={audio.music.url} className="h-8 w-full" />
-                                      </div>
+                                      <ProjectAudioTrackRow
+                                        id={`music-${video.id}`}
+                                        track={audio.music}
+                                        accent="sky"
+                                        Icon={Music2}
+                                        label="Music"
+                                        signUrl={signStorageUrl}
+                                        onDownload={(id, url, name) => { void downloadAudioFile(id, url, name) }}
+                                        downloading={downloadingId === `music-${video.id}`}
+                                      />
                                     ) : null}
                                     {audio?.voiceover ? (
-                                      <div className="space-y-1.5">
-                                        <div className="flex items-center justify-between gap-2">
-                                          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-200">
-                                            <Mic className="h-3 w-3" aria-hidden="true" /> Voiceover
-                                          </span>
-                                          <button
-                                            type="button"
-                                            disabled={downloadingId === `voice-${video.id}`}
-                                            onClick={(event) => {
-                                              event.stopPropagation()
-                                              void downloadAudioFile(`voice-${video.id}`, audio.voiceover!.url, audio.voiceover!.name)
-                                            }}
-                                            aria-label="Download voiceover"
-                                            title="Download voiceover"
-                                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
-                                          >
-                                            {downloadingId === `voice-${video.id}` ? (
-                                              <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
-                                            ) : (
-                                              <Download className="h-3 w-3" aria-hidden="true" />
-                                            )}
-                                          </button>
-                                        </div>
-                                        <p className="truncate text-[11px] text-zinc-500">{audio.voiceover.name}</p>
-                                        <audio controls preload="none" src={audio.voiceover.url} className="h-8 w-full" />
-                                      </div>
+                                      <ProjectAudioTrackRow
+                                        id={`voice-${video.id}`}
+                                        track={audio.voiceover}
+                                        accent="amber"
+                                        Icon={Mic}
+                                        label="Voiceover"
+                                        signUrl={signStorageUrl}
+                                        onDownload={(id, url, name) => { void downloadAudioFile(id, url, name) }}
+                                        downloading={downloadingId === `voice-${video.id}`}
+                                      />
                                     ) : null}
                                   </div>
                                 )}

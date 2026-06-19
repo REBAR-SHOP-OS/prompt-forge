@@ -1,61 +1,31 @@
-## Goal
+## Problem
 
-Make the copyright-check shield icon (next to Download in the Library → Final Videos row) a real, automatic content gate:
+In the Library → Final video → "Project audio" popover, the **Music** and **Voiceover** players show `0:00 / 0:00` and won't play.
 
-- After a Final Film is produced, it is checked **once, automatically**.
-- The icon turns **green** when approved, **red** when rejected, **amber** for caution.
-- The verdict is **persisted** so it survives reloads (not recomputed every time).
-- Clicking the icon still opens the existing details dialog and offers a manual re-run.
+## Root cause
 
-## Current behavior
+The project audio is stored in the **`merged-videos`** bucket, which is **private**. But the code saves and renders the track using `supabase.storage.from('merged-videos').getPublicUrl(...)` (see `persistAudioToStorage`). A public URL on a private bucket returns **403**, so the `<audio>` element never loads the file → duration stays `0:00` and playback fails. The Download button hits the same dead URL.
 
-- `copyright-check` edge function already sends video + music + voiceover to Gemini and returns a structured verdict (`approved` / `caution` / `rejected`). This logic is solid and stays.
-- In `DashboardPage.tsx`, `runCopyrightCheck(video)` only runs on manual click and opens a dialog; the result lives in transient state and is lost on reload. The shield icon is always neutral grey.
-- No automatic run after finalize. No persistence.
+This is the exact same class of issue already solved for images/videos elsewhere via `signStorageUrl` (which converts a stored public/raw path into a short-lived **signed** URL the private bucket actually serves). The popover just never got that treatment.
 
-## Changes
+## Fix
 
-### 1. Persist verdicts (database)
-Add a new table `generator_copyright_reviews`:
+Render the popover audio through **signed URLs** instead of the stored public URL.
 
-```text
-id uuid pk
-job_id uuid  (the final film job)
-user_id uuid
-verdict text          -- approved | caution | rejected
-video_status text
-music_status text
-summary text
-result jsonb          -- full structured result for the dialog
-created_at / updated_at
-unique (job_id)
-```
+1. **New small inner component `ProjectAudioTrackRow`** (defined inside `DashboardPage` so it can reuse `signStorageUrl`, `downloadAudioFile`, and `downloadingId`):
+   - Props: `kind` (`'music' | 'voiceover'`), `track` (`{ url, name }`), `jobId`, label/icon styling.
+   - On mount (and when `track.url` changes), call `signStorageUrl(track.url)` and store the resolved signed URL in local state.
+   - Render the `<audio controls>` with the **signed** URL; show a tiny "preparing…" state until it resolves.
+   - The Download button downloads using the **signed** URL too.
 
-- RLS: users `SELECT` own rows; client insert/update denied (writes only via edge function service role).
-- GRANTs: `SELECT` to `authenticated`, `ALL` to `service_role`.
+2. **Replace** the two inline `<audio src={audio.music.url}>` / `<audio src={audio.voiceover.url}>` blocks (and their download buttons) in the popover with `<ProjectAudioTrackRow>`.
 
-### 2. Edge function `copyright-check`
-- Accept an optional `jobId` in the body.
-- After computing the result, when `jobId` is present, upsert the row into `generator_copyright_reviews` (service-role client) with verdict/statuses/summary/full result.
-- Response shape unchanged (still returns `{ result }`), so the existing dialog keeps working.
-
-### 3. Frontend (`DashboardPage.tsx`)
-- **State:** add `copyrightReviews: Record<jobId, CopyrightResult>`.
-- **Load on open:** in `loadArchive`, fetch all `generator_copyright_reviews` for the user and populate the map so colors render immediately on reload.
-- **Pass `jobId`** in the `runCopyrightCheck` invoke body; on success also store the result into `copyrightReviews[video.id]`.
-- **Auto-run once after finalize:** when a Final Film finishes saving, trigger a silent `runCopyrightCheck` for that job (no dialog popup) only if no review exists yet. Guard with an in-flight set so it runs exactly once.
-- **Icon coloring:** replace the always-grey `Shield` button with verdict-driven rendering:
-  - loading/in-flight → spinner
-  - `approved` → `ShieldCheck`, emerald/green
-  - `rejected` → `ShieldX`, rose/red
-  - `caution` → `ShieldAlert`, amber
-  - no review yet → neutral `Shield` (click to check)
-- Click behavior unchanged: opens the dialog (now pre-filled from the stored result when available) with a re-run button.
+No database, bucket-privacy, or storage-layout changes — keeping the bucket private and signing on demand is the correct, secure approach (same pattern already used for `archiveAudio` and the copyright check).
 
 ## Out of scope
-- No change to the Gemini prompt or verdict thresholds.
-- No change to merge/finalize logic beyond firing the one-time check.
+- No change to how audio is uploaded/persisted at finalize time.
+- No change to bucket visibility.
 
 ## Technical notes
-- Auto-run reuses the existing signed-URL preparation in `runCopyrightCheck`; a small variant flag suppresses opening the dialog during the automatic pass.
-- Videos over the 25MB inline cap will surface as an error/caution state on the icon, same as the current dialog behavior.
+- `signStorageUrl` already parses `/storage/v1/object/public/<bucket>/<path>` URLs and returns a 30-minute signed URL, so stored entries work without re-persisting.
+- Signed URLs are generated lazily when the popover/player mounts, so there's no upfront cost for rows the user never opens.
