@@ -859,29 +859,42 @@ export default function DashboardPage() {
           if (!href) {
             const { data, error } = await supabase.storage
               .from(out.bucket)
-              .createSignedUrl(out.path, 60 * 60, { download: filename })
+              .createSignedUrl(out.path, 300, { download: filename })
             if (!error && data?.signedUrl) href = data.signedUrl
           }
         }
         // Fall back to whatever URL the server already returned
         if (!href) href = out.url ?? null
         if (!href) throw new Error('MP4 export did not return a downloadable file')
+        const downloadHref = href
         setDownloadProgressFor(cardId, 100)
         downloadHandledByToast = true
-        toast.success('MP4 download started')
         // The signed URL carries Content-Disposition: attachment. A hidden
         // anchor with a download attribute saves the file without navigating the
         // page away.
         const a = document.createElement('a')
-        a.href = href
+        a.href = downloadHref
         a.download = filename
         a.style.display = 'none'
         document.body.appendChild(a)
         a.click()
-        setTimeout(() => {
-          document.body.removeChild(a)
-          finishDownloading(cardId)
-        }, 2000)
+        setTimeout(() => document.body.removeChild(a), 2000)
+        // Fallback: if Chrome blocked the programmatic click (async user gesture),
+        // give the user a visible link to click themselves.
+        toast.success('MP4 ready', {
+          description: (
+            <a
+              href={downloadHref}
+              download={filename}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline font-medium"
+            >
+              Download didn’t start? Click here
+            </a>
+          ),
+        })
+        setTimeout(() => finishDownloading(cardId), 2000)
       }
 
       // 1) Kick off (or reuse a cached) server-side export.
