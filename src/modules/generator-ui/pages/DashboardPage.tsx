@@ -992,8 +992,9 @@ export default function DashboardPage() {
     }
   }
   const downloadImageFile = async (imageId: string, url: string) => {
-    if (downloadingId) return
-    setDownloadingId(imageId)
+    if (downloadingIds.has(imageId)) return
+    startDownloading(imageId)
+
     try {
       const response = await fetch(url)
       if (!response.ok) throw new Error('Download failed')
@@ -1015,7 +1016,8 @@ export default function DashboardPage() {
       console.error('Image download failed', err)
       window.open(url, '_blank')
     } finally {
-      setDownloadingId(null)
+      finishDownloading(imageId)
+
     }
   }
   // Persist an audio item (uploaded music or generated voiceover) to the
@@ -1056,8 +1058,9 @@ export default function DashboardPage() {
     }
   }
   const downloadAudioFile = async (audioId: string, url: string | null | undefined, name: string | null) => {
-    if (downloadingId || !url) return
-    setDownloadingId(audioId)
+    if (downloadingIds.has(audioId) || !url) return
+    startDownloading(audioId)
+
     try {
       const response = await fetch(url)
       if (!response.ok) throw new Error('Download failed')
@@ -1083,7 +1086,7 @@ export default function DashboardPage() {
       console.error('Audio download failed', err)
       window.open(url, '_blank')
     } finally {
-      setDownloadingId(null)
+      finishDownloading(audioId)
     }
   }
   const handleDeleteUserAudio = async (item: UserAudioItem) => {
