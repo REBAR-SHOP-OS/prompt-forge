@@ -101,18 +101,18 @@ Deno.serve(async (req) => {
     // to licensing). Fall back to libopenh264, then mpeg4 so we always produce a
     // playable .mp4 instead of failing outright.
     'ENC="$("$FF" -hide_banner -encoders 2>/dev/null)"',
-    'if echo "$ENC" | grep -q "[[:space:]]libx264[[:space:]]"; then VENC="libx264 -pix_fmt yuv420p";',
+    'if echo "$ENC" | grep -q "[[:space:]]libx264[[:space:]]"; then VENC="libx264";',
     'elif echo "$ENC" | grep -q "[[:space:]]h264_synology[[:space:]]"; then VENC="h264_synology";',
-    'elif echo "$ENC" | grep -q "[[:space:]]libopenh264[[:space:]]"; then VENC="libopenh264 -pix_fmt yuv420p";',
+    'elif echo "$ENC" | grep -q "[[:space:]]libopenh264[[:space:]]"; then VENC="libopenh264";',
     'else VENC="mpeg4 -q:v 3"; fi',
     // Prefer the native AAC encoder; fall back to libmp3lame if AAC is missing.
     'if echo "$ENC" | grep -q "[[:space:]]aac[[:space:]]"; then AENC="aac";',
     'elif echo "$ENC" | grep -q "[[:space:]]libmp3lame[[:space:]]"; then AENC="libmp3lame";',
     'else AENC="copy"; fi',
-    'echo "SELECTED VENC=[$VENC] AENC=[$AENC]"',
-    'echo "H264ENC:"; echo "$ENC" | grep -i 264 || true',
-    'echo "AUDIOENC:"; echo "$ENC" | grep -iE "aac|mp3" || true',
-    '"$FF" -y -i "$tmp/in" -c:v $VENC -c:a $AENC -movflags +faststart "$tmp/out.mp4"',
+    // MediaRecorder WebM has a 1000-fps timebase that breaks encoder init; force
+    // a normal CFR framerate, yuv420p, and an explicit bitrate so the encoder
+    // always opens. -r before output applies to the output stream.
+    '"$FF" -y -i "$tmp/in" -r 30 -vsync cfr -c:v $VENC -pix_fmt yuv420p -b:v 6M -c:a $AENC -b:a 192k -movflags +faststart "$tmp/out.mp4"',
     `curl -fsS -X PUT -H "content-type: video/mp4" --data-binary "@$tmp/out.mp4" "${uploadUrl}"`,
   ].join("\n");
 
