@@ -18,6 +18,22 @@ interface UploadJobBody {
   prompt?: string;
 }
 
+// Buckets a user may legitimately upload finished/edited videos into.
+const OWN_UPLOAD_BUCKETS = ["user-videos", "merged-videos"];
+
+// Accept only paths inside the caller's own folder, in either the bare
+// `<bucket>/<userId>/…` form or a fully-qualified Storage object URL.
+function isOwnStoragePath(storagePath: string, userId: string): boolean {
+  return OWN_UPLOAD_BUCKETS.some(
+    (b) =>
+      storagePath.startsWith(`${b}/${userId}/`) ||
+      storagePath.includes(`/storage/v1/object/${b}/${userId}/`) ||
+      storagePath.includes(`/storage/v1/object/public/${b}/${userId}/`) ||
+      storagePath.includes(`/storage/v1/object/sign/${b}/${userId}/`) ||
+      storagePath.includes(`/storage/v1/object/authenticated/${b}/${userId}/`),
+  );
+}
+
 function validate(body: unknown): { ok: true; value: UploadJobBody } | { ok: false; message: string } {
   if (!body || typeof body !== "object") return { ok: false, message: "body must be an object" };
   const b = body as Record<string, unknown>;
