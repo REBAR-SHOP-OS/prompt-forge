@@ -43,8 +43,26 @@ export async function proxiedVideoUrl(url: string): Promise<string> {
   try {
     parsed = new URL(url);
   } catch {
+    // Not an absolute URL — handle bare `<bucket>/<path>` references for our own
+    // private buckets (the form we now persist for NAS/Cloud-backed files).
+    const slash = url.indexOf("/");
+    if (slash > 0) {
+      const bucket = url.slice(0, slash);
+      const path = url.slice(slash + 1);
+      if (PRIVATE_STORAGE_BUCKETS.includes(bucket) && path) {
+        try {
+          const nas = await resolveNasStreamUrl(bucket, path);
+          if (nas) return nas;
+        } catch { /* fall back to signed URL */ }
+        const { data, error } = await supabase.storage
+          .from(bucket)
+          .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
+        if (!error && data?.signedUrl) return data.signedUrl;
+      }
+    }
     return url;
   }
+
 
   // Same-origin (e.g. relative URLs already on our domain) — no proxy needed.
   if (typeof window !== "undefined" && parsed.host === window.location.host) {
