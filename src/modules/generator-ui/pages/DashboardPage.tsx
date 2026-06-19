@@ -805,6 +805,9 @@ export default function DashboardPage() {
   // Tracks which card's download is currently being prepared (fetched +
   // transcoded to standard MP4) so we can show a spinner on that button.
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  // 0-100 percent while a card's MP4 is being prepared/transcoded; null when
+  // we don't yet have a measurable stage (e.g. signing / fetching).
+  const [downloadProgress, setDownloadProgress] = useState<number | null>(null)
 
   // --- Copyright shield: AI review of the final video + music/voiceover ---
   type CopyrightSection = { status: string; reason?: string; risks?: string[] }
@@ -834,6 +837,7 @@ export default function DashboardPage() {
   const downloadAsMp4 = async (cardId: string, url: string, namePrefix: string) => {
     if (downloadingId) return
     setDownloadingId(cardId)
+    setDownloadProgress(null)
     const triggerDownload = (blob: Blob, filename: string) => {
       const blobUrl = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -864,7 +868,16 @@ export default function DashboardPage() {
       return 'mp4'
     }
     try {
-      const fetchUrl = await proxiedVideoUrl(url)
+      // Resolve a fetchable URL. proxiedVideoUrl re-signs our private buckets,
+      // but it can only parse absolute URLs — for a raw storage path (no
+      // scheme) we sign it via signStorageUrl so the fetch never silently
+      // fails on a relative path.
+      let fetchUrl: string
+      if (/^https?:\/\//i.test(url) || url.startsWith('blob:') || url.startsWith('data:')) {
+        fetchUrl = await proxiedVideoUrl(url)
+      } else {
+        fetchUrl = (await signStorageUrl(url)) ?? url
+      }
       const response = await fetch(fetchUrl)
       if (!response.ok) throw new Error('Download failed')
       const blob = await response.blob()
@@ -881,20 +894,35 @@ export default function DashboardPage() {
       }
 
       try {
-        const mp4 = await ensureMp4(blob, blob.type)
-        triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.mp4`)
+        // Surface real progress to the button: loading band 1-10%,
+        // encode 10-95%, readout 100%.
+        setDownloadProgress(1)
+        const mp4 = await ensureMp4(blob, blob.type, ({ stage, ratio }) => {
+          if (stage === 'loading') setDownloadProgress(Math.round(1 + ratio * 9))
+          else if (stage === 'encode') setDownloadProgress(Math.round(10 + ratio * 85))
+          else if (stage === 'readout') setDownloadProgress(100)
+        })
+        triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.${mp4.extension}`)
+        if (mp4.extension !== 'mp4') {
+          // The in-browser converter was unavailable — be honest that we
+          // handed back the original (WebM) format rather than an MP4.
+          toast.error('Downloaded in original format (WebM) — the in-browser MP4 converter was unavailable.')
+        }
       } catch (transErr) {
         // Transcode failed (too large / OOM) — hand over the original file
         // with its TRUE extension (never mislabel WebM as .mp4) so the user
         // is never left without a download.
         console.warn('[download] MP4 transcode failed, serving original:', transErr)
         triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${extFromType(blob.type, url)}`)
+        toast.error('MP4 conversion failed — downloaded the original file instead.')
       }
     } catch (err) {
       console.error('Film download failed', err)
+      toast.error('Download failed. Please try again.')
       window.open(url, '_blank')
     } finally {
       setDownloadingId(null)
+      setDownloadProgress(null)
     }
   }
   // Fast, direct download: hands the browser a signed URL with a download
@@ -7658,10 +7686,14 @@ export default function DashboardPage() {
                                        onClick={(event) => event.stopPropagation()}
                                        aria-label="Download video"
                                        title="Download"
-                                       className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                       className="grid h-6 min-w-6 shrink-0 place-items-center rounded-full border border-white/10 px-1 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                                      >
                                        {downloadingId === job.id ? (
-                                         <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                         downloadProgress !== null ? (
+                                           <span className="text-[9px] font-semibold tabular-nums text-emerald-200">{downloadProgress}%</span>
+                                         ) : (
+                                           <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                         )
                                        ) : (
                                          <Download className="h-3 w-3" aria-hidden="true" />
                                        )}
@@ -9417,10 +9449,14 @@ export default function DashboardPage() {
                                  onClick={(event) => event.stopPropagation()}
                                  aria-label="Download video"
                                  title="Download"
-                                 className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                 className="grid h-6 min-w-6 shrink-0 place-items-center rounded-full border border-white/10 px-1 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                                >
                                  {downloadingId === video.id ? (
-                                   <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                   downloadProgress !== null ? (
+                                     <span className="text-[9px] font-semibold tabular-nums text-emerald-200">{downloadProgress}%</span>
+                                   ) : (
+                                     <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                   )
                                  ) : (
                                    <Download className="h-3 w-3" aria-hidden="true" />
                                  )}
