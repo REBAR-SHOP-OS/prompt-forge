@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
     if (signErr || !data?.signedUrl) {
       return jsonResponse({ status: "failed", error: "Export file unavailable" });
     }
-    return jsonResponse({ status: "completed", url: data.signedUrl });
+    return jsonResponse({ status: "completed", url: data.signedUrl, bucket: "mp4-exports", path: job.output_path });
   }
 
   if (job.status === "failed") {
