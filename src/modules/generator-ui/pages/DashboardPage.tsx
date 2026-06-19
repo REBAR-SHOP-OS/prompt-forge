@@ -756,7 +756,13 @@ export default function DashboardPage() {
           return null
         }
       }
-      // Raw storage path: final films live in merged-videos, clips in user-videos.
+      // Bare `<bucket>/<path>` reference (the form we now persist).
+      const knownBuckets = ['user-videos', MERGED_BUCKET, 'mp4-exports']
+      const slash = input.indexOf('/')
+      if (slash > 0 && knownBuckets.includes(input.slice(0, slash))) {
+        return { bucket: input.slice(0, slash), path: input.slice(slash + 1) }
+      }
+      // Legacy raw storage path: final films live in merged-videos, clips in user-videos.
       const bucket = namePrefix.includes('final') ? MERGED_BUCKET : 'user-videos'
       return { bucket, path: input }
     }
