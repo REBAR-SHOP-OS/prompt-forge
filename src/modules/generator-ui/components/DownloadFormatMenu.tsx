@@ -55,7 +55,44 @@ export function DownloadFormatMenu({
         >
           {busy ? (
             progress != null ? (
-              <span className="text-[8px] font-semibold leading-none">{progress}%</span>
+              (() => {
+                const pct = Math.max(0, Math.min(100, Math.round(progress)))
+                const r = 10
+                const circumference = 2 * Math.PI * r
+                const dashoffset = circumference * (1 - pct / 100)
+                return (
+                  <span
+                    className="relative grid h-6 w-6 place-items-center"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={pct}
+                  >
+                    <svg className="absolute inset-0 h-6 w-6 -rotate-90" viewBox="0 0 24 24">
+                      <circle
+                        cx="12" cy="12" r={r}
+                        fill="transparent"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        className="text-zinc-800/80"
+                      />
+                      <circle
+                        cx="12" cy="12" r={r}
+                        fill="transparent"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeDasharray={circumference}
+                        strokeDashoffset={dashoffset}
+                        className="text-emerald-500 drop-shadow-[0_0_4px_rgba(16,185,129,0.4)] transition-all duration-500"
+                      />
+                    </svg>
+                    <span className="relative z-10 text-[7px] font-bold tabular-nums tracking-tighter text-emerald-400">
+                      {pct}
+                    </span>
+                  </span>
+                )
+              })()
             ) : (
               <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
             )

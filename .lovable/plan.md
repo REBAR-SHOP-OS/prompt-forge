@@ -1,23 +1,31 @@
-## نتیجه مورد انتظار
-دانلود MP4 نباید باعث پرش/ری‌لود صفحه یا توقف ناگهانی شود. اگر تبدیل MP4 برای مرورگر سنگین باشد، برنامه باید امن و قابل پیش‌بینی عمل کند و دانلود اصلی را خراب نکند.
+# Modern Vivid Emerald Download Progress
 
-## تشخیص فعلی
-- مسیر `Download as MP4` کل ویدیو را داخل حافظه مرورگر fetch می‌کند و سپس با `ffmpeg.wasm` تبدیل می‌کند.
-- برای WebMهای بزرگ، چند کپی هم‌زمان از فایل و خروجی در حافظه ساخته می‌شود؛ این می‌تواند تب مرورگر را به OOM/ری‌لود بکشاند، همان «صفحه می‌پرد» که گزارش شده.
-- در خطای نهایی هم `window.open(url, '_blank')` وجود دارد که در بعضی حالت‌ها می‌تواند حس پرش/تغییر صفحه ایجاد کند.
-- پیش‌بارگذاری ffmpeg هنگام باز شدن داشبورد هم بدون کلیک کاربر حافظه را مصرف می‌کند و ریسک ناپایداری را بالا می‌برد.
+Replace the current plain `45%` text shown inside the small download button while a file is converting/downloading with a polished, colorful **emerald circular progress ring** (the "Vivid emerald progress" direction the user chose).
 
-## برنامه اصلاح امن
-1. پیش‌بارگذاری خودکار MP4 transcoder را حذف/غیرفعال می‌کنم تا صفحه بی‌دلیل موتور سنگین ffmpeg را لود نکند.
-2. قبل از شروع تبدیل MP4، اندازه فایل را با `HEAD` یا هدر `Content-Length` بررسی می‌کنم؛ اگر فایل برای تبدیل مرورگری بزرگ باشد، تبدیل شروع نمی‌شود و دانلود اصلی با فرمت واقعی انجام می‌شود.
-3. سقف امن تبدیل در مرورگر را محافظه‌کارانه‌تر می‌کنم تا قبل از OOM متوقف شود، نه بعد از ری‌لود تب.
-4. `triggerDownload` را پایدارتر می‌کنم: revoke کردن blob URL را با تأخیر انجام می‌دهم تا دانلود قبل از آزادسازی URL قطع نشود.
-5. fallback ناامن/آزاردهنده `window.open` در مسیر MP4 را حذف می‌کنم و به‌جای آن فقط پیام خطا/دانلود اصلی را اجرا می‌کنم تا صفحه نپرد.
-6. پیام UI را دقیق‌تر می‌کنم: اگر MP4 در مرورگر قابل تبدیل نبود، کاربر بداند فایل اصلی دانلود شده و اشتباهاً WebM با پسوند MP4 تحویل نگیرد.
+## Where it changes
 
-## اعتبارسنجی
-- بررسی می‌کنم مسیرهای `DownloadFormatMenu` همچنان فقط یک آیکون دانلود با کشوی انتخاب فرمت داشته باشند.
-- اجرای type/lint توسط harness انجام می‌شود؛ بعد از تغییر، مسیر دانلود از نظر کد بررسی می‌شود که دیگر ناوبری/ری‌لود ناخواسته نداشته باشد.
+`src/modules/generator-ui/components/DownloadFormatMenu.tsx` is the single component rendering the download button for every library/film card. Its `busy` + `progress` branch currently renders:
 
-## خارج از محدوده این اصلاح
-- تبدیل MP4 کاملاً بک‌اندی/صف‌محور پیاده‌سازی نمی‌کنم مگر بعداً بخواهید؛ این نسخه روی جلوگیری از crash صفحه و fallback امن در کلاینت تمرکز دارد.
+```text
+busy && progress != null  ->  <span>{progress}%</span>   (8px plain text)
+busy && progress == null  ->  spinner
+else                      ->  download icon
+```
+
+## What it will look like
+
+When `progress` is a number, render a compact SVG circular ring sized to the existing 24px button footprint:
+
+- Background track circle in `text-zinc-800/80`.
+- Active progress arc in `text-emerald-500` with a soft glow (`drop-shadow-[0_0_4px_rgba(16,185,129,0.4)]`), `stroke-linecap="round"`, animated via `stroke-dashoffset` with `transition-all duration-500`.
+- Center percentage number in bold emerald (`text-emerald-400`, tabular-nums), sized to stay readable in the small circle.
+- The arc length is computed from `progress` (circumference `2·π·r`, `dashoffset = circumference · (1 - progress/100)`).
+- `role="progressbar"` with aria values for accessibility.
+
+The spinner (indeterminate, `progress == null`) and the idle download icon stay as-is. No change to download logic, props, or the dropdown menu.
+
+## Technical notes
+
+- Keep the existing button element, sizes (`h-6 w-6`), hover styles, and `disabled` behavior.
+- Only the inner content of the `busy && progress != null` branch is swapped for the SVG ring.
+- Self-contained Tailwind classes; no new dependencies, tokens, or files.
