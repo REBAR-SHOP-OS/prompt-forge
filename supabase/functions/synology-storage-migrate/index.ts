@@ -11,7 +11,7 @@ import {
   readSynologyConfig,
   sftp,
   sftpMkdirP,
-  sftpPutStream,
+  sftpPut,
   sftpStat,
 } from "../_shared/synology-ssh.ts";
 
