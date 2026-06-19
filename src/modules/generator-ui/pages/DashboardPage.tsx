@@ -7482,7 +7482,9 @@ export default function DashboardPage() {
                   onClick={() => setFilmsCategory(cat)}
                   className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${
                     filmsCategory === cat
-                      ? 'bg-white/[0.08] text-zinc-100'
+                      ? cat === 'final'
+                        ? 'bg-green-500/15 text-green-400'
+                        : 'bg-white/[0.08] text-zinc-100'
                       : 'text-zinc-400 hover:text-zinc-200'
                   }`}
                 >
@@ -7556,7 +7558,13 @@ export default function DashboardPage() {
                     return (
                       <article
                         key={job.id}
-                        className={`flex flex-col gap-3 rounded-2xl border bg-white/[0.035] p-3 ${selectedArchiveIds.has(job.id) ? 'border-sky-400/60 ring-1 ring-sky-400/40' : 'border-white/10'}`}
+                        className={`flex flex-col gap-3 rounded-2xl border p-3 ${
+                          selectedArchiveIds.has(job.id)
+                            ? 'border-sky-400/60 ring-1 ring-sky-400/40'
+                            : filmsCategory === 'final'
+                              ? 'border-green-500/30 bg-green-950/40'
+                              : 'border-white/10 bg-white/[0.035]'
+                        }`}
                       >
                         <div
                           className={`group relative aspect-video w-full shrink-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a] ${video?.storage_path ? 'cursor-pointer' : ''}`}
