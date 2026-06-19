@@ -495,18 +495,6 @@ export function VoiceoverDialog({
               <Music2 className="h-4 w-4" />
             </Button>
           ) : null}
-          {activeVoiceoverUrl ? (
-            <Button
-              type="button"
-              variant={showSettings ? 'default' : 'secondary'}
-              size="icon"
-              onClick={() => setShowSettings((v) => !v)}
-              aria-label="Voiceover settings"
-              title="Settings"
-            >
-              <Settings2 className="h-4 w-4" />
-            </Button>
-          ) : null}
           <Button
             type="button"
             variant="secondary"
