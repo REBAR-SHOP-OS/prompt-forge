@@ -8790,7 +8790,7 @@ export default function DashboardPage() {
                           className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
                           style={{ aspectRatio: ratioToCss(lockedProjectRatio ?? aspectRatio) }}
                         >
-                          <img
+                          <SignedImage
                             src={img.storage_path}
                             alt="Uploaded reference"
                             className="h-full w-full object-contain"
