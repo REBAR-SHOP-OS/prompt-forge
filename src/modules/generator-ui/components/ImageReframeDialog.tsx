@@ -73,7 +73,11 @@ export default function ImageReframeDialog({ open, onOpenChange, onUseAsStartFra
         .from('user-images')
         .upload(inputPath, file, { contentType: file.type, upsert: false })
       if (up.error) throw new Error(up.error.message)
-      const { data: pub } = supabase.storage.from('user-images').getPublicUrl(inputPath)
+      // user-images is a PRIVATE bucket — hand the server a signed URL it can fetch.
+      const { data: signed, error: signErr } = await supabase.storage
+        .from('user-images')
+        .createSignedUrl(inputPath, 60 * 60 * 6)
+      if (signErr || !signed?.signedUrl) throw new Error(signErr?.message || 'Could not sign image')
 
       const { data: sess } = await supabase.auth.getSession()
       const token = sess.session?.access_token
@@ -85,7 +89,7 @@ export default function ImageReframeDialog({ open, onOpenChange, onUseAsStartFra
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ imageUrl: pub.publicUrl, aspectRatio: ratio }),
+        body: JSON.stringify({ imageUrl: signed.signedUrl, aspectRatio: ratio }),
       })
       const json = await resp.json().catch(() => ({}))
       if (!resp.ok) {

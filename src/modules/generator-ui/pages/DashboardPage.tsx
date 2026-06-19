@@ -141,6 +141,8 @@ const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.red
 )
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
+import { resolveSignedUrl } from '@/modules/generator-ui/lib/signedStorageUrl'
+import { SignedImage } from '@/modules/generator-ui/components/SignedImage'
 import { getMajorOccasionForDate } from '@/modules/generator-ui/lib/majorOccasions'
 import { StylePreviewCard } from '@/modules/generator-ui/components/StylePreviewCard'
 import {
@@ -4712,7 +4714,7 @@ export default function DashboardPage() {
     const userId = session?.user?.id
     try {
       if (!userId) throw new Error('Sign in before using an image as a frame')
-      const res = await fetch(url)
+      const res = await fetch(await resolveSignedUrl(url))
       if (!res.ok) throw new Error(`Could not read image (HTTP ${res.status})`)
       const blob = await res.blob()
       const storagePath = `${userId}/start-${Date.now()}-${crypto.randomUUID()}.png`
@@ -4720,11 +4722,11 @@ export default function DashboardPage() {
         .from(FRAMES_BUCKET)
         .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false })
       if (upErr) throw new Error(upErr.message)
-      const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+      const { data } = await supabase.storage.from(FRAMES_BUCKET).createSignedUrl(storagePath, 60 * 60 * 6)
       setUploadedFiles((current) =>
         current.map((f) =>
           f.id === seedId
-            ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size, error: null }
+            ? { ...f, status: 'ready', url: data?.signedUrl ?? '', size: blob.size, error: null }
             : f,
         ),
       )
@@ -4773,10 +4775,10 @@ export default function DashboardPage() {
       return
     }
 
-    const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+    const { data } = await supabase.storage.from(FRAMES_BUCKET).createSignedUrl(storagePath, 60 * 60 * 6)
     setUploadedFiles((currentFiles) => currentFiles.map((uploadedFile) => (
       uploadedFile.id === fileId
-        ? { ...uploadedFile, status: 'ready', url: data.publicUrl, error: null }
+        ? { ...uploadedFile, status: 'ready', url: data?.signedUrl ?? '', error: null }
         : uploadedFile
     )))
   }
@@ -5421,8 +5423,8 @@ export default function DashboardPage() {
           console.error(`${sceneLabel}: storage upload failed`, error)
           throw new Error(`${sceneLabel}: could not upload seed frame (${error.message})`)
         }
-        const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
-        return data.publicUrl
+        const { data } = await supabase.storage.from(FRAMES_BUCKET).createSignedUrl(storagePath, 60 * 60 * 6)
+        return data?.signedUrl ?? ''
       }
       await new Promise((r) => setTimeout(r, intervalMs))
     }
@@ -5575,11 +5577,11 @@ export default function DashboardPage() {
           .from(FRAMES_BUCKET)
           .upload(storagePath, blob, { contentType: 'image/png', upsert: false })
         if (error) throw new Error(error.message)
-        const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+        const { data } = await supabase.storage.from(FRAMES_BUCKET).createSignedUrl(storagePath, 60 * 60 * 6)
         setUploadedFiles((current) =>
           current.map((f) =>
             f.id === seedId
-              ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size }
+              ? { ...f, status: 'ready', url: data?.signedUrl ?? '', size: blob.size }
               : f,
           ),
         )
@@ -5642,11 +5644,11 @@ export default function DashboardPage() {
           .from(FRAMES_BUCKET)
           .upload(storagePath, blob, { contentType: 'image/png', upsert: false })
         if (error) throw new Error(error.message)
-        const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+        const { data } = await supabase.storage.from(FRAMES_BUCKET).createSignedUrl(storagePath, 60 * 60 * 6)
         setUploadedFiles((current) =>
           current.map((f) =>
             f.id === seedId
-              ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size }
+              ? { ...f, status: 'ready', url: data?.signedUrl ?? '', size: blob.size }
               : f,
           ),
         )
@@ -7093,7 +7095,7 @@ export default function DashboardPage() {
                             title="Click to view"
                             className="group relative aspect-square w-full shrink-0 cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-[#15171a] transition hover:border-white/30"
                           >
-                            <img
+                            <SignedImage
                               src={img.storage_path}
                               alt="Product"
                               loading="lazy"
@@ -7362,7 +7364,7 @@ export default function DashboardPage() {
                         title="Click to view"
                         className="group relative aspect-square w-full shrink-0 cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-[#15171a] transition hover:border-white/30"
                       >
-                        <img
+                        <SignedImage
                           src={img.storage_path}
                           alt="Generated"
                           loading="lazy"
@@ -8110,7 +8112,7 @@ export default function DashboardPage() {
             if (!userId) throw new Error('Not signed in')
             // Re-stage the AI image into the wan-frames bucket so the jobs-create
             // validator (which only accepts wan-frames/{userId}/...) accepts it.
-            const res = await fetch(row.storage_path)
+            const res = await fetch(await resolveSignedUrl(row.storage_path))
             if (!res.ok) throw new Error(`Could not read AI image (HTTP ${res.status})`)
             const blob = await res.blob()
             const storagePath = `${userId}/start-ai-${Date.now()}-${crypto.randomUUID()}.png`
@@ -8118,11 +8120,11 @@ export default function DashboardPage() {
               .from(FRAMES_BUCKET)
               .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false })
             if (upErr) throw new Error(upErr.message)
-            const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+            const { data } = await supabase.storage.from(FRAMES_BUCKET).createSignedUrl(storagePath, 60 * 60 * 6)
             setUploadedFiles((current) =>
               current.map((f) =>
                 f.id === seedId
-                  ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size, error: null }
+                  ? { ...f, status: 'ready', url: data?.signedUrl ?? '', size: blob.size, error: null }
                   : f,
               ),
             )
@@ -8405,7 +8407,7 @@ export default function DashboardPage() {
                     maxWidth: 'calc(100vw - 56rem)',
                   }}
                 >
-                  <img
+                  <SignedImage
                     key={previewItem.image.id}
                     src={previewItem.image.storage_path}
                     alt="Uploaded reference"
@@ -8705,7 +8707,7 @@ export default function DashboardPage() {
                   className="relative w-full min-w-0 overflow-hidden rounded-xl border border-amber-300/20 bg-[#15171a]"
                   style={{ aspectRatio: (lockedProjectRatio ?? aspectRatio) === '9:16' ? '9 / 16' : (lockedProjectRatio ?? aspectRatio) === '16:9' ? '16 / 9' : '1 / 1' }}
                 >
-                  <img
+                  <SignedImage
                     src={currentCover.storage_path}
                     alt="Film cover"
                     className="h-full w-full object-cover"
@@ -8788,7 +8790,7 @@ export default function DashboardPage() {
                           className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
                           style={{ aspectRatio: ratioToCss(lockedProjectRatio ?? aspectRatio) }}
                         >
-                          <img
+                          <SignedImage
                             src={img.storage_path}
                             alt="Uploaded reference"
                             className="h-full w-full object-contain"
@@ -10192,7 +10194,7 @@ export default function DashboardPage() {
             <DialogTitle>Image preview</DialogTitle>
           </DialogHeader>
           {previewImageUrl ? (
-            <img
+            <SignedImage
               src={previewImageUrl}
               alt="Attachment preview"
               className="mx-auto max-h-[80vh] w-auto object-contain"

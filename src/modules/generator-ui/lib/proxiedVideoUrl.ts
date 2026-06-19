@@ -19,7 +19,7 @@ import { FUNCTIONS_BASE } from "@/core/api/client";
 // form) must be re-signed on demand so the bytes load. Owners can sign their
 // own files via RLS; the resulting signed URL is CORS-enabled and Range-capable
 // and needs no auth header, so it can feed a <video> element directly.
-const PRIVATE_STORAGE_BUCKETS = ["merged-videos", "user-videos"];
+const PRIVATE_STORAGE_BUCKETS = ["merged-videos", "user-videos", "user-images", "wan-frames"];
 const SIGNED_URL_TTL_SECONDS = 60 * 60 * 2; // 2 hours
 
 function parseOwnStorage(parsed: URL): { bucket: string; path: string } | null {

@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { supabase } from '@/integrations/supabase/client'
+import { resolveSignedUrl } from '@/modules/generator-ui/lib/signedStorageUrl'
 import { StylePreviewCard } from './StylePreviewCard'
 import AiImageDialog, { type AiImageSavedRow } from './AiImageDialog'
 import camWhipPan from '@/assets/style-previews/cam-whip-pan.mp4.asset.json'
@@ -645,14 +646,14 @@ export default function ProductAdDialog({
         .order('created_at', { ascending: false })
       if (qErr) throw new Error(qErr.message)
       const rows = (data ?? []).filter((r) => (r.category ?? 'general') === 'product')
-      const photos: ProductPhoto[] = rows.map((r) => ({
-        id: r.id,
-        title: r.title ?? null,
-        // storage_path already holds the full public URL when the product was uploaded.
-        url: /^https?:\/\//i.test(r.storage_path)
-          ? r.storage_path
-          : supabase.storage.from(PRODUCTS_BUCKET).getPublicUrl(r.storage_path).data.publicUrl,
-      }))
+      // user-images is a PRIVATE bucket — resolve each reference to a fresh signed URL.
+      const photos: ProductPhoto[] = await Promise.all(
+        rows.map(async (r) => ({
+          id: r.id,
+          title: r.title ?? null,
+          url: await resolveSignedUrl(r.storage_path),
+        })),
+      )
       setProductPhotos(photos)
     } catch (e) {
       setError((e as Error).message ?? 'Failed to load products')
@@ -730,8 +731,8 @@ export default function ProductAdDialog({
         .from(FRAMES_BUCKET)
         .upload(storagePath, file, { contentType: file.type, upsert: false })
       if (upErr) throw new Error(upErr.message)
-      const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
-      setUploadedImageUrl(data.publicUrl)
+      const { data } = await supabase.storage.from(FRAMES_BUCKET).createSignedUrl(storagePath, 60 * 60 * 6)
+      setUploadedImageUrl(data?.signedUrl ?? null)
     } catch (e) {
       setError((e as Error).message ?? 'Image upload failed')
       setImagePreviewUrl(null)
