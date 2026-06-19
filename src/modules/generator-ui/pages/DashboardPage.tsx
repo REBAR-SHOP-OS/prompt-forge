@@ -7650,38 +7650,46 @@ export default function DashboardPage() {
                             <div className="flex shrink-0 items-center gap-1.5">
                               {job.status === 'completed' && video?.storage_path ? (
                                 <>
-                                  <button
-                                    type="button"
-                                    disabled={downloadingId === job.id}
-                                    onClick={(event) => {
-                                      event.stopPropagation()
-                                      if (!video) return
-                                      void downloadDirect(job.id, video.storage_path, 'film')
-                                    }}
-                                    aria-label="Download video (fast)"
-                                    title="Download (fast)"
-                                    className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
-                                  >
-                                    {downloadingId === job.id ? (
-                                      <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
-                                    ) : (
-                                      <Download className="h-3 w-3" aria-hidden="true" />
-                                    )}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={downloadingId === job.id}
-                                    onClick={(event) => {
-                                      event.stopPropagation()
-                                      if (!video) return
-                                      void downloadAsMp4(job.id, video.storage_path, 'film')
-                                    }}
-                                    aria-label="Download as MP4 (converted)"
-                                    title="Download as MP4"
-                                    className="grid h-6 shrink-0 place-items-center rounded-full border border-white/10 px-1.5 text-[9px] font-semibold leading-none text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
-                                  >
-                                    MP4
-                                  </button>
+                                <DropdownMenu>
+                                   <DropdownMenuTrigger asChild>
+                                     <button
+                                       type="button"
+                                       disabled={downloadingId === job.id}
+                                       onClick={(event) => event.stopPropagation()}
+                                       aria-label="Download video"
+                                       title="Download"
+                                       className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                     >
+                                       {downloadingId === job.id ? (
+                                         <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                       ) : (
+                                         <Download className="h-3 w-3" aria-hidden="true" />
+                                       )}
+                                     </button>
+                                   </DropdownMenuTrigger>
+                                   <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
+                                     <DropdownMenuLabel>Download as</DropdownMenuLabel>
+                                     <DropdownMenuSeparator />
+                                     <DropdownMenuItem
+                                       onClick={(event) => {
+                                         event.stopPropagation()
+                                         if (!video) return
+                                         void downloadAsMp4(job.id, video.storage_path, 'film')
+                                       }}
+                                     >
+                                       MP4 (compatible)
+                                     </DropdownMenuItem>
+                                     <DropdownMenuItem
+                                       onClick={(event) => {
+                                         event.stopPropagation()
+                                         if (!video) return
+                                         void downloadDirect(job.id, video.storage_path, 'film')
+                                       }}
+                                     >
+                                       Original (fast)
+                                     </DropdownMenuItem>
+                                   </DropdownMenuContent>
+                                 </DropdownMenu>
                                 </>
                               ) : null}
                               <AlertDialog>
@@ -9401,38 +9409,44 @@ export default function DashboardPage() {
                       <div className="flex shrink-0 items-center gap-1">
                         {variant === 'final' && video.video?.storage_path ? (
                           <>
-                            <button
-                              type="button"
-                              disabled={downloadingId === video.id}
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                // Fast direct download (no in-browser transcode).
-                                void downloadDirect(video.id, video.video!.storage_path, 'final-film')
-                              }}
-                              aria-label="Download video (fast)"
-                              title="Download (fast)"
-                              className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
-                            >
-                              {downloadingId === video.id ? (
-                                <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
-                              ) : (
-                                <Download className="h-3 w-3" aria-hidden="true" />
-                              )}
-                            </button>
-                            <button
-                              type="button"
-                              disabled={downloadingId === video.id}
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                // Compatibility path: transcode WebM → standard MP4.
-                                void downloadAsMp4(video.id, video.video!.storage_path, 'final-film')
-                              }}
-                              aria-label="Download as MP4 (converted)"
-                              title="Download as MP4"
-                              className="grid h-6 shrink-0 place-items-center rounded-full border border-white/10 px-1.5 text-[9px] font-semibold leading-none text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
-                            >
-                              MP4
-                            </button>
+                          <DropdownMenu>
+                             <DropdownMenuTrigger asChild>
+                               <button
+                                 type="button"
+                                 disabled={downloadingId === video.id}
+                                 onClick={(event) => event.stopPropagation()}
+                                 aria-label="Download video"
+                                 title="Download"
+                                 className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                               >
+                                 {downloadingId === video.id ? (
+                                   <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                 ) : (
+                                   <Download className="h-3 w-3" aria-hidden="true" />
+                                 )}
+                               </button>
+                             </DropdownMenuTrigger>
+                             <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
+                               <DropdownMenuLabel>Download as</DropdownMenuLabel>
+                               <DropdownMenuSeparator />
+                               <DropdownMenuItem
+                                 onClick={(event) => {
+                                   event.stopPropagation()
+                                   void downloadAsMp4(video.id, video.video!.storage_path, 'final-film')
+                                 }}
+                               >
+                                 MP4 (compatible)
+                               </DropdownMenuItem>
+                               <DropdownMenuItem
+                                 onClick={(event) => {
+                                   event.stopPropagation()
+                                   void downloadDirect(video.id, video.video!.storage_path, 'final-film')
+                                 }}
+                               >
+                                 Original (fast)
+                               </DropdownMenuItem>
+                             </DropdownMenuContent>
+                           </DropdownMenu>
                           </>
                         ) : null}
                         {(() => {

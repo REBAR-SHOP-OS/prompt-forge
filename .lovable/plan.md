@@ -1,31 +1,39 @@
-## Problem
+## Goal
 
-In the Library → Final video → "Project audio" popover, the **Music** and **Voiceover** players show `0:00 / 0:00` and won't play.
+Replace the current **two** download controls on each Final Film row (the download arrow + the separate small `MP4` badge button) with a **single download icon**. Clicking it opens a small menu listing the available formats; picking one downloads the video in that format.
 
-## Root cause
+## Current state
 
-The project audio is stored in the **`merged-videos`** bucket, which is **private**. But the code saves and renders the track using `supabase.storage.from('merged-videos').getPublicUrl(...)` (see `persistAudioToStorage`). A public URL on a private bucket returns **403**, so the `<audio>` element never loads the file → duration stays `0:00` and playback fails. The Download button hits the same dead URL.
+Each final-film row renders two buttons side by side:
+- A download arrow → `downloadDirect()` (fast, original file as stored — usually WebM/MP4)
+- An `MP4` text badge → `downloadAsMp4()` (transcodes WebM → broadly-compatible MP4)
 
-This is the exact same class of issue already solved for images/videos elsewhere via `signStorageUrl` (which converts a stored public/raw path into a short-lived **signed** URL the private bucket actually serves). The popover just never got that treatment.
+This exists in two places with identical markup:
+- The **Library → Final videos** row (the one circled in the screenshot)
+- The **workspace "Pending" film** row
 
-## Fix
+## Change
 
-Render the popover audio through **signed URLs** instead of the stored public URL.
+In both places, collapse the two buttons into one `DropdownMenu` (already imported in this file):
 
-1. **New small inner component `ProjectAudioTrackRow`** (defined inside `DashboardPage` so it can reuse `signStorageUrl`, `downloadAudioFile`, and `downloadingId`):
-   - Props: `kind` (`'music' | 'voiceover'`), `track` (`{ url, name }`), `jobId`, label/icon styling.
-   - On mount (and when `track.url` changes), call `signStorageUrl(track.url)` and store the resolved signed URL in local state.
-   - Render the `<audio controls>` with the **signed** URL; show a tiny "preparing…" state until it resolves.
-   - The Download button downloads using the **signed** URL too.
+- **Trigger:** a single round download icon (`Download`, shows the `LoaderCircle` spinner while `downloadingId === <id>`), same styling as today's download button.
+- **Menu content** (shown on click, before any download happens):
+  - A small label: "Download as"
+  - **MP4 (compatible)** → calls `downloadAsMp4(id, storage_path, prefix)` — transcodes to standard MP4 for QuickTime / mobile / players.
+  - **Original (fast)** → calls `downloadDirect(id, storage_path, prefix)` — fastest, hands over the stored file via a signed download URL.
 
-2. **Replace** the two inline `<audio src={audio.music.url}>` / `<audio src={audio.voiceover.url}>` blocks (and their download buttons) in the popover with `<ProjectAudioTrackRow>`.
+Selecting an item triggers that format's existing download function. No download starts until the user picks a format.
 
-No database, bucket-privacy, or storage-layout changes — keeping the bucket private and signing on demand is the correct, secure approach (same pattern already used for `archiveAudio` and the copyright check).
+The underlying `downloadAsMp4` and `downloadDirect` functions are unchanged — only the UI that invokes them changes.
 
 ## Out of scope
-- No change to how audio is uploaded/persisted at finalize time.
-- No change to bucket visibility.
+- No change to transcode logic, storage, or which formats are technically producible (MP4 + original remain the two real options the app supports).
+- No backend changes.
 
 ## Technical notes
-- `signStorageUrl` already parses `/storage/v1/object/public/<bucket>/<path>` URLs and returns a 30-minute signed URL, so stored entries work without re-persisting.
-- Signed URLs are generated lazily when the popover/player mounts, so there's no upfront cost for rows the user never opens.
+- File: `src/modules/generator-ui/pages/DashboardPage.tsx`.
+- Library row: the `<>...</>` block at ~lines 9402–9436.
+- Workspace pending row: the equivalent two-button block at ~lines 7650–7685.
+- Reuse `DropdownMenu`, `DropdownMenuTrigger`, `DropdownMenuContent`, `DropdownMenuItem`, `DropdownMenuLabel` (already imported).
+- Keep `event.stopPropagation()` so opening the menu / clicking an item does not trigger the row's click handler.
+- Disable the trigger while `downloadingId === <id>` to prevent concurrent downloads.
