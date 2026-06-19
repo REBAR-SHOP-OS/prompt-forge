@@ -61,6 +61,13 @@ Deno.serve(async (req) => {
 
   const { storagePath, durationSeconds, aspectRatio, prompt } = parsed.value;
 
+  // Ownership guard: the path must live inside the caller's own storage folder.
+  // Prevents DB pollution with other users' paths or arbitrary external URLs
+  // (which would otherwise feed an SSRF chain via repair-provider-videos).
+  if (!isOwnStoragePath(storagePath, auth.userId)) {
+    return errorResponse("VALIDATION_ERROR", "storagePath must be in your own storage folder", 400, requestId);
+  }
+
   const svc = getServiceClient();
   try {
     // 1) Create a job row owned by the caller (cost = 0 — no provider call).
