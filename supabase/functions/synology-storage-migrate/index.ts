@@ -191,12 +191,9 @@ Deno.serve(async (req) => {
       try { conn.end(); } catch { /* ignore */ }
     }
     console.log(`[migrate] batch done: ${done} processed`);
+    return done;
   };
 
-  // deno-lint-ignore no-explicit-any
-  const rt = (globalThis as any).EdgeRuntime;
-  if (rt?.waitUntil) rt.waitUntil(runBatch());
-  else runBatch();
-
-  return jsonResponse({ status: "started", cap });
+  const processed = await runBatch();
+  return jsonResponse({ status: "done", processed, cap });
 });
