@@ -1,44 +1,42 @@
-## Expected outcome
-- Clicking **Download original (WEBM)** saves the `.webm` file from NAS.
-- Clicking **Download as MP4** converts the NAS-backed WEBM to MP4, then saves the `.mp4` file.
-- The progress indicator must not remain at `0`; if conversion fails, the UI must show the real reason.
+## هدف نهایی
+وقتی روی دانلود MP4 کلیک می‌شود، فایل واقعی `.mp4` ساخته و دانلود شود؛ اگر آماده‌سازی طولانی شد، وضعیت پایدار بماند و چرخه loading از اول تکرار نشود.
 
-## Root cause found
-- The MP4 worker is trying to run `cp` on this NAS path:
-  `/volume1/ERP/media/merged-videos/55779.../merged-1781810244734.webm`
-- The database says that path is active on NAS, but the NAS command returns:
-  `cp: cannot stat ... No such file or directory`
-- So MP4 conversion fails immediately, and the frontend stays at `0` before the job is marked failed.
-- WEBM downloads are also vulnerable because direct browser streaming from the NAS proxy can be interrupted when the browser aborts/ranges the video request.
+## تشخیص ریشه‌ای
+- مسیر فعلی دانلود Final Video هنوز از `ensureMp4` داخل مرورگر استفاده می‌کند.
+- لاگ نشان می‌دهد encode در مرورگر بعد از 150 ثانیه timeout می‌شود: `720p encode failed, retrying at 540p`.
+- همین باعث می‌شود progress به 100 یا نزدیک آن برسد، دوباره retry/loading شروع شود، و در نهایت هیچ فایل MP4 دانلود نشود.
+- در کد، فانکشن‌های backend برای export MP4 (`mp4-export-create`, `mp4-export-status`, `mp4-export-worker`) وجود دارند، اما UI دانلود هنوز به جای استفاده از آن‌ها، مسیر ناپایدار browser-side ffmpeg را اجرا می‌کند.
 
-## Safe implementation plan
-1. **Fix MP4 worker source handling**
-   - In `mp4-export-worker`, do not assume the stored `nas_path` is readable from the SSH shell.
-   - When a source is NAS-backed, read the file through the existing `synology-storage-stream` endpoint using the file id and an internal/service token, then feed that URL to `ffmpeg` via `curl` on the NAS.
-   - Keep Cloud fallback unchanged for files still in Cloud.
+## محدودیت‌ها و چیزهایی که نباید خراب شود
+- دانلود مستقیم فایل‌های MP4 موجود نباید کند یا تغییر کند.
+- دانلود original / WEBM نباید تغییر کند.
+- state، کارت‌ها، Draftها و UIهای غیرمرتبط دست‌نخورده بمانند.
+- فایل WebM نباید با پسوند `.mp4` دانلود شود.
+- خطا باید واضح نمایش داده شود و spinner/progress حتماً پاک شود.
 
-2. **Fix cached/failed MP4 export behavior**
-   - Before creating a new job, if the deterministic output path already has an older failed job, still allow a fresh retry.
-   - Return clearer failure messages from the worker/status path so the UI does not only show generic “MP4 conversion failed”.
+## برنامه اجرا
+1. در `DashboardPage.tsx` مسیر `downloadAsMp4` را تغییر می‌دهم تا برای WebM به جای `ensureMp4` مرورگر، backend export job را صدا بزند.
+2. برای فایل‌هایی که از قبل `.mp4` هستند، همان مسیر مستقیم `downloadSigned` حفظ می‌شود.
+3. برای WebM:
+   - `bucket/path` منبع resolve می‌شود.
+   - `mp4-export-create` فراخوانی می‌شود.
+   - اگر خروجی cached یا already completed بود، همان لحظه دانلود می‌شود.
+   - اگر job در حال پردازش بود، `mp4-export-status` با polling کنترل‌شده بررسی می‌شود.
+   - بعد از completed، URL خروجی MP4 با `triggerDownload` دانلود می‌شود.
+4. progress UI را پایدار می‌کنم: هنگام پردازش backend درصد مصنوعی تا قبل از completion بالا می‌رود، اما فقط بعد از دریافت URL نهایی 100 می‌شود.
+5. fallback مرورگری `ensureMp4` را از مسیر دانلود Final Video حذف می‌کنم تا timeout مرورگر دیگر باعث تکرار loading نشود.
+6. در صورت نیاز، فانکشن worker را هم بررسی/اصلاح می‌کنم تا job فقط بعد از verify شدن فایل خروجی `completed` شود.
 
-3. **Make original WEBM download more robust**
-   - Keep the frontend Blob download helper.
-   - Ensure NAS stream download requests include a filename and use the authenticated stream URL.
-   - If Blob fetch fails, show an error toast instead of silently opening a broken/raw URL.
+## اعتبارسنجی
+- بررسی می‌کنم که مسیر دانلود دیگر `ensureMp4` را برای Final Video WebM اجرا نکند.
+- بررسی می‌کنم polling روی `completed/failed/timeout` درست متوقف شود.
+- بررسی می‌کنم `finishDownloading` در همه مسیرها اجرا شود.
+- در صورت امکان با preview/network تست می‌کنم که درخواست‌های `mp4-export-create` و `mp4-export-status` زده شوند و دانلود از URL نهایی انجام شود.
 
-4. **Deploy and test**
-   - Deploy changed edge function(s).
-   - Test `synology-storage-stream` for the affected WEBM file.
-   - Trigger an MP4 export for the same final-film file and verify the job reaches `completed`.
-   - Confirm the generated MP4 path is downloadable.
-   - Then test from the preview by clicking both menu options.
+<presentation-actions>
+  <presentation-open-history>View History</presentation-open-history>
+</presentation-actions>
 
-## Constraints / what must not break
-- Do not disable download buttons.
-- Do not move files back to Cloud.
-- Do not expose service credentials to the frontend.
-- Do not delete any NAS files.
-- Keep all new uploads routed to Synology.
-
-## Execution mode
-SAFE MODE: diagnose → minimal edge-function/frontend patch → deploy only touched functions → test with real affected file → verify in preview.
+<presentation-actions>
+<presentation-link url="https://docs.lovable.dev/tips-tricks/troubleshooting">Troubleshooting docs</presentation-link>
+</presentation-actions>
