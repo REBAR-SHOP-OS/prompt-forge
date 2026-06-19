@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { supabase } from '@/integrations/supabase/client'
+import { resolveSignedUrl } from '@/modules/generator-ui/lib/signedStorageUrl'
 import { StylePreviewCard } from './StylePreviewCard'
 import AiImageDialog, { type AiImageSavedRow } from './AiImageDialog'
 import camWhipPan from '@/assets/style-previews/cam-whip-pan.mp4.asset.json'
