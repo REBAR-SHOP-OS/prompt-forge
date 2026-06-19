@@ -389,22 +389,10 @@ export function VoiceoverDialog({
                 controls
                 className="w-full"
               />
-              {onUseAsSoundtrack ? (
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={handleUseAsSoundtrack}
-                  >
-                    <Music2 className="mr-2 h-3.5 w-3.5" />
-                    Use as soundtrack
-                  </Button>
-                </div>
-              ) : null}
             </div>
           ) : null}
 
-          {activeVoiceoverUrl ? (
+          {activeVoiceoverUrl && showSettings ? (
             <div className="space-y-4 rounded-md border border-white/10 bg-white/[0.03] p-3">
               <div className="flex items-center justify-between">
                 <div className="flex min-w-0 items-center gap-2 text-xs text-zinc-300">
