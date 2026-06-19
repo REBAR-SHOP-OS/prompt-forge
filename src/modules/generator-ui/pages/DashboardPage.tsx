@@ -9310,7 +9310,7 @@ export default function DashboardPage() {
                   className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-2.5 transition hover:border-white/20 hover:bg-white/[0.055] ${
                     selectMode && isChecked
                       ? 'border-rose-300/40 bg-rose-300/[0.06]'
-                      : isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : 'border-white/10 bg-white/[0.035]'
+                      : isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : variant === 'final' ? 'border-white/10 border-l-2 border-l-green-500 bg-green-950/60' : 'border-white/10 bg-white/[0.035]'
                   }`}
                   role="button"
                   tabIndex={0}
@@ -9577,7 +9577,7 @@ export default function DashboardPage() {
               <div className="grid gap-5">
                 <section className="grid gap-3">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-400">Final videos</h3>
+                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-green-400">Final videos</h3>
                     <span className="grid h-5 min-w-5 place-items-center rounded-full border border-white/10 px-1.5 text-[10px] font-semibold text-zinc-300">
                       {finalizedItems.length}
                     </span>
