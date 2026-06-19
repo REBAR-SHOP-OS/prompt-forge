@@ -734,127 +734,101 @@ export default function DashboardPage() {
   type CopyrightStatus = { verdict: 'approved' | 'caution' | 'rejected'; summary?: string; checkedAt: string }
   const [copyrightStatuses, setCopyrightStatuses] = useState<Record<string, CopyrightStatus>>({})
 
-  // Download a film as a standard, broadly-compatible MP4. Final Film output
-  // is WebM (MediaRecorder), which fails in QuickTime / WMP / mobile galleries.
-  // We fetch the stored file and run it through ensureMp4 (ffmpeg.wasm) so the
-  // user always gets a .mp4. On any transcode failure (e.g. file too large to
-  // process in-browser) we fall back to downloading the original file as-is.
+  // Download a film as a GUARANTEED real MP4. Final Film output is WebM
+  // (MediaRecorder), which fails in QuickTime / WMP / mobile galleries. The
+  // conversion runs server-side (job-based) so the user ALWAYS gets a real .mp4
+  // or a clear error — a WebM is never silently downloaded in its place.
   const downloadAsMp4 = async (cardId: string, url: string, namePrefix: string) => {
     if (downloadingIds.has(cardId)) return
     startDownloading(cardId)
 
-    const triggerDownload = (blob: Blob, filename: string) => {
-      const blobUrl = URL.createObjectURL(blob)
+    // Resolve {bucket, path} from a raw storage path or a full storage URL.
+    const resolveSource = (input: string): { bucket: string; path: string } | null => {
+      if (/^https?:\/\//i.test(input)) {
+        try {
+          const parsed = new URL(input)
+          const m = parsed.pathname.match(
+            /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/,
+          )
+          if (!m) return null
+          let path = m[2]
+          try { path = decodeURIComponent(path) } catch { /* keep raw */ }
+          return { bucket: m[1], path }
+        } catch {
+          return null
+        }
+      }
+      // Raw storage path: final films live in merged-videos, clips in user-videos.
+      const bucket = namePrefix.includes('final') ? MERGED_BUCKET : 'user-videos'
+      return { bucket, path: input }
+    }
+
+    // Sign the (already-MP4) object with a download disposition and stream it.
+    const downloadSigned = async (bucket: string, path: string) => {
+      const filename = `${namePrefix}-${cardId.slice(0, 8)}.mp4`
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .createSignedUrl(path, 60 * 60, { download: filename })
+      if (error || !data?.signedUrl) throw new Error('Could not prepare the MP4 download')
       const a = document.createElement('a')
-      a.href = blobUrl
+      a.href = data.signedUrl
       a.download = filename
       a.rel = 'noopener'
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
-      // Revoke after a delay — revoking immediately can abort the download in
-      // some browsers before the file has been handed to the download manager.
-      setTimeout(() => { try { URL.revokeObjectURL(blobUrl) } catch { /* ignore */ } }, 60_000)
     }
-    // Above this size, an in-browser ffmpeg.wasm transcode reliably OOMs the tab
-    // (which looks like the page "jumping"/reloading). We keep this comfortably
-    // below the engine's own hard cap so we never even start a doomed encode.
-    const SAFE_TRANSCODE_BYTES = 250 * 1024 * 1024
-    // ffmpeg.wasm transcode is heavy and routinely OOMs / fails to load on
-    // mobile browsers. When that happens we used to hand back a WebM file
-    // renamed .mp4, which iOS / the mobile gallery cannot play. So on mobile
-    // we skip the in-browser transcode entirely and download the original
-    // file with its TRUE extension based on the real blob MIME type.
-    const isMobile =
-      typeof navigator !== 'undefined' &&
-      /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
-    const extFromType = (type: string, fallbackUrl: string): string => {
-      const t = (type || '').toLowerCase()
-      if (t.includes('mp4')) return 'mp4'
-      if (t.includes('webm')) return 'webm'
-      if (t.includes('quicktime') || t.includes('mov')) return 'mov'
-      const lower = fallbackUrl.toLowerCase().split('?')[0]
-      if (lower.endsWith('.mp4')) return 'mp4'
-      if (lower.endsWith('.webm')) return 'webm'
-      if (lower.endsWith('.mov')) return 'mov'
-      return 'mp4'
-    }
-    try {
-      const fetchUrl = await proxiedVideoUrl(url)
-      const response = await fetch(fetchUrl)
-      if (!response.ok) throw new Error('Download failed')
-      const blob = await response.blob()
-      const sourceIsMp4 =
-        (blob.type || '').toLowerCase().includes('mp4') ||
-        url.toLowerCase().split('?')[0].endsWith('.mp4')
 
-      // On mobile, when the source is already a standard MP4, or when the file
-      // is too large to transcode safely in-browser, skip the engine entirely
-      // and serve the file directly with its real extension. This is the key
-      // fix for the "page jumps and the download stops" report: a doomed encode
-      // could OOM the tab, so we never start one for oversized files.
-      if (isMobile || sourceIsMp4 || blob.size > SAFE_TRANSCODE_BYTES) {
-        triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${extFromType(blob.type, url)}`)
-        if (!isMobile && !sourceIsMp4 && blob.size > SAFE_TRANSCODE_BYTES) {
-          toast.message('This film is too large to convert to MP4 in the browser — downloaded the original instead.')
-        }
+    try {
+      const src = resolveSource(url)
+      if (!src) throw new Error('Unrecognized video location')
+
+      // Already an MP4 → fast direct signed download, no conversion needed.
+      if (src.path.toLowerCase().split('?')[0].endsWith('.mp4')) {
+        await downloadSigned(src.bucket, src.path)
         return
       }
 
-      // Non-MP4 (WebM Final Film): transcode to a real H.264/AAC MP4.
-      // ensureMp4 reports progress so the button shows a percentage instead of
-      // looking frozen, and it returns the ACTUAL extension it produced — we
-      // honor that so a degraded WebM is never mislabeled as .mp4.
-      // The transcode runs through a single shared ffmpeg.wasm engine, so we
-      // serialize ONLY this step: if another MP4 conversion is already running,
-      // this one waits its turn (button stays busy) instead of running at the
-      // same time. Other download types are unaffected and stay parallel.
-      const runTranscode = async () => {
-        try {
-          const mp4 = await ensureMp4(blob, blob.type, (info) => {
-            if (info.stage === 'encode') {
-              setDownloadProgressFor(cardId, Math.round(info.ratio * 100))
-            } else if (info.stage === 'loading') {
-              setDownloadProgressFor(cardId, 0)
-            } else if (info.stage === 'readout') {
-              setDownloadProgressFor(cardId, 100)
-            }
+      setDownloadProgressFor(cardId, 0)
+      // Request (or reuse a cached) server-side conversion.
+      const { data: createData, error: createErr } = await supabase.functions.invoke(
+        'mp4-export-create',
+        { body: { bucket: src.bucket, storagePath: src.path } },
+      )
+      if (createErr || !createData) throw new Error('MP4 export service unavailable')
+
+      // deno-lint-ignore no-explicit-any
+      let result: any = createData
+      if (result.status === 'processing' && result.jobId) {
+        const jobId = result.jobId as string
+        const deadline = Date.now() + 5 * 60 * 1000 // 5 min ceiling
+        for (;;) {
+          if (Date.now() > deadline) throw new Error('MP4 conversion timed out — please try again')
+          await new Promise((r) => setTimeout(r, 3000))
+          const { data: st } = await supabase.functions.invoke('mp4-export-status', {
+            body: { jobId },
           })
-          if (mp4.extension === 'mp4') {
-            triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.mp4`)
-          } else {
-            // Engine was unavailable — ensureMp4 degraded to the original WebM.
-            // Serve it with its TRUE extension and tell the user why.
-            triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.${mp4.extension}`)
-            toast.error('Could not convert to MP4 in your browser — downloaded the original video instead.')
-          }
-        } catch (transErr) {
-          // Transcode failed (too large / OOM). Hand over the original file with
-          // its TRUE extension (never mislabel WebM as .mp4) and surface a clear
-          // message so the user is never left with a broken or missing file.
-          console.warn('[download] MP4 transcode failed, serving original:', transErr)
-          triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${extFromType(blob.type, url)}`)
-          const msg = transErr instanceof Error ? transErr.message : ''
-          toast.error(
-            /too large/i.test(msg)
-              ? 'This film is too large to convert in the browser — downloaded the original. Use the fast Download button.'
-              : 'MP4 conversion failed — downloaded the original video instead.',
-          )
+          if (!st) continue
+          if (st.status === 'completed') { result = st; break }
+          if (st.status === 'failed') throw new Error(st.error || 'MP4 conversion failed')
         }
       }
-      const queued = mp4QueueRef.current.then(runTranscode, runTranscode)
-      mp4QueueRef.current = queued
-      await queued
+
+      if (result.status !== 'completed' || !result.path) {
+        throw new Error('MP4 conversion failed')
+      }
+      setDownloadProgressFor(cardId, 100)
+      await downloadSigned(result.bucket || 'mp4-exports', result.path)
     } catch (err) {
-      // Never navigate away (window.open) here — that is what made the page
-      // "jump". Just report the failure and keep the user on the page.
-      console.error('Film download failed', err)
-      toast.error('Download failed. Please try again.')
+      // Never download a WebM in place of MP4 — only surface a clear error.
+      console.error('MP4 export failed', err)
+      const msg = err instanceof Error ? err.message : ''
+      toast.error(msg || 'Could not export MP4. Please try again.')
     } finally {
       finishDownloading(cardId)
     }
-
   }
+
 
   // Fast, direct download: hands the browser a signed URL with a download
   // Content-Disposition so it streams the file natively — no in-browser fetch
