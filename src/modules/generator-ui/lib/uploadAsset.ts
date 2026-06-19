@@ -7,9 +7,9 @@
 import { supabase } from "@/integrations/supabase/client";
 import { FUNCTIONS_BASE } from "@/core/api/client";
 
-// Files at or above this size are stored on the NAS. Keep in sync with the
-// worker's SYNOLOGY_MIN_BYTES default.
-export const NAS_THRESHOLD_BYTES = 20 * 1024 * 1024; // 20 MB
+// All files are stored on the NAS regardless of size. Keep in sync with the
+// worker's SYNOLOGY_MIN_BYTES default (0 = everything).
+export const NAS_THRESHOLD_BYTES = 0; // route everything to Synology
 
 export interface UploadResult {
   /** Bare `<bucket>/<path>` reference to persist and later resolve. */

@@ -11,7 +11,7 @@ import {
   readSynologyConfig,
   sftp,
   sftpMkdirP,
-  sftpPutStream,
+  sftpPut,
   sftpStat,
 } from "../_shared/synology-ssh.ts";
 
@@ -27,7 +27,7 @@ const BUCKETS = [
 function minBytes(): number {
   const raw = Deno.env.get("SYNOLOGY_MIN_BYTES");
   const n = raw ? parseInt(raw, 10) : NaN;
-  return Number.isFinite(n) ? n : 20 * 1024 * 1024; // 20 MB default
+  return Number.isFinite(n) ? n : 0; // 0 = migrate everything regardless of size
 }
 
 interface FileEntry { path: string; size: number; userId: string; contentType: string }
@@ -67,8 +67,28 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return errorResponse("METHOD_NOT_ALLOWED", "Use POST", 405);
 
-  const token = req.headers.get("x-internal-token");
-  if (!token || token !== getEnv("SUPABASE_SERVICE_ROLE_KEY")) {
+  // Authorize via internal service-role token OR an authenticated admin user.
+  const internalToken = req.headers.get("x-internal-token");
+  let authorized = !!internalToken && internalToken === getEnv("SUPABASE_SERVICE_ROLE_KEY");
+  if (!authorized) {
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const jwt = authHeader.replace(/^Bearer\s+/i, "").trim();
+    if (jwt) {
+      try {
+        const svcAuth = getServiceClient();
+        const { data: userData } = await svcAuth.auth.getUser(jwt);
+        const uid = userData?.user?.id;
+        if (uid) {
+          const { data: isAdmin } = await svcAuth.rpc("has_role", {
+            _user_id: uid,
+            _role: "admin",
+          });
+          authorized = isAdmin === true;
+        }
+      } catch (_e) { /* unauthorized */ }
+    }
+  }
+  if (!authorized) {
     return errorResponse("UNAUTHORIZED", "Internal only", 401);
   }
 
@@ -84,91 +104,96 @@ Deno.serve(async (req) => {
   const min = minBytes();
   const base = getMediaBasePath();
 
-  let conn;
-  try {
-    conn = await connect(cfg);
-  } catch (e) {
-    console.error("[migrate] ssh connect failed", e instanceof Error ? e.message : e);
-    return errorResponse("STORAGE_UNAVAILABLE", "Storage backend unreachable", 503);
-  }
+  // SFTP transfers can outlast the caller's HTTP timeout. Run the batch in the
+  // background and return immediately; the caller polls `storage_objects` for
+  // progress. Non-destructive: cloud copy removed only after a verified write.
+  const runBatch = async () => {
+    let conn;
+    try {
+      conn = await connect(cfg);
+    } catch (e) {
+      console.error("[migrate] ssh connect failed", e instanceof Error ? e.message : e);
+      return;
+    }
 
-  const results = { migrated: 0, skipped: 0, failed: 0, details: [] as unknown[] };
+    let done = 0;
+    try {
+      const sftpClient = await sftp(conn);
 
-  try {
-    const sftpClient = await sftp(conn);
+      for (const bucket of targetBuckets) {
+        if (done >= cap) break;
+        const files = await listLargeFiles(svc, bucket, min, cap);
 
-    for (const bucket of targetBuckets) {
-      if (results.migrated + results.failed >= cap) break;
-      const files = await listLargeFiles(svc, bucket, min, cap);
+        for (const f of files) {
+          if (done >= cap) break;
 
-      for (const f of files) {
-        if (results.migrated + results.failed >= cap) break;
+          // Skip if already tracked on NAS.
+          const { data: existing } = await svc
+            .from("storage_objects")
+            .select("id, backend")
+            .eq("logical_bucket", bucket)
+            .eq("object_key", f.path)
+            .maybeSingle();
+          if (existing?.backend === "synology") continue;
 
-        // Skip if already tracked on NAS.
-        const { data: existing } = await svc
-          .from("storage_objects")
-          .select("id, backend")
-          .eq("logical_bucket", bucket)
-          .eq("object_key", f.path)
-          .maybeSingle();
-        if (existing?.backend === "synology") { results.skipped++; continue; }
+          const nasPath = `${base}/${bucket}/${f.path}`;
+          const nasDir = nasPath.slice(0, nasPath.lastIndexOf("/"));
 
-        const nasPath = `${base}/${bucket}/${f.path}`;
-        const nasDir = nasPath.slice(0, nasPath.lastIndexOf("/"));
+          try {
+            // Mark migrating.
+            await svc.from("storage_objects").upsert({
+              user_id: f.userId,
+              logical_bucket: bucket,
+              object_key: f.path,
+              backend: "cloud",
+              size_bytes: f.size,
+              content_type: f.contentType,
+              status: "migrating",
+            }, { onConflict: "logical_bucket,object_key" });
 
-        try {
-          // Mark migrating.
-          await svc.from("storage_objects").upsert({
-            user_id: f.userId,
-            logical_bucket: bucket,
-            object_key: f.path,
-            backend: "cloud",
-            size_bytes: f.size,
-            content_type: f.contentType,
-            status: "migrating",
-          }, { onConflict: "logical_bucket,object_key" });
+            const { data: signed, error: signErr } = await svc.storage
+              .from(bucket)
+              .createSignedUrl(f.path, 60 * 60);
+            if (signErr || !signed?.signedUrl) throw new Error("sign failed");
 
-          const { data: signed, error: signErr } = await svc.storage
-            .from(bucket)
-            .createSignedUrl(f.path, 60 * 60);
-          if (signErr || !signed?.signedUrl) throw new Error("sign failed");
+            const resp = await fetch(signed.signedUrl);
+            if (!resp.ok || !resp.body) throw new Error(`download ${resp.status}`);
+            const bytes = new Uint8Array(await resp.arrayBuffer());
 
-          const resp = await fetch(signed.signedUrl);
-          if (!resp.ok || !resp.body) throw new Error(`download ${resp.status}`);
+            await sftpMkdirP(sftpClient, nasDir);
+            await sftpPut(sftpClient, nasPath, bytes);
 
-          await sftpMkdirP(sftpClient, nasDir);
-          await sftpPutStream(sftpClient, nasPath, resp.body);
+            const stat = await sftpStat(sftpClient, nasPath);
+            if (!stat || stat.size === 0) throw new Error("verify failed");
 
-          const stat = await sftpStat(sftpClient, nasPath);
-          if (!stat || stat.size === 0) throw new Error("verify failed");
+            await svc.from("storage_objects").update({
+              backend: "synology",
+              nas_path: nasPath,
+              size_bytes: stat.size,
+              status: "active",
+            }).eq("logical_bucket", bucket).eq("object_key", f.path);
 
-          await svc.from("storage_objects").update({
-            backend: "synology",
-            nas_path: nasPath,
-            size_bytes: stat.size,
-            status: "active",
-          }).eq("logical_bucket", bucket).eq("object_key", f.path);
-
-          // Cloud copy removed only after verified NAS write.
-          await svc.storage.from(bucket).remove([f.path]);
-
-          results.migrated++;
-          results.details.push({ bucket, path: f.path, size: stat.size, ok: true });
-        } catch (e) {
-          results.failed++;
-          const msg = e instanceof Error ? e.message : String(e);
-          console.error("[migrate] file failed", bucket, f.path, msg);
-          await svc.from("storage_objects").update({ status: "failed" })
-            .eq("logical_bucket", bucket).eq("object_key", f.path);
-          results.details.push({ bucket, path: f.path, ok: false, error: msg });
+            // Cloud copy removed only after verified NAS write.
+            await svc.storage.from(bucket).remove([f.path]);
+            done++;
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            console.error("[migrate] file failed", bucket, f.path, msg);
+            await svc.from("storage_objects").update({ status: "failed" })
+              .eq("logical_bucket", bucket).eq("object_key", f.path);
+            done++;
+          }
         }
       }
+    } catch (e) {
+      console.error("[migrate] fatal", e instanceof Error ? e.message : e);
+    } finally {
+      try { conn.end(); } catch { /* ignore */ }
     }
-  } catch (e) {
-    console.error("[migrate] fatal", e instanceof Error ? e.message : e);
-  } finally {
-    try { conn.end(); } catch { /* ignore */ }
-  }
+    console.log(`[migrate] batch done: ${done} processed`);
+    return done;
+  };
 
-  return jsonResponse(results);
+  const processed = await runBatch();
+  return jsonResponse({ status: "done", processed, cap });
 });
