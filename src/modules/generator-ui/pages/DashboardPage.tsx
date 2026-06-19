@@ -3949,9 +3949,12 @@ export default function DashboardPage() {
         }
 
         const imgRows = (imgRowsRes.data ?? []) as UserImageItem[]
-        const visibleImages = imgRows.filter(
-          (r) => !workspaceHiddenImageIds.has(r.id) && (r.category ?? 'general') !== 'product',
+        const visibleImages = await signUserImageRows(
+          imgRows.filter(
+            (r) => !workspaceHiddenImageIds.has(r.id) && (r.category ?? 'general') !== 'product',
+          ),
         )
+        if (cancelled) return
         if (visibleImages.length > 0) {
           setUserImages((current) => {
             const known = new Set(current.map((i) => i.id))
