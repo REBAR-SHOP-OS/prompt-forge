@@ -7686,10 +7686,14 @@ export default function DashboardPage() {
                                        onClick={(event) => event.stopPropagation()}
                                        aria-label="Download video"
                                        title="Download"
-                                       className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                       className="grid h-6 min-w-6 shrink-0 place-items-center rounded-full border border-white/10 px-1 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                                      >
                                        {downloadingId === job.id ? (
-                                         <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                         downloadProgress !== null ? (
+                                           <span className="text-[9px] font-semibold tabular-nums text-emerald-200">{downloadProgress}%</span>
+                                         ) : (
+                                           <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                         )
                                        ) : (
                                          <Download className="h-3 w-3" aria-hidden="true" />
                                        )}
