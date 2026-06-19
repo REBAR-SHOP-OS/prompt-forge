@@ -392,7 +392,7 @@ export function VoiceoverDialog({
             </div>
           ) : null}
 
-          {activeVoiceoverUrl && showSettings ? (
+          {activeVoiceoverUrl ? (
             <div className="space-y-4 rounded-md border border-white/10 bg-white/[0.03] p-3">
               <div className="flex items-center justify-between">
                 <div className="flex min-w-0 items-center gap-2 text-xs text-zinc-300">
