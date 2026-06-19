@@ -681,17 +681,36 @@ export default function DashboardPage() {
   const [startContext] = useState('Start')
   const [endGoal] = useState('End')
   const [generatedVideos, setGeneratedVideos] = useState<JobDetail[]>([])
-  // Tracks which card's download is currently being prepared (fetched +
-  // transcoded to standard MP4) so we can show a spinner on that button.
-  const [downloadingId, setDownloadingId] = useState<string | null>(null)
-  // Transcode progress (0..100) for the MP4 button so a long conversion never
-  // feels "stuck". null means no percentage to show (e.g. fetching / remux).
-  const [downloadProgress, setDownloadProgress] = useState<number | null>(null)
+  // Tracks which cards' downloads are currently being prepared (fetched +
+  // transcoded to standard MP4) so we can show a spinner on each button.
+  // Per-id so several downloads can run at the same time.
+  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(() => new Set())
+  // Transcode progress (0..100) per card for the MP4 button so a long
+  // conversion never feels "stuck".
+  const [downloadProgressMap, setDownloadProgressMap] = useState<Record<string, number>>({})
+
+  const startDownloading = useCallback((id: string) => {
+    setDownloadingIds((prev) => { const next = new Set(prev); next.add(id); return next })
+  }, [])
+  const finishDownloading = useCallback((id: string) => {
+    setDownloadingIds((prev) => { const next = new Set(prev); next.delete(id); return next })
+    setDownloadProgressMap((prev) => { const next = { ...prev }; delete next[id]; return next })
+  }, [])
+  const setDownloadProgressFor = useCallback((id: string, pct: number) => {
+    setDownloadProgressMap((prev) => ({ ...prev, [id]: pct }))
+  }, [])
+
+  // The heavy in-browser MP4 transcode uses a single shared ffmpeg.wasm engine,
+  // so two transcodes at once would corrupt each other / risk an OOM page jump.
+  // We serialize ONLY the MP4 conversions through this promise chain; all other
+  // download types still start immediately and run fully in parallel.
+  const mp4QueueRef = useRef<Promise<unknown>>(Promise.resolve())
 
   // NOTE: we intentionally do NOT pre-warm ffmpeg.wasm on mount. Loading the
   // heavy WASM core (and holding its memory) without an explicit user action
   // can destabilize the tab. The engine now loads lazily only when the user
   // actually picks "Download as MP4".
+
 
 
 
