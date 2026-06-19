@@ -312,6 +312,47 @@ function buildSocialTargetOrigins(detected: string | null): string[] {
 const USER_IMAGES_BUCKET = 'user-images'
 const USER_AUDIO_BUCKET = 'user-audio'
 
+/**
+ * The `user-images` bucket is PRIVATE, so any persisted public URL
+ * (.../object/public/user-images/<key>) returns 400 when loaded in an <img>.
+ * Extract the bucket-relative object key from whatever form is stored.
+ */
+function userImageObjectKey(storagePath: string | null | undefined): string | null {
+  if (!storagePath) return null
+  const marker = `/${USER_IMAGES_BUCKET}/`
+  const idx = storagePath.indexOf(marker)
+  if (idx >= 0) return storagePath.slice(idx + marker.length)
+  // Already a bucket-relative key (no http origin, no signed/blob/data URL).
+  if (!/^https?:|^blob:|^data:/.test(storagePath)) return storagePath
+  return null
+}
+
+/** Resolve a displayable signed URL for a private-bucket image. Falls back to the raw value. */
+async function signUserImageUrl(storagePath: string | null | undefined): Promise<string> {
+  const raw = storagePath ?? ''
+  // Already a directly-usable URL that isn't a (broken) public-bucket URL.
+  if (/^blob:|^data:/.test(raw)) return raw
+  if (/\/object\/sign\//.test(raw)) return raw
+  const key = userImageObjectKey(raw)
+  if (!key) return raw
+  try {
+    const { data, error } = await supabase.storage
+      .from(USER_IMAGES_BUCKET)
+      .createSignedUrl(key, 60 * 60 * 24 * 365)
+    if (!error && data?.signedUrl) return data.signedUrl
+  } catch {
+    /* fall through */
+  }
+  return raw
+}
+
+/** Sign every image row's storage_path so private-bucket thumbnails render. */
+async function signUserImageRows<T extends { storage_path: string }>(rows: T[]): Promise<T[]> {
+  return Promise.all(
+    rows.map(async (row) => ({ ...row, storage_path: await signUserImageUrl(row.storage_path) })),
+  )
+}
+
 type ModelChoice = {
   id: string
   label: string
@@ -1096,8 +1137,9 @@ export default function DashboardPage() {
       setArchiveJobs(jobs)
       setArchiveVideos(videos)
       const allImages = ((imagesRes as { data?: UserImageItem[] }).data ?? []) as UserImageItem[]
-      setArchiveImages(allImages.filter((i) => (i.category ?? 'general') !== 'product'))
-      setArchiveProductImages(allImages.filter((i) => (i.category ?? 'general') === 'product'))
+      const signedImages = await signUserImageRows(allImages)
+      setArchiveImages(signedImages.filter((i) => (i.category ?? 'general') !== 'product'))
+      setArchiveProductImages(signedImages.filter((i) => (i.category ?? 'general') === 'product'))
       const audioRows = ((audioRes as { data?: UserAudioItem[] }).data ?? []) as UserAudioItem[]
       // Generate short-lived signed URLs for private-bucket playback.
       const withUrls = await Promise.all(
@@ -3907,9 +3949,12 @@ export default function DashboardPage() {
         }
 
         const imgRows = (imgRowsRes.data ?? []) as UserImageItem[]
-        const visibleImages = imgRows.filter(
-          (r) => !workspaceHiddenImageIds.has(r.id) && (r.category ?? 'general') !== 'product',
+        const visibleImages = await signUserImageRows(
+          imgRows.filter(
+            (r) => !workspaceHiddenImageIds.has(r.id) && (r.category ?? 'general') !== 'product',
+          ),
         )
+        if (cancelled) return
         if (visibleImages.length > 0) {
           setUserImages((current) => {
             const known = new Set(current.map((i) => i.id))
@@ -3955,6 +4000,7 @@ export default function DashboardPage() {
         .from(USER_IMAGES_BUCKET)
         .upload(path, file, { contentType: file.type, upsert: false })
       if (up.error) throw up.error
+      if (!up.data?.path) throw new Error('upload did not persist')
       const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
       const publicUrl = pub.publicUrl
       const imageGroupId = ensureActiveDraftGroupId() ?? null
@@ -3970,8 +4016,9 @@ export default function DashboardPage() {
         .select('id, storage_path, created_at, still_duration_seconds, width, height, draft_group_id')
         .single()
       if (insErr) throw insErr
-      setUserImages((prev) => [row as UserImageItem, ...prev])
-      markNewImage((row as UserImageItem).id)
+      const signedRow = { ...(row as UserImageItem), storage_path: await signUserImageUrl((row as UserImageItem).storage_path) }
+      setUserImages((prev) => [signedRow, ...prev])
+      markNewImage(signedRow.id)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Upload failed.'
       setVideoColumnMessage(`Image upload failed: ${msg}`)
@@ -4011,6 +4058,7 @@ export default function DashboardPage() {
             .from(USER_IMAGES_BUCKET)
             .upload(path, file, { contentType: file.type, upsert: false })
           if (up.error) throw up.error
+          if (!up.data?.path) throw new Error('upload did not persist')
           const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
           const publicUrl = pub.publicUrl
           const { data: row, error: insErr } = await supabase
@@ -4026,7 +4074,8 @@ export default function DashboardPage() {
             .select('id, storage_path, created_at, still_duration_seconds, width, height, category, title')
             .single()
           if (insErr) throw insErr
-          setArchiveProductImages((prev) => [row as UserImageItem, ...prev])
+          const signedRow = { ...(row as UserImageItem), storage_path: await signUserImageUrl((row as UserImageItem).storage_path) }
+          setArchiveProductImages((prev) => [signedRow, ...prev])
           uploadedCount += 1
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'upload failed'
@@ -7927,7 +7976,8 @@ export default function DashboardPage() {
         onOpenChange={setIsAiImageDialogOpen}
         userId={userId}
         defaultAspect={lockedProjectRatio ?? aspectRatio}
-        onSaved={async (row) => {
+        onSaved={async (rawRow) => {
+          const row = { ...(rawRow as UserImageItem), storage_path: await signUserImageUrl((rawRow as UserImageItem).storage_path) }
           if (aiDialogMode === 'cover') {
             if (!coverScopeKey) {
               setVideoColumnMessage('Open or create a project first — covers attach to a specific project.')
