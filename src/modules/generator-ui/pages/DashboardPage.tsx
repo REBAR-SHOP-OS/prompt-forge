@@ -869,11 +869,19 @@ export default function DashboardPage() {
         setDownloadProgressFor(cardId, 100)
         downloadHandledByToast = true
         toast.success('MP4 download started')
-        // The signed URL carries Content-Disposition: attachment, so a top-level
-        // navigation saves the file even after the async conversion/poll loop
-        // (which Chrome would otherwise block for programmatic clicks).
-        window.location.href = href
-        setTimeout(() => finishDownloading(cardId), 2000)
+        // The signed URL carries Content-Disposition: attachment. A hidden
+        // anchor with a download attribute saves the file without navigating the
+        // page away.
+        const a = document.createElement('a')
+        a.href = href
+        a.download = filename
+        a.style.display = 'none'
+        document.body.appendChild(a)
+        a.click()
+        setTimeout(() => {
+          document.body.removeChild(a)
+          finishDownloading(cardId)
+        }, 2000)
       }
 
       // 1) Kick off (or reuse a cached) server-side export.
@@ -975,8 +983,18 @@ export default function DashboardPage() {
 
       if (!href) href = await proxiedVideoUrl(url)
 
-      window.location.href = href
-      setTimeout(() => finishDownloading(cardId), 1500)
+      // Signed URL carries Content-Disposition: attachment. Trigger the save via
+      // a hidden anchor with a download attribute (no page navigation).
+      const a = document.createElement('a')
+      a.href = href
+      a.download = filename
+      a.style.display = 'none'
+      document.body.appendChild(a)
+      a.click()
+      setTimeout(() => {
+        document.body.removeChild(a)
+        finishDownloading(cardId)
+      }, 1500)
     } catch (err) {
       console.error('Direct download failed', err)
       window.open(url, '_blank')
