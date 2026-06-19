@@ -9470,60 +9470,28 @@ export default function DashboardPage() {
                                 ) : (
                                   <div className="space-y-3">
                                     {audio?.music ? (
-                                      <div className="space-y-1.5">
-                                        <div className="flex items-center justify-between gap-2">
-                                          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-sky-200">
-                                            <Music2 className="h-3 w-3" aria-hidden="true" /> Music
-                                          </span>
-                                          <button
-                                            type="button"
-                                            disabled={downloadingId === `music-${video.id}`}
-                                            onClick={(event) => {
-                                              event.stopPropagation()
-                                              void downloadAudioFile(`music-${video.id}`, audio.music!.url, audio.music!.name)
-                                            }}
-                                            aria-label="Download music"
-                                            title="Download music"
-                                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
-                                          >
-                                            {downloadingId === `music-${video.id}` ? (
-                                              <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
-                                            ) : (
-                                              <Download className="h-3 w-3" aria-hidden="true" />
-                                            )}
-                                          </button>
-                                        </div>
-                                        <p className="truncate text-[11px] text-zinc-500">{audio.music.name}</p>
-                                        <audio controls preload="none" src={audio.music.url} className="h-8 w-full" />
-                                      </div>
+                                      <ProjectAudioTrackRow
+                                        id={`music-${video.id}`}
+                                        track={audio.music}
+                                        accent="sky"
+                                        Icon={Music2}
+                                        label="Music"
+                                        signUrl={signStorageUrl}
+                                        onDownload={(id, url, name) => { void downloadAudioFile(id, url, name) }}
+                                        downloading={downloadingId === `music-${video.id}`}
+                                      />
                                     ) : null}
                                     {audio?.voiceover ? (
-                                      <div className="space-y-1.5">
-                                        <div className="flex items-center justify-between gap-2">
-                                          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-200">
-                                            <Mic className="h-3 w-3" aria-hidden="true" /> Voiceover
-                                          </span>
-                                          <button
-                                            type="button"
-                                            disabled={downloadingId === `voice-${video.id}`}
-                                            onClick={(event) => {
-                                              event.stopPropagation()
-                                              void downloadAudioFile(`voice-${video.id}`, audio.voiceover!.url, audio.voiceover!.name)
-                                            }}
-                                            aria-label="Download voiceover"
-                                            title="Download voiceover"
-                                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
-                                          >
-                                            {downloadingId === `voice-${video.id}` ? (
-                                              <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
-                                            ) : (
-                                              <Download className="h-3 w-3" aria-hidden="true" />
-                                            )}
-                                          </button>
-                                        </div>
-                                        <p className="truncate text-[11px] text-zinc-500">{audio.voiceover.name}</p>
-                                        <audio controls preload="none" src={audio.voiceover.url} className="h-8 w-full" />
-                                      </div>
+                                      <ProjectAudioTrackRow
+                                        id={`voice-${video.id}`}
+                                        track={audio.voiceover}
+                                        accent="amber"
+                                        Icon={Mic}
+                                        label="Voiceover"
+                                        signUrl={signStorageUrl}
+                                        onDownload={(id, url, name) => { void downloadAudioFile(id, url, name) }}
+                                        downloading={downloadingId === `voice-${video.id}`}
+                                      />
                                     ) : null}
                                   </div>
                                 )}
