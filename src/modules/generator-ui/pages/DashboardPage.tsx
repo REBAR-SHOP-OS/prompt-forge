@@ -738,9 +738,9 @@ export default function DashboardPage() {
   // user always gets a .mp4. On any transcode failure (e.g. file too large to
   // process in-browser) we fall back to downloading the original file as-is.
   const downloadAsMp4 = async (cardId: string, url: string, namePrefix: string) => {
-    if (downloadingId) return
-    setDownloadingId(cardId)
-    setDownloadProgress(null)
+    if (downloadingIds.has(cardId)) return
+    startDownloading(cardId)
+
     const triggerDownload = (blob: Blob, filename: string) => {
       const blobUrl = URL.createObjectURL(blob)
       const a = document.createElement('a')
