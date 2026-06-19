@@ -27,7 +27,7 @@ const BUCKETS = [
 function minBytes(): number {
   const raw = Deno.env.get("SYNOLOGY_MIN_BYTES");
   const n = raw ? parseInt(raw, 10) : NaN;
-  return Number.isFinite(n) ? n : 20 * 1024 * 1024; // 20 MB default
+  return Number.isFinite(n) ? n : 0; // 0 = migrate everything regardless of size
 }
 
 interface FileEntry { path: string; size: number; userId: string; contentType: string }
