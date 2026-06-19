@@ -143,7 +143,7 @@ import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 import { resolveSignedUrl, resolveNasStreamUrl, parseStorageRef } from '@/modules/generator-ui/lib/signedStorageUrl'
 import { uploadAsset } from '@/modules/generator-ui/lib/uploadAsset'
-import { ensureMp4 } from '@/modules/generator-ui/lib/transcodeToMp4'
+
 import { SignedImage } from '@/modules/generator-ui/components/SignedImage'
 import { getMajorOccasionForDate } from '@/modules/generator-ui/lib/majorOccasions'
 import { StylePreviewCard } from '@/modules/generator-ui/components/StylePreviewCard'
@@ -823,16 +823,7 @@ export default function DashboardPage() {
       await triggerDownload(href, filename)
     }
 
-    // Resolve a fetchable URL for a {bucket, path} (NAS stream or signed Cloud URL).
-    const fetchableUrl = async (bucket: string, path: string): Promise<string> => {
-      try {
-        const nas = await resolveNasStreamUrl(bucket, path)
-        if (nas) return nas
-      } catch { /* fall back to signed URL */ }
-      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60)
-      if (error || !data?.signedUrl) throw new Error('Could not access the source video')
-      return data.signedUrl
-    }
+
 
     try {
       const src = resolveSource(url)
