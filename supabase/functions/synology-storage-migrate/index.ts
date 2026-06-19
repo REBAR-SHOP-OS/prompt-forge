@@ -158,9 +158,10 @@ Deno.serve(async (req) => {
 
             const resp = await fetch(signed.signedUrl);
             if (!resp.ok || !resp.body) throw new Error(`download ${resp.status}`);
+            const bytes = new Uint8Array(await resp.arrayBuffer());
 
             await sftpMkdirP(sftpClient, nasDir);
-            await sftpPutStream(sftpClient, nasPath, resp.body);
+            await sftpPut(sftpClient, nasPath, bytes);
 
             const stat = await sftpStat(sftpClient, nasPath);
             if (!stat || stat.size === 0) throw new Error("verify failed");
