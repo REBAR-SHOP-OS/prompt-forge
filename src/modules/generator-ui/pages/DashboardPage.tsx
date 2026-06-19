@@ -7976,7 +7976,8 @@ export default function DashboardPage() {
         onOpenChange={setIsAiImageDialogOpen}
         userId={userId}
         defaultAspect={lockedProjectRatio ?? aspectRatio}
-        onSaved={async (row) => {
+        onSaved={async (rawRow) => {
+          const row = { ...(rawRow as UserImageItem), storage_path: await signUserImageUrl((rawRow as UserImageItem).storage_path) }
           if (aiDialogMode === 'cover') {
             if (!coverScopeKey) {
               setVideoColumnMessage('Open or create a project first — covers attach to a specific project.')
