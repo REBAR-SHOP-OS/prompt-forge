@@ -681,17 +681,36 @@ export default function DashboardPage() {
   const [startContext] = useState('Start')
   const [endGoal] = useState('End')
   const [generatedVideos, setGeneratedVideos] = useState<JobDetail[]>([])
-  // Tracks which card's download is currently being prepared (fetched +
-  // transcoded to standard MP4) so we can show a spinner on that button.
-  const [downloadingId, setDownloadingId] = useState<string | null>(null)
-  // Transcode progress (0..100) for the MP4 button so a long conversion never
-  // feels "stuck". null means no percentage to show (e.g. fetching / remux).
-  const [downloadProgress, setDownloadProgress] = useState<number | null>(null)
+  // Tracks which cards' downloads are currently being prepared (fetched +
+  // transcoded to standard MP4) so we can show a spinner on each button.
+  // Per-id so several downloads can run at the same time.
+  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(() => new Set())
+  // Transcode progress (0..100) per card for the MP4 button so a long
+  // conversion never feels "stuck".
+  const [downloadProgressMap, setDownloadProgressMap] = useState<Record<string, number>>({})
+
+  const startDownloading = useCallback((id: string) => {
+    setDownloadingIds((prev) => { const next = new Set(prev); next.add(id); return next })
+  }, [])
+  const finishDownloading = useCallback((id: string) => {
+    setDownloadingIds((prev) => { const next = new Set(prev); next.delete(id); return next })
+    setDownloadProgressMap((prev) => { const next = { ...prev }; delete next[id]; return next })
+  }, [])
+  const setDownloadProgressFor = useCallback((id: string, pct: number) => {
+    setDownloadProgressMap((prev) => ({ ...prev, [id]: pct }))
+  }, [])
+
+  // The heavy in-browser MP4 transcode uses a single shared ffmpeg.wasm engine,
+  // so two transcodes at once would corrupt each other / risk an OOM page jump.
+  // We serialize ONLY the MP4 conversions through this promise chain; all other
+  // download types still start immediately and run fully in parallel.
+  const mp4QueueRef = useRef<Promise<unknown>>(Promise.resolve())
 
   // NOTE: we intentionally do NOT pre-warm ffmpeg.wasm on mount. Loading the
   // heavy WASM core (and holding its memory) without an explicit user action
   // can destabilize the tab. The engine now loads lazily only when the user
   // actually picks "Download as MP4".
+
 
 
 
@@ -719,9 +738,9 @@ export default function DashboardPage() {
   // user always gets a .mp4. On any transcode failure (e.g. file too large to
   // process in-browser) we fall back to downloading the original file as-is.
   const downloadAsMp4 = async (cardId: string, url: string, namePrefix: string) => {
-    if (downloadingId) return
-    setDownloadingId(cardId)
-    setDownloadProgress(null)
+    if (downloadingIds.has(cardId)) return
+    startDownloading(cardId)
+
     const triggerDownload = (blob: Blob, filename: string) => {
       const blobUrl = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -784,54 +803,64 @@ export default function DashboardPage() {
       // ensureMp4 reports progress so the button shows a percentage instead of
       // looking frozen, and it returns the ACTUAL extension it produced — we
       // honor that so a degraded WebM is never mislabeled as .mp4.
-      try {
-        const mp4 = await ensureMp4(blob, blob.type, (info) => {
-          if (info.stage === 'encode') {
-            setDownloadProgress(Math.round(info.ratio * 100))
-          } else if (info.stage === 'loading') {
-            setDownloadProgress(0)
-          } else if (info.stage === 'readout') {
-            setDownloadProgress(100)
+      // The transcode runs through a single shared ffmpeg.wasm engine, so we
+      // serialize ONLY this step: if another MP4 conversion is already running,
+      // this one waits its turn (button stays busy) instead of running at the
+      // same time. Other download types are unaffected and stay parallel.
+      const runTranscode = async () => {
+        try {
+          const mp4 = await ensureMp4(blob, blob.type, (info) => {
+            if (info.stage === 'encode') {
+              setDownloadProgressFor(cardId, Math.round(info.ratio * 100))
+            } else if (info.stage === 'loading') {
+              setDownloadProgressFor(cardId, 0)
+            } else if (info.stage === 'readout') {
+              setDownloadProgressFor(cardId, 100)
+            }
+          })
+          if (mp4.extension === 'mp4') {
+            triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.mp4`)
+          } else {
+            // Engine was unavailable — ensureMp4 degraded to the original WebM.
+            // Serve it with its TRUE extension and tell the user why.
+            triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.${mp4.extension}`)
+            toast.error('Could not convert to MP4 in your browser — downloaded the original video instead.')
           }
-        })
-        if (mp4.extension === 'mp4') {
-          triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.mp4`)
-        } else {
-          // Engine was unavailable — ensureMp4 degraded to the original WebM.
-          // Serve it with its TRUE extension and tell the user why.
-          triggerDownload(mp4.blob, `${namePrefix}-${cardId.slice(0, 8)}.${mp4.extension}`)
-          toast.error('Could not convert to MP4 in your browser — downloaded the original video instead.')
+        } catch (transErr) {
+          // Transcode failed (too large / OOM). Hand over the original file with
+          // its TRUE extension (never mislabel WebM as .mp4) and surface a clear
+          // message so the user is never left with a broken or missing file.
+          console.warn('[download] MP4 transcode failed, serving original:', transErr)
+          triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${extFromType(blob.type, url)}`)
+          const msg = transErr instanceof Error ? transErr.message : ''
+          toast.error(
+            /too large/i.test(msg)
+              ? 'This film is too large to convert in the browser — downloaded the original. Use the fast Download button.'
+              : 'MP4 conversion failed — downloaded the original video instead.',
+          )
         }
-      } catch (transErr) {
-        // Transcode failed (too large / OOM). Hand over the original file with
-        // its TRUE extension (never mislabel WebM as .mp4) and surface a clear
-        // message so the user is never left with a broken or missing file.
-        console.warn('[download] MP4 transcode failed, serving original:', transErr)
-        triggerDownload(blob, `${namePrefix}-${cardId.slice(0, 8)}.${extFromType(blob.type, url)}`)
-        const msg = transErr instanceof Error ? transErr.message : ''
-        toast.error(
-          /too large/i.test(msg)
-            ? 'This film is too large to convert in the browser — downloaded the original. Use the fast Download button.'
-            : 'MP4 conversion failed — downloaded the original video instead.',
-        )
       }
+      const queued = mp4QueueRef.current.then(runTranscode, runTranscode)
+      mp4QueueRef.current = queued
+      await queued
     } catch (err) {
       // Never navigate away (window.open) here — that is what made the page
       // "jump". Just report the failure and keep the user on the page.
       console.error('Film download failed', err)
       toast.error('Download failed. Please try again.')
     } finally {
-      setDownloadingId(null)
-      setDownloadProgress(null)
+      finishDownloading(cardId)
     }
+
   }
 
   // Fast, direct download: hands the browser a signed URL with a download
   // Content-Disposition so it streams the file natively — no in-browser fetch
   // into memory and no ffmpeg transcode. Falls back gracefully on failure.
   const downloadDirect = async (cardId: string, url: string, namePrefix: string) => {
-    if (downloadingId) return
-    setDownloadingId(cardId)
+    if (downloadingIds.has(cardId)) return
+    startDownloading(cardId)
+
     try {
       const lower = url.toLowerCase().split('?')[0]
       const ext = lower.endsWith('.mp4') ? 'mp4'
@@ -873,7 +902,8 @@ export default function DashboardPage() {
       console.error('Direct download failed', err)
       window.open(url, '_blank')
     } finally {
-      setDownloadingId(null)
+      finishDownloading(cardId)
+
     }
   }
 
@@ -962,8 +992,9 @@ export default function DashboardPage() {
     }
   }
   const downloadImageFile = async (imageId: string, url: string) => {
-    if (downloadingId) return
-    setDownloadingId(imageId)
+    if (downloadingIds.has(imageId)) return
+    startDownloading(imageId)
+
     try {
       const response = await fetch(url)
       if (!response.ok) throw new Error('Download failed')
@@ -985,7 +1016,8 @@ export default function DashboardPage() {
       console.error('Image download failed', err)
       window.open(url, '_blank')
     } finally {
-      setDownloadingId(null)
+      finishDownloading(imageId)
+
     }
   }
   // Persist an audio item (uploaded music or generated voiceover) to the
@@ -1026,8 +1058,9 @@ export default function DashboardPage() {
     }
   }
   const downloadAudioFile = async (audioId: string, url: string | null | undefined, name: string | null) => {
-    if (downloadingId || !url) return
-    setDownloadingId(audioId)
+    if (downloadingIds.has(audioId) || !url) return
+    startDownloading(audioId)
+
     try {
       const response = await fetch(url)
       if (!response.ok) throw new Error('Download failed')
@@ -1053,7 +1086,7 @@ export default function DashboardPage() {
       console.error('Audio download failed', err)
       window.open(url, '_blank')
     } finally {
-      setDownloadingId(null)
+      finishDownloading(audioId)
     }
   }
   const handleDeleteUserAudio = async (item: UserAudioItem) => {
@@ -7139,13 +7172,13 @@ export default function DashboardPage() {
                               </button>
                               <button
                                 type="button"
-                                disabled={downloadingId === img.id}
+                                disabled={downloadingIds.has(img.id)}
                                 onClick={() => { void downloadImageFile(img.id, img.storage_path) }}
                                 aria-label="Download image"
                                 title="Download image"
                                 className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                               >
-                                {downloadingId === img.id ? (
+                                {downloadingIds.has(img.id) ? (
                                   <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
                                 ) : (
                                   <Download className="h-3 w-3" aria-hidden="true" />
@@ -7247,13 +7280,13 @@ export default function DashboardPage() {
                         <div className="flex shrink-0 items-center gap-1.5">
                           <button
                             type="button"
-                            disabled={downloadingId === a.id || !a.url}
+                            disabled={downloadingIds.has(a.id) || !a.url}
                             onClick={() => { void downloadAudioFile(a.id, a.url, a.name) }}
                             aria-label="Download audio"
                             title="Download audio"
                             className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                           >
-                            {downloadingId === a.id ? (
+                            {downloadingIds.has(a.id) ? (
                               <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
                             ) : (
                               <Download className="h-3 w-3" aria-hidden="true" />
@@ -7361,13 +7394,13 @@ export default function DashboardPage() {
                           </button>
                           <button
                             type="button"
-                            disabled={downloadingId === img.id}
+                            disabled={downloadingIds.has(img.id)}
                             onClick={() => { void downloadImageFile(img.id, img.storage_path) }}
                             aria-label="Download image"
                             title="Download image"
                             className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                           >
-                            {downloadingId === img.id ? (
+                            {downloadingIds.has(img.id) ? (
                               <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
                             ) : (
                               <Download className="h-3 w-3" aria-hidden="true" />
@@ -7579,8 +7612,8 @@ export default function DashboardPage() {
                               {job.status === 'completed' && video?.storage_path ? (
                                 <DownloadFormatMenu
                                   url={video.storage_path}
-                                  busy={downloadingId === job.id}
-                                  progress={downloadingId === job.id ? downloadProgress : null}
+                                  busy={downloadingIds.has(job.id)}
+                                  progress={downloadProgressMap[job.id] ?? null}
                                   onDownloadOriginal={() => {
                                     if (!video) return
                                     void downloadDirect(job.id, video.storage_path, 'film')
@@ -9308,8 +9341,8 @@ export default function DashboardPage() {
                         {variant === 'final' && video.video?.storage_path ? (
                           <DownloadFormatMenu
                             url={video.video.storage_path}
-                            busy={downloadingId === video.id}
-                            progress={downloadingId === video.id ? downloadProgress : null}
+                            busy={downloadingIds.has(video.id)}
+                            progress={downloadProgressMap[video.id] ?? null}
                             onDownloadOriginal={() => {
                               void downloadDirect(video.id, video.video!.storage_path, 'final-film')
                             }}
@@ -9360,7 +9393,7 @@ export default function DashboardPage() {
                                           </span>
                                           <button
                                             type="button"
-                                            disabled={downloadingId === `music-${video.id}`}
+                                            disabled={downloadingIds.has(`music-${video.id}`)}
                                             onClick={(event) => {
                                               event.stopPropagation()
                                               void downloadAudioFile(`music-${video.id}`, audio.music!.url, audio.music!.name)
@@ -9369,7 +9402,7 @@ export default function DashboardPage() {
                                             title="Download music"
                                             className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                                           >
-                                            {downloadingId === `music-${video.id}` ? (
+                                            {downloadingIds.has(`music-${video.id}`) ? (
                                               <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
                                             ) : (
                                               <Download className="h-3 w-3" aria-hidden="true" />
@@ -9388,7 +9421,7 @@ export default function DashboardPage() {
                                           </span>
                                           <button
                                             type="button"
-                                            disabled={downloadingId === `voice-${video.id}`}
+                                            disabled={downloadingIds.has(`voice-${video.id}`)}
                                             onClick={(event) => {
                                               event.stopPropagation()
                                               void downloadAudioFile(`voice-${video.id}`, audio.voiceover!.url, audio.voiceover!.name)
@@ -9397,7 +9430,7 @@ export default function DashboardPage() {
                                             title="Download voiceover"
                                             className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                                           >
-                                            {downloadingId === `voice-${video.id}` ? (
+                                            {downloadingIds.has(`voice-${video.id}`) ? (
                                               <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
                                             ) : (
                                               <Download className="h-3 w-3" aria-hidden="true" />
