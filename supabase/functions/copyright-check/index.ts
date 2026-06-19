@@ -174,16 +174,17 @@ Deno.serve(async (req) => {
     const parts: Array<Record<string, unknown>> = [];
 
     try {
-      const v = await fetchInline(videoUrl, MAX_VIDEO_BYTES, "video/mp4");
-      parts.push({ inlineData: { mimeType: v.mimeType, data: v.data } });
+      const videoPart = await buildVideoPart(apiKey, videoUrl);
+      parts.push(videoPart);
       parts.push({ text: "The above is the VIDEO to review." });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const status = msg === "too_large" ? 413 : 502;
-      return new Response(JSON.stringify({ error: msg === "too_large" ? "Video too large to analyze (>25MB)" : "Could not fetch video" }), {
+      return new Response(JSON.stringify({ error: msg === "too_large" ? "Video too large to analyze (>500MB)" : "Could not fetch video" }), {
         status, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
 
     let musicProvided = false;
     if (musicUrl && isAllowedUrl(musicUrl)) {
