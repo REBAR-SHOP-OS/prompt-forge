@@ -4346,22 +4346,22 @@ export default function DashboardPage() {
     const path = `${userId}/upload-${Date.now()}-${crypto.randomUUID()}.${ext}`
     let uploadedPath: string | null = null
     try {
-      const up = await supabase.storage
-        .from('user-videos')
-        .upload(path, file, { contentType: file.type || 'video/mp4', upsert: false })
-      if (up.error) throw new Error(up.error.message)
-      uploadedPath = path
-      const { data } = supabase.storage.from('user-videos').getPublicUrl(path)
-      const publicUrl = data.publicUrl
+      // Large videos go to the NAS, small ones stay in Cloud; both yield a
+      // `<bucket>/<path>` reference that the players know how to resolve.
+      const up = await uploadAsset('user-videos', path, file, {
+        contentType: file.type || 'video/mp4',
+      })
+      uploadedPath = up.backend === 'cloud' ? path : null
 
       // Persist a real job + asset row server-side so the card shows up
       // through the same listMyJobs/getJob pipeline as generated videos.
       const detail = await jobOrchestratorGateway.createUploadedVideoJob({
-        storagePath: publicUrl,
+        storagePath: up.ref,
         durationSeconds,
         aspectRatio: pickedRatio,
         prompt: file.name,
       })
+
 
       // Drop into state immediately so the card appears without a refresh.
       // Stamp it into the active draft (like generated clips) so it shows as a
