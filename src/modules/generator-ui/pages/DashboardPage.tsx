@@ -710,6 +710,87 @@ function buildSeededJob(
   }
 }
 
+// Plays a project audio track from the private merged-videos bucket. The stored
+// URL is a (non-working) public URL, so we resolve a short-lived signed URL on
+// mount before feeding it to the <audio> element and the download button.
+function ProjectAudioTrackRow({
+  id,
+  track,
+  accent,
+  Icon,
+  label,
+  signUrl,
+  onDownload,
+  downloading,
+}: {
+  id: string
+  track: { url: string; name: string }
+  accent: 'sky' | 'amber'
+  Icon: typeof Music2
+  label: string
+  signUrl: (input: string) => Promise<string | null>
+  onDownload: (id: string, url: string, name: string) => void
+  downloading: boolean
+}) {
+  const [signed, setSigned] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    setSigned(null)
+    setFailed(false)
+    void signUrl(track.url).then((u) => {
+      if (!active) return
+      if (u) setSigned(u)
+      else setFailed(true)
+    })
+    return () => {
+      active = false
+    }
+  }, [track.url, signUrl])
+
+  const accentText = accent === 'sky' ? 'text-sky-200' : 'text-amber-200'
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide ${accentText}`}>
+          <Icon className="h-3 w-3" aria-hidden="true" /> {label}
+        </span>
+        <button
+          type="button"
+          disabled={downloading || !signed}
+          onClick={(event) => {
+            event.stopPropagation()
+            if (signed) onDownload(id, signed, track.name)
+          }}
+          aria-label={`Download ${label.toLowerCase()}`}
+          title={`Download ${label.toLowerCase()}`}
+          className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+        >
+          {downloading ? (
+            <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+          ) : (
+            <Download className="h-3 w-3" aria-hidden="true" />
+          )}
+        </button>
+      </div>
+      <p className="truncate text-[11px] text-zinc-500">{track.name}</p>
+      {signed ? (
+        <audio controls preload="metadata" src={signed} className="h-8 w-full" />
+      ) : failed ? (
+        <p className="text-[11px] text-rose-300">Unable to load audio.</p>
+      ) : (
+        <p className="inline-flex items-center gap-1.5 text-[11px] text-zinc-500">
+          <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" /> Preparing…
+        </p>
+      )}
+    </div>
+  )
+}
+
+
+
 export default function DashboardPage() {
   const { session, profile, signOut, loading: authLoading } = useAuth()
   const [promptText, setPromptText] = useState('')
