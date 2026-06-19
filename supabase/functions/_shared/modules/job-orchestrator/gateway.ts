@@ -44,7 +44,16 @@ const CreateJobSchema = z.object({
 const GetJobSchema = z.object({ jobId: z.string().uuid() });
 const DeleteJobSchema = z.object({ jobId: z.string().uuid() });
 
-const SUPABASE_PUBLIC_STORAGE_PREFIX = `${new URL(getEnv("SUPABASE_URL")).origin}/storage/v1/object/public/wan-frames/`;
+const SUPABASE_ORIGIN = new URL(getEnv("SUPABASE_URL")).origin;
+// wan-frames is now a PRIVATE bucket. Frame references arrive as signed URLs
+// (`…/object/sign/wan-frames/{userId}/…`) but we still accept the legacy public
+// form for backwards compatibility. Both are scoped to the caller's own folder.
+const SUPABASE_WAN_FRAMES_PREFIXES = [
+  `${SUPABASE_ORIGIN}/storage/v1/object/sign/wan-frames/`,
+  `${SUPABASE_ORIGIN}/storage/v1/object/public/wan-frames/`,
+  `${SUPABASE_ORIGIN}/storage/v1/object/authenticated/wan-frames/`,
+];
+
 
 // Local video routers (ComfyUI/Wan/LTX on the RTX box) often return the clip
 // inline as a `data:video/mp4;base64,...` URL instead of a hosted link. Storing
