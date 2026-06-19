@@ -49,19 +49,27 @@ Deno.serve(async (req) => {
 
   await svc.from("mp4_export_jobs").update({ status: "processing" }).eq("id", jobId);
 
-  // Is the source already on the NAS? If so ffmpeg can read it locally — no download.
+  // Is the source already on the NAS? If so, read it back through the SFTP-based
+  // stream endpoint over HTTPS. We must NOT `cp` the nas_path directly: the SSH
+  // shell and the SFTP subsystem do not share the same filesystem root on this
+  // DSM box, so a file written via SFTP is not visible to a shell `cp`/ffmpeg.
   const { data: srcObj } = await svc
     .from("storage_objects")
-    .select("backend, nas_path")
+    .select("id, backend, nas_path")
     .eq("logical_bucket", job.source_bucket)
     .eq("object_key", job.source_path)
     .maybeSingle();
-  const sourceNasPath = srcObj?.backend === "synology" ? (srcObj?.nas_path as string | null) : null;
+  const sourceOnNas = srcObj?.backend === "synology" && !!srcObj?.nas_path;
 
+  const serviceKey = getEnv("SUPABASE_SERVICE_ROLE_KEY");
   let downloadCmd: string;
-  if (sourceNasPath) {
-    // Read straight from the local NAS path.
-    downloadCmd = `cp "${sourceNasPath.replace(/"/g, "")}" "$tmp/in"`;
+  if (sourceOnNas) {
+    const streamUrl =
+      `${getEnv("SUPABASE_URL")}/functions/v1/synology-storage-stream?id=${srcObj!.id}`;
+    // Token passed via an env var (not argv) so it isn't visible in the box's
+    // process list. ffmpeg reads the downloaded file locally afterwards.
+    downloadCmd =
+      `curl -fsSL -H "x-internal-token: $INTERNAL_TOKEN" "${streamUrl}" -o "$tmp/in"`;
   } else {
     const { data: dl, error: dlErr } = await svc.storage
       .from(job.source_bucket)
