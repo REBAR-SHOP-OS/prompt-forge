@@ -739,42 +739,24 @@ export default function DashboardPage() {
   // or a clear error — a WebM is never silently downloaded in its place.
   const triggerDownload = async (href: string, filename: string) => {
     try {
-      // Supabase signed URLs with ?download= already carry Content-Disposition: attachment
-      // from the storage server — navigate directly so the browser handles the download
-      // natively without loading the whole file into RAM first (which froze on large videos).
-      const isSupabaseSigned =
-        /supabase\.co\/storage/.test(href) &&
-        (/[?&]download=/.test(href))
-      if (isSupabaseSigned) {
-        const a = document.createElement('a')
-        a.href = href
-        a.download = filename
-        a.style.display = 'none'
-        document.body.appendChild(a)
-        a.click()
-        setTimeout(() => document.body.removeChild(a), 1000)
-        return
+      const hasServerDownloadDisposition = /[?&]download=/.test(href)
+      if (hasServerDownloadDisposition) {
+        const opened = window.open(href, '_blank', 'noopener,noreferrer')
+        if (opened) return
       }
-      // Non-Supabase URLs (NAS proxy, blob URLs): fetch as blob so cross-origin download works.
-      const res = await fetch(href)
-      if (!res.ok) throw new Error(`download failed: ${res.status}`)
-      const blob = await res.blob()
-      const blobUrl = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = blobUrl
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 100)
-    } catch (err) {
-      console.error('Blob download failed, falling back to anchor', err)
+
       const a = document.createElement('a')
       a.href = href
       a.download = filename
+      a.target = '_blank'
+      a.rel = 'noopener noreferrer'
+      a.style.display = 'none'
       document.body.appendChild(a)
       a.click()
-      document.body.removeChild(a)
+      setTimeout(() => document.body.removeChild(a), 1000)
+    } catch (err) {
+      console.error('Download failed, falling back to new tab', err)
+      window.open(href, '_blank', 'noopener,noreferrer')
     }
   }
 
