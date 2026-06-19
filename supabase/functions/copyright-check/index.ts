@@ -4,7 +4,8 @@
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 
-const MAX_VIDEO_BYTES = 25 * 1024 * 1024; // 25MB cap (inline base64)
+const INLINE_VIDEO_BYTES = 18 * 1024 * 1024; // inline only small videos (Gemini ~20MB request cap)
+const MAX_VIDEO_BYTES = 500 * 1024 * 1024; // larger videos go through the Files API (up to 2GB supported)
 const MAX_AUDIO_BYTES = 15 * 1024 * 1024; // 15MB cap for audio
 
 const ANALYSIS_PROMPT = `You are a strict copyright & content-rights reviewer for short marketing/social videos.
@@ -77,6 +78,68 @@ async function fetchInline(url: string, cap: number, fallbackMime: string) {
   return { mimeType, data: toBase64(buf) };
 }
 
+// Upload a (potentially large) video to the Gemini Files API and return a
+// fileData part once the file becomes ACTIVE. This bypasses the ~20MB inline
+// request cap that causes "Video too large to analyze".
+async function uploadToGemini(apiKey: string, bytes: Uint8Array, mimeType: string) {
+  const startResp = await fetch(
+    `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: {
+        "X-Goog-Upload-Protocol": "resumable",
+        "X-Goog-Upload-Command": "start",
+        "X-Goog-Upload-Header-Content-Length": String(bytes.byteLength),
+        "X-Goog-Upload-Header-Content-Type": mimeType,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ file: { display_name: "copyright-review-video" } }),
+    },
+  );
+  if (!startResp.ok) throw new Error(`files start ${startResp.status}`);
+  const uploadUrl = startResp.headers.get("x-goog-upload-url");
+  if (!uploadUrl) throw new Error("no upload url");
+
+  const uploadResp = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      "X-Goog-Upload-Command": "upload, finalize",
+      "X-Goog-Upload-Offset": "0",
+      "Content-Length": String(bytes.byteLength),
+    },
+    body: bytes,
+  });
+  if (!uploadResp.ok) throw new Error(`files upload ${uploadResp.status}`);
+  const uploaded = await uploadResp.json();
+  let file = uploaded?.file;
+  if (!file?.uri || !file?.name) throw new Error("upload missing file uri");
+
+  // Poll until the file is ACTIVE (video processing) before referencing it.
+  for (let i = 0; i < 30 && file?.state === "PROCESSING"; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const statResp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/${file.name}?key=${apiKey}`,
+    );
+    if (!statResp.ok) break;
+    file = await statResp.json();
+  }
+  if (file?.state !== "ACTIVE") throw new Error("file not active");
+  return { fileUri: file.uri as string, mimeType: (file.mimeType as string) || mimeType };
+}
+
+async function buildVideoPart(apiKey: string, url: string) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`fetch ${resp.status}`);
+  const mimeType = resp.headers.get("content-type") || "video/mp4";
+  const buf = new Uint8Array(await resp.arrayBuffer());
+  if (buf.byteLength > MAX_VIDEO_BYTES) throw new Error("too_large");
+  if (buf.byteLength <= INLINE_VIDEO_BYTES) {
+    return { inlineData: { mimeType, data: toBase64(buf) } };
+  }
+  const up = await uploadToGemini(apiKey, buf, mimeType);
+  return { fileData: { mimeType: up.mimeType, fileUri: up.fileUri } };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -111,16 +174,17 @@ Deno.serve(async (req) => {
     const parts: Array<Record<string, unknown>> = [];
 
     try {
-      const v = await fetchInline(videoUrl, MAX_VIDEO_BYTES, "video/mp4");
-      parts.push({ inlineData: { mimeType: v.mimeType, data: v.data } });
+      const videoPart = await buildVideoPart(apiKey, videoUrl);
+      parts.push(videoPart);
       parts.push({ text: "The above is the VIDEO to review." });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const status = msg === "too_large" ? 413 : 502;
-      return new Response(JSON.stringify({ error: msg === "too_large" ? "Video too large to analyze (>25MB)" : "Could not fetch video" }), {
+      return new Response(JSON.stringify({ error: msg === "too_large" ? "Video too large to analyze (>500MB)" : "Could not fetch video" }), {
         status, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
 
     let musicProvided = false;
     if (musicUrl && isAllowedUrl(musicUrl)) {
