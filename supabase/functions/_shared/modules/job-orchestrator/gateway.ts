@@ -553,16 +553,22 @@ export const jobOrchestratorGateway = {
             return errorResponse("JOB_START_FAILED", "Could not start the job. Please try again.", 500, ctx.requestId);
           }
 
-          // Trigger generation through the adapter contract.
+          // Trigger generation through the adapter contract. wan-frames is a
+          // private bucket, so re-sign the frame references with the service
+          // client right before handing them to the external provider — this
+          // guarantees a valid, fetchable URL for the whole render window.
+          const providerFirstFrameUrl = await resolveFrameUrlForProvider(svc, auth.userId, firstFrameUrl);
+          const providerLastFrameUrl = await resolveFrameUrlForProvider(svc, auth.userId, lastFrameUrl);
           let gen;
           try {
             gen = await aiGateway.startGeneration(route.providerKey, route.resolvedModel, {
               prompt,
-              firstFrameUrl,
-              lastFrameUrl,
+              firstFrameUrl: providerFirstFrameUrl,
+              lastFrameUrl: providerLastFrameUrl,
               durationSeconds: parsed.data.durationSeconds ?? null,
               aspectRatio: chosenAspectRatio,
             });
+
           } catch (e) {
             const genErr = (e as Error).message ?? "";
             // Refund credits + mark failed atomically.
