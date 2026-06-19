@@ -88,8 +88,11 @@ Deno.serve(async (req) => {
     `${getEnv("SUPABASE_URL")}/storage/v1/object/upload/sign/mp4-exports/${outputPath}?token=${up.token}`;
 
   // Build the remote conversion command. URLs contain only URL-safe characters.
+  // INTERNAL_TOKEN is exported (never passed as an argv flag) so it is not
+  // exposed in the box's process list.
   const remoteCmd = [
     "set -e",
+    `export INTERNAL_TOKEN='${serviceKey}'`,
     'FF="$(command -v ffmpeg || echo /usr/local/bin/ffmpeg)"',
     'tmp="$(mktemp -d)"',
     'trap \'rm -rf "$tmp"\' EXIT',
