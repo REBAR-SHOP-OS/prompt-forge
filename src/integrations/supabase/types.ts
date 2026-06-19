@@ -315,6 +315,42 @@ export type Database = {
         }
         Relationships: []
       }
+      generator_film_exports: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          id: string
+          mp4_storage_path: string | null
+          source_asset_id: string
+          source_storage_path: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          mp4_storage_path?: string | null
+          source_asset_id: string
+          source_storage_path: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          mp4_storage_path?: string | null
+          source_asset_id?: string
+          source_storage_path?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       generator_generation_jobs: {
         Row: {
           created_at: string
@@ -553,6 +589,84 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      mp4_export_jobs: {
+        Row: {
+          created_at: string
+          error: string | null
+          id: string
+          output_path: string | null
+          source_bucket: string
+          source_path: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          error?: string | null
+          id?: string
+          output_path?: string | null
+          source_bucket: string
+          source_path: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          error?: string | null
+          id?: string
+          output_path?: string | null
+          source_bucket?: string
+          source_path?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      storage_objects: {
+        Row: {
+          backend: string
+          content_type: string | null
+          created_at: string
+          id: string
+          logical_bucket: string
+          nas_path: string | null
+          object_key: string
+          size_bytes: number | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          backend?: string
+          content_type?: string | null
+          created_at?: string
+          id?: string
+          logical_bucket: string
+          nas_path?: string | null
+          object_key: string
+          size_bytes?: number | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          backend?: string
+          content_type?: string | null
+          created_at?: string
+          id?: string
+          logical_bucket?: string
+          nas_path?: string | null
+          object_key?: string
+          size_bytes?: number | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       user_roles: {
         Row: {
