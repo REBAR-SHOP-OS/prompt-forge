@@ -132,6 +132,22 @@ export default function ScenarioWriterDialog({
   async function generate() {
     const isAuto = ideaMode === 'auto' && Boolean(uploadedImageUrl)
     if ((!isAuto && !idea.trim() && !uploadedImageUrl) || (isAuto && !uploadedImageUrl) || isWriting) return
+    if (!businessInfo.trim()) {
+      setError('Please describe your business first — the scenario must be relevant to it.')
+      return
+    }
+    if (userId) {
+      setBusinessSaving(true)
+      try {
+        await supabase
+          .from('generator_business_profiles')
+          .upsert({ user_id: userId, business_info: businessInfo.trim() }, { onConflict: 'user_id' })
+      } catch {
+        /* non-fatal */
+      } finally {
+        setBusinessSaving(false)
+      }
+    }
     setIsWriting(true)
     setError(null)
     setScenes([])
@@ -139,6 +155,7 @@ export default function ScenarioWriterDialog({
       const { data, error: invokeErr } = await supabase.functions.invoke('scenario-write', {
         body: {
           idea: isAuto ? '' : (idea.trim() || 'Generate a scenario based on the attached reference image.'),
+          businessInfo: businessInfo.trim(),
           durationSeconds: duration,
           imageUrl: uploadedImageUrl ?? undefined,
           autoFromImage: isAuto,
