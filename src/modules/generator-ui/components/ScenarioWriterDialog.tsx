@@ -321,15 +321,15 @@ export default function ScenarioWriterDialog({
   async function handlePickImage(file: File | undefined) {
     if (!file) return
     if (!userId) {
-      setError('Please sign in to attach an image.')
+      setError(t.errSignIn)
       return
     }
     if (!file.type.startsWith('image/')) {
-      setError('Only image files are supported.')
+      setError(t.errOnlyImages)
       return
     }
     if (file.size > 10 * 1024 * 1024) {
-      setError('Image too large (max 10MB).')
+      setError(t.errTooLarge)
       return
     }
     setError(null)
