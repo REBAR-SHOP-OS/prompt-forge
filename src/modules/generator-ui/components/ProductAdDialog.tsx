@@ -509,6 +509,7 @@ const T: Record<Lang, Record<string, string>> = {
     regenerate: 'إعادة التوليد',
     sendAll: 'إرسال الكل إلى قائمة الانتظار',
     useAsPrompt: 'استخدام كموجّه',
+    preparingFrame: 'جارٍ تجهيز الإطار…',
     generate: 'توليد سيناريو الإعلان',
     language: 'اللغة',
     chooseFromProducts: 'اختر من المنتجات',
