@@ -60,15 +60,37 @@ function cameraGuidance(opts: ProductAdOpts | CharacterSheetOpts, heroLabel = "p
   return bits.join(" ");
 }
 
+const LANGUAGE_NAMES: Record<string, string> = {
+  en: "English",
+  fa: "Persian (Farsi)",
+  ar: "Arabic",
+  tr: "Turkish",
+  es: "Spanish",
+  fr: "French",
+};
+
 function buildSystemPrompt(
   duration: number,
   productAd?: ProductAdOpts,
   autoFromImage?: boolean,
   characterSheet?: CharacterSheetOpts,
   businessInfo?: string,
+  outputLanguage = "en",
 ): string {
+  const langName = LANGUAGE_NAMES[outputLanguage] ?? "English";
+  const isEnglish = outputLanguage === "en";
+  const languageLine = isEnglish
+    ? "Write the entire scenario in ENGLISH, regardless of the input language."
+    : `Write the ENTIRE scenario — all narration, all spoken dialogue, and all on-screen action descriptions — in ${langName}, regardless of the input language. Do not output any English. Keep concrete camera-move and lighting terms clear and natural in ${langName}.`;
+  const productName = productAd?.productName?.trim();
   const businessLine = businessInfo
-    ? `Business context (provided by the user): ${businessInfo}. Every narration line, every spoken word, and the entire scenario MUST stay tightly relevant to this business and promote the user's selected product/subject. Do not drift into unrelated topics, products, or themes.`
+    ? [
+        `Business context (provided by the user): ${businessInfo}.`,
+        productName
+          ? `The user's selected product is "${productName}" (it matches the attached product image). Every shot, every beat, every narration line, and every spoken word MUST promote THIS specific product within the context of the above business.`
+          : `Every shot, every beat, every narration line, and every spoken word MUST promote the user's selected product/subject within the context of the above business.`,
+        "The scenario must stay tightly relevant to this business and product. Do not drift into unrelated topics, products, services, or themes.",
+      ].join(" ")
     : "";
   const sceneCount = expectedSceneCount(duration);
   const isAd = Boolean(productAd);
@@ -120,7 +142,8 @@ function buildSystemPrompt(
     return [
       persona,
       businessLine,
-      `Given the user's brief, write a CONTINUOUS narrative scenario in ENGLISH for a ${duration}-second cinematic ${longForm},`,
+      languageLine,
+      `Given the user's brief, write a CONTINUOUS narrative scenario for a ${duration}-second cinematic ${longForm},`,
       `structured as ${numWord} sequential 15-second scenes that flow into each other.`,
       "The scenario MUST follow a clear story arc across the whole sequence: the opening scene is an attention-grabbing hook that establishes the subject and setting, the middle scenes develop the story and build interest and desire, and the final scene delivers a defined payoff/resolution that ends on a strong, memorable note.",
       `Output EXACTLY ${sceneCount} scene blocks separated by the literal delimiter "${SCENE_DELIM}" on its own line.`,
@@ -136,8 +159,9 @@ function buildSystemPrompt(
   return [
     persona,
     businessLine,
-    `Given the user's brief, write a single cohesive ${singleForm} in ENGLISH`,
-    `suitable for a ${duration}-second cinematic video — regardless of the input language.`,
+    languageLine,
+    `Given the user's brief, write a single cohesive ${singleForm}`,
+    `suitable for a ${duration}-second cinematic video.`,
     "It MUST follow a clear narrative arc with a defined beginning, middle, and end: an attention-grabbing opening hook that establishes the subject and setting, a middle that develops the story, and a clear payoff/resolution that ends on a strong, memorable note.",
     "Include opening visual hook, beat-by-beat action, camera/lighting cues, and a clear ending.",
     `Match pacing realistically to the duration: ${beat}.`,
@@ -156,6 +180,7 @@ async function callGateway(
   autoFromImage?: boolean,
   characterSheet?: CharacterSheetOpts,
   businessInfo?: string,
+  outputLanguage = "en",
 ): Promise<Response> {
   const refText = characterSheet
     ? `Brief: ${idea}\nThe attached image IS the lead character — match their exact face, hair, wardrobe, body, and overall look in every shot, and keep them perfectly consistent throughout the film.`
@@ -188,7 +213,7 @@ async function callGateway(
     body: JSON.stringify({
       model: "google/gemini-2.5-flash",
       messages: [
-        { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage, characterSheet, businessInfo) },
+        { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage) },
         { role: "user", content: userContent },
       ],
     }),
@@ -270,6 +295,8 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const idea = typeof body?.idea === "string" ? body.idea.trim() : "";
     const businessInfo = typeof body?.businessInfo === "string" ? body.businessInfo.trim().slice(0, 2000) : "";
+    const ALLOWED_LANGS = ["en", "fa", "ar", "tr", "es", "fr"];
+    const outputLanguage = ALLOWED_LANGS.includes(body?.outputLanguage) ? body.outputLanguage : "en";
     const durationRaw = Number(body?.durationSeconds);
     const duration = [5, 10, 15, 30, 45, 135].includes(durationRaw) ? durationRaw : 0;
     const imageUrlRaw = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
@@ -379,7 +406,7 @@ Deno.serve(async (req) => {
     if (productAd?.characterImageUrl) {
       productAd.characterImageUrl = await resolveImageForGateway(productAd.characterImageUrl);
     }
-    let resp = await callGateway(apiKey, duration, effectiveIdea, resolvedImageUrl, productAd, autoFromImage, characterSheet, businessInfo);
+    let resp = await callGateway(apiKey, duration, effectiveIdea, resolvedImageUrl, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage);
 
     if (resp.status === 429) {
       return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
@@ -409,7 +436,7 @@ Deno.serve(async (req) => {
     // One retry for multi-scene durations if we didn't get the expected count.
     const expected = expectedSceneCount(duration);
     if (expected > 1 && scenes.length === 0) {
-      resp = await callGateway(apiKey, duration, effectiveIdea, resolvedImageUrl, productAd, autoFromImage, characterSheet, businessInfo);
+      resp = await callGateway(apiKey, duration, effectiveIdea, resolvedImageUrl, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage);
       if (resp.ok) {
         data = await resp.json();
         raw = (data?.choices?.[0]?.message?.content ?? "").trim();

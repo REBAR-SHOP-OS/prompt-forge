@@ -1,45 +1,34 @@
-## هدف
+# Scenario relevance + translation
 
-بخش «اطلاعات کسب‌وکار» که الان به‌صورت یک کادر همیشه‌باز در بالای دیالوگ‌هاست، تبدیل شود به:
-- یک **آیکون** (دکمه کوچک) که با کلیک باز می‌شود (Popover).
-- داخل آن یک **دکمهٔ ذخیره (Save)** مستقل تا کاربر بتواند اطلاعات را بدون ساختن سناریو ذخیره کند.
+Two goals from the user:
+1. The generated scenario/narration must be tightly tied to **both** the user's business AND the selected product (its name + image).
+2. Translation must work in **both** dialogs (Scenario Writer + Product Ad). When the user switches the language, the UI of that section translates, and the **generated scenario itself is written in the selected language**.
 
-این تغییر در هر دو دیالوگ اعمال می‌شود: `ProductAdDialog.tsx` و `ScenarioWriterDialog.tsx`.
+## 1. Edge function: `supabase/functions/scenario-write/index.ts`
 
----
+- Accept a new optional `outputLanguage` field in the request body (validated against the allowed set `en, fa, ar, tr, es, fr`; default `en`).
+- Replace the hard-coded "in ENGLISH" directives in `buildSystemPrompt` with a language directive driven by `outputLanguage`. When non-English, instruct the model to write the **entire scenario, all narration, and all spoken dialogue in that language** (e.g. Persian/Farsi), while keeping technical camera/lighting cues clear. The `===SCENE===` delimiter and word-count rules stay unchanged.
+- Strengthen the relevance constraint: combine business + product into one firm rule — every shot, beat, and spoken line must promote **the user's specific product** (by name, matching the attached image) **within the context of the user's business**, with no drift to unrelated themes. Make `businessLine` reference the product name explicitly when present.
 
-## رفتار
+## 2. Scenario Writer dialog: `src/modules/generator-ui/components/ScenarioWriterDialog.tsx`
 
-- آیکون (مثلاً `Building2` از lucide) کنار عنوان/هدر دیالوگ قرار می‌گیرد.
-- وضعیت بصری آیکون:
-  - اگر اطلاعات کسب‌وکار خالی است → حالت هشدار (رنگ کهربایی + یک نقطهٔ کوچک) تا کاربر بداند باید پر شود.
-  - اگر پر است → حالت عادی/سبز با تیک کوچک.
-- کلیک روی آیکون → باز شدن Popover شامل:
-  - برچسب «درباره کسب‌وکار شما» + تگ (الزامی).
-  - یک `Textarea` (همان مقدار `businessInfo`).
-  - دکمهٔ **Save** که مقدار را با `upsert` در جدول `generator_business_profiles` ذخیره می‌کند و حالت «در حال ذخیره…/ذخیره شد ✓» نشان می‌دهد.
-- منطق فعلی حفظ می‌شود: هنگام ساخت سناریو، اگر `businessInfo` خالی باشد خطا داده می‌شود و سناریو ساخته نمی‌شود (هم در فرانت و هم Edge function). اگر کاربر در Popover ذخیره نکرده باشد، خود `generate()` هم قبل از ارسال یک‌بار upsert می‌کند (مثل الان).
+Currently English-only with no language switcher. Bring it to parity with Product Ad:
 
----
+- Add a `Lang` type + `lang` state, a `Languages` icon `Select` in the header (same 6 options), and `dir` RTL handling (`fa`, `ar`).
+- Add a `T` translation table covering all visible strings (title, description, Duration label, idea label/placeholders, idea-mode toggles, image attach labels, business popover label/placeholder/required tag/Save/Saved, buttons, error fallbacks) in all 6 languages.
+- Pass `outputLanguage: lang` in the `scenario-write` invocation so output matches the chosen language.
 
-## تغییرات کد
+## 3. Product Ad dialog: `src/modules/generator-ui/components/ProductAdDialog.tsx`
 
-### `ProductAdDialog.tsx`
-- حذف کادر همیشه‌باز فعلی «About your business».
-- افزودن دکمهٔ آیکونی در هدر دیالوگ (کنار `DialogTitle`) که یک `Popover` را باز می‌کند.
-- داخل `PopoverContent`: `Textarea` برای `businessInfo` + دکمهٔ Save.
-- تابع جدید `saveBusinessInfo()` که `upsert` می‌کند و وضعیت `businessSaving` و یک فلگ `businessSaved` را مدیریت می‌کند.
-- استفاده از کامپوننت موجود `@/components/ui/popover` و آیکون `Building2`/`Check` از `lucide-react`.
-- کلیدهای ترجمهٔ موجود (`businessLabel`, `businessRequiredTag`, `businessPlaceholder`, `businessRequired`) دوباره استفاده می‌شوند؛ یک کلید جدید برای متن دکمهٔ «ذخیره/ذخیره شد» در هر شش زبان اضافه می‌شود.
+- It already has the full language switcher + `T` tables. Add `outputLanguage: lang` to its `scenario-write` invocation so the generated scenario follows the selected language (today only the UI translates).
 
-### `ScenarioWriterDialog.tsx`
-- همان الگو: حذف کادر همیشه‌باز، افزودن آیکون + Popover + دکمهٔ Save و تابع `saveBusinessInfo()` (متن‌ها انگلیسی، مطابق بقیهٔ این دیالوگ).
+## Technical notes
 
-> دیتابیس و Edge function تغییری لازم ندارند (جدول و اعتبارسنجی از قبل آماده‌اند).
+- Allowed language set kept in sync between the two dialogs and the edge function.
+- No database or schema changes; business-info persistence and gating stay as-is.
+- `google/gemini-2.5-flash` already handles multilingual output, so no model change.
 
----
+## Verification
 
-## تأیید
-
-- اجرای دیالوگ در preview با Playwright: آیکون دیده شود، با کلیک باز شود، ذخیره کار کند (وضعیت «ذخیره شد») و بعد از بستن/بازکردن مقدار از حساب کاربر بارگذاری شود.
-- بررسی اینکه با خالی‌بودن، ساخت سناریو همچنان مسدود است.
+- Deploy the edge function, then `curl` it with `outputLanguage: "fa"` plus a sample business + product to confirm the scenario comes back in Persian and on-topic; repeat with `en`.
+- Use the preview (Playwright) to switch language in each dialog and confirm labels + RTL flip, then generate and confirm the output language.
