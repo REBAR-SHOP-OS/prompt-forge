@@ -1,39 +1,43 @@
-Rebuild the per-card **Narration** dialog so it shows the prompt narration, the actual narration spoken on the film, and a comparison/health check between them.
-
-## Problem
-- The Narration dialog only runs `extractNarration()`, which matches **quoted text only**. When the scenario writer emits the narration as a labeled line (`Narration: …` / the translated label) without quotes, or with non-standard quotes, it is missed → "No narration detected" even though the prompt contained narration.
-- The dialog never shows what was actually spoken in the rendered video, and never flags mismatches (missing narration on film, wrong wording, mispronunciation).
-
 ## Goal
-A single Narration dialog with three sections:
-1. **Narration (from prompt)** — what the narration *should* be.
-2. **Narration (on film)** — what was actually spoken, transcribed from the video audio.
-3. **Check** — automatic comparison: presence/absence, wording mismatch, and pronunciation issues, with a clear notice to the user. The rule: the on-film narration must match the prompt narration.
 
-## Changes
+The narration written in the scenario/prompt must ALWAYS be the single source of truth ("ملاک"): it must always appear in the Narration dialog's "From prompt" section, and the on-film transcript must always be compared against it. Today the dialog re-derives narration with a regex from each card's `input_prompt`, which silently fails for valid narration phrased outside the two patterns it recognizes — producing "No narration detected" even when the scenario clearly wrote narration (see screenshots).
 
-### 1. Fix prompt-narration extraction — `DashboardPage.tsx` `extractNarration()`
-- Keep the existing quoted-text matching.
-- Additionally capture **labeled narration lines**: any line starting with a narration label followed by `:` (the same labels the scenario writer uses — `Narration`, plus the localized labels for fa/ar/tr/es/fr), taking the remainder of the line (stripping surrounding quotes if present).
-- De-duplicate as today. This makes narration detected whether or not the model wrapped it in quotes.
+## Root cause
 
-### 2. Turn the Narration dialog into a comparison panel
-- Change `narrationViewer` state from `string[] | null` to the selected job object (so the dialog has access to `input_prompt` and `video.storage_path`). The trigger button passes the job instead of the pre-extracted array.
-- Dialog content:
-  - **From prompt**: render `extractNarration(job.input_prompt)`; if empty, show the existing empty hint.
-  - **On film**: only when the card has a completed video. Resolve a fetchable URL via `proxiedVideoUrl(job.video.storage_path)` and call the existing `video-transcript` edge function (same contract as `TranscriptPanel`). Show a "Transcribe" action / loading state, then render the transcript with the existing low-confidence word highlighting + click-to-hear pronunciation (reuse the logic/markup from `TranscriptPanel`).
-  - **Check**: after both are available, compute a normalized comparison client-side:
-    - prompt has narration but film has none → "Narration is missing from the film".
-    - film has speech but prompt has none → "Film contains narration that isn't in the prompt".
-    - both present but normalized text differs beyond a small threshold → "On-film narration differs from the prompt" and show both for review.
-    - any low-confidence (likely mispronounced) words present → "Possible pronunciation issues" with the highlighted words.
-    - all good → green "Narration matches the prompt".
+- `extractNarration` (`src/modules/generator-ui/lib/narration.ts`) only matches (1) a `Narration:` labeled line and (2) text inside quotes. Scenario/ad scenes also express spoken lines as `Character says: "…"`, `<speaker> says: …`, or short labeled lines without quotes. Anything outside the two patterns → empty → "No narration detected".
+- There is no persisted narration. Each open of the dialog re-runs the regex, so detection depends entirely on the exact wording stored in `input_prompt`. If the prompt is later edited or rephrased, the narration "reference" changes or disappears.
 
-### 3. Reuse, don't duplicate
-- Extract the transcript-rendering + pronunciation playback already in `TranscriptPanel` into a small shared piece (or import/reuse) so the Narration dialog and the Transcript page stay consistent. No new backend is added — it reuses `video-transcript` and `tts-generate`.
+## Plan
+
+### 1. Broaden and harden narration extraction (authoritative parser)
+In `src/modules/generator-ui/lib/narration.ts`, extend `extractNarration` to recognize every spoken-line shape the scenario writer emits, in priority order:
+- Localized `Narration:` label lines (existing).
+- Speaker lines: `<Name> says:`, `Character says:`, `Narrator:`, `Voiceover:` / `VO:` and their localized equivalents — capture the remainder of the line, stripping surrounding quotes.
+- Inline quoted dialogue (existing), straight/smart/guillemet quotes.
+- De-duplicate (existing).
+Keep it deterministic (no AI). This guarantees narration that exists in the prompt is detected regardless of phrasing.
+
+### 2. Make the scenario narration the persisted reference
+So the reference can never drift from what the scenario produced:
+- Capture the canonical narration at the moment cards are created from a scenario (the multi-scene/"Send to Pending" + split-generation paths in `DashboardPage.tsx`), using the broadened parser on each scene block, and store it alongside the card.
+- Persist it via a new nullable `narration_text` column on `generator_generation_jobs` (additive migration; nullable; existing rows unaffected; GRANTs already present on the table — re-affirm SELECT/INSERT/UPDATE for `authenticated` and `service_role`). Plumb it through `createJob` (job-orchestrator contract/gateway/service + `jobs-create` / `jobs-create-from-upload`) and surface it in `jobs-get` / `jobs-list`.
+- The Narration dialog and the card's narration badge use `narration_text` first (the authoritative scenario narration) and fall back to `extractNarration(input_prompt)` for older cards or manual prompts.
+
+### 3. Always compare the film against this reference
+`NarrationDialog` already transcribes the rendered video and runs `compareNarration`. Point its "From prompt" section and the comparison baseline at the authoritative narration from step 2, so the on-film check is always measured against the scenario narration and flags missing / mismatched / mispronounced lines.
 
 ## Technical notes
-- Comparison/normalization (lowercase, strip punctuation/diacritics, collapse whitespace) runs in the client — deterministic, no extra AI cost. Pronunciation flags come from the transcript's existing `words[].lowConfidence`.
-- Only the Narration dialog and `extractNarration` change; the card list, generation flow, and edge functions are untouched.
 
-No database or edge-function changes.
+- Migration: `ALTER TABLE public.generator_generation_jobs ADD COLUMN narration_text text;` followed by the standard GRANT block; no backfill required (NULL → fall back to extraction).
+- No change to the video-generation provider payload — narration stays inside `input_prompt` for generation; `narration_text` is metadata used only for the reference/check UI, so the working generation pipeline is untouched.
+- Pure-frontend fallback (step 1 + dialog wiring) already fixes the visible "No narration detected" bug on its own; the persistence in step 2 makes it durable against prompt edits.
+
+## Files
+- `src/modules/generator-ui/lib/narration.ts` — broaden parser.
+- `src/modules/generator-ui/components/NarrationDialog.tsx` — prefer `narration_text`, fall back to extraction.
+- `src/modules/generator-ui/pages/DashboardPage.tsx` — capture narration on card creation; pass to `createJob`; badge + dialog use authoritative value.
+- `src/modules/job-orchestrator/*` and `supabase/functions/_shared/modules/job-orchestrator/*`, `jobs-create`, `jobs-create-from-upload`, `jobs-get`, `jobs-list` — carry `narration_text`.
+- One new migration for the `narration_text` column + GRANTs.
+
+## Scope check
+If you prefer the smallest safe change first, I can ship steps 1 + 3 only (frontend) — that resolves the "No narration detected" screenshots immediately — and add the persistence (step 2) afterward. Tell me which scope you want.
