@@ -1755,6 +1755,81 @@ export default function ProductAdDialog({
           </DialogContent>
         </Dialog>
 
+        <input
+          ref={characterFileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => handleUploadCharacter(e.target.files?.[0])}
+        />
+
+        <Dialog open={characterPickerOpen} onOpenChange={(o) => { if (!uploadingCharacter) setCharacterPickerOpen(o) }}>
+          <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <UserRound className="h-4 w-4" aria-hidden="true" /> Choose a character
+              </DialogTitle>
+              <DialogDescription className="text-zinc-400">
+                Pick a character you created with the Character Sheet, or upload one. The ad scenario will feature this character.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div>
+              <button
+                type="button"
+                onClick={() => characterFileInputRef.current?.click()}
+                disabled={uploadingCharacter}
+                className="inline-flex items-center gap-2 rounded-md border border-amber-300/30 bg-amber-300/10 px-3 py-1.5 text-xs font-semibold text-amber-100 transition hover:border-amber-300/60 hover:bg-amber-300/20 disabled:opacity-50"
+              >
+                {uploadingCharacter ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <ImagePlus className="h-4 w-4" aria-hidden="true" />
+                )}
+                Upload character
+              </button>
+            </div>
+
+            <div className="mt-3">
+              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">Your characters</div>
+              {loadingCharacters ? (
+                <div className="flex items-center justify-center py-10 text-sm text-zinc-400">
+                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> Loading characters…
+                </div>
+              ) : characterPhotos.length === 0 ? (
+                <div className="py-10 text-center text-sm text-zinc-500">No characters yet. Create one with the Character Sheet, or upload an image above.</div>
+              ) : (
+                <div className="grid max-h-[50vh] grid-cols-3 gap-3 overflow-y-auto pr-1 sm:grid-cols-4">
+                  {characterPhotos.map((photo) => (
+                    <button
+                      key={photo.id}
+                      type="button"
+                      onClick={() => pickCharacter(photo)}
+                      className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-amber-300/40"
+                    >
+                      <img
+                        src={photo.url}
+                        alt={photo.title ?? 'Character'}
+                        loading="lazy"
+                        className="aspect-square w-full bg-black/40 object-cover"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden' }}
+                      />
+                      <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || t.untitled}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end pt-2">
+              <Button variant="ghost" size="sm" onClick={() => { if (!uploadingCharacter) setCharacterPickerOpen(false) }} disabled={uploadingCharacter}>
+                <ArrowLeft className="mr-1.5 h-4 w-4" aria-hidden="true" /> {t.back}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+
         <Dialog open={previewLightboxOpen && Boolean(imagePreviewUrl)} onOpenChange={setPreviewLightboxOpen}>
           <DialogContent dir={dir} className="max-w-3xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
             <DialogHeader>
