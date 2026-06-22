@@ -967,6 +967,23 @@ export default function ProductAdDialog({
   }, [open, defaultDuration])
 
   useEffect(() => {
+    let cancelled = false
+    if (open && userId) {
+      supabase
+        .from('generator_business_profiles')
+        .select('business_info')
+        .eq('user_id', userId)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (!cancelled && data?.business_info) setBusinessInfo(data.business_info)
+        })
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [open, userId])
+
+  useEffect(() => {
     return () => {
       if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
     }
