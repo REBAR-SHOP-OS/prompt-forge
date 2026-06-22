@@ -729,7 +729,35 @@ async function fetchAsInlineData(url: string): Promise<{ mimeType: string; data:
     const mimeType = data.type?.split(";")[0]?.trim() || "image/png";
     const buf = new Uint8Array(await data.arrayBuffer());
     return { mimeType, data: bytesToBase64(buf) };
+}
+
+/**
+ * Ensure a frame URL is downloadable by an EXTERNAL provider (e.g. DashScope),
+ * which fetches the URL itself over plain HTTP with no auth.
+ *
+ * Scene-chain / reframe frames are staged into our own Supabase Storage. The
+ * `wan-frames` bucket is PRIVATE, so a `getPublicUrl()` `/object/public/...`
+ * link returns 400 to an unauthenticated fetch — which surfaced as
+ * "Failed to download …scene-chain-…png" on chained cards. For own-storage
+ * objects we mint a time-limited signed URL with the service-role client so the
+ * provider can download it regardless of the bucket's public/private setting.
+ * Genuinely external URLs are returned unchanged.
+ */
+async function resolveDownloadableFrameUrl(url: string): Promise<string> {
+  const ownStorage = parseOwnStorageObject(url);
+  if (!ownStorage) return url;
+  try {
+    const client = getServiceClient();
+    // 6h covers long extension/queue waits before the provider downloads it.
+    const { data, error } = await client.storage
+      .from(ownStorage.bucket)
+      .createSignedUrl(ownStorage.key, 6 * 60 * 60);
+    if (error || !data?.signedUrl) return url;
+    return data.signedUrl;
+  } catch {
+    return url;
   }
+}
 
   const r = await fetch(url);
   if (!r.ok) throw new Error(`failed to fetch frame ${url}: ${r.status}`);
