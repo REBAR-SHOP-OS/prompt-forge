@@ -8718,9 +8718,18 @@ export default function DashboardPage() {
                       onClick={closePreview}
                       aria-label="Close preview"
                       title="Close preview"
-                      className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+                      className="absolute right-2 top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
                     >
                       <X className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void openTranscript(src)}
+                      aria-label="نمایش متن فیلم"
+                      title="متن فیلم"
+                      className="absolute left-2 top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 backdrop-blur transition hover:border-sky-300/40 hover:bg-sky-500/20 hover:text-sky-100"
+                    >
+                      <FileText className="h-4 w-4" aria-hidden="true" />
                     </button>
                     <VideoWithSoundtrack
                       videoKey={`${previewItem.job.id}:${src}`}
@@ -8738,6 +8747,12 @@ export default function DashboardPage() {
                       preload="metadata"
                       clipVolume={1}
                     />
+                    {transcriptOpen ? (
+                      <TranscriptPanel
+                        videoUrl={transcriptResolving ? null : transcriptVideoUrl}
+                        onClose={() => { setTranscriptOpen(false); setTranscriptVideoUrl(null) }}
+                      />
+                    ) : null}
                   </div>
                 )
               })() : (
