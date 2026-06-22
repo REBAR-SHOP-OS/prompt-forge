@@ -697,6 +697,10 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'Chargement des produits…',
     back: 'Retour',
     viewImage: "Voir l'image",
+    businessLabel: 'À propos de votre entreprise',
+    businessRequiredTag: '(obligatoire)',
+    businessPlaceholder: 'Décrivez votre entreprise : ce que vous vendez, vos produits/services, votre public cible et le ton de la marque…',
+    businessRequired: "Décrivez d'abord votre entreprise — le scénario doit y être pertinent.",
   },
 }
 
