@@ -285,7 +285,7 @@ export function VoiceoverDialog({
     if (!downloadUrl) return
     const a = document.createElement('a')
     a.href = downloadUrl
-    a.download = `voiceover-${gender}-${tone}-${Date.now()}.wav`
+    a.download = `voiceover-${currentVoice.label}-${tone}-${Date.now()}.wav`
     document.body.appendChild(a)
     a.click()
     a.remove()
