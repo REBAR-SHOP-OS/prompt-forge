@@ -1713,20 +1713,25 @@ export default function ProductAdDialog({
                 {t.regenerate}
               </Button>
               {isSplit && onSendScenes ? (
-                <Button size="sm" onClick={handleSendAll} disabled={isWriting || isSending}>
-                  {isSending ? (
+                <Button size="sm" onClick={handleSendAll} disabled={isWriting || isSending || isPreparingFrame}>
+                  {isSending || isPreparingFrame ? (
                     <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
                   ) : (
                     <Send className="h-4 w-4 mr-2" aria-hidden="true" />
                   )}
-                  {t.sendAll}
+                  {isPreparingFrame ? t.preparingFrame : t.sendAll}
                 </Button>
               ) : (
-                <Button size="sm" onClick={handleUseAsPrompt} disabled={isWriting || isSending}>
-                  <Wand2 className="h-4 w-4 mr-2" aria-hidden="true" />
-                  {t.useAsPrompt}
+                <Button size="sm" onClick={handleUseAsPrompt} disabled={isWriting || isSending || isPreparingFrame}>
+                  {isPreparingFrame ? (
+                    <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Wand2 className="h-4 w-4 mr-2" aria-hidden="true" />
+                  )}
+                  {isPreparingFrame ? t.preparingFrame : t.useAsPrompt}
                 </Button>
               )}
+
             </>
           ) : (
             <Button onClick={generate} disabled={isWriting || !canGenerate} size="sm">
