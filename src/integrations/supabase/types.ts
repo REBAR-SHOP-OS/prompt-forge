@@ -243,6 +243,24 @@ export type Database = {
         }
         Relationships: []
       }
+      generator_business_profiles: {
+        Row: {
+          business_info: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          business_info: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          business_info?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       generator_clip_overlays: {
         Row: {
           bg_color: string | null
