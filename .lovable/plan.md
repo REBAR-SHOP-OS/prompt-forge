@@ -1,21 +1,22 @@
-Refactor the DURATION section in `VoiceoverDialog.tsx` to make manual time entry always visible and directly accessible.
+## مشکل
 
-Current state
-- A `Select` dropdown lists Auto, 5s, 10s, 15s, 30s, 45s, and Custom…
-- The custom seconds input only appears after choosing “Custom…”
-- The second column is empty or shows a static description for other options
+بخش «Choose from products» (انتخاب از محصولات) تصاویر را خراب نشان می‌دهد چون از روش آدرس عمومی (`getPublicUrl`) استفاده می‌کند، در حالی‌که باکت ذخیره‌سازی محصولات خصوصی است. بخش «Storage → Product Photos» درست کار می‌کند چون آدرس‌ها را امضا (signed URL) می‌کند. باید همان روش را در انتخابگر محصول هم به کار ببریم تا همیشه همان تصاویرِ بخش «Upload a product photo» نمایش داده شوند.
 
-Target state
-- Two-column layout stays, but the left column becomes a mode toggle (Auto / Manual)
-- The right column always shows a numeric input for seconds (1–135)
-- When Auto is active the input is disabled/grayed out and shows a placeholder
-- When the user types into the input, the mode automatically switches from Auto to Manual
-- When the user switches back to Auto the input is cleared and disabled again
+## تغییرات (فقط فایل `src/modules/generator-ui/components/ProductAdDialog.tsx`)
 
-Implementation steps
-1. Replace `durationMode: string` and the `Select` with a boolean state `isAutoDuration` (default `true`) and a toggle UI (segmented control or simple toggle/switch) in the left column.
-2. Keep `customDuration` but make the numeric `Input` always rendered in the right column.
-3. Update the `onChange` of the numeric input so it sets `isAutoDuration = false` and stores the value.
-4. Update `resolveDurationSec()` to return `undefined` when `isAutoDuration === true`, otherwise read `customDuration`.
-5. Style: input disabled state uses `disabled:opacity-50`/`disabled:cursor-not-allowed`, label stays consistent with existing dark theme labels (`text-xs uppercase tracking-wider text-zinc-400`).
-6. Remove obsolete preset values (5, 10, 15, 30, 45) from state/logic — they are no longer in the UI.
+1. **امضای آدرس تصاویر هنگام بارگذاری محصولات**
+   - در تابع `openProductPicker` به‌جای ساخت آدرس با `getPublicUrl`، برای هر ردیف یک signed URL از باکت `user-images` ساخته شود (مشابه `signUserImageUrl` در `DashboardPage.tsx`).
+   - اگر `storage_path` خودش یک URL کامل از نوع public/object باشد، کلید داخل باکت استخراج و دوباره امضا شود؛ اگر signed URL یا blob/data باشد همان مقدار استفاده شود.
+   - یک تابع کمکی کوچک محلی برای استخراج کلید و امضا اضافه می‌شود (بدون تغییر منطق بک‌اند).
+
+2. **نمایش مطمئن تصاویر (fallback)**
+   - روی `<img>` گرید محصولات یک `onError` ساده اضافه شود تا در صورت خطای موقت، حالت خراب به‌شکل تمیزتری مدیریت شود (placeholder یا مخفی شدن تصویر) و فقط متن نام محصول باقی نماند.
+
+3. **اطمینان از همیشه‌بودن لیست**
+   - همان منبع فعلی (`generator_user_images` با `category = 'product'`) که دقیقاً همان محصولات بخش «Upload a product photo» است حفظ می‌شود؛ فقط آدرس‌دهی اصلاح می‌شود تا تصاویر همیشه و درست نمایش داده شوند.
+
+## بخش فنی
+
+- منبع داده تغییر نمی‌کند؛ فقط ساخت URL از `getPublicUrl` به `createSignedUrl` (با اعتبار طولانی، مثل بخش Storage) منتقل می‌شود.
+- بدون تغییر در بک‌اند، RLS، یا اسکیما.
+- پس از تغییر، با باز کردن دیالوگ Product Ad → «Choose from products» تصاویر باید دقیقاً مثل تب «Product Photos» نمایش داده شوند.
