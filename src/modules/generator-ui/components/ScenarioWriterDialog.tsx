@@ -37,6 +37,8 @@ export default function ScenarioWriterDialog({
   onSendScenes,
 }: Props) {
   const [duration, setDuration] = useState<ScenarioDuration>(defaultDuration)
+  const [businessInfo, setBusinessInfo] = useState('')
+  const [businessSaving, setBusinessSaving] = useState(false)
   const [idea, setIdea] = useState('')
   const [ideaMode, setIdeaMode] = useState<'manual' | 'auto'>('manual')
   const [isWriting, setIsWriting] = useState(false)
