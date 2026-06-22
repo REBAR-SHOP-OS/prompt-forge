@@ -9308,7 +9308,10 @@ export default function DashboardPage() {
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation()
-                              setNarrationViewer(narration)
+                              setNarrationViewer({
+                                prompt: video.input_prompt ?? null,
+                                videoStoragePath: video.video?.storage_path ?? null,
+                              })
                             }}
                             aria-label="Narration for this card"
                             title={hasNarration ? 'Narration for this card' : 'No narration detected in this card'}
