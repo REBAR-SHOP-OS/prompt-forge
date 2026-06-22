@@ -887,6 +887,8 @@ export default function ProductAdDialog({
     if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
     setImagePreviewUrl(null)
     setUploadedImageUrl(null)
+    setPreviewError(null)
+    setPreviewLoading(false)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
