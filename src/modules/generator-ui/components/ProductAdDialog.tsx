@@ -1874,9 +1874,7 @@ export default function ProductAdDialog({
                       {copiedIndex === i ? t.copied : t.copy}
                     </Button>
                   </div>
-                  <p dir="ltr" className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
-                    {text}
-                  </p>
+                  <SceneText text={text} narrationLabel={t.narration} />
                 </div>
               ))}
             </div>
