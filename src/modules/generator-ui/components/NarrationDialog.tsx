@@ -33,8 +33,14 @@ type TranscriptResponse = {
 export interface NarrationDialogProps {
   open: boolean
   onClose: () => void
-  /** The card's full input prompt (narration is extracted from it). */
+  /** The card's full input prompt (narration is extracted from it as fallback). */
   prompt: string | null
+  /**
+   * Authoritative narration captured from the scenario when the card was
+   * created. When present it is the source of truth ("ملاک") and overrides
+   * extraction from the prompt. One spoken line per newline.
+   */
+  narrationText?: string | null
   /** Storage path / URL to the rendered film, when the card has a video. */
   videoStoragePath: string | null
 }
@@ -43,8 +49,10 @@ function rtlOf(text: string): 'rtl' | 'ltr' {
   return /[\u0600-\u06FF]/.test(text) ? 'rtl' : 'ltr'
 }
 
-export function NarrationDialog({ open, onClose, prompt, videoStoragePath }: NarrationDialogProps) {
-  const promptLines = extractNarration(prompt)
+export function NarrationDialog({ open, onClose, prompt, narrationText, videoStoragePath }: NarrationDialogProps) {
+  const promptLines = narrationText
+    ? narrationText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
+    : extractNarration(prompt)
   const hasVideo = Boolean(videoStoragePath)
 
   const [transcript, setTranscript] = useState<string | null>(null)
