@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Clapperboard, LoaderCircle, RefreshCw, Copy, Check, Wand2, Send, ImagePlus, X } from 'lucide-react'
+import { Clapperboard, LoaderCircle, RefreshCw, Copy, Check, Wand2, Send, ImagePlus, X, Building2 } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
