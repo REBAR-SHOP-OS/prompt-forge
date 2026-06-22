@@ -606,6 +606,8 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequiredTag: '(zorunlu)',
     businessPlaceholder: 'İşletmenizi açıklayın: ne sattığınız, ürün/hizmetleriniz, hedef kitle ve marka tonu…',
     businessRequired: 'Lütfen önce işletmenizi açıklayın — senaryo bununla ilgili olmalı.',
+    businessSave: 'Kaydet',
+    businessSaved: 'Kaydedildi',
   },
   es: {
     title: 'Guion de Anuncio de Producto',
