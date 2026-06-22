@@ -207,6 +207,7 @@ async function callGateway(
   characterSheet?: CharacterSheetOpts,
   businessInfo?: string,
   outputLanguage = "en",
+  narration = true,
 ): Promise<Response> {
   const refText = characterSheet
     ? `Brief: ${idea}\nThe attached image IS the lead character — match their exact face, hair, wardrobe, body, and overall look in every shot, and keep them perfectly consistent throughout the film.`
@@ -239,7 +240,7 @@ async function callGateway(
     body: JSON.stringify({
       model: "google/gemini-2.5-flash",
       messages: [
-        { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage) },
+        { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage, narration) },
         { role: "user", content: userContent },
       ],
     }),
