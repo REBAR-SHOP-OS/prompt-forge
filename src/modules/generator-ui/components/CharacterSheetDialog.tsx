@@ -32,6 +32,7 @@ type Props = {
   open: boolean
   onOpenChange: (open: boolean) => void
   userId: string | null
+  onUseCharacter?: (c: { id: string; url: string; title: string | null }) => void
 }
 
 
