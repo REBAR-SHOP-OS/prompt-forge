@@ -18,8 +18,8 @@ type Props = {
   onOpenChange: (open: boolean) => void
   defaultDuration: ScenarioDuration
   userId: string | null
-  onUseAsPrompt: (scenario: string, imageUrl?: string) => void
-  onSendScenes?: (scenes: string[], imageUrl?: string) => void | Promise<void>
+  onUseAsPrompt: (scenario: string, imageUrl?: string, duration?: ScenarioDuration) => void
+  onSendScenes?: (scenes: string[], imageUrl?: string, duration?: ScenarioDuration) => void | Promise<void>
 
 }
 
