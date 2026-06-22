@@ -138,12 +138,20 @@ function buildSystemPrompt(
       : (autoFromImage ? autoLine : "You are a world-class advertising creative director who writes persuasive, commercial-style video scenarios designed to promote and sell the subject.");
 
   const adWithCharacter = isAd && Boolean(productAd?.characterImageUrl);
-  const narrationMulti = adWithCharacter
-    ? `In EVERY scene, weave in the character's spoken dialogue as narration that promotes the product, formatted inline as Character says: "...". The spoken lines count toward the scene word count.`
-    : "";
-  const narrationSingle = adWithCharacter
-    ? `Weave in the character's spoken dialogue as narration that promotes the product, formatted inline as Character says: "...". The spoken lines count toward the word limit.`
-    : "";
+  const narrationLabel = NARRATION_LABELS[outputLanguage] ?? NARRATION_LABELS.en;
+  const narrationSpeaker = isCharacter
+    ? "the lead character's spoken dialogue"
+    : adWithCharacter
+      ? "the on-screen character's spoken dialogue that promotes the product"
+      : "a persuasive voiceover line that promotes the product";
+  const narrationFormat = [
+    `STRUCTURE EACH SCENE IN TWO PARTS, in this exact order:`,
+    `(1) First write the VISUAL scenario only — subject, action, camera move, and lighting — with NO spoken words mixed in.`,
+    `(2) Then, on a NEW line, write the narration on its own line, starting with the exact label "${narrationLabel}:" followed by ${narrationSpeaker} in quotes.`,
+    `The narration text counts toward the word limit. Keep spoken lines short and realistically timed to the duration.`,
+  ].join(" ");
+  const narrationMulti = narrationFormat;
+  const narrationSingle = narrationFormat;
 
   if (sceneCount > 1) {
     const numWord = sceneCount === 2 ? "TWO" : sceneCount === 3 ? "THREE" : sceneCount === 9 ? "NINE" : String(sceneCount);
