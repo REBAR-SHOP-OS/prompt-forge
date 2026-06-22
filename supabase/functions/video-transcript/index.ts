@@ -220,7 +220,7 @@ Deno.serve(async (req) => {
       return json({ error: 'The video file is empty or too small to transcribe.' }, 400)
     }
 
-    const transcript = await transcribeVideo(
+    const { transcript, words } = await transcribeVideo(
       apiKey,
       videoBytes,
       sourceUrl,
@@ -235,7 +235,7 @@ Deno.serve(async (req) => {
       translatedText = await translateText(apiKey, transcript, targetLanguage)
     }
 
-    return json({ transcript, translatedText, targetLanguage })
+    return json({ transcript, words, translatedText, targetLanguage })
   } catch (e) {
     const status = (e as Error & { status?: number }).status
     const message = e instanceof Error ? e.message : 'Unexpected error'
