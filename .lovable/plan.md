@@ -1,20 +1,21 @@
-## Plan: Show translation below the original (original kept as reference)
+## Plan: Only warn when the resulting name actually looks wrong
 
-Selecting a language currently replaces the original transcript with the translation. Change it so the original stays visible as reference and the translation appears beneath it.
+The warning currently checks the raw catalog title (e.g. `rebar_stirrup_005`), which always looks like a code — so even after cleaning to a readable "rebar stirrup", the warning still shows. Fix: validate the cleaned name placed in the field, not the raw title.
 
-### Change — `src/modules/generator-ui/components/TranscriptPanel.tsx`
+### Change — `src/modules/generator-ui/components/ProductAdDialog.tsx`
 
-**Rendering (lines ~241–280):**
-- Always render the **Original** block (existing word-by-word renderer with low-confidence highlighting + clickable pronunciation), driven by `words`/`transcript`, regardless of selected language.
-- When `language !== ORIGINAL`, render a **Translation** block below it showing `displayText`, with RTL direction from the selected language's `rtl` flag.
-- Add small section labels ("Original" and the selected language's label) styled like existing `text-xs uppercase tracking-wide text-zinc-400` headers, with a thin divider between blocks.
+**1. `looksLikeCode` — evaluate the cleaned name**
+- Detect a name still problematic after cleaning:
+  - empty/whitespace, or
+  - still contains code separators / leftover digits (`_`, `-`, or embedded digits), or
+  - a single gibberish token with no readable word.
+- A normal cleaned name with real words and spaces (e.g. "rebar stirrup") returns `false` → no warning.
 
-**State handling:**
-- `showWords` = render original with word highlighting whenever `words.length > 0` (no longer gated to `language === ORIGINAL`); falls back to `transcript` text when there are no words.
-- Low-confidence legend keeps showing for the original block.
-- RTL: original block uses Persian-char detection on the transcript; translation block uses the selected language's `rtl` flag.
-- `handleLanguageChange` translation loading/caching logic unchanged.
+**2. `pickProduct` (line ~944)**
+- Compute `cleaned = cleanProductName(photo.title)`.
+- Set the field to `cleaned`.
+- `setNameNeedsReview(looksLikeCode(cleaned))` — check the cleaned value instead of `photo.title`.
 
 ### Result
-- Language = Original → only the original block (current behavior).
-- Language = a translation → original block on top (reference, still highlight/click-to-hear), translated text below under its language label.
+- Pick `rebar_stirrup_005` → field "rebar stirrup", no warning.
+- Pick something still code-like after cleaning (e.g. `sku9931x`, leftover digits/garbled) → warning shown.
