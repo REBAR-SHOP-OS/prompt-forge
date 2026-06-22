@@ -1436,7 +1436,7 @@ export default function ProductAdDialog({
                     )}
                   </button>
                 </PopoverTrigger>
-                <PopoverContent align="end" className="w-80 border-white/10 bg-[#0b0c0e] text-zinc-100">
+                <PopoverContent align="end" className="w-[28rem] max-w-[92vw] border-white/10 bg-[#0b0c0e] text-zinc-100">
                   <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
                     {t.businessLabel} <span className="text-amber-300">{t.businessRequiredTag}</span>
                   </div>
@@ -1447,9 +1447,10 @@ export default function ProductAdDialog({
                       setBusinessSaved(false)
                       if (error) setError(null)
                     }}
-                    rows={4}
+                    rows={10}
+                    maxLength={undefined}
                     placeholder={t.businessPlaceholder}
-                    className="min-h-[96px] border-white/10 bg-black/30 text-sm text-zinc-100"
+                    className="max-h-[55vh] min-h-[220px] resize-y border-white/10 bg-black/30 text-sm text-zinc-100"
                   />
                   <div className="mt-2 flex justify-end">
                     <Button
