@@ -295,6 +295,8 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const idea = typeof body?.idea === "string" ? body.idea.trim() : "";
     const businessInfo = typeof body?.businessInfo === "string" ? body.businessInfo.trim().slice(0, 2000) : "";
+    const ALLOWED_LANGS = ["en", "fa", "ar", "tr", "es", "fr"];
+    const outputLanguage = ALLOWED_LANGS.includes(body?.outputLanguage) ? body.outputLanguage : "en";
     const durationRaw = Number(body?.durationSeconds);
     const duration = [5, 10, 15, 30, 45, 135].includes(durationRaw) ? durationRaw : 0;
     const imageUrlRaw = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
