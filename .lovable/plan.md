@@ -1,27 +1,16 @@
-# Narration choice for ad scenario
+Make the About Your Business popover textarea larger and ensure there is no character limit.
 
-When the user clicks the "Generate ad scenario" icon/button, show two choices — **With narration** and **Without narration** — and write the scenario based on the chosen option.
+### Current state
+- The business info popover is `w-80` (320 px) with a `Textarea` of `rows={4}` / `min-h-[96px]`.
+- The `business_info` DB column is already `text` (unlimited length).
+- There is no `maxLength` prop on the textarea, so text entry is already unlimited.
 
-## Behavior
-- Clicking the generate button no longer fires generation immediately. Instead it opens a small popover menu with two items:
-  - **With narration** → scenario includes the spoken narration line per scene (current behavior).
-  - **Without narration** → scenario contains only the visual scenario (subject, action, camera, lighting), with no narration/spoken lines.
-- The same two-option menu is used for the **Regenerate** button after a scenario already exists, so users can switch modes.
-- The selected mode is passed to the backend so the AI either includes or omits narration.
+### Changes
+1. **Popover width**: Change `w-80` to `w-96` (384 px) so the field has more horizontal space.
+2. **Textarea size**: Increase `rows` from 4 to 6 and `min-h` from `96px` to `144px` so the user sees more content without scrolling.
+3. **Character limit**: Add an explicit `maxLength={undefined}` guard (or remove any accidental limit if found) to guarantee no truncation.
 
-## Frontend changes (`src/modules/generator-ui/components/ProductAdDialog.tsx`)
-- Add a localized label set: `withNarration` / `withoutNarration` (en, fa, ar, tr, es, fr) in the translation tables.
-- Change `generate()` to accept a `withNarration: boolean` argument and include `narration: withNarration` in the `scenario-write` invoke body.
-- Wrap the main generate button (line ~1969) and the regenerate button (line ~1934) in a `Popover` (already imported). The trigger keeps the existing icon/label; the content lists two buttons that call `generate(true)` and `generate(false)` then close the popover.
-- Keep all existing disabled/loading states.
+### File
+- `src/modules/generator-ui/components/ProductAdDialog.tsx` — lines around the business info `PopoverContent` and `Textarea`.
 
-## Backend changes (`supabase/functions/scenario-write/index.ts`)
-- Read `narration` from the request body (default `true` for backward compatibility).
-- Thread it into `buildSystemPrompt`.
-- When `narration` is `true`: keep the current narration format block.
-- When `narration` is `false`: omit the narration block and instead add an instruction to write the visual scenario only — no narration label, no voiceover, no spoken dialogue.
-- Redeploy the `scenario-write` edge function.
-
-## Technical notes
-- `narration` is validated as a boolean; anything non-boolean falls back to `true`.
-- No schema/storage changes. UI-and-prompt only.
+No backend or database changes needed.
