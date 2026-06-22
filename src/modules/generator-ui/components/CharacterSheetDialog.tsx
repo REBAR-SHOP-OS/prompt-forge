@@ -214,8 +214,9 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
         .upload(path, file, { contentType: file.type, upsert: false })
       if (up.error) throw up.error
       const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
-      setLogoSendUrl(pub.publicUrl)
-      setLogoUrl(await signUrl(pub.publicUrl))
+      const signedLogo = await signUrl(pub.publicUrl)
+      setLogoSendUrl(signedLogo)
+      setLogoUrl(signedLogo)
       setApplyLogo(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Logo upload failed.')
