@@ -1098,11 +1098,30 @@ export default function ProductAdDialog({
                     aria-label={t.viewImage}
                     className="block cursor-zoom-in rounded-md"
                   >
-                    <img
-                      src={imagePreviewUrl}
-                      alt="Product"
-                      className="h-20 w-20 rounded-md border border-white/10 object-cover transition hover:border-white/30"
-                    />
+                    {previewError ? (
+                      <div className="flex h-20 w-20 flex-col items-center justify-center gap-1 rounded-md border border-red-500/40 bg-red-500/10 px-1 text-center text-[9px] text-red-200">
+                        <X className="h-4 w-4" aria-hidden="true" />
+                        <span>{previewError}</span>
+                      </div>
+                    ) : (
+                      <div className="relative h-20 w-20">
+                        <img
+                          src={imagePreviewUrl}
+                          alt="Product"
+                          className="h-20 w-20 rounded-md border border-white/10 object-cover transition hover:border-white/30"
+                          onLoad={() => setPreviewLoading(false)}
+                          onError={() => {
+                            setPreviewLoading(false)
+                            setPreviewError('Image load error')
+                          }}
+                        />
+                        {previewLoading && (
+                          <div className="absolute inset-0 flex items-center justify-center rounded-md bg-black/40">
+                            <LoaderCircle className="h-5 w-5 animate-spin text-white" aria-hidden="true" />
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </button>
                   <button
                     type="button"
