@@ -943,8 +943,9 @@ export default function ProductAdDialog({
       // Generation pipeline still receives the function's public URL (validator
       // contract is unchanged); only the preview uses a signed URL.
       setUploadedImageUrl((json.publicUrl as string) ?? signedPreview)
-      if (!productName.trim() && photo.title) setProductName(cleanProductName(photo.title))
-      setNameNeedsReview(looksLikeCode(photo.title))
+      const cleaned = cleanProductName(photo.title)
+      if (!productName.trim() && photo.title) setProductName(cleaned)
+      setNameNeedsReview(looksLikeCode(cleaned))
       setProductPickerOpen(false)
     } catch (e) {
       setPreviewLoading(false)
