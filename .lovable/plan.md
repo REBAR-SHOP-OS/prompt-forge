@@ -1,44 +1,60 @@
-## Goal
-When the user picks a duration inside the **Product Ad Scenario** (or **Scenario Writer**) dialog and then sends it to the prompt, the main toolbar/prompt duration must update to match that selection (e.g. pick 30s in the dialog → main prompt shows 30s). The user can still change it afterward in the toolbar.
+# قابلیت رونویسی و ترجمه‌ی فیلم در پری‌ویو
 
-## Current behavior
-- The dialog already receives `defaultDuration` from the toolbar, so it opens pre-set to the current toolbar duration. ✅
-- But when the user changes the duration inside the dialog and clicks **Use as prompt** / **Send**, the chosen duration is NOT sent back. The callbacks `onUseAsPrompt(scenario, imageUrl)` and `onSendScenes(scenes, imageUrl)` carry no duration, so `durationSeconds` in `DashboardPage` stays unchanged. ❌
+یک آیکون رونویسی (transcript) کنار دکمه‌ی بستن در پنجره‌ی پری‌ویوِ بزرگ اضافه می‌شود. با کلیک روی آن، صدای فیلم با هوش مصنوعی به متن تبدیل می‌شود و یک منوی انتخاب زبان امکان ترجمه‌ی متن را فراهم می‌کند.
 
-## Change (frontend only)
-Pass the dialog's selected `duration` back through the callbacks and apply it to the toolbar state.
-
-### 1. `src/modules/generator-ui/components/ProductAdDialog.tsx`
-- Extend prop types:
-  - `onUseAsPrompt: (scenario: string, imageUrl?: string, duration?: ProductAdDuration) => void`
-  - `onSendScenes?: (scenes: string[], imageUrl?: string, duration?: ProductAdDuration) => void | Promise<void>`
-- In `handleUseAsPrompt` pass `duration`: `onUseAsPrompt(scenes.join('\n\n'), frameUrl, duration)`
-- In `handleSendAll` pass `duration`: `await onSendScenes(scenes, frameUrl, duration)`
-
-### 2. `src/modules/generator-ui/components/ScenarioWriterDialog.tsx`
-- Same signature extension with `ScenarioDuration`.
-- Pass `duration` in both `onUseAsPrompt(...)` and `onSendScenes(...)` calls.
-
-### 3. `src/modules/generator-ui/pages/DashboardPage.tsx`
-- In the `<ProductAdDialog>` and `<ScenarioWriterDialog>` JSX handlers (around lines 8366–8412), update the callbacks to receive the `duration` argument and call `setDurationSeconds(duration)` when provided, before/alongside setting the prompt text.
+## رفتار مورد انتظار
 
 ```text
-onUseAsPrompt={(text, imageUrl, duration) => {
-  if (duration) setDurationSeconds(duration)
-  setPromptText(text)
-  ...
-}}
-onSendScenes={async (scenes, imageUrl, duration) => {
-  if (duration) setDurationSeconds(duration)
-  ...
-}}
+┌──────────────────────────────┐
+│ [▢ متن] [✕]   ← دکمه‌های بالای پری‌ویو
+│                              │
+│        ویدیوی فیلم           │
+│                              │
+└──────────────────────────────┘
+        ↓ کلیک روی «متن»
+┌──────────────────────────────┐
+│  Transcript        [زبان ▼]  │
+│  ─────────────────────────   │
+│  ...متن گفته‌شده در فیلم...    │
+│                              │
+│  (ترجمه پس از انتخاب زبان)    │
+└──────────────────────────────┘
 ```
 
-## Why this is safe
-- Purely additive optional parameter; existing calls without `duration` still work.
-- `durationSeconds` and the dialog durations share the same union (`5 | 10 | 15 | 30 | 45 | 135`), so no type mismatch.
-- No backend, schema, or generation-logic changes.
+- آیکون فقط برای آیتم‌های ویدیویی (نه تصویر) و وقتی فایل ویدیو موجود است نمایش داده می‌شود.
+- اولین کلیک: صدای فیلم رونویسی می‌شود و متن اصلی (به زبان تشخیص‌داده‌شده) نمایش داده می‌شود.
+- منوی زبان شامل چند زبان (فارسی، انگلیسی، عربی، فرانسوی، اسپانیایی، آلمانی، ترکی) است؛ با انتخاب هر زبان، متن به آن زبان ترجمه و نمایش داده می‌شود.
+- وضعیت‌های loading/error به‌صورت شفاف نشان داده می‌شوند؛ در صورت خطای STT دوباره‌تلاش امکان‌پذیر است.
+- نتیجه‌ی رونویسی برای هر فیلم کش می‌شود تا با تعویض زبان دوباره رونویسی انجام نشود (فقط ترجمه دوباره اجرا می‌شود).
 
-## Validation
-- Build passes automatically.
-- Manual: open Product Ad dialog, set 30s, Use as prompt → toolbar shows 30s; confirm toolbar can still be changed manually afterward.
+## بخش بک‌اند (Edge Function جدید: `video-transcript`)
+
+یک edge function امن که:
+1. JWT کاربر را در کد اعتبارسنجی می‌کند و ورودی را با Zod می‌سنجد (`videoUrl` یا `storagePath`، و `targetLanguage` اختیاری، و `transcript` اختیاری برای حالت فقط‌ترجمه).
+2. بایت‌های ویدیو را از URL امضاشده/مسیر استوریج دانلود می‌کند.
+3. **رونویسی**: فایل را به‌صورت `multipart/form-data` به Lovable AI STT می‌فرستد
+   (`POST https://ai.gateway.lovable.dev/v1/audio/transcriptions`، مدل `openai/gpt-4o-mini-transcribe`، حالت non-streaming) و متن کامل را می‌گیرد.
+4. **ترجمه** (در صورت ارسال `targetLanguage`): متن را با chat completions
+   (`POST https://ai.gateway.lovable.dev/v1/chat/completions`) به زبان مقصد ترجمه می‌کند و فقط متن ترجمه را برمی‌گرداند.
+5. پاسخ: `{ transcript, translatedText?, targetLanguage? }`. هدرهای CORS روی همه‌ی پاسخ‌ها (از جمله خطاها).
+
+این تابع از `LOVABLE_API_KEY` که از قبل موجود است استفاده می‌کند؛ نیازی به secret جدید نیست. خطاهای ۴۰۲/۴۲۹/۵۰۰ به‌صورت پیام قابل‌فهم به فرانت‌اند منتقل می‌شوند.
+
+## بخش فرانت‌اند
+
+**کامپوننت جدید `TranscriptPanel.tsx`** در `src/modules/generator-ui/components/`:
+- منوی انتخاب زبان (Select از shadcn).
+- نمایش متن با اسکرول، حالت loading/error، و دکمه‌ی دوباره‌تلاش.
+- فراخوانی `supabase.functions.invoke('video-transcript', ...)`؛ کش کردن متن اصلی در state و فقط فراخوانی ترجمه هنگام تعویض زبان.
+- متن با direction درست (rtl برای فارسی/عربی) نمایش داده می‌شود.
+
+**ویرایش `DashboardPage.tsx`** (بلوک پری‌ویوِ ویدیو حوالی خطوط ۸۶۹۲–۸۷۲۲):
+- افزودن دکمه‌ی آیکون رونویسی (آیکون `FileText`/`Captions` از lucide) کنار دکمه‌ی بستن، فقط وقتی `previewItem.job.video?.storage_path` موجود است.
+- state محلی برای باز/بسته بودن پنل و نگه‌داشتن URL امضاشده‌ی ویدیو (با همان `signStorageUrl`/`getCardVideoSrc` موجود).
+- رندر `TranscriptPanel` به‌صورت overlay داخل همان کادر پری‌ویو.
+
+## ملاحظات
+
+- تغییری در منطق تولید ویدیو، اسکیمای دیتابیس یا فایل‌های auto-generated داده نمی‌شود.
+- افزودنی و غیرمخرب است؛ روی جریان‌های موجود اثری ندارد.
+- صحت با `supabase--curl_edge_functions` (تست زنده‌ی تابع) و بررسی UI در پری‌ویو راستی‌آزمایی می‌شود.
