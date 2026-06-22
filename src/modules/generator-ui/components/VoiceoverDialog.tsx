@@ -212,7 +212,7 @@ export function VoiceoverDialog({
         user_id: uid,
         storage_path: path,
         kind: 'voiceover',
-        name: `Voiceover (${gender}, ${tone})`,
+        name: `Voiceover (${currentVoice.label}, ${tone})`,
         size_bytes: blob.size,
         mime_type: blob.type || null,
       })
