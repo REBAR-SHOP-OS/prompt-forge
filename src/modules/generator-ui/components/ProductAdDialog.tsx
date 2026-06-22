@@ -149,7 +149,38 @@ async function signProductPhotoUrl(storagePath: string | null | undefined): Prom
   return raw
 }
 
+/** Extract the object key inside the wan-frames bucket from a stored path/URL. */
+function framesObjectKey(storagePath: string | null | undefined): string | null {
+  if (!storagePath) return null
+  const marker = `/${FRAMES_BUCKET}/`
+  const idx = storagePath.indexOf(marker)
+  if (idx >= 0) {
+    // Strip any query string (e.g. an expired/broken public URL) before decoding.
+    const tail = storagePath.slice(idx + marker.length).split('?')[0]
+    return decodeURIComponent(tail)
+  }
+  if (!/^https?:|^blob:|^data:/.test(storagePath)) return storagePath
+  return null
+}
 
+/**
+ * Resolve a displayable signed URL for a private wan-frames object.
+ * `wan-frames` is a PRIVATE bucket, so public URLs return "Bucket not found".
+ * Throws if signing fails so the caller can show a clear error state.
+ */
+async function signFramesUrl(storagePath: string | null | undefined): Promise<string> {
+  const raw = storagePath ?? ''
+  if (/^blob:|^data:/.test(raw)) return raw
+  const key = framesObjectKey(raw)
+  if (!key) throw new Error('Could not resolve image path')
+  const { data, error } = await supabase.storage
+    .from(FRAMES_BUCKET)
+    .createSignedUrl(key, 60 * 60 * 24 * 7)
+  if (error || !data?.signedUrl) {
+    throw new Error(error?.message || 'Could not load image')
+  }
+  return data.signedUrl
+}
 
 const SPLIT_DURATIONS = [30, 45, 135]
 const sceneRange = (i: number) => `${i * 15}–${(i + 1) * 15}s`
