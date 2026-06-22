@@ -737,7 +737,7 @@ export default function ScenarioWriterDialog({
                 >
                   <div className="mb-1.5 flex items-center justify-between">
                     <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                      Scene {i + 1} ({sceneRange(i)})
+                      {t.scene} {i + 1} ({sceneRange(i)})
                     </div>
                     <Button
                       variant="ghost"
@@ -751,10 +751,10 @@ export default function ScenarioWriterDialog({
                       ) : (
                         <Copy className="h-3.5 w-3.5 mr-1" aria-hidden="true" />
                       )}
-                      {copiedIndex === i ? 'Copied' : 'Copy'}
+                      {copiedIndex === i ? t.copied : t.copy}
                     </Button>
                   </div>
-                  <p dir="ltr" className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
+                  <p dir={dir} className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
                     {text}
                   </p>
                 </div>
