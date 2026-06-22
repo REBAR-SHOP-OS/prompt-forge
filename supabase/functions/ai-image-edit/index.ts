@@ -129,16 +129,20 @@ Deno.serve(async (req) => {
       ? `You will receive ${imageUrls.length} images. Image 1 is the BASE image to edit/transform. The remaining ${imageUrls.length - 1} image(s) are visual REFERENCES — use their style, subject, products, or details to guide the edit. Apply this instruction (which may be in any language, including Persian/Farsi/Arabic) to image 1: ${prompt}.${aspectRatio ? ` The output image MUST keep a strict ${aspectRatio} aspect ratio.` : " Preserve the overall composition and aspect ratio of the base image unless the instruction explicitly requires otherwise."} Respond with ONLY the resulting image — no text, captions, or explanations.`
       : `Edit the provided image as follows: ${prompt}.${aspectRatio ? ` The output image MUST keep a strict ${aspectRatio} aspect ratio.` : " Preserve the overall composition and aspect ratio of the original image unless the instruction explicitly requires otherwise."} Respond with ONLY the edited image — no text, captions, or explanations.`;
 
+    // Inline private-bucket URLs as data URLs so the AI gateway can read them.
+    const inlinedUrls = await Promise.all(imageUrls.map((u) => toInlineDataUrl(u)));
+
     const messageContent = maskUrl
       ? [
           { type: "text", text: `You will receive two images. Image 1 is the ORIGINAL. Image 2 is a strict edit MASK (transparent background; opaque/white pixels mark the editable region). Only the white/opaque pixels of the mask define the editable region — DO NOT alter pixels where the mask is transparent. Keep every pixel outside the mask absolutely identical (same composition, colors, lighting, subject, pose, background). The user instruction (which may be in any language, including Persian/Farsi/Arabic) describes what to put inside the masked region: ${prompt}.${aspectRatio ? ` Output MUST keep a strict ${aspectRatio} aspect ratio.` : ""} Respond with ONLY the edited image — no text.` },
-          { type: "image_url", image_url: { url: imageUrls[0] } },
+          { type: "image_url", image_url: { url: inlinedUrls[0] } },
           { type: "image_url", image_url: { url: maskUrl } },
         ]
       : [
           { type: "text", text: multiRefText },
-          ...imageUrls.map((url) => ({ type: "image_url", image_url: { url } })),
+          ...inlinedUrls.map((url) => ({ type: "image_url", image_url: { url } })),
         ];
+
 
     const callModel = async (model: string) => {
       return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
