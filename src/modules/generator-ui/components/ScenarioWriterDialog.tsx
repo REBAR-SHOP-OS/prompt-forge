@@ -708,7 +708,7 @@ export default function ScenarioWriterDialog({
                     <button
                       type="button"
                       onClick={clearImage}
-                      aria-label="Remove image"
+                      aria-label={t.removeImage}
                       className="absolute -right-1.5 -top-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-zinc-900 text-zinc-200 ring-1 ring-white/20 hover:bg-zinc-800"
                     >
                       <X className="h-3 w-3" aria-hidden="true" />
