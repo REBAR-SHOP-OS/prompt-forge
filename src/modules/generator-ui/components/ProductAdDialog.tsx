@@ -553,6 +553,7 @@ const T: Record<Lang, Record<string, string>> = {
     regenerate: 'Yeniden oluştur',
     sendAll: 'Tümünü Bekleyenlere gönder',
     useAsPrompt: 'İstem olarak kullan',
+    preparingFrame: 'Kare hazırlanıyor…',
     generate: 'Reklam senaryosu oluştur',
     language: 'Dil',
     chooseFromProducts: 'Ürünlerden seç',
