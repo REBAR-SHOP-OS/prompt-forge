@@ -57,6 +57,7 @@ export const jobService: JobService = {
     if (input.aspectRatio) updates.requested_aspect_ratio = input.aspectRatio;
     if (input.durationSeconds) updates.requested_duration = input.durationSeconds;
     if (input.draftGroupId) updates.draft_group_id = input.draftGroupId;
+    if (input.narrationText !== undefined) updates.narration_text = input.narrationText ?? null;
     if (Object.keys(updates).length > 0) {
       const { error: updErr } = await svc
         .from("generator_generation_jobs")
