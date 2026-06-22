@@ -120,13 +120,47 @@ export function VoiceoverDialog({
 }: VoiceoverDialogProps) {
   const [text, setText] = useState('')
   const [gender, setGender] = useState<Gender>('female')
+  const [voiceId, setVoiceId] = useState<string>(() => defaultVoiceForGender('female').id)
   const [tone, setTone] = useState<Tone>('advertising')
   const [isAutoDuration, setIsAutoDuration] = useState<boolean>(true)
   const [customDuration, setCustomDuration] = useState<string>('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
-  
+  const [playingSampleId, setPlayingSampleId] = useState<string | null>(null)
+
   const lastUrlRef = useRef<string | null>(null)
+  const sampleAudioRef = useRef<HTMLAudioElement | null>(null)
+
+  const currentVoice = getVoiceById(voiceId) ?? defaultVoiceForGender(gender)
+
+  function handleGenderChange(next: Gender) {
+    setGender(next)
+    // Reset the selected voice to the first voice of the new gender group.
+    setVoiceId(defaultVoiceForGender(next).id)
+  }
+
+  function playSample(id: string) {
+    const voice = getVoiceById(id)
+    if (!voice) return
+    let el = sampleAudioRef.current
+    if (!el) {
+      el = new Audio()
+      sampleAudioRef.current = el
+      el.addEventListener('ended', () => setPlayingSampleId(null))
+    }
+    // Toggle: clicking the currently-playing sample stops it.
+    if (playingSampleId === id && !el.paused) {
+      el.pause()
+      el.currentTime = 0
+      setPlayingSampleId(null)
+      return
+    }
+    el.pause()
+    el.src = voice.sampleUrl
+    el.currentTime = 0
+    setPlayingSampleId(id)
+    void el.play().catch(() => setPlayingSampleId(null))
+  }
 
   function resolveDurationSec(): number | undefined {
     if (isAutoDuration) return undefined
