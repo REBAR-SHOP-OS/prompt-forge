@@ -472,24 +472,11 @@ export function VoiceoverDialog({
         </div>
 
         <DialogFooter className="gap-2 sm:gap-2">
-          {onUseAsSoundtrack ? (
-            <Button
-              type="button"
-              variant="secondary"
-              size="icon"
-              onClick={handleUseAsSoundtrack}
-              disabled={!audioUrl}
-              aria-label="Use as soundtrack"
-              title="Use as soundtrack"
-            >
-              <Music2 className="h-4 w-4" />
-            </Button>
-          ) : null}
           <Button
             type="button"
             variant="secondary"
             onClick={handleDownload}
-            disabled={!audioUrl}
+            disabled={!activeVoiceoverUrl && !audioUrl}
           >
             <Download className="mr-2 h-4 w-4" />
             Download
