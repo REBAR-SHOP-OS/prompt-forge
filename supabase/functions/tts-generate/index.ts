@@ -234,7 +234,7 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json().catch(() => null) as
-      | { text?: string; gender?: string; tone?: string; durationSec?: number }
+      | { text?: string; gender?: string; tone?: string; durationSec?: number; voiceName?: string }
       | null
     if (!body) {
       return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
