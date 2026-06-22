@@ -125,6 +125,8 @@ import AiImageDialog from '@/modules/generator-ui/components/AiImageDialog'
 import ScenarioWriterDialog from '@/modules/generator-ui/components/ScenarioWriterDialog'
 import ProductAdDialog from '@/modules/generator-ui/components/ProductAdDialog'
 import { TranscriptPanel } from '@/modules/generator-ui/components/TranscriptPanel'
+import { NarrationDialog } from '@/modules/generator-ui/components/NarrationDialog'
+import { extractNarration } from '@/modules/generator-ui/lib/narration'
 import CharacterSheetDialog from '@/modules/generator-ui/components/CharacterSheetDialog'
 
 /**
