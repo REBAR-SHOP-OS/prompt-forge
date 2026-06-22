@@ -79,7 +79,7 @@ function buildSystemPrompt(
         productAd?.productDescription ? `Product details: ${productAd.productDescription}.` : "",
         "Make the product the unmistakable hero of every shot: show it prominently, highlight its look, texture, and key selling points, and build desire.",
         productAd?.characterImageUrl
-          ? "This commercial ALSO features a recurring human character provided as a SECOND attached image. Carefully analyze that second image and feature this exact character on screen interacting with the product, keeping their face, hairstyle, wardrobe, and body type perfectly consistent and recognizable across every shot, while the product remains the clear hero."
+          ? "This commercial ALSO features a recurring human character provided as a SECOND attached image. Carefully analyze that second image and feature this exact character on screen interacting with the product, keeping their face, hairstyle, wardrobe, and body type perfectly consistent and recognizable across every shot, while the product remains the clear hero. This character is the on-screen SPOKESPERSON/PRESENTER who SPEAKS directly to the viewer: they must talk and verbally promote the product. Include the character's spoken lines (narration/dialogue) that pitch the product's key benefits in a natural, confident, persuasive tone, ending on a strong call-to-action. Keep spoken lines short and realistically timed to the duration."
           : "",
         productAd?.characterDescription ? `Character notes: ${productAd.characterDescription}.` : "",
         cameraGuidance(productAd ?? {}),
@@ -102,6 +102,14 @@ function buildSystemPrompt(
       ? productLine
       : (autoFromImage ? autoLine : "You are a world-class advertising creative director who writes persuasive, commercial-style video scenarios designed to promote and sell the subject.");
 
+  const adWithCharacter = isAd && Boolean(productAd?.characterImageUrl);
+  const narrationMulti = adWithCharacter
+    ? `In EVERY scene, weave in the character's spoken dialogue as narration that promotes the product, formatted inline as Character says: "...". The spoken lines count toward the scene word count.`
+    : "";
+  const narrationSingle = adWithCharacter
+    ? `Weave in the character's spoken dialogue as narration that promotes the product, formatted inline as Character says: "...". The spoken lines count toward the word limit.`
+    : "";
+
   if (sceneCount > 1) {
     const numWord = sceneCount === 2 ? "TWO" : sceneCount === 3 ? "THREE" : sceneCount === 9 ? "NINE" : String(sceneCount);
     const longForm = isCharacter ? "character-driven film" : isAd ? "product advertisement" : "commercial";
@@ -114,7 +122,8 @@ function buildSystemPrompt(
       "Do not number the scenes, do not add headings or labels, no markdown, no preamble, no quotes.",
       "Each scene must be 70-90 words and self-contained as a video prompt (include subject, action, camera move, lighting),",
       "while clearly continuing the story from the previous scene.",
-    ].join(" ");
+      narrationMulti,
+    ].filter(Boolean).join(" ");
   }
   const cap = WORD_CAPS[duration];
   const beat = BEAT_GUIDE[duration];
@@ -128,7 +137,8 @@ function buildSystemPrompt(
     `Match pacing realistically to the duration: ${beat}.`,
     "Output prose only — no markdown headings, no bullet lists, no preamble, no quotes.",
     `Keep it under ${cap} words.`,
-  ].join(" ");
+    narrationSingle,
+  ].filter(Boolean).join(" ");
 }
 
 async function callGateway(
