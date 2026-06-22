@@ -39,6 +39,8 @@ const CreateJobSchema = z.object({
   aspectRatio: z.enum(["9:16", "1:1", "16:9"]).optional(),
   /** Durable per-project group id so all clips in one session stay one draft. */
   draftGroupId: z.string().uuid().optional(),
+  /** Authoritative narration (spoken lines) written in the scenario for this card. */
+  narrationText: z.string().max(8000).optional(),
 });
 
 const GetJobSchema = z.object({ jobId: z.string().uuid() });
