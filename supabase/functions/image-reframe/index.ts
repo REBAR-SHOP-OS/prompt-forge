@@ -319,6 +319,9 @@ Deno.serve(async (req) => {
       const m = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
       if (!m) {
         console.error("image-reframe: no image returned", JSON.stringify(data).slice(0, 400));
+        // The model occasionally returns no image (e.g. IMAGE_RECITATION).
+        // Retry once more before failing.
+        if (attempt === 0) continue;
         return new Response(JSON.stringify({ error: "Model did not return an image" }), {
           status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
