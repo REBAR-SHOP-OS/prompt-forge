@@ -1139,14 +1139,11 @@ export default function ProductAdDialog({
 
     // Product ad without a character (or compose failed) → signed product image.
     if (uploadedImageUrl) {
-      try {
-        return await signFramesUrl(uploadedImageUrl)
-      } catch {
-        return imagePreviewUrl ?? uploadedImageUrl
-      }
+      return await signAny(uploadedImageUrl)
     }
     return undefined
   }
+
 
   async function handleUseAsPrompt() {
     if (scenes.length === 0 || isPreparingFrame) return
