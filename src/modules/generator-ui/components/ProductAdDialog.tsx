@@ -1387,23 +1387,6 @@ export default function ProductAdDialog({
         </DialogHeader>
 
         <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
-          {/* Business info (required) */}
-          <div className="rounded-md border border-amber-300/20 bg-amber-300/5 p-3">
-            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
-              {t.businessLabel} <span className="text-amber-300">{t.businessRequiredTag}</span>
-            </div>
-            <Textarea
-              value={businessInfo}
-              onChange={(e) => {
-                setBusinessInfo(e.target.value)
-                if (error) setError(null)
-              }}
-              rows={2}
-              placeholder={t.businessPlaceholder}
-              className="min-h-[56px] border-white/10 bg-black/30 text-zinc-100"
-            />
-          </div>
-
           {/* Product photo + name */}
           <div className="flex items-start gap-3">
             <input
