@@ -1129,7 +1129,9 @@ export default function ProductAdDialog({
         const composePrompt =
           'Image 1 is the PRODUCT. Image 2 is the on-screen CHARACTER / presenter. ' +
           'Compose a single photorealistic opening advertisement frame in which the character is presenting or holding the product, with the product clearly visible as the hero of the shot. ' +
-          'Keep the character\'s face, hair, wardrobe and body identical to image 2, and keep the product\'s exact shape, colors and label from image 1.'
+          'Keep the character\'s face, hair, wardrobe and body identical to image 2, and keep the product\'s exact shape, colors and label from image 1. ' +
+          'The final image MUST NOT contain any added text, captions, titles, subtitles, slogans, typography, watermarks, logos, or UI overlays of any kind. ' +
+          'Output a clean photographic frame only. The only writing allowed is the product\'s own real label that physically exists on the product in image 1.'
         const { data, error: fnErr } = await supabase.functions.invoke('ai-image-edit', {
           body: { prompt: composePrompt, imageUrls: [uploadedImageUrl, characterRefSendUrl] },
         })

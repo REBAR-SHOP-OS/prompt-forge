@@ -1,34 +1,35 @@
-## نتیجه مورد انتظار
-ساخت ویدئو با تصویر Start/End آپلودشده بدون خطای `INVALID_FIRST_FRAME_URL` انجام شود، در حالی که backend فقط فریم‌های متعلق به همان کاربر و همان bucket مجاز را بپذیرد.
+## Goal
+When a character + product are selected and a scenario is written, the generated **first-frame image** must ALWAYS be produced without any added text (no captions, titles, watermarks, slogans, or typography burned into the image). This must be an enforced requirement, not optional.
 
-## ریشه مشکل
-فرانت‌اند برای نمایش درست preview، آدرس فریم‌های private bucket `wan-frames` را به signed URL تبدیل می‌کند. اما اعتبارسنجی backend در `job-orchestrator/gateway.ts` هنوز ابتدا URL را فقط با prefix عمومی `/object/public/wan-frames/` مقایسه می‌کند؛ بنابراین signed URL معتبر با مسیر `/object/sign/wan-frames/{userId}/...` قبل از رسیدن به چک مالکیت رد می‌شود.
+## Root cause
+In `src/modules/generator-ui/components/ProductAdDialog.tsx`, the function `buildFirstFrame()` (lines ~1126–1144) composes the character + product opening frame by calling the `ai-image-edit` edge function with `composePrompt`. That prompt currently only describes the composition — it never instructs the model to avoid rendering text, so the model sometimes adds captions/labels/slogans to the frame.
 
-## پلن اصلاح امن
-1. **اصلاح اعتبارسنجی URL فریم در backend**
-   - منطق `isAllowedFrameUrl` را طوری تغییر می‌دهم که ابتدا origin فضای ذخیره‌سازی خود پروژه را بررسی کند.
-   - سپس فقط این دو مسیر را مجاز بداند:
-     - `/storage/v1/object/public/wan-frames/{userId}/...`
-     - `/storage/v1/object/sign/wan-frames/{userId}/...`
-   - مسیر باید دقیقاً با `userId` کاربر authenticated شروع شود؛ URL کاربر دیگر، bucket دیگر، host دیگر، یا پروتکل غیر HTTPS رد می‌شود.
+## Change (single, minimal, frontend-only)
+Update `composePrompt` in `buildFirstFrame()` to append a strict no-text instruction. The product's own real physical label/branding (which is part of the product itself) stays intact; only *added* text/graphics are forbidden.
 
-2. **شفاف‌سازی پیام خطا**
-   - متن خطا را از “public wan-frames upload” به پیام دقیق‌تر مثل “your own wan-frames upload” تغییر می‌دهم تا با signed URL هم سازگار باشد.
+New appended sentence (added to the existing prompt string):
 
-3. **حفظ امنیت bucket**
-   - bucket را public نمی‌کنم.
-   - bypass امنیتی یا پذیرش URL آزاد اضافه نمی‌کنم.
-   - فقط signed/public URLهای متعلق به همان کاربر در bucket مشخص پذیرفته می‌شوند.
+```text
+The final image MUST NOT contain any added text, captions, titles, subtitles,
+slogans, typography, watermarks, logos, or UI overlays of any kind. Output a
+clean photographic frame only. The only writing allowed is the product's own
+real label that physically exists on the product in image 1.
+```
 
-4. **Deploy و تست هدفمند Edge Function**
-   - فقط function مربوط به ساخت job را deploy می‌کنم.
-   - با یک درخواست مشابه همان payload خطادار تست می‌کنم که خطای `INVALID_FIRST_FRAME_URL` دیگر رخ ندهد.
-   - لاگ function را بررسی می‌کنم تا مطمئن شویم خطا از مسیر اعتبارسنجی برطرف شده و مشکل جدیدی ایجاد نشده است.
+```text
+buildFirstFrame()
+  └─ product + character branch
+        composePrompt = [existing composition instructions]
+                      + [new strict "no added text" clause]   ← added
+        → supabase.functions.invoke('ai-image-edit', { prompt: composePrompt, imageUrls })
+```
 
-## فایل‌های درگیر
-- `supabase/functions/_shared/modules/job-orchestrator/gateway.ts`
+## Why this is safe
+- Touches only one string literal in one function; no business logic, schema, or edge-function changes.
+- Does not affect the product-only or character-only branches (those reuse existing signed images, no generation involved). If desired, this can later be extended, but the user's case (character + product + scenario) is the compose branch, which is the only one that generates a new image.
+- No impact on the `jobs-create` / wan-frames validation flow.
 
-## ریسک‌ها و کنترل‌ها
-- **ریسک امنیتی پذیرش signed URL نامعتبر:** با محدود کردن origin، bucket و prefix شامل `userId` کنترل می‌شود.
-- **ریسک شکستن preview:** فرانت‌اند تغییر نمی‌کند؛ signed URL همچنان برای نمایش thumbnail باقی می‌ماند.
-- **ریسک اثر روی سایر مدل‌ها:** تغییر فقط روی اعتبارسنجی frame URL در مسیر ساخت job اعمال می‌شود.
+## Validation
+- Read back the edited lines to confirm the clause is present.
+- Build passes automatically.
+- Manual check in preview: select a character + product, write a scenario, use as first frame → generated opening frame has no overlaid text.
