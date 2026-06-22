@@ -283,9 +283,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    const autoFromImage = autoFromImageReq && Boolean(imageUrl) && !productAd;
-    const effectiveIdea = idea || (productAd?.productName ? `Create an advertisement for ${productAd.productName}.` : "Generate a scenario based on the attached reference image.");
-    let resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl, productAd, autoFromImage);
+    const autoFromImage = autoFromImageReq && Boolean(imageUrl) && !productAd && !characterSheet;
+    const effectiveIdea = idea
+      || (productAd?.productName ? `Create an advertisement for ${productAd.productName}.` : "")
+      || (characterSheet?.characterName ? `Create a film built around the character "${characterSheet.characterName}".` : "")
+      || (characterSheet ? "Create a film built around the character in the attached image." : "Generate a scenario based on the attached reference image.");
+    let resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl, productAd, autoFromImage, characterSheet);
 
     if (resp.status === 429) {
       return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
