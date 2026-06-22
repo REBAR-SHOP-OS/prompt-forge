@@ -250,7 +250,13 @@ Deno.serve(async (req) => {
         ? imageUrlRaw
         : undefined;
 
-    if (!idea && !imageUrl && !productAd?.productName) {
+    if (isCharacterSheet && !imageUrl) {
+      return new Response(JSON.stringify({ error: "A character image is required for Character Sheet mode." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (!idea && !imageUrl && !productAd?.productName && !characterSheet?.characterName) {
       return new Response(JSON.stringify({ error: "idea or imageUrl is required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
