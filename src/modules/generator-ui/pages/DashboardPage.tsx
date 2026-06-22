@@ -5468,6 +5468,9 @@ export default function DashboardPage() {
       // One durable project group id for every clip created in this batch.
       const draftGroupId = ensureActiveDraftGroupId()
 
+      // Authoritative narration from the user's prompt — kept as the reference
+      // for the on-film narration check, independent of later prompt edits.
+      const plannedNarration = extractNarration(plannedPrompt).join('\n') || undefined
       for (let i = 0; i < iterations; i++) {
         let createdJob
         let seedFrames: { firstFrameUrl?: string; lastFrameUrl?: string } = {}
