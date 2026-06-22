@@ -1283,7 +1283,25 @@ export default function DashboardPage() {
   const closePreview = () => {
     setPreviewVideoId(null)
     setPreviewDismissed(true)
+    setTranscriptOpen(false)
+    setTranscriptVideoUrl(null)
   }
+  // Transcript panel state for the large preview.
+  const [transcriptOpen, setTranscriptOpen] = useState(false)
+  const [transcriptVideoUrl, setTranscriptVideoUrl] = useState<string | null>(null)
+  const [transcriptResolving, setTranscriptResolving] = useState(false)
+  const openTranscript = useCallback(async (src: string) => {
+    setTranscriptOpen(true)
+    setTranscriptResolving(true)
+    try {
+      const signed = await signStorageUrl(src)
+      setTranscriptVideoUrl(signed ?? src)
+    } catch {
+      setTranscriptVideoUrl(src)
+    } finally {
+      setTranscriptResolving(false)
+    }
+  }, [signStorageUrl])
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
   // ----- Storage archive: every film the user ever made, read live from the
   // server (independent of drafts/library local state). -----
