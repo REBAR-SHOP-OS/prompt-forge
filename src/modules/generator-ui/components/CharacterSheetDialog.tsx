@@ -279,12 +279,27 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
                   key={img.id}
                   className="group relative aspect-square overflow-hidden rounded-lg border border-white/10 bg-white/[0.03]"
                 >
-                  <img
-                    src={img.storage_path}
-                    alt={img.title ?? 'Character'}
-                    className="h-full w-full object-cover"
-                    loading="lazy"
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setZoomImage(img)}
+                    aria-label="Zoom character"
+                    className="block h-full w-full cursor-zoom-in"
+                  >
+                    <img
+                      src={img.storage_path}
+                      alt={img.title ?? 'Character'}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setZoomImage(img)}
+                    aria-label="Zoom character"
+                    className="absolute left-1.5 top-1.5 grid h-7 w-7 place-items-center rounded-full bg-black/60 text-zinc-200 opacity-0 transition hover:bg-black/80 hover:text-white group-hover:opacity-100"
+                  >
+                    <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => { void handleDelete(img.id) }}
@@ -293,25 +308,62 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
                   >
                     <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => { void handleGenerateSheet(img) }}
-                    disabled={generatingId !== null}
-                    className="absolute inset-x-1.5 bottom-1.5 flex items-center justify-center gap-1 rounded-md bg-fuchsia-600/90 px-2 py-1.5 text-[11px] font-medium text-white opacity-0 transition hover:bg-fuchsia-500 disabled:cursor-not-allowed disabled:opacity-60 group-hover:opacity-100"
-                  >
-                    {generatingId === img.id ? (
-                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                    ) : (
-                      <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-                    )}
-                    {generatingId === img.id ? 'Generating…' : 'Make sheet'}
-                  </button>
-
+                  <div className="absolute inset-x-1.5 bottom-1.5 flex flex-col gap-1 opacity-0 transition group-hover:opacity-100">
+                    {onUseCharacter ? (
+                      <button
+                        type="button"
+                        onClick={() => handleUse(img)}
+                        className="flex items-center justify-center gap-1 rounded-md bg-emerald-600/90 px-2 py-1.5 text-[11px] font-medium text-white transition hover:bg-emerald-500"
+                      >
+                        <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
+                        Use as character
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => { void handleGenerateSheet(img) }}
+                      disabled={generatingId !== null}
+                      className="flex items-center justify-center gap-1 rounded-md bg-fuchsia-600/90 px-2 py-1.5 text-[11px] font-medium text-white transition hover:bg-fuchsia-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {generatingId === img.id ? (
+                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                      )}
+                      {generatingId === img.id ? 'Generating…' : 'Make sheet'}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </div>
+
+        {/* Zoom lightbox */}
+        <Dialog open={zoomImage !== null} onOpenChange={(o) => { if (!o) setZoomImage(null) }}>
+          <DialogContent className="max-w-3xl border-white/10 bg-black p-2">
+            {zoomImage ? (
+              <div className="relative">
+                <img
+                  src={zoomImage.storage_path}
+                  alt={zoomImage.title ?? 'Character'}
+                  className="max-h-[80vh] w-full rounded-md object-contain"
+                />
+                {onUseCharacter ? (
+                  <button
+                    type="button"
+                    onClick={() => handleUse(zoomImage)}
+                    className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-emerald-600/90 px-4 py-2 text-sm font-medium text-white shadow-lg transition hover:bg-emerald-500"
+                  >
+                    <UserRound className="h-4 w-4" aria-hidden="true" />
+                    Use as character
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </DialogContent>
+        </Dialog>
+
       </DialogContent>
     </Dialog>
   )
