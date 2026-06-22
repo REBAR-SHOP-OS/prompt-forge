@@ -702,6 +702,8 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequiredTag: '(obligatoire)',
     businessPlaceholder: 'Décrivez votre entreprise : ce que vous vendez, vos produits/services, votre public cible et le ton de la marque…',
     businessRequired: "Décrivez d'abord votre entreprise — le scénario doit y être pertinent.",
+    businessSave: 'Enregistrer',
+    businessSaved: 'Enregistré',
   },
 }
 
