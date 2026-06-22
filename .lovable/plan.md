@@ -1,26 +1,21 @@
 ## Goal
 
-When a character is added to the **Product Ad Scenario**, the generated scenario must make that character **speak** — delivering spoken narration/dialogue that promotes and sells the product. Today the character is only described visually; it never talks.
+Fix the "Add character" chip in the prompt bar (`DashboardPage.tsx`, ~lines 10212–10233). When a character is selected it currently shows the raw filename (e.g. `ai-9b8d1a95-…— sheet`), which looks broken. Replace the filename with a clean generic label and add an inline remove (×) control directly on the chip.
 
-## Where it changes
+## Changes (UI only, in `src/modules/generator-ui/pages/DashboardPage.tsx`)
 
-All changes are in the system prompt of `supabase/functions/scenario-write/index.ts` (the `buildSystemPrompt` function). No UI changes needed — the character is already attached and sent to the backend.
+1. **Stop showing the image filename**: when a character is selected, render the avatar thumbnail + a short fixed label `"Character"` instead of `selectedCharacter.title`. (The long generated name is never shown.)
 
-## What to change
+2. **Inline remove on the chip**: add a small `×` button at the end of the chip (only when a character is selected) that clears the selection (`setSelectedCharacter(null)`), without opening the popover. It needs `e.stopPropagation()` / `e.preventDefault()` so clicking × doesn't toggle the popover trigger, and an `aria-label="Remove character"`.
 
-1. **Character-with-product prompt block** (`productLine`, the branch where `productAd.characterImageUrl` exists):
-   - Add instructions that the character is the **on-screen spokesperson/presenter** who speaks directly about the product.
-   - Require the scenario to include the character's **spoken lines (narration/dialogue)** that pitch the product's benefits and end with a persuasive call-to-action, while keeping the product the hero.
-   - Lines should be natural, short, and timed to the duration.
+3. Keep the existing popover (picker + its "Remove" link) intact; this just adds the quick inline remove and hides the filename. The chip stays the same pill style, only the text and the added × change.
 
-2. **Output format instructions** (both the multi-scene branch `sceneCount > 1` and the single-scene branch):
-   - Only when a character is attached in product-ad mode, instruct the model to weave the character's spoken dialogue into each scene/the prose, formatted clearly (e.g. inline as `Character says: "..."`) so it reads as narration alongside the visual/camera description.
-   - Keep the existing word caps and scene-delimiter rules intact; the spoken lines count toward the scene text.
+## Technical detail
 
-3. Guard so this narration requirement applies **only** when a character is present (product-ad + `characterImageUrl`), leaving plain product ads and character-sheet film mode unchanged.
+- The trigger is a single `<button>` wrapping the avatar + label. To host an interactive × inside it (nested buttons are invalid), restructure the trigger content so the × is a clickable `<span role="button">` (or convert the chip container to a non-button element with the avatar/label as the popover trigger). Simplest: keep the chip as the trigger and render the × as a `span` with an `onClick` that stops propagation and clears selection.
 
 ## Verification
 
-- Redeploy `scenario-write`.
-- Test via the edge function with `mode: "product-ad"`, a product `imageUrl`, and a `characterImageUrl` to confirm the returned scenario contains spoken character lines that advertise the product.
-- Confirm a product-ad request **without** a character still returns a narration-free visual scenario (no regression).
+- Build passes.
+- With a character selected, the chip shows the avatar + "Character" (no long ID) and an × that removes it in one click.
+- With no character, it still shows the `UserRound` icon + "Add character" and opens the picker.

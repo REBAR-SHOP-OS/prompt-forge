@@ -10221,15 +10221,41 @@ export default function DashboardPage() {
                   }`}
                 >
                   {selectedCharacter ? (
-                    <img
-                      src={selectedCharacter.url}
-                      alt={selectedCharacter.title ?? 'Character'}
-                      className="h-6 w-6 rounded-full object-cover"
-                    />
+                    <>
+                      <img
+                        src={selectedCharacter.url}
+                        alt="Character"
+                        className="h-6 w-6 rounded-full object-cover"
+                      />
+                      <span>Character</span>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        aria-label="Remove character"
+                        title="Remove character"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setSelectedCharacter(null)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            setSelectedCharacter(null)
+                          }
+                        }}
+                        className="ml-0.5 grid h-5 w-5 place-items-center rounded-full text-fuchsia-200/80 transition hover:bg-fuchsia-500/20 hover:text-fuchsia-50"
+                      >
+                        <X className="h-3.5 w-3.5" aria-hidden="true" />
+                      </span>
+                    </>
                   ) : (
-                    <UserRound className="h-5 w-5" aria-hidden="true" />
+                    <>
+                      <UserRound className="h-5 w-5" aria-hidden="true" />
+                      <span>Add character</span>
+                    </>
                   )}
-                  {selectedCharacter ? (selectedCharacter.title ?? 'Character') : 'Add character'}
                 </button>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-72 p-2">
