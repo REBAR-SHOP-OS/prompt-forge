@@ -8,18 +8,36 @@ const INLINE_VIDEO_BYTES = 18 * 1024 * 1024; // inline only small videos (Gemini
 const MAX_VIDEO_BYTES = 500 * 1024 * 1024; // larger videos go through the Files API (up to 2GB supported)
 const MAX_AUDIO_BYTES = 15 * 1024 * 1024; // 15MB cap for audio
 
-const ANALYSIS_PROMPT = `You are a strict copyright & content-rights reviewer for short marketing/social videos.
+const ANALYSIS_PROMPT = `You are an EXTREMELY STRICT, zero-tolerance copyright, trademark, and content-rights
+reviewer for short marketing/social videos used in COMMERCIAL contexts.
 You receive a VIDEO and, optionally, a MUSIC track and/or a VOICEOVER track.
-Carefully inspect EVERYTHING and assess copyright / trademark / right-of-publicity risk.
+Inspect EVERY frame and EVERY second of audio meticulously. Err on the side of caution:
+when in doubt, escalate the risk level. Commercial use removes most fair-use defenses,
+so even small or partial appearances of protected material matter.
 
-For the VIDEO, look for: recognizable brand logos or trademarks, copyrighted
-characters or mascots, recognizable clips from known films/series/games,
-celebrity likeness, on-screen watermarks, or copyrighted artwork.
+For the VIDEO, examine ALL of these dimensions frame by frame:
+- Brand logos, trademarks, brand names, slogans, taglines (even partial / blurred / background).
+- Copyrighted characters, mascots, cartoon figures, fictional creatures.
+- Recognizable clips, scenes, shots, or stills from films, series, TV, games, ads, music videos.
+- Celebrity / public-figure likeness, recognizable real people, or convincing look-alikes
+  (right-of-publicity risk).
+- On-screen text quoting copyrighted lyrics, poems, scripts, books, or headlines.
+- Copyrighted artwork, paintings, photographs, posters, album covers, illustrations.
+- Watermarks, stock-footage marks, source overlays, or platform UI (TikTok/YouTube/etc.).
+- Product designs, packaging, vehicles, buildings, or landmarks with protected/trade-dress identity.
+- Fonts or typefaces tied to a specific brand identity.
+- Sports team kits, logos, league branding, or jersey names/numbers.
+- Any UI/app/website screen capture that exposes a third-party product.
 
-For the MUSIC, judge whether it sounds like a known commercial/copyrighted song
-(melody, hook, lyrics, recognizable artist) versus generic/royalty-free/AI-generated
-music that is safe to use. If only a voiceover is present (speech, no song),
-treat it as low risk unless it quotes copyrighted material.
+For the MUSIC, judge strictly whether it resembles a known commercial/copyrighted song
+or recording in ANY way:
+- Melody, hook, chord progression, riff, lyrics, vocal style, or recognizable artist.
+- Samples, interpolations, covers, remixes, or "sound-alike" tracks.
+- Sound effects or jingles tied to a brand (e.g. recognizable brand sonic logos).
+Only treat music as safe when it is clearly generic, royalty-free, or AI-generated with
+no resemblance to known works. If only a voiceover is present (speech, no song),
+treat it as low risk UNLESS it quotes copyrighted material (lyrics, scripts, books,
+trademarked slogans) or impersonates a recognizable real person's voice.
 
 Respond with ONLY a compact JSON object using EXACTLY this shape:
 
@@ -38,13 +56,18 @@ Respond with ONLY a compact JSON object using EXACTLY this shape:
   }
 }
 
-Rules:
-- "approved" = no meaningful copyright risk found.
-- "caution" = possible/uncertain risk that a human should review.
-- "rejected" = clear copyrighted/trademarked material detected.
+Rules (STRICT — assume commercial use, so fair-use rarely applies):
+- "approved" = ONLY when you found absolutely no protected material across ANY dimension above.
+- "caution" = any possible, partial, uncertain, or hard-to-verify resemblance to protected
+  material — this is the DEFAULT whenever you are not fully certain something is safe.
+- "rejected" = any clearly identifiable copyrighted, trademarked, or right-of-publicity material,
+  even if brief, partial, in the background, or only one instance.
+- Never downgrade risk just because the appearance is short, small, blurry, or incidental.
 - The top-level "verdict" must be the WORST of the two section statuses
   (rejected > caution > approved; ignore "not_provided").
-- Be concrete and honest. If you are unsure, use "caution", never invent details.
+- Be concrete and specific: in each "reason" name exactly what you saw/heard and where
+  (e.g. timestamp, on-screen location). Populate "risks" with every distinct issue found.
+- Be honest. If you are unsure, use "caution"; never invent details and never assume safety.
 - No markdown, no preamble, only the JSON object.`;
 
 function isAllowedUrl(u: string): boolean {
@@ -215,7 +238,7 @@ Deno.serve(async (req) => {
     parts.push({ text: ANALYSIS_PROMPT });
 
     const geminiResp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
