@@ -325,6 +325,74 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
             </div>
           </div>
 
+          <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-3">
+            <p className="text-xs font-medium text-zinc-400">Company logo (optional)</p>
+            <input
+              ref={logoInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => { void handleLogoSelected(e) }}
+            />
+            <div className="flex items-center gap-3">
+              {logoUrl ? (
+                <img
+                  src={logoUrl}
+                  alt="Company logo"
+                  className="h-12 w-12 shrink-0 rounded-md border border-white/10 bg-white object-contain"
+                />
+              ) : (
+                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-md border border-dashed border-white/15 text-zinc-500">
+                  <ImagePlus className="h-4 w-4" aria-hidden="true" />
+                </div>
+              )}
+              <div className="flex flex-1 flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handlePickLogo}
+                  disabled={logoUploading || !userId}
+                  className="gap-2"
+                >
+                  {logoUploading ? (
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <ImagePlus className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                  {logoUrl ? 'Replace logo' : 'Upload logo'}
+                </Button>
+                {logoUrl ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleRemoveLogo}
+                    className="gap-1 text-zinc-400 hover:text-rose-400"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    Remove
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+            <label
+              className={`flex items-center gap-2 text-xs ${
+                logoUrl ? 'text-zinc-300' : 'cursor-not-allowed text-zinc-600'
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={applyLogo}
+                disabled={!logoUrl}
+                onChange={(e) => setApplyLogo(e.target.checked)}
+                className="h-4 w-4 rounded border-white/20 bg-transparent accent-fuchsia-500"
+              />
+              Apply logo to character when generating the sheet
+            </label>
+          </div>
+
+
           {error ? <p className="text-xs text-rose-400">{error}</p> : null}
 
 
