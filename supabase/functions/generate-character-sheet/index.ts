@@ -62,6 +62,8 @@ Deno.serve(async (req) => {
     const imageUrl = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
     const modelKey = typeof body?.model === "string" ? body.model.trim() : "fast";
     const title = typeof body?.title === "string" ? body.title.trim().slice(0, 100) : "";
+    const logoUrl = typeof body?.logoUrl === "string" ? body.logoUrl.trim() : "";
+    const applyLogo = body?.applyLogo === true && !!logoUrl && isAllowedImageUrl(logoUrl);
 
     if (!imageUrl || !isAllowedImageUrl(imageUrl)) {
       return new Response(JSON.stringify({ error: "valid imageUrl is required" }), {
@@ -94,15 +96,48 @@ Deno.serve(async (req) => {
     if (!/^image\/(png|jpe?g|webp)$/i.test(srcMime)) srcMime = "image/png";
     const srcDataUrl = `data:${srcMime};base64,${bytesToBase64(srcBytes)}`;
 
-    const instruction = [
-      "Create a single, clean character sheet (turnaround sheet) of the SAME character shown in the provided image.",
+    // 1b) Optional company logo -> data URL
+    let logoDataUrl = "";
+    if (applyLogo) {
+      try {
+        const logoResp = await fetch(logoUrl);
+        if (logoResp.ok) {
+          const logoBytes = new Uint8Array(await logoResp.arrayBuffer());
+          let logoMime = logoResp.headers.get("content-type")?.split(";")[0]?.trim() || "image/png";
+          if (!/^image\/(png|jpe?g|webp)$/i.test(logoMime)) logoMime = "image/png";
+          logoDataUrl = `data:${logoMime};base64,${bytesToBase64(logoBytes)}`;
+        }
+      } catch { /* ignore — proceed without logo */ }
+    }
+    const useLogo = applyLogo && !!logoDataUrl;
+
+    const instructionParts = [
+      "Create a single, clean character sheet (turnaround sheet) of the SAME character shown in the FIRST provided image.",
       "Preserve the exact identity: same face, hairstyle, skin tone, body type, and outfit across every view.",
       "Compose ONE image on a plain neutral light-gray studio background, arranged in two rows:",
       "TOP ROW = full-body turnaround views of the character: front, 3/4 view, side profile, and back.",
       "BOTTOM ROW = head-and-shoulders close-ups showing several facial expressions: neutral, happy/smiling, angry, surprised, and sad.",
       "Keep consistent lighting and proportions, evenly spaced, all figures the same scale within their row.",
-      "Do NOT add any text, labels, captions, watermarks, logos, or borders. Output ONLY the rendered image.",
-    ].join(" ");
+    ];
+    if (useLogo) {
+      instructionParts.push(
+        "The SECOND provided image is the company logo. Place this logo tastefully on the character's clothing (such as the chest of the shirt/jersey or the cap), keeping it the same on every turnaround view and consistent in size and placement.",
+        "Do NOT add any other text, captions, watermarks, or borders. Output ONLY the rendered image.",
+      );
+    } else {
+      instructionParts.push(
+        "Do NOT add any text, labels, captions, watermarks, logos, or borders. Output ONLY the rendered image.",
+      );
+    }
+    const instruction = instructionParts.join(" ");
+
+    const userContent: any[] = [
+      { type: "text", text: instruction },
+      { type: "image_url", image_url: { url: srcDataUrl } },
+    ];
+    if (useLogo) {
+      userContent.push({ type: "image_url", image_url: { url: logoDataUrl } });
+    }
 
     const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -115,10 +150,7 @@ Deno.serve(async (req) => {
         messages: [
           {
             role: "user",
-            content: [
-              { type: "text", text: instruction },
-              { type: "image_url", image_url: { url: srcDataUrl } },
-            ],
+            content: userContent,
           },
         ],
       }),

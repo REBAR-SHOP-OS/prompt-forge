@@ -69,6 +69,7 @@ async function signUrl(storagePath: string | null | undefined): Promise<string> 
  */
 export default function CharacterSheetDialog({ open, onOpenChange, userId, onUseCharacter }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const logoInputRef = useRef<HTMLInputElement | null>(null)
   const [images, setImages] = useState<CharacterImage[]>([])
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -76,6 +77,18 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
   const [sheetModel, setSheetModel] = useState<SheetModel>('fast')
   const [generatingId, setGeneratingId] = useState<string | null>(null)
   const [zoomImage, setZoomImage] = useState<CharacterImage | null>(null)
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [logoSendUrl, setLogoSendUrl] = useState<string | null>(null)
+  const [logoUploading, setLogoUploading] = useState(false)
+  const [applyLogo, setApplyLogo] = useState(false)
+
+  useEffect(() => {
+    if (!open) {
+      setLogoUrl(null)
+      setLogoSendUrl(null)
+      setApplyLogo(false)
+    }
+  }, [open])
 
 
   useEffect(() => {
@@ -174,13 +187,62 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
     }
   }
 
+  const handlePickLogo = () => {
+    if (logoUploading) return
+    logoInputRef.current?.click()
+  }
+
+  const handleLogoSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || !userId) return
+    setError(null)
+    if (!file.type.startsWith('image/')) {
+      setError('Logo must be an image.')
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Logo must be smaller than 10 MB.')
+      return
+    }
+    setLogoUploading(true)
+    try {
+      const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png'
+      const path = `${userId}/logo-${crypto.randomUUID()}.${ext}`
+      const up = await supabase.storage
+        .from(USER_IMAGES_BUCKET)
+        .upload(path, file, { contentType: file.type, upsert: false })
+      if (up.error) throw up.error
+      const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
+      setLogoSendUrl(pub.publicUrl)
+      setLogoUrl(await signUrl(pub.publicUrl))
+      setApplyLogo(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Logo upload failed.')
+    } finally {
+      setLogoUploading(false)
+    }
+  }
+
+  const handleRemoveLogo = () => {
+    setLogoUrl(null)
+    setLogoSendUrl(null)
+    setApplyLogo(false)
+  }
+
   const handleGenerateSheet = async (img: CharacterImage) => {
     if (!userId || generatingId) return
     setError(null)
     setGeneratingId(img.id)
     try {
+      const useLogo = applyLogo && !!logoSendUrl
       const { data, error: fnErr } = await supabase.functions.invoke('generate-character-sheet', {
-        body: { imageUrl: img.storage_path, model: sheetModel, title: img.title ?? '' },
+        body: {
+          imageUrl: img.storage_path,
+          model: sheetModel,
+          title: img.title ?? '',
+          ...(useLogo ? { logoUrl: logoSendUrl, applyLogo: true } : {}),
+        },
       })
       if (fnErr) throw fnErr
       const row = data as CharacterImage | null
@@ -262,6 +324,74 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
               ))}
             </div>
           </div>
+
+          <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-3">
+            <p className="text-xs font-medium text-zinc-400">Company logo (optional)</p>
+            <input
+              ref={logoInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => { void handleLogoSelected(e) }}
+            />
+            <div className="flex items-center gap-3">
+              {logoUrl ? (
+                <img
+                  src={logoUrl}
+                  alt="Company logo"
+                  className="h-12 w-12 shrink-0 rounded-md border border-white/10 bg-white object-contain"
+                />
+              ) : (
+                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-md border border-dashed border-white/15 text-zinc-500">
+                  <ImagePlus className="h-4 w-4" aria-hidden="true" />
+                </div>
+              )}
+              <div className="flex flex-1 flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handlePickLogo}
+                  disabled={logoUploading || !userId}
+                  className="gap-2"
+                >
+                  {logoUploading ? (
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <ImagePlus className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                  {logoUrl ? 'Replace logo' : 'Upload logo'}
+                </Button>
+                {logoUrl ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleRemoveLogo}
+                    className="gap-1 text-zinc-400 hover:text-rose-400"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    Remove
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+            <label
+              className={`flex items-center gap-2 text-xs ${
+                logoUrl ? 'text-zinc-300' : 'cursor-not-allowed text-zinc-600'
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={applyLogo}
+                disabled={!logoUrl}
+                onChange={(e) => setApplyLogo(e.target.checked)}
+                className="h-4 w-4 rounded border-white/20 bg-transparent accent-fuchsia-500"
+              />
+              Apply logo to character when generating the sheet
+            </label>
+          </div>
+
 
           {error ? <p className="text-xs text-rose-400">{error}</p> : null}
 
