@@ -32,7 +32,16 @@ interface ProductAdOpts {
   scene?: string;
 }
 
-function cameraGuidance(opts: ProductAdOpts): string {
+interface CharacterSheetOpts {
+  characterName?: string;
+  characterDescription?: string;
+  cameraStyle?: string;
+  cameraMovement?: string;
+  genre?: string;
+  scene?: string;
+}
+
+function cameraGuidance(opts: ProductAdOpts | CharacterSheetOpts, heroLabel = "product"): string {
   const bits: string[] = [];
   if (opts.cameraStyle) {
     bits.push(`Use a "${opts.cameraStyle}" camera style as the dominant cinematic technique throughout, and explicitly name this camera move in the shot descriptions.`);
@@ -41,17 +50,23 @@ function cameraGuidance(opts: ProductAdOpts): string {
     bits.push(`Honor these specific camera-movement notes from the user: ${opts.cameraMovement}.`);
   }
   if (opts.genre) {
-    bits.push(`Direct the entire scenario in this genre/atmosphere: ${opts.genre}. Apply its mood, lighting, color palette, and visual style consistently across every shot while keeping the product the clear hero of the advertisement.`);
+    bits.push(`Direct the entire scenario in this genre/atmosphere: ${opts.genre}. Apply its mood, lighting, color palette, and visual style consistently across every shot while keeping the ${heroLabel} the clear hero of the film.`);
   }
   if (opts.scene) {
-    bits.push(`Set the entire scenario in this environment/location: ${opts.scene}. Use its setting, lighting, textures, and atmosphere consistently across every shot while keeping the product the clear hero of the advertisement.`);
+    bits.push(`Set the entire scenario in this environment/location: ${opts.scene}. Use its setting, lighting, textures, and atmosphere consistently across every shot while keeping the ${heroLabel} the clear hero of the film.`);
   }
   return bits.join(" ");
 }
 
-function buildSystemPrompt(duration: number, productAd?: ProductAdOpts, autoFromImage?: boolean): string {
+function buildSystemPrompt(
+  duration: number,
+  productAd?: ProductAdOpts,
+  autoFromImage?: boolean,
+  characterSheet?: CharacterSheetOpts,
+): string {
   const sceneCount = expectedSceneCount(duration);
   const isAd = Boolean(productAd);
+  const isCharacter = Boolean(characterSheet);
   const autoLine = autoFromImage
     ? "You are a world-class advertising creative director writing a persuasive, commercial-style scenario. The user provided ONLY a reference image and no written idea. First, carefully analyze the attached image — identify the main subject, setting, mood, colors, lighting, props, and overall style — then invent a compelling advertising scenario that is faithful to and inspired by what you see in the image, built to promote and sell that subject."
     : "";
@@ -64,15 +79,31 @@ function buildSystemPrompt(duration: number, productAd?: ProductAdOpts, autoFrom
         cameraGuidance(productAd ?? {}),
       ].filter(Boolean).join(" ")
     : "";
-  const persona = isAd ? productLine : (autoFromImage ? autoLine : "You are a world-class advertising creative director who writes persuasive, commercial-style video scenarios designed to promote and sell the subject.");
+  const characterLine = isCharacter
+    ? [
+        "You are a world-class film director writing a cinematic film scenario built entirely around a single LEAD CHARACTER.",
+        "The attached image IS this lead character — carefully analyze it first: identify the character's appearance, gender, approximate age, face, hairstyle, wardrobe/costume, body type, distinctive features, expression, and overall vibe.",
+        characterSheet?.characterName ? `The character's name is "${characterSheet.characterName}".` : "",
+        characterSheet?.characterDescription ? `Additional character notes: ${characterSheet.characterDescription}.` : "",
+        "Make this exact character the protagonist of every shot and keep their look (face, hair, wardrobe, body) perfectly consistent and recognizable across the whole film. Describe the character in concrete visual detail in each shot so the look never drifts.",
+        "Build a compelling story that revolves around this character, with clear actions and emotions driven by them.",
+        cameraGuidance(characterSheet ?? {}, "character"),
+      ].filter(Boolean).join(" ")
+    : "";
+  const persona = isCharacter
+    ? characterLine
+    : isAd
+      ? productLine
+      : (autoFromImage ? autoLine : "You are a world-class advertising creative director who writes persuasive, commercial-style video scenarios designed to promote and sell the subject.");
 
   if (sceneCount > 1) {
     const numWord = sceneCount === 2 ? "TWO" : sceneCount === 3 ? "THREE" : sceneCount === 9 ? "NINE" : String(sceneCount);
+    const longForm = isCharacter ? "character-driven film" : isAd ? "product advertisement" : "commercial";
     return [
       persona,
-      `Given the user's brief, write a CONTINUOUS advertising narrative scenario in ENGLISH for a ${duration}-second cinematic ${isAd ? "product advertisement" : "commercial"},`,
+      `Given the user's brief, write a CONTINUOUS narrative scenario in ENGLISH for a ${duration}-second cinematic ${longForm},`,
       `structured as ${numWord} sequential 15-second scenes that flow into each other.`,
-      "The scenario MUST follow a clear story arc across the whole sequence: the opening scene is an attention-grabbing hook that establishes the subject and setting, the middle scenes develop the story and build interest and desire, and the final scene delivers a defined payoff/resolution that ends the ad on a strong, memorable note.",
+      "The scenario MUST follow a clear story arc across the whole sequence: the opening scene is an attention-grabbing hook that establishes the subject and setting, the middle scenes develop the story and build interest and desire, and the final scene delivers a defined payoff/resolution that ends on a strong, memorable note.",
       `Output EXACTLY ${sceneCount} scene blocks separated by the literal delimiter "${SCENE_DELIM}" on its own line.`,
       "Do not number the scenes, do not add headings or labels, no markdown, no preamble, no quotes.",
       "Each scene must be 70-90 words and self-contained as a video prompt (include subject, action, camera move, lighting),",
@@ -81,11 +112,12 @@ function buildSystemPrompt(duration: number, productAd?: ProductAdOpts, autoFrom
   }
   const cap = WORD_CAPS[duration];
   const beat = BEAT_GUIDE[duration];
+  const singleForm = isCharacter ? "character-driven film scenario" : isAd ? "product advertisement" : "advertising scenario/treatment";
   return [
     persona,
-    `Given the user's brief, write a single cohesive ${isAd ? "product advertisement" : "advertising scenario/treatment"} in ENGLISH`,
+    `Given the user's brief, write a single cohesive ${singleForm} in ENGLISH`,
     `suitable for a ${duration}-second cinematic video — regardless of the input language.`,
-    "It MUST be persuasive and commercial in tone, and follow a clear narrative arc with a defined beginning, middle, and end: an attention-grabbing opening hook that establishes the subject and setting, a middle that develops the story and builds desire, and a clear payoff/resolution that ends the ad on a strong, memorable note.",
+    "It MUST follow a clear narrative arc with a defined beginning, middle, and end: an attention-grabbing opening hook that establishes the subject and setting, a middle that develops the story, and a clear payoff/resolution that ends on a strong, memorable note.",
     "Include opening visual hook, beat-by-beat action, camera/lighting cues, and a clear ending.",
     `Match pacing realistically to the duration: ${beat}.`,
     "Output prose only — no markdown headings, no bullet lists, no preamble, no quotes.",
@@ -100,18 +132,21 @@ async function callGateway(
   imageUrl?: string,
   productAd?: ProductAdOpts,
   autoFromImage?: boolean,
+  characterSheet?: CharacterSheetOpts,
 ): Promise<Response> {
-  const refText = productAd
-    ? `Brief: ${idea}\nThe attached image is the actual product — match its exact look, color, shape, and branding in every shot.`
-    : autoFromImage
-      ? `No written idea was provided. Analyze the attached image and write the scenario entirely based on what you observe in it.`
-      : `Idea: ${idea}\nBase the scenario on the attached reference image (subjects, setting, mood, props, style).`;
+  const refText = characterSheet
+    ? `Brief: ${idea}\nThe attached image IS the lead character — match their exact face, hair, wardrobe, body, and overall look in every shot, and keep them perfectly consistent throughout the film.`
+    : productAd
+      ? `Brief: ${idea}\nThe attached image is the actual product — match its exact look, color, shape, and branding in every shot.`
+      : autoFromImage
+        ? `No written idea was provided. Analyze the attached image and write the scenario entirely based on what you observe in it.`
+        : `Idea: ${idea}\nBase the scenario on the attached reference image (subjects, setting, mood, props, style).`;
   const userContent: unknown = imageUrl
     ? [
         { type: "text", text: refText },
         { type: "image_url", image_url: { url: imageUrl } },
       ]
-    : productAd ? `Brief: ${idea}` : `Idea: ${idea}`;
+    : (productAd || characterSheet) ? `Brief: ${idea}` : `Idea: ${idea}`;
 
   return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
@@ -122,7 +157,7 @@ async function callGateway(
     body: JSON.stringify({
       model: "google/gemini-2.5-flash",
       messages: [
-        { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage) },
+        { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage, characterSheet) },
         { role: "user", content: userContent },
       ],
     }),
@@ -173,6 +208,7 @@ Deno.serve(async (req) => {
     const imageUrlRaw = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
     const autoFromImageReq = body?.autoFromImage === true;
     const isProductAd = body?.mode === "product-ad";
+    const isCharacterSheet = body?.mode === "character-sheet";
     const clip = (v: unknown, max: number): string | undefined => {
       const s = typeof v === "string" ? v.trim() : "";
       return s ? s.slice(0, max) : undefined;
@@ -181,6 +217,16 @@ Deno.serve(async (req) => {
       ? {
           productName: clip(body?.productName, 200),
           productDescription: clip(body?.productDescription, 2000),
+          cameraStyle: clip(body?.cameraStyle, 100),
+          cameraMovement: clip(body?.cameraMovement, 1000),
+          genre: clip(body?.genre, 300),
+          scene: clip(body?.scene, 300),
+        }
+      : undefined;
+    const characterSheet: CharacterSheetOpts | undefined = isCharacterSheet
+      ? {
+          characterName: clip(body?.characterName, 200),
+          characterDescription: clip(body?.characterDescription, 2000),
           cameraStyle: clip(body?.cameraStyle, 100),
           cameraMovement: clip(body?.cameraMovement, 1000),
           genre: clip(body?.genre, 300),
@@ -204,7 +250,13 @@ Deno.serve(async (req) => {
         ? imageUrlRaw
         : undefined;
 
-    if (!idea && !imageUrl && !productAd?.productName) {
+    if (isCharacterSheet && !imageUrl) {
+      return new Response(JSON.stringify({ error: "A character image is required for Character Sheet mode." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (!idea && !imageUrl && !productAd?.productName && !characterSheet?.characterName) {
       return new Response(JSON.stringify({ error: "idea or imageUrl is required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -231,9 +283,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    const autoFromImage = autoFromImageReq && Boolean(imageUrl) && !productAd;
-    const effectiveIdea = idea || (productAd?.productName ? `Create an advertisement for ${productAd.productName}.` : "Generate a scenario based on the attached reference image.");
-    let resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl, productAd, autoFromImage);
+    const autoFromImage = autoFromImageReq && Boolean(imageUrl) && !productAd && !characterSheet;
+    const effectiveIdea = idea
+      || (productAd?.productName ? `Create an advertisement for ${productAd.productName}.` : "")
+      || (characterSheet?.characterName ? `Create a film built around the character "${characterSheet.characterName}".` : "")
+      || (characterSheet ? "Create a film built around the character in the attached image." : "Generate a scenario based on the attached reference image.");
+    let resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl, productAd, autoFromImage, characterSheet);
 
     if (resp.status === 429) {
       return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
@@ -263,7 +318,7 @@ Deno.serve(async (req) => {
     // One retry for multi-scene durations if we didn't get the expected count.
     const expected = expectedSceneCount(duration);
     if (expected > 1 && scenes.length === 0) {
-      resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl, productAd, autoFromImage);
+      resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl, productAd, autoFromImage, characterSheet);
       if (resp.ok) {
         data = await resp.json();
         raw = (data?.choices?.[0]?.message?.content ?? "").trim();

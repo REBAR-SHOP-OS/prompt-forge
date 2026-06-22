@@ -53,6 +53,7 @@ import {
   Trash2,
   Upload,
   UserRound,
+  Drama,
   Wand2,
   X
 } from 'lucide-react'
@@ -121,6 +122,7 @@ import ImageReframeDialog from '@/modules/generator-ui/components/ImageReframeDi
 import AiImageDialog from '@/modules/generator-ui/components/AiImageDialog'
 import ScenarioWriterDialog from '@/modules/generator-ui/components/ScenarioWriterDialog'
 import ProductAdDialog from '@/modules/generator-ui/components/ProductAdDialog'
+import CharacterSheetDialog from '@/modules/generator-ui/components/CharacterSheetDialog'
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
@@ -1234,6 +1236,7 @@ export default function DashboardPage() {
   const [isAiImageDialogOpen, setIsAiImageDialogOpen] = useState(false)
   const [isScenarioDialogOpen, setIsScenarioDialogOpen] = useState(false)
   const [isProductAdOpen, setIsProductAdOpen] = useState(false)
+  const [isCharacterSheetOpen, setIsCharacterSheetOpen] = useState(false)
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
@@ -8305,6 +8308,24 @@ export default function DashboardPage() {
         }}
       />
 
+      <CharacterSheetDialog
+        open={isCharacterSheetOpen}
+        onOpenChange={setIsCharacterSheetOpen}
+        defaultDuration={durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135 ? durationSeconds : (durationSeconds as 5 | 10 | 15)}
+        userId={userId}
+        onUseAsPrompt={(text) => {
+          setPromptText(text)
+        }}
+        onSendScenes={async (scenes) => {
+          const tagged = scenes
+            .map((s, i) => `=== Scene ${i + 1} ===\n${s.trim()}`)
+            .join('\n\n')
+          setPromptText(tagged)
+        }}
+      />
+
+
+
 
 
 
@@ -10096,6 +10117,17 @@ export default function DashboardPage() {
             >
               <Heart className="h-5 w-5 animate-heartbeat" aria-hidden="true" />
               Product Ad
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsCharacterSheetOpen(true)}
+              aria-label="Create a film built around an uploaded character"
+              title="Create a film built around an uploaded character"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-violet-500 via-fuchsia-500 to-sky-500 px-4 text-sm font-bold text-zinc-50 shadow-[0_8px_24px_rgba(139,92,246,0.35)] transition hover:from-violet-400 hover:via-fuchsia-400 hover:to-sky-400 hover:shadow-[0_10px_28px_rgba(139,92,246,0.5)]"
+            >
+              <Drama className="h-5 w-5" aria-hidden="true" />
+              Character Sheet
             </button>
 
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Package, LoaderCircle, RefreshCw, Copy, Check, Wand2, Send, ImagePlus, X, Languages, Boxes, ArrowLeft, Sparkles } from 'lucide-react'
+import { Package, LoaderCircle, RefreshCw, Copy, Check, Wand2, Send, ImagePlus, X, Languages, Boxes, ArrowLeft, Sparkles, Drama } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -101,6 +101,7 @@ type Props = {
   onOpenChange: (open: boolean) => void
   defaultDuration: ProductAdDuration
   userId: string | null
+  variant?: 'product' | 'character'
   onUseAsPrompt: (scenario: string, imageUrl?: string) => void
   onSendScenes?: (scenes: string[], imageUrl?: string) => void | Promise<void>
 }
@@ -620,14 +621,80 @@ const T: Record<Lang, Record<string, string>> = {
   },
 }
 
+// Character Sheet overrides — merged over the product strings when variant === 'character'.
+const CHAR_T: Record<Lang, Record<string, string>> = {
+  en: {
+    title: 'Character Sheet',
+    description:
+      'Upload your character image, answer a few questions, and get a cinematic film scenario built entirely around that character.',
+    photo: 'Character',
+    productName: 'Character name',
+    productNamePlaceholder: 'e.g. Captain Aria',
+    descriptionPlaceholder: 'Personality, role, age, vibe, backstory…',
+    generate: 'Generate film scenario',
+  },
+  fa: {
+    title: 'شناسنامه کاراکتر',
+    description:
+      'تصویر کاراکتر خود را آپلود کنید، به چند سؤال پاسخ دهید و یک سناریوی سینمایی کامل که کاملاً حول همان کاراکتر ساخته شده دریافت کنید.',
+    photo: 'کاراکتر',
+    productName: 'نام کاراکتر',
+    productNamePlaceholder: 'مثلاً کاپیتان آریا',
+    descriptionPlaceholder: 'شخصیت، نقش، سن، حال‌وهوا، پیشینه…',
+    generate: 'ساخت سناریوی فیلم',
+  },
+  ar: {
+    title: 'بطاقة الشخصية',
+    description:
+      'حمّل صورة شخصيتك، أجب عن بعض الأسئلة، واحصل على سيناريو فيلم سينمائي مبني بالكامل حول تلك الشخصية.',
+    photo: 'الشخصية',
+    productName: 'اسم الشخصية',
+    productNamePlaceholder: 'مثال: الكابتن آريا',
+    descriptionPlaceholder: 'الشخصية، الدور، العمر، الأجواء، الخلفية…',
+    generate: 'إنشاء سيناريو الفيلم',
+  },
+  tr: {
+    title: 'Karakter Sayfası',
+    description:
+      'Karakter görselinizi yükleyin, birkaç soruyu yanıtlayın ve tamamen o karakter etrafında kurgulanmış sinematik bir film senaryosu alın.',
+    photo: 'Karakter',
+    productName: 'Karakter adı',
+    productNamePlaceholder: 'örn. Kaptan Aria',
+    descriptionPlaceholder: 'Kişilik, rol, yaş, atmosfer, geçmiş…',
+    generate: 'Film senaryosu oluştur',
+  },
+  es: {
+    title: 'Ficha de Personaje',
+    description:
+      'Sube la imagen de tu personaje, responde unas preguntas y obtén un guion de película cinematográfico construido por completo en torno a ese personaje.',
+    photo: 'Personaje',
+    productName: 'Nombre del personaje',
+    productNamePlaceholder: 'p. ej. Capitana Aria',
+    descriptionPlaceholder: 'Personalidad, rol, edad, ambiente, historia…',
+    generate: 'Generar guion de película',
+  },
+  fr: {
+    title: 'Fiche de Personnage',
+    description:
+      'Téléchargez l’image de votre personnage, répondez à quelques questions et obtenez un scénario de film cinématographique entièrement construit autour de ce personnage.',
+    photo: 'Personnage',
+    productName: 'Nom du personnage',
+    productNamePlaceholder: 'p. ex. Capitaine Aria',
+    descriptionPlaceholder: 'Personnalité, rôle, âge, ambiance, histoire…',
+    generate: 'Générer le scénario du film',
+  },
+}
+
 export default function ProductAdDialog({
   open,
   onOpenChange,
   defaultDuration,
   userId,
+  variant = 'product',
   onUseAsPrompt,
   onSendScenes,
 }: Props) {
+  const isCharacter = variant === 'character'
   const [duration, setDuration] = useState<ProductAdDuration>(defaultDuration)
   const [productName, setProductName] = useState('')
   const [productDescription, setProductDescription] = useState('')
@@ -789,7 +856,12 @@ export default function ProductAdDialog({
 
   async function generate() {
     if (isWriting) return
-    if (!userPrompt.trim() && !productName.trim() && !uploadedImageUrl) {
+    if (isCharacter) {
+      if (!uploadedImageUrl) {
+        setError('Please upload a character image first.')
+        return
+      }
+    } else if (!userPrompt.trim() && !productName.trim() && !uploadedImageUrl) {
       setError('Write a prompt, add a product name, or attach a product photo.')
       return
     }
@@ -802,24 +874,36 @@ export default function ProductAdDialog({
       const templatePrompts = VIDEO_TEMPLATES.filter((v) => templateIds.has(v.id))
         .map((v) => v.prompt)
         .join(' ')
+      const subjectWord = isCharacter ? 'character' : 'product'
       let idea = trimmedPrompt
         ? trimmedName
-          ? `${trimmedPrompt}\n\nThis is an advertisement for the product "${trimmedName}".`
+          ? `${trimmedPrompt}\n\nThis is a film built around the ${subjectWord} "${trimmedName}".`
           : trimmedPrompt
         : trimmedName
-          ? `Advertisement for the product "${trimmedName}".`
-          : 'Advertisement for the attached product.'
+          ? isCharacter
+            ? `A film built around the character "${trimmedName}".`
+            : `Advertisement for the product "${trimmedName}".`
+          : isCharacter
+            ? 'A film built around the character in the attached image.'
+            : 'Advertisement for the attached product.'
       if (templatePrompts) {
         idea += `\n\nFollow these video template styles and conventions: ${templatePrompts}`
       }
       const { data, error: invokeErr } = await supabase.functions.invoke('scenario-write', {
         body: {
-          mode: 'product-ad',
+          mode: isCharacter ? 'character-sheet' : 'product-ad',
           idea,
           durationSeconds: duration,
           imageUrl: uploadedImageUrl ?? undefined,
-          productName: productName.trim() || undefined,
-          productDescription: productDescription.trim() || undefined,
+          ...(isCharacter
+            ? {
+                characterName: productName.trim() || undefined,
+                characterDescription: productDescription.trim() || undefined,
+              }
+            : {
+                productName: productName.trim() || undefined,
+                productDescription: productDescription.trim() || undefined,
+              }),
           cameraStyle,
           cameraMovement: cameraMovement.trim() || undefined,
           genre: GENRE_TEMPLATES.find((g) => g.id === genre)?.prompt || undefined,
@@ -827,7 +911,7 @@ export default function ProductAdDialog({
         },
       })
       if (invokeErr) {
-        setError(invokeErr.message || 'Failed to write ad scenario')
+        setError(invokeErr.message || 'Failed to write scenario')
         return
       }
       const payload = data as { scenario?: string; scenes?: string[]; warning?: string } | null
@@ -858,7 +942,7 @@ export default function ProductAdDialog({
 
   function handleUseAsPrompt() {
     if (scenes.length === 0) return
-    onUseAsPrompt(scenes.join('\n\n'), uploadedImageUrl ?? undefined)
+    onUseAsPrompt(scenes.join('\n\n'), isCharacter ? undefined : (uploadedImageUrl ?? undefined))
     onOpenChange(false)
   }
 
@@ -867,7 +951,7 @@ export default function ProductAdDialog({
     setIsSending(true)
     setError(null)
     try {
-      await onSendScenes(scenes, uploadedImageUrl ?? undefined)
+      await onSendScenes(scenes, isCharacter ? undefined : (uploadedImageUrl ?? undefined))
       onOpenChange(false)
     } catch (e) {
       setError((e as Error).message ?? 'Failed to send to Pending')
@@ -903,8 +987,10 @@ export default function ProductAdDialog({
 
   const isSplit = SPLIT_DURATIONS.includes(duration) && scenes.length > 1
   const concatenated = scenes.join('\n\n')
-  const canGenerate = (userPrompt.trim().length > 0 || productName.trim().length > 0 || Boolean(uploadedImageUrl)) && !isUploadingImage
-  const t = T[lang]
+  const canGenerate = isCharacter
+    ? Boolean(uploadedImageUrl) && !isUploadingImage
+    : (userPrompt.trim().length > 0 || productName.trim().length > 0 || Boolean(uploadedImageUrl)) && !isUploadingImage
+  const t = isCharacter ? { ...T[lang], ...CHAR_T[lang] } : T[lang]
   const dir = RTL_LANGS.includes(lang) ? 'rtl' : 'ltr'
 
   return (
@@ -918,7 +1004,11 @@ export default function ProductAdDialog({
       <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Package className="h-5 w-5 text-amber-300" aria-hidden="true" />
+            {isCharacter ? (
+              <Drama className="h-5 w-5 text-amber-300" aria-hidden="true" />
+            ) : (
+              <Package className="h-5 w-5 text-amber-300" aria-hidden="true" />
+            )}
             {t.title}
             <div className="ms-auto">
               <Select value={lang} onValueChange={(v) => setLang(v as Lang)}>
@@ -999,15 +1089,17 @@ export default function ProductAdDialog({
                 </button>
               )}
             </div>
-              <button
-                type="button"
-                onClick={openProductPicker}
-                title={t.chooseFromProducts}
-                className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-white/10 bg-black/30 px-1 py-1 text-[10px] text-zinc-300 transition hover:border-amber-300/40 hover:text-amber-100"
-              >
-                <Boxes className="h-3.5 w-3.5" aria-hidden="true" />
-                <span className="truncate">{t.chooseFromProducts}</span>
-              </button>
+              {isCharacter ? null : (
+                <button
+                  type="button"
+                  onClick={openProductPicker}
+                  title={t.chooseFromProducts}
+                  className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-white/10 bg-black/30 px-1 py-1 text-[10px] text-zinc-300 transition hover:border-amber-300/40 hover:text-amber-100"
+                >
+                  <Boxes className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span className="truncate">{t.chooseFromProducts}</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setAiImageOpen(true)}

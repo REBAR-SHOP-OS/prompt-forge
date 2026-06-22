@@ -1,22 +1,41 @@
-## مشکل
+# Character Sheet feature
 
-بخش «Choose from products» (انتخاب از محصولات) تصاویر را خراب نشان می‌دهد چون از روش آدرس عمومی (`getPublicUrl`) استفاده می‌کند، در حالی‌که باکت ذخیره‌سازی محصولات خصوصی است. بخش «Storage → Product Photos» درست کار می‌کند چون آدرس‌ها را امضا (signed URL) می‌کند. باید همان روش را در انتخابگر محصول هم به کار ببریم تا همیشه همان تصاویرِ بخش «Upload a product photo» نمایش داده شوند.
+Add a new **Character Sheet** action next to the **Product Ad** button. It opens a full scenario generator (camera style, genre, scene, duration — same UX as Product Ad), but it is centered on an uploaded **character**. The user must upload a character image; the AI analyzes it to understand who the character is and writes a cinematic scenario built around that character. The uploaded image is used as a **descriptive reference only** — it is NOT placed as the clip's start frame.
 
-## تغییرات (فقط فایل `src/modules/generator-ui/components/ProductAdDialog.tsx`)
+## What the user sees
+- A new pill button "Character Sheet" in the composer, beside "Product Ad", with its own icon.
+- Clicking it opens a dialog that mirrors the Product Ad flow:
+  - Required **character photo upload** (always uploaded by the user — no "choose from products" option).
+  - Character name + optional description (personality, role, vibe).
+  - Optional own-prompt, duration, camera style, genre & atmosphere, scene & environment (reused from the existing scenario controls).
+  - "Generate scenario" → produces the scenario, then "Use as prompt" / "Send scenes".
+- Multi-language labels matching the existing dialog (en/fa/ar/tr/es/fr).
 
-1. **امضای آدرس تصاویر هنگام بارگذاری محصولات**
-   - در تابع `openProductPicker` به‌جای ساخت آدرس با `getPublicUrl`، برای هر ردیف یک signed URL از باکت `user-images` ساخته شود (مشابه `signUserImageUrl` در `DashboardPage.tsx`).
-   - اگر `storage_path` خودش یک URL کامل از نوع public/object باشد، کلید داخل باکت استخراج و دوباره امضا شود؛ اگر signed URL یا blob/data باشد همان مقدار استفاده شود.
-   - یک تابع کمکی کوچک محلی برای استخراج کلید و امضا اضافه می‌شود (بدون تغییر منطق بک‌اند).
+## How it behaves
+- The character image is sent to the AI only for analysis. The generated scenario keeps the character visually and behaviorally consistent across every shot and makes them the protagonist of the film.
+- When the scenario is applied, only the **prompt text** is sent to the composer. The image is **not** set as the Start frame (descriptive reference only, per the chosen behavior).
 
-2. **نمایش مطمئن تصاویر (fallback)**
-   - روی `<img>` گرید محصولات یک `onError` ساده اضافه شود تا در صورت خطای موقت، حالت خراب به‌شکل تمیزتری مدیریت شود (placeholder یا مخفی شدن تصویر) و فقط متن نام محصول باقی نماند.
+## Technical changes
 
-3. **اطمینان از همیشه‌بودن لیست**
-   - همان منبع فعلی (`generator_user_images` با `category = 'product'`) که دقیقاً همان محصولات بخش «Upload a product photo» است حفظ می‌شود؛ فقط آدرس‌دهی اصلاح می‌شود تا تصاویر همیشه و درست نمایش داده شوند.
+### 1. Edge function `supabase/functions/scenario-write/index.ts`
+- Add a new mode `character-sheet` alongside `product-ad`.
+- Add a `CharacterSheetOpts` type (`characterName`, `characterDescription`, `cameraStyle`, `cameraMovement`, `genre`, `scene`).
+- Add a system-prompt branch: "world-class film director… The attached image is the lead CHARACTER. Analyze appearance, wardrobe, age, expression, vibe; keep this character consistent and recognizable in every shot; build the whole film around this character." Reuse the existing camera/genre/scene guidance.
+- Reuse the existing image-analysis path (`image_url` content block) and the existing scene-count / word-cap / parsing logic unchanged.
+- Validation: require the image for this mode (return 400 if missing for `character-sheet`).
 
-## بخش فنی
+### 2. New component `src/modules/generator-ui/components/CharacterSheetDialog.tsx`
+- Cloned from `ProductAdDialog.tsx`, adapted:
+  - Photo upload is **mandatory**; remove the "choose from products" picker.
+  - Character-oriented labels/placeholders in all 6 languages.
+  - Calls `supabase.functions.invoke('scenario-write', { body: { mode: 'character-sheet', characterName, characterDescription, cameraStyle, genre, scene, idea, durationSeconds, imageUrl } })`.
+  - `onUseAsPrompt(scenario)` / `onSendScenes(scenes)` are called **without** an image URL, so the dashboard sets only the prompt.
 
-- منبع داده تغییر نمی‌کند؛ فقط ساخت URL از `getPublicUrl` به `createSignedUrl` (با اعتبار طولانی، مثل بخش Storage) منتقل می‌شود.
-- بدون تغییر در بک‌اند، RLS، یا اسکیما.
-- پس از تغییر، با باز کردن دیالوگ Product Ad → «Choose from products» تصاویر باید دقیقاً مثل تب «Product Photos» نمایش داده شوند.
+### 3. `src/modules/generator-ui/pages/DashboardPage.tsx`
+- Add `isCharacterSheetOpen` state.
+- Add the "Character Sheet" button next to the Product Ad button (lucide icon such as `UserSquare`/`Drama`).
+- Render `<CharacterSheetDialog>` wired so `onUseAsPrompt`/`onSendScenes` set `promptText` only (no `handleUseImageAsStart` call).
+
+## Out of scope
+- No DB/schema changes; no new storage buckets (upload reuses the existing image upload path used by Product Ad).
+- Start-frame behavior is intentionally left untouched.
