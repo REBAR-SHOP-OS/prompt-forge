@@ -5664,6 +5664,9 @@ export default function DashboardPage() {
         if (!sourcePrompt) continue
         const sceneLabel = `Scene ${i + 1}`
         const prompt = sourcePrompt
+        // Capture the authoritative narration written in this scene so it stays
+        // the reference even if the visual prompt is later edited.
+        const narrationText = extractNarration(sourcePrompt).join('\n') || undefined
 
         let startFrameUrl: string | undefined
         if (i === 0) {
@@ -5681,6 +5684,7 @@ export default function DashboardPage() {
           aspectRatio: effectiveRatio,
           firstFrameUrl: startFrameUrl,
           draftGroupId,
+          narrationText,
         })
         const seededJob = buildSeededJob(prompt, createdJob, startFrameUrl ? { firstFrameUrl: startFrameUrl } : {})
         rememberClipRatio(seededJob.id, effectiveRatio)
