@@ -237,26 +237,16 @@ export function VoiceoverDialog({
   }
 
   function handleDownload() {
-    if (!audioUrl) return
+    const downloadUrl = activeVoiceoverUrl ?? audioUrl
+    if (!downloadUrl) return
     const a = document.createElement('a')
-    a.href = audioUrl
+    a.href = downloadUrl
     a.download = `voiceover-${gender}-${tone}-${Date.now()}.wav`
     document.body.appendChild(a)
     a.click()
     a.remove()
   }
 
-  function handleUseAsSoundtrack() {
-    if (!audioUrl) return
-    const name = `Voiceover (${gender}, ${tone}).wav`
-    onUseAsSoundtrack?.(audioUrl, name)
-    // Hand off ownership so we don't revoke it.
-    lastUrlRef.current = null
-    setAudioUrl(null)
-    setText('')
-    // Keep the dialog open so the user can adjust timing/volume right here.
-    toast.success('Voiceover set as soundtrack')
-  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
