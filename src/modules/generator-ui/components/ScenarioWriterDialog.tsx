@@ -717,7 +717,7 @@ export default function ScenarioWriterDialog({
                 ) : null}
                 {uploadedImageUrl ? (
                   <span className="text-[10px] uppercase tracking-wide text-emerald-300/80">
-                    Image attached
+                    {t.imageAttached}
                   </span>
                 ) : null}
               </div>
