@@ -120,6 +120,36 @@ const PRODUCT_ASPECTS: { value: ProductAspect; cls: string }[] = [
 
 type ProductPhoto = { id: string; title: string | null; url: string }
 
+/** Extract the object key inside the user-images bucket from a stored path/URL. */
+function productObjectKey(storagePath: string | null | undefined): string | null {
+  if (!storagePath) return null
+  const marker = `/${PRODUCTS_BUCKET}/`
+  const idx = storagePath.indexOf(marker)
+  if (idx >= 0) return decodeURIComponent(storagePath.slice(idx + marker.length))
+  if (!/^https?:|^blob:|^data:/.test(storagePath)) return storagePath
+  return null
+}
+
+/** Resolve a displayable signed URL for a private-bucket product photo. */
+async function signProductPhotoUrl(storagePath: string | null | undefined): Promise<string> {
+  const raw = storagePath ?? ''
+  if (/^blob:|^data:/.test(raw)) return raw
+  if (/\/object\/sign\//.test(raw)) return raw
+  const key = productObjectKey(raw)
+  if (!key) return raw
+  try {
+    const { data, error } = await supabase.storage
+      .from(PRODUCTS_BUCKET)
+      .createSignedUrl(key, 60 * 60 * 24 * 365)
+    if (!error && data?.signedUrl) return data.signedUrl
+  } catch {
+    /* fall through */
+  }
+  return raw
+}
+
+
+
 const SPLIT_DURATIONS = [30, 45, 135]
 const sceneRange = (i: number) => `${i * 15}–${(i + 1) * 15}s`
 
