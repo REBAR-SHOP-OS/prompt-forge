@@ -102,8 +102,8 @@ type Props = {
   defaultDuration: ProductAdDuration
   userId: string | null
   variant?: 'product' | 'character'
-  onUseAsPrompt: (scenario: string, imageUrl?: string) => void
-  onSendScenes?: (scenes: string[], imageUrl?: string) => void | Promise<void>
+  onUseAsPrompt: (scenario: string, imageUrl?: string, duration?: ProductAdDuration) => void
+  onSendScenes?: (scenes: string[], imageUrl?: string, duration?: ProductAdDuration) => void | Promise<void>
 }
 
 const DURATIONS: ProductAdDuration[] = [5, 10, 15, 30, 45, 135]
@@ -1159,7 +1159,7 @@ export default function ProductAdDialog({
     setError(null)
     try {
       const frameUrl = await buildFirstFrame()
-      onUseAsPrompt(scenes.join('\n\n'), frameUrl)
+      onUseAsPrompt(scenes.join('\n\n'), frameUrl, duration)
       onOpenChange(false)
     } finally {
       setIsPreparingFrame(false)
@@ -1172,7 +1172,7 @@ export default function ProductAdDialog({
     setError(null)
     try {
       const frameUrl = await buildFirstFrame()
-      await onSendScenes(scenes, frameUrl)
+      await onSendScenes(scenes, frameUrl, duration)
       onOpenChange(false)
     } catch (e) {
       setError((e as Error).message ?? 'Failed to send to Pending')

@@ -18,8 +18,8 @@ type Props = {
   onOpenChange: (open: boolean) => void
   defaultDuration: ScenarioDuration
   userId: string | null
-  onUseAsPrompt: (scenario: string, imageUrl?: string) => void
-  onSendScenes?: (scenes: string[], imageUrl?: string) => void | Promise<void>
+  onUseAsPrompt: (scenario: string, imageUrl?: string, duration?: ScenarioDuration) => void
+  onSendScenes?: (scenes: string[], imageUrl?: string, duration?: ScenarioDuration) => void | Promise<void>
 
 }
 
@@ -157,7 +157,7 @@ export default function ScenarioWriterDialog({
 
   function handleUseAsPrompt() {
     if (scenes.length === 0) return
-    onUseAsPrompt(scenes.join('\n\n'), uploadedImageUrl ?? undefined)
+    onUseAsPrompt(scenes.join('\n\n'), uploadedImageUrl ?? undefined, duration)
     onOpenChange(false)
   }
 
@@ -166,7 +166,7 @@ export default function ScenarioWriterDialog({
     setIsSending(true)
     setError(null)
     try {
-      await onSendScenes(scenes, uploadedImageUrl ?? undefined)
+      await onSendScenes(scenes, uploadedImageUrl ?? undefined, duration)
       onOpenChange(false)
     } catch (e) {
       setError((e as Error).message ?? 'Failed to send to Pending')
