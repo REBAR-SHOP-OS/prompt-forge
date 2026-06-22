@@ -356,6 +356,31 @@ async function signUserImageRows<T extends { storage_path: string }>(rows: T[]):
   )
 }
 
+/**
+ * The `wan-frames` bucket is PRIVATE, so a public URL returns 400 in an <img>.
+ * Resolve a year-long signed URL for display; fall back to the raw value.
+ */
+async function signFramesUrl(storagePath: string | null | undefined): Promise<string> {
+  const raw = storagePath ?? ''
+  if (/^blob:|^data:/.test(raw)) return raw
+  if (/\/object\/sign\//.test(raw)) return raw
+  const marker = `/${FRAMES_BUCKET}/`
+  const idx = raw.indexOf(marker)
+  let key: string | null = null
+  if (idx >= 0) key = raw.slice(idx + marker.length)
+  else if (!/^https?:|^blob:|^data:/.test(raw)) key = raw
+  if (!key) return raw
+  try {
+    const { data, error } = await supabase.storage
+      .from(FRAMES_BUCKET)
+      .createSignedUrl(key, 60 * 60 * 24 * 365)
+    if (!error && data?.signedUrl) return data.signedUrl
+  } catch {
+    /* fall through */
+  }
+  return raw
+}
+
 type ModelChoice = {
   id: string
   label: string
@@ -4814,10 +4839,11 @@ export default function DashboardPage() {
         .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false })
       if (upErr) throw new Error(upErr.message)
       const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+      const displayUrl = await signFramesUrl(storagePath).catch(() => data.publicUrl)
       setUploadedFiles((current) =>
         current.map((f) =>
           f.id === seedId
-            ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size, error: null }
+            ? { ...f, status: 'ready', url: displayUrl, size: blob.size, error: null }
             : f,
         ),
       )
@@ -4867,9 +4893,10 @@ export default function DashboardPage() {
     }
 
     const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+    const displayUrl = await signFramesUrl(storagePath).catch(() => data.publicUrl)
     setUploadedFiles((currentFiles) => currentFiles.map((uploadedFile) => (
       uploadedFile.id === fileId
-        ? { ...uploadedFile, status: 'ready', url: data.publicUrl, error: null }
+        ? { ...uploadedFile, status: 'ready', url: displayUrl, error: null }
         : uploadedFile
     )))
   }
@@ -5729,10 +5756,11 @@ export default function DashboardPage() {
           .upload(storagePath, blob, { contentType: 'image/png', upsert: false })
         if (error) throw new Error(error.message)
         const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+        const displayUrl = await signFramesUrl(storagePath).catch(() => data.publicUrl)
         setUploadedFiles((current) =>
           current.map((f) =>
             f.id === seedId
-              ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size }
+              ? { ...f, status: 'ready', url: displayUrl, size: blob.size }
               : f,
           ),
         )
@@ -5796,10 +5824,11 @@ export default function DashboardPage() {
           .upload(storagePath, blob, { contentType: 'image/png', upsert: false })
         if (error) throw new Error(error.message)
         const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+        const displayUrl = await signFramesUrl(storagePath).catch(() => data.publicUrl)
         setUploadedFiles((current) =>
           current.map((f) =>
             f.id === seedId
-              ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size }
+              ? { ...f, status: 'ready', url: displayUrl, size: blob.size }
               : f,
           ),
         )
@@ -8315,10 +8344,11 @@ export default function DashboardPage() {
               .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false })
             if (upErr) throw new Error(upErr.message)
             const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+            const displayUrl = await signFramesUrl(storagePath).catch(() => data.publicUrl)
             setUploadedFiles((current) =>
               current.map((f) =>
                 f.id === seedId
-                  ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size, error: null }
+                  ? { ...f, status: 'ready', url: displayUrl, size: blob.size, error: null }
                   : f,
               ),
             )
