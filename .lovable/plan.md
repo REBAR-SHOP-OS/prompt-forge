@@ -1,39 +1,39 @@
-## Goal
+## Problem
 
-When the user clicks **Use as prompt** (or **Send to Pending**) from the Product Ad / Character scenario dialog, set up an image‑to‑video generation whose **start frame actually shows the character together with the product**, driven by the generated scenario text. Today the start frame is empty/broken and the character is dropped.
+When a logo is selected and **Make sheet** is clicked, the logo is never actually applied to the generated character sheet.
 
-## Root causes
+## Root cause
 
-1. `ProductAdDialog.handleUseAsPrompt` (line 1093) passes `uploadedImageUrl` — a **private `wan-frames` public URL** that `handleUseImageAsStart` cannot `fetch()` → start frame fails silently (the empty thumbnail in the screenshot).
-2. The attached character (`characterRefSendUrl`) is only sent to the scenario text writer, never used to build the video start frame, so the video would never feature the character.
-3. For the Character‑sheet variant, `handleUseAsPrompt` passes `undefined`, so no start frame at all.
+The `user-images` storage bucket is **private** — everywhere in the dialog images are accessed through time-limited **signed URLs** (`signUrl` → `createSignedUrl`). The source character image works for exactly this reason.
 
-## Approach
+But the logo is sent to the backend as a **public URL**:
 
-Build a proper **first frame** before handing off to the composer, using the existing `ai-image-edit` edge function (it already accepts multiple reference images and returns a `dataUrl`).
+```text
+line 217:  setLogoSendUrl(pub.publicUrl)   // public URL on a PRIVATE bucket
+line 244:  ...(useLogo ? { logoUrl: logoSendUrl, applyLogo: true } : {})
+```
 
-### `ProductAdDialog.tsx`
+In the edge function (`generate-character-sheet/index.ts`), the logo fetch is wrapped in a silent try/catch:
 
-Add a helper `buildFirstFrame()` that returns a fetchable image URL (data URL or signed URL) based on context:
+```text
+line 103:  const logoResp = await fetch(logoUrl);   // 400/403 on private bucket
+line 110:  } catch { /* ignore — proceed without logo */ }
+line 112:  const useLogo = applyLogo && !!logoDataUrl;  // becomes false
+```
 
-- **Product variant + character attached** (`!isCharacter && characterRefSendUrl`):
-  call `ai-image-edit` with `imageUrls: [productSendUrl, characterRefSendUrl]`, `aspectRatio` from the selected dimensions, and a prompt such as: *"Image 1 is the product, image 2 is the on‑screen character/presenter. Compose a single photorealistic opening ad frame where the character is presenting/holding the product, product clearly visible as the hero. Keep the character's face, hair, wardrobe and body identical to image 2."* Use the returned `dataUrl` as the first frame.
-- **Product variant, no character:** use the **signed** product URL (`imagePreviewUrl` / `signFramesUrl`) — not the broken public URL.
-- **Character variant:** use the character image (`imagePreviewUrl` signed) as the first frame.
+Because the public URL returns 403 on a private bucket, `logoDataUrl` stays empty, `useLogo` becomes `false`, and the sheet is generated **without** the logo — no visible error.
 
-Update `handleUseAsPrompt` and `handleSendAll` to `await buildFirstFrame()` and pass the resulting URL to `onUseAsPrompt(text, frameUrl)` / `onSendScenes(scenes, frameUrl)`. Add a loading state (e.g. disable the button + spinner + "Preparing frame…") because the compose call takes a few seconds, and surface any `ai-image-edit` error (429/402/empty) inline using the existing `setError`.
+## Fix
 
-### `DashboardPage.tsx`
+Send the logo to the backend using a **signed URL** (the same mechanism every other image already uses), instead of the unreachable public URL.
 
-No signature change needed — `handleUseImageAsStart` already re‑fetches and re‑uploads the URL to `wan-frames`, and `fetch()` works on `data:` URLs. The handoff at lines 8341‑8381 stays as is (it already calls `handleUseImageAsStart(imageUrl)` and sets `generationMode` to image‑to‑video). Confirm the composed/signed URL is fetchable there.
+### `src/modules/generator-ui/components/CharacterSheetDialog.tsx`
+- In `handleLogoSelected`, set `logoSendUrl` to a signed URL: `setLogoSendUrl(await signUrl(pub.publicUrl))` (reuse the value already computed for the preview so we sign once).
+- `isAllowedImageUrl` in the edge function already accepts signed URLs (same `*.supabase.co` host), so no backend host-allowlist change is needed.
 
-## Verification
+### Optional robustness (backend, no behavior change when it works)
+- Keep the existing logo handling, but this fix alone makes the logo fetch succeed so `useLogo` becomes `true` and the existing prompt instructions ("place this logo on the character's clothing, consistent across all turnaround views") take effect.
 
-- Product Ad with a character attached → Use as prompt → start frame is populated with a composed character+product image, prompt filled, mode = Image to Video.
-- Product Ad without a character → start frame shows the product (signed URL, not broken).
-- Character variant → start frame shows the character.
-- Confirm `ai-image-edit` errors (rate limit / credits / empty) show a clear message instead of an empty frame.
+## Result
 
-## Notes / trade-offs
-
-- Composing the first frame consumes one AI image credit per use. This is the cleanest way to guarantee the character appears with the product in the video; the alternative (just using the character or product alone) would not satisfy "the character promoting that product."
+After this change, selecting a logo + clicking **Make sheet** produces a character sheet where the company logo is rendered on the character's clothing across all views, so the character is recognizable by that logo.
