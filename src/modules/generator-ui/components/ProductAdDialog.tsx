@@ -510,6 +510,8 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequiredTag: '(الزامی)',
     businessPlaceholder: 'کسب‌وکارتان را توضیح دهید: چه می‌فروشید، محصولات/خدمات، مخاطب هدف و لحن برند…',
     businessRequired: 'ابتدا کسب‌وکارتان را توضیح دهید — سناریو باید مرتبط با آن باشد.',
+    businessSave: 'ذخیره',
+    businessSaved: 'ذخیره شد',
   },
   ar: {
     title: 'سيناريو إعلان المنتج',
