@@ -688,8 +688,8 @@ export default function ScenarioWriterDialog({
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isUploadingImage}
-                  title="Attach a reference image"
-                  aria-label="Attach a reference image"
+                  title={t.attachImage}
+                  aria-label={t.attachImage}
                   className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/40 text-zinc-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
                 >
                   {isUploadingImage ? (
