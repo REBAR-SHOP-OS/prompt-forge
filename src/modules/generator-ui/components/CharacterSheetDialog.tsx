@@ -187,13 +187,62 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
     }
   }
 
+  const handlePickLogo = () => {
+    if (logoUploading) return
+    logoInputRef.current?.click()
+  }
+
+  const handleLogoSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || !userId) return
+    setError(null)
+    if (!file.type.startsWith('image/')) {
+      setError('Logo must be an image.')
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Logo must be smaller than 10 MB.')
+      return
+    }
+    setLogoUploading(true)
+    try {
+      const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png'
+      const path = `${userId}/logo-${crypto.randomUUID()}.${ext}`
+      const up = await supabase.storage
+        .from(USER_IMAGES_BUCKET)
+        .upload(path, file, { contentType: file.type, upsert: false })
+      if (up.error) throw up.error
+      const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
+      setLogoSendUrl(pub.publicUrl)
+      setLogoUrl(await signUrl(pub.publicUrl))
+      setApplyLogo(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Logo upload failed.')
+    } finally {
+      setLogoUploading(false)
+    }
+  }
+
+  const handleRemoveLogo = () => {
+    setLogoUrl(null)
+    setLogoSendUrl(null)
+    setApplyLogo(false)
+  }
+
   const handleGenerateSheet = async (img: CharacterImage) => {
     if (!userId || generatingId) return
     setError(null)
     setGeneratingId(img.id)
     try {
+      const useLogo = applyLogo && !!logoSendUrl
       const { data, error: fnErr } = await supabase.functions.invoke('generate-character-sheet', {
-        body: { imageUrl: img.storage_path, model: sheetModel, title: img.title ?? '' },
+        body: {
+          imageUrl: img.storage_path,
+          model: sheetModel,
+          title: img.title ?? '',
+          ...(useLogo ? { logoUrl: logoSendUrl, applyLogo: true } : {}),
+        },
       })
       if (fnErr) throw fnErr
       const row = data as CharacterImage | null
