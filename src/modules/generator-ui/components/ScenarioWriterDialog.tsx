@@ -132,6 +132,34 @@ export default function ScenarioWriterDialog({
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
+  async function saveBusinessInfo() {
+    if (!businessInfo.trim()) {
+      setError('Please describe your business first — the scenario must be relevant to it.')
+      return
+    }
+    if (!userId) return
+    setBusinessSaving(true)
+    setBusinessSaved(false)
+    try {
+      const { error: upErr } = await supabase
+        .from('generator_business_profiles')
+        .upsert({ user_id: userId, business_info: businessInfo.trim() }, { onConflict: 'user_id' })
+      if (upErr) {
+        setError(upErr.message)
+        return
+      }
+      setBusinessSaved(true)
+      setError(null)
+      setTimeout(() => setBusinessSaved(false), 1500)
+    } catch (e) {
+      setError((e as Error).message ?? 'Failed to save')
+    } finally {
+      setBusinessSaving(false)
+    }
+  }
+
+
+
   async function generate() {
     const isAuto = ideaMode === 'auto' && Boolean(uploadedImageUrl)
     if ((!isAuto && !idea.trim() && !uploadedImageUrl) || (isAuto && !uploadedImageUrl) || isWriting) return
