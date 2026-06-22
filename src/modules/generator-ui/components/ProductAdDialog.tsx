@@ -856,7 +856,12 @@ export default function ProductAdDialog({
 
   async function generate() {
     if (isWriting) return
-    if (!userPrompt.trim() && !productName.trim() && !uploadedImageUrl) {
+    if (isCharacter) {
+      if (!uploadedImageUrl) {
+        setError('Please upload a character image first.')
+        return
+      }
+    } else if (!userPrompt.trim() && !productName.trim() && !uploadedImageUrl) {
       setError('Write a prompt, add a product name, or attach a product photo.')
       return
     }
@@ -869,24 +874,36 @@ export default function ProductAdDialog({
       const templatePrompts = VIDEO_TEMPLATES.filter((v) => templateIds.has(v.id))
         .map((v) => v.prompt)
         .join(' ')
+      const subjectWord = isCharacter ? 'character' : 'product'
       let idea = trimmedPrompt
         ? trimmedName
-          ? `${trimmedPrompt}\n\nThis is an advertisement for the product "${trimmedName}".`
+          ? `${trimmedPrompt}\n\nThis is a film built around the ${subjectWord} "${trimmedName}".`
           : trimmedPrompt
         : trimmedName
-          ? `Advertisement for the product "${trimmedName}".`
-          : 'Advertisement for the attached product.'
+          ? isCharacter
+            ? `A film built around the character "${trimmedName}".`
+            : `Advertisement for the product "${trimmedName}".`
+          : isCharacter
+            ? 'A film built around the character in the attached image.'
+            : 'Advertisement for the attached product.'
       if (templatePrompts) {
         idea += `\n\nFollow these video template styles and conventions: ${templatePrompts}`
       }
       const { data, error: invokeErr } = await supabase.functions.invoke('scenario-write', {
         body: {
-          mode: 'product-ad',
+          mode: isCharacter ? 'character-sheet' : 'product-ad',
           idea,
           durationSeconds: duration,
           imageUrl: uploadedImageUrl ?? undefined,
-          productName: productName.trim() || undefined,
-          productDescription: productDescription.trim() || undefined,
+          ...(isCharacter
+            ? {
+                characterName: productName.trim() || undefined,
+                characterDescription: productDescription.trim() || undefined,
+              }
+            : {
+                productName: productName.trim() || undefined,
+                productDescription: productDescription.trim() || undefined,
+              }),
           cameraStyle,
           cameraMovement: cameraMovement.trim() || undefined,
           genre: GENRE_TEMPLATES.find((g) => g.id === genre)?.prompt || undefined,
@@ -894,7 +911,7 @@ export default function ProductAdDialog({
         },
       })
       if (invokeErr) {
-        setError(invokeErr.message || 'Failed to write ad scenario')
+        setError(invokeErr.message || 'Failed to write scenario')
         return
       }
       const payload = data as { scenario?: string; scenes?: string[]; warning?: string } | null
