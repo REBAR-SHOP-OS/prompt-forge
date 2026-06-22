@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 import { supabase } from '@/integrations/supabase/client'
 
 const USER_IMAGES_BUCKET = 'user-images'
@@ -81,6 +82,8 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
   const [logoSendUrl, setLogoSendUrl] = useState<string | null>(null)
   const [logoUploading, setLogoUploading] = useState(false)
   const [applyLogo, setApplyLogo] = useState(false)
+  const [promptText, setPromptText] = useState('')
+
 
   useEffect(() => {
     if (!open) {
@@ -258,6 +261,37 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
     }
   }
 
+  const handleGenerateFromPrompt = async () => {
+    const prompt = promptText.trim()
+    if (!userId || generatingId || !prompt) return
+    setError(null)
+    setGeneratingId('prompt')
+    try {
+      const useLogo = applyLogo && !!logoSendUrl
+      const { data, error: fnErr } = await supabase.functions.invoke('generate-character-sheet', {
+        body: {
+          prompt,
+          model: sheetModel,
+          title: '',
+          ...(useLogo ? { logoUrl: logoSendUrl, applyLogo: true } : {}),
+        },
+      })
+      if (fnErr) throw fnErr
+      const row = data as CharacterImage | null
+      if (!row?.id) throw new Error('No sheet returned')
+      const signed = { ...row, storage_path: await signUrl(row.storage_path) }
+      setImages((prev) => [signed, ...prev])
+      setPromptText('')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to generate character sheet.'
+      setError(msg)
+    } finally {
+      setGeneratingId(null)
+    }
+  }
+
+
+
   const handleUse = (img: CharacterImage) => {
     onUseCharacter?.({ id: img.id, url: img.storage_path, title: img.title ?? null })
     onOpenChange(false)
@@ -325,6 +359,33 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
               ))}
             </div>
           </div>
+
+          <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-3">
+            <p className="text-xs font-medium text-zinc-400">Describe a character (optional)</p>
+            <Textarea
+              value={promptText}
+              onChange={(e) => setPromptText(e.target.value)}
+              placeholder="e.g. A friendly robot barista with a round head, teal apron and glowing blue eyes"
+              maxLength={1000}
+              rows={3}
+              className="resize-none bg-transparent text-sm"
+            />
+            <Button
+              type="button"
+              onClick={() => { void handleGenerateFromPrompt() }}
+              disabled={!userId || !promptText.trim() || !!generatingId}
+              className="w-full gap-2"
+            >
+              {generatingId === 'prompt' ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Sparkles className="h-4 w-4" aria-hidden="true" />
+              )}
+              {generatingId === 'prompt' ? 'Generating…' : 'Generate from prompt'}
+            </Button>
+          </div>
+
+
 
           <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-3">
             <p className="text-xs font-medium text-zinc-400">Company logo (optional)</p>

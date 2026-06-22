@@ -61,12 +61,14 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const imageUrl = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
     const modelKey = typeof body?.model === "string" ? body.model.trim() : "fast";
+    const promptText = typeof body?.prompt === "string" ? body.prompt.trim().slice(0, 1000) : "";
     const title = typeof body?.title === "string" ? body.title.trim().slice(0, 100) : "";
     const logoUrl = typeof body?.logoUrl === "string" ? body.logoUrl.trim() : "";
     const applyLogo = body?.applyLogo === true && !!logoUrl && isAllowedImageUrl(logoUrl);
 
-    if (!imageUrl || !isAllowedImageUrl(imageUrl)) {
-      return new Response(JSON.stringify({ error: "valid imageUrl is required" }), {
+    const hasSource = !!imageUrl && isAllowedImageUrl(imageUrl);
+    if (!hasSource && !promptText) {
+      return new Response(JSON.stringify({ error: "Provide a character image or a text prompt" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -84,17 +86,20 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 1) Source image -> data URL
-    const srcResp = await fetch(imageUrl);
-    if (!srcResp.ok) {
-      return new Response(JSON.stringify({ error: "Could not fetch source image" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // 1) Source image -> data URL (only when an image is provided)
+    let srcDataUrl = "";
+    if (hasSource) {
+      const srcResp = await fetch(imageUrl);
+      if (!srcResp.ok) {
+        return new Response(JSON.stringify({ error: "Could not fetch source image" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const srcBytes = new Uint8Array(await srcResp.arrayBuffer());
+      let srcMime = srcResp.headers.get("content-type")?.split(";")[0]?.trim() || "image/png";
+      if (!/^image\/(png|jpe?g|webp)$/i.test(srcMime)) srcMime = "image/png";
+      srcDataUrl = `data:${srcMime};base64,${bytesToBase64(srcBytes)}`;
     }
-    const srcBytes = new Uint8Array(await srcResp.arrayBuffer());
-    let srcMime = srcResp.headers.get("content-type")?.split(";")[0]?.trim() || "image/png";
-    if (!/^image\/(png|jpe?g|webp)$/i.test(srcMime)) srcMime = "image/png";
-    const srcDataUrl = `data:${srcMime};base64,${bytesToBase64(srcBytes)}`;
 
     // 1b) Optional company logo -> data URL
     let logoDataUrl = "";
@@ -111,17 +116,27 @@ Deno.serve(async (req) => {
     }
     const useLogo = applyLogo && !!logoDataUrl;
 
-    const instructionParts = [
-      "Create a single, clean character sheet (turnaround sheet) of the SAME character shown in the FIRST provided image.",
-      "Preserve the exact identity: same face, hairstyle, skin tone, body type, and outfit across every view.",
+    const instructionParts: string[] = [];
+    if (hasSource) {
+      instructionParts.push(
+        "Create a single, clean character sheet (turnaround sheet) of the SAME character shown in the FIRST provided image.",
+        "Preserve the exact identity: same face, hairstyle, skin tone, body type, and outfit across every view.",
+      );
+    } else {
+      instructionParts.push(
+        `Design an original character based on this description: «${promptText}».`,
+        "Then create a single, clean character sheet (turnaround sheet) of that character, keeping the same identity, outfit and proportions across every view.",
+      );
+    }
+    instructionParts.push(
       "Compose ONE image on a plain neutral light-gray studio background, arranged in two rows:",
       "TOP ROW = full-body turnaround views of the character: front, 3/4 view, side profile, and back.",
       "BOTTOM ROW = head-and-shoulders close-ups showing several facial expressions: neutral, happy/smiling, angry, surprised, and sad.",
       "Keep consistent lighting and proportions, evenly spaced, all figures the same scale within their row.",
-    ];
+    );
     if (useLogo) {
       instructionParts.push(
-        "The SECOND provided image is the company logo. Place this logo tastefully on the character's clothing (such as the chest of the shirt/jersey or the cap), keeping it the same on every turnaround view and consistent in size and placement.",
+        `The ${hasSource ? "SECOND" : "provided"} image is the company logo. Place this logo tastefully on the character's clothing (such as the chest of the shirt/jersey or the cap), keeping it the same on every turnaround view and consistent in size and placement.`,
         "Do NOT add any other text, captions, watermarks, or borders. Output ONLY the rendered image.",
       );
     } else {
@@ -133,11 +148,15 @@ Deno.serve(async (req) => {
 
     const userContent: any[] = [
       { type: "text", text: instruction },
-      { type: "image_url", image_url: { url: srcDataUrl } },
     ];
+    if (hasSource) {
+      userContent.push({ type: "image_url", image_url: { url: srcDataUrl } });
+    }
     if (useLogo) {
       userContent.push({ type: "image_url", image_url: { url: logoDataUrl } });
     }
+
+
 
     const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -210,7 +229,7 @@ Deno.serve(async (req) => {
         size_bytes: outBytes.byteLength,
         mime_type: outMime,
         category: "character",
-        title: (title ? `${title} — sheet` : "Character sheet").slice(0, 100),
+        title: (title ? `${title} — sheet` : (promptText ? `${promptText.slice(0, 80)} — sheet` : "Character sheet")).slice(0, 100),
       })
       .select("id, storage_path, created_at, title")
       .single();
