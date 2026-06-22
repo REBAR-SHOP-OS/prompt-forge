@@ -141,12 +141,14 @@ function cleanProductName(title: string | null | undefined): string {
     .trim()
 }
 
-/** True when a title looks like a technical catalog code rather than a real product name. */
-function looksLikeCode(title: string | null | undefined): boolean {
-  if (!title) return false
-  const t = title.trim()
-  // code-like: lowercase tokens joined by _/- and/or ending in a number
-  return /^[a-z0-9]+([_-][a-z0-9]+)+$/u.test(t) || /[_-]\d+\s*$/u.test(t)
+/** True when the (already cleaned) name still looks like a technical code, not a real product name. */
+function looksLikeCode(name: string | null | undefined): boolean {
+  const t = (name ?? '').trim()
+  if (!t) return true // empty after cleaning -> needs a proper name
+  if (/[_\-\d]/u.test(t)) return true // leftover separators or digits
+  // Single token with no vowel reads like a code/garble (e.g. "skuxq")
+  if (!/\s/.test(t) && !/[aeiouAEIOU]/.test(t)) return true
+  return false
 }
 
 
