@@ -647,7 +647,7 @@ export default function ScenarioWriterDialog({
                       ideaMode === 'auto' ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'
                     }`}
                   >
-                    Auto from image
+                    {t.autoFromImage}
                   </button>
                   <button
                     type="button"
