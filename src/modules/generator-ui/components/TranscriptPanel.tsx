@@ -242,7 +242,7 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
             {hasLowConfidence ? (
               <p className="flex items-center gap-2 text-[11px] text-amber-300/90">
                 <span className="inline-block h-2 w-2 rounded-full bg-amber-400" aria-hidden="true" />
-                Highlighted words may be mispronounced in the narration.
+                Highlighted words may be mispronounced — click one to hear the correct pronunciation.
               </p>
             ) : null}
             <p
