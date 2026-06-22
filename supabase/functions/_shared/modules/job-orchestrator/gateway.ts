@@ -481,6 +481,7 @@ export const jobOrchestratorGateway = {
               aspectRatio: chosenAspectRatio,
               durationSeconds: parsed.data.durationSeconds ?? null,
               draftGroupId: parsed.data.draftGroupId ?? null,
+              narrationText: parsed.data.narrationText ?? null,
             });
           } catch (e) {
             const msg = (e as Error).message ?? "";
