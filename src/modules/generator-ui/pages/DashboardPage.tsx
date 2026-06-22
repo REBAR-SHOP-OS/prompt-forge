@@ -1235,6 +1235,7 @@ export default function DashboardPage() {
   const [isAiImageDialogOpen, setIsAiImageDialogOpen] = useState(false)
   const [isScenarioDialogOpen, setIsScenarioDialogOpen] = useState(false)
   const [isProductAdOpen, setIsProductAdOpen] = useState(false)
+  const [isCharacterSheetOpen, setIsCharacterSheetOpen] = useState(false)
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
