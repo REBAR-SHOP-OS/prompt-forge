@@ -1237,6 +1237,14 @@ export default function DashboardPage() {
   const [isScenarioDialogOpen, setIsScenarioDialogOpen] = useState(false)
   const [isProductAdOpen, setIsProductAdOpen] = useState(false)
   const [isCharacterSheetOpen, setIsCharacterSheetOpen] = useState(false)
+  // Character picked as a *descriptive reference* for the current project's film.
+  type ProjectCharacter = { id: string; url: string; title: string | null }
+  const [selectedCharacter, setSelectedCharacter] = useState<ProjectCharacter | null>(null)
+  const [characterList, setCharacterList] = useState<ProjectCharacter[]>([])
+  const [characterMenuOpen, setCharacterMenuOpen] = useState(false)
+  const [characterListLoading, setCharacterListLoading] = useState(false)
+  // Cache of generated character descriptions, keyed by character image id.
+  const characterDescCacheRef = useRef<Record<string, string>>({})
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
@@ -4115,9 +4123,10 @@ export default function DashboardPage() {
             .select('id, storage_path, created_at, still_duration_seconds, width, height, category')
             .eq('user_id', userId)
             .is('deleted_at', null)
-            // Product photos live only in the Storage > Product Photos tab.
-            // They must never leak into the workspace/drafts/library.
-            .or('category.is.null,category.neq.product'),
+            // Product photos live only in the Storage > Product Photos tab and
+            // character images live only in the Character Sheet dialog. Neither
+            // must ever leak into the workspace/drafts/library.
+            .or('category.is.null,and(category.neq.product,category.neq.character)'),
         ])
         if (cancelled) return
 
@@ -4132,7 +4141,10 @@ export default function DashboardPage() {
         const imgRows = (imgRowsRes.data ?? []) as UserImageItem[]
         const visibleImages = await signUserImageRows(
           imgRows.filter(
-            (r) => !workspaceHiddenImageIds.has(r.id) && (r.category ?? 'general') !== 'product',
+            (r) =>
+              !workspaceHiddenImageIds.has(r.id) &&
+              (r.category ?? 'general') !== 'product' &&
+              (r.category ?? 'general') !== 'character',
           ),
         )
         if (cancelled) return
@@ -5249,6 +5261,58 @@ export default function DashboardPage() {
     return parts.length > 0 ? parts : null
   }
 
+  // Load the user's uploaded characters for the in-project picker.
+  async function loadCharacterList() {
+    if (!userId) return
+    setCharacterListLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('generator_user_images')
+        .select('id, storage_path, title, created_at')
+        .eq('user_id', userId)
+        .eq('category', 'character')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      const rows = (data ?? []) as { id: string; storage_path: string; title: string | null }[]
+      const signed = await Promise.all(
+        rows.map(async (r) => ({
+          id: r.id,
+          title: r.title ?? null,
+          url: await signUserImageUrl(r.storage_path),
+        })),
+      )
+      setCharacterList(signed)
+    } catch {
+      setCharacterList([])
+    } finally {
+      setCharacterListLoading(false)
+    }
+  }
+
+  // Resolve (and cache) a textual description for the selected character so it
+  // can be injected into the film prompt as a descriptive reference.
+  async function resolveCharacterDescription(char: ProjectCharacter): Promise<string> {
+    const cached = characterDescCacheRef.current[char.id]
+    if (cached) return cached
+    try {
+      const { data, error } = await supabase.functions.invoke('describe-character', {
+        body: { imageUrl: char.url },
+      })
+      if (error) throw error
+      const desc = (data as { description?: string } | null)?.description?.trim() ?? ''
+      if (desc) characterDescCacheRef.current[char.id] = desc
+      return desc
+    } catch {
+      return ''
+    }
+  }
+
+  function applyCharacterPrefix(prompt: string, description: string): string {
+    if (!description) return prompt
+    return `Main character reference (keep this character consistent): ${description}\n\n${prompt}`
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
@@ -5290,7 +5354,15 @@ export default function DashboardPage() {
     }
 
     try {
-      const plannedPrompt = nextPrompt
+      let plannedPrompt = nextPrompt
+      // Inject the selected character as a descriptive reference into the prompt.
+      if (selectedCharacter) {
+        setVideoColumnMessage('Reading character reference…')
+        const desc = await resolveCharacterDescription(selectedCharacter)
+        plannedPrompt = applyCharacterPrefix(plannedPrompt, desc)
+        setVideoColumnMessage(null)
+      }
+
 
       // 45s auto-split: ask scenario-write to break the user's single prompt into
       // three sequential 15s scenes, then chain them via submitScenesAsJobs so each
@@ -10119,6 +10191,81 @@ export default function DashboardPage() {
               <Drama className="h-5 w-5" aria-hidden="true" />
               Character Sheet
             </button>
+
+            <Popover
+              open={characterMenuOpen}
+              onOpenChange={(open) => {
+                setCharacterMenuOpen(open)
+                if (open) void loadCharacterList()
+              }}
+            >
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Add a character to this project"
+                  title="Add a character as a reference for this project"
+                  className={`inline-flex h-11 items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
+                    selectedCharacter
+                      ? 'border-fuchsia-400/60 bg-fuchsia-500/10 text-fuchsia-100'
+                      : 'border-white/15 bg-white/[0.04] text-zinc-200 hover:border-white/30'
+                  }`}
+                >
+                  {selectedCharacter ? (
+                    <img
+                      src={selectedCharacter.url}
+                      alt={selectedCharacter.title ?? 'Character'}
+                      className="h-6 w-6 rounded-full object-cover"
+                    />
+                  ) : (
+                    <UserRound className="h-5 w-5" aria-hidden="true" />
+                  )}
+                  {selectedCharacter ? (selectedCharacter.title ?? 'Character') : 'Add character'}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-72 p-2">
+                <div className="mb-1.5 flex items-center justify-between px-1">
+                  <span className="text-xs font-semibold text-zinc-300">Project character</span>
+                  {selectedCharacter ? (
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedCharacter(null); setCharacterMenuOpen(false) }}
+                      className="text-[11px] text-zinc-400 hover:text-rose-300"
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+                {characterListLoading ? (
+                  <div className="flex items-center justify-center py-6 text-zinc-500">
+                    <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+                  </div>
+                ) : characterList.length === 0 ? (
+                  <div className="px-1 py-4 text-center text-xs text-zinc-500">
+                    No characters yet. Upload one in Character Sheet.
+                  </div>
+                ) : (
+                  <div className="grid max-h-64 grid-cols-3 gap-2 overflow-y-auto p-1">
+                    {characterList.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => { setSelectedCharacter(c); setCharacterMenuOpen(false) }}
+                        className={`group relative aspect-square overflow-hidden rounded-lg border transition ${
+                          selectedCharacter?.id === c.id
+                            ? 'border-fuchsia-400'
+                            : 'border-white/10 hover:border-white/30'
+                        }`}
+                        title={c.title ?? 'Character'}
+                      >
+                        <img src={c.url} alt={c.title ?? 'Character'} className="h-full w-full object-cover" loading="lazy" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </PopoverContent>
+            </Popover>
+
+
 
 
             <Popover
