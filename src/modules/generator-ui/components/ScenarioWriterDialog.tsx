@@ -630,7 +630,7 @@ export default function ScenarioWriterDialog({
           <div>
             <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
               <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                Your idea
+                {t.yourIdea}
               </div>
               {uploadedImageUrl ? (
                 <div
