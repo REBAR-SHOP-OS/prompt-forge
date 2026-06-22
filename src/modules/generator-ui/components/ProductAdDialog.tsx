@@ -1048,6 +1048,10 @@ export default function ProductAdDialog({
 
   async function generate() {
     if (isWriting) return
+    if (!businessInfo.trim()) {
+      setError(t.businessRequired)
+      return
+    }
     if (isCharacter) {
       if (!uploadedImageUrl) {
         setError('Please upload a character image first.')
@@ -1057,7 +1061,21 @@ export default function ProductAdDialog({
       setError('Write a prompt, add a product name, or attach a product photo.')
       return
     }
+    if (userId) {
+      setBusinessSaving(true)
+      try {
+        await supabase
+          .from('generator_business_profiles')
+          .upsert({ user_id: userId, business_info: businessInfo.trim() }, { onConflict: 'user_id' })
+      } catch {
+        /* non-fatal: still attempt generation */
+      } finally {
+        setBusinessSaving(false)
+      }
+    }
     setIsWriting(true)
+    setError(null)
+    setScenes([])
     setError(null)
     setScenes([])
     try {
