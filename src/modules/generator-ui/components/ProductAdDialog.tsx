@@ -553,6 +553,10 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'جارٍ تحميل المنتجات…',
     back: 'رجوع',
     viewImage: 'عرض الصورة',
+    businessLabel: 'عن عملك التجاري',
+    businessRequiredTag: '(مطلوب)',
+    businessPlaceholder: 'صِف عملك: ماذا تبيع، منتجاتك/خدماتك، الجمهور المستهدف ونبرة العلامة التجارية…',
+    businessRequired: 'يرجى وصف عملك أولاً — يجب أن يكون السيناريو ذا صلة به.',
   },
   tr: {
     title: 'Ürün Reklam Senaryosu',
