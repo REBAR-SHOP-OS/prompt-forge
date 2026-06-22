@@ -465,6 +465,7 @@ const T: Record<Lang, Record<string, string>> = {
     regenerate: 'تولید دوباره',
     sendAll: 'ارسال همه به Pending',
     useAsPrompt: 'استفاده به‌عنوان پرامت',
+    preparingFrame: 'در حال آماده‌سازی فریم…',
     generate: 'تولید سناریوی تبلیغ',
     language: 'زبان',
     chooseFromProducts: 'انتخاب از محصولات',
