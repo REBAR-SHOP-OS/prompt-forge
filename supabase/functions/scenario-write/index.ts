@@ -69,6 +69,15 @@ const LANGUAGE_NAMES: Record<string, string> = {
   fr: "French",
 };
 
+const NARRATION_LABELS: Record<string, string> = {
+  en: "Narration",
+  fa: "نریشن",
+  ar: "التعليق الصوتي",
+  tr: "Anlatım",
+  es: "Narración",
+  fr: "Narration",
+};
+
 function buildSystemPrompt(
   duration: number,
   productAd?: ProductAdOpts,
@@ -129,12 +138,20 @@ function buildSystemPrompt(
       : (autoFromImage ? autoLine : "You are a world-class advertising creative director who writes persuasive, commercial-style video scenarios designed to promote and sell the subject.");
 
   const adWithCharacter = isAd && Boolean(productAd?.characterImageUrl);
-  const narrationMulti = adWithCharacter
-    ? `In EVERY scene, weave in the character's spoken dialogue as narration that promotes the product, formatted inline as Character says: "...". The spoken lines count toward the scene word count.`
-    : "";
-  const narrationSingle = adWithCharacter
-    ? `Weave in the character's spoken dialogue as narration that promotes the product, formatted inline as Character says: "...". The spoken lines count toward the word limit.`
-    : "";
+  const narrationLabel = NARRATION_LABELS[outputLanguage] ?? NARRATION_LABELS.en;
+  const narrationSpeaker = isCharacter
+    ? "the lead character's spoken dialogue"
+    : adWithCharacter
+      ? "the on-screen character's spoken dialogue that promotes the product"
+      : "a persuasive voiceover line that promotes the product";
+  const narrationFormat = [
+    `STRUCTURE EACH SCENE IN TWO PARTS, in this exact order:`,
+    `(1) First write the VISUAL scenario only — subject, action, camera move, and lighting — with NO spoken words mixed in.`,
+    `(2) Then, on a NEW line, write the narration on its own line, starting with the exact label "${narrationLabel}:" followed by ${narrationSpeaker} in quotes.`,
+    `The narration text counts toward the word limit. Keep spoken lines short and realistically timed to the duration.`,
+  ].join(" ");
+  const narrationMulti = narrationFormat;
+  const narrationSingle = narrationFormat;
 
   if (sceneCount > 1) {
     const numWord = sceneCount === 2 ? "TWO" : sceneCount === 3 ? "THREE" : sceneCount === 9 ? "NINE" : String(sceneCount);
@@ -147,7 +164,7 @@ function buildSystemPrompt(
       `structured as ${numWord} sequential 15-second scenes that flow into each other.`,
       "The scenario MUST follow a clear story arc across the whole sequence: the opening scene is an attention-grabbing hook that establishes the subject and setting, the middle scenes develop the story and build interest and desire, and the final scene delivers a defined payoff/resolution that ends on a strong, memorable note.",
       `Output EXACTLY ${sceneCount} scene blocks separated by the literal delimiter "${SCENE_DELIM}" on its own line.`,
-      "Do not number the scenes, do not add headings or labels, no markdown, no preamble, no quotes.",
+      `Do not number the scenes, no markdown, no preamble. The only label allowed is the "${narrationLabel}:" line described below.`,
       "Each scene must be 70-90 words and self-contained as a video prompt (include subject, action, camera move, lighting),",
       "while clearly continuing the story from the previous scene.",
       narrationMulti,
@@ -165,7 +182,7 @@ function buildSystemPrompt(
     "It MUST follow a clear narrative arc with a defined beginning, middle, and end: an attention-grabbing opening hook that establishes the subject and setting, a middle that develops the story, and a clear payoff/resolution that ends on a strong, memorable note.",
     "Include opening visual hook, beat-by-beat action, camera/lighting cues, and a clear ending.",
     `Match pacing realistically to the duration: ${beat}.`,
-    "Output prose only — no markdown headings, no bullet lists, no preamble, no quotes.",
+    `Output prose only — no markdown headings, no bullet lists, no preamble. The only label allowed is the "${narrationLabel}:" line described below.`,
     `Keep it under ${cap} words.`,
     narrationSingle,
   ].filter(Boolean).join(" ");

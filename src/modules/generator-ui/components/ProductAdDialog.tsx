@@ -215,6 +215,41 @@ const tr = (m: Loc, lang: Lang) => m[lang] ?? m.en
 
 const RTL_LANGS: Lang[] = ['fa', 'ar']
 
+// All localized narration labels the edge function may emit, used to split a
+// scene block into its visual scenario part and its narration part.
+const NARRATION_LABELS = ['Narration', 'نریشن', 'التعليق الصوتي', 'Anlatım', 'Narración']
+const NARRATION_RE = new RegExp(`(^|\\n)\\s*(${NARRATION_LABELS.join('|')})\\s*:\\s*`, 'i')
+
+function splitNarration(text: string): { body: string; narration: string | null } {
+  const m = text.match(NARRATION_RE)
+  if (!m || m.index === undefined) return { body: text.trim(), narration: null }
+  const labelStart = m.index + m[1].length
+  const body = text.slice(0, labelStart).trim()
+  const narration = text.slice(m.index + m[0].length).trim()
+  return { body, narration: narration || null }
+}
+
+function SceneText({ text, narrationLabel }: { text: string; narrationLabel: string }) {
+  const { body, narration } = splitNarration(text)
+  return (
+    <div className="space-y-2">
+      <p dir="auto" className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
+        {body}
+      </p>
+      {narration ? (
+        <div className="rounded-md border border-amber-400/30 bg-amber-400/5 px-2.5 py-2">
+          <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300/90">
+            {narrationLabel}
+          </div>
+          <p dir="auto" className="whitespace-pre-wrap text-sm leading-6 text-amber-50/90">
+            {narration}
+          </p>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 const LANG_OPTIONS: { value: Lang; native: string }[] = [
   { value: 'en', native: 'English' },
   { value: 'fa', native: 'فارسی' },
@@ -438,6 +473,7 @@ const T: Record<Lang, Record<string, string>> = {
       'Describe how the camera should move, e.g. slow rise then fast push-in on the label…',
     adScenario: 'Ad scenario',
     scene_: 'Scene',
+    narration: 'Narration',
     copy: 'Copy',
     copyAll: 'Copy all',
     copied: 'Copied',
@@ -488,6 +524,7 @@ const T: Record<Lang, Record<string, string>> = {
       'توضیح دهید دوربین چطور حرکت کند، مثلاً بالا آمدن آرام سپس پوش‌این سریع روی برچسب…',
     adScenario: 'سناریوی تبلیغ',
     scene_: 'صحنه',
+    narration: 'نریشن',
     copy: 'کپی',
     copyAll: 'کپی همه',
     copied: 'کپی شد',
@@ -538,6 +575,7 @@ const T: Record<Lang, Record<string, string>> = {
       'صف كيف ينبغي أن تتحرك الكاميرا، مثلاً ارتفاع بطيء ثم دفع سريع نحو الملصق…',
     adScenario: 'سيناريو الإعلان',
     scene_: 'مشهد',
+    narration: 'التعليق الصوتي',
     copy: 'نسخ',
     copyAll: 'نسخ الكل',
     copied: 'تم النسخ',
@@ -588,6 +626,7 @@ const T: Record<Lang, Record<string, string>> = {
       'Kameranın nasıl hareket etmesi gerektiğini açıklayın, örn. yavaş yükseliş ardından etikete hızlı yaklaşma…',
     adScenario: 'Reklam senaryosu',
     scene_: 'Sahne',
+    narration: 'Anlatım',
     copy: 'Kopyala',
     copyAll: 'Tümünü kopyala',
     copied: 'Kopyalandı',
@@ -638,6 +677,7 @@ const T: Record<Lang, Record<string, string>> = {
       'Describe cómo debe moverse la cámara, p. ej. subida lenta y luego acercamiento rápido a la etiqueta…',
     adScenario: 'Guion del anuncio',
     scene_: 'Escena',
+    narration: 'Narración',
     copy: 'Copiar',
     copyAll: 'Copiar todo',
     copied: 'Copiado',
@@ -688,6 +728,7 @@ const T: Record<Lang, Record<string, string>> = {
       "Décrivez comment la caméra doit bouger, p. ex. montée lente puis travelling avant rapide sur l'étiquette…",
     adScenario: 'Scénario publicitaire',
     scene_: 'Scène',
+    narration: 'Narration',
     copy: 'Copier',
     copyAll: 'Tout copier',
     copied: 'Copié',
@@ -1860,9 +1901,7 @@ export default function ProductAdDialog({
                       {copiedIndex === i ? t.copied : t.copy}
                     </Button>
                   </div>
-                  <p dir="ltr" className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
-                    {text}
-                  </p>
+                  <SceneText text={text} narrationLabel={t.narration} />
                 </div>
               ))}
             </div>
@@ -1871,9 +1910,7 @@ export default function ProductAdDialog({
               <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
                 {t.adScenario} ({duration}s)
               </div>
-              <p dir="ltr" className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
-                {scenes[0]}
-              </p>
+              <SceneText text={scenes[0]} narrationLabel={t.narration} />
             </div>
           ) : null}
         </div>
