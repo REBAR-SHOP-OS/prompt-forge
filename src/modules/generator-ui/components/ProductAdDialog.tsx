@@ -1097,15 +1097,25 @@ export default function ProductAdDialog({
    * Returns undefined when no usable image is available.
    */
   async function buildFirstFrame(): Promise<string | undefined> {
+    // Resolve a fetchable URL for an image that may live in wan-frames or user-images.
+    const signAny = async (url: string): Promise<string> => {
+      try {
+        return await signFramesUrl(url)
+      } catch {
+        try {
+          return await signProductPhotoUrl(url)
+        } catch {
+          return imagePreviewUrl ?? url
+        }
+      }
+    }
+
     // Character film variant: use the character image itself.
     if (isCharacter) {
       if (!uploadedImageUrl) return undefined
-      try {
-        return await signFramesUrl(uploadedImageUrl)
-      } catch {
-        return imagePreviewUrl ?? uploadedImageUrl
-      }
+      return await signAny(uploadedImageUrl)
     }
+
 
     // Product ad with an attached character → compose a combined opening frame.
     if (uploadedImageUrl && characterRefSendUrl) {
