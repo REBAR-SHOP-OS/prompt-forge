@@ -348,7 +348,12 @@ Deno.serve(async (req) => {
       || (productAd?.productName ? `Create an advertisement for ${productAd.productName}.` : "")
       || (characterSheet?.characterName ? `Create a film built around the character "${characterSheet.characterName}".` : "")
       || (characterSheet ? "Create a film built around the character in the attached image." : "Generate a scenario based on the attached reference image.");
-    let resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl, productAd, autoFromImage, characterSheet);
+    // Inline private-bucket images as data URLs so the gateway can read them.
+    const resolvedImageUrl = imageUrl ? await resolveImageForGateway(imageUrl) : imageUrl;
+    if (productAd?.characterImageUrl) {
+      productAd.characterImageUrl = await resolveImageForGateway(productAd.characterImageUrl);
+    }
+    let resp = await callGateway(apiKey, duration, effectiveIdea, resolvedImageUrl, productAd, autoFromImage, characterSheet);
 
     if (resp.status === 429) {
       return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
