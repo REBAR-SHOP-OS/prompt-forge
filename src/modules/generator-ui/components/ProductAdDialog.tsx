@@ -482,6 +482,8 @@ const T: Record<Lang, Record<string, string>> = {
     useAsPrompt: 'Use as prompt',
     preparingFrame: 'Preparing frame…',
     generate: 'Generate ad scenario',
+    withNarration: 'With narration',
+    withoutNarration: 'Without narration',
     language: 'Language',
     chooseFromProducts: 'Choose from products',
     generateWithAi: 'Generate with AI',
@@ -533,6 +535,8 @@ const T: Record<Lang, Record<string, string>> = {
     useAsPrompt: 'استفاده به‌عنوان پرامت',
     preparingFrame: 'در حال آماده‌سازی فریم…',
     generate: 'تولید سناریوی تبلیغ',
+    withNarration: 'با نریشن',
+    withoutNarration: 'بدون نریشن',
     language: 'زبان',
     chooseFromProducts: 'انتخاب از محصولات',
     generateWithAi: 'ساخت با هوش مصنوعی',
@@ -584,6 +588,8 @@ const T: Record<Lang, Record<string, string>> = {
     useAsPrompt: 'استخدام كموجّه',
     preparingFrame: 'جارٍ تجهيز الإطار…',
     generate: 'توليد سيناريو الإعلان',
+    withNarration: 'مع التعليق الصوتي',
+    withoutNarration: 'بدون تعليق صوتي',
     language: 'اللغة',
     chooseFromProducts: 'اختر من المنتجات',
     generateWithAi: 'إنشاء بالذكاء الاصطناعي',
@@ -635,6 +641,8 @@ const T: Record<Lang, Record<string, string>> = {
     useAsPrompt: 'İstem olarak kullan',
     preparingFrame: 'Kare hazırlanıyor…',
     generate: 'Reklam senaryosu oluştur',
+    withNarration: 'Anlatımlı',
+    withoutNarration: 'Anlatımsız',
     language: 'Dil',
     chooseFromProducts: 'Ürünlerden seç',
     generateWithAi: 'Yapay zeka ile oluştur',
@@ -686,6 +694,8 @@ const T: Record<Lang, Record<string, string>> = {
     useAsPrompt: 'Usar como prompt',
     preparingFrame: 'Preparando fotograma…',
     generate: 'Generar guion del anuncio',
+    withNarration: 'Con narración',
+    withoutNarration: 'Sin narración',
     language: 'Idioma',
     chooseFromProducts: 'Elegir de productos',
     generateWithAi: 'Generar con IA',
@@ -737,6 +747,8 @@ const T: Record<Lang, Record<string, string>> = {
     useAsPrompt: 'Utiliser comme prompt',
     preparingFrame: 'Préparation de l’image…',
     generate: 'Générer le scénario publicitaire',
+    withNarration: 'Avec narration',
+    withoutNarration: 'Sans narration',
     language: 'Langue',
     chooseFromProducts: 'Choisir parmi les produits',
     generateWithAi: 'Générer avec l\'IA',
@@ -1152,7 +1164,7 @@ export default function ProductAdDialog({
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  async function generate() {
+  async function generate(withNarration = true) {
     if (isWriting) return
     if (!businessInfo.trim()) {
       setError(t.businessRequired)
@@ -1217,6 +1229,7 @@ export default function ProductAdDialog({
           idea,
           businessInfo: businessInfo.trim(),
           outputLanguage: lang,
+          narration: withNarration,
           durationSeconds: duration,
           imageUrl: uploadedImageUrl ?? undefined,
           ...(isCharacter
@@ -1931,19 +1944,38 @@ export default function ProductAdDialog({
                 )}
                 {copiedIndex === -1 ? t.copied : isSplit ? t.copyAll : t.copy}
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={generate}
-                disabled={isWriting || isSending || businessSaving || !canGenerate}
-              >
-                {isWriting ? (
-                  <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
-                ) : (
-                  <RefreshCw className="h-4 w-4 mr-2" aria-hidden="true" />
-                )}
-                {t.regenerate}
-              </Button>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={isWriting || isSending || businessSaving || !canGenerate}
+                  >
+                    {isWriting ? (
+                      <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4 mr-2" aria-hidden="true" />
+                    )}
+                    {t.regenerate}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" dir={dir} className="w-52 border-white/10 bg-[#0b0c0e]/95 p-1">
+                  <button
+                    type="button"
+                    onClick={() => generate(true)}
+                    className="flex w-full items-center rounded-md px-2.5 py-2 text-sm text-zinc-100 transition hover:bg-white/10"
+                  >
+                    {t.withNarration}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => generate(false)}
+                    className="flex w-full items-center rounded-md px-2.5 py-2 text-sm text-zinc-100 transition hover:bg-white/10"
+                  >
+                    {t.withoutNarration}
+                  </button>
+                </PopoverContent>
+              </Popover>
               {isSplit && onSendScenes ? (
                 <Button size="sm" onClick={handleSendAll} disabled={isWriting || isSending || isPreparingFrame}>
                   {isSending || isPreparingFrame ? (
@@ -1966,14 +1998,34 @@ export default function ProductAdDialog({
 
             </>
           ) : (
-            <Button onClick={generate} disabled={isWriting || businessSaving || !canGenerate} size="sm">
-              {isWriting ? (
-                <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
-              ) : (
-                <Wand2 className="h-4 w-4 mr-2" aria-hidden="true" />
-              )}
-              {t.generate}
-            </Button>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button disabled={isWriting || businessSaving || !canGenerate} size="sm">
+                  {isWriting ? (
+                    <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Wand2 className="h-4 w-4 mr-2" aria-hidden="true" />
+                  )}
+                  {t.generate}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" dir={dir} className="w-52 border-white/10 bg-[#0b0c0e]/95 p-1">
+                <button
+                  type="button"
+                  onClick={() => generate(true)}
+                  className="flex w-full items-center rounded-md px-2.5 py-2 text-sm text-zinc-100 transition hover:bg-white/10"
+                >
+                  {t.withNarration}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => generate(false)}
+                  className="flex w-full items-center rounded-md px-2.5 py-2 text-sm text-zinc-100 transition hover:bg-white/10"
+                >
+                  {t.withoutNarration}
+                </button>
+              </PopoverContent>
+            </Popover>
           )}
         </div>
 

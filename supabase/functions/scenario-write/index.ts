@@ -85,6 +85,7 @@ function buildSystemPrompt(
   characterSheet?: CharacterSheetOpts,
   businessInfo?: string,
   outputLanguage = "en",
+  narration = true,
 ): string {
   const langName = LANGUAGE_NAMES[outputLanguage] ?? "English";
   const isEnglish = outputLanguage === "en";
@@ -144,14 +145,22 @@ function buildSystemPrompt(
     : adWithCharacter
       ? "the on-screen character's spoken dialogue that promotes the product"
       : "a persuasive voiceover line that promotes the product";
-  const narrationFormat = [
-    `STRUCTURE EACH SCENE IN TWO PARTS, in this exact order:`,
-    `(1) First write the VISUAL scenario only — subject, action, camera move, and lighting — with NO spoken words mixed in.`,
-    `(2) Then, on a NEW line, write the narration on its own line, starting with the exact label "${narrationLabel}:" followed by ${narrationSpeaker} in quotes.`,
-    `The narration text counts toward the word limit. Keep spoken lines short and realistically timed to the duration.`,
-  ].join(" ");
+  const narrationFormat = narration
+    ? [
+        `STRUCTURE EACH SCENE IN TWO PARTS, in this exact order:`,
+        `(1) First write the VISUAL scenario only — subject, action, camera move, and lighting — with NO spoken words mixed in.`,
+        `(2) Then, on a NEW line, write the narration on its own line, starting with the exact label "${narrationLabel}:" followed by ${narrationSpeaker} in quotes.`,
+        `The narration text counts toward the word limit. Keep spoken lines short and realistically timed to the duration.`,
+      ].join(" ")
+    : [
+        `Write the VISUAL scenario ONLY — subject, action, camera move, and lighting.`,
+        `Do NOT include any narration, voiceover, spoken dialogue, captions, or the "${narrationLabel}:" label. No spoken words at all.`,
+      ].join(" ");
   const narrationMulti = narrationFormat;
   const narrationSingle = narrationFormat;
+  const labelNote = narration
+    ? ` The only label allowed is the "${narrationLabel}:" line described below.`
+    : ` Do not include any labels.`;
 
   if (sceneCount > 1) {
     const numWord = sceneCount === 2 ? "TWO" : sceneCount === 3 ? "THREE" : sceneCount === 9 ? "NINE" : String(sceneCount);
@@ -164,7 +173,7 @@ function buildSystemPrompt(
       `structured as ${numWord} sequential 15-second scenes that flow into each other.`,
       "The scenario MUST follow a clear story arc across the whole sequence: the opening scene is an attention-grabbing hook that establishes the subject and setting, the middle scenes develop the story and build interest and desire, and the final scene delivers a defined payoff/resolution that ends on a strong, memorable note.",
       `Output EXACTLY ${sceneCount} scene blocks separated by the literal delimiter "${SCENE_DELIM}" on its own line.`,
-      `Do not number the scenes, no markdown, no preamble. The only label allowed is the "${narrationLabel}:" line described below.`,
+      `Do not number the scenes, no markdown, no preamble.${labelNote}`,
       "Each scene must be 70-90 words and self-contained as a video prompt (include subject, action, camera move, lighting),",
       "while clearly continuing the story from the previous scene.",
       narrationMulti,
@@ -182,7 +191,7 @@ function buildSystemPrompt(
     "It MUST follow a clear narrative arc with a defined beginning, middle, and end: an attention-grabbing opening hook that establishes the subject and setting, a middle that develops the story, and a clear payoff/resolution that ends on a strong, memorable note.",
     "Include opening visual hook, beat-by-beat action, camera/lighting cues, and a clear ending.",
     `Match pacing realistically to the duration: ${beat}.`,
-    `Output prose only — no markdown headings, no bullet lists, no preamble. The only label allowed is the "${narrationLabel}:" line described below.`,
+    `Output prose only — no markdown headings, no bullet lists, no preamble.${labelNote}`,
     `Keep it under ${cap} words.`,
     narrationSingle,
   ].filter(Boolean).join(" ");
@@ -198,6 +207,7 @@ async function callGateway(
   characterSheet?: CharacterSheetOpts,
   businessInfo?: string,
   outputLanguage = "en",
+  narration = true,
 ): Promise<Response> {
   const refText = characterSheet
     ? `Brief: ${idea}\nThe attached image IS the lead character — match their exact face, hair, wardrobe, body, and overall look in every shot, and keep them perfectly consistent throughout the film.`
@@ -230,7 +240,7 @@ async function callGateway(
     body: JSON.stringify({
       model: "google/gemini-2.5-flash",
       messages: [
-        { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage) },
+        { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage, narration) },
         { role: "user", content: userContent },
       ],
     }),
@@ -314,6 +324,7 @@ Deno.serve(async (req) => {
     const businessInfo = typeof body?.businessInfo === "string" ? body.businessInfo.trim().slice(0, 2000) : "";
     const ALLOWED_LANGS = ["en", "fa", "ar", "tr", "es", "fr"];
     const outputLanguage = ALLOWED_LANGS.includes(body?.outputLanguage) ? body.outputLanguage : "en";
+    const narration = typeof body?.narration === "boolean" ? body.narration : true;
     const durationRaw = Number(body?.durationSeconds);
     const duration = [5, 10, 15, 30, 45, 135].includes(durationRaw) ? durationRaw : 0;
     const imageUrlRaw = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
@@ -423,7 +434,7 @@ Deno.serve(async (req) => {
     if (productAd?.characterImageUrl) {
       productAd.characterImageUrl = await resolveImageForGateway(productAd.characterImageUrl);
     }
-    let resp = await callGateway(apiKey, duration, effectiveIdea, resolvedImageUrl, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage);
+    let resp = await callGateway(apiKey, duration, effectiveIdea, resolvedImageUrl, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage, narration);
 
     if (resp.status === 429) {
       return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
@@ -453,7 +464,7 @@ Deno.serve(async (req) => {
     // One retry for multi-scene durations if we didn't get the expected count.
     const expected = expectedSceneCount(duration);
     if (expected > 1 && scenes.length === 0) {
-      resp = await callGateway(apiKey, duration, effectiveIdea, resolvedImageUrl, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage);
+      resp = await callGateway(apiKey, duration, effectiveIdea, resolvedImageUrl, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage, narration);
       if (resp.ok) {
         data = await resp.json();
         raw = (data?.choices?.[0]?.message?.content ?? "").trim();
