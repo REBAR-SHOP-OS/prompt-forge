@@ -1,50 +1,23 @@
-## هدف
+## Goal
+Make the Character Sheet dialog fully English — replace the Persian subtitles under the model options shown in your screenshot.
 
-سه تغییر روی بخش Character Sheet و استفاده از کارکتر در ساخت فیلم:
+## Change
+In `src/modules/generator-ui/components/CharacterSheetDialog.tsx`, the model options have Persian `hint` subtitles (lines 19–21):
 
-1. کارکترهای آپلودشده دیگر به‌صورت «Draft project» در کتابخانه نمایش داده نشوند.
-2. کاربر بتواند داخل هر پروژه یک کارکتر را انتخاب کند، پرامپتش را بنویسد و فیلم بسازد (کارکتر به‌عنوان **مرجع توصیفی** به مدل پاس داده شود).
-3. در دیالوگ Character Sheet کاربر یک عکس کارکتر آپلود کند و با انتخاب یکی از **۳ مدل**، یک Character Sheet کامل (هم نماهای چندزاویه‌ای بدن و هم حالات چهره در یک شیت) برایش ساخته شود.
+```text
+Fast          سریع
+High quality  کیفیت بالا
+Detailed      جزئیات
+```
 
----
+Replace the Persian hints with short English descriptions:
+- Fast → "Quick & cheap"
+- High quality → "Best detail"
+- Detailed → "Text & fine detail"
 
-## بخش ۱ — حذف نمایش کارکتر به‌صورت درفت
+(The main labels are already English; only the small grey subtitle line changes.)
 
-ریشهٔ مشکل: تصاویر دستهٔ `character` مثل تصاویر معمولی وارد `userImages` می‌شوند و سیستم به هرکدام یک «orphan draft» اختصاص می‌دهد (تصاویر `product` از قبل مستثنا شده‌اند، ولی `character` نه).
+## Verification
+Open Character Sheet and confirm the three model options show only English text.
 
-- در کوئری بازیابی workspace و فیلتر تصاویر، علاوه بر `product`، دستهٔ `character` هم از `userImages` کنار گذاشته شود تا هیچ‌وقت تبدیل به درفت نشود.
-- در نتیجه کارت «Draft project» مربوط به کارکتر دیگر ساخته نمی‌شود؛ کارکترها فقط داخل دیالوگ Character Sheet به‌عنوان کتابخانهٔ کارکتر باقی می‌مانند.
-
-## بخش ۲ — انتخاب کارکتر داخل پروژه و استفادهٔ توصیفی
-
-- در نوار پرامپت (composer) یک کنترل «Character» اضافه می‌شود که اجازه می‌دهد کاربر یکی از کارکترهای آپلودشده‌اش را برای پروژهٔ جاری انتخاب/حذف کند (با نمایش تصویر کوچک کارکتر انتخاب‌شده). انتخاب per-project ذخیره می‌شود.
-- هنگام ساخت فیلم، عکسِ کارکترِ انتخاب‌شده یک‌بار از طریق یک Edge Function با مدل بینایی به یک **توضیح متنی دقیق** تبدیل می‌شود (ظاهر، لباس، چهره، مو). این توضیح کش می‌شود تا برای دفعات بعد دوباره ساخته نشود.
-- توضیح کارکتر به ابتدای پرامپتِ ارسالی به `createJob` تزریق می‌شود (مثلاً: «Character reference: …. » + پرامپت کاربر). به این ترتیب کارکتر فقط به‌عنوان مرجع توصیفی اعمال می‌شود و فریم شروع را قفل نمی‌کند.
-- چون این مسیر متنی است، به باکت `wan-frames` نیازی ندارد و مستقل از مشکل باز قبلی کار می‌کند.
-
-## بخش ۳ — ساخت Character Sheet با مدل انتخابی
-
-در `CharacterSheetDialog`:
-- بعد از آپلود، یک منوی انتخاب مدل با **۳ گزینه** نمایش داده می‌شود:
-  - سریع: `google/gemini-3.1-flash-image`
-  - کیفیت بالا: `google/gemini-3-pro-image`
-  - دقیق/جزئیات: `openai/gpt-image-2`
-- دکمهٔ «Generate Character Sheet» روی هر کارکتر فعال می‌شود.
-- یک Edge Function جدید عکس کارکتر + مدل انتخابی را می‌گیرد و از طریق Lovable AI یک شیت ترکیبی می‌سازد: ردیف بالا نماهای چندزاویه‌ای بدن (روبه‌رو، نیم‌رخ، پشت، سه‌رخ) و ردیف پایین چند حالت چهره/احساس، با حفظ هویت همان کارکتر.
-- نتیجه در باکت `user-images` با دستهٔ `character` ذخیره و در گرید دیالوگ نمایش داده می‌شود؛ چون دستهٔ `character` از درفت‌ها مستثناست، شیت تولیدشده هم به‌صورت درفت ظاهر نمی‌شود.
-- خطاهای ۴۲۹/۴۰۲ گیت‌وی در UI دیالوگ به‌صورت پیام واضح نمایش داده می‌شوند.
-
----
-
-## جزئیات فنی
-
-- فایل‌ها:
-  - `src/modules/generator-ui/pages/DashboardPage.tsx` — مستثنا کردن `character` از `userImages`؛ افزودن state و کنترل انتخاب کارکتر در composer؛ تزریق توضیح کارکتر در پرامپت هنگام `createJob`.
-  - `src/modules/generator-ui/components/CharacterSheetDialog.tsx` — منوی انتخاب مدل + دکمهٔ تولید + فراخوانی Edge Function + نمایش نتیجه.
-  - `supabase/functions/describe-character/index.ts` — مدل بینایی (`google/gemini-3-flash-preview`) برای تولید توضیح متنی از عکس کارکتر.
-  - `supabase/functions/generate-character-sheet/index.ts` — تولید تصویر شیت با مدل انتخاب‌شده روی `https://ai.gateway.lovable.dev/v1/images/generations` (یا مسیر chat برای مدل‌های Gemini)، آپلود در `user-images`، درج رکورد با `category='character'`.
-- هر دو Edge Function: اعتبارسنجی JWT در کد، CORS، اعتبارسنجی ورودی با Zod، استفاده از `LOVABLE_API_KEY` (موجود).
-- توضیح کارکتر در ستون موجود تصویر (مثلاً `title`/متادیتا) یا در localStorage کش می‌شود تا فراخوانی تکراری مدل بینایی انجام نشود.
-
-## خارج از محدوده
-- مشکل عمومی بودن باکت `wan-frames` (مسیر فریم استارت) در این تغییر حل نمی‌شود؛ مسیر کارکترِ توصیفی به آن وابسته نیست.
+No other Persian text exists in this dialog.

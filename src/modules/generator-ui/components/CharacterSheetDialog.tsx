@@ -16,9 +16,9 @@ const CHARACTER_CATEGORY = 'character'
 type SheetModel = 'fast' | 'quality' | 'detailed'
 
 const SHEET_MODELS: { key: SheetModel; label: string; hint: string }[] = [
-  { key: 'fast', label: 'Fast', hint: 'سریع' },
-  { key: 'quality', label: 'High quality', hint: 'کیفیت بالا' },
-  { key: 'detailed', label: 'Detailed', hint: 'جزئیات' },
+  { key: 'fast', label: 'Fast', hint: 'Quick & cheap' },
+  { key: 'quality', label: 'High quality', hint: 'Best detail' },
+  { key: 'detailed', label: 'Detailed', hint: 'Text & fine detail' },
 ]
 
 type CharacterImage = {
