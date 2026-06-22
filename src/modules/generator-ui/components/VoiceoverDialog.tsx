@@ -26,8 +26,15 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
+import {
+  VOICE_CATALOG,
+  defaultVoiceForGender,
+  getVoiceById,
+  voicesForGender,
+  type VoiceGender,
+} from '@/modules/generator-ui/lib/voiceCatalog'
 
-type Gender = 'female' | 'male' | 'child'
+type Gender = VoiceGender
 type Tone =
   | 'advertising'
   | 'excited'
