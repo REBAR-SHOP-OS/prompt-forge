@@ -56,8 +56,10 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
   const audioCache = useRef<Map<string, string>>(new Map())
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  const showWords = language === ORIGINAL && words.length > 0
+  const showWords = words.length > 0
   const hasLowConfidence = showWords && words.some((w) => w.lowConfidence)
+  const showTranslation = language !== ORIGINAL
+  const translationLabel = LANGUAGES.find((l) => l.value === language)?.label ?? 'Translation'
 
   const playPronunciation = useCallback(async (rawWord: string, index: number) => {
     // Strip surrounding punctuation: "Stirrup," -> "Stirrup".
