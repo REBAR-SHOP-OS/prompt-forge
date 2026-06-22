@@ -758,6 +758,8 @@ export default function ProductAdDialog({
   const [productName, setProductName] = useState('')
   const [nameNeedsReview, setNameNeedsReview] = useState(false)
   const [productDescription, setProductDescription] = useState('')
+  const [businessInfo, setBusinessInfo] = useState('')
+  const [businessSaving, setBusinessSaving] = useState(false)
   const [userPrompt, setUserPrompt] = useState('')
   const [cameraStyle, setCameraStyle] = useState<string>(CAMERA_STYLES[0].label.en)
   const [cameraMovement, setCameraMovement] = useState('')
