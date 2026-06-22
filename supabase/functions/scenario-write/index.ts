@@ -182,7 +182,7 @@ function buildSystemPrompt(
     "It MUST follow a clear narrative arc with a defined beginning, middle, and end: an attention-grabbing opening hook that establishes the subject and setting, a middle that develops the story, and a clear payoff/resolution that ends on a strong, memorable note.",
     "Include opening visual hook, beat-by-beat action, camera/lighting cues, and a clear ending.",
     `Match pacing realistically to the duration: ${beat}.`,
-    "Output prose only — no markdown headings, no bullet lists, no preamble, no quotes.",
+    `Output prose only — no markdown headings, no bullet lists, no preamble. The only label allowed is the "${narrationLabel}:" line described below.`,
     `Keep it under ${cap} words.`,
     narrationSingle,
   ].filter(Boolean).join(" ");
