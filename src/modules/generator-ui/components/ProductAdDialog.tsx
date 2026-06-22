@@ -101,6 +101,7 @@ type Props = {
   onOpenChange: (open: boolean) => void
   defaultDuration: ProductAdDuration
   userId: string | null
+  variant?: 'product' | 'character'
   onUseAsPrompt: (scenario: string, imageUrl?: string) => void
   onSendScenes?: (scenes: string[], imageUrl?: string) => void | Promise<void>
 }
