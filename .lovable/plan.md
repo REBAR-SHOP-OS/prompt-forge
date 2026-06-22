@@ -1,33 +1,31 @@
-## Problem
+## Goal
 
-For videos longer than 15 seconds, scenes are generated as a **chain**: each next card uses the *last frame* of the previous clip as its start frame (`submitScenesAsJobs` → `waitForLastFrameUrl` in `DashboardPage.tsx`). The captured last frame is uploaded to the **`wan-frames`** storage bucket, then handed to the backend as a URL via:
+Put a clear **narration icon** on every working-clip card so the user can instantly see what narration / spoken voiceover belongs to that card.
 
-```
-supabase.storage.from('wan-frames').getPublicUrl(storagePath)
-// → /storage/v1/object/public/wan-frames/<userId>/scene-chain-...png
-```
+## Where the narration comes from
 
-But `wan-frames` is a **private** bucket. The backend (`fetchAsInlineData` in `external-api-adapter/service.ts`) fetches that frame with a plain, unauthenticated `fetch(url)` to feed Veo's first/last-frame extension. A `public` URL on a private bucket returns an error, so the fetch fails and the card shows **"Failed to download …scene-chain-…png"** — exactly the error in the screenshot. The first card works because it uses a directly-supplied image; only the chained next cards (>15s) hit this path.
+Each card's narration is already embedded **inside that card's scene prompt** (`job.input_prompt`). The scenario/ad writer weaves spoken lines into the text as quoted dialogue — e.g. `Character says: "..."`, plain `"..."` quotes, or `«...»` (Persian/Arabic). There is no separate narration column, so the icon will surface the spoken lines extracted from the prompt (and gracefully fall back when none are found).
 
-Every `wan-frames` staging site in the app uses the same broken `getPublicUrl` pattern, so the fix should be at the fetch layer to cover all of them robustly.
+## Changes (frontend only, in `src/modules/generator-ui/pages/DashboardPage.tsx`)
 
-## Fix (root cause, single robust change)
+1. **Narration extractor helper** — a small pure function `extractNarration(prompt: string): string[]` that pulls spoken lines from a prompt:
+   - Matches `says: "…"` / `: "…"` patterns and standalone quotes `"…"`, `“…”`, `«…»`.
+   - Returns the de-duplicated list of spoken lines. If none are found, returns `[]`.
 
-Harden the backend frame fetcher so it downloads the project's **own** storage objects with the service-role client instead of an unauthenticated public fetch.
+2. **Narration icon on each video clip card** — in the card action row (next to the existing Pencil / Regenerate / Trim icons, around line 9272–9424):
+   - Add a button with a speech icon (`MessageSquareQuote` from lucide-react, already the icon style used in the app) — tinted to stand out (e.g. indigo/violet accent).
+   - `title`/`aria-label`: "Narration for this card".
+   - Clicking it opens a small **popover/dialog** showing the extracted narration lines for that card. When no spoken lines are detected, show a short hint ("No narration detected in this card's prompt") so the user knows this card has no scripted voiceover yet.
+   - The icon shows a subtle dot/highlight when the card actually contains narration, so the user can tell at a glance which cards have a script.
 
-### `supabase/functions/_shared/modules/external-api-adapter/service.ts` — `fetchAsInlineData`
-- Detect when the incoming URL points to this project's Supabase Storage (matches `SUPABASE_URL` + `/storage/v1/object/(public|sign)/<bucket>/<key>`).
-- For those, use `getServiceClient().storage.from(bucket).download(key)` (service role bypasses the private-bucket restriction and RLS), then base64-encode the bytes as today.
-- For any other (genuinely external) URL, keep the existing plain `fetch(url)` path unchanged.
-- This makes both `public`- and `sign`-form URLs work, is immune to signed-URL expiry during long extension/queue waits, and fixes first-frame staging too — not just scene chaining.
-
-Imports needed in that file: `getServiceClient` from `../../core/supabase.ts` and `getEnv` (already imported).
+3. **Narration viewer** — reuse the existing lightweight prompt-viewer dialog pattern already in the file (`setPromptViewer`) by adding an analogous `narrationViewer` state + a small `Dialog`, OR render the lines in a shadcn `Popover` anchored to the icon. Keep it RTL-friendly (`dir="auto"`) so Persian/Arabic narration renders correctly.
 
 ## Verification
-- Re-deploy the edge function.
-- Use the existing scenario flow (or a direct `curl`) to create a 30s/chained job whose `firstFrameUrl` is a `wan-frames` public-form URL, and confirm the job no longer fails at the download step (check `edge_function_logs`).
-- Confirm a normal single 15s job (external/first image) still generates correctly — the external-URL branch is untouched.
+
+- Build passes.
+- Open the preview, generate/inspect a multi-scene project: each clip card shows the new narration icon; clicking it reveals that card's spoken lines; cards with quoted dialogue show the highlight, cards without show the empty-state hint.
+- Confirm Persian narration text displays right-to-left in the popover.
 
 ## Notes
-- Pure backend fix; no schema, bucket-visibility, or frontend changes required. `wan-frames` stays private (correct for user content).
-- Minimal, non-destructive, and covers all current and future `wan-frames` frame-staging call sites at once.
+- Pure presentation change — no backend, schema, or generation-logic changes.
+- Does not alter prompt text or the generation flow; it only reads and displays what's already on each card.
