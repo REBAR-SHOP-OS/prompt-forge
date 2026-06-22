@@ -987,8 +987,10 @@ export default function ProductAdDialog({
 
   const isSplit = SPLIT_DURATIONS.includes(duration) && scenes.length > 1
   const concatenated = scenes.join('\n\n')
-  const canGenerate = (userPrompt.trim().length > 0 || productName.trim().length > 0 || Boolean(uploadedImageUrl)) && !isUploadingImage
-  const t = T[lang]
+  const canGenerate = isCharacter
+    ? Boolean(uploadedImageUrl) && !isUploadingImage
+    : (userPrompt.trim().length > 0 || productName.trim().length > 0 || Boolean(uploadedImageUrl)) && !isUploadingImage
+  const t = isCharacter ? { ...T[lang], ...CHAR_T[lang] } : T[lang]
   const dir = RTL_LANGS.includes(lang) ? 'rtl' : 'ltr'
 
   return (
