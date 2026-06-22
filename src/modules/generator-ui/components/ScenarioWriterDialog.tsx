@@ -157,7 +157,7 @@ export default function ScenarioWriterDialog({
 
   function handleUseAsPrompt() {
     if (scenes.length === 0) return
-    onUseAsPrompt(scenes.join('\n\n'), uploadedImageUrl ?? undefined)
+    onUseAsPrompt(scenes.join('\n\n'), uploadedImageUrl ?? undefined, duration)
     onOpenChange(false)
   }
 
