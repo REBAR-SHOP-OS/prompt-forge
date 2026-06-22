@@ -8368,14 +8368,16 @@ export default function DashboardPage() {
         onOpenChange={setIsScenarioDialogOpen}
         defaultDuration={durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135 ? durationSeconds : (durationSeconds as 5 | 10 | 15)}
         userId={userId}
-        onUseAsPrompt={(text, imageUrl) => {
+        onUseAsPrompt={(text, imageUrl, duration) => {
+          if (duration) setDurationSeconds(duration)
           setPromptText(text)
           if (imageUrl) {
             setUploadTarget('Start')
             void handleUseImageAsStart(imageUrl)
           }
         }}
-        onSendScenes={async (scenes, imageUrl) => {
+        onSendScenes={async (scenes, imageUrl, duration) => {
+          if (duration) setDurationSeconds(duration)
           const tagged = scenes
             .map((s, i) => `=== Scene ${i + 1} ===\n${s.trim()}`)
             .join('\n\n')
@@ -8392,14 +8394,16 @@ export default function DashboardPage() {
         onOpenChange={setIsProductAdOpen}
         defaultDuration={durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135 ? durationSeconds : (durationSeconds as 5 | 10 | 15)}
         userId={userId}
-        onUseAsPrompt={(text, imageUrl) => {
+        onUseAsPrompt={(text, imageUrl, duration) => {
+          if (duration) setDurationSeconds(duration)
           setPromptText(text)
           if (imageUrl) {
             setUploadTarget('Start')
             void handleUseImageAsStart(imageUrl)
           }
         }}
-        onSendScenes={async (scenes, imageUrl) => {
+        onSendScenes={async (scenes, imageUrl, duration) => {
+          if (duration) setDurationSeconds(duration)
           const tagged = scenes
             .map((s, i) => `=== Scene ${i + 1} ===\n${s.trim()}`)
             .join('\n\n')
