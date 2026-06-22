@@ -78,6 +78,10 @@ function buildSystemPrompt(
         productAd?.productName ? `The hero product is "${productAd.productName}".` : "Center the scenario on the product in the user's brief.",
         productAd?.productDescription ? `Product details: ${productAd.productDescription}.` : "",
         "Make the product the unmistakable hero of every shot: show it prominently, highlight its look, texture, and key selling points, and build desire.",
+        productAd?.characterImageUrl
+          ? "This commercial ALSO features a recurring human character provided as a SECOND attached image. Carefully analyze that second image and feature this exact character on screen interacting with the product, keeping their face, hairstyle, wardrobe, and body type perfectly consistent and recognizable across every shot, while the product remains the clear hero."
+          : "",
+        productAd?.characterDescription ? `Character notes: ${productAd.characterDescription}.` : "",
         cameraGuidance(productAd ?? {}),
       ].filter(Boolean).join(" ")
     : "";
