@@ -380,16 +380,7 @@ export function VoiceoverDialog({
             )}
           </Button>
 
-          {audioUrl ? (
-            <div className="space-y-3 rounded-md border border-white/10 bg-white/[0.03] p-3">
-              <audio
-                key={audioUrl}
-                src={audioUrl}
-                controls
-                className="w-full"
-              />
-            </div>
-          ) : null}
+
 
           {activeVoiceoverUrl ? (
             <div className="space-y-4 rounded-md border border-white/10 bg-white/[0.03] p-3">
