@@ -41,7 +41,7 @@ interface CharacterSheetOpts {
   scene?: string;
 }
 
-function cameraGuidance(opts: ProductAdOpts | CharacterSheetOpts): string {
+function cameraGuidance(opts: ProductAdOpts | CharacterSheetOpts, heroLabel = "product"): string {
   const bits: string[] = [];
   if (opts.cameraStyle) {
     bits.push(`Use a "${opts.cameraStyle}" camera style as the dominant cinematic technique throughout, and explicitly name this camera move in the shot descriptions.`);
@@ -50,17 +50,23 @@ function cameraGuidance(opts: ProductAdOpts | CharacterSheetOpts): string {
     bits.push(`Honor these specific camera-movement notes from the user: ${opts.cameraMovement}.`);
   }
   if (opts.genre) {
-    bits.push(`Direct the entire scenario in this genre/atmosphere: ${opts.genre}. Apply its mood, lighting, color palette, and visual style consistently across every shot while keeping the product the clear hero of the advertisement.`);
+    bits.push(`Direct the entire scenario in this genre/atmosphere: ${opts.genre}. Apply its mood, lighting, color palette, and visual style consistently across every shot while keeping the ${heroLabel} the clear hero of the film.`);
   }
   if (opts.scene) {
-    bits.push(`Set the entire scenario in this environment/location: ${opts.scene}. Use its setting, lighting, textures, and atmosphere consistently across every shot while keeping the product the clear hero of the advertisement.`);
+    bits.push(`Set the entire scenario in this environment/location: ${opts.scene}. Use its setting, lighting, textures, and atmosphere consistently across every shot while keeping the ${heroLabel} the clear hero of the film.`);
   }
   return bits.join(" ");
 }
 
-function buildSystemPrompt(duration: number, productAd?: ProductAdOpts, autoFromImage?: boolean): string {
+function buildSystemPrompt(
+  duration: number,
+  productAd?: ProductAdOpts,
+  autoFromImage?: boolean,
+  characterSheet?: CharacterSheetOpts,
+): string {
   const sceneCount = expectedSceneCount(duration);
   const isAd = Boolean(productAd);
+  const isCharacter = Boolean(characterSheet);
   const autoLine = autoFromImage
     ? "You are a world-class advertising creative director writing a persuasive, commercial-style scenario. The user provided ONLY a reference image and no written idea. First, carefully analyze the attached image — identify the main subject, setting, mood, colors, lighting, props, and overall style — then invent a compelling advertising scenario that is faithful to and inspired by what you see in the image, built to promote and sell that subject."
     : "";
@@ -73,7 +79,22 @@ function buildSystemPrompt(duration: number, productAd?: ProductAdOpts, autoFrom
         cameraGuidance(productAd ?? {}),
       ].filter(Boolean).join(" ")
     : "";
-  const persona = isAd ? productLine : (autoFromImage ? autoLine : "You are a world-class advertising creative director who writes persuasive, commercial-style video scenarios designed to promote and sell the subject.");
+  const characterLine = isCharacter
+    ? [
+        "You are a world-class film director writing a cinematic film scenario built entirely around a single LEAD CHARACTER.",
+        "The attached image IS this lead character — carefully analyze it first: identify the character's appearance, gender, approximate age, face, hairstyle, wardrobe/costume, body type, distinctive features, expression, and overall vibe.",
+        characterSheet?.characterName ? `The character's name is "${characterSheet.characterName}".` : "",
+        characterSheet?.characterDescription ? `Additional character notes: ${characterSheet.characterDescription}.` : "",
+        "Make this exact character the protagonist of every shot and keep their look (face, hair, wardrobe, body) perfectly consistent and recognizable across the whole film. Describe the character in concrete visual detail in each shot so the look never drifts.",
+        "Build a compelling story that revolves around this character, with clear actions and emotions driven by them.",
+        cameraGuidance(characterSheet ?? {}, "character"),
+      ].filter(Boolean).join(" ")
+    : "";
+  const persona = isCharacter
+    ? characterLine
+    : isAd
+      ? productLine
+      : (autoFromImage ? autoLine : "You are a world-class advertising creative director who writes persuasive, commercial-style video scenarios designed to promote and sell the subject.");
 
   if (sceneCount > 1) {
     const numWord = sceneCount === 2 ? "TWO" : sceneCount === 3 ? "THREE" : sceneCount === 9 ? "NINE" : String(sceneCount);
