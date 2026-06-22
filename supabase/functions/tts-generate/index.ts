@@ -267,7 +267,11 @@ Deno.serve(async (req) => {
       })
     }
 
-    const voiceName = VOICE_MAP[gender][tone]
+    // Prefer an explicit named voice from the catalog; otherwise derive from
+    // the gender/tone map (keeps existing callers working).
+    const voiceName = isAllowedVoice(body.voiceName)
+      ? body.voiceName
+      : VOICE_MAP[gender][tone]
     const paceHint = targetDurationSec
       ? ` Pace the delivery naturally so the entire line lasts about ${targetDurationSec} seconds.`
       : ''
