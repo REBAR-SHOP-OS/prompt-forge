@@ -9300,6 +9300,31 @@ export default function DashboardPage() {
                       >
                         {video.input_prompt}
                       </button>
+                      {(() => {
+                        const narration = extractNarration(video.input_prompt)
+                        const hasNarration = narration.length > 0
+                        return (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setNarrationViewer(narration)
+                            }}
+                            aria-label="Narration for this card"
+                            title={hasNarration ? 'Narration for this card' : 'No narration detected in this card'}
+                            className={`relative grid h-7 w-7 shrink-0 place-items-center rounded-full border transition ${
+                              hasNarration
+                                ? 'border-violet-400/40 bg-violet-500/10 text-violet-200 hover:border-violet-300/60 hover:bg-violet-500/20 hover:text-violet-100'
+                                : 'border-white/10 bg-white/[0.03] text-zinc-500 hover:border-white/20 hover:text-zinc-300'
+                            }`}
+                          >
+                            <MessageSquareQuote className="h-3.5 w-3.5" aria-hidden="true" />
+                            {hasNarration ? (
+                              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-violet-400 ring-2 ring-[#0b0c0e]" aria-hidden="true" />
+                            ) : null}
+                          </button>
+                        )
+                      })()}
                       {!isReadOnlyProject && (
                       <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
                         <span
