@@ -1422,10 +1422,18 @@ export default function ProductAdDialog({
                 </div>
                 <Input
                   value={productName}
-                  onChange={(e) => setProductName(e.target.value)}
+                  onChange={(e) => {
+                    setProductName(e.target.value)
+                    if (nameNeedsReview) setNameNeedsReview(false)
+                  }}
                   placeholder={t.productNamePlaceholder}
                   className="border-white/10 bg-black/30 text-zinc-100"
                 />
+                {nameNeedsReview && (
+                  <p className="mt-1.5 text-xs text-amber-400" dir="ltr">
+                    This looks like a technical code — please enter the correct product name.
+                  </p>
+                )}
               </div>
               <div>
                 <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
