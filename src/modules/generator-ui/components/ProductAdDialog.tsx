@@ -149,7 +149,38 @@ async function signProductPhotoUrl(storagePath: string | null | undefined): Prom
   return raw
 }
 
+/** Extract the object key inside the wan-frames bucket from a stored path/URL. */
+function framesObjectKey(storagePath: string | null | undefined): string | null {
+  if (!storagePath) return null
+  const marker = `/${FRAMES_BUCKET}/`
+  const idx = storagePath.indexOf(marker)
+  if (idx >= 0) {
+    // Strip any query string (e.g. an expired/broken public URL) before decoding.
+    const tail = storagePath.slice(idx + marker.length).split('?')[0]
+    return decodeURIComponent(tail)
+  }
+  if (!/^https?:|^blob:|^data:/.test(storagePath)) return storagePath
+  return null
+}
 
+/**
+ * Resolve a displayable signed URL for a private wan-frames object.
+ * `wan-frames` is a PRIVATE bucket, so public URLs return "Bucket not found".
+ * Throws if signing fails so the caller can show a clear error state.
+ */
+async function signFramesUrl(storagePath: string | null | undefined): Promise<string> {
+  const raw = storagePath ?? ''
+  if (/^blob:|^data:/.test(raw)) return raw
+  const key = framesObjectKey(raw)
+  if (!key) throw new Error('Could not resolve image path')
+  const { data, error } = await supabase.storage
+    .from(FRAMES_BUCKET)
+    .createSignedUrl(key, 60 * 60 * 24 * 7)
+  if (error || !data?.signedUrl) {
+    throw new Error(error?.message || 'Could not load image')
+  }
+  return data.signedUrl
+}
 
 const SPLIT_DURATIONS = [30, 45, 135]
 const sceneRange = (i: number) => `${i * 15}–${(i + 1) * 15}s`
@@ -714,6 +745,8 @@ export default function ProductAdDialog({
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null)
   const [previewLightboxOpen, setPreviewLightboxOpen] = useState(false)
   const [isUploadingImage, setIsUploadingImage] = useState(false)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
   const [aiImageOpen, setAiImageOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -774,18 +807,27 @@ export default function ProductAdDialog({
       })
       const json = await resp.json().catch(() => ({}))
       if (!resp.ok) throw new Error(json?.error || `Request failed (${resp.status})`)
-      const reframedUrl = json.publicUrl as string
+      // `wan-frames` is private — the function's public URL is broken under the
+      // workspace public-buckets policy. Sign the returned object path instead.
+      const reframedPath = (json.path as string) || (json.publicUrl as string)
+      setPreviewError(null)
+      setPreviewLoading(true)
+      const signedPreview = await signFramesUrl(reframedPath)
       if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
-      setImagePreviewUrl(reframedUrl)
-      setUploadedImageUrl(reframedUrl)
+      setImagePreviewUrl(signedPreview)
+      // Generation pipeline still receives the function's public URL (validator
+      // contract is unchanged); only the preview uses a signed URL.
+      setUploadedImageUrl((json.publicUrl as string) ?? signedPreview)
       if (!productName.trim() && photo.title) setProductName(photo.title)
       setProductPickerOpen(false)
     } catch (e) {
+      setPreviewLoading(false)
       setError((e as Error).message ?? 'Failed to prepare image')
     } finally {
       setPreparingId(null)
     }
   }
+
 
 
   useEffect(() => {
@@ -816,6 +858,8 @@ export default function ProductAdDialog({
       return
     }
     setError(null)
+    setPreviewError(null)
+    setPreviewLoading(false)
     const localUrl = URL.createObjectURL(file)
     if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
     setImagePreviewUrl(localUrl)
@@ -843,6 +887,8 @@ export default function ProductAdDialog({
     if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
     setImagePreviewUrl(null)
     setUploadedImageUrl(null)
+    setPreviewError(null)
+    setPreviewLoading(false)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -1056,11 +1102,30 @@ export default function ProductAdDialog({
                     aria-label={t.viewImage}
                     className="block cursor-zoom-in rounded-md"
                   >
-                    <img
-                      src={imagePreviewUrl}
-                      alt="Product"
-                      className="h-20 w-20 rounded-md border border-white/10 object-cover transition hover:border-white/30"
-                    />
+                    {previewError ? (
+                      <div className="flex h-20 w-20 flex-col items-center justify-center gap-1 rounded-md border border-red-500/40 bg-red-500/10 px-1 text-center text-[9px] text-red-200">
+                        <X className="h-4 w-4" aria-hidden="true" />
+                        <span>{previewError}</span>
+                      </div>
+                    ) : (
+                      <div className="relative h-20 w-20">
+                        <img
+                          src={imagePreviewUrl}
+                          alt="Product"
+                          className="h-20 w-20 rounded-md border border-white/10 object-cover transition hover:border-white/30"
+                          onLoad={() => setPreviewLoading(false)}
+                          onError={() => {
+                            setPreviewLoading(false)
+                            setPreviewError('Image load error')
+                          }}
+                        />
+                        {previewLoading && (
+                          <div className="absolute inset-0 flex items-center justify-center rounded-md bg-black/40">
+                            <LoaderCircle className="h-5 w-5 animate-spin text-white" aria-hidden="true" />
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </button>
                   <button
                     type="button"
