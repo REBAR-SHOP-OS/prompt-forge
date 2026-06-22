@@ -208,6 +208,7 @@ Deno.serve(async (req) => {
     const imageUrlRaw = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
     const autoFromImageReq = body?.autoFromImage === true;
     const isProductAd = body?.mode === "product-ad";
+    const isCharacterSheet = body?.mode === "character-sheet";
     const clip = (v: unknown, max: number): string | undefined => {
       const s = typeof v === "string" ? v.trim() : "";
       return s ? s.slice(0, max) : undefined;
@@ -216,6 +217,16 @@ Deno.serve(async (req) => {
       ? {
           productName: clip(body?.productName, 200),
           productDescription: clip(body?.productDescription, 2000),
+          cameraStyle: clip(body?.cameraStyle, 100),
+          cameraMovement: clip(body?.cameraMovement, 1000),
+          genre: clip(body?.genre, 300),
+          scene: clip(body?.scene, 300),
+        }
+      : undefined;
+    const characterSheet: CharacterSheetOpts | undefined = isCharacterSheet
+      ? {
+          characterName: clip(body?.characterName, 200),
+          characterDescription: clip(body?.characterDescription, 2000),
           cameraStyle: clip(body?.cameraStyle, 100),
           cameraMovement: clip(body?.cameraMovement, 1000),
           genre: clip(body?.genre, 300),
