@@ -235,6 +235,7 @@ Deno.serve(async (req) => {
           cameraMovement: clip(body?.cameraMovement, 1000),
           genre: clip(body?.genre, 300),
           scene: clip(body?.scene, 300),
+          characterDescription: clip(body?.characterDescription, 2000),
         }
       : undefined;
     const characterSheet: CharacterSheetOpts | undefined = isCharacterSheet
