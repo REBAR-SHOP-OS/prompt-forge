@@ -14,14 +14,14 @@ type LangOption = { value: string; label: string; rtl?: boolean }
 const ORIGINAL = '__original__'
 
 const LANGUAGES: LangOption[] = [
-  { value: ORIGINAL, label: 'متن اصلی' },
-  { value: 'Persian', label: 'فارسی', rtl: true },
+  { value: ORIGINAL, label: 'Original' },
+  { value: 'Persian', label: 'Persian', rtl: true },
   { value: 'English', label: 'English' },
-  { value: 'Arabic', label: 'العربية', rtl: true },
-  { value: 'French', label: 'Français' },
-  { value: 'Spanish', label: 'Español' },
-  { value: 'German', label: 'Deutsch' },
-  { value: 'Turkish', label: 'Türkçe' },
+  { value: 'Arabic', label: 'Arabic', rtl: true },
+  { value: 'French', label: 'French' },
+  { value: 'Spanish', label: 'Spanish' },
+  { value: 'German', label: 'German' },
+  { value: 'Turkish', label: 'Turkish' },
 ]
 
 type TranscriptResponse = {
@@ -53,7 +53,7 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
 
   const runTranscribe = useCallback(async () => {
     if (!videoUrl) {
-      setError('فایل ویدیو در دسترس نیست.')
+      setError('Video file is not available.')
       return
     }
     setLoading(true)
@@ -70,9 +70,9 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
       translations.current.clear()
       translations.current.set(ORIGINAL, text)
       setLanguage(ORIGINAL)
-      setDisplayText(text || 'گفتاری در این فیلم تشخیص داده نشد.')
+      setDisplayText(text || 'No speech detected in this video.')
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'خطا در رونویسی')
+      setError(e instanceof Error ? e.message : 'Failed to transcribe.')
     } finally {
       setLoading(false)
     }
@@ -92,7 +92,7 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
 
       const cached = translations.current.get(next)
       if (cached !== undefined) {
-        setDisplayText(cached || 'متنی برای نمایش وجود ندارد.')
+        setDisplayText(cached || 'No text to display.')
         return
       }
 
@@ -106,9 +106,9 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
         if (data?.error) throw new Error(data.error)
         const translated = (data?.translatedText ?? '').trim()
         translations.current.set(next, translated)
-        setDisplayText(translated || 'ترجمه‌ای دریافت نشد.')
+        setDisplayText(translated || 'No translation received.')
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'خطا در ترجمه')
+        setError(e instanceof Error ? e.message : 'Failed to translate.')
       } finally {
         setLoading(false)
       }
@@ -119,11 +119,11 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
   return (
     <div className="absolute inset-0 z-20 flex flex-col bg-[#07080a]/95 backdrop-blur">
       <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
-        <span className="text-sm font-semibold text-zinc-100">متن فیلم</span>
+        <span className="text-sm font-semibold text-zinc-100">Transcript</span>
         <div className="flex items-center gap-2">
           <Select value={language} onValueChange={handleLanguageChange} disabled={!transcript || loading}>
             <SelectTrigger className="h-8 w-[130px] border-white/15 bg-white/[0.04] text-xs text-zinc-200">
-              <SelectValue placeholder="زبان" />
+              <SelectValue placeholder="Language" />
             </SelectTrigger>
             <SelectContent>
               {LANGUAGES.map((l) => (
@@ -136,8 +136,8 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
           <button
             type="button"
             onClick={onClose}
-            aria-label="بستن متن"
-            title="بستن"
+            aria-label="Close transcript"
+            title="Close"
             className="grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
           >
             <X className="h-4 w-4" aria-hidden="true" />
@@ -149,7 +149,7 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
         {loading ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-zinc-400">
             <Loader2 className="h-6 w-6 animate-spin" aria-hidden="true" />
-            <span className="text-sm">در حال پردازش…</span>
+            <span className="text-sm">Processing…</span>
           </div>
         ) : error ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
@@ -160,7 +160,7 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
               className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-4 py-1.5 text-xs font-semibold text-zinc-200 transition hover:bg-white/[0.08]"
             >
               <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-              تلاش دوباره
+              Retry
             </button>
           </div>
         ) : (
