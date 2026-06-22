@@ -800,9 +800,7 @@ export default function ScenarioWriterDialog({
               <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
                 {t.scenario} ({duration}s)
               </div>
-              <p dir={dir} className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
-                {scenes[0]}
-              </p>
+              <SceneText text={scenes[0]} narrationLabel={t.narration} dir={dir} />
             </div>
           ) : null}
         </div>
