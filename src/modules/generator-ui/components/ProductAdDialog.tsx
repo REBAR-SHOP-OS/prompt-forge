@@ -1824,7 +1824,7 @@ export default function ProductAdDialog({
                 variant="ghost"
                 size="sm"
                 onClick={generate}
-                disabled={isWriting || isSending || !canGenerate}
+                disabled={isWriting || isSending || businessSaving || !canGenerate}
               >
                 {isWriting ? (
                   <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
