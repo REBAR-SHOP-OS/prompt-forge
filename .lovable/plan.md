@@ -1,44 +1,50 @@
-## Goal
+# Named character voices + instant sample preview
 
-Make each generated scene show the **scenario (visual description) first, then a clearly-labeled narration paragraph**, so the user understands what the narration says — instead of the narration being buried inline inside the action text (`Character says: "..."`).
+Add a "Character / Voice" picker to the Voiceover dialog that lists distinct, named voices (each with a personality description) grouped by gender, alongside the existing Gender and Tone controls. Each voice gets a ▶ button that instantly plays a short pre-made sample (no AI cost).
 
-Target result per scene:
+## What the user gets
+
+- A new **Voice / Character** dropdown listing real named voices (e.g. Bright, Upbeat, Informative, Youthful, Firm, Breezy…), each with a one-line personality hint, organized under Female / Male / Child headers.
+- A small **play** button next to each voice option (and next to the selected voice) that plays a ~3s sample clip instantly.
+- Gender and Tone selectors stay. Picking a Gender filters the voice list; the chosen named voice drives the actual generation.
+
+## Voice catalog
+
+Define a shared catalog of Gemini prebuilt voices with: `id` (Gemini voiceName), `label`, `gender`, `personality` description, and `sampleUrl` (asset pointer). Examples per gender:
 
 ```text
-EXT. CONSTRUCTION SITE - DAY
-A whip pan reveals the "circular tie" product, glowing, held by the smiling
-character against a blurred construction backdrop. The camera whip-pans to a
-close-up on the product's texture. Bright, sunny lighting.
-
-Narration: "Tired of rebar chaos? Rebar.Shop introduces the innovation you've
-been waiting for!"
+Female: Leda (Youthful), Kore (Firm/Energetic), Aoede (Breezy/Calm),
+        Callirrhoe (Easy-going), Autonoe (Bright), Despina (Smooth)
+Male:   Puck (Upbeat), Charon (Informative), Fenrir (Excitable),
+        Algieba (Smooth), Orus (Firm), Achird (Friendly)
+Child:  Leda, Kore, Autonoe (bright youthful, child-style instruction)
 ```
 
-## Where it changes
+## Pre-made sample assets
 
-The scene text comes from the `scenario-write` edge function (`buildSystemPrompt`). Both the **Product Ad** and **Scenario Writer** dialogs render whatever it returns, so changing the prompt format fixes both at once.
+1. Generate one short sample clip (fixed phrase, ~3s) per distinct voice using the existing Gemini TTS path, one time, in build mode.
+2. Upload each clip via `lovable-assets create` and commit the `.asset.json` pointers under `src/assets/voice-samples/`.
+3. The catalog references these pointer URLs, so previews play instantly with zero credit cost.
 
-### 1. `supabase/functions/scenario-write/index.ts` — `buildSystemPrompt`
-- Replace the current inline-narration instruction (`narrationMulti` / `narrationSingle`, which say `formatted inline as Character says: "..."`) with a **structured order** instruction:
-  - Write the **visual scenario first** (subject, action, camera move, lighting) with **no spoken lines mixed in**.
-  - Then, on a **new line**, write the narration on its own, prefixed with a localized label `Narration:` followed by the spoken voiceover/dialogue in quotes.
-  - Keep word-count rules; the narration line counts toward the limit.
-  - Keep the `===SCENE===` delimiter and "exactly N scene blocks" rule unchanged so server-side scene splitting still works.
-- Add a localized narration label driven by `outputLanguage`:
-  - en `Narration`, fa `نریشن`, ar `التعليق الصوتي`, tr `Anlatım`, es `Narración`, fr `Narration`.
-- Apply this to both the multi-scene and single-scene branches. Use it for ad scenarios (the Product Ad case, with or without an on-screen character) and the default advertising persona; for character-sheet films the narration line carries the character's spoken lines.
+## Frontend changes (`VoiceoverDialog.tsx`)
 
-### 2. `src/modules/generator-ui/components/ProductAdDialog.tsx` (and same render in `ScenarioWriterDialog.tsx`) — light display emphasis
-- When rendering each scene block, detect the narration paragraph (line starting with the localized `Narration:` label) and render that part with a subtle emphasis (e.g. a small "Narration" chip / bolded label and slightly highlighted text), while the scenario text above stays normal.
-- Falls back gracefully: if no narration label is present, the block renders exactly as today.
-- Keep `whitespace-pre-wrap`; keep `dir="auto"` so Persian/Arabic narration renders right-to-left.
+- Add `voiceId` state, defaulting to the first voice of the selected gender.
+- Replace the plain Gender/Tone row layout to add a Voice picker. Filter catalog by `gender`; when gender changes, reset `voiceId` to that gender's default.
+- Render each `SelectItem` with the voice label + personality + a small play button; also show a play button beside the trigger for the current selection.
+- A single reusable `<audio>` element (ref) plays the selected sample; clicking play swaps `src` to the sample URL and plays. Stop any current playback first.
+- Pass the explicit `voiceName: voiceId` in the `tts-generate` invoke body, and include the voice label in saved/handed-off names (e.g. `Voiceover (Leda · advertising).wav`).
 
-## Consistency note
-- The existing per-card narration icon (added earlier, extracts quoted lines) keeps working — the quoted narration is still present, now also clearly labeled.
+## Backend change (`supabase/functions/tts-generate/index.ts`)
+
+- Accept an optional `voiceName` string in the body. If it's one of the known catalog voice IDs, use it directly; otherwise fall back to the existing `VOICE_MAP[gender][tone]` lookup. Tone still controls the style instruction; child still adds the youthful hint. No breaking change to existing callers.
+- Deploy and smoke-test with `supabase--curl_edge_functions`.
 
 ## Verification
-- Deploy the edge function; `curl`/generate a 30s product ad in English and confirm each scene has the visual description first and a separate `Narration:` line; repeat in Persian and confirm the `نریشن` label and RTL rendering.
-- In the preview, open Product Ad Scenario and Scenario Writer, generate, and confirm scenario-then-narration layout with the narration visually distinguished.
 
-## Notes
-- Prompt/format change plus a small presentational tweak — no schema or generation-pipeline changes. The full scene text (scenario + narration) is still what gets sent to video generation, which also improves spoken-audio results.
+- Build passes.
+- In preview: open Voiceover, switch gender → voice list updates; click play on a few voices → sample audio plays instantly; generate a voiceover with a chosen named voice → audio uses that voice and the saved name reflects it.
+
+## Notes / safety
+
+- Sample assets are generated once and cached on the CDN — no per-preview AI cost, matching the cost-aware requirement.
+- Backend change is additive (optional `voiceName`), so existing flows keep working.
