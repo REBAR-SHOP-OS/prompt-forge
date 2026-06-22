@@ -135,6 +135,7 @@ function buildSystemPrompt(
   const singleForm = isCharacter ? "character-driven film scenario" : isAd ? "product advertisement" : "advertising scenario/treatment";
   return [
     persona,
+    businessLine,
     `Given the user's brief, write a single cohesive ${singleForm} in ENGLISH`,
     `suitable for a ${duration}-second cinematic video — regardless of the input language.`,
     "It MUST follow a clear narrative arc with a defined beginning, middle, and end: an attention-grabbing opening hook that establishes the subject and setting, a middle that develops the story, and a clear payoff/resolution that ends on a strong, memorable note.",
