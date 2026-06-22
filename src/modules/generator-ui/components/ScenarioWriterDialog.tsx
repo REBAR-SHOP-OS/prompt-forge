@@ -350,7 +350,7 @@ export default function ScenarioWriterDialog({
       // When an image is attached, default to auto-from-image mode.
       if (!idea.trim()) setIdeaMode('auto')
     } catch (e) {
-      setError((e as Error).message ?? 'Image upload failed')
+      setError((e as Error).message ?? t.errUploadFailed)
       setImagePreviewUrl(null)
       setUploadedImageUrl(null)
     } finally {
