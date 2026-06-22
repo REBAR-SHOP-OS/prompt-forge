@@ -30,6 +30,8 @@ interface ProductAdOpts {
   cameraMovement?: string;
   genre?: string;
   scene?: string;
+  characterImageUrl?: string;
+  characterDescription?: string;
 }
 
 interface CharacterSheetOpts {
