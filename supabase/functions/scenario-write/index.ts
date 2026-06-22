@@ -137,7 +137,8 @@ function buildSystemPrompt(
     `Match pacing realistically to the duration: ${beat}.`,
     "Output prose only — no markdown headings, no bullet lists, no preamble, no quotes.",
     `Keep it under ${cap} words.`,
-  ].join(" ");
+    narrationSingle,
+  ].filter(Boolean).join(" ");
 }
 
 async function callGateway(
