@@ -641,6 +641,7 @@ const T: Record<Lang, Record<string, string>> = {
     regenerate: 'Régénérer',
     sendAll: 'Tout envoyer en attente',
     useAsPrompt: 'Utiliser comme prompt',
+    preparingFrame: 'Préparation de l’image…',
     generate: 'Générer le scénario publicitaire',
     language: 'Langue',
     chooseFromProducts: 'Choisir parmi les produits',
