@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
-import { Download, LoaderCircle, Mic, Play, Sparkles, X } from 'lucide-react'
+import { Check, Download, LoaderCircle, Mic, Play, Sparkles, X } from 'lucide-react'
 import { supabase } from '@/integrations/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
@@ -582,6 +582,14 @@ export function VoiceoverDialog({
           >
             <Download className="mr-2 h-4 w-4" />
             Download
+          </Button>
+          <Button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            disabled={!activeVoiceoverUrl && !audioUrl}
+          >
+            <Check className="mr-2 h-4 w-4" />
+            Apply
           </Button>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             Close
