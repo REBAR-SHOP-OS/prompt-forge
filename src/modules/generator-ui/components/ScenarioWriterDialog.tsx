@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { supabase } from '@/integrations/supabase/client'
 
 export type ScenarioDuration = 5 | 10 | 15 | 30 | 45 | 135
