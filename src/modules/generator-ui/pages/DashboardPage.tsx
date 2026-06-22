@@ -10119,6 +10119,17 @@ export default function DashboardPage() {
               Product Ad
             </button>
 
+            <button
+              type="button"
+              onClick={() => setIsCharacterSheetOpen(true)}
+              aria-label="Create a film built around an uploaded character"
+              title="Create a film built around an uploaded character"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-violet-500 via-fuchsia-500 to-sky-500 px-4 text-sm font-bold text-zinc-50 shadow-[0_8px_24px_rgba(139,92,246,0.35)] transition hover:from-violet-400 hover:via-fuchsia-400 hover:to-sky-400 hover:shadow-[0_10px_28px_rgba(139,92,246,0.5)]"
+            >
+              <Drama className="h-5 w-5" aria-hidden="true" />
+              Character Sheet
+            </button>
+
 
             <Popover
               open={isPromptMenuOpen}
