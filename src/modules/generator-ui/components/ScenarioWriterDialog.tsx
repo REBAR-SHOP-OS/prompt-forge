@@ -613,7 +613,16 @@ export default function ScenarioWriterDialog({
             </div>
             {SPLIT_DURATIONS.includes(duration) ? (
               <p className="mt-2 text-xs text-zinc-500">
-                Will be split into {duration / 15} sequential 15s scenes and sent as {duration / 15} cards.
+                {(
+                  {
+                    en: `Will be split into ${duration / 15} sequential 15s scenes and sent as ${duration / 15} cards.`,
+                    fa: `به ${duration / 15} صحنه‌ی ۱۵ ثانیه‌ای متوالی تقسیم و به‌صورت ${duration / 15} کارت ارسال می‌شود.`,
+                    ar: `سيُقسَّم إلى ${duration / 15} مشاهد متتالية مدة كل منها ١٥ ثانية وتُرسَل كـ ${duration / 15} بطاقات.`,
+                    tr: `${duration / 15} ardışık 15 sn’lik sahneye bölünüp ${duration / 15} kart olarak gönderilecek.`,
+                    es: `Se dividirá en ${duration / 15} escenas secuenciales de 15 s y se enviará como ${duration / 15} tarjetas.`,
+                    fr: `Sera divisé en ${duration / 15} scènes séquentielles de 15 s et envoyé sous forme de ${duration / 15} cartes.`,
+                  } as Record<Lang, string>
+                )[lang]}
               </p>
             ) : null}
           </div>
