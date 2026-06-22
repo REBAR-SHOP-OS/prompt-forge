@@ -658,7 +658,7 @@ export default function ScenarioWriterDialog({
                       ideaMode === 'manual' ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'
                     }`}
                   >
-                    Write my own
+                    {t.writeMyOwn}
                   </button>
                 </div>
               ) : null}
