@@ -62,6 +62,8 @@ Deno.serve(async (req) => {
     const imageUrl = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
     const modelKey = typeof body?.model === "string" ? body.model.trim() : "fast";
     const title = typeof body?.title === "string" ? body.title.trim().slice(0, 100) : "";
+    const logoUrl = typeof body?.logoUrl === "string" ? body.logoUrl.trim() : "";
+    const applyLogo = body?.applyLogo === true && !!logoUrl && isAllowedImageUrl(logoUrl);
 
     if (!imageUrl || !isAllowedImageUrl(imageUrl)) {
       return new Response(JSON.stringify({ error: "valid imageUrl is required" }), {
