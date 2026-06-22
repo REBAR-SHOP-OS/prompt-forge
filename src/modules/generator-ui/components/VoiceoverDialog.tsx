@@ -313,48 +313,60 @@ export function VoiceoverDialog({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label className="text-xs uppercase tracking-wider text-zinc-400">
-                Duration
-              </Label>
-              <Select value={durationMode} onValueChange={setDurationMode}>
-                <SelectTrigger className="border-white/10 bg-white/[0.04] text-zinc-100">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto">Auto</SelectItem>
-                  <SelectItem value="5">5 seconds</SelectItem>
-                  <SelectItem value="10">10 seconds</SelectItem>
-                  <SelectItem value="15">15 seconds</SelectItem>
-                  <SelectItem value="30">30 seconds</SelectItem>
-                  <SelectItem value="45">45 seconds</SelectItem>
-                  <SelectItem value="custom">Custom…</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="space-y-2">
+            <Label className="text-xs uppercase tracking-wider text-zinc-400">
+              Duration
+            </Label>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-1 rounded-md border border-white/10 bg-white/[0.04] p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAutoDuration(true)
+                    setCustomDuration('')
+                  }}
+                  className={`rounded px-3 py-1.5 text-sm transition-colors ${
+                    isAutoDuration
+                      ? 'bg-white/10 text-zinc-100'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  Auto
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAutoDuration(false)}
+                  className={`rounded px-3 py-1.5 text-sm transition-colors ${
+                    !isAutoDuration
+                      ? 'bg-white/10 text-zinc-100'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  Manual
+                </button>
+              </div>
 
-            {durationMode === 'custom' ? (
-              <div className="space-y-2">
-                <Label className="text-xs uppercase tracking-wider text-zinc-400">
-                  Seconds (1–135)
-                </Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={135}
-                  value={customDuration}
-                  onChange={(e) => setCustomDuration(e.target.value)}
-                  placeholder="e.g. 20"
-                  className="border-white/10 bg-white/[0.04] text-zinc-100 placeholder:text-zinc-500"
-                />
-              </div>
-            ) : (
-              <div className="flex items-end pb-1 text-[11px] leading-snug text-zinc-500">
-                Voice is paced and fitted to the chosen length.
-              </div>
-            )}
+              <Input
+                type="number"
+                min={1}
+                max={135}
+                value={isAutoDuration ? '' : customDuration}
+                disabled={isAutoDuration}
+                onChange={(e) => {
+                  setIsAutoDuration(false)
+                  setCustomDuration(e.target.value)
+                }}
+                placeholder={isAutoDuration ? 'Auto' : 'Seconds (1–135)'}
+                className="border-white/10 bg-white/[0.04] text-zinc-100 placeholder:text-zinc-500 disabled:cursor-not-allowed disabled:opacity-50"
+              />
+            </div>
+            <p className="text-[11px] leading-snug text-zinc-500">
+              {isAutoDuration
+                ? 'Voice is paced and fitted automatically to the content.'
+                : 'Voice is paced and fitted to the chosen length (1–135 seconds).'}
+            </p>
           </div>
+
 
 
           <Button
