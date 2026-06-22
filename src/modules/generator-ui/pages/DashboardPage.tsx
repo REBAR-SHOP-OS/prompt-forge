@@ -10678,32 +10678,13 @@ export default function DashboardPage() {
           </div>
         </DialogContent>
       </Dialog>
-      <Dialog open={narrationViewer !== null} onOpenChange={(o) => { if (!o) setNarrationViewer(null) }}>
-        <DialogContent className="max-w-lg border-white/10 bg-[#0b0c0e]/95">
-          <DialogHeader>
-            <DialogTitle className="inline-flex items-center gap-2">
-              <MessageSquareQuote className="h-4 w-4 text-violet-300" aria-hidden="true" />
-              Narration
-            </DialogTitle>
-          </DialogHeader>
-          {narrationViewer && narrationViewer.length > 0 ? (
-            <ul dir="auto" className="max-h-[60vh] space-y-2 overflow-y-auto">
-              {narrationViewer.map((line, i) => (
-                <li
-                  key={i}
-                  className="rounded-lg border border-violet-400/20 bg-violet-500/[0.06] px-3 py-2 text-sm leading-6 text-zinc-100"
-                >
-                  {line}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm leading-6 text-zinc-400">
-              No narration detected in this card's prompt. The narration / spoken lines appear here when the scene includes quoted dialogue.
-            </p>
-          )}
-        </DialogContent>
-      </Dialog>
+      <NarrationDialog
+        open={narrationViewer !== null}
+        onClose={() => setNarrationViewer(null)}
+        prompt={narrationViewer?.prompt ?? null}
+        videoStoragePath={narrationViewer?.videoStoragePath ?? null}
+      />
+
 
 
 
