@@ -261,7 +261,7 @@ export function VoiceoverDialog({
       // Auto-apply: immediately surface the full settings panel (volume,
       // waveform selection, "Play on video from … to") for the new voiceover.
       if (onUseAsSoundtrack) {
-        const name = `Voiceover (${gender}, ${tone}).wav`
+        const name = `Voiceover (${currentVoice.label} · ${tone}).wav`
         onUseAsSoundtrack(url, name)
         // Ownership handed off to the parent — don't revoke it here.
         lastUrlRef.current = null
