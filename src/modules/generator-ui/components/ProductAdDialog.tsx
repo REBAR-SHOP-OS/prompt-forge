@@ -1362,7 +1362,56 @@ export default function ProductAdDialog({
               <Package className="h-5 w-5 text-amber-300" aria-hidden="true" />
             )}
             {t.title}
-            <div className="ms-auto">
+            <div className="ms-auto flex items-center gap-2">
+              <Popover open={businessOpen} onOpenChange={setBusinessOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={t.businessLabel}
+                    title={t.businessLabel}
+                    className={`relative inline-flex h-7 w-7 items-center justify-center rounded-full border transition ${
+                      businessInfo.trim()
+                        ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
+                        : 'border-amber-300/40 bg-amber-300/10 text-amber-300'
+                    }`}
+                  >
+                    <Building2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    {!businessInfo.trim() && (
+                      <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-amber-400" />
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-80 border-white/10 bg-[#0b0c0e] text-zinc-100">
+                  <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
+                    {t.businessLabel} <span className="text-amber-300">{t.businessRequiredTag}</span>
+                  </div>
+                  <Textarea
+                    value={businessInfo}
+                    onChange={(e) => {
+                      setBusinessInfo(e.target.value)
+                      setBusinessSaved(false)
+                      if (error) setError(null)
+                    }}
+                    rows={4}
+                    placeholder={t.businessPlaceholder}
+                    className="min-h-[96px] border-white/10 bg-black/30 text-sm text-zinc-100"
+                  />
+                  <div className="mt-2 flex justify-end">
+                    <Button
+                      size="sm"
+                      onClick={saveBusinessInfo}
+                      disabled={businessSaving || !businessInfo.trim()}
+                    >
+                      {businessSaving ? (
+                        <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                      ) : businessSaved ? (
+                        <Check className="h-4 w-4 mr-2" aria-hidden="true" />
+                      ) : null}
+                      {businessSaved ? t.businessSaved : t.businessSave}
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
               <Select value={lang} onValueChange={(v) => setLang(v as Lang)}>
                 <SelectTrigger
                   className="h-7 w-auto gap-1.5 rounded-full border-white/10 bg-black/20 px-2.5 text-[11px] font-semibold text-zinc-300"
