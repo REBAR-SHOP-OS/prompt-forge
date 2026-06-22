@@ -645,14 +645,15 @@ export default function ProductAdDialog({
         .order('created_at', { ascending: false })
       if (qErr) throw new Error(qErr.message)
       const rows = (data ?? []).filter((r) => (r.category ?? 'general') === 'product')
-      const photos: ProductPhoto[] = rows.map((r) => ({
-        id: r.id,
-        title: r.title ?? null,
-        // storage_path already holds the full public URL when the product was uploaded.
-        url: /^https?:\/\//i.test(r.storage_path)
-          ? r.storage_path
-          : supabase.storage.from(PRODUCTS_BUCKET).getPublicUrl(r.storage_path).data.publicUrl,
-      }))
+      // user-images is a PRIVATE bucket, so getPublicUrl returns broken links.
+      // Resolve a signed URL for every product (same approach as the Storage modal).
+      const photos: ProductPhoto[] = await Promise.all(
+        rows.map(async (r) => ({
+          id: r.id,
+          title: r.title ?? null,
+          url: await signProductPhotoUrl(r.storage_path),
+        })),
+      )
       setProductPhotos(photos)
     } catch (e) {
       setError((e as Error).message ?? 'Failed to load products')
