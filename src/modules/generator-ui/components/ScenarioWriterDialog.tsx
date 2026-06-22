@@ -824,7 +824,7 @@ export default function ScenarioWriterDialog({
               ) : (
                 <Wand2 className="h-4 w-4 mr-2" aria-hidden="true" />
               )}
-              Write scenario
+              {t.writeScenario}
             </Button>
           )}
         </div>
