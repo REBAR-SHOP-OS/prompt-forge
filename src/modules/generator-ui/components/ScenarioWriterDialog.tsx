@@ -503,18 +503,18 @@ export default function ScenarioWriterDialog({
         if (!o) reset()
       }}
     >
-      <DialogContent className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+      <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Clapperboard className="h-5 w-5 text-amber-300" aria-hidden="true" />
-            Scenario Writer
-            <div className="ms-auto">
+            {t.title}
+            <div className="ms-auto flex items-center gap-2">
               <Popover open={businessOpen} onOpenChange={setBusinessOpen}>
                 <PopoverTrigger asChild>
                   <button
                     type="button"
-                    aria-label="About your business"
-                    title="About your business"
+                    aria-label={t.businessLabel}
+                    title={t.businessLabel}
                     className={`relative inline-flex h-7 w-7 items-center justify-center rounded-full border transition ${
                       businessInfo.trim()
                         ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
@@ -529,7 +529,7 @@ export default function ScenarioWriterDialog({
                 </PopoverTrigger>
                 <PopoverContent align="end" className="w-80 border-white/10 bg-[#0b0c0e] text-zinc-100">
                   <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
-                    About your business <span className="text-amber-300">(required)</span>
+                    {t.businessLabel} <span className="text-amber-300">{t.businessRequired}</span>
                   </div>
                   <Textarea
                     value={businessInfo}
@@ -539,7 +539,7 @@ export default function ScenarioWriterDialog({
                       if (error) setError(null)
                     }}
                     rows={4}
-                    placeholder="Describe your business: what you sell, your products/services, target audience, and brand tone…"
+                    placeholder={t.businessPlaceholder}
                     className="min-h-[96px] border-white/10 bg-black/30 text-sm text-zinc-100"
                   />
                   <div className="mt-2 flex justify-end">
@@ -553,16 +553,31 @@ export default function ScenarioWriterDialog({
                       ) : businessSaved ? (
                         <Check className="h-4 w-4 mr-2" aria-hidden="true" />
                       ) : null}
-                      {businessSaved ? 'Saved' : 'Save'}
+                      {businessSaved ? t.businessSaved : t.businessSave}
                     </Button>
                   </div>
                 </PopoverContent>
               </Popover>
+              <Select value={lang} onValueChange={(v) => setLang(v as Lang)}>
+                <SelectTrigger
+                  className="h-7 w-auto gap-1.5 rounded-full border-white/10 bg-black/20 px-2.5 text-[11px] font-semibold text-zinc-300"
+                  aria-label="Language"
+                >
+                  <Languages className="h-3.5 w-3.5 text-sky-300" aria-hidden="true" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LANG_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.native}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </DialogTitle>
           <DialogDescription className="text-zinc-400">
-            Pick a duration, describe your idea (any language), and get an English
-            cinematic scenario tuned to that length. Optionally attach a reference image.
+            {t.description}
           </DialogDescription>
         </DialogHeader>
 
