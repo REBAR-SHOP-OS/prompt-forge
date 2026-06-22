@@ -1,6 +1,37 @@
 // Edits an image (data URL or https URL) using Lovable AI Gateway (Nano Banana).
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
+import { getServiceClient } from "../_shared/core/supabase.ts";
+
+// Our storage buckets are private, so public URLs return 400 when the AI gateway
+// tries to fetch them. Download via the service client and inline as a data URL.
+function bytesToBase64(bytes: Uint8Array): string {
+  let s = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    s += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(s);
+}
+
+async function toInlineDataUrl(url: string): Promise<string> {
+  if (url.startsWith("data:")) return url;
+  const m = url.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/([^?]+)/);
+  if (m) {
+    const bucket = m[1];
+    const path = decodeURIComponent(m[2]);
+    const { data, error } = await getServiceClient().storage.from(bucket).download(path);
+    if (!error && data) {
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      let mime = data.type?.split(";")[0]?.trim() || "image/png";
+      if (!/^image\/(png|jpe?g|webp)$/i.test(mime)) mime = "image/png";
+      return `data:${mime};base64,${bytesToBase64(bytes)}`;
+    }
+  }
+  // Fall back to the raw URL (e.g. already-signed or external).
+  return url;
+}
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
