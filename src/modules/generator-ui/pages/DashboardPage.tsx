@@ -10673,6 +10673,7 @@ export default function DashboardPage() {
         open={narrationViewer !== null}
         onClose={() => setNarrationViewer(null)}
         prompt={narrationViewer?.prompt ?? null}
+        narrationText={narrationViewer?.narrationText ?? null}
         videoStoragePath={narrationViewer?.videoStoragePath ?? null}
       />
 
