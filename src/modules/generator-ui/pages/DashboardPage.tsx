@@ -55,6 +55,7 @@ import {
   UserRound,
   Drama,
   Wand2,
+  FileText,
   X
 } from 'lucide-react'
 import {
@@ -122,6 +123,7 @@ import ImageReframeDialog from '@/modules/generator-ui/components/ImageReframeDi
 import AiImageDialog from '@/modules/generator-ui/components/AiImageDialog'
 import ScenarioWriterDialog from '@/modules/generator-ui/components/ScenarioWriterDialog'
 import ProductAdDialog from '@/modules/generator-ui/components/ProductAdDialog'
+import { TranscriptPanel } from '@/modules/generator-ui/components/TranscriptPanel'
 import CharacterSheetDialog from '@/modules/generator-ui/components/CharacterSheetDialog'
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
@@ -1281,7 +1283,25 @@ export default function DashboardPage() {
   const closePreview = () => {
     setPreviewVideoId(null)
     setPreviewDismissed(true)
+    setTranscriptOpen(false)
+    setTranscriptVideoUrl(null)
   }
+  // Transcript panel state for the large preview.
+  const [transcriptOpen, setTranscriptOpen] = useState(false)
+  const [transcriptVideoUrl, setTranscriptVideoUrl] = useState<string | null>(null)
+  const [transcriptResolving, setTranscriptResolving] = useState(false)
+  const openTranscript = useCallback(async (src: string) => {
+    setTranscriptOpen(true)
+    setTranscriptResolving(true)
+    try {
+      const signed = await signStorageUrl(src)
+      setTranscriptVideoUrl(signed ?? src)
+    } catch {
+      setTranscriptVideoUrl(src)
+    } finally {
+      setTranscriptResolving(false)
+    }
+  }, [signStorageUrl])
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
   // ----- Storage archive: every film the user ever made, read live from the
   // server (independent of drafts/library local state). -----
@@ -8698,9 +8718,18 @@ export default function DashboardPage() {
                       onClick={closePreview}
                       aria-label="Close preview"
                       title="Close preview"
-                      className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+                      className="absolute right-2 top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
                     >
                       <X className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void openTranscript(src)}
+                      aria-label="نمایش متن فیلم"
+                      title="متن فیلم"
+                      className="absolute left-2 top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 backdrop-blur transition hover:border-sky-300/40 hover:bg-sky-500/20 hover:text-sky-100"
+                    >
+                      <FileText className="h-4 w-4" aria-hidden="true" />
                     </button>
                     <VideoWithSoundtrack
                       videoKey={`${previewItem.job.id}:${src}`}
@@ -8718,6 +8747,12 @@ export default function DashboardPage() {
                       preload="metadata"
                       clipVolume={1}
                     />
+                    {transcriptOpen && !transcriptResolving && transcriptVideoUrl ? (
+                      <TranscriptPanel
+                        videoUrl={transcriptVideoUrl}
+                        onClose={() => { setTranscriptOpen(false); setTranscriptVideoUrl(null) }}
+                      />
+                    ) : null}
                   </div>
                 )
               })() : (
