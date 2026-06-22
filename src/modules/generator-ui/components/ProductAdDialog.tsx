@@ -421,6 +421,7 @@ const T: Record<Lang, Record<string, string>> = {
     regenerate: 'Regenerate',
     sendAll: 'Send all to Pending',
     useAsPrompt: 'Use as prompt',
+    preparingFrame: 'Preparing frame…',
     generate: 'Generate ad scenario',
     language: 'Language',
     chooseFromProducts: 'Choose from products',
