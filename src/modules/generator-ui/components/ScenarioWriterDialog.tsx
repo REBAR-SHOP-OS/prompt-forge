@@ -283,6 +283,9 @@ export default function ScenarioWriterDialog({
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null)
   const [isUploadingImage, setIsUploadingImage] = useState(false)
+  const [lang, setLang] = useState<Lang>('en')
+  const t = T[lang]
+  const dir = RTL_LANGS.includes(lang) ? 'rtl' : 'ltr'
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
