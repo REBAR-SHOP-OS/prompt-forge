@@ -702,17 +702,68 @@ function isVeoNotProcessedYet(message: string | undefined | null): boolean {
 }
 
 async function fetchAsInlineData(url: string): Promise<{ mimeType: string; data: string }> {
+  // Frames are commonly staged into our OWN (private) Supabase Storage buckets
+  // — e.g. `wan-frames/<userId>/scene-chain-...png` used for >15s scene chaining.
+  // A `getPublicUrl()` on a private bucket yields a `/object/public/...` URL that
+  // an unauthenticated fetch cannot download (returns 400), which surfaced as
+  // "Failed to download …scene-chain-…png" on chained cards. Download those via
+  // the service-role client instead. This also works for `/object/sign/...`
+  // URLs and is immune to signed-URL expiry during long extension/queue waits.
+  const ownStorage = parseOwnStorageObject(url);
+  if (ownStorage) {
+    const client = getServiceClient();
+    const { data, error } = await client.storage
+      .from(ownStorage.bucket)
+      .download(ownStorage.key);
+    if (error || !data) {
+      throw new Error(
+        `failed to download frame from storage ${ownStorage.bucket}/${ownStorage.key}: ${
+          error?.message ?? "no data"
+        }`,
+      );
+    }
+    const mimeType = data.type?.split(";")[0]?.trim() || "image/png";
+    const buf = new Uint8Array(await data.arrayBuffer());
+    return { mimeType, data: bytesToBase64(buf) };
+  }
+
   const r = await fetch(url);
   if (!r.ok) throw new Error(`failed to fetch frame ${url}: ${r.status}`);
   const mimeType = r.headers.get("content-type")?.split(";")[0]?.trim() || "image/png";
   const buf = new Uint8Array(await r.arrayBuffer());
-  // Base64 in chunks to avoid call-stack overflow on large frames.
-  let bin = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < buf.length; i += chunk) {
-    bin += String.fromCharCode.apply(null, Array.from(buf.subarray(i, i + chunk)));
+  return { mimeType, data: bytesToBase64(buf) };
+}
+
+/**
+ * If `url` points to THIS project's Supabase Storage object API, return its
+ * bucket + key so we can download with the service-role client. Otherwise null
+ * (genuinely external URL — fall back to a plain fetch).
+ */
+function parseOwnStorageObject(url: string): { bucket: string; key: string } | null {
+  let supabaseUrl: string;
+  try {
+    supabaseUrl = getEnv("SUPABASE_URL");
+  } catch {
+    return null;
   }
-  return { mimeType, data: btoa(bin) };
+  let parsed: URL;
+  let base: URL;
+  try {
+    parsed = new URL(url);
+    base = new URL(supabaseUrl);
+  } catch {
+    return null;
+  }
+  if (parsed.host !== base.host) return null;
+  // Matches /storage/v1/object/{public|sign|authenticated}/<bucket>/<key...>
+  const m = parsed.pathname.match(
+    /^\/storage\/v1\/object\/(?:public|sign|authenticated)\/([^/]+)\/(.+)$/,
+  );
+  if (!m) return null;
+  const bucket = decodeURIComponent(m[1]);
+  const key = decodeURIComponent(m[2]);
+  if (!bucket || !key) return null;
+  return { bucket, key };
 }
 
 function bytesToBase64(buf: Uint8Array): string {
