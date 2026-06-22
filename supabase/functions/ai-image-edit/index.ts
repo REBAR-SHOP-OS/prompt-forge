@@ -1,6 +1,37 @@
 // Edits an image (data URL or https URL) using Lovable AI Gateway (Nano Banana).
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
+import { getServiceClient } from "../_shared/core/supabase.ts";
+
+// Our storage buckets are private, so public URLs return 400 when the AI gateway
+// tries to fetch them. Download via the service client and inline as a data URL.
+function bytesToBase64(bytes: Uint8Array): string {
+  let s = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    s += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(s);
+}
+
+async function toInlineDataUrl(url: string): Promise<string> {
+  if (url.startsWith("data:")) return url;
+  const m = url.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/([^?]+)/);
+  if (m) {
+    const bucket = m[1];
+    const path = decodeURIComponent(m[2]);
+    const { data, error } = await getServiceClient().storage.from(bucket).download(path);
+    if (!error && data) {
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      let mime = data.type?.split(";")[0]?.trim() || "image/png";
+      if (!/^image\/(png|jpe?g|webp)$/i.test(mime)) mime = "image/png";
+      return `data:${mime};base64,${bytesToBase64(bytes)}`;
+    }
+  }
+  // Fall back to the raw URL (e.g. already-signed or external).
+  return url;
+}
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -98,16 +129,20 @@ Deno.serve(async (req) => {
       ? `You will receive ${imageUrls.length} images. Image 1 is the BASE image to edit/transform. The remaining ${imageUrls.length - 1} image(s) are visual REFERENCES — use their style, subject, products, or details to guide the edit. Apply this instruction (which may be in any language, including Persian/Farsi/Arabic) to image 1: ${prompt}.${aspectRatio ? ` The output image MUST keep a strict ${aspectRatio} aspect ratio.` : " Preserve the overall composition and aspect ratio of the base image unless the instruction explicitly requires otherwise."} Respond with ONLY the resulting image — no text, captions, or explanations.`
       : `Edit the provided image as follows: ${prompt}.${aspectRatio ? ` The output image MUST keep a strict ${aspectRatio} aspect ratio.` : " Preserve the overall composition and aspect ratio of the original image unless the instruction explicitly requires otherwise."} Respond with ONLY the edited image — no text, captions, or explanations.`;
 
+    // Inline private-bucket URLs as data URLs so the AI gateway can read them.
+    const inlinedUrls = await Promise.all(imageUrls.map((u) => toInlineDataUrl(u)));
+
     const messageContent = maskUrl
       ? [
           { type: "text", text: `You will receive two images. Image 1 is the ORIGINAL. Image 2 is a strict edit MASK (transparent background; opaque/white pixels mark the editable region). Only the white/opaque pixels of the mask define the editable region — DO NOT alter pixels where the mask is transparent. Keep every pixel outside the mask absolutely identical (same composition, colors, lighting, subject, pose, background). The user instruction (which may be in any language, including Persian/Farsi/Arabic) describes what to put inside the masked region: ${prompt}.${aspectRatio ? ` Output MUST keep a strict ${aspectRatio} aspect ratio.` : ""} Respond with ONLY the edited image — no text.` },
-          { type: "image_url", image_url: { url: imageUrls[0] } },
+          { type: "image_url", image_url: { url: inlinedUrls[0] } },
           { type: "image_url", image_url: { url: maskUrl } },
         ]
       : [
           { type: "text", text: multiRefText },
-          ...imageUrls.map((url) => ({ type: "image_url", image_url: { url } })),
+          ...inlinedUrls.map((url) => ({ type: "image_url", image_url: { url } })),
         ];
+
 
     const callModel = async (model: string) => {
       return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
