@@ -1030,6 +1030,12 @@ export default function ProductAdDialog({
       if (templatePrompts) {
         idea += `\n\nFollow these video template styles and conventions: ${templatePrompts}`
       }
+      const useCharacter = !isCharacter && Boolean(characterRefSendUrl)
+      if (useCharacter) {
+        idea += characterRefName
+          ? `\n\nThis advertisement features a recurring on-screen character named "${characterRefName}" (see the second attached image). Keep this character's look (face, hair, wardrobe, body) consistent in every shot, while the product stays the hero.`
+          : `\n\nThis advertisement features a recurring on-screen character (see the second attached image). Keep this character's look (face, hair, wardrobe, body) consistent in every shot, while the product stays the hero.`
+      }
       const { data, error: invokeErr } = await supabase.functions.invoke('scenario-write', {
         body: {
           mode: isCharacter ? 'character-sheet' : 'product-ad',
@@ -1044,6 +1050,7 @@ export default function ProductAdDialog({
             : {
                 productName: productName.trim() || undefined,
                 productDescription: productDescription.trim() || undefined,
+                characterImageUrl: useCharacter ? (characterRefSendUrl ?? undefined) : undefined,
               }),
           cameraStyle,
           cameraMovement: cameraMovement.trim() || undefined,
