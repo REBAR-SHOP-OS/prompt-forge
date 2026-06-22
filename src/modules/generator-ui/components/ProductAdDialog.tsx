@@ -1855,7 +1855,7 @@ export default function ProductAdDialog({
 
             </>
           ) : (
-            <Button onClick={generate} disabled={isWriting || !canGenerate} size="sm">
+            <Button onClick={generate} disabled={isWriting || businessSaving || !canGenerate} size="sm">
               {isWriting ? (
                 <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
               ) : (
