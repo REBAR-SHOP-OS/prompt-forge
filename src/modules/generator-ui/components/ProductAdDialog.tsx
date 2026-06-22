@@ -1426,7 +1426,13 @@ export default function ProductAdDialog({
                         onClick={() => pickProduct(photo)}
                         className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-amber-300/40 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        <img src={photo.url} alt={photo.title ?? 'Product'} className="aspect-square w-full object-cover" />
+                        <img
+                          src={photo.url}
+                          alt={photo.title ?? 'Product'}
+                          loading="lazy"
+                          className="aspect-square w-full bg-black/40 object-cover"
+                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden' }}
+                        />
                         <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || t.untitled}</div>
                         {busy ? (
                           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/60 text-xs text-zinc-100">
