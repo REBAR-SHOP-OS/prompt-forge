@@ -1,45 +1,42 @@
-# Highlight Low-Confidence (Possible Mispronunciation) Words in the Transcript
+# Click a Flagged Word to Hear Its Correct Pronunciation
 
 ## Goal
-When the speech-to-text model is unsure about a spoken word, mark it in the transcript so the user can see exactly where the narration may have a pronunciation problem. Detection is based on the model's per-word confidence (logprobs); flagged words are highlighted inline inside the existing transcript panel.
+In the transcript panel, the low-confidence (possibly mispronounced) words are already highlighted. Make each highlighted word clickable: clicking it plays a clear, correct text-to-speech pronunciation of that word.
 
-## How detection works
-`openai/gpt-4o-mini-transcribe` can return token-level `logprobs`. A low logprob means the model heard that word unclearly — a strong signal of a garbled or mispronounced word. We convert each token's logprob to a confidence (`exp(logprob)`), group tokens into words, and flag words whose confidence falls below a threshold.
+## Approach
+Reuse the existing `tts-generate` edge function (Gemini TTS → base64 WAV). On click, the panel sends the single word, decodes the returned WAV to an audio blob, and plays it. Audio per word is cached so repeat clicks are instant and not re-billed.
 
-## Changes
+## Changes — `src/modules/generator-ui/components/TranscriptPanel.tsx`
 
-### 1. `supabase/functions/video-transcript/index.ts`
-- In `transcribeVideo`, request logprobs from the gateway:
-  - `form.append('response_format', 'json')`
-  - `form.append('include[]', 'logprobs')`
-- Change the return type to include token data. Parse `data.logprobs` (array of `{ token, logprob }`). Build a `words` array by:
-  - Splitting/accumulating tokens into words on whitespace boundaries (a new word starts when a token begins with a space or newline).
-  - For each word, take the minimum token confidence (`Math.exp(logprob)`) as the word confidence.
-  - Mark `lowConfidence: confidence < THRESHOLD` (start at ~0.55, tunable).
-- If `logprobs` is missing (older response), fall back to returning the plain transcript with no flags (graceful degradation).
-- Update the main handler to return `words` alongside `transcript`:
-  `return json({ transcript, words, translatedText, targetLanguage })`.
-- Keep the translate path unchanged (translations have no confidence data).
+1. **State & refs**
+   - `pronouncing: number | null` — index of the word currently loading TTS (for a spinner).
+   - `playingWord: number | null` — index currently playing (for visual state).
+   - `audioCache = useRef<Map<string, string>>` — maps lowercased word → object URL of generated WAV.
+   - `audioRef = useRef<HTMLAudioElement | null>` — single reused `<audio>` element.
 
-Returned shape:
-```text
-words: Array<{ text: string; lowConfidence: boolean; confidence: number }>
-```
+2. **`playPronunciation(word, index)` handler**
+   - Normalize the word (strip surrounding punctuation, e.g. `Stirrup,` → `Stirrup`).
+   - If cached, play immediately. Otherwise:
+     - `setPronouncing(index)`
+     - `supabase.functions.invoke('tts-generate', { body: { text: word, gender: 'female', tone: 'narrative' } })`
+     - Convert `data.audioBase64` (+ `data.mimeType`) to a Blob → object URL, store in cache.
+     - Play via the shared audio element; set `playingWord`, clear it on `ended`.
+   - Errors → `toast.error('Could not play pronunciation.')` (sonner) and clear loading.
+   - Pause/cancel any currently-playing audio before starting a new word.
 
-### 2. `src/modules/generator-ui/components/TranscriptPanel.tsx`
-- Extend `TranscriptResponse` with `words?: { text: string; lowConfidence: boolean; confidence: number }[]`.
-- Store `words` in state on the initial transcription.
-- Rendering the **Original** language view:
-  - If `words` exist, render the transcript as a sequence of `<span>`s. Low-confidence words get a highlight style (amber/warning underline + subtle background) and a `title` tooltip like "Possible pronunciation issue (low confidence)".
-  - Use semantic tokens (e.g. `text-amber-300`, `decoration-amber-400/60 underline decoration-dotted`) consistent with the panel's dark theme.
-  - If no `words`, fall back to the current plain paragraph.
-- For **translated** languages, keep plain text (confidence applies only to the spoken original). 
-- Add a small legend/hint line above the text when any low-confidence words exist, e.g. "Highlighted words may be mispronounced in the narration." Only show it in the Original view.
+3. **Render the highlighted words as buttons**
+   - Change each low-confidence `<span>` into a `<button type="button">` that calls `playPronunciation`.
+   - Keep the amber highlight styling; add `cursor-pointer`, hover emphasis, and a tiny inline speaker icon (`Volume2` from lucide-react) after the word. While that word is loading, show `Loader2` spinner instead; while playing, accent the icon.
+   - Update the tooltip/title to "Click to hear the correct pronunciation".
+   - Update the legend text to: "Highlighted words may be mispronounced — click one to hear the correct pronunciation."
 
-## Verification
-- Use `supabase--curl_edge_functions` to call `video-transcript` with a real signed video URL and confirm the response includes a `words` array with `lowConfidence` flags.
-- In the preview: open the large preview → transcript icon → confirm uncertain words appear highlighted with a tooltip, and the legend shows when applicable.
+4. **Cleanup**
+   - On unmount, revoke cached object URLs and pause audio.
 
 ## Notes
-- Threshold is a heuristic; it can be tuned after seeing real output.
-- No new secrets, tables, or dependencies needed.
+- `tts-generate` already requires auth; `supabase.functions.invoke` sends the session token automatically.
+- Only Original-view highlighted words are clickable (translations have no confidence/word data).
+- No backend changes, no new secrets, no schema changes.
+
+## Verification
+- Open large preview → transcript icon → click a highlighted word → confirm audio plays, spinner shows while generating, and a second click plays instantly from cache.
