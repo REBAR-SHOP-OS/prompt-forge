@@ -178,6 +178,41 @@ async function callGateway(
   });
 }
 
+// The AI gateway fetches image URLs itself, but our storage buckets (e.g.
+// wan-frames) are private, so a public object URL returns 400. Download the
+// object server-side with the service role and inline it as a base64 data URL.
+async function resolveImageForGateway(url: string): Promise<string> {
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    const marker = "/storage/v1/object/";
+    const idx = url.indexOf(marker);
+    if (!idx || idx < 0 || !supabaseUrl || !serviceKey) return url;
+
+    // Strip a leading "public/" segment so we hit the authenticated endpoint.
+    let objectPath = url.slice(idx + marker.length);
+    if (objectPath.startsWith("public/")) objectPath = objectPath.slice("public/".length);
+    const authUrl = `${supabaseUrl}/storage/v1/object/${objectPath}`;
+
+    const res = await fetch(authUrl, {
+      headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey },
+    });
+    if (!res.ok) {
+      console.error("resolveImageForGateway fetch failed", res.status, authUrl);
+      return url;
+    }
+    const contentType = res.headers.get("content-type") || "image/png";
+    const buf = new Uint8Array(await res.arrayBuffer());
+    let binary = "";
+    for (let i = 0; i < buf.length; i++) binary += String.fromCharCode(buf[i]);
+    const b64 = btoa(binary);
+    return `data:${contentType};base64,${b64}`;
+  } catch (e) {
+    console.error("resolveImageForGateway error", e);
+    return url;
+  }
+}
+
 function stripQuotes(s: string): string {
   return s.replace(/^["'`]+|["'`]+$/g, "").trim();
 }
@@ -313,7 +348,12 @@ Deno.serve(async (req) => {
       || (productAd?.productName ? `Create an advertisement for ${productAd.productName}.` : "")
       || (characterSheet?.characterName ? `Create a film built around the character "${characterSheet.characterName}".` : "")
       || (characterSheet ? "Create a film built around the character in the attached image." : "Generate a scenario based on the attached reference image.");
-    let resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl, productAd, autoFromImage, characterSheet);
+    // Inline private-bucket images as data URLs so the gateway can read them.
+    const resolvedImageUrl = imageUrl ? await resolveImageForGateway(imageUrl) : imageUrl;
+    if (productAd?.characterImageUrl) {
+      productAd.characterImageUrl = await resolveImageForGateway(productAd.characterImageUrl);
+    }
+    let resp = await callGateway(apiKey, duration, effectiveIdea, resolvedImageUrl, productAd, autoFromImage, characterSheet);
 
     if (resp.status === 429) {
       return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
@@ -343,7 +383,7 @@ Deno.serve(async (req) => {
     // One retry for multi-scene durations if we didn't get the expected count.
     const expected = expectedSceneCount(duration);
     if (expected > 1 && scenes.length === 0) {
-      resp = await callGateway(apiKey, duration, effectiveIdea, imageUrl, productAd, autoFromImage, characterSheet);
+      resp = await callGateway(apiKey, duration, effectiveIdea, resolvedImageUrl, productAd, autoFromImage, characterSheet);
       if (resp.ok) {
         data = await resp.json();
         raw = (data?.choices?.[0]?.message?.content ?? "").trim();
