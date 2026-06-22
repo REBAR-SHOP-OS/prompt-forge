@@ -178,6 +178,41 @@ async function callGateway(
   });
 }
 
+// The AI gateway fetches image URLs itself, but our storage buckets (e.g.
+// wan-frames) are private, so a public object URL returns 400. Download the
+// object server-side with the service role and inline it as a base64 data URL.
+async function resolveImageForGateway(url: string): Promise<string> {
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    const marker = "/storage/v1/object/";
+    const idx = url.indexOf(marker);
+    if (!idx || idx < 0 || !supabaseUrl || !serviceKey) return url;
+
+    // Strip a leading "public/" segment so we hit the authenticated endpoint.
+    let objectPath = url.slice(idx + marker.length);
+    if (objectPath.startsWith("public/")) objectPath = objectPath.slice("public/".length);
+    const authUrl = `${supabaseUrl}/storage/v1/object/${objectPath}`;
+
+    const res = await fetch(authUrl, {
+      headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey },
+    });
+    if (!res.ok) {
+      console.error("resolveImageForGateway fetch failed", res.status, authUrl);
+      return url;
+    }
+    const contentType = res.headers.get("content-type") || "image/png";
+    const buf = new Uint8Array(await res.arrayBuffer());
+    let binary = "";
+    for (let i = 0; i < buf.length; i++) binary += String.fromCharCode(buf[i]);
+    const b64 = btoa(binary);
+    return `data:${contentType};base64,${b64}`;
+  } catch (e) {
+    console.error("resolveImageForGateway error", e);
+    return url;
+  }
+}
+
 function stripQuotes(s: string): string {
   return s.replace(/^["'`]+|["'`]+$/g, "").trim();
 }
