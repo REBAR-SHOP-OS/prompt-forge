@@ -858,6 +858,8 @@ export default function ProductAdDialog({
       return
     }
     setError(null)
+    setPreviewError(null)
+    setPreviewLoading(false)
     const localUrl = URL.createObjectURL(file)
     if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
     setImagePreviewUrl(localUrl)
