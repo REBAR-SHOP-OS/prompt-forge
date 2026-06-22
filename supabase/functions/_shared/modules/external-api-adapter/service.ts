@@ -2,6 +2,7 @@
 // Provider/model resolution + cost estimation + real provider calls.
 // Wan provider uses Alibaba DashScope (Singapore) image-to-video API.
 import type { SupabaseClient } from "../../core/supabase.ts";
+import { getServiceClient } from "../../core/supabase.ts";
 import type {
   AiGateway,
   GenerationPollResult,
