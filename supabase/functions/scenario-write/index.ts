@@ -155,6 +155,7 @@ async function callGateway(
   productAd?: ProductAdOpts,
   autoFromImage?: boolean,
   characterSheet?: CharacterSheetOpts,
+  businessInfo?: string,
 ): Promise<Response> {
   const refText = characterSheet
     ? `Brief: ${idea}\nThe attached image IS the lead character — match their exact face, hair, wardrobe, body, and overall look in every shot, and keep them perfectly consistent throughout the film.`
