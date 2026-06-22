@@ -8305,6 +8305,24 @@ export default function DashboardPage() {
         }}
       />
 
+      <CharacterSheetDialog
+        open={isCharacterSheetOpen}
+        onOpenChange={setIsCharacterSheetOpen}
+        defaultDuration={durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135 ? durationSeconds : (durationSeconds as 5 | 10 | 15)}
+        userId={userId}
+        onUseAsPrompt={(text) => {
+          setPromptText(text)
+        }}
+        onSendScenes={async (scenes) => {
+          const tagged = scenes
+            .map((s, i) => `=== Scene ${i + 1} ===\n${s.trim()}`)
+            .join('\n\n')
+          setPromptText(tagged)
+        }}
+      />
+
+
+
 
 
 
