@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Package, LoaderCircle, RefreshCw, Copy, Check, Wand2, Send, ImagePlus, X, Languages, Boxes, ArrowLeft, Sparkles, Drama } from 'lucide-react'
+import { Package, LoaderCircle, RefreshCw, Copy, Check, Wand2, Send, ImagePlus, X, Languages, Boxes, ArrowLeft, Sparkles, Drama, UserRound } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -757,6 +757,101 @@ export default function ProductAdDialog({
   const [loadingProducts, setLoadingProducts] = useState(false)
   const [preparingId, setPreparingId] = useState<string | null>(null)
 
+  // Character attachment (feature a character in the product ad)
+  const characterFileInputRef = useRef<HTMLInputElement | null>(null)
+  const [characterPickerOpen, setCharacterPickerOpen] = useState(false)
+  const [characterPhotos, setCharacterPhotos] = useState<ProductPhoto[]>([])
+  const [loadingCharacters, setLoadingCharacters] = useState(false)
+  const [characterRefDisplayUrl, setCharacterRefDisplayUrl] = useState<string | null>(null)
+  const [characterRefSendUrl, setCharacterRefSendUrl] = useState<string | null>(null)
+  const [characterRefName, setCharacterRefName] = useState<string | null>(null)
+  const [uploadingCharacter, setUploadingCharacter] = useState(false)
+
+  async function openCharacterPicker() {
+    if (!userId) {
+      setError('Please sign in to choose a character.')
+      return
+    }
+    setError(null)
+    setCharacterPickerOpen(true)
+    setLoadingCharacters(true)
+    try {
+      const { data, error: qErr } = await supabase
+        .from('generator_user_images')
+        .select('id, storage_path, title, category')
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+      if (qErr) throw new Error(qErr.message)
+      const rows = (data ?? []).filter((r) => (r.category ?? 'general') === 'character')
+      const photos: ProductPhoto[] = await Promise.all(
+        rows.map(async (r) => ({
+          id: r.id,
+          title: r.title ?? null,
+          url: await signProductPhotoUrl(r.storage_path),
+        })),
+      )
+      setCharacterPhotos(photos)
+    } catch (e) {
+      setError((e as Error).message ?? 'Failed to load characters')
+    } finally {
+      setLoadingCharacters(false)
+    }
+  }
+
+  function pickCharacter(photo: ProductPhoto) {
+    setCharacterRefDisplayUrl(photo.url)
+    setCharacterRefSendUrl(photo.url)
+    setCharacterRefName(photo.title ?? null)
+    setCharacterPickerOpen(false)
+  }
+
+  async function handleUploadCharacter(file: File | undefined) {
+    if (!file) return
+    if (!userId) {
+      setError('Please sign in to attach a character.')
+      return
+    }
+    if (!file.type.startsWith('image/')) {
+      setError('Only image files are supported.')
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Image too large (max 10MB).')
+      return
+    }
+    setError(null)
+    setUploadingCharacter(true)
+    try {
+      const ext = (file.name.split('.').pop() || 'png').toLowerCase()
+      const storagePath = `${userId}/character-ref-${Date.now()}-${crypto.randomUUID()}.${ext}`
+      const { error: upErr } = await supabase.storage
+        .from(FRAMES_BUCKET)
+        .upload(storagePath, file, { contentType: file.type, upsert: false })
+      if (upErr) throw new Error(upErr.message)
+      const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+      const displayUrl = await signFramesUrl(data.publicUrl).catch(() => data.publicUrl)
+      setCharacterRefDisplayUrl(displayUrl)
+      setCharacterRefSendUrl(data.publicUrl)
+      setCharacterRefName(null)
+      setCharacterPickerOpen(false)
+    } catch (e) {
+      setError((e as Error).message ?? 'Character upload failed')
+    } finally {
+      setUploadingCharacter(false)
+      if (characterFileInputRef.current) characterFileInputRef.current.value = ''
+    }
+  }
+
+  function clearCharacter() {
+    setCharacterRefDisplayUrl(null)
+    setCharacterRefSendUrl(null)
+    setCharacterRefName(null)
+    if (characterFileInputRef.current) characterFileInputRef.current.value = ''
+  }
+
+
+
   async function openProductPicker() {
     if (!userId) {
       setError('Please sign in to choose a product.')
@@ -935,6 +1030,12 @@ export default function ProductAdDialog({
       if (templatePrompts) {
         idea += `\n\nFollow these video template styles and conventions: ${templatePrompts}`
       }
+      const useCharacter = !isCharacter && Boolean(characterRefSendUrl)
+      if (useCharacter) {
+        idea += characterRefName
+          ? `\n\nThis advertisement features a recurring on-screen character named "${characterRefName}" (see the second attached image). Keep this character's look (face, hair, wardrobe, body) consistent in every shot, while the product stays the hero.`
+          : `\n\nThis advertisement features a recurring on-screen character (see the second attached image). Keep this character's look (face, hair, wardrobe, body) consistent in every shot, while the product stays the hero.`
+      }
       const { data, error: invokeErr } = await supabase.functions.invoke('scenario-write', {
         body: {
           mode: isCharacter ? 'character-sheet' : 'product-ad',
@@ -949,6 +1050,7 @@ export default function ProductAdDialog({
             : {
                 productName: productName.trim() || undefined,
                 productDescription: productDescription.trim() || undefined,
+                characterImageUrl: useCharacter ? (characterRefSendUrl ?? undefined) : undefined,
               }),
           cameraStyle,
           cameraMovement: cameraMovement.trim() || undefined,
@@ -1029,6 +1131,7 @@ export default function ProductAdDialog({
     setCopiedIndex(null)
     setIsSending(false)
     clearImage()
+    clearCharacter()
   }
 
   const isSplit = SPLIT_DURATIONS.includes(duration) && scenes.length > 1
@@ -1174,7 +1277,47 @@ export default function ProductAdDialog({
                 <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
                 <span className="truncate">{t.generateWithAi}</span>
               </button>
+              {isCharacter ? null : (
+                characterRefDisplayUrl ? (
+                  <div className="relative w-20">
+                    <button
+                      type="button"
+                      onClick={openCharacterPicker}
+                      title="Change character"
+                      className="block w-20 overflow-hidden rounded-md border border-amber-300/50 bg-amber-300/10"
+                    >
+                      <img
+                        src={characterRefDisplayUrl}
+                        alt="Character"
+                        className="h-16 w-20 object-cover"
+                      />
+                      <span className="block truncate px-1 py-0.5 text-[9px] text-amber-100">
+                        {characterRefName || 'Character'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={clearCharacter}
+                      aria-label="Remove character"
+                      className="absolute -right-1.5 -top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-900 text-zinc-200 ring-1 ring-white/20 hover:bg-zinc-800"
+                    >
+                      <X className="h-3 w-3" aria-hidden="true" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={openCharacterPicker}
+                    title="Add character"
+                    className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-white/10 bg-black/30 px-1 py-1 text-[10px] text-zinc-300 transition hover:border-amber-300/40 hover:text-amber-100"
+                  >
+                    <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span className="truncate">Add character</span>
+                  </button>
+                )
+              )}
             </div>
+
             <div className="flex-1 space-y-2">
               <div>
                 <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
@@ -1611,6 +1754,81 @@ export default function ProductAdDialog({
             </div>
           </DialogContent>
         </Dialog>
+
+        <input
+          ref={characterFileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => handleUploadCharacter(e.target.files?.[0])}
+        />
+
+        <Dialog open={characterPickerOpen} onOpenChange={(o) => { if (!uploadingCharacter) setCharacterPickerOpen(o) }}>
+          <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <UserRound className="h-4 w-4" aria-hidden="true" /> Choose a character
+              </DialogTitle>
+              <DialogDescription className="text-zinc-400">
+                Pick a character you created with the Character Sheet, or upload one. The ad scenario will feature this character.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div>
+              <button
+                type="button"
+                onClick={() => characterFileInputRef.current?.click()}
+                disabled={uploadingCharacter}
+                className="inline-flex items-center gap-2 rounded-md border border-amber-300/30 bg-amber-300/10 px-3 py-1.5 text-xs font-semibold text-amber-100 transition hover:border-amber-300/60 hover:bg-amber-300/20 disabled:opacity-50"
+              >
+                {uploadingCharacter ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <ImagePlus className="h-4 w-4" aria-hidden="true" />
+                )}
+                Upload character
+              </button>
+            </div>
+
+            <div className="mt-3">
+              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">Your characters</div>
+              {loadingCharacters ? (
+                <div className="flex items-center justify-center py-10 text-sm text-zinc-400">
+                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> Loading characters…
+                </div>
+              ) : characterPhotos.length === 0 ? (
+                <div className="py-10 text-center text-sm text-zinc-500">No characters yet. Create one with the Character Sheet, or upload an image above.</div>
+              ) : (
+                <div className="grid max-h-[50vh] grid-cols-3 gap-3 overflow-y-auto pr-1 sm:grid-cols-4">
+                  {characterPhotos.map((photo) => (
+                    <button
+                      key={photo.id}
+                      type="button"
+                      onClick={() => pickCharacter(photo)}
+                      className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-amber-300/40"
+                    >
+                      <img
+                        src={photo.url}
+                        alt={photo.title ?? 'Character'}
+                        loading="lazy"
+                        className="aspect-square w-full bg-black/40 object-cover"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden' }}
+                      />
+                      <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || t.untitled}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end pt-2">
+              <Button variant="ghost" size="sm" onClick={() => { if (!uploadingCharacter) setCharacterPickerOpen(false) }} disabled={uploadingCharacter}>
+                <ArrowLeft className="mr-1.5 h-4 w-4" aria-hidden="true" /> {t.back}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
 
         <Dialog open={previewLightboxOpen && Boolean(imagePreviewUrl)} onOpenChange={setPreviewLightboxOpen}>
           <DialogContent dir={dir} className="max-w-3xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">

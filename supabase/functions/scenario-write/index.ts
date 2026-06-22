@@ -30,6 +30,8 @@ interface ProductAdOpts {
   cameraMovement?: string;
   genre?: string;
   scene?: string;
+  characterImageUrl?: string;
+  characterDescription?: string;
 }
 
 interface CharacterSheetOpts {
@@ -76,6 +78,10 @@ function buildSystemPrompt(
         productAd?.productName ? `The hero product is "${productAd.productName}".` : "Center the scenario on the product in the user's brief.",
         productAd?.productDescription ? `Product details: ${productAd.productDescription}.` : "",
         "Make the product the unmistakable hero of every shot: show it prominently, highlight its look, texture, and key selling points, and build desire.",
+        productAd?.characterImageUrl
+          ? "This commercial ALSO features a recurring human character provided as a SECOND attached image. Carefully analyze that second image and feature this exact character on screen interacting with the product, keeping their face, hairstyle, wardrobe, and body type perfectly consistent and recognizable across every shot, while the product remains the clear hero."
+          : "",
+        productAd?.characterDescription ? `Character notes: ${productAd.characterDescription}.` : "",
         cameraGuidance(productAd ?? {}),
       ].filter(Boolean).join(" ")
     : "";
@@ -141,11 +147,19 @@ async function callGateway(
       : autoFromImage
         ? `No written idea was provided. Analyze the attached image and write the scenario entirely based on what you observe in it.`
         : `Idea: ${idea}\nBase the scenario on the attached reference image (subjects, setting, mood, props, style).`;
-  const userContent: unknown = imageUrl
+  const characterImageUrl = productAd?.characterImageUrl;
+  const contentBlocks: unknown[] = imageUrl
     ? [
         { type: "text", text: refText },
         { type: "image_url", image_url: { url: imageUrl } },
       ]
+    : [];
+  if (imageUrl && characterImageUrl) {
+    contentBlocks.push({ type: "text", text: "The image below is the recurring human character to feature in the commercial — match their exact face, hair, wardrobe, and body in every shot." });
+    contentBlocks.push({ type: "image_url", image_url: { url: characterImageUrl } });
+  }
+  const userContent: unknown = imageUrl
+    ? contentBlocks
     : (productAd || characterSheet) ? `Brief: ${idea}` : `Idea: ${idea}`;
 
   return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -221,6 +235,7 @@ Deno.serve(async (req) => {
           cameraMovement: clip(body?.cameraMovement, 1000),
           genre: clip(body?.genre, 300),
           scene: clip(body?.scene, 300),
+          characterDescription: clip(body?.characterDescription, 2000),
         }
       : undefined;
     const characterSheet: CharacterSheetOpts | undefined = isCharacterSheet
@@ -249,6 +264,16 @@ Deno.serve(async (req) => {
       imageUrlRaw && imageUrlRaw.length <= 2048 && isAllowedImageUrl(imageUrlRaw)
         ? imageUrlRaw
         : undefined;
+
+    // Attach an optional character reference image (product-ad mode only).
+    // Only used when a product image is present, since prompts reference it as
+    // the "second attached image".
+    if (productAd && imageUrl) {
+      const charRaw = typeof body?.characterImageUrl === "string" ? body.characterImageUrl.trim() : "";
+      if (charRaw && charRaw.length <= 2048 && isAllowedImageUrl(charRaw)) {
+        productAd.characterImageUrl = charRaw;
+      }
+    }
 
     if (isCharacterSheet && !imageUrl) {
       return new Response(JSON.stringify({ error: "A character image is required for Character Sheet mode." }), {
