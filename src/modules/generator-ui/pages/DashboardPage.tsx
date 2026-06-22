@@ -6735,6 +6735,7 @@ export default function DashboardPage() {
     setLastMergedPreview(null)
     // Reset the composer to a fresh state.
     setPromptText('')
+    setSelectedCharacter(null)
     setUploadedFiles([])
     setComposerError(null)
     setVideoColumnMessage(null)
