@@ -69,6 +69,15 @@ const LANGUAGE_NAMES: Record<string, string> = {
   fr: "French",
 };
 
+const NARRATION_LABELS: Record<string, string> = {
+  en: "Narration",
+  fa: "نریشن",
+  ar: "التعليق الصوتي",
+  tr: "Anlatım",
+  es: "Narración",
+  fr: "Narration",
+};
+
 function buildSystemPrompt(
   duration: number,
   productAd?: ProductAdOpts,
