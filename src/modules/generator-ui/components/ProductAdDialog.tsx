@@ -1944,19 +1944,38 @@ export default function ProductAdDialog({
                 )}
                 {copiedIndex === -1 ? t.copied : isSplit ? t.copyAll : t.copy}
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={generate}
-                disabled={isWriting || isSending || businessSaving || !canGenerate}
-              >
-                {isWriting ? (
-                  <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
-                ) : (
-                  <RefreshCw className="h-4 w-4 mr-2" aria-hidden="true" />
-                )}
-                {t.regenerate}
-              </Button>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={isWriting || isSending || businessSaving || !canGenerate}
+                  >
+                    {isWriting ? (
+                      <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4 mr-2" aria-hidden="true" />
+                    )}
+                    {t.regenerate}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" dir={dir} className="w-52 border-white/10 bg-[#0b0c0e]/95 p-1">
+                  <button
+                    type="button"
+                    onClick={() => generate(true)}
+                    className="flex w-full items-center rounded-md px-2.5 py-2 text-sm text-zinc-100 transition hover:bg-white/10"
+                  >
+                    {t.withNarration}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => generate(false)}
+                    className="flex w-full items-center rounded-md px-2.5 py-2 text-sm text-zinc-100 transition hover:bg-white/10"
+                  >
+                    {t.withoutNarration}
+                  </button>
+                </PopoverContent>
+              </Popover>
               {isSplit && onSendScenes ? (
                 <Button size="sm" onClick={handleSendAll} disabled={isWriting || isSending || isPreparingFrame}>
                   {isSending || isPreparingFrame ? (
