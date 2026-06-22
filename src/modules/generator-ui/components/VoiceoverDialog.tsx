@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
-import { Download, LoaderCircle, Mic, Sparkles, X } from 'lucide-react'
+import { Download, LoaderCircle, Mic, Play, Sparkles, X } from 'lucide-react'
 import { supabase } from '@/integrations/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
@@ -26,8 +26,15 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
+import {
+  VOICE_CATALOG,
+  defaultVoiceForGender,
+  getVoiceById,
+  voicesForGender,
+  type VoiceGender,
+} from '@/modules/generator-ui/lib/voiceCatalog'
 
-type Gender = 'female' | 'male' | 'child'
+type Gender = VoiceGender
 type Tone =
   | 'advertising'
   | 'excited'
@@ -113,13 +120,47 @@ export function VoiceoverDialog({
 }: VoiceoverDialogProps) {
   const [text, setText] = useState('')
   const [gender, setGender] = useState<Gender>('female')
+  const [voiceId, setVoiceId] = useState<string>(() => defaultVoiceForGender('female').id)
   const [tone, setTone] = useState<Tone>('advertising')
   const [isAutoDuration, setIsAutoDuration] = useState<boolean>(true)
   const [customDuration, setCustomDuration] = useState<string>('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
-  
+  const [playingSampleId, setPlayingSampleId] = useState<string | null>(null)
+
   const lastUrlRef = useRef<string | null>(null)
+  const sampleAudioRef = useRef<HTMLAudioElement | null>(null)
+
+  const currentVoice = getVoiceById(voiceId) ?? defaultVoiceForGender(gender)
+
+  function handleGenderChange(next: Gender) {
+    setGender(next)
+    // Reset the selected voice to the first voice of the new gender group.
+    setVoiceId(defaultVoiceForGender(next).id)
+  }
+
+  function playSample(id: string) {
+    const voice = getVoiceById(id)
+    if (!voice) return
+    let el = sampleAudioRef.current
+    if (!el) {
+      el = new Audio()
+      sampleAudioRef.current = el
+      el.addEventListener('ended', () => setPlayingSampleId(null))
+    }
+    // Toggle: clicking the currently-playing sample stops it.
+    if (playingSampleId === id && !el.paused) {
+      el.pause()
+      el.currentTime = 0
+      setPlayingSampleId(null)
+      return
+    }
+    el.pause()
+    el.src = voice.sampleUrl
+    el.currentTime = 0
+    setPlayingSampleId(id)
+    void el.play().catch(() => setPlayingSampleId(null))
+  }
 
   function resolveDurationSec(): number | undefined {
     if (isAutoDuration) return undefined
@@ -134,6 +175,9 @@ export function VoiceoverDialog({
       if (lastUrlRef.current) {
         try { URL.revokeObjectURL(lastUrlRef.current) } catch { /* ignore */ }
       }
+      if (sampleAudioRef.current) {
+        try { sampleAudioRef.current.pause() } catch { /* ignore */ }
+      }
     }
   }, [])
 
@@ -141,6 +185,10 @@ export function VoiceoverDialog({
   useEffect(() => {
     if (!open) {
       setIsGenerating(false)
+      if (sampleAudioRef.current) {
+        try { sampleAudioRef.current.pause() } catch { /* ignore */ }
+      }
+      setPlayingSampleId(null)
     }
   }, [open])
 
@@ -164,7 +212,7 @@ export function VoiceoverDialog({
         user_id: uid,
         storage_path: path,
         kind: 'voiceover',
-        name: `Voiceover (${gender}, ${tone})`,
+        name: `Voiceover (${currentVoice.label}, ${tone})`,
         size_bytes: blob.size,
         mime_type: blob.type || null,
       })
@@ -186,7 +234,7 @@ export function VoiceoverDialog({
     try {
       const durationSec = resolveDurationSec()
       const { data, error } = await supabase.functions.invoke('tts-generate', {
-        body: { text: trimmed, gender, tone, ...(durationSec ? { durationSec } : {}) },
+        body: { text: trimmed, gender, tone, voiceName: currentVoice.voiceName, ...(durationSec ? { durationSec } : {}) },
       })
       if (error) throw error
       const payload = data as {
@@ -213,7 +261,7 @@ export function VoiceoverDialog({
       // Auto-apply: immediately surface the full settings panel (volume,
       // waveform selection, "Play on video from … to") for the new voiceover.
       if (onUseAsSoundtrack) {
-        const name = `Voiceover (${gender}, ${tone}).wav`
+        const name = `Voiceover (${currentVoice.label} · ${tone}).wav`
         onUseAsSoundtrack(url, name)
         // Ownership handed off to the parent — don't revoke it here.
         lastUrlRef.current = null
@@ -237,7 +285,7 @@ export function VoiceoverDialog({
     if (!downloadUrl) return
     const a = document.createElement('a')
     a.href = downloadUrl
-    a.download = `voiceover-${gender}-${tone}-${Date.now()}.wav`
+    a.download = `voiceover-${currentVoice.label}-${tone}-${Date.now()}.wav`
     document.body.appendChild(a)
     a.click()
     a.remove()
@@ -282,7 +330,7 @@ export function VoiceoverDialog({
               <Label className="text-xs uppercase tracking-wider text-zinc-400">
                 Gender
               </Label>
-              <Select value={gender} onValueChange={(v) => setGender(v as Gender)}>
+              <Select value={gender} onValueChange={(v) => handleGenderChange(v as Gender)}>
                 <SelectTrigger className="border-white/10 bg-white/[0.04] text-zinc-100">
                   <SelectValue />
                 </SelectTrigger>
@@ -312,6 +360,52 @@ export function VoiceoverDialog({
               </Select>
             </div>
           </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs uppercase tracking-wider text-zinc-400">
+                Voice / Character
+              </Label>
+              <span className="text-[10px] uppercase tracking-wider text-zinc-500">
+                Tap ▶ to preview
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Select value={voiceId} onValueChange={(v) => setVoiceId(v)}>
+                <SelectTrigger className="flex-1 border-white/10 bg-white/[0.04] text-zinc-100">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {voicesForGender(gender).map((v) => (
+                    <SelectItem key={v.id} value={v.id}>
+                      <span className="flex items-center gap-2">
+                        <span>{v.label}</span>
+                        <span className="text-[11px] text-zinc-500">· {v.personality}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                aria-label={`Play sample of ${currentVoice.label}`}
+                onClick={() => playSample(currentVoice.id)}
+                className="shrink-0 border-white/10 bg-white/[0.04] text-zinc-100 hover:bg-white/10"
+              >
+                {playingSampleId === currentVoice.id ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Play className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+            <p className="text-[11px] leading-snug text-zinc-500">
+              {currentVoice.label} — {currentVoice.personality.toLowerCase()}.
+            </p>
+          </div>
+
 
           <div className="space-y-2">
             <Label className="text-xs uppercase tracking-wider text-zinc-400">

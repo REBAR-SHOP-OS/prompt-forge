@@ -106,6 +106,15 @@ function isTone(v: unknown): v is Tone {
   return typeof v === 'string' && (TONES as string[]).includes(v)
 }
 
+// Allowed explicit Gemini prebuilt voices (catalog from the Voiceover dialog).
+const ALLOWED_VOICES = new Set<string>([
+  'Leda', 'Kore', 'Aoede', 'Callirrhoe', 'Autonoe', 'Despina',
+  'Puck', 'Charon', 'Fenrir', 'Algieba', 'Orus', 'Achird',
+])
+function isAllowedVoice(v: unknown): v is string {
+  return typeof v === 'string' && ALLOWED_VOICES.has(v)
+}
+
 // Build a WAV file (PCM 16-bit) from raw PCM bytes.
 function pcmToWav(pcm: Uint8Array, sampleRate = 24000, channels = 1): Uint8Array {
   const bitsPerSample = 16
@@ -225,7 +234,7 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json().catch(() => null) as
-      | { text?: string; gender?: string; tone?: string; durationSec?: number }
+      | { text?: string; gender?: string; tone?: string; durationSec?: number; voiceName?: string }
       | null
     if (!body) {
       return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
@@ -258,7 +267,11 @@ Deno.serve(async (req) => {
       })
     }
 
-    const voiceName = VOICE_MAP[gender][tone]
+    // Prefer an explicit named voice from the catalog; otherwise derive from
+    // the gender/tone map (keeps existing callers working).
+    const voiceName = isAllowedVoice(body.voiceName)
+      ? body.voiceName
+      : VOICE_MAP[gender][tone]
     const paceHint = targetDurationSec
       ? ` Pace the delivery naturally so the entire line lasts about ${targetDurationSec} seconds.`
       : ''
