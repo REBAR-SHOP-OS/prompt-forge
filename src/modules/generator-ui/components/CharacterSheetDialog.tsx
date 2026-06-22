@@ -361,6 +361,33 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
           </div>
 
           <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-3">
+            <p className="text-xs font-medium text-zinc-400">Describe a character (optional)</p>
+            <Textarea
+              value={promptText}
+              onChange={(e) => setPromptText(e.target.value)}
+              placeholder="e.g. A friendly robot barista with a round head, teal apron and glowing blue eyes"
+              maxLength={1000}
+              rows={3}
+              className="resize-none bg-transparent text-sm"
+            />
+            <Button
+              type="button"
+              onClick={() => { void handleGenerateFromPrompt() }}
+              disabled={!userId || !promptText.trim() || !!generatingId}
+              className="w-full gap-2"
+            >
+              {generatingId === 'prompt' ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Sparkles className="h-4 w-4" aria-hidden="true" />
+              )}
+              {generatingId === 'prompt' ? 'Generating…' : 'Generate from prompt'}
+            </Button>
+          </div>
+
+
+
+          <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-3">
             <p className="text-xs font-medium text-zinc-400">Company logo (optional)</p>
             <input
               ref={logoInputRef}
