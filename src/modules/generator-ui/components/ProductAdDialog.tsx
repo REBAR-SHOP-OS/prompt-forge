@@ -1089,10 +1089,66 @@ export default function ProductAdDialog({
     }
   }
 
-  function handleUseAsPrompt() {
-    if (scenes.length === 0) return
-    onUseAsPrompt(scenes.join('\n\n'), isCharacter ? undefined : (uploadedImageUrl ?? undefined))
-    onOpenChange(false)
+  /**
+   * Build a fetchable start-frame image for the video:
+   * - product ad with a character → compose character + product into one opening frame
+   * - product ad without a character → the signed product image
+   * - character film → the signed character image
+   * Returns undefined when no usable image is available.
+   */
+  async function buildFirstFrame(): Promise<string | undefined> {
+    // Character film variant: use the character image itself.
+    if (isCharacter) {
+      if (!uploadedImageUrl) return undefined
+      try {
+        return await signFramesUrl(uploadedImageUrl)
+      } catch {
+        return imagePreviewUrl ?? uploadedImageUrl
+      }
+    }
+
+    // Product ad with an attached character → compose a combined opening frame.
+    if (uploadedImageUrl && characterRefSendUrl) {
+      try {
+        const composePrompt =
+          'Image 1 is the PRODUCT. Image 2 is the on-screen CHARACTER / presenter. ' +
+          'Compose a single photorealistic opening advertisement frame in which the character is presenting or holding the product, with the product clearly visible as the hero of the shot. ' +
+          'Keep the character\'s face, hair, wardrobe and body identical to image 2, and keep the product\'s exact shape, colors and label from image 1.'
+        const { data, error: fnErr } = await supabase.functions.invoke('ai-image-edit', {
+          body: { prompt: composePrompt, imageUrls: [uploadedImageUrl, characterRefSendUrl] },
+        })
+        if (fnErr) throw new Error(fnErr.message || 'Failed to compose frame')
+        const dataUrl = (data as { dataUrl?: string } | null)?.dataUrl
+        if (dataUrl) return dataUrl
+        throw new Error('The AI did not return a composed frame.')
+      } catch (e) {
+        // Surface the issue but fall back to the product image so the flow still works.
+        setError((e as Error).message ?? 'Could not compose the character frame; using the product image instead.')
+      }
+    }
+
+    // Product ad without a character (or compose failed) → signed product image.
+    if (uploadedImageUrl) {
+      try {
+        return await signFramesUrl(uploadedImageUrl)
+      } catch {
+        return imagePreviewUrl ?? uploadedImageUrl
+      }
+    }
+    return undefined
+  }
+
+  async function handleUseAsPrompt() {
+    if (scenes.length === 0 || isPreparingFrame) return
+    setIsPreparingFrame(true)
+    setError(null)
+    try {
+      const frameUrl = await buildFirstFrame()
+      onUseAsPrompt(scenes.join('\n\n'), frameUrl)
+      onOpenChange(false)
+    } finally {
+      setIsPreparingFrame(false)
+    }
   }
 
   async function handleSendAll() {
@@ -1100,7 +1156,8 @@ export default function ProductAdDialog({
     setIsSending(true)
     setError(null)
     try {
-      await onSendScenes(scenes, isCharacter ? undefined : (uploadedImageUrl ?? undefined))
+      const frameUrl = await buildFirstFrame()
+      await onSendScenes(scenes, frameUrl)
       onOpenChange(false)
     } catch (e) {
       setError((e as Error).message ?? 'Failed to send to Pending')
@@ -1108,6 +1165,7 @@ export default function ProductAdDialog({
       setIsSending(false)
     }
   }
+
 
   function toggleTemplate(id: string) {
     setTemplateIds((prev) => {
