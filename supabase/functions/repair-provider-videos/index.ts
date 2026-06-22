@@ -32,6 +32,16 @@ Deno.serve(async (req) => {
     const userId = userData?.user?.id;
     if (!userId) return json({ error: "Unauthorized" }, 401);
 
+    // Admin-only: this batch re-hosting flow downloads from providers and
+    // uploads into storage, consuming bandwidth/quota. Require the admin role.
+    const { data: adminRole } = await userClient
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId)
+      .eq("role", "admin")
+      .maybeSingle();
+    if (!adminRole) return json({ error: "Forbidden" }, 403);
+
     const svc = createClient(SUPABASE_URL, SERVICE_ROLE);
 
     const ownStoragePrefix = `${new URL(SUPABASE_URL).origin}/storage/v1/object/`;
