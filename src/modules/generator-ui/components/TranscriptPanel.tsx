@@ -238,48 +238,70 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
             </button>
           </div>
         ) : (
-          <div className="space-y-3">
-            {hasLowConfidence ? (
-              <p className="flex items-center gap-2 text-[11px] text-amber-300/90">
-                <span className="inline-block h-2 w-2 rounded-full bg-amber-400" aria-hidden="true" />
-                Highlighted words may be mispronounced — click one to hear the correct pronunciation.
+          <div className="space-y-4">
+            <div className="space-y-2">
+              {showTranslation ? (
+                <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                  Original
+                </div>
+              ) : null}
+              {hasLowConfidence ? (
+                <p className="flex items-center gap-2 text-[11px] text-amber-300/90">
+                  <span className="inline-block h-2 w-2 rounded-full bg-amber-400" aria-hidden="true" />
+                  Highlighted words may be mispronounced — click one to hear the correct pronunciation.
+                </p>
+              ) : null}
+              <p
+                dir={originalRtl ? 'rtl' : 'ltr'}
+                className="whitespace-pre-wrap text-[15px] leading-7 text-zinc-200"
+              >
+                {showWords
+                  ? words.map((w, i) => (
+                      <span key={`${i}-${w.text}`}>
+                        {w.lowConfidence ? (
+                          <button
+                            type="button"
+                            onClick={() => void playPronunciation(w.text, i)}
+                            disabled={pronouncing === i}
+                            title="Click to hear the correct pronunciation"
+                            className={`inline-flex items-center gap-0.5 rounded-sm bg-amber-400/10 px-0.5 align-baseline text-amber-300 underline decoration-dotted decoration-amber-400/70 underline-offset-2 transition hover:bg-amber-400/20 hover:text-amber-200 disabled:cursor-wait ${
+                              playingWord === i ? 'bg-amber-400/25 text-amber-100' : ''
+                            }`}
+                          >
+                            {w.text}
+                            {pronouncing === i ? (
+                              <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                            ) : (
+                              <Volume2 className="h-3 w-3" aria-hidden="true" />
+                            )}
+                          </button>
+                        ) : (
+                          w.text
+                        )}
+                        {i < words.length - 1 ? ' ' : ''}
+                      </span>
+                    ))
+                  : transcript || 'No speech detected in this video.'}
               </p>
+            </div>
+
+            {showTranslation ? (
+              <div className="space-y-2 border-t border-white/10 pt-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                  {translationLabel}
+                </div>
+                <p
+                  dir={translationRtl ? 'rtl' : 'ltr'}
+                  className="whitespace-pre-wrap text-[15px] leading-7 text-zinc-200"
+                >
+                  {displayText}
+                </p>
+              </div>
             ) : null}
-            <p
-              dir={isRtl ? 'rtl' : 'ltr'}
-              className="whitespace-pre-wrap text-[15px] leading-7 text-zinc-200"
-            >
-              {showWords
-                ? words.map((w, i) => (
-                    <span key={`${i}-${w.text}`}>
-                      {w.lowConfidence ? (
-                        <button
-                          type="button"
-                          onClick={() => void playPronunciation(w.text, i)}
-                          disabled={pronouncing === i}
-                          title="Click to hear the correct pronunciation"
-                          className={`inline-flex items-center gap-0.5 rounded-sm bg-amber-400/10 px-0.5 align-baseline text-amber-300 underline decoration-dotted decoration-amber-400/70 underline-offset-2 transition hover:bg-amber-400/20 hover:text-amber-200 disabled:cursor-wait ${
-                            playingWord === i ? 'bg-amber-400/25 text-amber-100' : ''
-                          }`}
-                        >
-                          {w.text}
-                          {pronouncing === i ? (
-                            <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
-                          ) : (
-                            <Volume2 className="h-3 w-3" aria-hidden="true" />
-                          )}
-                        </button>
-                      ) : (
-                        w.text
-                      )}
-                      {i < words.length - 1 ? ' ' : ''}
-                    </span>
-                  ))
-                : displayText}
-            </p>
           </div>
         )}
       </div>
+
     </div>
   )
 }
