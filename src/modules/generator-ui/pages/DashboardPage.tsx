@@ -5961,7 +5961,7 @@ export default function DashboardPage() {
     setVoiceoverDuration(0)
     setVoiceoverRange([0, 0])
     setVoiceoverTimeline([0, mergedDurationSec])
-    setIsVoiceoverOpen(false)
+    // Keep the dialog open so the full settings panel surfaces immediately.
     // Voiceover persistence to Storage › Audio happens at generation time
     // inside VoiceoverDialog, so no extra save is needed here.
   }

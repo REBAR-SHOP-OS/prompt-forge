@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
-import { Download, LoaderCircle, Mic, Music2, Sparkles, X } from 'lucide-react'
+import { Download, LoaderCircle, Mic, Sparkles, X } from 'lucide-react'
 import { supabase } from '@/integrations/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
@@ -214,6 +214,15 @@ export function VoiceoverDialog({
       // Persist to Storage › Audio so every generated voiceover is saved.
       void persistVoiceover(blob)
 
+      // Auto-apply: immediately surface the full settings panel (volume,
+      // waveform selection, "Play on video from … to") for the new voiceover.
+      if (onUseAsSoundtrack) {
+        const name = `Voiceover (${gender}, ${tone}).wav`
+        onUseAsSoundtrack(url, name)
+        // Ownership handed off to the parent — don't revoke it here.
+        lastUrlRef.current = null
+      }
+
 
     } catch (err) {
       console.error('Voiceover generation failed', err)
@@ -228,26 +237,16 @@ export function VoiceoverDialog({
   }
 
   function handleDownload() {
-    if (!audioUrl) return
+    const downloadUrl = activeVoiceoverUrl ?? audioUrl
+    if (!downloadUrl) return
     const a = document.createElement('a')
-    a.href = audioUrl
+    a.href = downloadUrl
     a.download = `voiceover-${gender}-${tone}-${Date.now()}.wav`
     document.body.appendChild(a)
     a.click()
     a.remove()
   }
 
-  function handleUseAsSoundtrack() {
-    if (!audioUrl) return
-    const name = `Voiceover (${gender}, ${tone}).wav`
-    onUseAsSoundtrack?.(audioUrl, name)
-    // Hand off ownership so we don't revoke it.
-    lastUrlRef.current = null
-    setAudioUrl(null)
-    setText('')
-    // Keep the dialog open so the user can adjust timing/volume right here.
-    toast.success('Voiceover set as soundtrack')
-  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -381,16 +380,7 @@ export function VoiceoverDialog({
             )}
           </Button>
 
-          {audioUrl ? (
-            <div className="space-y-3 rounded-md border border-white/10 bg-white/[0.03] p-3">
-              <audio
-                key={audioUrl}
-                src={audioUrl}
-                controls
-                className="w-full"
-              />
-            </div>
-          ) : null}
+
 
           {activeVoiceoverUrl ? (
             <div className="space-y-4 rounded-md border border-white/10 bg-white/[0.03] p-3">
@@ -482,24 +472,11 @@ export function VoiceoverDialog({
         </div>
 
         <DialogFooter className="gap-2 sm:gap-2">
-          {onUseAsSoundtrack ? (
-            <Button
-              type="button"
-              variant="secondary"
-              size="icon"
-              onClick={handleUseAsSoundtrack}
-              disabled={!audioUrl}
-              aria-label="Use as soundtrack"
-              title="Use as soundtrack"
-            >
-              <Music2 className="h-4 w-4" />
-            </Button>
-          ) : null}
           <Button
             type="button"
             variant="secondary"
             onClick={handleDownload}
-            disabled={!audioUrl}
+            disabled={!activeVoiceoverUrl && !audioUrl}
           >
             <Download className="mr-2 h-4 w-4" />
             Download
