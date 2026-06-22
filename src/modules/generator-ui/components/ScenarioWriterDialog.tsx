@@ -789,9 +789,7 @@ export default function ScenarioWriterDialog({
                       {copiedIndex === i ? t.copied : t.copy}
                     </Button>
                   </div>
-                  <p dir={dir} className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
-                    {text}
-                  </p>
+                  <SceneText text={text} narrationLabel={t.narration} dir={dir} />
                 </div>
               ))}
             </div>
