@@ -214,6 +214,15 @@ export function VoiceoverDialog({
       // Persist to Storage › Audio so every generated voiceover is saved.
       void persistVoiceover(blob)
 
+      // Auto-apply: immediately surface the full settings panel (volume,
+      // waveform selection, "Play on video from … to") for the new voiceover.
+      if (onUseAsSoundtrack) {
+        const name = `Voiceover (${gender}, ${tone}).wav`
+        onUseAsSoundtrack(url, name)
+        // Ownership handed off to the parent — don't revoke it here.
+        lastUrlRef.current = null
+      }
+
 
     } catch (err) {
       console.error('Voiceover generation failed', err)
