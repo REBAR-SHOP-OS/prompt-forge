@@ -69,6 +69,7 @@ async function signUrl(storagePath: string | null | undefined): Promise<string> 
  */
 export default function CharacterSheetDialog({ open, onOpenChange, userId, onUseCharacter }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const logoInputRef = useRef<HTMLInputElement | null>(null)
   const [images, setImages] = useState<CharacterImage[]>([])
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -76,6 +77,18 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
   const [sheetModel, setSheetModel] = useState<SheetModel>('fast')
   const [generatingId, setGeneratingId] = useState<string | null>(null)
   const [zoomImage, setZoomImage] = useState<CharacterImage | null>(null)
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [logoSendUrl, setLogoSendUrl] = useState<string | null>(null)
+  const [logoUploading, setLogoUploading] = useState(false)
+  const [applyLogo, setApplyLogo] = useState(false)
+
+  useEffect(() => {
+    if (!open) {
+      setLogoUrl(null)
+      setLogoSendUrl(null)
+      setApplyLogo(false)
+    }
+  }, [open])
 
 
   useEffect(() => {
