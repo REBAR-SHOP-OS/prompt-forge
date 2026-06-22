@@ -173,7 +173,7 @@ function buildSystemPrompt(
       `structured as ${numWord} sequential 15-second scenes that flow into each other.`,
       "The scenario MUST follow a clear story arc across the whole sequence: the opening scene is an attention-grabbing hook that establishes the subject and setting, the middle scenes develop the story and build interest and desire, and the final scene delivers a defined payoff/resolution that ends on a strong, memorable note.",
       `Output EXACTLY ${sceneCount} scene blocks separated by the literal delimiter "${SCENE_DELIM}" on its own line.`,
-      `Do not number the scenes, no markdown, no preamble. The only label allowed is the "${narrationLabel}:" line described below.`,
+      `Do not number the scenes, no markdown, no preamble.${labelNote}`,
       "Each scene must be 70-90 words and self-contained as a video prompt (include subject, action, camera move, lighting),",
       "while clearly continuing the story from the previous scene.",
       narrationMulti,
@@ -191,7 +191,7 @@ function buildSystemPrompt(
     "It MUST follow a clear narrative arc with a defined beginning, middle, and end: an attention-grabbing opening hook that establishes the subject and setting, a middle that develops the story, and a clear payoff/resolution that ends on a strong, memorable note.",
     "Include opening visual hook, beat-by-beat action, camera/lighting cues, and a clear ending.",
     `Match pacing realistically to the duration: ${beat}.`,
-    `Output prose only — no markdown headings, no bullet lists, no preamble. The only label allowed is the "${narrationLabel}:" line described below.`,
+    `Output prose only — no markdown headings, no bullet lists, no preamble.${labelNote}`,
     `Keep it under ${cap} words.`,
     narrationSingle,
   ].filter(Boolean).join(" ");
