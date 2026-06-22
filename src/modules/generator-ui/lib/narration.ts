@@ -49,7 +49,36 @@ export function extractNarration(prompt: string | null | undefined): string[] {
     push(lm[1] ?? '')
   }
 
-  // 2) Inline quoted dialogue.
+  // 2) Generic spoken-line labels the scenario writer also emits, with or
+  //    without quotes:
+  //      - `Narrator:` / `Voiceover:` / `VO:` (+ localized)
+  //      - `<Speaker> says:` / `<Speaker> say:` (e.g. "Character says:")
+  //    Localized "says" verbs cover fa/ar/tr/es/fr.
+  const SPEAKER_LABELS = [
+    'Narrator', 'Voiceover', 'Voice-over', 'Voice over', 'VO',
+    'راوی', 'گوینده', 'صدای راوی', 'راوي', 'التعليق', 'Anlatıcı', 'Narrador',
+  ]
+    .map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')
+  const speakerLabelRe = new RegExp(`^\\s*(?:${SPEAKER_LABELS})\\s*[:：]\\s*(.+)$`, 'gim')
+  while ((lm = speakerLabelRe.exec(prompt)) !== null) {
+    push(lm[1] ?? '')
+  }
+
+  // `<Speaker> says:` / `... says,` style attributions in prose. Capture the
+  // remainder of the line; quote-stripping handles the common quoted form.
+  const SAYS_VERBS = [
+    'says', 'say', 'said', 'tells', 'narrates', 'speaks',
+    'می‌گوید', 'میگوید', 'می گوید', 'می‌گه', 'میگه', 'يقول', 'تقول', 'der', 'diyor', 'dice', 'dit',
+  ]
+    .map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')
+  const saysRe = new RegExp(`(?:${SAYS_VERBS})\\s*[:：,،]?\\s*("[^"]+"|“[^”]+”|«[^»]+»)`, 'giu')
+  while ((lm = saysRe.exec(prompt)) !== null) {
+    push(lm[1] ?? '')
+  }
+
+  // 3) Inline quoted dialogue (catch-all for anything still in quotes).
   const quoteRe = /"([^"]+)"|“([^”]+)”|«([^»]+)»/g
   let m: RegExpExecArray | null
   while ((m = quoteRe.exec(prompt)) !== null) {

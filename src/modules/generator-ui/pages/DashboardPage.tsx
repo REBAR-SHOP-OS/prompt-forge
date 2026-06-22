@@ -833,7 +833,7 @@ export default function DashboardPage() {
   const [isDragging, setIsDragging] = useState(false)
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
   const [promptViewer, setPromptViewer] = useState<string | null>(null)
-  const [narrationViewer, setNarrationViewer] = useState<{ prompt: string | null; videoStoragePath: string | null } | null>(null)
+  const [narrationViewer, setNarrationViewer] = useState<{ prompt: string | null; narrationText: string | null; videoStoragePath: string | null } | null>(null)
   const [editPromptJob, setEditPromptJob] = useState<JobDetail | null>(null)
   const [editPromptText, setEditPromptText] = useState('')
   const [startContext] = useState('Start')
@@ -5468,6 +5468,9 @@ export default function DashboardPage() {
       // One durable project group id for every clip created in this batch.
       const draftGroupId = ensureActiveDraftGroupId()
 
+      // Authoritative narration from the user's prompt — kept as the reference
+      // for the on-film narration check, independent of later prompt edits.
+      const plannedNarration = extractNarration(plannedPrompt).join('\n') || undefined
       for (let i = 0; i < iterations; i++) {
         let createdJob
         let seedFrames: { firstFrameUrl?: string; lastFrameUrl?: string } = {}
@@ -5482,6 +5485,7 @@ export default function DashboardPage() {
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
             draftGroupId,
+            narrationText: plannedNarration,
           })
         } else if (readyStartFrame?.url && readyEndFrame?.url) {
           createdJob = await jobOrchestratorGateway.createJob({
@@ -5493,6 +5497,7 @@ export default function DashboardPage() {
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
             draftGroupId,
+            narrationText: plannedNarration,
           })
           seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
         } else if (readyStartFrame?.url) {
@@ -5504,6 +5509,7 @@ export default function DashboardPage() {
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
             draftGroupId,
+            narrationText: plannedNarration,
           })
           seedFrames = { firstFrameUrl: readyStartFrame.url }
         } else if (readyEndFrame?.url) {
@@ -5515,6 +5521,7 @@ export default function DashboardPage() {
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
             draftGroupId,
+            narrationText: plannedNarration,
           })
           seedFrames = { lastFrameUrl: readyEndFrame.url }
         } else {
@@ -5664,6 +5671,9 @@ export default function DashboardPage() {
         if (!sourcePrompt) continue
         const sceneLabel = `Scene ${i + 1}`
         const prompt = sourcePrompt
+        // Capture the authoritative narration written in this scene so it stays
+        // the reference even if the visual prompt is later edited.
+        const narrationText = extractNarration(sourcePrompt).join('\n') || undefined
 
         let startFrameUrl: string | undefined
         if (i === 0) {
@@ -5681,6 +5691,7 @@ export default function DashboardPage() {
           aspectRatio: effectiveRatio,
           firstFrameUrl: startFrameUrl,
           draftGroupId,
+          narrationText,
         })
         const seededJob = buildSeededJob(prompt, createdJob, startFrameUrl ? { firstFrameUrl: startFrameUrl } : {})
         rememberClipRatio(seededJob.id, effectiveRatio)
@@ -9277,7 +9288,10 @@ export default function DashboardPage() {
                         {video.input_prompt}
                       </button>
                       {(() => {
-                        const narration = extractNarration(video.input_prompt)
+                        const canonical = (video as { narration_text?: string | null }).narration_text ?? null
+                        const narration = canonical
+                          ? canonical.split('\n').map((l) => l.trim()).filter(Boolean)
+                          : extractNarration(video.input_prompt)
                         const hasNarration = narration.length > 0
                         return (
                           <button
@@ -9286,6 +9300,7 @@ export default function DashboardPage() {
                               event.stopPropagation()
                               setNarrationViewer({
                                 prompt: video.input_prompt ?? null,
+                                narrationText: canonical,
                                 videoStoragePath: video.video?.storage_path ?? null,
                               })
                             }}
@@ -10658,6 +10673,7 @@ export default function DashboardPage() {
         open={narrationViewer !== null}
         onClose={() => setNarrationViewer(null)}
         prompt={narrationViewer?.prompt ?? null}
+        narrationText={narrationViewer?.narrationText ?? null}
         videoStoragePath={narrationViewer?.videoStoragePath ?? null}
       />
 

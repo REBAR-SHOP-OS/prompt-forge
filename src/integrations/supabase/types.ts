@@ -426,6 +426,7 @@ export type Database = {
           input_prompt: string
           last_frame_url: string | null
           model_key: string | null
+          narration_text: string | null
           negative_prompt: string | null
           parent_final_job_id: string | null
           provider_job_id: string | null
@@ -445,6 +446,7 @@ export type Database = {
           input_prompt: string
           last_frame_url?: string | null
           model_key?: string | null
+          narration_text?: string | null
           negative_prompt?: string | null
           parent_final_job_id?: string | null
           provider_job_id?: string | null
@@ -464,6 +466,7 @@ export type Database = {
           input_prompt?: string
           last_frame_url?: string | null
           model_key?: string | null
+          narration_text?: string | null
           negative_prompt?: string | null
           parent_final_job_id?: string | null
           provider_job_id?: string | null

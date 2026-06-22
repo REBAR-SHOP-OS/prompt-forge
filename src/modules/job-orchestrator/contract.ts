@@ -3,6 +3,7 @@ export interface JobSummary {
   id: string;
   status: string;
   input_prompt: string;
+  narration_text?: string | null;
   provider_key: string | null;
   model_key: string | null;
   provider_job_id?: string | null;
@@ -47,6 +48,8 @@ export interface CreateJobInput {
   aspectRatio?: AspectRatio;
   /** Durable per-project group id so all clips in one session stay one draft. */
   draftGroupId?: string;
+  /** Authoritative narration (spoken lines) from the scenario for this card. */
+  narrationText?: string;
 }
 
 export interface CreateJobResult {
