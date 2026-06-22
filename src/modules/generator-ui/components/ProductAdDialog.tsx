@@ -462,6 +462,8 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequiredTag: '(required)',
     businessPlaceholder: 'Describe your business: what you sell, your products/services, target audience, and brand tone…',
     businessRequired: 'Please describe your business first — the scenario must be relevant to it.',
+    businessSave: 'Save',
+    businessSaved: 'Saved',
   },
   fa: {
     title: 'سناریوی تبلیغ محصول',
