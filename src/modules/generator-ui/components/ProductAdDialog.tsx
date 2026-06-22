@@ -951,7 +951,7 @@ export default function ProductAdDialog({
     setIsSending(true)
     setError(null)
     try {
-      await onSendScenes(scenes, uploadedImageUrl ?? undefined)
+      await onSendScenes(scenes, isCharacter ? undefined : (uploadedImageUrl ?? undefined))
       onOpenChange(false)
     } catch (e) {
       setError((e as Error).message ?? 'Failed to send to Pending')
