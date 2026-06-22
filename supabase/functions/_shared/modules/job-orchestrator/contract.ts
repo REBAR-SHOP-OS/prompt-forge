@@ -5,6 +5,7 @@ export interface JobSummary {
   id: string;
   status: string;
   input_prompt: string;
+  narration_text?: string | null;
   provider_key: string | null;
   model_key: string | null;
   provider_job_id?: string | null;
@@ -42,6 +43,7 @@ export interface CreateJobInput {
   aspectRatio?: "9:16" | "1:1" | "16:9" | null;
   durationSeconds?: 5 | 10 | 15 | null;
   draftGroupId?: string | null;
+  narrationText?: string | null;
 }
 
 export interface JobService {
