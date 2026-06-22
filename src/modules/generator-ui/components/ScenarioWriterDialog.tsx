@@ -250,6 +250,21 @@ export default function ScenarioWriterDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          <div className="rounded-md border border-amber-300/20 bg-amber-300/5 p-3">
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
+              About your business <span className="text-amber-300">(required)</span>
+            </div>
+            <Textarea
+              value={businessInfo}
+              onChange={(e) => {
+                setBusinessInfo(e.target.value)
+                if (error) setError(null)
+              }}
+              rows={2}
+              placeholder="Describe your business: what you sell, your products/services, target audience, and brand tone…"
+              className="min-h-[56px] border-white/10 bg-black/30 text-zinc-100"
+            />
+          </div>
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
               Duration
