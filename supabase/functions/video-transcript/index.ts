@@ -171,8 +171,16 @@ Deno.serve(async (req) => {
       return json({ error: `Could not load video (${videoRes.status})` }, 502)
     }
     const videoBytes = await videoRes.blob()
+    if (videoBytes.size < 1024) {
+      return json({ error: 'The video file is empty or too small to transcribe.' }, 400)
+    }
 
-    const transcript = await transcribeVideo(apiKey, videoBytes)
+    const transcript = await transcribeVideo(
+      apiKey,
+      videoBytes,
+      sourceUrl,
+      videoRes.headers.get('content-type'),
+    )
     if (!transcript) {
       return json({ error: 'No speech was detected in this film.' }, 200)
     }
