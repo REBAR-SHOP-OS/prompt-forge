@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Package, LoaderCircle, RefreshCw, Copy, Check, Wand2, Send, ImagePlus, X, Languages, Boxes, ArrowLeft, Sparkles, Drama, UserRound } from 'lucide-react'
+import { Package, LoaderCircle, RefreshCw, Copy, Check, Wand2, Send, ImagePlus, X, Languages, Boxes, ArrowLeft, Sparkles, Drama, UserRound, Building2 } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { supabase } from '@/integrations/supabase/client'
 import { StylePreviewCard } from './StylePreviewCard'
 import AiImageDialog, { type AiImageSavedRow } from './AiImageDialog'
@@ -461,6 +462,8 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequiredTag: '(required)',
     businessPlaceholder: 'Describe your business: what you sell, your products/services, target audience, and brand tone…',
     businessRequired: 'Please describe your business first — the scenario must be relevant to it.',
+    businessSave: 'Save',
+    businessSaved: 'Saved',
   },
   fa: {
     title: 'سناریوی تبلیغ محصول',
@@ -509,6 +512,8 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequiredTag: '(الزامی)',
     businessPlaceholder: 'کسب‌وکارتان را توضیح دهید: چه می‌فروشید، محصولات/خدمات، مخاطب هدف و لحن برند…',
     businessRequired: 'ابتدا کسب‌وکارتان را توضیح دهید — سناریو باید مرتبط با آن باشد.',
+    businessSave: 'ذخیره',
+    businessSaved: 'ذخیره شد',
   },
   ar: {
     title: 'سيناريو إعلان المنتج',
@@ -557,6 +562,8 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequiredTag: '(مطلوب)',
     businessPlaceholder: 'صِف عملك: ماذا تبيع، منتجاتك/خدماتك، الجمهور المستهدف ونبرة العلامة التجارية…',
     businessRequired: 'يرجى وصف عملك أولاً — يجب أن يكون السيناريو ذا صلة به.',
+    businessSave: 'حفظ',
+    businessSaved: 'تم الحفظ',
   },
   tr: {
     title: 'Ürün Reklam Senaryosu',
@@ -605,6 +612,8 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequiredTag: '(zorunlu)',
     businessPlaceholder: 'İşletmenizi açıklayın: ne sattığınız, ürün/hizmetleriniz, hedef kitle ve marka tonu…',
     businessRequired: 'Lütfen önce işletmenizi açıklayın — senaryo bununla ilgili olmalı.',
+    businessSave: 'Kaydet',
+    businessSaved: 'Kaydedildi',
   },
   es: {
     title: 'Guion de Anuncio de Producto',
@@ -653,6 +662,8 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequiredTag: '(obligatorio)',
     businessPlaceholder: 'Describe tu negocio: qué vendes, tus productos/servicios, público objetivo y tono de marca…',
     businessRequired: 'Describe primero tu negocio: el escenario debe ser relevante para él.',
+    businessSave: 'Guardar',
+    businessSaved: 'Guardado',
   },
   fr: {
     title: 'Scénario de Publicité Produit',
@@ -701,6 +712,8 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequiredTag: '(obligatoire)',
     businessPlaceholder: 'Décrivez votre entreprise : ce que vous vendez, vos produits/services, votre public cible et le ton de la marque…',
     businessRequired: "Décrivez d'abord votre entreprise — le scénario doit y être pertinent.",
+    businessSave: 'Enregistrer',
+    businessSaved: 'Enregistré',
   },
 }
 
@@ -784,6 +797,8 @@ export default function ProductAdDialog({
   const [productDescription, setProductDescription] = useState('')
   const [businessInfo, setBusinessInfo] = useState('')
   const [businessSaving, setBusinessSaving] = useState(false)
+  const [businessSaved, setBusinessSaved] = useState(false)
+  const [businessOpen, setBusinessOpen] = useState(false)
   const [userPrompt, setUserPrompt] = useState('')
   const [cameraStyle, setCameraStyle] = useState<string>(CAMERA_STYLES[0].label.en)
   const [cameraMovement, setCameraMovement] = useState('')
@@ -1062,6 +1077,32 @@ export default function ProductAdDialog({
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
+  async function saveBusinessInfo() {
+    if (!businessInfo.trim()) {
+      setError(t.businessRequired)
+      return
+    }
+    if (!userId) return
+    setBusinessSaving(true)
+    setBusinessSaved(false)
+    try {
+      const { error: upErr } = await supabase
+        .from('generator_business_profiles')
+        .upsert({ user_id: userId, business_info: businessInfo.trim() }, { onConflict: 'user_id' })
+      if (upErr) {
+        setError(upErr.message)
+        return
+      }
+      setBusinessSaved(true)
+      setError(null)
+      setTimeout(() => setBusinessSaved(false), 1500)
+    } catch (e) {
+      setError((e as Error).message ?? 'Failed to save')
+    } finally {
+      setBusinessSaving(false)
+    }
+  }
+
   function handleAiImageSaved(row: AiImageSavedRow) {
     if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
     setError(null)
@@ -1321,7 +1362,56 @@ export default function ProductAdDialog({
               <Package className="h-5 w-5 text-amber-300" aria-hidden="true" />
             )}
             {t.title}
-            <div className="ms-auto">
+            <div className="ms-auto flex items-center gap-2">
+              <Popover open={businessOpen} onOpenChange={setBusinessOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={t.businessLabel}
+                    title={t.businessLabel}
+                    className={`relative inline-flex h-7 w-7 items-center justify-center rounded-full border transition ${
+                      businessInfo.trim()
+                        ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
+                        : 'border-amber-300/40 bg-amber-300/10 text-amber-300'
+                    }`}
+                  >
+                    <Building2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    {!businessInfo.trim() && (
+                      <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-amber-400" />
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-80 border-white/10 bg-[#0b0c0e] text-zinc-100">
+                  <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
+                    {t.businessLabel} <span className="text-amber-300">{t.businessRequiredTag}</span>
+                  </div>
+                  <Textarea
+                    value={businessInfo}
+                    onChange={(e) => {
+                      setBusinessInfo(e.target.value)
+                      setBusinessSaved(false)
+                      if (error) setError(null)
+                    }}
+                    rows={4}
+                    placeholder={t.businessPlaceholder}
+                    className="min-h-[96px] border-white/10 bg-black/30 text-sm text-zinc-100"
+                  />
+                  <div className="mt-2 flex justify-end">
+                    <Button
+                      size="sm"
+                      onClick={saveBusinessInfo}
+                      disabled={businessSaving || !businessInfo.trim()}
+                    >
+                      {businessSaving ? (
+                        <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                      ) : businessSaved ? (
+                        <Check className="h-4 w-4 mr-2" aria-hidden="true" />
+                      ) : null}
+                      {businessSaved ? t.businessSaved : t.businessSave}
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
               <Select value={lang} onValueChange={(v) => setLang(v as Lang)}>
                 <SelectTrigger
                   className="h-7 w-auto gap-1.5 rounded-full border-white/10 bg-black/20 px-2.5 text-[11px] font-semibold text-zinc-300"
@@ -1346,23 +1436,6 @@ export default function ProductAdDialog({
         </DialogHeader>
 
         <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
-          {/* Business info (required) */}
-          <div className="rounded-md border border-amber-300/20 bg-amber-300/5 p-3">
-            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
-              {t.businessLabel} <span className="text-amber-300">{t.businessRequiredTag}</span>
-            </div>
-            <Textarea
-              value={businessInfo}
-              onChange={(e) => {
-                setBusinessInfo(e.target.value)
-                if (error) setError(null)
-              }}
-              rows={2}
-              placeholder={t.businessPlaceholder}
-              className="min-h-[56px] border-white/10 bg-black/30 text-zinc-100"
-            />
-          </div>
-
           {/* Product photo + name */}
           <div className="flex items-start gap-3">
             <input
