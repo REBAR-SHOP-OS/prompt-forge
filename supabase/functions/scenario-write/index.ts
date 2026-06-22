@@ -213,7 +213,7 @@ async function callGateway(
     body: JSON.stringify({
       model: "google/gemini-2.5-flash",
       messages: [
-        { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage, characterSheet, businessInfo) },
+        { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage) },
         { role: "user", content: userContent },
       ],
     }),
