@@ -505,6 +505,10 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'در حال بارگذاری محصولات…',
     back: 'بازگشت',
     viewImage: 'نمایش تصویر',
+    businessLabel: 'درباره کسب‌وکار شما',
+    businessRequiredTag: '(الزامی)',
+    businessPlaceholder: 'کسب‌وکارتان را توضیح دهید: چه می‌فروشید، محصولات/خدمات، مخاطب هدف و لحن برند…',
+    businessRequired: 'ابتدا کسب‌وکارتان را توضیح دهید — سناریو باید مرتبط با آن باشد.',
   },
   ar: {
     title: 'سيناريو إعلان المنتج',
