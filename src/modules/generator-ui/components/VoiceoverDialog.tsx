@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
-import { Download, LoaderCircle, Mic, Sparkles, X } from 'lucide-react'
+import { Download, LoaderCircle, Mic, Play, Sparkles, X } from 'lucide-react'
 import { supabase } from '@/integrations/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
