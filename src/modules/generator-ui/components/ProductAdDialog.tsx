@@ -215,6 +215,20 @@ const tr = (m: Loc, lang: Lang) => m[lang] ?? m.en
 
 const RTL_LANGS: Lang[] = ['fa', 'ar']
 
+// All localized narration labels the edge function may emit, used to split a
+// scene block into its visual scenario part and its narration part.
+const NARRATION_LABELS = ['Narration', 'نریشن', 'التعليق الصوتي', 'Anlatım', 'Narración']
+const NARRATION_RE = new RegExp(`(^|\\n)\\s*(${NARRATION_LABELS.join('|')})\\s*:\\s*`, 'i')
+
+function splitNarration(text: string): { body: string; narration: string | null } {
+  const m = text.match(NARRATION_RE)
+  if (!m || m.index === undefined) return { body: text.trim(), narration: null }
+  const labelStart = m.index + m[1].length
+  const body = text.slice(0, labelStart).trim()
+  const narration = text.slice(m.index + m[0].length).trim()
+  return { body, narration: narration || null }
+}
+
 const LANG_OPTIONS: { value: Lang; native: string }[] = [
   { value: 'en', native: 'English' },
   { value: 'fa', native: 'فارسی' },
