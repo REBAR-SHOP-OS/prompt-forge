@@ -149,8 +149,10 @@ function isAllowedFrameUrl(url: string, userId: string): boolean {
 
   if (parsed.href.startsWith(SUPABASE_PUBLIC_STORAGE_PREFIX)) {
     const path = parsed.pathname;
-    const prefix = `/storage/v1/object/public/wan-frames/${userId}/`;
-    return path.startsWith(prefix);
+    // Accept both public and signed object URLs for the caller's own wan-frames uploads.
+    const publicPrefix = `/storage/v1/object/public/wan-frames/${userId}/`;
+    const signPrefix = `/storage/v1/object/sign/wan-frames/${userId}/`;
+    return path.startsWith(publicPrefix) || path.startsWith(signPrefix);
   }
 
   return EXTRA_PUBLIC_FRAME_HOSTS.includes(parsed.hostname.toLowerCase());
