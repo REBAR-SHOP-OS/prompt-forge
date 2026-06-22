@@ -56,6 +56,7 @@ import {
   Drama,
   Wand2,
   FileText,
+  MessageSquareQuote,
   X
 } from 'lucide-react'
 import {
