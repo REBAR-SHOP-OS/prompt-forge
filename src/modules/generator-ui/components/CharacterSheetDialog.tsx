@@ -195,6 +195,13 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
     }
   }
 
+  const handleUse = (img: CharacterImage) => {
+    onUseCharacter?.({ id: img.id, url: img.storage_path, title: img.title ?? null })
+    onOpenChange(false)
+  }
+
+
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
