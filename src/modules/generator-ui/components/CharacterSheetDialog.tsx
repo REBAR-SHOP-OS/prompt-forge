@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { Drama, ImagePlus, LoaderCircle, Sparkles, Trash2 } from 'lucide-react'
+import { Drama, ImagePlus, LoaderCircle, Maximize2, Sparkles, Trash2, UserRound, X } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
