@@ -121,6 +121,7 @@ import ImageReframeDialog from '@/modules/generator-ui/components/ImageReframeDi
 import AiImageDialog from '@/modules/generator-ui/components/AiImageDialog'
 import ScenarioWriterDialog from '@/modules/generator-ui/components/ScenarioWriterDialog'
 import ProductAdDialog from '@/modules/generator-ui/components/ProductAdDialog'
+import CharacterSheetDialog from '@/modules/generator-ui/components/CharacterSheetDialog'
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
