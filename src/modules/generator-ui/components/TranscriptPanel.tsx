@@ -42,12 +42,16 @@ export interface TranscriptPanelProps {
 
 export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
   const [transcript, setTranscript] = useState<string | null>(null)
+  const [words, setWords] = useState<TranscriptWord[]>([])
   const [displayText, setDisplayText] = useState<string>('')
   const [language, setLanguage] = useState<string>(ORIGINAL)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Cache of translations keyed by language value.
   const translations = useRef<Map<string, string>>(new Map())
+
+  const showWords = language === ORIGINAL && words.length > 0
+  const hasLowConfidence = showWords && words.some((w) => w.lowConfidence)
 
   const isRtl =
     language === ORIGINAL
