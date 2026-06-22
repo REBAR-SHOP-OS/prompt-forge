@@ -763,9 +763,9 @@ export default function ScenarioWriterDialog({
           ) : scenes.length > 0 ? (
             <div className="rounded-md border border-white/10 bg-black/30 p-3">
               <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                Scenario ({duration}s)
+                {t.scenario} ({duration}s)
               </div>
-              <p dir="ltr" className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
+              <p dir={dir} className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
                 {scenes[0]}
               </p>
             </div>
