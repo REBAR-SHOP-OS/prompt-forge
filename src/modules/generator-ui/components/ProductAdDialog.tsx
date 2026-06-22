@@ -1159,7 +1159,7 @@ export default function ProductAdDialog({
     setError(null)
     try {
       const frameUrl = await buildFirstFrame()
-      onUseAsPrompt(scenes.join('\n\n'), frameUrl)
+      onUseAsPrompt(scenes.join('\n\n'), frameUrl, duration)
       onOpenChange(false)
     } finally {
       setIsPreparingFrame(false)
