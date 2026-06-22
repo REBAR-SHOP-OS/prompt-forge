@@ -147,11 +147,19 @@ async function callGateway(
       : autoFromImage
         ? `No written idea was provided. Analyze the attached image and write the scenario entirely based on what you observe in it.`
         : `Idea: ${idea}\nBase the scenario on the attached reference image (subjects, setting, mood, props, style).`;
-  const userContent: unknown = imageUrl
+  const characterImageUrl = productAd?.characterImageUrl;
+  const contentBlocks: unknown[] = imageUrl
     ? [
         { type: "text", text: refText },
         { type: "image_url", image_url: { url: imageUrl } },
       ]
+    : [];
+  if (imageUrl && characterImageUrl) {
+    contentBlocks.push({ type: "text", text: "The image below is the recurring human character to feature in the commercial — match their exact face, hair, wardrobe, and body in every shot." });
+    contentBlocks.push({ type: "image_url", image_url: { url: characterImageUrl } });
+  }
+  const userContent: unknown = imageUrl
+    ? contentBlocks
     : (productAd || characterSheet) ? `Brief: ${idea}` : `Idea: ${idea}`;
 
   return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
