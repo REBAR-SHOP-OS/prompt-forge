@@ -37,6 +37,8 @@ export default function ScenarioWriterDialog({
   onSendScenes,
 }: Props) {
   const [duration, setDuration] = useState<ScenarioDuration>(defaultDuration)
+  const [businessInfo, setBusinessInfo] = useState('')
+  const [businessSaving, setBusinessSaving] = useState(false)
   const [idea, setIdea] = useState('')
   const [ideaMode, setIdeaMode] = useState<'manual' | 'auto'>('manual')
   const [isWriting, setIsWriting] = useState(false)
@@ -55,6 +57,23 @@ export default function ScenarioWriterDialog({
       setError(null)
     }
   }, [open, defaultDuration])
+
+  useEffect(() => {
+    let cancelled = false
+    if (open && userId) {
+      supabase
+        .from('generator_business_profiles')
+        .select('business_info')
+        .eq('user_id', userId)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (!cancelled && data?.business_info) setBusinessInfo(data.business_info)
+        })
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [open, userId])
 
   useEffect(() => {
     return () => {
@@ -113,6 +132,22 @@ export default function ScenarioWriterDialog({
   async function generate() {
     const isAuto = ideaMode === 'auto' && Boolean(uploadedImageUrl)
     if ((!isAuto && !idea.trim() && !uploadedImageUrl) || (isAuto && !uploadedImageUrl) || isWriting) return
+    if (!businessInfo.trim()) {
+      setError('Please describe your business first — the scenario must be relevant to it.')
+      return
+    }
+    if (userId) {
+      setBusinessSaving(true)
+      try {
+        await supabase
+          .from('generator_business_profiles')
+          .upsert({ user_id: userId, business_info: businessInfo.trim() }, { onConflict: 'user_id' })
+      } catch {
+        /* non-fatal */
+      } finally {
+        setBusinessSaving(false)
+      }
+    }
     setIsWriting(true)
     setError(null)
     setScenes([])
@@ -120,6 +155,7 @@ export default function ScenarioWriterDialog({
       const { data, error: invokeErr } = await supabase.functions.invoke('scenario-write', {
         body: {
           idea: isAuto ? '' : (idea.trim() || 'Generate a scenario based on the attached reference image.'),
+          businessInfo: businessInfo.trim(),
           durationSeconds: duration,
           imageUrl: uploadedImageUrl ?? undefined,
           autoFromImage: isAuto,
@@ -189,6 +225,7 @@ export default function ScenarioWriterDialog({
   const concatenated = scenes.join('\n\n')
   const isAutoMode = ideaMode === 'auto' && Boolean(uploadedImageUrl)
   const canGenerate =
+    Boolean(businessInfo.trim()) &&
     (isAutoMode ? Boolean(uploadedImageUrl) : idea.trim().length > 0 || Boolean(uploadedImageUrl)) &&
     !isUploadingImage
 
@@ -213,6 +250,21 @@ export default function ScenarioWriterDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          <div className="rounded-md border border-amber-300/20 bg-amber-300/5 p-3">
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
+              About your business <span className="text-amber-300">(required)</span>
+            </div>
+            <Textarea
+              value={businessInfo}
+              onChange={(e) => {
+                setBusinessInfo(e.target.value)
+                if (error) setError(null)
+              }}
+              rows={2}
+              placeholder="Describe your business: what you sell, your products/services, target audience, and brand tone…"
+              className="min-h-[56px] border-white/10 bg-black/30 text-zinc-100"
+            />
+          </div>
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
               Duration
@@ -414,7 +466,7 @@ export default function ScenarioWriterDialog({
                 variant="ghost"
                 size="sm"
                 onClick={generate}
-                disabled={isWriting || isSending || !canGenerate}
+                disabled={isWriting || isSending || businessSaving || !canGenerate}
               >
                 {isWriting ? (
                   <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
@@ -440,7 +492,7 @@ export default function ScenarioWriterDialog({
               )}
             </>
           ) : (
-            <Button onClick={generate} disabled={isWriting || !canGenerate} size="sm">
+            <Button onClick={generate} disabled={isWriting || businessSaving || !canGenerate} size="sm">
               {isWriting ? (
                 <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
               ) : (

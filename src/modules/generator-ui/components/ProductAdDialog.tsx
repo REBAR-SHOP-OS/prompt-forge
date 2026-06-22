@@ -457,6 +457,10 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'Loading products…',
     back: 'Back',
     viewImage: 'View image',
+    businessLabel: 'About your business',
+    businessRequiredTag: '(required)',
+    businessPlaceholder: 'Describe your business: what you sell, your products/services, target audience, and brand tone…',
+    businessRequired: 'Please describe your business first — the scenario must be relevant to it.',
   },
   fa: {
     title: 'سناریوی تبلیغ محصول',
@@ -501,6 +505,10 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'در حال بارگذاری محصولات…',
     back: 'بازگشت',
     viewImage: 'نمایش تصویر',
+    businessLabel: 'درباره کسب‌وکار شما',
+    businessRequiredTag: '(الزامی)',
+    businessPlaceholder: 'کسب‌وکارتان را توضیح دهید: چه می‌فروشید، محصولات/خدمات، مخاطب هدف و لحن برند…',
+    businessRequired: 'ابتدا کسب‌وکارتان را توضیح دهید — سناریو باید مرتبط با آن باشد.',
   },
   ar: {
     title: 'سيناريو إعلان المنتج',
@@ -545,6 +553,10 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'جارٍ تحميل المنتجات…',
     back: 'رجوع',
     viewImage: 'عرض الصورة',
+    businessLabel: 'عن عملك التجاري',
+    businessRequiredTag: '(مطلوب)',
+    businessPlaceholder: 'صِف عملك: ماذا تبيع، منتجاتك/خدماتك، الجمهور المستهدف ونبرة العلامة التجارية…',
+    businessRequired: 'يرجى وصف عملك أولاً — يجب أن يكون السيناريو ذا صلة به.',
   },
   tr: {
     title: 'Ürün Reklam Senaryosu',
@@ -589,6 +601,10 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'Ürünler yükleniyor…',
     back: 'Geri',
     viewImage: 'Görseli görüntüle',
+    businessLabel: 'İşletmeniz hakkında',
+    businessRequiredTag: '(zorunlu)',
+    businessPlaceholder: 'İşletmenizi açıklayın: ne sattığınız, ürün/hizmetleriniz, hedef kitle ve marka tonu…',
+    businessRequired: 'Lütfen önce işletmenizi açıklayın — senaryo bununla ilgili olmalı.',
   },
   es: {
     title: 'Guion de Anuncio de Producto',
@@ -633,6 +649,10 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'Cargando productos…',
     back: 'Atrás',
     viewImage: 'Ver imagen',
+    businessLabel: 'Sobre tu negocio',
+    businessRequiredTag: '(obligatorio)',
+    businessPlaceholder: 'Describe tu negocio: qué vendes, tus productos/servicios, público objetivo y tono de marca…',
+    businessRequired: 'Describe primero tu negocio: el escenario debe ser relevante para él.',
   },
   fr: {
     title: 'Scénario de Publicité Produit',
@@ -677,6 +697,10 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'Chargement des produits…',
     back: 'Retour',
     viewImage: "Voir l'image",
+    businessLabel: 'À propos de votre entreprise',
+    businessRequiredTag: '(obligatoire)',
+    businessPlaceholder: 'Décrivez votre entreprise : ce que vous vendez, vos produits/services, votre public cible et le ton de la marque…',
+    businessRequired: "Décrivez d'abord votre entreprise — le scénario doit y être pertinent.",
   },
 }
 
@@ -758,6 +782,8 @@ export default function ProductAdDialog({
   const [productName, setProductName] = useState('')
   const [nameNeedsReview, setNameNeedsReview] = useState(false)
   const [productDescription, setProductDescription] = useState('')
+  const [businessInfo, setBusinessInfo] = useState('')
+  const [businessSaving, setBusinessSaving] = useState(false)
   const [userPrompt, setUserPrompt] = useState('')
   const [cameraStyle, setCameraStyle] = useState<string>(CAMERA_STYLES[0].label.en)
   const [cameraMovement, setCameraMovement] = useState('')
@@ -965,6 +991,23 @@ export default function ProductAdDialog({
   }, [open, defaultDuration])
 
   useEffect(() => {
+    let cancelled = false
+    if (open && userId) {
+      supabase
+        .from('generator_business_profiles')
+        .select('business_info')
+        .eq('user_id', userId)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (!cancelled && data?.business_info) setBusinessInfo(data.business_info)
+        })
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [open, userId])
+
+  useEffect(() => {
     return () => {
       if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
     }
@@ -1029,6 +1072,10 @@ export default function ProductAdDialog({
 
   async function generate() {
     if (isWriting) return
+    if (!businessInfo.trim()) {
+      setError(t.businessRequired)
+      return
+    }
     if (isCharacter) {
       if (!uploadedImageUrl) {
         setError('Please upload a character image first.')
@@ -1038,7 +1085,21 @@ export default function ProductAdDialog({
       setError('Write a prompt, add a product name, or attach a product photo.')
       return
     }
+    if (userId) {
+      setBusinessSaving(true)
+      try {
+        await supabase
+          .from('generator_business_profiles')
+          .upsert({ user_id: userId, business_info: businessInfo.trim() }, { onConflict: 'user_id' })
+      } catch {
+        /* non-fatal: still attempt generation */
+      } finally {
+        setBusinessSaving(false)
+      }
+    }
     setIsWriting(true)
+    setError(null)
+    setScenes([])
     setError(null)
     setScenes([])
     try {
@@ -1072,6 +1133,7 @@ export default function ProductAdDialog({
         body: {
           mode: isCharacter ? 'character-sheet' : 'product-ad',
           idea,
+          businessInfo: businessInfo.trim(),
           durationSeconds: duration,
           imageUrl: uploadedImageUrl ?? undefined,
           ...(isCharacter
@@ -1236,9 +1298,9 @@ export default function ProductAdDialog({
 
   const isSplit = SPLIT_DURATIONS.includes(duration) && scenes.length > 1
   const concatenated = scenes.join('\n\n')
-  const canGenerate = isCharacter
+  const canGenerate = Boolean(businessInfo.trim()) && (isCharacter
     ? Boolean(uploadedImageUrl) && !isUploadingImage
-    : (userPrompt.trim().length > 0 || productName.trim().length > 0 || Boolean(uploadedImageUrl)) && !isUploadingImage
+    : (userPrompt.trim().length > 0 || productName.trim().length > 0 || Boolean(uploadedImageUrl)) && !isUploadingImage)
   const t = isCharacter ? { ...T[lang], ...CHAR_T[lang] } : T[lang]
   const dir = RTL_LANGS.includes(lang) ? 'rtl' : 'ltr'
 
@@ -1284,6 +1346,23 @@ export default function ProductAdDialog({
         </DialogHeader>
 
         <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
+          {/* Business info (required) */}
+          <div className="rounded-md border border-amber-300/20 bg-amber-300/5 p-3">
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
+              {t.businessLabel} <span className="text-amber-300">{t.businessRequiredTag}</span>
+            </div>
+            <Textarea
+              value={businessInfo}
+              onChange={(e) => {
+                setBusinessInfo(e.target.value)
+                if (error) setError(null)
+              }}
+              rows={2}
+              placeholder={t.businessPlaceholder}
+              className="min-h-[56px] border-white/10 bg-black/30 text-zinc-100"
+            />
+          </div>
+
           {/* Product photo + name */}
           <div className="flex items-start gap-3">
             <input
@@ -1745,7 +1824,7 @@ export default function ProductAdDialog({
                 variant="ghost"
                 size="sm"
                 onClick={generate}
-                disabled={isWriting || isSending || !canGenerate}
+                disabled={isWriting || isSending || businessSaving || !canGenerate}
               >
                 {isWriting ? (
                   <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
@@ -1776,7 +1855,7 @@ export default function ProductAdDialog({
 
             </>
           ) : (
-            <Button onClick={generate} disabled={isWriting || !canGenerate} size="sm">
+            <Button onClick={generate} disabled={isWriting || businessSaving || !canGenerate} size="sm">
               {isWriting ? (
                 <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
               ) : (

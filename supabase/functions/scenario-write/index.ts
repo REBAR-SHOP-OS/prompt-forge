@@ -65,7 +65,11 @@ function buildSystemPrompt(
   productAd?: ProductAdOpts,
   autoFromImage?: boolean,
   characterSheet?: CharacterSheetOpts,
+  businessInfo?: string,
 ): string {
+  const businessLine = businessInfo
+    ? `Business context (provided by the user): ${businessInfo}. Every narration line, every spoken word, and the entire scenario MUST stay tightly relevant to this business and promote the user's selected product/subject. Do not drift into unrelated topics, products, or themes.`
+    : "";
   const sceneCount = expectedSceneCount(duration);
   const isAd = Boolean(productAd);
   const isCharacter = Boolean(characterSheet);
@@ -115,6 +119,7 @@ function buildSystemPrompt(
     const longForm = isCharacter ? "character-driven film" : isAd ? "product advertisement" : "commercial";
     return [
       persona,
+      businessLine,
       `Given the user's brief, write a CONTINUOUS narrative scenario in ENGLISH for a ${duration}-second cinematic ${longForm},`,
       `structured as ${numWord} sequential 15-second scenes that flow into each other.`,
       "The scenario MUST follow a clear story arc across the whole sequence: the opening scene is an attention-grabbing hook that establishes the subject and setting, the middle scenes develop the story and build interest and desire, and the final scene delivers a defined payoff/resolution that ends on a strong, memorable note.",
@@ -130,6 +135,7 @@ function buildSystemPrompt(
   const singleForm = isCharacter ? "character-driven film scenario" : isAd ? "product advertisement" : "advertising scenario/treatment";
   return [
     persona,
+    businessLine,
     `Given the user's brief, write a single cohesive ${singleForm} in ENGLISH`,
     `suitable for a ${duration}-second cinematic video — regardless of the input language.`,
     "It MUST follow a clear narrative arc with a defined beginning, middle, and end: an attention-grabbing opening hook that establishes the subject and setting, a middle that develops the story, and a clear payoff/resolution that ends on a strong, memorable note.",
@@ -149,6 +155,7 @@ async function callGateway(
   productAd?: ProductAdOpts,
   autoFromImage?: boolean,
   characterSheet?: CharacterSheetOpts,
+  businessInfo?: string,
 ): Promise<Response> {
   const refText = characterSheet
     ? `Brief: ${idea}\nThe attached image IS the lead character — match their exact face, hair, wardrobe, body, and overall look in every shot, and keep them perfectly consistent throughout the film.`
@@ -181,7 +188,7 @@ async function callGateway(
     body: JSON.stringify({
       model: "google/gemini-2.5-flash",
       messages: [
-        { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage, characterSheet) },
+        { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage, characterSheet, businessInfo) },
         { role: "user", content: userContent },
       ],
     }),
@@ -262,6 +269,7 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const idea = typeof body?.idea === "string" ? body.idea.trim() : "";
+    const businessInfo = typeof body?.businessInfo === "string" ? body.businessInfo.trim().slice(0, 2000) : "";
     const durationRaw = Number(body?.durationSeconds);
     const duration = [5, 10, 15, 30, 45, 135].includes(durationRaw) ? durationRaw : 0;
     const imageUrlRaw = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
@@ -344,6 +352,14 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    if (!businessInfo) {
+      return new Response(JSON.stringify({ error: "Business information is required to write a scenario." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+
 
     const apiKey = Deno.env.get("LOVABLE_API_KEY");
     if (!apiKey) {
@@ -363,7 +379,7 @@ Deno.serve(async (req) => {
     if (productAd?.characterImageUrl) {
       productAd.characterImageUrl = await resolveImageForGateway(productAd.characterImageUrl);
     }
-    let resp = await callGateway(apiKey, duration, effectiveIdea, resolvedImageUrl, productAd, autoFromImage, characterSheet);
+    let resp = await callGateway(apiKey, duration, effectiveIdea, resolvedImageUrl, productAd, autoFromImage, characterSheet, businessInfo);
 
     if (resp.status === 429) {
       return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
@@ -393,7 +409,7 @@ Deno.serve(async (req) => {
     // One retry for multi-scene durations if we didn't get the expected count.
     const expected = expectedSceneCount(duration);
     if (expected > 1 && scenes.length === 0) {
-      resp = await callGateway(apiKey, duration, effectiveIdea, resolvedImageUrl, productAd, autoFromImage, characterSheet);
+      resp = await callGateway(apiKey, duration, effectiveIdea, resolvedImageUrl, productAd, autoFromImage, characterSheet, businessInfo);
       if (resp.ok) {
         data = await resp.json();
         raw = (data?.choices?.[0]?.message?.content ?? "").trim();
