@@ -583,6 +583,14 @@ export function VoiceoverDialog({
             <Download className="mr-2 h-4 w-4" />
             Download
           </Button>
+          <Button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            disabled={!activeVoiceoverUrl && !audioUrl}
+          >
+            <Check className="mr-2 h-4 w-4" />
+            Apply
+          </Button>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             Close
           </Button>
