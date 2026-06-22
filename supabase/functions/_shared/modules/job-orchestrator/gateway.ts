@@ -429,7 +429,7 @@ export const jobOrchestratorGateway = {
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 400, latencyMs: Date.now() - ctx.startedAt, errorCode: "INVALID_FIRST_FRAME_URL" });
             return errorResponse(
               "INVALID_FIRST_FRAME_URL",
-              "firstFrameUrl must point to your own public wan-frames upload",
+              "firstFrameUrl must point to your own wan-frames upload",
               400,
               ctx.requestId,
             );
@@ -439,7 +439,7 @@ export const jobOrchestratorGateway = {
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 400, latencyMs: Date.now() - ctx.startedAt, errorCode: "INVALID_LAST_FRAME_URL" });
             return errorResponse(
               "INVALID_LAST_FRAME_URL",
-              "lastFrameUrl must point to your own public wan-frames upload",
+              "lastFrameUrl must point to your own wan-frames upload",
               400,
               ctx.requestId,
             );
