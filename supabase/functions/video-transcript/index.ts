@@ -21,13 +21,68 @@ function json(body: unknown, status = 200) {
   })
 }
 
-async function transcribeVideo(apiKey: string, videoBytes: Blob): Promise<string> {
+type MediaExtension = 'flac' | 'mp3' | 'mp4' | 'mpeg' | 'mpga' | 'm4a' | 'ogg' | 'wav' | 'webm'
+
+const SUPPORTED_EXTENSIONS = new Set<MediaExtension>([
+  'flac',
+  'mp3',
+  'mp4',
+  'mpeg',
+  'mpga',
+  'm4a',
+  'ogg',
+  'wav',
+  'webm',
+])
+
+function inferMediaExtension(sourceUrl: string, contentType: string | null): MediaExtension {
+  const cleanContentType = (contentType ?? '').split(';')[0].trim().toLowerCase()
+  if (cleanContentType.includes('webm')) return 'webm'
+  if (cleanContentType.includes('mpeg')) return 'mpeg'
+  if (cleanContentType.includes('mpga')) return 'mpga'
+  if (cleanContentType.includes('mp3')) return 'mp3'
+  if (cleanContentType.includes('m4a')) return 'm4a'
+  if (cleanContentType.includes('mp4')) return 'mp4'
+  if (cleanContentType.includes('ogg')) return 'ogg'
+  if (cleanContentType.includes('wav')) return 'wav'
+  if (cleanContentType.includes('flac')) return 'flac'
+
+  try {
+    const path = new URL(sourceUrl).pathname.toLowerCase()
+    const match = path.match(/\.([a-z0-9]+)$/)
+    const ext = match?.[1] as MediaExtension | undefined
+    if (ext && SUPPORTED_EXTENSIONS.has(ext)) return ext
+  } catch {
+    // Fall through to the safest default below.
+  }
+
+  return 'mp4'
+}
+
+function transcriptionMimeType(ext: MediaExtension): string {
+  if (ext === 'webm') return 'audio/webm'
+  if (ext === 'mp3') return 'audio/mpeg'
+  if (ext === 'm4a' || ext === 'mp4') return 'audio/mp4'
+  if (ext === 'wav') return 'audio/wav'
+  if (ext === 'ogg') return 'audio/ogg'
+  if (ext === 'flac') return 'audio/flac'
+  return `audio/${ext}`
+}
+
+async function transcribeVideo(
+  apiKey: string,
+  videoBytes: Blob,
+  sourceUrl: string,
+  contentType: string | null,
+): Promise<string> {
   const form = new FormData()
   form.append('model', 'openai/gpt-4o-mini-transcribe')
-  // Re-wrap with an audio MIME type + .m4a name so the STT model accepts the
-  // MP4 container (a raw video/mp4 part is rejected as "unsupported").
-  const audioBlob = new Blob([await videoBytes.arrayBuffer()], { type: 'audio/mp4' })
-  form.append('file', audioBlob, 'film.m4a')
+  // The STT provider infers the container from the filename extension. Do not
+  // rename WebM/MP4 bytes to another extension; that makes valid files look
+  // corrupted or unsupported upstream.
+  const ext = inferMediaExtension(sourceUrl, contentType)
+  const audioBlob = new Blob([await videoBytes.arrayBuffer()], { type: transcriptionMimeType(ext) })
+  form.append('file', audioBlob, `film.${ext}`)
   // non-streaming: default JSON response with the transcript text
 
   const res = await fetch(`${GATEWAY}/audio/transcriptions`, {
@@ -38,7 +93,12 @@ async function transcribeVideo(apiKey: string, videoBytes: Blob): Promise<string
 
   if (!res.ok) {
     const text = await res.text().catch(() => '')
-    const err = new Error(`Transcription failed: ${res.status} ${text}`)
+    const isInvalidMedia = res.status === 400 && /corrupted|unsupported|invalid_value/i.test(text)
+    const err = new Error(
+      isInvalidMedia
+        ? 'No supported speech audio track was found in this film.'
+        : `Transcription failed: ${res.status} ${text}`,
+    )
     ;(err as Error & { status?: number }).status = res.status
     throw err
   }
@@ -111,8 +171,16 @@ Deno.serve(async (req) => {
       return json({ error: `Could not load video (${videoRes.status})` }, 502)
     }
     const videoBytes = await videoRes.blob()
+    if (videoBytes.size < 1024) {
+      return json({ error: 'The video file is empty or too small to transcribe.' }, 400)
+    }
 
-    const transcript = await transcribeVideo(apiKey, videoBytes)
+    const transcript = await transcribeVideo(
+      apiKey,
+      videoBytes,
+      sourceUrl,
+      videoRes.headers.get('content-type'),
+    )
     if (!transcript) {
       return json({ error: 'No speech was detected in this film.' }, 200)
     }
@@ -128,6 +196,10 @@ Deno.serve(async (req) => {
     const message = e instanceof Error ? e.message : 'Unexpected error'
     if (status === 402) return json({ error: 'AI credits exhausted. Please add credits.' }, 402)
     if (status === 429) return json({ error: 'Too many requests. Please try again shortly.' }, 429)
+    if (status === 400) {
+      const responseStatus = message.startsWith('No supported speech audio track') ? 200 : 400
+      return json({ error: message }, responseStatus)
+    }
     return json({ error: message }, 500)
   }
 })
