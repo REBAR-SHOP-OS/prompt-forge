@@ -745,6 +745,8 @@ export default function ProductAdDialog({
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null)
   const [previewLightboxOpen, setPreviewLightboxOpen] = useState(false)
   const [isUploadingImage, setIsUploadingImage] = useState(false)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
   const [aiImageOpen, setAiImageOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
