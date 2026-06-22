@@ -21,6 +21,41 @@ import { supabase } from '@/integrations/supabase/client'
 
 type Lang = 'en' | 'fa' | 'ar' | 'tr' | 'es' | 'fr'
 const RTL_LANGS: Lang[] = ['fa', 'ar']
+
+// Localized narration labels the edge function may emit, used to split a scene
+// block into its visual scenario part and its narration part.
+const NARRATION_LABELS = ['Narration', 'نریشن', 'التعليق الصوتي', 'Anlatım', 'Narración']
+const NARRATION_RE = new RegExp(`(^|\\n)\\s*(${NARRATION_LABELS.join('|')})\\s*:\\s*`, 'i')
+
+function splitNarration(text: string): { body: string; narration: string | null } {
+  const m = text.match(NARRATION_RE)
+  if (!m || m.index === undefined) return { body: text.trim(), narration: null }
+  const labelStart = m.index + m[1].length
+  const body = text.slice(0, labelStart).trim()
+  const narration = text.slice(m.index + m[0].length).trim()
+  return { body, narration: narration || null }
+}
+
+function SceneText({ text, narrationLabel, dir }: { text: string; narrationLabel: string; dir: string }) {
+  const { body, narration } = splitNarration(text)
+  return (
+    <div className="space-y-2">
+      <p dir={dir} className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
+        {body}
+      </p>
+      {narration ? (
+        <div className="rounded-md border border-amber-400/30 bg-amber-400/5 px-2.5 py-2">
+          <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300/90">
+            {narrationLabel}
+          </div>
+          <p dir={dir} className="whitespace-pre-wrap text-sm leading-6 text-amber-50/90">
+            {narration}
+          </p>
+        </div>
+      ) : null}
+    </div>
+  )
+}
 const LANG_OPTIONS: { value: Lang; native: string }[] = [
   { value: 'en', native: 'English' },
   { value: 'fa', native: 'فارسی' },
