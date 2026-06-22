@@ -1,29 +1,39 @@
 ## Goal
 
-Add a **company logo** capability to the Character Sheet dialog. The user can upload their own logo, and choose — via a toggle — whether the logo should be applied onto the character when generating a character sheet. If the toggle is off, generation behaves exactly as today (no logo).
+When the user clicks **Use as prompt** (or **Send to Pending**) from the Product Ad / Character scenario dialog, set up an image‑to‑video generation whose **start frame actually shows the character together with the product**, driven by the generated scenario text. Today the start frame is empty/broken and the character is dropped.
 
-## UI changes — `src/modules/generator-ui/components/CharacterSheetDialog.tsx`
+## Root causes
 
-1. **Logo state**: add `logoUrl` (signed/display URL), `logoSendUrl` (storage public URL passed to the backend), `logoUploading`, and `applyLogo` (boolean toggle, default off).
-2. **Logo upload control**: below the model selector, add a compact "Company logo (optional)" row:
-   - A small logo thumbnail preview + "Upload logo" button (reuses the same upload pattern as `handleSelected`, uploading into the `user-images` bucket; we don't need a `generator_user_images` row for the logo — it's transient). Accept PNG/JPG/WEBP up to 10 MB.
-   - An "×/Remove" control to clear the logo.
-   - A toggle/checkbox **"Apply logo to character"** (only enabled when a logo is uploaded). When no logo is present, the toggle is hidden/disabled.
-3. **Pass to backend**: in `handleGenerateSheet`, include `logoUrl: logoSendUrl` and `applyLogo` in the invoke body **only when** `applyLogo` is true and a logo exists.
-4. Reset logo state when the dialog closes.
+1. `ProductAdDialog.handleUseAsPrompt` (line 1093) passes `uploadedImageUrl` — a **private `wan-frames` public URL** that `handleUseImageAsStart` cannot `fetch()` → start frame fails silently (the empty thumbnail in the screenshot).
+2. The attached character (`characterRefSendUrl`) is only sent to the scenario text writer, never used to build the video start frame, so the video would never feature the character.
+3. For the Character‑sheet variant, `handleUseAsPrompt` passes `undefined`, so no start frame at all.
 
-## Backend changes — `supabase/functions/generate-character-sheet/index.ts`
+## Approach
 
-1. Parse `logoUrl` (string) and `applyLogo` (boolean) from the body. Validate `logoUrl` with the existing `isAllowedImageUrl` guard.
-2. When `applyLogo === true` and a valid `logoUrl` is provided:
-   - Fetch the logo and convert to a data URL (same path as the source image).
-   - Add it as a **second `image_url` block** in the gateway message.
-   - Extend the instruction: tell the model the second image is the company logo and to place it tastefully on the character (e.g. on the shirt/jersey/cap) consistently across all turnaround views, while keeping identity unchanged. Override the existing "no logos" sentence in this branch so it doesn't contradict.
-3. When `applyLogo` is false or no logo: keep the current behavior and the current instruction (including "no logos") unchanged.
+Build a proper **first frame** before handing off to the composer, using the existing `ai-image-edit` edge function (it already accepts multiple reference images and returns a `dataUrl`).
+
+### `ProductAdDialog.tsx`
+
+Add a helper `buildFirstFrame()` that returns a fetchable image URL (data URL or signed URL) based on context:
+
+- **Product variant + character attached** (`!isCharacter && characterRefSendUrl`):
+  call `ai-image-edit` with `imageUrls: [productSendUrl, characterRefSendUrl]`, `aspectRatio` from the selected dimensions, and a prompt such as: *"Image 1 is the product, image 2 is the on‑screen character/presenter. Compose a single photorealistic opening ad frame where the character is presenting/holding the product, product clearly visible as the hero. Keep the character's face, hair, wardrobe and body identical to image 2."* Use the returned `dataUrl` as the first frame.
+- **Product variant, no character:** use the **signed** product URL (`imagePreviewUrl` / `signFramesUrl`) — not the broken public URL.
+- **Character variant:** use the character image (`imagePreviewUrl` signed) as the first frame.
+
+Update `handleUseAsPrompt` and `handleSendAll` to `await buildFirstFrame()` and pass the resulting URL to `onUseAsPrompt(text, frameUrl)` / `onSendScenes(scenes, frameUrl)`. Add a loading state (e.g. disable the button + spinner + "Preparing frame…") because the compose call takes a few seconds, and surface any `ai-image-edit` error (429/402/empty) inline using the existing `setError`.
+
+### `DashboardPage.tsx`
+
+No signature change needed — `handleUseImageAsStart` already re‑fetches and re‑uploads the URL to `wan-frames`, and `fetch()` works on `data:` URLs. The handoff at lines 8341‑8381 stays as is (it already calls `handleUseImageAsStart(imageUrl)` and sets `generationMode` to image‑to‑video). Confirm the composed/signed URL is fetchable there.
 
 ## Verification
 
-- Redeploy `generate-character-sheet`.
-- Build passes.
-- Generate a sheet with logo toggle OFF → unchanged result, no logo.
-- Generate with a logo uploaded and toggle ON → the character sheet shows the logo applied to the character.
+- Product Ad with a character attached → Use as prompt → start frame is populated with a composed character+product image, prompt filled, mode = Image to Video.
+- Product Ad without a character → start frame shows the product (signed URL, not broken).
+- Character variant → start frame shows the character.
+- Confirm `ai-image-edit` errors (rate limit / credits / empty) show a clear message instead of an empty frame.
+
+## Notes / trade-offs
+
+- Composing the first frame consumes one AI image credit per use. This is the cleanest way to guarantee the character appears with the product in the video; the alternative (just using the character or product alone) would not satisfy "the character promoting that product."
