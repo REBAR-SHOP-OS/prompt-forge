@@ -584,7 +584,7 @@ export default function ScenarioWriterDialog({
         <div className="space-y-4">
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              Duration
+              {t.duration}
             </div>
             <div
               role="radiogroup"
