@@ -32,7 +32,16 @@ interface ProductAdOpts {
   scene?: string;
 }
 
-function cameraGuidance(opts: ProductAdOpts): string {
+interface CharacterSheetOpts {
+  characterName?: string;
+  characterDescription?: string;
+  cameraStyle?: string;
+  cameraMovement?: string;
+  genre?: string;
+  scene?: string;
+}
+
+function cameraGuidance(opts: ProductAdOpts | CharacterSheetOpts): string {
   const bits: string[] = [];
   if (opts.cameraStyle) {
     bits.push(`Use a "${opts.cameraStyle}" camera style as the dominant cinematic technique throughout, and explicitly name this camera move in the shot descriptions.`);
