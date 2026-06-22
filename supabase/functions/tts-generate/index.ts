@@ -106,6 +106,15 @@ function isTone(v: unknown): v is Tone {
   return typeof v === 'string' && (TONES as string[]).includes(v)
 }
 
+// Allowed explicit Gemini prebuilt voices (catalog from the Voiceover dialog).
+const ALLOWED_VOICES = new Set<string>([
+  'Leda', 'Kore', 'Aoede', 'Callirrhoe', 'Autonoe', 'Despina',
+  'Puck', 'Charon', 'Fenrir', 'Algieba', 'Orus', 'Achird',
+])
+function isAllowedVoice(v: unknown): v is string {
+  return typeof v === 'string' && ALLOWED_VOICES.has(v)
+}
+
 // Build a WAV file (PCM 16-bit) from raw PCM bytes.
 function pcmToWav(pcm: Uint8Array, sampleRate = 24000, channels = 1): Uint8Array {
   const bitsPerSample = 16
