@@ -56,6 +56,7 @@ import {
   Drama,
   Wand2,
   FileText,
+  MessageSquareQuote,
   X
 } from 'lucide-react'
 import {
@@ -125,6 +126,35 @@ import ScenarioWriterDialog from '@/modules/generator-ui/components/ScenarioWrit
 import ProductAdDialog from '@/modules/generator-ui/components/ProductAdDialog'
 import { TranscriptPanel } from '@/modules/generator-ui/components/TranscriptPanel'
 import CharacterSheetDialog from '@/modules/generator-ui/components/CharacterSheetDialog'
+
+/**
+ * Extract spoken narration / voiceover lines embedded inside a scene prompt.
+ * The scenario / ad writer weaves dialogue inline as quoted text
+ * (e.g. `says: "..."`, plain `"..."`, smart quotes `“...”`, or `«...»`).
+ * Returns the de-duplicated spoken lines, or an empty array when none found.
+ */
+function extractNarration(prompt: string | null | undefined): string[] {
+  if (!prompt) return []
+  const lines: string[] = []
+  const seen = new Set<string>()
+  const push = (raw: string) => {
+    const text = raw.trim()
+    if (text.length < 2) return
+    const key = text.toLowerCase()
+    if (seen.has(key)) return
+    seen.add(key)
+    lines.push(text)
+  }
+  // Match straight quotes "...", smart quotes “...”, and guillemets «...».
+  const quoteRe = /"([^"]+)"|“([^”]+)”|«([^»]+)»/g
+  let m: RegExpExecArray | null
+  while ((m = quoteRe.exec(prompt)) !== null) {
+    push(m[1] ?? m[2] ?? m[3] ?? '')
+  }
+  return lines
+}
+
+
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
@@ -827,6 +857,7 @@ export default function DashboardPage() {
   const [isDragging, setIsDragging] = useState(false)
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
   const [promptViewer, setPromptViewer] = useState<string | null>(null)
+  const [narrationViewer, setNarrationViewer] = useState<string[] | null>(null)
   const [editPromptJob, setEditPromptJob] = useState<JobDetail | null>(null)
   const [editPromptText, setEditPromptText] = useState('')
   const [startContext] = useState('Start')
@@ -9269,6 +9300,31 @@ export default function DashboardPage() {
                       >
                         {video.input_prompt}
                       </button>
+                      {(() => {
+                        const narration = extractNarration(video.input_prompt)
+                        const hasNarration = narration.length > 0
+                        return (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setNarrationViewer(narration)
+                            }}
+                            aria-label="Narration for this card"
+                            title={hasNarration ? 'Narration for this card' : 'No narration detected in this card'}
+                            className={`relative grid h-7 w-7 shrink-0 place-items-center rounded-full border transition ${
+                              hasNarration
+                                ? 'border-violet-400/40 bg-violet-500/10 text-violet-200 hover:border-violet-300/60 hover:bg-violet-500/20 hover:text-violet-100'
+                                : 'border-white/10 bg-white/[0.03] text-zinc-500 hover:border-white/20 hover:text-zinc-300'
+                            }`}
+                          >
+                            <MessageSquareQuote className="h-3.5 w-3.5" aria-hidden="true" />
+                            {hasNarration ? (
+                              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-violet-400 ring-2 ring-[#0b0c0e]" aria-hidden="true" />
+                            ) : null}
+                          </button>
+                        )
+                      })()}
                       {!isReadOnlyProject && (
                       <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
                         <span
@@ -10619,6 +10675,34 @@ export default function DashboardPage() {
           </div>
         </DialogContent>
       </Dialog>
+      <Dialog open={narrationViewer !== null} onOpenChange={(o) => { if (!o) setNarrationViewer(null) }}>
+        <DialogContent className="max-w-lg border-white/10 bg-[#0b0c0e]/95">
+          <DialogHeader>
+            <DialogTitle className="inline-flex items-center gap-2">
+              <MessageSquareQuote className="h-4 w-4 text-violet-300" aria-hidden="true" />
+              Narration
+            </DialogTitle>
+          </DialogHeader>
+          {narrationViewer && narrationViewer.length > 0 ? (
+            <ul dir="auto" className="max-h-[60vh] space-y-2 overflow-y-auto">
+              {narrationViewer.map((line, i) => (
+                <li
+                  key={i}
+                  className="rounded-lg border border-violet-400/20 bg-violet-500/[0.06] px-3 py-2 text-sm leading-6 text-zinc-100"
+                >
+                  {line}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm leading-6 text-zinc-400">
+              No narration detected in this card's prompt. The narration / spoken lines appear here when the scene includes quoted dialogue.
+            </p>
+          )}
+        </DialogContent>
+      </Dialog>
+
+
 
       <Dialog
         open={editPromptJob !== null}
