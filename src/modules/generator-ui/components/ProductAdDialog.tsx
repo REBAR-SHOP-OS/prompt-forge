@@ -1277,7 +1277,47 @@ export default function ProductAdDialog({
                 <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
                 <span className="truncate">{t.generateWithAi}</span>
               </button>
+              {isCharacter ? null : (
+                characterRefDisplayUrl ? (
+                  <div className="relative w-20">
+                    <button
+                      type="button"
+                      onClick={openCharacterPicker}
+                      title="Change character"
+                      className="block w-20 overflow-hidden rounded-md border border-amber-300/50 bg-amber-300/10"
+                    >
+                      <img
+                        src={characterRefDisplayUrl}
+                        alt="Character"
+                        className="h-16 w-20 object-cover"
+                      />
+                      <span className="block truncate px-1 py-0.5 text-[9px] text-amber-100">
+                        {characterRefName || 'Character'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={clearCharacter}
+                      aria-label="Remove character"
+                      className="absolute -right-1.5 -top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-900 text-zinc-200 ring-1 ring-white/20 hover:bg-zinc-800"
+                    >
+                      <X className="h-3 w-3" aria-hidden="true" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={openCharacterPicker}
+                    title="Add character"
+                    className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-white/10 bg-black/30 px-1 py-1 text-[10px] text-zinc-300 transition hover:border-amber-300/40 hover:text-amber-100"
+                  >
+                    <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span className="truncate">Add character</span>
+                  </button>
+                )
+              )}
             </div>
+
             <div className="flex-1 space-y-2">
               <div>
                 <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
