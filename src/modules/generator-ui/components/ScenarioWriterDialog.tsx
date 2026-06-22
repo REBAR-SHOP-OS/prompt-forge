@@ -273,6 +273,57 @@ export default function ScenarioWriterDialog({
           <DialogTitle className="flex items-center gap-2">
             <Clapperboard className="h-5 w-5 text-amber-300" aria-hidden="true" />
             Scenario Writer
+            <div className="ms-auto">
+              <Popover open={businessOpen} onOpenChange={setBusinessOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="About your business"
+                    title="About your business"
+                    className={`relative inline-flex h-7 w-7 items-center justify-center rounded-full border transition ${
+                      businessInfo.trim()
+                        ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
+                        : 'border-amber-300/40 bg-amber-300/10 text-amber-300'
+                    }`}
+                  >
+                    <Building2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    {!businessInfo.trim() && (
+                      <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-amber-400" />
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-80 border-white/10 bg-[#0b0c0e] text-zinc-100">
+                  <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
+                    About your business <span className="text-amber-300">(required)</span>
+                  </div>
+                  <Textarea
+                    value={businessInfo}
+                    onChange={(e) => {
+                      setBusinessInfo(e.target.value)
+                      setBusinessSaved(false)
+                      if (error) setError(null)
+                    }}
+                    rows={4}
+                    placeholder="Describe your business: what you sell, your products/services, target audience, and brand tone…"
+                    className="min-h-[96px] border-white/10 bg-black/30 text-sm text-zinc-100"
+                  />
+                  <div className="mt-2 flex justify-end">
+                    <Button
+                      size="sm"
+                      onClick={saveBusinessInfo}
+                      disabled={businessSaving || !businessInfo.trim()}
+                    >
+                      {businessSaving ? (
+                        <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                      ) : businessSaved ? (
+                        <Check className="h-4 w-4 mr-2" aria-hidden="true" />
+                      ) : null}
+                      {businessSaved ? 'Saved' : 'Save'}
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
           </DialogTitle>
           <DialogDescription className="text-zinc-400">
             Pick a duration, describe your idea (any language), and get an English
@@ -281,21 +332,6 @@ export default function ScenarioWriterDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="rounded-md border border-amber-300/20 bg-amber-300/5 p-3">
-            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
-              About your business <span className="text-amber-300">(required)</span>
-            </div>
-            <Textarea
-              value={businessInfo}
-              onChange={(e) => {
-                setBusinessInfo(e.target.value)
-                if (error) setError(null)
-              }}
-              rows={2}
-              placeholder="Describe your business: what you sell, your products/services, target audience, and brand tone…"
-              className="min-h-[56px] border-white/10 bg-black/30 text-zinc-100"
-            />
-          </div>
           <div>
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
               Duration
