@@ -74,6 +74,7 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
       if (data?.error) throw new Error(data.error)
       const text = (data?.transcript ?? '').trim()
       setTranscript(text)
+      setWords(Array.isArray(data?.words) ? data!.words : [])
       translations.current.clear()
       translations.current.set(ORIGINAL, text)
       setLanguage(ORIGINAL)
