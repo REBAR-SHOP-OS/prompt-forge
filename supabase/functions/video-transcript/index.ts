@@ -24,7 +24,10 @@ function json(body: unknown, status = 200) {
 async function transcribeVideo(apiKey: string, videoBytes: Blob): Promise<string> {
   const form = new FormData()
   form.append('model', 'openai/gpt-4o-mini-transcribe')
-  form.append('file', videoBytes, 'film.mp4')
+  // Re-wrap with an audio MIME type + .m4a name so the STT model accepts the
+  // MP4 container (a raw video/mp4 part is rejected as "unsupported").
+  const audioBlob = new Blob([await videoBytes.arrayBuffer()], { type: 'audio/mp4' })
+  form.append('file', audioBlob, 'film.m4a')
   // non-streaming: default JSON response with the transcript text
 
   const res = await fetch(`${GATEWAY}/audio/transcriptions`, {
