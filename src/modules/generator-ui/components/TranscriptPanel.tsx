@@ -121,10 +121,8 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
     }
   }, [])
 
-  const isRtl =
-    language === ORIGINAL
-      ? /[\u0600-\u06FF]/.test(displayText)
-      : Boolean(LANGUAGES.find((l) => l.value === language)?.rtl)
+  const originalRtl = /[\u0600-\u06FF]/.test(transcript ?? '')
+  const translationRtl = Boolean(LANGUAGES.find((l) => l.value === language)?.rtl)
 
   const runTranscribe = useCallback(async () => {
     if (!videoUrl) {
