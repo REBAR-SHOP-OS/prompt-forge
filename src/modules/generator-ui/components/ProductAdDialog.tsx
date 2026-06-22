@@ -601,6 +601,10 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'Ürünler yükleniyor…',
     back: 'Geri',
     viewImage: 'Görseli görüntüle',
+    businessLabel: 'İşletmeniz hakkında',
+    businessRequiredTag: '(zorunlu)',
+    businessPlaceholder: 'İşletmenizi açıklayın: ne sattığınız, ürün/hizmetleriniz, hedef kitle ve marka tonu…',
+    businessRequired: 'Lütfen önce işletmenizi açıklayın — senaryo bununla ilgili olmalı.',
   },
   es: {
     title: 'Guion de Anuncio de Producto',
