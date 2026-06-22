@@ -131,6 +131,26 @@ function productObjectKey(storagePath: string | null | undefined): string | null
   return null
 }
 
+/** Strip trailing catalog numbers and turn a slug into a readable name. */
+function cleanProductName(title: string | null | undefined): string {
+  if (!title) return ''
+  return title
+    .replace(/[\s_-]*\d+\s*$/u, '') // drop trailing number suffix (e.g. _005, -005, " 005")
+    .replace(/[_-]+/gu, ' ') // separators -> spaces
+    .replace(/\s+/gu, ' ')
+    .trim()
+}
+
+/** True when a title looks like a technical catalog code rather than a real product name. */
+function looksLikeCode(title: string | null | undefined): boolean {
+  if (!title) return false
+  const t = title.trim()
+  // code-like: lowercase tokens joined by _/- and/or ending in a number
+  return /^[a-z0-9]+([_-][a-z0-9]+)+$/u.test(t) || /[_-]\d+\s*$/u.test(t)
+}
+
+
+
 /** Resolve a displayable signed URL for a private-bucket product photo. */
 async function signProductPhotoUrl(storagePath: string | null | undefined): Promise<string> {
   const raw = storagePath ?? ''
