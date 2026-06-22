@@ -421,19 +421,20 @@ export default function ScenarioWriterDialog({
         body: {
           idea: isAuto ? '' : (idea.trim() || 'Generate a scenario based on the attached reference image.'),
           businessInfo: businessInfo.trim(),
+          outputLanguage: lang,
           durationSeconds: duration,
           imageUrl: uploadedImageUrl ?? undefined,
           autoFromImage: isAuto,
         },
       })
       if (invokeErr) {
-        setError(invokeErr.message || 'Failed to write scenario')
+        setError(invokeErr.message || t.errFailedWrite)
         return
       }
       const payload = data as { scenario?: string; scenes?: string[]; warning?: string } | null
       const list = (payload?.scenes ?? []).map((s) => s.trim()).filter(Boolean)
       if (list.length === 0) {
-        setError('Empty AI response')
+        setError(t.errEmpty)
         return
       }
       setScenes(list)
