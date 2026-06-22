@@ -734,6 +734,7 @@ export default function ProductAdDialog({
   const isCharacter = variant === 'character'
   const [duration, setDuration] = useState<ProductAdDuration>(defaultDuration)
   const [productName, setProductName] = useState('')
+  const [nameNeedsReview, setNameNeedsReview] = useState(false)
   const [productDescription, setProductDescription] = useState('')
   const [userPrompt, setUserPrompt] = useState('')
   const [cameraStyle, setCameraStyle] = useState<string>(CAMERA_STYLES[0].label.en)
