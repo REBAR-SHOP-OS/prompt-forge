@@ -621,14 +621,80 @@ const T: Record<Lang, Record<string, string>> = {
   },
 }
 
+// Character Sheet overrides — merged over the product strings when variant === 'character'.
+const CHAR_T: Record<Lang, Record<string, string>> = {
+  en: {
+    title: 'Character Sheet',
+    description:
+      'Upload your character image, answer a few questions, and get a cinematic film scenario built entirely around that character.',
+    photo: 'Character',
+    productName: 'Character name',
+    productNamePlaceholder: 'e.g. Captain Aria',
+    descriptionPlaceholder: 'Personality, role, age, vibe, backstory…',
+    generate: 'Generate film scenario',
+  },
+  fa: {
+    title: 'شناسنامه کاراکتر',
+    description:
+      'تصویر کاراکتر خود را آپلود کنید، به چند سؤال پاسخ دهید و یک سناریوی سینمایی کامل که کاملاً حول همان کاراکتر ساخته شده دریافت کنید.',
+    photo: 'کاراکتر',
+    productName: 'نام کاراکتر',
+    productNamePlaceholder: 'مثلاً کاپیتان آریا',
+    descriptionPlaceholder: 'شخصیت، نقش، سن، حال‌وهوا، پیشینه…',
+    generate: 'ساخت سناریوی فیلم',
+  },
+  ar: {
+    title: 'بطاقة الشخصية',
+    description:
+      'حمّل صورة شخصيتك، أجب عن بعض الأسئلة، واحصل على سيناريو فيلم سينمائي مبني بالكامل حول تلك الشخصية.',
+    photo: 'الشخصية',
+    productName: 'اسم الشخصية',
+    productNamePlaceholder: 'مثال: الكابتن آريا',
+    descriptionPlaceholder: 'الشخصية، الدور، العمر، الأجواء، الخلفية…',
+    generate: 'إنشاء سيناريو الفيلم',
+  },
+  tr: {
+    title: 'Karakter Sayfası',
+    description:
+      'Karakter görselinizi yükleyin, birkaç soruyu yanıtlayın ve tamamen o karakter etrafında kurgulanmış sinematik bir film senaryosu alın.',
+    photo: 'Karakter',
+    productName: 'Karakter adı',
+    productNamePlaceholder: 'örn. Kaptan Aria',
+    descriptionPlaceholder: 'Kişilik, rol, yaş, atmosfer, geçmiş…',
+    generate: 'Film senaryosu oluştur',
+  },
+  es: {
+    title: 'Ficha de Personaje',
+    description:
+      'Sube la imagen de tu personaje, responde unas preguntas y obtén un guion de película cinematográfico construido por completo en torno a ese personaje.',
+    photo: 'Personaje',
+    productName: 'Nombre del personaje',
+    productNamePlaceholder: 'p. ej. Capitana Aria',
+    descriptionPlaceholder: 'Personalidad, rol, edad, ambiente, historia…',
+    generate: 'Generar guion de película',
+  },
+  fr: {
+    title: 'Fiche de Personnage',
+    description:
+      'Téléchargez l’image de votre personnage, répondez à quelques questions et obtenez un scénario de film cinématographique entièrement construit autour de ce personnage.',
+    photo: 'Personnage',
+    productName: 'Nom du personnage',
+    productNamePlaceholder: 'p. ex. Capitaine Aria',
+    descriptionPlaceholder: 'Personnalité, rôle, âge, ambiance, histoire…',
+    generate: 'Générer le scénario du film',
+  },
+}
+
 export default function ProductAdDialog({
   open,
   onOpenChange,
   defaultDuration,
   userId,
+  variant = 'product',
   onUseAsPrompt,
   onSendScenes,
 }: Props) {
+  const isCharacter = variant === 'character'
   const [duration, setDuration] = useState<ProductAdDuration>(defaultDuration)
   const [productName, setProductName] = useState('')
   const [productDescription, setProductDescription] = useState('')
