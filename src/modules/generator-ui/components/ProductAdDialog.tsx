@@ -558,6 +558,8 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequiredTag: '(مطلوب)',
     businessPlaceholder: 'صِف عملك: ماذا تبيع، منتجاتك/خدماتك، الجمهور المستهدف ونبرة العلامة التجارية…',
     businessRequired: 'يرجى وصف عملك أولاً — يجب أن يكون السيناريو ذا صلة به.',
+    businessSave: 'حفظ',
+    businessSaved: 'تم الحفظ',
   },
   tr: {
     title: 'Ürün Reklam Senaryosu',
