@@ -131,6 +131,26 @@ function productObjectKey(storagePath: string | null | undefined): string | null
   return null
 }
 
+/** Strip trailing catalog numbers and turn a slug into a readable name. */
+function cleanProductName(title: string | null | undefined): string {
+  if (!title) return ''
+  return title
+    .replace(/[\s_-]*\d+\s*$/u, '') // drop trailing number suffix (e.g. _005, -005, " 005")
+    .replace(/[_-]+/gu, ' ') // separators -> spaces
+    .replace(/\s+/gu, ' ')
+    .trim()
+}
+
+/** True when a title looks like a technical catalog code rather than a real product name. */
+function looksLikeCode(title: string | null | undefined): boolean {
+  if (!title) return false
+  const t = title.trim()
+  // code-like: lowercase tokens joined by _/- and/or ending in a number
+  return /^[a-z0-9]+([_-][a-z0-9]+)+$/u.test(t) || /[_-]\d+\s*$/u.test(t)
+}
+
+
+
 /** Resolve a displayable signed URL for a private-bucket product photo. */
 async function signProductPhotoUrl(storagePath: string | null | undefined): Promise<string> {
   const raw = storagePath ?? ''
@@ -734,6 +754,7 @@ export default function ProductAdDialog({
   const isCharacter = variant === 'character'
   const [duration, setDuration] = useState<ProductAdDuration>(defaultDuration)
   const [productName, setProductName] = useState('')
+  const [nameNeedsReview, setNameNeedsReview] = useState(false)
   const [productDescription, setProductDescription] = useState('')
   const [userPrompt, setUserPrompt] = useState('')
   const [cameraStyle, setCameraStyle] = useState<string>(CAMERA_STYLES[0].label.en)
@@ -920,7 +941,8 @@ export default function ProductAdDialog({
       // Generation pipeline still receives the function's public URL (validator
       // contract is unchanged); only the preview uses a signed URL.
       setUploadedImageUrl((json.publicUrl as string) ?? signedPreview)
-      if (!productName.trim() && photo.title) setProductName(photo.title)
+      if (!productName.trim() && photo.title) setProductName(cleanProductName(photo.title))
+      setNameNeedsReview(looksLikeCode(photo.title))
       setProductPickerOpen(false)
     } catch (e) {
       setPreviewLoading(false)
@@ -1193,6 +1215,7 @@ export default function ProductAdDialog({
 
   function reset() {
     setProductName('')
+    setNameNeedsReview(false)
     setProductDescription('')
     setUserPrompt('')
     setCameraStyle(CAMERA_STYLES[0].label.en)
@@ -1399,10 +1422,18 @@ export default function ProductAdDialog({
                 </div>
                 <Input
                   value={productName}
-                  onChange={(e) => setProductName(e.target.value)}
+                  onChange={(e) => {
+                    setProductName(e.target.value)
+                    if (nameNeedsReview) setNameNeedsReview(false)
+                  }}
                   placeholder={t.productNamePlaceholder}
                   className="border-white/10 bg-black/30 text-zinc-100"
                 />
+                {nameNeedsReview && (
+                  <p className="mt-1.5 text-xs text-amber-400" dir="ltr">
+                    This looks like a technical code — please enter the correct product name.
+                  </p>
+                )}
               </div>
               <div>
                 <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">

@@ -1,42 +1,29 @@
-# Click a Flagged Word to Hear Its Correct Pronunciation
+## Plan: Clean product name on pick + warn (in English) when it's a technical code
 
-## Goal
-In the transcript panel, the low-confidence (possibly mispronounced) words are already highlighted. Make each highlighted word clickable: clicking it plays a clear, correct text-to-speech pronunciation of that word.
+When a product is chosen in "Choose from products", the field is filled with the raw catalog slug including its number (e.g. `rebar_stirrup_005`). We'll strip the number, fill a cleaned name, and show an **English** warning telling the user to type a real product name when the name is just a technical code.
 
-## Approach
-Reuse the existing `tts-generate` edge function (Gemini TTS → base64 WAV). On click, the panel sends the single word, decodes the returned WAV to an audio blob, and plays it. Audio per word is cached so repeat clicks are instant and not re-billed.
+### Changes — `src/modules/generator-ui/components/ProductAdDialog.tsx`
 
-## Changes — `src/modules/generator-ui/components/TranscriptPanel.tsx`
+**1. Add a name-cleaning + detection helper**
+- `cleanProductName(title)`:
+  - Remove trailing numeric suffix (`_005`, `-005`, or trailing ` 005`).
+  - Replace `_`/`-` with spaces, collapse whitespace, trim. (`rebar_stirrup_005` → `rebar stirrup`).
+- `looksLikeCode(title)`: true when the source title is a technical catalog slug (lowercase tokens joined by `_`/`-` and/or ending in a number, e.g. `rebar_stirrup_005`, `wire_mesh_034`). This is the "unintelligible" signal.
 
-1. **State & refs**
-   - `pronouncing: number | null` — index of the word currently loading TTS (for a spinner).
-   - `playingWord: number | null` — index currently playing (for visual state).
-   - `audioCache = useRef<Map<string, string>>` — maps lowercased word → object URL of generated WAV.
-   - `audioRef = useRef<HTMLAudioElement | null>` — single reused `<audio>` element.
+**2. Update `pickProduct` (line ~923)**
+- Replace `if (!productName.trim() && photo.title) setProductName(photo.title)` with:
+  - `cleaned = cleanProductName(photo.title)`; if field empty, set name to `cleaned` (number removed).
+  - If `looksLikeCode(photo.title)`, set a new `nameNeedsReview` flag to show the warning.
 
-2. **`playPronunciation(word, index)` handler**
-   - Normalize the word (strip surrounding punctuation, e.g. `Stirrup,` → `Stirrup`).
-   - If cached, play immediately. Otherwise:
-     - `setPronouncing(index)`
-     - `supabase.functions.invoke('tts-generate', { body: { text: word, gender: 'female', tone: 'narrative' } })`
-     - Convert `data.audioBase64` (+ `data.mimeType`) to a Blob → object URL, store in cache.
-     - Play via the shared audio element; set `playingWord`, clear it on `ended`.
-   - Errors → `toast.error('Could not play pronunciation.')` (sonner) and clear loading.
-   - Pause/cancel any currently-playing audio before starting a new word.
+**3. Add `nameNeedsReview` state**
+- `const [nameNeedsReview, setNameNeedsReview] = useState(false)`.
+- Clear it on manual edit of the name Input and on dialog reset (line ~1195).
 
-3. **Render the highlighted words as buttons**
-   - Change each low-confidence `<span>` into a `<button type="button">` that calls `playPronunciation`.
-   - Keep the amber highlight styling; add `cursor-pointer`, hover emphasis, and a tiny inline speaker icon (`Volume2` from lucide-react) after the word. While that word is loading, show `Loader2` spinner instead; while playing, accent the icon.
-   - Update the tooltip/title to "Click to hear the correct pronunciation".
-   - Update the legend text to: "Highlighted words may be mispronounced — click one to hear the correct pronunciation."
+**4. Show the warning under the Product Name input (line ~1405)**
+- When `nameNeedsReview` is true, render a small amber hint below the input.
+- **The warning text is always English (not localized):** e.g. "This looks like a technical code — please enter the correct product name."
 
-4. **Cleanup**
-   - On unmount, revoke cached object URLs and pause audio.
-
-## Notes
-- `tts-generate` already requires auth; `supabase.functions.invoke` sends the session token automatically.
-- Only Original-view highlighted words are clickable (translations have no confidence/word data).
-- No backend changes, no new secrets, no schema changes.
-
-## Verification
-- Open large preview → transcript icon → click a highlighted word → confirm audio plays, spinner shows while generating, and a second click plays instantly from cache.
+### Behavior summary
+- Pick `rebar_stirrup_005` → field shows `rebar stirrup` (number removed) + English amber warning.
+- Typing in the field dismisses the warning.
+- No backend / generation-pipeline changes; `productName.trim()` is still what gets sent.
