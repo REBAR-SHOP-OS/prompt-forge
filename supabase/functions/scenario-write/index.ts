@@ -60,15 +60,37 @@ function cameraGuidance(opts: ProductAdOpts | CharacterSheetOpts, heroLabel = "p
   return bits.join(" ");
 }
 
+const LANGUAGE_NAMES: Record<string, string> = {
+  en: "English",
+  fa: "Persian (Farsi)",
+  ar: "Arabic",
+  tr: "Turkish",
+  es: "Spanish",
+  fr: "French",
+};
+
 function buildSystemPrompt(
   duration: number,
   productAd?: ProductAdOpts,
   autoFromImage?: boolean,
   characterSheet?: CharacterSheetOpts,
   businessInfo?: string,
+  outputLanguage = "en",
 ): string {
+  const langName = LANGUAGE_NAMES[outputLanguage] ?? "English";
+  const isEnglish = outputLanguage === "en";
+  const languageLine = isEnglish
+    ? "Write the entire scenario in ENGLISH, regardless of the input language."
+    : `Write the ENTIRE scenario — all narration, all spoken dialogue, and all on-screen action descriptions — in ${langName}, regardless of the input language. Do not output any English. Keep concrete camera-move and lighting terms clear and natural in ${langName}.`;
+  const productName = productAd?.productName?.trim();
   const businessLine = businessInfo
-    ? `Business context (provided by the user): ${businessInfo}. Every narration line, every spoken word, and the entire scenario MUST stay tightly relevant to this business and promote the user's selected product/subject. Do not drift into unrelated topics, products, or themes.`
+    ? [
+        `Business context (provided by the user): ${businessInfo}.`,
+        productName
+          ? `The user's selected product is "${productName}" (it matches the attached product image). Every shot, every beat, every narration line, and every spoken word MUST promote THIS specific product within the context of the above business.`
+          : `Every shot, every beat, every narration line, and every spoken word MUST promote the user's selected product/subject within the context of the above business.`,
+        "The scenario must stay tightly relevant to this business and product. Do not drift into unrelated topics, products, services, or themes.",
+      ].join(" ")
     : "";
   const sceneCount = expectedSceneCount(duration);
   const isAd = Boolean(productAd);
