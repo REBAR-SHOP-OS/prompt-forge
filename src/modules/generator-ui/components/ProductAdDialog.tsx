@@ -1998,14 +1998,34 @@ export default function ProductAdDialog({
 
             </>
           ) : (
-            <Button onClick={generate} disabled={isWriting || businessSaving || !canGenerate} size="sm">
-              {isWriting ? (
-                <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
-              ) : (
-                <Wand2 className="h-4 w-4 mr-2" aria-hidden="true" />
-              )}
-              {t.generate}
-            </Button>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button disabled={isWriting || businessSaving || !canGenerate} size="sm">
+                  {isWriting ? (
+                    <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Wand2 className="h-4 w-4 mr-2" aria-hidden="true" />
+                  )}
+                  {t.generate}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" dir={dir} className="w-52 border-white/10 bg-[#0b0c0e]/95 p-1">
+                <button
+                  type="button"
+                  onClick={() => generate(true)}
+                  className="flex w-full items-center rounded-md px-2.5 py-2 text-sm text-zinc-100 transition hover:bg-white/10"
+                >
+                  {t.withNarration}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => generate(false)}
+                  className="flex w-full items-center rounded-md px-2.5 py-2 text-sm text-zinc-100 transition hover:bg-white/10"
+                >
+                  {t.withoutNarration}
+                </button>
+              </PopoverContent>
+            </Popover>
           )}
         </div>
 
