@@ -457,6 +457,10 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'Loading products…',
     back: 'Back',
     viewImage: 'View image',
+    businessLabel: 'About your business',
+    businessRequiredTag: '(required)',
+    businessPlaceholder: 'Describe your business: what you sell, your products/services, target audience, and brand tone…',
+    businessRequired: 'Please describe your business first — the scenario must be relevant to it.',
   },
   fa: {
     title: 'سناریوی تبلیغ محصول',
