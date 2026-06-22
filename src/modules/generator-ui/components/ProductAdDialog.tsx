@@ -1131,6 +1131,7 @@ export default function ProductAdDialog({
     setCopiedIndex(null)
     setIsSending(false)
     clearImage()
+    clearCharacter()
   }
 
   const isSplit = SPLIT_DURATIONS.includes(duration) && scenes.length > 1
