@@ -266,7 +266,9 @@ Deno.serve(async (req) => {
         : undefined;
 
     // Attach an optional character reference image (product-ad mode only).
-    if (productAd) {
+    // Only used when a product image is present, since prompts reference it as
+    // the "second attached image".
+    if (productAd && imageUrl) {
       const charRaw = typeof body?.characterImageUrl === "string" ? body.characterImageUrl.trim() : "";
       if (charRaw && charRaw.length <= 2048 && isAllowedImageUrl(charRaw)) {
         productAd.characterImageUrl = charRaw;
