@@ -1,34 +1,33 @@
-# Scenario relevance + translation
+## Problem
 
-Two goals from the user:
-1. The generated scenario/narration must be tightly tied to **both** the user's business AND the selected product (its name + image).
-2. Translation must work in **both** dialogs (Scenario Writer + Product Ad). When the user switches the language, the UI of that section translates, and the **generated scenario itself is written in the selected language**.
+For videos longer than 15 seconds, scenes are generated as a **chain**: each next card uses the *last frame* of the previous clip as its start frame (`submitScenesAsJobs` → `waitForLastFrameUrl` in `DashboardPage.tsx`). The captured last frame is uploaded to the **`wan-frames`** storage bucket, then handed to the backend as a URL via:
 
-## 1. Edge function: `supabase/functions/scenario-write/index.ts`
+```
+supabase.storage.from('wan-frames').getPublicUrl(storagePath)
+// → /storage/v1/object/public/wan-frames/<userId>/scene-chain-...png
+```
 
-- Accept a new optional `outputLanguage` field in the request body (validated against the allowed set `en, fa, ar, tr, es, fr`; default `en`).
-- Replace the hard-coded "in ENGLISH" directives in `buildSystemPrompt` with a language directive driven by `outputLanguage`. When non-English, instruct the model to write the **entire scenario, all narration, and all spoken dialogue in that language** (e.g. Persian/Farsi), while keeping technical camera/lighting cues clear. The `===SCENE===` delimiter and word-count rules stay unchanged.
-- Strengthen the relevance constraint: combine business + product into one firm rule — every shot, beat, and spoken line must promote **the user's specific product** (by name, matching the attached image) **within the context of the user's business**, with no drift to unrelated themes. Make `businessLine` reference the product name explicitly when present.
+But `wan-frames` is a **private** bucket. The backend (`fetchAsInlineData` in `external-api-adapter/service.ts`) fetches that frame with a plain, unauthenticated `fetch(url)` to feed Veo's first/last-frame extension. A `public` URL on a private bucket returns an error, so the fetch fails and the card shows **"Failed to download …scene-chain-…png"** — exactly the error in the screenshot. The first card works because it uses a directly-supplied image; only the chained next cards (>15s) hit this path.
 
-## 2. Scenario Writer dialog: `src/modules/generator-ui/components/ScenarioWriterDialog.tsx`
+Every `wan-frames` staging site in the app uses the same broken `getPublicUrl` pattern, so the fix should be at the fetch layer to cover all of them robustly.
 
-Currently English-only with no language switcher. Bring it to parity with Product Ad:
+## Fix (root cause, single robust change)
 
-- Add a `Lang` type + `lang` state, a `Languages` icon `Select` in the header (same 6 options), and `dir` RTL handling (`fa`, `ar`).
-- Add a `T` translation table covering all visible strings (title, description, Duration label, idea label/placeholders, idea-mode toggles, image attach labels, business popover label/placeholder/required tag/Save/Saved, buttons, error fallbacks) in all 6 languages.
-- Pass `outputLanguage: lang` in the `scenario-write` invocation so output matches the chosen language.
+Harden the backend frame fetcher so it downloads the project's **own** storage objects with the service-role client instead of an unauthenticated public fetch.
 
-## 3. Product Ad dialog: `src/modules/generator-ui/components/ProductAdDialog.tsx`
+### `supabase/functions/_shared/modules/external-api-adapter/service.ts` — `fetchAsInlineData`
+- Detect when the incoming URL points to this project's Supabase Storage (matches `SUPABASE_URL` + `/storage/v1/object/(public|sign)/<bucket>/<key>`).
+- For those, use `getServiceClient().storage.from(bucket).download(key)` (service role bypasses the private-bucket restriction and RLS), then base64-encode the bytes as today.
+- For any other (genuinely external) URL, keep the existing plain `fetch(url)` path unchanged.
+- This makes both `public`- and `sign`-form URLs work, is immune to signed-URL expiry during long extension/queue waits, and fixes first-frame staging too — not just scene chaining.
 
-- It already has the full language switcher + `T` tables. Add `outputLanguage: lang` to its `scenario-write` invocation so the generated scenario follows the selected language (today only the UI translates).
-
-## Technical notes
-
-- Allowed language set kept in sync between the two dialogs and the edge function.
-- No database or schema changes; business-info persistence and gating stay as-is.
-- `google/gemini-2.5-flash` already handles multilingual output, so no model change.
+Imports needed in that file: `getServiceClient` from `../../core/supabase.ts` and `getEnv` (already imported).
 
 ## Verification
+- Re-deploy the edge function.
+- Use the existing scenario flow (or a direct `curl`) to create a 30s/chained job whose `firstFrameUrl` is a `wan-frames` public-form URL, and confirm the job no longer fails at the download step (check `edge_function_logs`).
+- Confirm a normal single 15s job (external/first image) still generates correctly — the external-URL branch is untouched.
 
-- Deploy the edge function, then `curl` it with `outputLanguage: "fa"` plus a sample business + product to confirm the scenario comes back in Persian and on-topic; repeat with `en`.
-- Use the preview (Playwright) to switch language in each dialog and confirm labels + RTL flip, then generate and confirm the output language.
+## Notes
+- Pure backend fix; no schema, bucket-visibility, or frontend changes required. `wan-frames` stays private (correct for user content).
+- Minimal, non-destructive, and covers all current and future `wan-frames` frame-staging call sites at once.
