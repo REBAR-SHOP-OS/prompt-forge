@@ -234,7 +234,7 @@ export function VoiceoverDialog({
     try {
       const durationSec = resolveDurationSec()
       const { data, error } = await supabase.functions.invoke('tts-generate', {
-        body: { text: trimmed, gender, tone, ...(durationSec ? { durationSec } : {}) },
+        body: { text: trimmed, gender, tone, voiceName: currentVoice.voiceName, ...(durationSec ? { durationSec } : {}) },
       })
       if (error) throw error
       const payload = data as {
