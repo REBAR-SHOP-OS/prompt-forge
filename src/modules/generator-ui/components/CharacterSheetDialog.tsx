@@ -67,7 +67,7 @@ async function signUrl(storagePath: string | null | undefined): Promise<string> 
  * The user uploads one or more character images that are saved for later use
  * as a character reference. No scenario generation, no description field.
  */
-export default function CharacterSheetDialog({ open, onOpenChange, userId }: Props) {
+export default function CharacterSheetDialog({ open, onOpenChange, userId, onUseCharacter }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [images, setImages] = useState<CharacterImage[]>([])
   const [loading, setLoading] = useState(false)
@@ -75,6 +75,7 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId }: Pro
   const [error, setError] = useState<string | null>(null)
   const [sheetModel, setSheetModel] = useState<SheetModel>('fast')
   const [generatingId, setGeneratingId] = useState<string | null>(null)
+  const [zoomImage, setZoomImage] = useState<CharacterImage | null>(null)
 
 
   useEffect(() => {
