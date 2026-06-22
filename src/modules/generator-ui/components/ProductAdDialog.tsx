@@ -1004,7 +1004,11 @@ export default function ProductAdDialog({
       <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Package className="h-5 w-5 text-amber-300" aria-hidden="true" />
+            {isCharacter ? (
+              <Drama className="h-5 w-5 text-amber-300" aria-hidden="true" />
+            ) : (
+              <Package className="h-5 w-5 text-amber-300" aria-hidden="true" />
+            )}
             {t.title}
             <div className="ms-auto">
               <Select value={lang} onValueChange={(v) => setLang(v as Lang)}>
