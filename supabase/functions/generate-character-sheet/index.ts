@@ -229,7 +229,7 @@ Deno.serve(async (req) => {
         size_bytes: outBytes.byteLength,
         mime_type: outMime,
         category: "character",
-        title: (title ? `${title} — sheet` : "Character sheet").slice(0, 100),
+        title: (title ? `${title} — sheet` : (promptText ? `${promptText.slice(0, 80)} — sheet` : "Character sheet")).slice(0, 100),
       })
       .select("id, storage_path, created_at, title")
       .single();
