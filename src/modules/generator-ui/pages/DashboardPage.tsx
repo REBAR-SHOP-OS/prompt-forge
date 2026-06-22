@@ -8344,10 +8344,11 @@ export default function DashboardPage() {
               .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false })
             if (upErr) throw new Error(upErr.message)
             const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+            const displayUrl = await signFramesUrl(storagePath).catch(() => data.publicUrl)
             setUploadedFiles((current) =>
               current.map((f) =>
                 f.id === seedId
-                  ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size, error: null }
+                  ? { ...f, status: 'ready', url: displayUrl, size: blob.size, error: null }
                   : f,
               ),
             )
