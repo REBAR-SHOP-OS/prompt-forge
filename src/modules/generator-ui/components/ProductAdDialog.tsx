@@ -807,18 +807,27 @@ export default function ProductAdDialog({
       })
       const json = await resp.json().catch(() => ({}))
       if (!resp.ok) throw new Error(json?.error || `Request failed (${resp.status})`)
-      const reframedUrl = json.publicUrl as string
+      // `wan-frames` is private — the function's public URL is broken under the
+      // workspace public-buckets policy. Sign the returned object path instead.
+      const reframedPath = (json.path as string) || (json.publicUrl as string)
+      setPreviewError(null)
+      setPreviewLoading(true)
+      const signedPreview = await signFramesUrl(reframedPath)
       if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
-      setImagePreviewUrl(reframedUrl)
-      setUploadedImageUrl(reframedUrl)
+      setImagePreviewUrl(signedPreview)
+      // Generation pipeline still receives the function's public URL (validator
+      // contract is unchanged); only the preview uses a signed URL.
+      setUploadedImageUrl((json.publicUrl as string) ?? signedPreview)
       if (!productName.trim() && photo.title) setProductName(photo.title)
       setProductPickerOpen(false)
     } catch (e) {
+      setPreviewLoading(false)
       setError((e as Error).message ?? 'Failed to prepare image')
     } finally {
       setPreparingId(null)
     }
   }
+
 
 
   useEffect(() => {
