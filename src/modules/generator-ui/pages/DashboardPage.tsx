@@ -8747,9 +8747,9 @@ export default function DashboardPage() {
                       preload="metadata"
                       clipVolume={1}
                     />
-                    {transcriptOpen ? (
+                    {transcriptOpen && !transcriptResolving && transcriptVideoUrl ? (
                       <TranscriptPanel
-                        videoUrl={transcriptResolving ? null : transcriptVideoUrl}
+                        videoUrl={transcriptVideoUrl}
                         onClose={() => { setTranscriptOpen(false); setTranscriptVideoUrl(null) }}
                       />
                     ) : null}
