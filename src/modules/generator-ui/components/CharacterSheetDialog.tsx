@@ -82,6 +82,8 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
   const [logoSendUrl, setLogoSendUrl] = useState<string | null>(null)
   const [logoUploading, setLogoUploading] = useState(false)
   const [applyLogo, setApplyLogo] = useState(false)
+  const [promptText, setPromptText] = useState('')
+
 
   useEffect(() => {
     if (!open) {
