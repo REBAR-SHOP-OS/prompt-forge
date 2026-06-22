@@ -757,6 +757,101 @@ export default function ProductAdDialog({
   const [loadingProducts, setLoadingProducts] = useState(false)
   const [preparingId, setPreparingId] = useState<string | null>(null)
 
+  // Character attachment (feature a character in the product ad)
+  const characterFileInputRef = useRef<HTMLInputElement | null>(null)
+  const [characterPickerOpen, setCharacterPickerOpen] = useState(false)
+  const [characterPhotos, setCharacterPhotos] = useState<ProductPhoto[]>([])
+  const [loadingCharacters, setLoadingCharacters] = useState(false)
+  const [characterRefDisplayUrl, setCharacterRefDisplayUrl] = useState<string | null>(null)
+  const [characterRefSendUrl, setCharacterRefSendUrl] = useState<string | null>(null)
+  const [characterRefName, setCharacterRefName] = useState<string | null>(null)
+  const [uploadingCharacter, setUploadingCharacter] = useState(false)
+
+  async function openCharacterPicker() {
+    if (!userId) {
+      setError('Please sign in to choose a character.')
+      return
+    }
+    setError(null)
+    setCharacterPickerOpen(true)
+    setLoadingCharacters(true)
+    try {
+      const { data, error: qErr } = await supabase
+        .from('generator_user_images')
+        .select('id, storage_path, title, category')
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+      if (qErr) throw new Error(qErr.message)
+      const rows = (data ?? []).filter((r) => (r.category ?? 'general') === 'character')
+      const photos: ProductPhoto[] = await Promise.all(
+        rows.map(async (r) => ({
+          id: r.id,
+          title: r.title ?? null,
+          url: await signProductPhotoUrl(r.storage_path),
+        })),
+      )
+      setCharacterPhotos(photos)
+    } catch (e) {
+      setError((e as Error).message ?? 'Failed to load characters')
+    } finally {
+      setLoadingCharacters(false)
+    }
+  }
+
+  function pickCharacter(photo: ProductPhoto) {
+    setCharacterRefDisplayUrl(photo.url)
+    setCharacterRefSendUrl(photo.url)
+    setCharacterRefName(photo.title ?? null)
+    setCharacterPickerOpen(false)
+  }
+
+  async function handleUploadCharacter(file: File | undefined) {
+    if (!file) return
+    if (!userId) {
+      setError('Please sign in to attach a character.')
+      return
+    }
+    if (!file.type.startsWith('image/')) {
+      setError('Only image files are supported.')
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Image too large (max 10MB).')
+      return
+    }
+    setError(null)
+    setUploadingCharacter(true)
+    try {
+      const ext = (file.name.split('.').pop() || 'png').toLowerCase()
+      const storagePath = `${userId}/character-ref-${Date.now()}-${crypto.randomUUID()}.${ext}`
+      const { error: upErr } = await supabase.storage
+        .from(FRAMES_BUCKET)
+        .upload(storagePath, file, { contentType: file.type, upsert: false })
+      if (upErr) throw new Error(upErr.message)
+      const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+      const displayUrl = await signFramesUrl(data.publicUrl).catch(() => data.publicUrl)
+      setCharacterRefDisplayUrl(displayUrl)
+      setCharacterRefSendUrl(data.publicUrl)
+      setCharacterRefName(null)
+      setCharacterPickerOpen(false)
+    } catch (e) {
+      setError((e as Error).message ?? 'Character upload failed')
+    } finally {
+      setUploadingCharacter(false)
+      if (characterFileInputRef.current) characterFileInputRef.current.value = ''
+    }
+  }
+
+  function clearCharacter() {
+    setCharacterRefDisplayUrl(null)
+    setCharacterRefSendUrl(null)
+    setCharacterRefName(null)
+    if (characterFileInputRef.current) characterFileInputRef.current.value = ''
+  }
+
+
+
   async function openProductPicker() {
     if (!userId) {
       setError('Please sign in to choose a product.')
