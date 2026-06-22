@@ -102,6 +102,14 @@ function buildSystemPrompt(
       ? productLine
       : (autoFromImage ? autoLine : "You are a world-class advertising creative director who writes persuasive, commercial-style video scenarios designed to promote and sell the subject.");
 
+  const adWithCharacter = isAd && Boolean(productAd?.characterImageUrl);
+  const narrationMulti = adWithCharacter
+    ? `In EVERY scene, weave in the character's spoken dialogue as narration that promotes the product, formatted inline as Character says: "...". The spoken lines count toward the scene word count.`
+    : "";
+  const narrationSingle = adWithCharacter
+    ? `Weave in the character's spoken dialogue as narration that promotes the product, formatted inline as Character says: "...". The spoken lines count toward the word limit.`
+    : "";
+
   if (sceneCount > 1) {
     const numWord = sceneCount === 2 ? "TWO" : sceneCount === 3 ? "THREE" : sceneCount === 9 ? "NINE" : String(sceneCount);
     const longForm = isCharacter ? "character-driven film" : isAd ? "product advertisement" : "commercial";
@@ -114,7 +122,8 @@ function buildSystemPrompt(
       "Do not number the scenes, do not add headings or labels, no markdown, no preamble, no quotes.",
       "Each scene must be 70-90 words and self-contained as a video prompt (include subject, action, camera move, lighting),",
       "while clearly continuing the story from the previous scene.",
-    ].join(" ");
+      narrationMulti,
+    ].filter(Boolean).join(" ");
   }
   const cap = WORD_CAPS[duration];
   const beat = BEAT_GUIDE[duration];
