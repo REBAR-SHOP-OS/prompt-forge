@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { Drama, ImagePlus, LoaderCircle, Trash2 } from 'lucide-react'
+import { Drama, ImagePlus, LoaderCircle, Sparkles, Trash2 } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -13,6 +13,14 @@ import { supabase } from '@/integrations/supabase/client'
 const USER_IMAGES_BUCKET = 'user-images'
 const CHARACTER_CATEGORY = 'character'
 
+type SheetModel = 'fast' | 'quality' | 'detailed'
+
+const SHEET_MODELS: { key: SheetModel; label: string; hint: string }[] = [
+  { key: 'fast', label: 'Fast', hint: 'سریع' },
+  { key: 'quality', label: 'High quality', hint: 'کیفیت بالا' },
+  { key: 'detailed', label: 'Detailed', hint: 'جزئیات' },
+]
+
 type CharacterImage = {
   id: string
   storage_path: string
@@ -25,6 +33,7 @@ type Props = {
   onOpenChange: (open: boolean) => void
   userId: string | null
 }
+
 
 function objectKey(storagePath: string | null | undefined): string | null {
   if (!storagePath) return null
@@ -63,6 +72,9 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId }: Pro
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [sheetModel, setSheetModel] = useState<SheetModel>('fast')
+  const [generatingId, setGeneratingId] = useState<string | null>(null)
+
 
   useEffect(() => {
     if (!open || !userId) return
@@ -160,6 +172,28 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId }: Pro
     }
   }
 
+  const handleGenerateSheet = async (img: CharacterImage) => {
+    if (!userId || generatingId) return
+    setError(null)
+    setGeneratingId(img.id)
+    try {
+      const { data, error: fnErr } = await supabase.functions.invoke('generate-character-sheet', {
+        body: { imageUrl: img.storage_path, model: sheetModel, title: img.title ?? '' },
+      })
+      if (fnErr) throw fnErr
+      const row = data as CharacterImage | null
+      if (!row?.id) throw new Error('No sheet returned')
+      const signed = { ...row, storage_path: await signUrl(row.storage_path) }
+      setImages((prev) => [signed, ...prev])
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to generate character sheet.'
+      setError(msg)
+    } finally {
+      setGeneratingId(null)
+    }
+  }
+
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
@@ -169,8 +203,10 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId }: Pro
             Character Sheet
           </DialogTitle>
           <DialogDescription>
-            Upload a character photo to use as a reference. JPG, PNG or WEBP — up to 10 MB.
+            Upload a character photo, then generate a full character sheet with the model of your
+            choice. JPG, PNG or WEBP — up to 10 MB.
           </DialogDescription>
+
         </DialogHeader>
 
         <input
@@ -197,7 +233,29 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId }: Pro
             {uploading ? 'Uploading…' : 'Upload character'}
           </Button>
 
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-zinc-400">Character sheet model</p>
+            <div className="grid grid-cols-3 gap-2">
+              {SHEET_MODELS.map((m) => (
+                <button
+                  key={m.key}
+                  type="button"
+                  onClick={() => setSheetModel(m.key)}
+                  className={`rounded-lg border px-2 py-2 text-center transition ${
+                    sheetModel === m.key
+                      ? 'border-fuchsia-400/70 bg-fuchsia-500/10 text-fuchsia-200'
+                      : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:border-white/20'
+                  }`}
+                >
+                  <span className="block text-xs font-medium">{m.label}</span>
+                  <span className="block text-[10px] text-zinc-500">{m.hint}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {error ? <p className="text-xs text-rose-400">{error}</p> : null}
+
 
           {loading ? (
             <div className="flex items-center justify-center py-8 text-zinc-500">
@@ -226,6 +284,20 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId }: Pro
                   >
                     <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => { void handleGenerateSheet(img) }}
+                    disabled={generatingId !== null}
+                    className="absolute inset-x-1.5 bottom-1.5 flex items-center justify-center gap-1 rounded-md bg-fuchsia-600/90 px-2 py-1.5 text-[11px] font-medium text-white opacity-0 transition hover:bg-fuchsia-500 disabled:cursor-not-allowed disabled:opacity-60 group-hover:opacity-100"
+                  >
+                    {generatingId === img.id ? (
+                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                    )}
+                    {generatingId === img.id ? 'Generating…' : 'Make sheet'}
+                  </button>
+
                 </div>
               ))}
             </div>
