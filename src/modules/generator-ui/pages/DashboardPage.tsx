@@ -53,6 +53,7 @@ import {
   Trash2,
   Upload,
   UserRound,
+  Drama,
   Wand2,
   X
 } from 'lucide-react'
