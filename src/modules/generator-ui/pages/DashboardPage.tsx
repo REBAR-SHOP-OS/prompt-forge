@@ -55,6 +55,7 @@ import {
   UserRound,
   Drama,
   Wand2,
+  FileText,
   X
 } from 'lucide-react'
 import {
