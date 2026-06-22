@@ -265,6 +265,14 @@ Deno.serve(async (req) => {
         ? imageUrlRaw
         : undefined;
 
+    // Attach an optional character reference image (product-ad mode only).
+    if (productAd) {
+      const charRaw = typeof body?.characterImageUrl === "string" ? body.characterImageUrl.trim() : "";
+      if (charRaw && charRaw.length <= 2048 && isAllowedImageUrl(charRaw)) {
+        productAd.characterImageUrl = charRaw;
+      }
+    }
+
     if (isCharacterSheet && !imageUrl) {
       return new Response(JSON.stringify({ error: "A character image is required for Character Sheet mode." }), {
         status: 400,
