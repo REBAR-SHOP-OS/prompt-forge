@@ -1109,6 +1109,7 @@ export default function ProductAdDialog({
         body: {
           mode: isCharacter ? 'character-sheet' : 'product-ad',
           idea,
+          businessInfo: businessInfo.trim(),
           durationSeconds: duration,
           imageUrl: uploadedImageUrl ?? undefined,
           ...(isCharacter
