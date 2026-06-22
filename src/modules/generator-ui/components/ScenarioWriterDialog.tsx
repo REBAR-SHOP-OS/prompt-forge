@@ -440,7 +440,7 @@ export default function ScenarioWriterDialog({
       setScenes(list)
       if (payload?.warning) setError(payload.warning)
     } catch (e) {
-      setError((e as Error).message ?? 'Failed to write scenario')
+      setError((e as Error).message ?? t.errFailedWrite)
     } finally {
       setIsWriting(false)
     }
