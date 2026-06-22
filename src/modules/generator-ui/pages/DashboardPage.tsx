@@ -127,6 +127,35 @@ import ProductAdDialog from '@/modules/generator-ui/components/ProductAdDialog'
 import { TranscriptPanel } from '@/modules/generator-ui/components/TranscriptPanel'
 import CharacterSheetDialog from '@/modules/generator-ui/components/CharacterSheetDialog'
 
+/**
+ * Extract spoken narration / voiceover lines embedded inside a scene prompt.
+ * The scenario / ad writer weaves dialogue inline as quoted text
+ * (e.g. `says: "..."`, plain `"..."`, smart quotes `“...”`, or `«...»`).
+ * Returns the de-duplicated spoken lines, or an empty array when none found.
+ */
+function extractNarration(prompt: string | null | undefined): string[] {
+  if (!prompt) return []
+  const lines: string[] = []
+  const seen = new Set<string>()
+  const push = (raw: string) => {
+    const text = raw.trim()
+    if (text.length < 2) return
+    const key = text.toLowerCase()
+    if (seen.has(key)) return
+    seen.add(key)
+    lines.push(text)
+  }
+  // Match straight quotes "...", smart quotes “...”, and guillemets «...».
+  const quoteRe = /"([^"]+)"|“([^”]+)”|«([^»]+)»/g
+  let m: RegExpExecArray | null
+  while ((m = quoteRe.exec(prompt)) !== null) {
+    push(m[1] ?? m[2] ?? m[3] ?? '')
+  }
+  return lines
+}
+
+
+
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
   { id: 'fade', label: 'Fade', durationMs: 500 },
