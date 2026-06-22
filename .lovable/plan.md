@@ -1,41 +1,34 @@
-# Character Sheet feature
+# Character Sheet → فقط آپلود کارکتر
 
-Add a new **Character Sheet** action next to the **Product Ad** button. It opens a full scenario generator (camera style, genre, scene, duration — same UX as Product Ad), but it is centered on an uploaded **character**. The user must upload a character image; the AI analyzes it to understand who the character is and writes a cinematic scenario built around that character. The uploaded image is used as a **descriptive reference only** — it is NOT placed as the clip's start frame.
+دکمه‌ی **Character Sheet** دیگر صفحه‌ی Product Ad (تولید سناریو) را باز نمی‌کند. به‌جای آن یک پنجره‌ی کوچک و ساده باز می‌شود که فقط امکان آپلود تصویر کارکتر توسط یوزر را دارد (بدون فیلد توضیح، بدون تولید سناریو).
 
-## What the user sees
-- A new pill button "Character Sheet" in the composer, beside "Product Ad", with its own icon.
-- Clicking it opens a dialog that mirrors the Product Ad flow:
-  - Required **character photo upload** (always uploaded by the user — no "choose from products" option).
-  - Character name + optional description (personality, role, vibe).
-  - Optional own-prompt, duration, camera style, genre & atmosphere, scene & environment (reused from the existing scenario controls).
-  - "Generate scenario" → produces the scenario, then "Use as prompt" / "Send scenes".
-- Multi-language labels matching the existing dialog (en/fa/ar/tr/es/fr).
+## رفتار جدید
+- کلیک روی Character Sheet → یک دیالوگ کوچک باز می‌شود.
+- یوزر یک یا چند تصویر کارکتر را آپلود می‌کند (JPG/PNG/WEBP تا ۱۰MB).
+- تصویر آپلود و ذخیره می‌شود تا بعداً به‌عنوان مرجع کارکتر در دسترس باشد.
+- تصاویر آپلودشده داخل همان دیالوگ به‌صورت گرید نمایش داده می‌شوند.
+- هیچ سناریویی تولید نمی‌شود و هیچ متنی در prompt قرار نمی‌گیرد.
 
-## How it behaves
-- The character image is sent to the AI only for analysis. The generated scenario keeps the character visually and behaviorally consistent across every shot and makes them the protagonist of the film.
-- When the scenario is applied, only the **prompt text** is sent to the composer. The image is **not** set as the Start frame (descriptive reference only, per the chosen behavior).
+## تغییرات فنی
 
-## Technical changes
+### ۱. بازنویسی `src/modules/generator-ui/components/CharacterSheetDialog.tsx`
+- دیگر `ProductAdDialog` را wrap نمی‌کند.
+- یک دیالوگ ساده‌ی مستقل با:
+  - عنوان «Character Sheet» و توضیح کوتاه.
+  - دکمه‌ی آپلود تصویر (input مخفی + دکمه).
+  - گرید نمایش تصاویر کارکتر آپلودشده.
+- آپلود از همان الگوی موجود استفاده می‌کند: آپلود به `USER_IMAGES_BUCKET` و درج رکورد در `generator_user_images` با `category: 'character'` و گرفتن signed URL.
+- منطق آپلود/استیت یا داخل خود کامپوننت قرار می‌گیرد یا از طریق props از داشبورد پاس داده می‌شود (هندلر آپلود + لیست تصاویر کارکتر).
 
-### 1. Edge function `supabase/functions/scenario-write/index.ts`
-- Add a new mode `character-sheet` alongside `product-ad`.
-- Add a `CharacterSheetOpts` type (`characterName`, `characterDescription`, `cameraStyle`, `cameraMovement`, `genre`, `scene`).
-- Add a system-prompt branch: "world-class film director… The attached image is the lead CHARACTER. Analyze appearance, wardrobe, age, expression, vibe; keep this character consistent and recognizable in every shot; build the whole film around this character." Reuse the existing camera/genre/scene guidance.
-- Reuse the existing image-analysis path (`image_url` content block) and the existing scene-count / word-cap / parsing logic unchanged.
-- Validation: require the image for this mode (return 400 if missing for `character-sheet`).
+### ۲. `src/modules/generator-ui/pages/DashboardPage.tsx`
+- پراپ‌های `onUseAsPrompt` / `onSendScenes` / `defaultDuration` از `<CharacterSheetDialog>` حذف می‌شوند (دیگر لازم نیستند).
+- یک هندلر آپلود کارکتر مشابه `handleProductPhotoSelected` ولی با `category: 'character'` و استیت لیست تصاویر کارکتر اضافه می‌شود و به دیالوگ پاس داده می‌شود.
+- دکمه‌ی Character Sheet و `isCharacterSheetOpen` بدون تغییر باقی می‌مانند.
 
-### 2. New component `src/modules/generator-ui/components/CharacterSheetDialog.tsx`
-- Cloned from `ProductAdDialog.tsx`, adapted:
-  - Photo upload is **mandatory**; remove the "choose from products" picker.
-  - Character-oriented labels/placeholders in all 6 languages.
-  - Calls `supabase.functions.invoke('scenario-write', { body: { mode: 'character-sheet', characterName, characterDescription, cameraStyle, genre, scene, idea, durationSeconds, imageUrl } })`.
-  - `onUseAsPrompt(scenario)` / `onSendScenes(scenes)` are called **without** an image URL, so the dashboard sets only the prompt.
+### ۳. پاک‌سازی (اختیاری، بدون شکستن چیزی)
+- کد مربوط به `variant="character"` در `ProductAdDialog.tsx` و حالت `character-sheet` در edge function `scenario-write` می‌تواند بدون استفاده باقی بماند؛ برای جلوگیری از ریسک، در همین مرحله حذف نمی‌شود مگر درخواست شود.
 
-### 3. `src/modules/generator-ui/pages/DashboardPage.tsx`
-- Add `isCharacterSheetOpen` state.
-- Add the "Character Sheet" button next to the Product Ad button (lucide icon such as `UserSquare`/`Drama`).
-- Render `<CharacterSheetDialog>` wired so `onUseAsPrompt`/`onSendScenes` set `promptText` only (no `handleUseImageAsStart` call).
-
-## Out of scope
-- No DB/schema changes; no new storage buckets (upload reuses the existing image upload path used by Product Ad).
-- Start-frame behavior is intentionally left untouched.
+## خارج از محدوده
+- بدون تغییر اسکیمای دیتابیس (ستون `category` از قبل وجود دارد).
+- بدون تغییر در رفتار دکمه‌ی Product Ad.
+- بدون تولید سناریو یا استفاده‌ی خودکار تصویر به‌عنوان فریم Start.
