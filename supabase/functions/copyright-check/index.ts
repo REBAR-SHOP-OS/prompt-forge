@@ -56,13 +56,18 @@ Respond with ONLY a compact JSON object using EXACTLY this shape:
   }
 }
 
-Rules:
-- "approved" = no meaningful copyright risk found.
-- "caution" = possible/uncertain risk that a human should review.
-- "rejected" = clear copyrighted/trademarked material detected.
+Rules (STRICT — assume commercial use, so fair-use rarely applies):
+- "approved" = ONLY when you found absolutely no protected material across ANY dimension above.
+- "caution" = any possible, partial, uncertain, or hard-to-verify resemblance to protected
+  material — this is the DEFAULT whenever you are not fully certain something is safe.
+- "rejected" = any clearly identifiable copyrighted, trademarked, or right-of-publicity material,
+  even if brief, partial, in the background, or only one instance.
+- Never downgrade risk just because the appearance is short, small, blurry, or incidental.
 - The top-level "verdict" must be the WORST of the two section statuses
   (rejected > caution > approved; ignore "not_provided").
-- Be concrete and honest. If you are unsure, use "caution", never invent details.
+- Be concrete and specific: in each "reason" name exactly what you saw/heard and where
+  (e.g. timestamp, on-screen location). Populate "risks" with every distinct issue found.
+- Be honest. If you are unsure, use "caution"; never invent details and never assume safety.
 - No markdown, no preamble, only the JSON object.`;
 
 function isAllowedUrl(u: string): boolean {
