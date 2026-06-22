@@ -407,25 +407,6 @@ export function VoiceoverDialog({
           </div>
 
 
-            <div className="space-y-2">
-              <Label className="text-xs uppercase tracking-wider text-zinc-400">
-                Tone
-              </Label>
-              <Select value={tone} onValueChange={(v) => setTone(v as Tone)}>
-                <SelectTrigger className="border-white/10 bg-white/[0.04] text-zinc-100">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TONE_LABELS.map((t) => (
-                    <SelectItem key={t.value} value={t.value}>
-                      {t.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
           <div className="space-y-2">
             <Label className="text-xs uppercase tracking-wider text-zinc-400">
               Duration
