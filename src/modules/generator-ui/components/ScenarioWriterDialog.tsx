@@ -368,7 +368,7 @@ export default function ScenarioWriterDialog({
 
   async function saveBusinessInfo() {
     if (!businessInfo.trim()) {
-      setError('Please describe your business first — the scenario must be relevant to it.')
+      setError(t.errBusiness)
       return
     }
     if (!userId) return
