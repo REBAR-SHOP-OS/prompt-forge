@@ -98,11 +98,12 @@ function buildSystemPrompt(
 
   if (sceneCount > 1) {
     const numWord = sceneCount === 2 ? "TWO" : sceneCount === 3 ? "THREE" : sceneCount === 9 ? "NINE" : String(sceneCount);
+    const longForm = isCharacter ? "character-driven film" : isAd ? "product advertisement" : "commercial";
     return [
       persona,
-      `Given the user's brief, write a CONTINUOUS advertising narrative scenario in ENGLISH for a ${duration}-second cinematic ${isAd ? "product advertisement" : "commercial"},`,
+      `Given the user's brief, write a CONTINUOUS narrative scenario in ENGLISH for a ${duration}-second cinematic ${longForm},`,
       `structured as ${numWord} sequential 15-second scenes that flow into each other.`,
-      "The scenario MUST follow a clear story arc across the whole sequence: the opening scene is an attention-grabbing hook that establishes the subject and setting, the middle scenes develop the story and build interest and desire, and the final scene delivers a defined payoff/resolution that ends the ad on a strong, memorable note.",
+      "The scenario MUST follow a clear story arc across the whole sequence: the opening scene is an attention-grabbing hook that establishes the subject and setting, the middle scenes develop the story and build interest and desire, and the final scene delivers a defined payoff/resolution that ends on a strong, memorable note.",
       `Output EXACTLY ${sceneCount} scene blocks separated by the literal delimiter "${SCENE_DELIM}" on its own line.`,
       "Do not number the scenes, do not add headings or labels, no markdown, no preamble, no quotes.",
       "Each scene must be 70-90 words and self-contained as a video prompt (include subject, action, camera move, lighting),",
@@ -111,11 +112,12 @@ function buildSystemPrompt(
   }
   const cap = WORD_CAPS[duration];
   const beat = BEAT_GUIDE[duration];
+  const singleForm = isCharacter ? "character-driven film scenario" : isAd ? "product advertisement" : "advertising scenario/treatment";
   return [
     persona,
-    `Given the user's brief, write a single cohesive ${isAd ? "product advertisement" : "advertising scenario/treatment"} in ENGLISH`,
+    `Given the user's brief, write a single cohesive ${singleForm} in ENGLISH`,
     `suitable for a ${duration}-second cinematic video — regardless of the input language.`,
-    "It MUST be persuasive and commercial in tone, and follow a clear narrative arc with a defined beginning, middle, and end: an attention-grabbing opening hook that establishes the subject and setting, a middle that develops the story and builds desire, and a clear payoff/resolution that ends the ad on a strong, memorable note.",
+    "It MUST follow a clear narrative arc with a defined beginning, middle, and end: an attention-grabbing opening hook that establishes the subject and setting, a middle that develops the story, and a clear payoff/resolution that ends on a strong, memorable note.",
     "Include opening visual hook, beat-by-beat action, camera/lighting cues, and a clear ending.",
     `Match pacing realistically to the duration: ${beat}.`,
     "Output prose only — no markdown headings, no bullet lists, no preamble, no quotes.",
@@ -130,18 +132,21 @@ async function callGateway(
   imageUrl?: string,
   productAd?: ProductAdOpts,
   autoFromImage?: boolean,
+  characterSheet?: CharacterSheetOpts,
 ): Promise<Response> {
-  const refText = productAd
-    ? `Brief: ${idea}\nThe attached image is the actual product — match its exact look, color, shape, and branding in every shot.`
-    : autoFromImage
-      ? `No written idea was provided. Analyze the attached image and write the scenario entirely based on what you observe in it.`
-      : `Idea: ${idea}\nBase the scenario on the attached reference image (subjects, setting, mood, props, style).`;
+  const refText = characterSheet
+    ? `Brief: ${idea}\nThe attached image IS the lead character — match their exact face, hair, wardrobe, body, and overall look in every shot, and keep them perfectly consistent throughout the film.`
+    : productAd
+      ? `Brief: ${idea}\nThe attached image is the actual product — match its exact look, color, shape, and branding in every shot.`
+      : autoFromImage
+        ? `No written idea was provided. Analyze the attached image and write the scenario entirely based on what you observe in it.`
+        : `Idea: ${idea}\nBase the scenario on the attached reference image (subjects, setting, mood, props, style).`;
   const userContent: unknown = imageUrl
     ? [
         { type: "text", text: refText },
         { type: "image_url", image_url: { url: imageUrl } },
       ]
-    : productAd ? `Brief: ${idea}` : `Idea: ${idea}`;
+    : (productAd || characterSheet) ? `Brief: ${idea}` : `Idea: ${idea}`;
 
   return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
@@ -152,7 +157,7 @@ async function callGateway(
     body: JSON.stringify({
       model: "google/gemini-2.5-flash",
       messages: [
-        { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage) },
+        { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage, characterSheet) },
         { role: "user", content: userContent },
       ],
     }),
