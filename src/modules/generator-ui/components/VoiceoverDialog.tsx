@@ -175,6 +175,9 @@ export function VoiceoverDialog({
       if (lastUrlRef.current) {
         try { URL.revokeObjectURL(lastUrlRef.current) } catch { /* ignore */ }
       }
+      if (sampleAudioRef.current) {
+        try { sampleAudioRef.current.pause() } catch { /* ignore */ }
+      }
     }
   }, [])
 
@@ -182,6 +185,10 @@ export function VoiceoverDialog({
   useEffect(() => {
     if (!open) {
       setIsGenerating(false)
+      if (sampleAudioRef.current) {
+        try { sampleAudioRef.current.pause() } catch { /* ignore */ }
+      }
+      setPlayingSampleId(null)
     }
   }, [open])
 
