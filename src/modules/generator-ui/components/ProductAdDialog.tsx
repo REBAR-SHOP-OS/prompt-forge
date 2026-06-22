@@ -942,7 +942,7 @@ export default function ProductAdDialog({
 
   function handleUseAsPrompt() {
     if (scenes.length === 0) return
-    onUseAsPrompt(scenes.join('\n\n'), uploadedImageUrl ?? undefined)
+    onUseAsPrompt(scenes.join('\n\n'), isCharacter ? undefined : (uploadedImageUrl ?? undefined))
     onOpenChange(false)
   }
 
