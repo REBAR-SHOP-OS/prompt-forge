@@ -654,6 +654,8 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequiredTag: '(obligatorio)',
     businessPlaceholder: 'Describe tu negocio: qué vendes, tus productos/servicios, público objetivo y tono de marca…',
     businessRequired: 'Describe primero tu negocio: el escenario debe ser relevante para él.',
+    businessSave: 'Guardar',
+    businessSaved: 'Guardado',
   },
   fr: {
     title: 'Scénario de Publicité Produit',
