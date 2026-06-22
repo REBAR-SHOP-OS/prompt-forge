@@ -261,6 +261,37 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
     }
   }
 
+  const handleGenerateFromPrompt = async () => {
+    const prompt = promptText.trim()
+    if (!userId || generatingId || !prompt) return
+    setError(null)
+    setGeneratingId('prompt')
+    try {
+      const useLogo = applyLogo && !!logoSendUrl
+      const { data, error: fnErr } = await supabase.functions.invoke('generate-character-sheet', {
+        body: {
+          prompt,
+          model: sheetModel,
+          title: '',
+          ...(useLogo ? { logoUrl: logoSendUrl, applyLogo: true } : {}),
+        },
+      })
+      if (fnErr) throw fnErr
+      const row = data as CharacterImage | null
+      if (!row?.id) throw new Error('No sheet returned')
+      const signed = { ...row, storage_path: await signUrl(row.storage_path) }
+      setImages((prev) => [signed, ...prev])
+      setPromptText('')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to generate character sheet.'
+      setError(msg)
+    } finally {
+      setGeneratingId(null)
+    }
+  }
+
+
+
   const handleUse = (img: CharacterImage) => {
     onUseCharacter?.({ id: img.id, url: img.storage_path, title: img.title ?? null })
     onOpenChange(false)
