@@ -44,7 +44,7 @@ const CreateJobSchema = z.object({
 const GetJobSchema = z.object({ jobId: z.string().uuid() });
 const DeleteJobSchema = z.object({ jobId: z.string().uuid() });
 
-const SUPABASE_PUBLIC_STORAGE_PREFIX = `${new URL(getEnv("SUPABASE_URL")).origin}/storage/v1/object/public/wan-frames/`;
+const SUPABASE_STORAGE_ORIGIN = new URL(getEnv("SUPABASE_URL")).origin;
 
 // Local video routers (ComfyUI/Wan/LTX on the RTX box) often return the clip
 // inline as a `data:video/mp4;base64,...` URL instead of a hosted link. Storing
@@ -147,9 +147,12 @@ function isAllowedFrameUrl(url: string, userId: string): boolean {
     return false;
   }
 
-  if (parsed.href.startsWith(SUPABASE_PUBLIC_STORAGE_PREFIX)) {
+  // Only trust URLs hosted on our own Supabase storage origin.
+  if (parsed.origin === SUPABASE_STORAGE_ORIGIN) {
     const path = parsed.pathname;
-    // Accept both public and signed object URLs for the caller's own wan-frames uploads.
+    // Accept both public and signed object URLs for the caller's own wan-frames
+    // uploads. The frontend signs private-bucket frames for preview, so the
+    // path arrives as /object/sign/... rather than /object/public/...
     const publicPrefix = `/storage/v1/object/public/wan-frames/${userId}/`;
     const signPrefix = `/storage/v1/object/sign/wan-frames/${userId}/`;
     return path.startsWith(publicPrefix) || path.startsWith(signPrefix);
@@ -426,7 +429,7 @@ export const jobOrchestratorGateway = {
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 400, latencyMs: Date.now() - ctx.startedAt, errorCode: "INVALID_FIRST_FRAME_URL" });
             return errorResponse(
               "INVALID_FIRST_FRAME_URL",
-              "firstFrameUrl must point to your own public wan-frames upload",
+              "firstFrameUrl must point to your own wan-frames upload",
               400,
               ctx.requestId,
             );
@@ -436,7 +439,7 @@ export const jobOrchestratorGateway = {
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 400, latencyMs: Date.now() - ctx.startedAt, errorCode: "INVALID_LAST_FRAME_URL" });
             return errorResponse(
               "INVALID_LAST_FRAME_URL",
-              "lastFrameUrl must point to your own public wan-frames upload",
+              "lastFrameUrl must point to your own wan-frames upload",
               400,
               ctx.requestId,
             );
