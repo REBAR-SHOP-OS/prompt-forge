@@ -69,12 +69,51 @@ function transcriptionMimeType(ext: MediaExtension): string {
   return `audio/${ext}`
 }
 
+type TranscriptWord = { text: string; lowConfidence: boolean; confidence: number }
+
+// Below this confidence a word is flagged as a possible pronunciation issue.
+const LOW_CONFIDENCE_THRESHOLD = 0.55
+
+type LogProb = { token?: string; logprob?: number }
+
+/** Group raw STT tokens into display words, flagging low-confidence ones. */
+function buildWords(logprobs: LogProb[]): TranscriptWord[] {
+  const words: TranscriptWord[] = []
+  let currentText = ''
+  let currentMinConf = 1
+
+  const flush = () => {
+    const trimmed = currentText.trim()
+    if (trimmed) {
+      words.push({
+        text: trimmed,
+        confidence: currentMinConf,
+        lowConfidence: currentMinConf < LOW_CONFIDENCE_THRESHOLD,
+      })
+    }
+    currentText = ''
+    currentMinConf = 1
+  }
+
+  for (const lp of logprobs) {
+    const token = lp.token ?? ''
+    if (!token) continue
+    const conf = typeof lp.logprob === 'number' ? Math.exp(lp.logprob) : 1
+    // A leading space/newline marks the start of a new word.
+    if (/^\s/.test(token) && currentText.trim()) flush()
+    currentText += token
+    currentMinConf = Math.min(currentMinConf, conf)
+  }
+  flush()
+  return words
+}
+
 async function transcribeVideo(
   apiKey: string,
   videoBytes: Blob,
   sourceUrl: string,
   contentType: string | null,
-): Promise<string> {
+): Promise<{ transcript: string; words: TranscriptWord[] }> {
   const form = new FormData()
   form.append('model', 'openai/gpt-4o-mini-transcribe')
   // The STT provider infers the container from the filename extension. Do not
@@ -83,7 +122,9 @@ async function transcribeVideo(
   const ext = inferMediaExtension(sourceUrl, contentType)
   const audioBlob = new Blob([await videoBytes.arrayBuffer()], { type: transcriptionMimeType(ext) })
   form.append('file', audioBlob, `film.${ext}`)
-  // non-streaming: default JSON response with the transcript text
+  // Request per-token confidence so we can flag possible mispronunciations.
+  form.append('response_format', 'json')
+  form.append('include[]', 'logprobs')
 
   const res = await fetch(`${GATEWAY}/audio/transcriptions`, {
     method: 'POST',
@@ -103,8 +144,12 @@ async function transcribeVideo(
     throw err
   }
 
-  const data = await res.json().catch(() => null) as { text?: string } | null
-  return (data?.text ?? '').trim()
+  const data = await res.json().catch(() => null) as
+    | { text?: string; logprobs?: LogProb[] }
+    | null
+  const transcript = (data?.text ?? '').trim()
+  const words = Array.isArray(data?.logprobs) ? buildWords(data!.logprobs) : []
+  return { transcript, words }
 }
 
 async function translateText(
@@ -175,7 +220,7 @@ Deno.serve(async (req) => {
       return json({ error: 'The video file is empty or too small to transcribe.' }, 400)
     }
 
-    const transcript = await transcribeVideo(
+    const { transcript, words } = await transcribeVideo(
       apiKey,
       videoBytes,
       sourceUrl,
@@ -190,7 +235,7 @@ Deno.serve(async (req) => {
       translatedText = await translateText(apiKey, transcript, targetLanguage)
     }
 
-    return json({ transcript, translatedText, targetLanguage })
+    return json({ transcript, words, translatedText, targetLanguage })
   } catch (e) {
     const status = (e as Error & { status?: number }).status
     const message = e instanceof Error ? e.message : 'Unexpected error'

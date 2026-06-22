@@ -24,8 +24,11 @@ const LANGUAGES: LangOption[] = [
   { value: 'Turkish', label: 'Turkish' },
 ]
 
+type TranscriptWord = { text: string; lowConfidence: boolean; confidence: number }
+
 type TranscriptResponse = {
   transcript?: string
+  words?: TranscriptWord[]
   translatedText?: string
   targetLanguage?: string
   error?: string
@@ -39,12 +42,16 @@ export interface TranscriptPanelProps {
 
 export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
   const [transcript, setTranscript] = useState<string | null>(null)
+  const [words, setWords] = useState<TranscriptWord[]>([])
   const [displayText, setDisplayText] = useState<string>('')
   const [language, setLanguage] = useState<string>(ORIGINAL)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Cache of translations keyed by language value.
   const translations = useRef<Map<string, string>>(new Map())
+
+  const showWords = language === ORIGINAL && words.length > 0
+  const hasLowConfidence = showWords && words.some((w) => w.lowConfidence)
 
   const isRtl =
     language === ORIGINAL
@@ -67,6 +74,7 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
       if (data?.error) throw new Error(data.error)
       const text = (data?.transcript ?? '').trim()
       setTranscript(text)
+      setWords(Array.isArray(data?.words) ? data!.words : [])
       translations.current.clear()
       translations.current.set(ORIGINAL, text)
       setLanguage(ORIGINAL)
@@ -164,12 +172,36 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
             </button>
           </div>
         ) : (
-          <p
-            dir={isRtl ? 'rtl' : 'ltr'}
-            className="whitespace-pre-wrap text-[15px] leading-7 text-zinc-200"
-          >
-            {displayText}
-          </p>
+          <div className="space-y-3">
+            {hasLowConfidence ? (
+              <p className="flex items-center gap-2 text-[11px] text-amber-300/90">
+                <span className="inline-block h-2 w-2 rounded-full bg-amber-400" aria-hidden="true" />
+                Highlighted words may be mispronounced in the narration.
+              </p>
+            ) : null}
+            <p
+              dir={isRtl ? 'rtl' : 'ltr'}
+              className="whitespace-pre-wrap text-[15px] leading-7 text-zinc-200"
+            >
+              {showWords
+                ? words.map((w, i) => (
+                    <span key={`${i}-${w.text}`}>
+                      {w.lowConfidence ? (
+                        <span
+                          title="Possible pronunciation issue (low confidence)"
+                          className="rounded-sm bg-amber-400/10 px-0.5 text-amber-300 underline decoration-dotted decoration-amber-400/70 underline-offset-2"
+                        >
+                          {w.text}
+                        </span>
+                      ) : (
+                        w.text
+                      )}
+                      {i < words.length - 1 ? ' ' : ''}
+                    </span>
+                  ))
+                : displayText}
+            </p>
+          </div>
         )}
       </div>
     </div>
