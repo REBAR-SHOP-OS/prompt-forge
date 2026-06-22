@@ -1152,7 +1152,7 @@ export default function ProductAdDialog({
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  async function generate() {
+  async function generate(withNarration = true) {
     if (isWriting) return
     if (!businessInfo.trim()) {
       setError(t.businessRequired)
@@ -1217,6 +1217,7 @@ export default function ProductAdDialog({
           idea,
           businessInfo: businessInfo.trim(),
           outputLanguage: lang,
+          narration: withNarration,
           durationSeconds: duration,
           imageUrl: uploadedImageUrl ?? undefined,
           ...(isCharacter
