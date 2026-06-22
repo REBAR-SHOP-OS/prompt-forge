@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2, RefreshCw, X } from 'lucide-react'
+import { Loader2, RefreshCw, Volume2, X } from 'lucide-react'
+import { toast } from 'sonner'
 import { supabase } from '@/integrations/supabase/client'
 import {
   Select,
