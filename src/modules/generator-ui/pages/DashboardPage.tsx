@@ -5485,6 +5485,7 @@ export default function DashboardPage() {
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
             draftGroupId,
+            narrationText: plannedNarration,
           })
         } else if (readyStartFrame?.url && readyEndFrame?.url) {
           createdJob = await jobOrchestratorGateway.createJob({
@@ -5496,6 +5497,7 @@ export default function DashboardPage() {
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
             draftGroupId,
+            narrationText: plannedNarration,
           })
           seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
         } else if (readyStartFrame?.url) {
@@ -5507,6 +5509,7 @@ export default function DashboardPage() {
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
             draftGroupId,
+            narrationText: plannedNarration,
           })
           seedFrames = { firstFrameUrl: readyStartFrame.url }
         } else if (readyEndFrame?.url) {
@@ -5518,6 +5521,7 @@ export default function DashboardPage() {
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
             draftGroupId,
+            narrationText: plannedNarration,
           })
           seedFrames = { lastFrameUrl: readyEndFrame.url }
         } else {
