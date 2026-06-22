@@ -1,23 +1,26 @@
 ## Goal
-Make the Character Sheet dialog fully English — replace the Persian subtitles under the model options shown in your screenshot.
+In the Character Sheet dialog: (1) let the user zoom/enlarge a generated image to inspect it, and (2) add a "Use as character" action that sends the selected image to the composer's **Add character** slot and makes it the active project character.
 
-## Change
-In `src/modules/generator-ui/components/CharacterSheetDialog.tsx`, the model options have Persian `hint` subtitles (lines 19–21):
+## Changes
 
-```text
-Fast          سریع
-High quality  کیفیت بالا
-Detailed      جزئیات
-```
+### 1. `CharacterSheetDialog.tsx` — zoom + use-as-character
+- Add a **zoom lightbox**: a `zoomUrl` state. Each image card gets a maximize button (and clicking the image) opens a full-size preview overlay (nested `Dialog`) showing the image large with a close button.
+- Add a **"Use as character"** button on each card (next to "Make sheet"). Clicking it:
+  - calls a new optional prop `onUseCharacter({ id, url, title })`
+  - closes the Character Sheet dialog.
+- Add prop: `onUseCharacter?: (c: { id: string; url: string; title: string | null }) => void`.
 
-Replace the Persian hints with short English descriptions:
-- Fast → "Quick & cheap"
-- High quality → "Best detail"
-- Detailed → "Text & fine detail"
+### 2. `DashboardPage.tsx` — wire the selection
+- Pass `onUseCharacter` to `<CharacterSheetDialog>`. The handler:
+  - builds a `ProjectCharacter` from the image,
+  - sets it as `selectedCharacter`,
+  - inserts it into `characterList` if not already present (so the Add-character popover shows it),
+  - closes the Character Sheet (`setIsCharacterSheetOpen(false)`).
 
-(The main labels are already English; only the small grey subtitle line changes.)
+## Result
+- Clicking an image (or its zoom button) opens a large preview.
+- Clicking "Use as character" closes the sheet and fills the **Add character** button with that image — it becomes the project character reference used in generation.
 
-## Verification
-Open Character Sheet and confirm the three model options show only English text.
-
-No other Persian text exists in this dialog.
+## Notes
+- Uses the already-signed `storage_path` URL each image carries, so no extra signing needed.
+- No backend or generation-logic changes; UI/state wiring only.

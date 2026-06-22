@@ -8385,7 +8385,16 @@ export default function DashboardPage() {
         open={isCharacterSheetOpen}
         onOpenChange={setIsCharacterSheetOpen}
         userId={userId}
+        onUseCharacter={(c) => {
+          const character: ProjectCharacter = { id: c.id, url: c.url, title: c.title }
+          setSelectedCharacter(character)
+          setCharacterList((prev) =>
+            prev.some((p) => p.id === character.id) ? prev : [character, ...prev],
+          )
+          setIsCharacterSheetOpen(false)
+        }}
       />
+
 
 
 
