@@ -391,8 +391,12 @@ async function startWanI2V(
   // provided, the model treats it as the anchor and generates the rest of
   // the clip from the prompt.
   const media: Array<{ type: "first_frame" | "last_frame"; url: string }> = [];
-  if (input.firstFrameUrl) media.push({ type: "first_frame", url: input.firstFrameUrl });
-  if (input.lastFrameUrl) media.push({ type: "last_frame", url: input.lastFrameUrl });
+  if (input.firstFrameUrl) {
+    media.push({ type: "first_frame", url: await resolveDownloadableFrameUrl(input.firstFrameUrl) });
+  }
+  if (input.lastFrameUrl) {
+    media.push({ type: "last_frame", url: await resolveDownloadableFrameUrl(input.lastFrameUrl) });
+  }
 
   const body = {
     model: resolvedModel,
