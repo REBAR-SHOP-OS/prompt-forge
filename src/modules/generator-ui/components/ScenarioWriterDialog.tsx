@@ -398,7 +398,7 @@ export default function ScenarioWriterDialog({
     const isAuto = ideaMode === 'auto' && Boolean(uploadedImageUrl)
     if ((!isAuto && !idea.trim() && !uploadedImageUrl) || (isAuto && !uploadedImageUrl) || isWriting) return
     if (!businessInfo.trim()) {
-      setError('Please describe your business first — the scenario must be relevant to it.')
+      setError(t.errBusiness)
       return
     }
     if (userId) {
