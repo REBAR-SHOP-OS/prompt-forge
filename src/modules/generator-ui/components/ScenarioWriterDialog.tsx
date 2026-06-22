@@ -671,8 +671,8 @@ export default function ScenarioWriterDialog({
                 disabled={isAutoMode}
                 placeholder={
                   isAutoMode
-                    ? 'The scenario will be written automatically from the uploaded image…'
-                    : 'Describe your idea (any language)…'
+                    ? t.ideaPlaceholderAuto
+                    : t.ideaPlaceholder
                 }
                 className="min-h-[100px] border-white/10 bg-black/30 pb-12 text-zinc-100 disabled:opacity-60"
               />
