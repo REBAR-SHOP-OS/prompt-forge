@@ -330,7 +330,7 @@ export function VoiceoverDialog({
               <Label className="text-xs uppercase tracking-wider text-zinc-400">
                 Gender
               </Label>
-              <Select value={gender} onValueChange={(v) => setGender(v as Gender)}>
+              <Select value={gender} onValueChange={(v) => handleGenderChange(v as Gender)}>
                 <SelectTrigger className="border-white/10 bg-white/[0.04] text-zinc-100">
                   <SelectValue />
                 </SelectTrigger>
@@ -341,6 +341,71 @@ export function VoiceoverDialog({
                 </SelectContent>
               </Select>
             </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs uppercase tracking-wider text-zinc-400">
+                Tone
+              </Label>
+              <Select value={tone} onValueChange={(v) => setTone(v as Tone)}>
+                <SelectTrigger className="border-white/10 bg-white/[0.04] text-zinc-100">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TONE_LABELS.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs uppercase tracking-wider text-zinc-400">
+                Voice / Character
+              </Label>
+              <span className="text-[10px] uppercase tracking-wider text-zinc-500">
+                Tap ▶ to preview
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Select value={voiceId} onValueChange={(v) => setVoiceId(v)}>
+                <SelectTrigger className="flex-1 border-white/10 bg-white/[0.04] text-zinc-100">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {voicesForGender(gender).map((v) => (
+                    <SelectItem key={v.id} value={v.id}>
+                      <span className="flex items-center gap-2">
+                        <span>{v.label}</span>
+                        <span className="text-[11px] text-zinc-500">· {v.personality}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                aria-label={`Play sample of ${currentVoice.label}`}
+                onClick={() => playSample(currentVoice.id)}
+                className="shrink-0 border-white/10 bg-white/[0.04] text-zinc-100 hover:bg-white/10"
+              >
+                {playingSampleId === currentVoice.id ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Play className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+            <p className="text-[11px] leading-snug text-zinc-500">
+              {currentVoice.label} — {currentVoice.personality.toLowerCase()}.
+            </p>
+          </div>
+
 
             <div className="space-y-2">
               <Label className="text-xs uppercase tracking-wider text-zinc-400">
