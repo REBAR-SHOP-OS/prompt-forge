@@ -1172,7 +1172,7 @@ export default function ProductAdDialog({
     setError(null)
     try {
       const frameUrl = await buildFirstFrame()
-      await onSendScenes(scenes, frameUrl)
+      await onSendScenes(scenes, frameUrl, duration)
       onOpenChange(false)
     } catch (e) {
       setError((e as Error).message ?? 'Failed to send to Pending')
