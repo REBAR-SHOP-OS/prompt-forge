@@ -65,7 +65,11 @@ function buildSystemPrompt(
   productAd?: ProductAdOpts,
   autoFromImage?: boolean,
   characterSheet?: CharacterSheetOpts,
+  businessInfo?: string,
 ): string {
+  const businessLine = businessInfo
+    ? `Business context (provided by the user): ${businessInfo}. Every narration line, every spoken word, and the entire scenario MUST stay tightly relevant to this business and promote the user's selected product/subject. Do not drift into unrelated topics, products, or themes.`
+    : "";
   const sceneCount = expectedSceneCount(duration);
   const isAd = Boolean(productAd);
   const isCharacter = Boolean(characterSheet);
