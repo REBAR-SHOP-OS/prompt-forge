@@ -1,60 +1,31 @@
-# قابلیت رونویسی و ترجمه‌ی فیلم در پری‌ویو
+# Fix Transcript Panel: English UI + Duplicate Close Button
 
-یک آیکون رونویسی (transcript) کنار دکمه‌ی بستن در پنجره‌ی پری‌ویوِ بزرگ اضافه می‌شود. با کلیک روی آن، صدای فیلم با هوش مصنوعی به متن تبدیل می‌شود و یک منوی انتخاب زبان امکان ترجمه‌ی متن را فراهم می‌کند.
+## Problem
+1. The transcript overlay still uses Persian strings (header, loading text, error messages, retry button, "Original text" label). The user wants the whole UI in English.
+2. The large preview's own close button (`X`, top-right, `z-30`) renders **on top of** the transcript panel (`z-20`), so when the panel opens its own `X` close button appears next to the preview's `X` — looking like two close buttons.
 
-## رفتار مورد انتظار
+## Changes
 
-```text
-┌──────────────────────────────┐
-│ [▢ متن] [✕]   ← دکمه‌های بالای پری‌ویو
-│                              │
-│        ویدیوی فیلم           │
-│                              │
-└──────────────────────────────┘
-        ↓ کلیک روی «متن»
-┌──────────────────────────────┐
-│  Transcript        [زبان ▼]  │
-│  ─────────────────────────   │
-│  ...متن گفته‌شده در فیلم...    │
-│                              │
-│  (ترجمه پس از انتخاب زبان)    │
-└──────────────────────────────┘
-```
+### 1. `src/modules/generator-ui/components/TranscriptPanel.tsx` — English strings
+- `LANGUAGES`: change the `ORIGINAL` label `'متن اصلی'` → `'Original'`. Keep native language labels (English, Français, etc.) as-is, but switch `'فارسی'` → `'Persian'` and `'العربية'` → `'Arabic'` for consistency (or keep native — will use English names).
+- Header `'متن فیلم'` → `'Transcript'`.
+- `SelectValue` placeholder `'زبان'` → `'Language'`.
+- Loading text `'در حال پردازش…'` → `'Processing…'`.
+- Retry button `'تلاش دوباره'` → `'Retry'`.
+- Error/fallback strings:
+  - `'فایل ویدیو در دسترس نیست.'` → `'Video file is not available.'`
+  - `'خطا در رونویسی'` → `'Failed to transcribe.'`
+  - `'گفتاری در این فیلم تشخیص داده نشد.'` → `'No speech detected in this video.'`
+  - `'متنی برای نمایش وجود ندارد.'` → `'No text to display.'`
+  - `'ترجمه‌ای دریافت نشد.'` → `'No translation received.'`
+  - `'خطا در ترجمه'` → `'Failed to translate.'`
 
-- آیکون فقط برای آیتم‌های ویدیویی (نه تصویر) و وقتی فایل ویدیو موجود است نمایش داده می‌شود.
-- اولین کلیک: صدای فیلم رونویسی می‌شود و متن اصلی (به زبان تشخیص‌داده‌شده) نمایش داده می‌شود.
-- منوی زبان شامل چند زبان (فارسی، انگلیسی، عربی، فرانسوی، اسپانیایی، آلمانی، ترکی) است؛ با انتخاب هر زبان، متن به آن زبان ترجمه و نمایش داده می‌شود.
-- وضعیت‌های loading/error به‌صورت شفاف نشان داده می‌شوند؛ در صورت خطای STT دوباره‌تلاش امکان‌پذیر است.
-- نتیجه‌ی رونویسی برای هر فیلم کش می‌شود تا با تعویض زبان دوباره رونویسی انجام نشود (فقط ترجمه دوباره اجرا می‌شود).
+### 2. `src/modules/generator-ui/pages/DashboardPage.tsx` — fix duplicate close + English labels
+- FileText (transcript) button: `aria-label="نمایش متن فیلم"` → `"Show transcript"`, `title="متن فیلم"` → `"Transcript"`.
+- Fix the duplicate close button: when `transcriptOpen` is true, hide the preview's own close button and the FileText button (the panel has its own header with close). Apply a conditional so only the panel's controls show while it is open:
+  - Wrap the two corner buttons (close + FileText) so they render only when `!transcriptOpen`, e.g. `{!transcriptOpen && (<>…buttons…</>)}`.
 
-## بخش بک‌اند (Edge Function جدید: `video-transcript`)
+This keeps a single close affordance (the panel's `X`) while the transcript is open, and restores the preview close + transcript buttons after it closes.
 
-یک edge function امن که:
-1. JWT کاربر را در کد اعتبارسنجی می‌کند و ورودی را با Zod می‌سنجد (`videoUrl` یا `storagePath`، و `targetLanguage` اختیاری، و `transcript` اختیاری برای حالت فقط‌ترجمه).
-2. بایت‌های ویدیو را از URL امضاشده/مسیر استوریج دانلود می‌کند.
-3. **رونویسی**: فایل را به‌صورت `multipart/form-data` به Lovable AI STT می‌فرستد
-   (`POST https://ai.gateway.lovable.dev/v1/audio/transcriptions`، مدل `openai/gpt-4o-mini-transcribe`، حالت non-streaming) و متن کامل را می‌گیرد.
-4. **ترجمه** (در صورت ارسال `targetLanguage`): متن را با chat completions
-   (`POST https://ai.gateway.lovable.dev/v1/chat/completions`) به زبان مقصد ترجمه می‌کند و فقط متن ترجمه را برمی‌گرداند.
-5. پاسخ: `{ transcript, translatedText?, targetLanguage? }`. هدرهای CORS روی همه‌ی پاسخ‌ها (از جمله خطاها).
-
-این تابع از `LOVABLE_API_KEY` که از قبل موجود است استفاده می‌کند؛ نیازی به secret جدید نیست. خطاهای ۴۰۲/۴۲۹/۵۰۰ به‌صورت پیام قابل‌فهم به فرانت‌اند منتقل می‌شوند.
-
-## بخش فرانت‌اند
-
-**کامپوننت جدید `TranscriptPanel.tsx`** در `src/modules/generator-ui/components/`:
-- منوی انتخاب زبان (Select از shadcn).
-- نمایش متن با اسکرول، حالت loading/error، و دکمه‌ی دوباره‌تلاش.
-- فراخوانی `supabase.functions.invoke('video-transcript', ...)`؛ کش کردن متن اصلی در state و فقط فراخوانی ترجمه هنگام تعویض زبان.
-- متن با direction درست (rtl برای فارسی/عربی) نمایش داده می‌شود.
-
-**ویرایش `DashboardPage.tsx`** (بلوک پری‌ویوِ ویدیو حوالی خطوط ۸۶۹۲–۸۷۲۲):
-- افزودن دکمه‌ی آیکون رونویسی (آیکون `FileText`/`Captions` از lucide) کنار دکمه‌ی بستن، فقط وقتی `previewItem.job.video?.storage_path` موجود است.
-- state محلی برای باز/بسته بودن پنل و نگه‌داشتن URL امضاشده‌ی ویدیو (با همان `signStorageUrl`/`getCardVideoSrc` موجود).
-- رندر `TranscriptPanel` به‌صورت overlay داخل همان کادر پری‌ویو.
-
-## ملاحظات
-
-- تغییری در منطق تولید ویدیو، اسکیمای دیتابیس یا فایل‌های auto-generated داده نمی‌شود.
-- افزودنی و غیرمخرب است؛ روی جریان‌های موجود اثری ندارد.
-- صحت با `supabase--curl_edge_functions` (تست زنده‌ی تابع) و بررسی UI در پری‌ویو راستی‌آزمایی می‌شود.
+## Verification
+- Open the large preview, click the transcript icon, confirm: only one close button (in the panel header), all text is English, language menu shows "Original" + language names.
