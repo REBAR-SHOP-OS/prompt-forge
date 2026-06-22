@@ -799,7 +799,7 @@ export default function ScenarioWriterDialog({
                 ) : (
                   <RefreshCw className="h-4 w-4 mr-2" aria-hidden="true" />
                 )}
-                Regenerate
+                {t.regenerate}
               </Button>
               {isSplit && onSendScenes ? (
                 <Button size="sm" onClick={handleSendAll} disabled={isWriting || isSending}>
