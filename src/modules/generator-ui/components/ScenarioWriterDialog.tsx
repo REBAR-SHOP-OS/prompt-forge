@@ -471,7 +471,7 @@ export default function ScenarioWriterDialog({
       await onSendScenes(scenes, uploadedImageUrl ?? undefined, duration)
       onOpenChange(false)
     } catch (e) {
-      setError((e as Error).message ?? 'Failed to send to Pending')
+      setError((e as Error).message ?? t.errFailedSend)
     } finally {
       setIsSending(false)
     }
