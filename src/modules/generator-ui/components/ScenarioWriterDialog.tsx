@@ -40,6 +40,8 @@ export default function ScenarioWriterDialog({
   const [duration, setDuration] = useState<ScenarioDuration>(defaultDuration)
   const [businessInfo, setBusinessInfo] = useState('')
   const [businessSaving, setBusinessSaving] = useState(false)
+  const [businessSaved, setBusinessSaved] = useState(false)
+  const [businessOpen, setBusinessOpen] = useState(false)
   const [idea, setIdea] = useState('')
   const [ideaMode, setIdeaMode] = useState<'manual' | 'auto'>('manual')
   const [isWriting, setIsWriting] = useState(false)
