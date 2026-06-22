@@ -24,8 +24,11 @@ const LANGUAGES: LangOption[] = [
   { value: 'Turkish', label: 'Turkish' },
 ]
 
+type TranscriptWord = { text: string; lowConfidence: boolean; confidence: number }
+
 type TranscriptResponse = {
   transcript?: string
+  words?: TranscriptWord[]
   translatedText?: string
   targetLanguage?: string
   error?: string
