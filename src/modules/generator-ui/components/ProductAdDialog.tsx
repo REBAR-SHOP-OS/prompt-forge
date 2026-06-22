@@ -421,6 +421,7 @@ const T: Record<Lang, Record<string, string>> = {
     regenerate: 'Regenerate',
     sendAll: 'Send all to Pending',
     useAsPrompt: 'Use as prompt',
+    preparingFrame: 'Preparing frame…',
     generate: 'Generate ad scenario',
     language: 'Language',
     chooseFromProducts: 'Choose from products',
@@ -464,6 +465,7 @@ const T: Record<Lang, Record<string, string>> = {
     regenerate: 'تولید دوباره',
     sendAll: 'ارسال همه به Pending',
     useAsPrompt: 'استفاده به‌عنوان پرامت',
+    preparingFrame: 'در حال آماده‌سازی فریم…',
     generate: 'تولید سناریوی تبلیغ',
     language: 'زبان',
     chooseFromProducts: 'انتخاب از محصولات',
@@ -507,6 +509,7 @@ const T: Record<Lang, Record<string, string>> = {
     regenerate: 'إعادة التوليد',
     sendAll: 'إرسال الكل إلى قائمة الانتظار',
     useAsPrompt: 'استخدام كموجّه',
+    preparingFrame: 'جارٍ تجهيز الإطار…',
     generate: 'توليد سيناريو الإعلان',
     language: 'اللغة',
     chooseFromProducts: 'اختر من المنتجات',
@@ -550,6 +553,7 @@ const T: Record<Lang, Record<string, string>> = {
     regenerate: 'Yeniden oluştur',
     sendAll: 'Tümünü Bekleyenlere gönder',
     useAsPrompt: 'İstem olarak kullan',
+    preparingFrame: 'Kare hazırlanıyor…',
     generate: 'Reklam senaryosu oluştur',
     language: 'Dil',
     chooseFromProducts: 'Ürünlerden seç',
@@ -593,6 +597,7 @@ const T: Record<Lang, Record<string, string>> = {
     regenerate: 'Regenerar',
     sendAll: 'Enviar todo a Pendientes',
     useAsPrompt: 'Usar como prompt',
+    preparingFrame: 'Preparando fotograma…',
     generate: 'Generar guion del anuncio',
     language: 'Idioma',
     chooseFromProducts: 'Elegir de productos',
@@ -636,6 +641,7 @@ const T: Record<Lang, Record<string, string>> = {
     regenerate: 'Régénérer',
     sendAll: 'Tout envoyer en attente',
     useAsPrompt: 'Utiliser comme prompt',
+    preparingFrame: 'Préparation de l’image…',
     generate: 'Générer le scénario publicitaire',
     language: 'Langue',
     chooseFromProducts: 'Choisir parmi les produits',
@@ -741,6 +747,7 @@ export default function ProductAdDialog({
   const [error, setError] = useState<string | null>(null)
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
   const [isSending, setIsSending] = useState(false)
+  const [isPreparingFrame, setIsPreparingFrame] = useState(false)
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null)
   const [previewLightboxOpen, setPreviewLightboxOpen] = useState(false)
@@ -1088,10 +1095,73 @@ export default function ProductAdDialog({
     }
   }
 
-  function handleUseAsPrompt() {
-    if (scenes.length === 0) return
-    onUseAsPrompt(scenes.join('\n\n'), isCharacter ? undefined : (uploadedImageUrl ?? undefined))
-    onOpenChange(false)
+  /**
+   * Build a fetchable start-frame image for the video:
+   * - product ad with a character → compose character + product into one opening frame
+   * - product ad without a character → the signed product image
+   * - character film → the signed character image
+   * Returns undefined when no usable image is available.
+   */
+  async function buildFirstFrame(): Promise<string | undefined> {
+    // Resolve a fetchable URL for an image that may live in wan-frames or user-images.
+    const signAny = async (url: string): Promise<string> => {
+      try {
+        return await signFramesUrl(url)
+      } catch {
+        try {
+          return await signProductPhotoUrl(url)
+        } catch {
+          return imagePreviewUrl ?? url
+        }
+      }
+    }
+
+    // Character film variant: use the character image itself.
+    if (isCharacter) {
+      if (!uploadedImageUrl) return undefined
+      return await signAny(uploadedImageUrl)
+    }
+
+
+    // Product ad with an attached character → compose a combined opening frame.
+    if (uploadedImageUrl && characterRefSendUrl) {
+      try {
+        const composePrompt =
+          'Image 1 is the PRODUCT. Image 2 is the on-screen CHARACTER / presenter. ' +
+          'Compose a single photorealistic opening advertisement frame in which the character is presenting or holding the product, with the product clearly visible as the hero of the shot. ' +
+          'Keep the character\'s face, hair, wardrobe and body identical to image 2, and keep the product\'s exact shape, colors and label from image 1.'
+        const { data, error: fnErr } = await supabase.functions.invoke('ai-image-edit', {
+          body: { prompt: composePrompt, imageUrls: [uploadedImageUrl, characterRefSendUrl] },
+        })
+        if (fnErr) throw new Error(fnErr.message || 'Failed to compose frame')
+        const dataUrl = (data as { dataUrl?: string } | null)?.dataUrl
+        if (dataUrl) return dataUrl
+        throw new Error('The AI did not return a composed frame.')
+      } catch (e) {
+        // Surface the issue but fall back to the product image so the flow still works.
+        setError((e as Error).message ?? 'Could not compose the character frame; using the product image instead.')
+      }
+    }
+
+    // Product ad without a character (or compose failed) → signed product image.
+    if (uploadedImageUrl) {
+      return await signAny(uploadedImageUrl)
+    }
+    return undefined
+  }
+
+
+  async function handleUseAsPrompt() {
+    if (scenes.length === 0 || isPreparingFrame) return
+    setIsPreparingFrame(true)
+    setError(null)
+    try {
+      const frameUrl = await buildFirstFrame()
+      onUseAsPrompt(scenes.join('\n\n'), frameUrl)
+      onOpenChange(false)
+    } finally {
+      setIsPreparingFrame(false)
+    }
   }
 
   async function handleSendAll() {
@@ -1099,7 +1169,8 @@ export default function ProductAdDialog({
     setIsSending(true)
     setError(null)
     try {
-      await onSendScenes(scenes, isCharacter ? undefined : (uploadedImageUrl ?? undefined))
+      const frameUrl = await buildFirstFrame()
+      await onSendScenes(scenes, frameUrl)
       onOpenChange(false)
     } catch (e) {
       setError((e as Error).message ?? 'Failed to send to Pending')
@@ -1107,6 +1178,7 @@ export default function ProductAdDialog({
       setIsSending(false)
     }
   }
+
 
   function toggleTemplate(id: string) {
     setTemplateIds((prev) => {
@@ -1647,20 +1719,25 @@ export default function ProductAdDialog({
                 {t.regenerate}
               </Button>
               {isSplit && onSendScenes ? (
-                <Button size="sm" onClick={handleSendAll} disabled={isWriting || isSending}>
-                  {isSending ? (
+                <Button size="sm" onClick={handleSendAll} disabled={isWriting || isSending || isPreparingFrame}>
+                  {isSending || isPreparingFrame ? (
                     <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
                   ) : (
                     <Send className="h-4 w-4 mr-2" aria-hidden="true" />
                   )}
-                  {t.sendAll}
+                  {isPreparingFrame ? t.preparingFrame : t.sendAll}
                 </Button>
               ) : (
-                <Button size="sm" onClick={handleUseAsPrompt} disabled={isWriting || isSending}>
-                  <Wand2 className="h-4 w-4 mr-2" aria-hidden="true" />
-                  {t.useAsPrompt}
+                <Button size="sm" onClick={handleUseAsPrompt} disabled={isWriting || isSending || isPreparingFrame}>
+                  {isPreparingFrame ? (
+                    <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Wand2 className="h-4 w-4 mr-2" aria-hidden="true" />
+                  )}
+                  {isPreparingFrame ? t.preparingFrame : t.useAsPrompt}
                 </Button>
               )}
+
             </>
           ) : (
             <Button onClick={generate} disabled={isWriting || !canGenerate} size="sm">
