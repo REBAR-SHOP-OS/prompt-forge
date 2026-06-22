@@ -196,6 +196,10 @@ Deno.serve(async (req) => {
     const message = e instanceof Error ? e.message : 'Unexpected error'
     if (status === 402) return json({ error: 'AI credits exhausted. Please add credits.' }, 402)
     if (status === 429) return json({ error: 'Too many requests. Please try again shortly.' }, 429)
+    if (status === 400) {
+      const responseStatus = message.startsWith('No supported speech audio track') ? 200 : 400
+      return json({ error: message }, responseStatus)
+    }
     return json({ error: message }, 500)
   }
 })
