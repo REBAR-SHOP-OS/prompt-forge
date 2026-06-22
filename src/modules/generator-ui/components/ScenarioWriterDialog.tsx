@@ -225,6 +225,7 @@ export default function ScenarioWriterDialog({
   const concatenated = scenes.join('\n\n')
   const isAutoMode = ideaMode === 'auto' && Boolean(uploadedImageUrl)
   const canGenerate =
+    Boolean(businessInfo.trim()) &&
     (isAutoMode ? Boolean(uploadedImageUrl) : idea.trim().length > 0 || Boolean(uploadedImageUrl)) &&
     !isUploadingImage
 
