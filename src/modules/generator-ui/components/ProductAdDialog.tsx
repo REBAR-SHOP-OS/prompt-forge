@@ -1215,6 +1215,7 @@ export default function ProductAdDialog({
 
   function reset() {
     setProductName('')
+    setNameNeedsReview(false)
     setProductDescription('')
     setUserPrompt('')
     setCameraStyle(CAMERA_STYLES[0].label.en)
