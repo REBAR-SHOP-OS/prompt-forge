@@ -9288,7 +9288,10 @@ export default function DashboardPage() {
                         {video.input_prompt}
                       </button>
                       {(() => {
-                        const narration = extractNarration(video.input_prompt)
+                        const canonical = (video as { narration_text?: string | null }).narration_text ?? null
+                        const narration = canonical
+                          ? canonical.split('\n').map((l) => l.trim()).filter(Boolean)
+                          : extractNarration(video.input_prompt)
                         const hasNarration = narration.length > 0
                         return (
                           <button
@@ -9297,6 +9300,7 @@ export default function DashboardPage() {
                               event.stopPropagation()
                               setNarrationViewer({
                                 prompt: video.input_prompt ?? null,
+                                narrationText: canonical,
                                 videoStoragePath: video.video?.storage_path ?? null,
                               })
                             }}
