@@ -165,6 +165,29 @@ function isAllowedFrameUrl(url: string, userId: string): boolean {
   return EXTRA_PUBLIC_FRAME_HOSTS.includes(parsed.hostname.toLowerCase());
 }
 
+// Reference (Character Sheet) images come from the user's own image buckets
+// (e.g. user-images / generator assets), not wan-frames, so they use a more
+// relaxed-but-still-safe check: HTTPS, and either hosted on our own Supabase
+// storage origin under the caller's own user folder, or an explicitly allowlisted
+// public host. Prevents SSRF to arbitrary URLs while accepting signed/public
+// object URLs for the user's character assets.
+function isAllowedReferenceUrl(url: string, userId: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  if (parsed.origin === SUPABASE_STORAGE_ORIGIN) {
+    // Accept any of the caller's own object URLs (public or signed) that are
+    // scoped to their user folder.
+    return parsed.pathname.startsWith("/storage/v1/object/") &&
+      parsed.pathname.includes(`/${userId}/`);
+  }
+  return EXTRA_PUBLIC_FRAME_HOSTS.includes(parsed.hostname.toLowerCase());
+}
+
 // Estimate render progress when the provider hasn't reported one yet.
 // Capped conservatively so the UI never falsely implies "almost done".
 // Real provider progress (when present) is honored as-is up to 99 — only
