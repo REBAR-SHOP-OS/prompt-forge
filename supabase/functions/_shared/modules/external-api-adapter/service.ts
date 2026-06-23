@@ -282,53 +282,133 @@ function readLocalVideoConfig(): LocalVideoConfig {
     return { ok: false, error: LOCAL_NOT_CONFIGURED_MESSAGE };
   }
 
-  const withoutTrailingSlash = parsed.toString().replace(/\/+$/, "");
-  const pathname = parsed.pathname.replace(/\/+$/, "");
-  const exactCreateRoute = pathname.endsWith("/videos/generations")
-    ? "videos_generations"
-    : (pathname.endsWith("/videos") ? "videos" : null);
-
-  const baseUrl = exactCreateRoute
-    ? withoutTrailingSlash.replace(/\/videos(?:\/generations)?$/i, "")
-    : (withoutTrailingSlash.endsWith("/v1") ? withoutTrailingSlash : `${withoutTrailingSlash}/v1`);
-
-  const createPath = normalizeLocalPath(Deno.env.get("LOCAL_VIDEO_ROUTER_CREATE_PATH") ?? "/videos/generations");
-  const createRoute = exactCreateRoute ?? classifyLocalCreateRoute(createPath);
-  const createUrl = exactCreateRoute ? withoutTrailingSlash : `${baseUrl}${createPath}`;
+  const routerType = readLocalRouterType();
+  const baseUrl = parsed.toString().replace(/\/+$/, "");
   const apiKey = getProviderApiKey("local");
-  return { ok: true, baseUrl, createUrl, createRoute, apiKey, timeoutMs: readLocalVideoTimeoutMs() };
+  const timeoutMs = readLocalVideoTimeoutMs();
+  const statusPath = (Deno.env.get("LOCAL_VIDEO_ROUTER_STATUS_PATH") ?? "").trim() || null;
+  const outputPath = (Deno.env.get("LOCAL_VIDEO_ROUTER_OUTPUT_PATH") ?? "").trim() || null;
+  const comfyWorkflowJson = (Deno.env.get("LOCAL_VIDEO_COMFY_WORKFLOW_JSON") ?? "").trim() || null;
+  const createPathEnv = (Deno.env.get("LOCAL_VIDEO_ROUTER_CREATE_PATH") ?? "").trim();
+
+  let createAttempts: string[];
+  if (createPathEnv) {
+    // Explicit create path: base URL is the base only, path is the endpoint.
+    createAttempts = [joinUrl(baseUrl, createPathEnv)];
+  } else if (routerType === "comfyui") {
+    // ComfyUI default create endpoint.
+    createAttempts = [joinUrl(baseUrl, "/prompt")];
+  } else {
+    // openai_compatible defaults — preserve legacy /v1 handling and the
+    // exact-route detection for URLs that already include the endpoint.
+    const pathname = parsed.pathname.replace(/\/+$/, "");
+    if (pathname.endsWith("/videos/generations") || pathname.endsWith("/videos")) {
+      createAttempts = [baseUrl];
+    } else {
+      const apiBase = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
+      createAttempts = [`${apiBase}/videos/generations`, `${apiBase}/videos`];
+    }
+  }
+
+  return { ok: true, routerType, baseUrl, createAttempts, statusPath, outputPath, comfyWorkflowJson, apiKey, timeoutMs };
+}
+
+export interface LocalVideoStatusReport {
+  status: "configured" | "not_configured" | "unreachable";
+  message: string;
+  configured: boolean;
+  reachable: boolean | null;
+  create_endpoint_found: boolean | null;
+  attempted_create_paths: string[];
+  router_type: LocalRouterType | null;
 }
 
 /** Lightweight, no-secret config/health status for the local video router.
  *  Used by the orchestrator preflight and the status endpoint. When
- *  `probe` is true and configured, it attempts a reachability check. */
+ *  `probe` is true and configured, it checks reachability AND whether a
+ *  create endpoint exists (without running a real generation). */
 export async function localVideoStatus(
   probe = false,
-): Promise<{ status: "configured" | "not_configured" | "unreachable"; message: string }> {
+): Promise<LocalVideoStatusReport> {
   const config = readLocalVideoConfig();
   if (!config.ok) {
-    return { status: "not_configured", message: config.error };
+    return {
+      status: "not_configured",
+      message: config.error,
+      configured: false,
+      reachable: null,
+      create_endpoint_found: null,
+      attempted_create_paths: [],
+      router_type: null,
+    };
   }
+
+  const attemptedPaths = config.createAttempts.map((u) => `POST ${urlPath(u)}`);
+
   if (!probe) {
-    return { status: "configured", message: "Local video router is configured." };
+    return {
+      status: "configured",
+      message: "Local video router is configured.",
+      configured: true,
+      reachable: null,
+      create_endpoint_found: null,
+      attempted_create_paths: attemptedPaths,
+      router_type: config.routerType,
+    };
   }
-  try {
-    // Probe with a short timeout regardless of the generation timeout.
-    const res = await localVideoFetch(
-      `${config.baseUrl}/models`,
-      { method: "GET", headers: localVideoHeaders(config) },
-      Math.min(config.timeoutMs, 10_000),
-    );
-    // Any HTTP response (even 404) means the router host is reachable.
-    await res.body?.cancel().catch(() => {});
-    return { status: "configured", message: "Local video router is reachable." };
-  } catch (err) {
-    if (isUnreachableError(err)) {
-      return { status: "unreachable", message: LOCAL_UNREACHABLE_MESSAGE };
+
+  // Probe each candidate create endpoint with a GET. A reachable router
+  // answers (any non-404 status, typically 405 Method Not Allowed for a
+  // POST-only endpoint) which proves the path exists; 404 means missing.
+  let reachable = false;
+  let createFound = false;
+  for (const url of config.createAttempts) {
+    try {
+      const res = await localVideoFetch(
+        url,
+        { method: "GET", headers: localVideoHeaders(config) },
+        Math.min(config.timeoutMs, 10_000),
+      );
+      reachable = true;
+      await res.body?.cancel().catch(() => {});
+      if (res.status !== 404) {
+        createFound = true;
+        break;
+      }
+    } catch (err) {
+      if (!isUnreachableError(err)) {
+        // Non-network error against a responding host still implies reachable.
+        reachable = true;
+      }
     }
-    return { status: "configured", message: "Local video router is configured." };
   }
+
+  if (!reachable) {
+    return {
+      status: "unreachable",
+      message: LOCAL_UNREACHABLE_MESSAGE,
+      configured: true,
+      reachable: false,
+      create_endpoint_found: null,
+      attempted_create_paths: attemptedPaths,
+      router_type: config.routerType,
+    };
+  }
+
+  return {
+    status: "configured",
+    message: createFound
+      ? "Local video router is reachable and a create endpoint was found."
+      : `Local router is reachable, but no video create endpoint was found. Tried: ${attemptedPaths.join(", ")}. Set LOCAL_VIDEO_ROUTER_CREATE_PATH to your router's create endpoint, for example /prompt for ComfyUI.`,
+    configured: true,
+    reachable: true,
+    create_endpoint_found: createFound,
+    attempted_create_paths: attemptedPaths,
+    router_type: config.routerType,
+  };
 }
+
+
 
 function isLocalVideoModel(model: string): boolean {
   return LOCAL_VIDEO_MODELS.has(model);
