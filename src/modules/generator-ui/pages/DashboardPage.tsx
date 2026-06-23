@@ -833,7 +833,7 @@ export default function DashboardPage() {
   const [isDragging, setIsDragging] = useState(false)
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
   const [promptViewer, setPromptViewer] = useState<string | null>(null)
-  const [narrationViewer, setNarrationViewer] = useState<{ prompt: string | null; narrationText: string | null; videoStoragePath: string | null } | null>(null)
+  const [narrationViewer, setNarrationViewer] = useState<{ cardId: string; prompt: string | null; narrationText: string | null; videoStoragePath: string | null } | null>(null)
   const [editPromptJob, setEditPromptJob] = useState<JobDetail | null>(null)
   const [editPromptText, setEditPromptText] = useState('')
   const [startContext] = useState('Start')
@@ -10669,13 +10669,6 @@ export default function DashboardPage() {
           </div>
         </DialogContent>
       </Dialog>
-      <NarrationDialog
-        open={narrationViewer !== null}
-        onClose={() => setNarrationViewer(null)}
-        prompt={narrationViewer?.prompt ?? null}
-        narrationText={narrationViewer?.narrationText ?? null}
-        videoStoragePath={narrationViewer?.videoStoragePath ?? null}
-      />
 
 
 
