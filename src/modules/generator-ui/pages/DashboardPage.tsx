@@ -1866,6 +1866,26 @@ export default function DashboardPage() {
   }, [contactKey])
   const [contactDragging, setContactDragging] = useState(false)
   const contactBoxRef = useRef<HTMLDivElement | null>(null)
+  // Track the displayed video height so the live contact overlay can be sized
+  // proportionally (matching the burn-in ratios in mergeVideos.ts), giving a
+  // true WYSIWYG preview of the final film.
+  const [previewVideoSize, setPreviewVideoSize] = useState({ w: 0, h: 0 })
+  const contactRoRef = useRef<ResizeObserver | null>(null)
+  const setContactBoxRef = useCallback((el: HTMLDivElement | null) => {
+    contactBoxRef.current = el
+    contactRoRef.current?.disconnect()
+    if (!el || typeof ResizeObserver === 'undefined') { setPreviewVideoSize({ w: 0, h: 0 }); return }
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect
+      setPreviewVideoSize({ w: r?.width ?? el.clientWidth, h: r?.height ?? el.clientHeight })
+    })
+    ro.observe(el)
+    contactRoRef.current = ro
+    setPreviewVideoSize({ w: el.clientWidth, h: el.clientHeight })
+  }, [])
+
+
+
   // Drag the contact overlay anywhere on the preview video. Stores a normalized
   // 0–1 center position so it maps identically to the higher-res merge canvas.
   const handleContactPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -9002,7 +9022,7 @@ export default function DashboardPage() {
               {previewItem.job.video?.storage_path ? (() => {
                 const src = getCardVideoSrc(previewItem.job.id, previewItem.job.video.storage_path) ?? previewItem.job.video.storage_path
                 return (
-                  <div className="relative" ref={contactBoxRef}>
+                  <div className="relative" ref={setContactBoxRef}>
                     {!transcriptOpen && (
                       <>
                         <button
@@ -9042,20 +9062,50 @@ export default function DashboardPage() {
                       clipVolume={1}
                     />
                     {contactActive && !isMergedFinalPreview ? (() => {
+                      // Mirror the burn-in ratios from mergeVideos.ts so the live
+                      // overlay matches the final film exactly (WYSIWYG). `scale`
+                      // is baked into the metrics once, just like drawOverlay.
+                      const scale = Math.min(2, Math.max(0.5, contactOverlay.scale ?? 1))
+                      const ch = previewVideoSize.h || 0
+                      const cw = previewVideoSize.w || 0
+                      const fontSize = Math.max(10, ch * 0.032 * scale)
+                      const lineGap = fontSize * 0.45
+                      const lineHeight = fontSize + lineGap
+                      const padY = fontSize * 0.6
+                      const padX = cw ? cw * 0.04 : fontSize * 0.9
+                      const radius = fontSize * 0.6
+                      const logoH = ch * 0.12 * scale
+                      const logoGap = fontSize * 0.6
                       const content = (
                         <>
                           {contactLogoActive ? (
-                            <img src={contactOverlay.logoUrl} alt="Company logo" className="mb-1 max-h-16 w-auto object-contain" />
+                            <img
+                              src={contactOverlay.logoUrl}
+                              alt="Company logo"
+                              className="w-auto object-contain"
+                              style={{ height: logoH, marginBottom: logoGap - lineGap }}
+                            />
                           ) : null}
                           {contactLines.map((line, i) => (
-                            <span key={i} className="truncate text-sm font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                            <span
+                              key={i}
+                              className="truncate font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
+                              style={{ fontSize, lineHeight: `${lineHeight}px` }}
+                            >
                               {line}
                             </span>
                           ))}
                         </>
                       )
-                      const panelClass = `flex flex-col items-center gap-1 rounded-xl bg-black/45 px-5 py-4 cursor-move touch-none select-none ring-1 transition ${contactDragging ? 'ring-emerald-400/70' : 'ring-white/0 hover:ring-white/40'}`
-                      const scale = contactOverlay.scale ?? 1
+                      const panelClass = `flex flex-col items-center bg-black/45 cursor-move touch-none select-none ring-1 transition ${contactDragging ? 'ring-emerald-400/70' : 'ring-white/0 hover:ring-white/40'}`
+                      const panelStyle: React.CSSProperties = {
+                        gap: lineGap,
+                        borderRadius: radius,
+                        paddingLeft: padX,
+                        paddingRight: padX,
+                        paddingTop: padY,
+                        paddingBottom: padY,
+                      }
                       // Custom dragged position: absolutely centered at the stored point.
                       if (contactOverlay.offset) {
                         return (
@@ -9063,10 +9113,10 @@ export default function DashboardPage() {
                             onPointerDown={handleContactPointerDown}
                             className={`pointer-events-auto absolute z-20 ${panelClass}`}
                             style={{
+                              ...panelStyle,
                               left: `${contactOverlay.offset.x * 100}%`,
                               top: `${contactOverlay.offset.y * 100}%`,
-                              transform: `translate(-50%, -50%) scale(${scale})`,
-                              transformOrigin: 'center',
+                              transform: `translate(-50%, -50%)`,
                             }}
                           >
                             {content}
@@ -9087,13 +9137,14 @@ export default function DashboardPage() {
                           <div
                             onPointerDown={handleContactPointerDown}
                             className={`pointer-events-auto ${panelClass}`}
-                            style={{ transform: `scale(${scale})`, transformOrigin: contactOverlay.position === 'top' ? 'top center' : contactOverlay.position === 'center' ? 'center' : 'bottom center' }}
+                            style={panelStyle}
                           >
                             {content}
                           </div>
                         </div>
                       )
                     })() : null}
+
 
                     {transcriptOpen && !transcriptResolving && transcriptVideoUrl ? (
                       <TranscriptPanel
