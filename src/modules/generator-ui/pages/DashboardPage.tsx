@@ -1794,7 +1794,9 @@ export default function DashboardPage() {
     phone: string
     address: string
     enabled: boolean
-    position: 'top' | 'bottom'
+    position: 'top' | 'center' | 'bottom'
+    logoUrl: string
+    logoEnabled: boolean
   }
   const emptyContact = (): ContactOverlay => ({
     website: '',
@@ -1802,6 +1804,8 @@ export default function DashboardPage() {
     address: '',
     enabled: true,
     position: 'bottom',
+    logoUrl: '',
+    logoEnabled: true,
   })
   const [contactOverlay, setContactOverlay] = useState<ContactOverlay>(emptyContact)
   const [contactMenuOpen, setContactMenuOpen] = useState(false)
@@ -1809,19 +1813,19 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!contactKey) { setContactOverlay(emptyContact()); return }
     let cancelled = false
-    // Local prefs (enabled / position) persist per user in localStorage.
+    // Local prefs (enabled / position / logoEnabled) persist per user in localStorage.
     let base = emptyContact()
     try {
       const raw = window.localStorage.getItem(contactKey)
       if (raw) base = { ...base, ...(JSON.parse(raw) as Partial<ContactOverlay>) }
     } catch { /* ignore */ }
     setContactOverlay(base)
-    // Contact text (website / phone / address) is sourced from the business
-    // profile saved in the Product Ad Scenario modal — single source of truth.
+    // Contact text (website / phone / address) and logo are sourced from the
+    // business profile saved in the Product Ad Scenario modal — single source of truth.
     if (userId) {
       supabase
         .from('generator_business_profiles')
-        .select('contact_website, contact_phone, contact_address')
+        .select('contact_website, contact_phone, contact_address, contact_logo_url')
         .eq('user_id', userId)
         .maybeSingle()
         .then(({ data }) => {
@@ -1831,6 +1835,7 @@ export default function DashboardPage() {
             website: data.contact_website ?? '',
             phone: data.contact_phone ?? '',
             address: data.contact_address ?? '',
+            logoUrl: (data as { contact_logo_url?: string | null }).contact_logo_url ?? '',
           }))
         })
     }
@@ -1841,11 +1846,57 @@ export default function DashboardPage() {
     setContactOverlay((prev) => {
       const next = { ...prev, ...patch }
       if (contactKey) {
-        try { window.localStorage.setItem(contactKey, JSON.stringify(next)) } catch { /* ignore */ }
+        try {
+          // Keep the (potentially large) logo data URL out of localStorage; it
+          // is persisted in the business profile instead.
+          const { logoUrl: _omit, ...local } = next
+          window.localStorage.setItem(contactKey, JSON.stringify(local))
+        } catch { /* ignore */ }
       }
       return next
     })
   }, [contactKey])
+  // Persist the logo to the business profile (single source of truth) and update state.
+  const updateContactLogo = useCallback((logoUrl: string) => {
+    updateContact({ logoUrl })
+    if (!userId) return
+    void (async () => {
+      const value = logoUrl || null
+      const { data: updated } = await supabase
+        .from('generator_business_profiles')
+        .update({ contact_logo_url: value })
+        .eq('user_id', userId)
+        .select('user_id')
+      if (!updated || updated.length === 0) {
+        await supabase
+          .from('generator_business_profiles')
+          .insert({ user_id: userId, business_info: '', contact_logo_url: value })
+      }
+    })()
+  }, [updateContact, userId])
+  // Read an uploaded logo, downscale it to <=256px (PNG data URL), and persist it.
+  const onContactLogoFile = useCallback((file: File | null | undefined) => {
+    if (!file || !file.type.startsWith('image/')) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        const max = 256
+        const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight))
+        const w = Math.max(1, Math.round(img.naturalWidth * scale))
+        const h = Math.max(1, Math.round(img.naturalHeight * scale))
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+        ctx.drawImage(img, 0, 0, w, h)
+        updateContactLogo(canvas.toDataURL('image/png'))
+      }
+      img.src = String(reader.result)
+    }
+    reader.readAsDataURL(file)
+  }, [updateContactLogo])
   // Lines shown in the overlay (only non-empty fields), in display order.
   const contactLines = useMemo(
     () => [contactOverlay.website, contactOverlay.phone, contactOverlay.address]
@@ -1853,7 +1904,8 @@ export default function DashboardPage() {
       .filter(Boolean),
     [contactOverlay.website, contactOverlay.phone, contactOverlay.address],
   )
-  const contactActive = contactOverlay.enabled && contactLines.length > 0
+  const contactLogoActive = contactOverlay.logoEnabled && !!contactOverlay.logoUrl
+  const contactActive = contactOverlay.enabled && (contactLines.length > 0 || contactLogoActive)
 
 
   // Stores durable public URLs (copied into MERGED_BUCKET at finalize time) so
@@ -6582,7 +6634,9 @@ export default function DashboardPage() {
           audioOpt,
           transitionsForMerge,
           abortController.signal,
-          contactActive ? { lines: contactLines, position: contactOverlay.position } : undefined,
+          contactActive
+            ? { lines: contactLines, position: contactOverlay.position, logoUrl: contactLogoActive ? contactOverlay.logoUrl : undefined }
+            : undefined,
         ),
 
         pipelineTimeout,
@@ -8935,20 +8989,37 @@ export default function DashboardPage() {
                     />
                     {contactActive ? (
                       <div
-                        className={`pointer-events-none absolute inset-x-0 z-20 flex flex-col gap-0.5 bg-gradient-to-b px-4 py-3 ${
+                        className={`pointer-events-none absolute z-20 flex flex-col gap-1 px-4 py-3 ${
                           contactOverlay.position === 'top'
-                            ? 'top-0 from-black/65 to-transparent'
-                            : 'bottom-0 from-transparent to-black/65 justify-end'
+                            ? 'inset-x-0 top-0 items-start bg-gradient-to-b from-black/65 to-transparent'
+                            : contactOverlay.position === 'center'
+                              ? 'inset-0 items-center justify-center text-center'
+                              : 'inset-x-0 bottom-0 items-start justify-end bg-gradient-to-b from-transparent to-black/65'
                         }`}
                       >
-                        {contactLines.map((line, i) => (
-                          <span
-                            key={i}
-                            className="truncate text-sm font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
-                          >
-                            {line}
-                          </span>
-                        ))}
+                        {contactOverlay.position === 'center' ? (
+                          <div className="flex flex-col items-center gap-1 rounded-xl bg-black/45 px-5 py-4">
+                            {contactLogoActive ? (
+                              <img src={contactOverlay.logoUrl} alt="Company logo" className="mb-1 max-h-16 w-auto object-contain" />
+                            ) : null}
+                            {contactLines.map((line, i) => (
+                              <span key={i} className="truncate text-sm font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                                {line}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <>
+                            {contactLogoActive ? (
+                              <img src={contactOverlay.logoUrl} alt="Company logo" className="mb-1 max-h-14 w-auto object-contain" />
+                            ) : null}
+                            {contactLines.map((line, i) => (
+                              <span key={i} className="truncate text-sm font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                                {line}
+                              </span>
+                            ))}
+                          </>
+                        )}
                       </div>
                     ) : null}
                     {transcriptOpen && !transcriptResolving && transcriptVideoUrl ? (
@@ -10581,6 +10652,49 @@ export default function DashboardPage() {
                     />
                   </div>
                 </div>
+                <div className="mt-3 space-y-2">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Logo</label>
+                  <div className="flex items-center gap-2">
+                    {contactOverlay.logoUrl ? (
+                      <img
+                        src={contactOverlay.logoUrl}
+                        alt="Company logo"
+                        className="h-10 w-10 rounded-md border border-white/15 bg-white/5 object-contain p-0.5"
+                      />
+                    ) : (
+                      <div className="grid h-10 w-10 place-items-center rounded-md border border-dashed border-white/15 bg-white/[0.03] text-zinc-500">
+                        <ImageIcon className="h-4 w-4" aria-hidden="true" />
+                      </div>
+                    )}
+                    <label className="cursor-pointer rounded-lg border border-white/15 bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/30">
+                      {contactOverlay.logoUrl ? 'Replace' : 'Upload'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => { onContactLogoFile(e.target.files?.[0]); e.currentTarget.value = '' }}
+                      />
+                    </label>
+                    {contactOverlay.logoUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => updateContactLogo('')}
+                        className="text-[11px] text-zinc-400 hover:text-rose-300"
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                  {contactOverlay.logoUrl ? (
+                    <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+                      <span className="text-xs font-medium text-zinc-200">Show logo on video</span>
+                      <Switch
+                        checked={contactOverlay.logoEnabled}
+                        onCheckedChange={(v) => updateContact({ logoEnabled: v })}
+                      />
+                    </div>
+                  ) : null}
+                </div>
                 <div className="mt-3 flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
                   <span className="text-xs font-medium text-zinc-200">Show on video</span>
                   <Switch
@@ -10588,8 +10702,8 @@ export default function DashboardPage() {
                     onCheckedChange={(v) => updateContact({ enabled: v })}
                   />
                 </div>
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  {(['bottom', 'top'] as const).map((pos) => (
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  {(['top', 'center', 'bottom'] as const).map((pos) => (
                     <button
                       key={pos}
                       type="button"
