@@ -8636,7 +8636,7 @@ export default function DashboardPage() {
         open={isVoiceoverOpen}
         onOpenChange={setIsVoiceoverOpen}
         onUseAsSoundtrack={handleVoiceoverAsSoundtrack}
-        products={archiveProductImages.map((p) => ({ id: p.id, name: p.title?.trim() || 'Untitled product' }))}
+        products={archiveProductImages.map((p) => ({ id: p.id, name: p.title?.trim() || 'Untitled product', imageUrl: p.storage_path }))}
         activeVoiceoverUrl={voiceoverUrl}
         activeVoiceoverName={voiceoverName}
         voiceoverVolume={voiceoverVolume}

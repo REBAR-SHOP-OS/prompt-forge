@@ -76,7 +76,7 @@ interface VoiceoverDialogProps {
   onOpenChange: (open: boolean) => void
   onUseAsSoundtrack?: (url: string, name: string) => void
   /** Uploaded products available for advertising-narration generation. */
-  products?: { id: string; name: string }[]
+  products?: { id: string; name: string; imageUrl?: string }[]
   // Active voiceover applied to the film + its timing/volume controls.
   activeVoiceoverUrl?: string | null
   activeVoiceoverName?: string | null
@@ -380,7 +380,7 @@ export function VoiceoverDialog({
                 </PopoverTrigger>
                 <PopoverContent
                   align="start"
-                  className="w-72 border-white/10 bg-black text-zinc-100"
+                  className="w-80 border-white/10 bg-black text-zinc-100"
                 >
                   <div className="space-y-3">
                     <div>
@@ -400,22 +400,45 @@ export function VoiceoverDialog({
                           No saved products yet.
                         </p>
                       ) : (
-                        <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
+                        <div className="grid max-h-56 grid-cols-3 gap-2 overflow-y-auto pr-1">
                           {products.map((p) => (
                             <button
                               key={p.id}
                               type="button"
                               onClick={() => setSelectedProductId(p.id)}
-                              className={`flex w-full items-center justify-between gap-2 rounded-md border px-2 py-1.5 text-left text-xs transition ${
+                              title={p.name}
+                              className={`group relative flex flex-col gap-1 rounded-lg border p-1 text-left transition ${
                                 selectedProductId === p.id
-                                  ? 'border-emerald-300/50 bg-emerald-300/10 text-emerald-100'
-                                  : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:border-white/20'
+                                  ? 'border-emerald-300/60 bg-emerald-300/10'
+                                  : 'border-white/10 bg-white/[0.03] hover:border-white/25'
                               }`}
                             >
-                              <span className="truncate">{p.name}</span>
-                              {selectedProductId === p.id ? (
-                                <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                              ) : null}
+                              <span className="relative block aspect-square w-full overflow-hidden rounded-md border border-white/10 bg-[#15171a]">
+                                {p.imageUrl ? (
+                                  <img
+                                    src={p.imageUrl}
+                                    alt={p.name}
+                                    loading="lazy"
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : (
+                                  <span className="grid h-full w-full place-items-center">
+                                    <ShoppingBag className="h-4 w-4 text-zinc-600" aria-hidden="true" />
+                                  </span>
+                                )}
+                                {selectedProductId === p.id ? (
+                                  <span className="absolute right-1 top-1 grid h-4 w-4 place-items-center rounded-full bg-emerald-400 text-black">
+                                    <Check className="h-3 w-3" aria-hidden="true" />
+                                  </span>
+                                ) : null}
+                              </span>
+                              <span
+                                className={`truncate text-[10px] ${
+                                  selectedProductId === p.id ? 'text-emerald-100' : 'text-zinc-400'
+                                }`}
+                              >
+                                {p.name}
+                              </span>
                             </button>
                           ))}
                         </div>
