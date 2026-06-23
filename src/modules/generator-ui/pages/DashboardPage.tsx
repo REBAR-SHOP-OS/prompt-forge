@@ -9083,7 +9083,7 @@ export default function DashboardPage() {
                               src={contactOverlay.logoUrl}
                               alt="Company logo"
                               className="w-auto object-contain"
-                              style={{ height: logoH, marginBottom: logoGap - lineGap }}
+                              style={{ height: logoH, marginBottom: contactLogoActive ? 0 : logoGap - lineGap }}
                             />
                           ) : null}
                           {!contactLogoActive && contactLines.map((line, i) => (
