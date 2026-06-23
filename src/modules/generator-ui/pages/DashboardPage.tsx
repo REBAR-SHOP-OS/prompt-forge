@@ -57,6 +57,7 @@ import {
   Wand2,
   FileText,
   MessageSquareQuote,
+  Link2,
   X
 } from 'lucide-react'
 import {
@@ -93,6 +94,8 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { Slider } from '@/components/ui/slider'
+import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { toast } from 'sonner'
@@ -113,6 +116,15 @@ import type { VideoSummary } from '@/modules/video-library/contract'
 import { generatorUiGateway } from '@/modules/generator-ui/gateway'
 import { mergeVideoUrls, MergeCancelledError, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
 import { ensureMp4 } from '@/modules/generator-ui/lib/transcodeToMp4'
+import {
+  loadContinuity,
+  saveContinuity,
+  isMemoryEmpty,
+  generateStarterMemory,
+  applyContinuityPrompt,
+  type ContinuityState,
+  type SceneMemory,
+} from '@/modules/generator-ui/lib/continuity'
 import { recordBlobToMp4, canRecordMp4 } from '@/modules/generator-ui/lib/recordToMp4'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
 import UsageStatsPopover from '@/modules/generator-ui/components/UsageStatsPopover'
@@ -1447,6 +1459,11 @@ export default function DashboardPage() {
 
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
   const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15 | 30 | 45 | 135>(5)
+  // Continuity Mode — optional per-chain card-to-card continuity. State is
+  // persisted per generation chain (see continuityChainKey below).
+  const [continuity, setContinuity] = useState<ContinuityState>(() => loadContinuity(null))
+  const [continuityMemoryOpen, setContinuityMemoryOpen] = useState(false)
+  const [memoryDraft, setMemoryDraft] = useState<SceneMemory>(continuity.memory)
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '1:1' | '16:9'>(() => {
     if (typeof window === 'undefined') return '16:9'
     try {
@@ -2165,6 +2182,25 @@ export default function DashboardPage() {
   // its id is NOT a draft. Such projects are READ-ONLY: the user may watch,
   // download, and delete them, but cannot edit/resume/extend them.
   const isReadOnlyProject = !!selectedProjectId && !selectedProjectId.startsWith('draft-')
+
+  // Stable key for the current generation chain — used to persist/restore the
+  // Continuity Mode state and scene memory per project chain.
+  const continuityChainKey = selectedProjectId ?? activeDraftId ?? 'pending'
+  // Reload continuity state whenever the active chain changes.
+  useEffect(() => {
+    setContinuity(loadContinuity(continuityChainKey))
+  }, [continuityChainKey])
+  // Persist + update helper.
+  const updateContinuity = useCallback(
+    (patch: Partial<ContinuityState>) => {
+      setContinuity((prev) => {
+        const next = { ...prev, ...patch, memory: { ...prev.memory, ...(patch.memory ?? {}) } }
+        saveContinuity(continuityChainKey, next)
+        return next
+      })
+    },
+    [continuityChainKey],
+  )
 
   // Persist selectedProjectId + preview state per-user across refreshes so
   // a hard reload re-opens the same Final Film the user was viewing.
@@ -2908,6 +2944,21 @@ export default function DashboardPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const isTextToVideo = generationMode === 'text-to-video'
+  // A previous completed clip is required for Continuity Mode to be meaningful.
+  const previousClip = useMemo(
+    () =>
+      generatedVideos.find(
+        (v) => normalizeStatus(v.status) === 'completed' && v.video?.storage_path,
+      ) ?? null,
+    [generatedVideos],
+  )
+  const hasPreviousClip = !!previousClip
+  // Auto-disable continuity if the chain no longer has a previous clip.
+  useEffect(() => {
+    if (continuity.enabled && !hasPreviousClip) {
+      updateContinuity({ enabled: false })
+    }
+  }, [continuity.enabled, hasPreviousClip, updateContinuity])
   const hasComposerInput = promptText.trim().length > 0 || uploadedFiles.length > 0
   const readyStartFrame = uploadedFiles.find((file) => file.target === 'Start' && file.status === 'ready' && file.url)
   const readyEndFrame = uploadedFiles.find((file) => file.target === 'End' && file.status === 'ready' && file.url)
@@ -5367,6 +5418,33 @@ export default function DashboardPage() {
     return `Main character reference (keep this character consistent): ${description}\n\n${prompt}`
   }
 
+  // Toggle Continuity Mode. When turning on with an empty scene memory, seed a
+  // starter memory from the current prompt + character so the user has
+  // something to edit.
+  function handleToggleContinuity(enabled: boolean) {
+    if (enabled && !hasPreviousClip) return
+    let memory = continuity.memory
+    if (enabled && isMemoryEmpty(memory)) {
+      memory = generateStarterMemory(promptText.trim(), undefined)
+    }
+    updateContinuity({ enabled, memory })
+  }
+
+  // Open the scene-memory editor, seeding from a starter when empty.
+  function openMemoryEditor() {
+    const base = isMemoryEmpty(continuity.memory)
+      ? generateStarterMemory(promptText.trim(), undefined)
+      : continuity.memory
+    setMemoryDraft(base)
+    setContinuityMemoryOpen(true)
+  }
+
+  function saveMemoryEditor() {
+    updateContinuity({ memory: memoryDraft })
+    setContinuityMemoryOpen(false)
+  }
+
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
@@ -5416,6 +5494,20 @@ export default function DashboardPage() {
         plannedPrompt = applyCharacterPrefix(plannedPrompt, desc)
         setVideoColumnMessage(null)
       }
+
+      // Continuity Mode: append the continuity instruction block + scene memory
+      // so the next card continues from the previous clip. The previous frame is
+      // already seeded as the Start frame (Add card / continuation seeding).
+      if (continuity.enabled && hasPreviousClip) {
+        plannedPrompt = applyContinuityPrompt(plannedPrompt, continuity.memory)
+        // Roll the scene memory forward so the next card reuses this state.
+        const promptSummary = promptText.trim().replace(/\s+/g, ' ').split(/(?<=[.!?])\s/)[0]
+        if (promptSummary) {
+          updateContinuity({ memory: { ...continuity.memory, lastState: promptSummary } })
+        }
+      }
+
+
 
 
       // 45s auto-split: ask scenario-write to break the user's single prompt into
@@ -10158,6 +10250,157 @@ export default function DashboardPage() {
             <Clapperboard className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
+
+        {/* Continuity Mode — optional card-to-card continuity */}
+        <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Link2 className="h-4 w-4 text-cyan-300" aria-hidden="true" />
+              <div>
+                <div className="text-xs font-semibold text-zinc-200">Continuity Mode</div>
+                <div className="text-[11px] text-zinc-500">
+                  {hasPreviousClip
+                    ? 'Continue the next card from the previous clip'
+                    : 'Generate a clip first to enable continuity'}
+                </div>
+              </div>
+            </div>
+            <Switch
+              checked={continuity.enabled}
+              disabled={!hasPreviousClip}
+              onCheckedChange={handleToggleContinuity}
+              aria-label="Toggle Continuity Mode"
+            />
+          </div>
+
+          {continuity.enabled && hasPreviousClip ? (
+            <div className="mt-3 space-y-3 border-t border-white/10 pt-3 text-[11px]">
+              {/* Continuation source */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-zinc-500">Continuation source</span>
+                <div role="radiogroup" aria-label="Continuation source" className="inline-flex rounded-full border border-white/10 bg-black/30 p-0.5 font-semibold">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={continuity.source === 'previous-final-frame'}
+                    onClick={() => updateContinuity({ source: 'previous-final-frame' })}
+                    className={`rounded-full px-2.5 py-1 transition ${continuity.source === 'previous-final-frame' ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+                  >
+                    Previous final frame
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={continuity.source === 'best-clear-frame'}
+                    onClick={() => updateContinuity({ source: 'best-clear-frame' })}
+                    className={`rounded-full px-2.5 py-1 transition ${continuity.source === 'best-clear-frame' ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+                  >
+                    Best clear frame
+                  </button>
+                </div>
+              </div>
+
+              {/* Character / reference source */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-zinc-500">Character / reference</span>
+                {selectedCharacter ? (
+                  <span className="inline-flex items-center gap-2 text-zinc-200">
+                    {selectedCharacter.url ? (
+                      <img src={selectedCharacter.url} alt="" className="h-6 w-6 rounded object-cover" />
+                    ) : null}
+                    {selectedCharacter.title || 'Selected reference'}
+                  </span>
+                ) : (
+                  <span className="text-zinc-400">No reference selected</span>
+                )}
+              </div>
+              {!selectedCharacter ? (
+                <p className="text-[10px] text-amber-300/80">Add a character reference for stronger continuity.</p>
+              ) : null}
+
+              {/* Scene memory preview */}
+              <div className="rounded-lg bg-black/30 p-2.5">
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="font-semibold text-zinc-300">Scene memory</span>
+                  <button
+                    type="button"
+                    onClick={openMemoryEditor}
+                    className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-semibold text-zinc-300 transition hover:bg-white/5"
+                  >
+                    <Pencil className="h-3 w-3" aria-hidden="true" /> Edit memory
+                  </button>
+                </div>
+                <dl className="space-y-0.5 text-zinc-400">
+                  <div><span className="text-zinc-500">Character:</span> {continuity.memory.character || '—'}</div>
+                  <div><span className="text-zinc-500">Environment:</span> {continuity.memory.environment || '—'}</div>
+                  <div><span className="text-zinc-500">Visual style:</span> {continuity.memory.style || '—'}</div>
+                  <div><span className="text-zinc-500">Last scene state:</span> {continuity.memory.lastState || '—'}</div>
+                </dl>
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        {/* Scene memory editor */}
+        <Dialog open={continuityMemoryOpen} onOpenChange={setContinuityMemoryOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit scene memory</DialogTitle>
+              <DialogDescription>
+                Adjust the continuity description used for the next card. This is added to the generation prompt.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-zinc-300">Main character</label>
+                <Textarea
+                  value={memoryDraft.character}
+                  onChange={(e) => setMemoryDraft((m) => ({ ...m, character: e.target.value }))}
+                  rows={2}
+                  placeholder="Describe the main character, outfit, colors…"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-zinc-300">Environment</label>
+                <Textarea
+                  value={memoryDraft.environment}
+                  onChange={(e) => setMemoryDraft((m) => ({ ...m, environment: e.target.value }))}
+                  rows={2}
+                  placeholder="Describe the location / setting…"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-zinc-300">Visual style</label>
+                <Textarea
+                  value={memoryDraft.style}
+                  onChange={(e) => setMemoryDraft((m) => ({ ...m, style: e.target.value }))}
+                  rows={2}
+                  placeholder="Describe lighting, color palette, camera language…"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-zinc-300">Previous ending state</label>
+                <Textarea
+                  value={memoryDraft.lastState}
+                  onChange={(e) => setMemoryDraft((m) => ({ ...m, lastState: e.target.value }))}
+                  rows={2}
+                  placeholder="Where the previous clip ended…"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => setContinuityMemoryOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={saveMemoryEditor}>
+                Save memory
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+
+
 
 
         {!isTextToVideo ? (
