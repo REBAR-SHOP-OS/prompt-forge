@@ -1,75 +1,42 @@
-## Continuity Mode — implementation plan
+## نمایش کاراکتر شیت انتخاب‌شده در پنل Continuity Mode
 
-### Goal
-Let users optionally make each new card continue from the previous clip using three combined signals: (1) the previous clip's final frame, (2) a saved character/reference image, and (3) an editable short scene memory — plus an auto-appended continuity instruction in the generation prompt. Continuity stays fully optional and existing behavior is untouched when off.
+### مشکل فعلی
+وقتی Continuity Mode فعال می‌شود، ردیف «Character / reference» همیشه «No reference selected» نشان می‌دهد — حتی اگر آن فیلم با یک کاراکتر شیت ساخته شده باشد. علت: این پنل فقط به state موقت `selectedCharacter` نگاه می‌کند، و این state هنگام باز شدن پروژه/کلیپ موجود ریست می‌شود (`setSelectedCharacter(null)`). کاراکتر استفاده‌شده در ساخت کلیپ روی ردیف job ذخیره نمی‌شود، بنابراین هیچ مرجع پایداری برای نمایش وجود ندارد.
 
-### What already exists (reuse, don't rebuild)
-- `handleAddVideoCard` already seeds the previous completed clip's **final frame** as the Start frame (`captureLastFrameAsBlob` → upload → Start upload).
-- Character reference already exists: `selectedCharacter`, `resolveCharacterDescription`, `applyCharacterPrefix` inject the character description into the prompt.
-- `draftGroupId` (`ensureActiveDraftGroupId`) already identifies the current project/generation chain.
-- Frame fields (`firstFrameUrl`/`lastFrameUrl`) already flow into `createJob` and persist on the job row.
+### هدف
+وقتی این آیکون/سوییچ زده می‌شود و پنل Continuity باز می‌شود، کاراکتر شیتی که برای آن فیلم انتخاب شده بود در ردیف Character / reference نمایش داده شود تا فیلم بعدی بر اساس همان شخصیت ساخته شود. کاملاً اختیاری و فقط frontend، بدون تغییر دیتابیس/ادج‌فانکشن.
 
-Continuity Mode wires these together behind one toggle and adds the missing pieces: scene memory + the continuity prompt block.
+### راهکار امن و کم‌ریسک
+کاراکتر انتخاب‌شده را به‌صورت پایدار در همان state زنجیره‌ای Continuity (همان localStorage موجود `generator:continuity:<chainId>`) ذخیره می‌کنیم — دقیقاً مثل scene memory. به این ترتیب حتی پس از ریست شدن `selectedCharacter` یا بازگشت به پروژه، مرجع کاراکتر باقی می‌ماند.
 
-### Smallest safe data approach (no schema change)
-Store continuity state in `localStorage`, keyed by the active `draftGroupId`, exactly like the existing `persistLockedRatio` / `persistPendingEndAppends` patterns. This satisfies "store and reuse a short scene memory per project/generation chain" without touching the backend, DB, or provider architecture.
+#### ۱) گسترش `src/modules/generator-ui/lib/continuity.ts`
+- افزودن فیلد اختیاری `character` به `ContinuityState`:
+  ```ts
+  characterRef?: { id: string; url: string; title: string | null } | null
+  ```
+- مقدار پیش‌فرض `null` و خواندن/نوشتن امن در `loadContinuity`/`saveContinuity` (با fallback روی null هنگام نبود مقدار).
 
-Stored shape per chain:
-```text
-continuity:<draftGroupId> = {
-  enabled: boolean,
-  source: "previous-final-frame" | "best-clear-frame",
-  memory: { character, environment, style, lastState }
-}
-```
-"Which continuation inputs were used" is already captured on the job via `first_frame_url`/`last_frame_url`, and the continuity text is embedded in the saved prompt — so it is debuggable/repeatable without new columns.
+#### ۲) ذخیره کاراکتر در زمان درست (`DashboardPage.tsx`)
+- هنگام انتخاب کاراکتر (مسیرهای `setSelectedCharacter` در دیالوگ Character Sheet و منوی پروژه) و هنگام ساخت کلیپ با کاراکتر، علاوه بر state فعلی، مرجع کاراکتر در `updateContinuity({ characterRef })` نیز ذخیره شود.
+- هنگام فعال‌سازی Continuity (`handleToggleContinuity`)، اگر `selectedCharacter` موجود است همان را در `characterRef` ست کن؛ و اگر scene memory خالی است، فیلد `character` متن مموری از توضیح کاراکتر (`resolveCharacterDescription`) به‌عنوان starter پر شود تا فیلم بعدی واقعاً بر پایه آن شخصیت ساخته شود.
 
-### UI changes (DashboardPage.tsx, near duration/cards controls)
-1. **Toggle**: a compact "Continuity Mode" `Switch` placed beside the duration controls.
-   - Disabled state with tooltip when no previous completed clip exists in the project.
-2. **Continuity panel** (shown when enabled): 
-   - Continuation source row: "Previous final frame" (default) with a secondary "Best clear frame" option only if a clearer frame is available (uses existing thumbnail/last-frame data; no new AI frame-quality system).
-   - Character/reference row: "No reference selected" + subtle warning "Add a character reference for stronger continuity." when none, or the selected character name/thumbnail when set (reuses `selectedCharacter`).
-   - Scene memory preview: character / environment / visual style / previous ending state.
-   - **Edit memory** action opening a small dialog (existing `Dialog` + `Textarea`) to manually adjust memory before generating.
-3. If scene memory is empty when enabling, auto-generate a starter memory from the current prompt + card metadata (lightweight local heuristic, user-editable).
+#### ۳) نمایش در پنل (`DashboardPage.tsx`، ردیف Character / reference حدود خط ۱۰۳۰۵)
+- منبع نمایش را از `selectedCharacter` به مقدار مؤثر تغییر بده:
+  ```ts
+  const continuityCharacter = selectedCharacter ?? continuity.characterRef ?? null
+  ```
+- اگر `continuityCharacter` موجود بود، تصویر بندانگشتی + عنوان نمایش داده شود؛ در غیر این صورت همان حالت «No reference selected» و پیام راهنما باقی بماند.
+- اگر کاراکتر از `continuity.characterRef` آمده ولی `selectedCharacter` خالی است، با کلیک روی ردیف، `selectedCharacter` با همان مقدار ست شود تا فیلم بعدی قطعاً از آن استفاده کند (هم‌سو شدن state موقت با مرجع پایدار).
 
-### Prompt behavior
-When Continuity Mode is enabled, build the final prompt as: character prefix (existing) → user prompt → appended continuity block:
-```text
-Continue directly from the previous clip. Preserve the same main character, outfit, proportions, colors, visual style, lighting, environment, camera language, and story context. Use the provided previous frame as the motion and position bridge. Use the character/reference image to preserve identity and fine details. Do not redesign the character, location, or visual style unless the user explicitly asks for a change.
+#### ۴) استفاده در پرامپت فیلم بعدی
+- در مسیر `handleSubmit`، منطق فعلی تزریق کاراکتر (`applyCharacterPrefix` + `resolveCharacterDescription`) از `selectedCharacter` استفاده می‌کند. با هم‌سو شدن `selectedCharacter` با `characterRef` در مرحله ۳، فیلم بعدی به‌صورت خودکار بر اساس همان کاراکتر شیت ساخته می‌شود؛ تغییر منطق سرور لازم نیست.
 
-Scene memory:
-Main character: <character>
-Environment: <environment>
-Visual style: <style>
-Previous ending state: <lastState>
-```
-This is added in the existing `handleSubmit` path right where `applyCharacterPrefix` runs, gated on the toggle.
+### خارج از محدوده (دست‌نخورده)
+بدون تغییر دیتابیس/اسکیم، بدون تغییر ادج‌فانکشن یا قرارداد `createJob`، رفتار فعلی final-frame حفظ می‌شود، Continuity همچنان اختیاری و پیش‌فرض خاموش است.
 
-### Generation job behavior
-- Continuity ON + previous clip exists → ensure the previous final/selected frame is passed as `firstFrameUrl` (reuse `handleAddVideoCard`'s seeding so the Start frame is already populated), keep existing start-image behavior.
-- Character/reference: current provider flow injects it as prompt text (multi-image reference not supported yet), so we keep the character description in the prompt — matching the spec's fallback.
-- Continuity prompt block + scene memory included in the final provider prompt.
-- After a card completes, update the chain's `lastState` memory from the new prompt so the next card reuses it.
-
-### Failure states
-- No previous clip → toggle disabled with clear reason.
-- No character reference → still allowed; subtle warning shown.
-- Empty scene memory → starter memory generated from prompt/metadata and made editable.
-
-### Explicitly out of scope (untouched)
-No new project, no stack change, no generation-pipeline redesign, no billing/credits/team/model-comparison, existing final-frame continuation preserved, Continuity Mode optional and off by default.
-
-### Validation
-- Toggle enable/disable; disabled state with no prior clip.
-- Card 2 from card 1 uses previous frame as continuation image.
-- Character asset, when present, is referenced in the job prompt.
-- Final prompt contains the continuity instruction block + scene memory.
-- Scene memory persists per chain and is reused; user can edit before generating.
-- Normal generation still works with Continuity off.
-- Typecheck/build passes.
-
-### Technical notes
-- All changes are frontend/presentation in `src/modules/generator-ui/pages/DashboardPage.tsx` plus possibly one small helper file (e.g. `lib/continuity.ts`) for the localStorage read/write and memory templating.
-- No edits to `createJob` contract, edge functions, DB schema, or provider adapters.
+### اعتبارسنجی
+- فعال کردن Continuity روی فیلمی که با کاراکتر شیت ساخته شده → نمایش تصویر و نام همان کاراکتر در ردیف Character / reference.
+- بستن و بازکردن دوباره پروژه → مرجع کاراکتر همچنان نمایش داده می‌شود (پایداری localStorage).
+- ساخت فیلم بعدی → پرامپت شامل توضیح همان کاراکتر است.
+- نبود کاراکتر → همان پیام راهنمای قبلی.
+- Typecheck/build سالم.
