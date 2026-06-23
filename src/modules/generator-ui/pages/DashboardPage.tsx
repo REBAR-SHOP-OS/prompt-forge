@@ -10762,9 +10762,9 @@ export default function DashboardPage() {
                     <button
                       key={pos}
                       type="button"
-                      onClick={() => updateContact({ position: pos })}
+                      onClick={() => updateContact({ position: pos, offset: null })}
                       className={`rounded-lg border px-3 py-1.5 text-xs font-medium capitalize transition ${
-                        contactOverlay.position === pos
+                        !contactOverlay.offset && contactOverlay.position === pos
                           ? 'border-emerald-400/60 bg-emerald-500/10 text-emerald-100'
                           : 'border-white/15 bg-white/[0.03] text-zinc-300 hover:border-white/30'
                       }`}
@@ -10773,6 +10773,21 @@ export default function DashboardPage() {
                     </button>
                   ))}
                 </div>
+                <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                  <span className="text-zinc-400">
+                    {contactOverlay.offset ? 'Custom position (drag on video)' : 'Tip: drag the overlay on the video'}
+                  </span>
+                  {contactOverlay.offset ? (
+                    <button
+                      type="button"
+                      onClick={() => updateContact({ offset: null })}
+                      className="rounded-md border border-white/15 bg-white/[0.03] px-2 py-1 font-medium text-zinc-300 transition hover:border-white/30"
+                    >
+                      Reset position
+                    </button>
+                  ) : null}
+                </div>
+
               </PopoverContent>
             </Popover>
 
