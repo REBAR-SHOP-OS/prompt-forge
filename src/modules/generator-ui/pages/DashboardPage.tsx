@@ -5862,6 +5862,12 @@ export default function DashboardPage() {
     // Content continuity for chained cards: resolve the character description once
     // and reuse it as a prefix on every scene so all cards keep the same subject.
     const continuityCharacterRef = selectedCharacter ?? continuity.characterRef ?? null
+    // Persistent identity anchor: the actual Character Sheet image URL, sent on
+    // EVERY card (card 1 included) in addition to the previous-frame seed so the
+    // provider keeps the same character instead of drifting. Independent of the
+    // text description prefix below.
+    const referenceImageUrls: string[] | undefined =
+      continuityCharacterRef?.url ? [continuityCharacterRef.url] : undefined
     let characterPrefixDesc: string | null = null
     if (continuityActive && continuityCharacterRef) {
       try {
@@ -5903,6 +5909,7 @@ export default function DashboardPage() {
           durationSeconds: perClipDuration,
           aspectRatio: effectiveRatio,
           firstFrameUrl: startFrameUrl,
+          referenceImageUrls,
           draftGroupId,
           narrationText,
         })
