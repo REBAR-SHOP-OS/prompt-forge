@@ -6,6 +6,8 @@ import {
   Mic,
   CheckCircle2,
   AlertTriangle,
+  Play,
+  Pause,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
