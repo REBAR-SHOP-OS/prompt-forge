@@ -107,6 +107,21 @@ function formatTimeMS(s: number): string {
   return `${m}:${ss.toString().padStart(2, '0')}`
 }
 
+// Supported translation targets (must match the translate-text edge function).
+const TRANSLATE_LANGS: { code: string; label: string }[] = [
+  { code: 'fa', label: 'فارسی' },
+  { code: 'en', label: 'English' },
+  { code: 'ar', label: 'العربية' },
+  { code: 'tr', label: 'Türkçe' },
+  { code: 'es', label: 'Español' },
+  { code: 'fr', label: 'Français' },
+  { code: 'de', label: 'Deutsch' },
+  { code: 'ru', label: 'Русский' },
+  { code: 'zh', label: '中文' },
+]
+
+
+
 export function VoiceoverDialog({
   open,
   onOpenChange,
