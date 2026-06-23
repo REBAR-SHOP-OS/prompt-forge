@@ -118,6 +118,7 @@ import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { videoLibraryGateway } from '@/modules/video-library/gateway'
 import type { VideoSummary } from '@/modules/video-library/contract'
 import { generatorUiGateway } from '@/modules/generator-ui/gateway'
+import { externalApiAdapterGateway, type LocalVideoStatusResult } from '@/modules/external-api-adapter/gateway'
 import { mergeVideoUrls, MergeCancelledError, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
 import { ensureMp4 } from '@/modules/generator-ui/lib/transcodeToMp4'
 import {
