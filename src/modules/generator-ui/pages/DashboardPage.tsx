@@ -96,6 +96,8 @@ import {
 import { Slider } from '@/components/ui/slider'
 
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { toast } from 'sonner'
