@@ -1295,12 +1295,22 @@ async function startLocalVideo(
   const seconds = input.durationSeconds && input.durationSeconds > 0 ? input.durationSeconds : 5;
   const numFrames = Math.max(1, Math.round(seconds * fps));
 
+  // Local routers (Wan 2.1 / LTX on ComfyUI) have no standardized dedicated
+  // reference-image input. Keep firstFrameUrl as the start/continuation image.
+  // Forward referenceImageUrls as non-breaking extra fields (a capable router
+  // can consume them; others ignore unknown keys) AND fold identity into the
+  // prompt as a guaranteed fallback.
+  const refs = (input.referenceImageUrls ?? []).filter((u) => typeof u === "string" && u.trim());
+  const localPrompt = augmentPromptWithReferences(input.prompt, refs);
+
   const body = {
     model: resolvedModel,
-    prompt: input.prompt,
+    prompt: localPrompt,
     image_url: input.firstFrameUrl ?? input.lastFrameUrl ?? null,
     first_frame_url: input.firstFrameUrl ?? null,
     last_frame_url: input.lastFrameUrl ?? null,
+    // Non-breaking reference passthrough — ignored by routers that don't read it.
+    reference_image_urls: refs.length > 0 ? refs : undefined,
     duration: seconds,
     duration_seconds: seconds,
     // Frame-count fields — send several common aliases so different local
@@ -1313,6 +1323,7 @@ async function startLocalVideo(
     aspect_ratio: input.aspectRatio ?? "16:9",
     response_format: "url",
   };
+
 
   const res = await fetch(`${config.baseUrl}/videos/generations`, {
     method: "POST",
