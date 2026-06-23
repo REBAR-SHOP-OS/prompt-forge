@@ -5495,6 +5495,20 @@ export default function DashboardPage() {
         setVideoColumnMessage(null)
       }
 
+      // Continuity Mode: append the continuity instruction block + scene memory
+      // so the next card continues from the previous clip. The previous frame is
+      // already seeded as the Start frame (Add card / continuation seeding).
+      if (continuity.enabled && hasPreviousClip) {
+        plannedPrompt = applyContinuityPrompt(plannedPrompt, continuity.memory)
+        // Roll the scene memory forward so the next card reuses this state.
+        const promptSummary = promptText.trim().replace(/\s+/g, ' ').split(/(?<=[.!?])\s/)[0]
+        if (promptSummary) {
+          updateContinuity({ memory: { ...continuity.memory, lastState: promptSummary } })
+        }
+      }
+
+
+
 
       // 45s auto-split: ask scenario-write to break the user's single prompt into
       // three sequential 15s scenes, then chain them via submitScenesAsJobs so each
