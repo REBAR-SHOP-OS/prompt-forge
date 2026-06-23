@@ -36,7 +36,7 @@ export const externalApiAdapterGateway = {
     const ctx = startRequest(req, `/${EXTERNAL_API_ADAPTER_CONTRACT.domain}/${operation}`);
     const svc = getServiceClient();
     try {
-      if (req.method !== "POST") {
+      if (req.method !== "POST" && !(operation === "localVideoStatus" && req.method === "GET")) {
         return errorResponse("METHOD_NOT_ALLOWED", "Use POST", 405, ctx.requestId);
       }
       const auth = await authenticate(req);
