@@ -10110,27 +10110,13 @@ export default function DashboardPage() {
             const renderCard = (video: JobDetail, variant: 'final' | 'draft') => {
               const isPreviewSelected = previewVideo?.id === video.id
               // For drafts, resolve the real preview from the snapshot maps so
-              // a stale/empty entry.video never shows a blank card. For finals,
-              // new films persist their own poster (thumbnail_url) so we use the
-              // entry video directly. Legacy finals have no poster, so their
-              // preview depends entirely on the (heavy, sometimes-missing) merged
-              // file — for those we prefer the first source-clip snapshot, which
-              // is a smaller, more durable asset that still represents the film.
-              const display = (() => {
-                if (variant === 'draft') return resolveDraftDisplay(video.id, video).video
-                if (video.video?.thumbnail_url) return video.video
-                const sources = projectSourceJobs[video.id] ?? []
-                const firstSource = sources.find((c) => !!c.video?.storage_path)
-                if (firstSource?.video?.storage_path) {
-                  return {
-                    id: firstSource.video.id ?? video.id,
-                    storage_path: firstSource.video.storage_path,
-                    thumbnail_url: firstSource.video.thumbnail_url ?? null,
-                    aspect_ratio: firstSource.video.aspect_ratio ?? video.requested_aspect_ratio ?? null,
-                    duration: firstSource.video.duration ?? null,
-                  }
-                }
-                return video.video
+              // a stale/empty entry.video never shows a blank card. New finals
+              // persist their own poster (video.thumbnail_url) so the card shows
+              // a real preview even if the heavy merged file later disappears.
+              const display =
+                variant === 'draft'
+                  ? resolveDraftDisplay(video.id, video).video
+                  : video.video
               })()
               const selectMode = variant === 'final' ? finalSelectMode : draftSelectMode
               const isChecked = (variant === 'final' ? selectedFinalIds : selectedDraftIds).has(video.id)
