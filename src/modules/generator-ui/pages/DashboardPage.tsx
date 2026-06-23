@@ -10766,7 +10766,17 @@ export default function DashboardPage() {
                 </p>
                 <div className="space-y-2.5">
                   <div className="space-y-1">
-                    <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Website</label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Website</label>
+                      <button
+                        type="button"
+                        onClick={() => updateContact({ websiteEnabled: !contactOverlay.websiteEnabled })}
+                        title={contactOverlay.websiteEnabled ? 'Hide on video' : 'Show on video'}
+                        className={`grid h-6 w-6 place-items-center rounded-md transition ${contactOverlay.websiteEnabled ? 'text-emerald-300 hover:text-emerald-200' : 'text-zinc-600 hover:text-zinc-400'}`}
+                      >
+                        {contactOverlay.websiteEnabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
                     <Input
                       value={contactOverlay.website}
                       onChange={(e) => updateContact({ website: e.target.value })}
@@ -10775,7 +10785,17 @@ export default function DashboardPage() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Phone</label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Phone</label>
+                      <button
+                        type="button"
+                        onClick={() => updateContact({ phoneEnabled: !contactOverlay.phoneEnabled })}
+                        title={contactOverlay.phoneEnabled ? 'Hide on video' : 'Show on video'}
+                        className={`grid h-6 w-6 place-items-center rounded-md transition ${contactOverlay.phoneEnabled ? 'text-emerald-300 hover:text-emerald-200' : 'text-zinc-600 hover:text-zinc-400'}`}
+                      >
+                        {contactOverlay.phoneEnabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
                     <Input
                       value={contactOverlay.phone}
                       onChange={(e) => updateContact({ phone: e.target.value })}
@@ -10784,7 +10804,17 @@ export default function DashboardPage() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Address</label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Address</label>
+                      <button
+                        type="button"
+                        onClick={() => updateContact({ addressEnabled: !contactOverlay.addressEnabled })}
+                        title={contactOverlay.addressEnabled ? 'Hide on video' : 'Show on video'}
+                        className={`grid h-6 w-6 place-items-center rounded-md transition ${contactOverlay.addressEnabled ? 'text-emerald-300 hover:text-emerald-200' : 'text-zinc-600 hover:text-zinc-400'}`}
+                      >
+                        {contactOverlay.addressEnabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
                     <Input
                       value={contactOverlay.address}
                       onChange={(e) => updateContact({ address: e.target.value })}
@@ -10793,6 +10823,7 @@ export default function DashboardPage() {
                     />
                   </div>
                 </div>
+
                 <div className="mt-3 space-y-2">
                   <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Logo</label>
                   <div className="flex items-center gap-2">
