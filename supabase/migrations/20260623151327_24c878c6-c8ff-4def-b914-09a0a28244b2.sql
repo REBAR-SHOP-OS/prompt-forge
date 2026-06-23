@@ -1,0 +1,1 @@
+ALTER TABLE public.generator_business_profiles ADD COLUMN IF NOT EXISTS contact_logo_url text;

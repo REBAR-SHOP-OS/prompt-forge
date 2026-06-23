@@ -3,6 +3,7 @@ export interface JobSummary {
   id: string;
   status: string;
   input_prompt: string;
+  narration_text?: string | null;
   provider_key: string | null;
   model_key: string | null;
   provider_job_id?: string | null;
@@ -41,12 +42,20 @@ export interface CreateJobInput {
   prompt: string;
   firstFrameUrl?: string;
   lastFrameUrl?: string;
+  /**
+   * Optional persistent character/reference image URL(s) (e.g. a Character
+   * Sheet). Sent in ADDITION to firstFrameUrl/lastFrameUrl to anchor identity
+   * across chained cards. Providers that don't support reference images ignore it.
+   */
+  referenceImageUrls?: string[];
   /** Requested clip length in seconds. Defaults to 5 server-side. */
   durationSeconds?: 5 | 10 | 15;
   /** Requested output aspect ratio. Defaults to 16:9 server-side. */
   aspectRatio?: AspectRatio;
   /** Durable per-project group id so all clips in one session stay one draft. */
   draftGroupId?: string;
+  /** Authoritative narration (spoken lines) from the scenario for this card. */
+  narrationText?: string;
 }
 
 export interface CreateJobResult {

@@ -101,6 +101,34 @@ export interface MergeResult {
 }
 
 /**
+ * Contact / branding text overlay burned into every recorded frame.
+ * Each entry in `lines` becomes one row of text (e.g. website, phone, address).
+ */
+export interface MergeOverlayOptions {
+  lines: string[]
+  position?: 'top' | 'center' | 'bottom'
+  /** Normalized 0–1 center position when the user has dragged the overlay.
+   *  Takes precedence over `position` when set. */
+  offset?: { x: number; y: number }
+  /** Optional logo (data URL or same-origin URL) drawn above the text. */
+  logoUrl?: string
+  /** Size multiplier for the overlay (logo + text). 1 = default. */
+  scale?: number
+  /** Show the translucent backdrop panel behind the logo + text. */
+  panelEnabled?: boolean
+  /** Hex color of the backdrop panel. */
+  panelColor?: string
+  /** Opacity of the backdrop panel (0–1). */
+  panelOpacity?: number
+  /** Hex color of the overlay text. */
+  textColor?: string
+  /** CSS font-family stack used for the overlay text. */
+  fontFamily?: string
+}
+
+
+
+/**
  * Input clip descriptor for {@link mergeVideoUrls}. The merger handles image
  * clips natively (no MediaRecorder round-trip), so still images get painted
  * directly on the merge canvas for `durationSec` seconds.
@@ -261,6 +289,175 @@ function clipSource(c: ClipItem): HTMLVideoElement | HTMLImageElement {
   return c.kind === 'video' ? c.video : c.image
 }
 
+// Active contact/branding overlay for the current merge run. Set at the start
+// of mergeVideoUrls and cleared when it finishes so it never leaks across runs.
+let activeOverlay: MergeOverlayOptions | null = null
+let activeLogo: HTMLImageElement | null = null
+
+/** Convert a hex color + alpha into an rgba() string for canvas fills. */
+function overlayHexToRgba(hex: string, alpha: number): string {
+  const h = (hex || '#000000').replace('#', '')
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h
+  const r = parseInt(full.slice(0, 2) || '00', 16)
+  const g = parseInt(full.slice(2, 4) || '00', 16)
+  const b = parseInt(full.slice(4, 6) || '00', 16)
+  const a = Math.min(1, Math.max(0, Number.isFinite(alpha) ? alpha : 0.45))
+  return `rgba(${r}, ${g}, ${b}, ${a})`
+}
+
+
+/**
+ * Draw the contact/branding text lines onto the merge canvas. Called after each
+ * frame paint so the text is baked into every captured frame (and transitions).
+ */
+function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
+  const overlay = activeOverlay
+  if (!overlay) return
+  const lines = overlay.lines.map((l) => l.trim()).filter(Boolean)
+  const logo = activeLogo
+  if (lines.length === 0 && !logo) return
+
+  const position = overlay.position ?? 'bottom'
+  const panelEnabled = overlay.panelEnabled !== false
+  const panelColor = overlay.panelColor ?? '#000000'
+  const panelOpacity = typeof overlay.panelOpacity === 'number' ? overlay.panelOpacity : 0.45
+  const panelFill = overlayHexToRgba(panelColor, panelOpacity)
+  const textColor = overlay.textColor ?? '#ffffff'
+  const fontFamily = overlay.fontFamily || "system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif"
+  const scale = Math.min(2, Math.max(0.5, overlay.scale ?? 1))
+  const fontSize = Math.max(14, Math.round(ch * 0.032 * scale))
+  const lineGap = Math.round(fontSize * 0.45)
+  const padX = Math.round(cw * 0.04)
+  const padY = Math.round(fontSize * 0.6)
+  const lineHeight = fontSize + lineGap
+
+  // Logo dimensions (preserve aspect, height ~12% of frame).
+  let logoW = 0
+  let logoH = 0
+  if (logo && logo.naturalWidth && logo.naturalHeight) {
+    logoH = Math.round(ch * 0.12 * scale)
+    logoW = Math.round(logoH * (logo.naturalWidth / logo.naturalHeight))
+  }
+  const logoGap = logoH ? Math.round(fontSize * 0.6) : 0
+
+  const textBlockHeight = lines.length ? lines.length * lineHeight - lineGap : 0
+  const contentHeight = textBlockHeight + logoH + logoGap
+  const blockHeight = contentHeight + padY * 2
+
+  ctx.save()
+  ctx.textBaseline = 'top'
+  ctx.font = `600 ${fontSize}px ${fontFamily}`
+
+  // Custom dragged position: a centered translucent panel anchored at the
+  // stored normalized point, clamped so it stays fully on-screen.
+  if (overlay.offset) {
+    const panelW = Math.min(Math.round(cw * 0.92), Math.round(cw * 0.7))
+    const panelH = blockHeight
+    const cx = Math.min(cw - panelW / 2, Math.max(panelW / 2, overlay.offset.x * cw))
+    const cy = Math.min(ch - panelH / 2, Math.max(panelH / 2, overlay.offset.y * ch))
+    const panelX = Math.round(cx - panelW / 2)
+    const panelY = Math.round(cy - panelH / 2)
+    const radius = Math.round(fontSize * 0.6)
+    if (panelEnabled) {
+      ctx.fillStyle = panelFill
+      roundRect(ctx, panelX, panelY, panelW, panelH, radius)
+      ctx.fill()
+    }
+
+    let y = panelY + padY
+    if (logoH) {
+      ctx.drawImage(logo as HTMLImageElement, Math.round(cx - logoW / 2), y, logoW, logoH)
+      y += logoH + logoGap
+    }
+    ctx.shadowColor = 'rgba(0,0,0,0.85)'
+    ctx.shadowBlur = Math.round(fontSize * 0.25)
+    ctx.shadowOffsetY = 1
+    ctx.fillStyle = textColor
+    ctx.textAlign = 'center'
+    for (const line of lines) {
+      ctx.fillText(line, Math.round(cx), y, panelW - padX)
+      y += lineHeight
+    }
+    ctx.restore()
+    return
+  }
+
+  if (position === 'center') {
+
+    // Centered translucent panel with centered content.
+    const panelW = Math.round(cw * 0.92)
+    const panelX = Math.round((cw - panelW) / 2)
+    const panelY = Math.round((ch - blockHeight) / 2)
+    const radius = Math.round(fontSize * 0.6)
+    if (panelEnabled) {
+      ctx.fillStyle = panelFill
+      roundRect(ctx, panelX, panelY, panelW, blockHeight, radius)
+      ctx.fill()
+    }
+
+    let y = panelY + padY
+    if (logoH) {
+      ctx.drawImage(logo as HTMLImageElement, Math.round((cw - logoW) / 2), y, logoW, logoH)
+      y += logoH + logoGap
+    }
+    ctx.shadowColor = 'rgba(0,0,0,0.85)'
+    ctx.shadowBlur = Math.round(fontSize * 0.25)
+    ctx.shadowOffsetY = 1
+    ctx.fillStyle = textColor
+    ctx.textAlign = 'center'
+    for (const line of lines) {
+      ctx.fillText(line, Math.round(cw / 2), y, panelW - padX)
+      y += lineHeight
+    }
+    ctx.restore()
+    return
+  }
+
+  const barY = position === 'top' ? 0 : ch - blockHeight
+  if (panelEnabled) {
+    // Translucent gradient bar for legibility on any footage.
+    const strong = overlayHexToRgba(panelColor, Math.min(1, panelOpacity * 1.38))
+    const clear = overlayHexToRgba(panelColor, 0)
+    const grad = ctx.createLinearGradient(0, barY, 0, barY + blockHeight)
+    if (position === 'top') {
+      grad.addColorStop(0, strong)
+      grad.addColorStop(1, clear)
+    } else {
+      grad.addColorStop(0, clear)
+      grad.addColorStop(1, strong)
+    }
+    ctx.fillStyle = grad
+    ctx.fillRect(0, barY, cw, blockHeight)
+  }
+
+  let y = barY + padY
+  if (logoH) {
+    ctx.drawImage(logo as HTMLImageElement, padX, y, logoW, logoH)
+    y += logoH + logoGap
+  }
+  ctx.shadowColor = 'rgba(0,0,0,0.85)'
+  ctx.shadowBlur = Math.round(fontSize * 0.25)
+  ctx.shadowOffsetX = 0
+  ctx.shadowOffsetY = 1
+  ctx.fillStyle = textColor
+  for (const line of lines) {
+    ctx.fillText(line, padX, y, cw - padX * 2)
+    y += lineHeight
+  }
+  ctx.restore()
+}
+
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  const radius = Math.min(r, w / 2, h / 2)
+  ctx.beginPath()
+  ctx.moveTo(x + radius, y)
+  ctx.arcTo(x + w, y, x + w, y + h, radius)
+  ctx.arcTo(x + w, y + h, x, y + h, radius)
+  ctx.arcTo(x, y + h, x, y, radius)
+  ctx.arcTo(x, y, x + w, y, radius)
+  ctx.closePath()
+}
+
 function drawContain(
   ctx: CanvasRenderingContext2D,
   source: HTMLVideoElement | HTMLImageElement,
@@ -271,14 +468,16 @@ function drawContain(
   ctx.fillRect(0, 0, cw, ch)
   const vw = source instanceof HTMLImageElement ? source.naturalWidth : source.videoWidth
   const vh = source instanceof HTMLImageElement ? source.naturalHeight : source.videoHeight
-  if (!vw || !vh) return
+  if (!vw || !vh) { drawOverlay(ctx, cw, ch); return }
   const scale = Math.min(cw / vw, ch / vh)
   const dw = vw * scale
   const dh = vh * scale
   const dx = (cw - dw) / 2
   const dy = (ch - dh) / 2
   ctx.drawImage(source, dx, dy, dw, dh)
+  drawOverlay(ctx, cw, ch)
 }
+
 
 function easeInOut(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
@@ -305,6 +504,7 @@ function paintTransitionFrame(
     ctx.drawImage(outgoing, 0, 0, width, height)
   }
 
+  const body = () => {
   switch (spec.id) {
     case 'fade': {
       // Out fades to black, then in fades from black.
@@ -395,7 +595,11 @@ function paintTransitionFrame(
       return
     }
   }
+  }
+  body()
+  drawOverlay(ctx, width, height)
 }
+
 
 export class MergeCancelledError extends Error {
   constructor() {
@@ -410,14 +614,32 @@ export async function mergeVideoUrls(
   audio?: MergeAudioOptions,
   transitions?: TransitionSpec[],
   signal?: AbortSignal,
+  overlay?: MergeOverlayOptions,
 ): Promise<MergeResult> {
   if (inputs.length === 0) throw new Error('No videos to merge')
   if (signal?.aborted) throw new MergeCancelledError()
+
+  // Contact/branding overlay baked into every frame for this run.
+  const hasText = !!overlay && overlay.lines.some((l) => l.trim())
+  const hasLogo = !!overlay?.logoUrl
+  activeOverlay = overlay && (hasText || hasLogo)
+    ? { lines: overlay.lines, position: overlay.position ?? 'bottom', offset: overlay.offset, logoUrl: overlay.logoUrl, scale: overlay.scale ?? 1, panelEnabled: overlay.panelEnabled, panelColor: overlay.panelColor, panelOpacity: overlay.panelOpacity, textColor: overlay.textColor, fontFamily: overlay.fontFamily }
+    : null
+  // Preload the logo image so drawOverlay (sync) can paint it on every frame.
+  activeLogo = null
+  if (activeOverlay?.logoUrl) {
+    try {
+      activeLogo = await loadImage(activeOverlay.logoUrl, 'contact logo')
+    } catch {
+      activeLogo = null
+    }
+  }
 
   // Normalize: accept legacy `string[]` (always videos) or `MergeClip[]`.
   const clipDefs: MergeClip[] = inputs.map((it) =>
     typeof it === 'string' ? { kind: 'video', url: it } : it,
   )
+
 
   const norm = normalizeAudioOptions(audio)
   const musicTrack = norm?.music && norm.music.endSec > norm.music.startSec ? norm.music : undefined
@@ -1058,6 +1280,10 @@ export async function mergeVideoUrls(
     try { recorder.requestData() } catch { /* ignore */ }
     await new Promise((r) => setTimeout(r, 200))
   }
+
+  // Clear the per-run overlay so it never leaks into a later merge.
+  activeOverlay = null
+  activeLogo = null
 
   // Final cleanup of media elements + audio graph.
   for (const c of preloaded) {

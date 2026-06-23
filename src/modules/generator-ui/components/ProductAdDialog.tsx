@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Package, LoaderCircle, RefreshCw, Copy, Check, Wand2, Send, ImagePlus, X, Languages, Boxes, ArrowLeft, Sparkles } from 'lucide-react'
+import { Package, LoaderCircle, RefreshCw, Copy, Check, Wand2, Send, ImagePlus, X, Languages, Boxes, ArrowLeft, Sparkles, Drama, UserRound, Building2, History } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { supabase } from '@/integrations/supabase/client'
 import { StylePreviewCard } from './StylePreviewCard'
 import AiImageDialog, { type AiImageSavedRow } from './AiImageDialog'
@@ -101,8 +102,9 @@ type Props = {
   onOpenChange: (open: boolean) => void
   defaultDuration: ProductAdDuration
   userId: string | null
-  onUseAsPrompt: (scenario: string, imageUrl?: string) => void
-  onSendScenes?: (scenes: string[], imageUrl?: string) => void | Promise<void>
+  variant?: 'product' | 'character'
+  onUseAsPrompt: (scenario: string, imageUrl?: string, duration?: ProductAdDuration) => void
+  onSendScenes?: (scenes: string[], imageUrl?: string, duration?: ProductAdDuration) => void | Promise<void>
 }
 
 const DURATIONS: ProductAdDuration[] = [5, 10, 15, 30, 45, 135]
@@ -118,7 +120,118 @@ const PRODUCT_ASPECTS: { value: ProductAspect; cls: string }[] = [
   { value: '16:9', cls: 'aspect-video' },
 ]
 
+/** Canonical pixel dimensions for each aspect ratio (used to record/derive ratio). */
+const ASPECT_DIMS: Record<ProductAspect, { w: number; h: number }> = {
+  '9:16': { w: 1080, h: 1920 },
+  '1:1': { w: 1024, h: 1024 },
+  '16:9': { w: 1920, h: 1080 },
+}
+
+/** Snap an arbitrary width:height to the nearest supported aspect-ratio label. */
+function aspectLabelFromDims(width: number | null | undefined, height: number | null | undefined): ProductAspect {
+  if (!width || !height || width <= 0 || height <= 0) return '1:1'
+  const r = width / height
+  let best: ProductAspect = '1:1'
+  let bestDiff = Infinity
+  for (const a of PRODUCT_ASPECTS) {
+    const dims = ASPECT_DIMS[a.value]
+    const diff = Math.abs(r - dims.w / dims.h)
+    if (diff < bestDiff) {
+      bestDiff = diff
+      best = a.value
+    }
+  }
+  return best
+}
+
+type ReframeItem = { id: string; title: string | null; url: string; aspect: ProductAspect }
+
+
+
 type ProductPhoto = { id: string; title: string | null; url: string }
+
+/** Extract the object key inside the user-images bucket from a stored path/URL. */
+function productObjectKey(storagePath: string | null | undefined): string | null {
+  if (!storagePath) return null
+  const marker = `/${PRODUCTS_BUCKET}/`
+  const idx = storagePath.indexOf(marker)
+  if (idx >= 0) return decodeURIComponent(storagePath.slice(idx + marker.length))
+  if (!/^https?:|^blob:|^data:/.test(storagePath)) return storagePath
+  return null
+}
+
+/** Strip trailing catalog numbers and turn a slug into a readable name. */
+function cleanProductName(title: string | null | undefined): string {
+  if (!title) return ''
+  return title
+    .replace(/[\s_-]*\d+\s*$/u, '') // drop trailing number suffix (e.g. _005, -005, " 005")
+    .replace(/[_-]+/gu, ' ') // separators -> spaces
+    .replace(/\s+/gu, ' ')
+    .trim()
+}
+
+/** True when the (already cleaned) name still looks like a technical code, not a real product name. */
+function looksLikeCode(name: string | null | undefined): boolean {
+  const t = (name ?? '').trim()
+  if (!t) return true // empty after cleaning -> needs a proper name
+  if (/[_\-\d]/u.test(t)) return true // leftover separators or digits
+  // Single token with no vowel reads like a code/garble (e.g. "skuxq")
+  if (!/\s/.test(t) && !/[aeiouAEIOU]/.test(t)) return true
+  return false
+}
+
+
+
+/** Resolve a displayable signed URL for a private-bucket product photo. */
+async function signProductPhotoUrl(storagePath: string | null | undefined): Promise<string> {
+  const raw = storagePath ?? ''
+  if (/^blob:|^data:/.test(raw)) return raw
+  if (/\/object\/sign\//.test(raw)) return raw
+  const key = productObjectKey(raw)
+  if (!key) return raw
+  try {
+    const { data, error } = await supabase.storage
+      .from(PRODUCTS_BUCKET)
+      .createSignedUrl(key, 60 * 60 * 24 * 365)
+    if (!error && data?.signedUrl) return data.signedUrl
+  } catch {
+    /* fall through */
+  }
+  return raw
+}
+
+/** Extract the object key inside the wan-frames bucket from a stored path/URL. */
+function framesObjectKey(storagePath: string | null | undefined): string | null {
+  if (!storagePath) return null
+  const marker = `/${FRAMES_BUCKET}/`
+  const idx = storagePath.indexOf(marker)
+  if (idx >= 0) {
+    // Strip any query string (e.g. an expired/broken public URL) before decoding.
+    const tail = storagePath.slice(idx + marker.length).split('?')[0]
+    return decodeURIComponent(tail)
+  }
+  if (!/^https?:|^blob:|^data:/.test(storagePath)) return storagePath
+  return null
+}
+
+/**
+ * Resolve a displayable signed URL for a private wan-frames object.
+ * `wan-frames` is a PRIVATE bucket, so public URLs return "Bucket not found".
+ * Throws if signing fails so the caller can show a clear error state.
+ */
+async function signFramesUrl(storagePath: string | null | undefined): Promise<string> {
+  const raw = storagePath ?? ''
+  if (/^blob:|^data:/.test(raw)) return raw
+  const key = framesObjectKey(raw)
+  if (!key) throw new Error('Could not resolve image path')
+  const { data, error } = await supabase.storage
+    .from(FRAMES_BUCKET)
+    .createSignedUrl(key, 60 * 60 * 24 * 7)
+  if (error || !data?.signedUrl) {
+    throw new Error(error?.message || 'Could not load image')
+  }
+  return data.signedUrl
+}
 
 const SPLIT_DURATIONS = [30, 45, 135]
 const sceneRange = (i: number) => `${i * 15}–${(i + 1) * 15}s`
@@ -129,6 +242,41 @@ type Loc = Partial<Record<Lang, string>> & { en: string }
 const tr = (m: Loc, lang: Lang) => m[lang] ?? m.en
 
 const RTL_LANGS: Lang[] = ['fa', 'ar']
+
+// All localized narration labels the edge function may emit, used to split a
+// scene block into its visual scenario part and its narration part.
+const NARRATION_LABELS = ['Narration', 'نریشن', 'التعليق الصوتي', 'Anlatım', 'Narración']
+const NARRATION_RE = new RegExp(`(^|\\n)\\s*(${NARRATION_LABELS.join('|')})\\s*:\\s*`, 'i')
+
+function splitNarration(text: string): { body: string; narration: string | null } {
+  const m = text.match(NARRATION_RE)
+  if (!m || m.index === undefined) return { body: text.trim(), narration: null }
+  const labelStart = m.index + m[1].length
+  const body = text.slice(0, labelStart).trim()
+  const narration = text.slice(m.index + m[0].length).trim()
+  return { body, narration: narration || null }
+}
+
+function SceneText({ text, narrationLabel }: { text: string; narrationLabel: string }) {
+  const { body, narration } = splitNarration(text)
+  return (
+    <div className="space-y-2">
+      <p dir="auto" className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
+        {body}
+      </p>
+      {narration ? (
+        <div className="rounded-md border border-amber-400/30 bg-amber-400/5 px-2.5 py-2">
+          <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300/90">
+            {narrationLabel}
+          </div>
+          <p dir="auto" className="whitespace-pre-wrap text-sm leading-6 text-amber-50/90">
+            {narration}
+          </p>
+        </div>
+      ) : null}
+    </div>
+  )
+}
 
 const LANG_OPTIONS: { value: Lang; native: string }[] = [
   { value: 'en', native: 'English' },
@@ -353,13 +501,17 @@ const T: Record<Lang, Record<string, string>> = {
       'Describe how the camera should move, e.g. slow rise then fast push-in on the label…',
     adScenario: 'Ad scenario',
     scene_: 'Scene',
+    narration: 'Narration',
     copy: 'Copy',
     copyAll: 'Copy all',
     copied: 'Copied',
     regenerate: 'Regenerate',
     sendAll: 'Send all to Pending',
     useAsPrompt: 'Use as prompt',
+    preparingFrame: 'Preparing frame…',
     generate: 'Generate ad scenario',
+    withNarration: 'With narration',
+    withoutNarration: 'Without narration',
     language: 'Language',
     chooseFromProducts: 'Choose from products',
     generateWithAi: 'Generate with AI',
@@ -372,6 +524,21 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'Loading products…',
     back: 'Back',
     viewImage: 'View image',
+    reframeHistory: 'Previously made images',
+    loadingReframes: 'Loading history…',
+    noReframes: 'No reframed images yet.',
+    reuseHint: 'Click to reuse without regenerating.',
+    businessLabel: 'About your business',
+    businessRequiredTag: '(required)',
+    businessPlaceholder: 'Describe your business: what you sell, your products/services, target audience, and brand tone…',
+    businessRequired: 'Please describe your business first — the scenario must be relevant to it.',
+    businessSave: 'Save',
+    businessSaved: 'Saved',
+    contactLabel: 'Contact details (shown on video)',
+    contactWebsite: 'Website',
+    contactPhone: 'Phone',
+    contactAddress: 'Address',
+    contactLogo: 'Company logo',
   },
   fa: {
     title: 'سناریوی تبلیغ محصول',
@@ -396,13 +563,17 @@ const T: Record<Lang, Record<string, string>> = {
       'توضیح دهید دوربین چطور حرکت کند، مثلاً بالا آمدن آرام سپس پوش‌این سریع روی برچسب…',
     adScenario: 'سناریوی تبلیغ',
     scene_: 'صحنه',
+    narration: 'نریشن',
     copy: 'کپی',
     copyAll: 'کپی همه',
     copied: 'کپی شد',
     regenerate: 'تولید دوباره',
     sendAll: 'ارسال همه به Pending',
     useAsPrompt: 'استفاده به‌عنوان پرامت',
+    preparingFrame: 'در حال آماده‌سازی فریم…',
     generate: 'تولید سناریوی تبلیغ',
+    withNarration: 'با نریشن',
+    withoutNarration: 'بدون نریشن',
     language: 'زبان',
     chooseFromProducts: 'انتخاب از محصولات',
     generateWithAi: 'ساخت با هوش مصنوعی',
@@ -415,6 +586,21 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'در حال بارگذاری محصولات…',
     back: 'بازگشت',
     viewImage: 'نمایش تصویر',
+    reframeHistory: 'عکس‌های قبلاً ساخته‌شده',
+    loadingReframes: 'در حال بارگذاری تاریخچه…',
+    noReframes: 'هنوز عکسی در این بخش ساخته نشده است.',
+    reuseHint: 'برای استفاده دوباره بدون ساخت مجدد کلیک کنید.',
+    businessLabel: 'درباره کسب‌وکار شما',
+    businessRequiredTag: '(الزامی)',
+    businessPlaceholder: 'کسب‌وکارتان را توضیح دهید: چه می‌فروشید، محصولات/خدمات، مخاطب هدف و لحن برند…',
+    businessRequired: 'ابتدا کسب‌وکارتان را توضیح دهید — سناریو باید مرتبط با آن باشد.',
+    businessSave: 'ذخیره',
+    businessSaved: 'ذخیره شد',
+    contactLabel: 'اطلاعات تماس (روی ویدیو نمایش داده می‌شود)',
+    contactWebsite: 'وب‌سایت',
+    contactPhone: 'شماره تماس',
+    contactAddress: 'آدرس',
+    contactLogo: 'لوگوی شرکت',
   },
   ar: {
     title: 'سيناريو إعلان المنتج',
@@ -439,13 +625,17 @@ const T: Record<Lang, Record<string, string>> = {
       'صف كيف ينبغي أن تتحرك الكاميرا، مثلاً ارتفاع بطيء ثم دفع سريع نحو الملصق…',
     adScenario: 'سيناريو الإعلان',
     scene_: 'مشهد',
+    narration: 'التعليق الصوتي',
     copy: 'نسخ',
     copyAll: 'نسخ الكل',
     copied: 'تم النسخ',
     regenerate: 'إعادة التوليد',
     sendAll: 'إرسال الكل إلى قائمة الانتظار',
     useAsPrompt: 'استخدام كموجّه',
+    preparingFrame: 'جارٍ تجهيز الإطار…',
     generate: 'توليد سيناريو الإعلان',
+    withNarration: 'مع التعليق الصوتي',
+    withoutNarration: 'بدون تعليق صوتي',
     language: 'اللغة',
     chooseFromProducts: 'اختر من المنتجات',
     generateWithAi: 'إنشاء بالذكاء الاصطناعي',
@@ -458,6 +648,21 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'جارٍ تحميل المنتجات…',
     back: 'رجوع',
     viewImage: 'عرض الصورة',
+    reframeHistory: 'الصور المُعاد تأطيرها سابقًا',
+    loadingReframes: 'جارٍ تحميل السجل…',
+    noReframes: 'لا توجد صور مُعاد تأطيرها بعد.',
+    reuseHint: 'انقر لإعادة الاستخدام دون إعادة الإنشاء.',
+    businessLabel: 'عن عملك التجاري',
+    businessRequiredTag: '(مطلوب)',
+    businessPlaceholder: 'صِف عملك: ماذا تبيع، منتجاتك/خدماتك، الجمهور المستهدف ونبرة العلامة التجارية…',
+    businessRequired: 'يرجى وصف عملك أولاً — يجب أن يكون السيناريو ذا صلة به.',
+    businessSave: 'حفظ',
+    businessSaved: 'تم الحفظ',
+    contactLabel: 'بيانات الاتصال (تظهر على الفيديو)',
+    contactWebsite: 'الموقع الإلكتروني',
+    contactPhone: 'الهاتف',
+    contactAddress: 'العنوان',
+    contactLogo: 'شعار الشركة',
   },
   tr: {
     title: 'Ürün Reklam Senaryosu',
@@ -482,13 +687,17 @@ const T: Record<Lang, Record<string, string>> = {
       'Kameranın nasıl hareket etmesi gerektiğini açıklayın, örn. yavaş yükseliş ardından etikete hızlı yaklaşma…',
     adScenario: 'Reklam senaryosu',
     scene_: 'Sahne',
+    narration: 'Anlatım',
     copy: 'Kopyala',
     copyAll: 'Tümünü kopyala',
     copied: 'Kopyalandı',
     regenerate: 'Yeniden oluştur',
     sendAll: 'Tümünü Bekleyenlere gönder',
     useAsPrompt: 'İstem olarak kullan',
+    preparingFrame: 'Kare hazırlanıyor…',
     generate: 'Reklam senaryosu oluştur',
+    withNarration: 'Anlatımlı',
+    withoutNarration: 'Anlatımsız',
     language: 'Dil',
     chooseFromProducts: 'Ürünlerden seç',
     generateWithAi: 'Yapay zeka ile oluştur',
@@ -501,6 +710,21 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'Ürünler yükleniyor…',
     back: 'Geri',
     viewImage: 'Görseli görüntüle',
+    reframeHistory: 'Daha önce yeniden çerçevelenenler',
+    loadingReframes: 'Geçmiş yükleniyor…',
+    noReframes: 'Henüz yeniden çerçevelenmiş görsel yok.',
+    reuseHint: 'Yeniden oluşturmadan kullanmak için tıklayın.',
+    businessLabel: 'İşletmeniz hakkında',
+    businessRequiredTag: '(zorunlu)',
+    businessPlaceholder: 'İşletmenizi açıklayın: ne sattığınız, ürün/hizmetleriniz, hedef kitle ve marka tonu…',
+    businessRequired: 'Lütfen önce işletmenizi açıklayın — senaryo bununla ilgili olmalı.',
+    businessSave: 'Kaydet',
+    businessSaved: 'Kaydedildi',
+    contactLabel: 'İletişim bilgileri (videoda gösterilir)',
+    contactWebsite: 'Web sitesi',
+    contactPhone: 'Telefon',
+    contactAddress: 'Adres',
+    contactLogo: 'Şirket logosu',
   },
   es: {
     title: 'Guion de Anuncio de Producto',
@@ -525,13 +749,17 @@ const T: Record<Lang, Record<string, string>> = {
       'Describe cómo debe moverse la cámara, p. ej. subida lenta y luego acercamiento rápido a la etiqueta…',
     adScenario: 'Guion del anuncio',
     scene_: 'Escena',
+    narration: 'Narración',
     copy: 'Copiar',
     copyAll: 'Copiar todo',
     copied: 'Copiado',
     regenerate: 'Regenerar',
     sendAll: 'Enviar todo a Pendientes',
     useAsPrompt: 'Usar como prompt',
+    preparingFrame: 'Preparando fotograma…',
     generate: 'Generar guion del anuncio',
+    withNarration: 'Con narración',
+    withoutNarration: 'Sin narración',
     language: 'Idioma',
     chooseFromProducts: 'Elegir de productos',
     generateWithAi: 'Generar con IA',
@@ -544,6 +772,21 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'Cargando productos…',
     back: 'Atrás',
     viewImage: 'Ver imagen',
+    reframeHistory: 'Imágenes ya recortadas',
+    loadingReframes: 'Cargando historial…',
+    noReframes: 'Aún no hay imágenes recortadas.',
+    reuseHint: 'Haz clic para reutilizar sin regenerar.',
+    businessLabel: 'Sobre tu negocio',
+    businessRequiredTag: '(obligatorio)',
+    businessPlaceholder: 'Describe tu negocio: qué vendes, tus productos/servicios, público objetivo y tono de marca…',
+    businessRequired: 'Describe primero tu negocio: el escenario debe ser relevante para él.',
+    businessSave: 'Guardar',
+    businessSaved: 'Guardado',
+    contactLabel: 'Datos de contacto (se muestran en el video)',
+    contactWebsite: 'Sitio web',
+    contactPhone: 'Teléfono',
+    contactAddress: 'Dirección',
+    contactLogo: 'Logo de la empresa',
   },
   fr: {
     title: 'Scénario de Publicité Produit',
@@ -568,13 +811,17 @@ const T: Record<Lang, Record<string, string>> = {
       "Décrivez comment la caméra doit bouger, p. ex. montée lente puis travelling avant rapide sur l'étiquette…",
     adScenario: 'Scénario publicitaire',
     scene_: 'Scène',
+    narration: 'Narration',
     copy: 'Copier',
     copyAll: 'Tout copier',
     copied: 'Copié',
     regenerate: 'Régénérer',
     sendAll: 'Tout envoyer en attente',
     useAsPrompt: 'Utiliser comme prompt',
+    preparingFrame: 'Préparation de l’image…',
     generate: 'Générer le scénario publicitaire',
+    withNarration: 'Avec narration',
+    withoutNarration: 'Sans narration',
     language: 'Langue',
     chooseFromProducts: 'Choisir parmi les produits',
     generateWithAi: 'Générer avec l\'IA',
@@ -587,6 +834,85 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'Chargement des produits…',
     back: 'Retour',
     viewImage: "Voir l'image",
+    reframeHistory: 'Images déjà recadrées',
+    loadingReframes: 'Chargement de l’historique…',
+    noReframes: 'Aucune image recadrée pour le moment.',
+    reuseHint: 'Cliquez pour réutiliser sans régénérer.',
+    businessLabel: 'À propos de votre entreprise',
+    businessRequiredTag: '(obligatoire)',
+    businessPlaceholder: 'Décrivez votre entreprise : ce que vous vendez, vos produits/services, votre public cible et le ton de la marque…',
+    businessRequired: "Décrivez d'abord votre entreprise — le scénario doit y être pertinent.",
+    businessSave: 'Enregistrer',
+    businessSaved: 'Enregistré',
+    contactLabel: 'Coordonnées (affichées sur la vidéo)',
+    contactWebsite: 'Site web',
+    contactPhone: 'Téléphone',
+    contactAddress: 'Adresse',
+    contactLogo: "Logo de l'entreprise",
+  },
+}
+
+// Character Sheet overrides — merged over the product strings when variant === 'character'.
+const CHAR_T: Record<Lang, Record<string, string>> = {
+  en: {
+    title: 'Character Sheet',
+    description:
+      'Upload your character image, answer a few questions, and get a cinematic film scenario built entirely around that character.',
+    photo: 'Character',
+    productName: 'Character name',
+    productNamePlaceholder: 'e.g. Captain Aria',
+    descriptionPlaceholder: 'Personality, role, age, vibe, backstory…',
+    generate: 'Generate film scenario',
+  },
+  fa: {
+    title: 'شناسنامه کاراکتر',
+    description:
+      'تصویر کاراکتر خود را آپلود کنید، به چند سؤال پاسخ دهید و یک سناریوی سینمایی کامل که کاملاً حول همان کاراکتر ساخته شده دریافت کنید.',
+    photo: 'کاراکتر',
+    productName: 'نام کاراکتر',
+    productNamePlaceholder: 'مثلاً کاپیتان آریا',
+    descriptionPlaceholder: 'شخصیت، نقش، سن، حال‌وهوا، پیشینه…',
+    generate: 'ساخت سناریوی فیلم',
+  },
+  ar: {
+    title: 'بطاقة الشخصية',
+    description:
+      'حمّل صورة شخصيتك، أجب عن بعض الأسئلة، واحصل على سيناريو فيلم سينمائي مبني بالكامل حول تلك الشخصية.',
+    photo: 'الشخصية',
+    productName: 'اسم الشخصية',
+    productNamePlaceholder: 'مثال: الكابتن آريا',
+    descriptionPlaceholder: 'الشخصية، الدور، العمر، الأجواء، الخلفية…',
+    generate: 'إنشاء سيناريو الفيلم',
+  },
+  tr: {
+    title: 'Karakter Sayfası',
+    description:
+      'Karakter görselinizi yükleyin, birkaç soruyu yanıtlayın ve tamamen o karakter etrafında kurgulanmış sinematik bir film senaryosu alın.',
+    photo: 'Karakter',
+    productName: 'Karakter adı',
+    productNamePlaceholder: 'örn. Kaptan Aria',
+    descriptionPlaceholder: 'Kişilik, rol, yaş, atmosfer, geçmiş…',
+    generate: 'Film senaryosu oluştur',
+  },
+  es: {
+    title: 'Ficha de Personaje',
+    description:
+      'Sube la imagen de tu personaje, responde unas preguntas y obtén un guion de película cinematográfico construido por completo en torno a ese personaje.',
+    photo: 'Personaje',
+    productName: 'Nombre del personaje',
+    productNamePlaceholder: 'p. ej. Capitana Aria',
+    descriptionPlaceholder: 'Personalidad, rol, edad, ambiente, historia…',
+    generate: 'Generar guion de película',
+  },
+  fr: {
+    title: 'Fiche de Personnage',
+    description:
+      'Téléchargez l’image de votre personnage, répondez à quelques questions et obtenez un scénario de film cinématographique entièrement construit autour de ce personnage.',
+    photo: 'Personnage',
+    productName: 'Nom du personnage',
+    productNamePlaceholder: 'p. ex. Capitaine Aria',
+    descriptionPlaceholder: 'Personnalité, rôle, âge, ambiance, histoire…',
+    generate: 'Générer le scénario du film',
   },
 }
 
@@ -595,12 +921,23 @@ export default function ProductAdDialog({
   onOpenChange,
   defaultDuration,
   userId,
+  variant = 'product',
   onUseAsPrompt,
   onSendScenes,
 }: Props) {
+  const isCharacter = variant === 'character'
   const [duration, setDuration] = useState<ProductAdDuration>(defaultDuration)
   const [productName, setProductName] = useState('')
+  const [nameNeedsReview, setNameNeedsReview] = useState(false)
   const [productDescription, setProductDescription] = useState('')
+  const [businessInfo, setBusinessInfo] = useState('')
+  const [contactWebsite, setContactWebsite] = useState('')
+  const [contactPhone, setContactPhone] = useState('')
+  const [contactAddress, setContactAddress] = useState('')
+  const [contactLogo, setContactLogo] = useState('')
+  const [businessSaving, setBusinessSaving] = useState(false)
+  const [businessSaved, setBusinessSaved] = useState(false)
+  const [businessOpen, setBusinessOpen] = useState(false)
   const [userPrompt, setUserPrompt] = useState('')
   const [cameraStyle, setCameraStyle] = useState<string>(CAMERA_STYLES[0].label.en)
   const [cameraMovement, setCameraMovement] = useState('')
@@ -613,10 +950,13 @@ export default function ProductAdDialog({
   const [error, setError] = useState<string | null>(null)
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
   const [isSending, setIsSending] = useState(false)
+  const [isPreparingFrame, setIsPreparingFrame] = useState(false)
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null)
   const [previewLightboxOpen, setPreviewLightboxOpen] = useState(false)
   const [isUploadingImage, setIsUploadingImage] = useState(false)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
   const [aiImageOpen, setAiImageOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -626,6 +966,108 @@ export default function ProductAdDialog({
   const [productPhotos, setProductPhotos] = useState<ProductPhoto[]>([])
   const [loadingProducts, setLoadingProducts] = useState(false)
   const [preparingId, setPreparingId] = useState<string | null>(null)
+
+  // Reframe history (previously generated reframes the user can reuse)
+  const [reframeHistoryOpen, setReframeHistoryOpen] = useState(false)
+  const [reframeItems, setReframeItems] = useState<ReframeItem[]>([])
+  const [loadingReframes, setLoadingReframes] = useState(false)
+
+
+
+  // Character attachment (feature a character in the product ad)
+  const characterFileInputRef = useRef<HTMLInputElement | null>(null)
+  const [characterPickerOpen, setCharacterPickerOpen] = useState(false)
+  const [characterPhotos, setCharacterPhotos] = useState<ProductPhoto[]>([])
+  const [loadingCharacters, setLoadingCharacters] = useState(false)
+  const [characterRefDisplayUrl, setCharacterRefDisplayUrl] = useState<string | null>(null)
+  const [characterRefSendUrl, setCharacterRefSendUrl] = useState<string | null>(null)
+  const [characterRefName, setCharacterRefName] = useState<string | null>(null)
+  const [uploadingCharacter, setUploadingCharacter] = useState(false)
+
+  async function openCharacterPicker() {
+    if (!userId) {
+      setError('Please sign in to choose a character.')
+      return
+    }
+    setError(null)
+    setCharacterPickerOpen(true)
+    setLoadingCharacters(true)
+    try {
+      const { data, error: qErr } = await supabase
+        .from('generator_user_images')
+        .select('id, storage_path, title, category')
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+      if (qErr) throw new Error(qErr.message)
+      const rows = (data ?? []).filter((r) => (r.category ?? 'general') === 'character')
+      const photos: ProductPhoto[] = await Promise.all(
+        rows.map(async (r) => ({
+          id: r.id,
+          title: r.title ?? null,
+          url: await signProductPhotoUrl(r.storage_path),
+        })),
+      )
+      setCharacterPhotos(photos)
+    } catch (e) {
+      setError((e as Error).message ?? 'Failed to load characters')
+    } finally {
+      setLoadingCharacters(false)
+    }
+  }
+
+  function pickCharacter(photo: ProductPhoto) {
+    setCharacterRefDisplayUrl(photo.url)
+    setCharacterRefSendUrl(photo.url)
+    setCharacterRefName(photo.title ?? null)
+    setCharacterPickerOpen(false)
+  }
+
+  async function handleUploadCharacter(file: File | undefined) {
+    if (!file) return
+    if (!userId) {
+      setError('Please sign in to attach a character.')
+      return
+    }
+    if (!file.type.startsWith('image/')) {
+      setError('Only image files are supported.')
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Image too large (max 10MB).')
+      return
+    }
+    setError(null)
+    setUploadingCharacter(true)
+    try {
+      const ext = (file.name.split('.').pop() || 'png').toLowerCase()
+      const storagePath = `${userId}/character-ref-${Date.now()}-${crypto.randomUUID()}.${ext}`
+      const { error: upErr } = await supabase.storage
+        .from(FRAMES_BUCKET)
+        .upload(storagePath, file, { contentType: file.type, upsert: false })
+      if (upErr) throw new Error(upErr.message)
+      const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+      const displayUrl = await signFramesUrl(data.publicUrl).catch(() => data.publicUrl)
+      setCharacterRefDisplayUrl(displayUrl)
+      setCharacterRefSendUrl(data.publicUrl)
+      setCharacterRefName(null)
+      setCharacterPickerOpen(false)
+    } catch (e) {
+      setError((e as Error).message ?? 'Character upload failed')
+    } finally {
+      setUploadingCharacter(false)
+      if (characterFileInputRef.current) characterFileInputRef.current.value = ''
+    }
+  }
+
+  function clearCharacter() {
+    setCharacterRefDisplayUrl(null)
+    setCharacterRefSendUrl(null)
+    setCharacterRefName(null)
+    if (characterFileInputRef.current) characterFileInputRef.current.value = ''
+  }
+
+
 
   async function openProductPicker() {
     if (!userId) {
@@ -645,14 +1087,15 @@ export default function ProductAdDialog({
         .order('created_at', { ascending: false })
       if (qErr) throw new Error(qErr.message)
       const rows = (data ?? []).filter((r) => (r.category ?? 'general') === 'product')
-      const photos: ProductPhoto[] = rows.map((r) => ({
-        id: r.id,
-        title: r.title ?? null,
-        // storage_path already holds the full public URL when the product was uploaded.
-        url: /^https?:\/\//i.test(r.storage_path)
-          ? r.storage_path
-          : supabase.storage.from(PRODUCTS_BUCKET).getPublicUrl(r.storage_path).data.publicUrl,
-      }))
+      // user-images is a PRIVATE bucket, so getPublicUrl returns broken links.
+      // Resolve a signed URL for every product (same approach as the Storage modal).
+      const photos: ProductPhoto[] = await Promise.all(
+        rows.map(async (r) => ({
+          id: r.id,
+          title: r.title ?? null,
+          url: await signProductPhotoUrl(r.storage_path),
+        })),
+      )
       setProductPhotos(photos)
     } catch (e) {
       setError((e as Error).message ?? 'Failed to load products')
@@ -676,18 +1119,97 @@ export default function ProductAdDialog({
       })
       const json = await resp.json().catch(() => ({}))
       if (!resp.ok) throw new Error(json?.error || `Request failed (${resp.status})`)
-      const reframedUrl = json.publicUrl as string
+      // `wan-frames` is private — the function's public URL is broken under the
+      // workspace public-buckets policy. Sign the returned object path instead.
+      const reframedPath = (json.path as string) || (json.publicUrl as string)
+      setPreviewError(null)
+      setPreviewLoading(true)
+      const signedPreview = await signFramesUrl(reframedPath)
       if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
-      setImagePreviewUrl(reframedUrl)
-      setUploadedImageUrl(reframedUrl)
-      if (!productName.trim() && photo.title) setProductName(photo.title)
+      setImagePreviewUrl(signedPreview)
+      // Generation pipeline still receives the function's public URL (validator
+      // contract is unchanged); only the preview uses a signed URL.
+      setUploadedImageUrl((json.publicUrl as string) ?? signedPreview)
+      const cleaned = cleanProductName(photo.title)
+      if (!productName.trim() && photo.title) setProductName(cleaned)
+      setNameNeedsReview(looksLikeCode(cleaned))
+      // Record this reframe so it appears in the history gallery and can be
+      // reused later without paying for another generation.
+      try {
+        const dims = ASPECT_DIMS[pickedAspect]
+        await supabase.from('generator_user_images').insert({
+          user_id: userId!,
+          storage_path: (json.publicUrl as string) ?? reframedPath,
+          category: 'reframe',
+          title: photo.title ?? null,
+          width: dims.w,
+          height: dims.h,
+        })
+      } catch {
+        /* non-blocking: history record is best-effort */
+      }
       setProductPickerOpen(false)
     } catch (e) {
+      setPreviewLoading(false)
       setError((e as Error).message ?? 'Failed to prepare image')
     } finally {
       setPreparingId(null)
     }
   }
+
+  async function openReframeHistory() {
+    if (!userId) {
+      setError('Please sign in to view your images.')
+      return
+    }
+    setError(null)
+    setReframeHistoryOpen(true)
+    setLoadingReframes(true)
+    try {
+      const { data, error: qErr } = await supabase
+        .from('generator_user_images')
+        .select('id, storage_path, title, category, width, height')
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+      if (qErr) throw new Error(qErr.message)
+      const rows = (data ?? []).filter((r) => (r.category ?? 'general') === 'reframe')
+      const items: ReframeItem[] = await Promise.all(
+        rows.map(async (r) => ({
+          id: r.id,
+          title: r.title ?? null,
+          aspect: aspectLabelFromDims(r.width, r.height),
+          url: await signFramesUrl(r.storage_path).catch(() => signProductPhotoUrl(r.storage_path)),
+        })),
+      )
+      setReframeItems(items)
+    } catch (e) {
+      setError((e as Error).message ?? 'Failed to load history')
+    } finally {
+      setLoadingReframes(false)
+    }
+  }
+
+  async function reuseReframe(item: ReframeItem) {
+    setError(null)
+    setPreviewError(null)
+    setPreviewLoading(true)
+    try {
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
+      setImagePreviewUrl(item.url)
+      setUploadedImageUrl(item.url)
+      const cleaned = cleanProductName(item.title)
+      if (!productName.trim() && item.title) setProductName(cleaned)
+      setNameNeedsReview(looksLikeCode(cleaned))
+      setReframeHistoryOpen(false)
+      setProductPickerOpen(false)
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+
+
 
 
   useEffect(() => {
@@ -696,6 +1218,28 @@ export default function ProductAdDialog({
       setError(null)
     }
   }, [open, defaultDuration])
+
+  useEffect(() => {
+    let cancelled = false
+    if (open && userId) {
+      supabase
+        .from('generator_business_profiles')
+        .select('business_info, contact_website, contact_phone, contact_address, contact_logo_url')
+        .eq('user_id', userId)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (cancelled || !data) return
+          if (data.business_info) setBusinessInfo(data.business_info)
+          if (data.contact_website) setContactWebsite(data.contact_website)
+          if (data.contact_phone) setContactPhone(data.contact_phone)
+          if (data.contact_address) setContactAddress(data.contact_address)
+          setContactLogo((data as { contact_logo_url?: string | null }).contact_logo_url ?? '')
+        })
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [open, userId])
 
   useEffect(() => {
     return () => {
@@ -718,6 +1262,8 @@ export default function ProductAdDialog({
       return
     }
     setError(null)
+    setPreviewError(null)
+    setPreviewLoading(false)
     const localUrl = URL.createObjectURL(file)
     if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
     setImagePreviewUrl(localUrl)
@@ -745,8 +1291,69 @@ export default function ProductAdDialog({
     if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
     setImagePreviewUrl(null)
     setUploadedImageUrl(null)
+    setPreviewError(null)
+    setPreviewLoading(false)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
+
+  async function saveBusinessInfo() {
+    if (!businessInfo.trim()) {
+      setError(t.businessRequired)
+      return
+    }
+    if (!userId) return
+    setBusinessSaving(true)
+    setBusinessSaved(false)
+    try {
+      const { error: upErr } = await supabase
+        .from('generator_business_profiles')
+        .upsert({
+          user_id: userId,
+          business_info: businessInfo.trim(),
+          contact_website: contactWebsite.trim() || null,
+          contact_phone: contactPhone.trim() || null,
+          contact_address: contactAddress.trim() || null,
+          contact_logo_url: contactLogo || null,
+        }, { onConflict: 'user_id' })
+      if (upErr) {
+        setError(upErr.message)
+        return
+      }
+      setBusinessSaved(true)
+      setError(null)
+      setTimeout(() => setBusinessSaved(false), 1500)
+    } catch (e) {
+      setError((e as Error).message ?? 'Failed to save')
+    } finally {
+      setBusinessSaving(false)
+    }
+  }
+
+  // Read an uploaded logo, downscale it to <=256px (PNG data URL), and store it.
+  function onContactLogoFile(file: File | null | undefined) {
+    if (!file || !file.type.startsWith('image/')) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new window.Image()
+      img.onload = () => {
+        const max = 256
+        const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight))
+        const w = Math.max(1, Math.round(img.naturalWidth * scale))
+        const h = Math.max(1, Math.round(img.naturalHeight * scale))
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+        ctx.drawImage(img, 0, 0, w, h)
+        setContactLogo(canvas.toDataURL('image/png'))
+        setBusinessSaved(false)
+      }
+      img.src = String(reader.result)
+    }
+    reader.readAsDataURL(file)
+  }
+
 
   function handleAiImageSaved(row: AiImageSavedRow) {
     if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
@@ -756,13 +1363,43 @@ export default function ProductAdDialog({
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  async function generate() {
+  async function generate(withNarration = true) {
     if (isWriting) return
-    if (!userPrompt.trim() && !productName.trim() && !uploadedImageUrl) {
+    if (!businessInfo.trim()) {
+      setError(t.businessRequired)
+      return
+    }
+    if (isCharacter) {
+      if (!uploadedImageUrl) {
+        setError('Please upload a character image first.')
+        return
+      }
+    } else if (!userPrompt.trim() && !productName.trim() && !uploadedImageUrl) {
       setError('Write a prompt, add a product name, or attach a product photo.')
       return
     }
+    if (userId) {
+      setBusinessSaving(true)
+      try {
+        await supabase
+          .from('generator_business_profiles')
+          .upsert({
+            user_id: userId,
+            business_info: businessInfo.trim(),
+            contact_website: contactWebsite.trim() || null,
+            contact_phone: contactPhone.trim() || null,
+            contact_address: contactAddress.trim() || null,
+            contact_logo_url: contactLogo || null,
+          }, { onConflict: 'user_id' })
+      } catch {
+        /* non-fatal: still attempt generation */
+      } finally {
+        setBusinessSaving(false)
+      }
+    }
     setIsWriting(true)
+    setError(null)
+    setScenes([])
     setError(null)
     setScenes([])
     try {
@@ -771,24 +1408,46 @@ export default function ProductAdDialog({
       const templatePrompts = VIDEO_TEMPLATES.filter((v) => templateIds.has(v.id))
         .map((v) => v.prompt)
         .join(' ')
+      const subjectWord = isCharacter ? 'character' : 'product'
       let idea = trimmedPrompt
         ? trimmedName
-          ? `${trimmedPrompt}\n\nThis is an advertisement for the product "${trimmedName}".`
+          ? `${trimmedPrompt}\n\nThis is a film built around the ${subjectWord} "${trimmedName}".`
           : trimmedPrompt
         : trimmedName
-          ? `Advertisement for the product "${trimmedName}".`
-          : 'Advertisement for the attached product.'
+          ? isCharacter
+            ? `A film built around the character "${trimmedName}".`
+            : `Advertisement for the product "${trimmedName}".`
+          : isCharacter
+            ? 'A film built around the character in the attached image.'
+            : 'Advertisement for the attached product.'
       if (templatePrompts) {
         idea += `\n\nFollow these video template styles and conventions: ${templatePrompts}`
       }
+      const useCharacter = !isCharacter && Boolean(characterRefSendUrl)
+      if (useCharacter) {
+        idea += characterRefName
+          ? `\n\nThis advertisement features a recurring on-screen character named "${characterRefName}" (see the second attached image). Keep this character's look (face, hair, wardrobe, body) consistent in every shot, while the product stays the hero.`
+          : `\n\nThis advertisement features a recurring on-screen character (see the second attached image). Keep this character's look (face, hair, wardrobe, body) consistent in every shot, while the product stays the hero.`
+      }
       const { data, error: invokeErr } = await supabase.functions.invoke('scenario-write', {
         body: {
-          mode: 'product-ad',
+          mode: isCharacter ? 'character-sheet' : 'product-ad',
           idea,
+          businessInfo: businessInfo.trim(),
+          outputLanguage: lang,
+          narration: withNarration,
           durationSeconds: duration,
           imageUrl: uploadedImageUrl ?? undefined,
-          productName: productName.trim() || undefined,
-          productDescription: productDescription.trim() || undefined,
+          ...(isCharacter
+            ? {
+                characterName: productName.trim() || undefined,
+                characterDescription: productDescription.trim() || undefined,
+              }
+            : {
+                productName: productName.trim() || undefined,
+                productDescription: productDescription.trim() || undefined,
+                characterImageUrl: useCharacter ? (characterRefSendUrl ?? undefined) : undefined,
+              }),
           cameraStyle,
           cameraMovement: cameraMovement.trim() || undefined,
           genre: GENRE_TEMPLATES.find((g) => g.id === genre)?.prompt || undefined,
@@ -796,7 +1455,7 @@ export default function ProductAdDialog({
         },
       })
       if (invokeErr) {
-        setError(invokeErr.message || 'Failed to write ad scenario')
+        setError(invokeErr.message || 'Failed to write scenario')
         return
       }
       const payload = data as { scenario?: string; scenes?: string[]; warning?: string } | null
@@ -825,10 +1484,75 @@ export default function ProductAdDialog({
     }
   }
 
-  function handleUseAsPrompt() {
-    if (scenes.length === 0) return
-    onUseAsPrompt(scenes.join('\n\n'), uploadedImageUrl ?? undefined)
-    onOpenChange(false)
+  /**
+   * Build a fetchable start-frame image for the video:
+   * - product ad with a character → compose character + product into one opening frame
+   * - product ad without a character → the signed product image
+   * - character film → the signed character image
+   * Returns undefined when no usable image is available.
+   */
+  async function buildFirstFrame(): Promise<string | undefined> {
+    // Resolve a fetchable URL for an image that may live in wan-frames or user-images.
+    const signAny = async (url: string): Promise<string> => {
+      try {
+        return await signFramesUrl(url)
+      } catch {
+        try {
+          return await signProductPhotoUrl(url)
+        } catch {
+          return imagePreviewUrl ?? url
+        }
+      }
+    }
+
+    // Character film variant: use the character image itself.
+    if (isCharacter) {
+      if (!uploadedImageUrl) return undefined
+      return await signAny(uploadedImageUrl)
+    }
+
+
+    // Product ad with an attached character → compose a combined opening frame.
+    if (uploadedImageUrl && characterRefSendUrl) {
+      try {
+        const composePrompt =
+          'Image 1 is the PRODUCT. Image 2 is the on-screen CHARACTER / presenter. ' +
+          'Compose a single photorealistic opening advertisement frame in which the character is presenting or holding the product, with the product clearly visible as the hero of the shot. ' +
+          'Keep the character\'s face, hair, wardrobe and body identical to image 2, and keep the product\'s exact shape, colors and label from image 1. ' +
+          'The final image MUST NOT contain any added text, captions, titles, subtitles, slogans, typography, watermarks, logos, or UI overlays of any kind. ' +
+          'Output a clean photographic frame only. The only writing allowed is the product\'s own real label that physically exists on the product in image 1.'
+        const { data, error: fnErr } = await supabase.functions.invoke('ai-image-edit', {
+          body: { prompt: composePrompt, imageUrls: [uploadedImageUrl, characterRefSendUrl] },
+        })
+        if (fnErr) throw new Error(fnErr.message || 'Failed to compose frame')
+        const dataUrl = (data as { dataUrl?: string } | null)?.dataUrl
+        if (dataUrl) return dataUrl
+        throw new Error('The AI did not return a composed frame.')
+      } catch (e) {
+        // Surface the issue but fall back to the product image so the flow still works.
+        setError((e as Error).message ?? 'Could not compose the character frame; using the product image instead.')
+      }
+    }
+
+    // Product ad without a character (or compose failed) → signed product image.
+    if (uploadedImageUrl) {
+      return await signAny(uploadedImageUrl)
+    }
+    return undefined
+  }
+
+
+  async function handleUseAsPrompt() {
+    if (scenes.length === 0 || isPreparingFrame) return
+    setIsPreparingFrame(true)
+    setError(null)
+    try {
+      const frameUrl = await buildFirstFrame()
+      onUseAsPrompt(scenes.join('\n\n'), frameUrl, duration)
+      onOpenChange(false)
+    } finally {
+      setIsPreparingFrame(false)
+    }
   }
 
   async function handleSendAll() {
@@ -836,7 +1560,8 @@ export default function ProductAdDialog({
     setIsSending(true)
     setError(null)
     try {
-      await onSendScenes(scenes, uploadedImageUrl ?? undefined)
+      const frameUrl = await buildFirstFrame()
+      await onSendScenes(scenes, frameUrl, duration)
       onOpenChange(false)
     } catch (e) {
       setError((e as Error).message ?? 'Failed to send to Pending')
@@ -844,6 +1569,7 @@ export default function ProductAdDialog({
       setIsSending(false)
     }
   }
+
 
   function toggleTemplate(id: string) {
     setTemplateIds((prev) => {
@@ -856,6 +1582,7 @@ export default function ProductAdDialog({
 
   function reset() {
     setProductName('')
+    setNameNeedsReview(false)
     setProductDescription('')
     setUserPrompt('')
     setCameraStyle(CAMERA_STYLES[0].label.en)
@@ -868,12 +1595,15 @@ export default function ProductAdDialog({
     setCopiedIndex(null)
     setIsSending(false)
     clearImage()
+    clearCharacter()
   }
 
   const isSplit = SPLIT_DURATIONS.includes(duration) && scenes.length > 1
   const concatenated = scenes.join('\n\n')
-  const canGenerate = (userPrompt.trim().length > 0 || productName.trim().length > 0 || Boolean(uploadedImageUrl)) && !isUploadingImage
-  const t = T[lang]
+  const canGenerate = Boolean(businessInfo.trim()) && (isCharacter
+    ? Boolean(uploadedImageUrl) && !isUploadingImage
+    : (userPrompt.trim().length > 0 || productName.trim().length > 0 || Boolean(uploadedImageUrl)) && !isUploadingImage)
+  const t = isCharacter ? { ...T[lang], ...CHAR_T[lang] } : T[lang]
   const dir = RTL_LANGS.includes(lang) ? 'rtl' : 'ltr'
 
   return (
@@ -887,9 +1617,117 @@ export default function ProductAdDialog({
       <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Package className="h-5 w-5 text-amber-300" aria-hidden="true" />
+            {isCharacter ? (
+              <Drama className="h-5 w-5 text-amber-300" aria-hidden="true" />
+            ) : (
+              <Package className="h-5 w-5 text-amber-300" aria-hidden="true" />
+            )}
             {t.title}
-            <div className="ms-auto">
+            <div className="ms-auto flex items-center gap-2">
+              <Popover open={businessOpen} onOpenChange={setBusinessOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={t.businessLabel}
+                    title={t.businessLabel}
+                    className={`relative inline-flex h-7 w-7 items-center justify-center rounded-full border transition ${
+                      businessInfo.trim()
+                        ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
+                        : 'border-amber-300/40 bg-amber-300/10 text-amber-300'
+                    }`}
+                  >
+                    <Building2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    {!businessInfo.trim() && (
+                      <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-amber-400" />
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-[28rem] max-w-[92vw] border-white/10 bg-[#0b0c0e] text-zinc-100">
+                  <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
+                    {t.businessLabel} <span className="text-amber-300">{t.businessRequiredTag}</span>
+                  </div>
+                  <Textarea
+                    value={businessInfo}
+                    onChange={(e) => {
+                      setBusinessInfo(e.target.value)
+                      setBusinessSaved(false)
+                      if (error) setError(null)
+                    }}
+                    rows={10}
+                    maxLength={undefined}
+                    placeholder={t.businessPlaceholder}
+                    className="max-h-[55vh] min-h-[220px] resize-y border-white/10 bg-black/30 text-sm text-zinc-100"
+                  />
+                  <div className="mt-3 mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
+                    {t.contactLabel}
+                  </div>
+                  <div className="space-y-2">
+                    <Input
+                      value={contactWebsite}
+                      onChange={(e) => { setContactWebsite(e.target.value); setBusinessSaved(false) }}
+                      placeholder={t.contactWebsite}
+                      className="h-9 border-white/10 bg-black/30 text-sm text-zinc-100"
+                    />
+                    <Input
+                      value={contactPhone}
+                      onChange={(e) => { setContactPhone(e.target.value); setBusinessSaved(false) }}
+                      placeholder={t.contactPhone}
+                      className="h-9 border-white/10 bg-black/30 text-sm text-zinc-100"
+                    />
+                    <Input
+                      value={contactAddress}
+                      onChange={(e) => { setContactAddress(e.target.value); setBusinessSaved(false) }}
+                      placeholder={t.contactAddress}
+                      className="h-9 border-white/10 bg-black/30 text-sm text-zinc-100"
+                    />
+                    <div className="flex items-center gap-2 pt-1">
+                      {contactLogo ? (
+                        <img
+                          src={contactLogo}
+                          alt={t.contactLogo}
+                          className="h-10 w-10 rounded-md border border-white/15 bg-white/5 object-contain p-0.5"
+                        />
+                      ) : (
+                        <div className="grid h-10 w-10 place-items-center rounded-md border border-dashed border-white/15 bg-black/30 text-zinc-500">
+                          <ImagePlus className="h-4 w-4" aria-hidden="true" />
+                        </div>
+                      )}
+                      <label className="cursor-pointer rounded-md border border-white/15 bg-black/30 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/30">
+                        {contactLogo ? 'Replace' : t.contactLogo}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => { onContactLogoFile(e.target.files?.[0]); e.currentTarget.value = '' }}
+                        />
+                      </label>
+                      {contactLogo ? (
+                        <button
+                          type="button"
+                          onClick={() => { setContactLogo(''); setBusinessSaved(false) }}
+                          className="text-[11px] text-zinc-400 transition hover:text-rose-300"
+                        >
+                          ✕
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="mt-2 flex justify-end">
+                    <Button
+                      size="sm"
+                      onClick={saveBusinessInfo}
+                      disabled={businessSaving || !businessInfo.trim()}
+                    >
+                      {businessSaving ? (
+                        <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                      ) : businessSaved ? (
+                        <Check className="h-4 w-4 mr-2" aria-hidden="true" />
+                      ) : null}
+                      {businessSaved ? t.businessSaved : t.businessSave}
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
               <Select value={lang} onValueChange={(v) => setLang(v as Lang)}>
                 <SelectTrigger
                   className="h-7 w-auto gap-1.5 rounded-full border-white/10 bg-black/20 px-2.5 text-[11px] font-semibold text-zinc-300"
@@ -935,11 +1773,30 @@ export default function ProductAdDialog({
                     aria-label={t.viewImage}
                     className="block cursor-zoom-in rounded-md"
                   >
-                    <img
-                      src={imagePreviewUrl}
-                      alt="Product"
-                      className="h-20 w-20 rounded-md border border-white/10 object-cover transition hover:border-white/30"
-                    />
+                    {previewError ? (
+                      <div className="flex h-20 w-20 flex-col items-center justify-center gap-1 rounded-md border border-red-500/40 bg-red-500/10 px-1 text-center text-[9px] text-red-200">
+                        <X className="h-4 w-4" aria-hidden="true" />
+                        <span>{previewError}</span>
+                      </div>
+                    ) : (
+                      <div className="relative h-20 w-20">
+                        <img
+                          src={imagePreviewUrl}
+                          alt="Product"
+                          className="h-20 w-20 rounded-md border border-white/10 object-cover transition hover:border-white/30"
+                          onLoad={() => setPreviewLoading(false)}
+                          onError={() => {
+                            setPreviewLoading(false)
+                            setPreviewError('Image load error')
+                          }}
+                        />
+                        {previewLoading && (
+                          <div className="absolute inset-0 flex items-center justify-center rounded-md bg-black/40">
+                            <LoaderCircle className="h-5 w-5 animate-spin text-white" aria-hidden="true" />
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </button>
                   <button
                     type="button"
@@ -968,15 +1825,17 @@ export default function ProductAdDialog({
                 </button>
               )}
             </div>
-              <button
-                type="button"
-                onClick={openProductPicker}
-                title={t.chooseFromProducts}
-                className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-white/10 bg-black/30 px-1 py-1 text-[10px] text-zinc-300 transition hover:border-amber-300/40 hover:text-amber-100"
-              >
-                <Boxes className="h-3.5 w-3.5" aria-hidden="true" />
-                <span className="truncate">{t.chooseFromProducts}</span>
-              </button>
+              {isCharacter ? null : (
+                <button
+                  type="button"
+                  onClick={openProductPicker}
+                  title={t.chooseFromProducts}
+                  className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-white/10 bg-black/30 px-1 py-1 text-[10px] text-zinc-300 transition hover:border-amber-300/40 hover:text-amber-100"
+                >
+                  <Boxes className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span className="truncate">{t.chooseFromProducts}</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setAiImageOpen(true)}
@@ -986,7 +1845,47 @@ export default function ProductAdDialog({
                 <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
                 <span className="truncate">{t.generateWithAi}</span>
               </button>
+              {isCharacter ? null : (
+                characterRefDisplayUrl ? (
+                  <div className="relative w-20">
+                    <button
+                      type="button"
+                      onClick={openCharacterPicker}
+                      title="Change character"
+                      className="block w-20 overflow-hidden rounded-md border border-amber-300/50 bg-amber-300/10"
+                    >
+                      <img
+                        src={characterRefDisplayUrl}
+                        alt="Character"
+                        className="h-16 w-20 object-cover"
+                      />
+                      <span className="block truncate px-1 py-0.5 text-[9px] text-amber-100">
+                        {characterRefName || 'Character'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={clearCharacter}
+                      aria-label="Remove character"
+                      className="absolute -right-1.5 -top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-900 text-zinc-200 ring-1 ring-white/20 hover:bg-zinc-800"
+                    >
+                      <X className="h-3 w-3" aria-hidden="true" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={openCharacterPicker}
+                    title="Add character"
+                    className="inline-flex w-20 items-center justify-center gap-1 rounded-md border border-white/10 bg-black/30 px-1 py-1 text-[10px] text-zinc-300 transition hover:border-amber-300/40 hover:text-amber-100"
+                  >
+                    <UserRound className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span className="truncate">Add character</span>
+                  </button>
+                )
+              )}
             </div>
+
             <div className="flex-1 space-y-2">
               <div>
                 <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
@@ -994,10 +1893,18 @@ export default function ProductAdDialog({
                 </div>
                 <Input
                   value={productName}
-                  onChange={(e) => setProductName(e.target.value)}
+                  onChange={(e) => {
+                    setProductName(e.target.value)
+                    if (nameNeedsReview) setNameNeedsReview(false)
+                  }}
                   placeholder={t.productNamePlaceholder}
                   className="border-white/10 bg-black/30 text-zinc-100"
                 />
+                {nameNeedsReview && (
+                  <p className="mt-1.5 text-xs text-amber-400" dir="ltr">
+                    This looks like a technical code — please enter the correct product name.
+                  </p>
+                )}
               </div>
               <div>
                 <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
@@ -1268,9 +2175,7 @@ export default function ProductAdDialog({
                       {copiedIndex === i ? t.copied : t.copy}
                     </Button>
                   </div>
-                  <p dir="ltr" className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
-                    {text}
-                  </p>
+                  <SceneText text={text} narrationLabel={t.narration} />
                 </div>
               ))}
             </div>
@@ -1279,9 +2184,7 @@ export default function ProductAdDialog({
               <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
                 {t.adScenario} ({duration}s)
               </div>
-              <p dir="ltr" className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
-                {scenes[0]}
-              </p>
+              <SceneText text={scenes[0]} narrationLabel={t.narration} />
             </div>
           ) : null}
         </div>
@@ -1302,55 +2205,109 @@ export default function ProductAdDialog({
                 )}
                 {copiedIndex === -1 ? t.copied : isSplit ? t.copyAll : t.copy}
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={generate}
-                disabled={isWriting || isSending || !canGenerate}
-              >
-                {isWriting ? (
-                  <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
-                ) : (
-                  <RefreshCw className="h-4 w-4 mr-2" aria-hidden="true" />
-                )}
-                {t.regenerate}
-              </Button>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={isWriting || isSending || businessSaving || !canGenerate}
+                  >
+                    {isWriting ? (
+                      <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4 mr-2" aria-hidden="true" />
+                    )}
+                    {t.regenerate}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" dir={dir} className="w-52 border-white/10 bg-[#0b0c0e]/95 p-1">
+                  <button
+                    type="button"
+                    onClick={() => generate(true)}
+                    className="flex w-full items-center rounded-md px-2.5 py-2 text-sm text-zinc-100 transition hover:bg-white/10"
+                  >
+                    {t.withNarration}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => generate(false)}
+                    className="flex w-full items-center rounded-md px-2.5 py-2 text-sm text-zinc-100 transition hover:bg-white/10"
+                  >
+                    {t.withoutNarration}
+                  </button>
+                </PopoverContent>
+              </Popover>
               {isSplit && onSendScenes ? (
-                <Button size="sm" onClick={handleSendAll} disabled={isWriting || isSending}>
-                  {isSending ? (
+                <Button size="sm" onClick={handleSendAll} disabled={isWriting || isSending || isPreparingFrame}>
+                  {isSending || isPreparingFrame ? (
                     <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
                   ) : (
                     <Send className="h-4 w-4 mr-2" aria-hidden="true" />
                   )}
-                  {t.sendAll}
+                  {isPreparingFrame ? t.preparingFrame : t.sendAll}
                 </Button>
               ) : (
-                <Button size="sm" onClick={handleUseAsPrompt} disabled={isWriting || isSending}>
-                  <Wand2 className="h-4 w-4 mr-2" aria-hidden="true" />
-                  {t.useAsPrompt}
+                <Button size="sm" onClick={handleUseAsPrompt} disabled={isWriting || isSending || isPreparingFrame}>
+                  {isPreparingFrame ? (
+                    <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Wand2 className="h-4 w-4 mr-2" aria-hidden="true" />
+                  )}
+                  {isPreparingFrame ? t.preparingFrame : t.useAsPrompt}
                 </Button>
               )}
+
             </>
           ) : (
-            <Button onClick={generate} disabled={isWriting || !canGenerate} size="sm">
-              {isWriting ? (
-                <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
-              ) : (
-                <Wand2 className="h-4 w-4 mr-2" aria-hidden="true" />
-              )}
-              {t.generate}
-            </Button>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button disabled={isWriting || businessSaving || !canGenerate} size="sm">
+                  {isWriting ? (
+                    <LoaderCircle className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Wand2 className="h-4 w-4 mr-2" aria-hidden="true" />
+                  )}
+                  {t.generate}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" dir={dir} className="w-52 border-white/10 bg-[#0b0c0e]/95 p-1">
+                <button
+                  type="button"
+                  onClick={() => generate(true)}
+                  className="flex w-full items-center rounded-md px-2.5 py-2 text-sm text-zinc-100 transition hover:bg-white/10"
+                >
+                  {t.withNarration}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => generate(false)}
+                  className="flex w-full items-center rounded-md px-2.5 py-2 text-sm text-zinc-100 transition hover:bg-white/10"
+                >
+                  {t.withoutNarration}
+                </button>
+              </PopoverContent>
+            </Popover>
           )}
         </div>
 
         <Dialog open={productPickerOpen} onOpenChange={(o) => { if (!preparingId) setProductPickerOpen(o) }}>
           <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+            <button
+              type="button"
+              onClick={openReframeHistory}
+              title={t.reframeHistory}
+              aria-label={t.reframeHistory}
+              className="absolute right-12 top-4 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/10 bg-white/5 text-zinc-300 transition hover:border-amber-300/40 hover:text-amber-200"
+            >
+              <History className="h-4 w-4" aria-hidden="true" />
+            </button>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Boxes className="h-4 w-4" aria-hidden="true" /> {t.chooseFromProducts}
               </DialogTitle>
               <DialogDescription className="text-zinc-400">{t.aspectHint}</DialogDescription>
             </DialogHeader>
+
 
             {/* Step 1: aspect ratio */}
             <div>
@@ -1395,7 +2352,13 @@ export default function ProductAdDialog({
                         onClick={() => pickProduct(photo)}
                         className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-amber-300/40 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        <img src={photo.url} alt={photo.title ?? 'Product'} className="aspect-square w-full object-cover" />
+                        <img
+                          src={photo.url}
+                          alt={photo.title ?? 'Product'}
+                          loading="lazy"
+                          className="aspect-square w-full bg-black/40 object-cover"
+                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden' }}
+                        />
                         <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || t.untitled}</div>
                         {busy ? (
                           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/60 text-xs text-zinc-100">
@@ -1417,6 +2380,131 @@ export default function ProductAdDialog({
             </div>
           </DialogContent>
         </Dialog>
+
+        <Dialog open={reframeHistoryOpen} onOpenChange={setReframeHistoryOpen}>
+          <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <History className="h-4 w-4" aria-hidden="true" /> {t.reframeHistory}
+              </DialogTitle>
+              <DialogDescription className="text-zinc-400">{t.reuseHint}</DialogDescription>
+            </DialogHeader>
+
+            {loadingReframes ? (
+              <div className="flex items-center justify-center py-10 text-sm text-zinc-400">
+                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> {t.loadingReframes}
+              </div>
+            ) : reframeItems.length === 0 ? (
+              <div className="py-10 text-center text-sm text-zinc-500">{t.noReframes}</div>
+            ) : (
+              <div className="grid max-h-[55vh] grid-cols-3 gap-3 overflow-y-auto pr-1 sm:grid-cols-4">
+                {reframeItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => reuseReframe(item)}
+                    className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-amber-300/40"
+                  >
+                    <img
+                      src={item.url}
+                      alt={item.title ?? 'Reframed image'}
+                      loading="lazy"
+                      className="aspect-square w-full bg-black/40 object-cover"
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden' }}
+                    />
+                    <span className="absolute right-1.5 top-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-amber-200">
+                      {item.aspect}
+                    </span>
+                    <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{item.title || t.untitled}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end pt-2">
+              <Button variant="ghost" size="sm" onClick={() => setReframeHistoryOpen(false)}>
+                <ArrowLeft className="mr-1.5 h-4 w-4" aria-hidden="true" /> {t.back}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+
+
+        <input
+          ref={characterFileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => handleUploadCharacter(e.target.files?.[0])}
+        />
+
+        <Dialog open={characterPickerOpen} onOpenChange={(o) => { if (!uploadingCharacter) setCharacterPickerOpen(o) }}>
+          <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <UserRound className="h-4 w-4" aria-hidden="true" /> Choose a character
+              </DialogTitle>
+              <DialogDescription className="text-zinc-400">
+                Pick a character you created with the Character Sheet, or upload one. The ad scenario will feature this character.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div>
+              <button
+                type="button"
+                onClick={() => characterFileInputRef.current?.click()}
+                disabled={uploadingCharacter}
+                className="inline-flex items-center gap-2 rounded-md border border-amber-300/30 bg-amber-300/10 px-3 py-1.5 text-xs font-semibold text-amber-100 transition hover:border-amber-300/60 hover:bg-amber-300/20 disabled:opacity-50"
+              >
+                {uploadingCharacter ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <ImagePlus className="h-4 w-4" aria-hidden="true" />
+                )}
+                Upload character
+              </button>
+            </div>
+
+            <div className="mt-3">
+              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">Your characters</div>
+              {loadingCharacters ? (
+                <div className="flex items-center justify-center py-10 text-sm text-zinc-400">
+                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> Loading characters…
+                </div>
+              ) : characterPhotos.length === 0 ? (
+                <div className="py-10 text-center text-sm text-zinc-500">No characters yet. Create one with the Character Sheet, or upload an image above.</div>
+              ) : (
+                <div className="grid max-h-[50vh] grid-cols-3 gap-3 overflow-y-auto pr-1 sm:grid-cols-4">
+                  {characterPhotos.map((photo) => (
+                    <button
+                      key={photo.id}
+                      type="button"
+                      onClick={() => pickCharacter(photo)}
+                      className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-amber-300/40"
+                    >
+                      <img
+                        src={photo.url}
+                        alt={photo.title ?? 'Character'}
+                        loading="lazy"
+                        className="aspect-square w-full bg-black/40 object-cover"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden' }}
+                      />
+                      <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || t.untitled}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end pt-2">
+              <Button variant="ghost" size="sm" onClick={() => { if (!uploadingCharacter) setCharacterPickerOpen(false) }} disabled={uploadingCharacter}>
+                <ArrowLeft className="mr-1.5 h-4 w-4" aria-hidden="true" /> {t.back}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
 
         <Dialog open={previewLightboxOpen && Boolean(imagePreviewUrl)} onOpenChange={setPreviewLightboxOpen}>
           <DialogContent dir={dir} className="max-w-3xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">

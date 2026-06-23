@@ -53,7 +53,13 @@ import {
   Trash2,
   Upload,
   UserRound,
+  Drama,
   Wand2,
+  FileText,
+  MessageSquareQuote,
+  Contact,
+  Eye,
+  EyeOff,
   X
 } from 'lucide-react'
 import {
@@ -90,6 +96,10 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { Slider } from '@/components/ui/slider'
+
+import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { toast } from 'sonner'
@@ -110,6 +120,12 @@ import type { VideoSummary } from '@/modules/video-library/contract'
 import { generatorUiGateway } from '@/modules/generator-ui/gateway'
 import { mergeVideoUrls, MergeCancelledError, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
 import { ensureMp4 } from '@/modules/generator-ui/lib/transcodeToMp4'
+import {
+  loadContinuity,
+  saveContinuity,
+  applyContinuityPrompt,
+  type ContinuityState,
+} from '@/modules/generator-ui/lib/continuity'
 import { recordBlobToMp4, canRecordMp4 } from '@/modules/generator-ui/lib/recordToMp4'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
 import UsageStatsPopover from '@/modules/generator-ui/components/UsageStatsPopover'
@@ -121,6 +137,13 @@ import ImageReframeDialog from '@/modules/generator-ui/components/ImageReframeDi
 import AiImageDialog from '@/modules/generator-ui/components/AiImageDialog'
 import ScenarioWriterDialog from '@/modules/generator-ui/components/ScenarioWriterDialog'
 import ProductAdDialog from '@/modules/generator-ui/components/ProductAdDialog'
+import { TranscriptPanel } from '@/modules/generator-ui/components/TranscriptPanel'
+import { NarrationDialog } from '@/modules/generator-ui/components/NarrationDialog'
+import { extractNarration } from '@/modules/generator-ui/lib/narration'
+import CharacterSheetDialog from '@/modules/generator-ui/components/CharacterSheetDialog'
+
+
+
 
 const TRANSITION_OPTIONS: { id: TransitionId; label: string; durationMs: number }[] = [
   { id: 'cut', label: 'Cut', durationMs: 0 },
@@ -314,17 +337,26 @@ const USER_IMAGES_BUCKET = 'user-images'
 const USER_AUDIO_BUCKET = 'user-audio'
 
 /**
- * The `user-images` bucket is PRIVATE, so any persisted public URL
- * (.../object/public/user-images/<key>) returns 400 when loaded in an <img>.
- * Extract the bucket-relative object key from whatever form is stored.
+ * Private buckets (user-images, wan-frames, …) store paths as public URLs
+ * (.../object/public/<bucket>/<key>) which return 400/"Bucket not found"
+ * when loaded in an <img>. Detect which private bucket an object lives in and
+ * return both the bucket id and the bucket-relative key so we can sign it.
  */
-function userImageObjectKey(storagePath: string | null | undefined): string | null {
+const SIGNABLE_IMAGE_BUCKETS = [USER_IMAGES_BUCKET, FRAMES_BUCKET] as const
+
+function resolveImageBucketKey(
+  storagePath: string | null | undefined,
+): { bucket: string; key: string } | null {
   if (!storagePath) return null
-  const marker = `/${USER_IMAGES_BUCKET}/`
-  const idx = storagePath.indexOf(marker)
-  if (idx >= 0) return storagePath.slice(idx + marker.length)
+  for (const bucket of SIGNABLE_IMAGE_BUCKETS) {
+    const marker = `/${bucket}/`
+    const idx = storagePath.indexOf(marker)
+    if (idx >= 0) return { bucket, key: storagePath.slice(idx + marker.length) }
+  }
   // Already a bucket-relative key (no http origin, no signed/blob/data URL).
-  if (!/^https?:|^blob:|^data:/.test(storagePath)) return storagePath
+  if (!/^https?:|^blob:|^data:/.test(storagePath)) {
+    return { bucket: USER_IMAGES_BUCKET, key: storagePath }
+  }
   return null
 }
 
@@ -334,12 +366,12 @@ async function signUserImageUrl(storagePath: string | null | undefined): Promise
   // Already a directly-usable URL that isn't a (broken) public-bucket URL.
   if (/^blob:|^data:/.test(raw)) return raw
   if (/\/object\/sign\//.test(raw)) return raw
-  const key = userImageObjectKey(raw)
-  if (!key) return raw
+  const resolved = resolveImageBucketKey(raw)
+  if (!resolved) return raw
   try {
     const { data, error } = await supabase.storage
-      .from(USER_IMAGES_BUCKET)
-      .createSignedUrl(key, 60 * 60 * 24 * 365)
+      .from(resolved.bucket)
+      .createSignedUrl(resolved.key, 60 * 60 * 24 * 365)
     if (!error && data?.signedUrl) return data.signedUrl
   } catch {
     /* fall through */
@@ -352,6 +384,102 @@ async function signUserImageRows<T extends { storage_path: string }>(rows: T[]):
   return Promise.all(
     rows.map(async (row) => ({ ...row, storage_path: await signUserImageUrl(row.storage_path) })),
   )
+}
+
+/**
+ * Renders a private-bucket image with a self-healing fallback: if the <img>
+ * fails to load (stale/unsigned URL), it re-signs once from the source path.
+ * If it still fails (object deleted from storage), a clean placeholder is
+ * shown instead of the browser's broken-image glyph + bare alt text.
+ */
+function UserImageView({
+  src,
+  alt,
+  className,
+  imageKey,
+  loading,
+}: {
+  src: string
+  alt: string
+  className?: string
+  imageKey?: string
+  loading?: 'lazy' | 'eager'
+}) {
+  const [resolved, setResolved] = useState(src)
+  const [broken, setBroken] = useState(false)
+  const retriedRef = useRef(false)
+
+  useEffect(() => {
+    setResolved(src)
+    setBroken(false)
+    retriedRef.current = false
+  }, [src])
+
+  const handleError = useCallback(() => {
+    if (retriedRef.current) {
+      setBroken(true)
+      return
+    }
+    retriedRef.current = true
+    let active = true
+    signUserImageUrl(src)
+      .then((signed) => {
+        if (!active) return
+        if (signed && signed !== resolved) setResolved(signed)
+        else setBroken(true)
+      })
+      .catch(() => {
+        if (active) setBroken(true)
+      })
+    return () => {
+      active = false
+    }
+  }, [src, resolved])
+
+  if (broken) {
+    return (
+      <div className={`flex flex-col items-center justify-center gap-2 bg-[#0b0d10] text-center ${className ?? ''}`}>
+        <ImageIcon className="h-7 w-7 text-zinc-600" aria-hidden="true" />
+        <span className="px-2 text-xs text-zinc-500">تصویر در دسترس نیست</span>
+      </div>
+    )
+  }
+
+  return (
+    <img
+      key={imageKey ?? src}
+      src={resolved}
+      alt={alt}
+      className={className}
+      loading={loading}
+      onError={handleError}
+    />
+  )
+}
+
+/**
+ * The `wan-frames` bucket is PRIVATE, so a public URL returns 400 in an <img>.
+ * Resolve a year-long signed URL for display; fall back to the raw value.
+ */
+async function signFramesUrl(storagePath: string | null | undefined): Promise<string> {
+  const raw = storagePath ?? ''
+  if (/^blob:|^data:/.test(raw)) return raw
+  if (/\/object\/sign\//.test(raw)) return raw
+  const marker = `/${FRAMES_BUCKET}/`
+  const idx = raw.indexOf(marker)
+  let key: string | null = null
+  if (idx >= 0) key = raw.slice(idx + marker.length)
+  else if (!/^https?:|^blob:|^data:/.test(raw)) key = raw
+  if (!key) return raw
+  try {
+    const { data, error } = await supabase.storage
+      .from(FRAMES_BUCKET)
+      .createSignedUrl(key, 60 * 60 * 24 * 365)
+    if (!error && data?.signedUrl) return data.signedUrl
+  } catch {
+    /* fall through */
+  }
+  return raw
 }
 
 type ModelChoice = {
@@ -798,6 +926,7 @@ export default function DashboardPage() {
   const [isDragging, setIsDragging] = useState(false)
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
   const [promptViewer, setPromptViewer] = useState<string | null>(null)
+  const [narrationViewer, setNarrationViewer] = useState<{ cardId: string; prompt: string | null; narrationText: string | null; videoStoragePath: string | null } | null>(null)
   const [editPromptJob, setEditPromptJob] = useState<JobDetail | null>(null)
   const [editPromptText, setEditPromptText] = useState('')
   const [startContext] = useState('Start')
@@ -1234,6 +1363,15 @@ export default function DashboardPage() {
   const [isAiImageDialogOpen, setIsAiImageDialogOpen] = useState(false)
   const [isScenarioDialogOpen, setIsScenarioDialogOpen] = useState(false)
   const [isProductAdOpen, setIsProductAdOpen] = useState(false)
+  const [isCharacterSheetOpen, setIsCharacterSheetOpen] = useState(false)
+  // Character picked as a *descriptive reference* for the current project's film.
+  type ProjectCharacter = { id: string; url: string; title: string | null }
+  const [selectedCharacter, setSelectedCharacter] = useState<ProjectCharacter | null>(null)
+  const [characterList, setCharacterList] = useState<ProjectCharacter[]>([])
+  const [characterMenuOpen, setCharacterMenuOpen] = useState(false)
+  const [characterListLoading, setCharacterListLoading] = useState(false)
+  // Cache of generated character descriptions, keyed by character image id.
+  const characterDescCacheRef = useRef<Record<string, string>>({})
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
@@ -1245,7 +1383,25 @@ export default function DashboardPage() {
   const closePreview = () => {
     setPreviewVideoId(null)
     setPreviewDismissed(true)
+    setTranscriptOpen(false)
+    setTranscriptVideoUrl(null)
   }
+  // Transcript panel state for the large preview.
+  const [transcriptOpen, setTranscriptOpen] = useState(false)
+  const [transcriptVideoUrl, setTranscriptVideoUrl] = useState<string | null>(null)
+  const [transcriptResolving, setTranscriptResolving] = useState(false)
+  const openTranscript = useCallback(async (src: string) => {
+    setTranscriptOpen(true)
+    setTranscriptResolving(true)
+    try {
+      const signed = await signStorageUrl(src)
+      setTranscriptVideoUrl(signed ?? src)
+    } catch {
+      setTranscriptVideoUrl(src)
+    } finally {
+      setTranscriptResolving(false)
+    }
+  }, [signStorageUrl])
   const [isApprovedPanelOpen, setIsApprovedPanelOpen] = useState(false)
   // ----- Storage archive: every film the user ever made, read live from the
   // server (independent of drafts/library local state). -----
@@ -1384,6 +1540,9 @@ export default function DashboardPage() {
 
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
   const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15 | 30 | 45 | 135>(5)
+  // Continuity Mode — automatic per-chain card-to-card continuity for multi-card
+  // durations. State is persisted per generation chain (see continuityChainKey).
+  const [continuity, setContinuity] = useState<ContinuityState>(() => loadContinuity(null))
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '1:1' | '16:9'>(() => {
     if (typeof window === 'undefined') return '16:9'
     try {
@@ -1710,7 +1869,241 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
-  // Per-project snapshot of the music / voiceover used in each Final Film.
+  // Contact / branding info burned as a text overlay onto the Final Film.
+  // Persisted per user so it survives refresh and project switches.
+  const hexToRgba = (hex: string, alpha: number) => {
+    const h = (hex || '#000000').replace('#', '')
+    const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h
+    const r = parseInt(full.slice(0, 2) || '00', 16)
+    const g = parseInt(full.slice(2, 4) || '00', 16)
+    const b = parseInt(full.slice(4, 6) || '00', 16)
+    const a = Math.min(1, Math.max(0, Number.isFinite(alpha) ? alpha : 0.45))
+    return `rgba(${r}, ${g}, ${b}, ${a})`
+  }
+  type ContactOverlay = {
+    website: string
+    phone: string
+    address: string
+    enabled: boolean
+    websiteEnabled: boolean
+    phoneEnabled: boolean
+    addressEnabled: boolean
+    position: 'top' | 'center' | 'bottom'
+    /** Normalized 0–1 center position when the user has dragged the overlay.
+     *  null = use the `position` preset instead. */
+    offset: { x: number; y: number } | null
+    /** Size multiplier for the overlay (logo + text). 1 = default. */
+    scale: number
+    logoUrl: string
+    logoEnabled: boolean
+    /** Show the translucent backdrop panel behind the logo + text. */
+    panelEnabled: boolean
+    /** Hex color of the backdrop panel. */
+    panelColor: string
+    /** Opacity of the backdrop panel (0–1). */
+    panelOpacity: number
+    /** Hex color of the overlay text. */
+    textColor: string
+    /** CSS font-family stack used for the overlay text. */
+    fontFamily: string
+  }
+  const DEFAULT_CONTACT_FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif"
+  const CONTACT_THEMES: {
+    id: string
+    label: string
+    swatch: string
+    textColor: string
+    fontFamily: string
+    panelEnabled: boolean
+    panelColor: string
+    panelOpacity: number
+  }[] = [
+    { id: 'classic', label: 'Classic', swatch: '#000000', textColor: '#ffffff', fontFamily: DEFAULT_CONTACT_FONT, panelEnabled: true, panelColor: '#000000', panelOpacity: 0.45 },
+    { id: 'minimal', label: 'Minimal', swatch: '#ffffff', textColor: '#ffffff', fontFamily: "'Outfit', system-ui, sans-serif", panelEnabled: false, panelColor: '#000000', panelOpacity: 0.45 },
+    { id: 'cinematic', label: 'Cinematic', swatch: '#f5e6c8', textColor: '#f5e6c8', fontFamily: "'Playfair Display', Georgia, serif", panelEnabled: true, panelColor: '#000000', panelOpacity: 0.6 },
+    { id: 'neon', label: 'Neon', swatch: '#22d3ee', textColor: '#22d3ee', fontFamily: "'Space Grotesk', system-ui, sans-serif", panelEnabled: true, panelColor: '#000000', panelOpacity: 0.55 },
+    { id: 'sunlight', label: 'Sunlight', swatch: '#111111', textColor: '#111111', fontFamily: "'Outfit', system-ui, sans-serif", panelEnabled: true, panelColor: '#ffffff', panelOpacity: 0.7 },
+    { id: 'gold', label: 'Gold Luxe', swatch: '#e8b923', textColor: '#e8b923', fontFamily: "'Playfair Display', Georgia, serif", panelEnabled: true, panelColor: '#000000', panelOpacity: 0.5 },
+  ]
+  const emptyContact = (): ContactOverlay => ({
+    website: '',
+    phone: '',
+    address: '',
+    enabled: false,
+    websiteEnabled: true,
+    phoneEnabled: true,
+    addressEnabled: true,
+    position: 'bottom',
+    offset: null,
+    scale: 1,
+    logoUrl: '',
+    logoEnabled: true,
+    panelEnabled: true,
+    panelColor: '#000000',
+    panelOpacity: 0.45,
+    textColor: '#ffffff',
+    fontFamily: DEFAULT_CONTACT_FONT,
+  })
+
+  const [contactOverlay, setContactOverlay] = useState<ContactOverlay>(emptyContact)
+  const [contactMenuOpen, setContactMenuOpen] = useState(false)
+  const contactKey = userId ? `project-contact:${userId}` : null
+  useEffect(() => {
+    if (!contactKey) { setContactOverlay(emptyContact()); return }
+    let cancelled = false
+    // Local prefs (enabled / position / logoEnabled) persist per user in localStorage.
+    let base = emptyContact()
+    try {
+      const raw = window.localStorage.getItem(contactKey)
+      if (raw) base = { ...base, ...(JSON.parse(raw) as Partial<ContactOverlay>), enabled: false }
+    } catch { /* ignore */ }
+    setContactOverlay(base)
+    // Contact text (website / phone / address) and logo are sourced from the
+    // business profile saved in the Product Ad Scenario modal — single source of truth.
+    if (userId) {
+      supabase
+        .from('generator_business_profiles')
+        .select('contact_website, contact_phone, contact_address, contact_logo_url')
+        .eq('user_id', userId)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (cancelled || !data) return
+          setContactOverlay((prev) => ({
+            ...prev,
+            website: data.contact_website ?? '',
+            phone: data.contact_phone ?? '',
+            address: data.contact_address ?? '',
+            logoUrl: (data as { contact_logo_url?: string | null }).contact_logo_url ?? '',
+          }))
+        })
+    }
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contactKey, userId])
+  const updateContact = useCallback((patch: Partial<ContactOverlay>) => {
+    setContactOverlay((prev) => {
+      const next = { ...prev, ...patch }
+      if (contactKey) {
+        try {
+          // Keep the (potentially large) logo data URL out of localStorage; it
+          // is persisted in the business profile instead.
+          const { logoUrl: _omit, ...local } = next
+          window.localStorage.setItem(contactKey, JSON.stringify(local))
+        } catch { /* ignore */ }
+      }
+      return next
+    })
+  }, [contactKey])
+  const [contactDragging, setContactDragging] = useState(false)
+  const contactBoxRef = useRef<HTMLDivElement | null>(null)
+  // Track the displayed video height so the live contact overlay can be sized
+  // proportionally (matching the burn-in ratios in mergeVideos.ts), giving a
+  // true WYSIWYG preview of the final film.
+  const [previewVideoSize, setPreviewVideoSize] = useState({ w: 0, h: 0 })
+  const contactRoRef = useRef<ResizeObserver | null>(null)
+  const setContactBoxRef = useCallback((el: HTMLDivElement | null) => {
+    contactBoxRef.current = el
+    contactRoRef.current?.disconnect()
+    if (!el || typeof ResizeObserver === 'undefined') { setPreviewVideoSize({ w: 0, h: 0 }); return }
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect
+      setPreviewVideoSize({ w: r?.width ?? el.clientWidth, h: r?.height ?? el.clientHeight })
+    })
+    ro.observe(el)
+    contactRoRef.current = ro
+    setPreviewVideoSize({ w: el.clientWidth, h: el.clientHeight })
+  }, [])
+
+
+
+  // Drag the contact overlay anywhere on the preview video. Stores a normalized
+  // 0–1 center position so it maps identically to the higher-res merge canvas.
+  const handleContactPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    // Positioning context is the video box (contactBoxRef).
+    const bounds = contactBoxRef.current?.getBoundingClientRect()
+    if (!bounds || bounds.width === 0 || bounds.height === 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const target = e.currentTarget
+    try { target.setPointerCapture(e.pointerId) } catch { /* ignore */ }
+    setContactDragging(true)
+    const apply = (clientX: number, clientY: number) => {
+      const x = Math.min(1, Math.max(0, (clientX - bounds.left) / bounds.width))
+      const y = Math.min(1, Math.max(0, (clientY - bounds.top) / bounds.height))
+      updateContact({ offset: { x, y } })
+    }
+    apply(e.clientX, e.clientY)
+    const onMove = (ev: PointerEvent) => apply(ev.clientX, ev.clientY)
+    const onUp = () => {
+      setContactDragging(false)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      try { target.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }, [updateContact])
+
+  // Persist the logo to the business profile (single source of truth) and update state.
+  const updateContactLogo = useCallback((logoUrl: string) => {
+    updateContact({ logoUrl })
+    if (!userId) return
+    void (async () => {
+      const value = logoUrl || null
+      const { data: updated } = await supabase
+        .from('generator_business_profiles')
+        .update({ contact_logo_url: value })
+        .eq('user_id', userId)
+        .select('user_id')
+      if (!updated || updated.length === 0) {
+        await supabase
+          .from('generator_business_profiles')
+          .insert({ user_id: userId, business_info: '', contact_logo_url: value })
+      }
+    })()
+  }, [updateContact, userId])
+  // Read an uploaded logo, downscale it to <=256px (PNG data URL), and persist it.
+  const onContactLogoFile = useCallback((file: File | null | undefined) => {
+    if (!file || !file.type.startsWith('image/')) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        const max = 256
+        const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight))
+        const w = Math.max(1, Math.round(img.naturalWidth * scale))
+        const h = Math.max(1, Math.round(img.naturalHeight * scale))
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+        ctx.drawImage(img, 0, 0, w, h)
+        updateContactLogo(canvas.toDataURL('image/png'))
+      }
+      img.src = String(reader.result)
+    }
+    reader.readAsDataURL(file)
+  }, [updateContactLogo])
+  // Lines shown in the overlay (only non-empty fields), in display order.
+  const contactLines = useMemo(
+    () => [
+      contactOverlay.websiteEnabled ? contactOverlay.website : '',
+      contactOverlay.phoneEnabled ? contactOverlay.phone : '',
+      contactOverlay.addressEnabled ? contactOverlay.address : '',
+    ]
+      .map((l) => l.trim())
+      .filter(Boolean),
+    [
+      contactOverlay.website, contactOverlay.phone, contactOverlay.address,
+      contactOverlay.websiteEnabled, contactOverlay.phoneEnabled, contactOverlay.addressEnabled,
+    ],
+  )
+
+  const contactLogoActive = contactOverlay.logoEnabled && !!contactOverlay.logoUrl
+  const contactActive = contactOverlay.enabled && (contactLines.length > 0 || contactLogoActive)
+
+
   // Stores durable public URLs (copied into MERGED_BUCKET at finalize time) so
   // the finalized card can play + download the exact audio that project used.
   type ProjectAudioTrack = { url: string; name: string }
@@ -2103,6 +2496,25 @@ export default function DashboardPage() {
   // download, and delete them, but cannot edit/resume/extend them.
   const isReadOnlyProject = !!selectedProjectId && !selectedProjectId.startsWith('draft-')
 
+  // Stable key for the current generation chain — used to persist/restore the
+  // Continuity Mode state and scene memory per project chain.
+  const continuityChainKey = selectedProjectId ?? activeDraftId ?? 'pending'
+  // Reload continuity state whenever the active chain changes.
+  useEffect(() => {
+    setContinuity(loadContinuity(continuityChainKey))
+  }, [continuityChainKey])
+  // Persist + update helper.
+  const updateContinuity = useCallback(
+    (patch: Partial<ContinuityState>) => {
+      setContinuity((prev) => {
+        const next = { ...prev, ...patch, memory: { ...prev.memory, ...(patch.memory ?? {}) } }
+        saveContinuity(continuityChainKey, next)
+        return next
+      })
+    },
+    [continuityChainKey],
+  )
+
   // Persist selectedProjectId + preview state per-user across refreshes so
   // a hard reload re-opens the same Final Film the user was viewing.
   const selectedProjectKey = userId ? `selected-project:${userId}` : null
@@ -2157,6 +2569,61 @@ export default function DashboardPage() {
     const edited = editedClips[id]?.url
     return edited ?? fallback ?? undefined
   }
+
+  // Capture a single still frame from a video Blob and return it as a compact
+  // JPEG data URL. Used to persist a durable poster for Final Film library
+  // cards so the preview keeps showing even if the heavy merged video file
+  // later becomes unavailable in storage. Resolves to null on any failure.
+  const captureVideoPoster = (blob: Blob): Promise<string | null> => {
+    return new Promise((resolve) => {
+      let url: string | null = null
+      let settled = false
+      const finish = (val: string | null) => {
+        if (settled) return
+        settled = true
+        try { if (url) URL.revokeObjectURL(url) } catch { /* ignore */ }
+        resolve(val)
+      }
+      try {
+        url = URL.createObjectURL(blob)
+        const video = document.createElement('video')
+        video.muted = true
+        video.preload = 'metadata'
+        video.crossOrigin = 'anonymous'
+        video.src = url
+        const draw = () => {
+          try {
+            const w = video.videoWidth
+            const h = video.videoHeight
+            if (!w || !h) { finish(null); return }
+            const maxW = 640
+            const scale = Math.min(1, maxW / w)
+            const canvas = document.createElement('canvas')
+            canvas.width = Math.round(w * scale)
+            canvas.height = Math.round(h * scale)
+            const ctx = canvas.getContext('2d')
+            if (!ctx) { finish(null); return }
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+            finish(canvas.toDataURL('image/jpeg', 0.7))
+          } catch {
+            finish(null)
+          }
+        }
+        video.onloadedmetadata = () => {
+          const dur = Number.isFinite(video.duration) ? video.duration : 0
+          const target = dur > 0 ? Math.min(1, Math.max(0, dur - 0.05)) : 0.05
+          try { video.currentTime = target } catch { /* ignore */ }
+        }
+        video.onseeked = () => { draw() }
+        video.onerror = () => finish(null)
+        // Safety timeout so we never block the finalize flow.
+        setTimeout(() => finish(null), 8000)
+      } catch {
+        finish(null)
+      }
+    })
+  }
+
 
   // Single source of truth for what a Draft card should display. A draft's
   // own `entry.video` can be stale/empty (e.g. its first clip had no
@@ -2845,6 +3312,28 @@ export default function DashboardPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const isTextToVideo = generationMode === 'text-to-video'
+  // A previous completed clip is required for Continuity Mode to be meaningful.
+  const previousClip = useMemo(
+    () =>
+      generatedVideos.find(
+        (v) => normalizeStatus(v.status) === 'completed' && v.video?.storage_path,
+      ) ?? null,
+    [generatedVideos],
+  )
+  const hasPreviousClip = !!previousClip
+  // Long durations are auto-split into multiple sequential cards; Continuity Mode
+  // is forced ON for them so the cards stay narratively/content related.
+  const isMultiCardDuration =
+    durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135
+  // Effective continuity state used across UI + generation paths.
+  const continuityActive = continuity.enabled || isMultiCardDuration
+  // Auto-disable continuity if the chain no longer has a previous clip — but keep
+  // it on for multi-card durations (their continuity is intra-batch, no prior clip needed).
+  useEffect(() => {
+    if (continuity.enabled && !hasPreviousClip && !isMultiCardDuration) {
+      updateContinuity({ enabled: false })
+    }
+  }, [continuity.enabled, hasPreviousClip, isMultiCardDuration, updateContinuity])
   const hasComposerInput = promptText.trim().length > 0 || uploadedFiles.length > 0
   const readyStartFrame = uploadedFiles.find((file) => file.target === 'Start' && file.status === 'ready' && file.url)
   const readyEndFrame = uploadedFiles.find((file) => file.target === 'End' && file.status === 'ready' && file.url)
@@ -3859,6 +4348,15 @@ export default function DashboardPage() {
   // Backwards-compat alias used by existing card highlight + start-frame code paths
   const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
 
+  // True when the previewed video is an already-merged Final Film / Library
+  // project. These have the contact overlay permanently burned in during merge,
+  // so the live editable overlay layer must NOT be drawn on top (avoids dupes).
+  const isMergedFinalPreview =
+    previewItem?.kind === 'video' &&
+    (previewItem.job.id === '__final_film_preview__' ||
+      previewItem.job.provider_key === 'merged' ||
+      (!!selectedProjectId && previewItem.job.id === selectedProjectId))
+
   // --- Schedule the Final Film to the Rebar OS Social Media Manager ---
   // Frontend-only hand-off: posts a durable signed video URL + schedule time to
   // the embedding Rebar OS shell via postMessage (origin-locked). No backend or
@@ -4112,9 +4610,10 @@ export default function DashboardPage() {
             .select('id, storage_path, created_at, still_duration_seconds, width, height, category')
             .eq('user_id', userId)
             .is('deleted_at', null)
-            // Product photos live only in the Storage > Product Photos tab.
-            // They must never leak into the workspace/drafts/library.
-            .or('category.is.null,category.neq.product'),
+            // Product photos live only in the Storage > Product Photos tab and
+            // character images live only in the Character Sheet dialog. Neither
+            // must ever leak into the workspace/drafts/library.
+            .or('category.is.null,and(category.neq.product,category.neq.character)'),
         ])
         if (cancelled) return
 
@@ -4129,7 +4628,10 @@ export default function DashboardPage() {
         const imgRows = (imgRowsRes.data ?? []) as UserImageItem[]
         const visibleImages = await signUserImageRows(
           imgRows.filter(
-            (r) => !workspaceHiddenImageIds.has(r.id) && (r.category ?? 'general') !== 'product',
+            (r) =>
+              !workspaceHiddenImageIds.has(r.id) &&
+              (r.category ?? 'general') !== 'product' &&
+              (r.category ?? 'general') !== 'character',
           ),
         )
         if (cancelled) return
@@ -4799,10 +5301,11 @@ export default function DashboardPage() {
         .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false })
       if (upErr) throw new Error(upErr.message)
       const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+      const displayUrl = await signFramesUrl(storagePath).catch(() => data.publicUrl)
       setUploadedFiles((current) =>
         current.map((f) =>
           f.id === seedId
-            ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size, error: null }
+            ? { ...f, status: 'ready', url: displayUrl, size: blob.size, error: null }
             : f,
         ),
       )
@@ -4852,9 +5355,10 @@ export default function DashboardPage() {
     }
 
     const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+    const displayUrl = await signFramesUrl(storagePath).catch(() => data.publicUrl)
     setUploadedFiles((currentFiles) => currentFiles.map((uploadedFile) => (
       uploadedFile.id === fileId
-        ? { ...uploadedFile, status: 'ready', url: data.publicUrl, error: null }
+        ? { ...uploadedFile, status: 'ready', url: displayUrl, error: null }
         : uploadedFile
     )))
   }
@@ -5246,6 +5750,62 @@ export default function DashboardPage() {
     return parts.length > 0 ? parts : null
   }
 
+  // Load the user's uploaded characters for the in-project picker.
+  async function loadCharacterList() {
+    if (!userId) return
+    setCharacterListLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('generator_user_images')
+        .select('id, storage_path, title, created_at')
+        .eq('user_id', userId)
+        .eq('category', 'character')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      const rows = (data ?? []) as { id: string; storage_path: string; title: string | null }[]
+      const signed = await Promise.all(
+        rows.map(async (r) => ({
+          id: r.id,
+          title: r.title ?? null,
+          url: await signUserImageUrl(r.storage_path),
+        })),
+      )
+      setCharacterList(signed)
+    } catch {
+      setCharacterList([])
+    } finally {
+      setCharacterListLoading(false)
+    }
+  }
+
+  // Resolve (and cache) a textual description for the selected character so it
+  // can be injected into the film prompt as a descriptive reference.
+  async function resolveCharacterDescription(char: ProjectCharacter): Promise<string> {
+    const cached = characterDescCacheRef.current[char.id]
+    if (cached) return cached
+    try {
+      const { data, error } = await supabase.functions.invoke('describe-character', {
+        body: { imageUrl: char.url },
+      })
+      if (error) throw error
+      const desc = (data as { description?: string } | null)?.description?.trim() ?? ''
+      if (desc) characterDescCacheRef.current[char.id] = desc
+      return desc
+    } catch {
+      return ''
+    }
+  }
+
+  function applyCharacterPrefix(prompt: string, description: string): string {
+    if (!description) return prompt
+    return `Main character reference (keep this character consistent): ${description}\n\n${prompt}`
+  }
+
+
+
+
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
@@ -5287,7 +5847,29 @@ export default function DashboardPage() {
     }
 
     try {
-      const plannedPrompt = nextPrompt
+      let plannedPrompt = nextPrompt
+      // Inject the selected character as a descriptive reference into the prompt.
+      if (selectedCharacter) {
+        setVideoColumnMessage('Reading character reference…')
+        const desc = await resolveCharacterDescription(selectedCharacter)
+        plannedPrompt = applyCharacterPrefix(plannedPrompt, desc)
+        setVideoColumnMessage(null)
+      }
+
+      // Continuity Mode: append the continuity instruction block + scene memory
+      // so the next card continues from the previous clip. The previous frame is
+      // already seeded as the Start frame (Add card / continuation seeding).
+      if (continuity.enabled && hasPreviousClip) {
+        plannedPrompt = applyContinuityPrompt(plannedPrompt, continuity.memory)
+        // Roll the scene memory forward so the next card reuses this state.
+        const promptSummary = promptText.trim().replace(/\s+/g, ' ').split(/(?<=[.!?])\s/)[0]
+        if (promptSummary) {
+          updateContinuity({ memory: { ...continuity.memory, lastState: promptSummary } })
+        }
+      }
+
+
+
 
       // 45s auto-split: ask scenario-write to break the user's single prompt into
       // three sequential 15s scenes, then chain them via submitScenesAsJobs so each
@@ -5339,6 +5921,9 @@ export default function DashboardPage() {
       // One durable project group id for every clip created in this batch.
       const draftGroupId = ensureActiveDraftGroupId()
 
+      // Authoritative narration from the user's prompt — kept as the reference
+      // for the on-film narration check, independent of later prompt edits.
+      const plannedNarration = extractNarration(plannedPrompt).join('\n') || undefined
       for (let i = 0; i < iterations; i++) {
         let createdJob
         let seedFrames: { firstFrameUrl?: string; lastFrameUrl?: string } = {}
@@ -5353,6 +5938,7 @@ export default function DashboardPage() {
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
             draftGroupId,
+            narrationText: plannedNarration,
           })
         } else if (readyStartFrame?.url && readyEndFrame?.url) {
           createdJob = await jobOrchestratorGateway.createJob({
@@ -5364,6 +5950,7 @@ export default function DashboardPage() {
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
             draftGroupId,
+            narrationText: plannedNarration,
           })
           seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
         } else if (readyStartFrame?.url) {
@@ -5375,6 +5962,7 @@ export default function DashboardPage() {
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
             draftGroupId,
+            narrationText: plannedNarration,
           })
           seedFrames = { firstFrameUrl: readyStartFrame.url }
         } else if (readyEndFrame?.url) {
@@ -5386,6 +5974,7 @@ export default function DashboardPage() {
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
             draftGroupId,
+            narrationText: plannedNarration,
           })
           seedFrames = { lastFrameUrl: readyEndFrame.url }
         } else {
@@ -5529,12 +6118,41 @@ export default function DashboardPage() {
     let previousJobId: string | null = null
     // One durable project group id for every scene clip in this scenario.
     const draftGroupId = ensureActiveDraftGroupId()
+
+    // Content continuity for chained cards: resolve the character description once
+    // and reuse it as a prefix on every scene so all cards keep the same subject.
+    const continuityCharacterRef = selectedCharacter ?? continuity.characterRef ?? null
+    // Persistent identity anchor: the actual Character Sheet image URL, sent on
+    // EVERY card (card 1 included) in addition to the previous-frame seed so the
+    // provider keeps the same character instead of drifting. Independent of the
+    // text description prefix below.
+    const referenceImageUrls: string[] | undefined =
+      continuityCharacterRef?.url ? [continuityCharacterRef.url] : undefined
+    let characterPrefixDesc: string | null = null
+    if (continuityActive && continuityCharacterRef) {
+      try {
+        setVideoColumnMessage('Reading character reference…')
+        characterPrefixDesc = await resolveCharacterDescription(continuityCharacterRef)
+      } catch {
+        characterPrefixDesc = null
+      }
+      setVideoColumnMessage(null)
+    }
     try {
       for (let i = 0; i < scenes.length; i++) {
         const sourcePrompt = scenes[i].trim()
         if (!sourcePrompt) continue
         const sceneLabel = `Scene ${i + 1}`
-        const prompt = sourcePrompt
+        // Capture the authoritative narration written in this scene so it stays
+        // the reference even if the visual prompt is later edited.
+        const narrationText = extractNarration(sourcePrompt).join('\n') || undefined
+        // Enrich each card so the sequence stays content-connected: keep the same
+        // character, and (after the first) explicitly continue from the prior card.
+        let prompt = sourcePrompt
+        if (continuityActive) {
+          if (characterPrefixDesc) prompt = applyCharacterPrefix(prompt, characterPrefixDesc)
+          if (i > 0) prompt = applyContinuityPrompt(prompt, continuity.memory)
+        }
 
         let startFrameUrl: string | undefined
         if (i === 0) {
@@ -5551,7 +6169,9 @@ export default function DashboardPage() {
           durationSeconds: perClipDuration,
           aspectRatio: effectiveRatio,
           firstFrameUrl: startFrameUrl,
+          referenceImageUrls,
           draftGroupId,
+          narrationText,
         })
         const seededJob = buildSeededJob(prompt, createdJob, startFrameUrl ? { firstFrameUrl: startFrameUrl } : {})
         rememberClipRatio(seededJob.id, effectiveRatio)
@@ -5654,10 +6274,11 @@ export default function DashboardPage() {
           .upload(storagePath, blob, { contentType: 'image/png', upsert: false })
         if (error) throw new Error(error.message)
         const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+        const displayUrl = await signFramesUrl(storagePath).catch(() => data.publicUrl)
         setUploadedFiles((current) =>
           current.map((f) =>
             f.id === seedId
-              ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size }
+              ? { ...f, status: 'ready', url: displayUrl, size: blob.size }
               : f,
           ),
         )
@@ -5721,10 +6342,11 @@ export default function DashboardPage() {
           .upload(storagePath, blob, { contentType: 'image/png', upsert: false })
         if (error) throw new Error(error.message)
         const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+        const displayUrl = await signFramesUrl(storagePath).catch(() => data.publicUrl)
         setUploadedFiles((current) =>
           current.map((f) =>
             f.id === seedId
-              ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size }
+              ? { ...f, status: 'ready', url: displayUrl, size: blob.size }
               : f,
           ),
         )
@@ -5961,7 +6583,7 @@ export default function DashboardPage() {
     setVoiceoverDuration(0)
     setVoiceoverRange([0, 0])
     setVoiceoverTimeline([0, mergedDurationSec])
-    setIsVoiceoverOpen(false)
+    // Keep the dialog open so the full settings panel surfaces immediately.
     // Voiceover persistence to Storage › Audio happens at generation time
     // inside VoiceoverDialog, so no extra save is needed here.
   }
@@ -6279,7 +6901,11 @@ export default function DashboardPage() {
           audioOpt,
           transitionsForMerge,
           abortController.signal,
+          contactActive
+            ? { lines: contactLines, position: contactOverlay.position, offset: contactOverlay.offset ?? undefined, logoUrl: contactLogoActive ? contactOverlay.logoUrl : undefined, scale: contactOverlay.scale ?? 1, panelEnabled: contactOverlay.panelEnabled, panelColor: contactOverlay.panelColor, panelOpacity: contactOverlay.panelOpacity, textColor: contactOverlay.textColor, fontFamily: contactOverlay.fontFamily }
+            : undefined,
         ),
+
         pipelineTimeout,
       ])
       if (abortController.signal.aborted) throw new MergeCancelledError()
@@ -6313,6 +6939,11 @@ export default function DashboardPage() {
       setPreviewDismissed(false)
       setPreviewVideoId(null)
 
+      // Capture a durable poster frame from the merged blob so the Library
+      // card always shows a real preview, even if the merged video file later
+      // becomes unavailable in storage. Best-effort: null on failure.
+      const posterDataUrl = await captureVideoPoster(mergeRes.blob)
+
       // Register the merged film in Your Library (left panel). This does NOT
       // touch Pending (generatedVideos); it only appends a JobDetail entry to
       // mergedEntries + approvedIds (persisted in localStorage), exactly like
@@ -6335,7 +6966,7 @@ export default function DashboardPage() {
         video: {
           id: mergedId,
           storage_path: publicUrl,
-          thumbnail_url: null,
+          thumbnail_url: posterDataUrl,
           aspect_ratio: mergedRatio,
           duration: null,
         },
@@ -6660,6 +7291,7 @@ export default function DashboardPage() {
     setLastMergedPreview(null)
     // Reset the composer to a fresh state.
     setPromptText('')
+    setSelectedCharacter(null)
     setUploadedFiles([])
     setComposerError(null)
     setVideoColumnMessage(null)
@@ -8144,6 +8776,7 @@ export default function DashboardPage() {
         open={isVoiceoverOpen}
         onOpenChange={setIsVoiceoverOpen}
         onUseAsSoundtrack={handleVoiceoverAsSoundtrack}
+        products={archiveProductImages.map((p) => ({ id: p.id, name: p.title?.trim() || 'Untitled product', imageUrl: p.storage_path }))}
         activeVoiceoverUrl={voiceoverUrl}
         activeVoiceoverName={voiceoverName}
         voiceoverVolume={voiceoverVolume}
@@ -8239,10 +8872,11 @@ export default function DashboardPage() {
               .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false })
             if (upErr) throw new Error(upErr.message)
             const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+            const displayUrl = await signFramesUrl(storagePath).catch(() => data.publicUrl)
             setUploadedFiles((current) =>
               current.map((f) =>
                 f.id === seedId
-                  ? { ...f, status: 'ready', url: data.publicUrl, size: blob.size, error: null }
+                  ? { ...f, status: 'ready', url: displayUrl, size: blob.size, error: null }
                   : f,
               ),
             )
@@ -8262,14 +8896,16 @@ export default function DashboardPage() {
         onOpenChange={setIsScenarioDialogOpen}
         defaultDuration={durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135 ? durationSeconds : (durationSeconds as 5 | 10 | 15)}
         userId={userId}
-        onUseAsPrompt={(text, imageUrl) => {
+        onUseAsPrompt={(text, imageUrl, duration) => {
+          if (duration) setDurationSeconds(duration)
           setPromptText(text)
           if (imageUrl) {
             setUploadTarget('Start')
             void handleUseImageAsStart(imageUrl)
           }
         }}
-        onSendScenes={async (scenes, imageUrl) => {
+        onSendScenes={async (scenes, imageUrl, duration) => {
+          if (duration) setDurationSeconds(duration)
           const tagged = scenes
             .map((s, i) => `=== Scene ${i + 1} ===\n${s.trim()}`)
             .join('\n\n')
@@ -8286,14 +8922,16 @@ export default function DashboardPage() {
         onOpenChange={setIsProductAdOpen}
         defaultDuration={durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135 ? durationSeconds : (durationSeconds as 5 | 10 | 15)}
         userId={userId}
-        onUseAsPrompt={(text, imageUrl) => {
+        onUseAsPrompt={(text, imageUrl, duration) => {
+          if (duration) setDurationSeconds(duration)
           setPromptText(text)
           if (imageUrl) {
             setUploadTarget('Start')
             void handleUseImageAsStart(imageUrl)
           }
         }}
-        onSendScenes={async (scenes, imageUrl) => {
+        onSendScenes={async (scenes, imageUrl, duration) => {
+          if (duration) setDurationSeconds(duration)
           const tagged = scenes
             .map((s, i) => `=== Scene ${i + 1} ===\n${s.trim()}`)
             .join('\n\n')
@@ -8304,6 +8942,24 @@ export default function DashboardPage() {
           }
         }}
       />
+
+      <CharacterSheetDialog
+        open={isCharacterSheetOpen}
+        onOpenChange={setIsCharacterSheetOpen}
+        userId={userId}
+        onUseCharacter={(c) => {
+          const character: ProjectCharacter = { id: c.id, url: c.url, title: c.title }
+          setSelectedCharacter(character)
+          updateContinuity({ characterRef: character })
+          setCharacterList((prev) =>
+            prev.some((p) => p.id === character.id) ? prev : [character, ...prev],
+          )
+          setIsCharacterSheetOpen(false)
+        }}
+      />
+
+
+
 
 
 
@@ -8525,8 +9181,8 @@ export default function DashboardPage() {
                     maxWidth: 'calc(100vw - 56rem)',
                   }}
                 >
-                  <img
-                    key={previewItem.image.id}
+                  <UserImageView
+                    imageKey={previewItem.image.id}
                     src={previewItem.image.storage_path}
                     alt="Uploaded reference"
                     className="h-full w-full bg-black object-contain"
@@ -8565,16 +9221,29 @@ export default function DashboardPage() {
               {previewItem.job.video?.storage_path ? (() => {
                 const src = getCardVideoSrc(previewItem.job.id, previewItem.job.video.storage_path) ?? previewItem.job.video.storage_path
                 return (
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={closePreview}
-                      aria-label="Close preview"
-                      title="Close preview"
-                      className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
-                    >
-                      <X className="h-4 w-4" aria-hidden="true" />
-                    </button>
+                  <div className="relative" ref={setContactBoxRef}>
+                    {!transcriptOpen && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={closePreview}
+                          aria-label="Close preview"
+                          title="Close preview"
+                          className="absolute right-2 top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 backdrop-blur transition hover:border-rose-300/40 hover:bg-rose-500/20 hover:text-rose-100"
+                        >
+                          <X className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void openTranscript(src)}
+                          aria-label="Show transcript"
+                          title="Transcript"
+                          className="absolute left-2 top-2 z-30 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/60 text-zinc-200 backdrop-blur transition hover:border-sky-300/40 hover:bg-sky-500/20 hover:text-sky-100"
+                        >
+                          <FileText className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      </>
+                    )}
                     <VideoWithSoundtrack
                       videoKey={`${previewItem.job.id}:${src}`}
                       videoBoxClassName="overflow-hidden bg-black"
@@ -8591,6 +9260,103 @@ export default function DashboardPage() {
                       preload="metadata"
                       clipVolume={1}
                     />
+                    {contactActive && !isMergedFinalPreview ? (() => {
+                      // Mirror the burn-in ratios from mergeVideos.ts so the live
+                      // overlay matches the final film exactly (WYSIWYG). `scale`
+                      // is baked into the metrics once, just like drawOverlay.
+                      const scale = Math.min(2, Math.max(0.5, contactOverlay.scale ?? 1))
+                      const ch = previewVideoSize.h || 0
+                      const cw = previewVideoSize.w || 0
+                      const fontSize = Math.max(10, ch * 0.032 * scale)
+                      const lineGap = fontSize * 0.45
+                      const lineHeight = fontSize + lineGap
+                      const padY = fontSize * 0.6
+                      const padX = cw ? cw * 0.04 : fontSize * 0.9
+                      const radius = fontSize * 0.6
+                      const logoH = ch * 0.12 * scale
+                      const logoGap = fontSize * 0.6
+                      const content = (
+                        <>
+                          {contactLogoActive ? (
+                            <img
+                              src={contactOverlay.logoUrl}
+                              alt="Company logo"
+                              className="w-auto object-contain"
+                              style={{ height: logoH, marginBottom: contactLines.length ? logoGap - lineGap : 0 }}
+                            />
+                          ) : null}
+                          {contactLines.map((line, i) => (
+
+                            <span
+                              key={i}
+                              className="truncate font-semibold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
+                              style={{ fontSize, lineHeight: `${lineHeight}px`, color: contactOverlay.textColor ?? '#ffffff', fontFamily: contactOverlay.fontFamily || undefined }}
+                            >
+                              {line}
+                            </span>
+                          ))}
+
+                        </>
+                      )
+                      const panelClass = `flex flex-col items-center cursor-move touch-none select-none ring-1 transition ${contactDragging ? 'ring-emerald-400/70' : 'ring-white/0 hover:ring-white/40'}`
+                      const panelBg = contactOverlay.panelEnabled
+                        ? hexToRgba(contactOverlay.panelColor ?? '#000000', contactOverlay.panelOpacity ?? 0.45)
+                        : 'transparent'
+                      const panelStyle: React.CSSProperties = {
+                        gap: lineGap,
+                        borderRadius: radius,
+                        backgroundColor: panelBg,
+                        paddingLeft: padX,
+                        paddingRight: padX,
+                        paddingTop: padY,
+                        paddingBottom: padY,
+                      }
+                      // Custom dragged position: absolutely centered at the stored point.
+                      if (contactOverlay.offset) {
+                        return (
+                          <div
+                            onPointerDown={handleContactPointerDown}
+                            className={`pointer-events-auto absolute z-20 ${panelClass}`}
+                            style={{
+                              ...panelStyle,
+                              left: `${contactOverlay.offset.x * 100}%`,
+                              top: `${contactOverlay.offset.y * 100}%`,
+                              transform: `translate(-50%, -50%)`,
+                            }}
+                          >
+                            {content}
+                          </div>
+                        )
+                      }
+                      // Preset position: wrapper handles layout, inner panel is draggable.
+                      return (
+                        <div
+                          className={`pointer-events-none absolute z-20 flex px-4 py-3 ${
+                            contactOverlay.position === 'top'
+                              ? 'inset-x-0 top-0 items-start justify-center bg-gradient-to-b from-black/65 to-transparent'
+                              : contactOverlay.position === 'center'
+                                ? 'inset-0 items-center justify-center'
+                                : 'inset-x-0 bottom-0 items-end justify-center bg-gradient-to-b from-transparent to-black/65'
+                          }`}
+                        >
+                          <div
+                            onPointerDown={handleContactPointerDown}
+                            className={`pointer-events-auto ${panelClass}`}
+                            style={panelStyle}
+                          >
+                            {content}
+                          </div>
+                        </div>
+                      )
+                    })() : null}
+
+
+                    {transcriptOpen && !transcriptResolving && transcriptVideoUrl ? (
+                      <TranscriptPanel
+                        videoUrl={transcriptVideoUrl}
+                        onClose={() => { setTranscriptOpen(false); setTranscriptVideoUrl(null) }}
+                      />
+                    ) : null}
                   </div>
                 )
               })() : (
@@ -8908,7 +9674,7 @@ export default function DashboardPage() {
                           className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
                           style={{ aspectRatio: ratioToCss(lockedProjectRatio ?? aspectRatio) }}
                         >
-                          <img
+                          <UserImageView
                             src={img.storage_path}
                             alt="Uploaded reference"
                             className="h-full w-full object-contain"
@@ -9035,7 +9801,7 @@ export default function DashboardPage() {
                     onDragOver={handleCardDragOver}
                     onDrop={handleCardDrop(video.id)}
                     onDragEnd={handleCardDragEnd}
-                    className={`w-full min-w-0 cursor-pointer rounded-2xl border p-3 transition hover:border-white/20 hover:bg-white/[0.055] ${
+                    className={`relative w-full min-w-0 cursor-pointer rounded-2xl border p-3 transition hover:border-white/20 hover:bg-white/[0.055] ${
                       isPreviewSelected ? 'border-white/20 bg-white/[0.06]' : 'border-white/10 bg-white/[0.035]'
                     } ${isDragging ? 'opacity-50' : ''}`}
                     role="button"
@@ -9103,6 +9869,39 @@ export default function DashboardPage() {
                       >
                         {video.input_prompt}
                       </button>
+                      {(() => {
+                        const canonical = (video as { narration_text?: string | null }).narration_text ?? null
+                        const narration = canonical
+                          ? canonical.split('\n').map((l) => l.trim()).filter(Boolean)
+                          : extractNarration(video.input_prompt)
+                        const hasNarration = narration.length > 0
+                        return (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setNarrationViewer({
+                                cardId: video.id,
+                                prompt: video.input_prompt ?? null,
+                                narrationText: canonical,
+                                videoStoragePath: video.video?.storage_path ?? null,
+                              })
+                            }}
+                            aria-label="Narration for this card"
+                            title={hasNarration ? 'Narration for this card' : 'No narration detected in this card'}
+                            className={`relative grid h-7 w-7 shrink-0 place-items-center rounded-full border transition ${
+                              hasNarration
+                                ? 'border-violet-400/40 bg-violet-500/10 text-violet-200 hover:border-violet-300/60 hover:bg-violet-500/20 hover:text-violet-100'
+                                : 'border-white/10 bg-white/[0.03] text-zinc-500 hover:border-white/20 hover:text-zinc-300'
+                            }`}
+                          >
+                            <MessageSquareQuote className="h-3.5 w-3.5" aria-hidden="true" />
+                            {hasNarration ? (
+                              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-violet-400 ring-2 ring-[#0b0c0e]" aria-hidden="true" />
+                            ) : null}
+                          </button>
+                        )
+                      })()}
                       {!isReadOnlyProject && (
                       <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
                         <span
@@ -9282,6 +10081,13 @@ export default function DashboardPage() {
                         )
                       })()
                     ) : null}
+                    <NarrationDialog
+                      open={narrationViewer?.cardId === video.id}
+                      onClose={() => setNarrationViewer(null)}
+                      prompt={narrationViewer?.prompt ?? null}
+                      narrationText={narrationViewer?.narrationText ?? null}
+                      videoStoragePath={narrationViewer?.videoStoragePath ?? null}
+                    />
                   </article>
                   {!isLast ? (
                     <div
@@ -9341,7 +10147,7 @@ export default function DashboardPage() {
       <button
         type="button"
         aria-label="Close library"
-        className={`fixed inset-0 z-20 bg-black/35 transition lg:hidden ${
+        className={`fixed inset-0 z-20 bg-black/35 transition lg:bg-transparent ${
           isApprovedPanelOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
         }`}
         onClick={() => setIsApprovedPanelOpen(false)}
@@ -9384,7 +10190,9 @@ export default function DashboardPage() {
             const renderCard = (video: JobDetail, variant: 'final' | 'draft') => {
               const isPreviewSelected = previewVideo?.id === video.id
               // For drafts, resolve the real preview from the snapshot maps so
-              // a stale/empty entry.video never shows a blank card.
+              // a stale/empty entry.video never shows a blank card. New finals
+              // persist their own poster (video.thumbnail_url) so the card shows
+              // a real preview even if the heavy merged file later disappears.
               const display =
                 variant === 'draft'
                   ? resolveDraftDisplay(video.id, video).video
@@ -9935,6 +10743,13 @@ export default function DashboardPage() {
           </button>
         </div>
 
+        {/* Continuity Mode is automatic for multi-card durations (30s/45s/135s) —
+            no visible controls; the system links the cards' content internally. */}
+
+
+
+
+
 
         {!isTextToVideo ? (
           <div id="composer-start-frame" className="flex min-h-11 items-center gap-2 sm:min-h-12 sm:gap-3" aria-label="Prompt path">
@@ -10097,6 +10912,409 @@ export default function DashboardPage() {
               <Heart className="h-5 w-5 animate-heartbeat" aria-hidden="true" />
               Product Ad
             </button>
+
+            <button
+              type="button"
+              onClick={() => setIsCharacterSheetOpen(true)}
+              aria-label="Create a film built around an uploaded character"
+              title="Create a film built around an uploaded character"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-violet-500 via-fuchsia-500 to-sky-500 px-4 text-sm font-bold text-zinc-50 shadow-[0_8px_24px_rgba(139,92,246,0.35)] transition hover:from-violet-400 hover:via-fuchsia-400 hover:to-sky-400 hover:shadow-[0_10px_28px_rgba(139,92,246,0.5)]"
+            >
+              <Drama className="h-5 w-5" aria-hidden="true" />
+              Character Sheet
+            </button>
+
+            <Popover open={contactMenuOpen} onOpenChange={setContactMenuOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Add company contact info as an overlay on the film"
+                  title="Add company contact info (address, phone, website) as an overlay on the film"
+                  className={`inline-flex h-11 items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
+                    contactActive
+                      ? 'border-emerald-400/60 bg-emerald-500/10 text-emerald-100'
+                      : 'border-white/15 bg-white/[0.04] text-zinc-200 hover:border-white/30'
+                  }`}
+                >
+                  <Contact className="h-5 w-5" aria-hidden="true" />
+                  <span>Contact</span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-80 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-sm font-semibold text-zinc-100">Contact overlay</span>
+                  <button
+                    type="button"
+                    onClick={() => updateContact({ website: '', phone: '', address: '' })}
+                    className="text-[11px] text-zinc-400 hover:text-rose-300"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <p className="mb-3 text-xs leading-5 text-zinc-500">
+                  This text is shown as a layer on top of the generated film.
+                </p>
+                <div className="space-y-2.5">
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Website</label>
+                      <button
+                        type="button"
+                        onClick={() => updateContact({ websiteEnabled: !contactOverlay.websiteEnabled })}
+                        title={contactOverlay.websiteEnabled ? 'Hide on video' : 'Show on video'}
+                        className={`grid h-6 w-6 place-items-center rounded-md transition ${contactOverlay.websiteEnabled ? 'text-emerald-300 hover:text-emerald-200' : 'text-zinc-600 hover:text-zinc-400'}`}
+                      >
+                        {contactOverlay.websiteEnabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
+                    <Input
+                      value={contactOverlay.website}
+                      onChange={(e) => updateContact({ website: e.target.value })}
+                      placeholder="www.example.com"
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Phone</label>
+                      <button
+                        type="button"
+                        onClick={() => updateContact({ phoneEnabled: !contactOverlay.phoneEnabled })}
+                        title={contactOverlay.phoneEnabled ? 'Hide on video' : 'Show on video'}
+                        className={`grid h-6 w-6 place-items-center rounded-md transition ${contactOverlay.phoneEnabled ? 'text-emerald-300 hover:text-emerald-200' : 'text-zinc-600 hover:text-zinc-400'}`}
+                      >
+                        {contactOverlay.phoneEnabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
+                    <Input
+                      value={contactOverlay.phone}
+                      onChange={(e) => updateContact({ phone: e.target.value })}
+                      placeholder="+1 555 000 0000"
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Address</label>
+                      <button
+                        type="button"
+                        onClick={() => updateContact({ addressEnabled: !contactOverlay.addressEnabled })}
+                        title={contactOverlay.addressEnabled ? 'Hide on video' : 'Show on video'}
+                        className={`grid h-6 w-6 place-items-center rounded-md transition ${contactOverlay.addressEnabled ? 'text-emerald-300 hover:text-emerald-200' : 'text-zinc-600 hover:text-zinc-400'}`}
+                      >
+                        {contactOverlay.addressEnabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
+                    <Input
+                      value={contactOverlay.address}
+                      onChange={(e) => updateContact({ address: e.target.value })}
+                      placeholder="123 Main St, City"
+                      className="h-9"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Theme</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {CONTACT_THEMES.map((theme) => {
+                      const active =
+                        (contactOverlay.textColor ?? '#ffffff').toLowerCase() === theme.textColor.toLowerCase() &&
+                        contactOverlay.fontFamily === theme.fontFamily &&
+                        contactOverlay.panelEnabled === theme.panelEnabled &&
+                        (contactOverlay.panelColor ?? '#000000').toLowerCase() === theme.panelColor.toLowerCase() &&
+                        (contactOverlay.panelOpacity ?? 0.45) === theme.panelOpacity
+                      return (
+                        <button
+                          key={theme.id}
+                          type="button"
+                          onClick={() => updateContact({
+                            textColor: theme.textColor,
+                            fontFamily: theme.fontFamily,
+                            panelEnabled: theme.panelEnabled,
+                            panelColor: theme.panelColor,
+                            panelOpacity: theme.panelOpacity,
+                          })}
+                          className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${
+                            active
+                              ? 'border-emerald-400/60 bg-emerald-500/10 text-emerald-100'
+                              : 'border-white/15 bg-white/[0.03] text-zinc-300 hover:border-white/30'
+                          }`}
+                          style={{ fontFamily: theme.fontFamily }}
+                        >
+                          <span
+                            className="h-3 w-3 shrink-0 rounded-full border border-white/30"
+                            style={{ backgroundColor: theme.swatch }}
+                          />
+                          <span className="truncate">{theme.label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+
+                <div className="mt-3 space-y-2">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Logo</label>
+                  <div className="flex items-center gap-2">
+                    {contactOverlay.logoUrl ? (
+                      <img
+                        src={contactOverlay.logoUrl}
+                        alt="Company logo"
+                        className="h-10 w-10 rounded-md border border-white/15 bg-white/5 object-contain p-0.5"
+                      />
+                    ) : (
+                      <div className="grid h-10 w-10 place-items-center rounded-md border border-dashed border-white/15 bg-white/[0.03] text-zinc-500">
+                        <ImageIcon className="h-4 w-4" aria-hidden="true" />
+                      </div>
+                    )}
+                    <label className="cursor-pointer rounded-lg border border-white/15 bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/30">
+                      {contactOverlay.logoUrl ? 'Replace' : 'Upload'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => { onContactLogoFile(e.target.files?.[0]); e.currentTarget.value = '' }}
+                      />
+                    </label>
+                    {contactOverlay.logoUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => updateContactLogo('')}
+                        className="text-[11px] text-zinc-400 hover:text-rose-300"
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                  {contactOverlay.logoUrl ? (
+                    <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+                      <span className="text-xs font-medium text-zinc-200">Show logo on video</span>
+                      <Switch
+                        checked={contactOverlay.logoEnabled}
+                        onCheckedChange={(v) => updateContact({ logoEnabled: v })}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+                <div className="mt-3 flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+                  <span className="text-xs font-medium text-zinc-200">Show on video</span>
+                  <Switch
+                    checked={contactOverlay.enabled}
+                    onCheckedChange={(v) => updateContact({ enabled: v })}
+                  />
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  {(['top', 'center', 'bottom'] as const).map((pos) => (
+                    <button
+                      key={pos}
+                      type="button"
+                      onClick={() => updateContact({ position: pos, offset: null })}
+                      className={`rounded-lg border px-3 py-1.5 text-xs font-medium capitalize transition ${
+                        !contactOverlay.offset && contactOverlay.position === pos
+                          ? 'border-emerald-400/60 bg-emerald-500/10 text-emerald-100'
+                          : 'border-white/15 bg-white/[0.03] text-zinc-300 hover:border-white/30'
+                      }`}
+                    >
+                      {pos}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                  <span className="text-zinc-400">
+                    {contactOverlay.offset ? 'Custom position (drag on video)' : 'Tip: drag the overlay on the video'}
+                  </span>
+                  {contactOverlay.offset ? (
+                    <button
+                      type="button"
+                      onClick={() => updateContact({ offset: null })}
+                      className="rounded-md border border-white/15 bg-white/[0.03] px-2 py-1 font-medium text-zinc-300 transition hover:border-white/30"
+                    >
+                      Reset position
+                    </button>
+                  ) : null}
+                </div>
+                <div className="mt-3 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-zinc-200">Size</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-zinc-400">{Math.round((contactOverlay.scale ?? 1) * 100)}%</span>
+                      {(contactOverlay.scale ?? 1) !== 1 ? (
+                        <button
+                          type="button"
+                          onClick={() => updateContact({ scale: 1 })}
+                          className="rounded-md border border-white/15 bg-white/[0.03] px-2 py-1 font-medium text-zinc-300 transition hover:border-white/30"
+                        >
+                          Reset
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <Slider
+                    value={[contactOverlay.scale ?? 1]}
+                    min={0.5}
+                    max={2}
+                    step={0.05}
+                    onValueChange={(v) => updateContact({ scale: v[0] })}
+                  />
+                </div>
+
+                <div className="mt-3 space-y-2 rounded-lg border border-white/10 bg-white/[0.04] p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-zinc-200">Background layer</span>
+                    <Switch
+                      checked={contactOverlay.panelEnabled}
+                      onCheckedChange={(v) => updateContact({ panelEnabled: v })}
+                    />
+                  </div>
+                  <p className="text-[11px] leading-snug text-zinc-500">
+                    The shaded layer behind the logo, website, phone and address.
+                  </p>
+                  {contactOverlay.panelEnabled ? (
+                    <>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs text-zinc-300">Color</span>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={contactOverlay.panelColor ?? '#000000'}
+                            onChange={(e) => updateContact({ panelColor: e.target.value })}
+                            className="h-7 w-10 cursor-pointer rounded-md border border-white/15 bg-transparent p-0.5"
+                            aria-label="Background color"
+                          />
+                          {(contactOverlay.panelColor ?? '#000000').toLowerCase() !== '#000000' ? (
+                            <button
+                              type="button"
+                              onClick={() => updateContact({ panelColor: '#000000' })}
+                              className="rounded-md border border-white/15 bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-white/30"
+                            >
+                              Reset
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-zinc-300">Opacity</span>
+                          <span className="text-zinc-400">{Math.round((contactOverlay.panelOpacity ?? 0.45) * 100)}%</span>
+                        </div>
+                        <Slider
+                          value={[contactOverlay.panelOpacity ?? 0.45]}
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          onValueChange={(v) => updateContact({ panelOpacity: v[0] })}
+                        />
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              </PopoverContent>
+            </Popover>
+
+
+
+
+            <Popover
+              open={characterMenuOpen}
+              onOpenChange={(open) => {
+                setCharacterMenuOpen(open)
+                if (open) void loadCharacterList()
+              }}
+            >
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Add a character to this project"
+                  title="Add a character as a reference for this project"
+                  className={`inline-flex h-11 items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
+                    selectedCharacter
+                      ? 'border-fuchsia-400/60 bg-fuchsia-500/10 text-fuchsia-100'
+                      : 'border-white/15 bg-white/[0.04] text-zinc-200 hover:border-white/30'
+                  }`}
+                >
+                  {selectedCharacter ? (
+                    <>
+                      <img
+                        src={selectedCharacter.url}
+                        alt="Character"
+                        className="h-6 w-6 rounded-full object-cover"
+                      />
+                      <span>Character</span>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        aria-label="Remove character"
+                        title="Remove character"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setSelectedCharacter(null)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            setSelectedCharacter(null)
+                          }
+                        }}
+                        className="ml-0.5 grid h-5 w-5 place-items-center rounded-full text-fuchsia-200/80 transition hover:bg-fuchsia-500/20 hover:text-fuchsia-50"
+                      >
+                        <X className="h-3.5 w-3.5" aria-hidden="true" />
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <UserRound className="h-5 w-5" aria-hidden="true" />
+                      <span>Add character</span>
+                    </>
+                  )}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-72 p-2">
+                <div className="mb-1.5 flex items-center justify-between px-1">
+                  <span className="text-xs font-semibold text-zinc-300">Project character</span>
+                  {selectedCharacter ? (
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedCharacter(null); setCharacterMenuOpen(false) }}
+                      className="text-[11px] text-zinc-400 hover:text-rose-300"
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+                {characterListLoading ? (
+                  <div className="flex items-center justify-center py-6 text-zinc-500">
+                    <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+                  </div>
+                ) : characterList.length === 0 ? (
+                  <div className="px-1 py-4 text-center text-xs text-zinc-500">
+                    No characters yet. Upload one in Character Sheet.
+                  </div>
+                ) : (
+                  <div className="grid max-h-64 grid-cols-3 gap-2 overflow-y-auto p-1">
+                    {characterList.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => { setSelectedCharacter(c); updateContinuity({ characterRef: c }); setCharacterMenuOpen(false) }}
+                        className={`group relative aspect-square overflow-hidden rounded-lg border transition ${
+                          selectedCharacter?.id === c.id
+                            ? 'border-fuchsia-400'
+                            : 'border-white/10 hover:border-white/30'
+                        }`}
+                        title={c.title ?? 'Character'}
+                      >
+                        <img src={c.url} alt={c.title ?? 'Character'} className="h-full w-full object-cover" loading="lazy" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </PopoverContent>
+            </Popover>
+
+
 
 
             <Popover
@@ -10341,6 +11559,9 @@ export default function DashboardPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+
+
 
       <Dialog
         open={editPromptJob !== null}

@@ -2,6 +2,7 @@
 // Provider/model resolution + cost estimation + real provider calls.
 // Wan provider uses Alibaba DashScope (Singapore) image-to-video API.
 import type { SupabaseClient } from "../../core/supabase.ts";
+import { getServiceClient } from "../../core/supabase.ts";
 import type {
   AiGateway,
   GenerationPollResult,
@@ -100,6 +101,52 @@ type LocalVideoConfig =
 function sanitizePrompt(p: string): string {
   return p.replace(/\s+/g, " ").trim();
 }
+
+// ---- Provider capability helpers -------------------------------------------
+// Centralize which providers/models can accept which kinds of image
+// conditioning, so reference-image continuity logic stays explicit instead of
+// scattered across each start* function.
+//
+//  - supportsStartImage:      can take a first-frame/start image (continuation).
+//  - supportsReferenceImages: can take separate persistent reference/identity
+//                             images (distinct from the start frame).
+//
+// Only Veo 3.1 exposes a true, dedicated reference-image input today. Wan
+// (DashScope) and the local routers accept a start frame but have no proven
+// dedicated reference-image channel, so they fall back to prompt augmentation.
+function supportsStartImage(providerKey: ProviderKey, resolvedModel: string): boolean {
+  if (providerKey === "flow") {
+    // Veo text-to-video resolves with no frame; i2v paths pass a firstFrameUrl.
+    return true;
+  }
+  if (providerKey === "wan") return !isWanTextToVideoModel(resolvedModel);
+  if (providerKey === "local") return /i2v/i.test(resolvedModel);
+  return false;
+}
+
+function supportsReferenceImages(providerKey: ProviderKey, resolvedModel: string): boolean {
+  // Veo 3.1 (resolved from flow aliases) supports dedicated referenceImages.
+  // Veo Fast (veo-3.0-fast-*) does NOT, but startVeo upgrades to 3.1 whenever
+  // references are present, so we report true for the flow provider here and
+  // let startVeo gate on the concrete model.
+  if (providerKey === "flow") return true;
+  // No other provider has a proven dedicated reference-image input.
+  return false;
+}
+
+/** Append a non-breaking character-identity hint to the prompt for providers
+ *  that cannot accept dedicated reference images. The URLs are included so a
+ *  prompt-aware router can fetch them; identity wording keeps the subject
+ *  consistent for pure-prompt models. */
+function augmentPromptWithReferences(prompt: string, referenceImageUrls?: string[] | null): string {
+  if (!referenceImageUrls || referenceImageUrls.length === 0) return prompt;
+  const refs = referenceImageUrls.slice(0, 3).join(", ");
+  return sanitizePrompt(
+    `${prompt} Maintain the exact same character identity, face, outfit and style as the reference image(s): ${refs}.`,
+  );
+}
+
+
 
 function getProviderApiKey(providerKey: ProviderKey): string | null {
   if (providerKey === "flow") {
@@ -390,15 +437,26 @@ async function startWanI2V(
   // provided, the model treats it as the anchor and generates the rest of
   // the clip from the prompt.
   const media: Array<{ type: "first_frame" | "last_frame"; url: string }> = [];
-  if (input.firstFrameUrl) media.push({ type: "first_frame", url: input.firstFrameUrl });
-  if (input.lastFrameUrl) media.push({ type: "last_frame", url: input.lastFrameUrl });
+  if (input.firstFrameUrl) {
+    media.push({ type: "first_frame", url: await resolveDownloadableFrameUrl(input.firstFrameUrl) });
+  }
+  if (input.lastFrameUrl) {
+    media.push({ type: "last_frame", url: await resolveDownloadableFrameUrl(input.lastFrameUrl) });
+  }
+
+  // Wan (DashScope) i2v has no dedicated reference-image channel — media[]
+  // only carries first/last frames. Keep firstFrameUrl as the continuation
+  // anchor and fold persistent character identity into the prompt as a
+  // non-breaking fallback so the subject stays consistent across cards.
+  const wanPrompt = augmentPromptWithReferences(input.prompt, input.referenceImageUrls);
 
   const body = {
     model: resolvedModel,
     input: {
-      prompt: input.prompt,
+      prompt: wanPrompt,
       media,
     },
+
     parameters: {
       resolution: "720P",
       ratio: input.aspectRatio ?? "16:9",
@@ -701,17 +759,96 @@ function isVeoNotProcessedYet(message: string | undefined | null): boolean {
 }
 
 async function fetchAsInlineData(url: string): Promise<{ mimeType: string; data: string }> {
+  // Frames are commonly staged into our OWN (private) Supabase Storage buckets
+  // — e.g. `wan-frames/<userId>/scene-chain-...png` used for >15s scene chaining.
+  // A `getPublicUrl()` on a private bucket yields a `/object/public/...` URL that
+  // an unauthenticated fetch cannot download (returns 400), which surfaced as
+  // "Failed to download …scene-chain-…png" on chained cards. Download those via
+  // the service-role client instead. This also works for `/object/sign/...`
+  // URLs and is immune to signed-URL expiry during long extension/queue waits.
+  const ownStorage = parseOwnStorageObject(url);
+  if (ownStorage) {
+    const client = getServiceClient();
+    const { data, error } = await client.storage
+      .from(ownStorage.bucket)
+      .download(ownStorage.key);
+    if (error || !data) {
+      throw new Error(
+        `failed to download frame from storage ${ownStorage.bucket}/${ownStorage.key}: ${
+          error?.message ?? "no data"
+        }`,
+      );
+    }
+    const mimeType = data.type?.split(";")[0]?.trim() || "image/png";
+    const buf = new Uint8Array(await data.arrayBuffer());
+    return { mimeType, data: bytesToBase64(buf) };
+  }
+
   const r = await fetch(url);
   if (!r.ok) throw new Error(`failed to fetch frame ${url}: ${r.status}`);
   const mimeType = r.headers.get("content-type")?.split(";")[0]?.trim() || "image/png";
   const buf = new Uint8Array(await r.arrayBuffer());
-  // Base64 in chunks to avoid call-stack overflow on large frames.
-  let bin = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < buf.length; i += chunk) {
-    bin += String.fromCharCode.apply(null, Array.from(buf.subarray(i, i + chunk)));
+  return { mimeType, data: bytesToBase64(buf) };
+}
+
+/**
+ * Ensure a frame URL is downloadable by an EXTERNAL provider (e.g. DashScope),
+ * which fetches the URL itself over plain HTTP with no auth.
+ *
+ * Scene-chain / reframe frames are staged into our own Supabase Storage. The
+ * `wan-frames` bucket is PRIVATE, so a `getPublicUrl()` `/object/public/...`
+ * link returns 400 to an unauthenticated fetch — which surfaced as
+ * "Failed to download …scene-chain-…png" on chained cards. For own-storage
+ * objects we mint a time-limited signed URL with the service-role client so the
+ * provider can download it regardless of the bucket's public/private setting.
+ * Genuinely external URLs are returned unchanged.
+ */
+async function resolveDownloadableFrameUrl(url: string): Promise<string> {
+  const ownStorage = parseOwnStorageObject(url);
+  if (!ownStorage) return url;
+  try {
+    const client = getServiceClient();
+    // 6h covers long extension/queue waits before the provider downloads it.
+    const { data, error } = await client.storage
+      .from(ownStorage.bucket)
+      .createSignedUrl(ownStorage.key, 6 * 60 * 60);
+    if (error || !data?.signedUrl) return url;
+    return data.signedUrl;
+  } catch {
+    return url;
   }
-  return { mimeType, data: btoa(bin) };
+}
+
+/**
+ * If `url` points to THIS project's Supabase Storage object API, return its
+ * bucket + key so we can download with the service-role client. Otherwise null
+ * (genuinely external URL — fall back to a plain fetch).
+ */
+function parseOwnStorageObject(url: string): { bucket: string; key: string } | null {
+  let supabaseUrl: string;
+  try {
+    supabaseUrl = getEnv("SUPABASE_URL");
+  } catch {
+    return null;
+  }
+  let parsed: URL;
+  let base: URL;
+  try {
+    parsed = new URL(url);
+    base = new URL(supabaseUrl);
+  } catch {
+    return null;
+  }
+  if (parsed.host !== base.host) return null;
+  // Matches /storage/v1/object/{public|sign|authenticated}/<bucket>/<key...>
+  const m = parsed.pathname.match(
+    /^\/storage\/v1\/object\/(?:public|sign|authenticated)\/([^/]+)\/(.+)$/,
+  );
+  if (!m) return null;
+  const bucket = decodeURIComponent(m[1]);
+  const key = decodeURIComponent(m[2]);
+  if (!bucket || !key) return null;
+  return { bucket, key };
 }
 
 function bytesToBase64(buf: Uint8Array): string {
@@ -754,6 +891,27 @@ async function startVeo(
     // Veo 3.1 supports first+last frame interpolation via the `lastFrame` field.
     const frame = await fetchAsInlineData(input.lastFrameUrl);
     instance.lastFrame = { bytesBase64Encoded: frame.data, mimeType: frame.mimeType };
+  }
+
+  // Persistent identity anchor: forward reference (Character Sheet) images so
+  // the subject stays consistent across chained cards. Veo 3.1 only; capped at 3.
+  // Best-effort — a failed fetch for a reference image must never break the job.
+  if (input.referenceImageUrls && input.referenceImageUrls.length > 0) {
+    const references: Array<Record<string, unknown>> = [];
+    for (const url of input.referenceImageUrls.slice(0, 3)) {
+      try {
+        const ref = await fetchAsInlineData(url);
+        references.push({
+          image: { bytesBase64Encoded: ref.data, mimeType: ref.mimeType },
+          referenceType: "asset",
+        });
+      } catch (e) {
+        logError("veo reference image fetch failed, skipping", {
+          error: (e as Error).message,
+        });
+      }
+    }
+    if (references.length > 0) instance.referenceImages = references;
   }
 
 
@@ -1137,12 +1295,22 @@ async function startLocalVideo(
   const seconds = input.durationSeconds && input.durationSeconds > 0 ? input.durationSeconds : 5;
   const numFrames = Math.max(1, Math.round(seconds * fps));
 
+  // Local routers (Wan 2.1 / LTX on ComfyUI) have no standardized dedicated
+  // reference-image input. Keep firstFrameUrl as the start/continuation image.
+  // Forward referenceImageUrls as non-breaking extra fields (a capable router
+  // can consume them; others ignore unknown keys) AND fold identity into the
+  // prompt as a guaranteed fallback.
+  const refs = (input.referenceImageUrls ?? []).filter((u) => typeof u === "string" && u.trim());
+  const localPrompt = augmentPromptWithReferences(input.prompt, refs);
+
   const body = {
     model: resolvedModel,
-    prompt: input.prompt,
+    prompt: localPrompt,
     image_url: input.firstFrameUrl ?? input.lastFrameUrl ?? null,
     first_frame_url: input.firstFrameUrl ?? null,
     last_frame_url: input.lastFrameUrl ?? null,
+    // Non-breaking reference passthrough — ignored by routers that don't read it.
+    reference_image_urls: refs.length > 0 ? refs : undefined,
     duration: seconds,
     duration_seconds: seconds,
     // Frame-count fields — send several common aliases so different local
@@ -1155,6 +1323,7 @@ async function startLocalVideo(
     aspect_ratio: input.aspectRatio ?? "16:9",
     response_format: "url",
   };
+
 
   const res = await fetch(`${config.baseUrl}/videos/generations`, {
     method: "POST",
@@ -1281,6 +1450,18 @@ async function startGeneration(
   input: GenerationStartInput,
 ): Promise<GenerationStartResult> {
   const apiKey = getProviderApiKey(providerKey);
+
+  // Make reference-image continuity behavior explicit and observable.
+  if (input.referenceImageUrls && input.referenceImageUrls.length > 0) {
+    logInfo("reference-image continuity", {
+      providerKey,
+      resolvedModel,
+      referenceCount: input.referenceImageUrls.length,
+      startImage: supportsStartImage(providerKey, resolvedModel),
+      dedicatedReferenceSupport: supportsReferenceImages(providerKey, resolvedModel),
+    });
+  }
+
 
   if (providerKey === "local") {
     return await startLocalVideo(resolvedModel, input);

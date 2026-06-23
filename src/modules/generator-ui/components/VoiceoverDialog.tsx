@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
-import { Download, LoaderCircle, Mic, Music2, Sparkles, X } from 'lucide-react'
+import { Check, Download, Languages, LoaderCircle, Mic, Play, RefreshCw, ShoppingBag, Sparkles, X } from 'lucide-react'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import { supabase } from '@/integrations/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
@@ -26,8 +31,15 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
+import {
+  VOICE_CATALOG,
+  defaultVoiceForGender,
+  getVoiceById,
+  voicesForGender,
+  type VoiceGender,
+} from '@/modules/generator-ui/lib/voiceCatalog'
 
-type Gender = 'female' | 'male' | 'child'
+type Gender = VoiceGender
 type Tone =
   | 'advertising'
   | 'excited'
@@ -63,6 +75,8 @@ interface VoiceoverDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onUseAsSoundtrack?: (url: string, name: string) => void
+  /** Uploaded products available for advertising-narration generation. */
+  products?: { id: string; name: string; imageUrl?: string }[]
   // Active voiceover applied to the film + its timing/volume controls.
   activeVoiceoverUrl?: string | null
   activeVoiceoverName?: string | null
@@ -93,10 +107,26 @@ function formatTimeMS(s: number): string {
   return `${m}:${ss.toString().padStart(2, '0')}`
 }
 
+// Supported translation targets (must match the translate-text edge function).
+const TRANSLATE_LANGS: { code: string; label: string }[] = [
+  { code: 'fa', label: 'فارسی' },
+  { code: 'en', label: 'English' },
+  { code: 'ar', label: 'العربية' },
+  { code: 'tr', label: 'Türkçe' },
+  { code: 'es', label: 'Español' },
+  { code: 'fr', label: 'Français' },
+  { code: 'de', label: 'Deutsch' },
+  { code: 'ru', label: 'Русский' },
+  { code: 'zh', label: '中文' },
+]
+
+
+
 export function VoiceoverDialog({
   open,
   onOpenChange,
   onUseAsSoundtrack,
+  products = [],
   activeVoiceoverUrl,
   activeVoiceoverName,
   voiceoverVolume = 1,
@@ -113,23 +143,136 @@ export function VoiceoverDialog({
 }: VoiceoverDialogProps) {
   const [text, setText] = useState('')
   const [gender, setGender] = useState<Gender>('female')
+  const [voiceId, setVoiceId] = useState<string>(() => defaultVoiceForGender('female').id)
   const [tone, setTone] = useState<Tone>('advertising')
-  const [durationMode, setDurationMode] = useState<string>('auto')
+  const [isAutoDuration, setIsAutoDuration] = useState<boolean>(true)
   const [customDuration, setCustomDuration] = useState<string>('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
-  
+  const [playingSampleId, setPlayingSampleId] = useState<string | null>(null)
+
+  // --- Product advertising-narration generator ---
+  const [isProductPopoverOpen, setIsProductPopoverOpen] = useState(false)
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
+  const [narrationSeconds, setNarrationSeconds] = useState<string>('15')
+  const [isWritingNarration, setIsWritingNarration] = useState(false)
+  // Remember the last successful narration request so it can be regenerated.
+  const [lastNarration, setLastNarration] = useState<{ productId: string; seconds: number } | null>(null)
+
+  async function runNarration(productId: string | null, secs: number) {
+    const product = products.find((p) => p.id === productId)
+    if (!product) {
+      toast.error('Please choose a product first.')
+      return
+    }
+    if (!Number.isFinite(secs) || secs < 1 || secs > 600) {
+      toast.error('Enter a duration between 1 and 600 seconds.')
+      return
+    }
+    setIsWritingNarration(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('ad-narration', {
+        body: { productName: product.name, durationSec: secs },
+      })
+      if (error) throw error
+      const narration: string | undefined = data?.narration
+      if (!narration) throw new Error(data?.error || 'No narration returned')
+      setText(narration)
+      // Narration is always advertising copy — keep the TTS tone aligned.
+      setTone('advertising')
+      setLastNarration({ productId: product.id, seconds: secs })
+      setIsProductPopoverOpen(false)
+      toast.success('Advertising narration generated.')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to generate narration.'
+      toast.error(msg)
+    } finally {
+      setIsWritingNarration(false)
+    }
+  }
+
+  function handleGenerateNarration() {
+    void runNarration(selectedProductId, Math.round(Number(narrationSeconds)))
+  }
+
+  function handleRegenerateNarration() {
+    if (!lastNarration) return
+    void runNarration(lastNarration.productId, lastNarration.seconds)
+  }
+
+  // --- Narration translation ---
+  const [isTranslateOpen, setIsTranslateOpen] = useState(false)
+  const [isTranslating, setIsTranslating] = useState(false)
+
+  async function handleTranslate(targetLang: string) {
+    const source = text.trim()
+    if (!source) {
+      toast.error('Please write some text first.')
+      return
+    }
+    setIsTranslating(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('translate-text', {
+        body: { text: source, targetLang, style: 'advertising' },
+      })
+      if (error) throw error
+      const translation: string | undefined = data?.translation
+      if (!translation) throw new Error(data?.error || 'No translation returned')
+      setText(translation)
+      // Translated narration stays advertising — keep the TTS tone aligned.
+      setTone('advertising')
+      setIsTranslateOpen(false)
+      toast.success('Narration translated.')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to translate narration.'
+      toast.error(msg)
+    } finally {
+      setIsTranslating(false)
+    }
+  }
+
+
+
+
   const lastUrlRef = useRef<string | null>(null)
+  const sampleAudioRef = useRef<HTMLAudioElement | null>(null)
+
+  const currentVoice = getVoiceById(voiceId) ?? defaultVoiceForGender(gender)
+
+  function handleGenderChange(next: Gender) {
+    setGender(next)
+    // Reset the selected voice to the first voice of the new gender group.
+    setVoiceId(defaultVoiceForGender(next).id)
+  }
+
+  function playSample(id: string) {
+    const voice = getVoiceById(id)
+    if (!voice) return
+    let el = sampleAudioRef.current
+    if (!el) {
+      el = new Audio()
+      sampleAudioRef.current = el
+      el.addEventListener('ended', () => setPlayingSampleId(null))
+    }
+    // Toggle: clicking the currently-playing sample stops it.
+    if (playingSampleId === id && !el.paused) {
+      el.pause()
+      el.currentTime = 0
+      setPlayingSampleId(null)
+      return
+    }
+    el.pause()
+    el.src = voice.sampleUrl
+    el.currentTime = 0
+    setPlayingSampleId(id)
+    void el.play().catch(() => setPlayingSampleId(null))
+  }
 
   function resolveDurationSec(): number | undefined {
-    if (durationMode === 'auto') return undefined
-    if (durationMode === 'custom') {
-      const n = Math.round(Number(customDuration))
-      if (Number.isFinite(n) && n >= 1 && n <= 135) return n
-      return undefined
-    }
-    const n = Number(durationMode)
-    return Number.isFinite(n) ? n : undefined
+    if (isAutoDuration) return undefined
+    const n = Math.round(Number(customDuration))
+    if (Number.isFinite(n) && n >= 1 && n <= 135) return n
+    return undefined
   }
 
   // Cleanup blob URLs we created (not the one handed off to the parent).
@@ -138,6 +281,9 @@ export function VoiceoverDialog({
       if (lastUrlRef.current) {
         try { URL.revokeObjectURL(lastUrlRef.current) } catch { /* ignore */ }
       }
+      if (sampleAudioRef.current) {
+        try { sampleAudioRef.current.pause() } catch { /* ignore */ }
+      }
     }
   }, [])
 
@@ -145,6 +291,10 @@ export function VoiceoverDialog({
   useEffect(() => {
     if (!open) {
       setIsGenerating(false)
+      if (sampleAudioRef.current) {
+        try { sampleAudioRef.current.pause() } catch { /* ignore */ }
+      }
+      setPlayingSampleId(null)
     }
   }, [open])
 
@@ -168,7 +318,7 @@ export function VoiceoverDialog({
         user_id: uid,
         storage_path: path,
         kind: 'voiceover',
-        name: `Voiceover (${gender}, ${tone})`,
+        name: `Voiceover (${currentVoice.label}, ${tone})`,
         size_bytes: blob.size,
         mime_type: blob.type || null,
       })
@@ -190,7 +340,7 @@ export function VoiceoverDialog({
     try {
       const durationSec = resolveDurationSec()
       const { data, error } = await supabase.functions.invoke('tts-generate', {
-        body: { text: trimmed, gender, tone, ...(durationSec ? { durationSec } : {}) },
+        body: { text: trimmed, gender, tone, voiceName: currentVoice.voiceName, ...(durationSec ? { durationSec } : {}) },
       })
       if (error) throw error
       const payload = data as {
@@ -214,6 +364,15 @@ export function VoiceoverDialog({
       // Persist to Storage › Audio so every generated voiceover is saved.
       void persistVoiceover(blob)
 
+      // Auto-apply: immediately surface the full settings panel (volume,
+      // waveform selection, "Play on video from … to") for the new voiceover.
+      if (onUseAsSoundtrack) {
+        const name = `Voiceover (${currentVoice.label} · ${tone}).wav`
+        onUseAsSoundtrack(url, name)
+        // Ownership handed off to the parent — don't revoke it here.
+        lastUrlRef.current = null
+      }
+
 
     } catch (err) {
       console.error('Voiceover generation failed', err)
@@ -228,26 +387,16 @@ export function VoiceoverDialog({
   }
 
   function handleDownload() {
-    if (!audioUrl) return
+    const downloadUrl = activeVoiceoverUrl ?? audioUrl
+    if (!downloadUrl) return
     const a = document.createElement('a')
-    a.href = audioUrl
-    a.download = `voiceover-${gender}-${tone}-${Date.now()}.wav`
+    a.href = downloadUrl
+    a.download = `voiceover-${currentVoice.label}-${tone}-${Date.now()}.wav`
     document.body.appendChild(a)
     a.click()
     a.remove()
   }
 
-  function handleUseAsSoundtrack() {
-    if (!audioUrl) return
-    const name = `Voiceover (${gender}, ${tone}).wav`
-    onUseAsSoundtrack?.(audioUrl, name)
-    // Hand off ownership so we don't revoke it.
-    lastUrlRef.current = null
-    setAudioUrl(null)
-    setText('')
-    // Keep the dialog open so the user can adjust timing/volume right here.
-    toast.success('Voiceover set as soundtrack')
-  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -277,9 +426,182 @@ export function VoiceoverDialog({
               maxLength={5000}
               className="resize-none border-white/10 bg-white/[0.04] text-zinc-100 placeholder:text-zinc-500"
             />
-            <div className="text-right text-[10px] uppercase tracking-wider text-zinc-500">
-              {text.length}/5000
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+              <Popover open={isProductPopoverOpen} onOpenChange={setIsProductPopoverOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    title="Write an advertising narration from one of your products"
+                    aria-label="Generate advertising narration from a product"
+                    className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                  >
+                    <ShoppingBag className="h-3.5 w-3.5" aria-hidden="true" />
+                    Product narration
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  className="w-80 border-white/10 bg-black text-zinc-100"
+                >
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs font-semibold text-zinc-200">Product narration</p>
+                      <p className="mt-0.5 text-[11px] leading-4 text-zinc-500">
+                        Pick a product and a duration to auto-write an English
+                        advertising narration.
+                      </p>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] uppercase tracking-wider text-zinc-400">
+                        Product
+                      </Label>
+                      {products.length === 0 ? (
+                        <p className="rounded-md border border-dashed border-white/10 px-2 py-3 text-center text-[11px] text-zinc-500">
+                          No saved products yet.
+                        </p>
+                      ) : (
+                        <div className="grid max-h-56 grid-cols-3 gap-2 overflow-y-auto pr-1">
+                          {products.map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => setSelectedProductId(p.id)}
+                              title={p.name}
+                              className={`group relative flex flex-col gap-1 rounded-lg border p-1 text-left transition ${
+                                selectedProductId === p.id
+                                  ? 'border-emerald-300/60 bg-emerald-300/10'
+                                  : 'border-white/10 bg-white/[0.03] hover:border-white/25'
+                              }`}
+                            >
+                              <span className="relative block aspect-square w-full overflow-hidden rounded-md border border-white/10 bg-[#15171a]">
+                                {p.imageUrl ? (
+                                  <img
+                                    src={p.imageUrl}
+                                    alt={p.name}
+                                    loading="lazy"
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : (
+                                  <span className="grid h-full w-full place-items-center">
+                                    <ShoppingBag className="h-4 w-4 text-zinc-600" aria-hidden="true" />
+                                  </span>
+                                )}
+                                {selectedProductId === p.id ? (
+                                  <span className="absolute right-1 top-1 grid h-4 w-4 place-items-center rounded-full bg-emerald-400 text-black">
+                                    <Check className="h-3 w-3" aria-hidden="true" />
+                                  </span>
+                                ) : null}
+                              </span>
+                              <span
+                                className={`truncate text-[10px] ${
+                                  selectedProductId === p.id ? 'text-emerald-100' : 'text-zinc-400'
+                                }`}
+                              >
+                                {p.name}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label
+                        htmlFor="vo-narration-seconds"
+                        className="text-[10px] uppercase tracking-wider text-zinc-400"
+                      >
+                        Duration (seconds)
+                      </Label>
+                      <Input
+                        id="vo-narration-seconds"
+                        type="number"
+                        min={1}
+                        max={600}
+                        value={narrationSeconds}
+                        onChange={(e) => setNarrationSeconds(e.target.value)}
+                        placeholder="e.g. 15"
+                        className="h-8 border-white/10 bg-white/[0.04] text-zinc-100 placeholder:text-zinc-500"
+                      />
+                    </div>
+
+                    <Button
+                      type="button"
+                      onClick={() => handleGenerateNarration()}
+                      disabled={
+                        isWritingNarration ||
+                        !selectedProductId ||
+                        products.length === 0
+                      }
+                      className="w-full gap-2"
+                    >
+                      {isWritingNarration ? (
+                        <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Sparkles className="h-4 w-4" aria-hidden="true" />
+                      )}
+                      Generate narration
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+              {lastNarration ? (
+                <button
+                  type="button"
+                  onClick={handleRegenerateNarration}
+                  disabled={isWritingNarration}
+                  title="Regenerate narration"
+                  aria-label="Regenerate narration"
+                  className="grid h-7 w-7 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-zinc-300 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-50"
+                >
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${isWritingNarration ? 'animate-spin' : ''}`}
+                    aria-hidden="true"
+                  />
+                </button>
+              ) : null}
+              <Popover open={isTranslateOpen} onOpenChange={setIsTranslateOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    disabled={isTranslating || !text.trim()}
+                    title="Translate narration"
+                    aria-label="Translate narration"
+                    className="grid h-7 w-7 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-zinc-300 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200 disabled:opacity-50"
+                  >
+                    {isTranslating ? (
+                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Languages className="h-3.5 w-3.5" aria-hidden="true" />
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-44 p-1.5">
+                  <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                    Translate to
+                  </p>
+                  <div className="max-h-56 overflow-y-auto">
+                    {TRANSLATE_LANGS.map((l) => (
+                      <button
+                        key={l.code}
+                        type="button"
+                        disabled={isTranslating}
+                        onClick={() => void handleTranslate(l.code)}
+                        className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06] disabled:opacity-50"
+                      >
+                        {l.label}
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+              </div>
+              <div className="text-right text-[10px] uppercase tracking-wider text-zinc-500">
+                {text.length}/5000
+              </div>
             </div>
+
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -287,7 +609,7 @@ export function VoiceoverDialog({
               <Label className="text-xs uppercase tracking-wider text-zinc-400">
                 Gender
               </Label>
-              <Select value={gender} onValueChange={(v) => setGender(v as Gender)}>
+              <Select value={gender} onValueChange={(v) => handleGenderChange(v as Gender)}>
                 <SelectTrigger className="border-white/10 bg-white/[0.04] text-zinc-100">
                   <SelectValue />
                 </SelectTrigger>
@@ -318,48 +640,106 @@ export function VoiceoverDialog({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
               <Label className="text-xs uppercase tracking-wider text-zinc-400">
-                Duration
+                Voice / Character
               </Label>
-              <Select value={durationMode} onValueChange={setDurationMode}>
-                <SelectTrigger className="border-white/10 bg-white/[0.04] text-zinc-100">
+              <span className="text-[10px] uppercase tracking-wider text-zinc-500">
+                Tap ▶ to preview
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Select value={voiceId} onValueChange={(v) => setVoiceId(v)}>
+                <SelectTrigger className="flex-1 border-white/10 bg-white/[0.04] text-zinc-100">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="auto">Auto</SelectItem>
-                  <SelectItem value="5">5 seconds</SelectItem>
-                  <SelectItem value="10">10 seconds</SelectItem>
-                  <SelectItem value="15">15 seconds</SelectItem>
-                  <SelectItem value="30">30 seconds</SelectItem>
-                  <SelectItem value="45">45 seconds</SelectItem>
-                  <SelectItem value="custom">Custom…</SelectItem>
+                  {voicesForGender(gender).map((v) => (
+                    <SelectItem key={v.id} value={v.id}>
+                      <span className="flex items-center gap-2">
+                        <span>{v.label}</span>
+                        <span className="text-[11px] text-zinc-500">· {v.personality}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                aria-label={`Play sample of ${currentVoice.label}`}
+                onClick={() => playSample(currentVoice.id)}
+                className="shrink-0 border-white/10 bg-white/[0.04] text-zinc-100 hover:bg-white/10"
+              >
+                {playingSampleId === currentVoice.id ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Play className="h-4 w-4" />
+                )}
+              </Button>
             </div>
-
-            {durationMode === 'custom' ? (
-              <div className="space-y-2">
-                <Label className="text-xs uppercase tracking-wider text-zinc-400">
-                  Seconds (1–135)
-                </Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={135}
-                  value={customDuration}
-                  onChange={(e) => setCustomDuration(e.target.value)}
-                  placeholder="e.g. 20"
-                  className="border-white/10 bg-white/[0.04] text-zinc-100 placeholder:text-zinc-500"
-                />
-              </div>
-            ) : (
-              <div className="flex items-end pb-1 text-[11px] leading-snug text-zinc-500">
-                Voice is paced and fitted to the chosen length.
-              </div>
-            )}
+            <p className="text-[11px] leading-snug text-zinc-500">
+              {currentVoice.label} — {currentVoice.personality.toLowerCase()}.
+            </p>
           </div>
+
+
+          <div className="space-y-2">
+            <Label className="text-xs uppercase tracking-wider text-zinc-400">
+              Duration
+            </Label>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-1 rounded-md border border-white/10 bg-white/[0.04] p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAutoDuration(true)
+                    setCustomDuration('')
+                  }}
+                  className={`rounded px-3 py-1.5 text-sm transition-colors ${
+                    isAutoDuration
+                      ? 'bg-white/10 text-zinc-100'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  Auto
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAutoDuration(false)}
+                  className={`rounded px-3 py-1.5 text-sm transition-colors ${
+                    !isAutoDuration
+                      ? 'bg-white/10 text-zinc-100'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  Manual
+                </button>
+              </div>
+
+              <Input
+                type="number"
+                min={1}
+                max={135}
+                value={isAutoDuration ? '' : customDuration}
+                disabled={isAutoDuration}
+                onChange={(e) => {
+                  setIsAutoDuration(false)
+                  setCustomDuration(e.target.value)
+                }}
+                placeholder={isAutoDuration ? 'Auto' : 'Seconds (1–135)'}
+                className="border-white/10 bg-white/[0.04] text-zinc-100 placeholder:text-zinc-500 disabled:cursor-not-allowed disabled:opacity-50"
+              />
+            </div>
+            <p className="text-[11px] leading-snug text-zinc-500">
+              {isAutoDuration
+                ? 'Voice is paced and fitted automatically to the content.'
+                : 'Voice is paced and fitted to the chosen length (1–135 seconds).'}
+            </p>
+          </div>
+
 
 
           <Button
@@ -381,16 +761,7 @@ export function VoiceoverDialog({
             )}
           </Button>
 
-          {audioUrl ? (
-            <div className="space-y-3 rounded-md border border-white/10 bg-white/[0.03] p-3">
-              <audio
-                key={audioUrl}
-                src={audioUrl}
-                controls
-                className="w-full"
-              />
-            </div>
-          ) : null}
+
 
           {activeVoiceoverUrl ? (
             <div className="space-y-4 rounded-md border border-white/10 bg-white/[0.03] p-3">
@@ -482,27 +853,22 @@ export function VoiceoverDialog({
         </div>
 
         <DialogFooter className="gap-2 sm:gap-2">
-          {onUseAsSoundtrack ? (
-            <Button
-              type="button"
-              variant="secondary"
-              size="icon"
-              onClick={handleUseAsSoundtrack}
-              disabled={!audioUrl}
-              aria-label="Use as soundtrack"
-              title="Use as soundtrack"
-            >
-              <Music2 className="h-4 w-4" />
-            </Button>
-          ) : null}
           <Button
             type="button"
             variant="secondary"
             onClick={handleDownload}
-            disabled={!audioUrl}
+            disabled={!activeVoiceoverUrl && !audioUrl}
           >
             <Download className="mr-2 h-4 w-4" />
             Download
+          </Button>
+          <Button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            disabled={!activeVoiceoverUrl && !audioUrl}
+          >
+            <Check className="mr-2 h-4 w-4" />
+            Apply
           </Button>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             Close

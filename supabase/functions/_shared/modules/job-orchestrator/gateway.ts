@@ -35,16 +35,20 @@ const CreateJobSchema = z.object({
   prompt: z.string().min(1).max(16000),
   firstFrameUrl: z.string().url().max(2048).optional(),
   lastFrameUrl: z.string().url().max(2048).optional(),
+  /** Persistent character/reference image URL(s) for identity anchoring (max 3). */
+  referenceImageUrls: z.array(z.string().url().max(2048)).max(3).optional(),
   durationSeconds: z.union([z.literal(5), z.literal(10), z.literal(15)]).optional(),
   aspectRatio: z.enum(["9:16", "1:1", "16:9"]).optional(),
   /** Durable per-project group id so all clips in one session stay one draft. */
   draftGroupId: z.string().uuid().optional(),
+  /** Authoritative narration (spoken lines) written in the scenario for this card. */
+  narrationText: z.string().max(8000).optional(),
 });
 
 const GetJobSchema = z.object({ jobId: z.string().uuid() });
 const DeleteJobSchema = z.object({ jobId: z.string().uuid() });
 
-const SUPABASE_PUBLIC_STORAGE_PREFIX = `${new URL(getEnv("SUPABASE_URL")).origin}/storage/v1/object/public/wan-frames/`;
+const SUPABASE_STORAGE_ORIGIN = new URL(getEnv("SUPABASE_URL")).origin;
 
 // Local video routers (ComfyUI/Wan/LTX on the RTX box) often return the clip
 // inline as a `data:video/mp4;base64,...` URL instead of a hosted link. Storing
@@ -147,12 +151,40 @@ function isAllowedFrameUrl(url: string, userId: string): boolean {
     return false;
   }
 
-  if (parsed.href.startsWith(SUPABASE_PUBLIC_STORAGE_PREFIX)) {
+  // Only trust URLs hosted on our own Supabase storage origin.
+  if (parsed.origin === SUPABASE_STORAGE_ORIGIN) {
     const path = parsed.pathname;
-    const prefix = `/storage/v1/object/public/wan-frames/${userId}/`;
-    return path.startsWith(prefix);
+    // Accept both public and signed object URLs for the caller's own wan-frames
+    // uploads. The frontend signs private-bucket frames for preview, so the
+    // path arrives as /object/sign/... rather than /object/public/...
+    const publicPrefix = `/storage/v1/object/public/wan-frames/${userId}/`;
+    const signPrefix = `/storage/v1/object/sign/wan-frames/${userId}/`;
+    return path.startsWith(publicPrefix) || path.startsWith(signPrefix);
   }
 
+  return EXTRA_PUBLIC_FRAME_HOSTS.includes(parsed.hostname.toLowerCase());
+}
+
+// Reference (Character Sheet) images come from the user's own image buckets
+// (e.g. user-images / generator assets), not wan-frames, so they use a more
+// relaxed-but-still-safe check: HTTPS, and either hosted on our own Supabase
+// storage origin under the caller's own user folder, or an explicitly allowlisted
+// public host. Prevents SSRF to arbitrary URLs while accepting signed/public
+// object URLs for the user's character assets.
+function isAllowedReferenceUrl(url: string, userId: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  if (parsed.origin === SUPABASE_STORAGE_ORIGIN) {
+    // Accept any of the caller's own object URLs (public or signed) that are
+    // scoped to their user folder.
+    return parsed.pathname.startsWith("/storage/v1/object/") &&
+      parsed.pathname.includes(`/${userId}/`);
+  }
   return EXTRA_PUBLIC_FRAME_HOSTS.includes(parsed.hostname.toLowerCase());
 }
 
@@ -424,7 +456,7 @@ export const jobOrchestratorGateway = {
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 400, latencyMs: Date.now() - ctx.startedAt, errorCode: "INVALID_FIRST_FRAME_URL" });
             return errorResponse(
               "INVALID_FIRST_FRAME_URL",
-              "firstFrameUrl must point to your own public wan-frames upload",
+              "firstFrameUrl must point to your own wan-frames upload",
               400,
               ctx.requestId,
             );
@@ -434,11 +466,18 @@ export const jobOrchestratorGateway = {
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 400, latencyMs: Date.now() - ctx.startedAt, errorCode: "INVALID_LAST_FRAME_URL" });
             return errorResponse(
               "INVALID_LAST_FRAME_URL",
-              "lastFrameUrl must point to your own public wan-frames upload",
+              "lastFrameUrl must point to your own wan-frames upload",
               400,
               ctx.requestId,
             );
           }
+
+          // Persistent character/reference image(s). Filtered to the caller's own
+          // assets; any URL that fails the safety check is dropped (non-fatal) so
+          // generation still proceeds with the frame-based continuation.
+          const referenceImageUrls = (parsed.data.referenceImageUrls ?? []).filter((u) =>
+            isAllowedReferenceUrl(u, auth.userId)
+          );
 
           // Image-to-video accepts one or both frames; text-to-video provides
           // neither. No additional cross-frame validation needed here.
@@ -474,6 +513,7 @@ export const jobOrchestratorGateway = {
               aspectRatio: chosenAspectRatio,
               durationSeconds: parsed.data.durationSeconds ?? null,
               draftGroupId: parsed.data.draftGroupId ?? null,
+              narrationText: parsed.data.narrationText ?? null,
             });
           } catch (e) {
             const msg = (e as Error).message ?? "";
@@ -501,12 +541,21 @@ export const jobOrchestratorGateway = {
           }
 
           // Trigger generation through the adapter contract.
+          // Debug/repeatability: record which reference image(s) anchored this job.
+          if (referenceImageUrls.length > 0) {
+            logInfo("job reference images", {
+              jobId,
+              provider: route.providerKey,
+              referenceCount: referenceImageUrls.length,
+            });
+          }
           let gen;
           try {
             gen = await aiGateway.startGeneration(route.providerKey, route.resolvedModel, {
               prompt,
               firstFrameUrl,
               lastFrameUrl,
+              referenceImageUrls: referenceImageUrls.length > 0 ? referenceImageUrls : null,
               durationSeconds: parsed.data.durationSeconds ?? null,
               aspectRatio: chosenAspectRatio,
             });

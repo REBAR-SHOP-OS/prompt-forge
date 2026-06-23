@@ -243,6 +243,36 @@ export type Database = {
         }
         Relationships: []
       }
+      generator_business_profiles: {
+        Row: {
+          business_info: string
+          contact_address: string | null
+          contact_logo_url: string | null
+          contact_phone: string | null
+          contact_website: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          business_info: string
+          contact_address?: string | null
+          contact_logo_url?: string | null
+          contact_phone?: string | null
+          contact_website?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          business_info?: string
+          contact_address?: string | null
+          contact_logo_url?: string | null
+          contact_phone?: string | null
+          contact_website?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       generator_clip_overlays: {
         Row: {
           bg_color: string | null
@@ -408,6 +438,7 @@ export type Database = {
           input_prompt: string
           last_frame_url: string | null
           model_key: string | null
+          narration_text: string | null
           negative_prompt: string | null
           parent_final_job_id: string | null
           provider_job_id: string | null
@@ -427,6 +458,7 @@ export type Database = {
           input_prompt: string
           last_frame_url?: string | null
           model_key?: string | null
+          narration_text?: string | null
           negative_prompt?: string | null
           parent_final_job_id?: string | null
           provider_job_id?: string | null
@@ -446,6 +478,7 @@ export type Database = {
           input_prompt?: string
           last_frame_url?: string | null
           model_key?: string | null
+          narration_text?: string | null
           negative_prompt?: string | null
           parent_final_job_id?: string | null
           provider_job_id?: string | null
