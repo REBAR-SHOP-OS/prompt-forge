@@ -460,7 +460,11 @@ function paintTransitionFrame(
       return
     }
   }
+  }
+  body()
+  drawOverlay(ctx, width, height)
 }
+
 
 export class MergeCancelledError extends Error {
   constructor() {
