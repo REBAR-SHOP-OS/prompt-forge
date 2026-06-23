@@ -6689,7 +6689,7 @@ export default function DashboardPage() {
           transitionsForMerge,
           abortController.signal,
           contactActive
-            ? { lines: contactLines, position: contactOverlay.position, offset: contactOverlay.offset ?? undefined, logoUrl: contactLogoActive ? contactOverlay.logoUrl : undefined }
+            ? { lines: contactLines, position: contactOverlay.position, offset: contactOverlay.offset ?? undefined, logoUrl: contactLogoActive ? contactOverlay.logoUrl : undefined, scale: contactOverlay.scale ?? 1 }
             : undefined,
         ),
 
