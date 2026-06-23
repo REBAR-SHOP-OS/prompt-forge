@@ -1,35 +1,29 @@
-## حذف نمایش Continuity Mode از UI و خودکارسازی کامل آن برای ۳۰/۴۵/۱۳۵ ثانیه
+# Theme/Style as Inspiration, Not Replication
 
-### هدف
-کاربر نمی‌خواهد بخش Continuity Mode در رابط کاربری دیده شود. سیستم باید خودش تشخیص دهد که هر وقت مدت‌زمان ۳۰/۴۵/۱۳۵ ثانیه انتخاب شد (چون به چند کارت تقسیم می‌شود) به‌صورت داخلی پیوستگی محتوایی بین کارت‌ها را فعال کند تا فیلم‌ها به هم مرتبط بمانند — بدون هیچ سوییچ یا پنل قابل‌مشاهده.
+## Goal
+When a user picks a theme/style (e.g. Epic Fantasy, Sci‑Fi Minimalist, Cyberpunk Alleyway), the AI should treat it as **creative inspiration** and adapt it to the specific product/content — not literally recreate that world. Today the prompts instruct the model to apply the style "consistently across every shot," which pushes near‑exact copies of the reference style.
 
-### تغییرات (همه frontend در `DashboardPage.tsx`)
+## Where the behavior is defined
+The style wording is built into the AI system prompts in two edge functions:
+- `supabase/functions/scenario-write/index.ts` → `cameraGuidance()` (genre + scene lines), used by Product Ad / Character Sheet scenario generation.
+- `supabase/functions/enhance-prompt/index.ts` → `styleSuffix` block, used by the composer's Styles picker.
 
-#### ۱) حذف کامل UI مربوط به Continuity
-- حذف بلوک پنل «Continuity Mode» (سوییچ، منبع پیوستگی، ردیف کاراکتر، پیش‌نمایش scene memory و دکمه Edit memory) — حدود خطوط ۱۰۲۹۱ تا پایان بلوک.
-- حذف دیالوگ «Scene memory editor» (خطوط ۱۰۳۸۸–۱۰۴۴۴) چون فقط از همان پنل باز می‌شد.
+No UI changes and no changes to `promptStyles.ts` labels/previews are needed — only the instruction wording sent to the model.
 
-#### ۲) پاک‌سازی state/هندلرهای بلااستفاده برای جلوگیری از خطای لینت/بیلد
-- حذف `continuityMemoryOpen`، `memoryDraft`/`setMemoryDraft`، و توابع `handleToggleContinuity`، `openMemoryEditor`، `saveMemoryEditor`.
-- حذف ایمپورت‌های دیگر بلااستفاده در صورت آزاد شدن (مثل `isMemoryEmpty`, `generateStarterMemory`, `SceneMemory` اگر جای دیگری استفاده نشوند). فقط مواردی که واقعاً بدون مصرف می‌مانند حذف می‌شوند.
+## Changes
 
-#### ۳) حفظ منطق خودکار (بدون تغییر رفتار تولید)
-- مقدار مشتق فعلی حفظ می‌شود:
-  ```ts
-  const isMultiCardDuration = durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135
-  const continuityActive = continuity.enabled || isMultiCardDuration
-  ```
-  چون دیگر راهی برای روشن‌کردن دستی `continuity.enabled` وجود ندارد، عملاً `continuityActive` تنها زمانی true می‌شود که مدت‌زمان چندکارتی باشد — دقیقاً همان هدف کاربر.
-- مسیر `submitScenesAsJobs` بدون تغییر باقی می‌ماند: وقتی `continuityActive` فعال است، هر کارت پیشوند کاراکتر (در صورت وجود کاراکتر انتخاب‌شده/ذخیره‌شده) و بلوک Continuity را می‌گیرد و زنجیره فریم‌به‌فریم حفظ می‌شود.
-- کاراکتر همچنان از طریق دکمه‌های موجود «Character Sheet» / «Add character» انتخاب و در `continuity.characterRef` ذخیره می‌شود؛ این مسیرها UI جدا دارند و دست‌نخورده می‌مانند.
+### 1. `scenario-write/index.ts` — `cameraGuidance()`
+- **Genre line:** Rewrite so the style is a *mood/aesthetic inspiration* tuned to the product, not a literal world to reproduce. New wording (concept):
+  > "Use this genre/atmosphere only as creative INSPIRATION: borrow its mood, energy, lighting feel, and color sensibility, then adapt and reinterpret it tastefully to fit THIS specific product/content and a believable advertising context. Do not literally recreate that genre's world or clichés — the {hero} and its real selling points stay the focus."
+- **Scene line:** Similarly soften to "draw inspiration from this environment and adapt it to suit the product, rather than copying the location exactly," while keeping the {hero} the focus.
 
-#### ۴) مسیر تک‌کارتی (۵/۱۰/۱۵)
-- بلوک شرطی `continuity.enabled && hasPreviousClip` در `handleSubmit` عملاً غیرفعال می‌شود چون دیگر امکان روشن‌کردن دستی نیست؛ برای این مدت‌زمان‌ها تغییری در رفتار ایجاد نمی‌شود (پیوستگی فقط برای حالت چندکارتی معنا دارد).
+### 2. `enhance-prompt/index.ts` — `styleSuffix`
+- Change "The rewritten prompt MUST incorporate and optimize for these style directions" to instruct the model to **take inspiration** from the chosen styles and adapt them to the user's subject/content, keeping the user's core idea, subject identity, and language intact — without forcing a literal style copy.
 
-### خارج از محدوده (دست‌نخورده)
-بدون تغییر دیتابیس/اسکیم، ادج‌فانکشن، قرارداد `createJob`، منطق اسپلیت مدت‌زمان و زنجیره فریم. انتخاب کاراکتر و دیگر بخش‌های composer دست‌نخورده می‌مانند.
+## Out of scope
+- No changes to camera-style handling (camera moves should stay literal — a "tracking shot" must remain a tracking shot). Only genre/scene/visual-theme wording becomes inspiration-based.
+- No DB, schema, UI, or preview-asset changes.
 
-### اعتبارسنجی
-- انتخاب ۳۰/۴۵/۱۳۵ → هیچ پنل/سوییچ Continuity در UI دیده نمی‌شود، اما کارت‌های تولیدشده دارای بلوک پیوستگی و (در صورت وجود) توضیح کاراکتر هستند و فریم‌به‌فریم زنجیر می‌شوند.
-- انتخاب ۵/۱۰/۱۵ → رفتار قبلی، بدون پنل Continuity.
-- Typecheck/build و lint سالم (بدون متغیر/ایمپورت بلااستفاده).
+## Validation
+- Deploy both edge functions.
+- Generate a Product Ad scenario with a theme selected (e.g. Epic Fantasy on a cosmetic serum) and confirm the output adapts the mood to the product instead of producing a literal fantasy castle film. Repeat with a composer Styles selection.
