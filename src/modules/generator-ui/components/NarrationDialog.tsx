@@ -82,6 +82,16 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
   const [filmTime, setFilmTime] = useState(0)
   const [filmDuration, setFilmDuration] = useState(0)
 
+  // Read-aloud + translation for the prompt narration text.
+  const promptText = useMemo(() => promptLines.join('\n'), [promptLines])
+  const narrAudioRef = useRef<HTMLAudioElement | null>(null)
+  const narrCache = useRef<Map<string, string>>(new Map())
+  const [narrPlaying, setNarrPlaying] = useState(false)
+  const [narrLoading, setNarrLoading] = useState(false)
+  const [targetLang, setTargetLang] = useState('')
+  const [translation, setTranslation] = useState<string | null>(null)
+  const [translating, setTranslating] = useState(false)
+
   // Reset transient state whenever the panel is (re)opened for a card.
   useEffect(() => {
     if (!open) return
