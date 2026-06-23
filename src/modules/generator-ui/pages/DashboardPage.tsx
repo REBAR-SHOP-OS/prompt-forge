@@ -1795,6 +1795,9 @@ export default function DashboardPage() {
     address: string
     enabled: boolean
     position: 'top' | 'center' | 'bottom'
+    /** Normalized 0–1 center position when the user has dragged the overlay.
+     *  null = use the `position` preset instead. */
+    offset: { x: number; y: number } | null
     logoUrl: string
     logoEnabled: boolean
   }
@@ -1804,9 +1807,11 @@ export default function DashboardPage() {
     address: '',
     enabled: true,
     position: 'bottom',
+    offset: null,
     logoUrl: '',
     logoEnabled: true,
   })
+
   const [contactOverlay, setContactOverlay] = useState<ContactOverlay>(emptyContact)
   const [contactMenuOpen, setContactMenuOpen] = useState(false)
   const contactKey = userId ? `project-contact:${userId}` : null
@@ -1856,6 +1861,36 @@ export default function DashboardPage() {
       return next
     })
   }, [contactKey])
+  const [contactDragging, setContactDragging] = useState(false)
+  const contactBoxRef = useRef<HTMLDivElement | null>(null)
+  // Drag the contact overlay anywhere on the preview video. Stores a normalized
+  // 0–1 center position so it maps identically to the higher-res merge canvas.
+  const handleContactPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    // Positioning context is the video box (contactBoxRef).
+    const bounds = contactBoxRef.current?.getBoundingClientRect()
+    if (!bounds || bounds.width === 0 || bounds.height === 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const target = e.currentTarget
+    try { target.setPointerCapture(e.pointerId) } catch { /* ignore */ }
+    setContactDragging(true)
+    const apply = (clientX: number, clientY: number) => {
+      const x = Math.min(1, Math.max(0, (clientX - bounds.left) / bounds.width))
+      const y = Math.min(1, Math.max(0, (clientY - bounds.top) / bounds.height))
+      updateContact({ offset: { x, y } })
+    }
+    apply(e.clientX, e.clientY)
+    const onMove = (ev: PointerEvent) => apply(ev.clientX, ev.clientY)
+    const onUp = () => {
+      setContactDragging(false)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      try { target.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }, [updateContact])
+
   // Persist the logo to the business profile (single source of truth) and update state.
   const updateContactLogo = useCallback((logoUrl: string) => {
     updateContact({ logoUrl })
@@ -6642,7 +6677,7 @@ export default function DashboardPage() {
           transitionsForMerge,
           abortController.signal,
           contactActive
-            ? { lines: contactLines, position: contactOverlay.position, logoUrl: contactLogoActive ? contactOverlay.logoUrl : undefined }
+            ? { lines: contactLines, position: contactOverlay.position, offset: contactOverlay.offset ?? undefined, logoUrl: contactLogoActive ? contactOverlay.logoUrl : undefined }
             : undefined,
         ),
 
@@ -8955,7 +8990,7 @@ export default function DashboardPage() {
               {previewItem.job.video?.storage_path ? (() => {
                 const src = getCardVideoSrc(previewItem.job.id, previewItem.job.video.storage_path) ?? previewItem.job.video.storage_path
                 return (
-                  <div className="relative">
+                  <div className="relative" ref={contactBoxRef}>
                     {!transcriptOpen && (
                       <>
                         <button
@@ -8994,41 +9029,54 @@ export default function DashboardPage() {
                       preload="metadata"
                       clipVolume={1}
                     />
-                    {contactActive ? (
-                      <div
-                        className={`pointer-events-none absolute z-20 flex flex-col gap-1 px-4 py-3 ${
-                          contactOverlay.position === 'top'
-                            ? 'inset-x-0 top-0 items-start bg-gradient-to-b from-black/65 to-transparent'
-                            : contactOverlay.position === 'center'
-                              ? 'inset-0 items-center justify-center text-center'
-                              : 'inset-x-0 bottom-0 items-start justify-end bg-gradient-to-b from-transparent to-black/65'
-                        }`}
-                      >
-                        {contactOverlay.position === 'center' ? (
-                          <div className="flex flex-col items-center gap-1 rounded-xl bg-black/45 px-5 py-4">
-                            {contactLogoActive ? (
-                              <img src={contactOverlay.logoUrl} alt="Company logo" className="mb-1 max-h-16 w-auto object-contain" />
-                            ) : null}
-                            {contactLines.map((line, i) => (
-                              <span key={i} className="truncate text-sm font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
-                                {line}
-                              </span>
-                            ))}
+                    {contactActive ? (() => {
+                      const content = (
+                        <>
+                          {contactLogoActive ? (
+                            <img src={contactOverlay.logoUrl} alt="Company logo" className="mb-1 max-h-16 w-auto object-contain" />
+                          ) : null}
+                          {contactLines.map((line, i) => (
+                            <span key={i} className="truncate text-sm font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                              {line}
+                            </span>
+                          ))}
+                        </>
+                      )
+                      const panelClass = `flex flex-col items-center gap-1 rounded-xl bg-black/45 px-5 py-4 cursor-move touch-none select-none ring-1 transition ${contactDragging ? 'ring-emerald-400/70' : 'ring-white/0 hover:ring-white/40'}`
+                      // Custom dragged position: absolutely centered at the stored point.
+                      if (contactOverlay.offset) {
+                        return (
+                          <div
+                            onPointerDown={handleContactPointerDown}
+                            className={`pointer-events-auto absolute z-20 ${panelClass}`}
+                            style={{
+                              left: `${contactOverlay.offset.x * 100}%`,
+                              top: `${contactOverlay.offset.y * 100}%`,
+                              transform: 'translate(-50%, -50%)',
+                            }}
+                          >
+                            {content}
                           </div>
-                        ) : (
-                          <>
-                            {contactLogoActive ? (
-                              <img src={contactOverlay.logoUrl} alt="Company logo" className="mb-1 max-h-14 w-auto object-contain" />
-                            ) : null}
-                            {contactLines.map((line, i) => (
-                              <span key={i} className="truncate text-sm font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
-                                {line}
-                              </span>
-                            ))}
-                          </>
-                        )}
-                      </div>
-                    ) : null}
+                        )
+                      }
+                      // Preset position: wrapper handles layout, inner panel is draggable.
+                      return (
+                        <div
+                          className={`pointer-events-none absolute z-20 flex px-4 py-3 ${
+                            contactOverlay.position === 'top'
+                              ? 'inset-x-0 top-0 items-start justify-center bg-gradient-to-b from-black/65 to-transparent'
+                              : contactOverlay.position === 'center'
+                                ? 'inset-0 items-center justify-center'
+                                : 'inset-x-0 bottom-0 items-end justify-center bg-gradient-to-b from-transparent to-black/65'
+                          }`}
+                        >
+                          <div onPointerDown={handleContactPointerDown} className={`pointer-events-auto ${panelClass}`}>
+                            {content}
+                          </div>
+                        </div>
+                      )
+                    })() : null}
+
                     {transcriptOpen && !transcriptResolving && transcriptVideoUrl ? (
                       <TranscriptPanel
                         videoUrl={transcriptVideoUrl}
@@ -10714,9 +10762,9 @@ export default function DashboardPage() {
                     <button
                       key={pos}
                       type="button"
-                      onClick={() => updateContact({ position: pos })}
+                      onClick={() => updateContact({ position: pos, offset: null })}
                       className={`rounded-lg border px-3 py-1.5 text-xs font-medium capitalize transition ${
-                        contactOverlay.position === pos
+                        !contactOverlay.offset && contactOverlay.position === pos
                           ? 'border-emerald-400/60 bg-emerald-500/10 text-emerald-100'
                           : 'border-white/15 bg-white/[0.03] text-zinc-300 hover:border-white/30'
                       }`}
@@ -10725,6 +10773,21 @@ export default function DashboardPage() {
                     </button>
                   ))}
                 </div>
+                <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                  <span className="text-zinc-400">
+                    {contactOverlay.offset ? 'Custom position (drag on video)' : 'Tip: drag the overlay on the video'}
+                  </span>
+                  {contactOverlay.offset ? (
+                    <button
+                      type="button"
+                      onClick={() => updateContact({ offset: null })}
+                      className="rounded-md border border-white/15 bg-white/[0.03] px-2 py-1 font-medium text-zinc-300 transition hover:border-white/30"
+                    >
+                      Reset position
+                    </button>
+                  ) : null}
+                </div>
+
               </PopoverContent>
             </Popover>
 
