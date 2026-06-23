@@ -9181,8 +9181,8 @@ export default function DashboardPage() {
                     maxWidth: 'calc(100vw - 56rem)',
                   }}
                 >
-                  <img
-                    key={previewItem.image.id}
+                  <UserImageView
+                    imageKey={previewItem.image.id}
                     src={previewItem.image.storage_path}
                     alt="Uploaded reference"
                     className="h-full w-full bg-black object-contain"
