@@ -114,6 +114,12 @@ export interface MergeOverlayOptions {
   logoUrl?: string
   /** Size multiplier for the overlay (logo + text). 1 = default. */
   scale?: number
+  /** Show the translucent backdrop panel behind the logo + text. */
+  panelEnabled?: boolean
+  /** Hex color of the backdrop panel. */
+  panelColor?: string
+  /** Opacity of the backdrop panel (0–1). */
+  panelOpacity?: number
 }
 
 
