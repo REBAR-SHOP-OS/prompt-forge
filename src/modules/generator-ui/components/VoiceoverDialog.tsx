@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
-import { Check, Download, LoaderCircle, Mic, Play, Sparkles, X } from 'lucide-react'
+import { Check, Download, LoaderCircle, Mic, Play, ShoppingBag, Sparkles, X } from 'lucide-react'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import { supabase } from '@/integrations/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
@@ -70,6 +75,8 @@ interface VoiceoverDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onUseAsSoundtrack?: (url: string, name: string) => void
+  /** Uploaded products available for advertising-narration generation. */
+  products?: { id: string; name: string }[]
   // Active voiceover applied to the film + its timing/volume controls.
   activeVoiceoverUrl?: string | null
   activeVoiceoverName?: string | null
@@ -104,6 +111,7 @@ export function VoiceoverDialog({
   open,
   onOpenChange,
   onUseAsSoundtrack,
+  products = [],
   activeVoiceoverUrl,
   activeVoiceoverName,
   voiceoverVolume = 1,
@@ -127,6 +135,43 @@ export function VoiceoverDialog({
   const [isGenerating, setIsGenerating] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [playingSampleId, setPlayingSampleId] = useState<string | null>(null)
+
+  // --- Product advertising-narration generator ---
+  const [isProductPopoverOpen, setIsProductPopoverOpen] = useState(false)
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
+  const [narrationSeconds, setNarrationSeconds] = useState<string>('15')
+  const [isWritingNarration, setIsWritingNarration] = useState(false)
+
+  async function handleGenerateNarration() {
+    const product = products.find((p) => p.id === selectedProductId)
+    if (!product) {
+      toast.error('Please choose a product first.')
+      return
+    }
+    const secs = Math.round(Number(narrationSeconds))
+    if (!Number.isFinite(secs) || secs < 1 || secs > 600) {
+      toast.error('Enter a duration between 1 and 600 seconds.')
+      return
+    }
+    setIsWritingNarration(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('ad-narration', {
+        body: { productName: product.name, durationSec: secs },
+      })
+      if (error) throw error
+      const narration: string | undefined = data?.narration
+      if (!narration) throw new Error(data?.error || 'No narration returned')
+      setText(narration)
+      setIsProductPopoverOpen(false)
+      toast.success('Advertising narration generated.')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to generate narration.'
+      toast.error(msg)
+    } finally {
+      setIsWritingNarration(false)
+    }
+  }
+
 
   const lastUrlRef = useRef<string | null>(null)
   const sampleAudioRef = useRef<HTMLAudioElement | null>(null)
@@ -320,9 +365,107 @@ export function VoiceoverDialog({
               maxLength={5000}
               className="resize-none border-white/10 bg-white/[0.04] text-zinc-100 placeholder:text-zinc-500"
             />
-            <div className="text-right text-[10px] uppercase tracking-wider text-zinc-500">
-              {text.length}/5000
+            <div className="flex items-center justify-between gap-2">
+              <Popover open={isProductPopoverOpen} onOpenChange={setIsProductPopoverOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    title="Write an advertising narration from one of your products"
+                    aria-label="Generate advertising narration from a product"
+                    className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                  >
+                    <ShoppingBag className="h-3.5 w-3.5" aria-hidden="true" />
+                    Product narration
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  className="w-72 border-white/10 bg-black text-zinc-100"
+                >
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs font-semibold text-zinc-200">Product narration</p>
+                      <p className="mt-0.5 text-[11px] leading-4 text-zinc-500">
+                        Pick a product and a duration to auto-write an English
+                        advertising narration.
+                      </p>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] uppercase tracking-wider text-zinc-400">
+                        Product
+                      </Label>
+                      {products.length === 0 ? (
+                        <p className="rounded-md border border-dashed border-white/10 px-2 py-3 text-center text-[11px] text-zinc-500">
+                          No saved products yet.
+                        </p>
+                      ) : (
+                        <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
+                          {products.map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => setSelectedProductId(p.id)}
+                              className={`flex w-full items-center justify-between gap-2 rounded-md border px-2 py-1.5 text-left text-xs transition ${
+                                selectedProductId === p.id
+                                  ? 'border-emerald-300/50 bg-emerald-300/10 text-emerald-100'
+                                  : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:border-white/20'
+                              }`}
+                            >
+                              <span className="truncate">{p.name}</span>
+                              {selectedProductId === p.id ? (
+                                <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                              ) : null}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label
+                        htmlFor="vo-narration-seconds"
+                        className="text-[10px] uppercase tracking-wider text-zinc-400"
+                      >
+                        Duration (seconds)
+                      </Label>
+                      <Input
+                        id="vo-narration-seconds"
+                        type="number"
+                        min={1}
+                        max={600}
+                        value={narrationSeconds}
+                        onChange={(e) => setNarrationSeconds(e.target.value)}
+                        placeholder="e.g. 15"
+                        className="h-8 border-white/10 bg-white/[0.04] text-zinc-100 placeholder:text-zinc-500"
+                      />
+                    </div>
+
+                    <Button
+                      type="button"
+                      onClick={() => void handleGenerateNarration()}
+                      disabled={
+                        isWritingNarration ||
+                        !selectedProductId ||
+                        products.length === 0
+                      }
+                      className="w-full gap-2"
+                    >
+                      {isWritingNarration ? (
+                        <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Sparkles className="h-4 w-4" aria-hidden="true" />
+                      )}
+                      Generate narration
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+              <div className="text-right text-[10px] uppercase tracking-wider text-zinc-500">
+                {text.length}/5000
+              </div>
             </div>
+
           </div>
 
           <div className="grid grid-cols-2 gap-3">
