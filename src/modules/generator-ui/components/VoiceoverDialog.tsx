@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
-import { Check, Download, LoaderCircle, Mic, Play, ShoppingBag, Sparkles, X } from 'lucide-react'
+import { Check, Download, LoaderCircle, Mic, Play, RefreshCw, ShoppingBag, Sparkles, X } from 'lucide-react'
 import {
   Popover,
   PopoverContent,
