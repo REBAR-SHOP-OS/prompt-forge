@@ -10652,6 +10652,49 @@ export default function DashboardPage() {
                     />
                   </div>
                 </div>
+                <div className="mt-3 space-y-2">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Logo</label>
+                  <div className="flex items-center gap-2">
+                    {contactOverlay.logoUrl ? (
+                      <img
+                        src={contactOverlay.logoUrl}
+                        alt="Company logo"
+                        className="h-10 w-10 rounded-md border border-white/15 bg-white/5 object-contain p-0.5"
+                      />
+                    ) : (
+                      <div className="grid h-10 w-10 place-items-center rounded-md border border-dashed border-white/15 bg-white/[0.03] text-zinc-500">
+                        <ImageIcon className="h-4 w-4" aria-hidden="true" />
+                      </div>
+                    )}
+                    <label className="cursor-pointer rounded-lg border border-white/15 bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/30">
+                      {contactOverlay.logoUrl ? 'Replace' : 'Upload'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => { onContactLogoFile(e.target.files?.[0]); e.currentTarget.value = '' }}
+                      />
+                    </label>
+                    {contactOverlay.logoUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => updateContactLogo('')}
+                        className="text-[11px] text-zinc-400 hover:text-rose-300"
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                  {contactOverlay.logoUrl ? (
+                    <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+                      <span className="text-xs font-medium text-zinc-200">Show logo on video</span>
+                      <Switch
+                        checked={contactOverlay.logoEnabled}
+                        onCheckedChange={(v) => updateContact({ logoEnabled: v })}
+                      />
+                    </div>
+                  ) : null}
+                </div>
                 <div className="mt-3 flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
                   <span className="text-xs font-medium text-zinc-200">Show on video</span>
                   <Switch
@@ -10659,8 +10702,8 @@ export default function DashboardPage() {
                     onCheckedChange={(v) => updateContact({ enabled: v })}
                   />
                 </div>
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  {(['bottom', 'top'] as const).map((pos) => (
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  {(['top', 'center', 'bottom'] as const).map((pos) => (
                     <button
                       key={pos}
                       type="button"
