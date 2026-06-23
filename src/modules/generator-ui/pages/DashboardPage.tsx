@@ -6886,7 +6886,7 @@ export default function DashboardPage() {
         video: {
           id: mergedId,
           storage_path: publicUrl,
-          thumbnail_url: null,
+          thumbnail_url: posterDataUrl,
           aspect_ratio: mergedRatio,
           duration: null,
         },
