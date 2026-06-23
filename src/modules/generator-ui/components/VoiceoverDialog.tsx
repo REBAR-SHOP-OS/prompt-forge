@@ -185,6 +185,37 @@ export function VoiceoverDialog({
     void runNarration(lastNarration.productId, lastNarration.seconds)
   }
 
+  // --- Narration translation ---
+  const [isTranslateOpen, setIsTranslateOpen] = useState(false)
+  const [isTranslating, setIsTranslating] = useState(false)
+
+  async function handleTranslate(targetLang: string) {
+    const source = text.trim()
+    if (!source) {
+      toast.error('Please write some text first.')
+      return
+    }
+    setIsTranslating(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('translate-text', {
+        body: { text: source, targetLang },
+      })
+      if (error) throw error
+      const translation: string | undefined = data?.translation
+      if (!translation) throw new Error(data?.error || 'No translation returned')
+      setText(translation)
+      setIsTranslateOpen(false)
+      toast.success('Narration translated.')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to translate narration.'
+      toast.error(msg)
+    } finally {
+      setIsTranslating(false)
+    }
+  }
+
+
+
 
   const lastUrlRef = useRef<string | null>(null)
   const sampleAudioRef = useRef<HTMLAudioElement | null>(null)
