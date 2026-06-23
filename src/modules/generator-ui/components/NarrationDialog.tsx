@@ -567,8 +567,8 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                   type="button"
                   onClick={() => void speakNarration()}
                   disabled={narrLoading}
-                  aria-label={narrPlaying ? 'Pause narration' : 'Read narration aloud'}
-                  title={narrPlaying ? 'Pause narration' : 'Read narration aloud'}
+                  aria-label={narrPlaying ? t('pause') : t('readAloud')}
+                  title={narrPlaying ? t('pause') : t('readAloud')}
                   className="inline-flex items-center gap-1.5 rounded-full border border-violet-400/40 bg-violet-500/10 px-3 py-1 text-xs font-semibold text-violet-100 transition hover:bg-violet-500/20 disabled:cursor-wait"
                 >
                   {narrLoading ? (
@@ -578,7 +578,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                   ) : (
                     <Volume2 className="h-3.5 w-3.5" aria-hidden="true" />
                   )}
-                  Read aloud
+                  {t('readAloud')}
                 </button>
               </div>
             ) : null}
