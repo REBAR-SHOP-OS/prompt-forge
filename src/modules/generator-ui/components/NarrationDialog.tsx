@@ -6,6 +6,8 @@ import {
   Mic,
   CheckCircle2,
   AlertTriangle,
+  Play,
+  Pause,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -61,6 +63,15 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
   const audioCache = useRef<Map<string, string>>(new Map())
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
+  // Full film-audio playback so the user can hear the actual film voice and
+  // compare it with the reference narration text above.
+  const filmAudioRef = useRef<HTMLAudioElement | null>(null)
+  const [filmAudioUrl, setFilmAudioUrl] = useState<string | null>(null)
+  const [filmLoading, setFilmLoading] = useState(false)
+  const [filmPlaying, setFilmPlaying] = useState(false)
+  const [filmTime, setFilmTime] = useState(0)
+  const [filmDuration, setFilmDuration] = useState(0)
+
   // Reset transient state whenever the panel is (re)opened for a card.
   useEffect(() => {
     if (!open) return
@@ -68,15 +79,71 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
     setWords([])
     setError(null)
     setCheck(null)
+    setFilmPlaying(false)
+    setFilmTime(0)
+    setFilmDuration(0)
+    if (filmAudioRef.current) {
+      filmAudioRef.current.pause()
+      filmAudioRef.current.currentTime = 0
+    }
   }, [open, prompt, videoStoragePath])
 
   useEffect(() => {
     return () => {
       if (audioRef.current) audioRef.current.pause()
+      if (filmAudioRef.current) filmAudioRef.current.pause()
       for (const url of audioCache.current.values()) URL.revokeObjectURL(url)
       audioCache.current.clear()
     }
   }, [])
+
+  const toggleFilmAudio = useCallback(async () => {
+    if (!videoStoragePath) return
+    const el = filmAudioRef.current
+    if (el && filmPlaying) {
+      el.pause()
+      return
+    }
+    // Lazily resolve a playable URL the first time the user hits play.
+    if (!filmAudioUrl) {
+      setFilmLoading(true)
+      try {
+        let url = videoStoragePath
+        try {
+          url = await proxiedVideoUrl(videoStoragePath)
+        } catch {
+          /* fall back to raw path */
+        }
+        setFilmAudioUrl(url)
+      } finally {
+        setFilmLoading(false)
+      }
+      return
+    }
+    try {
+      await el?.play()
+    } catch {
+      toast.error('Could not play the film audio.')
+    }
+  }, [videoStoragePath, filmPlaying, filmAudioUrl])
+
+  // Once a URL is resolved (first play), start playback automatically.
+  useEffect(() => {
+    if (!filmAudioUrl) return
+    const el = filmAudioRef.current
+    if (!el) return
+    el.play().catch(() => {
+      /* user can press play again */
+    })
+  }, [filmAudioUrl])
+
+  const fmt = (s: number) => {
+    if (!Number.isFinite(s) || s < 0) return '0:00'
+    const m = Math.floor(s / 60)
+    const sec = Math.floor(s % 60)
+    return `${m}:${sec.toString().padStart(2, '0')}`
+  }
+
 
   const runTranscribe = useCallback(async () => {
     if (!videoStoragePath) return
@@ -208,6 +275,56 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
           <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
             On film
           </h3>
+
+          {/* Full film-audio player — hear the real film voice and compare it
+              with the reference narration above. */}
+          {hasVideo ? (
+            <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+              <button
+                type="button"
+                onClick={() => void toggleFilmAudio()}
+                disabled={filmLoading}
+                aria-label={filmPlaying ? 'Pause film audio' : 'Play film audio'}
+                title={filmPlaying ? 'Pause film audio' : 'Play film audio'}
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-violet-400/40 bg-violet-500/15 text-violet-100 transition hover:bg-violet-500/25 disabled:cursor-wait"
+              >
+                {filmLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : filmPlaying ? (
+                  <Pause className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <Play className="h-4 w-4 translate-x-0.5" aria-hidden="true" />
+                )}
+              </button>
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-medium text-zinc-300">Film voice</p>
+                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-violet-400 transition-[width] duration-150"
+                    style={{ width: filmDuration > 0 ? `${(filmTime / filmDuration) * 100}%` : '0%' }}
+                  />
+                </div>
+              </div>
+              <span className="shrink-0 text-[11px] tabular-nums text-zinc-400">
+                {fmt(filmTime)} / {fmt(filmDuration)}
+              </span>
+              {filmAudioUrl ? (
+                <audio
+                  ref={filmAudioRef}
+                  src={filmAudioUrl}
+                  preload="metadata"
+                  onPlay={() => setFilmPlaying(true)}
+                  onPause={() => setFilmPlaying(false)}
+                  onEnded={() => setFilmPlaying(false)}
+                  onTimeUpdate={(e) => setFilmTime(e.currentTarget.currentTime)}
+                  onLoadedMetadata={(e) => setFilmDuration(e.currentTarget.duration)}
+                  className="hidden"
+                />
+              ) : null}
+            </div>
+          ) : null}
+
+
           {!hasVideo ? (
             <p className="text-sm leading-6 text-zinc-500">
               No rendered video yet — generate this card to check the spoken narration.
