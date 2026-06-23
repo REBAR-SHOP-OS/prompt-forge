@@ -9125,10 +9125,14 @@ export default function DashboardPage() {
 
                         </>
                       )
-                      const panelClass = `flex flex-col items-center bg-black/45 cursor-move touch-none select-none ring-1 transition ${contactDragging ? 'ring-emerald-400/70' : 'ring-white/0 hover:ring-white/40'}`
+                      const panelClass = `flex flex-col items-center cursor-move touch-none select-none ring-1 transition ${contactDragging ? 'ring-emerald-400/70' : 'ring-white/0 hover:ring-white/40'}`
+                      const panelBg = contactOverlay.panelEnabled
+                        ? hexToRgba(contactOverlay.panelColor ?? '#000000', contactOverlay.panelOpacity ?? 0.45)
+                        : 'transparent'
                       const panelStyle: React.CSSProperties = {
                         gap: lineGap,
                         borderRadius: radius,
+                        backgroundColor: panelBg,
                         paddingLeft: padX,
                         paddingRight: padX,
                         paddingTop: padY,
