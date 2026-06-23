@@ -1794,7 +1794,9 @@ export default function DashboardPage() {
     phone: string
     address: string
     enabled: boolean
-    position: 'top' | 'bottom'
+    position: 'top' | 'center' | 'bottom'
+    logoUrl: string
+    logoEnabled: boolean
   }
   const emptyContact = (): ContactOverlay => ({
     website: '',
@@ -1802,6 +1804,8 @@ export default function DashboardPage() {
     address: '',
     enabled: true,
     position: 'bottom',
+    logoUrl: '',
+    logoEnabled: true,
   })
   const [contactOverlay, setContactOverlay] = useState<ContactOverlay>(emptyContact)
   const [contactMenuOpen, setContactMenuOpen] = useState(false)
@@ -1809,19 +1813,19 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!contactKey) { setContactOverlay(emptyContact()); return }
     let cancelled = false
-    // Local prefs (enabled / position) persist per user in localStorage.
+    // Local prefs (enabled / position / logoEnabled) persist per user in localStorage.
     let base = emptyContact()
     try {
       const raw = window.localStorage.getItem(contactKey)
       if (raw) base = { ...base, ...(JSON.parse(raw) as Partial<ContactOverlay>) }
     } catch { /* ignore */ }
     setContactOverlay(base)
-    // Contact text (website / phone / address) is sourced from the business
-    // profile saved in the Product Ad Scenario modal — single source of truth.
+    // Contact text (website / phone / address) and logo are sourced from the
+    // business profile saved in the Product Ad Scenario modal — single source of truth.
     if (userId) {
       supabase
         .from('generator_business_profiles')
-        .select('contact_website, contact_phone, contact_address')
+        .select('contact_website, contact_phone, contact_address, contact_logo_url')
         .eq('user_id', userId)
         .maybeSingle()
         .then(({ data }) => {
@@ -1831,6 +1835,7 @@ export default function DashboardPage() {
             website: data.contact_website ?? '',
             phone: data.contact_phone ?? '',
             address: data.contact_address ?? '',
+            logoUrl: (data as { contact_logo_url?: string | null }).contact_logo_url ?? '',
           }))
         })
     }
@@ -1841,11 +1846,25 @@ export default function DashboardPage() {
     setContactOverlay((prev) => {
       const next = { ...prev, ...patch }
       if (contactKey) {
-        try { window.localStorage.setItem(contactKey, JSON.stringify(next)) } catch { /* ignore */ }
+        try {
+          // Keep the (potentially large) logo data URL out of localStorage; it
+          // is persisted in the business profile instead.
+          const { logoUrl: _omit, ...local } = next
+          window.localStorage.setItem(contactKey, JSON.stringify(local))
+        } catch { /* ignore */ }
       }
       return next
     })
   }, [contactKey])
+  // Persist the logo to the business profile (single source of truth) and update state.
+  const updateContactLogo = useCallback((logoUrl: string) => {
+    updateContact({ logoUrl })
+    if (userId) {
+      void supabase
+        .from('generator_business_profiles')
+        .upsert({ user_id: userId, contact_logo_url: logoUrl || null }, { onConflict: 'user_id' })
+    }
+  }, [updateContact, userId])
   // Lines shown in the overlay (only non-empty fields), in display order.
   const contactLines = useMemo(
     () => [contactOverlay.website, contactOverlay.phone, contactOverlay.address]
@@ -1853,7 +1872,8 @@ export default function DashboardPage() {
       .filter(Boolean),
     [contactOverlay.website, contactOverlay.phone, contactOverlay.address],
   )
-  const contactActive = contactOverlay.enabled && contactLines.length > 0
+  const contactLogoActive = contactOverlay.logoEnabled && !!contactOverlay.logoUrl
+  const contactActive = contactOverlay.enabled && (contactLines.length > 0 || contactLogoActive)
 
 
   // Stores durable public URLs (copied into MERGED_BUCKET at finalize time) so
