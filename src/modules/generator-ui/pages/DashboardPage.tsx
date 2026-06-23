@@ -2490,6 +2490,61 @@ export default function DashboardPage() {
     return edited ?? fallback ?? undefined
   }
 
+  // Capture a single still frame from a video Blob and return it as a compact
+  // JPEG data URL. Used to persist a durable poster for Final Film library
+  // cards so the preview keeps showing even if the heavy merged video file
+  // later becomes unavailable in storage. Resolves to null on any failure.
+  const captureVideoPoster = (blob: Blob): Promise<string | null> => {
+    return new Promise((resolve) => {
+      let url: string | null = null
+      let settled = false
+      const finish = (val: string | null) => {
+        if (settled) return
+        settled = true
+        try { if (url) URL.revokeObjectURL(url) } catch { /* ignore */ }
+        resolve(val)
+      }
+      try {
+        url = URL.createObjectURL(blob)
+        const video = document.createElement('video')
+        video.muted = true
+        video.preload = 'metadata'
+        video.crossOrigin = 'anonymous'
+        video.src = url
+        const draw = () => {
+          try {
+            const w = video.videoWidth
+            const h = video.videoHeight
+            if (!w || !h) { finish(null); return }
+            const maxW = 640
+            const scale = Math.min(1, maxW / w)
+            const canvas = document.createElement('canvas')
+            canvas.width = Math.round(w * scale)
+            canvas.height = Math.round(h * scale)
+            const ctx = canvas.getContext('2d')
+            if (!ctx) { finish(null); return }
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+            finish(canvas.toDataURL('image/jpeg', 0.7))
+          } catch {
+            finish(null)
+          }
+        }
+        video.onloadedmetadata = () => {
+          const dur = Number.isFinite(video.duration) ? video.duration : 0
+          const target = dur > 0 ? Math.min(1, Math.max(0, dur - 0.05)) : 0.05
+          try { video.currentTime = target } catch { /* ignore */ }
+        }
+        video.onseeked = () => { draw() }
+        video.onerror = () => finish(null)
+        // Safety timeout so we never block the finalize flow.
+        setTimeout(() => finish(null), 8000)
+      } catch {
+        finish(null)
+      }
+    })
+  }
+
+
   // Single source of truth for what a Draft card should display. A draft's
   // own `entry.video` can be stale/empty (e.g. its first clip had no
   // storage_path the moment the snapshot was taken), so we always prefer the
