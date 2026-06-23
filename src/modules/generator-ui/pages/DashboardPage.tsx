@@ -9099,10 +9099,11 @@ export default function DashboardPage() {
                               src={contactOverlay.logoUrl}
                               alt="Company logo"
                               className="w-auto object-contain"
-                              style={{ height: logoH, marginBottom: contactLogoActive ? 0 : logoGap - lineGap }}
+                              style={{ height: logoH, marginBottom: contactLines.length ? logoGap - lineGap : 0 }}
                             />
                           ) : null}
-                          {!contactLogoActive && contactLines.map((line, i) => (
+                          {contactLines.map((line, i) => (
+
                             <span
                               key={i}
                               className="truncate font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
