@@ -6564,7 +6564,9 @@ export default function DashboardPage() {
           audioOpt,
           transitionsForMerge,
           abortController.signal,
+          contactActive ? { lines: contactLines, position: contactOverlay.position } : undefined,
         ),
+
         pipelineTimeout,
       ])
       if (abortController.signal.aborted) throw new MergeCancelledError()
