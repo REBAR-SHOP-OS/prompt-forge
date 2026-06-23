@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
-import { Check, Download, LoaderCircle, Mic, Play, RefreshCw, ShoppingBag, Sparkles, X } from 'lucide-react'
+import { Check, Download, Languages, LoaderCircle, Mic, Play, RefreshCw, ShoppingBag, Sparkles, X } from 'lucide-react'
 import {
   Popover,
   PopoverContent,
@@ -107,6 +107,21 @@ function formatTimeMS(s: number): string {
   return `${m}:${ss.toString().padStart(2, '0')}`
 }
 
+// Supported translation targets (must match the translate-text edge function).
+const TRANSLATE_LANGS: { code: string; label: string }[] = [
+  { code: 'fa', label: 'فارسی' },
+  { code: 'en', label: 'English' },
+  { code: 'ar', label: 'العربية' },
+  { code: 'tr', label: 'Türkçe' },
+  { code: 'es', label: 'Español' },
+  { code: 'fr', label: 'Français' },
+  { code: 'de', label: 'Deutsch' },
+  { code: 'ru', label: 'Русский' },
+  { code: 'zh', label: '中文' },
+]
+
+
+
 export function VoiceoverDialog({
   open,
   onOpenChange,
@@ -184,6 +199,37 @@ export function VoiceoverDialog({
     if (!lastNarration) return
     void runNarration(lastNarration.productId, lastNarration.seconds)
   }
+
+  // --- Narration translation ---
+  const [isTranslateOpen, setIsTranslateOpen] = useState(false)
+  const [isTranslating, setIsTranslating] = useState(false)
+
+  async function handleTranslate(targetLang: string) {
+    const source = text.trim()
+    if (!source) {
+      toast.error('Please write some text first.')
+      return
+    }
+    setIsTranslating(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('translate-text', {
+        body: { text: source, targetLang },
+      })
+      if (error) throw error
+      const translation: string | undefined = data?.translation
+      if (!translation) throw new Error(data?.error || 'No translation returned')
+      setText(translation)
+      setIsTranslateOpen(false)
+      toast.success('Narration translated.')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to translate narration.'
+      toast.error(msg)
+    } finally {
+      setIsTranslating(false)
+    }
+  }
+
+
 
 
   const lastUrlRef = useRef<string | null>(null)
@@ -513,6 +559,41 @@ export function VoiceoverDialog({
                   />
                 </button>
               ) : null}
+              <Popover open={isTranslateOpen} onOpenChange={setIsTranslateOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    disabled={isTranslating || !text.trim()}
+                    title="Translate narration"
+                    aria-label="Translate narration"
+                    className="grid h-7 w-7 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-zinc-300 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200 disabled:opacity-50"
+                  >
+                    {isTranslating ? (
+                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Languages className="h-3.5 w-3.5" aria-hidden="true" />
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-44 p-1.5">
+                  <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                    Translate to
+                  </p>
+                  <div className="max-h-56 overflow-y-auto">
+                    {TRANSLATE_LANGS.map((l) => (
+                      <button
+                        key={l.code}
+                        type="button"
+                        disabled={isTranslating}
+                        onClick={() => void handleTranslate(l.code)}
+                        className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06] disabled:opacity-50"
+                      >
+                        {l.label}
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
               </div>
               <div className="text-right text-[10px] uppercase tracking-wider text-zinc-500">
                 {text.length}/5000
