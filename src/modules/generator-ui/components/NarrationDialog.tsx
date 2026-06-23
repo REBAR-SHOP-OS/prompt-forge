@@ -248,6 +248,81 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
     }
   }, [])
 
+  // Read the narration aloud — reads the translation when one is shown,
+  // otherwise the original prompt narration. Audio is cached per text.
+  const displayText = translation ?? promptText
+  const speakNarration = useCallback(async () => {
+    const el = narrAudioRef.current
+    if (el && narrPlaying) {
+      el.pause()
+      return
+    }
+    const text = (translation ?? promptText).trim()
+    if (!text) return
+    const key = text.slice(0, 5000)
+    const playUrl = (url: string) => {
+      const audio = narrAudioRef.current ?? new Audio()
+      narrAudioRef.current = audio
+      audio.src = url
+      audio.onended = () => setNarrPlaying(false)
+      audio.onpause = () => setNarrPlaying(false)
+      setNarrPlaying(true)
+      void audio.play().catch(() => setNarrPlaying(false))
+    }
+    const cached = narrCache.current.get(key)
+    if (cached) { playUrl(cached); return }
+    setNarrLoading(true)
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke<{
+        audioBase64?: string
+        mimeType?: string
+        error?: string
+      }>('tts-generate', { body: { text: key, gender: 'female', tone: 'narrative' } })
+      if (fnError) throw new Error(fnError.message)
+      if (data?.error) throw new Error(data.error)
+      if (!data?.audioBase64) throw new Error('No audio returned')
+      const bin = atob(data.audioBase64)
+      const bytes = new Uint8Array(bin.length)
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+      const blob = new Blob([bytes], { type: data.mimeType || 'audio/wav' })
+      const url = URL.createObjectURL(blob)
+      narrCache.current.set(key, url)
+      playUrl(url)
+    } catch {
+      toast.error('Could not read the narration aloud.')
+    } finally {
+      setNarrLoading(false)
+    }
+  }, [translation, promptText, narrPlaying])
+
+  const translateNarration = useCallback(async (lang: string) => {
+    setTargetLang(lang)
+    // Stop any narration playback so the next read uses the chosen version.
+    if (narrAudioRef.current) narrAudioRef.current.pause()
+    if (!lang) { setTranslation(null); return }
+    const text = promptText.trim()
+    if (!text) return
+    setTranslating(true)
+    setTranslation(null)
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke<{
+        translation?: string
+        error?: string
+      }>('translate-text', { body: { text, targetLang: lang } })
+      if (fnError) throw new Error(fnError.message)
+      if (data?.error) throw new Error(data.error)
+      if (!data?.translation) throw new Error('No translation returned')
+      setTranslation(data.translation)
+    } catch {
+      toast.error('Could not translate the narration.')
+      setTargetLang('')
+    } finally {
+      setTranslating(false)
+    }
+  }, [promptText])
+
+
+
   if (!open) return null
 
   const lowConfWords = words.filter((w) => w.lowConfidence)
