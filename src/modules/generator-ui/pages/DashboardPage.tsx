@@ -337,17 +337,26 @@ const USER_IMAGES_BUCKET = 'user-images'
 const USER_AUDIO_BUCKET = 'user-audio'
 
 /**
- * The `user-images` bucket is PRIVATE, so any persisted public URL
- * (.../object/public/user-images/<key>) returns 400 when loaded in an <img>.
- * Extract the bucket-relative object key from whatever form is stored.
+ * Private buckets (user-images, wan-frames, …) store paths as public URLs
+ * (.../object/public/<bucket>/<key>) which return 400/"Bucket not found"
+ * when loaded in an <img>. Detect which private bucket an object lives in and
+ * return both the bucket id and the bucket-relative key so we can sign it.
  */
-function userImageObjectKey(storagePath: string | null | undefined): string | null {
+const SIGNABLE_IMAGE_BUCKETS = [USER_IMAGES_BUCKET, FRAMES_BUCKET] as const
+
+function resolveImageBucketKey(
+  storagePath: string | null | undefined,
+): { bucket: string; key: string } | null {
   if (!storagePath) return null
-  const marker = `/${USER_IMAGES_BUCKET}/`
-  const idx = storagePath.indexOf(marker)
-  if (idx >= 0) return storagePath.slice(idx + marker.length)
+  for (const bucket of SIGNABLE_IMAGE_BUCKETS) {
+    const marker = `/${bucket}/`
+    const idx = storagePath.indexOf(marker)
+    if (idx >= 0) return { bucket, key: storagePath.slice(idx + marker.length) }
+  }
   // Already a bucket-relative key (no http origin, no signed/blob/data URL).
-  if (!/^https?:|^blob:|^data:/.test(storagePath)) return storagePath
+  if (!/^https?:|^blob:|^data:/.test(storagePath)) {
+    return { bucket: USER_IMAGES_BUCKET, key: storagePath }
+  }
   return null
 }
 
@@ -357,12 +366,12 @@ async function signUserImageUrl(storagePath: string | null | undefined): Promise
   // Already a directly-usable URL that isn't a (broken) public-bucket URL.
   if (/^blob:|^data:/.test(raw)) return raw
   if (/\/object\/sign\//.test(raw)) return raw
-  const key = userImageObjectKey(raw)
-  if (!key) return raw
+  const resolved = resolveImageBucketKey(raw)
+  if (!resolved) return raw
   try {
     const { data, error } = await supabase.storage
-      .from(USER_IMAGES_BUCKET)
-      .createSignedUrl(key, 60 * 60 * 24 * 365)
+      .from(resolved.bucket)
+      .createSignedUrl(resolved.key, 60 * 60 * 24 * 365)
     if (!error && data?.signedUrl) return data.signedUrl
   } catch {
     /* fall through */
