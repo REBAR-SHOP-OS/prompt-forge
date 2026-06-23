@@ -229,23 +229,47 @@ export function compareNarration(
   const hasExpected = normalizeForCompare(expected).length > 0
   const hasActual = normalizeForCompare(actual).length > 0
 
+  const empty = { missingWords: [] as string[], extraWords: [] as string[], diff: [] as DiffToken[] }
+
   if (!hasExpected && !hasActual) {
-    return { status: 'none', similarity: 1, message: 'This card has no narration in the prompt and none on the film.' }
+    return {
+      status: 'none', similarity: 1, matchPercent: 100, errorPercent: 0, ...empty,
+      message: 'This card has no narration in the prompt and none on the film.',
+    }
   }
   if (hasExpected && !hasActual) {
-    return { status: 'missing-on-film', similarity: 0, message: 'The prompt has narration, but no speech was detected on the film.' }
+    return {
+      status: 'missing-on-film', similarity: 0, matchPercent: 0, errorPercent: 100,
+      missingWords: tokenize(expected).map((t) => t.raw), extraWords: [],
+      diff: tokenize(expected).map((t) => ({ text: t.raw, kind: 'missing' as const })),
+      message: 'The prompt has narration, but no speech was detected on the film.',
+    }
   }
   if (!hasExpected && hasActual) {
-    return { status: 'extra-on-film', similarity: 0, message: "The film contains narration that isn't written in the prompt." }
+    return {
+      status: 'extra-on-film', similarity: 0, matchPercent: 0, errorPercent: 100,
+      missingWords: [], extraWords: tokenize(actual).map((t) => t.raw),
+      diff: tokenize(actual).map((t) => ({ text: t.raw, kind: 'extra' as const })),
+      message: "The film contains narration that isn't written in the prompt.",
+    }
   }
 
   const sim = similarity(expected, actual)
-  if (sim >= 0.8) {
-    return { status: 'ok', similarity: sim, message: 'The on-film narration matches the prompt.' }
+  const d = diffNarration(expected, actual)
+  const missingWords = d.diff.filter((t) => t.kind === 'missing').map((t) => t.text)
+  const extraWords = d.diff.filter((t) => t.kind === 'extra').map((t) => t.text)
+
+  if (d.matchPercent >= 80) {
+    return {
+      status: 'ok', similarity: sim, matchPercent: d.matchPercent, errorPercent: d.errorPercent,
+      missingWords, extraWords, diff: d.diff,
+      message: `The on-film narration matches the prompt (${d.matchPercent}% match).`,
+    }
   }
   return {
-    status: 'mismatch',
-    similarity: sim,
-    message: 'The on-film narration differs from the prompt — review both below.',
+    status: 'mismatch', similarity: sim, matchPercent: d.matchPercent, errorPercent: d.errorPercent,
+    missingWords, extraWords, diff: d.diff,
+    message: `The on-film narration differs from the prompt — ${d.errorPercent}% different. Review the highlighted words below.`,
   }
 }
+
