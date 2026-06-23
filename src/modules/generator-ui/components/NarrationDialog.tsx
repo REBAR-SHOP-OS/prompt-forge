@@ -789,8 +789,8 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
             {check.status === 'ok' || check.status === 'mismatch' ? (
               <div className="space-y-1">
                 <div className="flex items-center justify-between text-[11px] font-medium">
-                  <span className="text-emerald-300">{check.matchPercent}% match</span>
-                  <span className="text-amber-300">{check.errorPercent}% different</span>
+                  <span className="text-emerald-300">{check.matchPercent}% {t('match')}</span>
+                  <span className="text-amber-300">{check.errorPercent}% {t('different')}</span>
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-amber-500/25">
                   <div
