@@ -1299,7 +1299,13 @@ export default function ProductAdDialog({
     try {
       const { error: upErr } = await supabase
         .from('generator_business_profiles')
-        .upsert({ user_id: userId, business_info: businessInfo.trim() }, { onConflict: 'user_id' })
+        .upsert({
+          user_id: userId,
+          business_info: businessInfo.trim(),
+          contact_website: contactWebsite.trim() || null,
+          contact_phone: contactPhone.trim() || null,
+          contact_address: contactAddress.trim() || null,
+        }, { onConflict: 'user_id' })
       if (upErr) {
         setError(upErr.message)
         return
