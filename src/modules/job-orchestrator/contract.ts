@@ -42,6 +42,12 @@ export interface CreateJobInput {
   prompt: string;
   firstFrameUrl?: string;
   lastFrameUrl?: string;
+  /**
+   * Optional persistent character/reference image URL(s) (e.g. a Character
+   * Sheet). Sent in ADDITION to firstFrameUrl/lastFrameUrl to anchor identity
+   * across chained cards. Providers that don't support reference images ignore it.
+   */
+  referenceImageUrls?: string[];
   /** Requested clip length in seconds. Defaults to 5 server-side. */
   durationSeconds?: 5 | 10 | 15;
   /** Requested output aspect ratio. Defaults to 16:9 server-side. */
