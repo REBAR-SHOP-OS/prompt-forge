@@ -216,6 +216,10 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
     setNarrPlaying(false)
     setTargetLang('')
     setTranslation(null)
+    setTranscriptTranslation(null)
+    setCheckMessageTranslation(null)
+    setMissingWordsTranslation(null)
+    setExtraWordsTranslation(null)
     if (filmAudioRef.current) {
       filmAudioRef.current.pause()
       filmAudioRef.current.currentTime = 0
