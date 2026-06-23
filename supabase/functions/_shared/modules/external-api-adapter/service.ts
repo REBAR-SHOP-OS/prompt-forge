@@ -224,27 +224,28 @@ function readLocalVideoConfig(): LocalVideoConfig {
   // image router URLs — those have no /videos/generations endpoint and would
   // produce a misleading 404 instead of a clear "not configured" error.
   const rawBaseUrl = (
+    Deno.env.get("LOCAL_VIDEO_ROUTER_URL") ??
     Deno.env.get("LOCAL_VIDEO_BASE_URL") ??
     Deno.env.get("LOCAL_AI_ROUTER_BASE_URL") ??
     ""
   ).trim();
 
   if (!rawBaseUrl) {
-    return { ok: false, error: "Local video generation is not configured yet. Configure the RTX video router or choose a cloud model." };
+    return { ok: false, error: LOCAL_NOT_CONFIGURED_MESSAGE };
   }
 
   let parsed: URL;
   try {
     parsed = new URL(rawBaseUrl);
   } catch {
-    return { ok: false, error: "Local video generation is not configured yet. Configure the RTX video router or choose a cloud model." };
+    return { ok: false, error: LOCAL_NOT_CONFIGURED_MESSAGE };
   }
 
   if (isLoopbackHost(parsed.hostname) && Deno.env.get("ALLOW_LOCAL_VIDEO_LOOPBACK") !== "true") {
-    return { ok: false, error: "Local video generation is not configured yet. Configure the RTX video router or choose a cloud model." };
+    return { ok: false, error: LOCAL_NOT_CONFIGURED_MESSAGE };
   }
   if (parsed.protocol !== "https:" && Deno.env.get("ALLOW_LOCAL_VIDEO_HTTP") !== "true") {
-    return { ok: false, error: "Local video generation is not configured yet. Configure the RTX video router or choose a cloud model." };
+    return { ok: false, error: LOCAL_NOT_CONFIGURED_MESSAGE };
   }
 
   const withoutTrailingSlash = parsed.toString().replace(/\/+$/, "");
@@ -252,7 +253,38 @@ function readLocalVideoConfig(): LocalVideoConfig {
     ? withoutTrailingSlash
     : `${withoutTrailingSlash}/v1`;
   const apiKey = getProviderApiKey("local");
-  return { ok: true, baseUrl, apiKey };
+  return { ok: true, baseUrl, apiKey, timeoutMs: readLocalVideoTimeoutMs() };
+}
+
+/** Lightweight, no-secret config/health status for the local video router.
+ *  Used by the orchestrator preflight and the status endpoint. When
+ *  `probe` is true and configured, it attempts a reachability check. */
+export async function localVideoStatus(
+  probe = false,
+): Promise<{ status: "configured" | "not_configured" | "unreachable"; message: string }> {
+  const config = readLocalVideoConfig();
+  if (!config.ok) {
+    return { status: "not_configured", message: config.error };
+  }
+  if (!probe) {
+    return { status: "configured", message: "Local video router is configured." };
+  }
+  try {
+    // Probe with a short timeout regardless of the generation timeout.
+    const res = await localVideoFetch(
+      `${config.baseUrl}/models`,
+      { method: "GET", headers: localVideoHeaders(config) },
+      Math.min(config.timeoutMs, 10_000),
+    );
+    // Any HTTP response (even 404) means the router host is reachable.
+    await res.body?.cancel().catch(() => {});
+    return { status: "configured", message: "Local video router is reachable." };
+  } catch (err) {
+    if (isUnreachableError(err)) {
+      return { status: "unreachable", message: LOCAL_UNREACHABLE_MESSAGE };
+    }
+    return { status: "configured", message: "Local video router is configured." };
+  }
 }
 
 function isLocalVideoModel(model: string): boolean {
