@@ -1680,6 +1680,37 @@ export default function ProductAdDialog({
                       placeholder={t.contactAddress}
                       className="h-9 border-white/10 bg-black/30 text-sm text-zinc-100"
                     />
+                    <div className="flex items-center gap-2 pt-1">
+                      {contactLogo ? (
+                        <img
+                          src={contactLogo}
+                          alt={t.contactLogo}
+                          className="h-10 w-10 rounded-md border border-white/15 bg-white/5 object-contain p-0.5"
+                        />
+                      ) : (
+                        <div className="grid h-10 w-10 place-items-center rounded-md border border-dashed border-white/15 bg-black/30 text-zinc-500">
+                          <ImagePlus className="h-4 w-4" aria-hidden="true" />
+                        </div>
+                      )}
+                      <label className="cursor-pointer rounded-md border border-white/15 bg-black/30 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/30">
+                        {contactLogo ? t.contactWebsite && 'Replace' : t.contactLogo}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => { onContactLogoFile(e.target.files?.[0]); e.currentTarget.value = '' }}
+                        />
+                      </label>
+                      {contactLogo ? (
+                        <button
+                          type="button"
+                          onClick={() => { setContactLogo(''); setBusinessSaved(false) }}
+                          className="text-[11px] text-zinc-400 transition hover:text-rose-300"
+                        >
+                          ✕
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="mt-2 flex justify-end">
                     <Button
