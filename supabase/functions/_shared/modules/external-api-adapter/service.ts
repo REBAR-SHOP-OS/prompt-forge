@@ -102,6 +102,52 @@ function sanitizePrompt(p: string): string {
   return p.replace(/\s+/g, " ").trim();
 }
 
+// ---- Provider capability helpers -------------------------------------------
+// Centralize which providers/models can accept which kinds of image
+// conditioning, so reference-image continuity logic stays explicit instead of
+// scattered across each start* function.
+//
+//  - supportsStartImage:      can take a first-frame/start image (continuation).
+//  - supportsReferenceImages: can take separate persistent reference/identity
+//                             images (distinct from the start frame).
+//
+// Only Veo 3.1 exposes a true, dedicated reference-image input today. Wan
+// (DashScope) and the local routers accept a start frame but have no proven
+// dedicated reference-image channel, so they fall back to prompt augmentation.
+function supportsStartImage(providerKey: ProviderKey, resolvedModel: string): boolean {
+  if (providerKey === "flow") {
+    // Veo text-to-video resolves with no frame; i2v paths pass a firstFrameUrl.
+    return true;
+  }
+  if (providerKey === "wan") return !isWanTextToVideoModel(resolvedModel);
+  if (providerKey === "local") return /i2v/i.test(resolvedModel);
+  return false;
+}
+
+function supportsReferenceImages(providerKey: ProviderKey, resolvedModel: string): boolean {
+  // Veo 3.1 (resolved from flow aliases) supports dedicated referenceImages.
+  // Veo Fast (veo-3.0-fast-*) does NOT, but startVeo upgrades to 3.1 whenever
+  // references are present, so we report true for the flow provider here and
+  // let startVeo gate on the concrete model.
+  if (providerKey === "flow") return true;
+  // No other provider has a proven dedicated reference-image input.
+  return false;
+}
+
+/** Append a non-breaking character-identity hint to the prompt for providers
+ *  that cannot accept dedicated reference images. The URLs are included so a
+ *  prompt-aware router can fetch them; identity wording keeps the subject
+ *  consistent for pure-prompt models. */
+function augmentPromptWithReferences(prompt: string, referenceImageUrls?: string[] | null): string {
+  if (!referenceImageUrls || referenceImageUrls.length === 0) return prompt;
+  const refs = referenceImageUrls.slice(0, 3).join(", ");
+  return sanitizePrompt(
+    `${prompt} Maintain the exact same character identity, face, outfit and style as the reference image(s): ${refs}.`,
+  );
+}
+
+
+
 function getProviderApiKey(providerKey: ProviderKey): string | null {
   if (providerKey === "flow") {
     return Deno.env.get("GEMINI_API_KEY") ?? Deno.env.get("FLOW_API_KEY") ?? null;
@@ -398,12 +444,19 @@ async function startWanI2V(
     media.push({ type: "last_frame", url: await resolveDownloadableFrameUrl(input.lastFrameUrl) });
   }
 
+  // Wan (DashScope) i2v has no dedicated reference-image channel — media[]
+  // only carries first/last frames. Keep firstFrameUrl as the continuation
+  // anchor and fold persistent character identity into the prompt as a
+  // non-breaking fallback so the subject stays consistent across cards.
+  const wanPrompt = augmentPromptWithReferences(input.prompt, input.referenceImageUrls);
+
   const body = {
     model: resolvedModel,
     input: {
-      prompt: input.prompt,
+      prompt: wanPrompt,
       media,
     },
+
     parameters: {
       resolution: "720P",
       ratio: input.aspectRatio ?? "16:9",
@@ -1242,12 +1295,22 @@ async function startLocalVideo(
   const seconds = input.durationSeconds && input.durationSeconds > 0 ? input.durationSeconds : 5;
   const numFrames = Math.max(1, Math.round(seconds * fps));
 
+  // Local routers (Wan 2.1 / LTX on ComfyUI) have no standardized dedicated
+  // reference-image input. Keep firstFrameUrl as the start/continuation image.
+  // Forward referenceImageUrls as non-breaking extra fields (a capable router
+  // can consume them; others ignore unknown keys) AND fold identity into the
+  // prompt as a guaranteed fallback.
+  const refs = (input.referenceImageUrls ?? []).filter((u) => typeof u === "string" && u.trim());
+  const localPrompt = augmentPromptWithReferences(input.prompt, refs);
+
   const body = {
     model: resolvedModel,
-    prompt: input.prompt,
+    prompt: localPrompt,
     image_url: input.firstFrameUrl ?? input.lastFrameUrl ?? null,
     first_frame_url: input.firstFrameUrl ?? null,
     last_frame_url: input.lastFrameUrl ?? null,
+    // Non-breaking reference passthrough — ignored by routers that don't read it.
+    reference_image_urls: refs.length > 0 ? refs : undefined,
     duration: seconds,
     duration_seconds: seconds,
     // Frame-count fields — send several common aliases so different local
@@ -1260,6 +1323,7 @@ async function startLocalVideo(
     aspect_ratio: input.aspectRatio ?? "16:9",
     response_format: "url",
   };
+
 
   const res = await fetch(`${config.baseUrl}/videos/generations`, {
     method: "POST",
@@ -1386,6 +1450,18 @@ async function startGeneration(
   input: GenerationStartInput,
 ): Promise<GenerationStartResult> {
   const apiKey = getProviderApiKey(providerKey);
+
+  // Make reference-image continuity behavior explicit and observable.
+  if (input.referenceImageUrls && input.referenceImageUrls.length > 0) {
+    logInfo("reference-image continuity", {
+      providerKey,
+      resolvedModel,
+      referenceCount: input.referenceImageUrls.length,
+      startImage: supportsStartImage(providerKey, resolvedModel),
+      dedicatedReferenceSupport: supportsReferenceImages(providerKey, resolvedModel),
+    });
+  }
+
 
   if (providerKey === "local") {
     return await startLocalVideo(resolvedModel, input);
