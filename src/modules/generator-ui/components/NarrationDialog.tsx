@@ -601,7 +601,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                   className="rounded-lg border border-sky-400/20 bg-sky-500/[0.06] px-3 py-2 text-sm leading-6 text-zinc-100"
                 >
                   <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-sky-300/80">
-                    {TRANSLATE_LANGS.find((l) => l.code === targetLang)?.label ?? 'Translation'}
+                    {TRANSLATE_LANGS.find((l) => l.code === targetLang)?.label ?? t('translation')}
                   </p>
                   {translation}
                 </div>
@@ -611,7 +611,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
             </>
           ) : (
             <p className="text-sm leading-6 text-zinc-400">
-              No narration detected in this card's prompt. The narration / spoken lines appear here when the scene includes a narration line or quoted dialogue.
+              {t('noPrompt')}
             </p>
           )}
         </section>
