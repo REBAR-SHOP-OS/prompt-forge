@@ -472,6 +472,13 @@ export const jobOrchestratorGateway = {
             );
           }
 
+          // Persistent character/reference image(s). Filtered to the caller's own
+          // assets; any URL that fails the safety check is dropped (non-fatal) so
+          // generation still proceeds with the frame-based continuation.
+          const referenceImageUrls = (parsed.data.referenceImageUrls ?? []).filter((u) =>
+            isAllowedReferenceUrl(u, auth.userId)
+          );
+
           // Image-to-video accepts one or both frames; text-to-video provides
           // neither. No additional cross-frame validation needed here.
 
