@@ -83,7 +83,15 @@ export interface AiGateway {
    */
   localVideoStatus(
     probe?: boolean,
-  ): Promise<{ status: "configured" | "not_configured" | "unreachable"; message: string }>;
+  ): Promise<{
+    status: "configured" | "not_configured" | "unreachable";
+    message: string;
+    configured: boolean;
+    reachable: boolean | null;
+    create_endpoint_found: boolean | null;
+    attempted_create_paths: string[];
+    router_type: "openai_compatible" | "comfyui" | null;
+  }>;
   getProviderApiKey(p: ProviderKey): string | null;
   /**
    * Trigger a generation against the external provider.
