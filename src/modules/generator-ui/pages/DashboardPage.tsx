@@ -1459,6 +1459,11 @@ export default function DashboardPage() {
 
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
   const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15 | 30 | 45 | 135>(5)
+  // Continuity Mode — optional per-chain card-to-card continuity. State is
+  // persisted per generation chain (see continuityChainKey below).
+  const [continuity, setContinuity] = useState<ContinuityState>(() => loadContinuity(null))
+  const [continuityMemoryOpen, setContinuityMemoryOpen] = useState(false)
+  const [memoryDraft, setMemoryDraft] = useState<SceneMemory>(continuity.memory)
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '1:1' | '16:9'>(() => {
     if (typeof window === 'undefined') return '16:9'
     try {
