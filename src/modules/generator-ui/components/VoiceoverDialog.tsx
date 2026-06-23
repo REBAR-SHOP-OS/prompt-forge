@@ -498,6 +498,22 @@ export function VoiceoverDialog({
                   </div>
                 </PopoverContent>
               </Popover>
+              {lastNarration ? (
+                <button
+                  type="button"
+                  onClick={handleRegenerateNarration}
+                  disabled={isWritingNarration}
+                  title="Regenerate narration"
+                  aria-label="Regenerate narration"
+                  className="grid h-7 w-7 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-zinc-300 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-50"
+                >
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${isWritingNarration ? 'animate-spin' : ''}`}
+                    aria-hidden="true"
+                  />
+                </button>
+              ) : null}
+              </div>
               <div className="text-right text-[10px] uppercase tracking-wider text-zinc-500">
                 {text.length}/5000
               </div>
