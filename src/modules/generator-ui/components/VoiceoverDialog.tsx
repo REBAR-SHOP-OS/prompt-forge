@@ -141,14 +141,15 @@ export function VoiceoverDialog({
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
   const [narrationSeconds, setNarrationSeconds] = useState<string>('15')
   const [isWritingNarration, setIsWritingNarration] = useState(false)
+  // Remember the last successful narration request so it can be regenerated.
+  const [lastNarration, setLastNarration] = useState<{ productId: string; seconds: number } | null>(null)
 
-  async function handleGenerateNarration() {
-    const product = products.find((p) => p.id === selectedProductId)
+  async function runNarration(productId: string | null, secs: number) {
+    const product = products.find((p) => p.id === productId)
     if (!product) {
       toast.error('Please choose a product first.')
       return
     }
-    const secs = Math.round(Number(narrationSeconds))
     if (!Number.isFinite(secs) || secs < 1 || secs > 600) {
       toast.error('Enter a duration between 1 and 600 seconds.')
       return
@@ -162,6 +163,9 @@ export function VoiceoverDialog({
       const narration: string | undefined = data?.narration
       if (!narration) throw new Error(data?.error || 'No narration returned')
       setText(narration)
+      // Narration is always advertising copy — keep the TTS tone aligned.
+      setTone('advertising')
+      setLastNarration({ productId: product.id, seconds: secs })
       setIsProductPopoverOpen(false)
       toast.success('Advertising narration generated.')
     } catch (e) {
@@ -170,6 +174,15 @@ export function VoiceoverDialog({
     } finally {
       setIsWritingNarration(false)
     }
+  }
+
+  function handleGenerateNarration() {
+    void runNarration(selectedProductId, Math.round(Number(narrationSeconds)))
+  }
+
+  function handleRegenerateNarration() {
+    if (!lastNarration) return
+    void runNarration(lastNarration.productId, lastNarration.seconds)
   }
 
 
