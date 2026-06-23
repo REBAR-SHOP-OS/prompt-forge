@@ -8966,20 +8966,37 @@ export default function DashboardPage() {
                     />
                     {contactActive ? (
                       <div
-                        className={`pointer-events-none absolute inset-x-0 z-20 flex flex-col gap-0.5 bg-gradient-to-b px-4 py-3 ${
+                        className={`pointer-events-none absolute z-20 flex flex-col gap-1 px-4 py-3 ${
                           contactOverlay.position === 'top'
-                            ? 'top-0 from-black/65 to-transparent'
-                            : 'bottom-0 from-transparent to-black/65 justify-end'
+                            ? 'inset-x-0 top-0 items-start bg-gradient-to-b from-black/65 to-transparent'
+                            : contactOverlay.position === 'center'
+                              ? 'inset-0 items-center justify-center text-center'
+                              : 'inset-x-0 bottom-0 items-start justify-end bg-gradient-to-b from-transparent to-black/65'
                         }`}
                       >
-                        {contactLines.map((line, i) => (
-                          <span
-                            key={i}
-                            className="truncate text-sm font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
-                          >
-                            {line}
-                          </span>
-                        ))}
+                        {contactOverlay.position === 'center' ? (
+                          <div className="flex flex-col items-center gap-1 rounded-xl bg-black/45 px-5 py-4">
+                            {contactLogoActive ? (
+                              <img src={contactOverlay.logoUrl} alt="Company logo" className="mb-1 max-h-16 w-auto object-contain" />
+                            ) : null}
+                            {contactLines.map((line, i) => (
+                              <span key={i} className="truncate text-sm font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                                {line}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <>
+                            {contactLogoActive ? (
+                              <img src={contactOverlay.logoUrl} alt="Company logo" className="mb-1 max-h-14 w-auto object-contain" />
+                            ) : null}
+                            {contactLines.map((line, i) => (
+                              <span key={i} className="truncate text-sm font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                                {line}
+                              </span>
+                            ))}
+                          </>
+                        )}
                       </div>
                     ) : null}
                     {transcriptOpen && !transcriptResolving && transcriptVideoUrl ? (
