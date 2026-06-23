@@ -1862,11 +1862,12 @@ export default function DashboardPage() {
     })
   }, [contactKey])
   const [contactDragging, setContactDragging] = useState(false)
+  const contactBoxRef = useRef<HTMLDivElement | null>(null)
   // Drag the contact overlay anywhere on the preview video. Stores a normalized
   // 0–1 center position so it maps identically to the higher-res merge canvas.
   const handleContactPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    // The overlay's positioning context is its parent (the `relative` video box).
-    const bounds = e.currentTarget.parentElement?.getBoundingClientRect()
+    // Positioning context is the video box (contactBoxRef).
+    const bounds = contactBoxRef.current?.getBoundingClientRect()
     if (!bounds || bounds.width === 0 || bounds.height === 0) return
     e.preventDefault()
     e.stopPropagation()
