@@ -1635,4 +1635,5 @@ export const aiGateway: AiGateway = {
   getProviderApiKey,
   startGeneration,
   pollGeneration,
+  localVideoStatus,
 };
