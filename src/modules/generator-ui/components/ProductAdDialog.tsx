@@ -1693,7 +1693,7 @@ export default function ProductAdDialog({
                         </div>
                       )}
                       <label className="cursor-pointer rounded-md border border-white/15 bg-black/30 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/30">
-                        {contactLogo ? t.contactWebsite && 'Replace' : t.contactLogo}
+                        {contactLogo ? 'Replace' : t.contactLogo}
                         <input
                           type="file"
                           accept="image/*"
