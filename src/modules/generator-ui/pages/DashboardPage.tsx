@@ -1787,7 +1787,57 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
-  // Per-project snapshot of the music / voiceover used in each Final Film.
+  // Contact / branding info burned as a text overlay onto the Final Film.
+  // Persisted per user so it survives refresh and project switches.
+  type ContactOverlay = {
+    website: string
+    phone: string
+    address: string
+    enabled: boolean
+    position: 'top' | 'bottom'
+  }
+  const emptyContact = (): ContactOverlay => ({
+    website: '',
+    phone: '',
+    address: '',
+    enabled: true,
+    position: 'bottom',
+  })
+  const [contactOverlay, setContactOverlay] = useState<ContactOverlay>(emptyContact)
+  const [contactMenuOpen, setContactMenuOpen] = useState(false)
+  const contactKey = userId ? `project-contact:${userId}` : null
+  useEffect(() => {
+    if (!contactKey) { setContactOverlay(emptyContact()); return }
+    try {
+      const raw = window.localStorage.getItem(contactKey)
+      if (raw) {
+        const obj = JSON.parse(raw) as Partial<ContactOverlay>
+        setContactOverlay({ ...emptyContact(), ...obj })
+      } else {
+        setContactOverlay(emptyContact())
+      }
+    } catch { setContactOverlay(emptyContact()) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contactKey])
+  const updateContact = useCallback((patch: Partial<ContactOverlay>) => {
+    setContactOverlay((prev) => {
+      const next = { ...prev, ...patch }
+      if (contactKey) {
+        try { window.localStorage.setItem(contactKey, JSON.stringify(next)) } catch { /* ignore */ }
+      }
+      return next
+    })
+  }, [contactKey])
+  // Lines shown in the overlay (only non-empty fields), in display order.
+  const contactLines = useMemo(
+    () => [contactOverlay.website, contactOverlay.phone, contactOverlay.address]
+      .map((l) => l.trim())
+      .filter(Boolean),
+    [contactOverlay.website, contactOverlay.phone, contactOverlay.address],
+  )
+  const contactActive = contactOverlay.enabled && contactLines.length > 0
+
+
   // Stores durable public URLs (copied into MERGED_BUCKET at finalize time) so
   // the finalized card can play + download the exact audio that project used.
   type ProjectAudioTrack = { url: string; name: string }
