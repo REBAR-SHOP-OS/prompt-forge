@@ -372,7 +372,7 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
     ctx.shadowColor = 'rgba(0,0,0,0.85)'
     ctx.shadowBlur = Math.round(fontSize * 0.25)
     ctx.shadowOffsetY = 1
-    ctx.fillStyle = '#ffffff'
+    ctx.fillStyle = textColor
     ctx.textAlign = 'center'
     for (const line of lines) {
       ctx.fillText(line, Math.round(cx), y, panelW - padX)
@@ -403,7 +403,7 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
     ctx.shadowColor = 'rgba(0,0,0,0.85)'
     ctx.shadowBlur = Math.round(fontSize * 0.25)
     ctx.shadowOffsetY = 1
-    ctx.fillStyle = '#ffffff'
+    ctx.fillStyle = textColor
     ctx.textAlign = 'center'
     for (const line of lines) {
       ctx.fillText(line, Math.round(cw / 2), y, panelW - padX)
@@ -439,7 +439,7 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
   ctx.shadowBlur = Math.round(fontSize * 0.25)
   ctx.shadowOffsetX = 0
   ctx.shadowOffsetY = 1
-  ctx.fillStyle = '#ffffff'
+  ctx.fillStyle = textColor
   for (const line of lines) {
     ctx.fillText(line, padX, y, cw - padX * 2)
     y += lineHeight
