@@ -9029,41 +9029,54 @@ export default function DashboardPage() {
                       preload="metadata"
                       clipVolume={1}
                     />
-                    {contactActive ? (
-                      <div
-                        className={`pointer-events-none absolute z-20 flex flex-col gap-1 px-4 py-3 ${
-                          contactOverlay.position === 'top'
-                            ? 'inset-x-0 top-0 items-start bg-gradient-to-b from-black/65 to-transparent'
-                            : contactOverlay.position === 'center'
-                              ? 'inset-0 items-center justify-center text-center'
-                              : 'inset-x-0 bottom-0 items-start justify-end bg-gradient-to-b from-transparent to-black/65'
-                        }`}
-                      >
-                        {contactOverlay.position === 'center' ? (
-                          <div className="flex flex-col items-center gap-1 rounded-xl bg-black/45 px-5 py-4">
-                            {contactLogoActive ? (
-                              <img src={contactOverlay.logoUrl} alt="Company logo" className="mb-1 max-h-16 w-auto object-contain" />
-                            ) : null}
-                            {contactLines.map((line, i) => (
-                              <span key={i} className="truncate text-sm font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
-                                {line}
-                              </span>
-                            ))}
+                    {contactActive ? (() => {
+                      const content = (
+                        <>
+                          {contactLogoActive ? (
+                            <img src={contactOverlay.logoUrl} alt="Company logo" className="mb-1 max-h-16 w-auto object-contain" />
+                          ) : null}
+                          {contactLines.map((line, i) => (
+                            <span key={i} className="truncate text-sm font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                              {line}
+                            </span>
+                          ))}
+                        </>
+                      )
+                      const panelClass = `flex flex-col items-center gap-1 rounded-xl bg-black/45 px-5 py-4 cursor-move touch-none select-none ring-1 transition ${contactDragging ? 'ring-emerald-400/70' : 'ring-white/0 hover:ring-white/40'}`
+                      // Custom dragged position: absolutely centered at the stored point.
+                      if (contactOverlay.offset) {
+                        return (
+                          <div
+                            onPointerDown={handleContactPointerDown}
+                            className={`pointer-events-auto absolute z-20 ${panelClass}`}
+                            style={{
+                              left: `${contactOverlay.offset.x * 100}%`,
+                              top: `${contactOverlay.offset.y * 100}%`,
+                              transform: 'translate(-50%, -50%)',
+                            }}
+                          >
+                            {content}
                           </div>
-                        ) : (
-                          <>
-                            {contactLogoActive ? (
-                              <img src={contactOverlay.logoUrl} alt="Company logo" className="mb-1 max-h-14 w-auto object-contain" />
-                            ) : null}
-                            {contactLines.map((line, i) => (
-                              <span key={i} className="truncate text-sm font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
-                                {line}
-                              </span>
-                            ))}
-                          </>
-                        )}
-                      </div>
-                    ) : null}
+                        )
+                      }
+                      // Preset position: wrapper handles layout, inner panel is draggable.
+                      return (
+                        <div
+                          className={`pointer-events-none absolute z-20 flex px-4 py-3 ${
+                            contactOverlay.position === 'top'
+                              ? 'inset-x-0 top-0 items-start justify-center bg-gradient-to-b from-black/65 to-transparent'
+                              : contactOverlay.position === 'center'
+                                ? 'inset-0 items-center justify-center'
+                                : 'inset-x-0 bottom-0 items-end justify-center bg-gradient-to-b from-transparent to-black/65'
+                          }`}
+                        >
+                          <div onPointerDown={handleContactPointerDown} className={`pointer-events-auto ${panelClass}`}>
+                            {content}
+                          </div>
+                        </div>
+                      )
+                    })() : null}
+
                     {transcriptOpen && !transcriptResolving && transcriptVideoUrl ? (
                       <TranscriptPanel
                         videoUrl={transcriptVideoUrl}
