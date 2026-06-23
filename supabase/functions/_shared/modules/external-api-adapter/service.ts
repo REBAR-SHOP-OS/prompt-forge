@@ -181,11 +181,12 @@ function isLoopbackHost(hostname: string): boolean {
 }
 
 function readLocalVideoConfig(): LocalVideoConfig {
+  // Only use a dedicated video router URL. Do NOT fall back to the LLM or
+  // image router URLs — those have no /videos/generations endpoint and would
+  // produce a misleading 404 instead of a clear "not configured" error.
   const rawBaseUrl = (
     Deno.env.get("LOCAL_VIDEO_BASE_URL") ??
     Deno.env.get("LOCAL_AI_ROUTER_BASE_URL") ??
-    Deno.env.get("LOCAL_IMAGE_BASE_URL") ??
-    Deno.env.get("LOCAL_LLM_BASE_URL") ??
     ""
   ).trim();
 
