@@ -9499,6 +9499,13 @@ export default function DashboardPage() {
                         )
                       })()
                     ) : null}
+                    <NarrationDialog
+                      open={narrationViewer?.cardId === video.id}
+                      onClose={() => setNarrationViewer(null)}
+                      prompt={narrationViewer?.prompt ?? null}
+                      narrationText={narrationViewer?.narrationText ?? null}
+                      videoStoragePath={narrationViewer?.videoStoragePath ?? null}
+                    />
                   </article>
                   {!isLast ? (
                     <div
