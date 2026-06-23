@@ -1123,6 +1123,59 @@ export default function ProductAdDialog({
     }
   }
 
+  async function openReframeHistory() {
+    if (!userId) {
+      setError('Please sign in to view your images.')
+      return
+    }
+    setError(null)
+    setReframeHistoryOpen(true)
+    setLoadingReframes(true)
+    try {
+      const { data, error: qErr } = await supabase
+        .from('generator_user_images')
+        .select('id, storage_path, title, category, width, height')
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+      if (qErr) throw new Error(qErr.message)
+      const rows = (data ?? []).filter((r) => (r.category ?? 'general') === 'reframe')
+      const items: ReframeItem[] = await Promise.all(
+        rows.map(async (r) => ({
+          id: r.id,
+          title: r.title ?? null,
+          aspect: aspectLabelFromDims(r.width, r.height),
+          url: await signFramesUrl(r.storage_path).catch(() => signProductPhotoUrl(r.storage_path)),
+        })),
+      )
+      setReframeItems(items)
+    } catch (e) {
+      setError((e as Error).message ?? 'Failed to load history')
+    } finally {
+      setLoadingReframes(false)
+    }
+  }
+
+  async function reuseReframe(item: ReframeItem) {
+    setError(null)
+    setPreviewError(null)
+    setPreviewLoading(true)
+    try {
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
+      setImagePreviewUrl(item.url)
+      setUploadedImageUrl(item.url)
+      const cleaned = cleanProductName(item.title)
+      if (!productName.trim() && item.title) setProductName(cleaned)
+      setNameNeedsReview(looksLikeCode(cleaned))
+      setReframeHistoryOpen(false)
+      setProductPickerOpen(false)
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+
+
 
 
   useEffect(() => {
