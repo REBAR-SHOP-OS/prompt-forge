@@ -589,12 +589,14 @@ export const jobOrchestratorGateway = {
             // isn't set up or is unreachable — instead of a generic provider
             // error. Credits are already refunded above. No secrets/URLs leak.
             if (route.providerKey === "local") {
-              const endpointNotFound = /endpoint not found|router 404|\b404\b/i.test(genErr);
+              const endpointNotFound = /no video create endpoint|endpoint not found|router 404|\b404\b/i.test(genErr);
               if (endpointNotFound) {
                 await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 502, latencyMs: Date.now() - ctx.startedAt, errorCode: "LOCAL_ENDPOINT_NOT_FOUND" });
                 return errorResponse(
                   "LOCAL_ENDPOINT_NOT_FOUND",
-                  "Local video router is reachable, but its video generation endpoint was not found. Set LOCAL_VIDEO_ROUTER_URL to the correct base URL or configure LOCAL_VIDEO_ROUTER_CREATE_PATH.",
+                  // genErr contains the exact attempted paths (host omitted) and the
+                  // LOCAL_VIDEO_ROUTER_CREATE_PATH hint — surface it directly.
+                  genErr || "Local video router is reachable, but its video generation endpoint was not found. Set LOCAL_VIDEO_ROUTER_CREATE_PATH to your router's create endpoint, for example /prompt for ComfyUI.",
                   502,
                   ctx.requestId,
                 );
