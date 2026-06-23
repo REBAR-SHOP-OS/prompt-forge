@@ -346,7 +346,7 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
 
   ctx.save()
   ctx.textBaseline = 'top'
-  ctx.font = `600 ${fontSize}px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif`
+  ctx.font = `600 ${fontSize}px ${fontFamily}`
 
   // Custom dragged position: a centered translucent panel anchored at the
   // stored normalized point, clamped so it stays fully on-screen.
