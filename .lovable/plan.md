@@ -1,29 +1,28 @@
-# Theme/Style as Inspiration, Not Replication
+# Contact-Info Overlay on Generated Films
 
 ## Goal
-When a user picks a theme/style (e.g. Epic Fantasy, Sci‑Fi Minimalist, Cyberpunk Alleyway), the AI should treat it as **creative inspiration** and adapt it to the specific product/content — not literally recreate that world. Today the prompts instruct the model to apply the style "consistently across every shot," which pushes near‑exact copies of the reference style.
+Add a toolbar icon in the composer that opens a small editor where the user types their company **address, phone, and website**. That text is then burned onto the Final Film as a clean lower overlay layer, and previewed live over the working video so the user sees placement before rendering.
 
-## Where the behavior is defined
-The style wording is built into the AI system prompts in two edge functions:
-- `supabase/functions/scenario-write/index.ts` → `cameraGuidance()` (genre + scene lines), used by Product Ad / Character Sheet scenario generation.
-- `supabase/functions/enhance-prompt/index.ts` → `styleSuffix` block, used by the composer's Styles picker.
+## UX
+- New round icon button in the composer toolbar (next to Product Ad / Character Sheet / Add character / Prompt), labeled **Contact**, using a `Contact`/`Phone` lucide icon. It highlights (filled style) when contact info is set.
+- Clicking opens a popover/dialog with three fields: **Website**, **Phone**, **Address** (all optional), plus an "Show on video" toggle and a **Position** choice (bottom / top). A Clear button empties it.
+- Values persist per user in `localStorage` (mirroring the existing `project-audio:${userId}` pattern) under `project-contact:${userId}`, so they survive refresh and project switches.
 
-No UI changes and no changes to `promptStyles.ts` labels/previews are needed — only the instruction wording sent to the model.
+## Live preview
+- Render the contact lines as a CSS overlay (semi-transparent dark bar, small clean text) positioned over the preview video stage when "Show on video" is on, so the user sees exactly where it lands.
 
-## Changes
+## Burned into Final Film
+- Extend `src/modules/generator-ui/lib/mergeVideos.ts`:
+  - Add an optional `overlay` param to `mergeVideoUrls` (e.g. `MergeOverlayOptions { lines: string[]; position: 'top' | 'bottom' }`).
+  - In the per-frame canvas paint loop, after drawing each clip/transition frame, draw a translucent rounded bar plus the contact lines with `ctx.fillText`, scaled to the canvas size, with a subtle shadow for legibility. This makes the text part of the recorded stream (works for every clip and transition automatically).
+- In `DashboardPage.tsx`, build the overlay lines from the saved contact info (only non-empty fields) and pass them into the existing `mergeVideoUrls(...)` call at the Final Film site (line ~6494), right alongside `audioOpt` and `transitionsForMerge`.
 
-### 1. `scenario-write/index.ts` — `cameraGuidance()`
-- **Genre line:** Rewrite so the style is a *mood/aesthetic inspiration* tuned to the product, not a literal world to reproduce. New wording (concept):
-  > "Use this genre/atmosphere only as creative INSPIRATION: borrow its mood, energy, lighting feel, and color sensibility, then adapt and reinterpret it tastefully to fit THIS specific product/content and a believable advertising context. Do not literally recreate that genre's world or clichés — the {hero} and its real selling points stay the focus."
-- **Scene line:** Similarly soften to "draw inspiration from this environment and adapt it to suit the product, rather than copying the location exactly," while keeping the {hero} the focus.
-
-### 2. `enhance-prompt/index.ts` — `styleSuffix`
-- Change "The rewritten prompt MUST incorporate and optimize for these style directions" to instruct the model to **take inspiration** from the chosen styles and adapt them to the user's subject/content, keeping the user's core idea, subject identity, and language intact — without forcing a literal style copy.
-
-## Out of scope
-- No changes to camera-style handling (camera moves should stay literal — a "tracking shot" must remain a tracking shot). Only genre/scene/visual-theme wording becomes inspiration-based.
-- No DB, schema, UI, or preview-asset changes.
+## Scope / notes
+- Frontend only: new dialog/state + localStorage persistence + canvas draw. No DB, edge-function, or schema changes.
+- Overlay is only applied when "Show on video" is enabled and at least one field is filled.
+- Text is rendered as plain canvas text (no logo/image upload in this pass).
 
 ## Validation
-- Deploy both edge functions.
-- Generate a Product Ad scenario with a theme selected (e.g. Epic Fantasy on a cosmetic serum) and confirm the output adapts the mood to the product instead of producing a literal fantasy castle film. Repeat with a composer Styles selection.
+- Set contact fields, confirm the live preview shows the bar in the chosen position.
+- Generate a Final Film and confirm the address/phone/website is visibly burned into the exported video across all clips and transitions.
+- Empty/disabled contact info produces a film with no overlay (unchanged behavior).
