@@ -354,26 +354,85 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
       <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4">
         {/* 1) Narration from the prompt */}
         <section className="space-y-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-            From prompt
-          </h3>
-          {promptLines.length > 0 ? (
-            <ul dir="auto" className="space-y-2">
-              {promptLines.map((line, i) => (
-                <li
-                  key={i}
-                  className="rounded-lg border border-violet-400/20 bg-violet-500/[0.06] px-3 py-2 text-sm leading-6 text-zinc-100"
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+              From prompt
+            </h3>
+            {promptLines.length > 0 ? (
+              <div className="flex items-center gap-2">
+                {/* Translate language selector */}
+                <div className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/[0.04] pl-2 pr-1 py-0.5">
+                  <Languages className="h-3.5 w-3.5 text-violet-300" aria-hidden="true" />
+                  <select
+                    value={targetLang}
+                    onChange={(e) => void translateNarration(e.target.value)}
+                    disabled={translating}
+                    aria-label="Translate narration"
+                    className="cursor-pointer rounded-full bg-transparent py-0.5 text-xs font-medium text-zinc-200 outline-none [&>option]:bg-[#0b0c10] [&>option]:text-zinc-200"
+                  >
+                    <option value="">Original</option>
+                    {TRANSLATE_LANGS.map((l) => (
+                      <option key={l.code} value={l.code}>{l.label}</option>
+                    ))}
+                  </select>
+                  {translating ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-300" aria-hidden="true" />
+                  ) : null}
+                </div>
+                {/* Read aloud */}
+                <button
+                  type="button"
+                  onClick={() => void speakNarration()}
+                  disabled={narrLoading}
+                  aria-label={narrPlaying ? 'Pause narration' : 'Read narration aloud'}
+                  title={narrPlaying ? 'Pause narration' : 'Read narration aloud'}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-violet-400/40 bg-violet-500/10 px-3 py-1 text-xs font-semibold text-violet-100 transition hover:bg-violet-500/20 disabled:cursor-wait"
                 >
-                  {line}
-                </li>
-              ))}
-            </ul>
+                  {narrLoading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  ) : narrPlaying ? (
+                    <Pause className="h-3.5 w-3.5" aria-hidden="true" />
+                  ) : (
+                    <Volume2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                  Read aloud
+                </button>
+              </div>
+            ) : null}
+          </div>
+          {promptLines.length > 0 ? (
+            <>
+              <ul dir="auto" className="space-y-2">
+                {promptLines.map((line, i) => (
+                  <li
+                    key={i}
+                    className="rounded-lg border border-violet-400/20 bg-violet-500/[0.06] px-3 py-2 text-sm leading-6 text-zinc-100"
+                  >
+                    {line}
+                  </li>
+                ))}
+              </ul>
+              {translation ? (
+                <div
+                  dir="auto"
+                  className="rounded-lg border border-sky-400/20 bg-sky-500/[0.06] px-3 py-2 text-sm leading-6 text-zinc-100"
+                >
+                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-sky-300/80">
+                    {TRANSLATE_LANGS.find((l) => l.code === targetLang)?.label ?? 'Translation'}
+                  </p>
+                  {translation}
+                </div>
+              ) : null}
+              {/* Hidden audio element for narration read-aloud */}
+              <audio ref={narrAudioRef} className="hidden" />
+            </>
           ) : (
             <p className="text-sm leading-6 text-zinc-400">
               No narration detected in this card's prompt. The narration / spoken lines appear here when the scene includes a narration line or quoted dialogue.
             </p>
           )}
         </section>
+
 
         {/* 2) Narration on the film */}
         <section className="space-y-2 border-t border-white/10 pt-4">
