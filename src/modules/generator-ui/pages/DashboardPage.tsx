@@ -1796,6 +1796,9 @@ export default function DashboardPage() {
     phone: string
     address: string
     enabled: boolean
+    websiteEnabled: boolean
+    phoneEnabled: boolean
+    addressEnabled: boolean
     position: 'top' | 'center' | 'bottom'
     /** Normalized 0–1 center position when the user has dragged the overlay.
      *  null = use the `position` preset instead. */
