@@ -94,12 +94,18 @@ const LOCAL_VIDEO_MODELS = new Set([
   "local/ltx-video-t2v",
 ]);
 
+type LocalRouterType = "openai_compatible" | "comfyui";
+
 type LocalVideoConfig =
   | {
       ok: true;
+      routerType: LocalRouterType;
       baseUrl: string;
-      createUrl: string;
-      createRoute: "videos_generations" | "videos" | "custom";
+      /** Ordered list of full create URLs to attempt (first that isn't 404 wins). */
+      createAttempts: string[];
+      statusPath: string | null;
+      outputPath: string | null;
+      comfyWorkflowJson: string | null;
       apiKey: string | null;
       timeoutMs: number;
     }
@@ -119,17 +125,25 @@ function readLocalVideoTimeoutMs(): number {
   return Number.isFinite(raw) && raw > 0 ? Math.round(raw) : DEFAULT_LOCAL_VIDEO_TIMEOUT_MS;
 }
 
-function normalizeLocalPath(path: string): string {
-  const trimmed = path.trim();
-  if (!trimmed) return "/videos/generations";
-  return trimmed.startsWith("/") ? trimmed.replace(/\/+$/, "") : `/${trimmed.replace(/\/+$/, "")}`;
+/** Join a base URL and a path safely, collapsing duplicate slashes. */
+function joinUrl(base: string, path: string): string {
+  const b = base.replace(/\/+$/, "");
+  const p = (path.startsWith("/") ? path : `/${path}`).replace(/\/{2,}/g, "/");
+  return `${b}${p}`;
 }
 
-function classifyLocalCreateRoute(path: string): "videos_generations" | "videos" | "custom" {
-  const normalized = normalizeLocalPath(path);
-  if (normalized === "/videos/generations") return "videos_generations";
-  if (normalized === "/videos") return "videos";
-  return "custom";
+/** Path portion of a full URL (host omitted so we never leak the router host). */
+function urlPath(fullUrl: string): string {
+  try {
+    return new URL(fullUrl).pathname || "/";
+  } catch {
+    return fullUrl;
+  }
+}
+
+function readLocalRouterType(): LocalRouterType {
+  const raw = (Deno.env.get("LOCAL_VIDEO_ROUTER_TYPE") ?? "openai_compatible").trim().toLowerCase();
+  return raw === "comfyui" ? "comfyui" : "openai_compatible";
 }
 
 /** True when the error is a network/abort failure (router down/unreachable),
