@@ -10310,18 +10310,23 @@ export default function DashboardPage() {
               {/* Character / reference source */}
               <div className="flex items-center justify-between gap-2">
                 <span className="text-zinc-500">Character / reference</span>
-                {selectedCharacter ? (
-                  <span className="inline-flex items-center gap-2 text-zinc-200">
-                    {selectedCharacter.url ? (
-                      <img src={selectedCharacter.url} alt="" className="h-6 w-6 rounded object-cover" />
+                {continuityCharacter ? (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCharacter(continuityCharacter)}
+                    className="inline-flex items-center gap-2 text-zinc-200 transition hover:text-white"
+                    title="Use this character for the next clip"
+                  >
+                    {continuityCharacter.url ? (
+                      <img src={continuityCharacter.url} alt="" className="h-6 w-6 rounded object-cover" />
                     ) : null}
-                    {selectedCharacter.title || 'Selected reference'}
-                  </span>
+                    {continuityCharacter.title || 'Selected reference'}
+                  </button>
                 ) : (
                   <span className="text-zinc-400">No reference selected</span>
                 )}
               </div>
-              {!selectedCharacter ? (
+              {!continuityCharacter ? (
                 <p className="text-[10px] text-amber-300/80">Add a character reference for stronger continuity.</p>
               ) : null}
 
