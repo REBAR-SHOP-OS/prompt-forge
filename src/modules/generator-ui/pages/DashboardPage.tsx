@@ -5418,6 +5418,33 @@ export default function DashboardPage() {
     return `Main character reference (keep this character consistent): ${description}\n\n${prompt}`
   }
 
+  // Toggle Continuity Mode. When turning on with an empty scene memory, seed a
+  // starter memory from the current prompt + character so the user has
+  // something to edit.
+  function handleToggleContinuity(enabled: boolean) {
+    if (enabled && !hasPreviousClip) return
+    let memory = continuity.memory
+    if (enabled && isMemoryEmpty(memory)) {
+      memory = generateStarterMemory(promptText.trim(), undefined)
+    }
+    updateContinuity({ enabled, memory })
+  }
+
+  // Open the scene-memory editor, seeding from a starter when empty.
+  function openMemoryEditor() {
+    const base = isMemoryEmpty(continuity.memory)
+      ? generateStarterMemory(promptText.trim(), undefined)
+      : continuity.memory
+    setMemoryDraft(base)
+    setContinuityMemoryOpen(true)
+  }
+
+  function saveMemoryEditor() {
+    updateContinuity({ memory: memoryDraft })
+    setContinuityMemoryOpen(false)
+  }
+
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
