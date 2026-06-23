@@ -155,6 +155,7 @@ function getProviderApiKey(providerKey: ProviderKey): string | null {
   if (providerKey === "wan") return Deno.env.get("WAN_API_KEY") ?? null;
   if (providerKey === "local") {
     return (
+      Deno.env.get("LOCAL_VIDEO_ROUTER_TOKEN") ??
       Deno.env.get("LOCAL_VIDEO_API_KEY") ??
       Deno.env.get("LOCAL_AI_ROUTER_TOKEN") ??
       Deno.env.get("LOCAL_IMAGE_API_KEY") ??
