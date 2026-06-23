@@ -136,6 +136,43 @@ export function VoiceoverDialog({
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [playingSampleId, setPlayingSampleId] = useState<string | null>(null)
 
+  // --- Product advertising-narration generator ---
+  const [isProductPopoverOpen, setIsProductPopoverOpen] = useState(false)
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
+  const [narrationSeconds, setNarrationSeconds] = useState<string>('15')
+  const [isWritingNarration, setIsWritingNarration] = useState(false)
+
+  async function handleGenerateNarration() {
+    const product = products.find((p) => p.id === selectedProductId)
+    if (!product) {
+      toast.error('Please choose a product first.')
+      return
+    }
+    const secs = Math.round(Number(narrationSeconds))
+    if (!Number.isFinite(secs) || secs < 1 || secs > 600) {
+      toast.error('Enter a duration between 1 and 600 seconds.')
+      return
+    }
+    setIsWritingNarration(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('ad-narration', {
+        body: { productName: product.name, durationSec: secs },
+      })
+      if (error) throw error
+      const narration: string | undefined = data?.narration
+      if (!narration) throw new Error(data?.error || 'No narration returned')
+      setText(narration)
+      setIsProductPopoverOpen(false)
+      toast.success('Advertising narration generated.')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to generate narration.'
+      toast.error(msg)
+    } finally {
+      setIsWritingNarration(false)
+    }
+  }
+
+
   const lastUrlRef = useRef<string | null>(null)
   const sampleAudioRef = useRef<HTMLAudioElement | null>(null)
 
