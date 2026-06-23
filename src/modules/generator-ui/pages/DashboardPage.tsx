@@ -10666,7 +10666,7 @@ export default function DashboardPage() {
                       <button
                         key={c.id}
                         type="button"
-                        onClick={() => { setSelectedCharacter(c); setCharacterMenuOpen(false) }}
+                        onClick={() => { setSelectedCharacter(c); updateContinuity({ characterRef: c }); setCharacterMenuOpen(false) }}
                         className={`group relative aspect-square overflow-hidden rounded-lg border transition ${
                           selectedCharacter?.id === c.id
                             ? 'border-fuchsia-400'
