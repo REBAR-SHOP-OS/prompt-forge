@@ -322,6 +322,8 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
   const panelColor = overlay.panelColor ?? '#000000'
   const panelOpacity = typeof overlay.panelOpacity === 'number' ? overlay.panelOpacity : 0.45
   const panelFill = overlayHexToRgba(panelColor, panelOpacity)
+  const textColor = overlay.textColor ?? '#ffffff'
+  const fontFamily = overlay.fontFamily || "system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif"
   const scale = Math.min(2, Math.max(0.5, overlay.scale ?? 1))
   const fontSize = Math.max(14, Math.round(ch * 0.032 * scale))
   const lineGap = Math.round(fontSize * 0.45)
