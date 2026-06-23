@@ -1426,13 +1426,29 @@ async function startLocalVideo(
   };
 
 
-  let res: Response;
-  try {
-    res = await localVideoFetch(`${config.baseUrl}/videos/generations`, {
+  async function postCreate(url: string): Promise<Response> {
+    return await localVideoFetch(url, {
       method: "POST",
       headers: localVideoHeaders(config),
       body: JSON.stringify(body),
     }, config.timeoutMs);
+  }
+
+  let res: Response;
+  try {
+    res = await postCreate(config.createUrl);
+
+    // Compatibility fallback: OpenRouter-style video routers expose POST
+    // /v1/videos, while the original RTX router contract used
+    // POST /v1/videos/generations. A 404 on the default path usually means the
+    // router is reachable but uses the alternate route, not that secrets are
+    // missing. Retry once before surfacing an endpoint-path error.
+    if (res.status === 404 && config.createRoute === "videos_generations") {
+      const fallbackUrl = `${config.baseUrl}/videos`;
+      logInfo("local video create fallback", { from: "/videos/generations", to: "/videos", model: resolvedModel });
+      await res.body?.cancel().catch(() => {});
+      res = await postCreate(fallbackUrl);
+    }
   } catch (err) {
     logError("local video create unreachable", { error: (err as Error).message, model: resolvedModel });
     if (isUnreachableError(err)) throw new Error(LOCAL_UNREACHABLE_MESSAGE);
@@ -1448,6 +1464,11 @@ async function startLocalVideo(
 
   if (!res.ok) {
     logError("local video create failed", { status: res.status, body: text.slice(0, 500), model: resolvedModel });
+    if (res.status === 404) {
+      throw new Error(
+        `Local video router endpoint not found. Configure LOCAL_VIDEO_ROUTER_URL to the correct base URL or set LOCAL_VIDEO_ROUTER_CREATE_PATH (for example /videos or /videos/generations). Router replied 404: ${text.slice(0, 200) || "Not Found"}`,
+      );
+    }
     throw new Error(`Local video router ${res.status}: ${text.slice(0, 300) || "unknown error"}`);
   }
 
