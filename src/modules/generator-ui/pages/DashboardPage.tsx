@@ -8558,6 +8558,7 @@ export default function DashboardPage() {
         onUseCharacter={(c) => {
           const character: ProjectCharacter = { id: c.id, url: c.url, title: c.title }
           setSelectedCharacter(character)
+          updateContinuity({ characterRef: character })
           setCharacterList((prev) =>
             prev.some((p) => p.id === character.id) ? prev : [character, ...prev],
           )
