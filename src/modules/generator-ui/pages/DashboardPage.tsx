@@ -6767,7 +6767,7 @@ export default function DashboardPage() {
           transitionsForMerge,
           abortController.signal,
           contactActive
-            ? { lines: contactLines, position: contactOverlay.position, offset: contactOverlay.offset ?? undefined, logoUrl: contactLogoActive ? contactOverlay.logoUrl : undefined, scale: contactOverlay.scale ?? 1, panelEnabled: contactOverlay.panelEnabled, panelColor: contactOverlay.panelColor, panelOpacity: contactOverlay.panelOpacity }
+            ? { lines: contactLines, position: contactOverlay.position, offset: contactOverlay.offset ?? undefined, logoUrl: contactLogoActive ? contactOverlay.logoUrl : undefined, scale: contactOverlay.scale ?? 1, panelEnabled: contactOverlay.panelEnabled, panelColor: contactOverlay.panelColor, panelOpacity: contactOverlay.panelOpacity, textColor: contactOverlay.textColor, fontFamily: contactOverlay.fontFamily }
             : undefined,
         ),
 
