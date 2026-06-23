@@ -1329,6 +1329,32 @@ export default function ProductAdDialog({
     }
   }
 
+  // Read an uploaded logo, downscale it to <=256px (PNG data URL), and store it.
+  function onContactLogoFile(file: File | null | undefined) {
+    if (!file || !file.type.startsWith('image/')) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new window.Image()
+      img.onload = () => {
+        const max = 256
+        const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight))
+        const w = Math.max(1, Math.round(img.naturalWidth * scale))
+        const h = Math.max(1, Math.round(img.naturalHeight * scale))
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+        ctx.drawImage(img, 0, 0, w, h)
+        setContactLogo(canvas.toDataURL('image/png'))
+        setBusinessSaved(false)
+      }
+      img.src = String(reader.result)
+    }
+    reader.readAsDataURL(file)
+  }
+
+
   function handleAiImageSaved(row: AiImageSavedRow) {
     if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
     setError(null)
