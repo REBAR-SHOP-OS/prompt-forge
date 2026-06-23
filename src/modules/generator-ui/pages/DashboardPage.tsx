@@ -10341,6 +10341,65 @@ export default function DashboardPage() {
           ) : null}
         </div>
 
+        {/* Scene memory editor */}
+        <Dialog open={continuityMemoryOpen} onOpenChange={setContinuityMemoryOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit scene memory</DialogTitle>
+              <DialogDescription>
+                Adjust the continuity description used for the next card. This is added to the generation prompt.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-zinc-300">Main character</label>
+                <Textarea
+                  value={memoryDraft.character}
+                  onChange={(e) => setMemoryDraft((m) => ({ ...m, character: e.target.value }))}
+                  rows={2}
+                  placeholder="Describe the main character, outfit, colors…"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-zinc-300">Environment</label>
+                <Textarea
+                  value={memoryDraft.environment}
+                  onChange={(e) => setMemoryDraft((m) => ({ ...m, environment: e.target.value }))}
+                  rows={2}
+                  placeholder="Describe the location / setting…"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-zinc-300">Visual style</label>
+                <Textarea
+                  value={memoryDraft.style}
+                  onChange={(e) => setMemoryDraft((m) => ({ ...m, style: e.target.value }))}
+                  rows={2}
+                  placeholder="Describe lighting, color palette, camera language…"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-zinc-300">Previous ending state</label>
+                <Textarea
+                  value={memoryDraft.lastState}
+                  onChange={(e) => setMemoryDraft((m) => ({ ...m, lastState: e.target.value }))}
+                  rows={2}
+                  placeholder="Where the previous clip ended…"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => setContinuityMemoryOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={saveMemoryEditor}>
+                Save memory
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+
 
 
 
