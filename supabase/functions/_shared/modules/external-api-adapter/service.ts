@@ -1468,10 +1468,21 @@ async function pollLocalVideo(providerJobId: string): Promise<GenerationPollResu
   }
 
   const jobId = providerJobId.startsWith("local:") ? providerJobId.slice("local:".length) : providerJobId;
-  const res = await fetch(`${config.baseUrl}/videos/generations/${encodeURIComponent(jobId)}`, {
-    method: "GET",
-    headers: localVideoHeaders(config),
-  });
+  let res: Response;
+  try {
+    res = await localVideoFetch(`${config.baseUrl}/videos/generations/${encodeURIComponent(jobId)}`, {
+      method: "GET",
+      headers: localVideoHeaders(config),
+    }, config.timeoutMs);
+  } catch (err) {
+    // Router unreachable mid-poll: keep the job processing so a transient
+    // outage doesn't fail an in-flight render. The stuck-timeout still applies.
+    if (isUnreachableError(err)) {
+      logError("local video poll unreachable", { error: (err as Error).message, providerJobId });
+      return { status: "processing", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null, progressPercent: 25 };
+    }
+    throw err;
+  }
   const text = await res.text().catch(() => "");
   let payload: unknown = null;
   try {
