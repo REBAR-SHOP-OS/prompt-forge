@@ -369,6 +369,7 @@ function paintTransitionFrame(
     ctx.drawImage(outgoing, 0, 0, width, height)
   }
 
+  const body = () => {
   switch (spec.id) {
     case 'fade': {
       // Out fades to black, then in fades from black.
