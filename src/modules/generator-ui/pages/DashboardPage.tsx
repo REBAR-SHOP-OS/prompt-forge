@@ -1875,7 +1875,7 @@ export default function DashboardPage() {
     let base = emptyContact()
     try {
       const raw = window.localStorage.getItem(contactKey)
-      if (raw) base = { ...base, ...(JSON.parse(raw) as Partial<ContactOverlay>) }
+      if (raw) base = { ...base, ...(JSON.parse(raw) as Partial<ContactOverlay>), enabled: false }
     } catch { /* ignore */ }
     setContactOverlay(base)
     // Contact text (website / phone / address) and logo are sourced from the
