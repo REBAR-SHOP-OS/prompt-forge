@@ -101,6 +101,16 @@ export interface MergeResult {
 }
 
 /**
+ * Contact / branding text overlay burned into every recorded frame.
+ * Each entry in `lines` becomes one row of text (e.g. website, phone, address).
+ */
+export interface MergeOverlayOptions {
+  lines: string[]
+  position?: 'top' | 'bottom'
+}
+
+
+/**
  * Input clip descriptor for {@link mergeVideoUrls}. The merger handles image
  * clips natively (no MediaRecorder round-trip), so still images get painted
  * directly on the merge canvas for `durationSec` seconds.
