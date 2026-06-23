@@ -1,43 +1,27 @@
-## Goal
+# تغییر باز شدن Transcript روی آیکون کارت
 
-The narration written in the scenario/prompt must ALWAYS be the single source of truth ("ملاک"): it must always appear in the Narration dialog's "From prompt" section, and the on-film transcript must always be compared against it. Today the dialog re-derives narration with a regex from each card's `input_prompt`, which silently fails for valid narration phrased outside the two patterns it recognizes — producing "No narration detected" even when the scenario clearly wrote narration (see screenshots).
+## هدف
+وقتی روی آیکون نریشن (آیکون بنفش گوشه‌ی هر کارت) کلیک می‌شود، به‌جای دیالوگ مرکزی فعلی (که مورد پسند نیست)، یک پنل تمیز و خوانا **روی همان کارت/پیش‌نمایش** به‌صورت overlay باز شود و سه بخش را نشان دهد:
 
-## Root cause
+1. **نریشن پرامت** (ملاک اصلی — همان متنی که در سناریو نوشته شده)
+2. **نریشن روی فیلم** (متن گفتاری استخراج‌شده از ویدئو + تشخیص تلفظ مشکوک با امکان پخش تلفظ صحیح)
+3. **بررسی مغایرت** (آیا گفتار فیلم با نریشن پرامت می‌خواند، کم/زیاد است، یا غایب است)
 
-- `extractNarration` (`src/modules/generator-ui/lib/narration.ts`) only matches (1) a `Narration:` labeled line and (2) text inside quotes. Scenario/ad scenes also express spoken lines as `Character says: "…"`, `<speaker> says: …`, or short labeled lines without quotes. Anything outside the two patterns → empty → "No narration detected".
-- There is no persisted narration. Each open of the dialog re-runs the regex, so detection depends entirely on the exact wording stored in `input_prompt`. If the prompt is later edited or rephrased, the narration "reference" changes or disappears.
+## رفتار جدید
+- کلیک روی آیکون نریشن دیگر `Dialog` مرکزی باز نمی‌کند؛ یک پنل overlay داخل ناحیه‌ی همان کارت/پیش‌نمایش باز می‌شود (هم‌سبک با پنل Transcript فعلی که از کنار/روی پیش‌نمایش ظاهر می‌شود).
+- پنل از بالا/راست با دکمه‌ی بستن (X) قابل بستن است و کلیک بیرون آن نیز آن را می‌بندد.
+- منطق فعلی نریشن دست‌نخورده می‌ماند: `narration_text` ذخیره‌شده به‌عنوان ملاک، fallback به `extractNarration(input_prompt)`، فراخوانی `video-transcript` برای گفتار فیلم، و `compareNarration` برای بررسی مغایرت.
 
-## Plan
+## طراحی بصری
+- پس‌زمینه‌ی پنل: `bg-[#07080a]/95` با `backdrop-blur` (هماهنگ با `TranscriptPanel` موجود) به‌جای کارت شناور فعلی.
+- سه بخش با تیترهای کوچک uppercase (`From prompt` / `On film` / `Check`) و جداکننده‌ی `border-white/10`.
+- نریشن پرامت در کارت‌های بنفش ملایم؛ گفتار فیلم با کلمات کم‌اطمینان هایلایت‌شده و قابل کلیک برای پخش تلفظ؛ بخش Check با رنگ سبز (مطابق)/کهربایی (مغایر)/خنثی (بدون نریشن).
+- پشتیبانی RTL برای متن فارسی/عربی حفظ می‌شود.
 
-### 1. Broaden and harden narration extraction (authoritative parser)
-In `src/modules/generator-ui/lib/narration.ts`, extend `extractNarration` to recognize every spoken-line shape the scenario writer emits, in priority order:
-- Localized `Narration:` label lines (existing).
-- Speaker lines: `<Name> says:`, `Character says:`, `Narrator:`, `Voiceover:` / `VO:` and their localized equivalents — capture the remainder of the line, stripping surrounding quotes.
-- Inline quoted dialogue (existing), straight/smart/guillemet quotes.
-- De-duplicate (existing).
-Keep it deterministic (no AI). This guarantees narration that exists in the prompt is detected regardless of phrasing.
+## بخش فنی
+- **`src/modules/generator-ui/components/NarrationDialog.tsx`**: تبدیل از `Dialog` به یک پنل `absolute inset-0`/overlay (یا بازنویسی به‌صورت `NarrationPanel`) با همان props (`prompt`, `narrationText`, `videoStoragePath`, `open`, `onClose`). تمام منطق transcribe/compare/pronunciation بدون تغییر باقی می‌ماند؛ فقط لایه‌ی ظرف (container) از دیالوگ مرکزی به overlay تغییر می‌کند و داخل کانتینر کارت/پیش‌نمایش رندر می‌شود.
+- **`src/modules/generator-ui/pages/DashboardPage.tsx`**: جایی که `NarrationDialog` در انتهای صفحه رندر شده، به محل overlay مربوط به کارت/پیش‌نمایش منتقل/تنظیم می‌شود تا روی همان ناحیه ظاهر شود؛ state `narrationViewer` و دکمه‌ی آیکون بدون تغییر منطقی می‌مانند.
+- بدون تغییر در ادج‌فانکشن‌ها یا دیتابیس.
 
-### 2. Make the scenario narration the persisted reference
-So the reference can never drift from what the scenario produced:
-- Capture the canonical narration at the moment cards are created from a scenario (the multi-scene/"Send to Pending" + split-generation paths in `DashboardPage.tsx`), using the broadened parser on each scene block, and store it alongside the card.
-- Persist it via a new nullable `narration_text` column on `generator_generation_jobs` (additive migration; nullable; existing rows unaffected; GRANTs already present on the table — re-affirm SELECT/INSERT/UPDATE for `authenticated` and `service_role`). Plumb it through `createJob` (job-orchestrator contract/gateway/service + `jobs-create` / `jobs-create-from-upload`) and surface it in `jobs-get` / `jobs-list`.
-- The Narration dialog and the card's narration badge use `narration_text` first (the authoritative scenario narration) and fall back to `extractNarration(input_prompt)` for older cards or manual prompts.
-
-### 3. Always compare the film against this reference
-`NarrationDialog` already transcribes the rendered video and runs `compareNarration`. Point its "From prompt" section and the comparison baseline at the authoritative narration from step 2, so the on-film check is always measured against the scenario narration and flags missing / mismatched / mispronounced lines.
-
-## Technical notes
-
-- Migration: `ALTER TABLE public.generator_generation_jobs ADD COLUMN narration_text text;` followed by the standard GRANT block; no backfill required (NULL → fall back to extraction).
-- No change to the video-generation provider payload — narration stays inside `input_prompt` for generation; `narration_text` is metadata used only for the reference/check UI, so the working generation pipeline is untouched.
-- Pure-frontend fallback (step 1 + dialog wiring) already fixes the visible "No narration detected" bug on its own; the persistence in step 2 makes it durable against prompt edits.
-
-## Files
-- `src/modules/generator-ui/lib/narration.ts` — broaden parser.
-- `src/modules/generator-ui/components/NarrationDialog.tsx` — prefer `narration_text`, fall back to extraction.
-- `src/modules/generator-ui/pages/DashboardPage.tsx` — capture narration on card creation; pass to `createJob`; badge + dialog use authoritative value.
-- `src/modules/job-orchestrator/*` and `supabase/functions/_shared/modules/job-orchestrator/*`, `jobs-create`, `jobs-create-from-upload`, `jobs-get`, `jobs-list` — carry `narration_text`.
-- One new migration for the `narration_text` column + GRANTs.
-
-## Scope check
-If you prefer the smallest safe change first, I can ship steps 1 + 3 only (frontend) — that resolves the "No narration detected" screenshots immediately — and add the persistence (step 2) afterward. Tell me which scope you want.
+## تأیید
+- کلیک روی آیکون نریشن یک کارت → پنل overlay روی همان کارت باز شود، سه بخش درست نمایش داده شوند، «Check narration on film» کار کند، و بستن پنل درست عمل کند (بررسی با Playwright/اسکرین‌شات).
