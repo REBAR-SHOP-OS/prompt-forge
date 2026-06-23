@@ -101,6 +101,16 @@ export interface MergeResult {
 }
 
 /**
+ * Contact / branding text overlay burned into every recorded frame.
+ * Each entry in `lines` becomes one row of text (e.g. website, phone, address).
+ */
+export interface MergeOverlayOptions {
+  lines: string[]
+  position?: 'top' | 'bottom'
+}
+
+
+/**
  * Input clip descriptor for {@link mergeVideoUrls}. The merger handles image
  * clips natively (no MediaRecorder round-trip), so still images get painted
  * directly on the merge canvas for `durationSec` seconds.
@@ -261,6 +271,58 @@ function clipSource(c: ClipItem): HTMLVideoElement | HTMLImageElement {
   return c.kind === 'video' ? c.video : c.image
 }
 
+// Active contact/branding overlay for the current merge run. Set at the start
+// of mergeVideoUrls and cleared when it finishes so it never leaks across runs.
+let activeOverlay: MergeOverlayOptions | null = null
+
+/**
+ * Draw the contact/branding text lines onto the merge canvas. Called after each
+ * frame paint so the text is baked into every captured frame (and transitions).
+ */
+function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
+  const overlay = activeOverlay
+  if (!overlay) return
+  const lines = overlay.lines.map((l) => l.trim()).filter(Boolean)
+  if (lines.length === 0) return
+
+  const position = overlay.position ?? 'bottom'
+  const fontSize = Math.max(14, Math.round(ch * 0.032))
+  const lineGap = Math.round(fontSize * 0.45)
+  const padX = Math.round(cw * 0.04)
+  const padY = Math.round(fontSize * 0.6)
+  const lineHeight = fontSize + lineGap
+  const blockHeight = lines.length * lineHeight - lineGap + padY * 2
+
+  ctx.save()
+  ctx.textBaseline = 'top'
+  ctx.font = `600 ${fontSize}px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif`
+
+  const barY = position === 'top' ? 0 : ch - blockHeight
+  // Translucent gradient bar for legibility on any footage.
+  const grad = ctx.createLinearGradient(0, barY, 0, barY + blockHeight)
+  if (position === 'top') {
+    grad.addColorStop(0, 'rgba(0,0,0,0.62)')
+    grad.addColorStop(1, 'rgba(0,0,0,0)')
+  } else {
+    grad.addColorStop(0, 'rgba(0,0,0,0)')
+    grad.addColorStop(1, 'rgba(0,0,0,0.62)')
+  }
+  ctx.fillStyle = grad
+  ctx.fillRect(0, barY, cw, blockHeight)
+
+  ctx.shadowColor = 'rgba(0,0,0,0.85)'
+  ctx.shadowBlur = Math.round(fontSize * 0.25)
+  ctx.shadowOffsetX = 0
+  ctx.shadowOffsetY = 1
+  ctx.fillStyle = '#ffffff'
+  let textY = barY + padY
+  for (const line of lines) {
+    ctx.fillText(line, padX, textY, cw - padX * 2)
+    textY += lineHeight
+  }
+  ctx.restore()
+}
+
 function drawContain(
   ctx: CanvasRenderingContext2D,
   source: HTMLVideoElement | HTMLImageElement,
@@ -271,14 +333,16 @@ function drawContain(
   ctx.fillRect(0, 0, cw, ch)
   const vw = source instanceof HTMLImageElement ? source.naturalWidth : source.videoWidth
   const vh = source instanceof HTMLImageElement ? source.naturalHeight : source.videoHeight
-  if (!vw || !vh) return
+  if (!vw || !vh) { drawOverlay(ctx, cw, ch); return }
   const scale = Math.min(cw / vw, ch / vh)
   const dw = vw * scale
   const dh = vh * scale
   const dx = (cw - dw) / 2
   const dy = (ch - dh) / 2
   ctx.drawImage(source, dx, dy, dw, dh)
+  drawOverlay(ctx, cw, ch)
 }
+
 
 function easeInOut(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
@@ -305,6 +369,7 @@ function paintTransitionFrame(
     ctx.drawImage(outgoing, 0, 0, width, height)
   }
 
+  const body = () => {
   switch (spec.id) {
     case 'fade': {
       // Out fades to black, then in fades from black.
@@ -395,7 +460,11 @@ function paintTransitionFrame(
       return
     }
   }
+  }
+  body()
+  drawOverlay(ctx, width, height)
 }
+
 
 export class MergeCancelledError extends Error {
   constructor() {
@@ -410,14 +479,21 @@ export async function mergeVideoUrls(
   audio?: MergeAudioOptions,
   transitions?: TransitionSpec[],
   signal?: AbortSignal,
+  overlay?: MergeOverlayOptions,
 ): Promise<MergeResult> {
   if (inputs.length === 0) throw new Error('No videos to merge')
   if (signal?.aborted) throw new MergeCancelledError()
+
+  // Contact/branding overlay baked into every frame for this run.
+  activeOverlay = overlay && overlay.lines.some((l) => l.trim())
+    ? { lines: overlay.lines, position: overlay.position ?? 'bottom' }
+    : null
 
   // Normalize: accept legacy `string[]` (always videos) or `MergeClip[]`.
   const clipDefs: MergeClip[] = inputs.map((it) =>
     typeof it === 'string' ? { kind: 'video', url: it } : it,
   )
+
 
   const norm = normalizeAudioOptions(audio)
   const musicTrack = norm?.music && norm.music.endSec > norm.music.startSec ? norm.music : undefined
@@ -1058,6 +1134,9 @@ export async function mergeVideoUrls(
     try { recorder.requestData() } catch { /* ignore */ }
     await new Promise((r) => setTimeout(r, 200))
   }
+
+  // Clear the per-run overlay so it never leaks into a later merge.
+  activeOverlay = null
 
   // Final cleanup of media elements + audio graph.
   for (const c of preloaded) {

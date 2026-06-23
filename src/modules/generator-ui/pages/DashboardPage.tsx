@@ -57,6 +57,7 @@ import {
   Wand2,
   FileText,
   MessageSquareQuote,
+  Contact,
   X
 } from 'lucide-react'
 import {
@@ -95,6 +96,8 @@ import {
 import { Slider } from '@/components/ui/slider'
 
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { toast } from 'sonner'
@@ -1784,7 +1787,57 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
-  // Per-project snapshot of the music / voiceover used in each Final Film.
+  // Contact / branding info burned as a text overlay onto the Final Film.
+  // Persisted per user so it survives refresh and project switches.
+  type ContactOverlay = {
+    website: string
+    phone: string
+    address: string
+    enabled: boolean
+    position: 'top' | 'bottom'
+  }
+  const emptyContact = (): ContactOverlay => ({
+    website: '',
+    phone: '',
+    address: '',
+    enabled: true,
+    position: 'bottom',
+  })
+  const [contactOverlay, setContactOverlay] = useState<ContactOverlay>(emptyContact)
+  const [contactMenuOpen, setContactMenuOpen] = useState(false)
+  const contactKey = userId ? `project-contact:${userId}` : null
+  useEffect(() => {
+    if (!contactKey) { setContactOverlay(emptyContact()); return }
+    try {
+      const raw = window.localStorage.getItem(contactKey)
+      if (raw) {
+        const obj = JSON.parse(raw) as Partial<ContactOverlay>
+        setContactOverlay({ ...emptyContact(), ...obj })
+      } else {
+        setContactOverlay(emptyContact())
+      }
+    } catch { setContactOverlay(emptyContact()) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contactKey])
+  const updateContact = useCallback((patch: Partial<ContactOverlay>) => {
+    setContactOverlay((prev) => {
+      const next = { ...prev, ...patch }
+      if (contactKey) {
+        try { window.localStorage.setItem(contactKey, JSON.stringify(next)) } catch { /* ignore */ }
+      }
+      return next
+    })
+  }, [contactKey])
+  // Lines shown in the overlay (only non-empty fields), in display order.
+  const contactLines = useMemo(
+    () => [contactOverlay.website, contactOverlay.phone, contactOverlay.address]
+      .map((l) => l.trim())
+      .filter(Boolean),
+    [contactOverlay.website, contactOverlay.phone, contactOverlay.address],
+  )
+  const contactActive = contactOverlay.enabled && contactLines.length > 0
+
+
   // Stores durable public URLs (copied into MERGED_BUCKET at finalize time) so
   // the finalized card can play + download the exact audio that project used.
   type ProjectAudioTrack = { url: string; name: string }
@@ -6511,7 +6564,9 @@ export default function DashboardPage() {
           audioOpt,
           transitionsForMerge,
           abortController.signal,
+          contactActive ? { lines: contactLines, position: contactOverlay.position } : undefined,
         ),
+
         pipelineTimeout,
       ])
       if (abortController.signal.aborted) throw new MergeCancelledError()
@@ -8860,6 +8915,24 @@ export default function DashboardPage() {
                       preload="metadata"
                       clipVolume={1}
                     />
+                    {contactActive ? (
+                      <div
+                        className={`pointer-events-none absolute inset-x-0 z-20 flex flex-col gap-0.5 bg-gradient-to-b px-4 py-3 ${
+                          contactOverlay.position === 'top'
+                            ? 'top-0 from-black/65 to-transparent'
+                            : 'bottom-0 from-transparent to-black/65 justify-end'
+                        }`}
+                      >
+                        {contactLines.map((line, i) => (
+                          <span
+                            key={i}
+                            className="truncate text-sm font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
+                          >
+                            {line}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                     {transcriptOpen && !transcriptResolving && transcriptVideoUrl ? (
                       <TranscriptPanel
                         videoUrl={transcriptVideoUrl}
@@ -10430,6 +10503,93 @@ export default function DashboardPage() {
               <Drama className="h-5 w-5" aria-hidden="true" />
               Character Sheet
             </button>
+
+            <Popover open={contactMenuOpen} onOpenChange={setContactMenuOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Add company contact info as an overlay on the film"
+                  title="Add company contact info (address, phone, website) as an overlay on the film"
+                  className={`inline-flex h-11 items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
+                    contactActive
+                      ? 'border-emerald-400/60 bg-emerald-500/10 text-emerald-100'
+                      : 'border-white/15 bg-white/[0.04] text-zinc-200 hover:border-white/30'
+                  }`}
+                >
+                  <Contact className="h-5 w-5" aria-hidden="true" />
+                  <span>Contact</span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-80 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-sm font-semibold text-zinc-100">Contact overlay</span>
+                  <button
+                    type="button"
+                    onClick={() => updateContact({ website: '', phone: '', address: '' })}
+                    className="text-[11px] text-zinc-400 hover:text-rose-300"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <p className="mb-3 text-xs leading-5 text-zinc-500">
+                  This text is shown as a layer on top of the generated film.
+                </p>
+                <div className="space-y-2.5">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Website</label>
+                    <Input
+                      value={contactOverlay.website}
+                      onChange={(e) => updateContact({ website: e.target.value })}
+                      placeholder="www.example.com"
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Phone</label>
+                    <Input
+                      value={contactOverlay.phone}
+                      onChange={(e) => updateContact({ phone: e.target.value })}
+                      placeholder="+1 555 000 0000"
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Address</label>
+                    <Input
+                      value={contactOverlay.address}
+                      onChange={(e) => updateContact({ address: e.target.value })}
+                      placeholder="123 Main St, City"
+                      className="h-9"
+                    />
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+                  <span className="text-xs font-medium text-zinc-200">Show on video</span>
+                  <Switch
+                    checked={contactOverlay.enabled}
+                    onCheckedChange={(v) => updateContact({ enabled: v })}
+                  />
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {(['bottom', 'top'] as const).map((pos) => (
+                    <button
+                      key={pos}
+                      type="button"
+                      onClick={() => updateContact({ position: pos })}
+                      className={`rounded-lg border px-3 py-1.5 text-xs font-medium capitalize transition ${
+                        contactOverlay.position === pos
+                          ? 'border-emerald-400/60 bg-emerald-500/10 text-emerald-100'
+                          : 'border-white/15 bg-white/[0.03] text-zinc-300 hover:border-white/30'
+                      }`}
+                    >
+                      {pos}
+                    </button>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+
+
 
             <Popover
               open={characterMenuOpen}
