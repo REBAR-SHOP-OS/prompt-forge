@@ -807,23 +807,21 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
             {check.diff.length > 0 && (check.status === 'ok' || check.status === 'mismatch') ? (
               <div className="space-y-2">
                 <p className="text-[11px] text-zinc-400">
-                  <span className="text-zinc-300">Word-by-word diff</span> — prompt vs film.
-                  <span className="ml-1 text-rose-300">red = missing on film</span>,
-                  <span className="ml-1 text-amber-300">amber = extra/wrong on film</span>.
+                  <span className="text-zinc-300">{t('wordDiff')}</span> — {t('diffLegend')}
                 </p>
                 <p dir="auto" className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[14px] leading-7">
-                  {check.diff.map((t, i) => (
+                  {check.diff.map((tok, i) => (
                     <span
                       key={i}
                       className={
-                        t.kind === 'missing'
+                        tok.kind === 'missing'
                           ? 'rounded-sm bg-rose-500/15 px-0.5 text-rose-300 line-through decoration-rose-400/70'
-                          : t.kind === 'extra'
+                          : tok.kind === 'extra'
                             ? 'rounded-sm bg-amber-400/15 px-0.5 text-amber-300 underline decoration-dotted decoration-amber-400/70 underline-offset-2'
                             : 'text-zinc-200'
                       }
                     >
-                      {t.text}
+                      {tok.text}
                       {i < check.diff.length - 1 ? ' ' : ''}
                     </span>
                   ))}
