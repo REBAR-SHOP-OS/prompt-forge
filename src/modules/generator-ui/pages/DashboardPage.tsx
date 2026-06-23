@@ -57,7 +57,6 @@ import {
   Wand2,
   FileText,
   MessageSquareQuote,
-  Link2,
   X
 } from 'lucide-react'
 import {
@@ -94,7 +93,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { Slider } from '@/components/ui/slider'
-import { Switch } from '@/components/ui/switch'
+
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
@@ -119,11 +118,8 @@ import { ensureMp4 } from '@/modules/generator-ui/lib/transcodeToMp4'
 import {
   loadContinuity,
   saveContinuity,
-  isMemoryEmpty,
-  generateStarterMemory,
   applyContinuityPrompt,
   type ContinuityState,
-  type SceneMemory,
 } from '@/modules/generator-ui/lib/continuity'
 import { recordBlobToMp4, canRecordMp4 } from '@/modules/generator-ui/lib/recordToMp4'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
@@ -1459,11 +1455,9 @@ export default function DashboardPage() {
 
   const [generationMode, setGenerationMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
   const [durationSeconds, setDurationSeconds] = useState<5 | 10 | 15 | 30 | 45 | 135>(5)
-  // Continuity Mode — optional per-chain card-to-card continuity. State is
-  // persisted per generation chain (see continuityChainKey below).
+  // Continuity Mode — automatic per-chain card-to-card continuity for multi-card
+  // durations. State is persisted per generation chain (see continuityChainKey).
   const [continuity, setContinuity] = useState<ContinuityState>(() => loadContinuity(null))
-  const [continuityMemoryOpen, setContinuityMemoryOpen] = useState(false)
-  const [memoryDraft, setMemoryDraft] = useState<SceneMemory>(continuity.memory)
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '1:1' | '16:9'>(() => {
     if (typeof window === 'undefined') return '16:9'
     try {
@@ -2966,9 +2960,6 @@ export default function DashboardPage() {
       updateContinuity({ enabled: false })
     }
   }, [continuity.enabled, hasPreviousClip, isMultiCardDuration, updateContinuity])
-  // Effective character shown in the continuity panel: the live selection wins,
-  // otherwise the character persisted for this chain/film.
-  const continuityCharacter = selectedCharacter ?? continuity.characterRef ?? null
   const hasComposerInput = promptText.trim().length > 0 || uploadedFiles.length > 0
   const readyStartFrame = uploadedFiles.find((file) => file.target === 'Start' && file.status === 'ready' && file.url)
   const readyEndFrame = uploadedFiles.find((file) => file.target === 'End' && file.status === 'ready' && file.url)
@@ -5428,37 +5419,8 @@ export default function DashboardPage() {
     return `Main character reference (keep this character consistent): ${description}\n\n${prompt}`
   }
 
-  // Toggle Continuity Mode. When turning on with an empty scene memory, seed a
-  // starter memory from the current prompt + character so the user has
-  // something to edit.
-  function handleToggleContinuity(enabled: boolean) {
-    if (enabled && !hasPreviousClip) return
-    let memory = continuity.memory
-    if (enabled && isMemoryEmpty(memory)) {
-      memory = generateStarterMemory(promptText.trim(), undefined)
-    }
-    // Persist the character sheet selected for this film so the panel can show
-    // it (and the next clip is built on the same character) even after the
-    // transient selectedCharacter is reset on project load.
-    const characterRef = selectedCharacter
-      ? { id: selectedCharacter.id, url: selectedCharacter.url, title: selectedCharacter.title }
-      : continuity.characterRef ?? null
-    updateContinuity({ enabled, memory, characterRef })
-  }
 
-  // Open the scene-memory editor, seeding from a starter when empty.
-  function openMemoryEditor() {
-    const base = isMemoryEmpty(continuity.memory)
-      ? generateStarterMemory(promptText.trim(), undefined)
-      : continuity.memory
-    setMemoryDraft(base)
-    setContinuityMemoryOpen(true)
-  }
 
-  function saveMemoryEditor() {
-    updateContinuity({ memory: memoryDraft })
-    setContinuityMemoryOpen(false)
-  }
 
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -10288,160 +10250,9 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        {/* Continuity Mode — optional card-to-card continuity */}
-        <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Link2 className="h-4 w-4 text-cyan-300" aria-hidden="true" />
-              <div>
-                <div className="text-xs font-semibold text-zinc-200">Continuity Mode</div>
-                <div className="text-[11px] text-zinc-500">
-                  {isMultiCardDuration
-                    ? 'Always on for 30s/45s/135s so the cards stay content-connected'
-                    : hasPreviousClip
-                      ? 'Continue the next card from the previous clip'
-                      : 'Generate a clip first to enable continuity'}
-                </div>
-              </div>
-            </div>
-            <Switch
-              checked={continuityActive}
-              disabled={isMultiCardDuration || !hasPreviousClip}
-              onCheckedChange={handleToggleContinuity}
-              aria-label="Toggle Continuity Mode"
-            />
-          </div>
+        {/* Continuity Mode is automatic for multi-card durations (30s/45s/135s) —
+            no visible controls; the system links the cards' content internally. */}
 
-          {continuityActive && (hasPreviousClip || isMultiCardDuration) ? (
-            <div className="mt-3 space-y-3 border-t border-white/10 pt-3 text-[11px]">
-              {/* Continuation source */}
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-zinc-500">Continuation source</span>
-                <div role="radiogroup" aria-label="Continuation source" className="inline-flex rounded-full border border-white/10 bg-black/30 p-0.5 font-semibold">
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={continuity.source === 'previous-final-frame'}
-                    onClick={() => updateContinuity({ source: 'previous-final-frame' })}
-                    className={`rounded-full px-2.5 py-1 transition ${continuity.source === 'previous-final-frame' ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
-                  >
-                    Previous final frame
-                  </button>
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={continuity.source === 'best-clear-frame'}
-                    onClick={() => updateContinuity({ source: 'best-clear-frame' })}
-                    className={`rounded-full px-2.5 py-1 transition ${continuity.source === 'best-clear-frame' ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
-                  >
-                    Best clear frame
-                  </button>
-                </div>
-              </div>
-
-              {/* Character / reference source */}
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-zinc-500">Character / reference</span>
-                {continuityCharacter ? (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedCharacter(continuityCharacter)}
-                    className="inline-flex items-center gap-2 text-zinc-200 transition hover:text-white"
-                    title="Use this character for the next clip"
-                  >
-                    {continuityCharacter.url ? (
-                      <img src={continuityCharacter.url} alt="" className="h-6 w-6 rounded object-cover" />
-                    ) : null}
-                    {continuityCharacter.title || 'Selected reference'}
-                  </button>
-                ) : (
-                  <span className="text-zinc-400">No reference selected</span>
-                )}
-              </div>
-              {!continuityCharacter ? (
-                <p className="text-[10px] text-amber-300/80">Add a character reference for stronger continuity.</p>
-              ) : null}
-
-              {/* Scene memory preview */}
-              <div className="rounded-lg bg-black/30 p-2.5">
-                <div className="mb-1 flex items-center justify-between">
-                  <span className="font-semibold text-zinc-300">Scene memory</span>
-                  <button
-                    type="button"
-                    onClick={openMemoryEditor}
-                    className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-semibold text-zinc-300 transition hover:bg-white/5"
-                  >
-                    <Pencil className="h-3 w-3" aria-hidden="true" /> Edit memory
-                  </button>
-                </div>
-                <dl className="space-y-0.5 text-zinc-400">
-                  <div><span className="text-zinc-500">Character:</span> {continuity.memory.character || '—'}</div>
-                  <div><span className="text-zinc-500">Environment:</span> {continuity.memory.environment || '—'}</div>
-                  <div><span className="text-zinc-500">Visual style:</span> {continuity.memory.style || '—'}</div>
-                  <div><span className="text-zinc-500">Last scene state:</span> {continuity.memory.lastState || '—'}</div>
-                </dl>
-              </div>
-            </div>
-          ) : null}
-        </div>
-
-        {/* Scene memory editor */}
-        <Dialog open={continuityMemoryOpen} onOpenChange={setContinuityMemoryOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Edit scene memory</DialogTitle>
-              <DialogDescription>
-                Adjust the continuity description used for the next card. This is added to the generation prompt.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-3">
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-zinc-300">Main character</label>
-                <Textarea
-                  value={memoryDraft.character}
-                  onChange={(e) => setMemoryDraft((m) => ({ ...m, character: e.target.value }))}
-                  rows={2}
-                  placeholder="Describe the main character, outfit, colors…"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-zinc-300">Environment</label>
-                <Textarea
-                  value={memoryDraft.environment}
-                  onChange={(e) => setMemoryDraft((m) => ({ ...m, environment: e.target.value }))}
-                  rows={2}
-                  placeholder="Describe the location / setting…"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-zinc-300">Visual style</label>
-                <Textarea
-                  value={memoryDraft.style}
-                  onChange={(e) => setMemoryDraft((m) => ({ ...m, style: e.target.value }))}
-                  rows={2}
-                  placeholder="Describe lighting, color palette, camera language…"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-zinc-300">Previous ending state</label>
-                <Textarea
-                  value={memoryDraft.lastState}
-                  onChange={(e) => setMemoryDraft((m) => ({ ...m, lastState: e.target.value }))}
-                  rows={2}
-                  placeholder="Where the previous clip ended…"
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => setContinuityMemoryOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="button" onClick={saveMemoryEditor}>
-                Save memory
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
 
 
 
