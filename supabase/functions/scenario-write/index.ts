@@ -52,11 +52,12 @@ function cameraGuidance(opts: ProductAdOpts | CharacterSheetOpts, heroLabel = "p
     bits.push(`Honor these specific camera-movement notes from the user: ${opts.cameraMovement}.`);
   }
   if (opts.genre) {
-    bits.push(`Direct the entire scenario in this genre/atmosphere: ${opts.genre}. Apply its mood, lighting, color palette, and visual style consistently across every shot while keeping the ${heroLabel} the clear hero of the film.`);
+    bits.push(`Use this genre/atmosphere ONLY as creative INSPIRATION: ${opts.genre}. Borrow its mood, energy, lighting feel, and color sensibility, then reinterpret and adapt it tastefully so it fits THIS specific ${heroLabel} and a believable advertising context. Do NOT literally recreate that genre's world, setting, or clichés — the ${heroLabel} and its real selling points stay the clear focus.`);
   }
   if (opts.scene) {
-    bits.push(`Set the entire scenario in this environment/location: ${opts.scene}. Use its setting, lighting, textures, and atmosphere consistently across every shot while keeping the ${heroLabel} the clear hero of the film.`);
+    bits.push(`Draw INSPIRATION from this environment/location: ${opts.scene}. Adapt its setting, lighting, textures, and atmosphere to suit the ${heroLabel} and the ad, rather than copying the location exactly, while keeping the ${heroLabel} the clear hero of the film.`);
   }
+
   return bits.join(" ");
 }
 
