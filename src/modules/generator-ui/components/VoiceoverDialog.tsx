@@ -479,7 +479,7 @@ export function VoiceoverDialog({
 
                     <Button
                       type="button"
-                      onClick={() => void handleGenerateNarration()}
+                      onClick={() => handleGenerateNarration()}
                       disabled={
                         isWritingNarration ||
                         !selectedProductId ||
