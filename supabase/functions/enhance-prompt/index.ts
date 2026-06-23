@@ -130,12 +130,15 @@ Deno.serve(async (req) => {
 
     const styleSuffix = styleHints
       ? [
-          "\n\nThe user has chosen the following visual styles. The rewritten prompt MUST",
-          "incorporate and optimize for these style directions while keeping the user's",
-          "core idea and original language intact:",
+          "\n\nThe user has chosen the following visual styles. Treat them as creative",
+          "INSPIRATION, not a template to copy literally: borrow their mood, energy,",
+          "lighting feel, and visual sensibility, then adapt and reinterpret them to fit",
+          "the user's specific subject/content and a believable result — while keeping the",
+          "user's core idea, subject identity, and original language fully intact:",
           `\n${styleHints}`,
         ].join(" ")
       : "";
+
 
     const systemPrompt = `${BASE_SYSTEM_PROMPT}\n\n${
       mode === "silent"
