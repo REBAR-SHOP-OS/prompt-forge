@@ -934,6 +934,7 @@ export default function ProductAdDialog({
   const [contactWebsite, setContactWebsite] = useState('')
   const [contactPhone, setContactPhone] = useState('')
   const [contactAddress, setContactAddress] = useState('')
+  const [contactLogo, setContactLogo] = useState('')
   const [businessSaving, setBusinessSaving] = useState(false)
   const [businessSaved, setBusinessSaved] = useState(false)
   const [businessOpen, setBusinessOpen] = useState(false)
@@ -1223,7 +1224,7 @@ export default function ProductAdDialog({
     if (open && userId) {
       supabase
         .from('generator_business_profiles')
-        .select('business_info, contact_website, contact_phone, contact_address')
+        .select('business_info, contact_website, contact_phone, contact_address, contact_logo_url')
         .eq('user_id', userId)
         .maybeSingle()
         .then(({ data }) => {
@@ -1232,6 +1233,7 @@ export default function ProductAdDialog({
           if (data.contact_website) setContactWebsite(data.contact_website)
           if (data.contact_phone) setContactPhone(data.contact_phone)
           if (data.contact_address) setContactAddress(data.contact_address)
+          setContactLogo((data as { contact_logo_url?: string | null }).contact_logo_url ?? '')
         })
     }
     return () => {
