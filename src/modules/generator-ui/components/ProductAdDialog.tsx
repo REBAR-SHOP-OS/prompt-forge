@@ -1217,11 +1217,15 @@ export default function ProductAdDialog({
     if (open && userId) {
       supabase
         .from('generator_business_profiles')
-        .select('business_info')
+        .select('business_info, contact_website, contact_phone, contact_address')
         .eq('user_id', userId)
         .maybeSingle()
         .then(({ data }) => {
-          if (!cancelled && data?.business_info) setBusinessInfo(data.business_info)
+          if (cancelled || !data) return
+          if (data.business_info) setBusinessInfo(data.business_info)
+          if (data.contact_website) setContactWebsite(data.contact_website)
+          if (data.contact_phone) setContactPhone(data.contact_phone)
+          if (data.contact_address) setContactAddress(data.contact_address)
         })
     }
     return () => {
