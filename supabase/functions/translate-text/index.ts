@@ -30,6 +30,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const text = typeof body?.text === "string" ? body.text.trim() : "";
     const targetLang = typeof body?.targetLang === "string" ? body.targetLang.trim() : "";
+    const style = typeof body?.style === "string" ? body.style.trim() : "";
 
     if (!text) {
       return new Response(JSON.stringify({ error: "text is required" }), {
@@ -59,11 +60,20 @@ Deno.serve(async (req) => {
       });
     }
 
-    const systemPrompt = [
-      `You are a professional translator. Translate the user's text into ${langName}.`,
-      "Preserve meaning, tone, and natural phrasing for spoken narration.",
-      "Output ONLY the translated text — no preamble, no quotes, no explanation, no markdown.",
-    ].join(" ");
+    const systemPrompt =
+      style === "advertising"
+        ? [
+            `You are a professional advertising copywriter and translator. Render the user's text into ${langName}.`,
+            "The result must ALWAYS be a punchy, high-energy, persuasive advertising / commercial voiceover script that a narrator can read aloud naturally.",
+            "Do not translate literally — adapt and rewrite it as natural, vivid ad copy in the target language while preserving the original meaning and any call to action.",
+            "CRITICAL: Never include any numbers, digits, product codes, SKUs, model numbers, dimensions, prices, or percentages — not as numerals and not spelled out as words.",
+            "Output ONLY the translated narration text — no preamble, no quotes, no explanation, no markdown.",
+          ].join(" ")
+        : [
+            `You are a professional translator. Translate the user's text into ${langName}.`,
+            "Preserve meaning, tone, and natural phrasing for spoken narration.",
+            "Output ONLY the translated text — no preamble, no quotes, no explanation, no markdown.",
+          ].join(" ");
 
     const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",

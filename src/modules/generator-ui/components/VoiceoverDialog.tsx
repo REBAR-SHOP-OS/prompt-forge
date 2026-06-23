@@ -213,12 +213,14 @@ export function VoiceoverDialog({
     setIsTranslating(true)
     try {
       const { data, error } = await supabase.functions.invoke('translate-text', {
-        body: { text: source, targetLang },
+        body: { text: source, targetLang, style: 'advertising' },
       })
       if (error) throw error
       const translation: string | undefined = data?.translation
       if (!translation) throw new Error(data?.error || 'No translation returned')
       setText(translation)
+      // Translated narration stays advertising — keep the TTS tone aligned.
+      setTone('advertising')
       setIsTranslateOpen(false)
       toast.success('Narration translated.')
     } catch (e) {
