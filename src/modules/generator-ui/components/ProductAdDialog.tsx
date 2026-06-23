@@ -2248,6 +2248,56 @@ export default function ProductAdDialog({
           </DialogContent>
         </Dialog>
 
+        <Dialog open={reframeHistoryOpen} onOpenChange={setReframeHistoryOpen}>
+          <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <History className="h-4 w-4" aria-hidden="true" /> {t.reframeHistory}
+              </DialogTitle>
+              <DialogDescription className="text-zinc-400">{t.reuseHint}</DialogDescription>
+            </DialogHeader>
+
+            {loadingReframes ? (
+              <div className="flex items-center justify-center py-10 text-sm text-zinc-400">
+                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> {t.loadingReframes}
+              </div>
+            ) : reframeItems.length === 0 ? (
+              <div className="py-10 text-center text-sm text-zinc-500">{t.noReframes}</div>
+            ) : (
+              <div className="grid max-h-[55vh] grid-cols-3 gap-3 overflow-y-auto pr-1 sm:grid-cols-4">
+                {reframeItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => reuseReframe(item)}
+                    className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-amber-300/40"
+                  >
+                    <img
+                      src={item.url}
+                      alt={item.title ?? 'Reframed image'}
+                      loading="lazy"
+                      className="aspect-square w-full bg-black/40 object-cover"
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden' }}
+                    />
+                    <span className="absolute right-1.5 top-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-amber-200">
+                      {item.aspect}
+                    </span>
+                    <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{item.title || t.untitled}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end pt-2">
+              <Button variant="ghost" size="sm" onClick={() => setReframeHistoryOpen(false)}>
+                <ArrowLeft className="mr-1.5 h-4 w-4" aria-hidden="true" /> {t.back}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+
+
         <input
           ref={characterFileInputRef}
           type="file"
