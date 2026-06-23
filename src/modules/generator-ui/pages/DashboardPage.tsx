@@ -1798,6 +1798,8 @@ export default function DashboardPage() {
     /** Normalized 0–1 center position when the user has dragged the overlay.
      *  null = use the `position` preset instead. */
     offset: { x: number; y: number } | null
+    /** Size multiplier for the overlay (logo + text). 1 = default. */
+    scale: number
     logoUrl: string
     logoEnabled: boolean
   }
@@ -1808,6 +1810,7 @@ export default function DashboardPage() {
     enabled: false,
     position: 'bottom',
     offset: null,
+    scale: 1,
     logoUrl: '',
     logoEnabled: true,
   })
