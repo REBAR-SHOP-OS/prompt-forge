@@ -828,12 +828,12 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                 </p>
                 {check.missingWords.length > 0 ? (
                   <p dir="auto" className="text-[12px] leading-5 text-rose-300/90">
-                    Missing on film: {check.missingWords.join('، ')}
+                    {t('missingOnFilm')} {missingWordsTranslation ?? check.missingWords.join('، ')}
                   </p>
                 ) : null}
                 {check.extraWords.length > 0 ? (
                   <p dir="auto" className="text-[12px] leading-5 text-amber-300/90">
-                    Extra / wrong on film: {check.extraWords.join('، ')}
+                    {t('extraOnFilm')} {extraWordsTranslation ?? check.extraWords.join('، ')}
                   </p>
                 ) : null}
               </div>
@@ -841,7 +841,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
 
             {lowConfWords.length > 0 ? (
               <p className="text-[12px] leading-5 text-amber-300/90">
-                Possible pronunciation issues: {lowConfWords.map((w) => w.text).join('، ')}
+                {t('pronIssues')} {lowConfWords.map((w) => w.text).join('، ')}
               </p>
             ) : null}
           </section>
