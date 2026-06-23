@@ -107,9 +107,13 @@ export interface MergeResult {
 export interface MergeOverlayOptions {
   lines: string[]
   position?: 'top' | 'center' | 'bottom'
+  /** Normalized 0–1 center position when the user has dragged the overlay.
+   *  Takes precedence over `position` when set. */
+  offset?: { x: number; y: number }
   /** Optional logo (data URL or same-origin URL) drawn above the text. */
   logoUrl?: string
 }
+
 
 
 /**
