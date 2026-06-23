@@ -76,7 +76,7 @@ interface VoiceoverDialogProps {
   onOpenChange: (open: boolean) => void
   onUseAsSoundtrack?: (url: string, name: string) => void
   /** Uploaded products available for advertising-narration generation. */
-  products?: { id: string; name: string }[]
+  products?: { id: string; name: string; imageUrl?: string }[]
   // Active voiceover applied to the film + its timing/volume controls.
   activeVoiceoverUrl?: string | null
   activeVoiceoverName?: string | null
