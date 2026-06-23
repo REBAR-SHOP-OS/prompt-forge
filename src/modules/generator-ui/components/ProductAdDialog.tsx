@@ -538,6 +538,7 @@ const T: Record<Lang, Record<string, string>> = {
     contactWebsite: 'Website',
     contactPhone: 'Phone',
     contactAddress: 'Address',
+    contactLogo: 'Company logo',
   },
   fa: {
     title: 'سناریوی تبلیغ محصول',
@@ -599,6 +600,7 @@ const T: Record<Lang, Record<string, string>> = {
     contactWebsite: 'وب‌سایت',
     contactPhone: 'شماره تماس',
     contactAddress: 'آدرس',
+    contactLogo: 'لوگوی شرکت',
   },
   ar: {
     title: 'سيناريو إعلان المنتج',
@@ -660,6 +662,7 @@ const T: Record<Lang, Record<string, string>> = {
     contactWebsite: 'الموقع الإلكتروني',
     contactPhone: 'الهاتف',
     contactAddress: 'العنوان',
+    contactLogo: 'شعار الشركة',
   },
   tr: {
     title: 'Ürün Reklam Senaryosu',
@@ -721,6 +724,7 @@ const T: Record<Lang, Record<string, string>> = {
     contactWebsite: 'Web sitesi',
     contactPhone: 'Telefon',
     contactAddress: 'Adres',
+    contactLogo: 'Şirket logosu',
   },
   es: {
     title: 'Guion de Anuncio de Producto',
@@ -782,6 +786,7 @@ const T: Record<Lang, Record<string, string>> = {
     contactWebsite: 'Sitio web',
     contactPhone: 'Teléfono',
     contactAddress: 'Dirección',
+    contactLogo: 'Logo de la empresa',
   },
   fr: {
     title: 'Scénario de Publicité Produit',
@@ -843,6 +848,7 @@ const T: Record<Lang, Record<string, string>> = {
     contactWebsite: 'Site web',
     contactPhone: 'Téléphone',
     contactAddress: 'Adresse',
+    contactLogo: "Logo de l'entreprise",
   },
 }
 
@@ -928,6 +934,7 @@ export default function ProductAdDialog({
   const [contactWebsite, setContactWebsite] = useState('')
   const [contactPhone, setContactPhone] = useState('')
   const [contactAddress, setContactAddress] = useState('')
+  const [contactLogo, setContactLogo] = useState('')
   const [businessSaving, setBusinessSaving] = useState(false)
   const [businessSaved, setBusinessSaved] = useState(false)
   const [businessOpen, setBusinessOpen] = useState(false)
@@ -1217,7 +1224,7 @@ export default function ProductAdDialog({
     if (open && userId) {
       supabase
         .from('generator_business_profiles')
-        .select('business_info, contact_website, contact_phone, contact_address')
+        .select('business_info, contact_website, contact_phone, contact_address, contact_logo_url')
         .eq('user_id', userId)
         .maybeSingle()
         .then(({ data }) => {
@@ -1226,6 +1233,7 @@ export default function ProductAdDialog({
           if (data.contact_website) setContactWebsite(data.contact_website)
           if (data.contact_phone) setContactPhone(data.contact_phone)
           if (data.contact_address) setContactAddress(data.contact_address)
+          setContactLogo((data as { contact_logo_url?: string | null }).contact_logo_url ?? '')
         })
     }
     return () => {
@@ -1305,6 +1313,7 @@ export default function ProductAdDialog({
           contact_website: contactWebsite.trim() || null,
           contact_phone: contactPhone.trim() || null,
           contact_address: contactAddress.trim() || null,
+          contact_logo_url: contactLogo || null,
         }, { onConflict: 'user_id' })
       if (upErr) {
         setError(upErr.message)
@@ -1319,6 +1328,32 @@ export default function ProductAdDialog({
       setBusinessSaving(false)
     }
   }
+
+  // Read an uploaded logo, downscale it to <=256px (PNG data URL), and store it.
+  function onContactLogoFile(file: File | null | undefined) {
+    if (!file || !file.type.startsWith('image/')) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new window.Image()
+      img.onload = () => {
+        const max = 256
+        const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight))
+        const w = Math.max(1, Math.round(img.naturalWidth * scale))
+        const h = Math.max(1, Math.round(img.naturalHeight * scale))
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+        ctx.drawImage(img, 0, 0, w, h)
+        setContactLogo(canvas.toDataURL('image/png'))
+        setBusinessSaved(false)
+      }
+      img.src = String(reader.result)
+    }
+    reader.readAsDataURL(file)
+  }
+
 
   function handleAiImageSaved(row: AiImageSavedRow) {
     if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
@@ -1354,6 +1389,7 @@ export default function ProductAdDialog({
             contact_website: contactWebsite.trim() || null,
             contact_phone: contactPhone.trim() || null,
             contact_address: contactAddress.trim() || null,
+            contact_logo_url: contactLogo || null,
           }, { onConflict: 'user_id' })
       } catch {
         /* non-fatal: still attempt generation */
@@ -1644,6 +1680,37 @@ export default function ProductAdDialog({
                       placeholder={t.contactAddress}
                       className="h-9 border-white/10 bg-black/30 text-sm text-zinc-100"
                     />
+                    <div className="flex items-center gap-2 pt-1">
+                      {contactLogo ? (
+                        <img
+                          src={contactLogo}
+                          alt={t.contactLogo}
+                          className="h-10 w-10 rounded-md border border-white/15 bg-white/5 object-contain p-0.5"
+                        />
+                      ) : (
+                        <div className="grid h-10 w-10 place-items-center rounded-md border border-dashed border-white/15 bg-black/30 text-zinc-500">
+                          <ImagePlus className="h-4 w-4" aria-hidden="true" />
+                        </div>
+                      )}
+                      <label className="cursor-pointer rounded-md border border-white/15 bg-black/30 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/30">
+                        {contactLogo ? 'Replace' : t.contactLogo}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => { onContactLogoFile(e.target.files?.[0]); e.currentTarget.value = '' }}
+                        />
+                      </label>
+                      {contactLogo ? (
+                        <button
+                          type="button"
+                          onClick={() => { setContactLogo(''); setBusinessSaved(false) }}
+                          className="text-[11px] text-zinc-400 transition hover:text-rose-300"
+                        >
+                          ✕
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="mt-2 flex justify-end">
                     <Button
