@@ -1313,6 +1313,7 @@ export default function ProductAdDialog({
           contact_website: contactWebsite.trim() || null,
           contact_phone: contactPhone.trim() || null,
           contact_address: contactAddress.trim() || null,
+          contact_logo_url: contactLogo || null,
         }, { onConflict: 'user_id' })
       if (upErr) {
         setError(upErr.message)
@@ -1362,6 +1363,7 @@ export default function ProductAdDialog({
             contact_website: contactWebsite.trim() || null,
             contact_phone: contactPhone.trim() || null,
             contact_address: contactAddress.trim() || null,
+            contact_logo_url: contactLogo || null,
           }, { onConflict: 'user_id' })
       } catch {
         /* non-fatal: still attempt generation */
