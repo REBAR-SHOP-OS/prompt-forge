@@ -840,6 +840,27 @@ async function startVeo(
     instance.lastFrame = { bytesBase64Encoded: frame.data, mimeType: frame.mimeType };
   }
 
+  // Persistent identity anchor: forward reference (Character Sheet) images so
+  // the subject stays consistent across chained cards. Veo 3.1 only; capped at 3.
+  // Best-effort — a failed fetch for a reference image must never break the job.
+  if (input.referenceImageUrls && input.referenceImageUrls.length > 0) {
+    const references: Array<Record<string, unknown>> = [];
+    for (const url of input.referenceImageUrls.slice(0, 3)) {
+      try {
+        const ref = await fetchAsInlineData(url);
+        references.push({
+          image: { bytesBase64Encoded: ref.data, mimeType: ref.mimeType },
+          referenceType: "asset",
+        });
+      } catch (e) {
+        logError("veo reference image fetch failed, skipping", {
+          error: (e as Error).message,
+        });
+      }
+    }
+    if (references.length > 0) instance.referenceImages = references;
+  }
+
 
   const body = {
     instances: [instance],
