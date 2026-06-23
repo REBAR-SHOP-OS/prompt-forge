@@ -111,6 +111,7 @@ export function VoiceoverDialog({
   open,
   onOpenChange,
   onUseAsSoundtrack,
+  products = [],
   activeVoiceoverUrl,
   activeVoiceoverName,
   voiceoverVolume = 1,
