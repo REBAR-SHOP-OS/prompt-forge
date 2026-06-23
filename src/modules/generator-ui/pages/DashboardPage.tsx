@@ -116,6 +116,15 @@ import type { VideoSummary } from '@/modules/video-library/contract'
 import { generatorUiGateway } from '@/modules/generator-ui/gateway'
 import { mergeVideoUrls, MergeCancelledError, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
 import { ensureMp4 } from '@/modules/generator-ui/lib/transcodeToMp4'
+import {
+  loadContinuity,
+  saveContinuity,
+  isMemoryEmpty,
+  generateStarterMemory,
+  applyContinuityPrompt,
+  type ContinuityState,
+  type SceneMemory,
+} from '@/modules/generator-ui/lib/continuity'
 import { recordBlobToMp4, canRecordMp4 } from '@/modules/generator-ui/lib/recordToMp4'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
 import UsageStatsPopover from '@/modules/generator-ui/components/UsageStatsPopover'
