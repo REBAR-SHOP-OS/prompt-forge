@@ -1,33 +1,24 @@
-# افزودن آیکون ترجمه به دیالوگ Voiceover
+# تضمین لحن تبلیغاتی برای همه‌ی نریشن‌ها
 
-افزودن یک دکمه‌ی آیکونی **ترجمه** کنار دکمه‌های «Product narration» و «Regenerate» تا متن نریشن داخل فیلد TEXT به‌صورت دقیق به زبان انتخابی ترجمه شود.
+نریشن تولیدی از قبل همیشه تبلیغاتی است (`ad-narration`). شکاف فعلی در مسیر **ترجمه** است: تابع `translate-text` فقط «لحن را حفظ کن» می‌گوید و ممکن است هنگام ترجمه، حالت تبلیغاتی و کوبنده‌ی نریشن از بین برود. این پلن تضمین می‌کند خروجی ترجمه‌شده هم همیشه تبلیغاتی باقی بماند.
 
-## نکته
-- edge function آماده‌ی `translate-text` از قبل وجود دارد و زبان‌های Persian, English, Arabic, Turkish, Spanish, French, German, Russian, Chinese را پشتیبانی می‌کند. نیازی به تغییر بک‌اند نیست.
+## تغییرات
 
-## تغییرات — فقط `src/modules/generator-ui/components/VoiceoverDialog.tsx`
+### ۱. `supabase/functions/translate-text/index.ts`
+- افزودن پارامتر اختیاری `style` به بدنه‌ی درخواست (مثلاً `'advertising'`).
+- وقتی `style === 'advertising'`:
+  - تقویت system prompt: ترجمه باید یک کپی تبلیغاتی/تجاری روان، کوبنده و متقاعدکننده مناسب اجرای صوتی باشد؛ نه ترجمه‌ی تحت‌اللفظی، بلکه بازنویسی طبیعی با حفظ معنا و حفظ call to action.
+  - تأکید بر اینکه هیچ عدد/کد/SKU اضافه نشود (هم‌راستا با `ad-narration`).
+- در صورت نبود `style`، رفتار فعلی بدون تغییر می‌ماند (سازگاری عقب‌رو).
+- استقرار مجدد تابع.
 
-- import آیکون `Languages` از lucide-react.
-- state جدید:
-  - `isTranslateOpen` برای popover انتخاب زبان.
-  - `isTranslating` برای حالت لودینگ.
-- یک ثابت محلی `TRANSLATE_LANGS` با همان کدهای پشتیبانی‌شده‌ی edge function و نام بومی هر زبان (مثلاً `fa: فارسی`, `en: English`, `ar: العربية`, ...).
-- تابع `handleTranslate(targetLang)`:
-  - اگر `text.trim()` خالی باشد → toast هشدار.
-  - فراخوانی `supabase.functions.invoke('translate-text', { body: { text, targetLang } })`.
-  - در موفقیت: `setText(data.translation)` و بستن popover و toast موفقیت.
-  - مدیریت خطا (۴۲۹/۴۰۲/سایر) با toast مناسب؛ مشابه الگوی موجود.
-- **دکمه‌ی آیکونی ترجمه** کنار دکمه‌ی Regenerate (همان ناحیه‌ی دایره‌ای در تصویر) با آیکون `Languages`:
-  - به‌صورت `PopoverTrigger`؛ کلیک → باز شدن لیست زبان‌ها.
-  - هر زبان یک ردیف قابل کلیک که `handleTranslate` را صدا می‌زند.
-  - در حال ترجمه، آیکون به اسپینر تبدیل و دکمه غیرفعال شود.
-  - دارای `title`/`aria-label` («Translate narration»).
-  - فقط زمانی فعال باشد که متنی در فیلد وجود دارد.
+### ۲. `src/modules/generator-ui/components/VoiceoverDialog.tsx`
+- در `handleTranslate`، ارسال `style: 'advertising'` در بدنه‌ی فراخوانی `translate-text`.
+- پس از ترجمه‌ی موفق، اطمینان از اینکه `tone` روی `advertising` بماند (`setTone('advertising')`) تا TTS هم تبلیغاتی باشد.
 
 ## بدون تغییر
-- منطق TTS، انتخاب صدا، تولید نریشن و سایر بخش‌ها دست‌نخورده می‌ماند.
+- منطق تولید نریشن، TTS، انتخاب صدا و سایر بخش‌ها دست‌نخورده می‌ماند.
 
 ## اعتبارسنجی
 - typecheck.
-- تست `translate-text` با curl روی یک نمونه متن.
-- بررسی بصری: تولید/داشتن متن، کلیک روی آیکون ترجمه، انتخاب زبان و جایگزینی متن ترجمه‌شده.
+- تست `translate-text` با `style: 'advertising'` روی یک متن نمونه و بررسی خروجی تبلیغاتی و بدون عدد.

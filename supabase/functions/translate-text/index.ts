@@ -30,6 +30,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const text = typeof body?.text === "string" ? body.text.trim() : "";
     const targetLang = typeof body?.targetLang === "string" ? body.targetLang.trim() : "";
+    const style = typeof body?.style === "string" ? body.style.trim() : "";
 
     if (!text) {
       return new Response(JSON.stringify({ error: "text is required" }), {
