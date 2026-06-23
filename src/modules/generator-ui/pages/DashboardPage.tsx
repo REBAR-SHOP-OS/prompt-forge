@@ -118,6 +118,7 @@ import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { videoLibraryGateway } from '@/modules/video-library/gateway'
 import type { VideoSummary } from '@/modules/video-library/contract'
 import { generatorUiGateway } from '@/modules/generator-ui/gateway'
+import { externalApiAdapterGateway, type LocalVideoStatusResult } from '@/modules/external-api-adapter/gateway'
 import { mergeVideoUrls, MergeCancelledError, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
 import { ensureMp4 } from '@/modules/generator-ui/lib/transcodeToMp4'
 import {
@@ -3388,6 +3389,25 @@ export default function DashboardPage() {
     if (typeof window === 'undefined') return
     window.localStorage.setItem('ui:preferred-model', selectedModelId)
   }, [selectedModelId])
+
+  // Local video router config/health status — only checked while a local model
+  // is selected, so cloud-only users never trigger the probe.
+  const [localStatus, setLocalStatus] = useState<LocalVideoStatusResult | null>(null)
+  const [localStatusLoading, setLocalStatusLoading] = useState(false)
+  useEffect(() => {
+    if (selectedModel?.providerKey !== 'local') {
+      setLocalStatus(null)
+      return
+    }
+    let cancelled = false
+    setLocalStatusLoading(true)
+    externalApiAdapterGateway
+      .localVideoStatus(true)
+      .then((res) => { if (!cancelled) setLocalStatus(res) })
+      .catch(() => { if (!cancelled) setLocalStatus(null) })
+      .finally(() => { if (!cancelled) setLocalStatusLoading(false) })
+    return () => { cancelled = true }
+  }, [selectedModel?.providerKey, selectedModel?.model])
 
 
   // Cost preview / confirm dialog state
@@ -10906,6 +10926,24 @@ export default function DashboardPage() {
                     </button>
                   )
                 })}
+                {selectedModel?.providerKey === 'local' && (
+                  <div
+                    className={`mt-1 rounded-lg border px-3 py-2 text-xs leading-5 ${
+                      localStatusLoading
+                        ? 'border-white/10 bg-white/[0.03] text-zinc-400'
+                        : localStatus?.status === 'configured'
+                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                          : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                    }`}
+                  >
+                    {localStatusLoading
+                      ? 'Checking local video router…'
+                      : localStatus?.status === 'configured'
+                        ? 'Local video router: connected.'
+                        : localStatus?.message ?? 'Local video router is not configured. Add LOCAL_VIDEO_ROUTER_URL or choose a cloud model.'}
+                  </div>
+                )}
+
               </PopoverContent>
             </Popover>
 

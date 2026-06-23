@@ -95,8 +95,46 @@ const LOCAL_VIDEO_MODELS = new Set([
 ]);
 
 type LocalVideoConfig =
-  | { ok: true; baseUrl: string; apiKey: string | null }
+  | { ok: true; baseUrl: string; apiKey: string | null; timeoutMs: number }
   | { ok: false; error: string };
+
+// Clear, actionable messages reused by the adapter, the orchestrator preflight
+// and the status endpoint so the UI always shows the same guidance.
+export const LOCAL_NOT_CONFIGURED_MESSAGE =
+  "Local video router is not configured. Add LOCAL_VIDEO_ROUTER_URL or choose a cloud model.";
+export const LOCAL_UNREACHABLE_MESSAGE =
+  "Local video router is unreachable. Check that the local router is running and accessible from the backend.";
+
+const DEFAULT_LOCAL_VIDEO_TIMEOUT_MS = 300_000;
+
+function readLocalVideoTimeoutMs(): number {
+  const raw = Number(Deno.env.get("LOCAL_VIDEO_ROUTER_TIMEOUT_MS"));
+  return Number.isFinite(raw) && raw > 0 ? Math.round(raw) : DEFAULT_LOCAL_VIDEO_TIMEOUT_MS;
+}
+
+/** True when the error is a network/abort failure (router down/unreachable),
+ *  as opposed to an HTTP error response from a reachable router. */
+function isUnreachableError(err: unknown): boolean {
+  if (err instanceof DOMException && err.name === "AbortError") return true;
+  if (err instanceof TypeError) return true; // fetch network failure
+  const msg = (err as Error)?.message?.toLowerCase() ?? "";
+  return /network|fetch failed|connection|timed out|timeout|dns|refused|unreachable|aborted/.test(msg);
+}
+
+/** Fetch with the configured local-router timeout via AbortController. */
+async function localVideoFetch(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function sanitizePrompt(p: string): string {
   return p.replace(/\s+/g, " ").trim();
@@ -155,6 +193,7 @@ function getProviderApiKey(providerKey: ProviderKey): string | null {
   if (providerKey === "wan") return Deno.env.get("WAN_API_KEY") ?? null;
   if (providerKey === "local") {
     return (
+      Deno.env.get("LOCAL_VIDEO_ROUTER_TOKEN") ??
       Deno.env.get("LOCAL_VIDEO_API_KEY") ??
       Deno.env.get("LOCAL_AI_ROUTER_TOKEN") ??
       Deno.env.get("LOCAL_IMAGE_API_KEY") ??
@@ -185,27 +224,28 @@ function readLocalVideoConfig(): LocalVideoConfig {
   // image router URLs — those have no /videos/generations endpoint and would
   // produce a misleading 404 instead of a clear "not configured" error.
   const rawBaseUrl = (
+    Deno.env.get("LOCAL_VIDEO_ROUTER_URL") ??
     Deno.env.get("LOCAL_VIDEO_BASE_URL") ??
     Deno.env.get("LOCAL_AI_ROUTER_BASE_URL") ??
     ""
   ).trim();
 
   if (!rawBaseUrl) {
-    return { ok: false, error: "Local video generation is not configured yet. Configure the RTX video router or choose a cloud model." };
+    return { ok: false, error: LOCAL_NOT_CONFIGURED_MESSAGE };
   }
 
   let parsed: URL;
   try {
     parsed = new URL(rawBaseUrl);
   } catch {
-    return { ok: false, error: "Local video generation is not configured yet. Configure the RTX video router or choose a cloud model." };
+    return { ok: false, error: LOCAL_NOT_CONFIGURED_MESSAGE };
   }
 
   if (isLoopbackHost(parsed.hostname) && Deno.env.get("ALLOW_LOCAL_VIDEO_LOOPBACK") !== "true") {
-    return { ok: false, error: "Local video generation is not configured yet. Configure the RTX video router or choose a cloud model." };
+    return { ok: false, error: LOCAL_NOT_CONFIGURED_MESSAGE };
   }
   if (parsed.protocol !== "https:" && Deno.env.get("ALLOW_LOCAL_VIDEO_HTTP") !== "true") {
-    return { ok: false, error: "Local video generation is not configured yet. Configure the RTX video router or choose a cloud model." };
+    return { ok: false, error: LOCAL_NOT_CONFIGURED_MESSAGE };
   }
 
   const withoutTrailingSlash = parsed.toString().replace(/\/+$/, "");
@@ -213,7 +253,38 @@ function readLocalVideoConfig(): LocalVideoConfig {
     ? withoutTrailingSlash
     : `${withoutTrailingSlash}/v1`;
   const apiKey = getProviderApiKey("local");
-  return { ok: true, baseUrl, apiKey };
+  return { ok: true, baseUrl, apiKey, timeoutMs: readLocalVideoTimeoutMs() };
+}
+
+/** Lightweight, no-secret config/health status for the local video router.
+ *  Used by the orchestrator preflight and the status endpoint. When
+ *  `probe` is true and configured, it attempts a reachability check. */
+export async function localVideoStatus(
+  probe = false,
+): Promise<{ status: "configured" | "not_configured" | "unreachable"; message: string }> {
+  const config = readLocalVideoConfig();
+  if (!config.ok) {
+    return { status: "not_configured", message: config.error };
+  }
+  if (!probe) {
+    return { status: "configured", message: "Local video router is configured." };
+  }
+  try {
+    // Probe with a short timeout regardless of the generation timeout.
+    const res = await localVideoFetch(
+      `${config.baseUrl}/models`,
+      { method: "GET", headers: localVideoHeaders(config) },
+      Math.min(config.timeoutMs, 10_000),
+    );
+    // Any HTTP response (even 404) means the router host is reachable.
+    await res.body?.cancel().catch(() => {});
+    return { status: "configured", message: "Local video router is reachable." };
+  } catch (err) {
+    if (isUnreachableError(err)) {
+      return { status: "unreachable", message: LOCAL_UNREACHABLE_MESSAGE };
+    }
+    return { status: "configured", message: "Local video router is configured." };
+  }
 }
 
 function isLocalVideoModel(model: string): boolean {
@@ -1326,11 +1397,18 @@ async function startLocalVideo(
   };
 
 
-  const res = await fetch(`${config.baseUrl}/videos/generations`, {
-    method: "POST",
-    headers: localVideoHeaders(config),
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await localVideoFetch(`${config.baseUrl}/videos/generations`, {
+      method: "POST",
+      headers: localVideoHeaders(config),
+      body: JSON.stringify(body),
+    }, config.timeoutMs);
+  } catch (err) {
+    logError("local video create unreachable", { error: (err as Error).message, model: resolvedModel });
+    if (isUnreachableError(err)) throw new Error(LOCAL_UNREACHABLE_MESSAGE);
+    throw err;
+  }
   const text = await res.text().catch(() => "");
   let payload: unknown = null;
   try {
@@ -1390,10 +1468,21 @@ async function pollLocalVideo(providerJobId: string): Promise<GenerationPollResu
   }
 
   const jobId = providerJobId.startsWith("local:") ? providerJobId.slice("local:".length) : providerJobId;
-  const res = await fetch(`${config.baseUrl}/videos/generations/${encodeURIComponent(jobId)}`, {
-    method: "GET",
-    headers: localVideoHeaders(config),
-  });
+  let res: Response;
+  try {
+    res = await localVideoFetch(`${config.baseUrl}/videos/generations/${encodeURIComponent(jobId)}`, {
+      method: "GET",
+      headers: localVideoHeaders(config),
+    }, config.timeoutMs);
+  } catch (err) {
+    // Router unreachable mid-poll: keep the job processing so a transient
+    // outage doesn't fail an in-flight render. The stuck-timeout still applies.
+    if (isUnreachableError(err)) {
+      logError("local video poll unreachable", { error: (err as Error).message, providerJobId });
+      return { status: "processing", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null, progressPercent: 25 };
+    }
+    throw err;
+  }
   const text = await res.text().catch(() => "");
   let payload: unknown = null;
   try {
@@ -1546,4 +1635,5 @@ export const aiGateway: AiGateway = {
   getProviderApiKey,
   startGeneration,
   pollGeneration,
+  localVideoStatus,
 };

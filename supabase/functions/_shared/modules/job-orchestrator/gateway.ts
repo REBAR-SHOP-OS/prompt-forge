@@ -486,6 +486,19 @@ export const jobOrchestratorGateway = {
           // chaining a Veo extension call inside the adapter (~15s total).
           // No up-front rejection needed — the adapter handles the chain.
 
+          // Preflight: for local models, verify the router is configured BEFORE
+          // creating a job + debiting credits, so a misconfiguration never
+          // leaves a broken Pending job behind.
+          if (providerKey === "local") {
+            const localStatus = await aiGateway.localVideoStatus(false);
+            if (localStatus.status === "not_configured") {
+              await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 503, latencyMs: Date.now() - ctx.startedAt, errorCode: "LOCAL_NOT_CONFIGURED" });
+              return errorResponse("LOCAL_NOT_CONFIGURED", localStatus.message, 503, ctx.requestId);
+            }
+          }
+
+
+
           // Cross-domain call via external-api-adapter contract.
           // Pass duration + lastFrame so cost is accurate and Veo tier is
           // chosen correctly (Fast unless last-frame interpolation needed).
@@ -573,13 +586,23 @@ export const jobOrchestratorGateway = {
             logError("startGeneration failed", { error: genErr, jobId });
 
             // Surface a precise, user-readable message when the Local router
-            // isn't set up — instead of a generic provider error. Credits are
-            // already refunded above. No secrets/URLs are leaked here.
-            if (route.providerKey === "local" || /local video generation is not configured|LOCAL_VIDEO_BASE_URL/i.test(genErr)) {
+            // isn't set up or is unreachable — instead of a generic provider
+            // error. Credits are already refunded above. No secrets/URLs leak.
+            if (route.providerKey === "local") {
+              const unreachable = /unreachable|unable to reach|router .* unreachable/i.test(genErr);
+              if (unreachable) {
+                await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 502, latencyMs: Date.now() - ctx.startedAt, errorCode: "LOCAL_UNREACHABLE" });
+                return errorResponse(
+                  "LOCAL_UNREACHABLE",
+                  "Local video router is unreachable. Check that the local router is running and accessible from the backend.",
+                  502,
+                  ctx.requestId,
+                );
+              }
               await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 503, latencyMs: Date.now() - ctx.startedAt, errorCode: "LOCAL_NOT_CONFIGURED" });
               return errorResponse(
                 "LOCAL_NOT_CONFIGURED",
-                "Local video generation is not configured yet. Configure the RTX video router or choose a cloud model.",
+                "Local video router is not configured. Add LOCAL_VIDEO_ROUTER_URL or choose a cloud model.",
                 503,
                 ctx.requestId,
               );

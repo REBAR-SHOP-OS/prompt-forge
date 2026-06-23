@@ -18,7 +18,7 @@ import type { DomainContractMeta } from "../_gateway/types.ts";
 export const EXTERNAL_API_ADAPTER_CONTRACT: DomainContractMeta = {
   domain: "external-api-adapter",
   version: "v1",
-  operations: ["routePreview"],
+  operations: ["routePreview", "localVideoStatus"],
 } as const;
 
 const RoutePreviewSchema = z.object({
@@ -36,7 +36,7 @@ export const externalApiAdapterGateway = {
     const ctx = startRequest(req, `/${EXTERNAL_API_ADAPTER_CONTRACT.domain}/${operation}`);
     const svc = getServiceClient();
     try {
-      if (req.method !== "POST") {
+      if (req.method !== "POST" && !(operation === "localVideoStatus" && req.method === "GET")) {
         return errorResponse("METHOD_NOT_ALLOWED", "Use POST", 405, ctx.requestId);
       }
       const auth = await authenticate(req);
@@ -89,6 +89,20 @@ export const externalApiAdapterGateway = {
             requestId: ctx.requestId,
           });
         }
+        case "localVideoStatus": {
+          if (req.method !== "GET" && req.method !== "POST") {
+            return errorResponse("METHOD_NOT_ALLOWED", "Use GET or POST", 405, ctx.requestId);
+          }
+          if (!rateLimit(`local-video-status:${auth.userId}`, 30, 60_000)) {
+            await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 429, latencyMs: Date.now() - ctx.startedAt, errorCode: "RATE_LIMITED" });
+            return errorResponse("RATE_LIMITED", "Too many requests", 429, ctx.requestId);
+          }
+          const probe = new URL(req.url).searchParams.get("probe") === "true";
+          const status = await aiGateway.localVideoStatus(probe);
+          await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
+          return jsonResponse({ ...status, requestId: ctx.requestId });
+        }
+
         default:
           await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 404, latencyMs: Date.now() - ctx.startedAt, errorCode: "UNKNOWN_OPERATION" });
           return errorResponse("UNKNOWN_OPERATION", `Unknown operation: ${operation}`, 404, ctx.requestId);
