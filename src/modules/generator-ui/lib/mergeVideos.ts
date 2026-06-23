@@ -544,9 +544,20 @@ export async function mergeVideoUrls(
   if (signal?.aborted) throw new MergeCancelledError()
 
   // Contact/branding overlay baked into every frame for this run.
-  activeOverlay = overlay && overlay.lines.some((l) => l.trim())
-    ? { lines: overlay.lines, position: overlay.position ?? 'bottom' }
+  const hasText = !!overlay && overlay.lines.some((l) => l.trim())
+  const hasLogo = !!overlay?.logoUrl
+  activeOverlay = overlay && (hasText || hasLogo)
+    ? { lines: overlay.lines, position: overlay.position ?? 'bottom', logoUrl: overlay.logoUrl }
     : null
+  // Preload the logo image so drawOverlay (sync) can paint it on every frame.
+  activeLogo = null
+  if (activeOverlay?.logoUrl) {
+    try {
+      activeLogo = await loadImage(activeOverlay.logoUrl, 'contact logo')
+    } catch {
+      activeLogo = null
+    }
+  }
 
   // Normalize: accept legacy `string[]` (always videos) or `MergeClip[]`.
   const clipDefs: MergeClip[] = inputs.map((it) =>
