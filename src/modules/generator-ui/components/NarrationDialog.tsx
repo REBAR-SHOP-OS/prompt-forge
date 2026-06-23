@@ -759,10 +759,10 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
         {check ? (
           <section className="space-y-2 border-t border-white/10 pt-4">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              Check
+              {t('check')}
             </h3>
             <div
-              className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm leading-6 ${
+              className={`flex flex-col gap-1 rounded-lg border px-3 py-2 text-sm leading-6 ${
                 check.status === 'ok'
                   ? 'border-emerald-400/30 bg-emerald-500/[0.08] text-emerald-100'
                   : check.status === 'none'
@@ -770,12 +770,19 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                     : 'border-amber-400/30 bg-amber-500/[0.08] text-amber-100'
               }`}
             >
-              {check.status === 'ok' ? (
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              ) : check.status === 'none' ? null : (
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              )}
-              <span>{check.message}</span>
+              <div className="flex items-start gap-2">
+                {check.status === 'ok' ? (
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                ) : check.status === 'none' ? null : (
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                )}
+                <span>{check.message}</span>
+              </div>
+              {checkMessageTranslation ? (
+                <p dir="auto" className="pl-6 text-[13px] text-sky-200/90">
+                  {checkMessageTranslation}
+                </p>
+              ) : null}
             </div>
 
             {/* Percentage match / difference meter */}
