@@ -246,16 +246,25 @@ export type Database = {
       generator_business_profiles: {
         Row: {
           business_info: string
+          contact_address: string | null
+          contact_phone: string | null
+          contact_website: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           business_info: string
+          contact_address?: string | null
+          contact_phone?: string | null
+          contact_website?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           business_info?: string
+          contact_address?: string | null
+          contact_phone?: string | null
+          contact_website?: string | null
           updated_at?: string
           user_id?: string
         }

@@ -534,6 +534,10 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequired: 'Please describe your business first — the scenario must be relevant to it.',
     businessSave: 'Save',
     businessSaved: 'Saved',
+    contactLabel: 'Contact details (shown on video)',
+    contactWebsite: 'Website',
+    contactPhone: 'Phone',
+    contactAddress: 'Address',
   },
   fa: {
     title: 'سناریوی تبلیغ محصول',
@@ -591,6 +595,10 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequired: 'ابتدا کسب‌وکارتان را توضیح دهید — سناریو باید مرتبط با آن باشد.',
     businessSave: 'ذخیره',
     businessSaved: 'ذخیره شد',
+    contactLabel: 'اطلاعات تماس (روی ویدیو نمایش داده می‌شود)',
+    contactWebsite: 'وب‌سایت',
+    contactPhone: 'شماره تماس',
+    contactAddress: 'آدرس',
   },
   ar: {
     title: 'سيناريو إعلان المنتج',
@@ -648,6 +656,10 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequired: 'يرجى وصف عملك أولاً — يجب أن يكون السيناريو ذا صلة به.',
     businessSave: 'حفظ',
     businessSaved: 'تم الحفظ',
+    contactLabel: 'بيانات الاتصال (تظهر على الفيديو)',
+    contactWebsite: 'الموقع الإلكتروني',
+    contactPhone: 'الهاتف',
+    contactAddress: 'العنوان',
   },
   tr: {
     title: 'Ürün Reklam Senaryosu',
@@ -705,6 +717,10 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequired: 'Lütfen önce işletmenizi açıklayın — senaryo bununla ilgili olmalı.',
     businessSave: 'Kaydet',
     businessSaved: 'Kaydedildi',
+    contactLabel: 'İletişim bilgileri (videoda gösterilir)',
+    contactWebsite: 'Web sitesi',
+    contactPhone: 'Telefon',
+    contactAddress: 'Adres',
   },
   es: {
     title: 'Guion de Anuncio de Producto',
@@ -762,6 +778,10 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequired: 'Describe primero tu negocio: el escenario debe ser relevante para él.',
     businessSave: 'Guardar',
     businessSaved: 'Guardado',
+    contactLabel: 'Datos de contacto (se muestran en el video)',
+    contactWebsite: 'Sitio web',
+    contactPhone: 'Teléfono',
+    contactAddress: 'Dirección',
   },
   fr: {
     title: 'Scénario de Publicité Produit',
@@ -819,6 +839,10 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequired: "Décrivez d'abord votre entreprise — le scénario doit y être pertinent.",
     businessSave: 'Enregistrer',
     businessSaved: 'Enregistré',
+    contactLabel: 'Coordonnées (affichées sur la vidéo)',
+    contactWebsite: 'Site web',
+    contactPhone: 'Téléphone',
+    contactAddress: 'Adresse',
   },
 }
 
@@ -901,6 +925,9 @@ export default function ProductAdDialog({
   const [nameNeedsReview, setNameNeedsReview] = useState(false)
   const [productDescription, setProductDescription] = useState('')
   const [businessInfo, setBusinessInfo] = useState('')
+  const [contactWebsite, setContactWebsite] = useState('')
+  const [contactPhone, setContactPhone] = useState('')
+  const [contactAddress, setContactAddress] = useState('')
   const [businessSaving, setBusinessSaving] = useState(false)
   const [businessSaved, setBusinessSaved] = useState(false)
   const [businessOpen, setBusinessOpen] = useState(false)
@@ -1190,11 +1217,15 @@ export default function ProductAdDialog({
     if (open && userId) {
       supabase
         .from('generator_business_profiles')
-        .select('business_info')
+        .select('business_info, contact_website, contact_phone, contact_address')
         .eq('user_id', userId)
         .maybeSingle()
         .then(({ data }) => {
-          if (!cancelled && data?.business_info) setBusinessInfo(data.business_info)
+          if (cancelled || !data) return
+          if (data.business_info) setBusinessInfo(data.business_info)
+          if (data.contact_website) setContactWebsite(data.contact_website)
+          if (data.contact_phone) setContactPhone(data.contact_phone)
+          if (data.contact_address) setContactAddress(data.contact_address)
         })
     }
     return () => {
@@ -1268,7 +1299,13 @@ export default function ProductAdDialog({
     try {
       const { error: upErr } = await supabase
         .from('generator_business_profiles')
-        .upsert({ user_id: userId, business_info: businessInfo.trim() }, { onConflict: 'user_id' })
+        .upsert({
+          user_id: userId,
+          business_info: businessInfo.trim(),
+          contact_website: contactWebsite.trim() || null,
+          contact_phone: contactPhone.trim() || null,
+          contact_address: contactAddress.trim() || null,
+        }, { onConflict: 'user_id' })
       if (upErr) {
         setError(upErr.message)
         return
@@ -1311,7 +1348,13 @@ export default function ProductAdDialog({
       try {
         await supabase
           .from('generator_business_profiles')
-          .upsert({ user_id: userId, business_info: businessInfo.trim() }, { onConflict: 'user_id' })
+          .upsert({
+            user_id: userId,
+            business_info: businessInfo.trim(),
+            contact_website: contactWebsite.trim() || null,
+            contact_phone: contactPhone.trim() || null,
+            contact_address: contactAddress.trim() || null,
+          }, { onConflict: 'user_id' })
       } catch {
         /* non-fatal: still attempt generation */
       } finally {
@@ -1579,6 +1622,29 @@ export default function ProductAdDialog({
                     placeholder={t.businessPlaceholder}
                     className="max-h-[55vh] min-h-[220px] resize-y border-white/10 bg-black/30 text-sm text-zinc-100"
                   />
+                  <div className="mt-3 mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
+                    {t.contactLabel}
+                  </div>
+                  <div className="space-y-2">
+                    <Input
+                      value={contactWebsite}
+                      onChange={(e) => { setContactWebsite(e.target.value); setBusinessSaved(false) }}
+                      placeholder={t.contactWebsite}
+                      className="h-9 border-white/10 bg-black/30 text-sm text-zinc-100"
+                    />
+                    <Input
+                      value={contactPhone}
+                      onChange={(e) => { setContactPhone(e.target.value); setBusinessSaved(false) }}
+                      placeholder={t.contactPhone}
+                      className="h-9 border-white/10 bg-black/30 text-sm text-zinc-100"
+                    />
+                    <Input
+                      value={contactAddress}
+                      onChange={(e) => { setContactAddress(e.target.value); setBusinessSaved(false) }}
+                      placeholder={t.contactAddress}
+                      className="h-9 border-white/10 bg-black/30 text-sm text-zinc-100"
+                    />
+                  </div>
                   <div className="mt-2 flex justify-end">
                     <Button
                       size="sm"
