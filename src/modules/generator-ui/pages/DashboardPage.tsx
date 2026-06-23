@@ -2953,12 +2953,19 @@ export default function DashboardPage() {
     [generatedVideos],
   )
   const hasPreviousClip = !!previousClip
-  // Auto-disable continuity if the chain no longer has a previous clip.
+  // Long durations are auto-split into multiple sequential cards; Continuity Mode
+  // is forced ON for them so the cards stay narratively/content related.
+  const isMultiCardDuration =
+    durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135
+  // Effective continuity state used across UI + generation paths.
+  const continuityActive = continuity.enabled || isMultiCardDuration
+  // Auto-disable continuity if the chain no longer has a previous clip — but keep
+  // it on for multi-card durations (their continuity is intra-batch, no prior clip needed).
   useEffect(() => {
-    if (continuity.enabled && !hasPreviousClip) {
+    if (continuity.enabled && !hasPreviousClip && !isMultiCardDuration) {
       updateContinuity({ enabled: false })
     }
-  }, [continuity.enabled, hasPreviousClip, updateContinuity])
+  }, [continuity.enabled, hasPreviousClip, isMultiCardDuration, updateContinuity])
   // Effective character shown in the continuity panel: the live selection wins,
   // otherwise the character persisted for this chain/film.
   const continuityCharacter = selectedCharacter ?? continuity.characterRef ?? null
@@ -5766,15 +5773,35 @@ export default function DashboardPage() {
     let previousJobId: string | null = null
     // One durable project group id for every scene clip in this scenario.
     const draftGroupId = ensureActiveDraftGroupId()
+
+    // Content continuity for chained cards: resolve the character description once
+    // and reuse it as a prefix on every scene so all cards keep the same subject.
+    const continuityCharacterRef = selectedCharacter ?? continuity.characterRef ?? null
+    let characterPrefixDesc: string | null = null
+    if (continuityActive && continuityCharacterRef) {
+      try {
+        setVideoColumnMessage('Reading character reference…')
+        characterPrefixDesc = await resolveCharacterDescription(continuityCharacterRef)
+      } catch {
+        characterPrefixDesc = null
+      }
+      setVideoColumnMessage(null)
+    }
     try {
       for (let i = 0; i < scenes.length; i++) {
         const sourcePrompt = scenes[i].trim()
         if (!sourcePrompt) continue
         const sceneLabel = `Scene ${i + 1}`
-        const prompt = sourcePrompt
         // Capture the authoritative narration written in this scene so it stays
         // the reference even if the visual prompt is later edited.
         const narrationText = extractNarration(sourcePrompt).join('\n') || undefined
+        // Enrich each card so the sequence stays content-connected: keep the same
+        // character, and (after the first) explicitly continue from the prior card.
+        let prompt = sourcePrompt
+        if (continuityActive) {
+          if (characterPrefixDesc) prompt = applyCharacterPrefix(prompt, characterPrefixDesc)
+          if (i > 0) prompt = applyContinuityPrompt(prompt, continuity.memory)
+        }
 
         let startFrameUrl: string | undefined
         if (i === 0) {
@@ -10269,21 +10296,23 @@ export default function DashboardPage() {
               <div>
                 <div className="text-xs font-semibold text-zinc-200">Continuity Mode</div>
                 <div className="text-[11px] text-zinc-500">
-                  {hasPreviousClip
-                    ? 'Continue the next card from the previous clip'
-                    : 'Generate a clip first to enable continuity'}
+                  {isMultiCardDuration
+                    ? 'Always on for 30s/45s/135s so the cards stay content-connected'
+                    : hasPreviousClip
+                      ? 'Continue the next card from the previous clip'
+                      : 'Generate a clip first to enable continuity'}
                 </div>
               </div>
             </div>
             <Switch
-              checked={continuity.enabled}
-              disabled={!hasPreviousClip}
+              checked={continuityActive}
+              disabled={isMultiCardDuration || !hasPreviousClip}
               onCheckedChange={handleToggleContinuity}
               aria-label="Toggle Continuity Mode"
             />
           </div>
 
-          {continuity.enabled && hasPreviousClip ? (
+          {continuityActive && (hasPreviousClip || isMultiCardDuration) ? (
             <div className="mt-3 space-y-3 border-t border-white/10 pt-3 text-[11px]">
               {/* Continuation source */}
               <div className="flex items-center justify-between gap-2">

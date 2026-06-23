@@ -1,42 +1,42 @@
-## نمایش کاراکتر شیت انتخاب‌شده در پنل Continuity Mode
-
-### مشکل فعلی
-وقتی Continuity Mode فعال می‌شود، ردیف «Character / reference» همیشه «No reference selected» نشان می‌دهد — حتی اگر آن فیلم با یک کاراکتر شیت ساخته شده باشد. علت: این پنل فقط به state موقت `selectedCharacter` نگاه می‌کند، و این state هنگام باز شدن پروژه/کلیپ موجود ریست می‌شود (`setSelectedCharacter(null)`). کاراکتر استفاده‌شده در ساخت کلیپ روی ردیف job ذخیره نمی‌شود، بنابراین هیچ مرجع پایداری برای نمایش وجود ندارد.
+## فعال‌سازی همیشگی Continuity Mode برای مدت‌زمان‌های ۳۰/۴۵/۱۳۵ ثانیه
 
 ### هدف
-وقتی این آیکون/سوییچ زده می‌شود و پنل Continuity باز می‌شود، کاراکتر شیتی که برای آن فیلم انتخاب شده بود در ردیف Character / reference نمایش داده شود تا فیلم بعدی بر اساس همان شخصیت ساخته شود. کاملاً اختیاری و فقط frontend، بدون تغییر دیتابیس/ادج‌فانکشن.
+این مدت‌زمان‌ها به‌صورت خودکار به چند کارت تقسیم می‌شوند (۳۰s→۲، ۴۵s→۳، ۱۳۵s→۹). برای اینکه این کارت‌ها از نظر محتوایی به هم مرتبط بمانند، Continuity Mode باید برای این سه مدت‌زمان همیشه فعال و قفل‌شده باشد (کاربر نتواند آن را خاموش کند)، و بلوک پیوستگی + scene memory + کاراکتر در هر کارت زنجیره اعمال شود.
 
-### راهکار امن و کم‌ریسک
-کاراکتر انتخاب‌شده را به‌صورت پایدار در همان state زنجیره‌ای Continuity (همان localStorage موجود `generator:continuity:<chainId>`) ذخیره می‌کنیم — دقیقاً مثل scene memory. به این ترتیب حتی پس از ریست شدن `selectedCharacter` یا بازگشت به پروژه، مرجع کاراکتر باقی می‌ماند.
+### وضعیت فعلی
+- مسیر چندکارتی (`submitScenesAsJobs`) فقط زنجیره‌سازی فریم‌به‌فریم انجام می‌دهد (فریم آخر هر کلیپ → فریم شروع کلیپ بعد) و بلوک متنی Continuity یا کاراکتر را در پرامپتِ هر صحنه تزریق نمی‌کند.
+- سوییچ Continuity فقط وقتی `hasPreviousClip` باشد فعال است؛ بنابراین در یک پروژه تازه با مدت‌زمان ۳۰/۴۵/۱۳۵ خاموش و غیرقابل‌فعال‌سازی است و پنل آن نمایش داده نمی‌شود.
 
-#### ۱) گسترش `src/modules/generator-ui/lib/continuity.ts`
-- افزودن فیلد اختیاری `character` به `ContinuityState`:
+### تغییرات (همه frontend در `DashboardPage.tsx`)
+
+#### ۱) مفهوم «مدت‌زمان چندکارتی» و فعال‌سازی اجباری
+- افزودن مقدار مشتق:
   ```ts
-  characterRef?: { id: string; url: string; title: string | null } | null
+  const isMultiCardDuration = durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135
+  const continuityActive = continuity.enabled || isMultiCardDuration
   ```
-- مقدار پیش‌فرض `null` و خواندن/نوشتن امن در `loadContinuity`/`saveContinuity` (با fallback روی null هنگام نبود مقدار).
+- در افکت موجود (خط ۲۹۵۷) منطق auto-disable طوری اصلاح شود که برای `isMultiCardDuration` خاموش نشود (پیوستگی درون‌دسته‌ای مستقل از وجود کلیپ قبلی است).
 
-#### ۲) ذخیره کاراکتر در زمان درست (`DashboardPage.tsx`)
-- هنگام انتخاب کاراکتر (مسیرهای `setSelectedCharacter` در دیالوگ Character Sheet و منوی پروژه) و هنگام ساخت کلیپ با کاراکتر، علاوه بر state فعلی، مرجع کاراکتر در `updateContinuity({ characterRef })` نیز ذخیره شود.
-- هنگام فعال‌سازی Continuity (`handleToggleContinuity`)، اگر `selectedCharacter` موجود است همان را در `characterRef` ست کن؛ و اگر scene memory خالی است، فیلد `character` متن مموری از توضیح کاراکتر (`resolveCharacterDescription`) به‌عنوان starter پر شود تا فیلم بعدی واقعاً بر پایه آن شخصیت ساخته شود.
+#### ۲) UI سوییچ Continuity (حدود خط ۱۰۲۷۰–۱۰۲۸۶)
+- وقتی `isMultiCardDuration` فعال است:
+  - `checked` = true و `disabled` = true (قفل روشن).
+  - زیرنویس به «به‌طور خودکار برای ۳۰/۴۵/۱۳۵ ثانیه فعال است تا کارت‌ها به‌هم مرتبط بمانند» تغییر کند.
+- گیتِ نمایش پنل از `continuity.enabled && hasPreviousClip` به `continuityActive && (hasPreviousClip || isMultiCardDuration)` تغییر کند تا پنل (منبع پیوستگی، کاراکتر، scene memory) برای این مدت‌زمان‌ها هم دیده شود.
 
-#### ۳) نمایش در پنل (`DashboardPage.tsx`، ردیف Character / reference حدود خط ۱۰۳۰۵)
-- منبع نمایش را از `selectedCharacter` به مقدار مؤثر تغییر بده:
-  ```ts
-  const continuityCharacter = selectedCharacter ?? continuity.characterRef ?? null
-  ```
-- اگر `continuityCharacter` موجود بود، تصویر بندانگشتی + عنوان نمایش داده شود؛ در غیر این صورت همان حالت «No reference selected» و پیام راهنما باقی بماند.
-- اگر کاراکتر از `continuity.characterRef` آمده ولی `selectedCharacter` خالی است، با کلیک روی ردیف، `selectedCharacter` با همان مقدار ست شود تا فیلم بعدی قطعاً از آن استفاده کند (هم‌سو شدن state موقت با مرجع پایدار).
+#### ۳) اعمال پیوستگی محتوایی در مسیر چندکارتی (`submitScenesAsJobs`)
+- پیش از ساخت هر job در حلقه، پرامپت هر صحنه با موارد زیر غنی شود (وقتی `continuityActive`):
+  - پیشوند کاراکتر از طریق `applyCharacterPrefix` + `resolveCharacterDescription` در صورت وجود `selectedCharacter`/`continuity.characterRef` (یک بار محاسبه و کش، خارج از حلقه).
+  - بلوک Continuity + scene memory از طریق `applyContinuityPrompt(prompt, continuity.memory)` برای صحنه‌های بعد از اولی، تا هر کارت صریحاً «ادامهٔ کارت قبل» باشد.
+- زنجیره‌سازی فریم‌به‌فریم فعلی دست‌نخورده باقی می‌ماند.
 
-#### ۴) استفاده در پرامپت فیلم بعدی
-- در مسیر `handleSubmit`، منطق فعلی تزریق کاراکتر (`applyCharacterPrefix` + `resolveCharacterDescription`) از `selectedCharacter` استفاده می‌کند. با هم‌سو شدن `selectedCharacter` با `characterRef` در مرحله ۳، فیلم بعدی به‌صورت خودکار بر اساس همان کاراکتر شیت ساخته می‌شود؛ تغییر منطق سرور لازم نیست.
+#### ۴) سازگاری مسیر handleSubmit
+- منطق فعلی که برای ۳۰/۴۵/۱۳۵ از `scenario-write` صحنه می‌سازد و به `submitScenesAsJobs` می‌دهد حفظ می‌شود؛ فقط تزریق کاراکتر/Continuity در داخل `submitScenesAsJobs` متمرکز می‌شود تا برای هر دو مسیر (اسپلیت خودکار و صحنه‌های دستی) یکسان عمل کند.
 
 ### خارج از محدوده (دست‌نخورده)
-بدون تغییر دیتابیس/اسکیم، بدون تغییر ادج‌فانکشن یا قرارداد `createJob`، رفتار فعلی final-frame حفظ می‌شود، Continuity همچنان اختیاری و پیش‌فرض خاموش است.
+بدون تغییر دیتابیس/اسکیم، بدون تغییر ادج‌فانکشن یا قرارداد `createJob`، رفتار اسپلیت مدت‌زمان و زنجیره فریم حفظ می‌شود، برای مدت‌زمان‌های ۵/۱۰/۱۵ Continuity همچنان اختیاری و دستی است.
 
 ### اعتبارسنجی
-- فعال کردن Continuity روی فیلمی که با کاراکتر شیت ساخته شده → نمایش تصویر و نام همان کاراکتر در ردیف Character / reference.
-- بستن و بازکردن دوباره پروژه → مرجع کاراکتر همچنان نمایش داده می‌شود (پایداری localStorage).
-- ساخت فیلم بعدی → پرامپت شامل توضیح همان کاراکتر است.
-- نبود کاراکتر → همان پیام راهنمای قبلی.
+- انتخاب ۳۰/۴۵/۱۳۵ → سوییچ Continuity روشن و قفل، پنل نمایش داده می‌شود.
+- ساخت با این مدت‌زمان‌ها → هر کارت دارای بلوک Continuity و (در صورت وجود) توضیح کاراکتر در پرامپت است.
+- انتخاب ۵/۱۰/۱۵ → سوییچ دوباره قابل تغییر و پیش‌فرض طبق وضعیت ذخیره‌شده.
 - Typecheck/build سالم.
