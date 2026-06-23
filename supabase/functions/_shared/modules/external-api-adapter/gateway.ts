@@ -18,7 +18,7 @@ import type { DomainContractMeta } from "../_gateway/types.ts";
 export const EXTERNAL_API_ADAPTER_CONTRACT: DomainContractMeta = {
   domain: "external-api-adapter",
   version: "v1",
-  operations: ["routePreview"],
+  operations: ["routePreview", "localVideoStatus"],
 } as const;
 
 const RoutePreviewSchema = z.object({
