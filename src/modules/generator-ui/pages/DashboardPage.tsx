@@ -5427,7 +5427,13 @@ export default function DashboardPage() {
     if (enabled && isMemoryEmpty(memory)) {
       memory = generateStarterMemory(promptText.trim(), undefined)
     }
-    updateContinuity({ enabled, memory })
+    // Persist the character sheet selected for this film so the panel can show
+    // it (and the next clip is built on the same character) even after the
+    // transient selectedCharacter is reset on project load.
+    const characterRef = selectedCharacter
+      ? { id: selectedCharacter.id, url: selectedCharacter.url, title: selectedCharacter.title }
+      : continuity.characterRef ?? null
+    updateContinuity({ enabled, memory, characterRef })
   }
 
   // Open the scene-memory editor, seeding from a starter when empty.
