@@ -1207,6 +1207,7 @@ export async function mergeVideoUrls(
 
   // Clear the per-run overlay so it never leaks into a later merge.
   activeOverlay = null
+  activeLogo = null
 
   // Final cleanup of media elements + audio graph.
   for (const c of preloaded) {
