@@ -1,38 +1,48 @@
-# Translate the entire Narration dialog
+# History of reframed product images
 
-When the user picks a language in the selector (circled in the screenshot), only the "From prompt" block is translated today. The user wants **every text block** in the dialog translated into the chosen language.
+## Goal
+In the "Choose from products" dialog, add a top-right icon that opens a gallery of product images that were **already reframed** in this dialog. Each thumbnail shows its **aspect ratio** (9:16 / 1:1 / 16:9). Picking one reuses it instantly — no new generation, no extra cost.
 
-## What gets translated
-
-When a language is selected:
-1. **From prompt** narration → already translated (keep).
-2. **On film** transcript → translate the recognized film speech.
-3. **Check** section → translate the status message, the "missing on film" and "extra/wrong on film" word lists, and the "possible pronunciation issues" line.
-4. **Static UI labels** (`From prompt`, `On film`, `Check`, `Read aloud`, `Word-by-word diff`, button titles, helper sentences) → switched using a small built-in dictionary, so fixed strings cost nothing and stay instant.
-
-Selecting **Original** restores all original text everywhere.
+Today, when a user picks a product + aspect ratio, `image-reframe` generates a new image into the private `wan-frames` bucket but nothing is recorded, so the same reframe gets paid for and regenerated every time. This change records each reframe and lets users pick from past results.
 
 ## How it works
 
-In `src/modules/generator-ui/components/NarrationDialog.tsx`:
+```text
+Choose from products  [⌖ history icon] [×]
+ ─ pick aspect (9:16 / 1:1 / 16:9)
+ ─ pick a product  → image-reframe → save record → preview
 
-- Keep one shared `targetLang` state driving the whole panel.
-- Add translation state for the transcript and the check message:
-  - `transcriptTranslation`, `checkMessageTranslation` (plus translating flags).
-- When `translateNarration(lang)` runs, fan out parallel `translate-text` calls for: prompt text (existing), the current transcript (if present), and the check message (if present). Cache results per `text+lang` in a `useRef` map so re-selecting a language is instant and avoids extra AI cost.
-- Render the translated text under each section when a translation exists (mirroring the existing sky-colored translation block used for the prompt), keeping the original above for reference.
-- Static labels read from a `UI_STRINGS[lang]` dictionary with English fallback; RTL handled by existing `dir="auto"`.
-- If transcription happens *after* a language is already chosen, automatically translate the new transcript too (effect keyed on `transcript` + `targetLang`).
+[history icon] → gallery of past reframes
+   ┌──────┐ ┌──────┐ ┌──────┐
+   │ img  │ │ img  │ │ img  │   each card overlays a badge: "9:16"
+   │ 9:16 │ │ 1:1  │ │ 16:9 │   click → reuse immediately
+   └──────┘ └──────┘ └──────┘
+```
 
-## Technical details
+## Changes
 
-- Reuse the existing `translate-text` edge function and `supabase.functions.invoke` pattern — no backend changes.
-- Word-by-word diff stays in the original language (it is a literal prompt-vs-film comparison and must not be altered); only the human-readable summary lines around it are translated.
-- "Read aloud" continues to read the translation when one is active.
-- Verify in the preview: pick فارسی and confirm prompt, transcript, and check message all show translated text; pick Original and confirm everything reverts.
+### 1. Persist each reframe (data)
+Reframed outputs already land in the private `wan-frames` bucket. Record a row so they can be listed later, reusing the existing `generator_user_images` table:
+- `category = 'reframe'`
+- `storage_path` = the reframe's `wan-frames` path returned by the function
+- `title` = source product name (cleaned)
+- `width` / `height` = canonical dims for the chosen ratio (e.g. 9:16 → 1080×1920, 1:1 → 1024×1024, 16:9 → 1920×1080) so the ratio can be derived/displayed
+- `user_id` = current user
 
-## Files
+This insert happens client-side in `pickProduct` right after a successful reframe (mirrors how AI images are saved in `AiImageDialog.handleUse`). No edge-function or schema change is needed — the columns already exist and RLS already scopes `generator_user_images` to the owner.
 
-- `src/modules/generator-ui/components/NarrationDialog.tsx` (translation fan-out, state, render, label dictionary)
+### 2. History icon + gallery (UI) — `ProductAdDialog.tsx`
+- Add a small icon button (lucide `History` or `Images`) in the product-picker `DialogHeader`, top-right next to the close affordance, RTL-aware.
+- Clicking it loads `generator_user_images` where `category = 'reframe'` for the user (newest first), signing each `wan-frames` path with the existing `signFramesUrl` helper.
+- Render a grid of cards. Each card overlays an **aspect-ratio badge** computed from `width:height` (snap to nearest of 9:16 / 1:1 / 16:9), shown in a corner pill.
+- Clicking a card sets it as the active preview/image directly (same state updates as the end of `pickProduct`, minus the network call) and closes the picker — so no regeneration happens.
+- Add localized strings (en/fa/ar/tr/es/fr) for the new labels: history title, empty state ("No reframed images yet"), and reuse hint. Persian first-class since the UI is RTL there.
+- Empty/loading states match the existing product grid styling.
 
-No database or edge-function changes.
+### 3. Reuse-aware behavior (optional safety)
+When the user picks a product + aspect that already has a saved reframe, surface/prefer the cached one. Minimal version: rely on the new history gallery for reuse. (If desired, we can later auto-detect an existing reframe for the exact product+aspect and skip the call — noting it here but keeping the first pass scoped to the gallery.)
+
+## Notes
+- No backend/schema migration required; `generator_user_images` already has `category`, `width`, `height`, `title`.
+- Only frontend + a client-side insert; generation pipeline and validators are untouched.
+- Aspect ratio is shown as the label (per your choice), not pixel size.
