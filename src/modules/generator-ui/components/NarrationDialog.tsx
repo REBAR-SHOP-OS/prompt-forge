@@ -521,7 +521,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
       <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
         <span className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-100">
           <MessageSquareQuote className="h-4 w-4 text-violet-300" aria-hidden="true" />
-          Narration
+          {t('narration')}
         </span>
         <button
           type="button"
