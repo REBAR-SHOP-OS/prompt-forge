@@ -444,12 +444,19 @@ async function startWanI2V(
     media.push({ type: "last_frame", url: await resolveDownloadableFrameUrl(input.lastFrameUrl) });
   }
 
+  // Wan (DashScope) i2v has no dedicated reference-image channel — media[]
+  // only carries first/last frames. Keep firstFrameUrl as the continuation
+  // anchor and fold persistent character identity into the prompt as a
+  // non-breaking fallback so the subject stays consistent across cards.
+  const wanPrompt = augmentPromptWithReferences(input.prompt, input.referenceImageUrls);
+
   const body = {
     model: resolvedModel,
     input: {
-      prompt: input.prompt,
+      prompt: wanPrompt,
       media,
     },
+
     parameters: {
       resolution: "720P",
       ratio: input.aspectRatio ?? "16:9",
