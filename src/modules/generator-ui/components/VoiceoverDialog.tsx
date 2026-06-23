@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
-import { Check, Download, LoaderCircle, Mic, Play, ShoppingBag, Sparkles, X } from 'lucide-react'
+import { Check, Download, LoaderCircle, Mic, Play, RefreshCw, ShoppingBag, Sparkles, X } from 'lucide-react'
 import {
   Popover,
   PopoverContent,
@@ -141,14 +141,15 @@ export function VoiceoverDialog({
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
   const [narrationSeconds, setNarrationSeconds] = useState<string>('15')
   const [isWritingNarration, setIsWritingNarration] = useState(false)
+  // Remember the last successful narration request so it can be regenerated.
+  const [lastNarration, setLastNarration] = useState<{ productId: string; seconds: number } | null>(null)
 
-  async function handleGenerateNarration() {
-    const product = products.find((p) => p.id === selectedProductId)
+  async function runNarration(productId: string | null, secs: number) {
+    const product = products.find((p) => p.id === productId)
     if (!product) {
       toast.error('Please choose a product first.')
       return
     }
-    const secs = Math.round(Number(narrationSeconds))
     if (!Number.isFinite(secs) || secs < 1 || secs > 600) {
       toast.error('Enter a duration between 1 and 600 seconds.')
       return
@@ -162,6 +163,9 @@ export function VoiceoverDialog({
       const narration: string | undefined = data?.narration
       if (!narration) throw new Error(data?.error || 'No narration returned')
       setText(narration)
+      // Narration is always advertising copy — keep the TTS tone aligned.
+      setTone('advertising')
+      setLastNarration({ productId: product.id, seconds: secs })
       setIsProductPopoverOpen(false)
       toast.success('Advertising narration generated.')
     } catch (e) {
@@ -170,6 +174,15 @@ export function VoiceoverDialog({
     } finally {
       setIsWritingNarration(false)
     }
+  }
+
+  function handleGenerateNarration() {
+    void runNarration(selectedProductId, Math.round(Number(narrationSeconds)))
+  }
+
+  function handleRegenerateNarration() {
+    if (!lastNarration) return
+    void runNarration(lastNarration.productId, lastNarration.seconds)
   }
 
 
@@ -366,6 +379,7 @@ export function VoiceoverDialog({
               className="resize-none border-white/10 bg-white/[0.04] text-zinc-100 placeholder:text-zinc-500"
             />
             <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
               <Popover open={isProductPopoverOpen} onOpenChange={setIsProductPopoverOpen}>
                 <PopoverTrigger asChild>
                   <button
@@ -466,7 +480,7 @@ export function VoiceoverDialog({
 
                     <Button
                       type="button"
-                      onClick={() => void handleGenerateNarration()}
+                      onClick={() => handleGenerateNarration()}
                       disabled={
                         isWritingNarration ||
                         !selectedProductId ||
@@ -484,6 +498,22 @@ export function VoiceoverDialog({
                   </div>
                 </PopoverContent>
               </Popover>
+              {lastNarration ? (
+                <button
+                  type="button"
+                  onClick={handleRegenerateNarration}
+                  disabled={isWritingNarration}
+                  title="Regenerate narration"
+                  aria-label="Regenerate narration"
+                  className="grid h-7 w-7 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-zinc-300 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-50"
+                >
+                  <RefreshCw
+                    className={`h-3.5 w-3.5 ${isWritingNarration ? 'animate-spin' : ''}`}
+                    aria-hidden="true"
+                  />
+                </button>
+              ) : null}
+              </div>
               <div className="text-right text-[10px] uppercase tracking-wider text-zinc-500">
                 {text.length}/5000
               </div>
