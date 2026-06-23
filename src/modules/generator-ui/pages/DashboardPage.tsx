@@ -2183,6 +2183,25 @@ export default function DashboardPage() {
   // download, and delete them, but cannot edit/resume/extend them.
   const isReadOnlyProject = !!selectedProjectId && !selectedProjectId.startsWith('draft-')
 
+  // Stable key for the current generation chain — used to persist/restore the
+  // Continuity Mode state and scene memory per project chain.
+  const continuityChainKey = selectedProjectId ?? activeDraftId ?? 'pending'
+  // Reload continuity state whenever the active chain changes.
+  useEffect(() => {
+    setContinuity(loadContinuity(continuityChainKey))
+  }, [continuityChainKey])
+  // Persist + update helper.
+  const updateContinuity = useCallback(
+    (patch: Partial<ContinuityState>) => {
+      setContinuity((prev) => {
+        const next = { ...prev, ...patch, memory: { ...prev.memory, ...(patch.memory ?? {}) } }
+        saveContinuity(continuityChainKey, next)
+        return next
+      })
+    },
+    [continuityChainKey],
+  )
+
   // Persist selectedProjectId + preview state per-user across refreshes so
   // a hard reload re-opens the same Final Film the user was viewing.
   const selectedProjectKey = userId ? `selected-project:${userId}` : null
