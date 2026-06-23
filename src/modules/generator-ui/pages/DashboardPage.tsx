@@ -9219,7 +9219,7 @@ export default function DashboardPage() {
                     onDragOver={handleCardDragOver}
                     onDrop={handleCardDrop(video.id)}
                     onDragEnd={handleCardDragEnd}
-                    className={`w-full min-w-0 cursor-pointer rounded-2xl border p-3 transition hover:border-white/20 hover:bg-white/[0.055] ${
+                    className={`relative w-full min-w-0 cursor-pointer rounded-2xl border p-3 transition hover:border-white/20 hover:bg-white/[0.055] ${
                       isPreviewSelected ? 'border-white/20 bg-white/[0.06]' : 'border-white/10 bg-white/[0.035]'
                     } ${isDragging ? 'opacity-50' : ''}`}
                     role="button"
