@@ -35,6 +35,8 @@ const CreateJobSchema = z.object({
   prompt: z.string().min(1).max(16000),
   firstFrameUrl: z.string().url().max(2048).optional(),
   lastFrameUrl: z.string().url().max(2048).optional(),
+  /** Persistent character/reference image URL(s) for identity anchoring (max 3). */
+  referenceImageUrls: z.array(z.string().url().max(2048)).max(3).optional(),
   durationSeconds: z.union([z.literal(5), z.literal(10), z.literal(15)]).optional(),
   aspectRatio: z.enum(["9:16", "1:1", "16:9"]).optional(),
   /** Durable per-project group id so all clips in one session stay one draft. */
