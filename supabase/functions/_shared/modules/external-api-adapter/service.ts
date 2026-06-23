@@ -95,8 +95,46 @@ const LOCAL_VIDEO_MODELS = new Set([
 ]);
 
 type LocalVideoConfig =
-  | { ok: true; baseUrl: string; apiKey: string | null }
+  | { ok: true; baseUrl: string; apiKey: string | null; timeoutMs: number }
   | { ok: false; error: string };
+
+// Clear, actionable messages reused by the adapter, the orchestrator preflight
+// and the status endpoint so the UI always shows the same guidance.
+export const LOCAL_NOT_CONFIGURED_MESSAGE =
+  "Local video router is not configured. Add LOCAL_VIDEO_ROUTER_URL or choose a cloud model.";
+export const LOCAL_UNREACHABLE_MESSAGE =
+  "Local video router is unreachable. Check that the local router is running and accessible from the backend.";
+
+const DEFAULT_LOCAL_VIDEO_TIMEOUT_MS = 300_000;
+
+function readLocalVideoTimeoutMs(): number {
+  const raw = Number(Deno.env.get("LOCAL_VIDEO_ROUTER_TIMEOUT_MS"));
+  return Number.isFinite(raw) && raw > 0 ? Math.round(raw) : DEFAULT_LOCAL_VIDEO_TIMEOUT_MS;
+}
+
+/** True when the error is a network/abort failure (router down/unreachable),
+ *  as opposed to an HTTP error response from a reachable router. */
+function isUnreachableError(err: unknown): boolean {
+  if (err instanceof DOMException && err.name === "AbortError") return true;
+  if (err instanceof TypeError) return true; // fetch network failure
+  const msg = (err as Error)?.message?.toLowerCase() ?? "";
+  return /network|fetch failed|connection|timed out|timeout|dns|refused|unreachable|aborted/.test(msg);
+}
+
+/** Fetch with the configured local-router timeout via AbortController. */
+async function localVideoFetch(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function sanitizePrompt(p: string): string {
   return p.replace(/\s+/g, " ").trim();
