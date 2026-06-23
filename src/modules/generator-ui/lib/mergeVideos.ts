@@ -1135,6 +1135,9 @@ export async function mergeVideoUrls(
     await new Promise((r) => setTimeout(r, 200))
   }
 
+  // Clear the per-run overlay so it never leaks into a later merge.
+  activeOverlay = null
+
   // Final cleanup of media elements + audio graph.
   for (const c of preloaded) {
     if (c.kind === 'video') {
