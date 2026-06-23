@@ -8915,6 +8915,24 @@ export default function DashboardPage() {
                       preload="metadata"
                       clipVolume={1}
                     />
+                    {contactActive ? (
+                      <div
+                        className={`pointer-events-none absolute inset-x-0 z-20 flex flex-col gap-0.5 bg-gradient-to-b px-4 py-3 ${
+                          contactOverlay.position === 'top'
+                            ? 'top-0 from-black/65 to-transparent'
+                            : 'bottom-0 from-transparent to-black/65 justify-end'
+                        }`}
+                      >
+                        {contactLines.map((line, i) => (
+                          <span
+                            key={i}
+                            className="truncate text-sm font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
+                          >
+                            {line}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                     {transcriptOpen && !transcriptResolving && transcriptVideoUrl ? (
                       <TranscriptPanel
                         videoUrl={transcriptVideoUrl}
