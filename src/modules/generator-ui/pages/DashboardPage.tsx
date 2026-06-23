@@ -10276,21 +10276,23 @@ export default function DashboardPage() {
               <div>
                 <div className="text-xs font-semibold text-zinc-200">Continuity Mode</div>
                 <div className="text-[11px] text-zinc-500">
-                  {hasPreviousClip
-                    ? 'Continue the next card from the previous clip'
-                    : 'Generate a clip first to enable continuity'}
+                  {isMultiCardDuration
+                    ? 'Always on for 30s/45s/135s so the cards stay content-connected'
+                    : hasPreviousClip
+                      ? 'Continue the next card from the previous clip'
+                      : 'Generate a clip first to enable continuity'}
                 </div>
               </div>
             </div>
             <Switch
-              checked={continuity.enabled}
-              disabled={!hasPreviousClip}
+              checked={continuityActive}
+              disabled={isMultiCardDuration || !hasPreviousClip}
               onCheckedChange={handleToggleContinuity}
               aria-label="Toggle Continuity Mode"
             />
           </div>
 
-          {continuity.enabled && hasPreviousClip ? (
+          {continuityActive && (hasPreviousClip || isMultiCardDuration) ? (
             <div className="mt-3 space-y-3 border-t border-white/10 pt-3 text-[11px]">
               {/* Continuation source */}
               <div className="flex items-center justify-between gap-2">
