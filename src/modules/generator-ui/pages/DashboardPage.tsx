@@ -57,6 +57,7 @@ import {
   Wand2,
   FileText,
   MessageSquareQuote,
+  Contact,
   X
 } from 'lucide-react'
 import {
