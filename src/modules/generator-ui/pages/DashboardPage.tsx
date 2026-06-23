@@ -9086,7 +9086,7 @@ export default function DashboardPage() {
                               style={{ height: logoH, marginBottom: logoGap - lineGap }}
                             />
                           ) : null}
-                          {contactLines.map((line, i) => (
+                          {!contactLogoActive && contactLines.map((line, i) => (
                             <span
                               key={i}
                               className="truncate font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
@@ -9095,6 +9095,7 @@ export default function DashboardPage() {
                               {line}
                             </span>
                           ))}
+
                         </>
                       )
                       const panelClass = `flex flex-col items-center bg-black/45 cursor-move touch-none select-none ring-1 transition ${contactDragging ? 'ring-emerald-400/70' : 'ring-white/0 hover:ring-white/40'}`
