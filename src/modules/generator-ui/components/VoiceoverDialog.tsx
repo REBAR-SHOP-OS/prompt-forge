@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
-import { Check, Download, LoaderCircle, Mic, Play, Sparkles, X } from 'lucide-react'
+import { Check, Download, LoaderCircle, Mic, Play, ShoppingBag, Sparkles, X } from 'lucide-react'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import { supabase } from '@/integrations/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
