@@ -1807,6 +1807,12 @@ export default function DashboardPage() {
     scale: number
     logoUrl: string
     logoEnabled: boolean
+    /** Show the translucent backdrop panel behind the logo + text. */
+    panelEnabled: boolean
+    /** Hex color of the backdrop panel. */
+    panelColor: string
+    /** Opacity of the backdrop panel (0–1). */
+    panelOpacity: number
   }
   const emptyContact = (): ContactOverlay => ({
     website: '',
@@ -1821,6 +1827,9 @@ export default function DashboardPage() {
     scale: 1,
     logoUrl: '',
     logoEnabled: true,
+    panelEnabled: true,
+    panelColor: '#000000',
+    panelOpacity: 0.45,
   })
 
   const [contactOverlay, setContactOverlay] = useState<ContactOverlay>(emptyContact)
