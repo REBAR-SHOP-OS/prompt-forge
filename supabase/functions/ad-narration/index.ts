@@ -67,17 +67,23 @@ Deno.serve(async (req) => {
 
     const systemPrompt =
       'You are a professional advertising copywriter. You write punchy, ' +
-      'natural-sounding voiceover scripts that a narrator can read aloud. ' +
+      'high-energy, persuasive voiceover scripts that a narrator can read ' +
+      'aloud naturally. The tone is ALWAYS advertising / commercial. ' +
       'Output ONLY the spoken words in English — no scene directions, no stage ' +
       'notes, no camera notes, no labels, no quotation marks, no markdown, no ' +
-      'lists. Just clean sentences ready to be spoken.'
+      'lists. Just clean sentences ready to be spoken. ' +
+      'CRITICAL: Never include any numbers, digits, product codes, SKUs, model ' +
+      'numbers, dimensions, prices, or percentages — not as numerals and not ' +
+      'spelled out as words (e.g. never "double oh eight", "zero zero eight", ' +
+      'or "008"). Refer to the product only by its descriptive name.'
 
     const userPrompt =
       `Write an English advertising voiceover for the product "${productName}".\n` +
       `Target spoken duration: about ${durationSec} seconds ` +
       `(roughly ${wordBudget} words — stay close to this length).\n` +
       `Make it persuasive, vivid, and end with a short memorable call to action. ` +
-      `Return only the narration text.`
+      `Use ONLY the product name "${productName}" — do not invent or mention any ` +
+      `numbers, codes, or model identifiers. Return only the narration text.`
 
     const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
