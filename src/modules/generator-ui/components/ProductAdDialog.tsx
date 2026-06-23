@@ -1348,7 +1348,13 @@ export default function ProductAdDialog({
       try {
         await supabase
           .from('generator_business_profiles')
-          .upsert({ user_id: userId, business_info: businessInfo.trim() }, { onConflict: 'user_id' })
+          .upsert({
+            user_id: userId,
+            business_info: businessInfo.trim(),
+            contact_website: contactWebsite.trim() || null,
+            contact_phone: contactPhone.trim() || null,
+            contact_address: contactAddress.trim() || null,
+          }, { onConflict: 'user_id' })
       } catch {
         /* non-fatal: still attempt generation */
       } finally {
