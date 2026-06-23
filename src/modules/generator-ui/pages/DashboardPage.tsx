@@ -9021,7 +9021,7 @@ export default function DashboardPage() {
               {previewItem.job.video?.storage_path ? (() => {
                 const src = getCardVideoSrc(previewItem.job.id, previewItem.job.video.storage_path) ?? previewItem.job.video.storage_path
                 return (
-                  <div className="relative" ref={contactBoxRef}>
+                  <div className="relative" ref={setContactBoxRef}>
                     {!transcriptOpen && (
                       <>
                         <button
