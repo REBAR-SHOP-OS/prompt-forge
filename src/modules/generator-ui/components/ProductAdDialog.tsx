@@ -120,6 +120,34 @@ const PRODUCT_ASPECTS: { value: ProductAspect; cls: string }[] = [
   { value: '16:9', cls: 'aspect-video' },
 ]
 
+/** Canonical pixel dimensions for each aspect ratio (used to record/derive ratio). */
+const ASPECT_DIMS: Record<ProductAspect, { w: number; h: number }> = {
+  '9:16': { w: 1080, h: 1920 },
+  '1:1': { w: 1024, h: 1024 },
+  '16:9': { w: 1920, h: 1080 },
+}
+
+/** Snap an arbitrary width:height to the nearest supported aspect-ratio label. */
+function aspectLabelFromDims(width: number | null | undefined, height: number | null | undefined): ProductAspect {
+  if (!width || !height || width <= 0 || height <= 0) return '1:1'
+  const r = width / height
+  let best: ProductAspect = '1:1'
+  let bestDiff = Infinity
+  for (const a of PRODUCT_ASPECTS) {
+    const dims = ASPECT_DIMS[a.value]
+    const diff = Math.abs(r - dims.w / dims.h)
+    if (diff < bestDiff) {
+      bestDiff = diff
+      best = a.value
+    }
+  }
+  return best
+}
+
+type ReframeItem = { id: string; title: string | null; url: string; aspect: ProductAspect }
+
+
+
 type ProductPhoto = { id: string; title: string | null; url: string }
 
 /** Extract the object key inside the user-images bucket from a stored path/URL. */
