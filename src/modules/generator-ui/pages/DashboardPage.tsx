@@ -6859,6 +6859,11 @@ export default function DashboardPage() {
       setPreviewDismissed(false)
       setPreviewVideoId(null)
 
+      // Capture a durable poster frame from the merged blob so the Library
+      // card always shows a real preview, even if the merged video file later
+      // becomes unavailable in storage. Best-effort: null on failure.
+      const posterDataUrl = await captureVideoPoster(mergeRes.blob)
+
       // Register the merged film in Your Library (left panel). This does NOT
       // touch Pending (generatedVideos); it only appends a JobDetail entry to
       // mergedEntries + approvedIds (persisted in localStorage), exactly like
