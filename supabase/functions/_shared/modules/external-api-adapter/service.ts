@@ -1397,11 +1397,18 @@ async function startLocalVideo(
   };
 
 
-  const res = await fetch(`${config.baseUrl}/videos/generations`, {
-    method: "POST",
-    headers: localVideoHeaders(config),
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await localVideoFetch(`${config.baseUrl}/videos/generations`, {
+      method: "POST",
+      headers: localVideoHeaders(config),
+      body: JSON.stringify(body),
+    }, config.timeoutMs);
+  } catch (err) {
+    logError("local video create unreachable", { error: (err as Error).message, model: resolvedModel });
+    if (isUnreachableError(err)) throw new Error(LOCAL_UNREACHABLE_MESSAGE);
+    throw err;
+  }
   const text = await res.text().catch(() => "");
   let payload: unknown = null;
   try {
