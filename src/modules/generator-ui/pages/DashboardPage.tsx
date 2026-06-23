@@ -1808,17 +1808,35 @@ export default function DashboardPage() {
   const contactKey = userId ? `project-contact:${userId}` : null
   useEffect(() => {
     if (!contactKey) { setContactOverlay(emptyContact()); return }
+    let cancelled = false
+    // Local prefs (enabled / position) persist per user in localStorage.
+    let base = emptyContact()
     try {
       const raw = window.localStorage.getItem(contactKey)
-      if (raw) {
-        const obj = JSON.parse(raw) as Partial<ContactOverlay>
-        setContactOverlay({ ...emptyContact(), ...obj })
-      } else {
-        setContactOverlay(emptyContact())
-      }
-    } catch { setContactOverlay(emptyContact()) }
+      if (raw) base = { ...base, ...(JSON.parse(raw) as Partial<ContactOverlay>) }
+    } catch { /* ignore */ }
+    setContactOverlay(base)
+    // Contact text (website / phone / address) is sourced from the business
+    // profile saved in the Product Ad Scenario modal — single source of truth.
+    if (userId) {
+      supabase
+        .from('generator_business_profiles')
+        .select('contact_website, contact_phone, contact_address')
+        .eq('user_id', userId)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (cancelled || !data) return
+          setContactOverlay((prev) => ({
+            ...prev,
+            website: data.contact_website ?? '',
+            phone: data.contact_phone ?? '',
+            address: data.contact_address ?? '',
+          }))
+        })
+    }
+    return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contactKey])
+  }, [contactKey, userId])
   const updateContact = useCallback((patch: Partial<ContactOverlay>) => {
     setContactOverlay((prev) => {
       const next = { ...prev, ...patch }
