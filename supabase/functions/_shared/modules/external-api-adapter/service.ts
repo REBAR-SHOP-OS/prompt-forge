@@ -481,6 +481,8 @@ function extractLocalJobId(payload: unknown): string | null {
     localVideoText(p.taskId) ??
     localVideoText(p.provider_job_id) ??
     localVideoText(p.providerJobId) ??
+    localVideoText(p.prompt_id) ??
+    localVideoText(p.promptId) ??
     localVideoText(output.task_id) ??
     null
   );
