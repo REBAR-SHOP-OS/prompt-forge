@@ -120,6 +120,10 @@ export interface MergeOverlayOptions {
   panelColor?: string
   /** Opacity of the backdrop panel (0–1). */
   panelOpacity?: number
+  /** Hex color of the overlay text. */
+  textColor?: string
+  /** CSS font-family stack used for the overlay text. */
+  fontFamily?: string
 }
 
 
