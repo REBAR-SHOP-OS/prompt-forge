@@ -538,6 +538,7 @@ const T: Record<Lang, Record<string, string>> = {
     contactWebsite: 'Website',
     contactPhone: 'Phone',
     contactAddress: 'Address',
+    contactLogo: 'Company logo',
   },
   fa: {
     title: 'سناریوی تبلیغ محصول',
@@ -599,6 +600,7 @@ const T: Record<Lang, Record<string, string>> = {
     contactWebsite: 'وب‌سایت',
     contactPhone: 'شماره تماس',
     contactAddress: 'آدرس',
+    contactLogo: 'لوگوی شرکت',
   },
   ar: {
     title: 'سيناريو إعلان المنتج',
@@ -660,6 +662,7 @@ const T: Record<Lang, Record<string, string>> = {
     contactWebsite: 'الموقع الإلكتروني',
     contactPhone: 'الهاتف',
     contactAddress: 'العنوان',
+    contactLogo: 'شعار الشركة',
   },
   tr: {
     title: 'Ürün Reklam Senaryosu',
@@ -721,6 +724,7 @@ const T: Record<Lang, Record<string, string>> = {
     contactWebsite: 'Web sitesi',
     contactPhone: 'Telefon',
     contactAddress: 'Adres',
+    contactLogo: 'Şirket logosu',
   },
   es: {
     title: 'Guion de Anuncio de Producto',
@@ -782,6 +786,7 @@ const T: Record<Lang, Record<string, string>> = {
     contactWebsite: 'Sitio web',
     contactPhone: 'Teléfono',
     contactAddress: 'Dirección',
+    contactLogo: 'Logo de la empresa',
   },
   fr: {
     title: 'Scénario de Publicité Produit',
@@ -843,6 +848,7 @@ const T: Record<Lang, Record<string, string>> = {
     contactWebsite: 'Site web',
     contactPhone: 'Téléphone',
     contactAddress: 'Adresse',
+    contactLogo: "Logo de l'entreprise",
   },
 }
 
