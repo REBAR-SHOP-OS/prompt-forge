@@ -10486,6 +10486,93 @@ export default function DashboardPage() {
               Character Sheet
             </button>
 
+            <Popover open={contactMenuOpen} onOpenChange={setContactMenuOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Add company contact info as an overlay on the film"
+                  title="Add company contact info (address, phone, website) as an overlay on the film"
+                  className={`inline-flex h-11 items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
+                    contactActive
+                      ? 'border-emerald-400/60 bg-emerald-500/10 text-emerald-100'
+                      : 'border-white/15 bg-white/[0.04] text-zinc-200 hover:border-white/30'
+                  }`}
+                >
+                  <Contact className="h-5 w-5" aria-hidden="true" />
+                  <span>Contact</span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-80 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-sm font-semibold text-zinc-100">Contact overlay</span>
+                  <button
+                    type="button"
+                    onClick={() => updateContact({ website: '', phone: '', address: '' })}
+                    className="text-[11px] text-zinc-400 hover:text-rose-300"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <p className="mb-3 text-xs leading-5 text-zinc-500">
+                  This text is shown as a layer on top of the generated film.
+                </p>
+                <div className="space-y-2.5">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Website</label>
+                    <Input
+                      value={contactOverlay.website}
+                      onChange={(e) => updateContact({ website: e.target.value })}
+                      placeholder="www.example.com"
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Phone</label>
+                    <Input
+                      value={contactOverlay.phone}
+                      onChange={(e) => updateContact({ phone: e.target.value })}
+                      placeholder="+1 555 000 0000"
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Address</label>
+                    <Input
+                      value={contactOverlay.address}
+                      onChange={(e) => updateContact({ address: e.target.value })}
+                      placeholder="123 Main St, City"
+                      className="h-9"
+                    />
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+                  <span className="text-xs font-medium text-zinc-200">Show on video</span>
+                  <Switch
+                    checked={contactOverlay.enabled}
+                    onCheckedChange={(v) => updateContact({ enabled: v })}
+                  />
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {(['bottom', 'top'] as const).map((pos) => (
+                    <button
+                      key={pos}
+                      type="button"
+                      onClick={() => updateContact({ position: pos })}
+                      className={`rounded-lg border px-3 py-1.5 text-xs font-medium capitalize transition ${
+                        contactOverlay.position === pos
+                          ? 'border-emerald-400/60 bg-emerald-500/10 text-emerald-100'
+                          : 'border-white/15 bg-white/[0.03] text-zinc-300 hover:border-white/30'
+                      }`}
+                    >
+                      {pos}
+                    </button>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+
+
+
             <Popover
               open={characterMenuOpen}
               onOpenChange={(open) => {
