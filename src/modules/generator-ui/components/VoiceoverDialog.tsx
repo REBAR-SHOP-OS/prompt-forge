@@ -380,7 +380,7 @@ export function VoiceoverDialog({
                 </PopoverTrigger>
                 <PopoverContent
                   align="start"
-                  className="w-72 border-white/10 bg-black text-zinc-100"
+                  className="w-80 border-white/10 bg-black text-zinc-100"
                 >
                   <div className="space-y-3">
                     <div>
