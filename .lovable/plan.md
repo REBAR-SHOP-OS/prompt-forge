@@ -1,28 +1,39 @@
-# Contact-Info Overlay on Generated Films
+# Contact info in the Product Ad Scenario modal → used by the video overlay
 
 ## Goal
-Add a toolbar icon in the composer that opens a small editor where the user types their company **address, phone, and website**. That text is then burned onto the Final Film as a clean lower overlay layer, and previewed live over the working video so the user sees placement before rendering.
+Inside the **Product Ad Scenario** dialog (the same place that holds "About your business"), let the user enter and **save** the company **website, phone, and address**. Then reuse that saved data automatically for the **Contact overlay** that gets burned onto the films — so the user enters it once in one place.
 
-## UX
-- New round icon button in the composer toolbar (next to Product Ad / Character Sheet / Add character / Prompt), labeled **Contact**, using a `Contact`/`Phone` lucide icon. It highlights (filled style) when contact info is set.
-- Clicking opens a popover/dialog with three fields: **Website**, **Phone**, **Address** (all optional), plus an "Show on video" toggle and a **Position** choice (bottom / top). A Clear button empties it.
-- Values persist per user in `localStorage` (mirroring the existing `project-audio:${userId}` pattern) under `project-contact:${userId}`, so they survive refresh and project switches.
+## Current state
+- The dialog (`ProductAdDialog.tsx`) saves only `business_info` to the `generator_business_profiles` table (columns today: `user_id`, `business_info`, `updated_at`).
+- The Contact overlay lives separately in `DashboardPage.tsx` as `contactOverlay` (website/phone/address/enabled/position), persisted only in `localStorage` under `project-contact:${userId}`.
+- These two are disconnected — contact info typed in the toolbar Contact popover is not the same as the business modal.
 
-## Live preview
-- Render the contact lines as a CSS overlay (semi-transparent dark bar, small clean text) positioned over the preview video stage when "Show on video" is on, so the user sees exactly where it lands.
+## What will change
 
-## Burned into Final Film
-- Extend `src/modules/generator-ui/lib/mergeVideos.ts`:
-  - Add an optional `overlay` param to `mergeVideoUrls` (e.g. `MergeOverlayOptions { lines: string[]; position: 'top' | 'bottom' }`).
-  - In the per-frame canvas paint loop, after drawing each clip/transition frame, draw a translucent rounded bar plus the contact lines with `ctx.fillText`, scaled to the canvas size, with a subtle shadow for legibility. This makes the text part of the recorded stream (works for every clip and transition automatically).
-- In `DashboardPage.tsx`, build the overlay lines from the saved contact info (only non-empty fields) and pass them into the existing `mergeVideoUrls(...)` call at the Final Film site (line ~6494), right alongside `audioOpt` and `transitionsForMerge`.
+### 1. Backend (single source of truth)
+Add three nullable text columns to the existing `generator_business_profiles` table:
+- `contact_website`
+- `contact_phone`
+- `contact_address`
 
-## Scope / notes
-- Frontend only: new dialog/state + localStorage persistence + canvas draw. No DB, edge-function, or schema changes.
-- Overlay is only applied when "Show on video" is enabled and at least one field is filled.
-- Text is rendered as plain canvas text (no logo/image upload in this pass).
+This keeps contact info next to the business profile, persisted per user, surviving refresh and project switches.
 
-## Validation
-- Set contact fields, confirm the live preview shows the bar in the chosen position.
-- Generate a Final Film and confirm the address/phone/website is visibly burned into the exported video across all clips and transitions.
-- Empty/disabled contact info produces a film with no overlay (unchanged behavior).
+### 2. Product Ad Scenario modal (`ProductAdDialog.tsx`)
+- In the business info popover (the `Building2` icon area), add a **Contact details** block with three optional inputs: Website, Phone, Address (localized labels for all 6 existing languages).
+- Load these values together with `business_info` when the dialog opens.
+- Save them in the same `Save` action (and in the silent upsert that runs on Generate), upserting all four fields at once.
+
+### 3. Contact overlay (`DashboardPage.tsx`)
+- On load, fetch `contact_website / contact_phone / contact_address` from `generator_business_profiles` and populate `contactOverlay` from it (the modal becomes the source of truth for the text).
+- Keep the user's `enabled` and `position` choices in `localStorage` as today.
+- The existing burn-in pipeline (`mergeVideoUrls` overlay + live preview) stays unchanged — it just now reads the values saved in the modal, so videos show the saved contact info.
+
+## Scope / safety
+- Frontend + one additive, non-destructive DB migration (new nullable columns only; existing data untouched).
+- Migration includes the required `GRANT`s for the new columns' table access (table already exists with RLS; column adds inherit existing policies).
+- No change to video rendering logic, no removal of the existing toolbar Contact popover behavior — it will simply share the same persisted data.
+
+## Technical notes
+- Migration: `ALTER TABLE public.generator_business_profiles ADD COLUMN IF NOT EXISTS contact_website text, ADD COLUMN ... ;` (RLS/policies already in place for this table).
+- `ProductAdDialog`: extend the `select('business_info')` load to also select the 3 contact columns; extend both `upsert(...)` calls to include them.
+- `DashboardPage`: in the contact-overlay init effect, after reading localStorage for enabled/position, query the table for the 3 text fields and merge them into `contactOverlay`.
