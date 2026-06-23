@@ -674,12 +674,12 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
 
           {!hasVideo ? (
             <p className="text-sm leading-6 text-zinc-500">
-              No rendered video yet — generate this card to check the spoken narration.
+              {t('noVideo')}
             </p>
           ) : loading ? (
             <div className="flex items-center gap-2 text-sm text-zinc-400">
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              Listening to the film…
+              {t('listening')}
             </div>
           ) : error ? (
             <div className="space-y-2">
@@ -689,7 +689,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                 onClick={() => void runTranscribe()}
                 className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-4 py-1.5 text-xs font-semibold text-zinc-200 transition hover:bg-white/[0.08]"
               >
-                <Mic className="h-3.5 w-3.5" aria-hidden="true" /> Retry
+                <Mic className="h-3.5 w-3.5" aria-hidden="true" /> {t('retry')}
               </button>
             </div>
           ) : transcript === null ? (
@@ -698,7 +698,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
               onClick={() => void runTranscribe()}
               className="inline-flex items-center gap-2 rounded-full border border-violet-400/40 bg-violet-500/10 px-4 py-1.5 text-xs font-semibold text-violet-100 transition hover:bg-violet-500/20"
             >
-              <Mic className="h-3.5 w-3.5" aria-hidden="true" /> Check narration on film
+              <Mic className="h-3.5 w-3.5" aria-hidden="true" /> {t('checkOnFilm')}
             </button>
           ) : (
             <>
