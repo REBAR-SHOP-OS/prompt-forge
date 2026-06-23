@@ -58,6 +58,8 @@ import {
   FileText,
   MessageSquareQuote,
   Contact,
+  Eye,
+  EyeOff,
   X
 } from 'lucide-react'
 import {
@@ -1794,6 +1796,9 @@ export default function DashboardPage() {
     phone: string
     address: string
     enabled: boolean
+    websiteEnabled: boolean
+    phoneEnabled: boolean
+    addressEnabled: boolean
     position: 'top' | 'center' | 'bottom'
     /** Normalized 0–1 center position when the user has dragged the overlay.
      *  null = use the `position` preset instead. */
@@ -1808,6 +1813,9 @@ export default function DashboardPage() {
     phone: '',
     address: '',
     enabled: false,
+    websiteEnabled: true,
+    phoneEnabled: true,
+    addressEnabled: true,
     position: 'bottom',
     offset: null,
     scale: 1,
@@ -1957,11 +1965,19 @@ export default function DashboardPage() {
   }, [updateContactLogo])
   // Lines shown in the overlay (only non-empty fields), in display order.
   const contactLines = useMemo(
-    () => [contactOverlay.website, contactOverlay.phone, contactOverlay.address]
+    () => [
+      contactOverlay.websiteEnabled ? contactOverlay.website : '',
+      contactOverlay.phoneEnabled ? contactOverlay.phone : '',
+      contactOverlay.addressEnabled ? contactOverlay.address : '',
+    ]
       .map((l) => l.trim())
       .filter(Boolean),
-    [contactOverlay.website, contactOverlay.phone, contactOverlay.address],
+    [
+      contactOverlay.website, contactOverlay.phone, contactOverlay.address,
+      contactOverlay.websiteEnabled, contactOverlay.phoneEnabled, contactOverlay.addressEnabled,
+    ],
   )
+
   const contactLogoActive = contactOverlay.logoEnabled && !!contactOverlay.logoUrl
   const contactActive = contactOverlay.enabled && (contactLines.length > 0 || contactLogoActive)
 
@@ -10750,7 +10766,17 @@ export default function DashboardPage() {
                 </p>
                 <div className="space-y-2.5">
                   <div className="space-y-1">
-                    <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Website</label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Website</label>
+                      <button
+                        type="button"
+                        onClick={() => updateContact({ websiteEnabled: !contactOverlay.websiteEnabled })}
+                        title={contactOverlay.websiteEnabled ? 'Hide on video' : 'Show on video'}
+                        className={`grid h-6 w-6 place-items-center rounded-md transition ${contactOverlay.websiteEnabled ? 'text-emerald-300 hover:text-emerald-200' : 'text-zinc-600 hover:text-zinc-400'}`}
+                      >
+                        {contactOverlay.websiteEnabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
                     <Input
                       value={contactOverlay.website}
                       onChange={(e) => updateContact({ website: e.target.value })}
@@ -10759,7 +10785,17 @@ export default function DashboardPage() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Phone</label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Phone</label>
+                      <button
+                        type="button"
+                        onClick={() => updateContact({ phoneEnabled: !contactOverlay.phoneEnabled })}
+                        title={contactOverlay.phoneEnabled ? 'Hide on video' : 'Show on video'}
+                        className={`grid h-6 w-6 place-items-center rounded-md transition ${contactOverlay.phoneEnabled ? 'text-emerald-300 hover:text-emerald-200' : 'text-zinc-600 hover:text-zinc-400'}`}
+                      >
+                        {contactOverlay.phoneEnabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
                     <Input
                       value={contactOverlay.phone}
                       onChange={(e) => updateContact({ phone: e.target.value })}
@@ -10768,7 +10804,17 @@ export default function DashboardPage() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Address</label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Address</label>
+                      <button
+                        type="button"
+                        onClick={() => updateContact({ addressEnabled: !contactOverlay.addressEnabled })}
+                        title={contactOverlay.addressEnabled ? 'Hide on video' : 'Show on video'}
+                        className={`grid h-6 w-6 place-items-center rounded-md transition ${contactOverlay.addressEnabled ? 'text-emerald-300 hover:text-emerald-200' : 'text-zinc-600 hover:text-zinc-400'}`}
+                      >
+                        {contactOverlay.addressEnabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
                     <Input
                       value={contactOverlay.address}
                       onChange={(e) => updateContact({ address: e.target.value })}
@@ -10777,6 +10823,7 @@ export default function DashboardPage() {
                     />
                   </div>
                 </div>
+
                 <div className="mt-3 space-y-2">
                   <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Logo</label>
                   <div className="flex items-center gap-2">
