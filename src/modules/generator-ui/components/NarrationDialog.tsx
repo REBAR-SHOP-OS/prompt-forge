@@ -47,6 +47,15 @@ function rtlOf(text: string): 'rtl' | 'ltr' {
   return /[\u0600-\u06FF]/.test(text) ? 'rtl' : 'ltr'
 }
 
+const TRANSLATE_LANGS: { code: string; label: string }[] = [
+  { code: 'fa', label: 'فارسی' },
+  { code: 'en', label: 'English' },
+  { code: 'ar', label: 'العربية' },
+  { code: 'tr', label: 'Türkçe' },
+  { code: 'es', label: 'Español' },
+  { code: 'fr', label: 'Français' },
+]
+
 export function NarrationDialog({ open, onClose, prompt, narrationText, videoStoragePath }: NarrationDialogProps) {
   const promptLines = narrationText
     ? narrationText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
