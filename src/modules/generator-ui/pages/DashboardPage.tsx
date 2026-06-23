@@ -1791,6 +1791,15 @@ export default function DashboardPage() {
 
   // Contact / branding info burned as a text overlay onto the Final Film.
   // Persisted per user so it survives refresh and project switches.
+  const hexToRgba = (hex: string, alpha: number) => {
+    const h = (hex || '#000000').replace('#', '')
+    const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h
+    const r = parseInt(full.slice(0, 2) || '00', 16)
+    const g = parseInt(full.slice(2, 4) || '00', 16)
+    const b = parseInt(full.slice(4, 6) || '00', 16)
+    const a = Math.min(1, Math.max(0, Number.isFinite(alpha) ? alpha : 0.45))
+    return `rgba(${r}, ${g}, ${b}, ${a})`
+  }
   type ContactOverlay = {
     website: string
     phone: string
