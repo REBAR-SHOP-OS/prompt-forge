@@ -589,6 +589,26 @@ export const jobOrchestratorGateway = {
             // isn't set up or is unreachable — instead of a generic provider
             // error. Credits are already refunded above. No secrets/URLs leak.
             if (route.providerKey === "local") {
+              const endpointNotFound = /endpoint not found|router 404|\b404\b/i.test(genErr);
+              if (endpointNotFound) {
+                await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 502, latencyMs: Date.now() - ctx.startedAt, errorCode: "LOCAL_ENDPOINT_NOT_FOUND" });
+                return errorResponse(
+                  "LOCAL_ENDPOINT_NOT_FOUND",
+                  "Local video router is reachable, but its video generation endpoint was not found. Set LOCAL_VIDEO_ROUTER_URL to the correct base URL or configure LOCAL_VIDEO_ROUTER_CREATE_PATH.",
+                  502,
+                  ctx.requestId,
+                );
+              }
+              const notConfigured = /not configured|add LOCAL_VIDEO_ROUTER_URL/i.test(genErr);
+              if (notConfigured) {
+                await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 503, latencyMs: Date.now() - ctx.startedAt, errorCode: "LOCAL_NOT_CONFIGURED" });
+                return errorResponse(
+                  "LOCAL_NOT_CONFIGURED",
+                  "Local video router is not configured. Add LOCAL_VIDEO_ROUTER_URL or choose a cloud model.",
+                  503,
+                  ctx.requestId,
+                );
+              }
               const unreachable = /unreachable|unable to reach|router .* unreachable/i.test(genErr);
               if (unreachable) {
                 await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 502, latencyMs: Date.now() - ctx.startedAt, errorCode: "LOCAL_UNREACHABLE" });
@@ -599,11 +619,11 @@ export const jobOrchestratorGateway = {
                   ctx.requestId,
                 );
               }
-              await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 503, latencyMs: Date.now() - ctx.startedAt, errorCode: "LOCAL_NOT_CONFIGURED" });
+              await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 502, latencyMs: Date.now() - ctx.startedAt, errorCode: "LOCAL_PROVIDER_ERROR" });
               return errorResponse(
-                "LOCAL_NOT_CONFIGURED",
-                "Local video router is not configured. Add LOCAL_VIDEO_ROUTER_URL or choose a cloud model.",
-                503,
+                "LOCAL_PROVIDER_ERROR",
+                "Local video router could not start generation. Check the router logs and endpoint compatibility.",
+                502,
                 ctx.requestId,
               );
             }
