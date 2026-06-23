@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Loader2,
   MessageSquareQuote,
@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   Play,
   Pause,
+  Languages,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -46,6 +47,15 @@ function rtlOf(text: string): 'rtl' | 'ltr' {
   return /[\u0600-\u06FF]/.test(text) ? 'rtl' : 'ltr'
 }
 
+const TRANSLATE_LANGS: { code: string; label: string }[] = [
+  { code: 'fa', label: 'فارسی' },
+  { code: 'en', label: 'English' },
+  { code: 'ar', label: 'العربية' },
+  { code: 'tr', label: 'Türkçe' },
+  { code: 'es', label: 'Español' },
+  { code: 'fr', label: 'Français' },
+]
+
 export function NarrationDialog({ open, onClose, prompt, narrationText, videoStoragePath }: NarrationDialogProps) {
   const promptLines = narrationText
     ? narrationText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
@@ -72,6 +82,16 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
   const [filmTime, setFilmTime] = useState(0)
   const [filmDuration, setFilmDuration] = useState(0)
 
+  // Read-aloud + translation for the prompt narration text.
+  const promptText = useMemo(() => promptLines.join('\n'), [promptLines])
+  const narrAudioRef = useRef<HTMLAudioElement | null>(null)
+  const narrCache = useRef<Map<string, string>>(new Map())
+  const [narrPlaying, setNarrPlaying] = useState(false)
+  const [narrLoading, setNarrLoading] = useState(false)
+  const [targetLang, setTargetLang] = useState('')
+  const [translation, setTranslation] = useState<string | null>(null)
+  const [translating, setTranslating] = useState(false)
+
   // Reset transient state whenever the panel is (re)opened for a card.
   useEffect(() => {
     if (!open) return
@@ -82,9 +102,16 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
     setFilmPlaying(false)
     setFilmTime(0)
     setFilmDuration(0)
+    setNarrPlaying(false)
+    setTargetLang('')
+    setTranslation(null)
     if (filmAudioRef.current) {
       filmAudioRef.current.pause()
       filmAudioRef.current.currentTime = 0
+    }
+    if (narrAudioRef.current) {
+      narrAudioRef.current.pause()
+      narrAudioRef.current.currentTime = 0
     }
   }, [open, prompt, videoStoragePath])
 
@@ -92,8 +119,11 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
     return () => {
       if (audioRef.current) audioRef.current.pause()
       if (filmAudioRef.current) filmAudioRef.current.pause()
+      if (narrAudioRef.current) narrAudioRef.current.pause()
       for (const url of audioCache.current.values()) URL.revokeObjectURL(url)
+      for (const url of narrCache.current.values()) URL.revokeObjectURL(url)
       audioCache.current.clear()
+      narrCache.current.clear()
     }
   }, [])
 
@@ -218,6 +248,80 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
     }
   }, [])
 
+  // Read the narration aloud — reads the translation when one is shown,
+  // otherwise the original prompt narration. Audio is cached per text.
+  const speakNarration = useCallback(async () => {
+    const el = narrAudioRef.current
+    if (el && narrPlaying) {
+      el.pause()
+      return
+    }
+    const text = (translation ?? promptText).trim()
+    if (!text) return
+    const key = text.slice(0, 5000)
+    const playUrl = (url: string) => {
+      const audio = narrAudioRef.current ?? new Audio()
+      narrAudioRef.current = audio
+      audio.src = url
+      audio.onended = () => setNarrPlaying(false)
+      audio.onpause = () => setNarrPlaying(false)
+      setNarrPlaying(true)
+      void audio.play().catch(() => setNarrPlaying(false))
+    }
+    const cached = narrCache.current.get(key)
+    if (cached) { playUrl(cached); return }
+    setNarrLoading(true)
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke<{
+        audioBase64?: string
+        mimeType?: string
+        error?: string
+      }>('tts-generate', { body: { text: key, gender: 'female', tone: 'narrative' } })
+      if (fnError) throw new Error(fnError.message)
+      if (data?.error) throw new Error(data.error)
+      if (!data?.audioBase64) throw new Error('No audio returned')
+      const bin = atob(data.audioBase64)
+      const bytes = new Uint8Array(bin.length)
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+      const blob = new Blob([bytes], { type: data.mimeType || 'audio/wav' })
+      const url = URL.createObjectURL(blob)
+      narrCache.current.set(key, url)
+      playUrl(url)
+    } catch {
+      toast.error('Could not read the narration aloud.')
+    } finally {
+      setNarrLoading(false)
+    }
+  }, [translation, promptText, narrPlaying])
+
+  const translateNarration = useCallback(async (lang: string) => {
+    setTargetLang(lang)
+    // Stop any narration playback so the next read uses the chosen version.
+    if (narrAudioRef.current) narrAudioRef.current.pause()
+    if (!lang) { setTranslation(null); return }
+    const text = promptText.trim()
+    if (!text) return
+    setTranslating(true)
+    setTranslation(null)
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke<{
+        translation?: string
+        error?: string
+      }>('translate-text', { body: { text, targetLang: lang } })
+      if (fnError) throw new Error(fnError.message)
+      if (data?.error) throw new Error(data.error)
+      if (!data?.translation) throw new Error('No translation returned')
+      setTranslation(data.translation)
+    } catch {
+      toast.error('Could not translate the narration.')
+      setTargetLang('')
+    } finally {
+      setTranslating(false)
+    }
+  }, [promptText])
+
+
+
   if (!open) return null
 
   const lowConfWords = words.filter((w) => w.lowConfidence)
@@ -249,26 +353,85 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
       <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4">
         {/* 1) Narration from the prompt */}
         <section className="space-y-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-            From prompt
-          </h3>
-          {promptLines.length > 0 ? (
-            <ul dir="auto" className="space-y-2">
-              {promptLines.map((line, i) => (
-                <li
-                  key={i}
-                  className="rounded-lg border border-violet-400/20 bg-violet-500/[0.06] px-3 py-2 text-sm leading-6 text-zinc-100"
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+              From prompt
+            </h3>
+            {promptLines.length > 0 ? (
+              <div className="flex items-center gap-2">
+                {/* Translate language selector */}
+                <div className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/[0.04] pl-2 pr-1 py-0.5">
+                  <Languages className="h-3.5 w-3.5 text-violet-300" aria-hidden="true" />
+                  <select
+                    value={targetLang}
+                    onChange={(e) => void translateNarration(e.target.value)}
+                    disabled={translating}
+                    aria-label="Translate narration"
+                    className="cursor-pointer rounded-full bg-transparent py-0.5 text-xs font-medium text-zinc-200 outline-none [&>option]:bg-[#0b0c10] [&>option]:text-zinc-200"
+                  >
+                    <option value="">Original</option>
+                    {TRANSLATE_LANGS.map((l) => (
+                      <option key={l.code} value={l.code}>{l.label}</option>
+                    ))}
+                  </select>
+                  {translating ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-300" aria-hidden="true" />
+                  ) : null}
+                </div>
+                {/* Read aloud */}
+                <button
+                  type="button"
+                  onClick={() => void speakNarration()}
+                  disabled={narrLoading}
+                  aria-label={narrPlaying ? 'Pause narration' : 'Read narration aloud'}
+                  title={narrPlaying ? 'Pause narration' : 'Read narration aloud'}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-violet-400/40 bg-violet-500/10 px-3 py-1 text-xs font-semibold text-violet-100 transition hover:bg-violet-500/20 disabled:cursor-wait"
                 >
-                  {line}
-                </li>
-              ))}
-            </ul>
+                  {narrLoading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  ) : narrPlaying ? (
+                    <Pause className="h-3.5 w-3.5" aria-hidden="true" />
+                  ) : (
+                    <Volume2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                  Read aloud
+                </button>
+              </div>
+            ) : null}
+          </div>
+          {promptLines.length > 0 ? (
+            <>
+              <ul dir="auto" className="space-y-2">
+                {promptLines.map((line, i) => (
+                  <li
+                    key={i}
+                    className="rounded-lg border border-violet-400/20 bg-violet-500/[0.06] px-3 py-2 text-sm leading-6 text-zinc-100"
+                  >
+                    {line}
+                  </li>
+                ))}
+              </ul>
+              {translation ? (
+                <div
+                  dir="auto"
+                  className="rounded-lg border border-sky-400/20 bg-sky-500/[0.06] px-3 py-2 text-sm leading-6 text-zinc-100"
+                >
+                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-sky-300/80">
+                    {TRANSLATE_LANGS.find((l) => l.code === targetLang)?.label ?? 'Translation'}
+                  </p>
+                  {translation}
+                </div>
+              ) : null}
+              {/* Hidden audio element for narration read-aloud */}
+              <audio ref={narrAudioRef} className="hidden" />
+            </>
           ) : (
             <p className="text-sm leading-6 text-zinc-400">
               No narration detected in this card's prompt. The narration / spoken lines appear here when the scene includes a narration line or quoted dialogue.
             </p>
           )}
         </section>
+
 
         {/* 2) Narration on the film */}
         <section className="space-y-2 border-t border-white/10 pt-4">
