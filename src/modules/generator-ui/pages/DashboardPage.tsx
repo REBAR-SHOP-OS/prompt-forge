@@ -58,6 +58,8 @@ import {
   FileText,
   MessageSquareQuote,
   Contact,
+  Eye,
+  EyeOff,
   X
 } from 'lucide-react'
 import {
