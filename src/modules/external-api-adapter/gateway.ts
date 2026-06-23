@@ -7,11 +7,21 @@ import type { RoutePreviewInput, RoutePreviewResult } from "./contract";
 
 export const EXTERNAL_API_ADAPTER_CONTRACT_VERSION = "v1" as const;
 
+export interface LocalVideoStatusResult {
+  status: "configured" | "not_configured" | "unreachable";
+  message: string;
+}
+
 export const externalApiAdapterGateway = {
   contractVersion: EXTERNAL_API_ADAPTER_CONTRACT_VERSION,
   routePreview: (input: RoutePreviewInput) =>
     request<RoutePreviewResult>("/ai-gateway-route-preview", {
       method: "POST",
       body: JSON.stringify(input),
+    }),
+  /** Local video router config/health. Pass probe=true for a reachability check. */
+  localVideoStatus: (probe = false) =>
+    request<LocalVideoStatusResult>(`/local-video-status${probe ? "?probe=true" : ""}`, {
+      method: "GET",
     }),
 };
