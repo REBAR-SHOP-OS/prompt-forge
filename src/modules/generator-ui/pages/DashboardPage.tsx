@@ -6611,7 +6611,9 @@ export default function DashboardPage() {
           audioOpt,
           transitionsForMerge,
           abortController.signal,
-          contactActive ? { lines: contactLines, position: contactOverlay.position } : undefined,
+          contactActive
+            ? { lines: contactLines, position: contactOverlay.position, logoUrl: contactLogoActive ? contactOverlay.logoUrl : undefined }
+            : undefined,
         ),
 
         pipelineTimeout,
