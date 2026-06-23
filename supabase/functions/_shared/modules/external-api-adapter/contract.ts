@@ -77,6 +77,13 @@ export interface AiGateway {
     opts?: ResolveRouteOptions,
   ): Promise<ResolvedRoute>;
   sanitizePrompt(p: string): string;
+  /**
+   * No-secret config/health status for the local video router. `probe=true`
+   * attempts a reachability check against the configured router.
+   */
+  localVideoStatus(
+    probe?: boolean,
+  ): Promise<{ status: "configured" | "not_configured" | "unreachable"; message: string }>;
   getProviderApiKey(p: ProviderKey): string | null;
   /**
    * Trigger a generation against the external provider.
