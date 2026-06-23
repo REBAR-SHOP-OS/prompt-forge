@@ -250,7 +250,6 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
 
   // Read the narration aloud — reads the translation when one is shown,
   // otherwise the original prompt narration. Audio is cached per text.
-  const displayText = translation ?? promptText
   const speakNarration = useCallback(async () => {
     const el = narrAudioRef.current
     if (el && narrPlaying) {
