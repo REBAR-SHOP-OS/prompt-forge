@@ -1099,6 +1099,21 @@ export default function ProductAdDialog({
       const cleaned = cleanProductName(photo.title)
       if (!productName.trim() && photo.title) setProductName(cleaned)
       setNameNeedsReview(looksLikeCode(cleaned))
+      // Record this reframe so it appears in the history gallery and can be
+      // reused later without paying for another generation.
+      try {
+        const dims = ASPECT_DIMS[pickedAspect]
+        await supabase.from('generator_user_images').insert({
+          user_id: userId!,
+          storage_path: (json.publicUrl as string) ?? reframedPath,
+          category: 'reframe',
+          title: photo.title ?? null,
+          width: dims.w,
+          height: dims.h,
+        })
+      } catch {
+        /* non-blocking: history record is best-effort */
+      }
       setProductPickerOpen(false)
     } catch (e) {
       setPreviewLoading(false)
