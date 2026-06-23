@@ -95,7 +95,14 @@ const LOCAL_VIDEO_MODELS = new Set([
 ]);
 
 type LocalVideoConfig =
-  | { ok: true; baseUrl: string; apiKey: string | null; timeoutMs: number }
+  | {
+      ok: true;
+      baseUrl: string;
+      createUrl: string;
+      createRoute: "videos_generations" | "videos" | "custom";
+      apiKey: string | null;
+      timeoutMs: number;
+    }
   | { ok: false; error: string };
 
 // Clear, actionable messages reused by the adapter, the orchestrator preflight
@@ -110,6 +117,19 @@ const DEFAULT_LOCAL_VIDEO_TIMEOUT_MS = 300_000;
 function readLocalVideoTimeoutMs(): number {
   const raw = Number(Deno.env.get("LOCAL_VIDEO_ROUTER_TIMEOUT_MS"));
   return Number.isFinite(raw) && raw > 0 ? Math.round(raw) : DEFAULT_LOCAL_VIDEO_TIMEOUT_MS;
+}
+
+function normalizeLocalPath(path: string): string {
+  const trimmed = path.trim();
+  if (!trimmed) return "/videos/generations";
+  return trimmed.startsWith("/") ? trimmed.replace(/\/+$/, "") : `/${trimmed.replace(/\/+$/, "")}`;
+}
+
+function classifyLocalCreateRoute(path: string): "videos_generations" | "videos" | "custom" {
+  const normalized = normalizeLocalPath(path);
+  if (normalized === "/videos/generations") return "videos_generations";
+  if (normalized === "/videos") return "videos";
+  return "custom";
 }
 
 /** True when the error is a network/abort failure (router down/unreachable),
@@ -249,11 +269,20 @@ function readLocalVideoConfig(): LocalVideoConfig {
   }
 
   const withoutTrailingSlash = parsed.toString().replace(/\/+$/, "");
-  const baseUrl = withoutTrailingSlash.endsWith("/v1")
-    ? withoutTrailingSlash
-    : `${withoutTrailingSlash}/v1`;
+  const pathname = parsed.pathname.replace(/\/+$/, "");
+  const exactCreateRoute = pathname.endsWith("/videos/generations")
+    ? "videos_generations"
+    : (pathname.endsWith("/videos") ? "videos" : null);
+
+  const baseUrl = exactCreateRoute
+    ? withoutTrailingSlash.replace(/\/videos(?:\/generations)?$/i, "")
+    : (withoutTrailingSlash.endsWith("/v1") ? withoutTrailingSlash : `${withoutTrailingSlash}/v1`);
+
+  const createPath = normalizeLocalPath(Deno.env.get("LOCAL_VIDEO_ROUTER_CREATE_PATH") ?? "/videos/generations");
+  const createRoute = exactCreateRoute ?? classifyLocalCreateRoute(createPath);
+  const createUrl = exactCreateRoute ? withoutTrailingSlash : `${baseUrl}${createPath}`;
   const apiKey = getProviderApiKey("local");
-  return { ok: true, baseUrl, apiKey, timeoutMs: readLocalVideoTimeoutMs() };
+  return { ok: true, baseUrl, createUrl, createRoute, apiKey, timeoutMs: readLocalVideoTimeoutMs() };
 }
 
 /** Lightweight, no-secret config/health status for the local video router.
@@ -1357,6 +1386,7 @@ async function startLocalVideo(
   }
   const config = readLocalVideoConfig();
   if (!config.ok) throw new Error(config.error);
+  const localConfig = config;
 
   // Local routers (Wan/LTX on ComfyUI) drive clip length via num_frames + fps,
   // not seconds. Without these they fall back to their default (~1s) clip and
@@ -1397,13 +1427,29 @@ async function startLocalVideo(
   };
 
 
+  async function postCreate(url: string): Promise<Response> {
+    return await localVideoFetch(url, {
+      method: "POST",
+      headers: localVideoHeaders(localConfig),
+      body: JSON.stringify(body),
+    }, localConfig.timeoutMs);
+  }
+
   let res: Response;
   try {
-    res = await localVideoFetch(`${config.baseUrl}/videos/generations`, {
-      method: "POST",
-      headers: localVideoHeaders(config),
-      body: JSON.stringify(body),
-    }, config.timeoutMs);
+    res = await postCreate(localConfig.createUrl);
+
+    // Compatibility fallback: OpenRouter-style video routers expose POST
+    // /v1/videos, while the original RTX router contract used
+    // POST /v1/videos/generations. A 404 on the default path usually means the
+    // router is reachable but uses the alternate route, not that secrets are
+    // missing. Retry once before surfacing an endpoint-path error.
+    if (res.status === 404 && localConfig.createRoute === "videos_generations") {
+      const fallbackUrl = `${localConfig.baseUrl}/videos`;
+      logInfo("local video create fallback", { from: "/videos/generations", to: "/videos", model: resolvedModel });
+      await res.body?.cancel().catch(() => {});
+      res = await postCreate(fallbackUrl);
+    }
   } catch (err) {
     logError("local video create unreachable", { error: (err as Error).message, model: resolvedModel });
     if (isUnreachableError(err)) throw new Error(LOCAL_UNREACHABLE_MESSAGE);
@@ -1419,6 +1465,11 @@ async function startLocalVideo(
 
   if (!res.ok) {
     logError("local video create failed", { status: res.status, body: text.slice(0, 500), model: resolvedModel });
+    if (res.status === 404) {
+      throw new Error(
+        `Local video router endpoint not found. Configure LOCAL_VIDEO_ROUTER_URL to the correct base URL or set LOCAL_VIDEO_ROUTER_CREATE_PATH (for example /videos or /videos/generations). Router replied 404: ${text.slice(0, 200) || "Not Found"}`,
+      );
+    }
     throw new Error(`Local video router ${res.status}: ${text.slice(0, 300) || "unknown error"}`);
   }
 
