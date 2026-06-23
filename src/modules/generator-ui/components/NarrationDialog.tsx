@@ -553,7 +553,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                     aria-label="Translate narration"
                     className="cursor-pointer rounded-full bg-transparent py-0.5 text-xs font-medium text-zinc-200 outline-none [&>option]:bg-[#0b0c10] [&>option]:text-zinc-200"
                   >
-                    <option value="">Original</option>
+                    <option value="">{t('original')}</option>
                     {TRANSLATE_LANGS.map((l) => (
                       <option key={l.code} value={l.code}>{l.label}</option>
                     ))}
