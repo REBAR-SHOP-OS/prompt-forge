@@ -2159,12 +2159,22 @@ export default function ProductAdDialog({
 
         <Dialog open={productPickerOpen} onOpenChange={(o) => { if (!preparingId) setProductPickerOpen(o) }}>
           <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+            <button
+              type="button"
+              onClick={openReframeHistory}
+              title={t.reframeHistory}
+              aria-label={t.reframeHistory}
+              className="absolute right-12 top-4 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/10 bg-white/5 text-zinc-300 transition hover:border-amber-300/40 hover:text-amber-200"
+            >
+              <History className="h-4 w-4" aria-hidden="true" />
+            </button>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Boxes className="h-4 w-4" aria-hidden="true" /> {t.chooseFromProducts}
               </DialogTitle>
               <DialogDescription className="text-zinc-400">{t.aspectHint}</DialogDescription>
             </DialogHeader>
+
 
             {/* Step 1: aspect ratio */}
             <div>
