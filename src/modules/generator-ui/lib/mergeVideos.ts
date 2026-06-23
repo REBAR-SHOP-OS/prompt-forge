@@ -371,9 +371,11 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
     const panelX = Math.round((cw - panelW) / 2)
     const panelY = Math.round((ch - blockHeight) / 2)
     const radius = Math.round(fontSize * 0.6)
-    ctx.fillStyle = 'rgba(0,0,0,0.45)'
-    roundRect(ctx, panelX, panelY, panelW, blockHeight, radius)
-    ctx.fill()
+    if (panelEnabled) {
+      ctx.fillStyle = panelFill
+      roundRect(ctx, panelX, panelY, panelW, blockHeight, radius)
+      ctx.fill()
+    }
 
     let y = panelY + padY
     if (logoH) {
