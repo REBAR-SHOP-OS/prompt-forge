@@ -1451,6 +1451,18 @@ async function startGeneration(
 ): Promise<GenerationStartResult> {
   const apiKey = getProviderApiKey(providerKey);
 
+  // Make reference-image continuity behavior explicit and observable.
+  if (input.referenceImageUrls && input.referenceImageUrls.length > 0) {
+    logInfo("reference-image continuity", {
+      providerKey,
+      resolvedModel,
+      referenceCount: input.referenceImageUrls.length,
+      startImage: supportsStartImage(providerKey, resolvedModel),
+      dedicatedReferenceSupport: supportsReferenceImages(providerKey, resolvedModel),
+    });
+  }
+
+
   if (providerKey === "local") {
     return await startLocalVideo(resolvedModel, input);
   }
