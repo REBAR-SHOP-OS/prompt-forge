@@ -379,6 +379,7 @@ export function VoiceoverDialog({
               className="resize-none border-white/10 bg-white/[0.04] text-zinc-100 placeholder:text-zinc-500"
             />
             <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
               <Popover open={isProductPopoverOpen} onOpenChange={setIsProductPopoverOpen}>
                 <PopoverTrigger asChild>
                   <button
