@@ -486,6 +486,19 @@ export const jobOrchestratorGateway = {
           // chaining a Veo extension call inside the adapter (~15s total).
           // No up-front rejection needed — the adapter handles the chain.
 
+          // Preflight: for local models, verify the router is configured BEFORE
+          // creating a job + debiting credits, so a misconfiguration never
+          // leaves a broken Pending job behind.
+          if (providerKey === "local") {
+            const localStatus = await aiGateway.localVideoStatus(false);
+            if (localStatus.status === "not_configured") {
+              await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 503, latencyMs: Date.now() - ctx.startedAt, errorCode: "LOCAL_NOT_CONFIGURED" });
+              return errorResponse("LOCAL_NOT_CONFIGURED", localStatus.message, 503, ctx.requestId);
+            }
+          }
+
+
+
           // Cross-domain call via external-api-adapter contract.
           // Pass duration + lastFrame so cost is accurate and Veo tier is
           // chosen correctly (Fast unless last-frame interpolation needed).
