@@ -1965,11 +1965,19 @@ export default function DashboardPage() {
   }, [updateContactLogo])
   // Lines shown in the overlay (only non-empty fields), in display order.
   const contactLines = useMemo(
-    () => [contactOverlay.website, contactOverlay.phone, contactOverlay.address]
+    () => [
+      contactOverlay.websiteEnabled ? contactOverlay.website : '',
+      contactOverlay.phoneEnabled ? contactOverlay.phone : '',
+      contactOverlay.addressEnabled ? contactOverlay.address : '',
+    ]
       .map((l) => l.trim())
       .filter(Boolean),
-    [contactOverlay.website, contactOverlay.phone, contactOverlay.address],
+    [
+      contactOverlay.website, contactOverlay.phone, contactOverlay.address,
+      contactOverlay.websiteEnabled, contactOverlay.phoneEnabled, contactOverlay.addressEnabled,
+    ],
   )
+
   const contactLogoActive = contactOverlay.logoEnabled && !!contactOverlay.logoUrl
   const contactActive = contactOverlay.enabled && (contactLines.length > 0 || contactLogoActive)
 
