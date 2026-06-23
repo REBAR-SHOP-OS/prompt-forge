@@ -534,6 +534,10 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequired: 'Please describe your business first — the scenario must be relevant to it.',
     businessSave: 'Save',
     businessSaved: 'Saved',
+    contactLabel: 'Contact details (shown on video)',
+    contactWebsite: 'Website',
+    contactPhone: 'Phone',
+    contactAddress: 'Address',
   },
   fa: {
     title: 'سناریوی تبلیغ محصول',
@@ -591,6 +595,10 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequired: 'ابتدا کسب‌وکارتان را توضیح دهید — سناریو باید مرتبط با آن باشد.',
     businessSave: 'ذخیره',
     businessSaved: 'ذخیره شد',
+    contactLabel: 'اطلاعات تماس (روی ویدیو نمایش داده می‌شود)',
+    contactWebsite: 'وب‌سایت',
+    contactPhone: 'شماره تماس',
+    contactAddress: 'آدرس',
   },
   ar: {
     title: 'سيناريو إعلان المنتج',
@@ -648,6 +656,10 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequired: 'يرجى وصف عملك أولاً — يجب أن يكون السيناريو ذا صلة به.',
     businessSave: 'حفظ',
     businessSaved: 'تم الحفظ',
+    contactLabel: 'بيانات الاتصال (تظهر على الفيديو)',
+    contactWebsite: 'الموقع الإلكتروني',
+    contactPhone: 'الهاتف',
+    contactAddress: 'العنوان',
   },
   tr: {
     title: 'Ürün Reklam Senaryosu',
@@ -705,6 +717,10 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequired: 'Lütfen önce işletmenizi açıklayın — senaryo bununla ilgili olmalı.',
     businessSave: 'Kaydet',
     businessSaved: 'Kaydedildi',
+    contactLabel: 'İletişim bilgileri (videoda gösterilir)',
+    contactWebsite: 'Web sitesi',
+    contactPhone: 'Telefon',
+    contactAddress: 'Adres',
   },
   es: {
     title: 'Guion de Anuncio de Producto',
@@ -762,6 +778,10 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequired: 'Describe primero tu negocio: el escenario debe ser relevante para él.',
     businessSave: 'Guardar',
     businessSaved: 'Guardado',
+    contactLabel: 'Datos de contacto (se muestran en el video)',
+    contactWebsite: 'Sitio web',
+    contactPhone: 'Teléfono',
+    contactAddress: 'Dirección',
   },
   fr: {
     title: 'Scénario de Publicité Produit',
@@ -819,6 +839,10 @@ const T: Record<Lang, Record<string, string>> = {
     businessRequired: "Décrivez d'abord votre entreprise — le scénario doit y être pertinent.",
     businessSave: 'Enregistrer',
     businessSaved: 'Enregistré',
+    contactLabel: 'Coordonnées (affichées sur la vidéo)',
+    contactWebsite: 'Site web',
+    contactPhone: 'Téléphone',
+    contactAddress: 'Adresse',
   },
 }
 
