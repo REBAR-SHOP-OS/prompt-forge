@@ -10110,11 +10110,26 @@ export default function DashboardPage() {
             const renderCard = (video: JobDetail, variant: 'final' | 'draft') => {
               const isPreviewSelected = previewVideo?.id === video.id
               // For drafts, resolve the real preview from the snapshot maps so
-              // a stale/empty entry.video never shows a blank card.
-              const display =
-                variant === 'draft'
-                  ? resolveDraftDisplay(video.id, video).video
-                  : video.video
+              // a stale/empty entry.video never shows a blank card. For finals,
+              // prefer the entry's own video but fall back to the first source
+              // clip snapshot when the merged file is missing/unplayable, so a
+              // final whose merged asset disappeared still shows a preview.
+              const display = (() => {
+                if (variant === 'draft') return resolveDraftDisplay(video.id, video).video
+                if (video.video?.storage_path) return video.video
+                const sources = projectSourceJobs[video.id] ?? []
+                const firstSource = sources.find((c) => !!c.video?.storage_path)
+                if (firstSource?.video?.storage_path) {
+                  return {
+                    id: firstSource.video.id ?? video.id,
+                    storage_path: firstSource.video.storage_path,
+                    thumbnail_url: video.video?.thumbnail_url ?? firstSource.video.thumbnail_url ?? null,
+                    aspect_ratio: firstSource.video.aspect_ratio ?? video.requested_aspect_ratio ?? null,
+                    duration: firstSource.video.duration ?? null,
+                  }
+                }
+                return video.video
+              })()
               const selectMode = variant === 'final' ? finalSelectMode : draftSelectMode
               const isChecked = (variant === 'final' ? selectedFinalIds : selectedDraftIds).has(video.id)
               return (
