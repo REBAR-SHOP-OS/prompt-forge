@@ -10117,7 +10117,6 @@ export default function DashboardPage() {
                 variant === 'draft'
                   ? resolveDraftDisplay(video.id, video).video
                   : video.video
-              })()
               const selectMode = variant === 'final' ? finalSelectMode : draftSelectMode
               const isChecked = (variant === 'final' ? selectedFinalIds : selectedDraftIds).has(video.id)
               return (
