@@ -1,33 +1,20 @@
-# Add company-logo upload to the Product Ad Scenario modal
+# Close library drawer on outside click
 
 ## Goal
-Add a **company logo upload** to the **Contact details (shown on video)** section of the Product Ad Scenario modal (`ProductAdDialog.tsx`), matching the logo capability already in the toolbar Contact popover. The logo is saved to the same single source of truth (`generator_business_profiles.contact_logo_url`), so it automatically appears as the overlay on generated videos.
+When the library drawer is open, clicking anywhere outside it (on the page) should close it, so the user no longer has to press the X icon every time.
 
-## Background
-- The `contact_logo_url` column already exists on `generator_business_profiles` (added previously). No migration needed.
-- The toolbar Contact popover already uploads/persists the logo and burns it into the film; this change simply lets users also set it from this modal.
+## Current behavior
+In `src/modules/generator-ui/pages/DashboardPage.tsx`:
+- The library panel is an `<aside>` controlled by `isApprovedPanelOpen` (line ~9834).
+- A full-screen dimming backdrop button exists (line ~9825) that closes the drawer on click — but it is restricted to mobile via the `lg:hidden` class, so on desktop there is no click-away region.
 
-## Changes (all in `src/modules/generator-ui/components/ProductAdDialog.tsx`)
+## Change
+Make the existing backdrop work on all screen sizes by removing the `lg:hidden` restriction, and make it transparent on larger screens so the desktop layout isn't dimmed (keep the subtle dim only on small screens where the drawer overlays content).
 
-### 1. Localized label
-Add a `contactLogo` label key (e.g. "Company logo") to all 6 language blocks (English, Persian, Arabic, Turkish, Spanish, French).
+- Update the backdrop button className so it is always rendered/clickable when the panel is open, using `bg-black/35` on small screens and `lg:bg-transparent` on large screens.
+- The backdrop sits at `z-20`, below the aside at `z-40`, so clicks on the drawer itself are unaffected — only clicks outside close it.
 
-### 2. State
-Add `const [contactLogo, setContactLogo] = useState('')` alongside the existing contact state.
+This is the minimal change and keeps the existing X icon and mobile behavior intact.
 
-### 3. Load
-In the profile-load effect (~1220), add `contact_logo_url` to the `.select(...)` and set `setContactLogo(data.contact_logo_url ?? '')`.
-
-### 4. Save
-Add `contact_logo_url: contactLogo || null` to **both** upsert calls (the explicit `saveBusinessInfo` ~1302 and the pre-generation upsert ~1351).
-
-### 5. Upload handler
-Add a handler that reads the chosen image file, downscales it to <=256px on an offscreen canvas, converts to a PNG data URL, and stores it in `contactLogo` (same approach as the toolbar popover, keeps the stored value small and CORS-safe).
-
-### 6. UI (in the contact block ~1628)
-Add a Logo row: a thumbnail preview (or a placeholder icon when empty), an **Upload/Replace** file button, and a **Remove** button when a logo is set. Changing the logo also calls `setBusinessSaved(false)` like the other fields.
-
-## Scope / safety
-- Frontend-only change in one file; no schema change; no change to video rendering.
-- Reuses the existing `contact_logo_url` column and existing overlay burn-in pipeline.
-- Logo stays optional; existing behavior is unchanged when no logo is set.
+## Technical detail
+Single className edit on the backdrop button (line ~9828): replace `transition lg:hidden` with `transition lg:bg-transparent` (and ensure pointer-events stay enabled when open across all breakpoints).
