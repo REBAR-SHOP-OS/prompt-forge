@@ -1795,6 +1795,9 @@ export default function DashboardPage() {
     address: string
     enabled: boolean
     position: 'top' | 'center' | 'bottom'
+    /** Normalized 0–1 center position when the user has dragged the overlay.
+     *  null = use the `position` preset instead. */
+    offset: { x: number; y: number } | null
     logoUrl: string
     logoEnabled: boolean
   }
@@ -1804,9 +1807,11 @@ export default function DashboardPage() {
     address: '',
     enabled: true,
     position: 'bottom',
+    offset: null,
     logoUrl: '',
     logoEnabled: true,
   })
+
   const [contactOverlay, setContactOverlay] = useState<ContactOverlay>(emptyContact)
   const [contactMenuOpen, setContactMenuOpen] = useState(false)
   const contactKey = userId ? `project-contact:${userId}` : null
