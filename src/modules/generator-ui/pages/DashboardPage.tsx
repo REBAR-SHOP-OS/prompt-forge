@@ -2964,9 +2964,6 @@ export default function DashboardPage() {
       updateContinuity({ enabled: false })
     }
   }, [continuity.enabled, hasPreviousClip, isMultiCardDuration, updateContinuity])
-  // Effective character shown in the continuity panel: the live selection wins,
-  // otherwise the character persisted for this chain/film.
-  const continuityCharacter = selectedCharacter ?? continuity.characterRef ?? null
   const hasComposerInput = promptText.trim().length > 0 || uploadedFiles.length > 0
   const readyStartFrame = uploadedFiles.find((file) => file.target === 'Start' && file.status === 'ready' && file.url)
   const readyEndFrame = uploadedFiles.find((file) => file.target === 'End' && file.status === 'ready' && file.url)
