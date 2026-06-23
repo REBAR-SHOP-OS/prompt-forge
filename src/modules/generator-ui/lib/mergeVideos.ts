@@ -396,17 +396,21 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
   }
 
   const barY = position === 'top' ? 0 : ch - blockHeight
-  // Translucent gradient bar for legibility on any footage.
-  const grad = ctx.createLinearGradient(0, barY, 0, barY + blockHeight)
-  if (position === 'top') {
-    grad.addColorStop(0, 'rgba(0,0,0,0.62)')
-    grad.addColorStop(1, 'rgba(0,0,0,0)')
-  } else {
-    grad.addColorStop(0, 'rgba(0,0,0,0)')
-    grad.addColorStop(1, 'rgba(0,0,0,0.62)')
+  if (panelEnabled) {
+    // Translucent gradient bar for legibility on any footage.
+    const strong = overlayHexToRgba(panelColor, Math.min(1, panelOpacity * 1.38))
+    const clear = overlayHexToRgba(panelColor, 0)
+    const grad = ctx.createLinearGradient(0, barY, 0, barY + blockHeight)
+    if (position === 'top') {
+      grad.addColorStop(0, strong)
+      grad.addColorStop(1, clear)
+    } else {
+      grad.addColorStop(0, clear)
+      grad.addColorStop(1, strong)
+    }
+    ctx.fillStyle = grad
+    ctx.fillRect(0, barY, cw, blockHeight)
   }
-  ctx.fillStyle = grad
-  ctx.fillRect(0, barY, cw, blockHeight)
 
   let y = barY + padY
   if (logoH) {
