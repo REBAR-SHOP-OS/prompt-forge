@@ -90,7 +90,14 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
   const [narrLoading, setNarrLoading] = useState(false)
   const [targetLang, setTargetLang] = useState('')
   const [translation, setTranslation] = useState<string | null>(null)
+  const [transcriptTranslation, setTranscriptTranslation] = useState<string | null>(null)
+  const [checkMessageTranslation, setCheckMessageTranslation] = useState<string | null>(null)
+  const [missingWordsTranslation, setMissingWordsTranslation] = useState<string | null>(null)
+  const [extraWordsTranslation, setExtraWordsTranslation] = useState<string | null>(null)
   const [translating, setTranslating] = useState(false)
+  // Cache translations per `${lang}::${text}` so re-selecting a language is
+  // instant and avoids repeat AI calls.
+  const translationCache = useRef<Map<string, string>>(new Map())
 
   // Reset transient state whenever the panel is (re)opened for a card.
   useEffect(() => {
