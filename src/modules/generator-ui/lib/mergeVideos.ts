@@ -317,7 +317,40 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
   ctx.textBaseline = 'top'
   ctx.font = `600 ${fontSize}px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif`
 
+  // Custom dragged position: a centered translucent panel anchored at the
+  // stored normalized point, clamped so it stays fully on-screen.
+  if (overlay.offset) {
+    const panelW = Math.min(Math.round(cw * 0.92), Math.round(cw * 0.7))
+    const panelH = blockHeight
+    const cx = Math.min(cw - panelW / 2, Math.max(panelW / 2, overlay.offset.x * cw))
+    const cy = Math.min(ch - panelH / 2, Math.max(panelH / 2, overlay.offset.y * ch))
+    const panelX = Math.round(cx - panelW / 2)
+    const panelY = Math.round(cy - panelH / 2)
+    const radius = Math.round(fontSize * 0.6)
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'
+    roundRect(ctx, panelX, panelY, panelW, panelH, radius)
+    ctx.fill()
+
+    let y = panelY + padY
+    if (logoH) {
+      ctx.drawImage(logo as HTMLImageElement, Math.round(cx - logoW / 2), y, logoW, logoH)
+      y += logoH + logoGap
+    }
+    ctx.shadowColor = 'rgba(0,0,0,0.85)'
+    ctx.shadowBlur = Math.round(fontSize * 0.25)
+    ctx.shadowOffsetY = 1
+    ctx.fillStyle = '#ffffff'
+    ctx.textAlign = 'center'
+    for (const line of lines) {
+      ctx.fillText(line, Math.round(cx), y, panelW - padX)
+      y += lineHeight
+    }
+    ctx.restore()
+    return
+  }
+
   if (position === 'center') {
+
     // Centered translucent panel with centered content.
     const panelW = Math.round(cw * 0.92)
     const panelX = Math.round((cw - panelW) / 2)
