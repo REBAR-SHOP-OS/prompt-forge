@@ -9149,8 +9149,8 @@ export default function DashboardPage() {
 
                             <span
                               key={i}
-                              className="truncate font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
-                              style={{ fontSize, lineHeight: `${lineHeight}px` }}
+                              className="truncate font-semibold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
+                              style={{ fontSize, lineHeight: `${lineHeight}px`, color: contactOverlay.textColor ?? '#ffffff', fontFamily: contactOverlay.fontFamily || undefined }}
                             >
                               {line}
                             </span>
