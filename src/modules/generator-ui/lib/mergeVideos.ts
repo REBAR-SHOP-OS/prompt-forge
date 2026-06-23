@@ -112,6 +112,8 @@ export interface MergeOverlayOptions {
   offset?: { x: number; y: number }
   /** Optional logo (data URL or same-origin URL) drawn above the text. */
   logoUrl?: string
+  /** Size multiplier for the overlay (logo + text). 1 = default. */
+  scale?: number
 }
 
 
