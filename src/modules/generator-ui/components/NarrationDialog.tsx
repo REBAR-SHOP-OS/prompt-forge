@@ -705,7 +705,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
               {lowConfWords.length > 0 ? (
                 <p className="flex items-center gap-2 text-[11px] text-amber-300/90">
                   <span className="inline-block h-2 w-2 rounded-full bg-amber-400" aria-hidden="true" />
-                  Highlighted words may be mispronounced — click one to hear the correct pronunciation.
+                  {t('mispronounced')}
                 </p>
               ) : null}
               <p
@@ -738,8 +738,19 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                         {i < words.length - 1 ? ' ' : ''}
                       </span>
                     ))
-                  : transcript || 'No speech detected in this film.'}
+                  : transcript || t('noSpeech')}
               </p>
+              {transcriptTranslation ? (
+                <div
+                  dir="auto"
+                  className="rounded-lg border border-sky-400/20 bg-sky-500/[0.06] px-3 py-2 text-sm leading-6 text-zinc-100"
+                >
+                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-sky-300/80">
+                    {TRANSLATE_LANGS.find((l) => l.code === targetLang)?.label ?? t('translation')}
+                  </p>
+                  {transcriptTranslation}
+                </div>
+              ) : null}
             </>
           )}
         </section>
