@@ -3390,6 +3390,25 @@ export default function DashboardPage() {
     window.localStorage.setItem('ui:preferred-model', selectedModelId)
   }, [selectedModelId])
 
+  // Local video router config/health status — only checked while a local model
+  // is selected, so cloud-only users never trigger the probe.
+  const [localStatus, setLocalStatus] = useState<LocalVideoStatusResult | null>(null)
+  const [localStatusLoading, setLocalStatusLoading] = useState(false)
+  useEffect(() => {
+    if (selectedModel?.providerKey !== 'local') {
+      setLocalStatus(null)
+      return
+    }
+    let cancelled = false
+    setLocalStatusLoading(true)
+    externalApiAdapterGateway
+      .localVideoStatus(true)
+      .then((res) => { if (!cancelled) setLocalStatus(res) })
+      .catch(() => { if (!cancelled) setLocalStatus(null) })
+      .finally(() => { if (!cancelled) setLocalStatusLoading(false) })
+    return () => { cancelled = true }
+  }, [selectedModel?.providerKey, selectedModel?.model])
+
 
   // Cost preview / confirm dialog state
   const [confirmCostOpen, setConfirmCostOpen] = useState(false)
