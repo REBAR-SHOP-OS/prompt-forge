@@ -933,6 +933,13 @@ export default function ProductAdDialog({
   const [loadingProducts, setLoadingProducts] = useState(false)
   const [preparingId, setPreparingId] = useState<string | null>(null)
 
+  // Reframe history (previously generated reframes the user can reuse)
+  const [reframeHistoryOpen, setReframeHistoryOpen] = useState(false)
+  const [reframeItems, setReframeItems] = useState<ReframeItem[]>([])
+  const [loadingReframes, setLoadingReframes] = useState(false)
+
+
+
   // Character attachment (feature a character in the product ad)
   const characterFileInputRef = useRef<HTMLInputElement | null>(null)
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false)
