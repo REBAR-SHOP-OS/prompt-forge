@@ -541,12 +541,21 @@ export const jobOrchestratorGateway = {
           }
 
           // Trigger generation through the adapter contract.
+          // Debug/repeatability: record which reference image(s) anchored this job.
+          if (referenceImageUrls.length > 0) {
+            logInfo("job reference images", {
+              jobId,
+              provider: route.providerKey,
+              referenceCount: referenceImageUrls.length,
+            });
+          }
           let gen;
           try {
             gen = await aiGateway.startGeneration(route.providerKey, route.resolvedModel, {
               prompt,
               firstFrameUrl,
               lastFrameUrl,
+              referenceImageUrls: referenceImageUrls.length > 0 ? referenceImageUrls : null,
               durationSeconds: parsed.data.durationSeconds ?? null,
               aspectRatio: chosenAspectRatio,
             });
