@@ -119,11 +119,8 @@ import { ensureMp4 } from '@/modules/generator-ui/lib/transcodeToMp4'
 import {
   loadContinuity,
   saveContinuity,
-  isMemoryEmpty,
-  generateStarterMemory,
   applyContinuityPrompt,
   type ContinuityState,
-  type SceneMemory,
 } from '@/modules/generator-ui/lib/continuity'
 import { recordBlobToMp4, canRecordMp4 } from '@/modules/generator-ui/lib/recordToMp4'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
