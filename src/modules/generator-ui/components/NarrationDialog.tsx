@@ -102,9 +102,16 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
     setFilmPlaying(false)
     setFilmTime(0)
     setFilmDuration(0)
+    setNarrPlaying(false)
+    setTargetLang('')
+    setTranslation(null)
     if (filmAudioRef.current) {
       filmAudioRef.current.pause()
       filmAudioRef.current.currentTime = 0
+    }
+    if (narrAudioRef.current) {
+      narrAudioRef.current.pause()
+      narrAudioRef.current.currentTime = 0
     }
   }, [open, prompt, videoStoragePath])
 
@@ -112,8 +119,11 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
     return () => {
       if (audioRef.current) audioRef.current.pause()
       if (filmAudioRef.current) filmAudioRef.current.pause()
+      if (narrAudioRef.current) narrAudioRef.current.pause()
       for (const url of audioCache.current.values()) URL.revokeObjectURL(url)
+      for (const url of narrCache.current.values()) URL.revokeObjectURL(url)
       audioCache.current.clear()
+      narrCache.current.clear()
     }
   }, [])
 
