@@ -1822,7 +1822,29 @@ export default function DashboardPage() {
     panelColor: string
     /** Opacity of the backdrop panel (0–1). */
     panelOpacity: number
+    /** Hex color of the overlay text. */
+    textColor: string
+    /** CSS font-family stack used for the overlay text. */
+    fontFamily: string
   }
+  const DEFAULT_CONTACT_FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif"
+  const CONTACT_THEMES: {
+    id: string
+    label: string
+    swatch: string
+    textColor: string
+    fontFamily: string
+    panelEnabled: boolean
+    panelColor: string
+    panelOpacity: number
+  }[] = [
+    { id: 'classic', label: 'Classic', swatch: '#000000', textColor: '#ffffff', fontFamily: DEFAULT_CONTACT_FONT, panelEnabled: true, panelColor: '#000000', panelOpacity: 0.45 },
+    { id: 'minimal', label: 'Minimal', swatch: '#ffffff', textColor: '#ffffff', fontFamily: "'Outfit', system-ui, sans-serif", panelEnabled: false, panelColor: '#000000', panelOpacity: 0.45 },
+    { id: 'cinematic', label: 'Cinematic', swatch: '#f5e6c8', textColor: '#f5e6c8', fontFamily: "'Playfair Display', Georgia, serif", panelEnabled: true, panelColor: '#000000', panelOpacity: 0.6 },
+    { id: 'neon', label: 'Neon', swatch: '#22d3ee', textColor: '#22d3ee', fontFamily: "'Space Grotesk', system-ui, sans-serif", panelEnabled: true, panelColor: '#000000', panelOpacity: 0.55 },
+    { id: 'sunlight', label: 'Sunlight', swatch: '#111111', textColor: '#111111', fontFamily: "'Outfit', system-ui, sans-serif", panelEnabled: true, panelColor: '#ffffff', panelOpacity: 0.7 },
+    { id: 'gold', label: 'Gold Luxe', swatch: '#e8b923', textColor: '#e8b923', fontFamily: "'Playfair Display', Georgia, serif", panelEnabled: true, panelColor: '#000000', panelOpacity: 0.5 },
+  ]
   const emptyContact = (): ContactOverlay => ({
     website: '',
     phone: '',
@@ -1839,6 +1861,8 @@ export default function DashboardPage() {
     panelEnabled: true,
     panelColor: '#000000',
     panelOpacity: 0.45,
+    textColor: '#ffffff',
+    fontFamily: DEFAULT_CONTACT_FONT,
   })
 
   const [contactOverlay, setContactOverlay] = useState<ContactOverlay>(emptyContact)
