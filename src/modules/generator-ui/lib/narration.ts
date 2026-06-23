@@ -43,7 +43,9 @@ export function extractNarration(prompt: string | null | undefined): string[] {
   const labelAlt = NARRATION_LABELS
     .map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join('|')
-  const labelRe = new RegExp(`^\\s*(?:${labelAlt})\\s*[:：]\\s*(.+)$`, 'gim')
+  // The label may appear at the start of a line OR mid-paragraph after a
+  // sentence/clause boundary (e.g. "...next shot. Narration: \"...\"").
+  const labelRe = new RegExp(`(?:^|[\\n.!?…])\\s*(?:${labelAlt})\\s*[:：]\\s*(.+)$`, 'gim')
   let lm: RegExpExecArray | null
   while ((lm = labelRe.exec(prompt)) !== null) {
     push(lm[1] ?? '')
