@@ -1859,11 +1859,20 @@ export default function DashboardPage() {
   // Persist the logo to the business profile (single source of truth) and update state.
   const updateContactLogo = useCallback((logoUrl: string) => {
     updateContact({ logoUrl })
-    if (userId) {
-      void supabase
+    if (!userId) return
+    void (async () => {
+      const value = logoUrl || null
+      const { data: updated } = await supabase
         .from('generator_business_profiles')
-        .upsert({ user_id: userId, contact_logo_url: logoUrl || null }, { onConflict: 'user_id' })
-    }
+        .update({ contact_logo_url: value })
+        .eq('user_id', userId)
+        .select('user_id')
+      if (!updated || updated.length === 0) {
+        await supabase
+          .from('generator_business_profiles')
+          .insert({ user_id: userId, business_info: '', contact_logo_url: value })
+      }
+    })()
   }, [updateContact, userId])
   // Lines shown in the overlay (only non-empty fields), in display order.
   const contactLines = useMemo(
