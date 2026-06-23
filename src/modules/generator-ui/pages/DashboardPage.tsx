@@ -9299,6 +9299,7 @@ export default function DashboardPage() {
                             onClick={(event) => {
                               event.stopPropagation()
                               setNarrationViewer({
+                                cardId: video.id,
                                 prompt: video.input_prompt ?? null,
                                 narrationText: canonical,
                                 videoStoragePath: video.video?.storage_path ?? null,
