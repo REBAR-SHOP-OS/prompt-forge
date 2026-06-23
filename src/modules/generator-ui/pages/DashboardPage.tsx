@@ -2959,6 +2959,9 @@ export default function DashboardPage() {
       updateContinuity({ enabled: false })
     }
   }, [continuity.enabled, hasPreviousClip, updateContinuity])
+  // Effective character shown in the continuity panel: the live selection wins,
+  // otherwise the character persisted for this chain/film.
+  const continuityCharacter = selectedCharacter ?? continuity.characterRef ?? null
   const hasComposerInput = promptText.trim().length > 0 || uploadedFiles.length > 0
   const readyStartFrame = uploadedFiles.find((file) => file.target === 'Start' && file.status === 'ready' && file.url)
   const readyEndFrame = uploadedFiles.find((file) => file.target === 'End' && file.status === 'ready' && file.url)
@@ -5427,7 +5430,13 @@ export default function DashboardPage() {
     if (enabled && isMemoryEmpty(memory)) {
       memory = generateStarterMemory(promptText.trim(), undefined)
     }
-    updateContinuity({ enabled, memory })
+    // Persist the character sheet selected for this film so the panel can show
+    // it (and the next clip is built on the same character) even after the
+    // transient selectedCharacter is reset on project load.
+    const characterRef = selectedCharacter
+      ? { id: selectedCharacter.id, url: selectedCharacter.url, title: selectedCharacter.title }
+      : continuity.characterRef ?? null
+    updateContinuity({ enabled, memory, characterRef })
   }
 
   // Open the scene-memory editor, seeding from a starter when empty.
@@ -8552,6 +8561,7 @@ export default function DashboardPage() {
         onUseCharacter={(c) => {
           const character: ProjectCharacter = { id: c.id, url: c.url, title: c.title }
           setSelectedCharacter(character)
+          updateContinuity({ characterRef: character })
           setCharacterList((prev) =>
             prev.some((p) => p.id === character.id) ? prev : [character, ...prev],
           )
@@ -10303,18 +10313,23 @@ export default function DashboardPage() {
               {/* Character / reference source */}
               <div className="flex items-center justify-between gap-2">
                 <span className="text-zinc-500">Character / reference</span>
-                {selectedCharacter ? (
-                  <span className="inline-flex items-center gap-2 text-zinc-200">
-                    {selectedCharacter.url ? (
-                      <img src={selectedCharacter.url} alt="" className="h-6 w-6 rounded object-cover" />
+                {continuityCharacter ? (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCharacter(continuityCharacter)}
+                    className="inline-flex items-center gap-2 text-zinc-200 transition hover:text-white"
+                    title="Use this character for the next clip"
+                  >
+                    {continuityCharacter.url ? (
+                      <img src={continuityCharacter.url} alt="" className="h-6 w-6 rounded object-cover" />
                     ) : null}
-                    {selectedCharacter.title || 'Selected reference'}
-                  </span>
+                    {continuityCharacter.title || 'Selected reference'}
+                  </button>
                 ) : (
                   <span className="text-zinc-400">No reference selected</span>
                 )}
               </div>
-              {!selectedCharacter ? (
+              {!continuityCharacter ? (
                 <p className="text-[10px] text-amber-300/80">Add a character reference for stronger continuity.</p>
               ) : null}
 
@@ -10659,7 +10674,7 @@ export default function DashboardPage() {
                       <button
                         key={c.id}
                         type="button"
-                        onClick={() => { setSelectedCharacter(c); setCharacterMenuOpen(false) }}
+                        onClick={() => { setSelectedCharacter(c); updateContinuity({ characterRef: c }); setCharacterMenuOpen(false) }}
                         className={`group relative aspect-square overflow-hidden rounded-lg border transition ${
                           selectedCharacter?.id === c.id
                             ? 'border-fuchsia-400'

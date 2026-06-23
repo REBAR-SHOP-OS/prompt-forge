@@ -16,10 +16,18 @@ export interface SceneMemory {
   lastState: string
 }
 
+export interface CharacterRef {
+  id: string
+  url: string
+  title: string | null
+}
+
 export interface ContinuityState {
   enabled: boolean
   source: ContinuationSource
   memory: SceneMemory
+  /** Persisted character sheet selected for this chain/film. */
+  characterRef?: CharacterRef | null
 }
 
 export const EMPTY_MEMORY: SceneMemory = {
@@ -33,6 +41,7 @@ export const DEFAULT_CONTINUITY: ContinuityState = {
   enabled: false,
   source: 'previous-final-frame',
   memory: { ...EMPTY_MEMORY },
+  characterRef: null,
 }
 
 const KEY_PREFIX = 'generator:continuity:'
@@ -58,6 +67,14 @@ export function loadContinuity(chainId: string | null | undefined): ContinuitySt
         style: parsed.memory?.style ?? '',
         lastState: parsed.memory?.lastState ?? '',
       },
+      characterRef:
+        parsed.characterRef && parsed.characterRef.id && parsed.characterRef.url
+          ? {
+              id: parsed.characterRef.id,
+              url: parsed.characterRef.url,
+              title: parsed.characterRef.title ?? null,
+            }
+          : null,
     }
   } catch {
     return { ...DEFAULT_CONTINUITY, memory: { ...EMPTY_MEMORY } }
