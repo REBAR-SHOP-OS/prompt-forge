@@ -276,6 +276,7 @@ function clipSource(c: ClipItem): HTMLVideoElement | HTMLImageElement {
 // Active contact/branding overlay for the current merge run. Set at the start
 // of mergeVideoUrls and cleared when it finishes so it never leaks across runs.
 let activeOverlay: MergeOverlayOptions | null = null
+let activeLogo: HTMLImageElement | null = null
 
 /**
  * Draw the contact/branding text lines onto the merge canvas. Called after each
@@ -285,7 +286,8 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
   const overlay = activeOverlay
   if (!overlay) return
   const lines = overlay.lines.map((l) => l.trim()).filter(Boolean)
-  if (lines.length === 0) return
+  const logo = activeLogo
+  if (lines.length === 0 && !logo) return
 
   const position = overlay.position ?? 'bottom'
   const fontSize = Math.max(14, Math.round(ch * 0.032))
@@ -293,11 +295,51 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
   const padX = Math.round(cw * 0.04)
   const padY = Math.round(fontSize * 0.6)
   const lineHeight = fontSize + lineGap
-  const blockHeight = lines.length * lineHeight - lineGap + padY * 2
+
+  // Logo dimensions (preserve aspect, height ~12% of frame).
+  let logoW = 0
+  let logoH = 0
+  if (logo && logo.naturalWidth && logo.naturalHeight) {
+    logoH = Math.round(ch * 0.12)
+    logoW = Math.round(logoH * (logo.naturalWidth / logo.naturalHeight))
+  }
+  const logoGap = logoH ? Math.round(fontSize * 0.6) : 0
+
+  const textBlockHeight = lines.length ? lines.length * lineHeight - lineGap : 0
+  const contentHeight = textBlockHeight + logoH + logoGap
+  const blockHeight = contentHeight + padY * 2
 
   ctx.save()
   ctx.textBaseline = 'top'
   ctx.font = `600 ${fontSize}px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif`
+
+  if (position === 'center') {
+    // Centered translucent panel with centered content.
+    const panelW = Math.round(cw * 0.92)
+    const panelX = Math.round((cw - panelW) / 2)
+    const panelY = Math.round((ch - blockHeight) / 2)
+    const radius = Math.round(fontSize * 0.6)
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'
+    roundRect(ctx, panelX, panelY, panelW, blockHeight, radius)
+    ctx.fill()
+
+    let y = panelY + padY
+    if (logoH) {
+      ctx.drawImage(logo as HTMLImageElement, Math.round((cw - logoW) / 2), y, logoW, logoH)
+      y += logoH + logoGap
+    }
+    ctx.shadowColor = 'rgba(0,0,0,0.85)'
+    ctx.shadowBlur = Math.round(fontSize * 0.25)
+    ctx.shadowOffsetY = 1
+    ctx.fillStyle = '#ffffff'
+    ctx.textAlign = 'center'
+    for (const line of lines) {
+      ctx.fillText(line, Math.round(cw / 2), y, panelW - padX)
+      y += lineHeight
+    }
+    ctx.restore()
+    return
+  }
 
   const barY = position === 'top' ? 0 : ch - blockHeight
   // Translucent gradient bar for legibility on any footage.
@@ -312,17 +354,32 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
   ctx.fillStyle = grad
   ctx.fillRect(0, barY, cw, blockHeight)
 
+  let y = barY + padY
+  if (logoH) {
+    ctx.drawImage(logo as HTMLImageElement, padX, y, logoW, logoH)
+    y += logoH + logoGap
+  }
   ctx.shadowColor = 'rgba(0,0,0,0.85)'
   ctx.shadowBlur = Math.round(fontSize * 0.25)
   ctx.shadowOffsetX = 0
   ctx.shadowOffsetY = 1
   ctx.fillStyle = '#ffffff'
-  let textY = barY + padY
   for (const line of lines) {
-    ctx.fillText(line, padX, textY, cw - padX * 2)
-    textY += lineHeight
+    ctx.fillText(line, padX, y, cw - padX * 2)
+    y += lineHeight
   }
   ctx.restore()
+}
+
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  const radius = Math.min(r, w / 2, h / 2)
+  ctx.beginPath()
+  ctx.moveTo(x + radius, y)
+  ctx.arcTo(x + w, y, x + w, y + h, radius)
+  ctx.arcTo(x + w, y + h, x, y + h, radius)
+  ctx.arcTo(x, y + h, x, y, radius)
+  ctx.arcTo(x, y, x + w, y, radius)
+  ctx.closePath()
 }
 
 function drawContain(
