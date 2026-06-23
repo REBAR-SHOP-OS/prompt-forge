@@ -1622,6 +1622,29 @@ export default function ProductAdDialog({
                     placeholder={t.businessPlaceholder}
                     className="max-h-[55vh] min-h-[220px] resize-y border-white/10 bg-black/30 text-sm text-zinc-100"
                   />
+                  <div className="mt-3 mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
+                    {t.contactLabel}
+                  </div>
+                  <div className="space-y-2">
+                    <Input
+                      value={contactWebsite}
+                      onChange={(e) => { setContactWebsite(e.target.value); setBusinessSaved(false) }}
+                      placeholder={t.contactWebsite}
+                      className="h-9 border-white/10 bg-black/30 text-sm text-zinc-100"
+                    />
+                    <Input
+                      value={contactPhone}
+                      onChange={(e) => { setContactPhone(e.target.value); setBusinessSaved(false) }}
+                      placeholder={t.contactPhone}
+                      className="h-9 border-white/10 bg-black/30 text-sm text-zinc-100"
+                    />
+                    <Input
+                      value={contactAddress}
+                      onChange={(e) => { setContactAddress(e.target.value); setBusinessSaved(false) }}
+                      placeholder={t.contactAddress}
+                      className="h-9 border-white/10 bg-black/30 text-sm text-zinc-100"
+                    />
+                  </div>
                   <div className="mt-2 flex justify-end">
                     <Button
                       size="sm"
