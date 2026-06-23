@@ -833,7 +833,7 @@ export default function DashboardPage() {
   const [isDragging, setIsDragging] = useState(false)
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
   const [promptViewer, setPromptViewer] = useState<string | null>(null)
-  const [narrationViewer, setNarrationViewer] = useState<{ prompt: string | null; narrationText: string | null; videoStoragePath: string | null } | null>(null)
+  const [narrationViewer, setNarrationViewer] = useState<{ cardId: string; prompt: string | null; narrationText: string | null; videoStoragePath: string | null } | null>(null)
   const [editPromptJob, setEditPromptJob] = useState<JobDetail | null>(null)
   const [editPromptText, setEditPromptText] = useState('')
   const [startContext] = useState('Start')
@@ -9219,7 +9219,7 @@ export default function DashboardPage() {
                     onDragOver={handleCardDragOver}
                     onDrop={handleCardDrop(video.id)}
                     onDragEnd={handleCardDragEnd}
-                    className={`w-full min-w-0 cursor-pointer rounded-2xl border p-3 transition hover:border-white/20 hover:bg-white/[0.055] ${
+                    className={`relative w-full min-w-0 cursor-pointer rounded-2xl border p-3 transition hover:border-white/20 hover:bg-white/[0.055] ${
                       isPreviewSelected ? 'border-white/20 bg-white/[0.06]' : 'border-white/10 bg-white/[0.035]'
                     } ${isDragging ? 'opacity-50' : ''}`}
                     role="button"
@@ -9299,6 +9299,7 @@ export default function DashboardPage() {
                             onClick={(event) => {
                               event.stopPropagation()
                               setNarrationViewer({
+                                cardId: video.id,
                                 prompt: video.input_prompt ?? null,
                                 narrationText: canonical,
                                 videoStoragePath: video.video?.storage_path ?? null,
@@ -9498,6 +9499,13 @@ export default function DashboardPage() {
                         )
                       })()
                     ) : null}
+                    <NarrationDialog
+                      open={narrationViewer?.cardId === video.id}
+                      onClose={() => setNarrationViewer(null)}
+                      prompt={narrationViewer?.prompt ?? null}
+                      narrationText={narrationViewer?.narrationText ?? null}
+                      videoStoragePath={narrationViewer?.videoStoragePath ?? null}
+                    />
                   </article>
                   {!isLast ? (
                     <div
@@ -10669,13 +10677,6 @@ export default function DashboardPage() {
           </div>
         </DialogContent>
       </Dialog>
-      <NarrationDialog
-        open={narrationViewer !== null}
-        onClose={() => setNarrationViewer(null)}
-        prompt={narrationViewer?.prompt ?? null}
-        narrationText={narrationViewer?.narrationText ?? null}
-        videoStoragePath={narrationViewer?.videoStoragePath ?? null}
-      />
 
 
 
