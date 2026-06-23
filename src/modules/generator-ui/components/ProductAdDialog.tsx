@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Package, LoaderCircle, RefreshCw, Copy, Check, Wand2, Send, ImagePlus, X, Languages, Boxes, ArrowLeft, Sparkles, Drama, UserRound, Building2 } from 'lucide-react'
+import { Package, LoaderCircle, RefreshCw, Copy, Check, Wand2, Send, ImagePlus, X, Languages, Boxes, ArrowLeft, Sparkles, Drama, UserRound, Building2, History } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -119,6 +119,34 @@ const PRODUCT_ASPECTS: { value: ProductAspect; cls: string }[] = [
   { value: '1:1', cls: 'aspect-square' },
   { value: '16:9', cls: 'aspect-video' },
 ]
+
+/** Canonical pixel dimensions for each aspect ratio (used to record/derive ratio). */
+const ASPECT_DIMS: Record<ProductAspect, { w: number; h: number }> = {
+  '9:16': { w: 1080, h: 1920 },
+  '1:1': { w: 1024, h: 1024 },
+  '16:9': { w: 1920, h: 1080 },
+}
+
+/** Snap an arbitrary width:height to the nearest supported aspect-ratio label. */
+function aspectLabelFromDims(width: number | null | undefined, height: number | null | undefined): ProductAspect {
+  if (!width || !height || width <= 0 || height <= 0) return '1:1'
+  const r = width / height
+  let best: ProductAspect = '1:1'
+  let bestDiff = Infinity
+  for (const a of PRODUCT_ASPECTS) {
+    const dims = ASPECT_DIMS[a.value]
+    const diff = Math.abs(r - dims.w / dims.h)
+    if (diff < bestDiff) {
+      bestDiff = diff
+      best = a.value
+    }
+  }
+  return best
+}
+
+type ReframeItem = { id: string; title: string | null; url: string; aspect: ProductAspect }
+
+
 
 type ProductPhoto = { id: string; title: string | null; url: string }
 
@@ -496,6 +524,10 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'Loading products…',
     back: 'Back',
     viewImage: 'View image',
+    reframeHistory: 'Previously made images',
+    loadingReframes: 'Loading history…',
+    noReframes: 'No reframed images yet.',
+    reuseHint: 'Click to reuse without regenerating.',
     businessLabel: 'About your business',
     businessRequiredTag: '(required)',
     businessPlaceholder: 'Describe your business: what you sell, your products/services, target audience, and brand tone…',
@@ -549,6 +581,10 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'در حال بارگذاری محصولات…',
     back: 'بازگشت',
     viewImage: 'نمایش تصویر',
+    reframeHistory: 'عکس‌های قبلاً ساخته‌شده',
+    loadingReframes: 'در حال بارگذاری تاریخچه…',
+    noReframes: 'هنوز عکسی در این بخش ساخته نشده است.',
+    reuseHint: 'برای استفاده دوباره بدون ساخت مجدد کلیک کنید.',
     businessLabel: 'درباره کسب‌وکار شما',
     businessRequiredTag: '(الزامی)',
     businessPlaceholder: 'کسب‌وکارتان را توضیح دهید: چه می‌فروشید، محصولات/خدمات، مخاطب هدف و لحن برند…',
@@ -602,6 +638,10 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'جارٍ تحميل المنتجات…',
     back: 'رجوع',
     viewImage: 'عرض الصورة',
+    reframeHistory: 'الصور المُعاد تأطيرها سابقًا',
+    loadingReframes: 'جارٍ تحميل السجل…',
+    noReframes: 'لا توجد صور مُعاد تأطيرها بعد.',
+    reuseHint: 'انقر لإعادة الاستخدام دون إعادة الإنشاء.',
     businessLabel: 'عن عملك التجاري',
     businessRequiredTag: '(مطلوب)',
     businessPlaceholder: 'صِف عملك: ماذا تبيع، منتجاتك/خدماتك، الجمهور المستهدف ونبرة العلامة التجارية…',
@@ -655,6 +695,10 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'Ürünler yükleniyor…',
     back: 'Geri',
     viewImage: 'Görseli görüntüle',
+    reframeHistory: 'Daha önce yeniden çerçevelenenler',
+    loadingReframes: 'Geçmiş yükleniyor…',
+    noReframes: 'Henüz yeniden çerçevelenmiş görsel yok.',
+    reuseHint: 'Yeniden oluşturmadan kullanmak için tıklayın.',
     businessLabel: 'İşletmeniz hakkında',
     businessRequiredTag: '(zorunlu)',
     businessPlaceholder: 'İşletmenizi açıklayın: ne sattığınız, ürün/hizmetleriniz, hedef kitle ve marka tonu…',
@@ -708,6 +752,10 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'Cargando productos…',
     back: 'Atrás',
     viewImage: 'Ver imagen',
+    reframeHistory: 'Imágenes ya recortadas',
+    loadingReframes: 'Cargando historial…',
+    noReframes: 'Aún no hay imágenes recortadas.',
+    reuseHint: 'Haz clic para reutilizar sin regenerar.',
     businessLabel: 'Sobre tu negocio',
     businessRequiredTag: '(obligatorio)',
     businessPlaceholder: 'Describe tu negocio: qué vendes, tus productos/servicios, público objetivo y tono de marca…',
@@ -761,6 +809,10 @@ const T: Record<Lang, Record<string, string>> = {
     loadingProducts: 'Chargement des produits…',
     back: 'Retour',
     viewImage: "Voir l'image",
+    reframeHistory: 'Images déjà recadrées',
+    loadingReframes: 'Chargement de l’historique…',
+    noReframes: 'Aucune image recadrée pour le moment.',
+    reuseHint: 'Cliquez pour réutiliser sans régénérer.',
     businessLabel: 'À propos de votre entreprise',
     businessRequiredTag: '(obligatoire)',
     businessPlaceholder: 'Décrivez votre entreprise : ce que vous vendez, vos produits/services, votre public cible et le ton de la marque…',
@@ -880,6 +932,13 @@ export default function ProductAdDialog({
   const [productPhotos, setProductPhotos] = useState<ProductPhoto[]>([])
   const [loadingProducts, setLoadingProducts] = useState(false)
   const [preparingId, setPreparingId] = useState<string | null>(null)
+
+  // Reframe history (previously generated reframes the user can reuse)
+  const [reframeHistoryOpen, setReframeHistoryOpen] = useState(false)
+  const [reframeItems, setReframeItems] = useState<ReframeItem[]>([])
+  const [loadingReframes, setLoadingReframes] = useState(false)
+
+
 
   // Character attachment (feature a character in the product ad)
   const characterFileInputRef = useRef<HTMLInputElement | null>(null)
@@ -1040,6 +1099,21 @@ export default function ProductAdDialog({
       const cleaned = cleanProductName(photo.title)
       if (!productName.trim() && photo.title) setProductName(cleaned)
       setNameNeedsReview(looksLikeCode(cleaned))
+      // Record this reframe so it appears in the history gallery and can be
+      // reused later without paying for another generation.
+      try {
+        const dims = ASPECT_DIMS[pickedAspect]
+        await supabase.from('generator_user_images').insert({
+          user_id: userId!,
+          storage_path: (json.publicUrl as string) ?? reframedPath,
+          category: 'reframe',
+          title: photo.title ?? null,
+          width: dims.w,
+          height: dims.h,
+        })
+      } catch {
+        /* non-blocking: history record is best-effort */
+      }
       setProductPickerOpen(false)
     } catch (e) {
       setPreviewLoading(false)
@@ -1048,6 +1122,59 @@ export default function ProductAdDialog({
       setPreparingId(null)
     }
   }
+
+  async function openReframeHistory() {
+    if (!userId) {
+      setError('Please sign in to view your images.')
+      return
+    }
+    setError(null)
+    setReframeHistoryOpen(true)
+    setLoadingReframes(true)
+    try {
+      const { data, error: qErr } = await supabase
+        .from('generator_user_images')
+        .select('id, storage_path, title, category, width, height')
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+      if (qErr) throw new Error(qErr.message)
+      const rows = (data ?? []).filter((r) => (r.category ?? 'general') === 'reframe')
+      const items: ReframeItem[] = await Promise.all(
+        rows.map(async (r) => ({
+          id: r.id,
+          title: r.title ?? null,
+          aspect: aspectLabelFromDims(r.width, r.height),
+          url: await signFramesUrl(r.storage_path).catch(() => signProductPhotoUrl(r.storage_path)),
+        })),
+      )
+      setReframeItems(items)
+    } catch (e) {
+      setError((e as Error).message ?? 'Failed to load history')
+    } finally {
+      setLoadingReframes(false)
+    }
+  }
+
+  async function reuseReframe(item: ReframeItem) {
+    setError(null)
+    setPreviewError(null)
+    setPreviewLoading(true)
+    try {
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
+      setImagePreviewUrl(item.url)
+      setUploadedImageUrl(item.url)
+      const cleaned = cleanProductName(item.title)
+      if (!productName.trim() && item.title) setProductName(cleaned)
+      setNameNeedsReview(looksLikeCode(cleaned))
+      setReframeHistoryOpen(false)
+      setProductPickerOpen(false)
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+
 
 
 
@@ -2032,12 +2159,22 @@ export default function ProductAdDialog({
 
         <Dialog open={productPickerOpen} onOpenChange={(o) => { if (!preparingId) setProductPickerOpen(o) }}>
           <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+            <button
+              type="button"
+              onClick={openReframeHistory}
+              title={t.reframeHistory}
+              aria-label={t.reframeHistory}
+              className="absolute right-12 top-4 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/10 bg-white/5 text-zinc-300 transition hover:border-amber-300/40 hover:text-amber-200"
+            >
+              <History className="h-4 w-4" aria-hidden="true" />
+            </button>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Boxes className="h-4 w-4" aria-hidden="true" /> {t.chooseFromProducts}
               </DialogTitle>
               <DialogDescription className="text-zinc-400">{t.aspectHint}</DialogDescription>
             </DialogHeader>
+
 
             {/* Step 1: aspect ratio */}
             <div>
@@ -2110,6 +2247,56 @@ export default function ProductAdDialog({
             </div>
           </DialogContent>
         </Dialog>
+
+        <Dialog open={reframeHistoryOpen} onOpenChange={setReframeHistoryOpen}>
+          <DialogContent dir={dir} className="max-w-2xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <History className="h-4 w-4" aria-hidden="true" /> {t.reframeHistory}
+              </DialogTitle>
+              <DialogDescription className="text-zinc-400">{t.reuseHint}</DialogDescription>
+            </DialogHeader>
+
+            {loadingReframes ? (
+              <div className="flex items-center justify-center py-10 text-sm text-zinc-400">
+                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> {t.loadingReframes}
+              </div>
+            ) : reframeItems.length === 0 ? (
+              <div className="py-10 text-center text-sm text-zinc-500">{t.noReframes}</div>
+            ) : (
+              <div className="grid max-h-[55vh] grid-cols-3 gap-3 overflow-y-auto pr-1 sm:grid-cols-4">
+                {reframeItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => reuseReframe(item)}
+                    className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-amber-300/40"
+                  >
+                    <img
+                      src={item.url}
+                      alt={item.title ?? 'Reframed image'}
+                      loading="lazy"
+                      className="aspect-square w-full bg-black/40 object-cover"
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden' }}
+                    />
+                    <span className="absolute right-1.5 top-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-amber-200">
+                      {item.aspect}
+                    </span>
+                    <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{item.title || t.untitled}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end pt-2">
+              <Button variant="ghost" size="sm" onClick={() => setReframeHistoryOpen(false)}>
+                <ArrowLeft className="mr-1.5 h-4 w-4" aria-hidden="true" /> {t.back}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+
 
         <input
           ref={characterFileInputRef}
