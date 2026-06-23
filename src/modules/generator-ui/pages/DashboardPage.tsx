@@ -3559,6 +3559,8 @@ export default function DashboardPage() {
     for (const ci of Object.values(coverImages)) coverImageIds.add(ci.id)
     const imagesByDraft = new Map<string, UserImageItem[]>()
     for (const img of userImages) {
+      // Reframe images (Product Ad "Choose from products") never become drafts.
+      if ((img.category ?? 'general') === 'reframe') continue
       if (finalClaimedImages.has(img.id)) continue
       if (coverImageIds.has(img.id)) continue
       const did = img.draft_group_id ? draftIdForGroupUuid(img.draft_group_id) : imageDraftMap[img.id]
