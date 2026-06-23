@@ -1,41 +1,31 @@
-# Plan: Fix blank previews for Final Film library cards
+# رفع باگ نمایش تصویر آپلودشده («Uploaded reference»)
 
-## Root cause (verified against live data)
+## مشکل چیست و از کجا می‌آید
+«Uploaded reference» محتوای واقعی نیست؛ این **متن جایگزین (alt)** یک `<img>` است که فقط وقتی نمایش داده می‌شود که خود تصویر بارگذاری نشود. منبع آن، تصویرِ کلیپِ «Uploaded image» در پنل Pending است که از جدول `generator_user_images` می‌آید و در دو نقطه رندر می‌شود:
+- پیش‌نمایش بزرگ — `DashboardPage.tsx` خط ۹۱۰۴ (`alt="Uploaded reference"`)
+- کارت کلیپ — `DashboardPage.tsx` خط ۹۵۹۷
 
-I inspected the actual library data and storage in the running app:
+## علت اصلی (تأییدشده با دیتای واقعی)
+همهٔ ردیف‌های `generator_user_images` آدرس را به‌صورت **URL عمومی** ذخیره می‌کنند (`/object/public/...`)، در حالی که باکت‌ها **خصوصی** هستند، پس `<img>` خطای 400/«Bucket not found» می‌گیرد و فقط متن alt دیده می‌شود.
 
-- All 6 "Final Film" library entries are stored with `thumbnail_url = null`. So a card's preview depends **entirely** on loading the merged `.webm` from the private `merged-videos` bucket and seeking to a frame.
-- For the two blank cards (the recent "Final Film (1 clip)" entries), the merged `.webm` files **no longer exist in storage** — signing them returns `Object not found`. The other four finals' files still exist, which is why only those render.
-- The card has **no fallback**: when the merged file is gone, `PlayableVideo` never paints, and since there is no poster, the tile stays blank.
+کد یک تابع امضا (`signUserImageUrl`) دارد که این URLها را به URL امضاشده تبدیل می‌کند، اما دو نقص دارد:
+1. تابع `userImageObjectKey` فقط کلید باکت `user-images` را استخراج می‌کند. تصاویری که در باکت `wan-frames` ذخیره شده‌اند (خروجی Product Ad / Scenario Writer که در همین جدول ثبت می‌شوند) شناسایی نمی‌شوند و URL خام شکستهٔ آن‌ها برمی‌گردد.
+2. هیچ `onError` روی این `<img>`ها وجود ندارد؛ پس اگر امضا یک‌بار شکست بخورد، تصویر به‌صورت دائم شکسته می‌ماند و کاربر فقط متن خام می‌بیند.
 
-So this is two compounding issues: (1) finals never persist a poster image, and (2) the card cannot fall back to anything when the heavy video asset is unavailable.
+## راه‌حل (فقط فرانت‌اند، بدون تغییر دیتابیس)
+۱. **امضای آگاه از باکت** در `DashboardPage.tsx`:
+   - `userImageObjectKey` و `signUserImageUrl` را طوری به‌روزرسانی کنم که علاوه بر `user-images`، باکت `wan-frames` را هم تشخیص دهد و از همان باکت درست `createSignedUrl` بسازد (الگوی موجود در `ProductAdDialog.tsx` که برای wan-frames کار می‌کند مرجع است).
+   - تابع کمکی مشترکی که از روی خود URL باکت را تشخیص می‌دهد، تا هر باکت خصوصیِ خودی به‌درستی امضا شود.
 
-Note: one of the two broken finals still has a valid source clip snapshot in storage; the other's source clip is also gone (unrecoverable — nothing left to preview).
+۲. **fallback امن روی هر دو `<img>`** (خطوط ۹۱۰۴ و ۹۵۹۷):
+   - افزودن `onError` که یک‌بار تلاش می‌کند URL را دوباره امضا کند؛ اگر باز هم شکست خورد، یک placeholder تمیز (آیکون تصویر + متن «تصویر در دسترس نیست») به‌جای آیکون شکستهٔ مرورگر نشان دهد.
 
-## Changes — `src/modules/generator-ui/pages/DashboardPage.tsx`
+۳. **اعتبارسنجی**: با اسکریپت Playwright روی پیش‌نمایش لوکال وارد می‌شوم، یک کلیپ تصویری Pending را باز می‌کنم و با اسکرین‌شات تأیید می‌کنم که تصویر واقعی (نه متن alt) نمایش داده می‌شود؛ console هم برای خطای 400 بررسی می‌شود.
 
-### 1. Persist a poster thumbnail at finalize (prevention)
+## بخش فنی
+- فایل: `src/modules/generator-ui/pages/DashboardPage.tsx` (خطوط ۳۴۴–۳۷۸ توابع امضا، و خطوط ~۹۱۰۴ و ~۹۵۹۷ رندر تصویر).
+- بدون migration، بدون تغییر در باکت‌ها (خصوصی می‌مانند — امن‌تر است).
+- بدون دست‌زدن به منطق آپلود؛ فقط لایهٔ نمایش/امضا اصلاح می‌شود تا سیستم‌های مجاور نشکنند.
 
-In the Final Film finalize flow (around line 6778-6833), after the merged blob is produced, capture a single frame as a compact JPEG data URL and store it as `thumbnail_url` on the library entry:
-
-- Add a small helper `captureVideoPoster(blob: Blob): Promise<string | null>` that loads the blob into an offscreen `<video>`, seeks to ~1s (or near end for very short clips), draws to a `<canvas>`, and returns `canvas.toDataURL('image/jpeg', 0.7)`. Fails gracefully to `null`.
-- Use its result for `libraryEntry.video.thumbnail_url` instead of `null`.
-
-Because posters are tiny and live in the same localStorage entry, the card now shows a real preview even if the merged file later disappears (`PlayableVideo` already renders `poster` as a background `<img>` whenever the video itself can't paint).
-
-### 2. Final card display fallback (recovery for existing entries)
-
-In the library card renderer (around line 10054), replace the final branch `display = video.video` with a resolver that mirrors the draft logic:
-
-- Prefer `video.video` when it has a usable `storage_path`.
-- Otherwise (or in addition, for the poster), fall back to the first source-clip snapshot in `projectSourceJobs[video.id]` that has a `storage_path`, using its `storage_path` + `thumbnail_url`.
-
-This recovers any broken final whose source clip still exists, and is harmless for healthy entries.
-
-### 3. Pass the resolved poster to the card
-
-Ensure the final card's `PlayableVideo` receives `poster={display.thumbnail_url ?? undefined}` (already wired) so the new poster path takes effect.
-
-## Out of scope / honest limitation
-
-The one fully-orphaned final (both its merged file and its only source clip are deleted from storage) has no remaining asset to preview; for it the card will show the neutral film icon rather than a blank black box. All other current and future finals will show a proper preview.
+## محدودیت
+ردیف‌هایی که آبجکت ذخیره‌سازی‌شان قبلاً حذف شده، قابل بازیابی نیستند و placeholder نمایش می‌دهند؛ ولی همهٔ تصاویری که فایلشان هنوز در استوریج هست، درست نشان داده می‌شوند.

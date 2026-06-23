@@ -337,17 +337,26 @@ const USER_IMAGES_BUCKET = 'user-images'
 const USER_AUDIO_BUCKET = 'user-audio'
 
 /**
- * The `user-images` bucket is PRIVATE, so any persisted public URL
- * (.../object/public/user-images/<key>) returns 400 when loaded in an <img>.
- * Extract the bucket-relative object key from whatever form is stored.
+ * Private buckets (user-images, wan-frames, …) store paths as public URLs
+ * (.../object/public/<bucket>/<key>) which return 400/"Bucket not found"
+ * when loaded in an <img>. Detect which private bucket an object lives in and
+ * return both the bucket id and the bucket-relative key so we can sign it.
  */
-function userImageObjectKey(storagePath: string | null | undefined): string | null {
+const SIGNABLE_IMAGE_BUCKETS = [USER_IMAGES_BUCKET, FRAMES_BUCKET] as const
+
+function resolveImageBucketKey(
+  storagePath: string | null | undefined,
+): { bucket: string; key: string } | null {
   if (!storagePath) return null
-  const marker = `/${USER_IMAGES_BUCKET}/`
-  const idx = storagePath.indexOf(marker)
-  if (idx >= 0) return storagePath.slice(idx + marker.length)
+  for (const bucket of SIGNABLE_IMAGE_BUCKETS) {
+    const marker = `/${bucket}/`
+    const idx = storagePath.indexOf(marker)
+    if (idx >= 0) return { bucket, key: storagePath.slice(idx + marker.length) }
+  }
   // Already a bucket-relative key (no http origin, no signed/blob/data URL).
-  if (!/^https?:|^blob:|^data:/.test(storagePath)) return storagePath
+  if (!/^https?:|^blob:|^data:/.test(storagePath)) {
+    return { bucket: USER_IMAGES_BUCKET, key: storagePath }
+  }
   return null
 }
 
@@ -357,12 +366,12 @@ async function signUserImageUrl(storagePath: string | null | undefined): Promise
   // Already a directly-usable URL that isn't a (broken) public-bucket URL.
   if (/^blob:|^data:/.test(raw)) return raw
   if (/\/object\/sign\//.test(raw)) return raw
-  const key = userImageObjectKey(raw)
-  if (!key) return raw
+  const resolved = resolveImageBucketKey(raw)
+  if (!resolved) return raw
   try {
     const { data, error } = await supabase.storage
-      .from(USER_IMAGES_BUCKET)
-      .createSignedUrl(key, 60 * 60 * 24 * 365)
+      .from(resolved.bucket)
+      .createSignedUrl(resolved.key, 60 * 60 * 24 * 365)
     if (!error && data?.signedUrl) return data.signedUrl
   } catch {
     /* fall through */
@@ -374,6 +383,77 @@ async function signUserImageUrl(storagePath: string | null | undefined): Promise
 async function signUserImageRows<T extends { storage_path: string }>(rows: T[]): Promise<T[]> {
   return Promise.all(
     rows.map(async (row) => ({ ...row, storage_path: await signUserImageUrl(row.storage_path) })),
+  )
+}
+
+/**
+ * Renders a private-bucket image with a self-healing fallback: if the <img>
+ * fails to load (stale/unsigned URL), it re-signs once from the source path.
+ * If it still fails (object deleted from storage), a clean placeholder is
+ * shown instead of the browser's broken-image glyph + bare alt text.
+ */
+function UserImageView({
+  src,
+  alt,
+  className,
+  imageKey,
+  loading,
+}: {
+  src: string
+  alt: string
+  className?: string
+  imageKey?: string
+  loading?: 'lazy' | 'eager'
+}) {
+  const [resolved, setResolved] = useState(src)
+  const [broken, setBroken] = useState(false)
+  const retriedRef = useRef(false)
+
+  useEffect(() => {
+    setResolved(src)
+    setBroken(false)
+    retriedRef.current = false
+  }, [src])
+
+  const handleError = useCallback(() => {
+    if (retriedRef.current) {
+      setBroken(true)
+      return
+    }
+    retriedRef.current = true
+    let active = true
+    signUserImageUrl(src)
+      .then((signed) => {
+        if (!active) return
+        if (signed && signed !== resolved) setResolved(signed)
+        else setBroken(true)
+      })
+      .catch(() => {
+        if (active) setBroken(true)
+      })
+    return () => {
+      active = false
+    }
+  }, [src, resolved])
+
+  if (broken) {
+    return (
+      <div className={`flex flex-col items-center justify-center gap-2 bg-[#0b0d10] text-center ${className ?? ''}`}>
+        <ImageIcon className="h-7 w-7 text-zinc-600" aria-hidden="true" />
+        <span className="px-2 text-xs text-zinc-500">تصویر در دسترس نیست</span>
+      </div>
+    )
+  }
+
+  return (
+    <img
+      key={imageKey ?? src}
+      src={resolved}
+      alt={alt}
+      className={className}
+      loading={loading}
+      onError={handleError}
+    />
   )
 }
 
@@ -9101,8 +9181,8 @@ export default function DashboardPage() {
                     maxWidth: 'calc(100vw - 56rem)',
                   }}
                 >
-                  <img
-                    key={previewItem.image.id}
+                  <UserImageView
+                    imageKey={previewItem.image.id}
                     src={previewItem.image.storage_path}
                     alt="Uploaded reference"
                     className="h-full w-full bg-black object-contain"
@@ -9594,7 +9674,7 @@ export default function DashboardPage() {
                           className="relative w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-[#15171a]"
                           style={{ aspectRatio: ratioToCss(lockedProjectRatio ?? aspectRatio) }}
                         >
-                          <img
+                          <UserImageView
                             src={img.storage_path}
                             alt="Uploaded reference"
                             className="h-full w-full object-contain"
