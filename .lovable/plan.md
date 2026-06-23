@@ -1,39 +1,49 @@
-# Contact info in the Product Ad Scenario modal → used by the video overlay
+# Contact overlay: add a logo (with on/off) + a Center position
 
 ## Goal
-Inside the **Product Ad Scenario** dialog (the same place that holds "About your business"), let the user enter and **save** the company **website, phone, and address**. Then reuse that saved data automatically for the **Contact overlay** that gets burned onto the films — so the user enters it once in one place.
+In the **Contact overlay** popover (the one circled in the screenshot), add:
+1. A **logo image** that can be uploaded, turned **on/off**, and is burned onto the film alongside the contact text.
+2. A **Center** placement option, so position is no longer only **Top / Bottom** but **Top / Center / Bottom**.
 
 ## Current state
-- The dialog (`ProductAdDialog.tsx`) saves only `business_info` to the `generator_business_profiles` table (columns today: `user_id`, `business_info`, `updated_at`).
-- The Contact overlay lives separately in `DashboardPage.tsx` as `contactOverlay` (website/phone/address/enabled/position), persisted only in `localStorage` under `project-contact:${userId}`.
-- These two are disconnected — contact info typed in the toolbar Contact popover is not the same as the business modal.
+- `ContactOverlay` (DashboardPage.tsx ~1792): `{ website, phone, address, enabled, position: 'top'|'bottom' }`. Text persists in the `generator_business_profiles` table; `enabled`/`position` persist in `localStorage` (`project-contact:${userId}`).
+- Overlay is burned in by `mergeVideos.ts` → `MergeOverlayOptions { lines, position: 'top'|'bottom' }`, drawn in `drawOverlay()` (text only, gradient bar at top or bottom).
+- Live CSS preview over the player (DashboardPage ~8936) mirrors the text at top/bottom.
+- Merge call passes `{ lines, position }` at ~6585.
 
 ## What will change
 
-### 1. Backend (single source of truth)
-Add three nullable text columns to the existing `generator_business_profiles` table:
-- `contact_website`
-- `contact_phone`
-- `contact_address`
+### 1. Backend (logo persistence)
+Add one nullable column to `generator_business_profiles`: `contact_logo_url text`. The logo is stored as a **client-resized PNG data URL** (max ~256px) — this keeps it small, persists it with the business profile, and lets the merge canvas draw it with **no CORS taint** (data URLs are same-origin-safe, unlike private-bucket URLs).
 
-This keeps contact info next to the business profile, persisted per user, surviving refresh and project switches.
+### 2. State / type (`DashboardPage.tsx`)
+- Extend `ContactOverlay`: add `logoUrl: string`, `logoEnabled: boolean`; change `position` to `'top' | 'center' | 'bottom'`.
+- Load `contact_logo_url` from the DB into `logoUrl` (alongside the existing contact-text load); persist `logoEnabled`/`position` in localStorage; save `logoUrl` to the DB when changed.
+- `contactActive` becomes true when there is text **or** an enabled logo.
 
-### 2. Product Ad Scenario modal (`ProductAdDialog.tsx`)
-- In the business info popover (the `Building2` icon area), add a **Contact details** block with three optional inputs: Website, Phone, Address (localized labels for all 6 existing languages).
-- Load these values together with `business_info` when the dialog opens.
-- Save them in the same `Save` action (and in the silent upsert that runs on Generate), upserting all four fields at once.
+### 3. Contact popover UI (`DashboardPage.tsx` ~10541)
+- Add a **Logo** block: an upload button (file input → resize to data URL), a small thumbnail preview, and a **Remove** button.
+- Add a **"Show logo on video"** Switch (drives `logoEnabled`).
+- Change the position selector from a 2-button (top/bottom) to a **3-button grid: Top / Center / Bottom**.
 
-### 3. Contact overlay (`DashboardPage.tsx`)
-- On load, fetch `contact_website / contact_phone / contact_address` from `generator_business_profiles` and populate `contactOverlay` from it (the modal becomes the source of truth for the text).
-- Keep the user's `enabled` and `position` choices in `localStorage` as today.
-- The existing burn-in pipeline (`mergeVideoUrls` overlay + live preview) stays unchanged — it just now reads the values saved in the modal, so videos show the saved contact info.
+### 4. Live preview overlay (`DashboardPage.tsx` ~8936)
+- Support `center` (vertically centered block, centered text).
+- Render the logo `<img>` above the text lines when `logoEnabled && logoUrl`.
+
+### 5. Burned-in overlay (`mergeVideos.ts`)
+- `MergeOverlayOptions`: add `logoUrl?: string`; widen `position` to include `'center'`.
+- In `mergeVideoUrls`, preload the logo into a module-level `HTMLImageElement` (via existing `loadImage`) before recording, store in `activeLogo`, and clear it on finish (next to `activeOverlay = null`).
+- In `drawOverlay()`:
+  - `center`: draw a centered translucent rounded panel, with logo (if present) and text lines centered in the frame (no top/bottom gradient bar).
+  - `top`/`bottom`: keep current gradient bar; draw the logo above the text lines.
+- Update the merge call at ~6585 to also pass `logoUrl` (when `logoEnabled`).
 
 ## Scope / safety
-- Frontend + one additive, non-destructive DB migration (new nullable columns only; existing data untouched).
-- Migration includes the required `GRANT`s for the new columns' table access (table already exists with RLS; column adds inherit existing policies).
-- No change to video rendering logic, no removal of the existing toolbar Contact popover behavior — it will simply share the same persisted data.
+- One additive, non-destructive DB migration (single nullable column; existing rows untouched; existing RLS/policies already cover the table).
+- Frontend changes confined to the Contact overlay (state, popover, live preview, merge overlay drawing). No change to video generation, models, or unrelated features.
+- Logo stays optional; when absent or toggled off, behavior is exactly as today.
 
 ## Technical notes
-- Migration: `ALTER TABLE public.generator_business_profiles ADD COLUMN IF NOT EXISTS contact_website text, ADD COLUMN ... ;` (RLS/policies already in place for this table).
-- `ProductAdDialog`: extend the `select('business_info')` load to also select the 3 contact columns; extend both `upsert(...)` calls to include them.
-- `DashboardPage`: in the contact-overlay init effect, after reading localStorage for enabled/position, query the table for the 3 text fields and merge them into `contactOverlay`.
+- Migration: `ALTER TABLE public.generator_business_profiles ADD COLUMN IF NOT EXISTS contact_logo_url text;`
+- Client resize: draw the uploaded image onto an offscreen canvas capped at 256px longest edge, `toDataURL('image/png')`.
+- `drawOverlay` logo sizing: scale logo to ~`ch * 0.12` height, preserve aspect, center-align with the text block.
