@@ -39,13 +39,24 @@ Deno.serve(async (req) => {
       })
     }
 
-    const productName = (body.productName || '').trim()
-    if (!productName) {
+    const rawProductName = (body.productName || '').trim()
+    if (!rawProductName) {
       return new Response(JSON.stringify({ error: 'productName is required' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
+
+    // Use ONLY the descriptive product name — strip any numeric codes / SKUs,
+    // separators (_ - /) and extra whitespace. e.g. "rebar_stirrup_008" ->
+    // "rebar stirrup". Fall back to the raw name if cleaning empties it.
+    const cleanedProductName =
+      rawProductName
+        .replace(/[_\-/]+/g, ' ')
+        .replace(/\d+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim() || rawProductName
+    const productName = cleanedProductName
 
     let durationSec = Number(body.durationSec)
     if (!Number.isFinite(durationSec)) durationSec = 15
