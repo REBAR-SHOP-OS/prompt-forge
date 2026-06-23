@@ -9825,7 +9825,7 @@ export default function DashboardPage() {
       <button
         type="button"
         aria-label="Close library"
-        className={`fixed inset-0 z-20 bg-black/35 transition lg:hidden ${
+        className={`fixed inset-0 z-20 bg-black/35 transition lg:bg-transparent ${
           isApprovedPanelOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
         }`}
         onClick={() => setIsApprovedPanelOpen(false)}
