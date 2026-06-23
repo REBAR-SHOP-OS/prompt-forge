@@ -9038,7 +9038,7 @@ export default function DashboardPage() {
                       preload="metadata"
                       clipVolume={1}
                     />
-                    {contactActive ? (() => {
+                    {contactActive && !isMergedFinalPreview ? (() => {
                       const content = (
                         <>
                           {contactLogoActive ? (
