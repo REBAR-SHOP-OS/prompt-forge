@@ -10926,6 +10926,24 @@ export default function DashboardPage() {
                     </button>
                   )
                 })}
+                {selectedModel?.providerKey === 'local' && (
+                  <div
+                    className={`mt-1 rounded-lg border px-3 py-2 text-xs leading-5 ${
+                      localStatusLoading
+                        ? 'border-white/10 bg-white/[0.03] text-zinc-400'
+                        : localStatus?.status === 'configured'
+                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                          : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                    }`}
+                  >
+                    {localStatusLoading
+                      ? 'Checking local video router…'
+                      : localStatus?.status === 'configured'
+                        ? 'Local video router: connected.'
+                        : localStatus?.message ?? 'Local video router is not configured. Add LOCAL_VIDEO_ROUTER_URL or choose a cloud model.'}
+                  </div>
+                )}
+
               </PopoverContent>
             </Popover>
 
