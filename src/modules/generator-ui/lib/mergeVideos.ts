@@ -114,6 +114,12 @@ export interface MergeOverlayOptions {
   logoUrl?: string
   /** Size multiplier for the overlay (logo + text). 1 = default. */
   scale?: number
+  /** Show the translucent backdrop panel behind the logo + text. */
+  panelEnabled?: boolean
+  /** Hex color of the backdrop panel. */
+  panelColor?: string
+  /** Opacity of the backdrop panel (0–1). */
+  panelOpacity?: number
 }
 
 
@@ -284,6 +290,18 @@ function clipSource(c: ClipItem): HTMLVideoElement | HTMLImageElement {
 let activeOverlay: MergeOverlayOptions | null = null
 let activeLogo: HTMLImageElement | null = null
 
+/** Convert a hex color + alpha into an rgba() string for canvas fills. */
+function overlayHexToRgba(hex: string, alpha: number): string {
+  const h = (hex || '#000000').replace('#', '')
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h
+  const r = parseInt(full.slice(0, 2) || '00', 16)
+  const g = parseInt(full.slice(2, 4) || '00', 16)
+  const b = parseInt(full.slice(4, 6) || '00', 16)
+  const a = Math.min(1, Math.max(0, Number.isFinite(alpha) ? alpha : 0.45))
+  return `rgba(${r}, ${g}, ${b}, ${a})`
+}
+
+
 /**
  * Draw the contact/branding text lines onto the merge canvas. Called after each
  * frame paint so the text is baked into every captured frame (and transitions).
@@ -296,6 +314,10 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
   if (lines.length === 0 && !logo) return
 
   const position = overlay.position ?? 'bottom'
+  const panelEnabled = overlay.panelEnabled !== false
+  const panelColor = overlay.panelColor ?? '#000000'
+  const panelOpacity = typeof overlay.panelOpacity === 'number' ? overlay.panelOpacity : 0.45
+  const panelFill = overlayHexToRgba(panelColor, panelOpacity)
   const scale = Math.min(2, Math.max(0.5, overlay.scale ?? 1))
   const fontSize = Math.max(14, Math.round(ch * 0.032 * scale))
   const lineGap = Math.round(fontSize * 0.45)
@@ -330,9 +352,11 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
     const panelX = Math.round(cx - panelW / 2)
     const panelY = Math.round(cy - panelH / 2)
     const radius = Math.round(fontSize * 0.6)
-    ctx.fillStyle = 'rgba(0,0,0,0.45)'
-    roundRect(ctx, panelX, panelY, panelW, panelH, radius)
-    ctx.fill()
+    if (panelEnabled) {
+      ctx.fillStyle = panelFill
+      roundRect(ctx, panelX, panelY, panelW, panelH, radius)
+      ctx.fill()
+    }
 
     let y = panelY + padY
     if (logoH) {
@@ -359,9 +383,11 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
     const panelX = Math.round((cw - panelW) / 2)
     const panelY = Math.round((ch - blockHeight) / 2)
     const radius = Math.round(fontSize * 0.6)
-    ctx.fillStyle = 'rgba(0,0,0,0.45)'
-    roundRect(ctx, panelX, panelY, panelW, blockHeight, radius)
-    ctx.fill()
+    if (panelEnabled) {
+      ctx.fillStyle = panelFill
+      roundRect(ctx, panelX, panelY, panelW, blockHeight, radius)
+      ctx.fill()
+    }
 
     let y = panelY + padY
     if (logoH) {
@@ -382,17 +408,21 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
   }
 
   const barY = position === 'top' ? 0 : ch - blockHeight
-  // Translucent gradient bar for legibility on any footage.
-  const grad = ctx.createLinearGradient(0, barY, 0, barY + blockHeight)
-  if (position === 'top') {
-    grad.addColorStop(0, 'rgba(0,0,0,0.62)')
-    grad.addColorStop(1, 'rgba(0,0,0,0)')
-  } else {
-    grad.addColorStop(0, 'rgba(0,0,0,0)')
-    grad.addColorStop(1, 'rgba(0,0,0,0.62)')
+  if (panelEnabled) {
+    // Translucent gradient bar for legibility on any footage.
+    const strong = overlayHexToRgba(panelColor, Math.min(1, panelOpacity * 1.38))
+    const clear = overlayHexToRgba(panelColor, 0)
+    const grad = ctx.createLinearGradient(0, barY, 0, barY + blockHeight)
+    if (position === 'top') {
+      grad.addColorStop(0, strong)
+      grad.addColorStop(1, clear)
+    } else {
+      grad.addColorStop(0, clear)
+      grad.addColorStop(1, strong)
+    }
+    ctx.fillStyle = grad
+    ctx.fillRect(0, barY, cw, blockHeight)
   }
-  ctx.fillStyle = grad
-  ctx.fillRect(0, barY, cw, blockHeight)
 
   let y = barY + padY
   if (logoH) {
@@ -587,7 +617,7 @@ export async function mergeVideoUrls(
   const hasText = !!overlay && overlay.lines.some((l) => l.trim())
   const hasLogo = !!overlay?.logoUrl
   activeOverlay = overlay && (hasText || hasLogo)
-    ? { lines: overlay.lines, position: overlay.position ?? 'bottom', offset: overlay.offset, logoUrl: overlay.logoUrl, scale: overlay.scale ?? 1 }
+    ? { lines: overlay.lines, position: overlay.position ?? 'bottom', offset: overlay.offset, logoUrl: overlay.logoUrl, scale: overlay.scale ?? 1, panelEnabled: overlay.panelEnabled, panelColor: overlay.panelColor, panelOpacity: overlay.panelOpacity }
     : null
   // Preload the logo image so drawOverlay (sync) can paint it on every frame.
   activeLogo = null

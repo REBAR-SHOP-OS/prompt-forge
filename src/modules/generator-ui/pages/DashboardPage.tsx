@@ -1791,6 +1791,15 @@ export default function DashboardPage() {
 
   // Contact / branding info burned as a text overlay onto the Final Film.
   // Persisted per user so it survives refresh and project switches.
+  const hexToRgba = (hex: string, alpha: number) => {
+    const h = (hex || '#000000').replace('#', '')
+    const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h
+    const r = parseInt(full.slice(0, 2) || '00', 16)
+    const g = parseInt(full.slice(2, 4) || '00', 16)
+    const b = parseInt(full.slice(4, 6) || '00', 16)
+    const a = Math.min(1, Math.max(0, Number.isFinite(alpha) ? alpha : 0.45))
+    return `rgba(${r}, ${g}, ${b}, ${a})`
+  }
   type ContactOverlay = {
     website: string
     phone: string
@@ -1807,6 +1816,12 @@ export default function DashboardPage() {
     scale: number
     logoUrl: string
     logoEnabled: boolean
+    /** Show the translucent backdrop panel behind the logo + text. */
+    panelEnabled: boolean
+    /** Hex color of the backdrop panel. */
+    panelColor: string
+    /** Opacity of the backdrop panel (0–1). */
+    panelOpacity: number
   }
   const emptyContact = (): ContactOverlay => ({
     website: '',
@@ -1821,6 +1836,9 @@ export default function DashboardPage() {
     scale: 1,
     logoUrl: '',
     logoEnabled: true,
+    panelEnabled: true,
+    panelColor: '#000000',
+    panelOpacity: 0.45,
   })
 
   const [contactOverlay, setContactOverlay] = useState<ContactOverlay>(emptyContact)
@@ -6725,7 +6743,7 @@ export default function DashboardPage() {
           transitionsForMerge,
           abortController.signal,
           contactActive
-            ? { lines: contactLines, position: contactOverlay.position, offset: contactOverlay.offset ?? undefined, logoUrl: contactLogoActive ? contactOverlay.logoUrl : undefined, scale: contactOverlay.scale ?? 1 }
+            ? { lines: contactLines, position: contactOverlay.position, offset: contactOverlay.offset ?? undefined, logoUrl: contactLogoActive ? contactOverlay.logoUrl : undefined, scale: contactOverlay.scale ?? 1, panelEnabled: contactOverlay.panelEnabled, panelColor: contactOverlay.panelColor, panelOpacity: contactOverlay.panelOpacity }
             : undefined,
         ),
 
@@ -9116,10 +9134,14 @@ export default function DashboardPage() {
 
                         </>
                       )
-                      const panelClass = `flex flex-col items-center bg-black/45 cursor-move touch-none select-none ring-1 transition ${contactDragging ? 'ring-emerald-400/70' : 'ring-white/0 hover:ring-white/40'}`
+                      const panelClass = `flex flex-col items-center cursor-move touch-none select-none ring-1 transition ${contactDragging ? 'ring-emerald-400/70' : 'ring-white/0 hover:ring-white/40'}`
+                      const panelBg = contactOverlay.panelEnabled
+                        ? hexToRgba(contactOverlay.panelColor ?? '#000000', contactOverlay.panelOpacity ?? 0.45)
+                        : 'transparent'
                       const panelStyle: React.CSSProperties = {
                         gap: lineGap,
                         borderRadius: radius,
+                        backgroundColor: panelBg,
                         paddingLeft: padX,
                         paddingRight: padX,
                         paddingTop: padY,
@@ -10931,9 +10953,59 @@ export default function DashboardPage() {
                   />
                 </div>
 
-
+                <div className="mt-3 space-y-2 rounded-lg border border-white/10 bg-white/[0.04] p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-zinc-200">Background layer</span>
+                    <Switch
+                      checked={contactOverlay.panelEnabled}
+                      onCheckedChange={(v) => updateContact({ panelEnabled: v })}
+                    />
+                  </div>
+                  <p className="text-[11px] leading-snug text-zinc-500">
+                    The shaded layer behind the logo, website, phone and address.
+                  </p>
+                  {contactOverlay.panelEnabled ? (
+                    <>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs text-zinc-300">Color</span>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={contactOverlay.panelColor ?? '#000000'}
+                            onChange={(e) => updateContact({ panelColor: e.target.value })}
+                            className="h-7 w-10 cursor-pointer rounded-md border border-white/15 bg-transparent p-0.5"
+                            aria-label="Background color"
+                          />
+                          {(contactOverlay.panelColor ?? '#000000').toLowerCase() !== '#000000' ? (
+                            <button
+                              type="button"
+                              onClick={() => updateContact({ panelColor: '#000000' })}
+                              className="rounded-md border border-white/15 bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-white/30"
+                            >
+                              Reset
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-zinc-300">Opacity</span>
+                          <span className="text-zinc-400">{Math.round((contactOverlay.panelOpacity ?? 0.45) * 100)}%</span>
+                        </div>
+                        <Slider
+                          value={[contactOverlay.panelOpacity ?? 0.45]}
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          onValueChange={(v) => updateContact({ panelOpacity: v[0] })}
+                        />
+                      </div>
+                    </>
+                  ) : null}
+                </div>
               </PopoverContent>
             </Popover>
+
 
 
 

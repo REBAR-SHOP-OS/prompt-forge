@@ -1,52 +1,37 @@
-## Goal
+# کنترل لایه‌ی پس‌زمینه‌ی اطلاعات تماس
 
-Inside the **Voiceover** dialog, next to the TEXT box (the spot circled in yellow), add an icon button that lets the user pick one of their **uploaded products** by name, enter a **duration in seconds**, and auto‑generate an **English advertising narration** that replaces the TEXT field content.
+افزودن قابلیتی به پنل «Contact overlay» تا کاربر بتواند رنگ لایه‌ی طوسی/مشکی که پشت لوگو، آدرس، شماره تماس و وب‌سایت می‌آید را تغییر دهد یا کاملاً حذف کند. این تغییر هم در پیش‌نمایش زنده و هم در ویدیوی نهایی (burn-in) اعمال می‌شود تا کاملاً WYSIWYG بماند.
 
-## How it works (user flow)
+## رفتار مورد نظر
+- یک گزینه‌ی روشن/خاموش برای نمایش لایه‌ی پس‌زمینه (وقتی خاموش است، فقط متن و لوگو با سایه روی ویدیو می‌نشینند، بدون مستطیل تیره).
+- انتخاب رنگ لایه (color picker) و میزان شفافیت (opacity) لایه.
+- مقادیر پیش‌فرض همان حالت فعلی است: مشکی با شفافیت ۴۵٪، تا پروژه‌های موجود تغییری حس نکنند.
 
-```text
-Voiceover dialog
- ┌─────────────────────────────┐
- │ TEXT  [textarea]            │
- │ [🛍 product icon]   0/5000  │  ← new icon under the textarea
- └─────────────────────────────┘
-        │ click
-        ▼
- Small popover:
-   • Product list (by name)  → select one
-   • Duration (seconds) input
-   • "Generate narration" button
-        │
-        ▼
- English ad narration text is written INTO the TEXT field (replaces existing text)
-```
+## تغییرات
 
-1. A new small icon button (shopping‑bag/sparkle, `lucide-react`) appears under the TEXT textarea.
-2. Clicking it opens a Popover listing the user's uploaded **product** images by their display name (the same products already loaded as `archiveProductImages`, category `product`). Each row is selectable.
-3. The popover has a **duration (seconds)** number input (free custom value) and a **Generate narration** button.
-4. On generate, the app calls a backend AI function that returns a concise **English** advertising narration sized to the chosen seconds, and the result **replaces** the current TEXT field value. The user can then generate the voiceover as usual.
+### ۱) نوع داده و state — `DashboardPage.tsx`
+- به تایپ `ContactOverlay` سه فیلد اضافه می‌شود:
+  - `panelEnabled: boolean` (پیش‌فرض `true`)
+  - `panelColor: string` (هگز، پیش‌فرض `#000000`)
+  - `panelOpacity: number` (۰ تا ۱، پیش‌فرض `0.45`)
+- در `emptyContact()` مقادیر پیش‌فرض بالا قرار می‌گیرند.
+- چون state در localStorage ذخیره می‌شود، هنگام بارگذاری مقادیر قدیمی، fallback به پیش‌فرض‌ها لحاظ می‌شود تا پروژه‌های موجود نشکنند.
 
-## Implementation
+### ۲) پیش‌نمایش زنده — `DashboardPage.tsx`
+- در `panelClass`/`panelStyle` (همان‌جایی که الان `bg-black/45` است)، رنگ از کلاس ثابت به `backgroundColor` داینامیک تبدیل می‌شود: اگر `panelEnabled` خاموش بود رنگ `transparent`، در غیر این صورت رنگ هگز با شفافیت محاسبه‌شده (rgba).
 
-### 1. Backend — new edge function `ad-narration`
-- `supabase/functions/ad-narration/index.ts`: CORS + in‑code JWT validation + Zod body `{ productName: string, durationSec: number(1–600) }`.
-- Calls Lovable AI Gateway (`google/gemini-3-flash-preview`) with `LOVABLE_API_KEY` to write a single, natural **English** advertising voiceover script for the product, paced to the given seconds (word budget ≈ `durationSec × ~2.3` words). Returns `{ narration: string }` — spoken words only, no scene/visual directions, no labels.
-- Reason for a dedicated function: `scenario-write` returns a full visual scenario mixed with narration; here we need clean spoken text only.
+### ۳) UI پنل Contact overlay — `DashboardPage.tsx`
+- زیر بخش LOGO و کنار سوییچ‌های موجود، یک بخش «Background» اضافه می‌شود شامل:
+  - سوییچ «Show background» (کنترل `panelEnabled`).
+  - یک ورودی رنگ (`<input type="color">`) و یک اسلایدر شفافیت، که فقط وقتی `panelEnabled` روشن است فعال‌اند.
+- استایل‌ها هماهنگ با تم موجود (`border-white/10 bg-white/[0.04]`).
 
-### 2. Frontend — `VoiceoverDialog.tsx`
-- Add props: `products?: { id: string; name: string }[]`.
-- Add state for popover open, selected product id, duration‑seconds string, and a generating flag.
-- Under the TEXT textarea, render the icon button + a `Popover` (already in the UI kit) containing:
-  - product list (radio‑style selectable rows; empty state "No saved products yet"),
-  - a seconds number input,
-  - a "Generate narration" button (disabled until a product is selected and seconds > 0).
-- On generate: `supabase.functions.invoke('ad-narration', { body: { productName, durationSec } })`, then `setText(result.narration)` (replace), close the popover, toast on success/error. Errors (402/429/etc.) surfaced via `toast`.
+### ۴) Burn-in در ویدیوی نهایی — `mergeVideos.ts`
+- به `MergeOverlayOptions` فیلدهای `panelEnabled?`, `panelColor?`, `panelOpacity?` افزوده می‌شود.
+- در `drawOverlay`، دو محل پر کردن پنل (`rgba(0,0,0,0.45)` در حالت offset و حالت preset، خطوط ~۳۳۳ و ~۳۶۲) به رنگ/شفافیت داینامیک تبدیل می‌شوند؛ و اگر `panelEnabled` خاموش بود، رسم مستطیل پس‌زمینه به‌کلی رد می‌شود (متن و لوگو با سایه باقی می‌مانند).
 
-### 3. Wire data in `DashboardPage.tsx`
-- Pass `products={archiveProductImages.map(p => ({ id: p.id, name: <display name> }))}` into `<VoiceoverDialog>`. The display name reuses the existing product‑name logic (`title` when present, otherwise the cleaned/derived name already used in the products archive).
+### ۵) عبور دادن مقادیر
+- در محل‌هایی که payload اورلی ساخته می‌شود (`{ lines, position, offset, logoUrl, scale }` در `DashboardPage.tsx` خط ~۶۷۲۸ و در `mergeVideos.ts` خط ~۵۹۰)، سه فیلد جدید نیز اضافه می‌شوند.
 
-## Notes / constraints
-- Narration language: **English** (per your choice).
-- Duration: **custom seconds** typed by the user (per your choice).
-- Behavior: generated text **replaces** the TEXT field (per your choice).
-- No database/schema changes. No changes to existing voiceover generation, music, or product‑ad flows — purely additive.
+## بدون تغییر
+- بدون تغییر دیتابیس یا اسکیما. کاملاً افزایشی روی همان جریان اورلی فعلی. مقادیر پیش‌فرض رفتار فعلی را عیناً حفظ می‌کنند.
