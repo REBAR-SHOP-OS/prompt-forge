@@ -290,6 +290,18 @@ function clipSource(c: ClipItem): HTMLVideoElement | HTMLImageElement {
 let activeOverlay: MergeOverlayOptions | null = null
 let activeLogo: HTMLImageElement | null = null
 
+/** Convert a hex color + alpha into an rgba() string for canvas fills. */
+function overlayHexToRgba(hex: string, alpha: number): string {
+  const h = (hex || '#000000').replace('#', '')
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h
+  const r = parseInt(full.slice(0, 2) || '00', 16)
+  const g = parseInt(full.slice(2, 4) || '00', 16)
+  const b = parseInt(full.slice(4, 6) || '00', 16)
+  const a = Math.min(1, Math.max(0, Number.isFinite(alpha) ? alpha : 0.45))
+  return `rgba(${r}, ${g}, ${b}, ${a})`
+}
+
+
 /**
  * Draw the contact/branding text lines onto the merge canvas. Called after each
  * frame paint so the text is baked into every captured frame (and transitions).
