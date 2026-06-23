@@ -1869,20 +1869,21 @@ export default function DashboardPage() {
   // Track the displayed video height so the live contact overlay can be sized
   // proportionally (matching the burn-in ratios in mergeVideos.ts), giving a
   // true WYSIWYG preview of the final film.
-  const [previewVideoHeight, setPreviewVideoHeight] = useState(0)
+  const [previewVideoSize, setPreviewVideoSize] = useState({ w: 0, h: 0 })
   const contactRoRef = useRef<ResizeObserver | null>(null)
   const setContactBoxRef = useCallback((el: HTMLDivElement | null) => {
     contactBoxRef.current = el
     contactRoRef.current?.disconnect()
-    if (!el || typeof ResizeObserver === 'undefined') { setPreviewVideoHeight(0); return }
+    if (!el || typeof ResizeObserver === 'undefined') { setPreviewVideoSize({ w: 0, h: 0 }); return }
     const ro = new ResizeObserver((entries) => {
-      const h = entries[0]?.contentRect.height ?? el.clientHeight
-      if (h) setPreviewVideoHeight(h)
+      const r = entries[0]?.contentRect
+      setPreviewVideoSize({ w: r?.width ?? el.clientWidth, h: r?.height ?? el.clientHeight })
     })
     ro.observe(el)
     contactRoRef.current = ro
-    setPreviewVideoHeight(el.clientHeight)
+    setPreviewVideoSize({ w: el.clientWidth, h: el.clientHeight })
   }, [])
+
 
 
   // Drag the contact overlay anywhere on the preview video. Stores a normalized
