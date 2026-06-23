@@ -302,6 +302,10 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
   if (lines.length === 0 && !logo) return
 
   const position = overlay.position ?? 'bottom'
+  const panelEnabled = overlay.panelEnabled !== false
+  const panelColor = overlay.panelColor ?? '#000000'
+  const panelOpacity = typeof overlay.panelOpacity === 'number' ? overlay.panelOpacity : 0.45
+  const panelFill = overlayHexToRgba(panelColor, panelOpacity)
   const scale = Math.min(2, Math.max(0.5, overlay.scale ?? 1))
   const fontSize = Math.max(14, Math.round(ch * 0.032 * scale))
   const lineGap = Math.round(fontSize * 0.45)
