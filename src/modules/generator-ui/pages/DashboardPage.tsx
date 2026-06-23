@@ -4610,10 +4610,12 @@ export default function DashboardPage() {
             .select('id, storage_path, created_at, still_duration_seconds, width, height, category')
             .eq('user_id', userId)
             .is('deleted_at', null)
-            // Product photos live only in the Storage > Product Photos tab and
-            // character images live only in the Character Sheet dialog. Neither
-            // must ever leak into the workspace/drafts/library.
-            .or('category.is.null,and(category.neq.product,category.neq.character)'),
+            // Product photos live only in the Storage > Product Photos tab,
+            // character images live only in the Character Sheet dialog, and
+            // reframe images (Product Ad > "Choose from products") live only in
+            // "Previously made images" + Storage. None must ever leak into the
+            // workspace/drafts/library.
+            .or('category.is.null,and(category.neq.product,category.neq.character,category.neq.reframe)'),
         ])
         if (cancelled) return
 
