@@ -2953,12 +2953,19 @@ export default function DashboardPage() {
     [generatedVideos],
   )
   const hasPreviousClip = !!previousClip
-  // Auto-disable continuity if the chain no longer has a previous clip.
+  // Long durations are auto-split into multiple sequential cards; Continuity Mode
+  // is forced ON for them so the cards stay narratively/content related.
+  const isMultiCardDuration =
+    durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135
+  // Effective continuity state used across UI + generation paths.
+  const continuityActive = continuity.enabled || isMultiCardDuration
+  // Auto-disable continuity if the chain no longer has a previous clip — but keep
+  // it on for multi-card durations (their continuity is intra-batch, no prior clip needed).
   useEffect(() => {
-    if (continuity.enabled && !hasPreviousClip) {
+    if (continuity.enabled && !hasPreviousClip && !isMultiCardDuration) {
       updateContinuity({ enabled: false })
     }
-  }, [continuity.enabled, hasPreviousClip, updateContinuity])
+  }, [continuity.enabled, hasPreviousClip, isMultiCardDuration, updateContinuity])
   // Effective character shown in the continuity panel: the live selection wins,
   // otherwise the character persisted for this chain/film.
   const continuityCharacter = selectedCharacter ?? continuity.characterRef ?? null
