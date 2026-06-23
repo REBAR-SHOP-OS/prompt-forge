@@ -409,31 +409,100 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
     }
   }, [translation, promptText, narrPlaying])
 
+  // Translate a single chunk via the edge function, with per-language caching.
+  const translateOne = useCallback(async (text: string, lang: string): Promise<string | null> => {
+    const clean = text.trim()
+    if (!clean) return null
+    const key = `${lang}::${clean.slice(0, 5000)}`
+    const cached = translationCache.current.get(key)
+    if (cached) return cached
+    const { data, error: fnError } = await supabase.functions.invoke<{
+      translation?: string
+      error?: string
+    }>('translate-text', { body: { text: clean, targetLang: lang } })
+    if (fnError) throw new Error(fnError.message)
+    if (data?.error) throw new Error(data.error)
+    if (!data?.translation) throw new Error('No translation returned')
+    translationCache.current.set(key, data.translation)
+    return data.translation
+  }, [])
+
+  // Translate the whole panel — prompt narration, film transcript and the
+  // check summary — into the chosen language at once.
   const translateNarration = useCallback(async (lang: string) => {
     setTargetLang(lang)
     // Stop any narration playback so the next read uses the chosen version.
     if (narrAudioRef.current) narrAudioRef.current.pause()
-    if (!lang) { setTranslation(null); return }
-    const text = promptText.trim()
-    if (!text) return
+    if (!lang) {
+      setTranslation(null)
+      setTranscriptTranslation(null)
+      setCheckMessageTranslation(null)
+      setMissingWordsTranslation(null)
+      setExtraWordsTranslation(null)
+      return
+    }
     setTranslating(true)
     setTranslation(null)
+    setTranscriptTranslation(null)
+    setCheckMessageTranslation(null)
+    setMissingWordsTranslation(null)
+    setExtraWordsTranslation(null)
     try {
-      const { data, error: fnError } = await supabase.functions.invoke<{
-        translation?: string
-        error?: string
-      }>('translate-text', { body: { text, targetLang: lang } })
-      if (fnError) throw new Error(fnError.message)
-      if (data?.error) throw new Error(data.error)
-      if (!data?.translation) throw new Error('No translation returned')
-      setTranslation(data.translation)
+      const missingJoined = check?.missingWords?.length ? check.missingWords.join('، ') : ''
+      const extraJoined = check?.extraWords?.length ? check.extraWords.join('، ') : ''
+      const [pt, tt, cm, mw, ew] = await Promise.all([
+        translateOne(promptText, lang),
+        translateOne(transcript ?? '', lang),
+        translateOne(check?.message ?? '', lang),
+        translateOne(missingJoined, lang),
+        translateOne(extraJoined, lang),
+      ])
+      setTranslation(pt)
+      setTranscriptTranslation(tt)
+      setCheckMessageTranslation(cm)
+      setMissingWordsTranslation(mw)
+      setExtraWordsTranslation(ew)
     } catch {
       toast.error('Could not translate the narration.')
       setTargetLang('')
     } finally {
       setTranslating(false)
     }
-  }, [promptText])
+  }, [promptText, transcript, check, translateOne])
+
+  // If a language is already selected when a transcript / check arrives later,
+  // translate the new content automatically.
+  useEffect(() => {
+    if (!targetLang || !transcript) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const missingJoined = check?.missingWords?.length ? check.missingWords.join('، ') : ''
+        const extraJoined = check?.extraWords?.length ? check.extraWords.join('، ') : ''
+        const [tt, cm, mw, ew] = await Promise.all([
+          translateOne(transcript, targetLang),
+          translateOne(check?.message ?? '', targetLang),
+          translateOne(missingJoined, targetLang),
+          translateOne(extraJoined, targetLang),
+        ])
+        if (cancelled) return
+        setTranscriptTranslation(tt)
+        setCheckMessageTranslation(cm)
+        setMissingWordsTranslation(mw)
+        setExtraWordsTranslation(ew)
+      } catch {
+        /* leave originals visible */
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transcript, check, targetLang])
+
+  // Resolve a static UI label in the active language (English fallback).
+  const t = useCallback(
+    (key: UIKey): string => UI_STRINGS[targetLang]?.[key] ?? UI_STRINGS.en[key] ?? key,
+    [targetLang],
+  )
 
 
 
