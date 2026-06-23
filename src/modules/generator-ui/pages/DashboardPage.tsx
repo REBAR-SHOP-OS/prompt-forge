@@ -2944,6 +2944,21 @@ export default function DashboardPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const isTextToVideo = generationMode === 'text-to-video'
+  // A previous completed clip is required for Continuity Mode to be meaningful.
+  const previousClip = useMemo(
+    () =>
+      generatedVideos.find(
+        (v) => normalizeStatus(v.status) === 'completed' && v.video?.storage_path,
+      ) ?? null,
+    [generatedVideos],
+  )
+  const hasPreviousClip = !!previousClip
+  // Auto-disable continuity if the chain no longer has a previous clip.
+  useEffect(() => {
+    if (continuity.enabled && !hasPreviousClip) {
+      updateContinuity({ enabled: false })
+    }
+  }, [continuity.enabled, hasPreviousClip, updateContinuity])
   const hasComposerInput = promptText.trim().length > 0 || uploadedFiles.length > 0
   const readyStartFrame = uploadedFiles.find((file) => file.target === 'Start' && file.status === 'ready' && file.url)
   const readyEndFrame = uploadedFiles.find((file) => file.target === 'End' && file.status === 'ready' && file.url)
