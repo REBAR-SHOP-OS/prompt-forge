@@ -5773,15 +5773,35 @@ export default function DashboardPage() {
     let previousJobId: string | null = null
     // One durable project group id for every scene clip in this scenario.
     const draftGroupId = ensureActiveDraftGroupId()
+
+    // Content continuity for chained cards: resolve the character description once
+    // and reuse it as a prefix on every scene so all cards keep the same subject.
+    const continuityCharacterRef = selectedCharacter ?? continuity.characterRef ?? null
+    let characterPrefixDesc: string | null = null
+    if (continuityActive && continuityCharacterRef) {
+      try {
+        setVideoColumnMessage('Reading character reference…')
+        characterPrefixDesc = await resolveCharacterDescription(continuityCharacterRef)
+      } catch {
+        characterPrefixDesc = null
+      }
+      setVideoColumnMessage(null)
+    }
     try {
       for (let i = 0; i < scenes.length; i++) {
         const sourcePrompt = scenes[i].trim()
         if (!sourcePrompt) continue
         const sceneLabel = `Scene ${i + 1}`
-        const prompt = sourcePrompt
         // Capture the authoritative narration written in this scene so it stays
         // the reference even if the visual prompt is later edited.
         const narrationText = extractNarration(sourcePrompt).join('\n') || undefined
+        // Enrich each card so the sequence stays content-connected: keep the same
+        // character, and (after the first) explicitly continue from the prior card.
+        let prompt = sourcePrompt
+        if (continuityActive) {
+          if (characterPrefixDesc) prompt = applyCharacterPrefix(prompt, characterPrefixDesc)
+          if (i > 0) prompt = applyContinuityPrompt(prompt, continuity.memory)
+        }
 
         let startFrameUrl: string | undefined
         if (i === 0) {
