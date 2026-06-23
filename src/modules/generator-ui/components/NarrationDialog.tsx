@@ -620,7 +620,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
         {/* 2) Narration on the film */}
         <section className="space-y-2 border-t border-white/10 pt-4">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-            On film
+            {t('onFilm')}
           </h3>
 
           {/* Full film-audio player — hear the real film voice and compare it
