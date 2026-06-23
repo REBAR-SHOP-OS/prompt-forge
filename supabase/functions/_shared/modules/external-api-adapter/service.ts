@@ -94,12 +94,18 @@ const LOCAL_VIDEO_MODELS = new Set([
   "local/ltx-video-t2v",
 ]);
 
+type LocalRouterType = "openai_compatible" | "comfyui";
+
 type LocalVideoConfig =
   | {
       ok: true;
+      routerType: LocalRouterType;
       baseUrl: string;
-      createUrl: string;
-      createRoute: "videos_generations" | "videos" | "custom";
+      /** Ordered list of full create URLs to attempt (first that isn't 404 wins). */
+      createAttempts: string[];
+      statusPath: string | null;
+      outputPath: string | null;
+      comfyWorkflowJson: string | null;
       apiKey: string | null;
       timeoutMs: number;
     }
@@ -119,17 +125,25 @@ function readLocalVideoTimeoutMs(): number {
   return Number.isFinite(raw) && raw > 0 ? Math.round(raw) : DEFAULT_LOCAL_VIDEO_TIMEOUT_MS;
 }
 
-function normalizeLocalPath(path: string): string {
-  const trimmed = path.trim();
-  if (!trimmed) return "/videos/generations";
-  return trimmed.startsWith("/") ? trimmed.replace(/\/+$/, "") : `/${trimmed.replace(/\/+$/, "")}`;
+/** Join a base URL and a path safely, collapsing duplicate slashes. */
+function joinUrl(base: string, path: string): string {
+  const b = base.replace(/\/+$/, "");
+  const p = (path.startsWith("/") ? path : `/${path}`).replace(/\/{2,}/g, "/");
+  return `${b}${p}`;
 }
 
-function classifyLocalCreateRoute(path: string): "videos_generations" | "videos" | "custom" {
-  const normalized = normalizeLocalPath(path);
-  if (normalized === "/videos/generations") return "videos_generations";
-  if (normalized === "/videos") return "videos";
-  return "custom";
+/** Path portion of a full URL (host omitted so we never leak the router host). */
+function urlPath(fullUrl: string): string {
+  try {
+    return new URL(fullUrl).pathname || "/";
+  } catch {
+    return fullUrl;
+  }
+}
+
+function readLocalRouterType(): LocalRouterType {
+  const raw = (Deno.env.get("LOCAL_VIDEO_ROUTER_TYPE") ?? "openai_compatible").trim().toLowerCase();
+  return raw === "comfyui" ? "comfyui" : "openai_compatible";
 }
 
 /** True when the error is a network/abort failure (router down/unreachable),
@@ -268,53 +282,133 @@ function readLocalVideoConfig(): LocalVideoConfig {
     return { ok: false, error: LOCAL_NOT_CONFIGURED_MESSAGE };
   }
 
-  const withoutTrailingSlash = parsed.toString().replace(/\/+$/, "");
-  const pathname = parsed.pathname.replace(/\/+$/, "");
-  const exactCreateRoute = pathname.endsWith("/videos/generations")
-    ? "videos_generations"
-    : (pathname.endsWith("/videos") ? "videos" : null);
-
-  const baseUrl = exactCreateRoute
-    ? withoutTrailingSlash.replace(/\/videos(?:\/generations)?$/i, "")
-    : (withoutTrailingSlash.endsWith("/v1") ? withoutTrailingSlash : `${withoutTrailingSlash}/v1`);
-
-  const createPath = normalizeLocalPath(Deno.env.get("LOCAL_VIDEO_ROUTER_CREATE_PATH") ?? "/videos/generations");
-  const createRoute = exactCreateRoute ?? classifyLocalCreateRoute(createPath);
-  const createUrl = exactCreateRoute ? withoutTrailingSlash : `${baseUrl}${createPath}`;
+  const routerType = readLocalRouterType();
+  const baseUrl = parsed.toString().replace(/\/+$/, "");
   const apiKey = getProviderApiKey("local");
-  return { ok: true, baseUrl, createUrl, createRoute, apiKey, timeoutMs: readLocalVideoTimeoutMs() };
+  const timeoutMs = readLocalVideoTimeoutMs();
+  const statusPath = (Deno.env.get("LOCAL_VIDEO_ROUTER_STATUS_PATH") ?? "").trim() || null;
+  const outputPath = (Deno.env.get("LOCAL_VIDEO_ROUTER_OUTPUT_PATH") ?? "").trim() || null;
+  const comfyWorkflowJson = (Deno.env.get("LOCAL_VIDEO_COMFY_WORKFLOW_JSON") ?? "").trim() || null;
+  const createPathEnv = (Deno.env.get("LOCAL_VIDEO_ROUTER_CREATE_PATH") ?? "").trim();
+
+  let createAttempts: string[];
+  if (createPathEnv) {
+    // Explicit create path: base URL is the base only, path is the endpoint.
+    createAttempts = [joinUrl(baseUrl, createPathEnv)];
+  } else if (routerType === "comfyui") {
+    // ComfyUI default create endpoint.
+    createAttempts = [joinUrl(baseUrl, "/prompt")];
+  } else {
+    // openai_compatible defaults — preserve legacy /v1 handling and the
+    // exact-route detection for URLs that already include the endpoint.
+    const pathname = parsed.pathname.replace(/\/+$/, "");
+    if (pathname.endsWith("/videos/generations") || pathname.endsWith("/videos")) {
+      createAttempts = [baseUrl];
+    } else {
+      const apiBase = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
+      createAttempts = [`${apiBase}/videos/generations`, `${apiBase}/videos`];
+    }
+  }
+
+  return { ok: true, routerType, baseUrl, createAttempts, statusPath, outputPath, comfyWorkflowJson, apiKey, timeoutMs };
+}
+
+export interface LocalVideoStatusReport {
+  status: "configured" | "not_configured" | "unreachable";
+  message: string;
+  configured: boolean;
+  reachable: boolean | null;
+  create_endpoint_found: boolean | null;
+  attempted_create_paths: string[];
+  router_type: LocalRouterType | null;
 }
 
 /** Lightweight, no-secret config/health status for the local video router.
  *  Used by the orchestrator preflight and the status endpoint. When
- *  `probe` is true and configured, it attempts a reachability check. */
+ *  `probe` is true and configured, it checks reachability AND whether a
+ *  create endpoint exists (without running a real generation). */
 export async function localVideoStatus(
   probe = false,
-): Promise<{ status: "configured" | "not_configured" | "unreachable"; message: string }> {
+): Promise<LocalVideoStatusReport> {
   const config = readLocalVideoConfig();
   if (!config.ok) {
-    return { status: "not_configured", message: config.error };
+    return {
+      status: "not_configured",
+      message: config.error,
+      configured: false,
+      reachable: null,
+      create_endpoint_found: null,
+      attempted_create_paths: [],
+      router_type: null,
+    };
   }
+
+  const attemptedPaths = config.createAttempts.map((u) => `POST ${urlPath(u)}`);
+
   if (!probe) {
-    return { status: "configured", message: "Local video router is configured." };
+    return {
+      status: "configured",
+      message: "Local video router is configured.",
+      configured: true,
+      reachable: null,
+      create_endpoint_found: null,
+      attempted_create_paths: attemptedPaths,
+      router_type: config.routerType,
+    };
   }
-  try {
-    // Probe with a short timeout regardless of the generation timeout.
-    const res = await localVideoFetch(
-      `${config.baseUrl}/models`,
-      { method: "GET", headers: localVideoHeaders(config) },
-      Math.min(config.timeoutMs, 10_000),
-    );
-    // Any HTTP response (even 404) means the router host is reachable.
-    await res.body?.cancel().catch(() => {});
-    return { status: "configured", message: "Local video router is reachable." };
-  } catch (err) {
-    if (isUnreachableError(err)) {
-      return { status: "unreachable", message: LOCAL_UNREACHABLE_MESSAGE };
+
+  // Probe each candidate create endpoint with a GET. A reachable router
+  // answers (any non-404 status, typically 405 Method Not Allowed for a
+  // POST-only endpoint) which proves the path exists; 404 means missing.
+  let reachable = false;
+  let createFound = false;
+  for (const url of config.createAttempts) {
+    try {
+      const res = await localVideoFetch(
+        url,
+        { method: "GET", headers: localVideoHeaders(config) },
+        Math.min(config.timeoutMs, 10_000),
+      );
+      reachable = true;
+      await res.body?.cancel().catch(() => {});
+      if (res.status !== 404) {
+        createFound = true;
+        break;
+      }
+    } catch (err) {
+      if (!isUnreachableError(err)) {
+        // Non-network error against a responding host still implies reachable.
+        reachable = true;
+      }
     }
-    return { status: "configured", message: "Local video router is configured." };
   }
+
+  if (!reachable) {
+    return {
+      status: "unreachable",
+      message: LOCAL_UNREACHABLE_MESSAGE,
+      configured: true,
+      reachable: false,
+      create_endpoint_found: null,
+      attempted_create_paths: attemptedPaths,
+      router_type: config.routerType,
+    };
+  }
+
+  return {
+    status: "configured",
+    message: createFound
+      ? "Local video router is reachable and a create endpoint was found."
+      : `Local router is reachable, but no video create endpoint was found. Tried: ${attemptedPaths.join(", ")}. Set LOCAL_VIDEO_ROUTER_CREATE_PATH to your router's create endpoint, for example /prompt for ComfyUI.`,
+    configured: true,
+    reachable: true,
+    create_endpoint_found: createFound,
+    attempted_create_paths: attemptedPaths,
+    router_type: config.routerType,
+  };
 }
+
+
 
 function isLocalVideoModel(model: string): boolean {
   return LOCAL_VIDEO_MODELS.has(model);
@@ -387,6 +481,8 @@ function extractLocalJobId(payload: unknown): string | null {
     localVideoText(p.taskId) ??
     localVideoText(p.provider_job_id) ??
     localVideoText(p.providerJobId) ??
+    localVideoText(p.prompt_id) ??
+    localVideoText(p.promptId) ??
     localVideoText(output.task_id) ??
     null
   );
@@ -1397,14 +1493,20 @@ async function startLocalVideo(
   const seconds = input.durationSeconds && input.durationSeconds > 0 ? input.durationSeconds : 5;
   const numFrames = Math.max(1, Math.round(seconds * fps));
 
-  // Local routers (Wan 2.1 / LTX on ComfyUI) have no standardized dedicated
-  // reference-image input. Keep firstFrameUrl as the start/continuation image.
-  // Forward referenceImageUrls as non-breaking extra fields (a capable router
-  // can consume them; others ignore unknown keys) AND fold identity into the
-  // prompt as a guaranteed fallback.
   const refs = (input.referenceImageUrls ?? []).filter((u) => typeof u === "string" && u.trim());
   const localPrompt = augmentPromptWithReferences(input.prompt, refs);
 
+  // ---- ComfyUI mode ---------------------------------------------------------
+  if (localConfig.routerType === "comfyui") {
+    return await startComfyVideo(localConfig, resolvedModel, input, {
+      prompt: localPrompt,
+      fps,
+      seconds,
+      numFrames,
+    });
+  }
+
+  // ---- OpenAI-compatible mode ----------------------------------------------
   const body = {
     model: resolvedModel,
     prompt: localPrompt,
@@ -1426,7 +1528,6 @@ async function startLocalVideo(
     response_format: "url",
   };
 
-
   async function postCreate(url: string): Promise<Response> {
     return await localVideoFetch(url, {
       method: "POST",
@@ -1435,26 +1536,37 @@ async function startLocalVideo(
     }, localConfig.timeoutMs);
   }
 
-  let res: Response;
+  // Try each configured create attempt in order. A 404 means "wrong path on a
+  // reachable router" — move on to the next candidate. Any non-404 response
+  // (success or a real error) is the authoritative one we act on.
+  const attempted = localConfig.createAttempts.map((u) => `POST ${urlPath(u)}`);
+  let res: Response | null = null;
   try {
-    res = await postCreate(localConfig.createUrl);
-
-    // Compatibility fallback: OpenRouter-style video routers expose POST
-    // /v1/videos, while the original RTX router contract used
-    // POST /v1/videos/generations. A 404 on the default path usually means the
-    // router is reachable but uses the alternate route, not that secrets are
-    // missing. Retry once before surfacing an endpoint-path error.
-    if (res.status === 404 && localConfig.createRoute === "videos_generations") {
-      const fallbackUrl = `${localConfig.baseUrl}/videos`;
-      logInfo("local video create fallback", { from: "/videos/generations", to: "/videos", model: resolvedModel });
-      await res.body?.cancel().catch(() => {});
-      res = await postCreate(fallbackUrl);
+    for (let i = 0; i < localConfig.createAttempts.length; i++) {
+      const url = localConfig.createAttempts[i];
+      const candidate = await postCreate(url);
+      if (candidate.status === 404 && i < localConfig.createAttempts.length - 1) {
+        logInfo("local video create fallback", {
+          from: urlPath(url),
+          to: urlPath(localConfig.createAttempts[i + 1]),
+          model: resolvedModel,
+        });
+        await candidate.body?.cancel().catch(() => {});
+        continue;
+      }
+      res = candidate;
+      break;
     }
   } catch (err) {
     logError("local video create unreachable", { error: (err as Error).message, model: resolvedModel });
     if (isUnreachableError(err)) throw new Error(LOCAL_UNREACHABLE_MESSAGE);
     throw err;
   }
+
+  if (!res) {
+    throw new Error("Local video router returned no response");
+  }
+
   const text = await res.text().catch(() => "");
   let payload: unknown = null;
   try {
@@ -1467,7 +1579,7 @@ async function startLocalVideo(
     logError("local video create failed", { status: res.status, body: text.slice(0, 500), model: resolvedModel });
     if (res.status === 404) {
       throw new Error(
-        `Local video router endpoint not found. Configure LOCAL_VIDEO_ROUTER_URL to the correct base URL or set LOCAL_VIDEO_ROUTER_CREATE_PATH (for example /videos or /videos/generations). Router replied 404: ${text.slice(0, 200) || "Not Found"}`,
+        `Local router is reachable, but no video create endpoint was found. Tried: ${attempted.join(", ")}. Set LOCAL_VIDEO_ROUTER_CREATE_PATH to your router's create endpoint, for example /prompt for ComfyUI.`,
       );
     }
     throw new Error(`Local video router ${res.status}: ${text.slice(0, 300) || "unknown error"}`);
@@ -1500,6 +1612,205 @@ async function startLocalVideo(
   };
 }
 
+// ----- ComfyUI -------------------------------------------------------------
+// ComfyUI generates from a workflow graph (API format), not a generic JSON
+// body. The graph MUST be provided via LOCAL_VIDEO_COMFY_WORKFLOW_JSON so we
+// never pretend ComfyUI can render video without one. Placeholders inside the
+// workflow JSON are substituted before submission:
+//   {{PROMPT}} {{NEGATIVE_PROMPT}} {{IMAGE_URL}} {{NUM_FRAMES}} {{FPS}}
+//   {{SECONDS}} {{ASPECT_RATIO}} {{SEED}}
+function buildComfyWorkflow(
+  raw: string,
+  vars: Record<string, string | number>,
+): unknown {
+  let substituted = raw;
+  for (const [key, value] of Object.entries(vars)) {
+    // JSON-safe replacement: numbers stay numeric, strings are escaped.
+    const token = `{{${key}}}`;
+    const replacement = typeof value === "number"
+      ? String(value)
+      : JSON.stringify(value).slice(1, -1); // escape but keep surrounding quotes from JSON
+    substituted = substituted.split(token).join(replacement);
+  }
+  return JSON.parse(substituted);
+}
+
+async function startComfyVideo(
+  config: Extract<LocalVideoConfig, { ok: true }>,
+  resolvedModel: string,
+  input: GenerationStartInput,
+  derived: { prompt: string; fps: number; seconds: number; numFrames: number },
+): Promise<GenerationStartResult> {
+  if (!config.comfyWorkflowJson) {
+    throw new Error(
+      "ComfyUI workflow not configured. Set LOCAL_VIDEO_COMFY_WORKFLOW_JSON to your ComfyUI API-format workflow graph (use placeholders like {{PROMPT}}, {{IMAGE_URL}}, {{NUM_FRAMES}}, {{FPS}}, {{SEED}}).",
+    );
+  }
+
+  const imageUrl = input.firstFrameUrl ?? input.lastFrameUrl ?? "";
+  // Image-to-video requires a start frame for the i2v models the UI exposes.
+  if (/i2v/i.test(resolvedModel) && !imageUrl) {
+    throw new Error("Local ComfyUI image-to-video requires a start image, but none was provided.");
+  }
+
+  let workflow: unknown;
+  try {
+    workflow = buildComfyWorkflow(config.comfyWorkflowJson, {
+      PROMPT: derived.prompt,
+      NEGATIVE_PROMPT: "",
+      IMAGE_URL: imageUrl,
+      NUM_FRAMES: derived.numFrames,
+      FPS: derived.fps,
+      SECONDS: derived.seconds,
+      ASPECT_RATIO: input.aspectRatio ?? "16:9",
+      SEED: Math.floor(Math.random() * 2_147_483_647),
+    });
+  } catch (err) {
+    throw new Error(`Invalid LOCAL_VIDEO_COMFY_WORKFLOW_JSON after substitution: ${(err as Error).message}`);
+  }
+
+  const createUrl = config.createAttempts[0];
+  let res: Response;
+  try {
+    res = await localVideoFetch(createUrl, {
+      method: "POST",
+      headers: localVideoHeaders(config),
+      body: JSON.stringify({ prompt: workflow }),
+    }, config.timeoutMs);
+  } catch (err) {
+    logError("comfy create unreachable", { error: (err as Error).message, model: resolvedModel });
+    if (isUnreachableError(err)) throw new Error(LOCAL_UNREACHABLE_MESSAGE);
+    throw err;
+  }
+
+  const text = await res.text().catch(() => "");
+  let payload: unknown = null;
+  try { payload = text ? JSON.parse(text) : null; } catch { payload = null; }
+
+  if (!res.ok) {
+    logError("comfy create failed", { status: res.status, body: text.slice(0, 500), model: resolvedModel });
+    if (res.status === 404) {
+      throw new Error(
+        `Local router is reachable, but no video create endpoint was found. Tried: POST ${urlPath(createUrl)}. Set LOCAL_VIDEO_ROUTER_CREATE_PATH to your ComfyUI create endpoint (default /prompt).`,
+      );
+    }
+    throw new Error(`ComfyUI ${res.status}: ${text.slice(0, 300) || "unknown error"}`);
+  }
+
+  const rec = localVideoRecord(payload);
+  const nodeErrors = localVideoRecord(rec.node_errors);
+  if (Object.keys(nodeErrors).length > 0) {
+    throw new Error(`ComfyUI rejected the workflow: ${JSON.stringify(nodeErrors).slice(0, 300)}`);
+  }
+  const promptId = localVideoText(rec.prompt_id) ?? extractLocalJobId(payload);
+  if (!promptId) {
+    throw new Error("ComfyUI returned no prompt_id");
+  }
+
+  return {
+    providerJobId: `localcomfy:${promptId}`,
+    videoUrl: null,
+    thumbnailUrl: null,
+    aspectRatio: input.aspectRatio ?? null,
+    duration: input.durationSeconds ?? null,
+    isComplete: false,
+  };
+}
+
+function extractComfyOutputUrl(
+  config: Extract<LocalVideoConfig, { ok: true }>,
+  entry: Record<string, unknown>,
+): string | null {
+  const outputs = localVideoRecord(entry.outputs);
+  const viewBase = config.outputPath ?? "/view";
+  for (const node of Object.values(outputs)) {
+    const nodeRec = localVideoRecord(node);
+    for (const key of ["gifs", "videos", "images"]) {
+      const arr = nodeRec[key];
+      if (!Array.isArray(arr)) continue;
+      for (const item of arr) {
+        const f = localVideoRecord(item);
+        const filename = localVideoText(f.filename);
+        if (!filename) continue;
+        // Prefer video-like outputs; skip plain preview images unless nothing else.
+        const isVideo = /\.(mp4|webm|gif|mov|mkv)$/i.test(filename);
+        if (key === "images" && !isVideo) continue;
+        const subfolder = localVideoText(f.subfolder) ?? "";
+        const type = localVideoText(f.type) ?? "output";
+        const qs = new URLSearchParams({ filename, subfolder, type }).toString();
+        return joinUrl(config.baseUrl, `${viewBase}?${qs}`);
+      }
+    }
+  }
+  return null;
+}
+
+async function pollComfyVideo(
+  config: Extract<LocalVideoConfig, { ok: true }>,
+  promptId: string,
+): Promise<GenerationPollResult> {
+  const statusBase = config.statusPath ?? "/history";
+  const url = joinUrl(config.baseUrl, `${statusBase}/${encodeURIComponent(promptId)}`);
+  let res: Response;
+  try {
+    res = await localVideoFetch(url, { method: "GET", headers: localVideoHeaders(config) }, config.timeoutMs);
+  } catch (err) {
+    if (isUnreachableError(err)) {
+      logError("comfy poll unreachable", { error: (err as Error).message, promptId });
+      return { status: "processing", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null, progressPercent: 25 };
+    }
+    throw err;
+  }
+  const text = await res.text().catch(() => "");
+  let payload: unknown = null;
+  try { payload = text ? JSON.parse(text) : null; } catch { payload = null; }
+
+  if (!res.ok) {
+    if (res.status >= 500 || res.status === 429) {
+      return { status: "processing", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null, progressPercent: 25 };
+    }
+    return {
+      status: "failed",
+      videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null,
+      reason: `ComfyUI ${res.status}: ${text.slice(0, 300) || "unknown error"}`,
+      progressPercent: null,
+    };
+  }
+
+  const history = localVideoRecord(payload);
+  const entry = localVideoRecord(history[promptId]);
+  // Empty history for this id means it's still queued/running.
+  if (Object.keys(entry).length === 0) {
+    return { status: "processing", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null, progressPercent: 25 };
+  }
+
+  const statusRec = localVideoRecord(entry.status);
+  const statusStr = String(statusRec.status_str ?? "").toLowerCase();
+  if (statusStr === "error") {
+    return {
+      status: "failed",
+      videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null,
+      reason: "ComfyUI workflow execution failed",
+      progressPercent: null,
+    };
+  }
+
+  const videoUrl = extractComfyOutputUrl(config, entry);
+  const completed = statusRec.completed === true || !!videoUrl;
+  if (completed && !videoUrl) {
+    return {
+      status: "failed",
+      videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null,
+      reason: "ComfyUI completed but produced no video output",
+      progressPercent: null,
+    };
+  }
+  if (videoUrl) {
+    return { status: "completed", videoUrl, thumbnailUrl: null, aspectRatio: null, duration: null, progressPercent: 100 };
+  }
+  return { status: "processing", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null, progressPercent: 40 };
+}
+
 async function pollLocalVideo(providerJobId: string): Promise<GenerationPollResult> {
   if (providerJobId.startsWith("local_sync_")) {
     return { status: "completed", videoUrl: null, thumbnailUrl: null, aspectRatio: null, duration: null, progressPercent: 100 };
@@ -1518,10 +1829,18 @@ async function pollLocalVideo(providerJobId: string): Promise<GenerationPollResu
     };
   }
 
+  if (providerJobId.startsWith("localcomfy:")) {
+    return await pollComfyVideo(config, providerJobId.slice("localcomfy:".length));
+  }
+
   const jobId = providerJobId.startsWith("local:") ? providerJobId.slice("local:".length) : providerJobId;
+  // Honor a custom status path when set; otherwise use the OpenAI-style route.
+  const statusUrl = config.statusPath
+    ? joinUrl(config.baseUrl, `${config.statusPath}/${encodeURIComponent(jobId)}`)
+    : joinUrl(config.baseUrl, `/v1/videos/generations/${encodeURIComponent(jobId)}`);
   let res: Response;
   try {
-    res = await localVideoFetch(`${config.baseUrl}/videos/generations/${encodeURIComponent(jobId)}`, {
+    res = await localVideoFetch(statusUrl, {
       method: "GET",
       headers: localVideoHeaders(config),
     }, config.timeoutMs);
