@@ -106,7 +106,9 @@ export interface MergeResult {
  */
 export interface MergeOverlayOptions {
   lines: string[]
-  position?: 'top' | 'bottom'
+  position?: 'top' | 'center' | 'bottom'
+  /** Optional logo (data URL or same-origin URL) drawn above the text. */
+  logoUrl?: string
 }
 
 
