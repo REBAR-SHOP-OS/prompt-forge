@@ -729,6 +729,13 @@ async function fetchAsInlineData(url: string): Promise<{ mimeType: string; data:
     const mimeType = data.type?.split(";")[0]?.trim() || "image/png";
     const buf = new Uint8Array(await data.arrayBuffer());
     return { mimeType, data: bytesToBase64(buf) };
+  }
+
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`failed to fetch frame ${url}: ${r.status}`);
+  const mimeType = r.headers.get("content-type")?.split(";")[0]?.trim() || "image/png";
+  const buf = new Uint8Array(await r.arrayBuffer());
+  return { mimeType, data: bytesToBase64(buf) };
 }
 
 /**
@@ -757,13 +764,6 @@ async function resolveDownloadableFrameUrl(url: string): Promise<string> {
   } catch {
     return url;
   }
-}
-
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`failed to fetch frame ${url}: ${r.status}`);
-  const mimeType = r.headers.get("content-type")?.split(";")[0]?.trim() || "image/png";
-  const buf = new Uint8Array(await r.arrayBuffer());
-  return { mimeType, data: bytesToBase64(buf) };
 }
 
 /**

@@ -1,48 +1,55 @@
-# History of reframed product images
+# Fix video generation PROVIDER_ERROR
 
-## Goal
-In the "Choose from products" dialog, add a top-right icon that opens a gallery of product images that were **already reframed** in this dialog. Each thumbnail shows its **aspect ratio** (9:16 / 1:1 / 16:9). Picking one reuses it instantly — no new generation, no extra cost.
+## Problem
+When starting a video generation, the request fails with:
+`PROVIDER_ERROR: The video provider could not start generation. Please try again.`
 
-Today, when a user picks a product + aspect ratio, `image-reframe` generates a new image into the private `wan-frames` bucket but nothing is recorded, so the same reframe gets paid for and regenerated every time. This change records each reframe and lets users pick from past results.
-
-## How it works
-
-```text
-Choose from products  [⌖ history icon] [×]
- ─ pick aspect (9:16 / 1:1 / 16:9)
- ─ pick a product  → image-reframe → save record → preview
-
-[history icon] → gallery of past reframes
-   ┌──────┐ ┌──────┐ ┌──────┐
-   │ img  │ │ img  │ │ img  │   each card overlays a badge: "9:16"
-   │ 9:16 │ │ 1:1  │ │ 16:9 │   click → reuse immediately
-   └──────┘ └──────┘ └──────┘
+The edge function log reveals the true cause:
+```
+startGeneration failed — "resolveDownloadableFrameUrl is not defined"
 ```
 
-## Changes
+## Root cause
+In `supabase/functions/_shared/modules/external-api-adapter/service.ts`, a previous edit pasted the helper `resolveDownloadableFrameUrl` (lines 734–760) **into the middle** of the `fetchAsInlineData` function:
 
-### 1. Persist each reframe (data)
-Reframed outputs already land in the private `wan-frames` bucket. Record a row so they can be listed later, reusing the existing `generator_user_images` table:
-- `category = 'reframe'`
-- `storage_path` = the reframe's `wan-frames` path returned by the function
-- `title` = source product name (cleaned)
-- `width` / `height` = canonical dims for the chosen ratio (e.g. 9:16 → 1080×1920, 1:1 → 1024×1024, 16:9 → 1920×1080) so the ratio can be derived/displayed
-- `user_id` = current user
+- Line 732 `}` closes `fetchAsInlineData` too early (it was meant to close the inner `if (ownStorage)` block).
+- The plain-`fetch` fallback (lines 762–766) and a trailing `}` are now stranded at module top level, where `url` does not exist.
+- This stray top-level code breaks module evaluation, so `resolveDownloadableFrameUrl` is never defined → the runtime error → the generic `PROVIDER_ERROR` shown to the user.
 
-This insert happens client-side in `pickProduct` right after a successful reframe (mirrors how AI images are saved in `AiImageDialog.handleUse`). No edge-function or schema change is needed — the columns already exist and RLS already scopes `generator_user_images` to the owner.
+## Fix (single file, structure-only, no behavior change)
+`supabase/functions/_shared/modules/external-api-adapter/service.ts`
 
-### 2. History icon + gallery (UI) — `ProductAdDialog.tsx`
-- Add a small icon button (lucide `History` or `Images`) in the product-picker `DialogHeader`, top-right next to the close affordance, RTL-aware.
-- Clicking it loads `generator_user_images` where `category = 'reframe'` for the user (newest first), signing each `wan-frames` path with the existing `signFramesUrl` helper.
-- Render a grid of cards. Each card overlays an **aspect-ratio badge** computed from `width:height` (snap to nearest of 9:16 / 1:1 / 16:9), shown in a corner pill.
-- Clicking a card sets it as the active preview/image directly (same state updates as the end of `pickProduct`, minus the network call) and closes the picker — so no regeneration happens.
-- Add localized strings (en/fa/ar/tr/es/fr) for the new labels: history title, empty state ("No reframed images yet"), and reuse hint. Persian first-class since the UI is RTL there.
-- Empty/loading states match the existing product grid styling.
+Reorder the two functions to their correct, separate shapes:
 
-### 3. Reuse-aware behavior (optional safety)
-When the user picks a product + aspect that already has a saved reframe, surface/prefer the cached one. Minimal version: rely on the new history gallery for reuse. (If desired, we can later auto-detect an existing reframe for the exact product+aspect and skip the call — noting it here but keeping the first pass scoped to the gallery.)
+```text
+async function fetchAsInlineData(url) {
+  const ownStorage = parseOwnStorageObject(url);
+  if (ownStorage) {
+    ... service-role download ...
+    return { mimeType, data };
+  }                       // <-- close the if block here
+  const r = await fetch(url);
+  if (!r.ok) throw ...;
+  ... 
+  return { mimeType, data };
+}                         // <-- close fetchAsInlineData here
 
-## Notes
-- No backend/schema migration required; `generator_user_images` already has `category`, `width`, `height`, `title`.
-- Only frontend + a client-side insert; generation pipeline and validators are untouched.
-- Aspect ratio is shown as the label (per your choice), not pixel size.
+async function resolveDownloadableFrameUrl(url) {
+  ... (unchanged body) ...
+}
+```
+
+Concretely:
+1. Add the missing closing `}` for the `if (ownStorage)` block inside `fetchAsInlineData`.
+2. Move the dangling fallback `fetch` block (currently lines 762–766) back inside `fetchAsInlineData`, after the `if` block.
+3. Keep `resolveDownloadableFrameUrl` as a separate top-level function with its existing body.
+
+No logic, signatures, or provider behavior change — purely repairing the misplaced braces/blocks.
+
+## Validation
+1. Deploy the affected edge functions (`jobs-create` and shared adapter).
+2. Trigger an image-to-video generation (Wan i2v) from the UI.
+3. Confirm the job starts (status `processing`, no `PROVIDER_ERROR`) and check `jobs-create` logs show no `resolveDownloadableFrameUrl is not defined`.
+
+## Risk
+Minimal — isolated to one file, restoring previously-working structure. Credits/refund logic and provider calls are untouched.
