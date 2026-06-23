@@ -110,9 +110,21 @@ export function normalizeForCompare(text: string): string {
     .trim()
 }
 
+export type DiffToken = {
+  /** Original display text for this token. */
+  text: string
+  /** match = in both; missing = only in prompt; extra = only on film. */
+  kind: 'match' | 'missing' | 'extra'
+}
+
 export type NarrationCheck = {
   status: 'ok' | 'missing-on-film' | 'extra-on-film' | 'mismatch' | 'none'
   similarity: number // 0..1
+  matchPercent: number // 0..100
+  errorPercent: number // 0..100
+  missingWords: string[] // in prompt, not on film
+  extraWords: string[] // on film, not in prompt
+  diff: DiffToken[] // word-level aligned diff (prompt vs film)
   message: string
 }
 
@@ -127,6 +139,84 @@ function similarity(a: string, b: string): number {
   for (const t of ta) if (tb.has(t)) inter++
   const union = ta.size + tb.size - inter
   return union === 0 ? 1 : inter / union
+}
+
+// Tokenize keeping both the display text and a normalized key for comparison.
+function tokenize(text: string): { raw: string; norm: string }[] {
+  return (text ?? '')
+    .split(/\s+/)
+    .map((raw) => ({ raw, norm: normalizeForCompare(raw) }))
+    .filter((t) => t.norm.length > 0)
+}
+
+// Word-level diff via LCS alignment on normalized tokens. Returns the aligned
+// token stream plus error metrics (WER-style) between the prompt narration
+// (expected) and the on-film transcript (actual).
+export function diffNarration(
+  expected: string,
+  actual: string,
+): {
+  diff: DiffToken[]
+  matched: number
+  missing: number
+  extra: number
+  matchPercent: number
+  errorPercent: number
+} {
+  const a = tokenize(expected) // prompt (baseline)
+  const b = tokenize(actual) // film
+  const n = a.length
+  const m = b.length
+
+  // LCS dynamic-programming table on normalized tokens.
+  const dp: number[][] = Array.from({ length: n + 1 }, () =>
+    new Array<number>(m + 1).fill(0),
+  )
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i].norm === b[j].norm
+        ? dp[i + 1][j + 1] + 1
+        : Math.max(dp[i + 1][j], dp[i][j + 1])
+    }
+  }
+
+  const diff: DiffToken[] = []
+  let matched = 0
+  let missing = 0
+  let extra = 0
+  let i = 0
+  let j = 0
+  while (i < n && j < m) {
+    if (a[i].norm === b[j].norm) {
+      diff.push({ text: a[i].raw, kind: 'match' })
+      matched++
+      i++
+      j++
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      diff.push({ text: a[i].raw, kind: 'missing' })
+      missing++
+      i++
+    } else {
+      diff.push({ text: b[j].raw, kind: 'extra' })
+      extra++
+      j++
+    }
+  }
+  while (i < n) {
+    diff.push({ text: a[i].raw, kind: 'missing' })
+    missing++
+    i++
+  }
+  while (j < m) {
+    diff.push({ text: b[j].raw, kind: 'extra' })
+    extra++
+    j++
+  }
+
+  const denom = 2 * matched + missing + extra
+  const errorPercent = denom === 0 ? 0 : Math.round(((missing + extra) / denom) * 100)
+  const matchPercent = 100 - errorPercent
+  return { diff, matched, missing, extra, matchPercent, errorPercent }
 }
 
 // Compare the expected (prompt) narration with the actual (on-film) transcript.
