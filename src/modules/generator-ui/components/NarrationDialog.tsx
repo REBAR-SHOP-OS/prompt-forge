@@ -582,6 +582,63 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
               )}
               <span>{check.message}</span>
             </div>
+
+            {/* Percentage match / difference meter */}
+            {check.status === 'ok' || check.status === 'mismatch' ? (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[11px] font-medium">
+                  <span className="text-emerald-300">{check.matchPercent}% match</span>
+                  <span className="text-amber-300">{check.errorPercent}% different</span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-amber-500/25">
+                  <div
+                    className={`h-full rounded-full transition-[width] ${
+                      check.matchPercent >= 80 ? 'bg-emerald-400' : 'bg-amber-400'
+                    }`}
+                    style={{ width: `${check.matchPercent}%` }}
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            {/* Word-level diff: where exactly prompt and film differ */}
+            {check.diff.length > 0 && (check.status === 'ok' || check.status === 'mismatch') ? (
+              <div className="space-y-2">
+                <p className="text-[11px] text-zinc-400">
+                  <span className="text-zinc-300">Word-by-word diff</span> — prompt vs film.
+                  <span className="ml-1 text-rose-300">red = missing on film</span>,
+                  <span className="ml-1 text-amber-300">amber = extra/wrong on film</span>.
+                </p>
+                <p dir="auto" className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[14px] leading-7">
+                  {check.diff.map((t, i) => (
+                    <span
+                      key={i}
+                      className={
+                        t.kind === 'missing'
+                          ? 'rounded-sm bg-rose-500/15 px-0.5 text-rose-300 line-through decoration-rose-400/70'
+                          : t.kind === 'extra'
+                            ? 'rounded-sm bg-amber-400/15 px-0.5 text-amber-300 underline decoration-dotted decoration-amber-400/70 underline-offset-2'
+                            : 'text-zinc-200'
+                      }
+                    >
+                      {t.text}
+                      {i < check.diff.length - 1 ? ' ' : ''}
+                    </span>
+                  ))}
+                </p>
+                {check.missingWords.length > 0 ? (
+                  <p dir="auto" className="text-[12px] leading-5 text-rose-300/90">
+                    Missing on film: {check.missingWords.join('، ')}
+                  </p>
+                ) : null}
+                {check.extraWords.length > 0 ? (
+                  <p dir="auto" className="text-[12px] leading-5 text-amber-300/90">
+                    Extra / wrong on film: {check.extraWords.join('، ')}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
             {lowConfWords.length > 0 ? (
               <p className="text-[12px] leading-5 text-amber-300/90">
                 Possible pronunciation issues: {lowConfWords.map((w) => w.text).join('، ')}
