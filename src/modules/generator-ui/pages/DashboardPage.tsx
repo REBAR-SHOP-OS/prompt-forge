@@ -1866,6 +1866,22 @@ export default function DashboardPage() {
   }, [contactKey])
   const [contactDragging, setContactDragging] = useState(false)
   const contactBoxRef = useRef<HTMLDivElement | null>(null)
+  // Track the displayed video height so the live contact overlay can be sized
+  // proportionally (matching the burn-in ratios in mergeVideos.ts), giving a
+  // true WYSIWYG preview of the final film.
+  const [previewVideoHeight, setPreviewVideoHeight] = useState(0)
+  useEffect(() => {
+    const el = contactBoxRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect.height ?? el.clientHeight
+      if (h) setPreviewVideoHeight(h)
+    })
+    ro.observe(el)
+    setPreviewVideoHeight(el.clientHeight)
+    return () => ro.disconnect()
+  }, [previewItem, contactActive])
+
   // Drag the contact overlay anywhere on the preview video. Stores a normalized
   // 0–1 center position so it maps identically to the higher-res merge canvas.
   const handleContactPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
