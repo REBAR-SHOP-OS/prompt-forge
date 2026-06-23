@@ -4132,6 +4132,15 @@ export default function DashboardPage() {
   // Backwards-compat alias used by existing card highlight + start-frame code paths
   const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
 
+  // True when the previewed video is an already-merged Final Film / Library
+  // project. These have the contact overlay permanently burned in during merge,
+  // so the live editable overlay layer must NOT be drawn on top (avoids dupes).
+  const isMergedFinalPreview =
+    previewItem?.kind === 'video' &&
+    (previewItem.job.id === '__final_film_preview__' ||
+      previewItem.job.provider_key === 'merged' ||
+      (!!selectedProjectId && previewItem.job.id === selectedProjectId))
+
   // --- Schedule the Final Film to the Rebar OS Social Media Manager ---
   // Frontend-only hand-off: posts a durable signed video URL + schedule time to
   // the embedding Rebar OS shell via postMessage (origin-locked). No backend or
