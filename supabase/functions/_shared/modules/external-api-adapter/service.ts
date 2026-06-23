@@ -95,7 +95,14 @@ const LOCAL_VIDEO_MODELS = new Set([
 ]);
 
 type LocalVideoConfig =
-  | { ok: true; baseUrl: string; apiKey: string | null; timeoutMs: number }
+  | {
+      ok: true;
+      baseUrl: string;
+      createUrl: string;
+      createRoute: "videos_generations" | "videos" | "custom";
+      apiKey: string | null;
+      timeoutMs: number;
+    }
   | { ok: false; error: string };
 
 // Clear, actionable messages reused by the adapter, the orchestrator preflight
@@ -110,6 +117,19 @@ const DEFAULT_LOCAL_VIDEO_TIMEOUT_MS = 300_000;
 function readLocalVideoTimeoutMs(): number {
   const raw = Number(Deno.env.get("LOCAL_VIDEO_ROUTER_TIMEOUT_MS"));
   return Number.isFinite(raw) && raw > 0 ? Math.round(raw) : DEFAULT_LOCAL_VIDEO_TIMEOUT_MS;
+}
+
+function normalizeLocalPath(path: string): string {
+  const trimmed = path.trim();
+  if (!trimmed) return "/videos/generations";
+  return trimmed.startsWith("/") ? trimmed.replace(/\/+$/, "") : `/${trimmed.replace(/\/+$/, "")}`;
+}
+
+function classifyLocalCreateRoute(path: string): "videos_generations" | "videos" | "custom" {
+  const normalized = normalizeLocalPath(path);
+  if (normalized === "/videos/generations") return "videos_generations";
+  if (normalized === "/videos") return "videos";
+  return "custom";
 }
 
 /** True when the error is a network/abort failure (router down/unreachable),
@@ -249,11 +269,20 @@ function readLocalVideoConfig(): LocalVideoConfig {
   }
 
   const withoutTrailingSlash = parsed.toString().replace(/\/+$/, "");
-  const baseUrl = withoutTrailingSlash.endsWith("/v1")
-    ? withoutTrailingSlash
-    : `${withoutTrailingSlash}/v1`;
+  const pathname = parsed.pathname.replace(/\/+$/, "");
+  const exactCreateRoute = pathname.endsWith("/videos/generations")
+    ? "videos_generations"
+    : (pathname.endsWith("/videos") ? "videos" : null);
+
+  const baseUrl = exactCreateRoute
+    ? withoutTrailingSlash.replace(/\/videos(?:\/generations)?$/i, "")
+    : (withoutTrailingSlash.endsWith("/v1") ? withoutTrailingSlash : `${withoutTrailingSlash}/v1`);
+
+  const createPath = normalizeLocalPath(Deno.env.get("LOCAL_VIDEO_ROUTER_CREATE_PATH") ?? "/videos/generations");
+  const createRoute = exactCreateRoute ?? classifyLocalCreateRoute(createPath);
+  const createUrl = exactCreateRoute ? withoutTrailingSlash : `${baseUrl}${createPath}`;
   const apiKey = getProviderApiKey("local");
-  return { ok: true, baseUrl, apiKey, timeoutMs: readLocalVideoTimeoutMs() };
+  return { ok: true, baseUrl, createUrl, createRoute, apiKey, timeoutMs: readLocalVideoTimeoutMs() };
 }
 
 /** Lightweight, no-secret config/health status for the local video router.
