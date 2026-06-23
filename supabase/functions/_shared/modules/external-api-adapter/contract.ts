@@ -15,6 +15,11 @@ export interface GenerationStartInput {
   firstFrameUrl?: string | null;
   /** Last-frame image URL (publicly fetchable by the provider). */
   lastFrameUrl?: string | null;
+  /**
+   * Optional persistent character/reference image URL(s). Forwarded to providers
+   * that support reference-guided generation (Veo 3.1); ignored otherwise.
+   */
+  referenceImageUrls?: string[] | null;
   /** Requested clip length in seconds (5, 10, or 15). Defaults to 5. */
   durationSeconds?: 5 | 10 | 15 | null;
   /** Requested output aspect ratio. Defaults to 16:9. */
