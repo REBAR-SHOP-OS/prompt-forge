@@ -1805,7 +1805,7 @@ export default function DashboardPage() {
     website: '',
     phone: '',
     address: '',
-    enabled: true,
+    enabled: false,
     position: 'bottom',
     offset: null,
     logoUrl: '',
