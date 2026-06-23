@@ -10251,6 +10251,98 @@ export default function DashboardPage() {
           </button>
         </div>
 
+        {/* Continuity Mode — optional card-to-card continuity */}
+        <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Link2 className="h-4 w-4 text-cyan-300" aria-hidden="true" />
+              <div>
+                <div className="text-xs font-semibold text-zinc-200">Continuity Mode</div>
+                <div className="text-[11px] text-zinc-500">
+                  {hasPreviousClip
+                    ? 'Continue the next card from the previous clip'
+                    : 'Generate a clip first to enable continuity'}
+                </div>
+              </div>
+            </div>
+            <Switch
+              checked={continuity.enabled}
+              disabled={!hasPreviousClip}
+              onCheckedChange={handleToggleContinuity}
+              aria-label="Toggle Continuity Mode"
+            />
+          </div>
+
+          {continuity.enabled && hasPreviousClip ? (
+            <div className="mt-3 space-y-3 border-t border-white/10 pt-3 text-[11px]">
+              {/* Continuation source */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-zinc-500">Continuation source</span>
+                <div role="radiogroup" aria-label="Continuation source" className="inline-flex rounded-full border border-white/10 bg-black/30 p-0.5 font-semibold">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={continuity.source === 'previous-final-frame'}
+                    onClick={() => updateContinuity({ source: 'previous-final-frame' })}
+                    className={`rounded-full px-2.5 py-1 transition ${continuity.source === 'previous-final-frame' ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+                  >
+                    Previous final frame
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={continuity.source === 'best-clear-frame'}
+                    onClick={() => updateContinuity({ source: 'best-clear-frame' })}
+                    className={`rounded-full px-2.5 py-1 transition ${continuity.source === 'best-clear-frame' ? 'bg-zinc-100 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+                  >
+                    Best clear frame
+                  </button>
+                </div>
+              </div>
+
+              {/* Character / reference source */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-zinc-500">Character / reference</span>
+                {selectedCharacter ? (
+                  <span className="inline-flex items-center gap-2 text-zinc-200">
+                    {selectedCharacter.url ? (
+                      <img src={selectedCharacter.url} alt="" className="h-6 w-6 rounded object-cover" />
+                    ) : null}
+                    {selectedCharacter.title || 'Selected reference'}
+                  </span>
+                ) : (
+                  <span className="text-zinc-400">No reference selected</span>
+                )}
+              </div>
+              {!selectedCharacter ? (
+                <p className="text-[10px] text-amber-300/80">Add a character reference for stronger continuity.</p>
+              ) : null}
+
+              {/* Scene memory preview */}
+              <div className="rounded-lg bg-black/30 p-2.5">
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="font-semibold text-zinc-300">Scene memory</span>
+                  <button
+                    type="button"
+                    onClick={openMemoryEditor}
+                    className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-semibold text-zinc-300 transition hover:bg-white/5"
+                  >
+                    <Pencil className="h-3 w-3" aria-hidden="true" /> Edit memory
+                  </button>
+                </div>
+                <dl className="space-y-0.5 text-zinc-400">
+                  <div><span className="text-zinc-500">Character:</span> {continuity.memory.character || '—'}</div>
+                  <div><span className="text-zinc-500">Environment:</span> {continuity.memory.environment || '—'}</div>
+                  <div><span className="text-zinc-500">Visual style:</span> {continuity.memory.style || '—'}</div>
+                  <div><span className="text-zinc-500">Last scene state:</span> {continuity.memory.lastState || '—'}</div>
+                </dl>
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+
+
 
         {!isTextToVideo ? (
           <div id="composer-start-frame" className="flex min-h-11 items-center gap-2 sm:min-h-12 sm:gap-3" aria-label="Prompt path">
