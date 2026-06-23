@@ -539,7 +539,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
         <section className="space-y-2">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              From prompt
+              {t('fromPrompt')}
             </h3>
             {promptLines.length > 0 ? (
               <div className="flex items-center gap-2">
