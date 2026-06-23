@@ -1386,6 +1386,7 @@ async function startLocalVideo(
   }
   const config = readLocalVideoConfig();
   if (!config.ok) throw new Error(config.error);
+  const localConfig = config;
 
   // Local routers (Wan/LTX on ComfyUI) drive clip length via num_frames + fps,
   // not seconds. Without these they fall back to their default (~1s) clip and
@@ -1429,22 +1430,22 @@ async function startLocalVideo(
   async function postCreate(url: string): Promise<Response> {
     return await localVideoFetch(url, {
       method: "POST",
-      headers: localVideoHeaders(config),
+      headers: localVideoHeaders(localConfig),
       body: JSON.stringify(body),
-    }, config.timeoutMs);
+    }, localConfig.timeoutMs);
   }
 
   let res: Response;
   try {
-    res = await postCreate(config.createUrl);
+    res = await postCreate(localConfig.createUrl);
 
     // Compatibility fallback: OpenRouter-style video routers expose POST
     // /v1/videos, while the original RTX router contract used
     // POST /v1/videos/generations. A 404 on the default path usually means the
     // router is reachable but uses the alternate route, not that secrets are
     // missing. Retry once before surfacing an endpoint-path error.
-    if (res.status === 404 && config.createRoute === "videos_generations") {
-      const fallbackUrl = `${config.baseUrl}/videos`;
+    if (res.status === 404 && localConfig.createRoute === "videos_generations") {
+      const fallbackUrl = `${localConfig.baseUrl}/videos`;
       logInfo("local video create fallback", { from: "/videos/generations", to: "/videos", model: resolvedModel });
       await res.body?.cancel().catch(() => {});
       res = await postCreate(fallbackUrl);
