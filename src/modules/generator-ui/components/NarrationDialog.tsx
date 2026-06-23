@@ -644,7 +644,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                 )}
               </button>
               <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-medium text-zinc-300">Film voice</p>
+                <p className="text-[11px] font-medium text-zinc-300">{t('filmVoice')}</p>
                 <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
                   <div
                     className="h-full rounded-full bg-violet-400 transition-[width] duration-150"
