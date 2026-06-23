@@ -67,6 +67,14 @@ export function loadContinuity(chainId: string | null | undefined): ContinuitySt
         style: parsed.memory?.style ?? '',
         lastState: parsed.memory?.lastState ?? '',
       },
+      characterRef:
+        parsed.characterRef && parsed.characterRef.id && parsed.characterRef.url
+          ? {
+              id: parsed.characterRef.id,
+              url: parsed.characterRef.url,
+              title: parsed.characterRef.title ?? null,
+            }
+          : null,
     }
   } catch {
     return { ...DEFAULT_CONTINUITY, memory: { ...EMPTY_MEMORY } }
