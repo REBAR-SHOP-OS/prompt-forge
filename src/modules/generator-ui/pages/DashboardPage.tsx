@@ -1798,6 +1798,8 @@ export default function DashboardPage() {
     /** Normalized 0–1 center position when the user has dragged the overlay.
      *  null = use the `position` preset instead. */
     offset: { x: number; y: number } | null
+    /** Size multiplier for the overlay (logo + text). 1 = default. */
+    scale: number
     logoUrl: string
     logoEnabled: boolean
   }
@@ -1808,6 +1810,7 @@ export default function DashboardPage() {
     enabled: false,
     position: 'bottom',
     offset: null,
+    scale: 1,
     logoUrl: '',
     logoEnabled: true,
   })
@@ -6686,7 +6689,7 @@ export default function DashboardPage() {
           transitionsForMerge,
           abortController.signal,
           contactActive
-            ? { lines: contactLines, position: contactOverlay.position, offset: contactOverlay.offset ?? undefined, logoUrl: contactLogoActive ? contactOverlay.logoUrl : undefined }
+            ? { lines: contactLines, position: contactOverlay.position, offset: contactOverlay.offset ?? undefined, logoUrl: contactLogoActive ? contactOverlay.logoUrl : undefined, scale: contactOverlay.scale ?? 1 }
             : undefined,
         ),
 
@@ -9052,6 +9055,7 @@ export default function DashboardPage() {
                         </>
                       )
                       const panelClass = `flex flex-col items-center gap-1 rounded-xl bg-black/45 px-5 py-4 cursor-move touch-none select-none ring-1 transition ${contactDragging ? 'ring-emerald-400/70' : 'ring-white/0 hover:ring-white/40'}`
+                      const scale = contactOverlay.scale ?? 1
                       // Custom dragged position: absolutely centered at the stored point.
                       if (contactOverlay.offset) {
                         return (
@@ -9061,7 +9065,8 @@ export default function DashboardPage() {
                             style={{
                               left: `${contactOverlay.offset.x * 100}%`,
                               top: `${contactOverlay.offset.y * 100}%`,
-                              transform: 'translate(-50%, -50%)',
+                              transform: `translate(-50%, -50%) scale(${scale})`,
+                              transformOrigin: 'center',
                             }}
                           >
                             {content}
@@ -9079,7 +9084,11 @@ export default function DashboardPage() {
                                 : 'inset-x-0 bottom-0 items-end justify-center bg-gradient-to-b from-transparent to-black/65'
                           }`}
                         >
-                          <div onPointerDown={handleContactPointerDown} className={`pointer-events-auto ${panelClass}`}>
+                          <div
+                            onPointerDown={handleContactPointerDown}
+                            className={`pointer-events-auto ${panelClass}`}
+                            style={{ transform: `scale(${scale})`, transformOrigin: contactOverlay.position === 'top' ? 'top center' : contactOverlay.position === 'center' ? 'center' : 'bottom center' }}
+                          >
                             {content}
                           </div>
                         </div>
@@ -10796,6 +10805,31 @@ export default function DashboardPage() {
                     </button>
                   ) : null}
                 </div>
+                <div className="mt-3 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-zinc-200">Size</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-zinc-400">{Math.round((contactOverlay.scale ?? 1) * 100)}%</span>
+                      {(contactOverlay.scale ?? 1) !== 1 ? (
+                        <button
+                          type="button"
+                          onClick={() => updateContact({ scale: 1 })}
+                          className="rounded-md border border-white/15 bg-white/[0.03] px-2 py-1 font-medium text-zinc-300 transition hover:border-white/30"
+                        >
+                          Reset
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <Slider
+                    value={[contactOverlay.scale ?? 1]}
+                    min={0.5}
+                    max={2}
+                    step={0.05}
+                    onValueChange={(v) => updateContact({ scale: v[0] })}
+                  />
+                </div>
+
 
               </PopoverContent>
             </Popover>

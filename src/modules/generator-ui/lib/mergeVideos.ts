@@ -112,6 +112,8 @@ export interface MergeOverlayOptions {
   offset?: { x: number; y: number }
   /** Optional logo (data URL or same-origin URL) drawn above the text. */
   logoUrl?: string
+  /** Size multiplier for the overlay (logo + text). 1 = default. */
+  scale?: number
 }
 
 
@@ -294,7 +296,8 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
   if (lines.length === 0 && !logo) return
 
   const position = overlay.position ?? 'bottom'
-  const fontSize = Math.max(14, Math.round(ch * 0.032))
+  const scale = Math.min(2, Math.max(0.5, overlay.scale ?? 1))
+  const fontSize = Math.max(14, Math.round(ch * 0.032 * scale))
   const lineGap = Math.round(fontSize * 0.45)
   const padX = Math.round(cw * 0.04)
   const padY = Math.round(fontSize * 0.6)
@@ -304,7 +307,7 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
   let logoW = 0
   let logoH = 0
   if (logo && logo.naturalWidth && logo.naturalHeight) {
-    logoH = Math.round(ch * 0.12)
+    logoH = Math.round(ch * 0.12 * scale)
     logoW = Math.round(logoH * (logo.naturalWidth / logo.naturalHeight))
   }
   const logoGap = logoH ? Math.round(fontSize * 0.6) : 0
@@ -584,7 +587,7 @@ export async function mergeVideoUrls(
   const hasText = !!overlay && overlay.lines.some((l) => l.trim())
   const hasLogo = !!overlay?.logoUrl
   activeOverlay = overlay && (hasText || hasLogo)
-    ? { lines: overlay.lines, position: overlay.position ?? 'bottom', offset: overlay.offset, logoUrl: overlay.logoUrl }
+    ? { lines: overlay.lines, position: overlay.position ?? 'bottom', offset: overlay.offset, logoUrl: overlay.logoUrl, scale: overlay.scale ?? 1 }
     : null
   // Preload the logo image so drawOverlay (sync) can paint it on every frame.
   activeLogo = null
