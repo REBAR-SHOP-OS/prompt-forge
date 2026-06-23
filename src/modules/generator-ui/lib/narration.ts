@@ -110,9 +110,21 @@ export function normalizeForCompare(text: string): string {
     .trim()
 }
 
+export type DiffToken = {
+  /** Original display text for this token. */
+  text: string
+  /** match = in both; missing = only in prompt; extra = only on film. */
+  kind: 'match' | 'missing' | 'extra'
+}
+
 export type NarrationCheck = {
   status: 'ok' | 'missing-on-film' | 'extra-on-film' | 'mismatch' | 'none'
   similarity: number // 0..1
+  matchPercent: number // 0..100
+  errorPercent: number // 0..100
+  missingWords: string[] // in prompt, not on film
+  extraWords: string[] // on film, not in prompt
+  diff: DiffToken[] // word-level aligned diff (prompt vs film)
   message: string
 }
 
@@ -129,6 +141,84 @@ function similarity(a: string, b: string): number {
   return union === 0 ? 1 : inter / union
 }
 
+// Tokenize keeping both the display text and a normalized key for comparison.
+function tokenize(text: string): { raw: string; norm: string }[] {
+  return (text ?? '')
+    .split(/\s+/)
+    .map((raw) => ({ raw, norm: normalizeForCompare(raw) }))
+    .filter((t) => t.norm.length > 0)
+}
+
+// Word-level diff via LCS alignment on normalized tokens. Returns the aligned
+// token stream plus error metrics (WER-style) between the prompt narration
+// (expected) and the on-film transcript (actual).
+export function diffNarration(
+  expected: string,
+  actual: string,
+): {
+  diff: DiffToken[]
+  matched: number
+  missing: number
+  extra: number
+  matchPercent: number
+  errorPercent: number
+} {
+  const a = tokenize(expected) // prompt (baseline)
+  const b = tokenize(actual) // film
+  const n = a.length
+  const m = b.length
+
+  // LCS dynamic-programming table on normalized tokens.
+  const dp: number[][] = Array.from({ length: n + 1 }, () =>
+    new Array<number>(m + 1).fill(0),
+  )
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i].norm === b[j].norm
+        ? dp[i + 1][j + 1] + 1
+        : Math.max(dp[i + 1][j], dp[i][j + 1])
+    }
+  }
+
+  const diff: DiffToken[] = []
+  let matched = 0
+  let missing = 0
+  let extra = 0
+  let i = 0
+  let j = 0
+  while (i < n && j < m) {
+    if (a[i].norm === b[j].norm) {
+      diff.push({ text: a[i].raw, kind: 'match' })
+      matched++
+      i++
+      j++
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      diff.push({ text: a[i].raw, kind: 'missing' })
+      missing++
+      i++
+    } else {
+      diff.push({ text: b[j].raw, kind: 'extra' })
+      extra++
+      j++
+    }
+  }
+  while (i < n) {
+    diff.push({ text: a[i].raw, kind: 'missing' })
+    missing++
+    i++
+  }
+  while (j < m) {
+    diff.push({ text: b[j].raw, kind: 'extra' })
+    extra++
+    j++
+  }
+
+  const denom = 2 * matched + missing + extra
+  const errorPercent = denom === 0 ? 0 : Math.round(((missing + extra) / denom) * 100)
+  const matchPercent = 100 - errorPercent
+  return { diff, matched, missing, extra, matchPercent, errorPercent }
+}
+
 // Compare the expected (prompt) narration with the actual (on-film) transcript.
 export function compareNarration(
   promptLines: string[],
@@ -139,23 +229,47 @@ export function compareNarration(
   const hasExpected = normalizeForCompare(expected).length > 0
   const hasActual = normalizeForCompare(actual).length > 0
 
+  const empty = { missingWords: [] as string[], extraWords: [] as string[], diff: [] as DiffToken[] }
+
   if (!hasExpected && !hasActual) {
-    return { status: 'none', similarity: 1, message: 'This card has no narration in the prompt and none on the film.' }
+    return {
+      status: 'none', similarity: 1, matchPercent: 100, errorPercent: 0, ...empty,
+      message: 'This card has no narration in the prompt and none on the film.',
+    }
   }
   if (hasExpected && !hasActual) {
-    return { status: 'missing-on-film', similarity: 0, message: 'The prompt has narration, but no speech was detected on the film.' }
+    return {
+      status: 'missing-on-film', similarity: 0, matchPercent: 0, errorPercent: 100,
+      missingWords: tokenize(expected).map((t) => t.raw), extraWords: [],
+      diff: tokenize(expected).map((t) => ({ text: t.raw, kind: 'missing' as const })),
+      message: 'The prompt has narration, but no speech was detected on the film.',
+    }
   }
   if (!hasExpected && hasActual) {
-    return { status: 'extra-on-film', similarity: 0, message: "The film contains narration that isn't written in the prompt." }
+    return {
+      status: 'extra-on-film', similarity: 0, matchPercent: 0, errorPercent: 100,
+      missingWords: [], extraWords: tokenize(actual).map((t) => t.raw),
+      diff: tokenize(actual).map((t) => ({ text: t.raw, kind: 'extra' as const })),
+      message: "The film contains narration that isn't written in the prompt.",
+    }
   }
 
   const sim = similarity(expected, actual)
-  if (sim >= 0.8) {
-    return { status: 'ok', similarity: sim, message: 'The on-film narration matches the prompt.' }
+  const d = diffNarration(expected, actual)
+  const missingWords = d.diff.filter((t) => t.kind === 'missing').map((t) => t.text)
+  const extraWords = d.diff.filter((t) => t.kind === 'extra').map((t) => t.text)
+
+  if (d.matchPercent >= 80) {
+    return {
+      status: 'ok', similarity: sim, matchPercent: d.matchPercent, errorPercent: d.errorPercent,
+      missingWords, extraWords, diff: d.diff,
+      message: `The on-film narration matches the prompt (${d.matchPercent}% match).`,
+    }
   }
   return {
-    status: 'mismatch',
-    similarity: sim,
-    message: 'The on-film narration differs from the prompt — review both below.',
+    status: 'mismatch', similarity: sim, matchPercent: d.matchPercent, errorPercent: d.errorPercent,
+    missingWords, extraWords, diff: d.diff,
+    message: `The on-film narration differs from the prompt — ${d.errorPercent}% different. Review the highlighted words below.`,
   }
 }
+
