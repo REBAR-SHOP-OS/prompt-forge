@@ -56,6 +56,110 @@ const TRANSLATE_LANGS: { code: string; label: string }[] = [
   { code: 'fr', label: 'Français' },
 ]
 
+// Static UI labels per language (English fallback). Switching these costs
+// nothing and stays instant — no AI call for fixed strings.
+type UIKey =
+  | 'narration' | 'close' | 'fromPrompt' | 'readAloud' | 'pause' | 'original'
+  | 'noPrompt' | 'onFilm' | 'filmVoice' | 'noVideo' | 'listening' | 'retry'
+  | 'checkOnFilm' | 'mispronounced' | 'noSpeech' | 'check' | 'match'
+  | 'different' | 'wordDiff' | 'diffLegend' | 'missingOnFilm' | 'extraOnFilm'
+  | 'pronIssues' | 'translation'
+
+const UI_STRINGS: Record<string, Partial<Record<UIKey, string>>> = {
+  en: {
+    narration: 'Narration', close: 'Close', fromPrompt: 'From prompt',
+    readAloud: 'Read aloud', pause: 'Pause', original: 'Original',
+    noPrompt: "No narration detected in this card's prompt. The narration / spoken lines appear here when the scene includes a narration line or quoted dialogue.",
+    onFilm: 'On film', filmVoice: 'Film voice',
+    noVideo: 'No rendered video yet — generate this card to check the spoken narration.',
+    listening: 'Listening to the film…', retry: 'Retry',
+    checkOnFilm: 'Check narration on film',
+    mispronounced: 'Highlighted words may be mispronounced — click one to hear the correct pronunciation.',
+    noSpeech: 'No speech detected in this film.', check: 'Check',
+    match: 'match', different: 'different', wordDiff: 'Word-by-word diff',
+    diffLegend: 'prompt vs film. red = missing on film, amber = extra/wrong on film.',
+    missingOnFilm: 'Missing on film:', extraOnFilm: 'Extra / wrong on film:',
+    pronIssues: 'Possible pronunciation issues:', translation: 'Translation',
+  },
+  fa: {
+    narration: 'روایت', close: 'بستن', fromPrompt: 'از پرامپت',
+    readAloud: 'خواندن با صدا', pause: 'مکث', original: 'اصلی',
+    noPrompt: 'هیچ روایتی در پرامپت این کارت یافت نشد. وقتی صحنه شامل یک خط روایت یا دیالوگ نقل‌قول‌شده باشد، روایت/خطوط گفتاری اینجا نمایش داده می‌شود.',
+    onFilm: 'روی فیلم', filmVoice: 'صدای فیلم',
+    noVideo: 'هنوز ویدیویی ساخته نشده — این کارت را بسازید تا روایت گفتاری بررسی شود.',
+    listening: 'در حال گوش دادن به فیلم…', retry: 'تلاش دوباره',
+    checkOnFilm: 'بررسی روایت روی فیلم',
+    mispronounced: 'کلمات مشخص‌شده ممکن است اشتباه تلفظ شده باشند — روی هرکدام کلیک کنید تا تلفظ درست را بشنوید.',
+    noSpeech: 'هیچ گفتاری در این فیلم یافت نشد.', check: 'بررسی',
+    match: 'تطابق', different: 'تفاوت', wordDiff: 'مقایسهٔ کلمه‌به‌کلمه',
+    diffLegend: 'پرامپت در برابر فیلم. قرمز = جا افتاده در فیلم، کهربایی = اضافه/اشتباه در فیلم.',
+    missingOnFilm: 'جا افتاده در فیلم:', extraOnFilm: 'اضافه / اشتباه در فیلم:',
+    pronIssues: 'مشکلات احتمالی تلفظ:', translation: 'ترجمه',
+  },
+  ar: {
+    narration: 'السرد', close: 'إغلاق', fromPrompt: 'من الموجّه',
+    readAloud: 'قراءة بصوت', pause: 'إيقاف مؤقت', original: 'الأصل',
+    noPrompt: 'لم يتم العثور على سرد في موجّه هذه البطاقة. تظهر هنا أسطر السرد / الحوار عندما يتضمّن المشهد سطر سرد أو حوارًا مقتبسًا.',
+    onFilm: 'في الفيلم', filmVoice: 'صوت الفيلم',
+    noVideo: 'لا يوجد فيديو بعد — أنشئ هذه البطاقة للتحقق من السرد المنطوق.',
+    listening: 'الاستماع إلى الفيلم…', retry: 'إعادة المحاولة',
+    checkOnFilm: 'تحقّق من السرد في الفيلم',
+    mispronounced: 'قد تكون الكلمات المميّزة منطوقة بشكل خاطئ — انقر على إحداها لسماع النطق الصحيح.',
+    noSpeech: 'لم يتم اكتشاف كلام في هذا الفيلم.', check: 'التحقّق',
+    match: 'تطابق', different: 'اختلاف', wordDiff: 'مقارنة كلمة بكلمة',
+    diffLegend: 'الموجّه مقابل الفيلم. أحمر = مفقود في الفيلم، كهرماني = زائد/خاطئ في الفيلم.',
+    missingOnFilm: 'مفقود في الفيلم:', extraOnFilm: 'زائد / خاطئ في الفيلم:',
+    pronIssues: 'مشكلات نطق محتملة:', translation: 'الترجمة',
+  },
+  tr: {
+    narration: 'Anlatım', close: 'Kapat', fromPrompt: 'İstemden',
+    readAloud: 'Sesli oku', pause: 'Duraklat', original: 'Orijinal',
+    noPrompt: 'Bu kartın isteminde anlatım bulunamadı. Sahne bir anlatım satırı veya alıntılanmış diyalog içerdiğinde anlatım / konuşma satırları burada görünür.',
+    onFilm: 'Filmde', filmVoice: 'Film sesi',
+    noVideo: 'Henüz oluşturulmuş video yok — konuşma anlatımını kontrol etmek için bu kartı oluşturun.',
+    listening: 'Film dinleniyor…', retry: 'Tekrar dene',
+    checkOnFilm: 'Filmde anlatımı kontrol et',
+    mispronounced: 'Vurgulanan kelimeler yanlış telaffuz edilmiş olabilir — doğru telaffuzu duymak için birine tıklayın.',
+    noSpeech: 'Bu filmde konuşma algılanmadı.', check: 'Kontrol',
+    match: 'eşleşme', different: 'farklı', wordDiff: 'Kelime kelime fark',
+    diffLegend: 'istem ile film. kırmızı = filmde eksik, kehribar = filmde fazla/yanlış.',
+    missingOnFilm: 'Filmde eksik:', extraOnFilm: 'Filmde fazla / yanlış:',
+    pronIssues: 'Olası telaffuz sorunları:', translation: 'Çeviri',
+  },
+  es: {
+    narration: 'Narración', close: 'Cerrar', fromPrompt: 'Del prompt',
+    readAloud: 'Leer en voz alta', pause: 'Pausar', original: 'Original',
+    noPrompt: 'No se detectó narración en el prompt de esta tarjeta. Las líneas de narración / diálogo aparecen aquí cuando la escena incluye una línea de narración o diálogo citado.',
+    onFilm: 'En el film', filmVoice: 'Voz del film',
+    noVideo: 'Aún no hay video renderizado — genera esta tarjeta para revisar la narración hablada.',
+    listening: 'Escuchando el film…', retry: 'Reintentar',
+    checkOnFilm: 'Comprobar narración en el film',
+    mispronounced: 'Las palabras resaltadas pueden estar mal pronunciadas — haz clic en una para oír la pronunciación correcta.',
+    noSpeech: 'No se detectó voz en este film.', check: 'Comprobación',
+    match: 'coincidencia', different: 'diferente', wordDiff: 'Diferencia palabra por palabra',
+    diffLegend: 'prompt vs film. rojo = falta en el film, ámbar = extra/incorrecto en el film.',
+    missingOnFilm: 'Falta en el film:', extraOnFilm: 'Extra / incorrecto en el film:',
+    pronIssues: 'Posibles problemas de pronunciación:', translation: 'Traducción',
+  },
+  fr: {
+    narration: 'Narration', close: 'Fermer', fromPrompt: 'Du prompt',
+    readAloud: 'Lire à voix haute', pause: 'Pause', original: 'Original',
+    noPrompt: "Aucune narration détectée dans le prompt de cette carte. Les lignes de narration / dialogue apparaissent ici lorsque la scène inclut une ligne de narration ou un dialogue cité.",
+    onFilm: 'Dans le film', filmVoice: 'Voix du film',
+    noVideo: "Pas encore de vidéo rendue — générez cette carte pour vérifier la narration parlée.",
+    listening: 'Écoute du film…', retry: 'Réessayer',
+    checkOnFilm: 'Vérifier la narration dans le film',
+    mispronounced: 'Les mots surlignés peuvent être mal prononcés — cliquez sur l’un d’eux pour entendre la bonne prononciation.',
+    noSpeech: 'Aucune parole détectée dans ce film.', check: 'Vérification',
+    match: 'correspondance', different: 'différent', wordDiff: 'Différence mot à mot',
+    diffLegend: 'prompt vs film. rouge = manquant dans le film, ambre = en trop/erroné dans le film.',
+    missingOnFilm: 'Manquant dans le film :', extraOnFilm: 'En trop / erroné dans le film :',
+    pronIssues: 'Problèmes de prononciation possibles :', translation: 'Traduction',
+  },
+}
+
+
+
 export function NarrationDialog({ open, onClose, prompt, narrationText, videoStoragePath }: NarrationDialogProps) {
   const promptLines = narrationText
     ? narrationText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
