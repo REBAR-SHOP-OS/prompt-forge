@@ -63,6 +63,15 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
   const audioCache = useRef<Map<string, string>>(new Map())
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
+  // Full film-audio playback so the user can hear the actual film voice and
+  // compare it with the reference narration text above.
+  const filmAudioRef = useRef<HTMLAudioElement | null>(null)
+  const [filmAudioUrl, setFilmAudioUrl] = useState<string | null>(null)
+  const [filmLoading, setFilmLoading] = useState(false)
+  const [filmPlaying, setFilmPlaying] = useState(false)
+  const [filmTime, setFilmTime] = useState(0)
+  const [filmDuration, setFilmDuration] = useState(0)
+
   // Reset transient state whenever the panel is (re)opened for a card.
   useEffect(() => {
     if (!open) return
@@ -70,15 +79,71 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
     setWords([])
     setError(null)
     setCheck(null)
+    setFilmPlaying(false)
+    setFilmTime(0)
+    setFilmDuration(0)
+    if (filmAudioRef.current) {
+      filmAudioRef.current.pause()
+      filmAudioRef.current.currentTime = 0
+    }
   }, [open, prompt, videoStoragePath])
 
   useEffect(() => {
     return () => {
       if (audioRef.current) audioRef.current.pause()
+      if (filmAudioRef.current) filmAudioRef.current.pause()
       for (const url of audioCache.current.values()) URL.revokeObjectURL(url)
       audioCache.current.clear()
     }
   }, [])
+
+  const toggleFilmAudio = useCallback(async () => {
+    if (!videoStoragePath) return
+    const el = filmAudioRef.current
+    if (el && filmPlaying) {
+      el.pause()
+      return
+    }
+    // Lazily resolve a playable URL the first time the user hits play.
+    if (!filmAudioUrl) {
+      setFilmLoading(true)
+      try {
+        let url = videoStoragePath
+        try {
+          url = await proxiedVideoUrl(videoStoragePath)
+        } catch {
+          /* fall back to raw path */
+        }
+        setFilmAudioUrl(url)
+      } finally {
+        setFilmLoading(false)
+      }
+      return
+    }
+    try {
+      await el?.play()
+    } catch {
+      toast.error('Could not play the film audio.')
+    }
+  }, [videoStoragePath, filmPlaying, filmAudioUrl])
+
+  // Once a URL is resolved (first play), start playback automatically.
+  useEffect(() => {
+    if (!filmAudioUrl) return
+    const el = filmAudioRef.current
+    if (!el) return
+    el.play().catch(() => {
+      /* user can press play again */
+    })
+  }, [filmAudioUrl])
+
+  const fmt = (s: number) => {
+    if (!Number.isFinite(s) || s < 0) return '0:00'
+    const m = Math.floor(s / 60)
+    const sec = Math.floor(s % 60)
+    return `${m}:${sec.toString().padStart(2, '0')}`
+  }
+
 
   const runTranscribe = useCallback(async () => {
     if (!videoStoragePath) return
