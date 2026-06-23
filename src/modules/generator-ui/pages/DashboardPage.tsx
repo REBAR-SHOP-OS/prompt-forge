@@ -1861,6 +1861,35 @@ export default function DashboardPage() {
       return next
     })
   }, [contactKey])
+  const [contactDragging, setContactDragging] = useState(false)
+  // Drag the contact overlay anywhere on the preview video. Stores a normalized
+  // 0–1 center position so it maps identically to the higher-res merge canvas.
+  const handleContactPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    // The overlay's positioning context is its parent (the `relative` video box).
+    const bounds = e.currentTarget.parentElement?.getBoundingClientRect()
+    if (!bounds || bounds.width === 0 || bounds.height === 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const target = e.currentTarget
+    try { target.setPointerCapture(e.pointerId) } catch { /* ignore */ }
+    setContactDragging(true)
+    const apply = (clientX: number, clientY: number) => {
+      const x = Math.min(1, Math.max(0, (clientX - bounds.left) / bounds.width))
+      const y = Math.min(1, Math.max(0, (clientY - bounds.top) / bounds.height))
+      updateContact({ offset: { x, y } })
+    }
+    apply(e.clientX, e.clientY)
+    const onMove = (ev: PointerEvent) => apply(ev.clientX, ev.clientY)
+    const onUp = () => {
+      setContactDragging(false)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      try { target.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }, [updateContact])
+
   // Persist the logo to the business profile (single source of truth) and update state.
   const updateContactLogo = useCallback((logoUrl: string) => {
     updateContact({ logoUrl })
