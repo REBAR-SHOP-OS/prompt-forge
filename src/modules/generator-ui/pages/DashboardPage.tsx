@@ -10805,6 +10805,31 @@ export default function DashboardPage() {
                     </button>
                   ) : null}
                 </div>
+                <div className="mt-3 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-zinc-200">Size</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-zinc-400">{Math.round((contactOverlay.scale ?? 1) * 100)}%</span>
+                      {(contactOverlay.scale ?? 1) !== 1 ? (
+                        <button
+                          type="button"
+                          onClick={() => updateContact({ scale: 1 })}
+                          className="rounded-md border border-white/15 bg-white/[0.03] px-2 py-1 font-medium text-zinc-300 transition hover:border-white/30"
+                        >
+                          Reset
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <Slider
+                    value={[contactOverlay.scale ?? 1]}
+                    min={0.5}
+                    max={2}
+                    step={0.05}
+                    onValueChange={(v) => updateContact({ scale: v[0] })}
+                  />
+                </div>
+
 
               </PopoverContent>
             </Popover>
