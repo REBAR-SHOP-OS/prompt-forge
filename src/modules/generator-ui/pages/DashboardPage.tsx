@@ -5909,6 +5909,7 @@ export default function DashboardPage() {
           durationSeconds: perClipDuration,
           aspectRatio: effectiveRatio,
           firstFrameUrl: startFrameUrl,
+          referenceImageUrls,
           draftGroupId,
           narrationText,
         })
