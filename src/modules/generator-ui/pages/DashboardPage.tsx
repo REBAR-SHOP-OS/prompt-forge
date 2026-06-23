@@ -10873,6 +10873,46 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="mt-3 space-y-2">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Theme</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {CONTACT_THEMES.map((theme) => {
+                      const active =
+                        (contactOverlay.textColor ?? '#ffffff').toLowerCase() === theme.textColor.toLowerCase() &&
+                        contactOverlay.fontFamily === theme.fontFamily &&
+                        contactOverlay.panelEnabled === theme.panelEnabled &&
+                        (contactOverlay.panelColor ?? '#000000').toLowerCase() === theme.panelColor.toLowerCase() &&
+                        (contactOverlay.panelOpacity ?? 0.45) === theme.panelOpacity
+                      return (
+                        <button
+                          key={theme.id}
+                          type="button"
+                          onClick={() => updateContact({
+                            textColor: theme.textColor,
+                            fontFamily: theme.fontFamily,
+                            panelEnabled: theme.panelEnabled,
+                            panelColor: theme.panelColor,
+                            panelOpacity: theme.panelOpacity,
+                          })}
+                          className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${
+                            active
+                              ? 'border-emerald-400/60 bg-emerald-500/10 text-emerald-100'
+                              : 'border-white/15 bg-white/[0.03] text-zinc-300 hover:border-white/30'
+                          }`}
+                          style={{ fontFamily: theme.fontFamily }}
+                        >
+                          <span
+                            className="h-3 w-3 shrink-0 rounded-full border border-white/30"
+                            style={{ backgroundColor: theme.swatch }}
+                          />
+                          <span className="truncate">{theme.label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+
+                <div className="mt-3 space-y-2">
                   <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Logo</label>
                   <div className="flex items-center gap-2">
                     {contactOverlay.logoUrl ? (
