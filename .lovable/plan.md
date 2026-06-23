@@ -1,32 +1,38 @@
-# بخش Check: درصد تفاوت + جای دقیق خطاها
+# Translate the entire Narration dialog
 
-## هدف
-در بخش **Check** پنل نریشن، علاوه بر پیام کلی فعلی، نشان بده:
-1. **درصد تطابق/تفاوت** بین نریشن پرامت (ملاک) و صدای نریشنِ فیلم.
-2. **جای دقیق خطاها** — کلمه‌به‌کلمه مشخص شود کدام کلمات حذف شده (در پرامت بود ولی در فیلم نیست)، کدام اضافه شده (در فیلم هست ولی در پرامت نیست) و کدام جایگزین/متفاوت شده.
+When the user picks a language in the selector (circled in the screenshot), only the "From prompt" block is translated today. The user wants **every text block** in the dialog translated into the chosen language.
 
-## وضعیت فعلی
-`compareNarration` فقط یک `similarity` (هم‌پوشانی توکنی Jaccard) و یک پیام کلی برمی‌گرداند؛ هیچ درصد یا دیف کلمه‌ای نمایش داده نمی‌شود.
+## What gets translated
 
-## ۱) محاسبه‌ی دقیق در `src/modules/generator-ui/lib/narration.ts`
-- افزودن تابع `diffNarration(expected, actual)` بر پایه‌ی **هم‌ترازی LCS** روی توکن‌های نرمال‌شده (`normalizeForCompare`) با نگه‌داشتن متن اصلی هر توکن برای نمایش:
-  - خروجی: آرایه‌ی توکن‌های هم‌تراز با وضعیت `match | missing | extra` (missing = فقط در پرامت، extra = فقط در فیلم). جفت‌های missing+extra پشت‌سرهم به‌عنوان «جایگزینی/متفاوت» علامت می‌خورند.
-  - معیار تفاوت بر پایه‌ی **Word Error Rate**: `errorPercent = round((missing + extra) / (2 × matched + missing + extra) × 100)` و `matchPercent = 100 − errorPercent` (مقاوم به اختلاف طول و ترتیب).
-- گسترش `NarrationCheck` با فیلدهای `matchPercent`، `errorPercent`، `missingWords: string[]`، `extraWords: string[]` و `diff` (توکن‌های هم‌تراز). `compareNarration` این مقادیر را پر می‌کند و آستانه‌ی وضعیت `ok/mismatch` بر پایه‌ی همان درصد جدید تنظیم می‌شود.
+When a language is selected:
+1. **From prompt** narration → already translated (keep).
+2. **On film** transcript → translate the recognized film speech.
+3. **Check** section → translate the status message, the "missing on film" and "extra/wrong on film" word lists, and the "possible pronunciation issues" line.
+4. **Static UI labels** (`From prompt`, `On film`, `Check`, `Read aloud`, `Word-by-word diff`, button titles, helper sentences) → switched using a small built-in dictionary, so fixed strings cost nothing and stay instant.
 
-## ۲) نمایش در بخش Check (`NarrationDialog.tsx`)
-- یک **نشانگر درصد** بالای پیام: مثلاً «۸۵٪ تطابق · ۱۵٪ تفاوت» با نوار رنگی (سبز برای بالا، کهربایی/قرمز برای پایین).
-- یک بلوک **دیف کلمه‌ای**: متن هم‌تراز نمایش داده می‌شود که در آن:
-  - کلمات حذف‌شده (فقط در پرامت) با رنگ قرمز و خط‌خورده،
-  - کلمات اضافه/متفاوتِ فیلم با رنگ کهربایی و زیرخط،
-  - کلمات منطبق به‌صورت عادی.
-- فهرست خلاصه‌ی «کلمات جاافتاده» و «کلمات اضافه/اشتباه» زیر آن (با `dir="auto"` برای فارسی/عربی).
-- نمایش فقط وقتی `transcript` گرفته شده باشد؛ بخش «مشکلات تلفظ» فعلی حفظ می‌شود.
+Selecting **Original** restores all original text everywhere.
 
-## بخش فنی
-- `src/modules/generator-ui/lib/narration.ts`: افزودن `diffNarration` (LCS)، گسترش `NarrationCheck` و به‌روزرسانی `compareNarration`.
-- `src/modules/generator-ui/components/NarrationDialog.tsx`: نمایش درصد + بلوک دیف رنگی در بخش Check.
-- بدون تغییر دیتابیس یا ادج‌فانکشن؛ کاملاً سمت کلاینت و قطعی (بدون هزینه‌ی AI).
+## How it works
 
-## تأیید
-- باز کردن پنل نریشن کارت Rebar و گرفتن ترنسکریپت: نمایش مثلاً «۸۵٪ تطابق» و هایلایت دقیق کلمات نادرست مثل `Tisrepas`، `Internouns`، `Clias`، `Reselical` به‌عنوان تفاوت — تطبیق با اسکرین‌شات از طریق Playwright.
+In `src/modules/generator-ui/components/NarrationDialog.tsx`:
+
+- Keep one shared `targetLang` state driving the whole panel.
+- Add translation state for the transcript and the check message:
+  - `transcriptTranslation`, `checkMessageTranslation` (plus translating flags).
+- When `translateNarration(lang)` runs, fan out parallel `translate-text` calls for: prompt text (existing), the current transcript (if present), and the check message (if present). Cache results per `text+lang` in a `useRef` map so re-selecting a language is instant and avoids extra AI cost.
+- Render the translated text under each section when a translation exists (mirroring the existing sky-colored translation block used for the prompt), keeping the original above for reference.
+- Static labels read from a `UI_STRINGS[lang]` dictionary with English fallback; RTL handled by existing `dir="auto"`.
+- If transcription happens *after* a language is already chosen, automatically translate the new transcript too (effect keyed on `transcript` + `targetLang`).
+
+## Technical details
+
+- Reuse the existing `translate-text` edge function and `supabase.functions.invoke` pattern — no backend changes.
+- Word-by-word diff stays in the original language (it is a literal prompt-vs-film comparison and must not be altered); only the human-readable summary lines around it are translated.
+- "Read aloud" continues to read the translation when one is active.
+- Verify in the preview: pick فارسی and confirm prompt, transcript, and check message all show translated text; pick Original and confirm everything reverts.
+
+## Files
+
+- `src/modules/generator-ui/components/NarrationDialog.tsx` (translation fan-out, state, render, label dictionary)
+
+No database or edge-function changes.
