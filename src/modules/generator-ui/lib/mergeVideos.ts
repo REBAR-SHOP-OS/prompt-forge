@@ -617,7 +617,7 @@ export async function mergeVideoUrls(
   const hasText = !!overlay && overlay.lines.some((l) => l.trim())
   const hasLogo = !!overlay?.logoUrl
   activeOverlay = overlay && (hasText || hasLogo)
-    ? { lines: overlay.lines, position: overlay.position ?? 'bottom', offset: overlay.offset, logoUrl: overlay.logoUrl, scale: overlay.scale ?? 1 }
+    ? { lines: overlay.lines, position: overlay.position ?? 'bottom', offset: overlay.offset, logoUrl: overlay.logoUrl, scale: overlay.scale ?? 1, panelEnabled: overlay.panelEnabled, panelColor: overlay.panelColor, panelOpacity: overlay.panelOpacity }
     : null
   // Preload the logo image so drawOverlay (sync) can paint it on every frame.
   activeLogo = null
