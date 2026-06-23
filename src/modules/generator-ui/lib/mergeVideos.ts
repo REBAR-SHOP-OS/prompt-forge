@@ -479,14 +479,21 @@ export async function mergeVideoUrls(
   audio?: MergeAudioOptions,
   transitions?: TransitionSpec[],
   signal?: AbortSignal,
+  overlay?: MergeOverlayOptions,
 ): Promise<MergeResult> {
   if (inputs.length === 0) throw new Error('No videos to merge')
   if (signal?.aborted) throw new MergeCancelledError()
+
+  // Contact/branding overlay baked into every frame for this run.
+  activeOverlay = overlay && overlay.lines.some((l) => l.trim())
+    ? { lines: overlay.lines, position: overlay.position ?? 'bottom' }
+    : null
 
   // Normalize: accept legacy `string[]` (always videos) or `MergeClip[]`.
   const clipDefs: MergeClip[] = inputs.map((it) =>
     typeof it === 'string' ? { kind: 'video', url: it } : it,
   )
+
 
   const norm = normalizeAudioOptions(audio)
   const musicTrack = norm?.music && norm.music.endSec > norm.music.startSec ? norm.music : undefined
