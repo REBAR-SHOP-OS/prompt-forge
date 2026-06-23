@@ -10,6 +10,11 @@ export const EXTERNAL_API_ADAPTER_CONTRACT_VERSION = "v1" as const;
 export interface LocalVideoStatusResult {
   status: "configured" | "not_configured" | "unreachable";
   message: string;
+  configured?: boolean;
+  reachable?: boolean | null;
+  create_endpoint_found?: boolean | null;
+  attempted_create_paths?: string[];
+  router_type?: "openai_compatible" | "comfyui" | null;
 }
 
 export const externalApiAdapterGateway = {
