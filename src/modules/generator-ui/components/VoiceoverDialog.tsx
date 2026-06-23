@@ -559,6 +559,41 @@ export function VoiceoverDialog({
                   />
                 </button>
               ) : null}
+              <Popover open={isTranslateOpen} onOpenChange={setIsTranslateOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    disabled={isTranslating || !text.trim()}
+                    title="Translate narration"
+                    aria-label="Translate narration"
+                    className="grid h-7 w-7 place-items-center rounded-full border border-white/10 bg-white/[0.04] text-zinc-300 transition hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200 disabled:opacity-50"
+                  >
+                    {isTranslating ? (
+                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Languages className="h-3.5 w-3.5" aria-hidden="true" />
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-44 p-1.5">
+                  <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                    Translate to
+                  </p>
+                  <div className="max-h-56 overflow-y-auto">
+                    {TRANSLATE_LANGS.map((l) => (
+                      <button
+                        key={l.code}
+                        type="button"
+                        disabled={isTranslating}
+                        onClick={() => void handleTranslate(l.code)}
+                        className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06] disabled:opacity-50"
+                      >
+                        {l.label}
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
               </div>
               <div className="text-right text-[10px] uppercase tracking-wider text-zinc-500">
                 {text.length}/5000
