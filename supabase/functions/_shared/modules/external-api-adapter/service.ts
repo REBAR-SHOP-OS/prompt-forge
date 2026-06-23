@@ -102,6 +102,52 @@ function sanitizePrompt(p: string): string {
   return p.replace(/\s+/g, " ").trim();
 }
 
+// ---- Provider capability helpers -------------------------------------------
+// Centralize which providers/models can accept which kinds of image
+// conditioning, so reference-image continuity logic stays explicit instead of
+// scattered across each start* function.
+//
+//  - supportsStartImage:      can take a first-frame/start image (continuation).
+//  - supportsReferenceImages: can take separate persistent reference/identity
+//                             images (distinct from the start frame).
+//
+// Only Veo 3.1 exposes a true, dedicated reference-image input today. Wan
+// (DashScope) and the local routers accept a start frame but have no proven
+// dedicated reference-image channel, so they fall back to prompt augmentation.
+function supportsStartImage(providerKey: ProviderKey, resolvedModel: string): boolean {
+  if (providerKey === "flow") {
+    // Veo text-to-video resolves with no frame; i2v paths pass a firstFrameUrl.
+    return true;
+  }
+  if (providerKey === "wan") return !isWanTextToVideoModel(resolvedModel);
+  if (providerKey === "local") return /i2v/i.test(resolvedModel);
+  return false;
+}
+
+function supportsReferenceImages(providerKey: ProviderKey, resolvedModel: string): boolean {
+  // Veo 3.1 (resolved from flow aliases) supports dedicated referenceImages.
+  // Veo Fast (veo-3.0-fast-*) does NOT, but startVeo upgrades to 3.1 whenever
+  // references are present, so we report true for the flow provider here and
+  // let startVeo gate on the concrete model.
+  if (providerKey === "flow") return true;
+  // No other provider has a proven dedicated reference-image input.
+  return false;
+}
+
+/** Append a non-breaking character-identity hint to the prompt for providers
+ *  that cannot accept dedicated reference images. The URLs are included so a
+ *  prompt-aware router can fetch them; identity wording keeps the subject
+ *  consistent for pure-prompt models. */
+function augmentPromptWithReferences(prompt: string, referenceImageUrls?: string[] | null): string {
+  if (!referenceImageUrls || referenceImageUrls.length === 0) return prompt;
+  const refs = referenceImageUrls.slice(0, 3).join(", ");
+  return sanitizePrompt(
+    `${prompt} Maintain the exact same character identity, face, outfit and style as the reference image(s): ${refs}.`,
+  );
+}
+
+
+
 function getProviderApiKey(providerKey: ProviderKey): string | null {
   if (providerKey === "flow") {
     return Deno.env.get("GEMINI_API_KEY") ?? Deno.env.get("FLOW_API_KEY") ?? null;
