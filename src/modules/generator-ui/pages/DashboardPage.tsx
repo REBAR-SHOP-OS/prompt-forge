@@ -9055,6 +9055,7 @@ export default function DashboardPage() {
                         </>
                       )
                       const panelClass = `flex flex-col items-center gap-1 rounded-xl bg-black/45 px-5 py-4 cursor-move touch-none select-none ring-1 transition ${contactDragging ? 'ring-emerald-400/70' : 'ring-white/0 hover:ring-white/40'}`
+                      const scale = contactOverlay.scale ?? 1
                       // Custom dragged position: absolutely centered at the stored point.
                       if (contactOverlay.offset) {
                         return (
@@ -9064,7 +9065,8 @@ export default function DashboardPage() {
                             style={{
                               left: `${contactOverlay.offset.x * 100}%`,
                               top: `${contactOverlay.offset.y * 100}%`,
-                              transform: 'translate(-50%, -50%)',
+                              transform: `translate(-50%, -50%) scale(${scale})`,
+                              transformOrigin: 'center',
                             }}
                           >
                             {content}
@@ -9082,7 +9084,11 @@ export default function DashboardPage() {
                                 : 'inset-x-0 bottom-0 items-end justify-center bg-gradient-to-b from-transparent to-black/65'
                           }`}
                         >
-                          <div onPointerDown={handleContactPointerDown} className={`pointer-events-auto ${panelClass}`}>
+                          <div
+                            onPointerDown={handleContactPointerDown}
+                            className={`pointer-events-auto ${panelClass}`}
+                            style={{ transform: `scale(${scale})`, transformOrigin: contactOverlay.position === 'top' ? 'top center' : contactOverlay.position === 'center' ? 'center' : 'bottom center' }}
+                          >
                             {content}
                           </div>
                         </div>
