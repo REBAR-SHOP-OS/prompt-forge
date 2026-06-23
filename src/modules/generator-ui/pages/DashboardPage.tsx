@@ -1870,17 +1870,20 @@ export default function DashboardPage() {
   // proportionally (matching the burn-in ratios in mergeVideos.ts), giving a
   // true WYSIWYG preview of the final film.
   const [previewVideoHeight, setPreviewVideoHeight] = useState(0)
-  useEffect(() => {
-    const el = contactBoxRef.current
-    if (!el || typeof ResizeObserver === 'undefined') return
+  const contactRoRef = useRef<ResizeObserver | null>(null)
+  const setContactBoxRef = useCallback((el: HTMLDivElement | null) => {
+    contactBoxRef.current = el
+    contactRoRef.current?.disconnect()
+    if (!el || typeof ResizeObserver === 'undefined') { setPreviewVideoHeight(0); return }
     const ro = new ResizeObserver((entries) => {
       const h = entries[0]?.contentRect.height ?? el.clientHeight
       if (h) setPreviewVideoHeight(h)
     })
     ro.observe(el)
+    contactRoRef.current = ro
     setPreviewVideoHeight(el.clientHeight)
-    return () => ro.disconnect()
-  }, [previewItem, contactActive])
+  }, [])
+
 
   // Drag the contact overlay anywhere on the preview video. Stores a normalized
   // 0–1 center position so it maps identically to the higher-res merge canvas.
