@@ -62,7 +62,7 @@ export function extractNarration(prompt: string | null | undefined): string[] {
   ]
     .map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join('|')
-  const speakerLabelRe = new RegExp(`^\\s*(?:${SPEAKER_LABELS})\\s*[:：]\\s*(.+)$`, 'gim')
+  const speakerLabelRe = new RegExp(`(?:^|[\\n.!?…])\\s*(?:${SPEAKER_LABELS})\\s*[:：]\\s*(.+)$`, 'gim')
   while ((lm = speakerLabelRe.exec(prompt)) !== null) {
     push(lm[1] ?? '')
   }
