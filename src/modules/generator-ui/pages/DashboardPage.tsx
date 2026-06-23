@@ -1822,7 +1822,29 @@ export default function DashboardPage() {
     panelColor: string
     /** Opacity of the backdrop panel (0–1). */
     panelOpacity: number
+    /** Hex color of the overlay text. */
+    textColor: string
+    /** CSS font-family stack used for the overlay text. */
+    fontFamily: string
   }
+  const DEFAULT_CONTACT_FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif"
+  const CONTACT_THEMES: {
+    id: string
+    label: string
+    swatch: string
+    textColor: string
+    fontFamily: string
+    panelEnabled: boolean
+    panelColor: string
+    panelOpacity: number
+  }[] = [
+    { id: 'classic', label: 'Classic', swatch: '#000000', textColor: '#ffffff', fontFamily: DEFAULT_CONTACT_FONT, panelEnabled: true, panelColor: '#000000', panelOpacity: 0.45 },
+    { id: 'minimal', label: 'Minimal', swatch: '#ffffff', textColor: '#ffffff', fontFamily: "'Outfit', system-ui, sans-serif", panelEnabled: false, panelColor: '#000000', panelOpacity: 0.45 },
+    { id: 'cinematic', label: 'Cinematic', swatch: '#f5e6c8', textColor: '#f5e6c8', fontFamily: "'Playfair Display', Georgia, serif", panelEnabled: true, panelColor: '#000000', panelOpacity: 0.6 },
+    { id: 'neon', label: 'Neon', swatch: '#22d3ee', textColor: '#22d3ee', fontFamily: "'Space Grotesk', system-ui, sans-serif", panelEnabled: true, panelColor: '#000000', panelOpacity: 0.55 },
+    { id: 'sunlight', label: 'Sunlight', swatch: '#111111', textColor: '#111111', fontFamily: "'Outfit', system-ui, sans-serif", panelEnabled: true, panelColor: '#ffffff', panelOpacity: 0.7 },
+    { id: 'gold', label: 'Gold Luxe', swatch: '#e8b923', textColor: '#e8b923', fontFamily: "'Playfair Display', Georgia, serif", panelEnabled: true, panelColor: '#000000', panelOpacity: 0.5 },
+  ]
   const emptyContact = (): ContactOverlay => ({
     website: '',
     phone: '',
@@ -1839,6 +1861,8 @@ export default function DashboardPage() {
     panelEnabled: true,
     panelColor: '#000000',
     panelOpacity: 0.45,
+    textColor: '#ffffff',
+    fontFamily: DEFAULT_CONTACT_FONT,
   })
 
   const [contactOverlay, setContactOverlay] = useState<ContactOverlay>(emptyContact)
@@ -6743,7 +6767,7 @@ export default function DashboardPage() {
           transitionsForMerge,
           abortController.signal,
           contactActive
-            ? { lines: contactLines, position: contactOverlay.position, offset: contactOverlay.offset ?? undefined, logoUrl: contactLogoActive ? contactOverlay.logoUrl : undefined, scale: contactOverlay.scale ?? 1, panelEnabled: contactOverlay.panelEnabled, panelColor: contactOverlay.panelColor, panelOpacity: contactOverlay.panelOpacity }
+            ? { lines: contactLines, position: contactOverlay.position, offset: contactOverlay.offset ?? undefined, logoUrl: contactLogoActive ? contactOverlay.logoUrl : undefined, scale: contactOverlay.scale ?? 1, panelEnabled: contactOverlay.panelEnabled, panelColor: contactOverlay.panelColor, panelOpacity: contactOverlay.panelOpacity, textColor: contactOverlay.textColor, fontFamily: contactOverlay.fontFamily }
             : undefined,
         ),
 
@@ -9125,8 +9149,8 @@ export default function DashboardPage() {
 
                             <span
                               key={i}
-                              className="truncate font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
-                              style={{ fontSize, lineHeight: `${lineHeight}px` }}
+                              className="truncate font-semibold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
+                              style={{ fontSize, lineHeight: `${lineHeight}px`, color: contactOverlay.textColor ?? '#ffffff', fontFamily: contactOverlay.fontFamily || undefined }}
                             >
                               {line}
                             </span>
@@ -10847,6 +10871,46 @@ export default function DashboardPage() {
                     />
                   </div>
                 </div>
+
+                <div className="mt-3 space-y-2">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Theme</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {CONTACT_THEMES.map((theme) => {
+                      const active =
+                        (contactOverlay.textColor ?? '#ffffff').toLowerCase() === theme.textColor.toLowerCase() &&
+                        contactOverlay.fontFamily === theme.fontFamily &&
+                        contactOverlay.panelEnabled === theme.panelEnabled &&
+                        (contactOverlay.panelColor ?? '#000000').toLowerCase() === theme.panelColor.toLowerCase() &&
+                        (contactOverlay.panelOpacity ?? 0.45) === theme.panelOpacity
+                      return (
+                        <button
+                          key={theme.id}
+                          type="button"
+                          onClick={() => updateContact({
+                            textColor: theme.textColor,
+                            fontFamily: theme.fontFamily,
+                            panelEnabled: theme.panelEnabled,
+                            panelColor: theme.panelColor,
+                            panelOpacity: theme.panelOpacity,
+                          })}
+                          className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${
+                            active
+                              ? 'border-emerald-400/60 bg-emerald-500/10 text-emerald-100'
+                              : 'border-white/15 bg-white/[0.03] text-zinc-300 hover:border-white/30'
+                          }`}
+                          style={{ fontFamily: theme.fontFamily }}
+                        >
+                          <span
+                            className="h-3 w-3 shrink-0 rounded-full border border-white/30"
+                            style={{ backgroundColor: theme.swatch }}
+                          />
+                          <span className="truncate">{theme.label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
 
                 <div className="mt-3 space-y-2">
                   <label className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Logo</label>

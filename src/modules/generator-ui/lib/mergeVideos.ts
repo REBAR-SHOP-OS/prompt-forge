@@ -120,6 +120,10 @@ export interface MergeOverlayOptions {
   panelColor?: string
   /** Opacity of the backdrop panel (0–1). */
   panelOpacity?: number
+  /** Hex color of the overlay text. */
+  textColor?: string
+  /** CSS font-family stack used for the overlay text. */
+  fontFamily?: string
 }
 
 
@@ -318,6 +322,8 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
   const panelColor = overlay.panelColor ?? '#000000'
   const panelOpacity = typeof overlay.panelOpacity === 'number' ? overlay.panelOpacity : 0.45
   const panelFill = overlayHexToRgba(panelColor, panelOpacity)
+  const textColor = overlay.textColor ?? '#ffffff'
+  const fontFamily = overlay.fontFamily || "system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif"
   const scale = Math.min(2, Math.max(0.5, overlay.scale ?? 1))
   const fontSize = Math.max(14, Math.round(ch * 0.032 * scale))
   const lineGap = Math.round(fontSize * 0.45)
@@ -340,7 +346,7 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
 
   ctx.save()
   ctx.textBaseline = 'top'
-  ctx.font = `600 ${fontSize}px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif`
+  ctx.font = `600 ${fontSize}px ${fontFamily}`
 
   // Custom dragged position: a centered translucent panel anchored at the
   // stored normalized point, clamped so it stays fully on-screen.
@@ -366,7 +372,7 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
     ctx.shadowColor = 'rgba(0,0,0,0.85)'
     ctx.shadowBlur = Math.round(fontSize * 0.25)
     ctx.shadowOffsetY = 1
-    ctx.fillStyle = '#ffffff'
+    ctx.fillStyle = textColor
     ctx.textAlign = 'center'
     for (const line of lines) {
       ctx.fillText(line, Math.round(cx), y, panelW - padX)
@@ -397,7 +403,7 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
     ctx.shadowColor = 'rgba(0,0,0,0.85)'
     ctx.shadowBlur = Math.round(fontSize * 0.25)
     ctx.shadowOffsetY = 1
-    ctx.fillStyle = '#ffffff'
+    ctx.fillStyle = textColor
     ctx.textAlign = 'center'
     for (const line of lines) {
       ctx.fillText(line, Math.round(cw / 2), y, panelW - padX)
@@ -433,7 +439,7 @@ function drawOverlay(ctx: CanvasRenderingContext2D, cw: number, ch: number) {
   ctx.shadowBlur = Math.round(fontSize * 0.25)
   ctx.shadowOffsetX = 0
   ctx.shadowOffsetY = 1
-  ctx.fillStyle = '#ffffff'
+  ctx.fillStyle = textColor
   for (const line of lines) {
     ctx.fillText(line, padX, y, cw - padX * 2)
     y += lineHeight
@@ -617,7 +623,7 @@ export async function mergeVideoUrls(
   const hasText = !!overlay && overlay.lines.some((l) => l.trim())
   const hasLogo = !!overlay?.logoUrl
   activeOverlay = overlay && (hasText || hasLogo)
-    ? { lines: overlay.lines, position: overlay.position ?? 'bottom', offset: overlay.offset, logoUrl: overlay.logoUrl, scale: overlay.scale ?? 1, panelEnabled: overlay.panelEnabled, panelColor: overlay.panelColor, panelOpacity: overlay.panelOpacity }
+    ? { lines: overlay.lines, position: overlay.position ?? 'bottom', offset: overlay.offset, logoUrl: overlay.logoUrl, scale: overlay.scale ?? 1, panelEnabled: overlay.panelEnabled, panelColor: overlay.panelColor, panelOpacity: overlay.panelOpacity, textColor: overlay.textColor, fontFamily: overlay.fontFamily }
     : null
   // Preload the logo image so drawOverlay (sync) can paint it on every frame.
   activeLogo = null
