@@ -387,6 +387,77 @@ async function signUserImageRows<T extends { storage_path: string }>(rows: T[]):
 }
 
 /**
+ * Renders a private-bucket image with a self-healing fallback: if the <img>
+ * fails to load (stale/unsigned URL), it re-signs once from the source path.
+ * If it still fails (object deleted from storage), a clean placeholder is
+ * shown instead of the browser's broken-image glyph + bare alt text.
+ */
+function UserImageView({
+  src,
+  alt,
+  className,
+  imageKey,
+  loading,
+}: {
+  src: string
+  alt: string
+  className?: string
+  imageKey?: string
+  loading?: 'lazy' | 'eager'
+}) {
+  const [resolved, setResolved] = useState(src)
+  const [broken, setBroken] = useState(false)
+  const retriedRef = useRef(false)
+
+  useEffect(() => {
+    setResolved(src)
+    setBroken(false)
+    retriedRef.current = false
+  }, [src])
+
+  const handleError = useCallback(() => {
+    if (retriedRef.current) {
+      setBroken(true)
+      return
+    }
+    retriedRef.current = true
+    let active = true
+    signUserImageUrl(src)
+      .then((signed) => {
+        if (!active) return
+        if (signed && signed !== resolved) setResolved(signed)
+        else setBroken(true)
+      })
+      .catch(() => {
+        if (active) setBroken(true)
+      })
+    return () => {
+      active = false
+    }
+  }, [src, resolved])
+
+  if (broken) {
+    return (
+      <div className={`flex flex-col items-center justify-center gap-2 bg-[#0b0d10] text-center ${className ?? ''}`}>
+        <ImageIcon className="h-7 w-7 text-zinc-600" aria-hidden="true" />
+        <span className="px-2 text-xs text-zinc-500">تصویر در دسترس نیست</span>
+      </div>
+    )
+  }
+
+  return (
+    <img
+      key={imageKey ?? src}
+      src={resolved}
+      alt={alt}
+      className={className}
+      loading={loading}
+      onError={handleError}
+    />
+  )
+}
+
+/**
  * The `wan-frames` bucket is PRIVATE, so a public URL returns 400 in an <img>.
  * Resolve a year-long signed URL for display; fall back to the raw value.
  */
