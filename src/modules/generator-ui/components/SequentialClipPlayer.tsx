@@ -231,6 +231,27 @@ export function SequentialClipPlayer({
     current && current.kind === 'video' ? current.src : null,
   )
 
+  // Warm the playable-URL cache for EVERY video clip up front so that when a
+  // clip becomes active its (proxied / signed) URL is already resolved — this
+  // removes the spinner gap at each clip boundary on the first play-through.
+  const allVideoSrcs = useMemo(
+    () => clips.map((c) => (c.kind === 'video' ? c.src : null)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [clips.map((c) => `${c.kind}:${c.id}:${c.src}`).join('|')],
+  )
+  const { urls: resolvedAllSrcs } = usePlayableVideoUrls(allVideoSrcs)
+
+  // Look-ahead: resolved URL of the NEXT video clip, used to pre-buffer its
+  // bytes in a hidden <video> so the swap at the clip boundary is instant.
+  const nextIndex = clips.length > 0 ? (index + 1) % clips.length : 0
+  const nextClip = clips[nextIndex] ?? null
+  const nextResolvedSrc =
+    nextClip && nextClip.kind === 'video' && nextIndex !== index
+      ? resolvedAllSrcs[nextIndex] ?? null
+      : null
+
+
+
   // Reset the per-clip error guard whenever the active clip changes.
   useEffect(() => {
     erroredOnceRef.current = null
