@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
       .replace(/https?:\/\/\S+/gi, ' ')
       .replace(/\s+/g, ' ')
       .trim()
-      .slice(0, 600)
+      .slice(0, 2000)
     const hasCompany = cleanedBusinessInfo.length > 0
 
     // Optional user-provided narration directions (tone/style/emphasis).
@@ -85,12 +85,18 @@ Deno.serve(async (req) => {
     const hasInstructions = cleanedNarrationInstructions.length > 0
 
     const systemPrompt =
-      'You are a professional advertising copywriter. You write punchy, ' +
-      'high-energy, persuasive voiceover scripts that a narrator can read ' +
-      'aloud naturally. The tone is ALWAYS advertising / commercial. ' +
+      'You are a professional advertising copywriter who writes voiceover ' +
+      'scripts that sound like a real, warm human talking — not a robot and ' +
+      'not a list of features. Write punchy, persuasive, natural spoken ' +
+      'English with a smooth conversational rhythm that one narrator can read ' +
+      'aloud in a single take. The tone is ALWAYS advertising / commercial. ' +
+      'Ground the whole script in the brand: reflect the company\'s identity, ' +
+      'target audience, values, and the way the business talks about itself — ' +
+      'do not just tack the brand onto the end. Introduce and sell the product ' +
+      'inside that brand context. ' +
       'Output ONLY the spoken words in English — no scene directions, no stage ' +
       'notes, no camera notes, no labels, no quotation marks, no markdown, no ' +
-      'lists. Just clean sentences ready to be spoken. ' +
+      'lists, no bullet points. Just clean, flowing sentences ready to be spoken. ' +
       'CRITICAL: Never include any numbers, digits, product codes, SKUs, model ' +
       'numbers, dimensions, prices, percentages, phone numbers, or web ' +
       'addresses — not as numerals and not ' +
@@ -98,15 +104,20 @@ Deno.serve(async (req) => {
       'or "008"). Refer to the product only by its descriptive name.'
 
     const companyClause = hasCompany
-      ? `\nThe video is produced by this company/brand. Company information: "${cleanedBusinessInfo}".\n` +
-        `End the voiceover with ONE short, natural promotional sentence about the company ` +
-        `(mention the company/brand name and its value), spoken right after the product call to action. ` +
-        `Do NOT read out any phone numbers, prices, or website addresses.`
+      ? `\nThis video is produced by the following business — treat this as the ` +
+        `primary context for the ENTIRE narration, not just the ending. ` +
+        `Business information: "${cleanedBusinessInfo}".\n` +
+        `Use it to shape the brand voice, who you are speaking to, the values you ` +
+        `emphasize, and how the product fits this business. Weave the brand naturally ` +
+        `throughout, and close with ONE short, natural promotional sentence about the ` +
+        `company (mention the brand name and its value) spoken right after the product ` +
+        `call to action. Do NOT read out any phone numbers, prices, or website addresses.`
       : ''
 
     const instructionsClause = hasInstructions
-      ? `\nFollow these narration directions from the business owner (apply them to tone, style, ` +
-        `pacing, and emphasis, but never break the numbers/codes rule above): "${cleanedNarrationInstructions}".`
+      ? `\nTOP-PRIORITY directions from the business owner — follow these closely for ` +
+        `tone, style, pacing, emphasis, and personality (but never break the ` +
+        `numbers/codes rule above): "${cleanedNarrationInstructions}".`
       : ''
 
 
@@ -114,9 +125,9 @@ Deno.serve(async (req) => {
       `Write an English advertising voiceover for the product "${productName}".\n` +
       `Target spoken duration: about ${durationSec} seconds ` +
       `(roughly ${wordBudget} words — stay close to this length, including any company line).\n` +
-      `Make it persuasive, vivid, and end with a short memorable call to action. ` +
-      `Use ONLY the product name "${productName}" — do not invent or mention any ` +
-      `numbers, codes, or model identifiers.` +
+      `Make it persuasive, vivid, and human-sounding, and end with a short memorable ` +
+      `call to action. Use ONLY the product name "${productName}" — do not invent or ` +
+      `mention any numbers, codes, or model identifiers.` +
       companyClause +
       instructionsClause +
       `\nReturn only the narration text.`
