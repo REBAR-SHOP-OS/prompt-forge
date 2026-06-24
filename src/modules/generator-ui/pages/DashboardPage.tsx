@@ -60,6 +60,7 @@ import {
   Contact,
   Eye,
   EyeOff,
+  Building2,
   X
 } from 'lucide-react'
 import {
@@ -138,6 +139,7 @@ import ImageReframeDialog from '@/modules/generator-ui/components/ImageReframeDi
 import AiImageDialog from '@/modules/generator-ui/components/AiImageDialog'
 import ScenarioWriterDialog from '@/modules/generator-ui/components/ScenarioWriterDialog'
 import ProductAdDialog from '@/modules/generator-ui/components/ProductAdDialog'
+import { BusinessProfileDialog } from '@/modules/generator-ui/components/BusinessProfileDialog'
 import { TranscriptPanel } from '@/modules/generator-ui/components/TranscriptPanel'
 import { NarrationDialog } from '@/modules/generator-ui/components/NarrationDialog'
 import { extractNarration } from '@/modules/generator-ui/lib/narration'
@@ -1528,6 +1530,8 @@ export default function DashboardPage() {
   }
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [hasOccasionToday, setHasOccasionToday] = useState(false)
+  const [isBusinessOpen, setIsBusinessOpen] = useState(false)
+  const [hasBusinessInfo, setHasBusinessInfo] = useState<boolean | null>(null)
 
   // Deterministic daily check: is today a curated MAJOR occasion?
   // No AI / network — avoids false positives from hallucinated dates.
@@ -1662,6 +1666,29 @@ export default function DashboardPage() {
   // `lockedProjectRatio` is kept only for Final Film merge/preview consistency,
   // not to override the user's per-clip selection.
   const userId = session?.user?.id ?? null
+
+  // Check whether the user has saved their business profile, to flag the
+  // "About your business (required)" button when it's still empty.
+  useEffect(() => {
+    let cancelled = false
+    if (!userId) {
+      setHasBusinessInfo(null)
+      return
+    }
+    supabase
+      .from('generator_business_profiles')
+      .select('business_info')
+      .eq('user_id', userId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return
+        setHasBusinessInfo(Boolean(data?.business_info?.trim()))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
+
 
   // Load persisted copyright verdicts so Library shield icons show the right
   // color (green/red/amber) immediately, surviving reloads.
@@ -7610,7 +7637,44 @@ export default function DashboardPage() {
         </button>
 
         <UsageStatsPopover triggerClassName="grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100" />
+
+        <button
+          type="button"
+          aria-label="About your business (required)"
+          title="About your business (required)"
+          onClick={() => { setIsBusinessOpen(true) }}
+          className={`group relative flex h-9 items-center gap-2 rounded-md border px-2.5 transition ${
+            hasBusinessInfo === false
+              ? 'border-amber-400/40 bg-amber-400/10 hover:bg-amber-400/15'
+              : 'border-transparent text-zinc-200/80 hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100'
+          }`}
+        >
+          <Building2
+            className={`h-[18px] w-[18px] ${hasBusinessInfo === false ? 'text-amber-300' : ''}`}
+            aria-hidden="true"
+          />
+          <span
+            className={`text-[11px] font-medium uppercase tracking-[0.12em] ${
+              hasBusinessInfo === false ? 'text-amber-300' : 'text-zinc-300'
+            }`}
+          >
+            Your business
+          </span>
+          {hasBusinessInfo === false && (
+            <span className="absolute -right-1 -top-1 inline-block h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-[#0b0c0e]" aria-hidden="true" />
+          )}
+        </button>
       </div>
+
+      <BusinessProfileDialog
+        open={isBusinessOpen}
+        onOpenChange={setIsBusinessOpen}
+        userId={userId}
+        onSaved={(filled) => setHasBusinessInfo(filled)}
+      />
+
+
+
 
 
 

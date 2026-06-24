@@ -174,22 +174,24 @@ export function VoiceoverDialog({
       // Load the user's saved company/brand info so the narration can close
       // with a short promotional line about the company.
       let businessInfo = ''
+      let narrationInstructions = ''
       try {
         const { data: authData } = await supabase.auth.getUser()
         const uid = authData?.user?.id
         if (uid) {
           const { data: profile } = await supabase
             .from('generator_business_profiles')
-            .select('business_info')
+            .select('business_info, narration_instructions')
             .eq('user_id', uid)
             .maybeSingle()
           businessInfo = (profile?.business_info ?? '').trim()
+          narrationInstructions = ((profile as { narration_instructions?: string | null })?.narration_instructions ?? '').trim()
         }
       } catch {
         // Non-fatal: fall back to product-only narration.
       }
       const { data, error } = await supabase.functions.invoke('ad-narration', {
-        body: { productName: product.name, durationSec: secs, businessInfo },
+        body: { productName: product.name, durationSec: secs, businessInfo, narrationInstructions },
       })
       if (error) throw error
       const narration: string | undefined = data?.narration

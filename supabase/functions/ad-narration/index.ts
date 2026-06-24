@@ -8,6 +8,7 @@ interface Body {
   productName?: string
   durationSec?: number
   businessInfo?: string
+  narrationInstructions?: string
 }
 
 Deno.serve(async (req) => {
@@ -76,6 +77,13 @@ Deno.serve(async (req) => {
       .slice(0, 600)
     const hasCompany = cleanedBusinessInfo.length > 0
 
+    // Optional user-provided narration directions (tone/style/emphasis).
+    const cleanedNarrationInstructions = (body.narrationInstructions || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 600)
+    const hasInstructions = cleanedNarrationInstructions.length > 0
+
     const systemPrompt =
       'You are a professional advertising copywriter. You write punchy, ' +
       'high-energy, persuasive voiceover scripts that a narrator can read ' +
@@ -96,6 +104,12 @@ Deno.serve(async (req) => {
         `Do NOT read out any phone numbers, prices, or website addresses.`
       : ''
 
+    const instructionsClause = hasInstructions
+      ? `\nFollow these narration directions from the business owner (apply them to tone, style, ` +
+        `pacing, and emphasis, but never break the numbers/codes rule above): "${cleanedNarrationInstructions}".`
+      : ''
+
+
     const userPrompt =
       `Write an English advertising voiceover for the product "${productName}".\n` +
       `Target spoken duration: about ${durationSec} seconds ` +
@@ -104,6 +118,7 @@ Deno.serve(async (req) => {
       `Use ONLY the product name "${productName}" — do not invent or mention any ` +
       `numbers, codes, or model identifiers.` +
       companyClause +
+      instructionsClause +
       `\nReturn only the narration text.`
 
     const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
