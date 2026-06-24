@@ -1140,7 +1140,7 @@ export function VoiceoverDialog({
                       <button
                         type="button"
                         aria-label="Check audio for errors"
-                        title="بررسی سلامت و تلفظ صدا"
+                        title="Check audio health & pronunciation"
                         className={`grid h-6 w-6 place-items-center rounded-full transition disabled:opacity-50 ${
                           checkResult?.status === 'error'
                             ? 'text-red-500 hover:bg-red-500/10 hover:text-red-400'
@@ -1158,11 +1158,11 @@ export function VoiceoverDialog({
                         )}
                       </button>
                     </PopoverTrigger>
-                    <PopoverContent align="end" className="w-72 border-white/10 bg-black text-zinc-100">
+                    <PopoverContent align="end" className="w-80 border-white/10 bg-black text-zinc-100">
                       <div className="space-y-2.5">
-                        <p className="text-xs font-semibold text-zinc-200">بررسی سلامت و تلفظ صدا</p>
+                        <p className="text-xs font-semibold text-zinc-200">Audio health &amp; pronunciation check</p>
                         {checkResult ? (
-                          <div className="space-y-2">
+                          <div className="space-y-2.5">
                             <p
                               className={`text-[11px] font-medium ${
                                 checkResult.status === 'error'
@@ -1175,18 +1175,42 @@ export function VoiceoverDialog({
                               {checkResult.summary}
                             </p>
                             {checkResult.issues.length > 0 ? (
-                              <ul className="list-disc space-y-1 pr-4 text-[11px] leading-4 text-zinc-400">
+                              <ul className="list-disc space-y-1 pl-4 text-[11px] leading-4 text-zinc-400">
                                 {checkResult.issues.map((issue, i) => (
                                   <li key={i}>{issue}</li>
                                 ))}
                               </ul>
                             ) : (
-                              <p className="text-[11px] text-zinc-500">هیچ ایرادی یافت نشد.</p>
+                              <p className="text-[11px] text-zinc-500">No issues found.</p>
                             )}
+                            {checkResult.diff && checkResult.diff.some((t) => !t.ok) ? (
+                              <div className="space-y-1">
+                                <p className="text-[10px] uppercase tracking-wider text-zinc-500">
+                                  Script vs. spoken
+                                </p>
+                                <p className="max-h-28 overflow-y-auto rounded-md border border-white/10 bg-white/[0.03] p-2 text-[11px] leading-5">
+                                  {checkResult.diff.map((t, i) => (
+                                    <span
+                                      key={i}
+                                      className={
+                                        t.ok
+                                          ? 'text-zinc-300'
+                                          : 'rounded bg-red-500/20 text-red-300 line-through decoration-red-400/60'
+                                      }
+                                    >
+                                      {t.word}{' '}
+                                    </span>
+                                  ))}
+                                </p>
+                                <p className="text-[10px] text-zinc-500">
+                                  Highlighted words were skipped or mispronounced.
+                                </p>
+                              </div>
+                            ) : null}
                           </div>
                         ) : (
                           <p className="text-[11px] leading-4 text-zinc-500">
-                            برای بررسی سکوت، اعوجاج و تلفظ نادرست، دکمه‌ی زیر را بزنید.
+                            Check silence, distortion, and pronunciation against the script. Press the button below.
                           </p>
                         )}
                         <Button
@@ -1199,18 +1223,19 @@ export function VoiceoverDialog({
                           {checking ? (
                             <>
                               <LoaderCircle className="mr-2 h-3.5 w-3.5 animate-spin" />
-                              در حال بررسی…
+                              Checking…
                             </>
                           ) : (
                             <>
                               <ShieldCheck className="mr-2 h-3.5 w-3.5" />
-                              بررسی صدا
+                              Check audio
                             </>
                           )}
                         </Button>
                       </div>
                     </PopoverContent>
                   </Popover>
+
 
                   {onClearVoiceover ? (
                     <button
