@@ -77,6 +77,13 @@ Deno.serve(async (req) => {
       .slice(0, 600)
     const hasCompany = cleanedBusinessInfo.length > 0
 
+    // Optional user-provided narration directions (tone/style/emphasis).
+    const cleanedNarrationInstructions = (body.narrationInstructions || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 600)
+    const hasInstructions = cleanedNarrationInstructions.length > 0
+
     const systemPrompt =
       'You are a professional advertising copywriter. You write punchy, ' +
       'high-energy, persuasive voiceover scripts that a narrator can read ' +
@@ -96,6 +103,12 @@ Deno.serve(async (req) => {
         `(mention the company/brand name and its value), spoken right after the product call to action. ` +
         `Do NOT read out any phone numbers, prices, or website addresses.`
       : ''
+
+    const instructionsClause = hasInstructions
+      ? `\nFollow these narration directions from the business owner (apply them to tone, style, ` +
+        `pacing, and emphasis, but never break the numbers/codes rule above): "${cleanedNarrationInstructions}".`
+      : ''
+
 
     const userPrompt =
       `Write an English advertising voiceover for the product "${productName}".\n` +
