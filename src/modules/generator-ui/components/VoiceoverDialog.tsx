@@ -150,6 +150,8 @@ export function VoiceoverDialog({
   const [isGenerating, setIsGenerating] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [checking, setChecking] = useState(false)
+  const [checkResult, setCheckResult] = useState<AudioCheckResult | null>(null)
+  const [checkOpen, setCheckOpen] = useState(false)
   const [playingSampleId, setPlayingSampleId] = useState<string | null>(null)
 
   // --- Product advertising-narration generator ---
