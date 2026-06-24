@@ -176,6 +176,8 @@ export function VoiceoverDialog({
   const [customDuration, setCustomDuration] = useState<string>('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  // The exact text the current voiceover was generated from (comparison source).
+  const [generatedText, setGeneratedText] = useState('')
   const [checking, setChecking] = useState(false)
   const [checkResult, setCheckResult] = useState<AudioCheckResult | null>(null)
   const [checkOpen, setCheckOpen] = useState(false)
