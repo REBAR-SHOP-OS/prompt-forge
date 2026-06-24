@@ -657,8 +657,19 @@ export async function mergeVideoUrls(
 
   const totalClips = clipDefs.length
   const first = await loadClip(clipDefs[0], captureClipAudio, `#1 of ${totalClips}`)
-  const width = Math.max(640, Math.floor(first.width || 1280))
-  const height = Math.max(360, Math.floor(first.height || 720))
+  // Cap the recording canvas so the long side never exceeds 1080px. Real-time
+  // encoding of larger frames (e.g. 1440p+) saturates the encoder and bakes
+  // stutter into the output. We keep the source aspect ratio exactly, so clips
+  // still fit via drawContain with no distortion.
+  const MAX_LONG_SIDE = 1080
+  let width = Math.max(640, Math.floor(first.width || 1280))
+  let height = Math.max(360, Math.floor(first.height || 720))
+  const longSide = Math.max(width, height)
+  if (longSide > MAX_LONG_SIDE) {
+    const s = MAX_LONG_SIDE / longSide
+    width = Math.max(2, Math.round((width * s) / 2) * 2)
+    height = Math.max(2, Math.round((height * s) / 2) * 2)
+  }
 
   const canvas = document.createElement('canvas')
   canvas.width = width
