@@ -2871,6 +2871,17 @@ export default function DashboardPage() {
   const [musicVolume, setMusicVolume] = useState<number>(1)
   const [isMusicDialogOpen, setIsMusicDialogOpen] = useState(false)
   const [isVoiceoverOpen, setIsVoiceoverOpen] = useState(false)
+  // Saved products live in `archiveProductImages`, which is normally filled when
+  // the Archive dialog opens. Users often open Voiceover → Product narration
+  // directly, so load them on demand when the Voiceover dialog opens.
+  useEffect(() => {
+    if (isVoiceoverOpen && archiveProductImages.length === 0) {
+      void loadArchive()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isVoiceoverOpen])
+
+
   
   const [isReframeOpen, setIsReframeOpen] = useState(false)
   const [voiceoverUrl, setVoiceoverUrl] = useState<string | null>(null)
