@@ -148,9 +148,14 @@ function pickMimeType(): string {
   // downstream tools — users were getting "downloaded final film won't play"
   // reports. WebM (VP9/VP8 + Opus) from MediaRecorder is well-formed and plays
   // in VLC, modern desktop players, browsers, Android, Telegram, Discord, etc.
+  // VP8 is preferred over VP9 for REAL-TIME canvas capture. Chromium's
+  // software VP9 encoder is far heavier and routinely drops/duplicates frames
+  // during live MediaRecorder capture of 1080p footage, which bakes visible
+  // stutter into the Final Film. VP8 encodes fast enough to keep up in real
+  // time, eliminating that jitter. Both are well-formed WebM that play widely.
   const candidates = [
-    'video/webm;codecs=vp9,opus',
     'video/webm;codecs=vp8,opus',
+    'video/webm;codecs=vp9,opus',
     'video/webm;codecs=opus',
     'video/webm',
   ]

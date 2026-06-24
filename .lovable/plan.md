@@ -1,31 +1,42 @@
-## Goal
-When a user generates a **Product narration** in the Voiceover dialog, the script should end with a short promotional line about the company, using the business info the user already saved.
+# رفع لگ/پرش ویدئوی نهایی (Final Film و فایل دانلودی)
 
-## Where the data lives
-The user's company details are stored in the `generator_business_profiles` table:
-- `business_info` (free-text description of the company / brand)
-- `contact_website`, `contact_phone`, `contact_address`, `contact_logo_url`
+## مشکل چیست
+ویدئوی نهایی با روش «پخش زنده کلیپ‌ها روی canvas + ضبط همزمان با MediaRecorder» ساخته می‌شود (`src/modules/generator-ui/lib/mergeVideos.ts`). چون لگ در فایل دانلودشده هم وجود دارد، پرش داخل خود فایل ضبط‌شده «پخته» شده است، نه در پخش.
 
-The narration is created by the `ad-narration` edge function, which today receives only `{ productName, durationSec }` and never sees any company info.
+## علت ریشه‌ای (بررسی‌شده در کد)
+ضبط، همزمان (real-time) است؛ یعنی سرعت انکود باید با سرعت پخش برابر بماند. سه عامل در کد فعلی باعث می‌شوند مرورگر کروم نتواند هم‌گام بماند و فریم‌ها به‌صورت نامنظم بیفتند/تکرار شوند (همان پرش در کل ویدئو):
 
-## Changes
+1. **کدک VP9 در اولویت است** (`pickMimeType`). انکودر نرم‌افزاری VP9 در MediaRecorder برای ضبط زنده‌ی ۱۰۸۰p بسیار سنگین است و فریم می‌اندازد. VP8 برای ضبط بلادرنگ به‌مراتب سبک‌تر و پایدارتر است.
+2. **بیت‌ریت بیش از حد بالا**: `videoBitsPerSecond` با کف ۸Mbps تا سقف ۴۰Mbps تنظیم شده (خط ۹۷۴–۹۷۵). این مقدار برای انکود زنده روی CPU خیلی زیاد است و انکودر را اشباع می‌کند → افت فریم.
+3. **کادنس فریم نامنظم**: `canvas.captureStream(30)` نمونه‌برداری را به مرورگر می‌سپارد، در حالی‌که نقاشی با `requestVideoFrameCallback` به‌صورت انفجاری انجام می‌شود. عدم تطابق این دو، جیتر تولید می‌کند.
 
-### 1. Frontend — `VoiceoverDialog.tsx` (`runNarration`)
-- Before calling `ad-narration`, load the current user's `business_info` (and optionally the company/brand name from it) from `generator_business_profiles` (same query pattern already used in `ProductAdDialog.tsx`).
-- Pass it to the function: `body: { productName, durationSec, businessInfo }`.
-- This stays purely in presentation/data-fetch code.
+## راه‌حل (کم‌ریسک، اصولی، داخل همان معماری فعلی)
 
-### 2. Edge function — `supabase/functions/ad-narration/index.ts`
-- Accept an optional `businessInfo` string in the request body.
-- When present, extend the prompt so the narration **closes with one short promotional sentence about the company** (a branded call-to-action naming the company/brand), right after the product copy.
-- Keep the existing rule that no numbers/codes/SKUs are spoken. Phone numbers, prices and website URLs from the business info will NOT be read aloud — the company promo will reference the brand/company by name and value proposition only (contact details continue to appear via the on-video overlay). 
-- Keep total length aligned with the requested `durationSec` (the closing company line is part of the same word budget).
-- If `businessInfo` is empty/missing, behavior is unchanged (product-only narration).
+### ۱) اولویت کدک: VP8 قبل از VP9 — `mergeVideos.ts` تابع `pickMimeType`
+ترتیب کاندیداها به‌گونه‌ای تغییر می‌کند که `video/webm;codecs=vp8,opus` اول امتحان شود و VP9 فقط در صورت نبود VP8 استفاده گردد. این مهم‌ترین تغییر برای پایداری ضبط زنده است.
 
-## Notes / decisions for you
-- The spoken company promo will mention the **company/brand name and message**, but not phone numbers, website URLs, or prices, because the function intentionally never voices digits/codes. The contact details remain as the burned-in overlay on the Final Film. If you instead want the website/phone spoken, that's a separate change to the no-numbers rule — tell me and I'll include it.
+### ۲) بیت‌ریت پایدار — `mergeVideos.ts` خطوط ۹۷۴–۹۷۵
+ضریب از `0.18` به حدود `0.1` bits/px/frame و بازه‌ی clamp از (۸M..۴۰M) به یک بازه‌ی قابل‌انکودِ بلادرنگ مثل (۳M..۱۲M) تغییر می‌کند. کیفیت همچنان بالا می‌ماند ولی انکودر دیگر اشباع نمی‌شود.
 
-## Verification
-- Typecheck clean.
-- With a saved company profile, generate a Product narration → the text ends with a branded company promo line.
-- With no company profile saved → narration is product-only (no regression).
+### ۳) کادنس فریم یکنواخت — حلقه‌ی نقاشی در `mergeVideos.ts`
+به‌جای واگذاری نرخ نمونه‌برداری به مرورگر، از `canvas.captureStream(0)` به‌همراه فراخوانی صریح `videoTrack.requestFrame()` بعد از هر نقاشی، با یک درایور زمانی ثابت ~۳۰fps استفاده می‌شود تا فریم‌ها با فاصله‌ی یکنواخت وارد ضبط شوند (حذف جیتر ناشی از rVFC انفجاری). این تغییر به‌صورت ایمن انجام می‌شود: اگر `requestFrame` در دسترس نبود، به رفتار فعلی `captureStream(fps)` برمی‌گردیم (fallback).
+
+### ۴) سقف‌گذاری امن ابعاد بوم (اختیاری ولی مؤثر)
+اگر ضلع بزرگ بوم از ۱۰۸۰px بیشتر شد، بوم ضبط تا ۱۰۸۰px کوچک می‌شود (با حفظ نسبت تصویر). این کار بار انکود زنده را کم می‌کند بدون افت محسوس کیفیت روی موبایل/وب. کلیپ‌ها همچنان با `drawContain` داخل بوم می‌نشینند.
+
+## آنچه تغییر نمی‌کند (حفظ پایداری)
+- منطق ترنزیشن‌ها، صدا/موسیقی/نریشن، overlay تماس و watchdogهای ضدهنگ دست‌نخورده می‌مانند.
+- خروجی همچنان WebM پایدار است (همان فرمت فعلی؛ سازگاری دانلود حفظ می‌شود).
+- مسیر ffmpeg.wasm که قبلاً حذف شده، برنمی‌گردد.
+
+## فایل‌های تغییرکننده
+- `src/modules/generator-ui/lib/mergeVideos.ts` (تنها فایل اصلی)
+
+## اعتبارسنجی
+1. `bun run tsc --noEmit` تمیز باشد.
+2. ساخت Final Film با ۲ تا ۳ کلیپ متصل و یک ترنزیشن؛ سپس دانلود و پخش فایل برای تأیید روان بودن کل ویدئو.
+3. بررسی console برای نبود خطای recorder و تأیید این‌که خروجی خالی نیست.
+4. تست با حالت دارای موسیقی/نریشن برای اطمینان از حفظ هم‌گامی صدا و تصویر.
+
+## ریسک باقیمانده
+ضبط بلادرنگ ذاتاً به توان دستگاه کاربر وابسته است؛ این تغییرات احتمال افت فریم را به‌شدت کاهش می‌دهند اما روی دستگاه‌های بسیار ضعیف ممکن است جیتر جزئی باقی بماند. در آن صورت گام بعدی، کاهش نرخ هدف به ۲۴fps خواهد بود.
