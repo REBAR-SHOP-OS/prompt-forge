@@ -1308,6 +1308,8 @@ export async function mergeVideoUrls(
     try { voiceoverEl.pause() } catch { /* ignore */ }
   }
   stopPaint()
+  stopFramePump()
+
 
   onProgress?.({ ratio: 0.95, clipIndex: totalClips, totalClips, stage: 'finalizing' })
 
