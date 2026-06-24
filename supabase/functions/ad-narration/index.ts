@@ -66,6 +66,16 @@ Deno.serve(async (req) => {
     // ~2.3 spoken words per second is a natural advertising pace.
     const wordBudget = Math.max(6, Math.round(durationSec * 2.3))
 
+    // Optional company / brand info — the narration should close with a short
+    // branded promotional line. Strip digits/codes (phone, prices, URLs are not
+    // spoken; they appear as the on-video overlay) but keep the brand wording.
+    const cleanedBusinessInfo = (body.businessInfo || '')
+      .replace(/https?:\/\/\S+/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 600)
+    const hasCompany = cleanedBusinessInfo.length > 0
+
     const systemPrompt =
       'You are a professional advertising copywriter. You write punchy, ' +
       'high-energy, persuasive voiceover scripts that a narrator can read ' +
@@ -74,17 +84,27 @@ Deno.serve(async (req) => {
       'notes, no camera notes, no labels, no quotation marks, no markdown, no ' +
       'lists. Just clean sentences ready to be spoken. ' +
       'CRITICAL: Never include any numbers, digits, product codes, SKUs, model ' +
-      'numbers, dimensions, prices, or percentages — not as numerals and not ' +
+      'numbers, dimensions, prices, percentages, phone numbers, or web ' +
+      'addresses — not as numerals and not ' +
       'spelled out as words (e.g. never "double oh eight", "zero zero eight", ' +
       'or "008"). Refer to the product only by its descriptive name.'
+
+    const companyClause = hasCompany
+      ? `\nThe video is produced by this company/brand. Company information: "${cleanedBusinessInfo}".\n` +
+        `End the voiceover with ONE short, natural promotional sentence about the company ` +
+        `(mention the company/brand name and its value), spoken right after the product call to action. ` +
+        `Do NOT read out any phone numbers, prices, or website addresses.`
+      : ''
 
     const userPrompt =
       `Write an English advertising voiceover for the product "${productName}".\n` +
       `Target spoken duration: about ${durationSec} seconds ` +
-      `(roughly ${wordBudget} words — stay close to this length).\n` +
+      `(roughly ${wordBudget} words — stay close to this length, including any company line).\n` +
       `Make it persuasive, vivid, and end with a short memorable call to action. ` +
       `Use ONLY the product name "${productName}" — do not invent or mention any ` +
-      `numbers, codes, or model identifiers. Return only the narration text.`
+      `numbers, codes, or model identifiers.` +
+      companyClause +
+      `\nReturn only the narration text.`
 
     const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
