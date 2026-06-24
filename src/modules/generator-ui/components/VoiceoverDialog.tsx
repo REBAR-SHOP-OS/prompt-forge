@@ -447,7 +447,14 @@ export function VoiceoverDialog({
             <Textarea
               id="vo-text"
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                setText(e.target.value)
+                // Editing the original invalidates the translation reference.
+                if (translation) {
+                  setTranslation(null)
+                  setTranslationLang(null)
+                }
+              }}
               placeholder="What should the voice say?"
               rows={5}
               maxLength={5000}
