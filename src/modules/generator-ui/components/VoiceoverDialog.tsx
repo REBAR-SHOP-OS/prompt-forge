@@ -450,7 +450,9 @@ export function VoiceoverDialog({
       return
     }
     setChecking(true)
+    const issues: string[] = []
     try {
+      // ---------- Layer 1: deterministic signal check (client-side) ----------
       const res = await fetch(checkUrl)
       const arrayBuffer = await res.arrayBuffer()
       if (!arrayBuffer.byteLength) throw new Error('empty')
@@ -465,7 +467,13 @@ export function VoiceoverDialog({
       }
 
       if (!audioBuffer || audioBuffer.duration <= 0) {
-        toast.error('فایل صدا خراب است یا مدت‌زمان معتبری ندارد.')
+        const result: AudioCheckResult = {
+          status: 'error',
+          summary: 'فایل صدا خراب است',
+          issues: ['فایل صدا قابل دیکود نیست یا مدت‌زمان معتبری ندارد.'],
+        }
+        setCheckResult(result)
+        toast.error(result.summary)
         return
       }
 
@@ -487,7 +495,13 @@ export function VoiceoverDialog({
       }
 
       if (invalid) {
-        toast.error('صدا حاوی داده‌ی نامعتبر است (خراب).')
+        const result: AudioCheckResult = {
+          status: 'error',
+          summary: 'صدا خراب است',
+          issues: ['صدا حاوی داده‌ی نامعتبر (NaN/Infinity) است.'],
+        }
+        setCheckResult(result)
+        toast.error(result.summary)
         return
       }
 
@@ -495,18 +509,111 @@ export function VoiceoverDialog({
       const clipRatio = total > 0 ? clipped / total : 0
 
       if (rms < 0.0005) {
-        toast.error('صدا سکوت کامل است — هیچ گفتاری تولید نشده.')
-        return
-      }
-      if (clipRatio > 0.01) {
-        toast.warning(`صدا اعوجاج/کلیپینگ دارد (${Math.round(clipRatio * 100)}٪ از نمونه‌ها اشباع).`)
+        const result: AudioCheckResult = {
+          status: 'error',
+          summary: 'صدا سکوت کامل است',
+          issues: ['هیچ گفتاری در فایل صدا تشخیص داده نشد (سکوت کامل).'],
+        }
+        setCheckResult(result)
+        toast.error(result.summary)
         return
       }
 
-      toast.success(`صدا سالم است ✓ (مدت: ${formatTimeMS(audioBuffer.duration)})`)
+      let clipError = false
+      if (clipRatio > 0.01) {
+        clipError = true
+        issues.push(`اعوجاج/کلیپینگ: حدود ${Math.round(clipRatio * 100)}٪ از نمونه‌ها اشباع شده‌اند.`)
+      }
+
+      // ---------- Layer 2: speech / pronunciation check (STT) ----------
+      let speechError = false
+      try {
+        const { data, error } = await supabase.functions.invoke('video-transcript', {
+          body: { videoUrl: checkUrl },
+        })
+        if (error) throw error
+        if (data?.error) throw new Error(String(data.error))
+
+        const transcript: string = (data?.transcript ?? '').trim()
+        const words: TranscriptWord[] = Array.isArray(data?.words) ? data.words : []
+
+        if (!transcript) {
+          speechError = true
+          issues.push('گفتاری در صدا تشخیص داده نشد (ممکن است صدا نامفهوم باشد).')
+        } else {
+          // Words flagged by STT as low-confidence = likely mispronunciation.
+          const lowConf = words.filter((w) => w.lowConfidence).map((w) => w.text)
+          const lowRatio = words.length > 0 ? lowConf.length / words.length : 0
+
+          if (lowConf.length > 0) {
+            const sample = lowConf.slice(0, 8).join('، ')
+            if (lowRatio > 0.15) {
+              speechError = true
+              issues.push(`تلفظ مشکوک در چند کلمه (${lowConf.length} کلمه): ${sample}${lowConf.length > 8 ? ' …' : ''}`)
+            } else {
+              issues.push(`کلمات با تلفظ کمی نامطمئن: ${sample}${lowConf.length > 8 ? ' …' : ''}`)
+            }
+          }
+
+          // Compare against the intended narration text when available.
+          const expected = text.trim()
+          if (expected) {
+            const expectedWords = normalizeWords(expected)
+            const spokenSet = new Set(normalizeWords(transcript))
+            const missing = expectedWords.filter((w) => !spokenSet.has(w))
+            // Deduplicate while preserving order.
+            const missingUnique = Array.from(new Set(missing))
+            const missingRatio = expectedWords.length > 0 ? missingUnique.length / expectedWords.length : 0
+            if (missingRatio > 0.2 && missingUnique.length > 0) {
+              speechError = true
+              const sample = missingUnique.slice(0, 8).join('، ')
+              issues.push(`کلمات جا‌افتاده یا اشتباه‌خوانده‌شده نسبت به متن: ${sample}${missingUnique.length > 8 ? ' …' : ''}`)
+            }
+          }
+        }
+      } catch (sttErr) {
+        console.error('Speech check failed', sttErr)
+        // Don't fail the whole check — report it as a warning only.
+        issues.push('بررسی تلفظ انجام نشد (سرویس رونویسی در دسترس نبود).')
+      }
+
+      // ---------- Build final result ----------
+      let result: AudioCheckResult
+      if (speechError) {
+        result = {
+          status: 'error',
+          summary: 'صدا ایراد دارد — تلفظ/گفتار نادرست',
+          issues,
+        }
+        setCheckResult(result)
+        toast.error(result.summary)
+        setCheckOpen(true)
+      } else if (clipError || issues.length > 0) {
+        result = {
+          status: 'warn',
+          summary: 'صدا با هشدار جزئی',
+          issues,
+        }
+        setCheckResult(result)
+        toast.warning(result.summary)
+      } else {
+        result = {
+          status: 'ok',
+          summary: `صدا سالم است ✓ (مدت: ${formatTimeMS(audioBuffer.duration)})`,
+          issues: [],
+        }
+        setCheckResult(result)
+        toast.success(result.summary)
+      }
     } catch (err) {
       console.error('Audio check failed', err)
-      toast.error('فایل صدا قابل خواندن نیست یا خراب است.')
+      const result: AudioCheckResult = {
+        status: 'error',
+        summary: 'فایل صدا قابل خواندن نیست یا خراب است',
+        issues: ['خطا در خواندن یا دیکود فایل صدا.'],
+      }
+      setCheckResult(result)
+      toast.error(result.summary)
     } finally {
       setChecking(false)
     }
