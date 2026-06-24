@@ -900,16 +900,32 @@ export function VoiceoverDialog({
                   <Mic className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                   <span className="truncate">{activeVoiceoverName ?? 'Voiceover'}</span>
                 </div>
-                {onClearVoiceover ? (
+                <div className="flex shrink-0 items-center gap-1">
                   <button
                     type="button"
-                    onClick={onClearVoiceover}
-                    aria-label="Remove voiceover"
-                    className="grid h-6 w-6 place-items-center rounded-full text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+                    onClick={handleCheckAudio}
+                    disabled={checking}
+                    aria-label="Check audio for errors"
+                    title="بررسی سلامت صدا"
+                    className="grid h-6 w-6 place-items-center rounded-full text-emerald-400 hover:bg-emerald-400/10 hover:text-emerald-300 disabled:opacity-50"
                   >
-                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                    {checking ? (
+                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                    )}
                   </button>
-                ) : null}
+                  {onClearVoiceover ? (
+                    <button
+                      type="button"
+                      onClick={onClearVoiceover}
+                      aria-label="Remove voiceover"
+                      className="grid h-6 w-6 place-items-center rounded-full text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+                    >
+                      <X className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                  ) : null}
+                </div>
               </div>
 
               <div className="space-y-1.5">
