@@ -57,7 +57,10 @@ function computeUsd(resolvedModel: string, durationSeconds: number): number {
  *     are NOT allowed on veo-3.0-fast (Google returns 400 "Video extension
  *     is not allowed for this model"). */
 function resolveVeoModel(model: string, opts: ResolveRouteOptions = {}): string {
-  const needs31 = Boolean(opts.hasLastFrame) || (opts.durationSeconds ?? 0) > 8;
+  const needs31 =
+    Boolean(opts.hasLastFrame) ||
+    Boolean(opts.hasReferenceImages) ||
+    (opts.durationSeconds ?? 0) > 8;
   if (model === "flow-video-1") {
     return needs31 ? "veo-3.1-generate-preview" : "veo-3.0-fast-generate-001";
   }
