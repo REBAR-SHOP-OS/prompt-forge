@@ -1530,6 +1530,8 @@ export default function DashboardPage() {
   }
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [hasOccasionToday, setHasOccasionToday] = useState(false)
+  const [isBusinessOpen, setIsBusinessOpen] = useState(false)
+  const [hasBusinessInfo, setHasBusinessInfo] = useState<boolean | null>(null)
 
   // Deterministic daily check: is today a curated MAJOR occasion?
   // No AI / network — avoids false positives from hallucinated dates.
