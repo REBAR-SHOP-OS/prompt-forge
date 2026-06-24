@@ -1,44 +1,37 @@
-# Plan: Project character recognized by every card
+# Fix: Preview lag must never happen
 
-## Goal
-When a character is added to a project (via Character Sheet or the "Add character" picker), the system must treat that character as the project's identity anchor and attach it to **every** generated card — the first card, single-card generations, and all continuation/chained cards — so the character never drifts or changes while the film continues.
+## Problem
+When you press PREVIEW, the player (`SequentialClipPlayer`) plays your clips back-to-back in a single video frame. The lag/freeze you see happens **at the boundary between clips**, for two reasons:
 
-## Current behavior (what's wrong)
-The plumbing for sending a character reference image to the provider already exists end-to-end (`referenceImageUrls` → job-orchestrator gateway → external-api-adapter, max 3 images). But the frontend only uses it partially:
+1. **On-demand URL resolution.** Each clip's playable URL (proxy / signed storage URL) is only resolved the moment that clip becomes active. During that wait the player shows a spinner instead of the next frame — a visible stall on the first play-through.
+2. **No look-ahead buffering.** There is a single `<video>` element that is fully torn down and recreated for every clip (`key` changes per clip). The next clip's video bytes only start downloading after the previous clip ends, so there is a black/loading gap while it buffers.
 
-1. **Single-card generations don't send the character image.** In `handleSubmit`, the four single-card `createJob` calls (text-to-video, start+end, start-only, end-only) never pass `referenceImageUrls`. Only the multi-scene `submitScenesAsJobs` path attaches the character image. So a normal "continue the film" / single card render relies only on a text description that can drift.
-2. **The character is lost on project reopen.** `selectedCharacter` is component state only. `continuity.characterRef` is persisted per project chain, but when a project is reopened `selectedCharacter` is not re-hydrated from it, so later cards generate without the anchor.
-3. **The single path only reads `selectedCharacter`,** not falling back to the persisted `continuity.characterRef`, so even mid-session the anchor can be missing.
+This is a presentation-layer issue only — generation, Final Film, and audio mixing are untouched.
 
-## Changes (frontend only — `DashboardPage.tsx`)
+## Solution (scoped to `SequentialClipPlayer.tsx`)
+Make every clip ready *before* it is needed, so transitions are instant. Three safe, additive changes:
 
-### 1. Single, project-wide character resolver
-Add a derived value used everywhere a job is created:
-```text
-projectCharacter = selectedCharacter ?? continuity.characterRef ?? null
-projectCharacterRefs = projectCharacter?.url ? [projectCharacter.url] : undefined
-```
+1. **Pre-resolve all clip URLs up front.** On mount / when the clip list changes, warm the playable-URL cache for every video clip at once (the existing `usePlayableVideoUrls` batch resolver already does this and shares the same in-memory cache). When a clip becomes active, its URL is already cached, so the spinner gap disappears.
 
-### 2. Attach the character image to every single-card job
-In `handleSubmit`, pass `referenceImageUrls: projectCharacterRefs` to all four single-card `createJob` calls (text-to-video, start+end, start-only, end-only). Also resolve and prepend the character text description using `projectCharacter` (not just `selectedCharacter`) so both the image anchor and the descriptive prefix are always present.
+2. **Look-ahead buffering (double buffer).** Render a hidden, muted `<video preload="auto">` for the **next** clip's resolved URL so its bytes are already downloaded/decoded by the time it becomes active. When the active clip ends, the swap is to an already-buffered source — no stall.
 
-### 3. Keep chained cards using the same anchor
-`submitScenesAsJobs` already builds `continuityCharacterRef = selectedCharacter ?? continuity.characterRef`. Switch it to use the shared `projectCharacter` and ensure the reference image is sent on every card (it already is). Remove the `continuityActive` gate on the character image so card 1 of a chain also carries the anchor whenever a project character exists.
+3. **`preload="auto"` on the active video** so the browser keeps a healthy forward buffer during a single clip too.
 
-### 4. Restore the character when a project is reopened
-When the active chain changes (the effect at the `continuityChainKey` change that calls `loadContinuity`), also re-hydrate `selectedCharacter` from the loaded `continuity.characterRef`. This makes the anchor survive project switches and reloads.
+4. **Tidy the duration-preload effects** to resolve through the same proxy path (they currently create throwaway `<video>` elements pointed at the raw, unproxied `src`, which can hang or fail CORS for external providers). Reuse the warmed cache instead of duplicating fetches.
 
-### 5. Persist on selection (already mostly done)
-Both selection points (`CharacterSheetDialog onUseCharacter` and the in-project picker) already call `updateContinuity({ characterRef })`. Keep that so the anchor is saved per project. Removing the character clears both `selectedCharacter` and `continuity.characterRef`.
+## Out of scope / safety
+- No change to job creation, Final Film encoding (`mergeVideosWebCodecs.ts`), audio mixing, or any edge function.
+- No change to the proxy/signing logic itself — only *when* it is called.
+- Purely additive: if pre-buffering fails for any reason, playback falls back to today's on-demand behavior, so nothing breaks.
 
-## Constraints / safety
-- Provider reference-image cap is 3; the project uses exactly one character URL, so we stay within limits.
-- No backend, schema, or edge-function changes — all required parameters already exist and are validated server-side.
-- `Start Over` continues to reset `selectedCharacter` and continuity, so a fresh project starts with no anchor.
-- Purely additive to generation requests; existing prompt, frame-seeding, and continuity logic are unchanged.
+## Technical detail
+- Add a batch `usePlayableVideoUrls(clips.map(videoSrc))` call to warm the cache; key it on the clip-id/src signature already used by the duration effect.
+- Compute `nextIndex` and, when the next clip is a video with a resolved URL, mount an off-screen `<video muted preload="auto" src={nextResolvedUrl}>` (zero-size / `hidden`) to force buffering. Do not attach it to playback logic.
+- Keep the active `<video>` element's `key` stable per clip (unchanged) but add `preload="auto"`.
+- No new dependencies.
 
 ## Verification
-- Add a character, generate a single card → confirm the create-job request carries `referenceImageUrls`.
-- Generate a multi-scene / long-duration film → every card carries the same reference image.
-- Reopen the project → the character chip is restored and the next card still carries the anchor.
-- `bun run tsc --noEmit` clean.
+1. `bunx tsgo --noEmit` clean.
+2. Open PREVIEW on a multi-clip project (like the 9:16 reel in the screenshot) and confirm clips play through with no spinner/black gap at each boundary, including the very first play-through.
+3. Scrub across clip boundaries and confirm seeking still works.
+4. Confirm music/voiceover stay in sync (soundtrack handlers unchanged).
