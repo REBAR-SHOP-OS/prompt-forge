@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
       .replace(/https?:\/\/\S+/gi, ' ')
       .replace(/\s+/g, ' ')
       .trim()
-      .slice(0, 600)
+      .slice(0, 2000)
     const hasCompany = cleanedBusinessInfo.length > 0
 
     // Optional user-provided narration directions (tone/style/emphasis).
