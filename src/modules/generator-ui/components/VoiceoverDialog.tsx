@@ -414,6 +414,75 @@ export function VoiceoverDialog({
     }
   }
 
+  async function handleCheckAudio() {
+    const checkUrl = activeVoiceoverUrl ?? audioUrl
+    if (!checkUrl) {
+      toast.error('No voiceover to check yet.')
+      return
+    }
+    setChecking(true)
+    try {
+      const res = await fetch(checkUrl)
+      const arrayBuffer = await res.arrayBuffer()
+      if (!arrayBuffer.byteLength) throw new Error('empty')
+
+      const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+      const ctx = new Ctx()
+      let audioBuffer: AudioBuffer
+      try {
+        audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0))
+      } finally {
+        void ctx.close().catch(() => { /* ignore */ })
+      }
+
+      if (!audioBuffer || audioBuffer.duration <= 0) {
+        toast.error('فایل صدا خراب است یا مدت‌زمان معتبری ندارد.')
+        return
+      }
+
+      let sumSquares = 0
+      let total = 0
+      let clipped = 0
+      let invalid = false
+      for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
+        const data = audioBuffer.getChannelData(ch)
+        for (let i = 0; i < data.length; i++) {
+          const s = data[i]
+          if (!Number.isFinite(s)) { invalid = true; break }
+          const abs = Math.abs(s)
+          sumSquares += s * s
+          if (abs >= 0.99) clipped++
+          total++
+        }
+        if (invalid) break
+      }
+
+      if (invalid) {
+        toast.error('صدا حاوی داده‌ی نامعتبر است (خراب).')
+        return
+      }
+
+      const rms = total > 0 ? Math.sqrt(sumSquares / total) : 0
+      const clipRatio = total > 0 ? clipped / total : 0
+
+      if (rms < 0.0005) {
+        toast.error('صدا سکوت کامل است — هیچ گفتاری تولید نشده.')
+        return
+      }
+      if (clipRatio > 0.01) {
+        toast.warning(`صدا اعوجاج/کلیپینگ دارد (${Math.round(clipRatio * 100)}٪ از نمونه‌ها اشباع).`)
+        return
+      }
+
+      toast.success(`صدا سالم است ✓ (مدت: ${formatTimeMS(audioBuffer.duration)})`)
+    } catch (err) {
+      console.error('Audio check failed', err)
+      toast.error('فایل صدا قابل خواندن نیست یا خراب است.')
+    } finally {
+      setChecking(false)
+    }
+  }
+
   function handleDownload() {
     const downloadUrl = activeVoiceoverUrl ?? audioUrl
     if (!downloadUrl) return
