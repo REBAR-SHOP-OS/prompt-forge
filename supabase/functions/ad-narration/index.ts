@@ -118,6 +118,7 @@ Deno.serve(async (req) => {
       `Use ONLY the product name "${productName}" — do not invent or mention any ` +
       `numbers, codes, or model identifiers.` +
       companyClause +
+      instructionsClause +
       `\nReturn only the narration text.`
 
     const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
