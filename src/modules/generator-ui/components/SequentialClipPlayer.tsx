@@ -491,7 +491,24 @@ export function SequentialClipPlayer({
             />
           )}
 
-          {/* Bottom overlay controls: play/pause + film-wide scrub bar */}
+          {/* Hidden double-buffer: pre-download the next clip's bytes so the
+              swap at the clip boundary is instant (no black/loading gap). It is
+              muted, off-screen, and never wired into playback logic. */}
+          {nextResolvedSrc ? (
+            <video
+              key={`prefetch:${nextResolvedSrc}`}
+              src={nextResolvedSrc}
+              preload="auto"
+              muted
+              playsInline
+              aria-hidden="true"
+              tabIndex={-1}
+              className="pointer-events-none absolute h-px w-px opacity-0"
+              style={{ left: -9999, top: -9999 }}
+            />
+          ) : null}
+
+
           <div className="absolute inset-x-0 bottom-0 z-10 flex items-center gap-3 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3 py-2">
             <button
               type="button"
