@@ -688,7 +688,26 @@ export async function mergeVideoUrls(
   if (!snapCtx) throw new Error('Canvas 2D not supported (snapshot)')
 
   const fps = 30
-  const videoStream = canvas.captureStream(fps)
+  // Prefer manual frame control: captureStream(0) emits a frame only when we
+  // call track.requestFrame(). Driving that from a fixed-cadence clock gives a
+  // uniform frame rate to the encoder and removes the jitter caused by bursty
+  // requestVideoFrameCallback paints. Fall back to auto-sampling when the API
+  // is unavailable.
+  type FrameRequestTrack = MediaStreamTrack & { requestFrame?: () => void }
+  let manualFrameTrack: FrameRequestTrack | null = null
+  let videoStream: MediaStream
+  {
+    const auto = canvas.captureStream(0)
+    const vTrack = auto.getVideoTracks()[0] as FrameRequestTrack | undefined
+    if (vTrack && typeof vTrack.requestFrame === 'function') {
+      manualFrameTrack = vTrack
+      videoStream = auto
+    } else {
+      // No manual control — use timed auto-sampling instead.
+      try { auto.getTracks().forEach((t) => t.stop()) } catch { /* ignore */ }
+      videoStream = canvas.captureStream(fps)
+    }
+  }
 
   // --- Audio routing -------------------------------------------------------
   const Ctor: typeof AudioContext = (window.AudioContext
