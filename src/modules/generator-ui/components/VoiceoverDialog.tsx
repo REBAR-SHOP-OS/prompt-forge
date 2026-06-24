@@ -636,7 +636,33 @@ export function VoiceoverDialog({
               </div>
             </div>
 
+            {translation ? (
+              <div className="space-y-1.5 rounded-lg border border-dashed border-white/15 bg-white/[0.03] p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                    Translation{translationLang ? ` (${translationLang})` : ''} — reference only
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTranslation(null)
+                      setTranslationLang(null)
+                    }}
+                    title="Dismiss translation"
+                    aria-label="Dismiss translation"
+                    className="grid h-5 w-5 place-items-center rounded-full text-zinc-500 transition hover:bg-white/10 hover:text-zinc-200"
+                  >
+                    <X className="h-3 w-3" aria-hidden="true" />
+                  </button>
+                </div>
+                <p className="whitespace-pre-wrap text-[12px] leading-5 text-zinc-300">
+                  {translation}
+                </p>
+              </div>
+            ) : null}
+
           </div>
+
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
