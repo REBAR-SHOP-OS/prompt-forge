@@ -197,6 +197,9 @@ export function VoiceoverDialog({
       const narration: string | undefined = data?.narration
       if (!narration) throw new Error(data?.error || 'No narration returned')
       setText(narration)
+      // A fresh narration invalidates any previous translation reference.
+      setTranslation(null)
+      setTranslationLang(null)
       // Narration is always advertising copy — keep the TTS tone aligned.
       setTone('advertising')
       setLastNarration({ productId: product.id, seconds: secs })
