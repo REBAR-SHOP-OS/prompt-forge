@@ -1073,10 +1073,12 @@ async function startVeo(
   // model can actually be extended. Veo Fast does not support the extension
   // chain, so a 10s/15s request must run on Veo 3.1 even if a legacy/route
   // path handed us veo-3.0-fast.
+  const hasReferenceImages = Boolean(input.referenceImageUrls && input.referenceImageUrls.length > 0);
   const veoModel = ensureVeoExtensionCapable(
     resolveVeoModel(resolvedModel, {
       durationSeconds: requested,
       hasLastFrame: Boolean(input.lastFrameUrl),
+      hasReferenceImages,
     }),
     willExtend,
   );
