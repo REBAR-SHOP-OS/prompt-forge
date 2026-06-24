@@ -120,12 +120,24 @@ const TRANSLATE_LANGS: { code: string; label: string }[] = [
   { code: 'zh', label: '中文' },
 ]
 
+// A token in the reference-script comparison. `ok` = spoken as written,
+// `missing` = in the script but not spoken (skipped/mispronounced).
+interface DiffToken {
+  word: string
+  ok: boolean
+}
+
 // Result of the deterministic + speech-level audio health check.
 type AudioCheckStatus = 'ok' | 'warn' | 'error'
 interface AudioCheckResult {
   status: AudioCheckStatus
   summary: string
   issues: string[]
+  // Reference script tokens with per-word match flags (for highlighting).
+  diff?: DiffToken[]
+  // Words that were spoken but are not in the script (extra/wrong words).
+  extraWords?: string[]
+  transcript?: string
 }
 
 // Word returned by the video-transcript STT edge function.
@@ -143,6 +155,74 @@ function normalizeWords(s: string): string[] {
     .split(/\s+/)
     .filter(Boolean)
 }
+
+// Strip punctuation from a single token for matching (keeps original for display).
+function normToken(s: string): string {
+  return s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
+}
+
+// Word-level LCS alignment between the reference script and the spoken
+// transcript. Returns the script tokens flagged as matched/missing plus the
+// list of spoken words that don't appear in the script.
+function diffScriptVsSpoken(
+  scriptDisplay: string[],
+  spokenDisplay: string[],
+): { diff: DiffToken[]; missing: string[]; extra: string[] } {
+  const a = scriptDisplay.map(normToken)
+  const b = spokenDisplay.map(normToken)
+  const n = a.length
+  const m = b.length
+  // LCS table.
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0))
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1])
+    }
+  }
+  const diff: DiffToken[] = []
+  const missing: string[] = []
+  const extra: string[] = []
+  let i = 0
+  let j = 0
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      diff.push({ word: scriptDisplay[i], ok: true })
+      i++
+      j++
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      diff.push({ word: scriptDisplay[i], ok: false })
+      if (a[i]) missing.push(scriptDisplay[i])
+      i++
+    } else {
+      if (b[j]) extra.push(spokenDisplay[j])
+      j++
+    }
+  }
+  while (i < n) {
+    diff.push({ word: scriptDisplay[i], ok: false })
+    if (a[i]) missing.push(scriptDisplay[i])
+    i++
+  }
+  while (j < m) {
+    if (b[j]) extra.push(spokenDisplay[j])
+    j++
+  }
+  return { diff, missing, extra }
+}
+
+// Read a Blob as a base64 string (no data: prefix).
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      const result = reader.result as string
+      resolve(result.includes(',') ? result.split(',').pop()! : result)
+    }
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
+}
+
 
 
 
