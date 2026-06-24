@@ -1034,6 +1034,22 @@ export async function mergeVideoUrls(
   })
   recorder.start(250)
 
+  // Fixed-cadence frame pump: when manual frame control is available, push
+  // exactly one canvas frame per ~1/fps tick so the encoder receives a uniform
+  // frame rate regardless of how the per-clip painters update the canvas. This
+  // is what removes the whole-film stutter from the recording.
+  let framePumpTimer: ReturnType<typeof setInterval> | null = null
+  if (manualFrameTrack) {
+    const intervalMs = Math.max(1, Math.round(1000 / fps))
+    framePumpTimer = setInterval(() => {
+      try { manualFrameTrack?.requestFrame?.() } catch { /* ignore */ }
+    }, intervalMs)
+  }
+  const stopFramePump = () => {
+    if (framePumpTimer) { clearInterval(framePumpTimer); framePumpTimer = null }
+  }
+
+
   // Unified timeline gating: each track only plays while the global playhead is
   // inside its timeline window. Outside the window the track is silenced and
   // paused. Inside the window each track maps the global time into its source
