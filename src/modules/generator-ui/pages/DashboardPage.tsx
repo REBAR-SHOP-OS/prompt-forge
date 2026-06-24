@@ -6548,6 +6548,12 @@ export default function DashboardPage() {
         prompt,
         firstFrameUrl,
         lastFrameUrl,
+        // Preserve the same Character Sheet anchor the card was created with;
+        // fall back to the current project character so identity never drifts.
+        referenceImageUrls:
+          (job.reference_image_urls && job.reference_image_urls.length > 0
+            ? job.reference_image_urls
+            : projectCharacterRefs) ?? undefined,
         durationSeconds,
         aspectRatio: ratio,
         draftGroupId,
