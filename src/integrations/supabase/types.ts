@@ -250,6 +250,7 @@ export type Database = {
           contact_logo_url: string | null
           contact_phone: string | null
           contact_website: string | null
+          narration_instructions: string | null
           updated_at: string
           user_id: string
         }
@@ -259,6 +260,7 @@ export type Database = {
           contact_logo_url?: string | null
           contact_phone?: string | null
           contact_website?: string | null
+          narration_instructions?: string | null
           updated_at?: string
           user_id: string
         }
@@ -268,6 +270,7 @@ export type Database = {
           contact_logo_url?: string | null
           contact_phone?: string | null
           contact_website?: string | null
+          narration_instructions?: string | null
           updated_at?: string
           user_id?: string
         }
