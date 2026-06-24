@@ -197,6 +197,9 @@ export function VoiceoverDialog({
       const narration: string | undefined = data?.narration
       if (!narration) throw new Error(data?.error || 'No narration returned')
       setText(narration)
+      // A fresh narration invalidates any previous translation reference.
+      setTranslation(null)
+      setTranslationLang(null)
       // Narration is always advertising copy — keep the TTS tone aligned.
       setTone('advertising')
       setLastNarration({ productId: product.id, seconds: secs })
@@ -219,9 +222,11 @@ export function VoiceoverDialog({
     void runNarration(lastNarration.productId, lastNarration.seconds)
   }
 
-  // --- Narration translation ---
+  // --- Narration translation (reference only — never overwrites the original) ---
   const [isTranslateOpen, setIsTranslateOpen] = useState(false)
   const [isTranslating, setIsTranslating] = useState(false)
+  const [translation, setTranslation] = useState<string | null>(null)
+  const [translationLang, setTranslationLang] = useState<string | null>(null)
 
   async function handleTranslate(targetLang: string) {
     const source = text.trim()
@@ -235,11 +240,13 @@ export function VoiceoverDialog({
         body: { text: source, targetLang, style: 'advertising' },
       })
       if (error) throw error
-      const translation: string | undefined = data?.translation
-      if (!translation) throw new Error(data?.error || 'No translation returned')
-      setText(translation)
-      // Translated narration stays advertising — keep the TTS tone aligned.
-      setTone('advertising')
+      const translationResult: string | undefined = data?.translation
+      if (!translationResult) throw new Error(data?.error || 'No translation returned')
+      // Keep the original text intact — the translation is shown only for reference.
+      setTranslation(translationResult)
+      setTranslationLang(
+        TRANSLATE_LANGS.find((l) => l.code === targetLang)?.label ?? targetLang,
+      )
       setIsTranslateOpen(false)
       toast.success('Narration translated.')
     } catch (e) {
@@ -249,6 +256,7 @@ export function VoiceoverDialog({
       setIsTranslating(false)
     }
   }
+
 
 
 
@@ -439,7 +447,14 @@ export function VoiceoverDialog({
             <Textarea
               id="vo-text"
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                setText(e.target.value)
+                // Editing the original invalidates the translation reference.
+                if (translation) {
+                  setTranslation(null)
+                  setTranslationLang(null)
+                }
+              }}
               placeholder="What should the voice say?"
               rows={5}
               maxLength={5000}
@@ -621,7 +636,33 @@ export function VoiceoverDialog({
               </div>
             </div>
 
+            {translation ? (
+              <div className="space-y-1.5 rounded-lg border border-dashed border-white/15 bg-white/[0.03] p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                    Translation{translationLang ? ` (${translationLang})` : ''} — reference only
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTranslation(null)
+                      setTranslationLang(null)
+                    }}
+                    title="Dismiss translation"
+                    aria-label="Dismiss translation"
+                    className="grid h-5 w-5 place-items-center rounded-full text-zinc-500 transition hover:bg-white/10 hover:text-zinc-200"
+                  >
+                    <X className="h-3 w-3" aria-hidden="true" />
+                  </button>
+                </div>
+                <p className="whitespace-pre-wrap text-[12px] leading-5 text-zinc-300">
+                  {translation}
+                </p>
+              </div>
+            ) : null}
+
           </div>
+
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
