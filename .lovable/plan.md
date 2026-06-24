@@ -1,29 +1,44 @@
-# جلوگیری از نمایش تصویر «Choose from products» به‌صورت Draft
+## Problem
 
-## مشکل چیست و از کجا می‌آید
-وقتی در Product Ad → «Choose from products» یک محصول انتخاب می‌شود، تابع `pickProduct` در `ProductAdDialog.tsx` تصویر را reframe می‌کند و یک ردیف در جدول `generator_user_images` با `category: 'reframe'` ثبت می‌کند (همان «Previously made images» + استورج). این رفتار درست است و باید بماند.
+In the Voiceover dialog's "Product narration" section, the product dropdown always shows "No saved products yet" unless the user first opened the Archive dialog.
 
-اما در `DashboardPage.tsx`، هنگام بازیابی workspace (خطوط ۴۶۰۸–۴۶۳۶)، فقط تصاویر `product` و `character` فیلتر می‌شوند و تصاویر `reframe` وارد state به نام `userImages` می‌شوند. سپس افکت‌های backfill/grouping (خطوط ۳۵۶۰ و ۳۷۱۹) هر تصویر داخل `userImages` را به یک Draft تبدیل می‌کنند — و به همین دلیل تصویر ساخته‌شده در «Choose from products» به‌شکل یک «Draft project» (همان دایرهٔ سفید در عکس) در Library ظاهر می‌شود.
+## Root cause
 
-## راه‌حل (فقط فرانت‌اند، بدون migration و بدون تغییر استورج)
-تصاویر `reframe` باید مثل `product`/`character` از workspace و drafts کنار گذاشته شوند، اما در «Previously made images» و Storage دست‌نخورده باقی بمانند.
+`DashboardPage.tsx` populates `archiveProductImages` only inside `loadArchive()`, which is invoked exclusively when the Archive dialog opens (lines 7595 and 7610). The Voiceover dialog receives products via:
 
-۱. **حذف reframe از بازیابی workspace** در `DashboardPage.tsx`:
-   - در کوئری خط ~۴۶۱۶، شرط `.or(...)` به‌گونه‌ای اصلاح شود که دستهٔ `reframe` هم استثنا شود.
-   - در فیلتر خطوط ~۴۶۳۰–۴۶۳۵، شرط `(r.category ?? 'general') !== 'reframe'` اضافه شود تا تصاویر reframe وارد `userImages` نشوند.
+```
+products={archiveProductImages.map(...)}  // line 8806
+```
 
-۲. **گارد دفاعی در دو افکت Draft** (برای اطمینان از اینکه هیچ مسیر دیگری reframe را به draft تبدیل نکند):
-   - در حلقهٔ grouping (خط ~۳۵۶۱) و حلقهٔ backfill (خط ~۳۷۱۹)، اگر `(img.category ?? 'general') === 'reframe'` بود، آن تصویر نادیده گرفته شود.
+Since users typically open the Voiceover dialog directly (without first opening Archive), `archiveProductImages` is still empty, so the saved products never appear. This is a data-loading/timing bug, not a missing-data or RLS problem.
 
-## آنچه تغییر نمی‌کند
-- `pickProduct` و ثبت در «Previously made images» و استورج: بدون تغییر.
-- تب Storage و گالری «Previously made images»: همچنان تصاویر reframe را نشان می‌دهند.
-- منطق آپلود و ساخت ویدئو/کلیپ: بدون تغییر.
+## Fix
 
-## بخش فنی
-- فایل: `src/modules/generator-ui/pages/DashboardPage.tsx` (خطوط ~۴۶۱۶، ~۴۶۳۰–۴۶۳۵، ~۳۵۶۱، ~۳۷۱۹).
-- بدون تغییر دیتابیس، باکت‌ها یا edge functionها.
+Ensure products are loaded whenever the Voiceover dialog opens.
 
-## اعتبارسنجی
-- typecheck.
-- با Playwright روی پیش‌نمایش لوکال: یک محصول از «Choose from products» انتخاب می‌شود؛ تأیید می‌شود که (الف) در Library هیچ «Draft project» جدیدی ساخته نمی‌شود، و (ب) همان تصویر در «Previously made images» و Storage دیده می‌شود.
+- Add a `useEffect` in `DashboardPage.tsx` that, when `isVoiceoverOpen` becomes `true`, triggers a load of the user's product images if they haven't been loaded yet (e.g. `archiveProductImages.length === 0`).
+- Reuse the existing `loadArchive()` function for consistency (it already signs URLs and splits product vs. general images), guarded so it doesn't refetch needlessly.
+
+This keeps the change purely in the frontend presentation/data-fetch layer and touches no backend, billing, or generation logic.
+
+## Technical details
+
+File: `src/modules/generator-ui/pages/DashboardPage.tsx`
+
+Add near the other Voiceover state/effects:
+
+```ts
+useEffect(() => {
+  if (isVoiceoverOpen && archiveProductImages.length === 0) {
+    void loadArchive()
+  }
+}, [isVoiceoverOpen])
+```
+
+(Place after `loadArchive` and `isVoiceoverOpen` are defined; keep the dependency list minimal to avoid repeated fetches.)
+
+## Verification
+
+- Build/typecheck clean.
+- With at least one saved product, open Voiceover → Product narration without opening Archive first → the product now appears in the list.
+- Confirm in the published preview that the dropdown no longer shows "No saved products yet" when products exist.
