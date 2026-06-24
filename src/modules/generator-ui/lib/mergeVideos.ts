@@ -299,6 +299,30 @@ export function clipSource(c: ClipItem): HTMLVideoElement | HTMLImageElement {
 let activeOverlay: MergeOverlayOptions | null = null
 let activeLogo: HTMLImageElement | null = null
 
+/**
+ * Configure the contact/branding overlay used by {@link drawContain} and
+ * {@link paintTransitionFrame} (which paint via the module-level state). The
+ * WebCodecs encoder reuses these exact painters so the overlay looks identical
+ * across both pipelines. Resolves the logo image when one is supplied.
+ */
+export async function setMergeOverlay(overlay?: MergeOverlayOptions): Promise<void> {
+  const hasText = !!overlay && overlay.lines.some((l) => l.trim())
+  const hasLogo = !!overlay?.logoUrl
+  activeOverlay = overlay && (hasText || hasLogo)
+    ? { lines: overlay.lines, position: overlay.position ?? 'bottom', offset: overlay.offset, logoUrl: overlay.logoUrl, scale: overlay.scale ?? 1, panelEnabled: overlay.panelEnabled, panelColor: overlay.panelColor, panelOpacity: overlay.panelOpacity, textColor: overlay.textColor, fontFamily: overlay.fontFamily }
+    : null
+  activeLogo = null
+  if (activeOverlay?.logoUrl) {
+    try {
+      activeLogo = await loadImage(activeOverlay.logoUrl, 'contact logo')
+    } catch {
+      activeLogo = null
+    }
+  }
+}
+
+
+
 /** Convert a hex color + alpha into an rgba() string for canvas fills. */
 function overlayHexToRgba(hex: string, alpha: number): string {
   const h = (hex || '#000000').replace('#', '')
