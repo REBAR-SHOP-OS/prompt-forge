@@ -120,6 +120,33 @@ const TRANSLATE_LANGS: { code: string; label: string }[] = [
   { code: 'zh', label: '中文' },
 ]
 
+// Result of the deterministic + speech-level audio health check.
+type AudioCheckStatus = 'ok' | 'warn' | 'error'
+interface AudioCheckResult {
+  status: AudioCheckStatus
+  summary: string
+  issues: string[]
+}
+
+// Word returned by the video-transcript STT edge function.
+interface TranscriptWord {
+  text: string
+  confidence: number
+  lowConfidence: boolean
+}
+
+// Normalize text into comparable lowercase word tokens (drops punctuation).
+function normalizeWords(s: string): string[] {
+  return s
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+}
+
+
+
+
 
 
 export function VoiceoverDialog({
