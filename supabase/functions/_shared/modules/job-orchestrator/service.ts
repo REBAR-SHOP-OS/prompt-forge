@@ -3,7 +3,7 @@ import type { SupabaseClient } from "../../core/supabase.ts";
 import type { CreateJobInput, JobDetail, JobService, JobSummary } from "./contract.ts";
 
 const JOB_COLUMNS =
-  "id, status, input_prompt, narration_text, provider_key, model_key, provider_job_id, first_frame_url, last_frame_url, requested_duration, requested_aspect_ratio, draft_group_id, created_at, updated_at";
+  "id, status, input_prompt, narration_text, provider_key, model_key, provider_job_id, first_frame_url, last_frame_url, reference_image_urls, requested_duration, requested_aspect_ratio, draft_group_id, created_at, updated_at";
 
 export const jobService: JobService = {
   async listMyJobs(userId, client, limit = 20) {
@@ -54,6 +54,12 @@ export const jobService: JobService = {
     const updates: Record<string, unknown> = {};
     if (input.firstFrameUrl !== undefined) updates.first_frame_url = input.firstFrameUrl ?? null;
     if (input.lastFrameUrl !== undefined) updates.last_frame_url = input.lastFrameUrl ?? null;
+    if (input.referenceImageUrls !== undefined) {
+      updates.reference_image_urls =
+        input.referenceImageUrls && input.referenceImageUrls.length > 0
+          ? input.referenceImageUrls
+          : null;
+    }
     if (input.aspectRatio) updates.requested_aspect_ratio = input.aspectRatio;
     if (input.durationSeconds) updates.requested_duration = input.durationSeconds;
     if (input.draftGroupId) updates.draft_group_id = input.draftGroupId;
