@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react'
-import { Check, Download, Languages, LoaderCircle, Mic, Play, RefreshCw, ShoppingBag, Sparkles, X } from 'lucide-react'
+import { Check, Download, Languages, LoaderCircle, Mic, Play, RefreshCw, ShieldCheck, ShoppingBag, Sparkles, X } from 'lucide-react'
 import {
   Popover,
   PopoverContent,
@@ -149,6 +149,7 @@ export function VoiceoverDialog({
   const [customDuration, setCustomDuration] = useState<string>('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const [checking, setChecking] = useState(false)
   const [playingSampleId, setPlayingSampleId] = useState<string | null>(null)
 
   // --- Product advertising-narration generator ---
