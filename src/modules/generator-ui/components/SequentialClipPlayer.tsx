@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { LoaderCircle, Pause, Play, X } from 'lucide-react'
-import { usePlayableVideoUrl } from '@/modules/generator-ui/lib/usePlayableVideoUrl'
+import { usePlayableVideoUrl, usePlayableVideoUrls } from '@/modules/generator-ui/lib/usePlayableVideoUrl'
 import {
   PreviewSoundtrackWaveforms,
   type PreviewSoundtrackHandle,
@@ -231,6 +231,27 @@ export function SequentialClipPlayer({
     current && current.kind === 'video' ? current.src : null,
   )
 
+  // Warm the playable-URL cache for EVERY video clip up front so that when a
+  // clip becomes active its (proxied / signed) URL is already resolved — this
+  // removes the spinner gap at each clip boundary on the first play-through.
+  const allVideoSrcs = useMemo(
+    () => clips.map((c) => (c.kind === 'video' ? c.src : null)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [clips.map((c) => `${c.kind}:${c.id}:${c.src}`).join('|')],
+  )
+  const { urls: resolvedAllSrcs } = usePlayableVideoUrls(allVideoSrcs)
+
+  // Look-ahead: resolved URL of the NEXT video clip, used to pre-buffer its
+  // bytes in a hidden <video> so the swap at the clip boundary is instant.
+  const nextIndex = clips.length > 0 ? (index + 1) % clips.length : 0
+  const nextClip = clips[nextIndex] ?? null
+  const nextResolvedSrc =
+    nextClip && nextClip.kind === 'video' && nextIndex !== index
+      ? resolvedAllSrcs[nextIndex] ?? null
+      : null
+
+
+
   // Reset the per-clip error guard whenever the active clip changes.
   useEffect(() => {
     erroredOnceRef.current = null
@@ -411,6 +432,7 @@ export function SequentialClipPlayer({
                 key={`${current.id}:${resolvedVideoSrc}`}
                 src={resolvedVideoSrc}
                 className="h-full w-full bg-black object-contain"
+                preload="auto"
                 playsInline
                 autoPlay={isPlaying}
                 controls={false}
@@ -469,7 +491,24 @@ export function SequentialClipPlayer({
             />
           )}
 
-          {/* Bottom overlay controls: play/pause + film-wide scrub bar */}
+          {/* Hidden double-buffer: pre-download the next clip's bytes so the
+              swap at the clip boundary is instant (no black/loading gap). It is
+              muted, off-screen, and never wired into playback logic. */}
+          {nextResolvedSrc ? (
+            <video
+              key={`prefetch:${nextResolvedSrc}`}
+              src={nextResolvedSrc}
+              preload="auto"
+              muted
+              playsInline
+              aria-hidden="true"
+              tabIndex={-1}
+              className="pointer-events-none absolute h-px w-px opacity-0"
+              style={{ left: -9999, top: -9999 }}
+            />
+          ) : null}
+
+
           <div className="absolute inset-x-0 bottom-0 z-10 flex items-center gap-3 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3 py-2">
             <button
               type="button"
