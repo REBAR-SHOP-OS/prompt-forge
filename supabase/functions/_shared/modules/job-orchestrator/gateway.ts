@@ -523,6 +523,7 @@ export const jobOrchestratorGateway = {
               estimatedCost: costCredits,
               firstFrameUrl,
               lastFrameUrl,
+              referenceImageUrls: referenceImageUrls.length > 0 ? referenceImageUrls : null,
               aspectRatio: chosenAspectRatio,
               durationSeconds: parsed.data.durationSeconds ?? null,
               draftGroupId: parsed.data.draftGroupId ?? null,
