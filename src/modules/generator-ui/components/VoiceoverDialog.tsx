@@ -120,12 +120,24 @@ const TRANSLATE_LANGS: { code: string; label: string }[] = [
   { code: 'zh', label: '中文' },
 ]
 
+// A token in the reference-script comparison. `ok` = spoken as written,
+// `missing` = in the script but not spoken (skipped/mispronounced).
+interface DiffToken {
+  word: string
+  ok: boolean
+}
+
 // Result of the deterministic + speech-level audio health check.
 type AudioCheckStatus = 'ok' | 'warn' | 'error'
 interface AudioCheckResult {
   status: AudioCheckStatus
   summary: string
   issues: string[]
+  // Reference script tokens with per-word match flags (for highlighting).
+  diff?: DiffToken[]
+  // Words that were spoken but are not in the script (extra/wrong words).
+  extraWords?: string[]
+  transcript?: string
 }
 
 // Word returned by the video-transcript STT edge function.
@@ -135,14 +147,75 @@ interface TranscriptWord {
   lowConfidence: boolean
 }
 
-// Normalize text into comparable lowercase word tokens (drops punctuation).
-function normalizeWords(s: string): string[] {
-  return s
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .split(/\s+/)
-    .filter(Boolean)
+
+
+// Strip punctuation from a single token for matching (keeps original for display).
+function normToken(s: string): string {
+  return s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
 }
+
+// Word-level LCS alignment between the reference script and the spoken
+// transcript. Returns the script tokens flagged as matched/missing plus the
+// list of spoken words that don't appear in the script.
+function diffScriptVsSpoken(
+  scriptDisplay: string[],
+  spokenDisplay: string[],
+): { diff: DiffToken[]; missing: string[]; extra: string[] } {
+  const a = scriptDisplay.map(normToken)
+  const b = spokenDisplay.map(normToken)
+  const n = a.length
+  const m = b.length
+  // LCS table.
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0))
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1])
+    }
+  }
+  const diff: DiffToken[] = []
+  const missing: string[] = []
+  const extra: string[] = []
+  let i = 0
+  let j = 0
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      diff.push({ word: scriptDisplay[i], ok: true })
+      i++
+      j++
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      diff.push({ word: scriptDisplay[i], ok: false })
+      if (a[i]) missing.push(scriptDisplay[i])
+      i++
+    } else {
+      if (b[j]) extra.push(spokenDisplay[j])
+      j++
+    }
+  }
+  while (i < n) {
+    diff.push({ word: scriptDisplay[i], ok: false })
+    if (a[i]) missing.push(scriptDisplay[i])
+    i++
+  }
+  while (j < m) {
+    if (b[j]) extra.push(spokenDisplay[j])
+    j++
+  }
+  return { diff, missing, extra }
+}
+
+// Read a Blob as a base64 string (no data: prefix).
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      const result = reader.result as string
+      resolve(result.includes(',') ? result.split(',').pop()! : result)
+    }
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
+}
+
 
 
 
@@ -176,6 +249,8 @@ export function VoiceoverDialog({
   const [customDuration, setCustomDuration] = useState<string>('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  // The exact text the current voiceover was generated from (comparison source).
+  const [generatedText, setGeneratedText] = useState('')
   const [checking, setChecking] = useState(false)
   const [checkResult, setCheckResult] = useState<AudioCheckResult | null>(null)
   const [checkOpen, setCheckOpen] = useState(false)
@@ -417,6 +492,9 @@ export function VoiceoverDialog({
       const url = URL.createObjectURL(blob)
       lastUrlRef.current = url
       setAudioUrl(url)
+      // Remember what this voiceover was generated from + reset any prior check.
+      setGeneratedText(trimmed)
+      setCheckResult(null)
       if (payload.warning) toast.warning(payload.warning)
       // Persist to Storage › Audio so every generated voiceover is saved.
       void persistVoiceover(blob)
@@ -454,7 +532,8 @@ export function VoiceoverDialog({
     try {
       // ---------- Layer 1: deterministic signal check (client-side) ----------
       const res = await fetch(checkUrl)
-      const arrayBuffer = await res.arrayBuffer()
+      const blob = await res.blob()
+      const arrayBuffer = await blob.arrayBuffer()
       if (!arrayBuffer.byteLength) throw new Error('empty')
 
       const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
@@ -469,8 +548,8 @@ export function VoiceoverDialog({
       if (!audioBuffer || audioBuffer.duration <= 0) {
         const result: AudioCheckResult = {
           status: 'error',
-          summary: 'فایل صدا خراب است',
-          issues: ['فایل صدا قابل دیکود نیست یا مدت‌زمان معتبری ندارد.'],
+          summary: 'Corrupted audio file',
+          issues: ['The audio could not be decoded or has no valid duration.'],
         }
         setCheckResult(result)
         toast.error(result.summary)
@@ -497,8 +576,8 @@ export function VoiceoverDialog({
       if (invalid) {
         const result: AudioCheckResult = {
           status: 'error',
-          summary: 'صدا خراب است',
-          issues: ['صدا حاوی داده‌ی نامعتبر (NaN/Infinity) است.'],
+          summary: 'Corrupted audio',
+          issues: ['The audio contains invalid samples (NaN/Infinity).'],
         }
         setCheckResult(result)
         toast.error(result.summary)
@@ -511,8 +590,8 @@ export function VoiceoverDialog({
       if (rms < 0.0005) {
         const result: AudioCheckResult = {
           status: 'error',
-          summary: 'صدا سکوت کامل است',
-          issues: ['هیچ گفتاری در فایل صدا تشخیص داده نشد (سکوت کامل).'],
+          summary: 'Silent audio',
+          issues: ['No speech was detected — the audio is completely silent.'],
         }
         setCheckResult(result)
         toast.error(result.summary)
@@ -522,59 +601,69 @@ export function VoiceoverDialog({
       let clipError = false
       if (clipRatio > 0.01) {
         clipError = true
-        issues.push(`اعوجاج/کلیپینگ: حدود ${Math.round(clipRatio * 100)}٪ از نمونه‌ها اشباع شده‌اند.`)
+        issues.push(`Clipping/distortion: about ${Math.round(clipRatio * 100)}% of samples are saturated.`)
       }
 
       // ---------- Layer 2: speech / pronunciation check (STT) ----------
       let speechError = false
+      let diff: DiffToken[] | undefined
+      let extraWords: string[] | undefined
+      let transcriptText: string | undefined
       try {
+        // Send raw audio bytes (base64) — a browser blob: URL can't be fetched
+        // by the server, so URLs alone would always fail.
+        const audioBase64 = await blobToBase64(blob)
         const { data, error } = await supabase.functions.invoke('video-transcript', {
-          body: { videoUrl: checkUrl },
+          body: { audioBase64, mimeType: blob.type || 'audio/wav' },
         })
         if (error) throw error
         if (data?.error) throw new Error(String(data.error))
 
         const transcript: string = (data?.transcript ?? '').trim()
         const words: TranscriptWord[] = Array.isArray(data?.words) ? data.words : []
+        transcriptText = transcript
 
         if (!transcript) {
           speechError = true
-          issues.push('گفتاری در صدا تشخیص داده نشد (ممکن است صدا نامفهوم باشد).')
+          issues.push('No intelligible speech was detected in the audio.')
         } else {
           // Words flagged by STT as low-confidence = likely mispronunciation.
           const lowConf = words.filter((w) => w.lowConfidence).map((w) => w.text)
           const lowRatio = words.length > 0 ? lowConf.length / words.length : 0
-
           if (lowConf.length > 0) {
-            const sample = lowConf.slice(0, 8).join('، ')
+            const sample = lowConf.slice(0, 8).join(', ')
             if (lowRatio > 0.15) {
               speechError = true
-              issues.push(`تلفظ مشکوک در چند کلمه (${lowConf.length} کلمه): ${sample}${lowConf.length > 8 ? ' …' : ''}`)
+              issues.push(`Unclear pronunciation in ${lowConf.length} word(s): ${sample}${lowConf.length > 8 ? ' …' : ''}`)
             } else {
-              issues.push(`کلمات با تلفظ کمی نامطمئن: ${sample}${lowConf.length > 8 ? ' …' : ''}`)
+              issues.push(`Slightly uncertain words: ${sample}${lowConf.length > 8 ? ' …' : ''}`)
             }
           }
 
-          // Compare against the intended narration text when available.
-          const expected = text.trim()
+          // Compare against the exact text the voiceover was generated from.
+          const expected = (generatedText || text).trim()
           if (expected) {
-            const expectedWords = normalizeWords(expected)
-            const spokenSet = new Set(normalizeWords(transcript))
-            const missing = expectedWords.filter((w) => !spokenSet.has(w))
-            // Deduplicate while preserving order.
-            const missingUnique = Array.from(new Set(missing))
-            const missingRatio = expectedWords.length > 0 ? missingUnique.length / expectedWords.length : 0
-            if (missingRatio > 0.2 && missingUnique.length > 0) {
-              speechError = true
-              const sample = missingUnique.slice(0, 8).join('، ')
-              issues.push(`کلمات جا‌افتاده یا اشتباه‌خوانده‌شده نسبت به متن: ${sample}${missingUnique.length > 8 ? ' …' : ''}`)
+            const scriptDisplay = expected.split(/\s+/).filter(Boolean)
+            const spokenDisplay = transcript.split(/\s+/).filter(Boolean)
+            const cmp = diffScriptVsSpoken(scriptDisplay, spokenDisplay)
+            diff = cmp.diff
+            extraWords = cmp.extra
+            const missingRatio = scriptDisplay.length > 0 ? cmp.missing.length / scriptDisplay.length : 0
+            if (cmp.missing.length > 0 && missingRatio > 0.05) {
+              if (missingRatio > 0.2) speechError = true
+              const sample = cmp.missing.slice(0, 8).join(', ')
+              issues.push(`${cmp.missing.length} word(s) differ from the script: ${sample}${cmp.missing.length > 8 ? ' …' : ''}`)
+            }
+            if (cmp.extra.length > 0 && cmp.extra.length / Math.max(1, spokenDisplay.length) > 0.2) {
+              const sample = cmp.extra.slice(0, 6).join(', ')
+              issues.push(`Extra/unexpected words spoken: ${sample}${cmp.extra.length > 6 ? ' …' : ''}`)
             }
           }
         }
       } catch (sttErr) {
         console.error('Speech check failed', sttErr)
         // Don't fail the whole check — report it as a warning only.
-        issues.push('بررسی تلفظ انجام نشد (سرویس رونویسی در دسترس نبود).')
+        issues.push('Pronunciation check could not run (transcription unavailable).')
       }
 
       // ---------- Build final result ----------
@@ -582,8 +671,11 @@ export function VoiceoverDialog({
       if (speechError) {
         result = {
           status: 'error',
-          summary: 'صدا ایراد دارد — تلفظ/گفتار نادرست',
+          summary: 'Audio has issues — wrong or missing words',
           issues,
+          diff,
+          extraWords,
+          transcript: transcriptText,
         }
         setCheckResult(result)
         toast.error(result.summary)
@@ -591,16 +683,21 @@ export function VoiceoverDialog({
       } else if (clipError || issues.length > 0) {
         result = {
           status: 'warn',
-          summary: 'صدا با هشدار جزئی',
+          summary: 'Audio OK with minor warnings',
           issues,
+          diff,
+          extraWords,
+          transcript: transcriptText,
         }
         setCheckResult(result)
         toast.warning(result.summary)
       } else {
         result = {
           status: 'ok',
-          summary: `صدا سالم است ✓ (مدت: ${formatTimeMS(audioBuffer.duration)})`,
+          summary: `Audio is healthy ✓ (${formatTimeMS(audioBuffer.duration)})`,
           issues: [],
+          diff,
+          transcript: transcriptText,
         }
         setCheckResult(result)
         toast.success(result.summary)
@@ -609,8 +706,8 @@ export function VoiceoverDialog({
       console.error('Audio check failed', err)
       const result: AudioCheckResult = {
         status: 'error',
-        summary: 'فایل صدا قابل خواندن نیست یا خراب است',
-        issues: ['خطا در خواندن یا دیکود فایل صدا.'],
+        summary: 'Audio file is unreadable or corrupted',
+        issues: ['Failed to read or decode the audio file.'],
       }
       setCheckResult(result)
       toast.error(result.summary)
@@ -618,6 +715,7 @@ export function VoiceoverDialog({
       setChecking(false)
     }
   }
+
 
   function handleDownload() {
     const downloadUrl = activeVoiceoverUrl ?? audioUrl
@@ -1042,7 +1140,7 @@ export function VoiceoverDialog({
                       <button
                         type="button"
                         aria-label="Check audio for errors"
-                        title="بررسی سلامت و تلفظ صدا"
+                        title="Check audio health & pronunciation"
                         className={`grid h-6 w-6 place-items-center rounded-full transition disabled:opacity-50 ${
                           checkResult?.status === 'error'
                             ? 'text-red-500 hover:bg-red-500/10 hover:text-red-400'
@@ -1060,11 +1158,11 @@ export function VoiceoverDialog({
                         )}
                       </button>
                     </PopoverTrigger>
-                    <PopoverContent align="end" className="w-72 border-white/10 bg-black text-zinc-100">
+                    <PopoverContent align="end" className="w-80 border-white/10 bg-black text-zinc-100">
                       <div className="space-y-2.5">
-                        <p className="text-xs font-semibold text-zinc-200">بررسی سلامت و تلفظ صدا</p>
+                        <p className="text-xs font-semibold text-zinc-200">Audio health &amp; pronunciation check</p>
                         {checkResult ? (
-                          <div className="space-y-2">
+                          <div className="space-y-2.5">
                             <p
                               className={`text-[11px] font-medium ${
                                 checkResult.status === 'error'
@@ -1077,18 +1175,42 @@ export function VoiceoverDialog({
                               {checkResult.summary}
                             </p>
                             {checkResult.issues.length > 0 ? (
-                              <ul className="list-disc space-y-1 pr-4 text-[11px] leading-4 text-zinc-400">
+                              <ul className="list-disc space-y-1 pl-4 text-[11px] leading-4 text-zinc-400">
                                 {checkResult.issues.map((issue, i) => (
                                   <li key={i}>{issue}</li>
                                 ))}
                               </ul>
                             ) : (
-                              <p className="text-[11px] text-zinc-500">هیچ ایرادی یافت نشد.</p>
+                              <p className="text-[11px] text-zinc-500">No issues found.</p>
                             )}
+                            {checkResult.diff && checkResult.diff.some((t) => !t.ok) ? (
+                              <div className="space-y-1">
+                                <p className="text-[10px] uppercase tracking-wider text-zinc-500">
+                                  Script vs. spoken
+                                </p>
+                                <p className="max-h-28 overflow-y-auto rounded-md border border-white/10 bg-white/[0.03] p-2 text-[11px] leading-5">
+                                  {checkResult.diff.map((t, i) => (
+                                    <span
+                                      key={i}
+                                      className={
+                                        t.ok
+                                          ? 'text-zinc-300'
+                                          : 'rounded bg-red-500/20 text-red-300 line-through decoration-red-400/60'
+                                      }
+                                    >
+                                      {t.word}{' '}
+                                    </span>
+                                  ))}
+                                </p>
+                                <p className="text-[10px] text-zinc-500">
+                                  Highlighted words were skipped or mispronounced.
+                                </p>
+                              </div>
+                            ) : null}
                           </div>
                         ) : (
                           <p className="text-[11px] leading-4 text-zinc-500">
-                            برای بررسی سکوت، اعوجاج و تلفظ نادرست، دکمه‌ی زیر را بزنید.
+                            Check silence, distortion, and pronunciation against the script. Press the button below.
                           </p>
                         )}
                         <Button
@@ -1101,18 +1223,19 @@ export function VoiceoverDialog({
                           {checking ? (
                             <>
                               <LoaderCircle className="mr-2 h-3.5 w-3.5 animate-spin" />
-                              در حال بررسی…
+                              Checking…
                             </>
                           ) : (
                             <>
                               <ShieldCheck className="mr-2 h-3.5 w-3.5" />
-                              بررسی صدا
+                              Check audio
                             </>
                           )}
                         </Button>
                       </div>
                     </PopoverContent>
                   </Popover>
+
 
                   {onClearVoiceover ? (
                     <button
