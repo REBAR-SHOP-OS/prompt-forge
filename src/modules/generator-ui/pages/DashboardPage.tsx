@@ -6016,6 +6016,7 @@ export default function DashboardPage() {
             aspectRatio: effectiveRatio,
             draftGroupId,
             narrationText: plannedNarration,
+            referenceImageUrls: projectCharacterRefs,
           })
         } else if (readyStartFrame?.url && readyEndFrame?.url) {
           createdJob = await jobOrchestratorGateway.createJob({
@@ -6028,6 +6029,7 @@ export default function DashboardPage() {
             aspectRatio: effectiveRatio,
             draftGroupId,
             narrationText: plannedNarration,
+            referenceImageUrls: projectCharacterRefs,
           })
           seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
         } else if (readyStartFrame?.url) {
@@ -6040,6 +6042,7 @@ export default function DashboardPage() {
             aspectRatio: effectiveRatio,
             draftGroupId,
             narrationText: plannedNarration,
+            referenceImageUrls: projectCharacterRefs,
           })
           seedFrames = { firstFrameUrl: readyStartFrame.url }
         } else if (readyEndFrame?.url) {
@@ -6052,6 +6055,7 @@ export default function DashboardPage() {
             aspectRatio: effectiveRatio,
             draftGroupId,
             narrationText: plannedNarration,
+            referenceImageUrls: projectCharacterRefs,
           })
           seedFrames = { lastFrameUrl: readyEndFrame.url }
         } else {
