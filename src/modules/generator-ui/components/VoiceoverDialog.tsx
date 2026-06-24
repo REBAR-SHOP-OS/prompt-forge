@@ -147,14 +147,7 @@ interface TranscriptWord {
   lowConfidence: boolean
 }
 
-// Normalize text into comparable lowercase word tokens (drops punctuation).
-function normalizeWords(s: string): string[] {
-  return s
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .split(/\s+/)
-    .filter(Boolean)
-}
+
 
 // Strip punctuation from a single token for matching (keeps original for display).
 function normToken(s: string): string {
