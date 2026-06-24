@@ -6,12 +6,16 @@ const GATEWAY = 'https://ai.gateway.lovable.dev/v1'
 const BodySchema = z.object({
   videoUrl: z.string().url().optional(),
   storagePath: z.string().min(1).optional(),
+  // Raw audio bytes (base64) to transcribe directly — used when the caller only
+  // has a browser blob: URL that the server cannot fetch.
+  audioBase64: z.string().min(1).optional(),
+  mimeType: z.string().min(1).max(128).optional(),
   // When provided, the function only translates the supplied transcript.
   transcript: z.string().min(1).optional(),
   targetLanguage: z.string().min(1).max(64).optional(),
 }).refine(
-  (v) => Boolean(v.videoUrl || v.storagePath || v.transcript),
-  { message: 'videoUrl, storagePath or transcript is required' },
+  (v) => Boolean(v.videoUrl || v.storagePath || v.audioBase64 || v.transcript),
+  { message: 'videoUrl, storagePath, audioBase64 or transcript is required' },
 )
 
 function json(body: unknown, status = 200) {
