@@ -1,44 +1,44 @@
-## اهداف
-۱. تمام متن‌های مربوط به «بررسی صدا» انگلیسی شوند.
-۲. هنگام بررسی، **متن اصلی که برای ساخت ویس استفاده شده** با **متن رونویسی‌شده‌ی صدای تولیدشده** مقایسه شود و قسمت‌های دارای ایراد (کلمات جا‌افتاده/اشتباه) به‌صورت برجسته به کاربر نمایش داده شود.
+# Plan: Project character recognized by every card
 
-## ریشه‌ی مشکل فعلی (طبق اسکرین‌شات)
-در پنل، پیام «بررسی تلفظ انجام نشد (سرویس رونویسی در دسترس نبود)» دیده می‌شود. علت: صدای تولیدشده با `URL.createObjectURL` به‌صورت `blob:` ساخته می‌شود و به edge function `video-transcript` پاس داده می‌شد؛ اما این تابع URL را **سمت سرور** `fetch` می‌کند و `blob:` فقط داخل مرورگر معتبر است → رونویسی همیشه شکست می‌خورد. بنابراین مقایسه‌ی تلفظ عملاً هیچ‌وقت اجرا نمی‌شد.
+## Goal
+When a character is added to a project (via Character Sheet or the "Add character" picker), the system must treat that character as the project's identity anchor and attach it to **every** generated card — the first card, single-card generations, and all continuation/chained cards — so the character never drifts or changes while the film continues.
 
-## راه‌حل
+## Current behavior (what's wrong)
+The plumbing for sending a character reference image to the provider already exists end-to-end (`referenceImageUrls` → job-orchestrator gateway → external-api-adapter, max 3 images). But the frontend only uses it partially:
 
-### ۱. رونویسی قابل‌اعتماد (ارسال بایت‌های صدا، نه URL)
-- بک‌اند: `supabase/functions/video-transcript/index.ts` یک ورودی جدید بپذیرد: `audioBase64` (+ `mimeType` اختیاری). اگر این مقدار داده شد، تابع به‌جای `fetch(url)` همان بایت‌ها را دیکود و رونویسی می‌کند (از همان مسیر `transcribeVideo`/STT با logprobs استفاده می‌شود). ورودی‌های موجود (`videoUrl`/`storagePath`/`transcript`) بدون تغییر باقی می‌مانند (سازگار به‌عقب).
-- فرانت‌اند `handleCheckAudio`: به‌جای پاس‌دادن `videoUrl: blobUrl`، ابتدا صدا را سمت کلاینت `fetch` → `blob` → `base64` می‌کند و با `audioBase64` به تابع می‌فرستد. این روش برای هر دو حالت (blob محلی و URL استوریج) کار می‌کند.
+1. **Single-card generations don't send the character image.** In `handleSubmit`, the four single-card `createJob` calls (text-to-video, start+end, start-only, end-only) never pass `referenceImageUrls`. Only the multi-scene `submitScenesAsJobs` path attaches the character image. So a normal "continue the film" / single card render relies only on a text description that can drift.
+2. **The character is lost on project reopen.** `selectedCharacter` is component state only. `continuity.characterRef` is persisted per project chain, but when a project is reopened `selectedCharacter` is not re-hydrated from it, so later cards generate without the anchor.
+3. **The single path only reads `selectedCharacter`,** not falling back to the persisted `continuity.characterRef`, so even mid-session the anchor can be missing.
 
-### ۲. مقایسه‌ی متن اصلی با متن گفته‌شده
-- ذخیره‌ی متنی که ویس از روی آن ساخته شده: یک state جدید `generatedText` که در `handleGenerate` پس از موفقیت برابر `trimmed` می‌شود. این «متن مرجع» برای مقایسه است (نه متن لحظه‌ای داخل Textarea که ممکن است کاربر بعداً عوضش کند).
-- در `handleCheckAudio`:
-  - متن مرجع = `generatedText || text.trim()`.
-  - متن رونویسی‌شده از STT گرفته می‌شود.
-  - هر دو نرمال‌سازی می‌شوند (حروف کوچک، حذف نقطه‌گذاری) و با یک **diff کلمه‌به‌کلمه مبتنی بر LCS** هم‌تراز می‌شوند تا کلمات «جا‌افتاده» (در متن اصلی هست، در گفتار نیست) و «اضافه/اشتباه» (در گفتار هست، در متن اصلی نیست) دقیق مشخص شوند — بهتر از مقایسه‌ی صرفِ مجموعه‌ای فعلی.
+## Changes (frontend only — `DashboardPage.tsx`)
 
-### ۳. نمایش قسمت‌های دارای ایراد (انگلیسی)
-- Popover بازطراحی شود تا:
-  - **Reference script** را نشان دهد و کلمات مشکل‌دار (جا‌افتاده/اشتباه‌خوانده‌شده) را با رنگ قرمز/خط‌خورده **برجسته** کند.
-  - در صورت وجود اختلاف، یک خلاصه‌ی انگلیسی مثل «N word(s) differ from the script» و فهرست کوتاه کلمات مشکل‌دار نمایش دهد.
-  - وضعیت آیکون مثل قبل: قرمز در صورت ایراد جدی، زرد برای هشدار، سبز برای سالم.
-- همه‌ی toastها و متن‌ها انگلیسی شوند، از جمله:
-  - «Audio is healthy ✓ (0:16)»
-  - «Audio has issues — wrong pronunciation/words»
-  - «Silent audio — no speech detected»
-  - «Corrupted audio file» و غیره.
+### 1. Single, project-wide character resolver
+Add a derived value used everywhere a job is created:
+```text
+projectCharacter = selectedCharacter ?? continuity.characterRef ?? null
+projectCharacterRefs = projectCharacter?.url ? [projectCharacter.url] : undefined
+```
 
-### آستانه‌ها (انگلیسی، بدون تغییر منطق کلی)
-- خطا (قرمز): وجود کلمات جا‌افتاده/اشتباه واقعی نسبت به متن، یا سکوت/خرابی/عدم تشخیص گفتار، یا نسبت بالای کلمات کم‌اطمینان.
-- هشدار (زرد): اختلاف جزئی یا کلیپینگ.
-- سالم (سبز): گفتار کامل و منطبق با متن.
+### 2. Attach the character image to every single-card job
+In `handleSubmit`, pass `referenceImageUrls: projectCharacterRefs` to all four single-card `createJob` calls (text-to-video, start+end, start-only, end-only). Also resolve and prepend the character text description using `projectCharacter` (not just `selectedCharacter`) so both the image anchor and the descriptive prefix are always present.
 
-## فایل‌ها
-- `supabase/functions/video-transcript/index.ts` — افزودن پشتیبانی `audioBase64`/`mimeType` (Zod schema + مسیر دیکود).
-- `src/modules/generator-ui/components/VoiceoverDialog.tsx` — ارسال base64 به‌جای blob URL، افزودن `generatedText`، diff مبتنی بر LCS، بازطراحی Popover با برجسته‌سازی کلمات، و انگلیسی‌کردن همه‌ی متن‌ها.
+### 3. Keep chained cards using the same anchor
+`submitScenesAsJobs` already builds `continuityCharacterRef = selectedCharacter ?? continuity.characterRef`. Switch it to use the shared `projectCharacter` and ensure the reference image is sent on every card (it already is). Remove the `continuityActive` gate on the character image so card 1 of a chain also carries the anchor whenever a project character exists.
 
-## تأیید
-- تایپ‌چک تمیز (`tsgo --noEmit`).
-- تست edge function با `curl_edge_functions` (ارسال یک نمونه base64) برای اطمینان از رونویسی.
-- در پیش‌نمایش: تولید ویس، کلیک روی آیکون → «Check audio»: مشاهده‌ی سبز برای صدای منطبق؛ و در صورت مغایرت، قرمز‌شدن آیکون و نمایش متن مرجع با کلمات مشکل‌دارِ برجسته‌شده — همه به انگلیسی.
+### 4. Restore the character when a project is reopened
+When the active chain changes (the effect at the `continuityChainKey` change that calls `loadContinuity`), also re-hydrate `selectedCharacter` from the loaded `continuity.characterRef`. This makes the anchor survive project switches and reloads.
+
+### 5. Persist on selection (already mostly done)
+Both selection points (`CharacterSheetDialog onUseCharacter` and the in-project picker) already call `updateContinuity({ characterRef })`. Keep that so the anchor is saved per project. Removing the character clears both `selectedCharacter` and `continuity.characterRef`.
+
+## Constraints / safety
+- Provider reference-image cap is 3; the project uses exactly one character URL, so we stay within limits.
+- No backend, schema, or edge-function changes — all required parameters already exist and are validated server-side.
+- `Start Over` continues to reset `selectedCharacter` and continuity, so a fresh project starts with no anchor.
+- Purely additive to generation requests; existing prompt, frame-seeding, and continuity logic are unchanged.
+
+## Verification
+- Add a character, generate a single card → confirm the create-job request carries `referenceImageUrls`.
+- Generate a multi-scene / long-duration film → every card carries the same reference image.
+- Reopen the project → the character chip is restored and the next card still carries the anchor.
+- `bun run tsc --noEmit` clean.
