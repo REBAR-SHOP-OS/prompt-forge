@@ -2528,9 +2528,13 @@ export default function DashboardPage() {
   // Stable key for the current generation chain — used to persist/restore the
   // Continuity Mode state and scene memory per project chain.
   const continuityChainKey = selectedProjectId ?? activeDraftId ?? 'pending'
-  // Reload continuity state whenever the active chain changes.
+  // Reload continuity state whenever the active chain changes, and re-hydrate
+  // the selected character from the persisted project anchor so the character
+  // survives project switches / reloads and keeps anchoring every new card.
   useEffect(() => {
-    setContinuity(loadContinuity(continuityChainKey))
+    const loaded = loadContinuity(continuityChainKey)
+    setContinuity(loaded)
+    setSelectedCharacter(loaded.characterRef ?? null)
   }, [continuityChainKey])
   // Persist + update helper.
   const updateContinuity = useCallback(
@@ -3367,6 +3371,13 @@ export default function DashboardPage() {
     durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135
   // Effective continuity state used across UI + generation paths.
   const continuityActive = continuity.enabled || isMultiCardDuration
+  // Project-wide character anchor: the character chosen for this project, falling
+  // back to the persisted continuity anchor. Sent on EVERY card so the character
+  // never drifts as the film continues.
+  const projectCharacter = selectedCharacter ?? continuity.characterRef ?? null
+  const projectCharacterRefs: string[] | undefined = projectCharacter?.url
+    ? [projectCharacter.url]
+    : undefined
   // Auto-disable continuity if the chain no longer has a previous clip — but keep
   // it on for multi-card durations (their continuity is intra-batch, no prior clip needed).
   useEffect(() => {
@@ -5914,10 +5925,10 @@ export default function DashboardPage() {
 
     try {
       let plannedPrompt = nextPrompt
-      // Inject the selected character as a descriptive reference into the prompt.
-      if (selectedCharacter) {
+      // Inject the project character as a descriptive reference into the prompt.
+      if (projectCharacter) {
         setVideoColumnMessage('Reading character reference…')
-        const desc = await resolveCharacterDescription(selectedCharacter)
+        const desc = await resolveCharacterDescription(projectCharacter)
         plannedPrompt = applyCharacterPrefix(plannedPrompt, desc)
         setVideoColumnMessage(null)
       }
@@ -6005,6 +6016,7 @@ export default function DashboardPage() {
             aspectRatio: effectiveRatio,
             draftGroupId,
             narrationText: plannedNarration,
+            referenceImageUrls: projectCharacterRefs,
           })
         } else if (readyStartFrame?.url && readyEndFrame?.url) {
           createdJob = await jobOrchestratorGateway.createJob({
@@ -6017,6 +6029,7 @@ export default function DashboardPage() {
             aspectRatio: effectiveRatio,
             draftGroupId,
             narrationText: plannedNarration,
+            referenceImageUrls: projectCharacterRefs,
           })
           seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
         } else if (readyStartFrame?.url) {
@@ -6029,6 +6042,7 @@ export default function DashboardPage() {
             aspectRatio: effectiveRatio,
             draftGroupId,
             narrationText: plannedNarration,
+            referenceImageUrls: projectCharacterRefs,
           })
           seedFrames = { firstFrameUrl: readyStartFrame.url }
         } else if (readyEndFrame?.url) {
@@ -6041,6 +6055,7 @@ export default function DashboardPage() {
             aspectRatio: effectiveRatio,
             draftGroupId,
             narrationText: plannedNarration,
+            referenceImageUrls: projectCharacterRefs,
           })
           seedFrames = { lastFrameUrl: readyEndFrame.url }
         } else {
@@ -6187,7 +6202,7 @@ export default function DashboardPage() {
 
     // Content continuity for chained cards: resolve the character description once
     // and reuse it as a prefix on every scene so all cards keep the same subject.
-    const continuityCharacterRef = selectedCharacter ?? continuity.characterRef ?? null
+    const continuityCharacterRef = projectCharacter
     // Persistent identity anchor: the actual Character Sheet image URL, sent on
     // EVERY card (card 1 included) in addition to the previous-frame seed so the
     // provider keeps the same character instead of drifting. Independent of the
@@ -6195,7 +6210,7 @@ export default function DashboardPage() {
     const referenceImageUrls: string[] | undefined =
       continuityCharacterRef?.url ? [continuityCharacterRef.url] : undefined
     let characterPrefixDesc: string | null = null
-    if (continuityActive && continuityCharacterRef) {
+    if (continuityCharacterRef) {
       try {
         setVideoColumnMessage('Reading character reference…')
         characterPrefixDesc = await resolveCharacterDescription(continuityCharacterRef)
@@ -6215,10 +6230,9 @@ export default function DashboardPage() {
         // Enrich each card so the sequence stays content-connected: keep the same
         // character, and (after the first) explicitly continue from the prior card.
         let prompt = sourcePrompt
-        if (continuityActive) {
-          if (characterPrefixDesc) prompt = applyCharacterPrefix(prompt, characterPrefixDesc)
-          if (i > 0) prompt = applyContinuityPrompt(prompt, continuity.memory)
-        }
+        // Always anchor the character (every card) so identity never drifts.
+        if (characterPrefixDesc) prompt = applyCharacterPrefix(prompt, characterPrefixDesc)
+        if (continuityActive && i > 0) prompt = applyContinuityPrompt(prompt, continuity.memory)
 
         let startFrameUrl: string | undefined
         if (i === 0) {
