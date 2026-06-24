@@ -7637,7 +7637,35 @@ export default function DashboardPage() {
         </button>
 
         <UsageStatsPopover triggerClassName="grid h-9 w-9 place-items-center rounded-md border border-transparent text-zinc-200/80 transition hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100" />
+
+        <button
+          type="button"
+          aria-label="About your business (required)"
+          title="About your business (required)"
+          onClick={() => { setIsBusinessOpen(true) }}
+          className={`group relative flex h-9 items-center gap-2 rounded-md border px-2.5 transition ${
+            hasBusinessInfo === false
+              ? 'border-amber-400/40 bg-amber-400/10 hover:bg-amber-400/15'
+              : 'border-transparent text-zinc-200/80 hover:border-white/10 hover:bg-white/[0.045] hover:text-zinc-100'
+          }`}
+        >
+          <Building2
+            className={`h-[18px] w-[18px] ${hasBusinessInfo === false ? 'text-amber-300' : ''}`}
+            aria-hidden="true"
+          />
+          <span
+            className={`text-[11px] font-medium uppercase tracking-[0.12em] ${
+              hasBusinessInfo === false ? 'text-amber-300' : 'text-zinc-300'
+            }`}
+          >
+            Your business
+          </span>
+          {hasBusinessInfo === false && (
+            <span className="absolute -right-1 -top-1 inline-block h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-[#0b0c0e]" aria-hidden="true" />
+          )}
+        </button>
       </div>
+
 
 
 
