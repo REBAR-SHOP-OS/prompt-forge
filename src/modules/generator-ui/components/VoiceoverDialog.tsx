@@ -499,6 +499,9 @@ export function VoiceoverDialog({
       const url = URL.createObjectURL(blob)
       lastUrlRef.current = url
       setAudioUrl(url)
+      // Remember what this voiceover was generated from + reset any prior check.
+      setGeneratedText(trimmed)
+      setCheckResult(null)
       if (payload.warning) toast.warning(payload.warning)
       // Persist to Storage › Audio so every generated voiceover is saved.
       void persistVoiceover(blob)
