@@ -1037,20 +1037,83 @@ export function VoiceoverDialog({
                   <span className="truncate">{activeVoiceoverName ?? 'Voiceover'}</span>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={handleCheckAudio}
-                    disabled={checking}
-                    aria-label="Check audio for errors"
-                    title="بررسی سلامت صدا"
-                    className="grid h-6 w-6 place-items-center rounded-full text-emerald-400 hover:bg-emerald-400/10 hover:text-emerald-300 disabled:opacity-50"
-                  >
-                    {checking ? (
-                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                    ) : (
-                      <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-                    )}
-                  </button>
+                  <Popover open={checkOpen} onOpenChange={setCheckOpen}>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="Check audio for errors"
+                        title="بررسی سلامت و تلفظ صدا"
+                        className={`grid h-6 w-6 place-items-center rounded-full transition disabled:opacity-50 ${
+                          checkResult?.status === 'error'
+                            ? 'text-red-500 hover:bg-red-500/10 hover:text-red-400'
+                            : checkResult?.status === 'warn'
+                              ? 'text-amber-400 hover:bg-amber-400/10 hover:text-amber-300'
+                              : checkResult?.status === 'ok'
+                                ? 'text-emerald-400 hover:bg-emerald-400/10 hover:text-emerald-300'
+                                : 'text-zinc-400 hover:bg-white/10 hover:text-zinc-100'
+                        }`}
+                      >
+                        {checking ? (
+                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                        )}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-72 border-white/10 bg-black text-zinc-100">
+                      <div className="space-y-2.5">
+                        <p className="text-xs font-semibold text-zinc-200">بررسی سلامت و تلفظ صدا</p>
+                        {checkResult ? (
+                          <div className="space-y-2">
+                            <p
+                              className={`text-[11px] font-medium ${
+                                checkResult.status === 'error'
+                                  ? 'text-red-400'
+                                  : checkResult.status === 'warn'
+                                    ? 'text-amber-300'
+                                    : 'text-emerald-300'
+                              }`}
+                            >
+                              {checkResult.summary}
+                            </p>
+                            {checkResult.issues.length > 0 ? (
+                              <ul className="list-disc space-y-1 pr-4 text-[11px] leading-4 text-zinc-400">
+                                {checkResult.issues.map((issue, i) => (
+                                  <li key={i}>{issue}</li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-[11px] text-zinc-500">هیچ ایرادی یافت نشد.</p>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] leading-4 text-zinc-500">
+                            برای بررسی سکوت، اعوجاج و تلفظ نادرست، دکمه‌ی زیر را بزنید.
+                          </p>
+                        )}
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={handleCheckAudio}
+                          disabled={checking}
+                          className="w-full bg-emerald-500 text-black hover:bg-emerald-400"
+                        >
+                          {checking ? (
+                            <>
+                              <LoaderCircle className="mr-2 h-3.5 w-3.5 animate-spin" />
+                              در حال بررسی…
+                            </>
+                          ) : (
+                            <>
+                              <ShieldCheck className="mr-2 h-3.5 w-3.5" />
+                              بررسی صدا
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+
                   {onClearVoiceover ? (
                     <button
                       type="button"
