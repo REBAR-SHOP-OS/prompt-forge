@@ -9,6 +9,8 @@ export interface JobSummary {
   provider_job_id?: string | null;
   first_frame_url?: string | null;
   last_frame_url?: string | null;
+  /** Persistent Character Sheet reference image URL(s) anchored on this job. */
+  reference_image_urls?: string[] | null;
   requested_duration?: number | null;
   requested_aspect_ratio?: string | null;
   /** Durable per-project group id; all clips in one draft project share it. */
