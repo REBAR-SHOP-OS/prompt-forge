@@ -505,6 +505,7 @@ export const jobOrchestratorGateway = {
           const route = await aiGateway.resolveRoute(svc, providerKey, parsed.data.requestedModel, prompt, {
             durationSeconds: parsed.data.durationSeconds ?? 5,
             hasLastFrame: Boolean(lastFrameUrl),
+            hasReferenceImages: referenceImageUrls.length > 0,
           });
 
           // Convert USD cost to credits (1 credit = $0.01). Local models are
