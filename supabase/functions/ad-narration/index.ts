@@ -8,6 +8,7 @@ interface Body {
   productName?: string
   durationSec?: number
   businessInfo?: string
+  narrationInstructions?: string
 }
 
 Deno.serve(async (req) => {
