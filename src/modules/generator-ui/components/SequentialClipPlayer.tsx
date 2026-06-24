@@ -432,6 +432,7 @@ export function SequentialClipPlayer({
                 key={`${current.id}:${resolvedVideoSrc}`}
                 src={resolvedVideoSrc}
                 className="h-full w-full bg-black object-contain"
+                preload="auto"
                 playsInline
                 autoPlay={isPlaying}
                 controls={false}
