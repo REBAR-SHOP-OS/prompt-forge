@@ -120,6 +120,33 @@ const TRANSLATE_LANGS: { code: string; label: string }[] = [
   { code: 'zh', label: '中文' },
 ]
 
+// Result of the deterministic + speech-level audio health check.
+type AudioCheckStatus = 'ok' | 'warn' | 'error'
+interface AudioCheckResult {
+  status: AudioCheckStatus
+  summary: string
+  issues: string[]
+}
+
+// Word returned by the video-transcript STT edge function.
+interface TranscriptWord {
+  text: string
+  confidence: number
+  lowConfidence: boolean
+}
+
+// Normalize text into comparable lowercase word tokens (drops punctuation).
+function normalizeWords(s: string): string[] {
+  return s
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+}
+
+
+
+
 
 
 export function VoiceoverDialog({
@@ -150,6 +177,8 @@ export function VoiceoverDialog({
   const [isGenerating, setIsGenerating] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [checking, setChecking] = useState(false)
+  const [checkResult, setCheckResult] = useState<AudioCheckResult | null>(null)
+  const [checkOpen, setCheckOpen] = useState(false)
   const [playingSampleId, setPlayingSampleId] = useState<string | null>(null)
 
   // --- Product advertising-narration generator ---
@@ -421,7 +450,9 @@ export function VoiceoverDialog({
       return
     }
     setChecking(true)
+    const issues: string[] = []
     try {
+      // ---------- Layer 1: deterministic signal check (client-side) ----------
       const res = await fetch(checkUrl)
       const arrayBuffer = await res.arrayBuffer()
       if (!arrayBuffer.byteLength) throw new Error('empty')
@@ -436,7 +467,13 @@ export function VoiceoverDialog({
       }
 
       if (!audioBuffer || audioBuffer.duration <= 0) {
-        toast.error('فایل صدا خراب است یا مدت‌زمان معتبری ندارد.')
+        const result: AudioCheckResult = {
+          status: 'error',
+          summary: 'فایل صدا خراب است',
+          issues: ['فایل صدا قابل دیکود نیست یا مدت‌زمان معتبری ندارد.'],
+        }
+        setCheckResult(result)
+        toast.error(result.summary)
         return
       }
 
@@ -458,7 +495,13 @@ export function VoiceoverDialog({
       }
 
       if (invalid) {
-        toast.error('صدا حاوی داده‌ی نامعتبر است (خراب).')
+        const result: AudioCheckResult = {
+          status: 'error',
+          summary: 'صدا خراب است',
+          issues: ['صدا حاوی داده‌ی نامعتبر (NaN/Infinity) است.'],
+        }
+        setCheckResult(result)
+        toast.error(result.summary)
         return
       }
 
@@ -466,18 +509,111 @@ export function VoiceoverDialog({
       const clipRatio = total > 0 ? clipped / total : 0
 
       if (rms < 0.0005) {
-        toast.error('صدا سکوت کامل است — هیچ گفتاری تولید نشده.')
-        return
-      }
-      if (clipRatio > 0.01) {
-        toast.warning(`صدا اعوجاج/کلیپینگ دارد (${Math.round(clipRatio * 100)}٪ از نمونه‌ها اشباع).`)
+        const result: AudioCheckResult = {
+          status: 'error',
+          summary: 'صدا سکوت کامل است',
+          issues: ['هیچ گفتاری در فایل صدا تشخیص داده نشد (سکوت کامل).'],
+        }
+        setCheckResult(result)
+        toast.error(result.summary)
         return
       }
 
-      toast.success(`صدا سالم است ✓ (مدت: ${formatTimeMS(audioBuffer.duration)})`)
+      let clipError = false
+      if (clipRatio > 0.01) {
+        clipError = true
+        issues.push(`اعوجاج/کلیپینگ: حدود ${Math.round(clipRatio * 100)}٪ از نمونه‌ها اشباع شده‌اند.`)
+      }
+
+      // ---------- Layer 2: speech / pronunciation check (STT) ----------
+      let speechError = false
+      try {
+        const { data, error } = await supabase.functions.invoke('video-transcript', {
+          body: { videoUrl: checkUrl },
+        })
+        if (error) throw error
+        if (data?.error) throw new Error(String(data.error))
+
+        const transcript: string = (data?.transcript ?? '').trim()
+        const words: TranscriptWord[] = Array.isArray(data?.words) ? data.words : []
+
+        if (!transcript) {
+          speechError = true
+          issues.push('گفتاری در صدا تشخیص داده نشد (ممکن است صدا نامفهوم باشد).')
+        } else {
+          // Words flagged by STT as low-confidence = likely mispronunciation.
+          const lowConf = words.filter((w) => w.lowConfidence).map((w) => w.text)
+          const lowRatio = words.length > 0 ? lowConf.length / words.length : 0
+
+          if (lowConf.length > 0) {
+            const sample = lowConf.slice(0, 8).join('، ')
+            if (lowRatio > 0.15) {
+              speechError = true
+              issues.push(`تلفظ مشکوک در چند کلمه (${lowConf.length} کلمه): ${sample}${lowConf.length > 8 ? ' …' : ''}`)
+            } else {
+              issues.push(`کلمات با تلفظ کمی نامطمئن: ${sample}${lowConf.length > 8 ? ' …' : ''}`)
+            }
+          }
+
+          // Compare against the intended narration text when available.
+          const expected = text.trim()
+          if (expected) {
+            const expectedWords = normalizeWords(expected)
+            const spokenSet = new Set(normalizeWords(transcript))
+            const missing = expectedWords.filter((w) => !spokenSet.has(w))
+            // Deduplicate while preserving order.
+            const missingUnique = Array.from(new Set(missing))
+            const missingRatio = expectedWords.length > 0 ? missingUnique.length / expectedWords.length : 0
+            if (missingRatio > 0.2 && missingUnique.length > 0) {
+              speechError = true
+              const sample = missingUnique.slice(0, 8).join('، ')
+              issues.push(`کلمات جا‌افتاده یا اشتباه‌خوانده‌شده نسبت به متن: ${sample}${missingUnique.length > 8 ? ' …' : ''}`)
+            }
+          }
+        }
+      } catch (sttErr) {
+        console.error('Speech check failed', sttErr)
+        // Don't fail the whole check — report it as a warning only.
+        issues.push('بررسی تلفظ انجام نشد (سرویس رونویسی در دسترس نبود).')
+      }
+
+      // ---------- Build final result ----------
+      let result: AudioCheckResult
+      if (speechError) {
+        result = {
+          status: 'error',
+          summary: 'صدا ایراد دارد — تلفظ/گفتار نادرست',
+          issues,
+        }
+        setCheckResult(result)
+        toast.error(result.summary)
+        setCheckOpen(true)
+      } else if (clipError || issues.length > 0) {
+        result = {
+          status: 'warn',
+          summary: 'صدا با هشدار جزئی',
+          issues,
+        }
+        setCheckResult(result)
+        toast.warning(result.summary)
+      } else {
+        result = {
+          status: 'ok',
+          summary: `صدا سالم است ✓ (مدت: ${formatTimeMS(audioBuffer.duration)})`,
+          issues: [],
+        }
+        setCheckResult(result)
+        toast.success(result.summary)
+      }
     } catch (err) {
       console.error('Audio check failed', err)
-      toast.error('فایل صدا قابل خواندن نیست یا خراب است.')
+      const result: AudioCheckResult = {
+        status: 'error',
+        summary: 'فایل صدا قابل خواندن نیست یا خراب است',
+        issues: ['خطا در خواندن یا دیکود فایل صدا.'],
+      }
+      setCheckResult(result)
+      toast.error(result.summary)
     } finally {
       setChecking(false)
     }
@@ -901,20 +1037,83 @@ export function VoiceoverDialog({
                   <span className="truncate">{activeVoiceoverName ?? 'Voiceover'}</span>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={handleCheckAudio}
-                    disabled={checking}
-                    aria-label="Check audio for errors"
-                    title="بررسی سلامت صدا"
-                    className="grid h-6 w-6 place-items-center rounded-full text-emerald-400 hover:bg-emerald-400/10 hover:text-emerald-300 disabled:opacity-50"
-                  >
-                    {checking ? (
-                      <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                    ) : (
-                      <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-                    )}
-                  </button>
+                  <Popover open={checkOpen} onOpenChange={setCheckOpen}>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="Check audio for errors"
+                        title="بررسی سلامت و تلفظ صدا"
+                        className={`grid h-6 w-6 place-items-center rounded-full transition disabled:opacity-50 ${
+                          checkResult?.status === 'error'
+                            ? 'text-red-500 hover:bg-red-500/10 hover:text-red-400'
+                            : checkResult?.status === 'warn'
+                              ? 'text-amber-400 hover:bg-amber-400/10 hover:text-amber-300'
+                              : checkResult?.status === 'ok'
+                                ? 'text-emerald-400 hover:bg-emerald-400/10 hover:text-emerald-300'
+                                : 'text-zinc-400 hover:bg-white/10 hover:text-zinc-100'
+                        }`}
+                      >
+                        {checking ? (
+                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                        )}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-72 border-white/10 bg-black text-zinc-100">
+                      <div className="space-y-2.5">
+                        <p className="text-xs font-semibold text-zinc-200">بررسی سلامت و تلفظ صدا</p>
+                        {checkResult ? (
+                          <div className="space-y-2">
+                            <p
+                              className={`text-[11px] font-medium ${
+                                checkResult.status === 'error'
+                                  ? 'text-red-400'
+                                  : checkResult.status === 'warn'
+                                    ? 'text-amber-300'
+                                    : 'text-emerald-300'
+                              }`}
+                            >
+                              {checkResult.summary}
+                            </p>
+                            {checkResult.issues.length > 0 ? (
+                              <ul className="list-disc space-y-1 pr-4 text-[11px] leading-4 text-zinc-400">
+                                {checkResult.issues.map((issue, i) => (
+                                  <li key={i}>{issue}</li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-[11px] text-zinc-500">هیچ ایرادی یافت نشد.</p>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] leading-4 text-zinc-500">
+                            برای بررسی سکوت، اعوجاج و تلفظ نادرست، دکمه‌ی زیر را بزنید.
+                          </p>
+                        )}
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={handleCheckAudio}
+                          disabled={checking}
+                          className="w-full bg-emerald-500 text-black hover:bg-emerald-400"
+                        >
+                          {checking ? (
+                            <>
+                              <LoaderCircle className="mr-2 h-3.5 w-3.5 animate-spin" />
+                              در حال بررسی…
+                            </>
+                          ) : (
+                            <>
+                              <ShieldCheck className="mr-2 h-3.5 w-3.5" />
+                              بررسی صدا
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+
                   {onClearVoiceover ? (
                     <button
                       type="button"
