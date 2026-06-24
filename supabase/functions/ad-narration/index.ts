@@ -7,6 +7,7 @@ import { authenticate } from '../_shared/core/auth.ts'
 interface Body {
   productName?: string
   durationSec?: number
+  businessInfo?: string
 }
 
 Deno.serve(async (req) => {
