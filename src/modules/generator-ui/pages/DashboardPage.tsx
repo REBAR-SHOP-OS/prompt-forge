@@ -1667,6 +1667,29 @@ export default function DashboardPage() {
   // not to override the user's per-clip selection.
   const userId = session?.user?.id ?? null
 
+  // Check whether the user has saved their business profile, to flag the
+  // "About your business (required)" button when it's still empty.
+  useEffect(() => {
+    let cancelled = false
+    if (!userId) {
+      setHasBusinessInfo(null)
+      return
+    }
+    supabase
+      .from('generator_business_profiles')
+      .select('business_info')
+      .eq('user_id', userId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return
+        setHasBusinessInfo(Boolean(data?.business_info?.trim()))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
+
+
   // Load persisted copyright verdicts so Library shield icons show the right
   // color (green/red/amber) immediately, surviving reloads.
   useEffect(() => {
