@@ -5925,10 +5925,10 @@ export default function DashboardPage() {
 
     try {
       let plannedPrompt = nextPrompt
-      // Inject the selected character as a descriptive reference into the prompt.
-      if (selectedCharacter) {
+      // Inject the project character as a descriptive reference into the prompt.
+      if (projectCharacter) {
         setVideoColumnMessage('Reading character reference…')
-        const desc = await resolveCharacterDescription(selectedCharacter)
+        const desc = await resolveCharacterDescription(projectCharacter)
         plannedPrompt = applyCharacterPrefix(plannedPrompt, desc)
         setVideoColumnMessage(null)
       }
