@@ -1002,12 +1002,13 @@ export async function mergeVideoUrls(
   }
 
   const chosenMime = pickMimeType()
-  // Default MediaRecorder canvas-capture bitrate (~2.5 Mbps) is far too low for
-  // 1080p / vertical HD clips and visibly softened the Final Film. Pick a
-  // resolution-aware target (~0.18 bits/px/frame) clamped to a sane range so
-  // the merged film keeps the sharpness of the source cards.
-  const targetVideoBitrate = Math.round(width * height * fps * 0.18)
-  const videoBitsPerSecond = Math.max(8_000_000, Math.min(40_000_000, targetVideoBitrate))
+  // Resolution-aware bitrate tuned for REAL-TIME encoding. The previous target
+  // (~0.18 bits/px/frame, floor 8 Mbps, ceil 40 Mbps) saturated Chrome's live
+  // encoder and made it drop frames — the baked-in stutter. ~0.1 bits/px/frame
+  // clamped to 3–12 Mbps keeps the picture sharp while staying within what the
+  // encoder can sustain at 30fps, so frames are no longer dropped.
+  const targetVideoBitrate = Math.round(width * height * fps * 0.1)
+  const videoBitsPerSecond = Math.max(3_000_000, Math.min(12_000_000, targetVideoBitrate))
   let recorder: MediaRecorder
   try {
     recorder = new MediaRecorder(outStream, {
