@@ -209,16 +209,23 @@ function supportsReferenceImages(providerKey: ProviderKey, resolvedModel: string
   return false;
 }
 
-/** Append a non-breaking character-identity hint to the prompt for providers
- *  that cannot accept dedicated reference images. The URLs are included so a
- *  prompt-aware router can fetch them; identity wording keeps the subject
- *  consistent for pure-prompt models. */
+/** Append a strict character-identity lock to the prompt for providers that
+ *  cannot accept dedicated reference images. The URLs are included so a
+ *  prompt-aware router can fetch them; the strict wording keeps the subject's
+ *  face, body, and full wardrobe identical across chained cards. */
 function augmentPromptWithReferences(prompt: string, referenceImageUrls?: string[] | null): string {
   if (!referenceImageUrls || referenceImageUrls.length === 0) return prompt;
   const refs = referenceImageUrls.slice(0, 3).join(", ");
-  return sanitizePrompt(
-    `${prompt} Maintain the exact same character identity, face, outfit and style as the reference image(s): ${refs}.`,
-  );
+  const lock = [
+    "CHARACTER IDENTITY LOCK (highest priority):",
+    "The main character MUST be the exact same person as in the reference image(s):",
+    `${refs}.`,
+    "Keep the identical face, head, hairstyle, skin/body, proportions, and the EXACT same outfit —",
+    "same clothing items, same colors, same logos/prints, same trousers, same shoes and accessories.",
+    "Do NOT change, restyle, recolor, swap, add, or remove any clothing or accessory.",
+    "Do NOT redesign the character. Only the pose, action, camera, and environment may change.",
+  ].join(" ");
+  return sanitizePrompt(`${lock}\n\n${prompt}`);
 }
 
 
