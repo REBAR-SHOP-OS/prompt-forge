@@ -11,6 +11,7 @@ export interface JobSummary {
   provider_job_id?: string | null;
   first_frame_url?: string | null;
   last_frame_url?: string | null;
+  reference_image_urls?: string[] | null;
   requested_duration?: number | null;
   requested_aspect_ratio?: string | null;
   draft_group_id?: string | null;
