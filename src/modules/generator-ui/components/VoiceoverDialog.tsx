@@ -219,9 +219,11 @@ export function VoiceoverDialog({
     void runNarration(lastNarration.productId, lastNarration.seconds)
   }
 
-  // --- Narration translation ---
+  // --- Narration translation (reference only — never overwrites the original) ---
   const [isTranslateOpen, setIsTranslateOpen] = useState(false)
   const [isTranslating, setIsTranslating] = useState(false)
+  const [translation, setTranslation] = useState<string | null>(null)
+  const [translationLang, setTranslationLang] = useState<string | null>(null)
 
   async function handleTranslate(targetLang: string) {
     const source = text.trim()
@@ -235,11 +237,13 @@ export function VoiceoverDialog({
         body: { text: source, targetLang, style: 'advertising' },
       })
       if (error) throw error
-      const translation: string | undefined = data?.translation
-      if (!translation) throw new Error(data?.error || 'No translation returned')
-      setText(translation)
-      // Translated narration stays advertising — keep the TTS tone aligned.
-      setTone('advertising')
+      const translationResult: string | undefined = data?.translation
+      if (!translationResult) throw new Error(data?.error || 'No translation returned')
+      // Keep the original text intact — the translation is shown only for reference.
+      setTranslation(translationResult)
+      setTranslationLang(
+        TRANSLATE_LANGS.find((l) => l.code === targetLang)?.label ?? targetLang,
+      )
       setIsTranslateOpen(false)
       toast.success('Narration translated.')
     } catch (e) {
@@ -249,6 +253,7 @@ export function VoiceoverDialog({
       setIsTranslating(false)
     }
   }
+
 
 
 
