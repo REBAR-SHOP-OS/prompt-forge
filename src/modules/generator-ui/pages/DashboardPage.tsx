@@ -2528,9 +2528,13 @@ export default function DashboardPage() {
   // Stable key for the current generation chain — used to persist/restore the
   // Continuity Mode state and scene memory per project chain.
   const continuityChainKey = selectedProjectId ?? activeDraftId ?? 'pending'
-  // Reload continuity state whenever the active chain changes.
+  // Reload continuity state whenever the active chain changes, and re-hydrate
+  // the selected character from the persisted project anchor so the character
+  // survives project switches / reloads and keeps anchoring every new card.
   useEffect(() => {
-    setContinuity(loadContinuity(continuityChainKey))
+    const loaded = loadContinuity(continuityChainKey)
+    setContinuity(loaded)
+    setSelectedCharacter(loaded.characterRef ?? null)
   }, [continuityChainKey])
   // Persist + update helper.
   const updateContinuity = useCallback(
