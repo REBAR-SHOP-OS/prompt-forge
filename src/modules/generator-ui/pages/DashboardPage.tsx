@@ -3371,6 +3371,13 @@ export default function DashboardPage() {
     durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135
   // Effective continuity state used across UI + generation paths.
   const continuityActive = continuity.enabled || isMultiCardDuration
+  // Project-wide character anchor: the character chosen for this project, falling
+  // back to the persisted continuity anchor. Sent on EVERY card so the character
+  // never drifts as the film continues.
+  const projectCharacter = selectedCharacter ?? continuity.characterRef ?? null
+  const projectCharacterRefs: string[] | undefined = projectCharacter?.url
+    ? [projectCharacter.url]
+    : undefined
   // Auto-disable continuity if the chain no longer has a previous clip — but keep
   // it on for multi-card durations (their continuity is intra-batch, no prior clip needed).
   useEffect(() => {
