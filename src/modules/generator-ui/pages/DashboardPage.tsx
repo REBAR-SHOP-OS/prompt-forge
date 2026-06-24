@@ -7666,6 +7666,15 @@ export default function DashboardPage() {
         </button>
       </div>
 
+      <BusinessProfileDialog
+        open={isBusinessOpen}
+        onOpenChange={setIsBusinessOpen}
+        userId={userId}
+        onSaved={(filled) => setHasBusinessInfo(filled)}
+      />
+
+
+
 
 
 
