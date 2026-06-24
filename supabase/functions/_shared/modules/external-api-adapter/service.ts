@@ -57,7 +57,10 @@ function computeUsd(resolvedModel: string, durationSeconds: number): number {
  *     are NOT allowed on veo-3.0-fast (Google returns 400 "Video extension
  *     is not allowed for this model"). */
 function resolveVeoModel(model: string, opts: ResolveRouteOptions = {}): string {
-  const needs31 = Boolean(opts.hasLastFrame) || (opts.durationSeconds ?? 0) > 8;
+  const needs31 =
+    Boolean(opts.hasLastFrame) ||
+    Boolean(opts.hasReferenceImages) ||
+    (opts.durationSeconds ?? 0) > 8;
   if (model === "flow-video-1") {
     return needs31 ? "veo-3.1-generate-preview" : "veo-3.0-fast-generate-001";
   }
@@ -206,16 +209,23 @@ function supportsReferenceImages(providerKey: ProviderKey, resolvedModel: string
   return false;
 }
 
-/** Append a non-breaking character-identity hint to the prompt for providers
- *  that cannot accept dedicated reference images. The URLs are included so a
- *  prompt-aware router can fetch them; identity wording keeps the subject
- *  consistent for pure-prompt models. */
+/** Append a strict character-identity lock to the prompt for providers that
+ *  cannot accept dedicated reference images. The URLs are included so a
+ *  prompt-aware router can fetch them; the strict wording keeps the subject's
+ *  face, body, and full wardrobe identical across chained cards. */
 function augmentPromptWithReferences(prompt: string, referenceImageUrls?: string[] | null): string {
   if (!referenceImageUrls || referenceImageUrls.length === 0) return prompt;
   const refs = referenceImageUrls.slice(0, 3).join(", ");
-  return sanitizePrompt(
-    `${prompt} Maintain the exact same character identity, face, outfit and style as the reference image(s): ${refs}.`,
-  );
+  const lock = [
+    "CHARACTER IDENTITY LOCK (highest priority):",
+    "The main character MUST be the exact same person as in the reference image(s):",
+    `${refs}.`,
+    "Keep the identical face, head, hairstyle, skin/body, proportions, and the EXACT same outfit —",
+    "same clothing items, same colors, same logos/prints, same trousers, same shoes and accessories.",
+    "Do NOT change, restyle, recolor, swap, add, or remove any clothing or accessory.",
+    "Do NOT redesign the character. Only the pose, action, camera, and environment may change.",
+  ].join(" ");
+  return sanitizePrompt(`${lock}\n\n${prompt}`);
 }
 
 
@@ -645,6 +655,7 @@ async function startWanI2V(
   // only carries first/last frames. Keep firstFrameUrl as the continuation
   // anchor and fold persistent character identity into the prompt as a
   // non-breaking fallback so the subject stays consistent across cards.
+  const hasReference = Boolean(input.referenceImageUrls && input.referenceImageUrls.length > 0);
   const wanPrompt = augmentPromptWithReferences(input.prompt, input.referenceImageUrls);
 
   const body = {
@@ -658,7 +669,10 @@ async function startWanI2V(
       resolution: "720P",
       ratio: input.aspectRatio ?? "16:9",
       duration: input.durationSeconds ?? 5,
-      prompt_extend: true,
+      // Provider prompt expansion can reinterpret/restyle the character's
+      // wardrobe. When a Character Sheet anchor is present, keep the strict
+      // identity-lock prompt verbatim instead of letting Wan rewrite it.
+      prompt_extend: !hasReference,
       watermark: false,
     },
   };
@@ -1070,10 +1084,12 @@ async function startVeo(
   // model can actually be extended. Veo Fast does not support the extension
   // chain, so a 10s/15s request must run on Veo 3.1 even if a legacy/route
   // path handed us veo-3.0-fast.
+  const hasReferenceImages = Boolean(input.referenceImageUrls && input.referenceImageUrls.length > 0);
   const veoModel = ensureVeoExtensionCapable(
     resolveVeoModel(resolvedModel, {
       durationSeconds: requested,
       hasLastFrame: Boolean(input.lastFrameUrl),
+      hasReferenceImages,
     }),
     willExtend,
   );

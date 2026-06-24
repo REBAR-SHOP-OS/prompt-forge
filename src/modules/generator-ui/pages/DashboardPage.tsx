@@ -5876,7 +5876,13 @@ export default function DashboardPage() {
 
   function applyCharacterPrefix(prompt: string, description: string): string {
     if (!description) return prompt
-    return `Main character reference (keep this character consistent): ${description}\n\n${prompt}`
+    return [
+      `CHARACTER IDENTITY LOCK (highest priority): The main character is fixed and must stay identical in every shot:`,
+      description,
+      `Keep the exact same face, hair, body, proportions and the EXACT same outfit — same clothing items, colors, logos/prints, trousers, shoes and accessories. Do not change, restyle, recolor, add or remove any clothing or accessory, and do not redesign the character. Only the pose, action, camera and environment may change.`,
+      ``,
+      prompt,
+    ].join('\n')
   }
 
 
@@ -6542,6 +6548,12 @@ export default function DashboardPage() {
         prompt,
         firstFrameUrl,
         lastFrameUrl,
+        // Preserve the same Character Sheet anchor the card was created with;
+        // fall back to the current project character so identity never drifts.
+        referenceImageUrls:
+          (job.reference_image_urls && job.reference_image_urls.length > 0
+            ? job.reference_image_urls
+            : projectCharacterRefs) ?? undefined,
         durationSeconds,
         aspectRatio: ratio,
         draftGroupId,

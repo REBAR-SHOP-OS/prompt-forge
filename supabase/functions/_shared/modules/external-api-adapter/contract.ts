@@ -66,6 +66,9 @@ export interface ResolveRouteOptions {
   /** When true, the request includes a last-frame and must use a model that
    *  supports first+last frame interpolation (Veo 3.1, not Veo Fast). */
   hasLastFrame?: boolean;
+  /** When true, the request carries persistent reference (Character Sheet)
+   *  images and must use the reference-capable model (Veo 3.1, not Veo Fast). */
+  hasReferenceImages?: boolean;
 }
 
 export interface AiGateway {

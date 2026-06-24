@@ -446,6 +446,7 @@ export type Database = {
           parent_final_job_id: string | null
           provider_job_id: string | null
           provider_key: string | null
+          reference_image_urls: string[] | null
           requested_aspect_ratio: string | null
           requested_duration: number | null
           status: Database["public"]["Enums"]["job_status"]
@@ -466,6 +467,7 @@ export type Database = {
           parent_final_job_id?: string | null
           provider_job_id?: string | null
           provider_key?: string | null
+          reference_image_urls?: string[] | null
           requested_aspect_ratio?: string | null
           requested_duration?: number | null
           status?: Database["public"]["Enums"]["job_status"]
@@ -486,6 +488,7 @@ export type Database = {
           parent_final_job_id?: string | null
           provider_job_id?: string | null
           provider_key?: string | null
+          reference_image_urls?: string[] | null
           requested_aspect_ratio?: string | null
           requested_duration?: number | null
           status?: Database["public"]["Enums"]["job_status"]
