@@ -655,6 +655,7 @@ async function startWanI2V(
   // only carries first/last frames. Keep firstFrameUrl as the continuation
   // anchor and fold persistent character identity into the prompt as a
   // non-breaking fallback so the subject stays consistent across cards.
+  const hasReference = Boolean(input.referenceImageUrls && input.referenceImageUrls.length > 0);
   const wanPrompt = augmentPromptWithReferences(input.prompt, input.referenceImageUrls);
 
   const body = {
@@ -668,7 +669,10 @@ async function startWanI2V(
       resolution: "720P",
       ratio: input.aspectRatio ?? "16:9",
       duration: input.durationSeconds ?? 5,
-      prompt_extend: true,
+      // Provider prompt expansion can reinterpret/restyle the character's
+      // wardrobe. When a Character Sheet anchor is present, keep the strict
+      // identity-lock prompt verbatim instead of letting Wan rewrite it.
+      prompt_extend: !hasReference,
       watermark: false,
     },
   };
