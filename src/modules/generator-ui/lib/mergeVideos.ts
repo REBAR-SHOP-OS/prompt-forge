@@ -59,7 +59,7 @@ export interface MergeAudioOptions {
   musicVolume?: number
 }
 
-function normalizeAudioOptions(audio?: MergeAudioOptions): {
+export function normalizeAudioOptions(audio?: MergeAudioOptions): {
   music?: MergeMusicTrack
   voiceover?: MergeVoiceoverTrack
   clipVolume?: number
@@ -137,7 +137,7 @@ export type MergeClip =
   | { kind: 'video'; url: string }
   | { kind: 'image'; url: string; durationSec: number }
 
-type ClipItem =
+export type ClipItem =
   | { kind: 'video'; video: HTMLVideoElement; duration: number; width: number; height: number }
   | { kind: 'image'; image: HTMLImageElement; duration: number; width: number; height: number }
 
@@ -245,7 +245,7 @@ async function loadVideo(url: string, withAudio: boolean, clipLabel?: string): P
   return v
 }
 
-async function loadImage(url: string, clipLabel?: string): Promise<HTMLImageElement> {
+export async function loadImage(url: string, clipLabel?: string): Promise<HTMLImageElement> {
   return await new Promise((resolve, reject) => {
     const img = new Image()
     img.crossOrigin = 'anonymous'
@@ -269,7 +269,7 @@ async function loadImage(url: string, clipLabel?: string): Promise<HTMLImageElem
   })
 }
 
-async function loadClip(c: MergeClip, withAudio: boolean, label: string): Promise<ClipItem> {
+export async function loadClip(c: MergeClip, withAudio: boolean, label: string): Promise<ClipItem> {
   if (c.kind === 'image') {
     const image = await loadImage(c.url, label)
     return {
@@ -290,7 +290,7 @@ async function loadClip(c: MergeClip, withAudio: boolean, label: string): Promis
   }
 }
 
-function clipSource(c: ClipItem): HTMLVideoElement | HTMLImageElement {
+export function clipSource(c: ClipItem): HTMLVideoElement | HTMLImageElement {
   return c.kind === 'video' ? c.video : c.image
 }
 
@@ -298,6 +298,30 @@ function clipSource(c: ClipItem): HTMLVideoElement | HTMLImageElement {
 // of mergeVideoUrls and cleared when it finishes so it never leaks across runs.
 let activeOverlay: MergeOverlayOptions | null = null
 let activeLogo: HTMLImageElement | null = null
+
+/**
+ * Configure the contact/branding overlay used by {@link drawContain} and
+ * {@link paintTransitionFrame} (which paint via the module-level state). The
+ * WebCodecs encoder reuses these exact painters so the overlay looks identical
+ * across both pipelines. Resolves the logo image when one is supplied.
+ */
+export async function setMergeOverlay(overlay?: MergeOverlayOptions): Promise<void> {
+  const hasText = !!overlay && overlay.lines.some((l) => l.trim())
+  const hasLogo = !!overlay?.logoUrl
+  activeOverlay = overlay && (hasText || hasLogo)
+    ? { lines: overlay.lines, position: overlay.position ?? 'bottom', offset: overlay.offset, logoUrl: overlay.logoUrl, scale: overlay.scale ?? 1, panelEnabled: overlay.panelEnabled, panelColor: overlay.panelColor, panelOpacity: overlay.panelOpacity, textColor: overlay.textColor, fontFamily: overlay.fontFamily }
+    : null
+  activeLogo = null
+  if (activeOverlay?.logoUrl) {
+    try {
+      activeLogo = await loadImage(activeOverlay.logoUrl, 'contact logo')
+    } catch {
+      activeLogo = null
+    }
+  }
+}
+
+
 
 /** Convert a hex color + alpha into an rgba() string for canvas fills. */
 function overlayHexToRgba(hex: string, alpha: number): string {
@@ -463,7 +487,7 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath()
 }
 
-function drawContain(
+export function drawContain(
   ctx: CanvasRenderingContext2D,
   source: HTMLVideoElement | HTMLImageElement,
   cw: number,
@@ -493,7 +517,7 @@ function easeInOut(t: number): number {
  * with last frame of clip A) and the incoming live source (clip B, which may
  * be a video element or a still image).
  */
-function paintTransitionFrame(
+export function paintTransitionFrame(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,

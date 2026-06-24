@@ -121,6 +121,7 @@ import type { VideoSummary } from '@/modules/video-library/contract'
 import { generatorUiGateway } from '@/modules/generator-ui/gateway'
 import { externalApiAdapterGateway, type LocalVideoStatusResult } from '@/modules/external-api-adapter/gateway'
 import { mergeVideoUrls, MergeCancelledError, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
+import { mergeVideoUrlsWebCodecs, canEncodeWithWebCodecs, WebCodecsUnsupportedError } from '@/modules/generator-ui/lib/mergeVideosWebCodecs'
 import { ensureMp4 } from '@/modules/generator-ui/lib/transcodeToMp4'
 import {
   loadContinuity,
@@ -6945,34 +6946,51 @@ export default function DashboardPage() {
 
       const abortController = new AbortController()
       mergeAbortRef.current = abortController
-      const mergeRes = await Promise.race([
-        mergeVideoUrls(
-          mergeClips,
-          (p) => {
-            // Map stages into a monotonic 1..99 percent so the UI keeps
-            // moving past the old 95% cap during encode and upload.
-            if (p.stage === 'encoding') {
-              setMergeStage('encoding')
-              setMergeProgress(Math.max(95, Math.min(99, Math.round(p.ratio * 100))))
-            } else if (p.stage === 'finalizing') {
-              setMergeStage('finalizing')
-              setMergeProgress((curr) => Math.max(curr, 95))
-            } else {
-              setMergeStage('recording')
-              // Record/transition stages cap at 94 to reserve 95+ for finalize/encode.
-              setMergeProgress(Math.max(1, Math.min(94, Math.round(p.ratio * 100))))
-            }
-          },
-          audioOpt,
-          transitionsForMerge,
-          abortController.signal,
-          contactActive
-            ? { lines: contactLines, position: contactOverlay.position, offset: contactOverlay.offset ?? undefined, logoUrl: contactLogoActive ? contactOverlay.logoUrl : undefined, scale: contactOverlay.scale ?? 1, panelEnabled: contactOverlay.panelEnabled, panelColor: contactOverlay.panelColor, panelOpacity: contactOverlay.panelOpacity, textColor: contactOverlay.textColor, fontFamily: contactOverlay.fontFamily }
-            : undefined,
-        ),
 
+      const overlayArg = contactActive
+        ? { lines: contactLines, position: contactOverlay.position, offset: contactOverlay.offset ?? undefined, logoUrl: contactLogoActive ? contactOverlay.logoUrl : undefined, scale: contactOverlay.scale ?? 1, panelEnabled: contactOverlay.panelEnabled, panelColor: contactOverlay.panelColor, panelOpacity: contactOverlay.panelOpacity, textColor: contactOverlay.textColor, fontFamily: contactOverlay.fontFamily }
+        : undefined
+      const mergeProgressCb = (p: import('@/modules/generator-ui/lib/mergeVideos').MergeProgress) => {
+        // Map stages into a monotonic 1..99 percent so the UI keeps
+        // moving past the old 95% cap during encode and upload.
+        if (p.stage === 'encoding') {
+          setMergeStage('encoding')
+          setMergeProgress(Math.max(95, Math.min(99, Math.round(p.ratio * 100))))
+        } else if (p.stage === 'finalizing') {
+          setMergeStage('finalizing')
+          setMergeProgress((curr) => Math.max(curr, 95))
+        } else {
+          setMergeStage('recording')
+          // Record/transition stages cap at 94 to reserve 95+ for finalize/encode.
+          setMergeProgress(Math.max(1, Math.min(94, Math.round(p.ratio * 100))))
+        }
+      }
+      type MergeFn = typeof mergeVideoUrls
+      const runMerge = (fn: MergeFn) => Promise.race([
+        fn(mergeClips, mergeProgressCb, audioOpt, transitionsForMerge, abortController.signal, overlayArg),
         pipelineTimeout,
       ])
+
+      // Prefer the deterministic WebCodecs MP4 encoder — it produces a smooth,
+      // lag-free file because encoding is decoupled from wall-clock. Fall back
+      // to the legacy live-recorder path when WebCodecs is unavailable or the
+      // browser rejects the encoder configuration mid-run.
+      let mergeRes: import('@/modules/generator-ui/lib/mergeVideos').MergeResult
+      if (canEncodeWithWebCodecs()) {
+        try {
+          mergeRes = await runMerge(mergeVideoUrlsWebCodecs)
+        } catch (err) {
+          if (err instanceof WebCodecsUnsupportedError) {
+            console.warn('[merge] WebCodecs unsupported, falling back to live recorder:', err)
+            mergeRes = await runMerge(mergeVideoUrls)
+          } else {
+            throw err
+          }
+        }
+      } else {
+        mergeRes = await runMerge(mergeVideoUrls)
+      }
+
       if (abortController.signal.aborted) throw new MergeCancelledError()
 
       setMergeStage('uploading')

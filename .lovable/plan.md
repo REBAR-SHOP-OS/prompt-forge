@@ -1,31 +1,51 @@
-## Goal
-In the Voiceover dialog, translation should be **informational only**. The original (main) text must stay in the TEXT field and remain what's used for the voiceover. The translation is shown separately as a read-only reference.
+# رفع لگ فیلم نهایی (Final Film)
 
-## Current behavior (problem)
-`handleTranslate()` calls `setText(translation)` — this **overwrites** the original text, so the source text is lost and the main text is no longer displayed.
+## مشکل ریشه‌ای
+فیلم نهایی الان با روش **ضبط زنده (real-time)** ساخته می‌شود: هر کلیپ با سرعت عادی پخش می‌شود، فریم‌ها روی یک canvas کشیده می‌شوند و `MediaRecorder` همان لحظه (live) آن‌ها را انکود می‌کند (`src/modules/generator-ui/lib/mergeVideos.ts`).
 
-## Planned changes (file: `src/modules/generator-ui/components/VoiceoverDialog.tsx`)
+مشکل ذاتی این روش: انکود زنده به سرعت لحظه‌ای دستگاه وابسته است. هر بار که دستگاه از انکود ۳۰ فریم در ثانیه عقب بماند (فریم بزرگ، کلیپ زیاد، نمایشگر سنگین)، فریم‌ها افتاده یا تکراری می‌شوند و این پرش‌ها **برای همیشه داخل فایل خروجی پخته می‌شوند**. ده‌ها پچ در کد برای پنهان‌کردن این موضوع زده شده، ولی خود روش قابل‌اعتماد نیست. شما تأیید کردید لگ داخل فایل دانلودشده است و خروجی باید MP4 باشد.
 
-1. **Add a separate translation state**
-   - New state `const [translation, setTranslation] = useState<string | null>(null)` and `const [translationLang, setTranslationLang] = useState<string | null>(null)`.
+## راه‌حل
+جایگزینی موتور ضبط زنده با یک مسیر **قطعی و فریم‌به‌فریم** مبتنی بر **WebCodecs** (`VideoEncoder`) + یک **MP4 muxer**. در این روش انکود از ساعت دیواری (wall-clock) جدا می‌شود: هر فریم فقط بعد از کشیده‌شدن کامل و با timestamp دقیق انکود می‌شود، بنابراین هیچ فریمی نمی‌افتد و هیچ پرشی ایجاد نمی‌شود. خروجی مستقیماً MP4 (H.264/AAC) و سازگار با همه‌جا است.
 
-2. **Stop overwriting the original text**
-   - In `handleTranslate()`, replace `setText(translation)` with `setTranslation(translationResult)` + store the target language label. The TEXT field keeps the original untouched.
-   - Keep `setTone('advertising')` and the success toast.
+این روش سریع‌تر و سبک‌تر از `ffmpeg.wasm` است (که طبق کامنت‌های موجود روی کلیپ‌های طولانی هنگ/OOM می‌کرد) و آن مسیر را دست نمی‌زنیم.
 
-3. **Display the translation as a read-only reference panel**
-   - Below the TEXT textarea (after the toolbar row, before the Gender/Tone grid), conditionally render a small bordered, muted panel when `translation` is set:
-     - A label like “Translation ({language}) — reference only”.
-     - The translated text shown read-only (not editable, not used for TTS).
-     - A small ✕ button to dismiss/clear the translation reference.
-   - Use existing semantic styling (muted zinc tones, `text-[11px]`, dashed/subtle border) consistent with the dialog.
+## رویکرد امن (Safe Mode)
+- مسیر فعلی `mergeVideoUrls` **حذف نمی‌شود**؛ به‌عنوان fallback می‌ماند.
+- مسیر جدید فقط وقتی استفاده می‌شود که مرورگر از WebCodecs + muxer پشتیبانی کند (با یک تابع `canEncodeWithWebCodecs()`). در غیر این صورت دقیقاً مثل امروز کار می‌کند.
+- منطق UI، صدا، اورلی، ترنزیشن‌ها و آپلود بدون تغییر باقی می‌ماند؛ فقط هسته‌ی تولید فریم/انکود عوض می‌شود.
 
-4. **Clear translation when appropriate**
-   - Reset `translation`/`translationLang` to null when the user edits the original text (in the textarea `onChange`) and when a new narration is generated, so the reference never goes stale.
+## تغییرات
 
-## Result
-- TEXT box always shows and keeps the original text (the “main text”), which is what the voiceover is generated from.
-- The translation appears underneath purely for awareness, and can be dismissed.
+### ۱. افزودن MP4 muxer
+نصب `mp4-muxer` (کتابخانه‌ی کوچک و سبک، بدون wasm) با `bun add mp4-muxer`.
 
-## Note
-No backend/edge-function changes are needed — the `translate-text` function still returns the translation; only how the result is presented in the UI changes.
+### ۲. فایل جدید: `src/modules/generator-ui/lib/mergeVideosWebCodecs.ts`
+یک تابع `mergeVideoUrlsWebCodecs(...)` با **همان امضای ورودی/خروجی** `mergeVideoUrls` (همان `MergeClip[]`، `audio`، `transitions`، `signal`، `overlay`، و خروجی `MergeResult` با `extension: 'mp4'`). داخل آن:
+
+- **ویدئو (قطعی):** برای هر کلیپ، فریم‌ها به‌ترتیب پیش‌برده می‌شوند (با `requestVideoFrameCallback` یا seek گام‌به‌گام)، روی canvas با همان توابع موجود (`drawContain`, `drawOverlay`, `paintTransitionFrame`) کشیده می‌شوند، سپس هر فریم به‌صورت `VideoFrame` با timestamp محاسبه‌شده (بر اساس شماره‌ی فریم × ۱/fps) به `VideoEncoder` داده می‌شود. چون انکودر منتظر می‌ماند، هیچ افت فریمی رخ نمی‌دهد.
+- **عکس‌ها:** برای مدت `durationSec` تعداد فریم لازم تولید می‌شود (مثل الان).
+- **ترنزیشن‌ها/اورلی:** از همان توابع رندر فعلی استفاده می‌شود تا ظاهر دقیقاً مثل قبل بماند.
+- **صدا (قطعی):** میکس موسیقی + ویس‌اوور + صدای کلیپ‌ها با `OfflineAudioContext` به‌صورت آفلاین و دقیق رندر می‌شود (به‌جای گیت‌های real-time فعلی)، سپس با `AudioEncoder` (AAC) انکود و در همان muxer قرار می‌گیرد. منطق پنجره‌های timeline دقیقاً از همان مقادیر فعلی می‌آید.
+- **پیشرفت (progress):** همان callback `MergeProgress` با مراحل `recording`/`encoding`/`finalizing` تغذیه می‌شود تا نوار درصد UI بدون تغییر کار کند.
+- **لغو (abort):** همان `AbortSignal` پشتیبانی می‌شود و `MergeCancelledError` پرتاب می‌شود.
+
+### ۳. اتصال در `DashboardPage.tsx`
+در محل فراخوانی اصلی (حدود خط ۶۹۴۹) یک انتخاب‌گر اضافه می‌شود:
+```text
+const merge = canEncodeWithWebCodecs() ? mergeVideoUrlsWebCodecs : mergeVideoUrls
+```
+بقیه‌ی فراخوانی (آرگومان‌ها، progress، watchdog، آپلود) دست‌نخورده می‌ماند. دو فراخوانی کوچک دیگر mergeVideoUrls (خطوط ۵۱۹۲ و ۵۲۶۰، برای ترکیب تک‌عکس) فعلاً روی همان مسیر فعلی می‌مانند تا ریسک کم بماند.
+
+### ۴. تست‌ها
+- افزودن تست واحد برای انتخاب‌گر و تبدیل timestampها در فایل تست کنار `mergeVideos.test.ts`.
+- اعتبارسنجی نهایی: ساخت یک Final Film چندکلیپی در پیش‌نمایش، دانلود فایل MP4، و بررسی پخش روان و بدون لگ + طول/صدای درست.
+
+## جزئیات فنی / ریسک‌ها
+- **پشتیبانی مرورگر:** WebCodecs `VideoEncoder` در Chrome/Edge/Chromium و نسخه‌های جدید Safari/Firefox موجود است. در نبود آن، fallback خودکار به مسیر فعلی فعال می‌شود — هیچ کاربری قابلیت را از دست نمی‌دهد.
+- **بدون تغییر اسکیمای دیتابیس / بک‌اند.** فقط کد فرانت‌اند (presentation/encoding).
+- **عدم شکست مسیرهای موجود:** مسیر قدیمی و `ffmpeg.wasm`/`transcodeToMp4` دست‌نخورده می‌مانند.
+- **ریسک باقی‌مانده:** هم‌زمانی دقیق صدا و تصویر در مسیر آفلاین باید با یک نمونه واقعی تأیید شود؛ در صورت اختلاف جزئی، نقطه‌ی شروع timeline صدا کالیبره می‌شود.
+
+## نتیجه
+فیلم نهایی به‌صورت MP4 قطعی و فریم‌به‌فریم انکود می‌شود؛ پرش/لگ ناشی از انکود زنده کاملاً حذف می‌شود، و در مرورگرهای قدیمی رفتار فعلی حفظ می‌شود.
