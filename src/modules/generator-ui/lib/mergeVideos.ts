@@ -148,9 +148,14 @@ function pickMimeType(): string {
   // downstream tools — users were getting "downloaded final film won't play"
   // reports. WebM (VP9/VP8 + Opus) from MediaRecorder is well-formed and plays
   // in VLC, modern desktop players, browsers, Android, Telegram, Discord, etc.
+  // VP8 is preferred over VP9 for REAL-TIME canvas capture. Chromium's
+  // software VP9 encoder is far heavier and routinely drops/duplicates frames
+  // during live MediaRecorder capture of 1080p footage, which bakes visible
+  // stutter into the Final Film. VP8 encodes fast enough to keep up in real
+  // time, eliminating that jitter. Both are well-formed WebM that play widely.
   const candidates = [
-    'video/webm;codecs=vp9,opus',
     'video/webm;codecs=vp8,opus',
+    'video/webm;codecs=vp9,opus',
     'video/webm;codecs=opus',
     'video/webm',
   ]
@@ -652,8 +657,19 @@ export async function mergeVideoUrls(
 
   const totalClips = clipDefs.length
   const first = await loadClip(clipDefs[0], captureClipAudio, `#1 of ${totalClips}`)
-  const width = Math.max(640, Math.floor(first.width || 1280))
-  const height = Math.max(360, Math.floor(first.height || 720))
+  // Cap the recording canvas so the long side never exceeds 1080px. Real-time
+  // encoding of larger frames (e.g. 1440p+) saturates the encoder and bakes
+  // stutter into the output. We keep the source aspect ratio exactly, so clips
+  // still fit via drawContain with no distortion.
+  const MAX_LONG_SIDE = 1080
+  let width = Math.max(640, Math.floor(first.width || 1280))
+  let height = Math.max(360, Math.floor(first.height || 720))
+  const longSide = Math.max(width, height)
+  if (longSide > MAX_LONG_SIDE) {
+    const s = MAX_LONG_SIDE / longSide
+    width = Math.max(2, Math.round((width * s) / 2) * 2)
+    height = Math.max(2, Math.round((height * s) / 2) * 2)
+  }
 
   const canvas = document.createElement('canvas')
   canvas.width = width
@@ -672,7 +688,26 @@ export async function mergeVideoUrls(
   if (!snapCtx) throw new Error('Canvas 2D not supported (snapshot)')
 
   const fps = 30
-  const videoStream = canvas.captureStream(fps)
+  // Prefer manual frame control: captureStream(0) emits a frame only when we
+  // call track.requestFrame(). Driving that from a fixed-cadence clock gives a
+  // uniform frame rate to the encoder and removes the jitter caused by bursty
+  // requestVideoFrameCallback paints. Fall back to auto-sampling when the API
+  // is unavailable.
+  type FrameRequestTrack = MediaStreamTrack & { requestFrame?: () => void }
+  let manualFrameTrack: FrameRequestTrack | null = null
+  let videoStream: MediaStream
+  {
+    const auto = canvas.captureStream(0)
+    const vTrack = auto.getVideoTracks()[0] as FrameRequestTrack | undefined
+    if (vTrack && typeof vTrack.requestFrame === 'function') {
+      manualFrameTrack = vTrack
+      videoStream = auto
+    } else {
+      // No manual control — use timed auto-sampling instead.
+      try { auto.getTracks().forEach((t) => t.stop()) } catch { /* ignore */ }
+      videoStream = canvas.captureStream(fps)
+    }
+  }
 
   // --- Audio routing -------------------------------------------------------
   const Ctor: typeof AudioContext = (window.AudioContext
@@ -967,12 +1002,13 @@ export async function mergeVideoUrls(
   }
 
   const chosenMime = pickMimeType()
-  // Default MediaRecorder canvas-capture bitrate (~2.5 Mbps) is far too low for
-  // 1080p / vertical HD clips and visibly softened the Final Film. Pick a
-  // resolution-aware target (~0.18 bits/px/frame) clamped to a sane range so
-  // the merged film keeps the sharpness of the source cards.
-  const targetVideoBitrate = Math.round(width * height * fps * 0.18)
-  const videoBitsPerSecond = Math.max(8_000_000, Math.min(40_000_000, targetVideoBitrate))
+  // Resolution-aware bitrate tuned for REAL-TIME encoding. The previous target
+  // (~0.18 bits/px/frame, floor 8 Mbps, ceil 40 Mbps) saturated Chrome's live
+  // encoder and made it drop frames — the baked-in stutter. ~0.1 bits/px/frame
+  // clamped to 3–12 Mbps keeps the picture sharp while staying within what the
+  // encoder can sustain at 30fps, so frames are no longer dropped.
+  const targetVideoBitrate = Math.round(width * height * fps * 0.1)
+  const videoBitsPerSecond = Math.max(3_000_000, Math.min(12_000_000, targetVideoBitrate))
   let recorder: MediaRecorder
   try {
     recorder = new MediaRecorder(outStream, {
@@ -998,6 +1034,22 @@ export async function mergeVideoUrls(
     recorder.onstop = () => resolve()
   })
   recorder.start(250)
+
+  // Fixed-cadence frame pump: when manual frame control is available, push
+  // exactly one canvas frame per ~1/fps tick so the encoder receives a uniform
+  // frame rate regardless of how the per-clip painters update the canvas. This
+  // is what removes the whole-film stutter from the recording.
+  let framePumpTimer: ReturnType<typeof setInterval> | null = null
+  if (manualFrameTrack) {
+    const intervalMs = Math.max(1, Math.round(1000 / fps))
+    framePumpTimer = setInterval(() => {
+      try { manualFrameTrack?.requestFrame?.() } catch { /* ignore */ }
+    }, intervalMs)
+  }
+  const stopFramePump = () => {
+    if (framePumpTimer) { clearInterval(framePumpTimer); framePumpTimer = null }
+  }
+
 
   // Unified timeline gating: each track only plays while the global playhead is
   // inside its timeline window. Outside the window the track is silenced and
@@ -1257,6 +1309,8 @@ export async function mergeVideoUrls(
     try { voiceoverEl.pause() } catch { /* ignore */ }
   }
   stopPaint()
+  stopFramePump()
+
 
   onProgress?.({ ratio: 0.95, clipIndex: totalClips, totalClips, stage: 'finalizing' })
 
