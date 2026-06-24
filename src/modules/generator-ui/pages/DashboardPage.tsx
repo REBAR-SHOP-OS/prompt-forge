@@ -6202,7 +6202,7 @@ export default function DashboardPage() {
 
     // Content continuity for chained cards: resolve the character description once
     // and reuse it as a prefix on every scene so all cards keep the same subject.
-    const continuityCharacterRef = selectedCharacter ?? continuity.characterRef ?? null
+    const continuityCharacterRef = projectCharacter
     // Persistent identity anchor: the actual Character Sheet image URL, sent on
     // EVERY card (card 1 included) in addition to the previous-frame seed so the
     // provider keeps the same character instead of drifting. Independent of the
@@ -6210,7 +6210,7 @@ export default function DashboardPage() {
     const referenceImageUrls: string[] | undefined =
       continuityCharacterRef?.url ? [continuityCharacterRef.url] : undefined
     let characterPrefixDesc: string | null = null
-    if (continuityActive && continuityCharacterRef) {
+    if (continuityCharacterRef) {
       try {
         setVideoColumnMessage('Reading character reference…')
         characterPrefixDesc = await resolveCharacterDescription(continuityCharacterRef)
@@ -6230,10 +6230,9 @@ export default function DashboardPage() {
         // Enrich each card so the sequence stays content-connected: keep the same
         // character, and (after the first) explicitly continue from the prior card.
         let prompt = sourcePrompt
-        if (continuityActive) {
-          if (characterPrefixDesc) prompt = applyCharacterPrefix(prompt, characterPrefixDesc)
-          if (i > 0) prompt = applyContinuityPrompt(prompt, continuity.memory)
-        }
+        // Always anchor the character (every card) so identity never drifts.
+        if (characterPrefixDesc) prompt = applyCharacterPrefix(prompt, characterPrefixDesc)
+        if (continuityActive && i > 0) prompt = applyContinuityPrompt(prompt, continuity.memory)
 
         let startFrameUrl: string | undefined
         if (i === 0) {
