@@ -1,37 +1,43 @@
-# Fix: Preview lag must never happen
+## Expected outcome
+Every card in a project must use the same Character Sheet identity, including the same face/body/outfit/clothing details, so card 2+ cannot silently drift away from card 1.
 
-## Problem
-When you press PREVIEW, the player (`SequentialClipPlayer`) plays your clips back-to-back in a single video frame. The lag/freeze you see happens **at the boundary between clips**, for two reasons:
+## What I found
+- The frontend sends `referenceImageUrls` when creating cards, but the backend does not persist those reference URLs on the job row.
+- Because the reference is not persisted, regenerate/retry and later lifecycle operations can lose the Character Sheet anchor.
+- For Wan, the Character Sheet is currently only added as prompt text because Wan has no separate reference-image channel in this implementation; this is weak and `prompt_extend: true` can further rewrite the prompt.
+- Veo receives `referenceImages`, but the request does not force the 3.1 reference-capable model during routing unless another condition requires it.
 
-1. **On-demand URL resolution.** Each clip's playable URL (proxy / signed storage URL) is only resolved the moment that clip becomes active. During that wait the player shows a spinner instead of the next frame — a visible stall on the first play-through.
-2. **No look-ahead buffering.** There is a single `<video>` element that is fully torn down and recreated for every clip (`key` changes per clip). The next clip's video bytes only start downloading after the previous clip ends, so there is a black/loading gap while it buffers.
+## Plan
+1. **Persist the project Character Sheet on every job**
+   - Add a safe `reference_image_urls` metadata column to `generator_generation_jobs`.
+   - Store the filtered Character Sheet URLs during `createJob`.
+   - Return that metadata from job list/get endpoints so regenerated cards inherit the exact same character anchor.
 
-This is a presentation-layer issue only — generation, Final Film, and audio mixing are untouched.
+2. **Make regeneration preserve the same character**
+   - Update the frontend job contract to include `reference_image_urls`.
+   - In `regenerateCard`, send `job.reference_image_urls` first, falling back to the current project Character Sheet.
+   - This prevents edits/retries from dropping the anchor.
 
-## Solution (scoped to `SequentialClipPlayer.tsx`)
-Make every clip ready *before* it is needed, so transitions are instant. Three safe, additive changes:
+3. **Strengthen prompt anchoring for every provider**
+   - Replace the current soft prefix with a stricter English identity-lock block that explicitly says: same face, same blue robot body, same black T-shirt, same orange logo, same gray cargo pants, same shoes/accessories; do not change wardrobe unless the user explicitly requests it.
+   - Keep user prompt content intact after this block.
 
-1. **Pre-resolve all clip URLs up front.** On mount / when the clip list changes, warm the playable-URL cache for every video clip at once (the existing `usePlayableVideoUrls` batch resolver already does this and shares the same in-memory cache). When a clip becomes active, its URL is already cached, so the spinner gap disappears.
+4. **Fix provider-specific weak points**
+   - For Wan: disable provider prompt expansion when a Character Sheet reference exists, because expansion can reinterpret/change clothing.
+   - For Wan/local fallback: include the reference URL and strict identity-lock prompt, while keeping the previous-frame start image as the motion bridge.
+   - For Flow/Veo: route reference-image jobs to the reference-capable Veo 3.1 path and attach `referenceImages` as inline data.
 
-2. **Look-ahead buffering (double buffer).** Render a hidden, muted `<video preload="auto">` for the **next** clip's resolved URL so its bytes are already downloaded/decoded by the time it becomes active. When the active clip ends, the swap is to an already-buffered source — no stall.
+5. **Add observability without leaking secrets**
+   - Log only job id, provider/model, and reference count, never the actual signed URLs.
+   - This lets us confirm card 2+ was submitted with a Character Sheet anchor.
 
-3. **`preload="auto"` on the active video** so the browser keeps a healthy forward buffer during a single clip too.
+6. **Validate safely**
+   - Run TypeScript validation.
+   - Run targeted backend tests if available.
+   - After deployment, verify a two-card generation request logs `referenceCount: 1` for both cards and that the second card request keeps the persisted reference metadata.
 
-4. **Tidy the duration-preload effects** to resolve through the same proxy path (they currently create throwaway `<video>` elements pointed at the raw, unproxied `src`, which can hang or fail CORS for external providers). Reuse the warmed cache instead of duplicating fetches.
-
-## Out of scope / safety
-- No change to job creation, Final Film encoding (`mergeVideosWebCodecs.ts`), audio mixing, or any edge function.
-- No change to the proxy/signing logic itself — only *when* it is called.
-- Purely additive: if pre-buffering fails for any reason, playback falls back to today's on-demand behavior, so nothing breaks.
-
-## Technical detail
-- Add a batch `usePlayableVideoUrls(clips.map(videoSrc))` call to warm the cache; key it on the clip-id/src signature already used by the duration effect.
-- Compute `nextIndex` and, when the next clip is a video with a resolved URL, mount an off-screen `<video muted preload="auto" src={nextResolvedUrl}>` (zero-size / `hidden`) to force buffering. Do not attach it to playback logic.
-- Keep the active `<video>` element's `key` stable per clip (unchanged) but add `preload="auto"`.
-- No new dependencies.
-
-## Verification
-1. `bunx tsgo --noEmit` clean.
-2. Open PREVIEW on a multi-clip project (like the 9:16 reel in the screenshot) and confirm clips play through with no spinner/black gap at each boundary, including the very first play-through.
-3. Scrub across clip boundaries and confirm seeking still works.
-4. Confirm music/voiceover stay in sync (soundtrack handlers unchanged).
+## Risks / safeguards
+- Existing jobs without `reference_image_urls` remain compatible.
+- No credit ledger changes.
+- No destructive data changes.
+- If a provider still ignores visual references, the app will at least preserve and resend the strongest available anchor consistently instead of losing it between cards.
