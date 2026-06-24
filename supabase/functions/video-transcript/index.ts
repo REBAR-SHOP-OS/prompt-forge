@@ -205,7 +205,7 @@ Deno.serve(async (req) => {
     if (!parsed.success) {
       return json({ error: parsed.error.flatten().formErrors.join(', ') || 'Invalid request' }, 400)
     }
-    const { videoUrl, storagePath, transcript: providedTranscript, targetLanguage } = parsed.data
+    const { videoUrl, storagePath, audioBase64, mimeType, transcript: providedTranscript, targetLanguage } = parsed.data
 
     // Translate-only path: caller already has the transcript cached.
     if (providedTranscript) {
@@ -214,21 +214,46 @@ Deno.serve(async (req) => {
       return json({ transcript: providedTranscript, translatedText, targetLanguage })
     }
 
-    const sourceUrl = videoUrl ?? storagePath!
-    const videoRes = await fetch(sourceUrl)
-    if (!videoRes.ok) {
-      return json({ error: `Could not load video (${videoRes.status})` }, 502)
-    }
-    const videoBytes = await videoRes.blob()
-    if (videoBytes.size < 1024) {
-      return json({ error: 'The video file is empty or too small to transcribe.' }, 400)
+    let videoBytes: Blob
+    let sourceUrl: string
+    let contentType: string | null
+
+    if (audioBase64) {
+      // Direct raw-audio path (e.g. a browser blob: URL the server can't fetch).
+      let bytes: Uint8Array
+      try {
+        const clean = audioBase64.includes(',') ? audioBase64.split(',').pop()! : audioBase64
+        const bin = atob(clean)
+        bytes = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+      } catch {
+        return json({ error: 'Invalid audioBase64 payload.' }, 400)
+      }
+      contentType = mimeType ?? 'audio/wav'
+      videoBytes = new Blob([bytes], { type: contentType })
+      // Give the STT format-inference a filename hint via the mime type.
+      sourceUrl = `audio.${contentType.includes('mpeg') || contentType.includes('mp3') ? 'mp3' : contentType.includes('webm') ? 'webm' : contentType.includes('mp4') || contentType.includes('m4a') ? 'm4a' : contentType.includes('ogg') ? 'ogg' : 'wav'}`
+      if (videoBytes.size < 1024) {
+        return json({ error: 'The audio is empty or too small to transcribe.' }, 400)
+      }
+    } else {
+      sourceUrl = videoUrl ?? storagePath!
+      const videoRes = await fetch(sourceUrl)
+      if (!videoRes.ok) {
+        return json({ error: `Could not load video (${videoRes.status})` }, 502)
+      }
+      videoBytes = await videoRes.blob()
+      contentType = videoRes.headers.get('content-type')
+      if (videoBytes.size < 1024) {
+        return json({ error: 'The video file is empty or too small to transcribe.' }, 400)
+      }
     }
 
     const { transcript, words } = await transcribeVideo(
       apiKey,
       videoBytes,
       sourceUrl,
-      videoRes.headers.get('content-type'),
+      contentType,
     )
     if (!transcript) {
       return json({ error: 'No speech was detected in this film.' }, 200)
