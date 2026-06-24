@@ -60,6 +60,7 @@ import {
   Contact,
   Eye,
   EyeOff,
+  Building2,
   X
 } from 'lucide-react'
 import {
