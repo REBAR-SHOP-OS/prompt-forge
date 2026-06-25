@@ -12,7 +12,6 @@ export default class RootErrorBoundary extends Component<{ children: ReactNode }
   }
 
   componentDidCatch(error: Error, info: unknown) {
-    // eslint-disable-next-line no-console
     console.error("[RootErrorBoundary]", error, info);
   }
 

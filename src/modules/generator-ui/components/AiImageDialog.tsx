@@ -82,10 +82,10 @@ async function extractFnError(fnErr: unknown, fallback: string): Promise<string>
       try {
         const parsed = JSON.parse(txt) as { error?: string }
         if (parsed?.error) return String(parsed.error)
-      } catch { }
+      } catch { /* noop */ }
       if (txt) return txt
     }
-  } catch { }
+  } catch { /* noop */ }
   if (fnErr instanceof Error && fnErr.message) return fnErr.message
   return fallback
 }

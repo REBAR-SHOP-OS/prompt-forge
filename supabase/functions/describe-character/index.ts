@@ -110,6 +110,7 @@ Deno.serve(async (req) => {
 
     const data = await resp.json();
     // deno-lint-ignore no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const description: string = ((data as any)?.choices?.[0]?.message?.content ?? "").toString().trim();
     if (!description) {
       return new Response(JSON.stringify({ error: "No description returned" }), {

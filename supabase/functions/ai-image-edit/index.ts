@@ -161,6 +161,7 @@ Deno.serve(async (req) => {
     };
 
     // deno-lint-ignore no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const extractImage = (data: any): string | undefined =>
       data?.choices?.[0]?.message?.images?.[0]?.image_url?.url;
 

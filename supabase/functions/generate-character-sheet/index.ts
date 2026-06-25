@@ -146,6 +146,7 @@ Deno.serve(async (req) => {
     }
     const instruction = instructionParts.join(" ");
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const userContent: any[] = [
       { type: "text", text: instruction },
     ];
@@ -250,6 +251,7 @@ Deno.serve(async (req) => {
     } catch { /* fall back to public url */ }
 
     return new Response(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       JSON.stringify({ id: (row as any)?.id, storage_path: signedUrl, title: (row as any)?.title, created_at: (row as any)?.created_at }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
