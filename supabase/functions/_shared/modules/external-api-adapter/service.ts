@@ -801,13 +801,24 @@ async function pollWanI2V(taskId: string, apiKey: string): Promise<GenerationPol
     };
   }
   if (status === "FAILED" || status === "CANCELED") {
+    const providerCode = json.output?.code ?? json.code ?? "";
+    const providerMessage = json.output?.message ?? json.message ?? `task ${status.toLowerCase()}`;
+    // DashScope content moderation ("green net") rejects the prompt or start
+    // image. Surface a clear, actionable message so the user knows to reword
+    // the prompt / swap the image instead of seeing a bare provider error.
+    const isModeration = /DataInspectionFailed|green net|inappropriate content/i.test(
+      `${providerCode} ${providerMessage}`,
+    );
+    const reason = isModeration
+      ? "This scene was blocked by the video provider's content filter. Reword the prompt (avoid brand names, real people, logos, or sensitive wording) or change the start image, then try again."
+      : providerMessage;
     return {
       status: "failed",
       videoUrl: null,
       thumbnailUrl: null,
       aspectRatio: null,
       duration: null,
-      reason: json.output?.message ?? json.message ?? `task ${status.toLowerCase()}`,
+      reason,
       progressPercent: null,
     };
   }
