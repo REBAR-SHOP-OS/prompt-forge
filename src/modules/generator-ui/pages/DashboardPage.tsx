@@ -3450,10 +3450,7 @@ export default function DashboardPage() {
     return MODEL_CHOICES.find((m) => m.supports.includes(needed)) ?? MODEL_CHOICES[0]
   }, [selectedModelId, isTextToVideo])
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem('ui:preferred-model', selectedModelId)
-  }, [selectedModelId])
+
 
   // Local video router config/health status — only checked while a local model
   // is selected, so cloud-only users never trigger the probe.
