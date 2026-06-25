@@ -6267,6 +6267,8 @@ export default function DashboardPage() {
         let prompt = sourcePrompt
         // Always anchor the character (every card) so identity never drifts.
         if (characterPrefixDesc) prompt = applyCharacterPrefix(prompt, characterPrefixDesc)
+        // Always anchor the selected product (every card) so it never drifts.
+        if (selectedProduct) prompt = applyProductPrefix(prompt, selectedProduct)
         if (continuityActive && i > 0) prompt = applyContinuityPrompt(prompt, continuity.memory)
 
         let startFrameUrl: string | undefined
