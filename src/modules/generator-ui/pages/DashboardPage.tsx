@@ -6121,7 +6121,7 @@ export default function DashboardPage() {
             providerKey: selectedModel.providerKey,
             requestedModel: selectedModel.model,
             prompt: plannedPrompt,
-            firstFrameUrl: readyStartFrame.url,
+            firstFrameUrl: bakedStartFrameUrl,
             lastFrameUrl: readyEndFrame.url,
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
@@ -6129,13 +6129,13 @@ export default function DashboardPage() {
             narrationText: plannedNarration,
             referenceImageUrls: projectReferenceUrls,
           })
-          seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
+          seedFrames = { firstFrameUrl: bakedStartFrameUrl, lastFrameUrl: readyEndFrame.url }
         } else if (readyStartFrame?.url) {
           createdJob = await jobOrchestratorGateway.createJob({
             providerKey: selectedModel.providerKey,
             requestedModel: selectedModel.model,
             prompt: plannedPrompt,
-            firstFrameUrl: readyStartFrame.url,
+            firstFrameUrl: bakedStartFrameUrl,
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
             draftGroupId,
