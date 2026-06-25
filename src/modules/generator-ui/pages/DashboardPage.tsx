@@ -6646,11 +6646,19 @@ export default function DashboardPage() {
     const draftGroupId =
       job.draft_group_id ?? draftGroupUuid(jobDraftMap[job.id]) ?? ensureActiveDraftGroupId()
     try {
+      // Re-bake the pinned product into the start frame on regenerate so the
+      // refreshed clip still matches the exact product.
+      let regenFirstFrameUrl = firstFrameUrl
+      if (selectedProduct && firstFrameUrl) {
+        setVideoColumnMessage('Locking product into start frame…')
+        regenFirstFrameUrl = await bakeProductIntoFrame(firstFrameUrl, selectedProduct, ratio)
+        setVideoColumnMessage(null)
+      }
       const createdJob = await jobOrchestratorGateway.createJob({
         providerKey,
         requestedModel,
         prompt,
-        firstFrameUrl,
+        firstFrameUrl: regenFirstFrameUrl,
         lastFrameUrl,
         // Preserve the same Character Sheet anchor the card was created with;
         // fall back to the current project character so identity never drifts.
@@ -6663,7 +6671,7 @@ export default function DashboardPage() {
         draftGroupId,
       })
       const seededJob = buildSeededJob(prompt, createdJob, {
-        firstFrameUrl,
+        firstFrameUrl: regenFirstFrameUrl,
         lastFrameUrl,
       })
       newJobId = seededJob.id
