@@ -8170,7 +8170,19 @@ export default function DashboardPage() {
                               <Pencil className="h-3 w-3 shrink-0 text-zinc-500 opacity-0 transition group-hover:opacity-100" aria-hidden="true" />
                             </button>
                           )}
+                          <textarea
+                            value={productDescDraft[img.id] ?? img.description ?? ''}
+                            onChange={(e) =>
+                              setProductDescDraft((prev) => ({ ...prev, [img.id]: e.target.value }))
+                            }
+                            onBlur={() => { void saveProductDescription(img.id) }}
+                            maxLength={2000}
+                            rows={2}
+                            placeholder="Describe for AI — what is this product? (helps the AI build the video correctly)"
+                            className="w-full resize-y rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] leading-snug text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-sky-300/40"
+                          />
                           <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
+
                             <span className="tabular-nums">{formatCreatedAt(img.created_at)}</span>
                             <div className="flex shrink-0 items-center gap-1.5">
                               <button
