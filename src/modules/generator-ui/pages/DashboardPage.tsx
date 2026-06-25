@@ -6033,7 +6033,7 @@ export default function DashboardPage() {
             aspectRatio: effectiveRatio,
             draftGroupId,
             narrationText: plannedNarration,
-            referenceImageUrls: projectCharacterRefs,
+            referenceImageUrls: projectReferenceUrls,
           })
         } else if (readyStartFrame?.url && readyEndFrame?.url) {
           createdJob = await jobOrchestratorGateway.createJob({
@@ -6046,7 +6046,7 @@ export default function DashboardPage() {
             aspectRatio: effectiveRatio,
             draftGroupId,
             narrationText: plannedNarration,
-            referenceImageUrls: projectCharacterRefs,
+            referenceImageUrls: projectReferenceUrls,
           })
           seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
         } else if (readyStartFrame?.url) {
@@ -6059,7 +6059,7 @@ export default function DashboardPage() {
             aspectRatio: effectiveRatio,
             draftGroupId,
             narrationText: plannedNarration,
-            referenceImageUrls: projectCharacterRefs,
+            referenceImageUrls: projectReferenceUrls,
           })
           seedFrames = { firstFrameUrl: readyStartFrame.url }
         } else if (readyEndFrame?.url) {
@@ -6072,7 +6072,7 @@ export default function DashboardPage() {
             aspectRatio: effectiveRatio,
             draftGroupId,
             narrationText: plannedNarration,
-            referenceImageUrls: projectCharacterRefs,
+            referenceImageUrls: projectReferenceUrls,
           })
           seedFrames = { lastFrameUrl: readyEndFrame.url }
         } else {
@@ -6563,7 +6563,7 @@ export default function DashboardPage() {
         referenceImageUrls:
           (job.reference_image_urls && job.reference_image_urls.length > 0
             ? job.reference_image_urls
-            : projectCharacterRefs) ?? undefined,
+            : projectReferenceUrls) ?? undefined,
         durationSeconds,
         aspectRatio: ratio,
         draftGroupId,
