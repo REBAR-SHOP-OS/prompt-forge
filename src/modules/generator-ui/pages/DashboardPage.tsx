@@ -6142,7 +6142,7 @@ export default function DashboardPage() {
             narrationText: plannedNarration,
             referenceImageUrls: projectReferenceUrls,
           })
-          seedFrames = { firstFrameUrl: readyStartFrame.url }
+          seedFrames = { firstFrameUrl: bakedStartFrameUrl }
         } else if (readyEndFrame?.url) {
           createdJob = await jobOrchestratorGateway.createJob({
             providerKey: selectedModel.providerKey,
