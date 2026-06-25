@@ -19,6 +19,24 @@ export default defineConfig(({ mode }) => ({
     },
     dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime", "@tanstack/react-query", "@tanstack/query-core"],
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (id.includes("node_modules/@ffmpeg")) return "ffmpeg";
+          if (id.includes("node_modules/recharts") || id.includes("node_modules/d3-") || id.includes("node_modules/victory-")) return "charts";
+          if (id.includes("node_modules/wavesurfer")) return "wavesurfer";
+          if (id.includes("node_modules/@radix-ui")) return "radix-ui";
+          if (id.includes("node_modules/@supabase")) return "supabase";
+          if (id.includes("node_modules/@tanstack")) return "tanstack";
+          if (id.includes("node_modules/react-router-dom") || id.includes("node_modules/react-router/") || id.includes("node_modules/@remix-run")) return "router";
+          if (id.includes("node_modules/react") || id.includes("node_modules/react-dom")) return "react";
+          if (id.includes("node_modules/lucide-react")) return "lucide";
+          if (id.includes("node_modules/")) return "vendor";
+        },
+      },
+    },
+  },
   // ffmpeg.wasm ships its own ES module worker that uses dynamic import().
   // Vite's dep-optimizer rewrites those imports and breaks the worker load,
   // leaving FFmpeg.load() hanging until timeout. Excluding the packages keeps

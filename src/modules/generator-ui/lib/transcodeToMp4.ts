@@ -13,9 +13,7 @@ import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile, toBlobURL } from '@ffmpeg/util'
 
 // Vite turns these into URLs to hashed assets under /assets/.
-// eslint-disable-next-line import/no-unresolved
 import coreUrl from '@ffmpeg/core?url'
-// eslint-disable-next-line import/no-unresolved
 import wasmUrl from '@ffmpeg/core/wasm?url'
 // The engine's worker. `?worker&url` makes Vite compile worker.js + its
 // internal imports (const.js / errors.js) into OUR build graph and return a
@@ -24,7 +22,6 @@ import wasmUrl from '@ffmpeg/core/wasm?url'
 // production (the package is excluded from optimizeDeps), so the worker never
 // starts and load() hangs until the 45s timeout. Passing this as
 // `classWorkerURL` removes that fragility.
-// eslint-disable-next-line import/no-unresolved
 import ffmpegWorkerUrl from '@ffmpeg/ffmpeg/worker?worker&url'
 
 export interface Mp4Result {

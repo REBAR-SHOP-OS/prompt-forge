@@ -3070,7 +3070,6 @@ export default function DashboardPage() {
     const confirmMsg = `Delete ${ids.length} selected ${label}${ids.length === 1 ? '' : 's'} permanently?`
     if (typeof window !== 'undefined' && !window.confirm(confirmMsg)) return
     for (const id of ids) {
-      // eslint-disable-next-line no-await-in-loop
       await deleteCardConfirmed(id)
     }
     if (variant === 'final') {
@@ -3874,7 +3873,6 @@ export default function DashboardPage() {
         }
       }
     })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, generatedVideos, userImages, jobDraftMap, imageDraftMap])
 
 
@@ -3918,7 +3916,6 @@ export default function DashboardPage() {
     // Per user requirement: drafts are never auto-removed. Duplicate
     // detection is preserved for diagnostics but no draft is deleted here.
     if (toRemove.size === 0) return
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, draftEntries, draftSourceJobs, draftSourceImages])
 
   // One-time cleanup of legacy pollution: earlier builds could turn a Film
@@ -4230,7 +4227,7 @@ export default function DashboardPage() {
   const handleCardDragStart = (id: string) => (event: React.DragEvent) => {
     setDraggingId(id)
     event.dataTransfer.effectAllowed = 'move'
-    try { event.dataTransfer.setData('text/plain', id) } catch {}
+    try { event.dataTransfer.setData('text/plain', id) } catch { /* noop */ }
   }
   const handleCardDragOver = (event: React.DragEvent) => {
     event.preventDefault()
@@ -6010,8 +6007,8 @@ export default function DashboardPage() {
       for (let i = 0; i < iterations; i++) {
         let createdJob
         let seedFrames: { firstFrameUrl?: string; lastFrameUrl?: string } = {}
-        let pendingEndAppendUrl: string | null = null
-        let pendingStartPrependUrl: string | null = null
+        const pendingEndAppendUrl: string | null = null
+        const pendingStartPrependUrl: string | null = null
 
         if (isTextToVideo) {
           createdJob = await jobOrchestratorGateway.createJob({
@@ -6124,7 +6121,6 @@ export default function DashboardPage() {
     const timeoutMs = 45 * 60 * 1000
     const intervalMs = 3000
     setVideoColumnMessage(`Waiting for ${sceneLabel} to finish before queuing the next scene…`)
-    // eslint-disable-next-line no-constant-condition
     while (true) {
       if (Date.now() - startedAt > timeoutMs) {
         throw new Error(`Timed out waiting for ${sceneLabel} to complete`)

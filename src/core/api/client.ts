@@ -73,9 +73,9 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   }
 
   const text = await res.text();
-  // deno-lint-ignore no-explicit-any
-  let body: any = null;
-  try { body = text ? JSON.parse(text) : null; } catch { /* keep as text */ }
+  type ResponseBody = { error?: { code?: string; message?: string; details?: unknown }; requestId?: string } | null;
+  let body: ResponseBody = null;
+  try { body = text ? (JSON.parse(text) as ResponseBody) : null; } catch { /* keep as text */ }
 
   if (!res.ok) {
     const code = body?.error?.code ?? `HTTP_${res.status}`;
