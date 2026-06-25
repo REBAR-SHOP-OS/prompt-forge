@@ -6238,8 +6238,12 @@ export default function DashboardPage() {
     // EVERY card (card 1 included) in addition to the previous-frame seed so the
     // provider keeps the same character instead of drifting. Independent of the
     // text description prefix below.
-    const referenceImageUrls: string[] | undefined =
-      continuityCharacterRef?.url ? [continuityCharacterRef.url] : undefined
+    const referenceImageUrls: string[] | undefined = (() => {
+      const urls = [continuityCharacterRef?.url, selectedProduct?.url].filter(
+        (u): u is string => typeof u === 'string' && u.length > 0,
+      )
+      return urls.length > 0 ? urls.slice(0, 3) : undefined
+    })()
     let characterPrefixDesc: string | null = null
     if (continuityCharacterRef) {
       try {
