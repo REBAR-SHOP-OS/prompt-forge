@@ -11524,6 +11524,110 @@ export default function DashboardPage() {
               </PopoverContent>
             </Popover>
 
+            <Popover
+              open={productMenuOpen}
+              onOpenChange={(open) => {
+                setProductMenuOpen(open)
+                if (open && archiveProductImages.length === 0) void loadArchive()
+              }}
+            >
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Pin a product for this project"
+                  title="Pin the product so it stays identical in every card"
+                  className={`inline-flex h-11 items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
+                    selectedProduct
+                      ? 'border-amber-400/60 bg-amber-500/10 text-amber-100'
+                      : 'border-white/15 bg-white/[0.04] text-zinc-200 hover:border-white/30'
+                  }`}
+                >
+                  {selectedProduct ? (
+                    <>
+                      <img
+                        src={selectedProduct.url}
+                        alt="Product"
+                        className="h-6 w-6 rounded-md object-cover"
+                      />
+                      <span>Product</span>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        aria-label="Remove product"
+                        title="Remove product"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setSelectedProduct(null)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            setSelectedProduct(null)
+                          }
+                        }}
+                        className="ml-0.5 grid h-5 w-5 place-items-center rounded-full text-amber-200/80 transition hover:bg-amber-500/20 hover:text-amber-50"
+                      >
+                        <X className="h-3.5 w-3.5" aria-hidden="true" />
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Package className="h-5 w-5" aria-hidden="true" />
+                      <span>Add product</span>
+                    </>
+                  )}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-72 p-2">
+                <div className="mb-1.5 flex items-center justify-between px-1">
+                  <span className="text-xs font-semibold text-zinc-300">Project product</span>
+                  {selectedProduct ? (
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedProduct(null); setProductMenuOpen(false) }}
+                      className="text-[11px] text-zinc-400 hover:text-rose-300"
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+                {archiveLoading && archiveProductImages.length === 0 ? (
+                  <div className="flex items-center justify-center py-6 text-zinc-500">
+                    <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+                  </div>
+                ) : archiveProductImages.length === 0 ? (
+                  <div className="px-1 py-4 text-center text-xs text-zinc-500">
+                    No products yet. Add one in Product AD.
+                  </div>
+                ) : (
+                  <div className="grid max-h-64 grid-cols-3 gap-2 overflow-y-auto p-1">
+                    {archiveProductImages.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedProduct({ id: p.id, url: p.storage_path, title: p.title?.trim() || 'Selected product' })
+                          setProductMenuOpen(false)
+                        }}
+                        className={`group relative aspect-square overflow-hidden rounded-lg border transition ${
+                          selectedProduct?.id === p.id
+                            ? 'border-amber-400'
+                            : 'border-white/10 hover:border-white/30'
+                        }`}
+                        title={p.title ?? 'Product'}
+                      >
+                        <img src={p.storage_path} alt={p.title ?? 'Product'} className="h-full w-full object-cover" loading="lazy" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </PopoverContent>
+            </Popover>
+
+
+
 
 
 
