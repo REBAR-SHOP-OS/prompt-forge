@@ -4838,7 +4838,7 @@ export default function DashboardPage() {
               category: 'product',
               title: trimmedName || file.name.replace(/\.[^/.]+$/, '').slice(0, 100) || null,
             })
-            .select('id, storage_path, created_at, still_duration_seconds, width, height, category, title')
+            .select('id, storage_path, created_at, still_duration_seconds, width, height, category, title, description')
             .single()
           if (insErr) throw insErr
           const signedRow = { ...(row as UserImageItem), storage_path: await signUserImageUrl((row as UserImageItem).storage_path) }
