@@ -8038,7 +8038,7 @@ export default function DashboardPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-4 py-3">
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-zinc-200">Upload a product photo</p>
-                      <p className="mt-0.5 text-xs text-zinc-500">JPG, PNG or WEBP — up to 10 MB. Saved here for reuse.</p>
+                      <p className="mt-0.5 text-xs text-zinc-500">JPG, PNG or WEBP — up to 10 MB. Saved here for reuse. Add a description under each photo so the AI understands the product.</p>
                       {productUploadError ? (
                         <p className="mt-1 text-xs text-rose-300">{productUploadError}</p>
                       ) : null}
