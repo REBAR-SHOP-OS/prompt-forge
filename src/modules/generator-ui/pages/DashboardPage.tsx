@@ -5930,9 +5930,11 @@ export default function DashboardPage() {
   function applyProductPrefix(prompt: string, product: ProjectProduct | null): string {
     if (!product) return prompt
     const name = product.title?.trim()
+    const desc = product.description?.trim()
     return [
       `PRODUCT IDENTITY LOCK (highest priority): The advertised product${name ? ` ("${name}")` : ''} is fixed and must stay identical in every shot, matching the provided product reference image exactly.`,
       `Keep the exact same product shape, geometry, materials, colors, branding, logos, text and labels. Do not redesign, recolor, relabel, add or remove any part of the product. The product must be the same item the user selected, not a similar-looking substitute. Only the camera, pose and environment may change.`,
+      ...(desc ? [`Product description (use this to render it correctly): ${desc}`] : []),
       ``,
       prompt,
     ].join('\n')
