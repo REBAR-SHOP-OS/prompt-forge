@@ -3427,10 +3427,7 @@ export default function DashboardPage() {
   const [composerError, setComposerError] = useState<string | null>(null)
   const [isPromptMenuOpen, setIsPromptMenuOpen] = useState(false)
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false)
-  const [selectedModelId, setSelectedModelId] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'wan-i2v'
-    return window.localStorage.getItem('ui:preferred-model') ?? 'wan-i2v'
-  })
+  const [selectedModelId, setSelectedModelId] = useState<string>('wan-i2v')
   const [narratorMode, setNarratorMode] = useState<'idle' | 'input'>('idle')
   const [narratorScript, setNarratorScript] = useState('')
   const [styleMode, setStyleMode] = useState<'idle' | 'input'>('idle')
@@ -3453,10 +3450,7 @@ export default function DashboardPage() {
     return MODEL_CHOICES.find((m) => m.supports.includes(needed)) ?? MODEL_CHOICES[0]
   }, [selectedModelId, isTextToVideo])
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem('ui:preferred-model', selectedModelId)
-  }, [selectedModelId])
+
 
   // Local video router config/health status — only checked while a local model
   // is selected, so cloud-only users never trigger the probe.
