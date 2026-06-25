@@ -5907,6 +5907,50 @@ export default function DashboardPage() {
     ].join('\n')
   }
 
+  // Bake the real product image directly into a clip's start frame. Wan I2V only
+  // conditions on the start frame (it cannot read separate reference images), so
+  // this is the only reliable way to make the generated clip reproduce the exact
+  // product the user pinned. Uses ai-image-edit (multi-image) to composite the
+  // reference product into the frame, then uploads the result to wan-frames and
+  // returns a downloadable URL. Non-destructive: any failure returns the
+  // original start frame so generation never breaks.
+  async function bakeProductIntoFrame(
+    startFrameUrl: string | undefined,
+    product: ProjectProduct | null,
+    ratio: Ratio,
+  ): Promise<string | undefined> {
+    if (!startFrameUrl || !product?.url) return startFrameUrl
+    const userId = session?.user?.id
+    if (!userId) return startFrameUrl
+    const editRatio: '1:1' | '9:16' | '16:9' =
+      ratio === '9:16' ? '9:16' : ratio === '1:1' ? '1:1' : '16:9'
+    try {
+      const name = product.title?.trim()
+      const instruction = [
+        `Replace the advertised product in image 1 with the EXACT product shown in the reference image (image 2)${name ? ` ("${name}")` : ''}.`,
+        `Match the reference product precisely: same shape, geometry, materials, colors, branding, logos, text and labels — it must be the same item, not a similar-looking substitute.`,
+        `Keep everything else in image 1 unchanged: same character, face, pose, hands, lighting, background and composition. The product should sit naturally in the scene where the original product was.`,
+      ].join(' ')
+      const { data, error } = await supabase.functions.invoke('ai-image-edit', {
+        body: { imageUrls: [startFrameUrl, product.url], aspectRatio: editRatio, prompt: instruction },
+      })
+      if (error) throw error
+      const dataUrl = (data as { dataUrl?: string } | null)?.dataUrl
+      if (!dataUrl) return startFrameUrl
+      const res = await fetch(dataUrl)
+      const blob = await res.blob()
+      const storagePath = `${userId}/product-baked-${Date.now()}-${crypto.randomUUID()}.png`
+      const { error: upErr } = await supabase.storage
+        .from(FRAMES_BUCKET)
+        .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false })
+      if (upErr) return startFrameUrl
+      const { data: pub } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+      return await signFramesUrl(storagePath).catch(() => pub.publicUrl)
+    } catch {
+      return startFrameUrl
+    }
+  }
+
   // Pin the project product from a product image URL (Product AD flow). Matches a
   // saved product when possible so the title/id are meaningful, else creates one.
   function pinProductFromImageUrl(imageUrl: string) {
@@ -6046,6 +6090,15 @@ export default function DashboardPage() {
       // Authoritative narration from the user's prompt — kept as the reference
       // for the on-film narration check, independent of later prompt edits.
       const plannedNarration = extractNarration(plannedPrompt).join('\n') || undefined
+      // Wan I2V only "sees" the start frame. When a product is pinned, bake the
+      // real product image into the start frame so the clip reproduces the exact
+      // product the user selected (text locks alone can't make Wan see it).
+      let bakedStartFrameUrl = readyStartFrame?.url
+      if (selectedProduct && readyStartFrame?.url) {
+        setVideoColumnMessage('Locking product into start frame…')
+        bakedStartFrameUrl = await bakeProductIntoFrame(readyStartFrame.url, selectedProduct, effectiveRatio)
+        setVideoColumnMessage(null)
+      }
       for (let i = 0; i < iterations; i++) {
         let createdJob
         let seedFrames: { firstFrameUrl?: string; lastFrameUrl?: string } = {}
@@ -6068,7 +6121,7 @@ export default function DashboardPage() {
             providerKey: selectedModel.providerKey,
             requestedModel: selectedModel.model,
             prompt: plannedPrompt,
-            firstFrameUrl: readyStartFrame.url,
+            firstFrameUrl: bakedStartFrameUrl,
             lastFrameUrl: readyEndFrame.url,
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
@@ -6076,20 +6129,20 @@ export default function DashboardPage() {
             narrationText: plannedNarration,
             referenceImageUrls: projectReferenceUrls,
           })
-          seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
+          seedFrames = { firstFrameUrl: bakedStartFrameUrl, lastFrameUrl: readyEndFrame.url }
         } else if (readyStartFrame?.url) {
           createdJob = await jobOrchestratorGateway.createJob({
             providerKey: selectedModel.providerKey,
             requestedModel: selectedModel.model,
             prompt: plannedPrompt,
-            firstFrameUrl: readyStartFrame.url,
+            firstFrameUrl: bakedStartFrameUrl,
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
             draftGroupId,
             narrationText: plannedNarration,
             referenceImageUrls: projectReferenceUrls,
           })
-          seedFrames = { firstFrameUrl: readyStartFrame.url }
+          seedFrames = { firstFrameUrl: bakedStartFrameUrl }
         } else if (readyEndFrame?.url) {
           createdJob = await jobOrchestratorGateway.createJob({
             providerKey: selectedModel.providerKey,
@@ -6290,6 +6343,13 @@ export default function DashboardPage() {
         } else if (previousJobId) {
           startFrameUrl = await waitForLastFrameUrl(previousJobId, `Scene ${i}`)
         }
+        // Bake the pinned product into this scene's start frame so Wan reproduces
+        // the exact product (it only conditions on the start frame).
+        if (selectedProduct && startFrameUrl) {
+          setVideoColumnMessage(`Locking product into ${sceneLabel}…`)
+          startFrameUrl = await bakeProductIntoFrame(startFrameUrl, selectedProduct, effectiveRatio)
+        }
+
 
         setVideoColumnMessage(`Queuing ${sceneLabel}…`)
         const createdJob = await jobOrchestratorGateway.createJob({
@@ -6586,11 +6646,19 @@ export default function DashboardPage() {
     const draftGroupId =
       job.draft_group_id ?? draftGroupUuid(jobDraftMap[job.id]) ?? ensureActiveDraftGroupId()
     try {
+      // Re-bake the pinned product into the start frame on regenerate so the
+      // refreshed clip still matches the exact product.
+      let regenFirstFrameUrl = firstFrameUrl
+      if (selectedProduct && firstFrameUrl) {
+        setVideoColumnMessage('Locking product into start frame…')
+        regenFirstFrameUrl = await bakeProductIntoFrame(firstFrameUrl, selectedProduct, ratio)
+        setVideoColumnMessage(null)
+      }
       const createdJob = await jobOrchestratorGateway.createJob({
         providerKey,
         requestedModel,
         prompt,
-        firstFrameUrl,
+        firstFrameUrl: regenFirstFrameUrl,
         lastFrameUrl,
         // Preserve the same Character Sheet anchor the card was created with;
         // fall back to the current project character so identity never drifts.
@@ -6603,7 +6671,7 @@ export default function DashboardPage() {
         draftGroupId,
       })
       const seededJob = buildSeededJob(prompt, createdJob, {
-        firstFrameUrl,
+        firstFrameUrl: regenFirstFrameUrl,
         lastFrameUrl,
       })
       newJobId = seededJob.id
