@@ -5961,6 +5961,9 @@ export default function DashboardPage() {
         plannedPrompt = applyCharacterPrefix(plannedPrompt, desc)
         setVideoColumnMessage(null)
       }
+      // Anchor the selected product (every card) so the product/logo never drifts.
+      if (selectedProduct) plannedPrompt = applyProductPrefix(plannedPrompt, selectedProduct)
+
 
       // Continuity Mode: append the continuity instruction block + scene memory
       // so the next card continues from the previous clip. The previous frame is
