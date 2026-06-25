@@ -9105,6 +9105,7 @@ export default function DashboardPage() {
           if (imageUrl) {
             setUploadTarget('Start')
             void handleUseImageAsStart(imageUrl)
+            pinProductFromImageUrl(imageUrl)
           }
         }}
         onSendScenes={async (scenes, imageUrl, duration) => {
@@ -9116,6 +9117,7 @@ export default function DashboardPage() {
           if (imageUrl) {
             setUploadTarget('Start')
             await handleUseImageAsStart(imageUrl)
+            pinProductFromImageUrl(imageUrl)
           }
         }}
       />
