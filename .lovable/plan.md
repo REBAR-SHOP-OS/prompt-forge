@@ -1,41 +1,28 @@
-## هدف
-محصولی که کاربر در بخش Product AD انتخاب کرده، در **همه‌ی کارت‌ها** ثابت بماند: همان محصول، همان شکل و رنگ و لوگو. علاوه بر آن، یک دکمه‌ی مستقل برای انتخاب/تغییر دستی محصول پروژه اضافه شود.
+# Fix: "Scene 1 failed; cannot chain remaining scenes"
 
-## علت مشکل (پس از بررسی کد)
-- در `DashboardPage.tsx` عکس محصول از Product AD فقط به‌عنوان Start frame کارت اول ست می‌شود و به‌صورت دائمی ذخیره نمی‌شود.
-- در حلقه‌ی ساخت کارت‌ها، `referenceImageUrls` فقط از Character Sheet پر می‌شود؛ محصول در آن نیست.
-- نتیجه: کارت دوم فقط «فرم آخر کارت قبلی + مرجع کاراکتر» را می‌بیند و چون فرم آخر همه‌ی زوایای محصول/لوگو را نشان نمی‌دهد، مدل آن را عوض می‌کند.
-- backend از قبل آماده است: تا ۳ مرجع را به Veo 3.1 به‌عنوان `referenceImages` می‌فرستد و برای Wan در متن پرامت لنگر می‌کند — پس فقط باید محصول را به آرایه‌ی مرجع اضافه کنیم. هیچ تغییری در backend/RLS/storage/auth لازم نیست.
+## Root cause (confirmed via live provider query)
+The Wan/DashScope task `38a0e30b-...` returned:
+- `code: DataInspectionFailed`
+- `message: Green net check failed for text (input): Input data may contain inappropriate content.`
 
-## تغییرات (فقط frontend)
+The provider's content-moderation filter rejected the **prompt text** (brand names like
+"ChatGPT" / sensitive wording). This is not a chaining bug — Scene 1 genuinely failed at
+the provider, which correctly halts the chain. The problem is the UI showed only "Failed"
+with no actionable reason, and credits handling/message were unclear.
 
-### ۱. state دائمی محصول پروژه
-- افزودن `projectProduct: { id, url, title } | null` مثل `selectedCharacter`.
-- ساخت آرایه‌ی ترکیبی مرجع‌ها:
-  ```text
-  projectReferenceUrls = [character?.url, product?.url].filter(Boolean).slice(0, 3)
-  ```
+## Plan
+1. **`supabase/functions/_shared/modules/external-api-adapter/service.ts`** — in
+   `pollWanI2V` FAILED/CANCELED branch, detect moderation codes
+   (`DataInspectionFailed`, "green net", "inappropriate content") and return a clear,
+   actionable English reason: ask the user to reword the prompt (avoid brand names / real
+   people / sensitive wording) or change the start image. Pass through other provider
+   messages unchanged.
 
-### ۲. پین‌شدن خودکار از Product AD
-- در هندلرهای `onUseAsPrompt` و `onSendScenes` در `DashboardPage.tsx`، علاوه بر ست‌کردن Start frame، همان `imageUrl` به‌عنوان `projectProduct` ذخیره شود.
+2. (Optional, confirm with user) Frontend `DashboardPage.tsx`: when the failed reason is a
+   moderation block, show the friendly message in the card/toast so it's obvious how to fix.
 
-### ۳. دکمه‌ی مستقل پین محصول
-- افزودن یک دکمه‌ی «Product» در نوار بالای صفحه (کنار Character Sheet) که از روی `archiveProductImages` (محصولات ذخیره‌شده‌ی کاربر) امکان انتخاب/تغییر/حذف محصول پروژه را می‌دهد.
-- نشانگر کوچک وضعیت «Product locked» مثل وضعیت کاراکتر.
+3. Redeploy `jobs-get` / affected functions and re-test.
 
-### ۴. تزریق محصول به مرجع همه‌ی کارت‌ها
-- جایگزینی همه‌ی نقاطی که الان فقط `projectCharacterRefs` می‌فرستند با `projectReferenceUrls` (تک‌کارت، چندصحنه، و regenerate/retry).
-- چون ستون `reference_image_urls` روی job ذخیره می‌شود، ساخت مجدد هم محصول را حفظ می‌کند.
-
-### ۵. لنگر متنی محصول در پرامت هر کارت
-- افزودن یک بلوک کوتاه انگلیسی «هویت‌قفل محصول» (مشابه `applyCharacterPrefix`) که قبل از متن کاربر روی هر کارت قرار می‌گیرد: همان محصول، همان فرم/رنگ/لوگو، بدون تغییر مگر درخواست صریح کاربر. این لوگوی روی بدن کاراکتر و خود محصول را تثبیت می‌کند.
-
-## ایمنی و ریسک
-- فقط frontend؛ بدون تغییر backend، دیتابیس، RLS، storage یا auth.
-- سازگار با کارت‌های قدیمی (نبود محصول = رفتار فعلی).
-- محدودیت ۳ مرجع Veo رعایت می‌شود (کاراکتر + محصول = ۲).
-- بدون تغییر در ledger اعتبار.
-
-## تأیید
-- اجرای typecheck.
-- بررسی اینکه روی ساخت دو کارت، هر دو کارت با مرجع محصول ارسال می‌شوند و محصول/لوگو ثابت می‌ماند.
+## Notes
+- Credits are already refunded on failure (existing `failJob(..., refundCredits: true)`).
+- No change to chaining logic, auth, storage, or generation UI structure.
