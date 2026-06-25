@@ -3382,6 +3382,15 @@ export default function DashboardPage() {
   const projectCharacterRefs: string[] | undefined = projectCharacter?.url
     ? [projectCharacter.url]
     : undefined
+  // Combined identity anchor for every card: character + product reference images.
+  // Veo accepts up to 3 reference images; cap defensively. Sent on EVERY card so
+  // both the character (logo on body) and the selected product stay identical.
+  const projectReferenceUrls: string[] | undefined = (() => {
+    const urls = [projectCharacter?.url, selectedProduct?.url].filter(
+      (u): u is string => typeof u === 'string' && u.length > 0,
+    )
+    return urls.length > 0 ? urls.slice(0, 3) : undefined
+  })()
   // Auto-disable continuity if the chain no longer has a previous clip — but keep
   // it on for multi-card durations (their continuity is intra-batch, no prior clip needed).
   useEffect(() => {
