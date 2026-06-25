@@ -1374,6 +1374,11 @@ export default function DashboardPage() {
   const [characterList, setCharacterList] = useState<ProjectCharacter[]>([])
   const [characterMenuOpen, setCharacterMenuOpen] = useState(false)
   const [characterListLoading, setCharacterListLoading] = useState(false)
+  // Persistent project product (the item chosen in Product AD or pinned manually).
+  // Its reference image is sent on EVERY card so the product/logo never drifts.
+  type ProjectProduct = { id: string; url: string; title: string | null }
+  const [selectedProduct, setSelectedProduct] = useState<ProjectProduct | null>(null)
+  const [productMenuOpen, setProductMenuOpen] = useState(false)
   // Cache of generated character descriptions, keyed by character image id.
   const characterDescCacheRef = useRef<Record<string, string>>({})
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
