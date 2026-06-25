@@ -1,33 +1,48 @@
 ## Goal
-Make generated clips show the product **exactly** like the pinned Product reference photos.
 
-## Root cause
-The project generates with **Wan 2.7 Image-to-Video**. Wan only conditions on **one real image — the start frame** (plus optional end frame). The pinned product reference URLs are **not** sent to Wan as images; they are only appended into the text prompt as URLs (`augmentPromptWithReferences` / `applyProductPrefix`), which Wan cannot fetch or look at. So Wan never sees the product photo — it only reproduces whatever is already in the start frame. For card 2+, the start frame is the previous clip's last frame (already drifted), so the product keeps degrading.
+In the **Storage → Product Photos** tab, let the user add a free-text **description** for each product image (e.g. "rebar stirrup, rectangular, 8mm steel, hook on one corner"). This description is stored with the image and fed to the AI when that product is used, so the model understands exactly what the product is and doesn't distort it during video generation.
 
-## Fix (chosen approach: bake the product into each start frame)
-Before each clip is queued, when a product is pinned, composite the **real product image** into that clip's start frame using the existing `ai-image-edit` function (Nano Banana, multi-image edit), then use the composited frame as `firstFrameUrl`. This way Wan literally sees the true product in its only image input.
+Today each product photo has only an optional **name**. We add a richer **description** field alongside it.
 
-### Technical steps
+## What the user will see
 
-1. **New helper in `DashboardPage.tsx`** — `bakeProductIntoFrame(startFrameUrl, product, ratio)`:
-   - Calls `supabase.functions.invoke('ai-image-edit', { body: { imageUrls: [startFrameUrl, product.url], aspectRatio } })` with an instruction like: *"Replace/insert the advertised product in image 1 with the EXACT product shown in the reference image (image 2): same shape, color, materials, label/logo, proportions. Keep the rest of the scene, character, pose, lighting and composition unchanged."*
-   - `ai-image-edit` returns a `dataUrl`. Upload that data URL to the `wan-frames` (`FRAMES_BUCKET`) bucket and return its public URL (reuse the existing frame-upload pattern at lines ~5407/6216).
-   - If no start frame exists (pure text-to-video first card) or the edit fails, fall back gracefully to the original `startFrameUrl` so generation never breaks (non-destructive).
+- Under each product photo (next to the name), a new **"Describe for AI"** field (a small multi-line text box) where they can type what the product is and any rules ("keep the hook visible", "do not change the spacing", etc.).
+- The description is saved automatically and persists. A short hint explains it helps the AI build the video correctly.
+- Optionally: an **"Auto-describe"** button that asks the AI (vision) to generate a draft description from the image, which the user can then edit. (Confirm if wanted — see question.)
 
-2. **Wire it into the generation paths** where a product is pinned (`selectedProduct`):
-   - **Multi-scene** (`submitScenesAsJobs`, ~6284–6305): after `startFrameUrl` is resolved for each scene, run `bakeProductIntoFrame` and pass the baked URL as `firstFrameUrl`.
-   - **Single-card main submit path**: same baking step before `createJob`.
-   - **Regenerate path** (~6589): bake into the preserved `firstFrameUrl` when the project still has a pinned product.
-   - Card 1 with a user-uploaded start frame: bake too, so even the first clip matches the real product.
+## How it improves generation
 
-3. **Keep the existing text lock** (`applyProductPrefix` / `PRODUCT IDENTITY LOCK`) as reinforcement — it still helps Wan keep the baked product stable across motion.
+When a product is selected/pinned for a project, its description is injected into:
+1. The **PRODUCT IDENTITY LOCK** prompt block (`applyProductPrefix`) sent with every clip.
+2. The **bake-into-start-frame** instruction (`bakeProductIntoFrame`) used to composite the real product into each frame.
 
-4. **UX**: show a progress message ("Locking product into start frame…") during the bake so the extra image step is visible. One extra `ai-image-edit` call per clip.
+This gives the model an explicit textual understanding of the product in addition to the reference image.
 
-### Files touched
-- `src/modules/generator-ui/pages/DashboardPage.tsx` (new helper + wiring in the three generation paths).
-- No backend/schema/provider changes; `ai-image-edit` already supports multi-image edits and the `wan-frames` bucket already exists.
+## Technical details
 
-### Notes / trade-offs
-- Adds one image-edit step (and a small wait) per clip that has a pinned product. Cloud AI image credits only — no provider switch, Wan stays the generator.
-- Fully non-destructive: any failure falls back to the current behavior.
+**1. Database (`generator_user_images`)**
+- Add migration: `ALTER TABLE public.generator_user_images ADD COLUMN IF NOT EXISTS description text;`
+- No new grants/policies needed (column on existing table; existing RLS covers it).
+
+**2. Type + queries (`DashboardPage.tsx`)**
+- Add `description?: string | null` to `UserImageItem` and to `ProjectProduct`.
+- Include `description` in the select column lists used when loading images and on insert (lines ~4839, ~4712, and the archive/product load query).
+
+**3. Upload + edit**
+- On upload insert, persist `description` (empty by default).
+- Add `updateProductDescription(imageId, text)` mirroring `renameProductPhoto`, updating `generator_user_images.description` and local `archiveProductImages` state. Debounce/save on blur or Enter.
+
+**4. UI (Product Photos card, ~lines 8060–8160)**
+- Add a `<textarea>` "Describe for AI" under the name, bound to per-image state, saved on blur.
+- Add a one-line helper text under the section header.
+
+**5. Feed into AI**
+- Extend `applyProductPrefix` to append the product description when present.
+- Extend `bakeProductIntoFrame` instruction to include the description.
+- Ensure `selectedProduct`/pinned product carries `description` through to both paths.
+
+**6. Verify**
+- `bunx tsgo --noEmit` clean; quick Playwright check that the field renders, saves, and reloads.
+
+## Out of scope
+- No changes to generation UI layout beyond the new field, auth, storage policies, or providers.

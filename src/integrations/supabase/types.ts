@@ -576,6 +576,7 @@ export type Database = {
           category: string
           created_at: string
           deleted_at: string | null
+          description: string | null
           draft_group_id: string | null
           height: number | null
           id: string
@@ -592,6 +593,7 @@ export type Database = {
           category?: string
           created_at?: string
           deleted_at?: string | null
+          description?: string | null
           draft_group_id?: string | null
           height?: number | null
           id?: string
@@ -608,6 +610,7 @@ export type Database = {
           category?: string
           created_at?: string
           deleted_at?: string | null
+          description?: string | null
           draft_group_id?: string | null
           height?: number | null
           id?: string

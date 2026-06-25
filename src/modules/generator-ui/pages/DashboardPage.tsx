@@ -256,6 +256,8 @@ type UserImageItem = {
   height?: number | null
   category?: string | null
   title?: string | null
+  /** Free-text description the user writes so the AI understands this product image. */
+  description?: string | null
   /** Durable per-project group id; mirrors job draft_group_id. */
   draft_group_id?: string | null
 }
@@ -1376,7 +1378,7 @@ export default function DashboardPage() {
   const [characterListLoading, setCharacterListLoading] = useState(false)
   // Persistent project product (the item chosen in Product AD or pinned manually).
   // Its reference image is sent on EVERY card so the product/logo never drifts.
-  type ProjectProduct = { id: string; url: string; title: string | null }
+  type ProjectProduct = { id: string; url: string; title: string | null; description?: string | null }
   const [selectedProduct, setSelectedProduct] = useState<ProjectProduct | null>(null)
   const [productMenuOpen, setProductMenuOpen] = useState(false)
   // Cache of generated character descriptions, keyed by character image id.
@@ -1429,6 +1431,8 @@ export default function DashboardPage() {
   const [productName, setProductName] = useState('')
   const [renamingProductId, setRenamingProductId] = useState<string | null>(null)
   const [renameProductValue, setRenameProductValue] = useState('')
+  // Per-image draft text for the "Describe for AI" field (keyed by image id).
+  const [productDescDraft, setProductDescDraft] = useState<Record<string, string>>({})
   const [archiveLoading, setArchiveLoading] = useState(false)
   const loadArchive = async () => {
     setArchiveLoading(true)
@@ -1439,7 +1443,7 @@ export default function DashboardPage() {
         userId
           ? supabase
               .from('generator_user_images')
-              .select('id, storage_path, created_at, still_duration_seconds, width, height, category, title, draft_group_id')
+              .select('id, storage_path, created_at, still_duration_seconds, width, height, category, title, description, draft_group_id')
               .eq('user_id', userId)
               .is('deleted_at', null)
               .order('created_at', { ascending: false })
@@ -4836,7 +4840,7 @@ export default function DashboardPage() {
               category: 'product',
               title: trimmedName || file.name.replace(/\.[^/.]+$/, '').slice(0, 100) || null,
             })
-            .select('id, storage_path, created_at, still_duration_seconds, width, height, category, title')
+            .select('id, storage_path, created_at, still_duration_seconds, width, height, category, title, description')
             .single()
           if (insErr) throw insErr
           const signedRow = { ...(row as UserImageItem), storage_path: await signUserImageUrl((row as UserImageItem).storage_path) }
@@ -4887,6 +4891,33 @@ export default function DashboardPage() {
       setProductUploadError(`Rename failed: ${msg}`)
     } finally {
       cancelRenameProduct()
+    }
+  }
+
+  // Persist the per-image AI description. Called on blur so typing stays smooth.
+  const saveProductDescription = async (imageId: string) => {
+    if (!userId) return
+    const draft = productDescDraft[imageId]
+    if (draft === undefined) return
+    const current = archiveProductImages.find((i) => i.id === imageId)?.description ?? ''
+    const next = draft.trim().slice(0, 2000)
+    if (next === (current ?? '')) return
+    const value = next || null
+    try {
+      const { error } = await supabase
+        .from('generator_user_images')
+        .update({ description: value })
+        .eq('id', imageId)
+        .eq('user_id', userId)
+      if (error) throw error
+      setArchiveProductImages((prev) =>
+        prev.map((i) => (i.id === imageId ? { ...i, description: value } : i)),
+      )
+      // Keep a pinned/selected product's description in sync with edits.
+      setSelectedProduct((prev) => (prev && prev.id === imageId ? { ...prev, description: value } : prev))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Could not save description.'
+      setProductUploadError(`Description save failed: ${msg}`)
     }
   }
 
@@ -5899,9 +5930,11 @@ export default function DashboardPage() {
   function applyProductPrefix(prompt: string, product: ProjectProduct | null): string {
     if (!product) return prompt
     const name = product.title?.trim()
+    const desc = product.description?.trim()
     return [
       `PRODUCT IDENTITY LOCK (highest priority): The advertised product${name ? ` ("${name}")` : ''} is fixed and must stay identical in every shot, matching the provided product reference image exactly.`,
       `Keep the exact same product shape, geometry, materials, colors, branding, logos, text and labels. Do not redesign, recolor, relabel, add or remove any part of the product. The product must be the same item the user selected, not a similar-looking substitute. Only the camera, pose and environment may change.`,
+      ...(desc ? [`Product description (use this to render it correctly): ${desc}`] : []),
       ``,
       prompt,
     ].join('\n')
@@ -5926,11 +5959,13 @@ export default function DashboardPage() {
       ratio === '9:16' ? '9:16' : ratio === '1:1' ? '1:1' : '16:9'
     try {
       const name = product.title?.trim()
+      const desc = product.description?.trim()
       const instruction = [
         `Replace the advertised product in image 1 with the EXACT product shown in the reference image (image 2)${name ? ` ("${name}")` : ''}.`,
         `Match the reference product precisely: same shape, geometry, materials, colors, branding, logos, text and labels — it must be the same item, not a similar-looking substitute.`,
+        desc ? `Product description (for accuracy): ${desc}.` : '',
         `Keep everything else in image 1 unchanged: same character, face, pose, hands, lighting, background and composition. The product should sit naturally in the scene where the original product was.`,
-      ].join(' ')
+      ].filter(Boolean).join(' ')
       const { data, error } = await supabase.functions.invoke('ai-image-edit', {
         body: { imageUrls: [startFrameUrl, product.url], aspectRatio: editRatio, prompt: instruction },
       })
@@ -5959,6 +5994,7 @@ export default function DashboardPage() {
       id: match?.id ?? `product-${imageUrl.slice(-24)}`,
       url: imageUrl,
       title: match?.title?.trim() || 'Selected product',
+      description: match?.description ?? null,
     })
   }
 
@@ -8002,7 +8038,7 @@ export default function DashboardPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-4 py-3">
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-zinc-200">Upload a product photo</p>
-                      <p className="mt-0.5 text-xs text-zinc-500">JPG, PNG or WEBP — up to 10 MB. Saved here for reuse.</p>
+                      <p className="mt-0.5 text-xs text-zinc-500">JPG, PNG or WEBP — up to 10 MB. Saved here for reuse. Add a description under each photo so the AI understands the product.</p>
                       {productUploadError ? (
                         <p className="mt-1 text-xs text-rose-300">{productUploadError}</p>
                       ) : null}
@@ -8134,7 +8170,19 @@ export default function DashboardPage() {
                               <Pencil className="h-3 w-3 shrink-0 text-zinc-500 opacity-0 transition group-hover:opacity-100" aria-hidden="true" />
                             </button>
                           )}
+                          <textarea
+                            value={productDescDraft[img.id] ?? img.description ?? ''}
+                            onChange={(e) =>
+                              setProductDescDraft((prev) => ({ ...prev, [img.id]: e.target.value }))
+                            }
+                            onBlur={() => { void saveProductDescription(img.id) }}
+                            maxLength={2000}
+                            rows={2}
+                            placeholder="Describe for AI — what is this product? (helps the AI build the video correctly)"
+                            className="w-full resize-y rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] leading-snug text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-sky-300/40"
+                          />
                           <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-500">
+
                             <span className="tabular-nums">{formatCreatedAt(img.created_at)}</span>
                             <div className="flex shrink-0 items-center gap-1.5">
                               <button
@@ -11676,7 +11724,7 @@ export default function DashboardPage() {
                         key={p.id}
                         type="button"
                         onClick={() => {
-                          setSelectedProduct({ id: p.id, url: p.storage_path, title: p.title?.trim() || 'Selected product' })
+                          setSelectedProduct({ id: p.id, url: p.storage_path, title: p.title?.trim() || 'Selected product', description: p.description ?? null })
                           setProductMenuOpen(false)
                         }}
                         className={`group relative aspect-square overflow-hidden rounded-lg border transition ${
