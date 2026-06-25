@@ -256,6 +256,8 @@ type UserImageItem = {
   height?: number | null
   category?: string | null
   title?: string | null
+  /** Free-text description the user writes so the AI understands this product image. */
+  description?: string | null
   /** Durable per-project group id; mirrors job draft_group_id. */
   draft_group_id?: string | null
 }
