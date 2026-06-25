@@ -5994,6 +5994,7 @@ export default function DashboardPage() {
       id: match?.id ?? `product-${imageUrl.slice(-24)}`,
       url: imageUrl,
       title: match?.title?.trim() || 'Selected product',
+      description: match?.description ?? null,
     })
   }
 
