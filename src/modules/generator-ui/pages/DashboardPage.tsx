@@ -5959,11 +5959,13 @@ export default function DashboardPage() {
       ratio === '9:16' ? '9:16' : ratio === '1:1' ? '1:1' : '16:9'
     try {
       const name = product.title?.trim()
+      const desc = product.description?.trim()
       const instruction = [
         `Replace the advertised product in image 1 with the EXACT product shown in the reference image (image 2)${name ? ` ("${name}")` : ''}.`,
         `Match the reference product precisely: same shape, geometry, materials, colors, branding, logos, text and labels — it must be the same item, not a similar-looking substitute.`,
+        desc ? `Product description (for accuracy): ${desc}.` : '',
         `Keep everything else in image 1 unchanged: same character, face, pose, hands, lighting, background and composition. The product should sit naturally in the scene where the original product was.`,
-      ].join(' ')
+      ].filter(Boolean).join(' ')
       const { data, error } = await supabase.functions.invoke('ai-image-edit', {
         body: { imageUrls: [startFrameUrl, product.url], aspectRatio: editRatio, prompt: instruction },
       })
