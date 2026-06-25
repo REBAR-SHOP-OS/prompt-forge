@@ -3379,9 +3379,6 @@ export default function DashboardPage() {
   // back to the persisted continuity anchor. Sent on EVERY card so the character
   // never drifts as the film continues.
   const projectCharacter = selectedCharacter ?? continuity.characterRef ?? null
-  const projectCharacterRefs: string[] | undefined = projectCharacter?.url
-    ? [projectCharacter.url]
-    : undefined
   // Combined identity anchor for every card: character + product reference images.
   // Veo accepts up to 3 reference images; cap defensively. Sent on EVERY card so
   // both the character (logo on body) and the selected product stay identical.
