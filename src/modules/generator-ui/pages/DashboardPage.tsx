@@ -8174,6 +8174,20 @@ export default function DashboardPage() {
                         )}
                         {isUploadingProductPhoto ? 'Uploading…' : 'Upload product photo'}
                       </button>
+                      <button
+                        type="button"
+                        onClick={handlePickCaptionFiles}
+                        disabled={isImportingCaptions || !userId || archiveProductImages.length === 0}
+                        title={archiveProductImages.length === 0 ? 'Upload product photos first, then import captions' : 'Import .txt captions matched by file name'}
+                        className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-white/15 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-zinc-200 transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isImportingCaptions ? (
+                          <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <FileText className="h-4 w-4" aria-hidden="true" />
+                        )}
+                        {isImportingCaptions ? 'Importing…' : 'Import captions (.txt)'}
+                      </button>
                     </div>
                   </div>
 
