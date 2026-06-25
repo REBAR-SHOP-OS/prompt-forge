@@ -8127,8 +8127,12 @@ export default function DashboardPage() {
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-zinc-200">Upload a product photo</p>
                       <p className="mt-0.5 text-xs text-zinc-500">JPG, PNG or WEBP — up to 10 MB. Saved here for reuse. Add a description under each photo so the AI understands the product.</p>
+                      <p className="mt-0.5 text-xs text-zinc-500">Or bulk-import captions: upload <span className="text-zinc-300">.txt</span> files named like the photos (e.g. <span className="text-zinc-300">circular_tie_001.txt</span> → <span className="text-zinc-300">circular_tie_001</span>) to attach each text to its matching image.</p>
                       {productUploadError ? (
                         <p className="mt-1 text-xs text-rose-300">{productUploadError}</p>
+                      ) : null}
+                      {captionImportStatus ? (
+                        <p className="mt-1 text-xs text-sky-300">{captionImportStatus}</p>
                       ) : null}
                     </div>
                     <input
@@ -8138,6 +8142,14 @@ export default function DashboardPage() {
                       multiple
                       className="hidden"
                       onChange={(e) => { void handleProductPhotoSelected(e) }}
+                    />
+                    <input
+                      ref={captionFilesInputRef}
+                      type="file"
+                      accept=".txt,.md,.csv,text/plain"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => { void handleCaptionFilesSelected(e) }}
                     />
                     <div className="flex shrink-0 items-center gap-2">
                       <input
