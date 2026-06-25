@@ -6343,6 +6343,13 @@ export default function DashboardPage() {
         } else if (previousJobId) {
           startFrameUrl = await waitForLastFrameUrl(previousJobId, `Scene ${i}`)
         }
+        // Bake the pinned product into this scene's start frame so Wan reproduces
+        // the exact product (it only conditions on the start frame).
+        if (selectedProduct && startFrameUrl) {
+          setVideoColumnMessage(`Locking product into ${sceneLabel}…`)
+          startFrameUrl = await bakeProductIntoFrame(startFrameUrl, selectedProduct, effectiveRatio)
+        }
+
 
         setVideoColumnMessage(`Queuing ${sceneLabel}…`)
         const createdJob = await jobOrchestratorGateway.createJob({
