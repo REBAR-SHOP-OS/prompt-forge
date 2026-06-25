@@ -5907,6 +5907,19 @@ export default function DashboardPage() {
     ].join('\n')
   }
 
+  // Pin the project product from a product image URL (Product AD flow). Matches a
+  // saved product when possible so the title/id are meaningful, else creates one.
+  function pinProductFromImageUrl(imageUrl: string) {
+    const match = archiveProductImages.find((p) => p.storage_path === imageUrl)
+    setSelectedProduct({
+      id: match?.id ?? `product-${imageUrl.slice(-24)}`,
+      url: imageUrl,
+      title: match?.title?.trim() || 'Selected product',
+    })
+  }
+
+
+
 
 
 
