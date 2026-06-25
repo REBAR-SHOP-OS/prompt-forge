@@ -1429,6 +1429,10 @@ export default function DashboardPage() {
   const [isUploadingProductPhoto, setIsUploadingProductPhoto] = useState(false)
   const [productUploadError, setProductUploadError] = useState<string | null>(null)
   const [productName, setProductName] = useState('')
+  // Bulk caption import: upload .txt files named like the images to attach descriptions.
+  const captionFilesInputRef = useRef<HTMLInputElement | null>(null)
+  const [isImportingCaptions, setIsImportingCaptions] = useState(false)
+  const [captionImportStatus, setCaptionImportStatus] = useState<string | null>(null)
   const [renamingProductId, setRenamingProductId] = useState<string | null>(null)
   const [renameProductValue, setRenameProductValue] = useState('')
   // Per-image draft text for the "Describe for AI" field (keyed by image id).
