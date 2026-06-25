@@ -1429,6 +1429,10 @@ export default function DashboardPage() {
   const [isUploadingProductPhoto, setIsUploadingProductPhoto] = useState(false)
   const [productUploadError, setProductUploadError] = useState<string | null>(null)
   const [productName, setProductName] = useState('')
+  // Bulk caption import: upload .txt files named like the images to attach descriptions.
+  const captionFilesInputRef = useRef<HTMLInputElement | null>(null)
+  const [isImportingCaptions, setIsImportingCaptions] = useState(false)
+  const [captionImportStatus, setCaptionImportStatus] = useState<string | null>(null)
   const [renamingProductId, setRenamingProductId] = useState<string | null>(null)
   const [renameProductValue, setRenameProductValue] = useState('')
   // Per-image draft text for the "Describe for AI" field (keyed by image id).
@@ -4862,6 +4866,90 @@ export default function DashboardPage() {
     }
   }
 
+  const handlePickCaptionFiles = () => {
+    if (isImportingCaptions) return
+    captionFilesInputRef.current?.click()
+  }
+
+  // Bulk-attach descriptions from .txt files. Each text file is matched to the
+  // product photo whose base name (title or original file name) equals the text
+  // file's base name (e.g. circular_tie_001.txt → circular_tie_001.jpg). The
+  // file's contents become that image's "Describe for AI" description.
+  const handleCaptionFilesSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? [])
+    event.target.value = ''
+    if (files.length === 0 || !userId) return
+    setCaptionImportStatus(null)
+    setIsImportingCaptions(true)
+    const norm = (s: string) =>
+      s.replace(/\.[^/.]+$/, '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+    // Build a lookup of current product images by normalized base name.
+    const byName = new Map<string, UserImageItem>()
+    for (const img of archiveProductImages) {
+      const key = norm(img.title ?? '')
+      if (key && !byName.has(key)) byName.set(key, img)
+    }
+    let matched = 0
+    const unmatched: string[] = []
+    const errors: string[] = []
+    try {
+      for (const file of files) {
+        const isText = file.type.startsWith('text/') || /\.(txt|md|csv)$/i.test(file.name)
+        if (!isText) {
+          errors.push(`${file.name}: not a text file`)
+          continue
+        }
+        if (file.size > 1024 * 1024) {
+          errors.push(`${file.name}: must be smaller than 1 MB`)
+          continue
+        }
+        const key = norm(file.name)
+        const target = byName.get(key)
+        if (!target) {
+          unmatched.push(file.name)
+          continue
+        }
+        let text = ''
+        try {
+          text = (await file.text()).trim().slice(0, 2000)
+        } catch {
+          errors.push(`${file.name}: could not read`)
+          continue
+        }
+        if (!text) {
+          errors.push(`${file.name}: empty`)
+          continue
+        }
+        try {
+          const { error } = await supabase
+            .from('generator_user_images')
+            .update({ description: text })
+            .eq('id', target.id)
+            .eq('user_id', userId)
+          if (error) throw error
+          setArchiveProductImages((prev) =>
+            prev.map((i) => (i.id === target.id ? { ...i, description: text } : i)),
+          )
+          setProductDescDraft((prev) => ({ ...prev, [target.id]: text }))
+          setSelectedProduct((prev) => (prev && prev.id === target.id ? { ...prev, description: text } : prev))
+          matched += 1
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'update failed'
+          errors.push(`${file.name}: ${msg}`)
+        }
+      }
+      const parts: string[] = [`${matched} caption${matched === 1 ? '' : 's'} attached`]
+      if (unmatched.length > 0) parts.push(`${unmatched.length} unmatched (no image with that name): ${unmatched.slice(0, 5).join(', ')}${unmatched.length > 5 ? '…' : ''}`)
+      if (errors.length > 0) parts.push(`${errors.length} failed: ${errors.slice(0, 5).join('; ')}`)
+      setCaptionImportStatus(parts.join(' • '))
+    } finally {
+      setIsImportingCaptions(false)
+    }
+  }
+
+
+
+
 
   const startRenameProduct = (img: UserImageItem) => {
     setRenamingProductId(img.id)
@@ -8039,8 +8127,12 @@ export default function DashboardPage() {
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-zinc-200">Upload a product photo</p>
                       <p className="mt-0.5 text-xs text-zinc-500">JPG, PNG or WEBP — up to 10 MB. Saved here for reuse. Add a description under each photo so the AI understands the product.</p>
+                      <p className="mt-0.5 text-xs text-zinc-500">Or bulk-import captions: upload <span className="text-zinc-300">.txt</span> files named like the photos (e.g. <span className="text-zinc-300">circular_tie_001.txt</span> → <span className="text-zinc-300">circular_tie_001</span>) to attach each text to its matching image.</p>
                       {productUploadError ? (
                         <p className="mt-1 text-xs text-rose-300">{productUploadError}</p>
+                      ) : null}
+                      {captionImportStatus ? (
+                        <p className="mt-1 text-xs text-sky-300">{captionImportStatus}</p>
                       ) : null}
                     </div>
                     <input
@@ -8050,6 +8142,14 @@ export default function DashboardPage() {
                       multiple
                       className="hidden"
                       onChange={(e) => { void handleProductPhotoSelected(e) }}
+                    />
+                    <input
+                      ref={captionFilesInputRef}
+                      type="file"
+                      accept=".txt,.md,.csv,text/plain"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => { void handleCaptionFilesSelected(e) }}
                     />
                     <div className="flex shrink-0 items-center gap-2">
                       <input
@@ -8073,6 +8173,20 @@ export default function DashboardPage() {
                           <Package className="h-4 w-4" aria-hidden="true" />
                         )}
                         {isUploadingProductPhoto ? 'Uploading…' : 'Upload product photo'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handlePickCaptionFiles}
+                        disabled={isImportingCaptions || !userId || archiveProductImages.length === 0}
+                        title={archiveProductImages.length === 0 ? 'Upload product photos first, then import captions' : 'Import .txt captions matched by file name'}
+                        className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-white/15 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-zinc-200 transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isImportingCaptions ? (
+                          <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <FileText className="h-4 w-4" aria-hidden="true" />
+                        )}
+                        {isImportingCaptions ? 'Importing…' : 'Import captions (.txt)'}
                       </button>
                     </div>
                   </div>
