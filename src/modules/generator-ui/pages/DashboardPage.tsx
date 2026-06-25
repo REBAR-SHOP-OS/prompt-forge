@@ -11712,7 +11712,7 @@ export default function DashboardPage() {
                         key={p.id}
                         type="button"
                         onClick={() => {
-                          setSelectedProduct({ id: p.id, url: p.storage_path, title: p.title?.trim() || 'Selected product' })
+                          setSelectedProduct({ id: p.id, url: p.storage_path, title: p.title?.trim() || 'Selected product', description: p.description ?? null })
                           setProductMenuOpen(false)
                         }}
                         className={`group relative aspect-square overflow-hidden rounded-lg border transition ${
