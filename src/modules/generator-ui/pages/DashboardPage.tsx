@@ -3427,10 +3427,7 @@ export default function DashboardPage() {
   const [composerError, setComposerError] = useState<string | null>(null)
   const [isPromptMenuOpen, setIsPromptMenuOpen] = useState(false)
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false)
-  const [selectedModelId, setSelectedModelId] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'wan-i2v'
-    return window.localStorage.getItem('ui:preferred-model') ?? 'wan-i2v'
-  })
+  const [selectedModelId, setSelectedModelId] = useState<string>('wan-i2v')
   const [narratorMode, setNarratorMode] = useState<'idle' | 'input'>('idle')
   const [narratorScript, setNarratorScript] = useState('')
   const [styleMode, setStyleMode] = useState<'idle' | 'input'>('idle')
