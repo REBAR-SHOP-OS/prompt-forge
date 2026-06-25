@@ -1431,6 +1431,8 @@ export default function DashboardPage() {
   const [productName, setProductName] = useState('')
   const [renamingProductId, setRenamingProductId] = useState<string | null>(null)
   const [renameProductValue, setRenameProductValue] = useState('')
+  // Per-image draft text for the "Describe for AI" field (keyed by image id).
+  const [productDescDraft, setProductDescDraft] = useState<Record<string, string>>({})
   const [archiveLoading, setArchiveLoading] = useState(false)
   const loadArchive = async () => {
     setArchiveLoading(true)
