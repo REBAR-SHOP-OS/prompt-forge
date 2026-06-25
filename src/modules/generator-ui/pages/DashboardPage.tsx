@@ -5907,6 +5907,50 @@ export default function DashboardPage() {
     ].join('\n')
   }
 
+  // Bake the real product image directly into a clip's start frame. Wan I2V only
+  // conditions on the start frame (it cannot read separate reference images), so
+  // this is the only reliable way to make the generated clip reproduce the exact
+  // product the user pinned. Uses ai-image-edit (multi-image) to composite the
+  // reference product into the frame, then uploads the result to wan-frames and
+  // returns a downloadable URL. Non-destructive: any failure returns the
+  // original start frame so generation never breaks.
+  async function bakeProductIntoFrame(
+    startFrameUrl: string | undefined,
+    product: ProjectProduct | null,
+    ratio: Ratio,
+  ): Promise<string | undefined> {
+    if (!startFrameUrl || !product?.url) return startFrameUrl
+    const userId = session?.user?.id
+    if (!userId) return startFrameUrl
+    const editRatio: '1:1' | '9:16' | '16:9' =
+      ratio === '9:16' ? '9:16' : ratio === '1:1' ? '1:1' : '16:9'
+    try {
+      const name = product.title?.trim()
+      const instruction = [
+        `Replace the advertised product in image 1 with the EXACT product shown in the reference image (image 2)${name ? ` ("${name}")` : ''}.`,
+        `Match the reference product precisely: same shape, geometry, materials, colors, branding, logos, text and labels — it must be the same item, not a similar-looking substitute.`,
+        `Keep everything else in image 1 unchanged: same character, face, pose, hands, lighting, background and composition. The product should sit naturally in the scene where the original product was.`,
+      ].join(' ')
+      const { data, error } = await supabase.functions.invoke('ai-image-edit', {
+        body: { imageUrls: [startFrameUrl, product.url], aspectRatio: editRatio, prompt: instruction },
+      })
+      if (error) throw error
+      const dataUrl = (data as { dataUrl?: string } | null)?.dataUrl
+      if (!dataUrl) return startFrameUrl
+      const res = await fetch(dataUrl)
+      const blob = await res.blob()
+      const storagePath = `${userId}/product-baked-${Date.now()}-${crypto.randomUUID()}.png`
+      const { error: upErr } = await supabase.storage
+        .from(FRAMES_BUCKET)
+        .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false })
+      if (upErr) return startFrameUrl
+      const { data: pub } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+      return await signFramesUrl(storagePath).catch(() => pub.publicUrl)
+    } catch {
+      return startFrameUrl
+    }
+  }
+
   // Pin the project product from a product image URL (Product AD flow). Matches a
   // saved product when possible so the title/id are meaningful, else creates one.
   function pinProductFromImageUrl(imageUrl: string) {
