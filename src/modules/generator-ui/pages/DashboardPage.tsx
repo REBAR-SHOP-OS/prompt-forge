@@ -4894,6 +4894,33 @@ export default function DashboardPage() {
     }
   }
 
+  // Persist the per-image AI description. Called on blur so typing stays smooth.
+  const saveProductDescription = async (imageId: string) => {
+    if (!userId) return
+    const draft = productDescDraft[imageId]
+    if (draft === undefined) return
+    const current = archiveProductImages.find((i) => i.id === imageId)?.description ?? ''
+    const next = draft.trim().slice(0, 2000)
+    if (next === (current ?? '')) return
+    const value = next || null
+    try {
+      const { error } = await supabase
+        .from('generator_user_images')
+        .update({ description: value })
+        .eq('id', imageId)
+        .eq('user_id', userId)
+      if (error) throw error
+      setArchiveProductImages((prev) =>
+        prev.map((i) => (i.id === imageId ? { ...i, description: value } : i)),
+      )
+      // Keep a pinned/selected product's description in sync with edits.
+      setSelectedProduct((prev) => (prev && prev.id === imageId ? { ...prev, description: value } : prev))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Could not save description.'
+      setProductUploadError(`Description save failed: ${msg}`)
+    }
+  }
+
   const handleDeleteUserImage = async (imageId: string) => {
     unmarkActiveImages([imageId])
     if (!userId) return
