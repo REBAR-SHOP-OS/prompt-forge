@@ -6090,6 +6090,15 @@ export default function DashboardPage() {
       // Authoritative narration from the user's prompt — kept as the reference
       // for the on-film narration check, independent of later prompt edits.
       const plannedNarration = extractNarration(plannedPrompt).join('\n') || undefined
+      // Wan I2V only "sees" the start frame. When a product is pinned, bake the
+      // real product image into the start frame so the clip reproduces the exact
+      // product the user selected (text locks alone can't make Wan see it).
+      let bakedStartFrameUrl = readyStartFrame?.url
+      if (selectedProduct && readyStartFrame?.url) {
+        setVideoColumnMessage('Locking product into start frame…')
+        bakedStartFrameUrl = await bakeProductIntoFrame(readyStartFrame.url, selectedProduct, effectiveRatio)
+        setVideoColumnMessage(null)
+      }
       for (let i = 0; i < iterations; i++) {
         let createdJob
         let seedFrames: { firstFrameUrl?: string; lastFrameUrl?: string } = {}
