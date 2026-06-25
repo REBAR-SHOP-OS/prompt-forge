@@ -14,44 +14,11 @@ function formatDuration(sec: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-function useTotalDuration(clips: SeqClip[]): number {
-  const cacheRef = useRef<Map<string, number>>(new Map())
-  const [, force] = useState(0)
-
-  useEffect(() => {
-    let cancelled = false
-    const cache = cacheRef.current
-    const videos = clips.filter((c): c is SeqVideoClip => c.kind === 'video')
-    const missing = videos.filter((v) => !cache.has(v.src))
-    if (missing.length === 0) return
-    let pending = missing.length
-    missing.forEach((v) => {
-      const el = document.createElement('video')
-      el.preload = 'metadata'
-      el.muted = true
-      el.src = v.src
-      const done = (dur: number) => {
-        if (cancelled) return
-        cache.set(v.src, Number.isFinite(dur) && dur > 0 ? dur : 0)
-        pending -= 1
-        if (pending <= 0) force((n) => n + 1)
-      }
-      el.addEventListener('loadedmetadata', () => done(el.duration), { once: true })
-      el.addEventListener('error', () => done(0), { once: true })
-    })
-    return () => { cancelled = true }
-  }, [clips.map((c) => `${c.kind}:${c.id}:${c.src}`).join('|')])
-
-  return useMemo(() => {
-    let total = 0
-    for (const c of clips) {
-      if (c.kind === 'image') total += Math.max(0, c.durationSec || 0)
-      else total += cacheRef.current.get(c.src) ?? 0
-    }
-    return total
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clips, cacheRef.current.size])
-}
+// How early (seconds before the active clip ends) to mount the hidden
+// next-clip prefetch <video>. Keeping this window short means the active clip
+// owns the decoder/bandwidth for most of playback (no concurrent-decode
+// stutter) while still eliminating the black gap at the clip boundary.
+const PREFETCH_LEAD_SECONDS = 2.5
 
 // Lightweight type aliases (kept compatible with DashboardPage's UnifiedClip).
 type SeqVideoClip = {
@@ -112,7 +79,6 @@ export function SequentialClipPlayer({
   clipVolume = 1,
 }: Props) {
   const [index, setIndex] = useState(0)
-  const totalDuration = useTotalDuration(clips)
   const [isPlaying, setIsPlaying] = useState(true)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const soundtrackRef = useRef<PreviewSoundtrackHandle | null>(null)
@@ -121,8 +87,6 @@ export function SequentialClipPlayer({
   // film-wide scrub bar to the right clip + local time. Preloaded for videos
   // and refreshed once each clip's metadata loads.
   const [clipDurations, setClipDurations] = useState<Record<string, number>>({})
-  // The live film-wide playhead (seconds across all clips).
-  const [globalTime, setGlobalTime] = useState(0)
   // True while the user is dragging the scrub bar (suppresses live updates).
   const scrubbingRef = useRef(false)
   // Local time (seconds) to seek the next active clip to once its video loads.
@@ -131,6 +95,20 @@ export function SequentialClipPlayer({
   // clip's source after a playback error, so a permanently-bad source skips
   // instead of looping forever.
   const erroredOnceRef = useRef<string | null>(null)
+
+  // ── Playhead (decoupled from React render) ──────────────────────────────
+  // The live film-wide playhead is written to DOM refs every frame WITHOUT
+  // calling setState, so the heavy player subtree (active <video>, prefetch
+  // <video>, wavesurfer waveforms) is NOT re-rendered 4–60×/sec. This is the
+  // main fix for playback stutter.
+  const globalTimeRef = useRef(0)
+  const filmTotalRef = useRef(0)
+  const fillRef = useRef<HTMLDivElement | null>(null)
+  const knobRef = useRef<HTMLDivElement | null>(null)
+  const timeLabelRef = useRef<HTMLSpanElement | null>(null)
+  // Whether the hidden next-clip prefetch element should be mounted right now
+  // (only true in the final PREFETCH_LEAD_SECONDS of the active clip).
+  const [prefetchNext, setPrefetchNext] = useState(false)
 
   const durationOf = (clip: SeqClip): number => {
     if (clip.kind === 'image') return Math.max(0, clip.durationSec || 0)
@@ -150,9 +128,75 @@ export function SequentialClipPlayer({
     return total
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clips, clipDurations])
+  filmTotalRef.current = filmTotal
+
+  // Write the playhead straight to the DOM (no re-render). Updates the scrub
+  // fill width, the knob position, and the current-time label.
+  const renderPlayhead = (t: number) => {
+    globalTimeRef.current = t
+    const total = filmTotalRef.current
+    const pct = total > 0 ? Math.min(100, Math.max(0, (t / total) * 100)) : 0
+    if (fillRef.current) fillRef.current.style.width = `${pct}%`
+    if (knobRef.current) knobRef.current.style.left = `${pct}%`
+    if (timeLabelRef.current) timeLabelRef.current.textContent = formatDuration(t)
+  }
+
+  // Re-paint the playhead whenever totals or the active clip change (e.g. once
+  // metadata loads and filmTotal becomes accurate).
+  useEffect(() => {
+    renderPlayhead(globalTimeRef.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filmTotal, index])
+
+  // Maybe flip the prefetch flag on while the active clip nears its end.
+  const maybeArmPrefetch = (localTime: number, localDuration: number) => {
+    if (localDuration <= 0) return
+    const near = localDuration - localTime <= PREFETCH_LEAD_SECONDS
+    if (near) setPrefetchNext((p) => (p ? p : true))
+  }
+
+  // Seek the whole film to an absolute time (seconds): pick the clip that owns
+  // that moment, activate it, and seek the video (or position an image) there.
+  const seekToFilmTime = (target: number) => {
+    if (clips.length === 0) return
+    const t = Math.max(0, Math.min(target, filmTotal || target))
+    let acc = 0
+    let targetIndex = clips.length - 1
+    for (let k = 0; k < clips.length; k++) {
+      const d = durationOf(clips[k]) || 0
+      if (t < acc + d || k === clips.length - 1) {
+        targetIndex = k
+        break
+      }
+      acc += d
+    }
+    const local = Math.max(0, t - acc)
+    renderPlayhead(t)
+    soundtrackRef.current?.handleSeek(t)
+    if (targetIndex === index) {
+      const v = videoRef.current
+      if (v && clips[targetIndex]?.kind === 'video') {
+        try { v.currentTime = local } catch { /* ignore */ }
+      } else {
+        pendingLocalRef.current = local
+      }
+    } else {
+      pendingLocalRef.current = local
+      setIndex(targetIndex)
+    }
+  }
+
+  // Push the cumulative film time to the soundtrack so music/voiceover follow
+  // the picture when the active clip changes or the active video seeks.
+  const syncSoundtrackToFilmTime = (localTime: number) => {
+    const s = soundtrackRef.current
+    if (!s) return
+    s.handleSeek(offsetBeforeIndex(index) + Math.max(0, localTime))
+  }
 
   // Preload every video clip's duration so the scrub bar math is accurate even
-  // before a clip has been played.
+  // before a clip has been played. This is the SINGLE metadata-probing path
+  // (the total-duration display reads from `filmTotal`, derived from this map).
   useEffect(() => {
     let cancelled = false
     const videos = clips.filter((c): c is SeqVideoClip => c.kind === 'video')
@@ -175,46 +219,6 @@ export function SequentialClipPlayer({
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clips.map((c) => `${c.kind}:${c.id}`).join('|')])
-
-  // Push the cumulative film time to the soundtrack so music/voiceover follow
-  // the picture when the active clip changes or the active video seeks.
-  const syncSoundtrackToFilmTime = (localTime: number) => {
-    const s = soundtrackRef.current
-    if (!s) return
-    s.handleSeek(offsetBeforeIndex(index) + Math.max(0, localTime))
-  }
-
-  // Seek the whole film to an absolute time (seconds): pick the clip that owns
-  // that moment, activate it, and seek the video (or position an image) there.
-  const seekToFilmTime = (target: number) => {
-    if (clips.length === 0) return
-    const t = Math.max(0, Math.min(target, filmTotal || target))
-    let acc = 0
-    let targetIndex = clips.length - 1
-    for (let k = 0; k < clips.length; k++) {
-      const d = durationOf(clips[k]) || 0
-      if (t < acc + d || k === clips.length - 1) {
-        targetIndex = k
-        break
-      }
-      acc += d
-    }
-    const local = Math.max(0, t - acc)
-    setGlobalTime(t)
-    soundtrackRef.current?.handleSeek(t)
-    if (targetIndex === index) {
-      const v = videoRef.current
-      if (v && clips[targetIndex]?.kind === 'video') {
-        try { v.currentTime = local } catch { /* ignore */ }
-      } else {
-        pendingLocalRef.current = local
-      }
-    } else {
-      pendingLocalRef.current = local
-      setIndex(targetIndex)
-    }
-  }
-
 
   // Keep index inside bounds when clips change.
   useEffect(() => {
@@ -250,11 +254,11 @@ export function SequentialClipPlayer({
       ? resolvedAllSrcs[nextIndex] ?? null
       : null
 
-
-
-  // Reset the per-clip error guard whenever the active clip changes.
+  // Reset the per-clip error guard + prefetch arming whenever the active clip
+  // changes.
   useEffect(() => {
     erroredOnceRef.current = null
+    setPrefetchNext(false)
   }, [current?.id])
 
   useEffect(() => {
@@ -262,8 +266,8 @@ export function SequentialClipPlayer({
   }, [current?.id, onActiveClipChange])
 
   // Drive image clips with a timer; videos drive themselves via onEnded.
-  // The film-wide playhead is advanced with rAF so the scrub bar moves while
-  // an image clip is on screen.
+  // The film-wide playhead is advanced with rAF (DOM-only, no setState) so the
+  // scrub bar moves while an image clip is on screen.
   useEffect(() => {
     if (imageTimerRef.current) {
       window.clearTimeout(imageTimerRef.current)
@@ -275,7 +279,7 @@ export function SequentialClipPlayer({
     const startLocal = Math.min(pendingLocalRef.current || 0, current.durationSec)
     pendingLocalRef.current = 0
     const base = offsetBeforeIndex(index)
-    if (!scrubbingRef.current) setGlobalTime(base + startLocal)
+    if (!scrubbingRef.current) renderPlayhead(base + startLocal)
 
     if (!isPlaying) return
 
@@ -286,8 +290,9 @@ export function SequentialClipPlayer({
       if (scrubbingRef.current) { raf = requestAnimationFrame(tick); return }
       const elapsed = (now - startTs) / 1000
       const local = Math.min(current.durationSec, startLocal + elapsed)
-      setGlobalTime(base + local)
+      renderPlayhead(base + local)
       soundtrackRef.current?.syncTime(base + local)
+      maybeArmPrefetch(local, current.durationSec)
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
@@ -335,7 +340,6 @@ export function SequentialClipPlayer({
     }
   }, [isPlaying, current?.id, current?.kind, resolvedVideoSrc])
 
-
   // Apply clip volume to the active video element.
   useEffect(() => {
     const v = videoRef.current
@@ -358,7 +362,6 @@ export function SequentialClipPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPlaying, musicUrl, voiceoverUrl, current?.id, index])
 
-
   function goNext() {
     if (clips.length === 0) return
     setIndex((i) => {
@@ -366,7 +369,7 @@ export function SequentialClipPlayer({
       if (next >= clips.length) {
         // Loop back and pause at the start so user can replay.
         setIsPlaying(false)
-        setGlobalTime(0)
+        renderPlayhead(0)
         return 0
       }
       return next
@@ -453,11 +456,15 @@ export function SequentialClipPlayer({
                 }}
                 onTimeUpdate={(e) => {
                   if (scrubbingRef.current) return
-                  const ft = offsetBeforeIndex(index) + e.currentTarget.currentTime
-                  setGlobalTime(ft)
+                  const el = e.currentTarget
+                  const ft = offsetBeforeIndex(index) + el.currentTime
+                  // DOM-only playhead update (no re-render).
+                  renderPlayhead(ft)
                   // Continuously re-gate the soundtrack so music/voiceover start
                   // and stop at the exact film second the user selected.
                   soundtrackRef.current?.syncTime(ft)
+                  // Arm the next-clip prefetch only as we approach the boundary.
+                  maybeArmPrefetch(el.currentTime, el.duration || durationOf(current))
                 }}
                 onSeeking={(e) => syncSoundtrackToFilmTime(e.currentTarget.currentTime)}
                 onSeeked={(e) => syncSoundtrackToFilmTime(e.currentTarget.currentTime)}
@@ -493,8 +500,10 @@ export function SequentialClipPlayer({
 
           {/* Hidden double-buffer: pre-download the next clip's bytes so the
               swap at the clip boundary is instant (no black/loading gap). It is
-              muted, off-screen, and never wired into playback logic. */}
-          {nextResolvedSrc ? (
+              only mounted in the final PREFETCH_LEAD_SECONDS of the active clip
+              so a second decode pipeline never competes with the playing clip
+              for the whole duration (the previous cause of playback stutter). */}
+          {prefetchNext && nextResolvedSrc ? (
             <video
               key={`prefetch:${nextResolvedSrc}`}
               src={nextResolvedSrc}
@@ -508,7 +517,6 @@ export function SequentialClipPlayer({
             />
           ) : null}
 
-
           <div className="absolute inset-x-0 bottom-0 z-10 flex items-center gap-3 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3 py-2">
             <button
               type="button"
@@ -519,8 +527,11 @@ export function SequentialClipPlayer({
               {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
             </button>
 
-            <span className="shrink-0 text-[11px] font-semibold tabular-nums text-zinc-200">
-              {formatDuration(globalTime)}
+            <span
+              ref={timeLabelRef}
+              className="shrink-0 text-[11px] font-semibold tabular-nums text-zinc-200"
+            >
+              {formatDuration(globalTimeRef.current)}
             </span>
 
             <div
@@ -528,7 +539,7 @@ export function SequentialClipPlayer({
               aria-label="Seek film"
               aria-valuemin={0}
               aria-valuemax={Math.round(filmTotal)}
-              aria-valuenow={Math.round(globalTime)}
+              aria-valuenow={Math.round(globalTimeRef.current)}
               tabIndex={0}
               onPointerDown={(e) => {
                 if (filmTotal <= 0) return
@@ -542,7 +553,7 @@ export function SequentialClipPlayer({
                 if (!scrubbingRef.current || filmTotal <= 0) return
                 const rect = e.currentTarget.getBoundingClientRect()
                 const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-                setGlobalTime(frac * filmTotal)
+                renderPlayhead(frac * filmTotal)
               }}
               onPointerUp={(e) => {
                 if (filmTotal <= 0) return
@@ -554,30 +565,30 @@ export function SequentialClipPlayer({
               }}
               onKeyDown={(e) => {
                 if (filmTotal <= 0) return
-                if (e.key === 'ArrowRight') { e.preventDefault(); seekToFilmTime(Math.min(filmTotal, globalTime + 1)) }
-                else if (e.key === 'ArrowLeft') { e.preventDefault(); seekToFilmTime(Math.max(0, globalTime - 1)) }
+                if (e.key === 'ArrowRight') { e.preventDefault(); seekToFilmTime(Math.min(filmTotal, globalTimeRef.current + 1)) }
+                else if (e.key === 'ArrowLeft') { e.preventDefault(); seekToFilmTime(Math.max(0, globalTimeRef.current - 1)) }
               }}
               className="group relative flex h-6 flex-1 cursor-pointer items-center"
             >
               <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-white/20">
                 <div
+                  ref={fillRef}
                   className="absolute inset-y-0 left-0 rounded-full bg-emerald-400"
-                  style={{ width: `${filmTotal > 0 ? Math.min(100, (globalTime / filmTotal) * 100) : 0}%` }}
+                  style={{ width: '0%' }}
                 />
               </div>
               <div
+                ref={knobRef}
                 className="pointer-events-none absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow"
-                style={{ left: `${filmTotal > 0 ? Math.min(100, (globalTime / filmTotal) * 100) : 0}%` }}
+                style={{ left: '0%' }}
               />
             </div>
 
             <span className="shrink-0 text-[11px] font-semibold tabular-nums text-zinc-200">
-              {formatDuration(filmTotal || totalDuration)}
+              {formatDuration(filmTotal)}
             </span>
           </div>
         </div>
-
-
 
         {/* Synced soundtrack waveforms (live preview only — not part of Final Film). */}
         <PreviewSoundtrackWaveforms
