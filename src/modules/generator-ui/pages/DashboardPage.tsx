@@ -1374,6 +1374,11 @@ export default function DashboardPage() {
   const [characterList, setCharacterList] = useState<ProjectCharacter[]>([])
   const [characterMenuOpen, setCharacterMenuOpen] = useState(false)
   const [characterListLoading, setCharacterListLoading] = useState(false)
+  // Persistent project product (the item chosen in Product AD or pinned manually).
+  // Its reference image is sent on EVERY card so the product/logo never drifts.
+  type ProjectProduct = { id: string; url: string; title: string | null }
+  const [selectedProduct, setSelectedProduct] = useState<ProjectProduct | null>(null)
+  const [productMenuOpen, setProductMenuOpen] = useState(false)
   // Cache of generated character descriptions, keyed by character image id.
   const characterDescCacheRef = useRef<Record<string, string>>({})
   const [uploadTarget, setUploadTarget] = useState<UploadTarget>('Start')
@@ -3374,9 +3379,15 @@ export default function DashboardPage() {
   // back to the persisted continuity anchor. Sent on EVERY card so the character
   // never drifts as the film continues.
   const projectCharacter = selectedCharacter ?? continuity.characterRef ?? null
-  const projectCharacterRefs: string[] | undefined = projectCharacter?.url
-    ? [projectCharacter.url]
-    : undefined
+  // Combined identity anchor for every card: character + product reference images.
+  // Veo accepts up to 3 reference images; cap defensively. Sent on EVERY card so
+  // both the character (logo on body) and the selected product stay identical.
+  const projectReferenceUrls: string[] | undefined = (() => {
+    const urls = [projectCharacter?.url, selectedProduct?.url].filter(
+      (u): u is string => typeof u === 'string' && u.length > 0,
+    )
+    return urls.length > 0 ? urls.slice(0, 3) : undefined
+  })()
   // Auto-disable continuity if the chain no longer has a previous clip — but keep
   // it on for multi-card durations (their continuity is intra-batch, no prior clip needed).
   useEffect(() => {
@@ -5882,6 +5893,34 @@ export default function DashboardPage() {
     ].join('\n')
   }
 
+  // Text anchor for the selected product. The product reference image is the
+  // strong visual anchor (sent via referenceImageUrls); this block reinforces it
+  // in the prompt so the product/logo stays identical across every card.
+  function applyProductPrefix(prompt: string, product: ProjectProduct | null): string {
+    if (!product) return prompt
+    const name = product.title?.trim()
+    return [
+      `PRODUCT IDENTITY LOCK (highest priority): The advertised product${name ? ` ("${name}")` : ''} is fixed and must stay identical in every shot, matching the provided product reference image exactly.`,
+      `Keep the exact same product shape, geometry, materials, colors, branding, logos, text and labels. Do not redesign, recolor, relabel, add or remove any part of the product. The product must be the same item the user selected, not a similar-looking substitute. Only the camera, pose and environment may change.`,
+      ``,
+      prompt,
+    ].join('\n')
+  }
+
+  // Pin the project product from a product image URL (Product AD flow). Matches a
+  // saved product when possible so the title/id are meaningful, else creates one.
+  function pinProductFromImageUrl(imageUrl: string) {
+    const match = archiveProductImages.find((p) => p.storage_path === imageUrl)
+    setSelectedProduct({
+      id: match?.id ?? `product-${imageUrl.slice(-24)}`,
+      url: imageUrl,
+      title: match?.title?.trim() || 'Selected product',
+    })
+  }
+
+
+
+
 
 
 
@@ -5935,6 +5974,9 @@ export default function DashboardPage() {
         plannedPrompt = applyCharacterPrefix(plannedPrompt, desc)
         setVideoColumnMessage(null)
       }
+      // Anchor the selected product (every card) so the product/logo never drifts.
+      if (selectedProduct) plannedPrompt = applyProductPrefix(plannedPrompt, selectedProduct)
+
 
       // Continuity Mode: append the continuity instruction block + scene memory
       // so the next card continues from the previous clip. The previous frame is
@@ -6019,7 +6061,7 @@ export default function DashboardPage() {
             aspectRatio: effectiveRatio,
             draftGroupId,
             narrationText: plannedNarration,
-            referenceImageUrls: projectCharacterRefs,
+            referenceImageUrls: projectReferenceUrls,
           })
         } else if (readyStartFrame?.url && readyEndFrame?.url) {
           createdJob = await jobOrchestratorGateway.createJob({
@@ -6032,7 +6074,7 @@ export default function DashboardPage() {
             aspectRatio: effectiveRatio,
             draftGroupId,
             narrationText: plannedNarration,
-            referenceImageUrls: projectCharacterRefs,
+            referenceImageUrls: projectReferenceUrls,
           })
           seedFrames = { firstFrameUrl: readyStartFrame.url, lastFrameUrl: readyEndFrame.url }
         } else if (readyStartFrame?.url) {
@@ -6045,7 +6087,7 @@ export default function DashboardPage() {
             aspectRatio: effectiveRatio,
             draftGroupId,
             narrationText: plannedNarration,
-            referenceImageUrls: projectCharacterRefs,
+            referenceImageUrls: projectReferenceUrls,
           })
           seedFrames = { firstFrameUrl: readyStartFrame.url }
         } else if (readyEndFrame?.url) {
@@ -6058,7 +6100,7 @@ export default function DashboardPage() {
             aspectRatio: effectiveRatio,
             draftGroupId,
             narrationText: plannedNarration,
-            referenceImageUrls: projectCharacterRefs,
+            referenceImageUrls: projectReferenceUrls,
           })
           seedFrames = { lastFrameUrl: readyEndFrame.url }
         } else {
@@ -6209,8 +6251,12 @@ export default function DashboardPage() {
     // EVERY card (card 1 included) in addition to the previous-frame seed so the
     // provider keeps the same character instead of drifting. Independent of the
     // text description prefix below.
-    const referenceImageUrls: string[] | undefined =
-      continuityCharacterRef?.url ? [continuityCharacterRef.url] : undefined
+    const referenceImageUrls: string[] | undefined = (() => {
+      const urls = [continuityCharacterRef?.url, selectedProduct?.url].filter(
+        (u): u is string => typeof u === 'string' && u.length > 0,
+      )
+      return urls.length > 0 ? urls.slice(0, 3) : undefined
+    })()
     let characterPrefixDesc: string | null = null
     if (continuityCharacterRef) {
       try {
@@ -6234,6 +6280,8 @@ export default function DashboardPage() {
         let prompt = sourcePrompt
         // Always anchor the character (every card) so identity never drifts.
         if (characterPrefixDesc) prompt = applyCharacterPrefix(prompt, characterPrefixDesc)
+        // Always anchor the selected product (every card) so it never drifts.
+        if (selectedProduct) prompt = applyProductPrefix(prompt, selectedProduct)
         if (continuityActive && i > 0) prompt = applyContinuityPrompt(prompt, continuity.memory)
 
         let startFrameUrl: string | undefined
@@ -6549,7 +6597,7 @@ export default function DashboardPage() {
         referenceImageUrls:
           (job.reference_image_urls && job.reference_image_urls.length > 0
             ? job.reference_image_urls
-            : projectCharacterRefs) ?? undefined,
+            : projectReferenceUrls) ?? undefined,
         durationSeconds,
         aspectRatio: ratio,
         draftGroupId,
@@ -9070,6 +9118,7 @@ export default function DashboardPage() {
           if (imageUrl) {
             setUploadTarget('Start')
             void handleUseImageAsStart(imageUrl)
+            pinProductFromImageUrl(imageUrl)
           }
         }}
         onSendScenes={async (scenes, imageUrl, duration) => {
@@ -9081,6 +9130,7 @@ export default function DashboardPage() {
           if (imageUrl) {
             setUploadTarget('Start')
             await handleUseImageAsStart(imageUrl)
+            pinProductFromImageUrl(imageUrl)
           }
         }}
       />
@@ -11473,6 +11523,110 @@ export default function DashboardPage() {
                 )}
               </PopoverContent>
             </Popover>
+
+            <Popover
+              open={productMenuOpen}
+              onOpenChange={(open) => {
+                setProductMenuOpen(open)
+                if (open && archiveProductImages.length === 0) void loadArchive()
+              }}
+            >
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Pin a product for this project"
+                  title="Pin the product so it stays identical in every card"
+                  className={`inline-flex h-11 items-center justify-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
+                    selectedProduct
+                      ? 'border-amber-400/60 bg-amber-500/10 text-amber-100'
+                      : 'border-white/15 bg-white/[0.04] text-zinc-200 hover:border-white/30'
+                  }`}
+                >
+                  {selectedProduct ? (
+                    <>
+                      <img
+                        src={selectedProduct.url}
+                        alt="Product"
+                        className="h-6 w-6 rounded-md object-cover"
+                      />
+                      <span>Product</span>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        aria-label="Remove product"
+                        title="Remove product"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setSelectedProduct(null)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            setSelectedProduct(null)
+                          }
+                        }}
+                        className="ml-0.5 grid h-5 w-5 place-items-center rounded-full text-amber-200/80 transition hover:bg-amber-500/20 hover:text-amber-50"
+                      >
+                        <X className="h-3.5 w-3.5" aria-hidden="true" />
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Package className="h-5 w-5" aria-hidden="true" />
+                      <span>Add product</span>
+                    </>
+                  )}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-72 p-2">
+                <div className="mb-1.5 flex items-center justify-between px-1">
+                  <span className="text-xs font-semibold text-zinc-300">Project product</span>
+                  {selectedProduct ? (
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedProduct(null); setProductMenuOpen(false) }}
+                      className="text-[11px] text-zinc-400 hover:text-rose-300"
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+                {archiveLoading && archiveProductImages.length === 0 ? (
+                  <div className="flex items-center justify-center py-6 text-zinc-500">
+                    <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+                  </div>
+                ) : archiveProductImages.length === 0 ? (
+                  <div className="px-1 py-4 text-center text-xs text-zinc-500">
+                    No products yet. Add one in Product AD.
+                  </div>
+                ) : (
+                  <div className="grid max-h-64 grid-cols-3 gap-2 overflow-y-auto p-1">
+                    {archiveProductImages.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedProduct({ id: p.id, url: p.storage_path, title: p.title?.trim() || 'Selected product' })
+                          setProductMenuOpen(false)
+                        }}
+                        className={`group relative aspect-square overflow-hidden rounded-lg border transition ${
+                          selectedProduct?.id === p.id
+                            ? 'border-amber-400'
+                            : 'border-white/10 hover:border-white/30'
+                        }`}
+                        title={p.title ?? 'Product'}
+                      >
+                        <img src={p.storage_path} alt={p.title ?? 'Product'} className="h-full w-full object-cover" loading="lazy" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </PopoverContent>
+            </Popover>
+
+
 
 
 

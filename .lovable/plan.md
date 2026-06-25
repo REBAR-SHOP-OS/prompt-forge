@@ -1,43 +1,41 @@
-## Expected outcome
-Every card in a project must use the same Character Sheet identity, including the same face/body/outfit/clothing details, so card 2+ cannot silently drift away from card 1.
+## هدف
+محصولی که کاربر در بخش Product AD انتخاب کرده، در **همه‌ی کارت‌ها** ثابت بماند: همان محصول، همان شکل و رنگ و لوگو. علاوه بر آن، یک دکمه‌ی مستقل برای انتخاب/تغییر دستی محصول پروژه اضافه شود.
 
-## What I found
-- The frontend sends `referenceImageUrls` when creating cards, but the backend does not persist those reference URLs on the job row.
-- Because the reference is not persisted, regenerate/retry and later lifecycle operations can lose the Character Sheet anchor.
-- For Wan, the Character Sheet is currently only added as prompt text because Wan has no separate reference-image channel in this implementation; this is weak and `prompt_extend: true` can further rewrite the prompt.
-- Veo receives `referenceImages`, but the request does not force the 3.1 reference-capable model during routing unless another condition requires it.
+## علت مشکل (پس از بررسی کد)
+- در `DashboardPage.tsx` عکس محصول از Product AD فقط به‌عنوان Start frame کارت اول ست می‌شود و به‌صورت دائمی ذخیره نمی‌شود.
+- در حلقه‌ی ساخت کارت‌ها، `referenceImageUrls` فقط از Character Sheet پر می‌شود؛ محصول در آن نیست.
+- نتیجه: کارت دوم فقط «فرم آخر کارت قبلی + مرجع کاراکتر» را می‌بیند و چون فرم آخر همه‌ی زوایای محصول/لوگو را نشان نمی‌دهد، مدل آن را عوض می‌کند.
+- backend از قبل آماده است: تا ۳ مرجع را به Veo 3.1 به‌عنوان `referenceImages` می‌فرستد و برای Wan در متن پرامت لنگر می‌کند — پس فقط باید محصول را به آرایه‌ی مرجع اضافه کنیم. هیچ تغییری در backend/RLS/storage/auth لازم نیست.
 
-## Plan
-1. **Persist the project Character Sheet on every job**
-   - Add a safe `reference_image_urls` metadata column to `generator_generation_jobs`.
-   - Store the filtered Character Sheet URLs during `createJob`.
-   - Return that metadata from job list/get endpoints so regenerated cards inherit the exact same character anchor.
+## تغییرات (فقط frontend)
 
-2. **Make regeneration preserve the same character**
-   - Update the frontend job contract to include `reference_image_urls`.
-   - In `regenerateCard`, send `job.reference_image_urls` first, falling back to the current project Character Sheet.
-   - This prevents edits/retries from dropping the anchor.
+### ۱. state دائمی محصول پروژه
+- افزودن `projectProduct: { id, url, title } | null` مثل `selectedCharacter`.
+- ساخت آرایه‌ی ترکیبی مرجع‌ها:
+  ```text
+  projectReferenceUrls = [character?.url, product?.url].filter(Boolean).slice(0, 3)
+  ```
 
-3. **Strengthen prompt anchoring for every provider**
-   - Replace the current soft prefix with a stricter English identity-lock block that explicitly says: same face, same blue robot body, same black T-shirt, same orange logo, same gray cargo pants, same shoes/accessories; do not change wardrobe unless the user explicitly requests it.
-   - Keep user prompt content intact after this block.
+### ۲. پین‌شدن خودکار از Product AD
+- در هندلرهای `onUseAsPrompt` و `onSendScenes` در `DashboardPage.tsx`، علاوه بر ست‌کردن Start frame، همان `imageUrl` به‌عنوان `projectProduct` ذخیره شود.
 
-4. **Fix provider-specific weak points**
-   - For Wan: disable provider prompt expansion when a Character Sheet reference exists, because expansion can reinterpret/change clothing.
-   - For Wan/local fallback: include the reference URL and strict identity-lock prompt, while keeping the previous-frame start image as the motion bridge.
-   - For Flow/Veo: route reference-image jobs to the reference-capable Veo 3.1 path and attach `referenceImages` as inline data.
+### ۳. دکمه‌ی مستقل پین محصول
+- افزودن یک دکمه‌ی «Product» در نوار بالای صفحه (کنار Character Sheet) که از روی `archiveProductImages` (محصولات ذخیره‌شده‌ی کاربر) امکان انتخاب/تغییر/حذف محصول پروژه را می‌دهد.
+- نشانگر کوچک وضعیت «Product locked» مثل وضعیت کاراکتر.
 
-5. **Add observability without leaking secrets**
-   - Log only job id, provider/model, and reference count, never the actual signed URLs.
-   - This lets us confirm card 2+ was submitted with a Character Sheet anchor.
+### ۴. تزریق محصول به مرجع همه‌ی کارت‌ها
+- جایگزینی همه‌ی نقاطی که الان فقط `projectCharacterRefs` می‌فرستند با `projectReferenceUrls` (تک‌کارت، چندصحنه، و regenerate/retry).
+- چون ستون `reference_image_urls` روی job ذخیره می‌شود، ساخت مجدد هم محصول را حفظ می‌کند.
 
-6. **Validate safely**
-   - Run TypeScript validation.
-   - Run targeted backend tests if available.
-   - After deployment, verify a two-card generation request logs `referenceCount: 1` for both cards and that the second card request keeps the persisted reference metadata.
+### ۵. لنگر متنی محصول در پرامت هر کارت
+- افزودن یک بلوک کوتاه انگلیسی «هویت‌قفل محصول» (مشابه `applyCharacterPrefix`) که قبل از متن کاربر روی هر کارت قرار می‌گیرد: همان محصول، همان فرم/رنگ/لوگو، بدون تغییر مگر درخواست صریح کاربر. این لوگوی روی بدن کاراکتر و خود محصول را تثبیت می‌کند.
 
-## Risks / safeguards
-- Existing jobs without `reference_image_urls` remain compatible.
-- No credit ledger changes.
-- No destructive data changes.
-- If a provider still ignores visual references, the app will at least preserve and resend the strongest available anchor consistently instead of losing it between cards.
+## ایمنی و ریسک
+- فقط frontend؛ بدون تغییر backend، دیتابیس، RLS، storage یا auth.
+- سازگار با کارت‌های قدیمی (نبود محصول = رفتار فعلی).
+- محدودیت ۳ مرجع Veo رعایت می‌شود (کاراکتر + محصول = ۲).
+- بدون تغییر در ledger اعتبار.
+
+## تأیید
+- اجرای typecheck.
+- بررسی اینکه روی ساخت دو کارت، هر دو کارت با مرجع محصول ارسال می‌شوند و محصول/لوگو ثابت می‌ماند.
