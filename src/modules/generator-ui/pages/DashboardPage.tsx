@@ -12050,6 +12050,31 @@ export default function DashboardPage() {
 
                 <button
                   type="button"
+                  onClick={() => void runProductScenario()}
+                  disabled={isEnhancingPrompt || !selectedProduct}
+                  className="mt-1 flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full border border-amber-300/30 bg-amber-300/10 text-amber-200">
+                    {selectedProduct ? (
+                      <img src={selectedProduct.url} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <Package className="h-4 w-4" aria-hidden="true" />
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-zinc-100">Scenario for this product</span>
+                    <span className="block text-xs leading-5 text-zinc-500">
+                      {selectedProduct
+                        ? `Write a ${durationSeconds}s ad scenario for the pinned product — tuned to your duration and styles.`
+                        : 'Pin a product first (Add product) to write its scenario.'}
+                    </span>
+                  </span>
+                </button>
+
+
+
+                <button
+                  type="button"
                   onClick={() => setStyleMode((m) => (m === 'input' ? 'idle' : 'input'))}
                   disabled={isEnhancingPrompt}
                   className={`mt-1 flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40 ${
