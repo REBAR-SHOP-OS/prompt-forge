@@ -391,6 +391,7 @@ async function discoverComfyEndpoints(config: Extract<LocalVideoConfig, { ok: tr
  *  create endpoint exists (without running a real generation). */
 export async function localVideoStatus(
   probe = false,
+  discover = false,
 ): Promise<LocalVideoStatusReport> {
   const config = readLocalVideoConfig();
   if (!config.ok) {
