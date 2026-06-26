@@ -3660,6 +3660,7 @@ export default function DashboardPage() {
       setNarratorMode('idle')
       setNarratorScript('')
       setStyleMode('idle')
+      setScenarioMode('idle')
       setSelectedStyles(emptyStyleSelection())
     } catch {
       setComposerError('Could not write the product scenario. Please try again.')
