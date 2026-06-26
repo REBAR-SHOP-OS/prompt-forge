@@ -1,15 +1,39 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { aiGateway } from "../_shared/modules/external-api-adapter/service.ts";
 
+/** Snapshot and clear env vars that leak from the host shell into tests. */
+function isolateEnv(): () => void {
+  const keys = [
+    "LOCAL_VIDEO_ROUTER_URL",
+    "LOCAL_VIDEO_ROUTER_TYPE",
+    "LOCAL_VIDEO_ROUTER_CREATE_PATH",
+    "LOCAL_VIDEO_ROUTER_STATUS_PATH",
+    "LOCAL_VIDEO_ROUTER_OUTPUT_PATH",
+    "LOCAL_VIDEO_ROUTER_TIMEOUT_MS",
+    "LOCAL_VIDEO_COMFY_WORKFLOW_JSON",
+    "LOCAL_VIDEO_ROUTER_TOKEN",
+    "ALLOW_LOCAL_VIDEO_HTTP",
+    "ALLOW_LOCAL_VIDEO_LOOPBACK",
+  ];
+  const snapshot = new Map<string, string | undefined>();
+  for (const k of keys) snapshot.set(k, Deno.env.get(k));
+  for (const k of keys) Deno.env.delete(k);
+  return () => {
+    for (const k of keys) {
+      const v = snapshot.get(k);
+      if (v === undefined) Deno.env.delete(k);
+      else Deno.env.set(k, v);
+    }
+  };
+}
+
 Deno.test("local video router 404 on /videos/generations falls back to /videos", async () => {
+  const restoreEnv = isolateEnv();
   const originalFetch = globalThis.fetch;
-  const previousUrl = Deno.env.get("LOCAL_VIDEO_ROUTER_URL");
-  const previousPath = Deno.env.get("LOCAL_VIDEO_ROUTER_CREATE_PATH");
-  const previousTimeout = Deno.env.get("LOCAL_VIDEO_ROUTER_TIMEOUT_MS");
   const requestedUrls: string[] = [];
 
   Deno.env.set("LOCAL_VIDEO_ROUTER_URL", "https://router.example/v1");
-  Deno.env.delete("LOCAL_VIDEO_ROUTER_CREATE_PATH");
+  Deno.env.set("LOCAL_VIDEO_ROUTER_TYPE", "openai_compatible");
   Deno.env.set("LOCAL_VIDEO_ROUTER_TIMEOUT_MS", "1000");
 
   globalThis.fetch = ((input: RequestInfo | URL) => {
@@ -42,26 +66,17 @@ Deno.test("local video router 404 on /videos/generations falls back to /videos",
     assertEquals(result.isComplete, false);
   } finally {
     globalThis.fetch = originalFetch;
-    if (previousUrl === undefined) Deno.env.delete("LOCAL_VIDEO_ROUTER_URL");
-    else Deno.env.set("LOCAL_VIDEO_ROUTER_URL", previousUrl);
-    if (previousPath === undefined) Deno.env.delete("LOCAL_VIDEO_ROUTER_CREATE_PATH");
-    else Deno.env.set("LOCAL_VIDEO_ROUTER_CREATE_PATH", previousPath);
-    if (previousTimeout === undefined) Deno.env.delete("LOCAL_VIDEO_ROUTER_TIMEOUT_MS");
-    else Deno.env.set("LOCAL_VIDEO_ROUTER_TIMEOUT_MS", previousTimeout);
+    restoreEnv();
   }
 });
 
 Deno.test("local video status probes the ComfyUI create endpoint with POST", async () => {
+  const restoreEnv = isolateEnv();
   const originalFetch = globalThis.fetch;
-  const previousUrl = Deno.env.get("LOCAL_VIDEO_ROUTER_URL");
-  const previousType = Deno.env.get("LOCAL_VIDEO_ROUTER_TYPE");
-  const previousPath = Deno.env.get("LOCAL_VIDEO_ROUTER_CREATE_PATH");
-  const previousTimeout = Deno.env.get("LOCAL_VIDEO_ROUTER_TIMEOUT_MS");
   const requests: Array<{ method: string; url: string; body: string }> = [];
 
   Deno.env.set("LOCAL_VIDEO_ROUTER_URL", "https://router.example");
   Deno.env.set("LOCAL_VIDEO_ROUTER_TYPE", "comfyui");
-  Deno.env.delete("LOCAL_VIDEO_ROUTER_CREATE_PATH");
   Deno.env.set("LOCAL_VIDEO_ROUTER_TIMEOUT_MS", "1000");
 
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
@@ -92,39 +107,35 @@ Deno.test("local video status probes the ComfyUI create endpoint with POST", asy
     assertEquals(result.create_endpoint_found, true);
   } finally {
     globalThis.fetch = originalFetch;
-    if (previousUrl === undefined) Deno.env.delete("LOCAL_VIDEO_ROUTER_URL");
-    else Deno.env.set("LOCAL_VIDEO_ROUTER_URL", previousUrl);
-    if (previousType === undefined) Deno.env.delete("LOCAL_VIDEO_ROUTER_TYPE");
-    else Deno.env.set("LOCAL_VIDEO_ROUTER_TYPE", previousType);
-    if (previousPath === undefined) Deno.env.delete("LOCAL_VIDEO_ROUTER_CREATE_PATH");
-    else Deno.env.set("LOCAL_VIDEO_ROUTER_CREATE_PATH", previousPath);
-    if (previousTimeout === undefined) Deno.env.delete("LOCAL_VIDEO_ROUTER_TIMEOUT_MS");
-    else Deno.env.set("LOCAL_VIDEO_ROUTER_TIMEOUT_MS", previousTimeout);
+    restoreEnv();
   }
 });
 
 Deno.test("local video router ComfyUI falls back through common prompt endpoints", async () => {
+  const restoreEnv = isolateEnv();
   const originalFetch = globalThis.fetch;
-  const previousUrl = Deno.env.get("LOCAL_VIDEO_ROUTER_URL");
-  const previousType = Deno.env.get("LOCAL_VIDEO_ROUTER_TYPE");
-  const previousPath = Deno.env.get("LOCAL_VIDEO_ROUTER_CREATE_PATH");
-  const previousTimeout = Deno.env.get("LOCAL_VIDEO_ROUTER_TIMEOUT_MS");
   const requests: Array<{ method: string; url: string }> = [];
 
   Deno.env.set("LOCAL_VIDEO_ROUTER_URL", "https://router.example");
   Deno.env.set("LOCAL_VIDEO_ROUTER_TYPE", "comfyui");
-  Deno.env.delete("LOCAL_VIDEO_ROUTER_CREATE_PATH");
   Deno.env.set("LOCAL_VIDEO_ROUTER_TIMEOUT_MS", "1000");
+  Deno.env.set(
+    "LOCAL_VIDEO_COMFY_WORKFLOW_JSON",
+    JSON.stringify({
+      "1": { inputs: { ckpt_name: "test.safetensors" }, class_type: "CheckpointLoaderSimple" },
+      "2": { inputs: { text: "{{PROMPT}}" }, class_type: "CLIPTextEncode" },
+    }),
+  );
 
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = (init?.method ?? "GET").toUpperCase();
     requests.push({ method, url });
-    if (url.endsWith("/prompt")) {
+    if (url === "https://router.example/prompt") {
       return Promise.resolve(new Response("Not Found", { status: 404 }));
     }
     return Promise.resolve(
-      new Response(JSON.stringify({ id: "queue_1", status: "queued" }), {
+      new Response(JSON.stringify({ prompt_id: "queue_1" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }),
@@ -143,17 +154,10 @@ Deno.test("local video router ComfyUI falls back through common prompt endpoints
       { method: "POST", url: "https://router.example/prompt" },
       { method: "POST", url: "https://router.example/api/prompt" },
     ]);
-    assertEquals(result.providerJobId, "local:queue_1");
+    assertEquals(result.providerJobId, "localcomfy:queue_1");
     assertEquals(result.isComplete, false);
   } finally {
     globalThis.fetch = originalFetch;
-    if (previousUrl === undefined) Deno.env.delete("LOCAL_VIDEO_ROUTER_URL");
-    else Deno.env.set("LOCAL_VIDEO_ROUTER_URL", previousUrl);
-    if (previousType === undefined) Deno.env.delete("LOCAL_VIDEO_ROUTER_TYPE");
-    else Deno.env.set("LOCAL_VIDEO_ROUTER_TYPE", previousType);
-    if (previousPath === undefined) Deno.env.delete("LOCAL_VIDEO_ROUTER_CREATE_PATH");
-    else Deno.env.set("LOCAL_VIDEO_ROUTER_CREATE_PATH", previousPath);
-    if (previousTimeout === undefined) Deno.env.delete("LOCAL_VIDEO_ROUTER_TIMEOUT_MS");
-    else Deno.env.set("LOCAL_VIDEO_ROUTER_TIMEOUT_MS", previousTimeout);
+    restoreEnv();
   }
 });
