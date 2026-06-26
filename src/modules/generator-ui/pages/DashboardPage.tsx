@@ -11970,6 +11970,7 @@ export default function DashboardPage() {
                   setNarratorMode('idle')
                   setNarratorScript('')
                   setStyleMode('idle')
+                  setScenarioMode('idle')
                   setSelectedStyles(emptyStyleSelection())
                 }
               }}
