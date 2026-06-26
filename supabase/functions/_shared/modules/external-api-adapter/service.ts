@@ -302,18 +302,30 @@ function readLocalVideoConfig(): LocalVideoConfig {
   const createPathEnv = (Deno.env.get("LOCAL_VIDEO_ROUTER_CREATE_PATH") ?? "").trim();
 
   let createAttempts: string[];
-  if (createPathEnv) {
-    // Explicit create path: base URL is the base only, path is the endpoint.
+  if (routerType === "comfyui") {
+    // ComfyUI: collect explicit path (if set) plus default fallbacks.
+    // Some reverse proxies expose the endpoint under /api, /v1, etc.
+    // Also guard against double paths when the base URL already ends with
+    // one of the known create endpoints.
+    const comfyPaths = new Set<string>();
+    if (createPathEnv) {
+      comfyPaths.add(joinUrl(baseUrl, createPathEnv));
+    }
+    const defaults = ["/prompt", "/api/prompt", "/api/v1/prompt", "/v1/prompt"];
+    for (const p of defaults) {
+      comfyPaths.add(joinUrl(baseUrl, p));
+    }
+    // If the base URL itself already looks like a ComfyUI endpoint, try it too.
+    const basePath = parsed.pathname.replace(/\/+$/, "");
+    for (const p of defaults) {
+      if (basePath === p || basePath.endsWith(p)) {
+        comfyPaths.add(baseUrl);
+      }
+    }
+    createAttempts = Array.from(comfyPaths);
+  } else if (createPathEnv) {
+    // Explicit create path for openai_compatible routers.
     createAttempts = [joinUrl(baseUrl, createPathEnv)];
-  } else if (routerType === "comfyui") {
-    // ComfyUI default create endpoint. Some reverse proxies expose it under
-    // a nested /api prefix, so try the common variants before failing.
-    createAttempts = [
-      joinUrl(baseUrl, "/prompt"),
-      joinUrl(baseUrl, "/api/prompt"),
-      joinUrl(baseUrl, "/api/v1/prompt"),
-      joinUrl(baseUrl, "/v1/prompt"),
-    ];
   } else {
     // openai_compatible defaults — preserve legacy /v1 handling and the
     // exact-route detection for URLs that already include the endpoint.
