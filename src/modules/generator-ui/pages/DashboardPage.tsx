@@ -564,6 +564,40 @@ const MODEL_CHOICES: ModelChoice[] = [
   },
 ]
 
+type LocalPlannerModelChoice = {
+  id: string
+  label: string
+  description: string
+}
+
+const LOCAL_PLANNER_MODEL_CHOICES: LocalPlannerModelChoice[] = [
+  {
+    id: 'gpt-oss:20b',
+    label: 'gpt-oss:20b',
+    description: 'Fast general-purpose local planner.',
+  },
+  {
+    id: 'qwen3.5:27b',
+    label: 'qwen3.5:27b',
+    description: 'Stronger instruction following for video prompts.',
+  },
+  {
+    id: 'qwen3:14b',
+    label: 'qwen3:14b',
+    description: 'Lighter local planner for quick rewrites.',
+  },
+  {
+    id: 'qwen3.6:32b',
+    label: 'qwen3.6:32b',
+    description: 'Best larger local option for prompt quality.',
+  },
+  {
+    id: 'gemma4:27b',
+    label: 'gemma4:27b',
+    description: 'Alternative high-quality local planner.',
+  },
+]
+
 
 // Mirrors backend pricing in supabase/functions/_shared/modules/external-api-adapter/service.ts.
 // 1 USD = 100 credits. Keep in sync with COST_MAP_USD.
@@ -3428,6 +3462,15 @@ export default function DashboardPage() {
   const [isPromptMenuOpen, setIsPromptMenuOpen] = useState(false)
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false)
   const [selectedModelId, setSelectedModelId] = useState<string>('wan-i2v')
+  const [localPlannerModel, setLocalPlannerModel] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'gpt-oss:20b'
+    try {
+      const raw = window.localStorage.getItem('ui:local-video-planner-model')?.trim()
+      return LOCAL_PLANNER_MODEL_CHOICES.some((choice) => choice.id === raw) ? raw! : 'gpt-oss:20b'
+    } catch {
+      return 'gpt-oss:20b'
+    }
+  })
   const [narratorMode, setNarratorMode] = useState<'idle' | 'input'>('idle')
   const [narratorScript, setNarratorScript] = useState('')
   const [styleMode, setStyleMode] = useState<'idle' | 'input'>('idle')
@@ -3451,6 +3494,15 @@ export default function DashboardPage() {
     return MODEL_CHOICES.find((m) => m.supports.includes(needed)) ?? MODEL_CHOICES[0]
   }, [selectedModelId, isTextToVideo])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem('ui:local-video-planner-model', localPlannerModel)
+    } catch {
+      /* ignore */
+    }
+  }, [localPlannerModel])
+
 
 
   // Local video router config/health status — only checked while a local model
@@ -3471,6 +3523,45 @@ export default function DashboardPage() {
       .finally(() => { if (!cancelled) setLocalStatusLoading(false) })
     return () => { cancelled = true }
   }, [selectedModel?.providerKey, selectedModel?.model])
+
+  async function rewriteVideoPrompt(params: {
+    prompt: string
+    imageUrls: string[]
+    mode: 'silent' | 'narrated' | 'styles'
+    narratorScript?: string
+    styleHints?: string
+  }): Promise<string> {
+    const invokeMode = params.mode === 'styles' ? 'silent' : params.mode
+    const body = {
+      prompt: params.prompt,
+      imageUrls: params.imageUrls,
+      mode: invokeMode,
+      narratorScript: params.narratorScript ?? '',
+      styleHints: params.styleHints ?? '',
+    }
+
+    if (selectedModel?.providerKey === 'local') {
+      const { data, error } = await supabase.functions.invoke('local-llm-plan-video', {
+        body: {
+          ...body,
+          model: localPlannerModel,
+          videoModel: selectedModel.model,
+          durationSeconds,
+          aspectRatio,
+        },
+      })
+      if (error) throw error
+      const planned = (data as { plannedPrompt?: string } | null)?.plannedPrompt?.trim()
+      if (!planned) throw new Error('Could not plan the local video prompt.')
+      return planned
+    }
+
+    const { data, error } = await supabase.functions.invoke('enhance-prompt', { body })
+    if (error) throw error
+    const enhanced = (data as { enhancedPrompt?: string } | null)?.enhancedPrompt?.trim()
+    if (!enhanced) throw new Error('Could not enhance the prompt.')
+    return enhanced
+  }
 
 
   // Cost preview / confirm dialog state
@@ -3525,38 +3616,24 @@ export default function DashboardPage() {
       const imageUrls = [readyStartFrame?.url, readyEndFrame?.url].filter(
         (u): u is string => typeof u === 'string' && u.length > 0,
       )
-      // 'styles' optimization is a silent rewrite that incorporates style hints.
-      const invokeMode = options.mode === 'styles' ? 'silent' : options.mode
-      const { data, error } = await supabase.functions.invoke('enhance-prompt', {
-        body: {
-          prompt: current,
-          imageUrls,
-          mode: invokeMode,
-          narratorScript: options.narratorScript ?? '',
-          styleHints: options.styleHints ?? '',
-        },
+      const enhanced = await rewriteVideoPrompt({
+        prompt: current,
+        imageUrls,
+        mode: options.mode,
+        narratorScript: options.narratorScript,
+        styleHints: options.styleHints,
       })
-      if (error) {
-        const ctx = (error as unknown as { context?: { status?: number } })?.context
-        const status = ctx?.status
-        if (status === 429) setComposerError('Rate limit reached. Try again in a moment.')
-        else if (status === 402) setComposerError('AI credits exhausted. Add credits to continue.')
-        else setComposerError('Could not enhance prompt. Please try again.')
-        return
-      }
-      const enhanced = (data as { enhancedPrompt?: string } | null)?.enhancedPrompt?.trim()
-      if (!enhanced) {
-        setComposerError('Could not enhance prompt. Please try again.')
-        return
-      }
       setPromptText(enhanced)
       setIsPromptMenuOpen(false)
       setNarratorMode('idle')
       setNarratorScript('')
       setStyleMode('idle')
       setSelectedStyles(emptyStyleSelection())
-    } catch {
-      setComposerError('Could not enhance prompt. Please try again.')
+    } catch (e) {
+      const status = (e as unknown as { context?: { status?: number } })?.context?.status
+      if (status === 429) setComposerError('Rate limit reached. Try again in a moment.')
+      else if (status === 402) setComposerError('AI credits exhausted. Add credits to continue.')
+      else setComposerError('Could not enhance prompt. Please try again.')
     } finally {
       setIsEnhancingPrompt(false)
     }
@@ -3633,27 +3710,12 @@ export default function DashboardPage() {
           idea || `A polished ${durationSeconds}s cinematic product advertisement.`,
           product,
         )
-        const { data, error } = await supabase.functions.invoke('enhance-prompt', {
-          body: {
-            prompt: seedPrompt,
-            imageUrls: [product.url],
-            mode: 'silent',
-            narratorScript: '',
-            styleHints,
-          },
+        const enhanced = await rewriteVideoPrompt({
+          prompt: seedPrompt,
+          imageUrls: [product.url],
+          mode: 'silent',
+          styleHints,
         })
-        if (error) {
-          const status = (error as unknown as { context?: { status?: number } })?.context?.status
-          if (status === 429) setComposerError('Rate limit reached. Try again in a moment.')
-          else if (status === 402) setComposerError('AI credits exhausted. Add credits to continue.')
-          else setComposerError('Could not write the product scenario. Please try again.')
-          return
-        }
-        const enhanced = (data as { enhancedPrompt?: string } | null)?.enhancedPrompt?.trim()
-        if (!enhanced) {
-          setComposerError('Could not write the product scenario. Please try again.')
-          return
-        }
         setPromptText(enhanced)
       }
       setIsPromptMenuOpen(false)
@@ -3662,8 +3724,11 @@ export default function DashboardPage() {
       setStyleMode('idle')
       setScenarioMode('idle')
       setSelectedStyles(emptyStyleSelection())
-    } catch {
-      setComposerError('Could not write the product scenario. Please try again.')
+    } catch (e) {
+      const status = (e as unknown as { context?: { status?: number } })?.context?.status
+      if (status === 429) setComposerError('Rate limit reached. Try again in a moment.')
+      else if (status === 402) setComposerError('AI credits exhausted. Add credits to continue.')
+      else setComposerError('Could not write the product scenario. Please try again.')
     } finally {
       setIsEnhancingPrompt(false)
     }
@@ -11449,6 +11514,36 @@ export default function DashboardPage() {
                       : localStatus?.status === 'configured'
                         ? 'Local video router: connected.'
                         : localStatus?.message ?? 'Local video router is not configured. Add LOCAL_VIDEO_ROUTER_URL or choose a cloud model.'}
+                  </div>
+                )}
+                {selectedModel?.providerKey === 'local' && (
+                  <div className="mt-2 rounded-lg border border-white/10 bg-white/[0.03] p-2">
+                    <div className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                      Local prompt planner
+                    </div>
+                    <div className="grid gap-2">
+                      {LOCAL_PLANNER_MODEL_CHOICES.map((choice) => {
+                        const active = choice.id === localPlannerModel
+                        return (
+                          <button
+                            key={choice.id}
+                            type="button"
+                            onClick={() => setLocalPlannerModel(choice.id)}
+                            className={`flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-white/[0.05] ${
+                              active ? 'bg-white/[0.05]' : ''
+                            }`}
+                          >
+                            <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/10 bg-black/20 text-[10px] font-bold text-zinc-200">
+                              {active ? '•' : '·'}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-sm font-semibold text-zinc-100">{choice.label}</span>
+                              <span className="block text-xs leading-5 text-zinc-500">{choice.description}</span>
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
                 )}
 
