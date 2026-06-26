@@ -626,7 +626,12 @@ export const jobOrchestratorGateway = {
               await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 502, latencyMs: Date.now() - ctx.startedAt, errorCode: "LOCAL_PROVIDER_ERROR" });
               return errorResponse(
                 "LOCAL_PROVIDER_ERROR",
-                "Local video router could not start generation. Check the router logs and endpoint compatibility.",
+                // Surface the router's actual rejection (e.g. ComfyUI node errors,
+                // missing model/checkpoint, or a bad LoadImage path). genErr never
+                // contains the router host/URL or any secret, so it is safe to show.
+                genErr
+                  ? `Local video router could not start generation: ${genErr}`
+                  : "Local video router could not start generation. Check the router logs and endpoint compatibility.",
                 502,
                 ctx.requestId,
               );
