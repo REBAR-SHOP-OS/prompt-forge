@@ -3431,6 +3431,7 @@ export default function DashboardPage() {
   const [narratorMode, setNarratorMode] = useState<'idle' | 'input'>('idle')
   const [narratorScript, setNarratorScript] = useState('')
   const [styleMode, setStyleMode] = useState<'idle' | 'input'>('idle')
+  const [scenarioMode, setScenarioMode] = useState<'idle' | 'input'>('idle')
   const [selectedStyles, setSelectedStyles] = useState<StyleSelection>(emptyStyleSelection)
   const selectedStyleCount = useMemo(() => countSelectedStyles(selectedStyles), [selectedStyles])
   const toggleStyle = (kind: keyof StyleSelection, id: string) => {
