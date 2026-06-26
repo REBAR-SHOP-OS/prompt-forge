@@ -1750,6 +1750,12 @@ async function startComfyVideo(
     throw err;
   }
 
+  if (!res) {
+    throw new Error(
+      `Local router is reachable, but no video create endpoint was found. Tried: ${attempted.join(", ")}. Set LOCAL_VIDEO_ROUTER_CREATE_PATH to your ComfyUI create endpoint (default /prompt).`,
+    );
+  }
+
   const text = await res.text().catch(() => "");
   let payload: unknown = null;
   try { payload = text ? JSON.parse(text) : null; } catch { payload = null; }
