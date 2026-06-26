@@ -466,18 +466,24 @@ export async function localVideoStatus(
     };
   }
 
+  const discovered = discover ? await discoverComfyEndpoints(config) : undefined;
+
   return {
     status: "configured",
     message: createFound
       ? "Local video router is reachable and a create endpoint was found."
+      : discovered && discovered.length > 0
+      ? `Local router is reachable. ComfyUI signature endpoints responded at: ${discovered.join(", ")}. Set LOCAL_VIDEO_ROUTER_URL so its base + /prompt matches one of these (or set LOCAL_VIDEO_ROUTER_CREATE_PATH accordingly).`
       : `Local router is reachable, but no video create endpoint was found. Tried: ${attemptedPaths.join(", ")}. Set LOCAL_VIDEO_ROUTER_CREATE_PATH to your router's create endpoint, for example /prompt for ComfyUI.`,
     configured: true,
     reachable: true,
     create_endpoint_found: createFound,
     attempted_create_paths: attemptedPaths,
     router_type: config.routerType,
+    ...(discovered ? { discovered_endpoints: discovered } : {}),
   };
 }
+
 
 
 
