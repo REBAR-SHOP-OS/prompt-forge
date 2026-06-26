@@ -97,8 +97,10 @@ export const externalApiAdapterGateway = {
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 429, latencyMs: Date.now() - ctx.startedAt, errorCode: "RATE_LIMITED" });
             return errorResponse("RATE_LIMITED", "Too many requests", 429, ctx.requestId);
           }
-          const probe = new URL(req.url).searchParams.get("probe") === "true";
-          const status = await aiGateway.localVideoStatus(probe);
+          const params = new URL(req.url).searchParams;
+          const probe = params.get("probe") === "true";
+          const discover = params.get("discover") === "true";
+          const status = await aiGateway.localVideoStatus(probe || discover, discover);
           await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
           return jsonResponse({ ...status, requestId: ctx.requestId });
         }
