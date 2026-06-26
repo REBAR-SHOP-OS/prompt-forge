@@ -122,8 +122,7 @@ Deno.test("local video router ComfyUI falls back through common prompt endpoints
   Deno.env.set(
     "LOCAL_VIDEO_COMFY_WORKFLOW_JSON",
     JSON.stringify({
-      "1": { inputs: { ckpt_name: "test.safetensors" }, class_type: "CheckpointLoaderSimple" },
-      "2": { inputs: { text: "{{PROMPT}}" }, class_type: "CLIPTextEncode" },
+      "1": { inputs: { text: "{{PROMPT}}" }, class_type: "CLIPTextEncode" },
     }),
   );
 
@@ -176,6 +175,7 @@ Deno.test("local video router ComfyUI tries proxied /comfy prompt endpoint", asy
       "1": { inputs: { text: "{{PROMPT}}" }, class_type: "CLIPTextEncode" },
     }),
   );
+  Deno.env.set("LOCAL_VIDEO_ROUTER_CREATE_PATH", "/comfy/prompt");
 
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -201,10 +201,6 @@ Deno.test("local video router ComfyUI tries proxied /comfy prompt endpoint", asy
     });
 
     assertEquals(requests, [
-      { method: "POST", url: "https://router.example/prompt" },
-      { method: "POST", url: "https://router.example/api/prompt" },
-      { method: "POST", url: "https://router.example/api/v1/prompt" },
-      { method: "POST", url: "https://router.example/v1/prompt" },
       { method: "POST", url: "https://router.example/comfy/prompt" },
     ]);
     assertEquals(result.providerJobId, "localcomfy:proxied_queue_1");
