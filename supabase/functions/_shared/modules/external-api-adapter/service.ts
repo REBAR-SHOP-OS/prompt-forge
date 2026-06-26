@@ -367,16 +367,24 @@ export async function localVideoStatus(
     };
   }
 
-  // Probe each candidate create endpoint with a GET. A reachable router
-  // answers (any non-404 status, typically 405 Method Not Allowed for a
-  // POST-only endpoint) which proves the path exists; 404 means missing.
+  // Probe each candidate create endpoint with a lightweight POST so we verify
+  // the same HTTP method the real generation path uses. A reachable router
+  // answers (any non-404 status) which proves the path exists; 404 means
+  // missing. Timeouts/abort still count as unreachable.
   let reachable = false;
   let createFound = false;
   for (const url of config.createAttempts) {
     try {
       const res = await localVideoFetch(
         url,
-        { method: "GET", headers: localVideoHeaders(config) },
+        {
+          method: "POST",
+          headers: localVideoHeaders(config),
+          body: JSON.stringify({
+            prompt: {},
+            client_id: "local-video-status-probe",
+          }),
+        },
         Math.min(config.timeoutMs, 10_000),
       );
       reachable = true;
