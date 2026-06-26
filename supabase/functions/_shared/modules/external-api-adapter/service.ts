@@ -1758,7 +1758,7 @@ async function startComfyVideo(
     logError("comfy create failed", { status: res.status, body: text.slice(0, 500), model: resolvedModel });
     if (res.status === 404) {
       throw new Error(
-        `Local router is reachable, but no video create endpoint was found. Tried: POST ${urlPath(createUrl)}. Set LOCAL_VIDEO_ROUTER_CREATE_PATH to your ComfyUI create endpoint (default /prompt).`,
+        `Local router is reachable, but no video create endpoint was found. Tried: ${attempted.join(", ")}. Set LOCAL_VIDEO_ROUTER_CREATE_PATH to your ComfyUI create endpoint (default /prompt).`,
       );
     }
     throw new Error(`ComfyUI ${res.status}: ${text.slice(0, 300) || "unknown error"}`);
