@@ -356,7 +356,7 @@ export interface LocalVideoStatusReport {
 
 /** Probe ComfyUI's well-known GET endpoints to find the real API base path.
  *  Returns the relative paths (host omitted) that answered with HTTP < 400. */
-async function discoverComfyEndpoints(config: LocalVideoConfigOk): Promise<string[]> {
+async function discoverComfyEndpoints(config: Extract<LocalVideoConfig, { ok: true }>): Promise<string[]> {
   // ComfyUI signature routes. Cover bare root and common reverse-proxy
   // prefixes (/api, /comfy, /comfyui) so a prefixed deployment is detected.
   const signatures = ["/system_stats", "/object_info", "/queue", "/history", "/prompt"];
