@@ -1722,14 +1722,28 @@ async function startComfyVideo(
     throw new Error(`Invalid LOCAL_VIDEO_COMFY_WORKFLOW_JSON after substitution: ${(err as Error).message}`);
   }
 
-  const createUrl = config.createAttempts[0];
-  let res: Response;
+  const attempted = config.createAttempts.map((u) => `POST ${urlPath(u)}`);
+  let res: Response | null = null;
   try {
-    res = await localVideoFetch(createUrl, {
-      method: "POST",
-      headers: localVideoHeaders(config),
-      body: JSON.stringify({ prompt: workflow }),
-    }, config.timeoutMs);
+    for (let i = 0; i < config.createAttempts.length; i++) {
+      const url = config.createAttempts[i];
+      const candidate = await localVideoFetch(url, {
+        method: "POST",
+        headers: localVideoHeaders(config),
+        body: JSON.stringify({ prompt: workflow }),
+      }, config.timeoutMs);
+      if (candidate.status === 404 && i < config.createAttempts.length - 1) {
+        logInfo("comfy create fallback", {
+          from: urlPath(url),
+          to: urlPath(config.createAttempts[i + 1]),
+          model: resolvedModel,
+        });
+        await candidate.body?.cancel().catch(() => {});
+        continue;
+      }
+      res = candidate;
+      break;
+    }
   } catch (err) {
     logError("comfy create unreachable", { error: (err as Error).message, model: resolvedModel });
     if (isUnreachableError(err)) throw new Error(LOCAL_UNREACHABLE_MESSAGE);
