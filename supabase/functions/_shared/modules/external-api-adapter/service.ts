@@ -306,8 +306,14 @@ function readLocalVideoConfig(): LocalVideoConfig {
     // Explicit create path: base URL is the base only, path is the endpoint.
     createAttempts = [joinUrl(baseUrl, createPathEnv)];
   } else if (routerType === "comfyui") {
-    // ComfyUI default create endpoint.
-    createAttempts = [joinUrl(baseUrl, "/prompt")];
+    // ComfyUI default create endpoint. Some reverse proxies expose it under
+    // a nested /api prefix, so try the common variants before failing.
+    createAttempts = [
+      joinUrl(baseUrl, "/prompt"),
+      joinUrl(baseUrl, "/api/prompt"),
+      joinUrl(baseUrl, "/api/v1/prompt"),
+      joinUrl(baseUrl, "/v1/prompt"),
+    ];
   } else {
     // openai_compatible defaults — preserve legacy /v1 handling and the
     // exact-route detection for URLs that already include the endpoint.
