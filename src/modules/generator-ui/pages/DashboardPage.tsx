@@ -3561,6 +3561,98 @@ export default function DashboardPage() {
     }
   }
 
+  // Write an AI scenario tuned to the pinned product. Short durations (5/10/15)
+  // fill the prompt box with a single product prompt; long durations (30/45/135)
+  // produce a scene-by-scene scenario routed through the multi-scene flow. Uses
+  // the chosen duration and any selected styles automatically.
+  const runProductScenario = async () => {
+    if (isEnhancingPrompt || isSubmitting) return
+    const product = selectedProduct
+    if (!product) {
+      setComposerError('Pin a product first (Add product), then write its scenario.')
+      return
+    }
+    setIsEnhancingPrompt(true)
+    setComposerError(null)
+    try {
+      const idea = promptText.trim()
+      const styleHints = buildStyleHints(selectedStyles)
+      const name = product.title?.trim()
+      const desc = product.description?.trim()
+      const productBrief = [
+        `Advertised product${name ? ` ("${name}")` : ''}.`,
+        desc ? `Product details: ${desc}` : '',
+        idea ? `User's idea/direction: ${idea}` : 'No extra direction — build a compelling product ad from the product itself.',
+      ]
+        .filter(Boolean)
+        .join('\n')
+
+      const isLong = durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135
+      if (isLong) {
+        const { data, error } = await supabase.functions.invoke('scenario-write', {
+          body: {
+            idea: [productBrief, styleHints ? `Visual styles to honor: ${styleHints}` : ''].filter(Boolean).join('\n\n'),
+            durationSeconds,
+            imageUrl: product.url,
+          },
+        })
+        if (error) {
+          const status = (error as unknown as { context?: { status?: number } })?.context?.status
+          if (status === 429) setComposerError('Rate limit reached. Try again in a moment.')
+          else if (status === 402) setComposerError('AI credits exhausted. Add credits to continue.')
+          else setComposerError('Could not write the product scenario. Please try again.')
+          return
+        }
+        const rawScenes = (data as { scenes?: unknown } | null)?.scenes
+        const scenes = Array.isArray(rawScenes)
+          ? rawScenes.map((s) => (typeof s === 'string' ? s.trim() : '')).filter((s) => s.length > 0)
+          : []
+        if (scenes.length === 0) {
+          setComposerError('Could not write the product scenario. Please try again.')
+          return
+        }
+        const tagged = scenes.map((s, i) => `=== Scene ${i + 1} ===\n${s}`).join('\n\n')
+        setPromptText(tagged)
+      } else {
+        const seedPrompt = applyProductPrefix(
+          idea || `A polished ${durationSeconds}s cinematic product advertisement.`,
+          product,
+        )
+        const { data, error } = await supabase.functions.invoke('enhance-prompt', {
+          body: {
+            prompt: seedPrompt,
+            imageUrls: [product.url],
+            mode: 'silent',
+            narratorScript: '',
+            styleHints,
+          },
+        })
+        if (error) {
+          const status = (error as unknown as { context?: { status?: number } })?.context?.status
+          if (status === 429) setComposerError('Rate limit reached. Try again in a moment.')
+          else if (status === 402) setComposerError('AI credits exhausted. Add credits to continue.')
+          else setComposerError('Could not write the product scenario. Please try again.')
+          return
+        }
+        const enhanced = (data as { enhancedPrompt?: string } | null)?.enhancedPrompt?.trim()
+        if (!enhanced) {
+          setComposerError('Could not write the product scenario. Please try again.')
+          return
+        }
+        setPromptText(enhanced)
+      }
+      setIsPromptMenuOpen(false)
+      setNarratorMode('idle')
+      setNarratorScript('')
+      setStyleMode('idle')
+      setSelectedStyles(emptyStyleSelection())
+    } catch {
+      setComposerError('Could not write the product scenario. Please try again.')
+    } finally {
+      setIsEnhancingPrompt(false)
+    }
+  }
+
   const startUploadCount = uploadedFiles.filter((file) => file.target === 'Start').length
   const endUploadCount = uploadedFiles.filter((file) => file.target === 'End').length
   const visibleVideos = useMemo(() => {
@@ -11955,6 +12047,31 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => void runProductScenario()}
+                  disabled={isEnhancingPrompt || !selectedProduct}
+                  className="mt-1 flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full border border-amber-300/30 bg-amber-300/10 text-amber-200">
+                    {selectedProduct ? (
+                      <img src={selectedProduct.url} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <Package className="h-4 w-4" aria-hidden="true" />
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-zinc-100">Scenario for this product</span>
+                    <span className="block text-xs leading-5 text-zinc-500">
+                      {selectedProduct
+                        ? `Write a ${durationSeconds}s ad scenario for the pinned product — tuned to your duration and styles.`
+                        : 'Pin a product first (Add product) to write its scenario.'}
+                    </span>
+                  </span>
+                </button>
+
+
 
                 <button
                   type="button"
