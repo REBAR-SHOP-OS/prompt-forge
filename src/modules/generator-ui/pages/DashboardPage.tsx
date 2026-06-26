@@ -3532,8 +3532,16 @@ export default function DashboardPage() {
     styleHints?: string
   }): Promise<string> {
     const invokeMode = params.mode === 'styles' ? 'silent' : params.mode
+    // Source text for planning: fall back to narrator script / style hints when
+    // the prompt box is empty so the local planner never gets an empty prompt.
+    const effectivePrompt = (
+      params.prompt?.trim() ||
+      params.narratorScript?.trim() ||
+      params.styleHints?.trim() ||
+      ''
+    )
     const body = {
-      prompt: params.prompt,
+      prompt: effectivePrompt,
       imageUrls: params.imageUrls,
       mode: invokeMode,
       narratorScript: params.narratorScript ?? '',
@@ -3541,6 +3549,9 @@ export default function DashboardPage() {
     }
 
     if (selectedModel?.providerKey === 'local') {
+      if (effectivePrompt.length < 3) {
+        throw new Error('Add a prompt, narration, or style before planning the local video.')
+      }
       const { data, error } = await supabase.functions.invoke('local-llm-plan-video', {
         body: {
           ...body,
