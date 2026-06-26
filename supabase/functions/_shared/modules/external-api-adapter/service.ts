@@ -302,18 +302,30 @@ function readLocalVideoConfig(): LocalVideoConfig {
   const createPathEnv = (Deno.env.get("LOCAL_VIDEO_ROUTER_CREATE_PATH") ?? "").trim();
 
   let createAttempts: string[];
-  if (createPathEnv) {
-    // Explicit create path: base URL is the base only, path is the endpoint.
+  if (routerType === "comfyui") {
+    // ComfyUI: collect explicit path (if set) plus default fallbacks.
+    // Some reverse proxies expose the endpoint under /api, /v1, etc.
+    // Also guard against double paths when the base URL already ends with
+    // one of the known create endpoints.
+    const comfyPaths = new Set<string>();
+    if (createPathEnv) {
+      comfyPaths.add(joinUrl(baseUrl, createPathEnv));
+    }
+    const defaults = ["/prompt", "/api/prompt", "/api/v1/prompt", "/v1/prompt"];
+    for (const p of defaults) {
+      comfyPaths.add(joinUrl(baseUrl, p));
+    }
+    // If the base URL itself already looks like a ComfyUI endpoint, try it too.
+    const basePath = parsed.pathname.replace(/\/+$/, "");
+    for (const p of defaults) {
+      if (basePath === p || basePath.endsWith(p)) {
+        comfyPaths.add(baseUrl);
+      }
+    }
+    createAttempts = Array.from(comfyPaths);
+  } else if (createPathEnv) {
+    // Explicit create path for openai_compatible routers.
     createAttempts = [joinUrl(baseUrl, createPathEnv)];
-  } else if (routerType === "comfyui") {
-    // ComfyUI default create endpoint. Some reverse proxies expose it under
-    // a nested /api prefix, so try the common variants before failing.
-    createAttempts = [
-      joinUrl(baseUrl, "/prompt"),
-      joinUrl(baseUrl, "/api/prompt"),
-      joinUrl(baseUrl, "/api/v1/prompt"),
-      joinUrl(baseUrl, "/v1/prompt"),
-    ];
   } else {
     // openai_compatible defaults — preserve legacy /v1 handling and the
     // exact-route detection for URLs that already include the endpoint.
@@ -1710,18 +1722,38 @@ async function startComfyVideo(
     throw new Error(`Invalid LOCAL_VIDEO_COMFY_WORKFLOW_JSON after substitution: ${(err as Error).message}`);
   }
 
-  const createUrl = config.createAttempts[0];
-  let res: Response;
+  const attempted = config.createAttempts.map((u) => `POST ${urlPath(u)}`);
+  let res: Response | null = null;
   try {
-    res = await localVideoFetch(createUrl, {
-      method: "POST",
-      headers: localVideoHeaders(config),
-      body: JSON.stringify({ prompt: workflow }),
-    }, config.timeoutMs);
+    for (let i = 0; i < config.createAttempts.length; i++) {
+      const url = config.createAttempts[i];
+      const candidate = await localVideoFetch(url, {
+        method: "POST",
+        headers: localVideoHeaders(config),
+        body: JSON.stringify({ prompt: workflow }),
+      }, config.timeoutMs);
+      if (candidate.status === 404 && i < config.createAttempts.length - 1) {
+        logInfo("comfy create fallback", {
+          from: urlPath(url),
+          to: urlPath(config.createAttempts[i + 1]),
+          model: resolvedModel,
+        });
+        await candidate.body?.cancel().catch(() => {});
+        continue;
+      }
+      res = candidate;
+      break;
+    }
   } catch (err) {
     logError("comfy create unreachable", { error: (err as Error).message, model: resolvedModel });
     if (isUnreachableError(err)) throw new Error(LOCAL_UNREACHABLE_MESSAGE);
     throw err;
+  }
+
+  if (!res) {
+    throw new Error(
+      `Local router is reachable, but no video create endpoint was found. Tried: ${attempted.join(", ")}. Set LOCAL_VIDEO_ROUTER_CREATE_PATH to your ComfyUI create endpoint (default /prompt).`,
+    );
   }
 
   const text = await res.text().catch(() => "");
@@ -1732,7 +1764,7 @@ async function startComfyVideo(
     logError("comfy create failed", { status: res.status, body: text.slice(0, 500), model: resolvedModel });
     if (res.status === 404) {
       throw new Error(
-        `Local router is reachable, but no video create endpoint was found. Tried: POST ${urlPath(createUrl)}. Set LOCAL_VIDEO_ROUTER_CREATE_PATH to your ComfyUI create endpoint (default /prompt).`,
+        `Local router is reachable, but no video create endpoint was found. Tried: ${attempted.join(", ")}. Set LOCAL_VIDEO_ROUTER_CREATE_PATH to your ComfyUI create endpoint (default /prompt).`,
       );
     }
     throw new Error(`ComfyUI ${res.status}: ${text.slice(0, 300) || "unknown error"}`);
