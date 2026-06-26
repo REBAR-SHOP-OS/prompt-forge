@@ -3589,11 +3589,25 @@ export default function DashboardPage() {
 
       const isLong = durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135
       if (isLong) {
+        let businessInfo = ''
+        if (userId) {
+          const { data: profile } = await supabase
+            .from('generator_business_profiles')
+            .select('business_info')
+            .eq('user_id', userId)
+            .maybeSingle()
+          businessInfo = profile?.business_info?.trim() ?? ''
+        }
+        if (!businessInfo) {
+          setComposerError('Add your business info (About your business) before writing a product scenario.')
+          return
+        }
         const { data, error } = await supabase.functions.invoke('scenario-write', {
           body: {
             idea: [productBrief, styleHints ? `Visual styles to honor: ${styleHints}` : ''].filter(Boolean).join('\n\n'),
             durationSeconds,
             imageUrl: product.url,
+            businessInfo,
           },
         })
         if (error) {
