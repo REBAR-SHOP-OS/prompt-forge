@@ -1,7 +1,13 @@
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 
-const ALLOWED_MODELS = new Set(["gpt-oss:20b", "qwen3.5:27b", "qwen3:14b"]);
+const ALLOWED_MODELS = new Set([
+  "gpt-oss:20b",
+  "qwen3.5:27b",
+  "qwen3:14b",
+  "qwen3.6:32b",
+  "gemma4:27b",
+]);
 const DEFAULT_MODEL = "gpt-oss:20b";
 const MAX_PROMPT_CHARS = 8000;
 const TIMEOUT_MS = 45_000;

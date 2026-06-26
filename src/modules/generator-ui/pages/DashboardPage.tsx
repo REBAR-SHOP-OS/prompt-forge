@@ -4390,7 +4390,11 @@ export default function DashboardPage() {
     if (selectedProjectId) {
       const snapshot = projectSourceImages[selectedProjectId] ?? draftSourceImages[selectedProjectId] ?? []
       const liveById = new Map(userImages.map((i) => [i.id, i]))
-      if (snapshot.length > 0) return snapshot.map((s) => liveById.get(s.id) ?? s).filter((i) => !allCoverImageIds.has(i.id))
+      if (snapshot.length > 0) {
+        return snapshot
+          .map((s) => liveById.get(s.id) ?? s)
+          .filter((i) => !allCoverImageIds.has(i.id) && (i.category ?? 'general') !== 'reframe')
+      }
       // Single-clip Library entries never have image sources.
       if (!selectedProjectId.startsWith('merged-') && !selectedProjectId.startsWith('draft-')) return []
     }
@@ -4402,7 +4406,14 @@ export default function DashboardPage() {
       if (did === activeDraftId) continue
       for (const i of imgs) claimedByProjects.add(i.id)
     }
-    return userImages.filter((i) => activeImageIds.has(i.id) && !workspaceHiddenImageIds.has(i.id) && !claimedByProjects.has(i.id) && !allCoverImageIds.has(i.id))
+    return userImages.filter(
+      (i) =>
+        activeImageIds.has(i.id) &&
+        !workspaceHiddenImageIds.has(i.id) &&
+        !claimedByProjects.has(i.id) &&
+        !allCoverImageIds.has(i.id) &&
+        (i.category ?? 'general') !== 'reframe',
+    )
   }, [userImages, selectedProjectId, projectSourceImages, draftSourceImages, activeDraftId, workspaceHiddenImageIds, allCoverImageIds, activeImageIds])
 
 
