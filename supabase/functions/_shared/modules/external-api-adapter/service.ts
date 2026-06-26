@@ -349,7 +349,41 @@ export interface LocalVideoStatusReport {
   create_endpoint_found: boolean | null;
   attempted_create_paths: string[];
   router_type: LocalRouterType | null;
+  /** Present when discover=true: ComfyUI signature endpoints that responded
+   *  (HTTP < 400) on a GET, revealing the real API base path to configure. */
+  discovered_endpoints?: string[];
 }
+
+/** Probe ComfyUI's well-known GET endpoints to find the real API base path.
+ *  Returns the relative paths (host omitted) that answered with HTTP < 400. */
+async function discoverComfyEndpoints(config: LocalVideoConfigOk): Promise<string[]> {
+  // ComfyUI signature routes. Cover bare root and common reverse-proxy
+  // prefixes (/api, /comfy, /comfyui) so a prefixed deployment is detected.
+  const signatures = ["/system_stats", "/object_info", "/queue", "/history", "/prompt"];
+  const prefixes = ["", "/api", "/comfy", "/comfyui", "/v1"];
+  const candidates = new Set<string>();
+  for (const prefix of prefixes) {
+    for (const sig of signatures) {
+      candidates.add(joinUrl(config.baseUrl, `${prefix}${sig}`));
+    }
+  }
+  const found: string[] = [];
+  for (const url of candidates) {
+    try {
+      const res = await localVideoFetch(
+        url,
+        { method: "GET", headers: localVideoHeaders(config) },
+        Math.min(config.timeoutMs, 8_000),
+      );
+      await res.body?.cancel().catch(() => {});
+      if (res.status < 400) found.push(urlPath(url));
+    } catch {
+      // ignore unreachable individual probes
+    }
+  }
+  return found;
+}
+
 
 /** Lightweight, no-secret config/health status for the local video router.
  *  Used by the orchestrator preflight and the status endpoint. When
