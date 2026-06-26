@@ -114,6 +114,8 @@ type LocalVideoConfig =
     }
   | { ok: false; error: string };
 
+const COMFY_CREATE_PREFIXES = ["", "/api", "/api/v1", "/v1", "/comfy", "/comfyui"] as const;
+
 // Clear, actionable messages reused by the adapter, the orchestrator preflight
 // and the status endpoint so the UI always shows the same guidance.
 export const LOCAL_NOT_CONFIGURED_MESSAGE =
@@ -304,14 +306,14 @@ function readLocalVideoConfig(): LocalVideoConfig {
   let createAttempts: string[];
   if (routerType === "comfyui") {
     // ComfyUI: collect explicit path (if set) plus default fallbacks.
-    // Some reverse proxies expose the endpoint under /api, /v1, etc.
+    // Some reverse proxies expose the endpoint under /api, /v1, /comfy, etc.
     // Also guard against double paths when the base URL already ends with
     // one of the known create endpoints.
     const comfyPaths = new Set<string>();
     if (createPathEnv) {
       comfyPaths.add(joinUrl(baseUrl, createPathEnv));
     }
-    const defaults = ["/prompt", "/api/prompt", "/api/v1/prompt", "/v1/prompt"];
+    const defaults = COMFY_CREATE_PREFIXES.map((prefix) => `${prefix}/prompt`);
     for (const p of defaults) {
       comfyPaths.add(joinUrl(baseUrl, p));
     }
