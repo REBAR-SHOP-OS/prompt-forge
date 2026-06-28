@@ -161,6 +161,59 @@ Deno.test("local video router ComfyUI falls back through common prompt endpoints
   }
 });
 
+Deno.test("local video router ComfyUI retries prompt endpoint with trailing slash", async () => {
+  const restoreEnv = isolateEnv();
+  const originalFetch = globalThis.fetch;
+  const requests: Array<{ method: string; url: string }> = [];
+
+  Deno.env.set("LOCAL_VIDEO_ROUTER_URL", "https://router.example");
+  Deno.env.set("LOCAL_VIDEO_ROUTER_TYPE", "comfyui");
+  Deno.env.set("LOCAL_VIDEO_ROUTER_TIMEOUT_MS", "1000");
+  Deno.env.set(
+    "LOCAL_VIDEO_COMFY_WORKFLOW_JSON",
+    JSON.stringify({
+      "1": { inputs: { text: "{{PROMPT}}" }, class_type: "CLIPTextEncode" },
+    }),
+  );
+
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const method = (init?.method ?? "GET").toUpperCase();
+    requests.push({ method, url });
+    if (url === "https://router.example/prompt") {
+      return Promise.resolve(new Response("Not Found", { status: 404 }));
+    }
+    if (url === "https://router.example/prompt/") {
+      return Promise.resolve(
+        new Response(JSON.stringify({ prompt_id: "queue_slash_1" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }
+    return Promise.resolve(new Response("Not Found", { status: 404 }));
+  }) as typeof fetch;
+
+  try {
+    const result = await aiGateway.startGeneration("local", "local/ltx-video-i2v", {
+      prompt: "test comfyui local video slash fallback",
+      firstFrameUrl: "https://frames.example/start.png",
+      durationSeconds: 5,
+      aspectRatio: "16:9",
+    });
+
+    assertEquals(requests, [
+      { method: "POST", url: "https://router.example/prompt" },
+      { method: "POST", url: "https://router.example/prompt/" },
+    ]);
+    assertEquals(result.providerJobId, "localcomfy:queue_slash_1");
+    assertEquals(result.isComplete, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreEnv();
+  }
+});
+
 Deno.test("local video router ComfyUI tries proxied /comfy prompt endpoint", async () => {
   const restoreEnv = isolateEnv();
   const originalFetch = globalThis.fetch;
