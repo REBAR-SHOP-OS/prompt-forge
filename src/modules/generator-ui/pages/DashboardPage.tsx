@@ -9296,7 +9296,7 @@ export default function DashboardPage() {
           })()}
         >
           <Film className="h-[14px] w-[14px]" aria-hidden="true" />
-          <span>Final film</span>
+          <span className="hidden lg:inline">Final film</span>
         </button>
       )}
 
