@@ -9122,7 +9122,7 @@ export default function DashboardPage() {
             aria-label="Start over"
           >
             <RotateCcw className="h-[14px] w-[14px]" aria-hidden="true" />
-            <span>Start over</span>
+            <span className="hidden lg:inline">Start over</span>
           </button>
         </AlertDialogTrigger>
         <AlertDialogContent>
