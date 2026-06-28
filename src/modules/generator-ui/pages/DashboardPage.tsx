@@ -9156,7 +9156,7 @@ export default function DashboardPage() {
               title={isInIframe ? 'Schedule to Social Media Manager' : 'Open inside Rebar OS to schedule'}
             >
               <CalendarPlus className="h-[14px] w-[14px]" aria-hidden="true" />
-              <span>Schedule</span>
+              <span className="hidden lg:inline">Schedule</span>
             </button>
           </PopoverTrigger>
           <PopoverContent align="center" className="w-auto p-3">
