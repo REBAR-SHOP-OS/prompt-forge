@@ -811,6 +811,14 @@ function isExpectedBillingError(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 402 || error.code === 'INSUFFICIENT_CREDITS')
 }
 
+function isExpectedLocalRouterError(error: unknown): boolean {
+  return error instanceof ApiError && (
+    error.code === 'LOCAL_ENDPOINT_NOT_FOUND' ||
+    error.code === 'LOCAL_UNREACHABLE' ||
+    error.code === 'LOCAL_NOT_CONFIGURED'
+  )
+}
+
 function generationStartErrorMessage(error: unknown, fallback: string): string {
   if (isExpectedBillingError(error)) {
     return 'Not enough credits for this generation. Add credits or choose a lower-cost model/duration.'
@@ -6510,7 +6518,7 @@ export default function DashboardPage() {
       setPromptText('')
       setUploadedFiles([])
     } catch (error) {
-      if (!isExpectedBillingError(error)) console.error('handleSubmit failed', error)
+      if (!isExpectedBillingError(error) && !isExpectedLocalRouterError(error)) console.error('handleSubmit failed', error)
       const message = generationStartErrorMessage(error, 'Could not start video generation.')
       // Don't overwrite a more specific message set by submitScenesAsJobs.
       setComposerError((current) => current ?? message)
