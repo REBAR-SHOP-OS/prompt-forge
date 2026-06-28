@@ -130,7 +130,7 @@ Deno.test("local video router ComfyUI falls back through common prompt endpoints
     const url = String(input);
     const method = (init?.method ?? "GET").toUpperCase();
     requests.push({ method, url });
-    if (url === "https://router.example/prompt") {
+    if (url === "https://router.example/prompt" || url === "https://router.example/prompt/") {
       return Promise.resolve(new Response("Not Found", { status: 404 }));
     }
     return Promise.resolve(
@@ -151,6 +151,7 @@ Deno.test("local video router ComfyUI falls back through common prompt endpoints
 
     assertEquals(requests, [
       { method: "POST", url: "https://router.example/prompt" },
+      { method: "POST", url: "https://router.example/prompt/" },
       { method: "POST", url: "https://router.example/api/prompt" },
     ]);
     assertEquals(result.providerJobId, "localcomfy:queue_1");
