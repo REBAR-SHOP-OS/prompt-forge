@@ -9373,7 +9373,7 @@ export default function DashboardPage() {
         ) : (
           <>
             <Mic className="h-[14px] w-[14px]" aria-hidden="true" />
-            <span>Voiceover</span>
+            <span className="hidden lg:inline">Voiceover</span>
           </>
         )}
       </button>
