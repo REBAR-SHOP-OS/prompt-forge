@@ -146,6 +146,19 @@ function urlPath(fullUrl: string): string {
   }
 }
 
+function addUrlAttempt(target: Set<string>, fullUrl: string) {
+  target.add(fullUrl);
+  try {
+    const parsed = new URL(fullUrl);
+    if (!parsed.pathname.endsWith("/")) {
+      parsed.pathname = `${parsed.pathname}/`.replace(/\/+/g, "/");
+      target.add(parsed.toString().replace(/\/$/, "/"));
+    }
+  } catch {
+    // Ignore malformed derived attempts; the original URL is already present.
+  }
+}
+
 function readLocalRouterType(): LocalRouterType {
   const raw = (Deno.env.get("LOCAL_VIDEO_ROUTER_TYPE") ?? "openai_compatible").trim().toLowerCase();
   return raw === "comfyui" ? "comfyui" : "openai_compatible";
@@ -311,17 +324,17 @@ function readLocalVideoConfig(): LocalVideoConfig {
     // one of the known create endpoints.
     const comfyPaths = new Set<string>();
     if (createPathEnv) {
-      comfyPaths.add(joinUrl(baseUrl, createPathEnv));
+      addUrlAttempt(comfyPaths, joinUrl(baseUrl, createPathEnv));
     }
     const defaults = COMFY_CREATE_PREFIXES.map((prefix) => `${prefix}/prompt`);
     for (const p of defaults) {
-      comfyPaths.add(joinUrl(baseUrl, p));
+      addUrlAttempt(comfyPaths, joinUrl(baseUrl, p));
     }
     // If the base URL itself already looks like a ComfyUI endpoint, try it too.
     const basePath = parsed.pathname.replace(/\/+$/, "");
     for (const p of defaults) {
       if (basePath === p || basePath.endsWith(p)) {
-        comfyPaths.add(baseUrl);
+        addUrlAttempt(comfyPaths, baseUrl);
       }
     }
     createAttempts = Array.from(comfyPaths);
@@ -377,13 +390,32 @@ async function discoverComfyEndpoints(config: Extract<LocalVideoConfig, { ok: tr
         { method: "GET", headers: localVideoHeaders(config) },
         Math.min(config.timeoutMs, 8_000),
       );
-      await res.body?.cancel().catch(() => {});
-      if (res.status < 400) found.push(urlPath(url));
+      const text = await res.text().catch(() => "");
+      let payload: unknown = null;
+      try { payload = text ? JSON.parse(text) : null; } catch { payload = null; }
+      const path = urlPath(url);
+      if (res.status < 400 && isLikelyComfySignature(path, payload, res.headers.get("content-type"))) {
+        found.push(path);
+      }
     } catch {
       // ignore unreachable individual probes
     }
   }
   return found;
+}
+
+function isLikelyComfySignature(path: string, payload: unknown, contentType: string | null): boolean {
+  // Many tunnel/front-end deployments return a 200 HTML SPA shell for any GET
+  // path. Treating that as discovery creates false confidence while POST
+  // /prompt still 404s. Only count JSON responses with ComfyUI-shaped fields.
+  if (!contentType?.toLowerCase().includes("json")) return false;
+  const rec = localVideoRecord(payload);
+  if (path.endsWith("/prompt")) return Boolean(localVideoRecord(rec.exec_info).queue_remaining !== undefined);
+  if (path.endsWith("/queue")) return "queue_running" in rec || "queue_pending" in rec;
+  if (path.endsWith("/system_stats")) return "system" in rec || "devices" in rec;
+  if (path.endsWith("/object_info")) return Object.keys(rec).length > 0;
+  if (path.endsWith("/history")) return payload !== null && typeof payload === "object" && !Array.isArray(payload);
+  return false;
 }
 
 
@@ -496,7 +528,10 @@ function isLocalVideoModel(model: string): boolean {
 function localVideoHeaders(config: Extract<LocalVideoConfig, { ok: true }>): HeadersInit {
   return {
     ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
+    "Accept": "application/json",
     "Content-Type": "application/json",
+    // Required by ngrok browser-warning interstitials and harmless elsewhere.
+    "ngrok-skip-browser-warning": "true",
   };
 }
 
@@ -1773,7 +1808,7 @@ async function startComfyVideo(
       const candidate = await localVideoFetch(url, {
         method: "POST",
         headers: localVideoHeaders(config),
-        body: JSON.stringify({ prompt: workflow }),
+        body: JSON.stringify({ prompt: workflow, client_id: "local-video-router" }),
       }, config.timeoutMs);
       if (candidate.status === 404 && i < config.createAttempts.length - 1) {
         logInfo("comfy create fallback", {
