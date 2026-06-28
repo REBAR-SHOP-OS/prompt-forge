@@ -9109,7 +9109,7 @@ export default function DashboardPage() {
               <span className="pointer-events-none absolute inset-0 rounded-md ring-2 ring-emerald-400/50 animate-ping" aria-hidden="true" />
             ) : null}
             <Play className={`relative h-[14px] w-[14px] ${hasReadyClips ? 'animate-pulse' : ''}`} aria-hidden="true" />
-            <span className="relative">Preview</span>
+            <span className="relative hidden lg:inline">Preview</span>
           </button>
         )
       })()}
