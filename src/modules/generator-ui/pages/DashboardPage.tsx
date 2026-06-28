@@ -8087,7 +8087,7 @@ export default function DashboardPage() {
             />
           </span>
           <span
-            className={`text-[11px] font-medium uppercase tracking-[0.12em] ${
+            className={`hidden 2xl:inline text-[11px] font-medium uppercase tracking-[0.12em] ${
               hasOccasionToday ? 'text-red-300' : 'text-emerald-300'
             }`}
           >
@@ -8123,7 +8123,7 @@ export default function DashboardPage() {
             aria-hidden="true"
           />
           <span
-            className={`text-[11px] font-medium uppercase tracking-[0.12em] ${
+            className={`hidden 2xl:inline text-[11px] font-medium uppercase tracking-[0.12em] ${
               hasBusinessInfo === false ? 'text-amber-300' : 'text-zinc-300'
             }`}
           >
@@ -9082,7 +9082,7 @@ export default function DashboardPage() {
 
 
 
-      <div className="fixed left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-2 sm:top-5">
+      <div className="fixed left-1/2 top-[3.25rem] z-50 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:top-5">
       {(() => {
         const hasReadyClips = playableSequenceClips.length > 0
         return (
@@ -9109,7 +9109,7 @@ export default function DashboardPage() {
               <span className="pointer-events-none absolute inset-0 rounded-md ring-2 ring-emerald-400/50 animate-ping" aria-hidden="true" />
             ) : null}
             <Play className={`relative h-[14px] w-[14px] ${hasReadyClips ? 'animate-pulse' : ''}`} aria-hidden="true" />
-            <span className="relative">Preview</span>
+            <span className="relative hidden xl:inline">Preview</span>
           </button>
         )
       })()}
@@ -9122,7 +9122,7 @@ export default function DashboardPage() {
             aria-label="Start over"
           >
             <RotateCcw className="h-[14px] w-[14px]" aria-hidden="true" />
-            <span>Start over</span>
+            <span className="hidden xl:inline">Start over</span>
           </button>
         </AlertDialogTrigger>
         <AlertDialogContent>
@@ -9156,7 +9156,7 @@ export default function DashboardPage() {
               title={isInIframe ? 'Schedule to Social Media Manager' : 'Open inside Rebar OS to schedule'}
             >
               <CalendarPlus className="h-[14px] w-[14px]" aria-hidden="true" />
-              <span>Schedule</span>
+              <span className="hidden xl:inline">Schedule</span>
             </button>
           </PopoverTrigger>
           <PopoverContent align="center" className="w-auto p-3">
@@ -9296,7 +9296,7 @@ export default function DashboardPage() {
           })()}
         >
           <Film className="h-[14px] w-[14px]" aria-hidden="true" />
-          <span>Final film</span>
+          <span className="hidden xl:inline">Final film</span>
         </button>
       )}
 
@@ -9342,7 +9342,7 @@ export default function DashboardPage() {
           title="Upload a music file as soundtrack for the Final Film"
         >
           <Music className="h-[14px] w-[14px]" aria-hidden="true" />
-          <span>Music</span>
+          <span className="hidden xl:inline">Music</span>
         </button>
       )}
 
@@ -9373,7 +9373,7 @@ export default function DashboardPage() {
         ) : (
           <>
             <Mic className="h-[14px] w-[14px]" aria-hidden="true" />
-            <span>Voiceover</span>
+            <span className="hidden xl:inline">Voiceover</span>
           </>
         )}
       </button>
@@ -11459,7 +11459,7 @@ export default function DashboardPage() {
             ) : null}
           </div>
 
-          <div className="flex items-center justify-between gap-2 sm:justify-end">
+          <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end">
             <span
               title={`Estimated cost for ${durationSeconds}s on ${selectedModel.label}${costEstimate.clips > 1 ? ` (${costEstimate.clips} × ${costEstimate.perClipSec}s clips)` : ''}`}
               className="hidden sm:inline-flex h-10 items-center gap-1.5 rounded-full border border-amber-300/20 bg-amber-300/[0.06] px-3 text-[11px] font-semibold text-amber-200/90"
