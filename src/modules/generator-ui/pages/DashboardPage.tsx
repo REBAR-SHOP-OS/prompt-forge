@@ -9109,7 +9109,7 @@ export default function DashboardPage() {
               <span className="pointer-events-none absolute inset-0 rounded-md ring-2 ring-emerald-400/50 animate-ping" aria-hidden="true" />
             ) : null}
             <Play className={`relative h-[14px] w-[14px] ${hasReadyClips ? 'animate-pulse' : ''}`} aria-hidden="true" />
-            <span className="relative hidden lg:inline">Preview</span>
+            <span className="relative hidden xl:inline">Preview</span>
           </button>
         )
       })()}
@@ -9122,7 +9122,7 @@ export default function DashboardPage() {
             aria-label="Start over"
           >
             <RotateCcw className="h-[14px] w-[14px]" aria-hidden="true" />
-            <span className="hidden lg:inline">Start over</span>
+            <span className="hidden xl:inline">Start over</span>
           </button>
         </AlertDialogTrigger>
         <AlertDialogContent>
@@ -9156,7 +9156,7 @@ export default function DashboardPage() {
               title={isInIframe ? 'Schedule to Social Media Manager' : 'Open inside Rebar OS to schedule'}
             >
               <CalendarPlus className="h-[14px] w-[14px]" aria-hidden="true" />
-              <span className="hidden lg:inline">Schedule</span>
+              <span className="hidden xl:inline">Schedule</span>
             </button>
           </PopoverTrigger>
           <PopoverContent align="center" className="w-auto p-3">
@@ -9296,7 +9296,7 @@ export default function DashboardPage() {
           })()}
         >
           <Film className="h-[14px] w-[14px]" aria-hidden="true" />
-          <span className="hidden lg:inline">Final film</span>
+          <span className="hidden xl:inline">Final film</span>
         </button>
       )}
 
@@ -9342,7 +9342,7 @@ export default function DashboardPage() {
           title="Upload a music file as soundtrack for the Final Film"
         >
           <Music className="h-[14px] w-[14px]" aria-hidden="true" />
-          <span className="hidden lg:inline">Music</span>
+          <span className="hidden xl:inline">Music</span>
         </button>
       )}
 
@@ -9373,7 +9373,7 @@ export default function DashboardPage() {
         ) : (
           <>
             <Mic className="h-[14px] w-[14px]" aria-hidden="true" />
-            <span className="hidden lg:inline">Voiceover</span>
+            <span className="hidden xl:inline">Voiceover</span>
           </>
         )}
       </button>
