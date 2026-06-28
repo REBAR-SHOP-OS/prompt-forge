@@ -8087,7 +8087,7 @@ export default function DashboardPage() {
             />
           </span>
           <span
-            className={`text-[11px] font-medium uppercase tracking-[0.12em] ${
+            className={`hidden 2xl:inline text-[11px] font-medium uppercase tracking-[0.12em] ${
               hasOccasionToday ? 'text-red-300' : 'text-emerald-300'
             }`}
           >
