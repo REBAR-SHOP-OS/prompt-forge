@@ -8123,7 +8123,7 @@ export default function DashboardPage() {
             aria-hidden="true"
           />
           <span
-            className={`text-[11px] font-medium uppercase tracking-[0.12em] ${
+            className={`hidden 2xl:inline text-[11px] font-medium uppercase tracking-[0.12em] ${
               hasBusinessInfo === false ? 'text-amber-300' : 'text-zinc-300'
             }`}
           >
