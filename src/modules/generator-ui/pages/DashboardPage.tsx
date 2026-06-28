@@ -9082,7 +9082,7 @@ export default function DashboardPage() {
 
 
 
-      <div className="fixed left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-2 sm:top-5">
+      <div className="fixed left-1/2 top-4 z-50 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:top-5">
       {(() => {
         const hasReadyClips = playableSequenceClips.length > 0
         return (
