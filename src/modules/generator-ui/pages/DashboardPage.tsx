@@ -9342,7 +9342,7 @@ export default function DashboardPage() {
           title="Upload a music file as soundtrack for the Final Film"
         >
           <Music className="h-[14px] w-[14px]" aria-hidden="true" />
-          <span>Music</span>
+          <span className="hidden lg:inline">Music</span>
         </button>
       )}
 
