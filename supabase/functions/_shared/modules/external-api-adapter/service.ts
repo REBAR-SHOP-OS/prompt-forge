@@ -390,13 +390,32 @@ async function discoverComfyEndpoints(config: Extract<LocalVideoConfig, { ok: tr
         { method: "GET", headers: localVideoHeaders(config) },
         Math.min(config.timeoutMs, 8_000),
       );
-      await res.body?.cancel().catch(() => {});
-      if (res.status < 400) found.push(urlPath(url));
+      const text = await res.text().catch(() => "");
+      let payload: unknown = null;
+      try { payload = text ? JSON.parse(text) : null; } catch { payload = null; }
+      const path = urlPath(url);
+      if (res.status < 400 && isLikelyComfySignature(path, payload, res.headers.get("content-type"))) {
+        found.push(path);
+      }
     } catch {
       // ignore unreachable individual probes
     }
   }
   return found;
+}
+
+function isLikelyComfySignature(path: string, payload: unknown, contentType: string | null): boolean {
+  // Many tunnel/front-end deployments return a 200 HTML SPA shell for any GET
+  // path. Treating that as discovery creates false confidence while POST
+  // /prompt still 404s. Only count JSON responses with ComfyUI-shaped fields.
+  if (!contentType?.toLowerCase().includes("json")) return false;
+  const rec = localVideoRecord(payload);
+  if (path.endsWith("/prompt")) return Boolean(localVideoRecord(rec.exec_info).queue_remaining !== undefined);
+  if (path.endsWith("/queue")) return "queue_running" in rec || "queue_pending" in rec;
+  if (path.endsWith("/system_stats")) return "system" in rec || "devices" in rec;
+  if (path.endsWith("/object_info")) return Object.keys(rec).length > 0;
+  if (path.endsWith("/history")) return payload !== null && typeof payload === "object" && !Array.isArray(payload);
+  return false;
 }
 
 
@@ -509,7 +528,10 @@ function isLocalVideoModel(model: string): boolean {
 function localVideoHeaders(config: Extract<LocalVideoConfig, { ok: true }>): HeadersInit {
   return {
     ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
+    "Accept": "application/json",
     "Content-Type": "application/json",
+    // Required by ngrok browser-warning interstitials and harmless elsewhere.
+    "ngrok-skip-browser-warning": "true",
   };
 }
 
@@ -1786,7 +1808,7 @@ async function startComfyVideo(
       const candidate = await localVideoFetch(url, {
         method: "POST",
         headers: localVideoHeaders(config),
-        body: JSON.stringify({ prompt: workflow }),
+        body: JSON.stringify({ prompt: workflow, client_id: "local-video-router" }),
       }, config.timeoutMs);
       if (candidate.status === 404 && i < config.createAttempts.length - 1) {
         logInfo("comfy create fallback", {
