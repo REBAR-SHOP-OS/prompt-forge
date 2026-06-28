@@ -146,6 +146,19 @@ function urlPath(fullUrl: string): string {
   }
 }
 
+function addUrlAttempt(target: Set<string>, fullUrl: string) {
+  target.add(fullUrl);
+  try {
+    const parsed = new URL(fullUrl);
+    if (!parsed.pathname.endsWith("/")) {
+      parsed.pathname = `${parsed.pathname}/`.replace(/\/+/g, "/");
+      target.add(parsed.toString().replace(/\/$/, "/"));
+    }
+  } catch {
+    // Ignore malformed derived attempts; the original URL is already present.
+  }
+}
+
 function readLocalRouterType(): LocalRouterType {
   const raw = (Deno.env.get("LOCAL_VIDEO_ROUTER_TYPE") ?? "openai_compatible").trim().toLowerCase();
   return raw === "comfyui" ? "comfyui" : "openai_compatible";
@@ -311,17 +324,17 @@ function readLocalVideoConfig(): LocalVideoConfig {
     // one of the known create endpoints.
     const comfyPaths = new Set<string>();
     if (createPathEnv) {
-      comfyPaths.add(joinUrl(baseUrl, createPathEnv));
+      addUrlAttempt(comfyPaths, joinUrl(baseUrl, createPathEnv));
     }
     const defaults = COMFY_CREATE_PREFIXES.map((prefix) => `${prefix}/prompt`);
     for (const p of defaults) {
-      comfyPaths.add(joinUrl(baseUrl, p));
+      addUrlAttempt(comfyPaths, joinUrl(baseUrl, p));
     }
     // If the base URL itself already looks like a ComfyUI endpoint, try it too.
     const basePath = parsed.pathname.replace(/\/+$/, "");
     for (const p of defaults) {
       if (basePath === p || basePath.endsWith(p)) {
-        comfyPaths.add(baseUrl);
+        addUrlAttempt(comfyPaths, baseUrl);
       }
     }
     createAttempts = Array.from(comfyPaths);
