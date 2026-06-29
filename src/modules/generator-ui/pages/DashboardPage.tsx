@@ -6567,8 +6567,8 @@ export default function DashboardPage() {
           seedFrames = { firstFrameUrl: startUrl }
         } else if (readyEndFrame?.url) {
           createdJob = await jobOrchestratorGateway.createJob({
-            providerKey: selectedModel.providerKey,
-            requestedModel: selectedModel.model,
+            providerKey: effectiveModel.providerKey,
+            requestedModel: effectiveModel.model,
             prompt: plannedPrompt,
             lastFrameUrl: readyEndFrame.url,
             durationSeconds: perClipDuration,
