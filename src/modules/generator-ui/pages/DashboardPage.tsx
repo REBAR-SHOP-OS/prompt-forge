@@ -7023,6 +7023,12 @@ export default function DashboardPage() {
               sourcePrompt,
             )
           }
+          // Still no start frame but a product is pinned: use the real product
+          // photo as the start frame so card 1 reproduces the exact product
+          // instead of drifting in pure text-to-video.
+          if (!startFrameUrl && selectedProduct) {
+            startFrameUrl = productStartFrame(selectedProduct)
+          }
         } else if (previousJobId) {
           startFrameUrl = await waitForLastFrameUrl(previousJobId, `Scene ${i}`)
         }
