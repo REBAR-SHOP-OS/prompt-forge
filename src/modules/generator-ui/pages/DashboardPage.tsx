@@ -7345,6 +7345,10 @@ export default function DashboardPage() {
         setVideoColumnMessage('Locking product into start frame…')
         regenFirstFrameUrl = await bakeProductIntoFrame(firstFrameUrl, selectedProduct, ratio)
         setVideoColumnMessage(null)
+      } else if (selectedProduct && !firstFrameUrl) {
+        // Source clip had no start frame: seed with the real product photo so the
+        // regenerated clip actually reproduces the selected product.
+        regenFirstFrameUrl = productStartFrame(selectedProduct)
       }
       const createdJob = await jobOrchestratorGateway.createJob({
         providerKey,
