@@ -2316,34 +2316,46 @@ export default function DashboardPage() {
     return Math.max(1, Math.round(total || 1))
   }
 
+  function probeAudioMetadataDuration(url: string, timeoutMs = 5000): Promise<number | null> {
+    return new Promise((resolve) => {
+      try {
+        const audio = new Audio()
+        let settled = false
+        const finish = (duration: number | null) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          audio.removeEventListener('loadedmetadata', handleReady)
+          audio.removeEventListener('durationchange', handleReady)
+          audio.removeEventListener('canplay', handleReady)
+          audio.removeEventListener('error', handleError)
+          try { audio.removeAttribute('src'); audio.load() } catch { /* ignore */ }
+          resolve(duration)
+        }
+        const handleReady = () => {
+          const duration = audio.duration
+          if (Number.isFinite(duration) && duration > 0) finish(duration)
+        }
+        const handleError = () => finish(null)
+        const timer = setTimeout(() => finish(null), timeoutMs)
+        audio.preload = 'metadata'
+        audio.crossOrigin = 'anonymous'
+        audio.addEventListener('loadedmetadata', handleReady)
+        audio.addEventListener('durationchange', handleReady)
+        audio.addEventListener('canplay', handleReady)
+        audio.addEventListener('error', handleError)
+        audio.src = url
+        try { audio.load() } catch { /* ignore */ }
+      } catch {
+        resolve(null)
+      }
+    })
+  }
+
   function loadAudioMetadataDuration(url: string, onDuration: (duration: number) => void) {
-    try {
-      const audio = new Audio()
-      let settled = false
-      const cleanup = () => {
-        audio.removeEventListener('loadedmetadata', handleReady)
-        audio.removeEventListener('durationchange', handleReady)
-        audio.removeEventListener('canplay', handleReady)
-        audio.removeEventListener('error', cleanup)
-      }
-      const handleReady = () => {
-        const duration = audio.duration
-        if (!Number.isFinite(duration) || duration <= 0) return
-        if (settled) return
-        settled = true
-        cleanup()
-        onDuration(duration)
-        try { audio.removeAttribute('src'); audio.load() } catch { /* ignore */ }
-      }
-      audio.preload = 'metadata'
-      audio.crossOrigin = 'anonymous'
-      audio.addEventListener('loadedmetadata', handleReady)
-      audio.addEventListener('durationchange', handleReady)
-      audio.addEventListener('canplay', handleReady)
-      audio.addEventListener('error', cleanup)
-      audio.src = url
-      try { audio.load() } catch { /* ignore */ }
-    } catch { /* ignore */ }
+    void probeAudioMetadataDuration(url).then((duration) => {
+      if (duration && Number.isFinite(duration) && duration > 0) onDuration(duration)
+    })
   }
 
   // Persist a music/voiceover source into the public MERGED_BUCKET so it
