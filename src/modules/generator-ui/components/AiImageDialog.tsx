@@ -287,6 +287,43 @@ export default function AiImageDialog({
     }
   }
 
+  async function handleSelectProduct(product: AiProductOption) {
+    setError(null)
+    if (referenceImages.length >= MAX_REFERENCE_IMAGES) {
+      setError(`You can add up to ${MAX_REFERENCE_IMAGES} reference images.`)
+      return
+    }
+    if (referenceImages.some((r) => r.dataUrl === product.url || r.name === (product.title ?? product.id))) {
+      setProductMenuOpen(false)
+      return
+    }
+    setProductLoadingId(product.id)
+    try {
+      const res = await fetch(product.url)
+      if (!res.ok) throw new Error('Could not load the product image.')
+      const blob = await res.blob()
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          if (typeof reader.result === 'string') resolve(reader.result)
+          else reject(new Error('Failed to read product image.'))
+        }
+        reader.onerror = () => reject(new Error('Failed to read product image.'))
+        reader.readAsDataURL(blob)
+      })
+      setReferenceImages((prev) =>
+        prev.length >= MAX_REFERENCE_IMAGES
+          ? prev
+          : [...prev, { name: product.title || 'Product', dataUrl }],
+      )
+      setProductMenuOpen(false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to add product image.')
+    } finally {
+      setProductLoadingId(null)
+    }
+  }
+
   function handleRemoveRefineReference(index: number) {
     setRefineReferenceImages((prev) => prev.filter((_, i) => i !== index))
     if (refineReferenceInputRef.current) {
