@@ -3673,6 +3673,20 @@ export default function DashboardPage() {
     return MODEL_CHOICES.find((m) => m.supports.includes(needed)) ?? MODEL_CHOICES[0]
   }, [selectedModelId, isTextToVideo])
 
+  // When the user switches between Text-to-Video and Image-to-Video, keep
+  // the selected provider family (Wan / local / Flow) by swapping to the
+  // counterpart model that supports the new mode.
+  useEffect(() => {
+    const current = MODEL_CHOICES.find((m) => m.id === selectedModelId)
+    if (!current) return
+    if (generationMode === 'text-to-video' && !current.supports.includes('t2v')) {
+      setSelectedModelId(toTextToVideoModel(current).id)
+    }
+    if (generationMode === 'image-to-video' && !current.supports.includes('i2v')) {
+      setSelectedModelId(toImageToVideoModel(current).id)
+    }
+  }, [generationMode])
+
   useEffect(() => {
     if (typeof window === 'undefined') return
     try {
