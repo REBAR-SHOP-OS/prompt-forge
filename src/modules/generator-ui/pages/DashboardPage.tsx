@@ -5973,13 +5973,22 @@ export default function DashboardPage() {
 
     // 8b. Move the film's persisted audio over to the draft scope so the
     // soundtrack stays attached and is restored into the live audio state.
+    // Resolve from a fallback chain: prefer the final film's snapshot, then the
+    // recovered draft's original soundtrack. This recovers audio for older or
+    // failed finalizations where only the draft-scoped copy survived.
+    const hasAudio = (a: ProjectAudio | undefined): a is ProjectAudio =>
+      !!a && (!!a.music || !!a.voiceover)
+    const movedAudio: ProjectAudio | undefined =
+      (hasAudio(projectAudio[finalId]) && projectAudio[finalId]) ||
+      (hasAudio(projectAudio[draftId]) && projectAudio[draftId]) ||
+      undefined
     // Single atomic update: drop finalId AND write draftId in one pass so the
-    // draft always ends up with a durable soundtrack mapping.
-    const movedAudio = projectAudio[finalId]
+    // draft always ends up with a durable soundtrack mapping. Never overwrite an
+    // existing draft soundtrack with nothing.
     setProjectAudio((prev) => {
-      const audio = prev[finalId] ?? movedAudio
-      if (!audio) return prev
+      const audio = movedAudio ?? prev[finalId] ?? prev[draftId]
       const { [finalId]: _dropAudio, ...rest } = prev
+      if (!hasAudio(audio)) return _dropAudio === undefined ? prev : rest
       const next = { ...rest, [draftId]: audio }
       persistProjectAudio(next)
       return next
@@ -5989,6 +5998,7 @@ export default function DashboardPage() {
     setActiveDraftId(draftId)
     persistActiveDraftId(draftId)
     restoreDraftAudio(draftId, movedAudio)
+
     setSelectedProjectId(null)
     setPreviewVideoId(null)
     setLastMergedPreview(null)
