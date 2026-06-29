@@ -12731,6 +12731,8 @@ export default function DashboardPage() {
             setCopyrightResult(null)
             setCopyrightError(null)
             setCopyrightLoading(false)
+            setCopyrightLang('')
+            setCopyrightTranslations({})
           }
         }}
       >
