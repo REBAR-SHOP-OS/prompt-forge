@@ -1,27 +1,32 @@
-## Goal
-Let the user translate the **Copyright check** dialog content into their own language so they can read the verdict, summary, and risk explanations accurately.
+## Problem
 
-## What changes
-Add a small **language selector** at the top of the Copyright check dialog (in `src/modules/generator-ui/pages/DashboardPage.tsx`). Default option is **Original** (English, unchanged). Choosing a language (Persian, Arabic, English, Turkish, Spanish, French, German) translates all the dialog's text in place:
-- Overall verdict summary
-- Video section reason + risk bullets
-- Music & voiceover section reason + risk bullets
+When no character is added in the composer, a character can still be baked into the video. The user removes the character (or never adds one), yet the AI still injects a character into the clip.
 
-The status labels (Approved / Rejected / Caution) and colors stay as visual indicators; only the human-readable explanation text gets translated.
+## Root cause
 
-## How it works
-- Reuse the existing `translate-text` edge function (already deployed, no backend change needed). It accepts `{ text, targetLang }` and returns `{ translation }`.
-- When a language is selected, gather every text field from `copyrightResult` into one batched request (joined with a unique separator), send it to `translate-text`, then split the result back into the matching fields and render the translated version.
-- Translations are cached per language in component state so re-selecting a language is instant and costs nothing.
-- RTL languages (Persian, Arabic) render with `dir="rtl"`.
-- A small spinner shows while translating; on error the dialog falls back to the original text with a retry.
+`projectCharacter` is derived as:
 
-## Scope
-- Frontend-only change in `DashboardPage.tsx` (dialog UI + a couple of state hooks).
-- No database, auth, storage, or generation-logic changes.
-- No new edge function — reuses `translate-text`.
+```text
+projectCharacter = selectedCharacter ?? continuity.characterRef ?? null
+```
 
-## Technical notes
-- New state: `copyrightLang` (selected language) and `copyrightTranslations` (cache map keyed by language → translated CopyrightResult).
-- A helper builds a flat ordered list of strings from `CopyrightResult`, sends them as one delimited payload, and reconstructs the translated object so bullet order is preserved.
-- Reset translation state to "Original" whenever the dialog opens a new film or a fresh check runs.
+The "Add character" button and its Remove (X) actions only call `setSelectedCharacter(null)`. They never clear `continuity.characterRef`. So after removing a character, `selectedCharacter` is `null` but `continuity.characterRef` still holds the old reference. `projectCharacter` falls back to it, and the generation paths (`extractCharacterStartFrame`, `applyCharacterPrefix`, forced Image-to-Video) keep using a character that is no longer added.
+
+## Fix (frontend / presentation only)
+
+In `src/modules/generator-ui/pages/DashboardPage.tsx`, make "no character added" truly mean "no character used":
+
+1. **Clear the persisted anchor on every remove path.** Update the three places that currently do only `setSelectedCharacter(null)` to also call `updateContinuity({ characterRef: null })`:
+   - The chip's inline Remove (X) button (~line 12123–12133)
+   - The popover header "Remove" button (~line 12154)
+   These already exist; adding the continuity clear ensures the character is dropped from the project anchor, not just the local selection.
+
+2. **No behavior change when a character IS added** — selecting a character still sets both `selectedCharacter` and `continuity.characterRef` (line 12175), so consistency/anchoring across cards is preserved exactly as today.
+
+This keeps `projectCharacter` and `continuityCharacterRef` empty whenever the user has not added a character, so none of the character-injection branches (start-frame extraction, character prefix, forced I2V) run.
+
+## Verification
+
+- Add a character → confirm it still bakes/anchors across scenes (unchanged).
+- Remove the character (X or Remove) → confirm `projectCharacter` becomes null and no character start frame / prefix is applied on submit.
+- Reload project after removing → character stays removed (continuity anchor cleared and persisted).
