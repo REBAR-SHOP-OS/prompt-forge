@@ -1201,14 +1201,25 @@ export default function DashboardPage() {
     try {
       let bucket = MERGED_BUCKET
       let path = input
+      const storagePathRe = /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/
       if (/^https?:\/\//i.test(input)) {
         const parsed = new URL(input)
-        const m = parsed.pathname.match(
-          /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/,
-        )
+        const m = parsed.pathname.match(storagePathRe)
         if (!m) return input // unknown shape; let the function try as-is
         bucket = m[1]
         try { path = decodeURIComponent(m[2]) } catch { path = m[2] }
+      } else if (input.startsWith('/storage/v1/object/')) {
+        const m = input.match(storagePathRe)
+        if (m) {
+          bucket = m[1]
+          try { path = decodeURIComponent(m[2].split('?')[0]) } catch { path = m[2].split('?')[0] }
+        }
+      } else {
+        const parts = input.split('/').filter(Boolean)
+        if (parts.length > 1 && (parts[0] === MERGED_BUCKET || parts[0] === 'user-videos' || parts[0] === 'user-audio')) {
+          bucket = parts.shift() as string
+          path = parts.join('/')
+        }
       }
       const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 30)
       if (!error && data?.signedUrl) return data.signedUrl
@@ -7303,7 +7314,7 @@ export default function DashboardPage() {
   }
 
   function handleClearMusic() {
-    if (musicUrl) {
+    if (musicUrl?.startsWith('blob:')) {
       try { URL.revokeObjectURL(musicUrl) } catch { /* ignore */ }
     }
     setMusicName(null)
@@ -7315,7 +7326,7 @@ export default function DashboardPage() {
   }
 
   function handleVoiceoverAsSoundtrack(url: string, name: string) {
-    if (voiceoverUrl) {
+    if (voiceoverUrl?.startsWith('blob:')) {
       try { URL.revokeObjectURL(voiceoverUrl) } catch { /* ignore */ }
     }
     setVoiceoverUrl(url)
@@ -7331,7 +7342,7 @@ export default function DashboardPage() {
 
 
   function handleClearVoiceover() {
-    if (voiceoverUrl) {
+    if (voiceoverUrl?.startsWith('blob:')) {
       try { URL.revokeObjectURL(voiceoverUrl) } catch { /* ignore */ }
     }
     setVoiceoverUrl(null)
