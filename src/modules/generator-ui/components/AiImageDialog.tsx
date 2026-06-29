@@ -144,6 +144,7 @@ export default function AiImageDialog({
   userId,
   defaultAspect,
   onSaved,
+  products = [],
 }: Props) {
   const [aspect, setAspect] = useState<AiImageAspect>(defaultAspect)
   const [prompt, setPrompt] = useState('')
