@@ -7288,7 +7288,7 @@ export default function DashboardPage() {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
-    if (musicUrl) {
+    if (musicUrl?.startsWith('blob:')) {
       try { URL.revokeObjectURL(musicUrl) } catch { /* ignore */ }
     }
     const url = URL.createObjectURL(file)
@@ -8049,7 +8049,7 @@ export default function DashboardPage() {
       try { window.localStorage.setItem(pendingStartPrependsKey, JSON.stringify({})) } catch { /* ignore */ }
     }
     // Tear down the soundtrack so the audio chip in the top tabs disappears.
-    if (musicUrl) {
+    if (musicUrl?.startsWith('blob:')) {
       try { URL.revokeObjectURL(musicUrl) } catch { /* ignore */ }
     }
     setMusicName(null)
@@ -8057,7 +8057,7 @@ export default function DashboardPage() {
     setMusicDuration(0)
     setMusicRange([0, 0])
     setIsMusicDialogOpen(false)
-    if (voiceoverUrl) {
+    if (voiceoverUrl?.startsWith('blob:')) {
       try { URL.revokeObjectURL(voiceoverUrl) } catch { /* ignore */ }
     }
     setVoiceoverUrl(null)
