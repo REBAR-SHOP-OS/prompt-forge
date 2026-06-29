@@ -1027,6 +1027,72 @@ export default function DashboardPage() {
   // guarantees the automatic post-finalize check runs exactly once per film.
   const [copyrightChecking, setCopyrightChecking] = useState<Set<string>>(new Set())
   const copyrightAutoRunRef = useRef<Set<string>>(new Set())
+  // --- Copyright dialog translation ---
+  // Selected target language for the Copyright dialog ('' = original English).
+  const [copyrightLang, setCopyrightLang] = useState('')
+  // Cache of translated results keyed by language code.
+  const [copyrightTranslations, setCopyrightTranslations] = useState<Record<string, CopyrightResult>>({})
+  const [copyrightTranslating, setCopyrightTranslating] = useState(false)
+
+  const COPYRIGHT_LANGS: Array<{ value: string; label: string; rtl?: boolean }> = [
+    { value: '', label: 'Original' },
+    { value: 'fa', label: 'فارسی', rtl: true },
+    { value: 'ar', label: 'العربية', rtl: true },
+    { value: 'en', label: 'English' },
+    { value: 'tr', label: 'Türkçe' },
+    { value: 'es', label: 'Español' },
+    { value: 'fr', label: 'Français' },
+    { value: 'de', label: 'Deutsch' },
+  ]
+
+  // Translate every human-readable string in a CopyrightResult in one batched
+  // request, preserving field/bullet order via a unique separator.
+  const translateCopyrightResult = useCallback(async (lang: string) => {
+    if (!lang) return
+    if (copyrightTranslations[lang] || !copyrightResult) return
+    const SEP = '\n<<<§§§>>>\n'
+    const src = copyrightResult
+    const parts: string[] = []
+    const pushSection = (s?: CopyrightSection) => {
+      parts.push(s?.reason ?? '')
+      for (const r of s?.risks ?? []) parts.push(r)
+    }
+    parts.push(src.summary ?? '')
+    const videoRiskCount = src.video?.risks?.length ?? 0
+    const musicRiskCount = src.music?.risks?.length ?? 0
+    pushSection(src.video)
+    pushSection(src.music)
+
+    setCopyrightTranslating(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('translate-text', {
+        body: { text: parts.join(SEP), targetLang: lang },
+      })
+      if (error) throw new Error(error.message || 'Translation failed.')
+      const translated = (data as { translation?: string } | null)?.translation ?? ''
+      const out = translated.split(SEP)
+      let i = 0
+      const summary = out[i++] ?? src.summary
+      const videoReason = out[i++] ?? src.video?.reason
+      const videoRisks: string[] = []
+      for (let k = 0; k < videoRiskCount; k++) videoRisks.push(out[i++] ?? src.video!.risks![k])
+      const musicReason = out[i++] ?? src.music?.reason
+      const musicRisks: string[] = []
+      for (let k = 0; k < musicRiskCount; k++) musicRisks.push(out[i++] ?? src.music!.risks![k])
+      const result: CopyrightResult = {
+        verdict: src.verdict,
+        summary,
+        video: src.video ? { ...src.video, reason: videoReason, risks: videoRisks } : undefined,
+        music: src.music ? { ...src.music, reason: musicReason, risks: musicRisks } : undefined,
+      }
+      setCopyrightTranslations((prev) => ({ ...prev, [lang]: result }))
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Translation failed.')
+      setCopyrightLang('')
+    } finally {
+      setCopyrightTranslating(false)
+    }
+  }, [copyrightResult, copyrightTranslations])
 
   // Download a film as a standard, broadly-compatible MP4. Final Film output
   // is WebM (MediaRecorder), which fails in QuickTime / WMP / mobile galleries.
