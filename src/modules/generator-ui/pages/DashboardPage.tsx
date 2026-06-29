@@ -12095,6 +12095,33 @@ export default function DashboardPage() {
                     ))}
                   </div>
                 )}
+                {selectedCharacter ? (
+                  <div className="mt-2 border-t border-white/10 px-1 pt-2">
+                    <p className="mb-1 text-[11px] font-medium text-zinc-400">
+                      Start-frame view (baked from the sheet)
+                    </p>
+                    <div className="grid grid-cols-4 gap-1">
+                      {(['auto', 'front', 'side', 'back'] as const).map((v) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => setCharacterView(v)}
+                          className={`rounded-md border px-1.5 py-1 text-[11px] capitalize transition ${
+                            characterView === v
+                              ? 'border-fuchsia-400/70 bg-fuchsia-500/10 text-fuchsia-200'
+                              : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:border-white/20'
+                          }`}
+                        >
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-1 text-[10px] text-zinc-500">
+                      A clean single-view frame is generated from the Character Sheet so the
+                      character stays consistent (Image-to-Video).
+                    </p>
+                  </div>
+                ) : null}
               </PopoverContent>
             </Popover>
 
