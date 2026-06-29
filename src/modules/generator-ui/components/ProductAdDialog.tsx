@@ -2027,12 +2027,15 @@ export default function ProductAdDialog({
                     description={g.prompt}
                     preview={g.preview}
                     rtl={RTL_LANGS.includes(lang)}
+                    selected={active}
+                    onSelect={() => setGenre((cur) => (cur === g.id ? '' : g.id))}
+                    selectLabel={tr(SELECT_LABEL, lang)}
+                    selectedLabel={tr(SELECTED_LABEL, lang)}
                   >
                     <button
                       type="button"
                       role="radio"
                       aria-checked={active}
-                      onClick={() => setGenre((cur) => (cur === g.id ? '' : g.id))}
                       className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                         active
                           ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
