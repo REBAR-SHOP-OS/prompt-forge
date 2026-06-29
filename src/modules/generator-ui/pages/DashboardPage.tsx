@@ -10252,16 +10252,18 @@ export default function DashboardPage() {
                       controls
                       playsInline
                       preload="metadata"
-                      musicUrl={musicUrl}
+                      musicUrl={isMergedFinalPreview ? null : musicUrl}
                       musicRange={musicRange}
                       musicVolume={musicVolume}
                       musicTimeline={musicTimeline}
-                      voiceoverUrl={voiceoverUrl}
+                      voiceoverUrl={isMergedFinalPreview ? null : voiceoverUrl}
                       voiceoverVolume={voiceoverVolume}
                       voiceoverRange={voiceoverRange}
                       voiceoverTimeline={voiceoverTimeline}
                       clipVolume={
-                        musicUrl && musicRange[1] > musicRange[0]
+                        isMergedFinalPreview
+                          ? 1
+                          : musicUrl && musicRange[1] > musicRange[0]
                           ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
                           : (voiceoverUrl ? voiceoverClipVolume : 1)
                       }
