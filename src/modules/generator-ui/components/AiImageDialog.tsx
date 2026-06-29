@@ -649,11 +649,13 @@ export default function AiImageDialog({
                   className="hidden"
                   onChange={handleReferenceChange}
                 />
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => referenceInputRef.current?.click()}
                   disabled={isLoading || referenceImages.length >= MAX_REFERENCE_IMAGES}
-                  className="absolute bottom-3 left-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                   title="Upload reference images"
                 >
                   <ImagePlus className="h-4 w-4" />
