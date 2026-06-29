@@ -12124,12 +12124,14 @@ export default function DashboardPage() {
                           e.preventDefault()
                           e.stopPropagation()
                           setSelectedCharacter(null)
+                          updateContinuity({ characterRef: null })
                         }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault()
                             e.stopPropagation()
                             setSelectedCharacter(null)
+                            updateContinuity({ characterRef: null })
                           }
                         }}
                         className="ml-0.5 grid h-5 w-5 place-items-center rounded-full text-fuchsia-200/80 transition hover:bg-fuchsia-500/20 hover:text-fuchsia-50"
@@ -12151,7 +12153,7 @@ export default function DashboardPage() {
                   {selectedCharacter ? (
                     <button
                       type="button"
-                      onClick={() => { setSelectedCharacter(null); setCharacterMenuOpen(false) }}
+                      onClick={() => { setSelectedCharacter(null); updateContinuity({ characterRef: null }); setCharacterMenuOpen(false) }}
                       className="text-[11px] text-zinc-400 hover:text-rose-300"
                     >
                       Remove
