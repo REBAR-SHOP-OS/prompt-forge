@@ -12843,6 +12843,8 @@ export default function DashboardPage() {
           if (!o) {
             setCopyrightJob(null)
             setCopyrightResult(null)
+            setCopyrightTranslated(null)
+            setShowCopyrightOriginal(false)
             setCopyrightError(null)
             setCopyrightLoading(false)
           }
