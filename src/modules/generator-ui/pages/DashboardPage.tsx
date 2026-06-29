@@ -7645,6 +7645,11 @@ export default function DashboardPage() {
           effectiveMusicRange = [0, probedDuration]
           setMusicDuration(probedDuration)
           setMusicRange(effectiveMusicRange)
+        } else {
+          // Do not silently drop a restored soundtrack just because browser
+          // metadata probing was late/blocked. The merger can safely clamp to
+          // the decoded media duration; this placeholder keeps the track alive.
+          effectiveMusicRange = [0, fallbackTimelineEnd]
         }
       }
       let effectiveVoiceoverRange = voiceoverRange
