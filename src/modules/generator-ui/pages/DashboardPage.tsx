@@ -6766,6 +6766,18 @@ export default function DashboardPage() {
         let startFrameUrl: string | undefined
         if (i === 0) {
           startFrameUrl = firstSceneImageUrl
+          // No uploaded start frame but a character is anchored: build a clean
+          // single-view start frame from the Character Sheet so card 1 locks onto
+          // the character instead of drifting in pure text-to-video.
+          if (!startFrameUrl && continuityCharacterRef) {
+            setVideoColumnMessage(`Building character start frame for ${sceneLabel}…`)
+            startFrameUrl = await extractCharacterStartFrame(
+              continuityCharacterRef,
+              characterView,
+              effectiveRatio,
+              sourcePrompt,
+            )
+          }
         } else if (previousJobId) {
           startFrameUrl = await waitForLastFrameUrl(previousJobId, `Scene ${i}`)
         }
@@ -6779,8 +6791,8 @@ export default function DashboardPage() {
 
         setVideoColumnMessage(`Queuing ${sceneLabel}…`)
         const createdJob = await jobOrchestratorGateway.createJob({
-          providerKey: selectedModel.providerKey,
-          requestedModel: selectedModel.model,
+          providerKey: scenarioModel.providerKey,
+          requestedModel: scenarioModel.model,
           prompt,
           durationSeconds: perClipDuration,
           aspectRatio: effectiveRatio,
