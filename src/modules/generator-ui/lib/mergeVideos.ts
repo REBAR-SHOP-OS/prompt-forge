@@ -1130,8 +1130,10 @@ export async function mergeVideoUrls(
         const inWin = gt >= musicTlStart && gt < musicTlEnd
         if (inWin) {
           soundtrackGain.gain.value = musicVolume
-          if (soundtrackEl.currentTime >= musicWinEnd || soundtrackEl.currentTime < musicWinStart) {
-            try { soundtrackEl.currentTime = musicWinStart } catch { /* ignore */ }
+          const winLen = Math.max(0.05, musicWinEnd - musicWinStart)
+          const target = musicWinStart + ((gt - musicTlStart) % winLen)
+          if (Math.abs(soundtrackEl.currentTime - target) > 0.35) {
+            try { soundtrackEl.currentTime = Math.max(0, target) } catch { /* ignore */ }
           }
           if (soundtrackEl.paused) void soundtrackEl.play().catch(() => { /* ignore */ })
         } else {
