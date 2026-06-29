@@ -6100,6 +6100,7 @@ export default function DashboardPage() {
     // Single atomic update: drop finalId AND write draftId in one pass so the
     // draft always ends up with a durable soundtrack mapping.
     const movedAudio = projectAudio[finalId]
+    const draftTimelineSec = durationForDraftSources(sourceJobs, sourceImages, video.video?.duration ?? video.requested_duration ?? null)
     setProjectAudio((prev) => {
       const audio = prev[finalId] ?? movedAudio
       if (!audio) return prev
@@ -6110,9 +6111,10 @@ export default function DashboardPage() {
     })
 
     // 9. Activate edit mode on the draft.
+    ensureActiveDraftIdRef.current = draftId
     setActiveDraftId(draftId)
     persistActiveDraftId(draftId)
-    restoreDraftAudio(draftId, movedAudio)
+    restoreDraftAudio(draftId, movedAudio, draftTimelineSec)
     setSelectedProjectId(null)
     setPreviewVideoId(null)
     setLastMergedPreview(null)
@@ -6123,7 +6125,7 @@ export default function DashboardPage() {
   // Restore a draft's persisted music/voiceover back into the live audio state
   // so the soundtrack chip reappears and applies to the exact same film. Audio
   // durations are loaded so the music range is set to the full track.
-  const restoreDraftAudio = useCallback((draftId: string, override?: ProjectAudio) => {
+  const restoreDraftAudio = useCallback((draftId: string, override?: ProjectAudio, timelineDurationSec?: number) => {
     const audio = override ?? projectAudio[draftId]
     if (!audio) return
     // Always persist the restored audio under the draft scope so it survives
@@ -6136,52 +6138,62 @@ export default function DashboardPage() {
         return next
       })
     }
-    // The film length may not be measured yet; fall back to the track's own
-    // duration so the timeline window is valid even before the preview loads.
-    const tlEnd = (d: number) => (mergedDurationSec > 0 ? mergedDurationSec : d)
+    // Use the draft's own source duration when available. During Reopen, the
+    // live preview may not have recomputed `mergedDurationSec` yet; using that
+    // stale/empty value creates a visible chip with a non-audible timeline.
+    const knownTimelineEnd = Math.max(
+      1,
+      Math.round(
+        timelineDurationSec && Number.isFinite(timelineDurationSec) && timelineDurationSec > 0
+          ? timelineDurationSec
+          : mergedDurationSec,
+      ),
+    )
     if (audio.music?.url) {
       const url = audio.music.url
       setMusicName(audio.music.name)
       setMusicUrl(url)
-      setMusicTimeline([0, mergedDurationSec])
-      try {
-        const a = new Audio()
-        a.src = url
-        a.addEventListener('loadedmetadata', () => {
-          const d = a.duration
-          if (Number.isFinite(d) && d > 0) {
-            setMusicDuration(d)
-            setMusicRange([0, d])
-            if (mergedDurationSec <= 0) setMusicTimeline([0, tlEnd(d)])
-          }
-        })
-      } catch { /* ignore */ }
+      setMusicDuration(0)
+      setMusicRange([0, 0])
+      setMusicTimeline([0, knownTimelineEnd])
+      loadAudioMetadataDuration(url, (d) => {
+        setMusicDuration(d)
+        setMusicRange([0, d])
+        setMusicTimeline((current) => current[1] > current[0] ? current : [0, knownTimelineEnd])
+      })
       draftAudioSnapshotRef.current[draftId] = {
         ...(draftAudioSnapshotRef.current[draftId] ?? {}),
         music: url,
       }
+    } else {
+      setMusicName(null)
+      setMusicUrl(null)
+      setMusicDuration(0)
+      setMusicRange([0, 0])
+      setMusicTimeline([0, 0])
     }
     if (audio.voiceover?.url) {
       const url = audio.voiceover.url
       setVoiceoverName(audio.voiceover.name)
       setVoiceoverUrl(url)
-      setVoiceoverTimeline([0, mergedDurationSec])
-      try {
-        const a = new Audio()
-        a.src = url
-        a.addEventListener('loadedmetadata', () => {
-          const d = a.duration
-          if (Number.isFinite(d) && d > 0) {
-            setVoiceoverDuration(d)
-            setVoiceoverRange([0, d])
-            if (mergedDurationSec <= 0) setVoiceoverTimeline([0, tlEnd(d)])
-          }
-        })
-      } catch { /* ignore */ }
+      setVoiceoverDuration(0)
+      setVoiceoverRange([0, 0])
+      setVoiceoverTimeline([0, knownTimelineEnd])
+      loadAudioMetadataDuration(url, (d) => {
+        setVoiceoverDuration(d)
+        setVoiceoverRange([0, d])
+        setVoiceoverTimeline((current) => current[1] > current[0] ? current : [0, knownTimelineEnd])
+      })
       draftAudioSnapshotRef.current[draftId] = {
         ...(draftAudioSnapshotRef.current[draftId] ?? {}),
         voice: url,
       }
+    } else {
+      setVoiceoverName(null)
+      setVoiceoverUrl(null)
+      setVoiceoverDuration(0)
+      setVoiceoverRange([0, 0])
+      setVoiceoverTimeline([0, 0])
     }
   }, [projectAudio, mergedDurationSec])
 
