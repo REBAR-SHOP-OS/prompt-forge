@@ -1988,12 +1988,15 @@ export default function ProductAdDialog({
                     description={style.desc ? tr(style.desc, lang) : undefined}
                     preview={style.preview}
                     rtl={RTL_LANGS.includes(lang)}
+                    selected={active}
+                    onSelect={() => setCameraStyle(style.label.en)}
+                    selectLabel={tr(SELECT_LABEL, lang)}
+                    selectedLabel={tr(SELECTED_LABEL, lang)}
                   >
                     <button
                       type="button"
                       role="radio"
                       aria-checked={active}
-                      onClick={() => setCameraStyle(style.label.en)}
                       className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                         active
                           ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
