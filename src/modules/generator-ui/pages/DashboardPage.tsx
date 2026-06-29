@@ -6746,9 +6746,26 @@ export default function DashboardPage() {
         setVideoColumnMessage(null)
         if (characterSeedFrameUrl) setGenerationMode('image-to-video')
       }
-      // Drive an I2V model (and bypass the T2V branch) when a character frame was baked.
-      const effectiveModel = characterSeedFrameUrl ? toImageToVideoModel(selectedModel) : selectedModel
-      const treatTextToVideo = isTextToVideo && !characterSeedFrameUrl
+      // Product pinned but NO start frame and NO character seed: use the real
+      // product photo itself as the start frame so Wan I2V actually reproduces
+      // the selected product instead of generating an unrelated item from text.
+      let productSeedFrameUrl: string | undefined
+      if (
+        selectedProduct &&
+        !readyStartFrame?.url &&
+        !readyEndFrame?.url &&
+        !characterSeedFrameUrl
+      ) {
+        productSeedFrameUrl = productStartFrame(selectedProduct)
+        if (productSeedFrameUrl) {
+          bakedStartFrameUrl = productSeedFrameUrl
+          setGenerationMode('image-to-video')
+        }
+      }
+      // Drive an I2V model (and bypass the T2V branch) when a character/product frame was seeded.
+      const seededAnyFrame = Boolean(characterSeedFrameUrl || productSeedFrameUrl)
+      const effectiveModel = seededAnyFrame ? toImageToVideoModel(selectedModel) : selectedModel
+      const treatTextToVideo = isTextToVideo && !seededAnyFrame
       for (let i = 0; i < iterations; i++) {
         let createdJob
         let seedFrames: { firstFrameUrl?: string; lastFrameUrl?: string } = {}
