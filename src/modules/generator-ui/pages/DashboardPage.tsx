@@ -61,6 +61,7 @@ import {
   Eye,
   EyeOff,
   Building2,
+  Languages,
   X
 } from 'lucide-react'
 import {
