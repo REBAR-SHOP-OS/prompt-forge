@@ -1294,6 +1294,8 @@ export default function DashboardPage() {
     if (!silent) {
       setCopyrightJob(video)
       setCopyrightResult(null)
+      setCopyrightLang('')
+      setCopyrightTranslations({})
       setCopyrightError(null)
       setCopyrightLoading(true)
     }
