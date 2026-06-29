@@ -6296,6 +6296,59 @@ export default function DashboardPage() {
     }
   }
 
+  // Build a clean, single-view start frame from a Character Sheet so Wan I2V can
+  // lock onto the character. The sheet is usually a multi-pose collage that the
+  // model cannot animate directly; this extracts ONE full-body view (front/side/
+  // back, or auto = the angle that best fits the scene text) into a clean frame,
+  // uploads it to wan-frames and returns a downloadable URL. Non-destructive:
+  // any failure returns undefined so the caller can fall back gracefully.
+  async function extractCharacterStartFrame(
+    character: ProjectCharacter | null,
+    view: CharacterView,
+    ratio: Ratio,
+    sceneText?: string,
+  ): Promise<string | undefined> {
+    if (!character?.url) return undefined
+    const userId = session?.user?.id
+    if (!userId) return undefined
+    const editRatio: '1:1' | '9:16' | '16:9' =
+      ratio === '9:16' ? '9:16' : ratio === '1:1' ? '1:1' : '16:9'
+    const viewInstruction =
+      view === 'front'
+        ? 'Render a front-facing full-body view.'
+        : view === 'side'
+          ? 'Render a side-profile full-body view.'
+          : view === 'back'
+            ? 'Render a back full-body view.'
+            : `Choose the single camera angle (front, 3/4, side or back) that best fits this scene and render that full-body view.${sceneText ? ` Scene: ${sceneText.slice(0, 280)}` : ''}`
+    try {
+      const instruction = [
+        `The provided image is a CHARACTER SHEET showing the same character from multiple angles.`,
+        `Produce ONE single, clean, full-body image of EXACTLY this character — same face, hair, body, proportions and the EXACT same outfit (same clothing items, colors, logos/prints, trousers, shoes and accessories).`,
+        viewInstruction,
+        `The character must stand naturally, fully in frame, on a clean neutral studio background. Do not show a grid, multiple poses, panels or text — just one character in one shot.`,
+      ].join(' ')
+      const { data, error } = await supabase.functions.invoke('ai-image-edit', {
+        body: { imageUrls: [character.url], aspectRatio: editRatio, prompt: instruction },
+      })
+      if (error) throw error
+      const dataUrl = (data as { dataUrl?: string } | null)?.dataUrl
+      if (!dataUrl) return undefined
+      const res = await fetch(dataUrl)
+      const blob = await res.blob()
+      const storagePath = `${userId}/character-frame-${Date.now()}-${crypto.randomUUID()}.png`
+      const { error: upErr } = await supabase.storage
+        .from(FRAMES_BUCKET)
+        .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false })
+      if (upErr) return undefined
+      const { data: pub } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+      return await signFramesUrl(storagePath).catch(() => pub.publicUrl)
+    } catch {
+      return undefined
+    }
+  }
+
+
   // Pin the project product from a product image URL (Product AD flow). Matches a
   // saved product when possible so the title/id are meaningful, else creates one.
   function pinProductFromImageUrl(imageUrl: string) {
