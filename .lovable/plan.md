@@ -1,32 +1,34 @@
-## Problem
+# رفع موزیک و ویس‌اور پس از بازگرداندن «فاینال» به «درفت»
 
-When no character is added in the composer, a character can still be baked into the video. The user removes the character (or never adds one), yet the AI still injects a character into the clip.
+## علت ریشه‌ای
+باکت `merged-videos` خصوصی است، اما تابع `persistAudioToStorage` با `getPublicUrl` یک URL عمومی برمی‌گرداند که روی باکت خصوصی کار نمی‌کند. در نتیجه پس از reopen، نام موزیک/ویس ست می‌شود اما خود فایل قابل بارگذاری نیست → چیپ‌ها و نوار موج صوتی خالی نمایش داده می‌شوند بدون اینکه صدایی روی فیلم اعمال شود.
 
-## Root cause
+## هدف
+1. **اولویت اول — حفظ صدا:** موزیک/ویس ذخیره‌شده در باکت خصوصی با signed URL درست resolve شود تا واقعاً روی فیلم درفت بارگذاری و پخش شود (دقیقاً مثل ویدئو و تصاویر).
+2. **fallback:** اگر صدا واقعاً قابل بازیابی نبود (فایل حذف شده/خراب)، نام و URL موزیک/ویس پاک شود تا چیپ بالای صفحه و نوار خالی موج صوتی دیگر نمایش داده نشوند.
 
-`projectCharacter` is derived as:
+## تغییرات (همگی در لایهٔ فرانت‌اند / presentation)
 
-```text
-projectCharacter = selectedCharacter ?? continuity.characterRef ?? null
-```
+### ۱) افزودن امضاکنندهٔ URL صدا
+در `src/modules/generator-ui/pages/DashboardPage.tsx` تابعی شبیه `signFramesUrl` اضافه می‌شود:
+- `signMergedAudioUrl(storagePath)` که مارکر `/merged-videos/` را از URL استخراج کرده و با `createSignedUrl` یک URL امضاشدهٔ معتبر (اعتبار طولانی) برمی‌گرداند؛ در صورت شکست، مقدار خام را برمی‌گرداند.
 
-The "Add character" button and its Remove (X) actions only call `setSelectedCharacter(null)`. They never clear `continuity.characterRef`. So after removing a character, `selectedCharacter` is `null` but `continuity.characterRef` still holds the old reference. `projectCharacter` falls back to it, and the generation paths (`extractCharacterStartFrame`, `applyCharacterPrefix`, forced Image-to-Video) keep using a character that is no longer added.
+### ۲) resolve صدای ذخیره‌شده هنگام restore
+در `restoreDraftAudio` (حدود خطوط ۶۰۷۱–۶۱۳۱):
+- پیش از `setMusicUrl` / `setVoiceoverUrl`، URL از طریق `signMergedAudioUrl` امضا شود.
+- اعتبارسنجی بارگذاری با همان `new Audio()`: روی رویداد `error` (یا timeout)، آن ترک نامعتبر تلقی شده و state آن پاک شود (`setMusicName(null)` + `setMusicUrl(null)` یا معادل ویس) تا چیپ و نوار حذف شوند.
+- روی `loadedmetadata` مثل قبل مدت‌زمان و range ست می‌شود.
 
-## Fix (frontend / presentation only)
+### ۳) همگام‌سازی هنگام تولید فاینال (دوام بلندمدت)
+در مسیر persist صدا، به‌جای اتکا به public URL خصوصی، URL خام/کلید ذخیره‌شده طوری نگه‌داری شود که `signMergedAudioUrl` همیشه بتواند آن را دوباره امضا کند (URL حاوی `/merged-videos/` کافی است). نیازی به تغییر باکت یا policy نیست.
 
-In `src/modules/generator-ui/pages/DashboardPage.tsx`, make "no character added" truly mean "no character used":
+### ۴) محافظ نمایش نوار موج صوتی
+در `PreviewSoundtrackWaveforms` یک `onError` برای WaveSurfer اضافه می‌شود؛ اگر بارگذاری ترک شکست بخورد، آن ترک محو شده و در صورت نبود هیچ ترک معتبری، کل بخش نوار رندر نمی‌شود. این تضمین می‌کند هرگز نوار خالی بدون موج دیده نشود.
 
-1. **Clear the persisted anchor on every remove path.** Update the three places that currently do only `setSelectedCharacter(null)` to also call `updateContinuity({ characterRef: null })`:
-   - The chip's inline Remove (X) button (~line 12123–12133)
-   - The popover header "Remove" button (~line 12154)
-   These already exist; adding the continuity clear ensures the character is dropped from the project anchor, not just the local selection.
+## تأیید (پس از پیاده‌سازی)
+- یک فاینال دارای موزیک+ویس را reopen → بررسی اینکه صدا واقعاً روی فیلم پخش می‌شود و موج صوتی رندر می‌گردد.
+- شبیه‌سازی URL مُرده → بررسی اینکه چیپ‌ها و نوار خالی دیگر نمایش داده نمی‌شوند.
+- اجرای typecheck.
 
-2. **No behavior change when a character IS added** — selecting a character still sets both `selectedCharacter` and `continuity.characterRef` (line 12175), so consistency/anchoring across cards is preserved exactly as today.
-
-This keeps `projectCharacter` and `continuityCharacterRef` empty whenever the user has not added a character, so none of the character-injection branches (start-frame extraction, character prefix, forced I2V) run.
-
-## Verification
-
-- Add a character → confirm it still bakes/anchors across scenes (unchanged).
-- Remove the character (X or Remove) → confirm `projectCharacter` becomes null and no character start frame / prefix is applied on submit.
-- Reload project after removing → character stays removed (continuity anchor cleared and persisted).
+## دامنه
+فقط منطق resolve/نمایش صدا در فرانت‌اند. بدون تغییر در auth، storage policy، schema یا بک‌اند.

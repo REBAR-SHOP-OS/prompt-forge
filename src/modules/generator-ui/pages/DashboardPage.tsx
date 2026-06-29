@@ -489,6 +489,59 @@ async function signFramesUrl(storagePath: string | null | undefined): Promise<st
   return raw
 }
 
+/**
+ * The `merged-videos` bucket is PRIVATE, so the public URL persisted for a
+ * project's music / voiceover returns 400 and never loads. Resolve a long-lived
+ * signed URL so the saved soundtrack actually plays after a Final film is
+ * reopened as a Draft. Falls back to the raw value when it can't be signed.
+ */
+async function signMergedAudioUrl(storagePath: string | null | undefined): Promise<string> {
+  const raw = storagePath ?? ''
+  if (/^blob:|^data:/.test(raw)) return raw
+  if (/\/object\/sign\//.test(raw)) return raw
+  const marker = `/${MERGED_BUCKET}/`
+  const idx = raw.indexOf(marker)
+  let key: string | null = null
+  if (idx >= 0) key = raw.slice(idx + marker.length)
+  else if (!/^https?:|^blob:|^data:/.test(raw)) key = raw
+  if (!key) return raw
+  try {
+    const { data, error } = await supabase.storage
+      .from(MERGED_BUCKET)
+      .createSignedUrl(key, 60 * 60 * 24 * 365)
+    if (!error && data?.signedUrl) return data.signedUrl
+  } catch {
+    /* fall through */
+  }
+  return raw
+}
+
+/**
+ * Verify an audio URL actually loads. Used as the fallback guard so that a
+ * dead/missing soundtrack never leaves an empty chip + waveform strip behind.
+ */
+function audioUrlLoads(url: string, timeoutMs = 12_000): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false
+    const done = (ok: boolean) => {
+      if (settled) return
+      settled = true
+      resolve(ok)
+    }
+    try {
+      const a = new Audio()
+      a.preload = 'metadata'
+      a.addEventListener('loadedmetadata', () => done(Number.isFinite(a.duration)))
+      a.addEventListener('canplaythrough', () => done(true))
+      a.addEventListener('error', () => done(false))
+      a.src = url
+      setTimeout(() => done(false), timeoutMs)
+    } catch {
+      done(false)
+    }
+  })
+}
+
 type ModelChoice = {
   id: string
   label: string
@@ -6085,48 +6138,72 @@ export default function DashboardPage() {
     // duration so the timeline window is valid even before the preview loads.
     const tlEnd = (d: number) => (mergedDurationSec > 0 ? mergedDurationSec : d)
     if (audio.music?.url) {
-      const url = audio.music.url
-      setMusicName(audio.music.name)
-      setMusicUrl(url)
-      setMusicTimeline([0, mergedDurationSec])
-      try {
-        const a = new Audio()
-        a.src = url
-        a.addEventListener('loadedmetadata', () => {
-          const d = a.duration
-          if (Number.isFinite(d) && d > 0) {
-            setMusicDuration(d)
-            setMusicRange([0, d])
-            if (mergedDurationSec <= 0) setMusicTimeline([0, tlEnd(d)])
-          }
-        })
-      } catch { /* ignore */ }
-      draftAudioSnapshotRef.current[draftId] = {
-        ...(draftAudioSnapshotRef.current[draftId] ?? {}),
-        music: url,
-      }
+      const rawUrl = audio.music.url
+      const name = audio.music.name
+      void (async () => {
+        // Resolve a signed URL (merged-videos is private) then verify it loads.
+        const url = await signMergedAudioUrl(rawUrl)
+        const ok = /^blob:|^data:/.test(url) || (await audioUrlLoads(url))
+        if (!ok) {
+          // Soundtrack is gone/unreachable: clear it so no empty chip/strip shows.
+          setMusicName(null)
+          setMusicUrl(null)
+          delete draftAudioSnapshotRef.current[draftId]?.music
+          return
+        }
+        setMusicName(name)
+        setMusicUrl(url)
+        setMusicTimeline([0, mergedDurationSec])
+        try {
+          const a = new Audio()
+          a.src = url
+          a.addEventListener('loadedmetadata', () => {
+            const d = a.duration
+            if (Number.isFinite(d) && d > 0) {
+              setMusicDuration(d)
+              setMusicRange([0, d])
+              if (mergedDurationSec <= 0) setMusicTimeline([0, tlEnd(d)])
+            }
+          })
+        } catch { /* ignore */ }
+        draftAudioSnapshotRef.current[draftId] = {
+          ...(draftAudioSnapshotRef.current[draftId] ?? {}),
+          music: url,
+        }
+      })()
     }
     if (audio.voiceover?.url) {
-      const url = audio.voiceover.url
-      setVoiceoverName(audio.voiceover.name)
-      setVoiceoverUrl(url)
-      setVoiceoverTimeline([0, mergedDurationSec])
-      try {
-        const a = new Audio()
-        a.src = url
-        a.addEventListener('loadedmetadata', () => {
-          const d = a.duration
-          if (Number.isFinite(d) && d > 0) {
-            setVoiceoverDuration(d)
-            setVoiceoverRange([0, d])
-            if (mergedDurationSec <= 0) setVoiceoverTimeline([0, tlEnd(d)])
-          }
-        })
-      } catch { /* ignore */ }
-      draftAudioSnapshotRef.current[draftId] = {
-        ...(draftAudioSnapshotRef.current[draftId] ?? {}),
-        voice: url,
-      }
+      const rawUrl = audio.voiceover.url
+      const name = audio.voiceover.name
+      void (async () => {
+        const url = await signMergedAudioUrl(rawUrl)
+        const ok = /^blob:|^data:/.test(url) || (await audioUrlLoads(url))
+        if (!ok) {
+          setVoiceoverName(null)
+          setVoiceoverUrl(null)
+          delete draftAudioSnapshotRef.current[draftId]?.voice
+          return
+        }
+        setVoiceoverName(name)
+        setVoiceoverUrl(url)
+        setVoiceoverTimeline([0, mergedDurationSec])
+        try {
+          const a = new Audio()
+          a.src = url
+          a.addEventListener('loadedmetadata', () => {
+            const d = a.duration
+            if (Number.isFinite(d) && d > 0) {
+              setVoiceoverDuration(d)
+              setVoiceoverRange([0, d])
+              if (mergedDurationSec <= 0) setVoiceoverTimeline([0, tlEnd(d)])
+            }
+          })
+        } catch { /* ignore */ }
+        draftAudioSnapshotRef.current[draftId] = {
+          ...(draftAudioSnapshotRef.current[draftId] ?? {}),
+          voice: url,
+        }
+      })()
     }
   }, [projectAudio, mergedDurationSec])
 
