@@ -489,6 +489,59 @@ async function signFramesUrl(storagePath: string | null | undefined): Promise<st
   return raw
 }
 
+/**
+ * The `merged-videos` bucket is PRIVATE, so the public URL persisted for a
+ * project's music / voiceover returns 400 and never loads. Resolve a long-lived
+ * signed URL so the saved soundtrack actually plays after a Final film is
+ * reopened as a Draft. Falls back to the raw value when it can't be signed.
+ */
+async function signMergedAudioUrl(storagePath: string | null | undefined): Promise<string> {
+  const raw = storagePath ?? ''
+  if (/^blob:|^data:/.test(raw)) return raw
+  if (/\/object\/sign\//.test(raw)) return raw
+  const marker = `/${MERGED_BUCKET}/`
+  const idx = raw.indexOf(marker)
+  let key: string | null = null
+  if (idx >= 0) key = raw.slice(idx + marker.length)
+  else if (!/^https?:|^blob:|^data:/.test(raw)) key = raw
+  if (!key) return raw
+  try {
+    const { data, error } = await supabase.storage
+      .from(MERGED_BUCKET)
+      .createSignedUrl(key, 60 * 60 * 24 * 365)
+    if (!error && data?.signedUrl) return data.signedUrl
+  } catch {
+    /* fall through */
+  }
+  return raw
+}
+
+/**
+ * Verify an audio URL actually loads. Used as the fallback guard so that a
+ * dead/missing soundtrack never leaves an empty chip + waveform strip behind.
+ */
+function audioUrlLoads(url: string, timeoutMs = 12_000): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false
+    const done = (ok: boolean) => {
+      if (settled) return
+      settled = true
+      resolve(ok)
+    }
+    try {
+      const a = new Audio()
+      a.preload = 'metadata'
+      a.addEventListener('loadedmetadata', () => done(Number.isFinite(a.duration)))
+      a.addEventListener('canplaythrough', () => done(true))
+      a.addEventListener('error', () => done(false))
+      a.src = url
+      setTimeout(() => done(false), timeoutMs)
+    } catch {
+      done(false)
+    }
+  })
+}
+
 type ModelChoice = {
   id: string
   label: string
