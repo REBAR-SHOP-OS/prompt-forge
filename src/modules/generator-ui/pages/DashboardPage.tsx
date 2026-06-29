@@ -639,6 +639,24 @@ function toImageToVideoModel(model: ModelChoice): ModelChoice {
   )
 }
 
+// Resolve the Text-to-Video counterpart of a chosen model. When the user
+// switches to Text-to-Video mode we want to stay inside the same provider
+// family (wan/ltx/local) instead of falling back to the first generic t2v
+// model in the list.
+function toTextToVideoModel(model: ModelChoice): ModelChoice {
+  if (model.supports.includes('t2v')) return model
+  const base = model.id.replace(/-i2v$/, '')
+  const sibling = MODEL_CHOICES.find(
+    (m) => m.providerKey === model.providerKey && m.supports.includes('t2v') && m.id.replace(/-t2v$/, '') === base,
+  )
+  return (
+    sibling ??
+    MODEL_CHOICES.find((m) => m.providerKey === model.providerKey && m.supports.includes('t2v')) ??
+    MODEL_CHOICES.find((m) => m.id === 'wan-t2v') ??
+    model
+  )
+}
+
 
 
 type LocalPlannerModelChoice = {
@@ -3654,6 +3672,20 @@ export default function DashboardPage() {
     if (chosen && chosen.supports.includes(needed)) return chosen
     return MODEL_CHOICES.find((m) => m.supports.includes(needed)) ?? MODEL_CHOICES[0]
   }, [selectedModelId, isTextToVideo])
+
+  // When the user switches between Text-to-Video and Image-to-Video, keep
+  // the selected provider family (Wan / local / Flow) by swapping to the
+  // counterpart model that supports the new mode.
+  useEffect(() => {
+    const current = MODEL_CHOICES.find((m) => m.id === selectedModelId)
+    if (!current) return
+    if (generationMode === 'text-to-video' && !current.supports.includes('t2v')) {
+      setSelectedModelId(toTextToVideoModel(current).id)
+    }
+    if (generationMode === 'image-to-video' && !current.supports.includes('i2v')) {
+      setSelectedModelId(toImageToVideoModel(current).id)
+    }
+  }, [generationMode])
 
   useEffect(() => {
     if (typeof window === 'undefined') return

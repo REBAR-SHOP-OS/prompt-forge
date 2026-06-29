@@ -1,25 +1,23 @@
-# Fix: pinned product persists after "Start Over"
+Problem
+--------
+`selectedModelId` is hardcoded to `'wan-i2v'` on init, but `selectedModel` (the effective model) falls back to the first Text-to-Video-compatible model when the user is in Text-to-Video mode because `wan-i2v` only supports `i2v`. The dropdown therefore shows "Google Veo 3 Fast" as selected instead of the Wan family.
 
-## Problem
-When the user clicks **Start Over**, the previously pinned product chip stays in the composer. This is a real bug: the reset routine clears almost every workspace value (prompt, character, music, voiceover, uploads, duration, etc.) but forgets the product.
+Goal
+----
+Ensure the Wan 2.7 family is the default in **both** tabs:
+- Image to Video → `wan-i2v`
+- Text to Video → `wan-t2v`
 
-## Root cause
-In `src/modules/generator-ui/pages/DashboardPage.tsx`, `resetWorkspace()` (lines ~8092–8175) resets composer state including `setSelectedCharacter(null)` — but never touches `selectedProduct` or `productMenuOpen`. Since the product lives only in in-memory React state (it is not persisted to storage), simply resetting it in this function fully fixes the issue. `handleStartOver()` calls `resetWorkspace()`, so the fix applies to both the Start Over button and the fresh-login auto-reset path.
+Plan
+----
+1. Add a `toTextToVideoModel(model)` helper (counterpart to the existing `toImageToVideoModel`). It finds the `t2v` sibling in the same provider family, falling back to `wan-t2v` as the last resort.
 
-## Change (single, minimal, safe)
-In `resetWorkspace()`, alongside the existing composer resets (right after `setSelectedCharacter(null)`), add:
+2. Add a `useEffect` that watches `generationMode` (or `isTextToVideo`). When the mode changes:
+   - If entering **Text to Video** and the current `selectedModelId` only supports `i2v`, replace it with the `t2v` counterpart via `toTextToVideoModel`.
+   - If entering **Image to Video** and the current `selectedModelId` only supports `t2v`, replace it with the `i2v` counterpart via `toImageToVideoModel`.
 
-```ts
-setSelectedProduct(null)
-setProductMenuOpen(false)
-```
+3. Keep the initial `useState('wan-i2v')` unchanged so the Image-to-Video tab starts with Wan I2V.
 
-## Why this is safe
-- Product state is in-memory only (no DB/storage writes), so clearing it has no side effects on saved Library projects or storage files.
-- It mirrors the existing `setSelectedCharacter(null)` handling, keeping reset behavior consistent.
-- No change to generation logic, identity anchors, or persisted drafts. Reopening a saved/draft project still restores its own product because that path sets `selectedProduct` explicitly.
+4. Verify the dropdown label and checkmark now correctly reflect the Wan family after tab switches.
 
-## Verification
-- Pin a product, click **Start Over** → the product chip disappears and the composer shows the empty "Start forging a prompt" state.
-- Confirm character, prompt, music, and voiceover still clear as before.
-- Typecheck remains clean.
+No other UI, auth, or backend changes required.
