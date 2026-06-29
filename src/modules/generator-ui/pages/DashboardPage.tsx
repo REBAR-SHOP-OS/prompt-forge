@@ -6049,7 +6049,8 @@ export default function DashboardPage() {
     setProjectAudio((prev) => {
       const persisted = readPersistedProjectAudio()
       const audio = audioToRestore ?? persisted[finalId] ?? persisted[draftId] ?? prev[finalId] ?? prev[draftId]
-      const { [finalId]: _dropAudio, ...rest } = prev
+      const base = { ...persisted, ...prev }
+      const { [finalId]: _dropAudio, ...rest } = base
       if (!hasProjectAudio(audio)) return _dropAudio === undefined ? prev : rest
       const next = { ...rest, [draftId]: audio }
       persistProjectAudio(next)
