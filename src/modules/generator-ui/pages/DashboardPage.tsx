@@ -1288,7 +1288,10 @@ export default function DashboardPage() {
           path = parts.join('/')
         }
       }
-      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 30)
+      // Audio/video preview sessions can stay open for a long time while the
+      // user edits cards. Short-lived signed URLs then expire while waveform UI
+      // still exists, causing intermittent silent playback/merge failures.
+      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60 * 24)
       if (!error && data?.signedUrl) return data.signedUrl
       return null
     } catch {
@@ -7668,6 +7671,8 @@ export default function DashboardPage() {
 
       const hasMusic = Boolean(musicUrl && musicRange[1] > musicRange[0])
       const hasVoiceover = Boolean(voiceoverUrl)
+      const mergeMusicUrl = hasMusic && musicUrl ? await resolveAudioPlaybackUrl(musicUrl) : null
+      const mergeVoiceoverUrl = hasVoiceover && voiceoverUrl ? await resolveAudioPlaybackUrl(voiceoverUrl) : null
       const mixedClipVolume = hasMusic
         ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
         : (hasVoiceover ? voiceoverClipVolume : 1)
@@ -7675,7 +7680,7 @@ export default function DashboardPage() {
         ? {
             music: hasMusic
               ? {
-                  src: musicUrl as string,
+                  src: mergeMusicUrl as string,
                   startSec: musicRange[0],
                   endSec: musicRange[1],
                   musicVolume,
@@ -7685,7 +7690,7 @@ export default function DashboardPage() {
               : undefined,
             voiceover: hasVoiceover
               ? {
-                  src: voiceoverUrl as string,
+                  src: mergeVoiceoverUrl as string,
                   volume: voiceoverVolume,
                   sourceStartSec: voiceoverRange[1] > voiceoverRange[0] ? voiceoverRange[0] : undefined,
                   sourceEndSec: voiceoverRange[1] > voiceoverRange[0] ? voiceoverRange[1] : undefined,
