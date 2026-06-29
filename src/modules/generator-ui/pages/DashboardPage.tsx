@@ -9810,15 +9810,23 @@ export default function DashboardPage() {
               setAiDialogMode('frame')
               return
             }
+            // Durably tag this image as a film cover so it can NEVER be turned
+            // into a standalone orphan draft (the draft builders skip category
+            // 'cover'). This does not rely on the async coverImages map.
+            const coverRow = { ...(row as UserImageItem), category: 'cover' }
+            void supabase
+              .from('generator_user_images')
+              .update({ category: 'cover' })
+              .eq('id', coverRow.id)
             // Pin this image as the film cover for the current scope.
             // Do NOT stage it as a Start frame, do NOT add it to the regular
             // pending source-image list (it's excluded via allCoverImageIds).
             setUserImages((prev) => {
-              if (prev.some((p) => p.id === row.id)) return prev
-              return [row as UserImageItem, ...prev]
+              if (prev.some((p) => p.id === coverRow.id)) return prev
+              return [coverRow as UserImageItem, ...prev]
             })
             setCoverImages((prev) => {
-              const next = { ...prev, [coverScopeKey]: row as UserImageItem }
+              const next = { ...prev, [coverScopeKey]: coverRow as UserImageItem }
               persistCoverImages(next)
               return next
             })
