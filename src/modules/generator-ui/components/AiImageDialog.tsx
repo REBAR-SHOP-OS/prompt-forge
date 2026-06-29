@@ -395,9 +395,16 @@ export default function AiImageDialog({
     try {
       let url: string | undefined
 
+      const themeDescriptor = selectedTheme
+        ? THEME_OPTIONS.find((t) => t.id === selectedTheme)?.descriptor
+        : null
+      const finalPrompt = themeDescriptor
+        ? `${prompt.trim()}, ${themeDescriptor}`
+        : prompt.trim()
+
       if (referenceImages.length > 0) {
         const { data, error: fnErr } = await supabase.functions.invoke('ai-image-edit', {
-          body: { prompt: prompt.trim(), imageUrls: referenceImages.map((r) => r.dataUrl), aspectRatio: aspect },
+          body: { prompt: finalPrompt, imageUrls: referenceImages.map((r) => r.dataUrl), aspectRatio: aspect },
         })
         if (fnErr) {
           const msg = await extractFnError(fnErr, 'Failed to generate image.')
@@ -406,7 +413,7 @@ export default function AiImageDialog({
         url = (data as { dataUrl?: string } | null)?.dataUrl
       } else {
         const { data, error: fnErr } = await supabase.functions.invoke('ai-image-generate', {
-          body: { prompt: prompt.trim(), aspectRatio: aspect },
+          body: { prompt: finalPrompt, aspectRatio: aspect },
         })
         if (fnErr) {
           const msg = await extractFnError(fnErr, 'Failed to generate image.')
