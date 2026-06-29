@@ -743,7 +743,7 @@ export default function AiImageDialog({
                     <button
                       type="button"
                       disabled={isLoading || referenceImages.length >= MAX_REFERENCE_IMAGES}
-                      className="absolute bottom-3 left-[15rem] inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                       title="Use one of your saved products as a reference"
                     >
                       <Package className="h-4 w-4" />
