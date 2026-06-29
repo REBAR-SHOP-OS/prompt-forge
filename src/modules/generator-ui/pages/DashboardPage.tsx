@@ -5874,12 +5874,10 @@ export default function DashboardPage() {
       persistProjectSourceImages(rest)
       return rest
     })
-    setProjectAudio((prev) => {
-      if (!(finalId in prev)) return prev
-      const { [finalId]: _dropAudio, ...rest } = prev
-      persistProjectAudio(rest)
-      return rest
-    })
+    // NOTE: the final film's audio is NOT removed here. It is moved atomically
+    // to the draft scope in step 8b below. Deleting it here (in a separate
+    // functional update) would race the move and leave the draft without any
+    // persisted soundtrack — the exact bug this avoids.
 
 
 
