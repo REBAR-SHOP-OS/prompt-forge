@@ -7638,6 +7638,11 @@ export default function DashboardPage() {
           return { id, durationMs: TRANSITION_DURATION[id] ?? 0 }
         })
 
+      const fallbackTimelineEnd = durationForDraftSources(
+        eligibleClips.filter((c): c is Extract<UnifiedClip, { kind: 'video' }> => c.kind === 'video').map((c) => c.job),
+        eligibleClips.filter((c): c is Extract<UnifiedClip, { kind: 'image' }> => c.kind === 'image').map((c) => c.image),
+        mergedDurationSec,
+      )
       let effectiveMusicRange = musicRange
       if (musicUrl && effectiveMusicRange[1] <= effectiveMusicRange[0]) {
         const probedDuration = musicDuration > 0 ? musicDuration : await probeAudioMetadataDuration(musicUrl, 3000)
@@ -7661,11 +7666,6 @@ export default function DashboardPage() {
           setVoiceoverRange(effectiveVoiceoverRange)
         }
       }
-      const fallbackTimelineEnd = durationForDraftSources(
-        eligibleClips.filter((c): c is Extract<UnifiedClip, { kind: 'video' }> => c.kind === 'video').map((c) => c.job),
-        eligibleClips.filter((c): c is Extract<UnifiedClip, { kind: 'image' }> => c.kind === 'image').map((c) => c.image),
-        mergedDurationSec,
-      )
       const effectiveMusicTimeline: [number, number] = musicTimeline[1] > musicTimeline[0]
         ? musicTimeline
         : [0, fallbackTimelineEnd]
