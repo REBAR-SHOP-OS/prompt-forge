@@ -61,6 +61,7 @@ import {
   Eye,
   EyeOff,
   Building2,
+  Languages,
   X
 } from 'lucide-react'
 import {
@@ -1027,6 +1028,72 @@ export default function DashboardPage() {
   // guarantees the automatic post-finalize check runs exactly once per film.
   const [copyrightChecking, setCopyrightChecking] = useState<Set<string>>(new Set())
   const copyrightAutoRunRef = useRef<Set<string>>(new Set())
+  // Optional translation of the copyright review so the user can read it in
+  // their own language. The original English result is kept intact.
+  const COPYRIGHT_TRANSLATE_LANGS: { code: string; label: string }[] = [
+    { code: 'fa', label: 'فارسی' },
+    { code: 'en', label: 'English' },
+    { code: 'ar', label: 'العربية' },
+    { code: 'tr', label: 'Türkçe' },
+    { code: 'es', label: 'Español' },
+    { code: 'fr', label: 'Français' },
+    { code: 'de', label: 'Deutsch' },
+    { code: 'ru', label: 'Русский' },
+    { code: 'zh', label: '中文' },
+  ]
+  const [copyrightLang, setCopyrightLang] = useState('fa')
+  const [copyrightTranslating, setCopyrightTranslating] = useState(false)
+  const [copyrightTranslated, setCopyrightTranslated] = useState<CopyrightResult | null>(null)
+  const [showCopyrightOriginal, setShowCopyrightOriginal] = useState(false)
+
+  // Serialize the result's prose into a single delimited blob, translate it in
+  // one call, then split it back into the structured shape.
+  const runCopyrightTranslate = async () => {
+    if (!copyrightResult) return
+    const r = copyrightResult
+    const parts: string[] = [
+      r.summary ?? '',
+      r.video?.reason ?? '',
+      ...(r.video?.risks ?? []),
+      '\u0000VIDEO_RISKS_END\u0000',
+      r.music?.reason ?? '',
+      ...(r.music?.risks ?? []),
+    ]
+    const videoRiskCount = r.video?.risks?.length ?? 0
+    const SEP = '\n\u241E\n'
+    const text = parts.join(SEP)
+    setCopyrightTranslating(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('translate-text', {
+        body: { text, targetLang: copyrightLang, style: 'plain' },
+      })
+      if (error) throw error
+      const translation: string | undefined = data?.translation
+      if (!translation) throw new Error(data?.error || 'No translation returned')
+      const segs = translation.split(SEP).map((s) => s.trim())
+      const endIdx = segs.findIndex((s) => s.includes('VIDEO_RISKS_END'))
+      const cut = endIdx >= 0 ? endIdx : 2 + videoRiskCount
+      const summary = segs[0] ?? ''
+      const videoReason = segs[1] ?? ''
+      const videoRisks = segs.slice(2, cut).filter(Boolean)
+      const rest = segs.slice(cut + (endIdx >= 0 ? 1 : 0)).filter((s) => !s.includes('VIDEO_RISKS_END'))
+      const musicReason = rest[0] ?? ''
+      const musicRisks = rest.slice(1).filter(Boolean)
+      setCopyrightTranslated({
+        verdict: r.verdict,
+        summary,
+        video: { status: r.video?.status ?? '', reason: videoReason, risks: videoRisks },
+        music: { status: r.music?.status ?? '', reason: musicReason, risks: musicRisks },
+      })
+      setShowCopyrightOriginal(false)
+      toast.success('Copyright review translated.')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Translation failed.')
+    } finally {
+      setCopyrightTranslating(false)
+    }
+  }
+
 
   // Download a film as a standard, broadly-compatible MP4. Final Film output
   // is WebM (MediaRecorder), which fails in QuickTime / WMP / mobile galleries.
@@ -1254,6 +1321,8 @@ export default function DashboardPage() {
     if (!silent) {
       setCopyrightJob(video)
       setCopyrightResult(null)
+      setCopyrightTranslated(null)
+      setShowCopyrightOriginal(false)
       setCopyrightError(null)
       setCopyrightLoading(true)
     }
@@ -12774,6 +12843,8 @@ export default function DashboardPage() {
           if (!o) {
             setCopyrightJob(null)
             setCopyrightResult(null)
+            setCopyrightTranslated(null)
+            setShowCopyrightOriginal(false)
             setCopyrightError(null)
             setCopyrightLoading(false)
           }
@@ -12817,6 +12888,10 @@ export default function DashboardPage() {
                     : status === 'not_provided'
                       ? { text: 'text-zinc-400', bg: 'bg-white/5 border-white/10', Icon: Shield, label: 'Not provided' }
                       : { text: 'text-amber-300', bg: 'bg-amber-300/10 border-amber-300/30', Icon: ShieldAlert, label: 'Caution' }
+              const hasTranslation = copyrightTranslated !== null
+              const showOriginal = showCopyrightOriginal || !hasTranslation
+              const display = showOriginal ? copyrightResult : (copyrightTranslated as CopyrightResult)
+              const rtl = !showOriginal && (copyrightLang === 'fa' || copyrightLang === 'ar')
               const Section = ({ title, section }: { title: string; section?: CopyrightSection }) => {
                 const t = tone(section?.status)
                 return (
@@ -12828,30 +12903,66 @@ export default function DashboardPage() {
                       </span>
                     </div>
                     {section?.reason ? (
-                      <p className="mt-2 text-xs leading-5 text-zinc-300">{section.reason}</p>
+                      <p className="mt-2 text-xs leading-5 text-zinc-300" dir={rtl ? 'rtl' : undefined}>{section.reason}</p>
                     ) : null}
                     {section?.risks && section.risks.length > 0 ? (
-                      <ul className="mt-2 list-disc space-y-0.5 pl-4 text-[11px] text-zinc-400">
+                      <ul className="mt-2 list-disc space-y-0.5 pl-4 text-[11px] text-zinc-400" dir={rtl ? 'rtl' : undefined}>
                         {section.risks.map((r, i) => <li key={i}>{r}</li>)}
                       </ul>
                     ) : null}
                   </div>
                 )
               }
-              const overall = tone(copyrightResult.verdict)
+              const overall = tone(display.verdict)
               return (
                 <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 p-2">
+                    <div className="flex items-center gap-2">
+                      <Languages className="h-4 w-4 text-violet-300" aria-hidden="true" />
+                      <select
+                        value={copyrightLang}
+                        onChange={(e) => setCopyrightLang(e.target.value)}
+                        className="rounded-md border border-white/10 bg-[#111214] px-2 py-1 text-xs text-zinc-200 outline-none"
+                      >
+                        {COPYRIGHT_TRANSLATE_LANGS.map((l) => (
+                          <option key={l.code} value={l.code}>{l.label}</option>
+                        ))}
+                      </select>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 border-white/10 px-2 text-xs"
+                        disabled={copyrightTranslating}
+                        onClick={() => { void runCopyrightTranslate() }}
+                      >
+                        {copyrightTranslating ? (
+                          <LoaderCircle className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                        ) : null}
+                        Translate
+                      </Button>
+                    </div>
+                    {hasTranslation ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-xs text-zinc-300"
+                        onClick={() => setShowCopyrightOriginal((v) => !v)}
+                      >
+                        {showOriginal ? 'نمایش ترجمه / Show translation' : 'Show original'}
+                      </Button>
+                    ) : null}
+                  </div>
                   <div className={`flex items-center gap-3 rounded-xl border p-3 ${overall.bg}`}>
                     <overall.Icon className={`h-6 w-6 ${overall.text}`} aria-hidden="true" />
                     <div>
                       <p className={`text-sm font-semibold ${overall.text}`}>{overall.label}</p>
-                      {copyrightResult.summary ? (
-                        <p className="text-xs leading-5 text-zinc-300">{copyrightResult.summary}</p>
+                      {display.summary ? (
+                        <p className="text-xs leading-5 text-zinc-300" dir={rtl ? 'rtl' : undefined}>{display.summary}</p>
                       ) : null}
                     </div>
                   </div>
-                  <Section title="Video" section={copyrightResult.video} />
-                  <Section title="Music & voiceover" section={copyrightResult.music} />
+                  <Section title="Video" section={display.video} />
+                  <Section title="Music & voiceover" section={display.music} />
                   <p className="text-[11px] leading-5 text-zinc-500">
                     This is an AI-based estimate, not legal advice or definitive song matching.
                   </p>
