@@ -588,14 +588,14 @@ export default function AiImageDialog({
                       <Palette className="h-4 w-4" />
                       <span>
                         {selectedTheme
-                          ? THEME_OPTIONS.find((t) => t.id === selectedTheme)?.faLabel ?? 'تم'
-                          : 'انتخاب تم'}
+                          ? THEME_OPTIONS.find((t) => t.id === selectedTheme)?.enLabel ?? 'Theme'
+                          : 'Pick a theme'}
                       </span>
                     </button>
                   </PopoverTrigger>
-                  <PopoverContent align="start" className="w-72 p-2" dir="rtl">
+                  <PopoverContent align="start" className="w-[24rem] p-3">
                     <div className="mb-2 flex items-center justify-between px-1">
-                      <span className="text-xs font-medium text-zinc-300">انتخاب تم تصویر</span>
+                      <span className="text-xs font-medium text-zinc-300">Choose a theme</span>
                       {selectedTheme ? (
                         <button
                           type="button"
@@ -605,11 +605,11 @@ export default function AiImageDialog({
                           }}
                           className="text-[11px] text-rose-300 hover:text-rose-200"
                         >
-                          حذف انتخاب
+                          Clear
                         </button>
                       ) : null}
                     </div>
-                    <div className="max-h-72 space-y-0.5 overflow-y-auto pr-1">
+                    <div className="grid max-h-80 grid-cols-2 gap-2 overflow-y-auto pr-1">
                       {THEME_OPTIONS.map((t) => {
                         const active = selectedTheme === t.id
                         return (
@@ -620,17 +620,30 @@ export default function AiImageDialog({
                               setSelectedTheme(t.id)
                               setThemeMenuOpen(false)
                             }}
-                            className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-right transition ${
+                            className={`group flex flex-col gap-1.5 rounded-xl border p-1.5 text-left transition ${
                               active
-                                ? 'bg-amber-300/15 text-amber-100'
-                                : 'text-zinc-200 hover:bg-white/[0.06]'
+                                ? 'border-amber-300/70 bg-amber-300/10'
+                                : 'border-white/10 hover:border-white/25 hover:bg-white/[0.05]'
                             }`}
                           >
-                            <span className="min-w-0">
-                              <span className="block truncate text-sm">{t.faLabel}</span>
-                              <span className="block truncate text-[11px] text-zinc-500">{t.enLabel}</span>
+                            <span className="relative block h-16 w-full overflow-hidden rounded-lg border border-white/10">
+                              <span
+                                className="absolute inset-0"
+                                style={{ background: t.swatch }}
+                              />
+                              {active ? (
+                                <span className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-black">
+                                  <Check className="h-3.5 w-3.5" />
+                                </span>
+                              ) : null}
                             </span>
-                            {active ? <Check className="h-4 w-4 shrink-0" /> : null}
+                            <span
+                              className={`block truncate text-xs font-medium ${
+                                active ? 'text-amber-100' : 'text-zinc-200'
+                              }`}
+                            >
+                              {t.enLabel}
+                            </span>
                           </button>
                         )
                       })}
