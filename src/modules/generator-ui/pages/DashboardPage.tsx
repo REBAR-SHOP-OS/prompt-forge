@@ -4020,6 +4020,8 @@ export default function DashboardPage() {
     for (const img of userImages) {
       // Reframe images (Product Ad "Choose from products") never become drafts.
       if ((img.category ?? 'general') === 'reframe') continue
+      // Film covers are project-scoped, never a standalone draft.
+      if ((img.category ?? 'general') === 'cover') continue
       if (finalClaimedImages.has(img.id)) continue
       if (coverImageIds.has(img.id)) continue
       const did = img.draft_group_id ? draftIdForGroupUuid(img.draft_group_id) : imageDraftMap[img.id]
