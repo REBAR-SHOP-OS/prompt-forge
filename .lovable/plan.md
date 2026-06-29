@@ -1,23 +1,40 @@
-Problem
---------
-`selectedModelId` is hardcoded to `'wan-i2v'` on init, but `selectedModel` (the effective model) falls back to the first Text-to-Video-compatible model when the user is in Text-to-Video mode because `wan-i2v` only supports `i2v`. The dropdown therefore shows "Google Veo 3 Fast" as selected instead of the Wan family.
+## Goal
+Make the generated film faithfully reproduce the selected product by ensuring the **real product photo** is what conditions Wan I2V, instead of relying on an AI re-draw that can substitute a look-alike.
 
-Goal
-----
-Ensure the Wan 2.7 family is the default in **both** tabs:
-- Image to Video → `wan-i2v`
-- Text to Video → `wan-t2v`
+## Root cause
+- Default model `wan-i2v` (Wan 2.7 Image-to-Video) only conditions on the **start frame**; the `referenceImageUrls` carrying `selectedProduct.url` are ignored by the provider.
+- The product reaches the model only via `bakeProductIntoFrame()` (an `ai-image-edit` redraw), which often produces a similar-but-not-exact product.
+- When the user pins a product but uploads **no start frame**, no product conditioning happens at all (main flow even errors "Add a Start or End image"; scenario flow queues a text-only first scene).
 
-Plan
-----
-1. Add a `toTextToVideoModel(model)` helper (counterpart to the existing `toImageToVideoModel`). It finds the `t2v` sibling in the same provider family, falling back to `wan-t2v` as the last resort.
+## Fix (frontend only — `src/modules/generator-ui/pages/DashboardPage.tsx`)
 
-2. Add a `useEffect` that watches `generationMode` (or `isTextToVideo`). When the mode changes:
-   - If entering **Text to Video** and the current `selectedModelId` only supports `i2v`, replace it with the `t2v` counterpart via `toTextToVideoModel`.
-   - If entering **Image to Video** and the current `selectedModelId` only supports `t2v`, replace it with the `i2v` counterpart via `toImageToVideoModel`.
+### 1. New helper `productStartFrame(product, ratio)`
+Returns a downloadable start-frame URL built **from the real product photo with no AI redraw**:
+- If the product image already matches the target aspect ratio closely, return `product.url` unchanged.
+- Otherwise call the existing `image-reframe` edge function to **pad/outpaint to the target ratio while keeping the original product pixels intact** (background extension only, product untouched), upload to `wan-frames`, return a signed URL.
+- Non-destructive: any failure falls back to returning `product.url` directly so generation never breaks.
 
-3. Keep the initial `useState('wan-i2v')` unchanged so the Image-to-Video tab starts with Wan I2V.
+### 2. `handleSubmit` (single + N-clip path)
+- When `selectedProduct` is set and there is **no** `readyStartFrame` and no character seed frame:
+  - Set `bakedStartFrameUrl = await productStartFrame(selectedProduct, effectiveRatio)`.
+  - Force `image-to-video` so the no-frame `else` branch ("Add a Start or End image") is no longer hit when a product is pinned.
+- When the user **did** upload a start frame, keep current `bakeProductIntoFrame` behavior (their chosen scene, product composited in).
 
-4. Verify the dropdown label and checkmark now correctly reflect the Wan family after tab switches.
+### 3. `submitScenesAsJobs` (Product scenario / multi-scene)
+- For scene 0, if `startFrameUrl` is still empty after the character-frame step and `selectedProduct` is set, seed it with `await productStartFrame(selectedProduct, effectiveRatio)`.
+- Keep the existing per-scene `bakeProductIntoFrame` so later scenes (seeded from previous frame) re-lock the exact product.
+- Ensure the scenario runs on an I2V model when a product is pinned (mirror the character `toImageToVideoModel` logic).
 
-No other UI, auth, or backend changes required.
+### 4. Regenerate path
+- When `selectedProduct` is set and the source clip has no `firstFrameUrl`, seed regeneration with `productStartFrame(...)` before the existing re-bake step.
+
+### 5. Keep Wan as default
+No model change. `referenceImageUrls` continue to be sent (harmless; used by Veo-family if ever selected), but correctness now comes from the real-photo start frame.
+
+## Validation
+- `tsgo` clean.
+- Playwright smoke against the live preview: pin the rebar product, no uploaded frame, submit a 5s clip; confirm the job is created with `firstFrameUrl` pointing at a `wan-frames` product image (network inspection) rather than failing or going text-only.
+- Confirm cloud/Veo flows and character-only flows are unaffected.
+
+## Out of scope
+No changes to generation UI layout, auth, storage policies, credit ledger, or edge-function business logic beyond using the existing `image-reframe`/`ai-image-edit` functions.
