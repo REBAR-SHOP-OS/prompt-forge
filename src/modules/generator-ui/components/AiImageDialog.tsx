@@ -791,6 +791,20 @@ export default function AiImageDialog({
                     )}
                   </PopoverContent>
                 </Popover>
+                <button
+                  type="button"
+                  onClick={() => void handleWritePrompt()}
+                  disabled={isLoading || isWritingPrompt}
+                  className="absolute bottom-3 right-3 inline-flex items-center gap-2 rounded-full border border-amber-300/40 bg-amber-300/10 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:border-amber-300/70 hover:bg-amber-300/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  title="Write a professional prompt from your references & theme"
+                >
+                  {isWritingPrompt ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Wand2 className="h-4 w-4" />
+                  )}
+                  <span>{isWritingPrompt ? 'Writing…' : 'Write prompt'}</span>
+                </button>
               </div>
               {referenceImages.length > 0 ? (
                 <div className="mt-3 space-y-2">
