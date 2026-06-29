@@ -2120,11 +2120,14 @@ export default function ProductAdDialog({
                           description={v.prompt}
                           preview={v.preview}
                           rtl={RTL_LANGS.includes(lang)}
+                          selected={active}
+                          onSelect={() => toggleTemplate(v.id)}
+                          selectLabel={tr(SELECT_LABEL, lang)}
+                          selectedLabel={tr(SELECTED_LABEL, lang)}
                         >
                           <button
                             type="button"
                             aria-pressed={active}
-                            onClick={() => toggleTemplate(v.id)}
                             className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                               active
                                 ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
