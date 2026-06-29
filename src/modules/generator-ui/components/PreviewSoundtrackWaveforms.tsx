@@ -81,6 +81,8 @@ export const PreviewSoundtrackWaveforms = forwardRef<
   const wantPlayingRef = useRef(false)
   const musicPlayPendingRef = useRef(false)
   const voicePlayPendingRef = useRef(false)
+  const musicSessionRef = useRef(0)
+  const voiceSessionRef = useRef(0)
   // Last film playhead (seconds) pushed from the player, so play() resumes at
   // the correct film position instead of resetting to 0.
   const lastFilmTimeRef = useRef(0)
@@ -191,13 +193,18 @@ export const PreviewSoundtrackWaveforms = forwardRef<
   useEffect(() => {
     const a = musicAudioRef.current
     if (!a) return
+    const session = ++musicSessionRef.current
     musicNativeReadyRef.current = false
+    musicPlayPendingRef.current = false
     const markReady = () => {
+      if (musicSessionRef.current !== session) return
       musicNativeReadyRef.current = true
       if (wantPlayingRef.current) applyMusic(lastFilmTimeRef.current, true)
     }
     const markErrored = () => {
+      if (musicSessionRef.current !== session) return
       musicNativeReadyRef.current = false
+      musicPlayPendingRef.current = false
       try { a.pause() } catch { /* ignore */ }
     }
     a.addEventListener('loadedmetadata', markReady)
@@ -206,6 +213,7 @@ export const PreviewSoundtrackWaveforms = forwardRef<
     a.addEventListener('error', markErrored)
     try { a.pause(); a.currentTime = 0; a.load() } catch { /* ignore */ }
     return () => {
+      musicSessionRef.current += 1
       a.removeEventListener('loadedmetadata', markReady)
       a.removeEventListener('canplay', markReady)
       a.removeEventListener('canplaythrough', markReady)
@@ -221,13 +229,18 @@ export const PreviewSoundtrackWaveforms = forwardRef<
   useEffect(() => {
     const a = voiceAudioRef.current
     if (!a) return
+    const session = ++voiceSessionRef.current
     voiceNativeReadyRef.current = false
+    voicePlayPendingRef.current = false
     const markReady = () => {
+      if (voiceSessionRef.current !== session) return
       voiceNativeReadyRef.current = true
       if (wantPlayingRef.current) applyVoice(lastFilmTimeRef.current, true)
     }
     const markErrored = () => {
+      if (voiceSessionRef.current !== session) return
       voiceNativeReadyRef.current = false
+      voicePlayPendingRef.current = false
       try { a.pause() } catch { /* ignore */ }
     }
     a.addEventListener('loadedmetadata', markReady)
@@ -236,6 +249,7 @@ export const PreviewSoundtrackWaveforms = forwardRef<
     a.addEventListener('error', markErrored)
     try { a.pause(); a.currentTime = 0; a.load() } catch { /* ignore */ }
     return () => {
+      voiceSessionRef.current += 1
       a.removeEventListener('loadedmetadata', markReady)
       a.removeEventListener('canplay', markReady)
       a.removeEventListener('canplaythrough', markReady)
@@ -261,22 +275,27 @@ export const PreviewSoundtrackWaveforms = forwardRef<
     audio: HTMLAudioElement | null,
     readyRef: MutableRefObject<boolean>,
     pendingRef: MutableRefObject<boolean>,
+    sessionRef: MutableRefObject<number>,
   ) => {
     if (!audio || !wantPlayingRef.current || !audio.paused || pendingRef.current) return
     if (!readyRef.current && audio.readyState < HTMLMediaElement.HAVE_METADATA) {
       return
     }
     pendingRef.current = true
+    const session = sessionRef.current
     const attempt = audio.play()
     if (attempt && typeof attempt.catch === 'function') {
       attempt.catch(() => {
+        if (sessionRef.current !== session) return
         // If the media element was not ready yet, keep the user's desired play
         // state and retry once native readiness events arrive. Autoplay blocks
         // still resolve naturally on the next user-initiated video play.
         if (audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) {
           readyRef.current = false
         }
-      }).finally(() => { pendingRef.current = false })
+      }).finally(() => {
+        if (sessionRef.current === session) pendingRef.current = false
+      })
     } else {
       pendingRef.current = false
     }
@@ -310,7 +329,7 @@ export const PreviewSoundtrackWaveforms = forwardRef<
       }
       setNativeTime(a, target, forceSeek, 0.35)
       if (m && musicReadyRef.current && (forceSeek || Math.abs(m.getCurrentTime() - target) > 0.25)) m.setTime(target)
-      playNative(a, musicNativeReadyRef, musicPlayPendingRef)
+      playNative(a, musicNativeReadyRef, musicPlayPendingRef, musicSessionRef)
     } catch { /* ignore */ }
   }
 
@@ -343,7 +362,7 @@ export const PreviewSoundtrackWaveforms = forwardRef<
       if (v && voiceReadyRef.current && (forceSeek || Math.abs(v.getCurrentTime() - target) > 0.25)) {
         v.setTime(Math.max(0, Math.min(target, dur > 0 ? dur - 0.05 : target)))
       }
-      playNative(a, voiceNativeReadyRef, voicePlayPendingRef)
+      playNative(a, voiceNativeReadyRef, voicePlayPendingRef, voiceSessionRef)
     } catch { /* ignore */ }
   }
 
