@@ -145,6 +145,7 @@ import { BusinessProfileDialog } from '@/modules/generator-ui/components/Busines
 import { TranscriptPanel } from '@/modules/generator-ui/components/TranscriptPanel'
 import { NarrationDialog } from '@/modules/generator-ui/components/NarrationDialog'
 import { extractNarration } from '@/modules/generator-ui/lib/narration'
+import { buildReferenceImageUrls, explicitCharacterAnchor } from '@/modules/generator-ui/lib/identityAnchors'
 import CharacterSheetDialog from '@/modules/generator-ui/components/CharacterSheetDialog'
 
 
@@ -2730,13 +2731,19 @@ export default function DashboardPage() {
   // Stable key for the current generation chain — used to persist/restore the
   // Continuity Mode state and scene memory per project chain.
   const continuityChainKey = selectedProjectId ?? activeDraftId ?? 'pending'
-  // Reload continuity state whenever the active chain changes, and re-hydrate
-  // the selected character from the persisted project anchor so the character
-  // survives project switches / reloads and keeps anchoring every new card.
+  // Reload continuity state whenever the active chain changes. Character usage
+  // is intentionally NOT re-hydrated from continuity: the visible Add/Character
+  // button is the only authority for whether character identity is applied.
   useEffect(() => {
     const loaded = loadContinuity(continuityChainKey)
-    setContinuity(loaded)
-    setSelectedCharacter(loaded.characterRef ?? null)
+    if (loaded.characterRef) {
+      const cleaned = { ...loaded, characterRef: null }
+      setContinuity(cleaned)
+      saveContinuity(continuityChainKey, cleaned)
+    } else {
+      setContinuity(loaded)
+    }
+    setSelectedCharacter(null)
   }, [continuityChainKey])
   // Persist + update helper.
   const updateContinuity = useCallback(
@@ -3572,19 +3579,17 @@ export default function DashboardPage() {
     durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135
   // Effective continuity state used across UI + generation paths.
   const continuityActive = continuity.enabled || isMultiCardDuration
-  // Project-wide character anchor: the character chosen for this project, falling
-  // back to the persisted continuity anchor. Sent on EVERY card so the character
-  // never drifts as the film continues.
-  const projectCharacter = selectedCharacter ?? continuity.characterRef ?? null
+  // Project-wide character anchor: only the character visibly chosen in the UI
+  // may affect generation. Do not fall back to continuity.characterRef; it can
+  // be stale and would inject a character while the UI says "Add character".
+  const projectCharacter = explicitCharacterAnchor(selectedCharacter)
   // Combined identity anchor for every card: character + product reference images.
   // Veo accepts up to 3 reference images; cap defensively. Sent on EVERY card so
   // both the character (logo on body) and the selected product stay identical.
-  const projectReferenceUrls: string[] | undefined = (() => {
-    const urls = [projectCharacter?.url, selectedProduct?.url].filter(
-      (u): u is string => typeof u === 'string' && u.length > 0,
-    )
-    return urls.length > 0 ? urls.slice(0, 3) : undefined
-  })()
+  const projectReferenceUrls: string[] | undefined = buildReferenceImageUrls([
+    projectCharacter?.url,
+    selectedProduct?.url,
+  ])
   // Auto-disable continuity if the chain no longer has a previous clip — but keep
   // it on for multi-card durations (their continuity is intra-batch, no prior clip needed).
   useEffect(() => {
@@ -6907,12 +6912,10 @@ export default function DashboardPage() {
     // EVERY card (card 1 included) in addition to the previous-frame seed so the
     // provider keeps the same character instead of drifting. Independent of the
     // text description prefix below.
-    const referenceImageUrls: string[] | undefined = (() => {
-      const urls = [continuityCharacterRef?.url, selectedProduct?.url].filter(
-        (u): u is string => typeof u === 'string' && u.length > 0,
-      )
-      return urls.length > 0 ? urls.slice(0, 3) : undefined
-    })()
+    const referenceImageUrls: string[] | undefined = buildReferenceImageUrls([
+      continuityCharacterRef?.url,
+      selectedProduct?.url,
+    ])
     let characterPrefixDesc: string | null = null
     if (continuityCharacterRef) {
       try {
@@ -7279,12 +7282,13 @@ export default function DashboardPage() {
         prompt,
         firstFrameUrl: regenFirstFrameUrl,
         lastFrameUrl,
-        // Preserve the same Character Sheet anchor the card was created with;
-        // fall back to the current project character so identity never drifts.
+        // Preserve only the references this card was originally created with.
+        // If none existed, only the currently selected product may be added;
+        // never fall back to a stale/current character when UI says Add character.
         referenceImageUrls:
           (job.reference_image_urls && job.reference_image_urls.length > 0
             ? job.reference_image_urls
-            : projectReferenceUrls) ?? undefined,
+            : buildReferenceImageUrls([selectedProduct?.url])) ?? undefined,
         durationSeconds,
         aspectRatio: ratio,
         draftGroupId,

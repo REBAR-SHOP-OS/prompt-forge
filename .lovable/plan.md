@@ -1,33 +1,51 @@
-# جدا کردن موزیک و صدای هر پروژه هنگام Reopen for edit
+## Plan
 
-## علت ریشه‌ای
-وقتی یک پروژه فاینال را «reopen for edit» می‌کنید (یا بین پروژه‌ها جابه‌جا می‌شوید)، تابع `restoreDraftAudio` در `DashboardPage.tsx` فقط زمانی state صدا را تنظیم می‌کند که آن پروژه صدای ذخیره‌شده داشته باشد:
+### Verified state
+- Active app route: `/` dashboard preview.
+- Relevant files checked:
+  - `src/modules/generator-ui/pages/DashboardPage.tsx`
+  - `src/modules/generator-ui/lib/continuity.ts`
+  - `src/modules/generator-ui/components/ProductAdDialog.tsx`
+  - `supabase/functions/jobs-create/index.ts`
+  - `supabase/functions/_shared/modules/job-orchestrator/service.ts`
 
-```text
-const audio = override ?? projectAudio[draftId]
-if (!audio) return   // ← اینجا state زندهٔ موزیک/ویس پاک نمی‌شود
+### Likely cause
+A stale persisted continuity anchor can still be applied even when the UI shows **Add character**.
+
+The risky logic is:
+```ts
+const projectCharacter = selectedCharacter ?? continuity.characterRef ?? null
 ```
+So if `selectedCharacter` is empty but `continuity.characterRef` still exists in local storage for that project/draft, generation can still:
+- prepend character identity prompt text,
+- create a character start frame,
+- send character reference images,
+- force image-to-video character behavior.
 
-در نتیجه اگر پروژه‌ای که باز می‌کنید موزیک/ویس مخصوص خودش را نداشته باشد، موزیک و صدای **پروژهٔ قبلی** که در state زنده باقی مانده، روی این پروژه نشان داده می‌شود. یعنی صدا بین پروژه‌ها نشت می‌کند و هر پروژه «مختص خودش» نیست.
+This matches the screenshot: the UI button says **Add character**, but the produced film contains a character.
 
-## هدف
-هر پروژهٔ فاینال که reopen می‌شود فقط باید موزیک و صدای ذخیره‌شدهٔ خودش را داشته باشد؛ اگر صدایی نداشت، باید کاملاً بدون صدا باز شود (نه صدای پروژهٔ قبلی).
+### Fix to apply
+1. Make the visible UI selection the only authority for character usage:
+   - Change generation logic so `projectCharacter` comes only from `selectedCharacter`.
+   - Do not silently fall back to `continuity.characterRef` during job creation.
 
-## تغییرات (همگی فرانت‌اند، فقط منطق resolve/نمایش صدا)
+2. Keep continuity memory safe:
+   - Continuity can still preserve scene/environment/style between cards.
+   - It must not apply character identity/reference unless the user explicitly selected a character in the current project UI.
 
-### ۱) ریست همیشگی صدا در `restoreDraftAudio`
-به‌جای `if (!audio) return`، در ابتدای تابع state زندهٔ صدا همیشه به حالت خالی برگردانده شود (music و voiceover: name/url/duration/range/timeline)، سپس فقط صدای متعلق به همین پروژه دوباره بارگذاری شود. اگر `audio` خالی بود، تابع بعد از پاک‌کردن خارج می‌شود تا هیچ صدای قدیمی باقی نماند.
+3. Add a defensive cleanup path:
+   - When loading a project/draft, if the selected character is absent, ensure any stale persisted `characterRef` is cleared for that chain.
+   - Existing remove buttons will continue clearing both UI state and continuity state.
 
-### ۲) اطمینان از فراخوانی در همهٔ مسیرهای باز کردن پروژه
-هر سه مسیر موجود — `reopenFinalAsDraft` (خط ~۶۱۱۳)، `resumeSelectedProject` (خط ~۶۲۸۷) و `openLibraryEntry` (خط ~۶۳۲۹) — از همان `restoreDraftAudio` اصلاح‌شده استفاده می‌کنند، پس با ریست داخلی، نشت صدا در همهٔ این مسیرها برطرف می‌شود.
+4. Fix regeneration safety:
+   - Regenerate should preserve a card’s original reference images only if that card really had them.
+   - It must not fall back to the current/stale project character when none is selected.
+   - Product reference can still be used when a product is selected.
 
-### ۳) بدون تغییر در منطق move صدا
-بخش «8b. Move the film's persisted audio over to the draft scope» دست‌نخورده می‌ماند؛ صدای واقعی هر پروژه همچنان درست منتقل و بازیابی می‌شود (مطابق اصلاح قبلی signed-URL). تنها تفاوت: نبودِ صدا دیگر باعث نمایش صدای پروژهٔ دیگر نمی‌شود.
+5. Add regression coverage:
+   - Add/update a targeted test for the character-selection helper logic so: `selectedCharacter = null` + stale `continuity.characterRef` results in **no character reference URLs**.
 
-## تأیید
-- پروژهٔ A با موزیک+ویس را reopen → صدای خودش نمایش داده و پخش می‌شود.
-- سپس پروژهٔ B بدون صدا را reopen → هیچ موزیک/ویسی نمایش داده نمی‌شود (نه صدای A).
-- اجرای typecheck.
-
-## دامنه
-فقط منطق ریست/بازیابی صدا در `src/modules/generator-ui/pages/DashboardPage.tsx`. بدون تغییر در auth، storage policy، schema یا بک‌اند.
+### Verification
+- Source check: confirm no generation path uses `continuity.characterRef` as a fallback character.
+- Test check: run the targeted regression test.
+- Manual expected behavior: if the button shows **Add character**, generated jobs must not include character prompt locks, character start frame generation, or character reference URLs. Product AD references should continue working.
