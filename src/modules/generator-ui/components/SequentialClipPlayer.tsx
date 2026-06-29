@@ -356,15 +356,11 @@ export function SequentialClipPlayer({
     if (!s) return
     // Re-align the soundtrack to where this clip starts in the overall film,
     // then start/stop it to match the player's play state.
-    const activeVideo = videoRef.current
-    const local = activeVideo && current?.kind === 'video'
-      ? activeVideo.currentTime || 0
-      : pendingLocalRef.current || 0
-    s.handleSeek(offsetBeforeIndex(index) + Math.max(0, local))
+    s.handleSeek(offsetBeforeIndex(index))
     if (isPlaying) s.play()
     else s.pause()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPlaying, musicUrl, voiceoverUrl, musicTimeline, voiceoverTimeline, current?.id, index, resolvedVideoSrc])
+  }, [isPlaying, musicUrl, voiceoverUrl, current?.id, index])
 
   function goNext() {
     if (clips.length === 0) return
@@ -457,9 +453,6 @@ export function SequentialClipPlayer({
                       prev[current.id] === el.duration ? prev : { ...prev, [current.id]: el.duration },
                     )
                   }
-                  const filmTime = offsetBeforeIndex(index) + (el.currentTime || 0)
-                  soundtrackRef.current?.handleSeek(filmTime)
-                  if (!el.paused && !el.ended) soundtrackRef.current?.play()
                 }}
                 onTimeUpdate={(e) => {
                   if (scrubbingRef.current) return
@@ -487,14 +480,8 @@ export function SequentialClipPlayer({
                     goNext()
                   }
                 }}
-                onPlay={(e) => {
-                  const filmTime = offsetBeforeIndex(index) + (e.currentTarget.currentTime || 0)
-                  soundtrackRef.current?.handleSeek(filmTime)
-                  soundtrackRef.current?.play()
-                  setIsPlaying(true)
-                }}
+                onPlay={() => setIsPlaying(true)}
                 onPause={() => {
-                  soundtrackRef.current?.pause()
                   // Only mirror pauses that came from the user (not from src swap).
                   if (videoRef.current && !videoRef.current.ended) {
                     // no-op: state is driven by isPlaying button

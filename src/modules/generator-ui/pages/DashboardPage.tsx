@@ -1288,10 +1288,7 @@ export default function DashboardPage() {
           path = parts.join('/')
         }
       }
-      // Audio/video preview sessions can stay open for a long time while the
-      // user edits cards. Short-lived signed URLs then expire while waveform UI
-      // still exists, causing intermittent silent playback/merge failures.
-      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60 * 24)
+      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 30)
       if (!error && data?.signedUrl) return data.signedUrl
       return null
     } catch {
@@ -2313,20 +2310,8 @@ export default function DashboardPage() {
 
   // Stores durable public URLs (copied into MERGED_BUCKET at finalize time) so
   // the finalized card can play + download the exact audio that project used.
-  type ProjectAudioTrack = {
-    url: string
-    name: string
-    range?: [number, number]
-    timeline?: [number, number]
-    volume?: number
-  }
-  type ProjectAudio = {
-    music?: ProjectAudioTrack
-    voiceover?: ProjectAudioTrack
-    clipVolume?: number
-    voiceoverClipVolume?: number
-    soundtrackMode?: 'music-only' | 'mix'
-  }
+  type ProjectAudioTrack = { url: string; name: string }
+  type ProjectAudio = { music?: ProjectAudioTrack; voiceover?: ProjectAudioTrack }
   const [projectAudio, setProjectAudio] = useState<Record<string, ProjectAudio>>({})
   const projectAudioKey = userId ? `project-audio:${userId}` : null
   useEffect(() => {
@@ -3180,6 +3165,7 @@ export default function DashboardPage() {
     const seen = draftAudioSnapshotRef.current[draftId] ?? {}
     const needMusic = Boolean(musicUrl) && seen.music !== musicUrl
     const needVoice = Boolean(voiceoverUrl) && seen.voice !== voiceoverUrl
+    if (!needMusic && !needVoice) return
     let cancelled = false
     const timer = setTimeout(async () => {
       const musicSnap = needMusic && musicUrl
@@ -3193,33 +3179,11 @@ export default function DashboardPage() {
         music: musicUrl ?? seen.music,
         voice: voiceoverUrl ?? seen.voice,
       }
+      if (!musicSnap && !voiceSnap) return
       setProjectAudio((prev) => {
         const entry: ProjectAudio = { ...(prev[draftId] ?? {}) }
-        if (musicUrl) {
-          entry.music = {
-            url: musicSnap ?? entry.music?.url ?? musicUrl,
-            name: musicName ?? entry.music?.name ?? 'Music',
-            range: musicRange,
-            timeline: musicTimeline,
-            volume: musicVolume,
-          }
-        } else {
-          delete entry.music
-        }
-        if (voiceoverUrl) {
-          entry.voiceover = {
-            url: voiceSnap ?? entry.voiceover?.url ?? voiceoverUrl,
-            name: voiceoverName ?? entry.voiceover?.name ?? 'Voiceover',
-            range: voiceoverRange,
-            timeline: voiceoverTimeline,
-            volume: voiceoverVolume,
-          }
-        } else {
-          delete entry.voiceover
-        }
-        entry.clipVolume = clipVolume
-        entry.voiceoverClipVolume = voiceoverClipVolume
-        entry.soundtrackMode = soundtrackMode
+        if (musicSnap) entry.music = { url: musicSnap, name: musicName ?? 'Music' }
+        if (voiceSnap) entry.voiceover = { url: voiceSnap, name: voiceoverName ?? 'Voiceover' }
         const next = { ...prev, [draftId]: entry }
         persistProjectAudio(next)
         return next
@@ -3227,7 +3191,7 @@ export default function DashboardPage() {
     }, 1200)
     return () => { cancelled = true; clearTimeout(timer) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, activeDraftId, musicUrl, voiceoverUrl, musicName, voiceoverName, musicRange, musicTimeline, musicVolume, voiceoverRange, voiceoverTimeline, voiceoverVolume, clipVolume, voiceoverClipVolume, soundtrackMode, persistAudioToStorage])
+  }, [userId, activeDraftId, musicUrl, voiceoverUrl, musicName, voiceoverName, persistAudioToStorage])
 
   useEffect(() => {
     setPendingEndAppends({})
@@ -4844,7 +4808,6 @@ export default function DashboardPage() {
     previewItem?.kind === 'video' &&
     (previewItem.job.id === '__final_film_preview__' ||
       previewItem.job.provider_key === 'merged' ||
-      previewItem.job.provider_key === 'final-film' ||
       (!!selectedProjectId && previewItem.job.id === selectedProjectId))
 
   // --- Schedule the Final Film to the Rebar OS Social Media Manager ---
@@ -6160,15 +6123,7 @@ export default function DashboardPage() {
     // contains the mixed soundtrack. Use that movie file as a one-shot restored
     // voiceover track so reopening a Final Film can never produce a silent draft.
     const recoveredFilmAudio: ProjectAudio | undefined = !movedAudio && video.video?.storage_path
-      ? {
-          // Last-resort recovery for older final films that do not have separate
-          // music/voice snapshots. This URL is the final movie's already-mixed
-          // audio, so source clip audio must be muted when previewing/re-rendering
-          // the reopened draft; otherwise the same soundtrack is layered twice
-          // and becomes echoey/noisy.
-          voiceover: { url: video.video.storage_path, name: 'Restored final film audio' },
-          voiceoverClipVolume: 0,
-        }
+      ? { voiceover: { url: video.video.storage_path, name: 'Restored final film audio' } }
       : undefined
     const audioToRestore = movedAudio ?? recoveredFilmAudio
     // Single atomic update: drop finalId AND write draftId in one pass so the
@@ -6217,26 +6172,12 @@ export default function DashboardPage() {
     // The film length may not be measured yet; fall back to the track's own
     // duration so the timeline window is valid even before the preview loads.
     const timelineDuration = mergedDurationSec > 0 ? mergedDurationSec : fallbackTimelineSec
-    const tlEnd = (d: number) => {
-      const trackDuration = Number.isFinite(d) && d > 0 ? d : 0
-      const end = timelineDuration > 0 ? timelineDuration : trackDuration
-      return end > 0 ? end : 1
-    }
+    const tlEnd = (d: number) => (timelineDuration > 0 ? timelineDuration : d)
     if (audio.music?.url) {
       const url = await resolveAudioPlaybackUrl(audio.music.url)
       setMusicName(audio.music.name)
       setMusicUrl(url)
-      setMusicVolume(typeof audio.music.volume === 'number' ? audio.music.volume : 1)
-      if (audio.soundtrackMode) setSoundtrackMode(audio.soundtrackMode)
-      if (typeof audio.clipVolume === 'number') setClipVolume(audio.clipVolume)
-      const restoredMusicRange = audio.music.range && audio.music.range[1] > audio.music.range[0]
-        ? audio.music.range
-        : null
-      const restoredMusicTimeline = audio.music.timeline && audio.music.timeline[1] > audio.music.timeline[0]
-        ? audio.music.timeline
-        : null
-      if (restoredMusicRange) setMusicRange(restoredMusicRange)
-      setMusicTimeline(restoredMusicTimeline ?? [0, tlEnd(fallbackTimelineSec)])
+      setMusicTimeline([0, tlEnd(fallbackTimelineSec || 0)])
       try {
         const a = new Audio()
         a.src = url
@@ -6244,8 +6185,8 @@ export default function DashboardPage() {
           const d = a.duration
           if (Number.isFinite(d) && d > 0) {
             setMusicDuration(d)
-            if (!restoredMusicRange) setMusicRange([0, d])
-            if (!restoredMusicTimeline) setMusicTimeline([0, tlEnd(d)])
+            setMusicRange([0, d])
+            setMusicTimeline([0, tlEnd(d)])
           }
         })
         a.load()
@@ -6259,18 +6200,7 @@ export default function DashboardPage() {
       const url = await resolveAudioPlaybackUrl(audio.voiceover.url)
       setVoiceoverName(audio.voiceover.name)
       setVoiceoverUrl(url)
-      setVoiceoverVolume(typeof audio.voiceover.volume === 'number' ? audio.voiceover.volume : 1)
-      const isRecoveredFinalMix = audio.voiceover.name === 'Restored final film audio'
-      if (typeof audio.voiceoverClipVolume === 'number') setVoiceoverClipVolume(audio.voiceoverClipVolume)
-      else if (isRecoveredFinalMix) setVoiceoverClipVolume(0)
-      const restoredVoiceRange = audio.voiceover.range && audio.voiceover.range[1] > audio.voiceover.range[0]
-        ? audio.voiceover.range
-        : null
-      const restoredVoiceTimeline = audio.voiceover.timeline && audio.voiceover.timeline[1] > audio.voiceover.timeline[0]
-        ? audio.voiceover.timeline
-        : null
-      if (restoredVoiceRange) setVoiceoverRange(restoredVoiceRange)
-      setVoiceoverTimeline(restoredVoiceTimeline ?? [0, tlEnd(fallbackTimelineSec)])
+      setVoiceoverTimeline([0, tlEnd(fallbackTimelineSec || 0)])
       try {
         const a = new Audio()
         a.src = url
@@ -6278,8 +6208,8 @@ export default function DashboardPage() {
           const d = a.duration
           if (Number.isFinite(d) && d > 0) {
             setVoiceoverDuration(d)
-            if (!restoredVoiceRange) setVoiceoverRange([0, d])
-            if (!restoredVoiceTimeline) setVoiceoverTimeline([0, tlEnd(d)])
+            setVoiceoverRange([0, d])
+            setVoiceoverTimeline([0, tlEnd(d)])
           }
         })
         a.load()
@@ -7734,8 +7664,6 @@ export default function DashboardPage() {
 
       const hasMusic = Boolean(musicUrl && musicRange[1] > musicRange[0])
       const hasVoiceover = Boolean(voiceoverUrl)
-      const mergeMusicUrl = hasMusic && musicUrl ? await resolveAudioPlaybackUrl(musicUrl) : null
-      const mergeVoiceoverUrl = hasVoiceover && voiceoverUrl ? await resolveAudioPlaybackUrl(voiceoverUrl) : null
       const mixedClipVolume = hasMusic
         ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
         : (hasVoiceover ? voiceoverClipVolume : 1)
@@ -7743,7 +7671,7 @@ export default function DashboardPage() {
         ? {
             music: hasMusic
               ? {
-                  src: mergeMusicUrl as string,
+                  src: musicUrl as string,
                   startSec: musicRange[0],
                   endSec: musicRange[1],
                   musicVolume,
@@ -7753,7 +7681,7 @@ export default function DashboardPage() {
               : undefined,
             voiceover: hasVoiceover
               ? {
-                  src: mergeVoiceoverUrl as string,
+                  src: voiceoverUrl as string,
                   volume: voiceoverVolume,
                   sourceStartSec: voiceoverRange[1] > voiceoverRange[0] ? voiceoverRange[0] : undefined,
                   sourceEndSec: voiceoverRange[1] > voiceoverRange[0] ? voiceoverRange[1] : undefined,
@@ -7993,17 +7921,14 @@ export default function DashboardPage() {
           })()
           if (hasMusic && musicUrl) {
             const url = await persistAudioToStorage(musicUrl, 'music', mergedId)
-            if (url) entry.music = { url, name: musicName ?? 'Music', range: musicRange, timeline: musicTimeline, volume: musicVolume }
+            if (url) entry.music = { url, name: musicName ?? 'Music' }
             else if (fallbackAudio?.music) entry.music = fallbackAudio.music
           }
           if (hasVoiceover && voiceoverUrl) {
             const url = await persistAudioToStorage(voiceoverUrl, 'voice', mergedId)
-            if (url) entry.voiceover = { url, name: voiceoverName ?? 'Voiceover', range: voiceoverRange, timeline: voiceoverTimeline, volume: voiceoverVolume }
+            if (url) entry.voiceover = { url, name: voiceoverName ?? 'Voiceover' }
             else if (fallbackAudio?.voiceover) entry.voiceover = fallbackAudio.voiceover
           }
-          entry.clipVolume = clipVolume
-          entry.voiceoverClipVolume = voiceoverClipVolume
-          entry.soundtrackMode = soundtrackMode
           if (entry.music || entry.voiceover) {
             setProjectAudio((prev) => {
               const nextAudio = { ...readPersistedProjectAudio(), ...prev, [mergedId]: entry }
@@ -10263,18 +10188,16 @@ export default function DashboardPage() {
                       controls
                       playsInline
                       preload="metadata"
-                      musicUrl={isMergedFinalPreview ? null : musicUrl}
+                      musicUrl={musicUrl}
                       musicRange={musicRange}
                       musicVolume={musicVolume}
                       musicTimeline={musicTimeline}
-                      voiceoverUrl={isMergedFinalPreview ? null : voiceoverUrl}
+                      voiceoverUrl={voiceoverUrl}
                       voiceoverVolume={voiceoverVolume}
                       voiceoverRange={voiceoverRange}
                       voiceoverTimeline={voiceoverTimeline}
                       clipVolume={
-                        isMergedFinalPreview
-                          ? 1
-                          : musicUrl && musicRange[1] > musicRange[0]
+                        musicUrl && musicRange[1] > musicRange[0]
                           ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
                           : (voiceoverUrl ? voiceoverClipVolume : 1)
                       }

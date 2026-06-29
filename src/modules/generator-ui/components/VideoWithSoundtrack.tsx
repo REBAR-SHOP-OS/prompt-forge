@@ -50,15 +50,6 @@ export function VideoWithSoundtrack({
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const soundtrackRef = useRef<PreviewSoundtrackHandle | null>(null)
 
-  const {
-    className: videoClassName,
-    style: videoStyle,
-    onLoadedMetadata,
-    ...restVideoProps
-  } = videoProps
-
-  const { url: resolvedSrc, loading: srcLoading } = usePlayableVideoUrl(src)
-
   // Apply clip volume / mute to the video element.
   useEffect(() => {
     const v = videoRef.current
@@ -68,10 +59,6 @@ export function VideoWithSoundtrack({
   }, [clipVolume])
 
   // Sync the soundtrack waveforms with the video's play / pause / seek / end.
-  // Important: the video element is mounted only after `resolvedSrc` finishes
-  // loading. The effect must therefore depend on the resolved URL/key, not only
-  // on soundtrack URLs, otherwise it can run against the spinner state and never
-  // attach listeners to the real <video>.
   useEffect(() => {
     const v = videoRef.current
     if (!v) return
@@ -90,12 +77,9 @@ export function VideoWithSoundtrack({
     v.addEventListener('seeked', onSeeked)
     v.addEventListener('timeupdate', onTimeUpdate)
 
-    // Push the current film position once the real video element exists, then
-    // mirror the current transport state. This covers both cases: video source
-    // resolved after the waveform mounted, or audio URL changed mid-playback.
-    soundtrackRef.current?.handleSeek(v.currentTime || 0)
+    // If video is already playing when this effect re-runs (e.g. soundtrack URL
+    // changed while playing), restart the audios in sync.
     if (!v.paused && !v.ended) soundtrackRef.current?.play()
-    else soundtrackRef.current?.pause()
 
     return () => {
       v.removeEventListener('play', onPlay)
@@ -105,7 +89,16 @@ export function VideoWithSoundtrack({
       v.removeEventListener('seeked', onSeeked)
       v.removeEventListener('timeupdate', onTimeUpdate)
     }
-  }, [musicUrl, voiceoverUrl, resolvedSrc, videoKey])
+  }, [musicUrl, voiceoverUrl])
+
+  const {
+    className: videoClassName,
+    style: videoStyle,
+    onLoadedMetadata,
+    ...restVideoProps
+  } = videoProps
+
+  const { url: resolvedSrc, loading: srcLoading } = usePlayableVideoUrl(src)
 
   return (
     <div className="flex w-full flex-col">
@@ -128,8 +121,6 @@ export function VideoWithSoundtrack({
               const el = e.currentTarget
               el.volume = Math.max(0, Math.min(1, clipVolume))
               el.muted = clipVolume <= 0
-              soundtrackRef.current?.handleSeek(el.currentTime || 0)
-              if (!el.paused && !el.ended) soundtrackRef.current?.play()
               onLoadedMetadata?.(e)
             }}
           />
