@@ -573,6 +573,70 @@ export default function AiImageDialog({
                   <ImagePlus className="h-4 w-4" />
                   <span>{referenceImages.length > 0 ? 'Add image' : 'Upload image'}</span>
                 </button>
+                <Popover open={themeMenuOpen} onOpenChange={setThemeMenuOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      disabled={isLoading}
+                      className={`absolute bottom-3 left-[8.5rem] inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                        selectedTheme
+                          ? 'border-amber-300/60 bg-amber-300/10 text-amber-100 hover:bg-amber-300/20'
+                          : 'border-white/10 bg-black/40 text-zinc-200 hover:border-white/20 hover:bg-white/[0.08] hover:text-white'
+                      }`}
+                      title="Pick a visual theme"
+                    >
+                      <Palette className="h-4 w-4" />
+                      <span>
+                        {selectedTheme
+                          ? THEME_OPTIONS.find((t) => t.id === selectedTheme)?.faLabel ?? 'تم'
+                          : 'انتخاب تم'}
+                      </span>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-72 p-2" dir="rtl">
+                    <div className="mb-2 flex items-center justify-between px-1">
+                      <span className="text-xs font-medium text-zinc-300">انتخاب تم تصویر</span>
+                      {selectedTheme ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedTheme(null)
+                            setThemeMenuOpen(false)
+                          }}
+                          className="text-[11px] text-rose-300 hover:text-rose-200"
+                        >
+                          حذف انتخاب
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="max-h-72 space-y-0.5 overflow-y-auto pr-1">
+                      {THEME_OPTIONS.map((t) => {
+                        const active = selectedTheme === t.id
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedTheme(t.id)
+                              setThemeMenuOpen(false)
+                            }}
+                            className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-right transition ${
+                              active
+                                ? 'bg-amber-300/15 text-amber-100'
+                                : 'text-zinc-200 hover:bg-white/[0.06]'
+                            }`}
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm">{t.faLabel}</span>
+                              <span className="block truncate text-[11px] text-zinc-500">{t.enLabel}</span>
+                            </span>
+                            {active ? <Check className="h-4 w-4 shrink-0" /> : null}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
               {referenceImages.length > 0 ? (
                 <div className="mt-3 space-y-2">
