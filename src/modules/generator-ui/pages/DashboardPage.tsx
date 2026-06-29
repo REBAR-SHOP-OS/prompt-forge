@@ -61,7 +61,6 @@ import {
   Eye,
   EyeOff,
   Building2,
-  Languages,
   X
 } from 'lucide-react'
 import {
@@ -1028,72 +1027,6 @@ export default function DashboardPage() {
   // guarantees the automatic post-finalize check runs exactly once per film.
   const [copyrightChecking, setCopyrightChecking] = useState<Set<string>>(new Set())
   const copyrightAutoRunRef = useRef<Set<string>>(new Set())
-  // Optional translation of the copyright review so the user can read it in
-  // their own language. The original English result is kept intact.
-  const COPYRIGHT_TRANSLATE_LANGS: { code: string; label: string }[] = [
-    { code: 'fa', label: 'فارسی' },
-    { code: 'en', label: 'English' },
-    { code: 'ar', label: 'العربية' },
-    { code: 'tr', label: 'Türkçe' },
-    { code: 'es', label: 'Español' },
-    { code: 'fr', label: 'Français' },
-    { code: 'de', label: 'Deutsch' },
-    { code: 'ru', label: 'Русский' },
-    { code: 'zh', label: '中文' },
-  ]
-  const [copyrightLang, setCopyrightLang] = useState('fa')
-  const [copyrightTranslating, setCopyrightTranslating] = useState(false)
-  const [copyrightTranslated, setCopyrightTranslated] = useState<CopyrightResult | null>(null)
-  const [showCopyrightOriginal, setShowCopyrightOriginal] = useState(false)
-
-  // Serialize the result's prose into a single delimited blob, translate it in
-  // one call, then split it back into the structured shape.
-  const runCopyrightTranslate = async () => {
-    if (!copyrightResult) return
-    const r = copyrightResult
-    const parts: string[] = [
-      r.summary ?? '',
-      r.video?.reason ?? '',
-      ...(r.video?.risks ?? []),
-      '\u0000VIDEO_RISKS_END\u0000',
-      r.music?.reason ?? '',
-      ...(r.music?.risks ?? []),
-    ]
-    const videoRiskCount = r.video?.risks?.length ?? 0
-    const SEP = '\n\u241E\n'
-    const text = parts.join(SEP)
-    setCopyrightTranslating(true)
-    try {
-      const { data, error } = await supabase.functions.invoke('translate-text', {
-        body: { text, targetLang: copyrightLang, style: 'plain' },
-      })
-      if (error) throw error
-      const translation: string | undefined = data?.translation
-      if (!translation) throw new Error(data?.error || 'No translation returned')
-      const segs = translation.split(SEP).map((s) => s.trim())
-      const endIdx = segs.findIndex((s) => s.includes('VIDEO_RISKS_END'))
-      const cut = endIdx >= 0 ? endIdx : 2 + videoRiskCount
-      const summary = segs[0] ?? ''
-      const videoReason = segs[1] ?? ''
-      const videoRisks = segs.slice(2, cut).filter(Boolean)
-      const rest = segs.slice(cut + (endIdx >= 0 ? 1 : 0)).filter((s) => !s.includes('VIDEO_RISKS_END'))
-      const musicReason = rest[0] ?? ''
-      const musicRisks = rest.slice(1).filter(Boolean)
-      setCopyrightTranslated({
-        verdict: r.verdict,
-        summary,
-        video: { status: r.video?.status ?? '', reason: videoReason, risks: videoRisks },
-        music: { status: r.music?.status ?? '', reason: musicReason, risks: musicRisks },
-      })
-      setShowCopyrightOriginal(false)
-      toast.success('Copyright review translated.')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Translation failed.')
-    } finally {
-      setCopyrightTranslating(false)
-    }
-  }
-
 
   // Download a film as a standard, broadly-compatible MP4. Final Film output
   // is WebM (MediaRecorder), which fails in QuickTime / WMP / mobile galleries.
@@ -1268,25 +1201,14 @@ export default function DashboardPage() {
     try {
       let bucket = MERGED_BUCKET
       let path = input
-      const storagePathRe = /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/
       if (/^https?:\/\//i.test(input)) {
         const parsed = new URL(input)
-        const m = parsed.pathname.match(storagePathRe)
+        const m = parsed.pathname.match(
+          /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/,
+        )
         if (!m) return input // unknown shape; let the function try as-is
         bucket = m[1]
         try { path = decodeURIComponent(m[2]) } catch { path = m[2] }
-      } else if (input.startsWith('/storage/v1/object/')) {
-        const m = input.match(storagePathRe)
-        if (m) {
-          bucket = m[1]
-          try { path = decodeURIComponent(m[2].split('?')[0]) } catch { path = m[2].split('?')[0] }
-        }
-      } else {
-        const parts = input.split('/').filter(Boolean)
-        if (parts.length > 1 && (parts[0] === MERGED_BUCKET || parts[0] === 'user-videos' || parts[0] === 'user-audio')) {
-          bucket = parts.shift() as string
-          path = parts.join('/')
-        }
       }
       const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 30)
       if (!error && data?.signedUrl) return data.signedUrl
@@ -1295,21 +1217,6 @@ export default function DashboardPage() {
       return null
     }
   }, [])
-
-  // Audio tracks are kept in private storage. Any persisted/raw storage URL must
-  // be freshly signed before it is handed to WaveSurfer, <audio>, fetch(), or the
-  // Final Film merger; otherwise the UI can show an audio row while playback and
-  // merge silently fail.
-  const resolveAudioPlaybackUrl = useCallback(async (input: string): Promise<string> => {
-    if (!input) return input
-    if (/^blob:|^data:/i.test(input)) return input
-    try {
-      const signed = await signStorageUrl(input)
-      return signed || input
-    } catch {
-      return input
-    }
-  }, [signStorageUrl])
 
   // Run a real AI copyright review of the final video + its music/voiceover.
   // `silent` runs the check in the background (no dialog) — used for the
@@ -1321,8 +1228,6 @@ export default function DashboardPage() {
     if (!silent) {
       setCopyrightJob(video)
       setCopyrightResult(null)
-      setCopyrightTranslated(null)
-      setShowCopyrightOriginal(false)
       setCopyrightError(null)
       setCopyrightLoading(true)
     }
@@ -2329,48 +2234,6 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
-  function hasProjectAudio(a: ProjectAudio | undefined): a is ProjectAudio {
-    return !!a && (!!a.music?.url || !!a.voiceover?.url)
-  }
-
-  function readPersistedProjectAudio(): Record<string, ProjectAudio> {
-    if (!projectAudioKey || typeof window === 'undefined') return {}
-    try {
-      const raw = window.localStorage.getItem(projectAudioKey)
-      const parsed = raw ? (JSON.parse(raw) as Record<string, ProjectAudio>) : {}
-      return parsed && typeof parsed === 'object' ? parsed : {}
-    } catch {
-      return {}
-    }
-  }
-
-  function latestProjectAudioMap(): Record<string, ProjectAudio> {
-    // localStorage wins because library-state hydration and previous writes may
-    // have updated it before React's projectAudio state has flushed.
-    return { ...projectAudio, ...readPersistedProjectAudio() }
-  }
-
-  function resolveProjectAudioForReopen(finalId: string, draftId: string): ProjectAudio | undefined {
-    const latest = latestProjectAudioMap()
-    return hasProjectAudio(latest[finalId]) ? latest[finalId]
-      : hasProjectAudio(latest[draftId]) ? latest[draftId]
-      : hasProjectAudio(projectAudio[finalId]) ? projectAudio[finalId]
-      : hasProjectAudio(projectAudio[draftId]) ? projectAudio[draftId]
-      : undefined
-  }
-
-  function durationFromProjectSources(jobs: JobDetail[], images: UserImageItem[]): number {
-    let total = 0
-    for (const job of jobs) {
-      const d = job.video?.duration ?? job.requested_duration ?? null
-      total += d && Number.isFinite(d) && d > 0 ? d : 8
-    }
-    for (const img of images) {
-      total += Math.max(1, Math.min(15, img.still_duration_seconds || 3))
-    }
-    return total > 0 ? Math.max(1, Math.round(total)) : 0
-  }
-
   // Persist a music/voiceover source into the public MERGED_BUCKET so it
   // survives refresh and project switches. Returns a durable public URL, or
   // null on failure. Reused by both Final Film finalize and Draft snapshots.
@@ -2385,8 +2248,7 @@ export default function DashboardPage() {
           ),
         ])
       try {
-        const fetchSrc = await resolveAudioPlaybackUrl(src)
-        const resp = await withTimeout(fetch(fetchSrc), 60_000)
+        const resp = await withTimeout(fetch(src), 60_000)
         if (!resp.ok) throw new Error(`fetch ${resp.status}`)
         const blob = await withTimeout(resp.blob(), 60_000)
         const ct = (blob.type || 'audio/mpeg').toLowerCase()
@@ -2411,7 +2273,7 @@ export default function DashboardPage() {
         return null
       }
     },
-    [userId, resolveAudioPlaybackUrl],
+    [userId],
   )
 
 
@@ -3591,10 +3453,7 @@ export default function DashboardPage() {
   // Project-wide character anchor: the character chosen for this project, falling
   // back to the persisted continuity anchor. Sent on EVERY card so the character
   // never drifts as the film continues.
-  // Only an explicitly-added character may be used in generation. We do NOT fall
-  // back to a stale continuity anchor — if the user hasn't added a character,
-  // no character is injected into any card.
-  const projectCharacter = selectedCharacter ?? null
+  const projectCharacter = selectedCharacter ?? continuity.characterRef ?? null
   // Combined identity anchor for every card: character + product reference images.
   // Veo accepts up to 3 reference images; cap defensively. Sent on EVERY card so
   // both the character (logo on body) and the selected product stay identical.
@@ -6114,38 +5973,22 @@ export default function DashboardPage() {
 
     // 8b. Move the film's persisted audio over to the draft scope so the
     // soundtrack stays attached and is restored into the live audio state.
-    // Resolve from a fallback chain: prefer the final film's snapshot, then the
-    // recovered draft's original soundtrack. This recovers audio for older or
-    // failed finalizations where only the draft-scoped copy survived.
-    const movedAudio = resolveProjectAudioForReopen(finalId, draftId)
-    // Recovery path for older/broken finalizations: if we never managed to
-    // persist separate music/voiceover tracks, the finalized movie itself still
-    // contains the mixed soundtrack. Use that movie file as a one-shot restored
-    // voiceover track so reopening a Final Film can never produce a silent draft.
-    const recoveredFilmAudio: ProjectAudio | undefined = !movedAudio && video.video?.storage_path
-      ? { voiceover: { url: video.video.storage_path, name: 'Restored final film audio' } }
-      : undefined
-    const audioToRestore = movedAudio ?? recoveredFilmAudio
     // Single atomic update: drop finalId AND write draftId in one pass so the
-    // draft always ends up with a durable soundtrack mapping. Never overwrite an
-    // existing draft soundtrack with nothing.
+    // draft always ends up with a durable soundtrack mapping.
+    const movedAudio = projectAudio[finalId]
     setProjectAudio((prev) => {
-      const persisted = readPersistedProjectAudio()
-      const audio = audioToRestore ?? persisted[finalId] ?? persisted[draftId] ?? prev[finalId] ?? prev[draftId]
-      const base = { ...persisted, ...prev }
-      const { [finalId]: _dropAudio, ...rest } = base
-      if (!hasProjectAudio(audio)) return _dropAudio === undefined ? prev : rest
+      const audio = prev[finalId] ?? movedAudio
+      if (!audio) return prev
+      const { [finalId]: _dropAudio, ...rest } = prev
       const next = { ...rest, [draftId]: audio }
       persistProjectAudio(next)
       return next
     })
 
     // 9. Activate edit mode on the draft.
-    ensureActiveDraftIdRef.current = draftId
     setActiveDraftId(draftId)
     persistActiveDraftId(draftId)
-    void restoreDraftAudio(draftId, audioToRestore, durationFromProjectSources(sourceJobs, sourceImages))
-
+    restoreDraftAudio(draftId, movedAudio)
     setSelectedProjectId(null)
     setPreviewVideoId(null)
     setLastMergedPreview(null)
@@ -6156,8 +5999,8 @@ export default function DashboardPage() {
   // Restore a draft's persisted music/voiceover back into the live audio state
   // so the soundtrack chip reappears and applies to the exact same film. Audio
   // durations are loaded so the music range is set to the full track.
-  const restoreDraftAudio = useCallback(async (draftId: string, override?: ProjectAudio, fallbackTimelineSec = 0) => {
-    const audio = override ?? latestProjectAudioMap()[draftId]
+  const restoreDraftAudio = useCallback((draftId: string, override?: ProjectAudio) => {
+    const audio = override ?? projectAudio[draftId]
     if (!audio) return
     // Always persist the restored audio under the draft scope so it survives
     // refresh / draft switch even when this was driven by an override (move).
@@ -6171,13 +6014,12 @@ export default function DashboardPage() {
     }
     // The film length may not be measured yet; fall back to the track's own
     // duration so the timeline window is valid even before the preview loads.
-    const timelineDuration = mergedDurationSec > 0 ? mergedDurationSec : fallbackTimelineSec
-    const tlEnd = (d: number) => (timelineDuration > 0 ? timelineDuration : d)
+    const tlEnd = (d: number) => (mergedDurationSec > 0 ? mergedDurationSec : d)
     if (audio.music?.url) {
-      const url = await resolveAudioPlaybackUrl(audio.music.url)
+      const url = audio.music.url
       setMusicName(audio.music.name)
       setMusicUrl(url)
-      setMusicTimeline([0, tlEnd(fallbackTimelineSec || 0)])
+      setMusicTimeline([0, mergedDurationSec])
       try {
         const a = new Audio()
         a.src = url
@@ -6186,10 +6028,9 @@ export default function DashboardPage() {
           if (Number.isFinite(d) && d > 0) {
             setMusicDuration(d)
             setMusicRange([0, d])
-            setMusicTimeline([0, tlEnd(d)])
+            if (mergedDurationSec <= 0) setMusicTimeline([0, tlEnd(d)])
           }
         })
-        a.load()
       } catch { /* ignore */ }
       draftAudioSnapshotRef.current[draftId] = {
         ...(draftAudioSnapshotRef.current[draftId] ?? {}),
@@ -6197,10 +6038,10 @@ export default function DashboardPage() {
       }
     }
     if (audio.voiceover?.url) {
-      const url = await resolveAudioPlaybackUrl(audio.voiceover.url)
+      const url = audio.voiceover.url
       setVoiceoverName(audio.voiceover.name)
       setVoiceoverUrl(url)
-      setVoiceoverTimeline([0, tlEnd(fallbackTimelineSec || 0)])
+      setVoiceoverTimeline([0, mergedDurationSec])
       try {
         const a = new Audio()
         a.src = url
@@ -6209,17 +6050,16 @@ export default function DashboardPage() {
           if (Number.isFinite(d) && d > 0) {
             setVoiceoverDuration(d)
             setVoiceoverRange([0, d])
-            setVoiceoverTimeline([0, tlEnd(d)])
+            if (mergedDurationSec <= 0) setVoiceoverTimeline([0, tlEnd(d)])
           }
         })
-        a.load()
       } catch { /* ignore */ }
       draftAudioSnapshotRef.current[draftId] = {
         ...(draftAudioSnapshotRef.current[draftId] ?? {}),
         voice: url,
       }
     }
-  }, [projectAudio, mergedDurationSec, resolveAudioPlaybackUrl])
+  }, [projectAudio, mergedDurationSec])
 
 
 
@@ -6298,7 +6138,7 @@ export default function DashboardPage() {
       ensureActiveDraftIdRef.current = pid
       setActiveDraftId(pid)
       persistActiveDraftId(pid)
-      void restoreDraftAudio(pid, undefined, durationFromProjectSources(videoSnapshot, imageSnapshot))
+      restoreDraftAudio(pid)
     } else {
       ensureActiveDraftIdRef.current = null
       setActiveDraftId(null)
@@ -6340,7 +6180,7 @@ export default function DashboardPage() {
 
       setSelectedProjectId(did)
       setPreviewVideoId(firstPlayableId)
-      void restoreDraftAudio(did, undefined, durationFromProjectSources(clips, images))
+      restoreDraftAudio(did)
       return
     }
 
@@ -7360,7 +7200,7 @@ export default function DashboardPage() {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
-    if (musicUrl?.startsWith('blob:')) {
+    if (musicUrl) {
       try { URL.revokeObjectURL(musicUrl) } catch { /* ignore */ }
     }
     const url = URL.createObjectURL(file)
@@ -7386,7 +7226,7 @@ export default function DashboardPage() {
   }
 
   function handleClearMusic() {
-    if (musicUrl?.startsWith('blob:')) {
+    if (musicUrl) {
       try { URL.revokeObjectURL(musicUrl) } catch { /* ignore */ }
     }
     setMusicName(null)
@@ -7398,7 +7238,7 @@ export default function DashboardPage() {
   }
 
   function handleVoiceoverAsSoundtrack(url: string, name: string) {
-    if (voiceoverUrl?.startsWith('blob:')) {
+    if (voiceoverUrl) {
       try { URL.revokeObjectURL(voiceoverUrl) } catch { /* ignore */ }
     }
     setVoiceoverUrl(url)
@@ -7414,7 +7254,7 @@ export default function DashboardPage() {
 
 
   function handleClearVoiceover() {
-    if (voiceoverUrl?.startsWith('blob:')) {
+    if (voiceoverUrl) {
       try { URL.revokeObjectURL(voiceoverUrl) } catch { /* ignore */ }
     }
     setVoiceoverUrl(null)
@@ -7910,31 +7750,18 @@ export default function DashboardPage() {
       if ((hasMusic || hasVoiceover) && userId) {
         try {
           const entry: ProjectAudio = {}
-          const audioFallbackKeys = [activeDraftId, selectedProjectId]
-            .filter((k): k is string => !!k && k.startsWith('draft-'))
-          const fallbackAudio = (() => {
-            const latest = latestProjectAudioMap()
-            for (const key of audioFallbackKeys) {
-              if (hasProjectAudio(latest[key])) return latest[key]
-            }
-            return undefined
-          })()
           if (hasMusic && musicUrl) {
             const url = await persistAudioToStorage(musicUrl, 'music', mergedId)
             if (url) entry.music = { url, name: musicName ?? 'Music' }
-            else if (fallbackAudio?.music) entry.music = fallbackAudio.music
           }
           if (hasVoiceover && voiceoverUrl) {
             const url = await persistAudioToStorage(voiceoverUrl, 'voice', mergedId)
             if (url) entry.voiceover = { url, name: voiceoverName ?? 'Voiceover' }
-            else if (fallbackAudio?.voiceover) entry.voiceover = fallbackAudio.voiceover
           }
           if (entry.music || entry.voiceover) {
-            setProjectAudio((prev) => {
-              const nextAudio = { ...readPersistedProjectAudio(), ...prev, [mergedId]: entry }
-              persistProjectAudio(nextAudio)
-              return nextAudio
-            })
+            const nextAudio = { ...projectAudio, [mergedId]: entry }
+            setProjectAudio(nextAudio)
+            persistProjectAudio(nextAudio)
           }
         } catch (err) {
           console.warn('[audio-snapshot] failed', err)
@@ -8121,7 +7948,7 @@ export default function DashboardPage() {
       try { window.localStorage.setItem(pendingStartPrependsKey, JSON.stringify({})) } catch { /* ignore */ }
     }
     // Tear down the soundtrack so the audio chip in the top tabs disappears.
-    if (musicUrl?.startsWith('blob:')) {
+    if (musicUrl) {
       try { URL.revokeObjectURL(musicUrl) } catch { /* ignore */ }
     }
     setMusicName(null)
@@ -8129,7 +7956,7 @@ export default function DashboardPage() {
     setMusicDuration(0)
     setMusicRange([0, 0])
     setIsMusicDialogOpen(false)
-    if (voiceoverUrl?.startsWith('blob:')) {
+    if (voiceoverUrl) {
       try { URL.revokeObjectURL(voiceoverUrl) } catch { /* ignore */ }
     }
     setVoiceoverUrl(null)
@@ -10188,19 +10015,7 @@ export default function DashboardPage() {
                       controls
                       playsInline
                       preload="metadata"
-                      musicUrl={musicUrl}
-                      musicRange={musicRange}
-                      musicVolume={musicVolume}
-                      musicTimeline={musicTimeline}
-                      voiceoverUrl={voiceoverUrl}
-                      voiceoverVolume={voiceoverVolume}
-                      voiceoverRange={voiceoverRange}
-                      voiceoverTimeline={voiceoverTimeline}
-                      clipVolume={
-                        musicUrl && musicRange[1] > musicRange[0]
-                          ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
-                          : (voiceoverUrl ? voiceoverClipVolume : 1)
-                      }
+                      clipVolume={1}
                     />
                     {contactActive && !isMergedFinalPreview ? (() => {
                       // Mirror the burn-in ratios from mergeVideos.ts so the live
@@ -12240,14 +12055,12 @@ export default function DashboardPage() {
                           e.preventDefault()
                           e.stopPropagation()
                           setSelectedCharacter(null)
-                          updateContinuity({ characterRef: null })
                         }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault()
                             e.stopPropagation()
                             setSelectedCharacter(null)
-                            updateContinuity({ characterRef: null })
                           }
                         }}
                         className="ml-0.5 grid h-5 w-5 place-items-center rounded-full text-fuchsia-200/80 transition hover:bg-fuchsia-500/20 hover:text-fuchsia-50"
@@ -12269,7 +12082,7 @@ export default function DashboardPage() {
                   {selectedCharacter ? (
                     <button
                       type="button"
-                      onClick={() => { setSelectedCharacter(null); updateContinuity({ characterRef: null }); setCharacterMenuOpen(false) }}
+                      onClick={() => { setSelectedCharacter(null); setCharacterMenuOpen(false) }}
                       className="text-[11px] text-zinc-400 hover:text-rose-300"
                     >
                       Remove
@@ -12848,8 +12661,6 @@ export default function DashboardPage() {
           if (!o) {
             setCopyrightJob(null)
             setCopyrightResult(null)
-            setCopyrightTranslated(null)
-            setShowCopyrightOriginal(false)
             setCopyrightError(null)
             setCopyrightLoading(false)
           }
@@ -12893,10 +12704,6 @@ export default function DashboardPage() {
                     : status === 'not_provided'
                       ? { text: 'text-zinc-400', bg: 'bg-white/5 border-white/10', Icon: Shield, label: 'Not provided' }
                       : { text: 'text-amber-300', bg: 'bg-amber-300/10 border-amber-300/30', Icon: ShieldAlert, label: 'Caution' }
-              const hasTranslation = copyrightTranslated !== null
-              const showOriginal = showCopyrightOriginal || !hasTranslation
-              const display = showOriginal ? copyrightResult : (copyrightTranslated as CopyrightResult)
-              const rtl = !showOriginal && (copyrightLang === 'fa' || copyrightLang === 'ar')
               const Section = ({ title, section }: { title: string; section?: CopyrightSection }) => {
                 const t = tone(section?.status)
                 return (
@@ -12908,66 +12715,30 @@ export default function DashboardPage() {
                       </span>
                     </div>
                     {section?.reason ? (
-                      <p className="mt-2 text-xs leading-5 text-zinc-300" dir={rtl ? 'rtl' : undefined}>{section.reason}</p>
+                      <p className="mt-2 text-xs leading-5 text-zinc-300">{section.reason}</p>
                     ) : null}
                     {section?.risks && section.risks.length > 0 ? (
-                      <ul className="mt-2 list-disc space-y-0.5 pl-4 text-[11px] text-zinc-400" dir={rtl ? 'rtl' : undefined}>
+                      <ul className="mt-2 list-disc space-y-0.5 pl-4 text-[11px] text-zinc-400">
                         {section.risks.map((r, i) => <li key={i}>{r}</li>)}
                       </ul>
                     ) : null}
                   </div>
                 )
               }
-              const overall = tone(display.verdict)
+              const overall = tone(copyrightResult.verdict)
               return (
                 <div className="space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 p-2">
-                    <div className="flex items-center gap-2">
-                      <Languages className="h-4 w-4 text-violet-300" aria-hidden="true" />
-                      <select
-                        value={copyrightLang}
-                        onChange={(e) => setCopyrightLang(e.target.value)}
-                        className="rounded-md border border-white/10 bg-[#111214] px-2 py-1 text-xs text-zinc-200 outline-none"
-                      >
-                        {COPYRIGHT_TRANSLATE_LANGS.map((l) => (
-                          <option key={l.code} value={l.code}>{l.label}</option>
-                        ))}
-                      </select>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 border-white/10 px-2 text-xs"
-                        disabled={copyrightTranslating}
-                        onClick={() => { void runCopyrightTranslate() }}
-                      >
-                        {copyrightTranslating ? (
-                          <LoaderCircle className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                        ) : null}
-                        Translate
-                      </Button>
-                    </div>
-                    {hasTranslation ? (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 px-2 text-xs text-zinc-300"
-                        onClick={() => setShowCopyrightOriginal((v) => !v)}
-                      >
-                        {showOriginal ? 'نمایش ترجمه / Show translation' : 'Show original'}
-                      </Button>
-                    ) : null}
-                  </div>
                   <div className={`flex items-center gap-3 rounded-xl border p-3 ${overall.bg}`}>
                     <overall.Icon className={`h-6 w-6 ${overall.text}`} aria-hidden="true" />
                     <div>
                       <p className={`text-sm font-semibold ${overall.text}`}>{overall.label}</p>
-                      {display.summary ? (
-                        <p className="text-xs leading-5 text-zinc-300" dir={rtl ? 'rtl' : undefined}>{display.summary}</p>
+                      {copyrightResult.summary ? (
+                        <p className="text-xs leading-5 text-zinc-300">{copyrightResult.summary}</p>
                       ) : null}
                     </div>
                   </div>
-                  <Section title="Video" section={display.video} />
-                  <Section title="Music & voiceover" section={display.music} />
+                  <Section title="Video" section={copyrightResult.video} />
+                  <Section title="Music & voiceover" section={copyrightResult.music} />
                   <p className="text-[11px] leading-5 text-zinc-500">
                     This is an AI-based estimate, not legal advice or definitive song matching.
                   </p>

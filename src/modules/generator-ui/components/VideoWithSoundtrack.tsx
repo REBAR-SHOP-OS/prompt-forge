@@ -91,12 +91,7 @@ export function VideoWithSoundtrack({
     }
   }, [musicUrl, voiceoverUrl])
 
-  const {
-    className: videoClassName,
-    style: videoStyle,
-    onLoadedMetadata,
-    ...restVideoProps
-  } = videoProps
+  const { className: videoClassName, style: videoStyle, ...restVideoProps } = videoProps
 
   const { url: resolvedSrc, loading: srcLoading } = usePlayableVideoUrl(src)
 
@@ -121,7 +116,6 @@ export function VideoWithSoundtrack({
               const el = e.currentTarget
               el.volume = Math.max(0, Math.min(1, clipVolume))
               el.muted = clipVolume <= 0
-              onLoadedMetadata?.(e)
             }}
           />
         )}

@@ -71,8 +71,6 @@ export const PreviewSoundtrackWaveforms = forwardRef<
   const voiceContainerRef = useRef<HTMLDivElement | null>(null)
   const musicWsRef = useRef<WaveSurfer | null>(null)
   const voiceWsRef = useRef<WaveSurfer | null>(null)
-  const musicAudioRef = useRef<HTMLAudioElement | null>(null)
-  const voiceAudioRef = useRef<HTMLAudioElement | null>(null)
   const musicReadyRef = useRef(false)
   const voiceReadyRef = useRef(false)
   const wantPlayingRef = useRef(false)
@@ -117,13 +115,12 @@ export const PreviewSoundtrackWaveforms = forwardRef<
 
     const onReady = () => {
       musicReadyRef.current = true
-      // WaveSurfer is display-only in the preview. Native <audio> below is the
-      // actual playback engine because it handles signed/private/video-container
-      // URLs more reliably than WaveSurfer's fetch/decode path.
-      ws.setVolume(0)
+      ws.setVolume(Math.max(0, Math.min(1, musicVolume)))
       const start = rangeRef.current?.[0] ?? 0
       try { ws.setTime(start) } catch { /* ignore */ }
-      if (wantPlayingRef.current) applyMusic(lastFilmTimeRef.current, true)
+      if (wantPlayingRef.current) {
+        ws.play().catch(() => { /* autoplay block — ignore */ })
+      }
     }
     ws.on('ready', onReady)
 
@@ -158,8 +155,10 @@ export const PreviewSoundtrackWaveforms = forwardRef<
 
     const onReady = () => {
       voiceReadyRef.current = true
-      ws.setVolume(0)
-      if (wantPlayingRef.current) applyVoice(lastFilmTimeRef.current, true)
+      ws.setVolume(Math.max(0, Math.min(1, voiceoverVolume)))
+      if (wantPlayingRef.current) {
+        ws.play().catch(() => { /* ignore */ })
+      }
     }
     ws.on('ready', onReady)
 
@@ -174,56 +173,28 @@ export const PreviewSoundtrackWaveforms = forwardRef<
   // Live volume updates.
   useEffect(() => {
     const ws = musicWsRef.current
-    if (ws && musicReadyRef.current) ws.setVolume(0)
-    if (musicAudioRef.current) musicAudioRef.current.volume = Math.max(0, Math.min(1, musicVolume))
+    if (ws && musicReadyRef.current) ws.setVolume(Math.max(0, Math.min(1, musicVolume)))
   }, [musicVolume])
   useEffect(() => {
     const ws = voiceWsRef.current
-    if (ws && voiceReadyRef.current) ws.setVolume(0)
-    if (voiceAudioRef.current) voiceAudioRef.current.volume = Math.max(0, Math.min(1, voiceoverVolume))
+    if (ws && voiceReadyRef.current) ws.setVolume(Math.max(0, Math.min(1, voiceoverVolume)))
   }, [voiceoverVolume])
-
-  useEffect(() => {
-    const a = musicAudioRef.current
-    if (!a) return
-    try { a.pause(); a.load() } catch { /* ignore */ }
-  }, [musicUrl])
-
-  useEffect(() => {
-    const a = voiceAudioRef.current
-    if (!a) return
-    try { a.pause(); a.load() } catch { /* ignore */ }
-  }, [voiceoverUrl])
-
-  const setNativeTime = (audio: HTMLAudioElement | null, t: number, forceSeek: boolean) => {
-    if (!audio || !Number.isFinite(t)) return
-    const dur = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : Number.POSITIVE_INFINITY
-    const target = Math.max(0, Math.min(t, Number.isFinite(dur) ? Math.max(0, dur - 0.05) : t))
-    if (forceSeek || Math.abs((audio.currentTime || 0) - target) > 0.25) {
-      try { audio.currentTime = target } catch { /* ignore */ }
-    }
-  }
-
-  const playNative = (audio: HTMLAudioElement | null) => {
-    if (!audio || !wantPlayingRef.current || !audio.paused) return
-    audio.play().catch(() => { /* autoplay block — ignore */ })
-  }
 
   // Apply music gating + source mapping for a given video playhead.
   const applyMusic = (t: number, forceSeek: boolean) => {
     const m = musicWsRef.current
-    const a = musicAudioRef.current
+    if (!m || !musicReadyRef.current) return
     const tl = musicTimelineRef.current
     const tlStart = tl?.[0] ?? 0
     const tlEnd = tl && tl[1] > tl[0] ? tl[1] : Number.POSITIVE_INFINITY
     const inWin = t >= tlStart && t < tlEnd
     try {
       if (!inWin) {
-        if (a) { a.volume = 0; a.pause() }
-        if (m?.isPlaying()) m.pause()
+        m.setVolume(0)
+        if (m.isPlaying()) m.pause()
         return
       }
-      if (a) a.volume = Math.max(0, Math.min(1, musicVolumeRef.current))
+      m.setVolume(Math.max(0, Math.min(1, musicVolumeRef.current)))
       const range = rangeRef.current
       const rel = t - tlStart
       let target: number
@@ -232,45 +203,43 @@ export const PreviewSoundtrackWaveforms = forwardRef<
         const win = end - start
         target = start + (rel % win)
       } else {
-        const dur = m && musicReadyRef.current ? m.getDuration() : (a?.duration ?? 0)
+        const dur = m.getDuration()
         target = dur > 0 ? rel % dur : rel
       }
-      setNativeTime(a, target, forceSeek)
-      if (m && musicReadyRef.current && (forceSeek || Math.abs(m.getCurrentTime() - target) > 0.25)) m.setTime(target)
-      playNative(a)
+      if (forceSeek || Math.abs(m.getCurrentTime() - target) > 0.25) m.setTime(target)
+      if (wantPlayingRef.current && !m.isPlaying()) m.play().catch(() => { /* ignore */ })
     } catch { /* ignore */ }
   }
 
   // Apply voiceover gating + source mapping for a given video playhead.
   const applyVoice = (t: number, forceSeek: boolean) => {
     const v = voiceWsRef.current
-    const a = voiceAudioRef.current
+    if (!v || !voiceReadyRef.current) return
     const tl = voiceTimelineRef.current
     const tlStart = tl?.[0] ?? 0
     const tlEnd = tl && tl[1] > tl[0] ? tl[1] : Number.POSITIVE_INFINITY
     const inWin = t >= tlStart && t < tlEnd
     try {
       if (!inWin) {
-        if (a) { a.volume = 0; a.pause() }
-        if (v?.isPlaying()) v.pause()
+        v.setVolume(0)
+        if (v.isPlaying()) v.pause()
         return
       }
       const range = voiceRangeRef.current
-      const dur = v && voiceReadyRef.current ? v.getDuration() : (a?.duration ?? 0)
+      const dur = v.getDuration()
       const srcStart = range && range[1] > range[0] ? range[0] : 0
       const srcEnd = range && range[1] > range[0] ? range[1] : (dur > 0 ? dur : Number.POSITIVE_INFINITY)
       const target = srcStart + (t - tlStart)
       if (target >= srcEnd) {
-        if (a) { a.volume = 0; a.pause() }
-        if (v?.isPlaying()) v.pause()
+        v.setVolume(0)
+        if (v.isPlaying()) v.pause()
         return
       }
-      if (a) a.volume = Math.max(0, Math.min(1, voiceVolumeRef.current))
-      setNativeTime(a, target, forceSeek)
-      if (v && voiceReadyRef.current && (forceSeek || Math.abs(v.getCurrentTime() - target) > 0.25)) {
+      v.setVolume(Math.max(0, Math.min(1, voiceVolumeRef.current)))
+      if (forceSeek || Math.abs(v.getCurrentTime() - target) > 0.25) {
         v.setTime(Math.max(0, Math.min(target, dur > 0 ? dur - 0.05 : target)))
       }
-      playNative(a)
+      if (wantPlayingRef.current && !v.isPlaying()) v.play().catch(() => { /* ignore */ })
     } catch { /* ignore */ }
   }
 
@@ -285,8 +254,6 @@ export const PreviewSoundtrackWaveforms = forwardRef<
       wantPlayingRef.current = false
       try { musicWsRef.current?.pause() } catch { /* ignore */ }
       try { voiceWsRef.current?.pause() } catch { /* ignore */ }
-      try { musicAudioRef.current?.pause() } catch { /* ignore */ }
-      try { voiceAudioRef.current?.pause() } catch { /* ignore */ }
     },
     handleSeek: (videoCurrentTime: number) => {
       const t = Math.max(0, videoCurrentTime)
@@ -306,8 +273,6 @@ export const PreviewSoundtrackWaveforms = forwardRef<
 
   return (
     <div className="flex flex-col gap-2 border-t border-white/10 px-4 py-3">
-      {musicUrl ? <audio ref={musicAudioRef} src={musicUrl} preload="auto" className="hidden" /> : null}
-      {voiceoverUrl ? <audio ref={voiceAudioRef} src={voiceoverUrl} preload="auto" className="hidden" /> : null}
       {musicUrl ? (
         <div className="flex items-center gap-2">
           <span
