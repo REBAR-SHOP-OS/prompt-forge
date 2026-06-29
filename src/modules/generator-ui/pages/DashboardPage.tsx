@@ -2303,61 +2303,6 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
-  function durationForDraftSources(jobs: JobDetail[], images: UserImageItem[], fallback?: number | null): number {
-    let total = 0
-    for (const job of jobs) {
-      const d = job.video?.duration ?? job.requested_duration ?? null
-      total += d && Number.isFinite(d) && d > 0 ? d : 8
-    }
-    for (const image of images) {
-      total += Math.max(1, Math.min(15, image.still_duration_seconds || 3))
-    }
-    if (total <= 0 && fallback && Number.isFinite(fallback) && fallback > 0) total = fallback
-    return Math.max(1, Math.round(total || 1))
-  }
-
-  function probeAudioMetadataDuration(url: string, timeoutMs = 5000): Promise<number | null> {
-    return new Promise((resolve) => {
-      try {
-        const audio = new Audio()
-        let settled = false
-        const finish = (duration: number | null) => {
-          if (settled) return
-          settled = true
-          clearTimeout(timer)
-          audio.removeEventListener('loadedmetadata', handleReady)
-          audio.removeEventListener('durationchange', handleReady)
-          audio.removeEventListener('canplay', handleReady)
-          audio.removeEventListener('error', handleError)
-          try { audio.removeAttribute('src'); audio.load() } catch { /* ignore */ }
-          resolve(duration)
-        }
-        const handleReady = () => {
-          const duration = audio.duration
-          if (Number.isFinite(duration) && duration > 0) finish(duration)
-        }
-        const handleError = () => finish(null)
-        const timer = setTimeout(() => finish(null), timeoutMs)
-        audio.preload = 'metadata'
-        audio.crossOrigin = 'anonymous'
-        audio.addEventListener('loadedmetadata', handleReady)
-        audio.addEventListener('durationchange', handleReady)
-        audio.addEventListener('canplay', handleReady)
-        audio.addEventListener('error', handleError)
-        audio.src = url
-        try { audio.load() } catch { /* ignore */ }
-      } catch {
-        resolve(null)
-      }
-    })
-  }
-
-  function loadAudioMetadataDuration(url: string, onDuration: (duration: number) => void) {
-    void probeAudioMetadataDuration(url).then((duration) => {
-      if (duration && Number.isFinite(duration) && duration > 0) onDuration(duration)
-    })
-  }
-
   // Persist a music/voiceover source into the public MERGED_BUCKET so it
   // survives refresh and project switches. Returns a durable public URL, or
   // null on failure. Reused by both Final Film finalize and Draft snapshots.
@@ -6100,7 +6045,6 @@ export default function DashboardPage() {
     // Single atomic update: drop finalId AND write draftId in one pass so the
     // draft always ends up with a durable soundtrack mapping.
     const movedAudio = projectAudio[finalId]
-    const draftTimelineSec = durationForDraftSources(sourceJobs, sourceImages, video.video?.duration ?? video.requested_duration ?? null)
     setProjectAudio((prev) => {
       const audio = prev[finalId] ?? movedAudio
       if (!audio) return prev
@@ -6111,10 +6055,9 @@ export default function DashboardPage() {
     })
 
     // 9. Activate edit mode on the draft.
-    ensureActiveDraftIdRef.current = draftId
     setActiveDraftId(draftId)
     persistActiveDraftId(draftId)
-    restoreDraftAudio(draftId, movedAudio, draftTimelineSec)
+    restoreDraftAudio(draftId, movedAudio)
     setSelectedProjectId(null)
     setPreviewVideoId(null)
     setLastMergedPreview(null)
@@ -6125,7 +6068,7 @@ export default function DashboardPage() {
   // Restore a draft's persisted music/voiceover back into the live audio state
   // so the soundtrack chip reappears and applies to the exact same film. Audio
   // durations are loaded so the music range is set to the full track.
-  const restoreDraftAudio = useCallback((draftId: string, override?: ProjectAudio, timelineDurationSec?: number) => {
+  const restoreDraftAudio = useCallback((draftId: string, override?: ProjectAudio) => {
     const audio = override ?? projectAudio[draftId]
     if (!audio) return
     // Always persist the restored audio under the draft scope so it survives
@@ -6138,62 +6081,52 @@ export default function DashboardPage() {
         return next
       })
     }
-    // Use the draft's own source duration when available. During Reopen, the
-    // live preview may not have recomputed `mergedDurationSec` yet; using that
-    // stale/empty value creates a visible chip with a non-audible timeline.
-    const knownTimelineEnd = Math.max(
-      1,
-      Math.round(
-        timelineDurationSec && Number.isFinite(timelineDurationSec) && timelineDurationSec > 0
-          ? timelineDurationSec
-          : mergedDurationSec,
-      ),
-    )
+    // The film length may not be measured yet; fall back to the track's own
+    // duration so the timeline window is valid even before the preview loads.
+    const tlEnd = (d: number) => (mergedDurationSec > 0 ? mergedDurationSec : d)
     if (audio.music?.url) {
       const url = audio.music.url
       setMusicName(audio.music.name)
       setMusicUrl(url)
-      setMusicDuration(0)
-      setMusicRange([0, 0])
-      setMusicTimeline([0, knownTimelineEnd])
-      loadAudioMetadataDuration(url, (d) => {
-        setMusicDuration(d)
-        setMusicRange([0, d])
-        setMusicTimeline((current) => current[1] > current[0] ? current : [0, knownTimelineEnd])
-      })
+      setMusicTimeline([0, mergedDurationSec])
+      try {
+        const a = new Audio()
+        a.src = url
+        a.addEventListener('loadedmetadata', () => {
+          const d = a.duration
+          if (Number.isFinite(d) && d > 0) {
+            setMusicDuration(d)
+            setMusicRange([0, d])
+            if (mergedDurationSec <= 0) setMusicTimeline([0, tlEnd(d)])
+          }
+        })
+      } catch { /* ignore */ }
       draftAudioSnapshotRef.current[draftId] = {
         ...(draftAudioSnapshotRef.current[draftId] ?? {}),
         music: url,
       }
-    } else {
-      setMusicName(null)
-      setMusicUrl(null)
-      setMusicDuration(0)
-      setMusicRange([0, 0])
-      setMusicTimeline([0, 0])
     }
     if (audio.voiceover?.url) {
       const url = audio.voiceover.url
       setVoiceoverName(audio.voiceover.name)
       setVoiceoverUrl(url)
-      setVoiceoverDuration(0)
-      setVoiceoverRange([0, 0])
-      setVoiceoverTimeline([0, knownTimelineEnd])
-      loadAudioMetadataDuration(url, (d) => {
-        setVoiceoverDuration(d)
-        setVoiceoverRange([0, d])
-        setVoiceoverTimeline((current) => current[1] > current[0] ? current : [0, knownTimelineEnd])
-      })
+      setVoiceoverTimeline([0, mergedDurationSec])
+      try {
+        const a = new Audio()
+        a.src = url
+        a.addEventListener('loadedmetadata', () => {
+          const d = a.duration
+          if (Number.isFinite(d) && d > 0) {
+            setVoiceoverDuration(d)
+            setVoiceoverRange([0, d])
+            if (mergedDurationSec <= 0) setVoiceoverTimeline([0, tlEnd(d)])
+          }
+        })
+      } catch { /* ignore */ }
       draftAudioSnapshotRef.current[draftId] = {
         ...(draftAudioSnapshotRef.current[draftId] ?? {}),
         voice: url,
       }
-    } else {
-      setVoiceoverName(null)
-      setVoiceoverUrl(null)
-      setVoiceoverDuration(0)
-      setVoiceoverRange([0, 0])
-      setVoiceoverTimeline([0, 0])
     }
   }, [projectAudio, mergedDurationSec])
 
@@ -6274,7 +6207,7 @@ export default function DashboardPage() {
       ensureActiveDraftIdRef.current = pid
       setActiveDraftId(pid)
       persistActiveDraftId(pid)
-      restoreDraftAudio(pid, undefined, durationForDraftSources(videoSnapshot, imageSnapshot, null))
+      restoreDraftAudio(pid)
     } else {
       ensureActiveDraftIdRef.current = null
       setActiveDraftId(null)
@@ -6316,7 +6249,7 @@ export default function DashboardPage() {
 
       setSelectedProjectId(did)
       setPreviewVideoId(firstPlayableId)
-      restoreDraftAudio(did, undefined, durationForDraftSources(clips, images, video.video?.duration ?? video.requested_duration ?? null))
+      restoreDraftAudio(did)
       return
     }
 
@@ -7638,44 +7571,7 @@ export default function DashboardPage() {
           return { id, durationMs: TRANSITION_DURATION[id] ?? 0 }
         })
 
-      const fallbackTimelineEnd = durationForDraftSources(
-        eligibleClips.filter((c): c is Extract<UnifiedClip, { kind: 'video' }> => c.kind === 'video').map((c) => c.job),
-        eligibleClips.filter((c): c is Extract<UnifiedClip, { kind: 'image' }> => c.kind === 'image').map((c) => c.image),
-        mergedDurationSec,
-      )
-      let effectiveMusicRange = musicRange
-      if (musicUrl && effectiveMusicRange[1] <= effectiveMusicRange[0]) {
-        const probedDuration = musicDuration > 0 ? musicDuration : await probeAudioMetadataDuration(musicUrl, 3000)
-        if (probedDuration && Number.isFinite(probedDuration) && probedDuration > 0) {
-          effectiveMusicRange = [0, probedDuration]
-          setMusicDuration(probedDuration)
-          setMusicRange(effectiveMusicRange)
-        } else {
-          // Do not silently drop a restored soundtrack just because browser
-          // metadata probing was late/blocked. The merger can safely clamp to
-          // the decoded media duration; this placeholder keeps the track alive.
-          effectiveMusicRange = [0, fallbackTimelineEnd]
-        }
-      }
-      let effectiveVoiceoverRange = voiceoverRange
-      if (voiceoverUrl && effectiveVoiceoverRange[1] <= effectiveVoiceoverRange[0]) {
-        const probedDuration = voiceoverDuration > 0 ? voiceoverDuration : await probeAudioMetadataDuration(voiceoverUrl, 3000)
-        if (probedDuration && Number.isFinite(probedDuration) && probedDuration > 0) {
-          effectiveVoiceoverRange = [0, probedDuration]
-          setVoiceoverDuration(probedDuration)
-          setVoiceoverRange(effectiveVoiceoverRange)
-        }
-      }
-      const effectiveMusicTimeline: [number, number] = musicTimeline[1] > musicTimeline[0]
-        ? musicTimeline
-        : [0, fallbackTimelineEnd]
-      const effectiveVoiceoverTimeline: [number, number] = voiceoverTimeline[1] > voiceoverTimeline[0]
-        ? voiceoverTimeline
-        : [0, fallbackTimelineEnd]
-      if (musicUrl && musicTimeline[1] <= musicTimeline[0]) setMusicTimeline(effectiveMusicTimeline)
-      if (voiceoverUrl && voiceoverTimeline[1] <= voiceoverTimeline[0]) setVoiceoverTimeline(effectiveVoiceoverTimeline)
-
-      const hasMusic = Boolean(musicUrl && effectiveMusicRange[1] > effectiveMusicRange[0])
+      const hasMusic = Boolean(musicUrl && musicRange[1] > musicRange[0])
       const hasVoiceover = Boolean(voiceoverUrl)
       const mixedClipVolume = hasMusic
         ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
@@ -7685,21 +7581,21 @@ export default function DashboardPage() {
             music: hasMusic
               ? {
                   src: musicUrl as string,
-                  startSec: effectiveMusicRange[0],
-                  endSec: effectiveMusicRange[1],
+                  startSec: musicRange[0],
+                  endSec: musicRange[1],
                   musicVolume,
-                  timelineStartSec: effectiveMusicTimeline[1] > effectiveMusicTimeline[0] ? effectiveMusicTimeline[0] : undefined,
-                  timelineEndSec: effectiveMusicTimeline[1] > effectiveMusicTimeline[0] ? effectiveMusicTimeline[1] : undefined,
+                  timelineStartSec: musicTimeline[1] > musicTimeline[0] ? musicTimeline[0] : undefined,
+                  timelineEndSec: musicTimeline[1] > musicTimeline[0] ? musicTimeline[1] : undefined,
                 }
               : undefined,
             voiceover: hasVoiceover
               ? {
                   src: voiceoverUrl as string,
                   volume: voiceoverVolume,
-                  sourceStartSec: effectiveVoiceoverRange[1] > effectiveVoiceoverRange[0] ? effectiveVoiceoverRange[0] : undefined,
-                  sourceEndSec: effectiveVoiceoverRange[1] > effectiveVoiceoverRange[0] ? effectiveVoiceoverRange[1] : undefined,
-                  timelineStartSec: effectiveVoiceoverTimeline[1] > effectiveVoiceoverTimeline[0] ? effectiveVoiceoverTimeline[0] : undefined,
-                  timelineEndSec: effectiveVoiceoverTimeline[1] > effectiveVoiceoverTimeline[0] ? effectiveVoiceoverTimeline[1] : undefined,
+                  sourceStartSec: voiceoverRange[1] > voiceoverRange[0] ? voiceoverRange[0] : undefined,
+                  sourceEndSec: voiceoverRange[1] > voiceoverRange[0] ? voiceoverRange[1] : undefined,
+                  timelineStartSec: voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[0] : undefined,
+                  timelineEndSec: voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[1] : undefined,
                 }
               : undefined,
             clipVolume: mixedClipVolume,

@@ -1097,14 +1097,8 @@ export async function mergeVideoUrls(
   }
 
   {
-    const musicDuration = soundtrackEl && Number.isFinite(soundtrackEl.duration) && soundtrackEl.duration > 0
-      ? soundtrackEl.duration
-      : Number.POSITIVE_INFINITY
-    const musicWinStart = Math.max(0, Math.min(musicTrack?.startSec ?? 0, Math.max(0, musicDuration - 0.05)))
-    const requestedMusicWinEnd = musicTrack?.endSec != null && musicTrack.endSec > musicWinStart
-      ? musicTrack.endSec
-      : musicDuration
-    const musicWinEnd = Math.max(musicWinStart + 0.05, Math.min(requestedMusicWinEnd, musicDuration))
+    const musicWinStart = Math.max(0, musicTrack?.startSec ?? 0)
+    const musicWinEnd = Math.max(musicWinStart + 0.05, musicTrack?.endSec ?? 0)
     const musicTlStart = Math.max(0, musicTrack?.timelineStartSec ?? 0)
     const musicTlEnd = musicTrack?.timelineEndSec != null && musicTrack.timelineEndSec > musicTlStart
       ? musicTrack.timelineEndSec

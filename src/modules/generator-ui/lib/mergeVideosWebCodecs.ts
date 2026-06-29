@@ -170,9 +170,7 @@ async function renderAudioMix(
   if (music) {
     const buffer = await decodeAudio(music.src)
     if (buffer) {
-      const srcStart = Math.max(0, Math.min(music.startSec, Math.max(0, buffer.duration - 0.05)))
-      const srcEnd = Math.max(srcStart + 0.05, Math.min(music.endSec, buffer.duration))
-      const winLen = Math.max(0.05, srcEnd - srcStart)
+      const winLen = Math.max(0.05, music.endSec - music.startSec)
       const tlStart = Math.max(0, music.timelineStartSec ?? 0)
       const tlEnd = Math.min(totalDuration, music.timelineEndSec ?? totalDuration)
       let pos = tlStart
@@ -183,7 +181,7 @@ async function renderAudioMix(
         const gain = octx.createGain()
         gain.gain.value = musicVolume
         src.connect(gain).connect(octx.destination)
-        try { src.start(pos, srcStart, playLen) } catch { /* ignore */ }
+        try { src.start(pos, music.startSec, playLen) } catch { /* ignore */ }
         pos += playLen
         scheduled = true
       }
