@@ -6138,48 +6138,72 @@ export default function DashboardPage() {
     // duration so the timeline window is valid even before the preview loads.
     const tlEnd = (d: number) => (mergedDurationSec > 0 ? mergedDurationSec : d)
     if (audio.music?.url) {
-      const url = audio.music.url
-      setMusicName(audio.music.name)
-      setMusicUrl(url)
-      setMusicTimeline([0, mergedDurationSec])
-      try {
-        const a = new Audio()
-        a.src = url
-        a.addEventListener('loadedmetadata', () => {
-          const d = a.duration
-          if (Number.isFinite(d) && d > 0) {
-            setMusicDuration(d)
-            setMusicRange([0, d])
-            if (mergedDurationSec <= 0) setMusicTimeline([0, tlEnd(d)])
-          }
-        })
-      } catch { /* ignore */ }
-      draftAudioSnapshotRef.current[draftId] = {
-        ...(draftAudioSnapshotRef.current[draftId] ?? {}),
-        music: url,
-      }
+      const rawUrl = audio.music.url
+      const name = audio.music.name
+      void (async () => {
+        // Resolve a signed URL (merged-videos is private) then verify it loads.
+        const url = await signMergedAudioUrl(rawUrl)
+        const ok = /^blob:|^data:/.test(url) || (await audioUrlLoads(url))
+        if (!ok) {
+          // Soundtrack is gone/unreachable: clear it so no empty chip/strip shows.
+          setMusicName(null)
+          setMusicUrl(null)
+          delete draftAudioSnapshotRef.current[draftId]?.music
+          return
+        }
+        setMusicName(name)
+        setMusicUrl(url)
+        setMusicTimeline([0, mergedDurationSec])
+        try {
+          const a = new Audio()
+          a.src = url
+          a.addEventListener('loadedmetadata', () => {
+            const d = a.duration
+            if (Number.isFinite(d) && d > 0) {
+              setMusicDuration(d)
+              setMusicRange([0, d])
+              if (mergedDurationSec <= 0) setMusicTimeline([0, tlEnd(d)])
+            }
+          })
+        } catch { /* ignore */ }
+        draftAudioSnapshotRef.current[draftId] = {
+          ...(draftAudioSnapshotRef.current[draftId] ?? {}),
+          music: url,
+        }
+      })()
     }
     if (audio.voiceover?.url) {
-      const url = audio.voiceover.url
-      setVoiceoverName(audio.voiceover.name)
-      setVoiceoverUrl(url)
-      setVoiceoverTimeline([0, mergedDurationSec])
-      try {
-        const a = new Audio()
-        a.src = url
-        a.addEventListener('loadedmetadata', () => {
-          const d = a.duration
-          if (Number.isFinite(d) && d > 0) {
-            setVoiceoverDuration(d)
-            setVoiceoverRange([0, d])
-            if (mergedDurationSec <= 0) setVoiceoverTimeline([0, tlEnd(d)])
-          }
-        })
-      } catch { /* ignore */ }
-      draftAudioSnapshotRef.current[draftId] = {
-        ...(draftAudioSnapshotRef.current[draftId] ?? {}),
-        voice: url,
-      }
+      const rawUrl = audio.voiceover.url
+      const name = audio.voiceover.name
+      void (async () => {
+        const url = await signMergedAudioUrl(rawUrl)
+        const ok = /^blob:|^data:/.test(url) || (await audioUrlLoads(url))
+        if (!ok) {
+          setVoiceoverName(null)
+          setVoiceoverUrl(null)
+          delete draftAudioSnapshotRef.current[draftId]?.voice
+          return
+        }
+        setVoiceoverName(name)
+        setVoiceoverUrl(url)
+        setVoiceoverTimeline([0, mergedDurationSec])
+        try {
+          const a = new Audio()
+          a.src = url
+          a.addEventListener('loadedmetadata', () => {
+            const d = a.duration
+            if (Number.isFinite(d) && d > 0) {
+              setVoiceoverDuration(d)
+              setVoiceoverRange([0, d])
+              if (mergedDurationSec <= 0) setVoiceoverTimeline([0, tlEnd(d)])
+            }
+          })
+        } catch { /* ignore */ }
+        draftAudioSnapshotRef.current[draftId] = {
+          ...(draftAudioSnapshotRef.current[draftId] ?? {}),
+          voice: url,
+        }
+      })()
     }
   }, [projectAudio, mergedDurationSec])
 
