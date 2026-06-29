@@ -564,6 +564,27 @@ const MODEL_CHOICES: ModelChoice[] = [
   },
 ]
 
+// Resolve the Image-to-Video counterpart of a chosen model. When a character
+// start frame is baked in we must drive an I2V model even if the user is in
+// Text-to-Video mode, otherwise the provider ignores the frame. Prefers the
+// same engine family (wan/ltx/local), then any I2V model of the same provider,
+// then Wan I2V as a last resort.
+function toImageToVideoModel(model: ModelChoice): ModelChoice {
+  if (model.supports.includes('i2v')) return model
+  const base = model.id.replace(/-t2v$/, '')
+  const sibling = MODEL_CHOICES.find(
+    (m) => m.providerKey === model.providerKey && m.supports.includes('i2v') && m.id.replace(/-i2v$/, '') === base,
+  )
+  return (
+    sibling ??
+    MODEL_CHOICES.find((m) => m.providerKey === model.providerKey && m.supports.includes('i2v')) ??
+    MODEL_CHOICES.find((m) => m.id === 'wan-i2v') ??
+    model
+  )
+}
+
+
+
 type LocalPlannerModelChoice = {
   id: string
   label: string
