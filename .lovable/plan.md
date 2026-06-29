@@ -1,40 +1,31 @@
-# جلوگیری از تغییر شکل کاراکتر در فیلم
+# Fix: Music & narration lost when reverting Final Film → Draft
 
-## مشکل واقعی (تأییدشده در کد)
-در حالت سناریو/تک‌کارت، فریم شروع کارت اول فقط از فایل آپلودشده گرفته می‌شه (`firstSceneImageUrl = readyStartFrame?.url`). وقتی کاربر فقط یک Character Sheet انتخاب می‌کنه و چیزی آپلود نکرده، کارت اول **بدون فریم شروع** و در حالت Text-to-Video ساخته می‌شه؛ برای همین کاراکتر کاملاً فرق می‌کنه. شیت چهارنما هم به‌عنوان `referenceImageUrls` فرستاده می‌شه ولی مدل Wan I2V عملاً فقط روی فریم شروع قفل می‌شه، نه روی تصاویر مرجع.
+## Problem
+When a finalized "Final Film" is reopened as a Draft (pencil icon → `reopenFinalAsDraft`), the music and voiceover (narration) disappear from the draft. The soundtrack chips under the preview come up empty (circled area in the screenshots), and the audio is not restored when the draft is reopened later.
 
-نکتهٔ درست کاربر: دادن «فقط نمای جلو» برای همهٔ صحنه‌ها هم اشتباهه، چون هر صحنه ممکنه زاویهٔ متفاوتی بخواد. راه‌حل: برای هر صحنه نمای مناسب از شیت به فریم شروع تمیز تبدیل بشه.
+## Root cause
+`reopenFinalAsDraft` in `src/modules/generator-ui/pages/DashboardPage.tsx` mutates `projectAudio` **twice**, and the two updates conflict:
 
-## راه‌حل
-ساخت خودکار یک «فریم شروع تمیز» از روی Character Sheet برای هر کارت، با امکان انتخاب نما، و سوئیچ خودکار به Image-to-Video.
+1. Step "3. Remove the final film" (lines ~5877–5882) runs a functional `setProjectAudio` that **deletes** `finalId` from `projectAudio` and persists.
+2. Step "8b. Move the film's persisted audio" (lines ~5979–5986) runs a second functional `setProjectAudio` that tries to move `projectAudio[finalId]` → `draftId`. But because React applies functional updaters in order, by the time this one runs `prev[finalId]` is already gone, so it returns unchanged and **never writes `projectAudio[draftId]`**.
 
-### ۱) انتخاب نما برای کاراکتر (UI)
-- کنار چیپ «Project character» یک انتخاب کوچک نما اضافه می‌شه: `Auto / Front / Side / Back`.
-- مقدار در state پروژه نگه‌داری می‌شه (`characterView`). پیش‌فرض `Auto`.
-- `Auto` یعنی برای هر صحنه از روی متن صحنه، نمای مناسب توسط مدل ویرایش تصویر انتخاب بشه؛ بقیه نمای ثابت را اجبار می‌کنن.
+Result: the durable audio mapping for the new draft is never persisted. The in-memory `restoreDraftAudio(draftId, movedAudio)` call may briefly set live state, but nothing is saved, so on any refresh / draft switch / snapshot pass the music and narration are lost. If the captured `movedAudio` is also empty, the chips are empty immediately.
 
-### ۲) تابع جدید `extractCharacterStartFrame`
-مشابه `bakeProductIntoFrame`:
-- ورودی: تصویر Character Sheet، نمای انتخابی، نسبت تصویر، و (اختیاری) متن صحنه.
-- با `ai-image-edit` از شیت چهارنما **یک پرترهٔ تک‌نمای تمام‌قد تمیز** در نمای مشخص می‌سازه (دستور: «از این شیت، یک تصویر واحد تمام‌قد از همین کاراکتر در نمای X بساز؛ همان چهره/بدن/لباس/لوگو، پس‌زمینهٔ تمیز»).
-- نتیجه در باکت `wan-frames` آپلود و URL امضاشده برمی‌گرده.
-- غیرمخرب: هر خطا → برگرداندن مقدار قبلی تا تولید نشکنه.
+## Fix (safe, minimal, non-destructive)
+All changes are confined to `reopenFinalAsDraft` and `restoreDraftAudio` in `DashboardPage.tsx` — no schema, storage, or backend changes.
 
-### ۳) اتصال به جریان تولید
-در `submitScenesAsJobs` و مسیر تک‌کارت:
-- اگر مدل I2V بود و کاراکتر انتخاب شده ولی فریم شروع کارت اول وجود نداشت → `extractCharacterStartFrame` فراخوانی و خروجی به‌عنوان `startFrameUrl` کارت اول استفاده بشه.
-- اگر محصول هم پین شده بود، بعدش `bakeProductIntoFrame` روی همین فریم اجرا بشه (لوگو/محصول قفل بمونه).
-- کارت‌های بعدی مثل الان از آخرین فریم کارت قبلی ادامه می‌دن (کاراکتر حفظ می‌شه).
+1. **Single atomic audio move.** Remove the standalone delete block (the `setProjectAudio` at ~5877–5882). Keep only the step-8b update, and rewrite it to perform the delete-and-move in one functional updater:
+   - read `prev[finalId]`
+   - if present, build `next` = `{ ...prev without finalId, [draftId]: audio }`
+   - persist and return `next`
+   This guarantees `projectAudio[draftId]` is written and survives refresh.
 
-### ۴) سوئیچ خودکار به Image-to-Video
-- وقتی کاراکتر انتخاب شده و کاربر در حالت Text-to-Video است، هنگام ارسال به‌صورت خودکار مدل به `wan-i2v` (یا معادل I2V همان provider اگر local) تغییر کنه، با یک پیام کوتاه اطلاع‌رسانی در ستون ویدئو.
+2. **Robust `movedAudio` capture.** Keep capturing `movedAudio = projectAudio[finalId]` from the render closure before the state update (already correct) and pass it to `restoreDraftAudio(draftId, movedAudio)` so live chips appear instantly in the same tick.
 
-## بخش فنی
-- فایل: `src/modules/generator-ui/pages/DashboardPage.tsx`
-- state جدید: `characterView: 'auto' | 'front' | 'side' | 'back'`.
-- تابع جدید `extractCharacterStartFrame(character, view, ratio, sceneText?)` با الگوی دقیق `bakeProductIntoFrame` (همان باکت `FRAMES_BUCKET`، همان امضای URL).
-- ادغام در دو نقطه: کارت اولِ `submitScenesAsJobs` و مسیر تک‌کارت `handleSubmit`.
-- بدون تغییر در edge functionها، auth، storage policies یا منطق کردیت. فقط لایهٔ frontend/presentation و فراخوانی `ai-image-edit` موجود.
+3. **Harden `restoreDraftAudio`.** When restoring, if `mergedDurationSec` is 0/unknown at that moment, fall back to the loaded audio track duration for the music/voiceover range and timeline so the chip and playback window are valid even before the preview has measured the film length. Always write the snapshot back into `projectAudio[draftId]` (durable) in addition to `draftAudioSnapshotRef`.
 
-## نتیجهٔ مورد انتظار
-کاراکتر در همهٔ سکانس‌ها ثابت می‌مونه؛ شیت چهارنما به‌عنوان منبع باقی می‌مونه ولی برای هر صحنه نمای مناسب به فریم شروع تمیز تبدیل می‌شه و مدل دقیقاً از همان نقطه شروع می‌کنه.
+4. **Verification.** Typecheck clean (`tsgo`/build runs automatically). Manual check via preview: finalize a film with music + narration, click the edit/revert icon to send it back to Drafts, confirm the music and voiceover chips reappear under the preview, then refresh and reopen the draft to confirm they persist.
+
+## Notes / out of scope
+- Films finalized in an older version that never snapshotted audio at finalization will have no stored audio to restore; this fix cannot recover audio that was never saved. It guarantees correct behavior for all films finalized with the current audio-snapshot path.
+- No changes to generation UI layout, auth, storage policies, or backend functions.
