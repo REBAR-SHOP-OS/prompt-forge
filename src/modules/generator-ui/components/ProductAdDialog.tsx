@@ -243,6 +243,9 @@ const tr = (m: Loc, lang: Lang) => m[lang] ?? m.en
 
 const RTL_LANGS: Lang[] = ['fa', 'ar']
 
+const SELECT_LABEL: Loc = { en: 'Select', fa: 'انتخاب', ar: 'اختيار', tr: 'Seç', es: 'Seleccionar', fr: 'Choisir' }
+const SELECTED_LABEL: Loc = { en: 'Selected ✓', fa: 'انتخاب‌شده ✓', ar: 'محدد ✓', tr: 'Seçildi ✓', es: 'Seleccionado ✓', fr: 'Sélectionné ✓' }
+
 // All localized narration labels the edge function may emit, used to split a
 // scene block into its visual scenario part and its narration part.
 const NARRATION_LABELS = ['Narration', 'نریشن', 'التعليق الصوتي', 'Anlatım', 'Narración']
