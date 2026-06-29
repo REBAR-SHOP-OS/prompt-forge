@@ -6986,10 +6986,11 @@ export default function DashboardPage() {
       }
       setVideoColumnMessage(null)
     }
-    // When a character is anchored, every scene must run on an I2V model so the
-    // baked character / previous-frame seed is actually used by the provider.
-    const scenarioModel = continuityCharacterRef ? toImageToVideoModel(selectedModel) : selectedModel
-    if (continuityCharacterRef) setGenerationMode('image-to-video')
+    // When a character OR product is anchored, every scene must run on an I2V
+    // model so the seeded start frame is actually used by the provider.
+    const scenarioModel =
+      continuityCharacterRef || selectedProduct ? toImageToVideoModel(selectedModel) : selectedModel
+    if (continuityCharacterRef || selectedProduct) setGenerationMode('image-to-video')
     try {
       for (let i = 0; i < scenes.length; i++) {
         const sourcePrompt = scenes[i].trim()
