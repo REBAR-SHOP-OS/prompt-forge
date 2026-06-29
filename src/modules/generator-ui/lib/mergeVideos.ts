@@ -738,17 +738,27 @@ export async function mergeVideoUrls(
     ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)
   let audioCtx: AudioContext | null = null
   let audioDest: MediaStreamAudioDestinationNode | null = null
+  let audioOutput: AudioNode | null = null
   let outStream: MediaStream = videoStream
 
   try {
     audioCtx = new Ctor()
     audioDest = audioCtx.createMediaStreamDestination()
+    const limiter = audioCtx.createDynamicsCompressor()
+    limiter.threshold.value = -6
+    limiter.knee.value = 6
+    limiter.ratio.value = 12
+    limiter.attack.value = 0.003
+    limiter.release.value = 0.25
+    limiter.connect(audioDest)
+    audioOutput = limiter
     const tracks = [...videoStream.getVideoTracks(), ...audioDest.stream.getAudioTracks()]
     outStream = new MediaStream(tracks)
   } catch (err) {
     console.warn('[mergeVideoUrls] AudioContext unavailable, recording video-only:', err)
     audioCtx = null
     audioDest = null
+    audioOutput = null
     outStream = videoStream
   }
 
@@ -774,7 +784,7 @@ export async function mergeVideoUrls(
       const gain = audioCtx.createGain()
       gain.gain.value = musicVolume
       source.connect(gain)
-      gain.connect(audioDest)
+      gain.connect(audioOutput ?? audioDest)
       soundtrackGain = gain
     } catch (err) {
       console.warn('[mergeVideoUrls] soundtrack disabled:', err)
@@ -803,7 +813,7 @@ export async function mergeVideoUrls(
       const vGain = audioCtx.createGain()
       vGain.gain.value = voiceoverVolume
       vSource.connect(vGain)
-      vGain.connect(audioDest)
+      vGain.connect(audioOutput ?? audioDest)
       voiceoverGain = vGain
     } catch (err) {
       console.warn('[mergeVideoUrls] voiceover disabled:', err)
@@ -1215,7 +1225,7 @@ export async function mergeVideoUrls(
         const gain = audioCtx.createGain()
         gain.gain.value = clipVolume
         clipNode.connect(gain)
-        gain.connect(audioDest)
+        gain.connect(audioOutput ?? audioDest)
       } catch (err) {
         console.warn('[mergeVideoUrls] clip audio skipped:', err)
         clipNode = null

@@ -2313,8 +2313,20 @@ export default function DashboardPage() {
 
   // Stores durable public URLs (copied into MERGED_BUCKET at finalize time) so
   // the finalized card can play + download the exact audio that project used.
-  type ProjectAudioTrack = { url: string; name: string }
-  type ProjectAudio = { music?: ProjectAudioTrack; voiceover?: ProjectAudioTrack }
+  type ProjectAudioTrack = {
+    url: string
+    name: string
+    range?: [number, number]
+    timeline?: [number, number]
+    volume?: number
+  }
+  type ProjectAudio = {
+    music?: ProjectAudioTrack
+    voiceover?: ProjectAudioTrack
+    clipVolume?: number
+    voiceoverClipVolume?: number
+    soundtrackMode?: 'music-only' | 'mix'
+  }
   const [projectAudio, setProjectAudio] = useState<Record<string, ProjectAudio>>({})
   const projectAudioKey = userId ? `project-audio:${userId}` : null
   useEffect(() => {
@@ -3168,7 +3180,6 @@ export default function DashboardPage() {
     const seen = draftAudioSnapshotRef.current[draftId] ?? {}
     const needMusic = Boolean(musicUrl) && seen.music !== musicUrl
     const needVoice = Boolean(voiceoverUrl) && seen.voice !== voiceoverUrl
-    if (!needMusic && !needVoice) return
     let cancelled = false
     const timer = setTimeout(async () => {
       const musicSnap = needMusic && musicUrl
@@ -3182,11 +3193,33 @@ export default function DashboardPage() {
         music: musicUrl ?? seen.music,
         voice: voiceoverUrl ?? seen.voice,
       }
-      if (!musicSnap && !voiceSnap) return
       setProjectAudio((prev) => {
         const entry: ProjectAudio = { ...(prev[draftId] ?? {}) }
-        if (musicSnap) entry.music = { url: musicSnap, name: musicName ?? 'Music' }
-        if (voiceSnap) entry.voiceover = { url: voiceSnap, name: voiceoverName ?? 'Voiceover' }
+        if (musicUrl) {
+          entry.music = {
+            url: musicSnap ?? entry.music?.url ?? musicUrl,
+            name: musicName ?? entry.music?.name ?? 'Music',
+            range: musicRange,
+            timeline: musicTimeline,
+            volume: musicVolume,
+          }
+        } else {
+          delete entry.music
+        }
+        if (voiceoverUrl) {
+          entry.voiceover = {
+            url: voiceSnap ?? entry.voiceover?.url ?? voiceoverUrl,
+            name: voiceoverName ?? entry.voiceover?.name ?? 'Voiceover',
+            range: voiceoverRange,
+            timeline: voiceoverTimeline,
+            volume: voiceoverVolume,
+          }
+        } else {
+          delete entry.voiceover
+        }
+        entry.clipVolume = clipVolume
+        entry.voiceoverClipVolume = voiceoverClipVolume
+        entry.soundtrackMode = soundtrackMode
         const next = { ...prev, [draftId]: entry }
         persistProjectAudio(next)
         return next
@@ -3194,7 +3227,7 @@ export default function DashboardPage() {
     }, 1200)
     return () => { cancelled = true; clearTimeout(timer) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, activeDraftId, musicUrl, voiceoverUrl, musicName, voiceoverName, persistAudioToStorage])
+  }, [userId, activeDraftId, musicUrl, voiceoverUrl, musicName, voiceoverName, musicRange, musicTimeline, musicVolume, voiceoverRange, voiceoverTimeline, voiceoverVolume, clipVolume, voiceoverClipVolume, soundtrackMode, persistAudioToStorage])
 
   useEffect(() => {
     setPendingEndAppends({})
@@ -6184,7 +6217,17 @@ export default function DashboardPage() {
       const url = await resolveAudioPlaybackUrl(audio.music.url)
       setMusicName(audio.music.name)
       setMusicUrl(url)
-      setMusicTimeline([0, tlEnd(fallbackTimelineSec)])
+      setMusicVolume(typeof audio.music.volume === 'number' ? audio.music.volume : 1)
+      if (audio.soundtrackMode) setSoundtrackMode(audio.soundtrackMode)
+      if (typeof audio.clipVolume === 'number') setClipVolume(audio.clipVolume)
+      const restoredMusicRange = audio.music.range && audio.music.range[1] > audio.music.range[0]
+        ? audio.music.range
+        : null
+      const restoredMusicTimeline = audio.music.timeline && audio.music.timeline[1] > audio.music.timeline[0]
+        ? audio.music.timeline
+        : null
+      if (restoredMusicRange) setMusicRange(restoredMusicRange)
+      setMusicTimeline(restoredMusicTimeline ?? [0, tlEnd(fallbackTimelineSec)])
       try {
         const a = new Audio()
         a.src = url
@@ -6192,8 +6235,8 @@ export default function DashboardPage() {
           const d = a.duration
           if (Number.isFinite(d) && d > 0) {
             setMusicDuration(d)
-            setMusicRange([0, d])
-            setMusicTimeline([0, tlEnd(d)])
+            if (!restoredMusicRange) setMusicRange([0, d])
+            if (!restoredMusicTimeline) setMusicTimeline([0, tlEnd(d)])
           }
         })
         a.load()
@@ -6207,7 +6250,16 @@ export default function DashboardPage() {
       const url = await resolveAudioPlaybackUrl(audio.voiceover.url)
       setVoiceoverName(audio.voiceover.name)
       setVoiceoverUrl(url)
-      setVoiceoverTimeline([0, tlEnd(fallbackTimelineSec)])
+      setVoiceoverVolume(typeof audio.voiceover.volume === 'number' ? audio.voiceover.volume : 1)
+      if (typeof audio.voiceoverClipVolume === 'number') setVoiceoverClipVolume(audio.voiceoverClipVolume)
+      const restoredVoiceRange = audio.voiceover.range && audio.voiceover.range[1] > audio.voiceover.range[0]
+        ? audio.voiceover.range
+        : null
+      const restoredVoiceTimeline = audio.voiceover.timeline && audio.voiceover.timeline[1] > audio.voiceover.timeline[0]
+        ? audio.voiceover.timeline
+        : null
+      if (restoredVoiceRange) setVoiceoverRange(restoredVoiceRange)
+      setVoiceoverTimeline(restoredVoiceTimeline ?? [0, tlEnd(fallbackTimelineSec)])
       try {
         const a = new Audio()
         a.src = url
@@ -6215,8 +6267,8 @@ export default function DashboardPage() {
           const d = a.duration
           if (Number.isFinite(d) && d > 0) {
             setVoiceoverDuration(d)
-            setVoiceoverRange([0, d])
-            setVoiceoverTimeline([0, tlEnd(d)])
+            if (!restoredVoiceRange) setVoiceoverRange([0, d])
+            if (!restoredVoiceTimeline) setVoiceoverTimeline([0, tlEnd(d)])
           }
         })
         a.load()
@@ -7930,14 +7982,17 @@ export default function DashboardPage() {
           })()
           if (hasMusic && musicUrl) {
             const url = await persistAudioToStorage(musicUrl, 'music', mergedId)
-            if (url) entry.music = { url, name: musicName ?? 'Music' }
+            if (url) entry.music = { url, name: musicName ?? 'Music', range: musicRange, timeline: musicTimeline, volume: musicVolume }
             else if (fallbackAudio?.music) entry.music = fallbackAudio.music
           }
           if (hasVoiceover && voiceoverUrl) {
             const url = await persistAudioToStorage(voiceoverUrl, 'voice', mergedId)
-            if (url) entry.voiceover = { url, name: voiceoverName ?? 'Voiceover' }
+            if (url) entry.voiceover = { url, name: voiceoverName ?? 'Voiceover', range: voiceoverRange, timeline: voiceoverTimeline, volume: voiceoverVolume }
             else if (fallbackAudio?.voiceover) entry.voiceover = fallbackAudio.voiceover
           }
+          entry.clipVolume = clipVolume
+          entry.voiceoverClipVolume = voiceoverClipVolume
+          entry.soundtrackMode = soundtrackMode
           if (entry.music || entry.voiceover) {
             setProjectAudio((prev) => {
               const nextAudio = { ...readPersistedProjectAudio(), ...prev, [mergedId]: entry }

@@ -79,6 +79,8 @@ export const PreviewSoundtrackWaveforms = forwardRef<
   const musicNativeReadyRef = useRef(false)
   const voiceNativeReadyRef = useRef(false)
   const wantPlayingRef = useRef(false)
+  const musicPlayPendingRef = useRef(false)
+  const voicePlayPendingRef = useRef(false)
   // Last film playhead (seconds) pushed from the player, so play() resumes at
   // the correct film position instead of resetting to 0.
   const lastFilmTimeRef = useRef(0)
@@ -209,7 +211,9 @@ export const PreviewSoundtrackWaveforms = forwardRef<
       a.removeEventListener('canplaythrough', markReady)
       a.removeEventListener('error', markErrored)
       musicNativeReadyRef.current = false
+      musicPlayPendingRef.current = false
       try { a.pause() } catch { /* ignore */ }
+      try { a.removeAttribute('src'); a.load() } catch { /* ignore */ }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [musicUrl])
@@ -237,26 +241,32 @@ export const PreviewSoundtrackWaveforms = forwardRef<
       a.removeEventListener('canplaythrough', markReady)
       a.removeEventListener('error', markErrored)
       voiceNativeReadyRef.current = false
+      voicePlayPendingRef.current = false
       try { a.pause() } catch { /* ignore */ }
+      try { a.removeAttribute('src'); a.load() } catch { /* ignore */ }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voiceoverUrl])
 
-  const setNativeTime = (audio: HTMLAudioElement | null, t: number, forceSeek: boolean) => {
+  const setNativeTime = (audio: HTMLAudioElement | null, t: number, forceSeek: boolean, threshold = 0.3) => {
     if (!audio || !Number.isFinite(t)) return
     const dur = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : Number.POSITIVE_INFINITY
     const target = Math.max(0, Math.min(t, Number.isFinite(dur) ? Math.max(0, dur - 0.05) : t))
-    if (forceSeek || Math.abs((audio.currentTime || 0) - target) > 0.25) {
+    if (forceSeek || Math.abs((audio.currentTime || 0) - target) > threshold) {
       try { audio.currentTime = target } catch { /* ignore */ }
     }
   }
 
-  const playNative = (audio: HTMLAudioElement | null, readyRef: MutableRefObject<boolean>) => {
-    if (!audio || !wantPlayingRef.current || !audio.paused) return
+  const playNative = (
+    audio: HTMLAudioElement | null,
+    readyRef: MutableRefObject<boolean>,
+    pendingRef: MutableRefObject<boolean>,
+  ) => {
+    if (!audio || !wantPlayingRef.current || !audio.paused || pendingRef.current) return
     if (!readyRef.current && audio.readyState < HTMLMediaElement.HAVE_METADATA) {
-      try { audio.load() } catch { /* ignore */ }
       return
     }
+    pendingRef.current = true
     const attempt = audio.play()
     if (attempt && typeof attempt.catch === 'function') {
       attempt.catch(() => {
@@ -265,9 +275,10 @@ export const PreviewSoundtrackWaveforms = forwardRef<
         // still resolve naturally on the next user-initiated video play.
         if (audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) {
           readyRef.current = false
-          try { audio.load() } catch { /* ignore */ }
         }
-      })
+      }).finally(() => { pendingRef.current = false })
+    } else {
+      pendingRef.current = false
     }
   }
 
@@ -297,9 +308,9 @@ export const PreviewSoundtrackWaveforms = forwardRef<
         const dur = m && musicReadyRef.current ? m.getDuration() : (a?.duration ?? 0)
         target = dur > 0 ? rel % dur : rel
       }
-      setNativeTime(a, target, forceSeek)
+      setNativeTime(a, target, forceSeek, 0.35)
       if (m && musicReadyRef.current && (forceSeek || Math.abs(m.getCurrentTime() - target) > 0.25)) m.setTime(target)
-      playNative(a, musicNativeReadyRef)
+      playNative(a, musicNativeReadyRef, musicPlayPendingRef)
     } catch { /* ignore */ }
   }
 
@@ -328,11 +339,11 @@ export const PreviewSoundtrackWaveforms = forwardRef<
         return
       }
       if (a) a.volume = Math.max(0, Math.min(1, voiceVolumeRef.current))
-      setNativeTime(a, target, forceSeek)
+      setNativeTime(a, target, forceSeek, 0.6)
       if (v && voiceReadyRef.current && (forceSeek || Math.abs(v.getCurrentTime() - target) > 0.25)) {
         v.setTime(Math.max(0, Math.min(target, dur > 0 ? dur - 0.05 : target)))
       }
-      playNative(a, voiceNativeReadyRef)
+      playNative(a, voiceNativeReadyRef, voicePlayPendingRef)
     } catch { /* ignore */ }
   }
 
@@ -345,6 +356,8 @@ export const PreviewSoundtrackWaveforms = forwardRef<
     },
     pause: () => {
       wantPlayingRef.current = false
+      musicPlayPendingRef.current = false
+      voicePlayPendingRef.current = false
       try { musicWsRef.current?.pause() } catch { /* ignore */ }
       try { voiceWsRef.current?.pause() } catch { /* ignore */ }
       try { musicAudioRef.current?.pause() } catch { /* ignore */ }
@@ -368,8 +381,8 @@ export const PreviewSoundtrackWaveforms = forwardRef<
 
   return (
     <div className="flex flex-col gap-2 border-t border-white/10 px-4 py-3">
-      {musicUrl ? <audio ref={musicAudioRef} src={musicUrl} preload="auto" className="hidden" /> : null}
-      {voiceoverUrl ? <audio ref={voiceAudioRef} src={voiceoverUrl} preload="auto" className="hidden" /> : null}
+      {musicUrl ? <audio key={`music:${musicUrl}`} ref={musicAudioRef} src={musicUrl} preload="auto" className="hidden" /> : null}
+      {voiceoverUrl ? <audio key={`voice:${voiceoverUrl}`} ref={voiceAudioRef} src={voiceoverUrl} preload="auto" className="hidden" /> : null}
       {musicUrl ? (
         <div className="flex items-center gap-2">
           <span

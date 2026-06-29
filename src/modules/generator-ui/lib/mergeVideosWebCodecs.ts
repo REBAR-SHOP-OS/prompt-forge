@@ -238,6 +238,27 @@ async function renderAudioMix(
   return await octx.startRendering()
 }
 
+function preventAudioClipping(buffer: AudioBuffer): AudioBuffer {
+  let peak = 0
+  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+    const data = buffer.getChannelData(ch)
+    for (let i = 0; i < data.length; i++) {
+      const v = Math.abs(data[i] || 0)
+      if (v > peak) peak = v
+    }
+  }
+  // Leave normal material untouched. When music + voice + clip audio stack over
+  // full-scale, scale the whole rendered mix down deterministically so AAC
+  // encoding never receives clipped samples (the audible "noise" report).
+  if (peak <= 0.98) return buffer
+  const gain = 0.98 / peak
+  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+    const data = buffer.getChannelData(ch)
+    for (let i = 0; i < data.length; i++) data[i] *= gain
+  }
+  return buffer
+}
+
 export async function mergeVideoUrlsWebCodecs(
   inputs: Array<string | MergeClip>,
   onProgress?: MergeProgressCallback,
@@ -321,7 +342,8 @@ export async function mergeVideoUrlsWebCodecs(
   onProgress?.({ ratio: 0, clipIndex: 0, totalClips, stage: 'loading' })
   let audioBuffer: AudioBuffer | null = null
   try {
-    audioBuffer = await renderAudioMix(clips, clipDefs, totalDuration, norm)
+    const mixed = await renderAudioMix(clips, clipDefs, totalDuration, norm)
+    audioBuffer = mixed ? preventAudioClipping(mixed) : null
   } catch (err) {
     console.warn('[webcodecs] audio mix failed, encoding video-only:', err)
     audioBuffer = null
