@@ -4844,6 +4844,7 @@ export default function DashboardPage() {
     previewItem?.kind === 'video' &&
     (previewItem.job.id === '__final_film_preview__' ||
       previewItem.job.provider_key === 'merged' ||
+      previewItem.job.provider_key === 'final-film' ||
       (!!selectedProjectId && previewItem.job.id === selectedProjectId))
 
   // --- Schedule the Final Film to the Rebar OS Social Media Manager ---
@@ -6259,7 +6260,9 @@ export default function DashboardPage() {
       setVoiceoverName(audio.voiceover.name)
       setVoiceoverUrl(url)
       setVoiceoverVolume(typeof audio.voiceover.volume === 'number' ? audio.voiceover.volume : 1)
+      const isRecoveredFinalMix = audio.voiceover.name === 'Restored final film audio'
       if (typeof audio.voiceoverClipVolume === 'number') setVoiceoverClipVolume(audio.voiceoverClipVolume)
+      else if (isRecoveredFinalMix) setVoiceoverClipVolume(0)
       const restoredVoiceRange = audio.voiceover.range && audio.voiceover.range[1] > audio.voiceover.range[0]
         ? audio.voiceover.range
         : null
