@@ -2303,6 +2303,19 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  function durationForDraftSources(jobs: JobDetail[], images: UserImageItem[], fallback?: number | null): number {
+    let total = 0
+    for (const job of jobs) {
+      const d = job.video?.duration ?? job.requested_duration ?? null
+      total += d && Number.isFinite(d) && d > 0 ? d : 8
+    }
+    for (const image of images) {
+      total += Math.max(1, Math.min(15, image.still_duration_seconds || 3))
+    }
+    if (total <= 0 && fallback && Number.isFinite(fallback) && fallback > 0) total = fallback
+    return Math.max(1, Math.round(total || 1))
+  }
+
   // Persist a music/voiceover source into the public MERGED_BUCKET so it
   // survives refresh and project switches. Returns a durable public URL, or
   // null on failure. Reused by both Final Film finalize and Draft snapshots.
