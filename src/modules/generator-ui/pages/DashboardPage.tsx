@@ -6515,6 +6515,16 @@ export default function DashboardPage() {
     }
   }
 
+  // When a product is pinned but the user supplied no Start frame, Wan I2V has
+  // nothing to condition on and the film won't resemble the product. The most
+  // faithful fix (per product decision) is to use the REAL product photo itself
+  // as the start frame — no AI redraw, so the exact product pixels drive the
+  // first frame. The product image URLs are already signed/downloadable, so we
+  // return the URL directly. Returns undefined only when there is no product.
+  function productStartFrame(product: ProjectProduct | null): string | undefined {
+    return product?.url || undefined
+  }
+
   // Build a clean, single-view start frame from a Character Sheet so Wan I2V can
   // lock onto the character. The sheet is usually a multi-pose collage that the
   // model cannot animate directly; this extracts ONE full-body view (front/side/
