@@ -5087,11 +5087,12 @@ export default function DashboardPage() {
             .eq('user_id', userId)
             .is('deleted_at', null)
             // Product photos live only in the Storage > Product Photos tab,
-            // character images live only in the Character Sheet dialog, and
+            // character images live only in the Character Sheet dialog,
             // reframe images (Product Ad > "Choose from products") live only in
-            // "Previously made images" + Storage. None must ever leak into the
+            // "Previously made images" + Storage, and film covers are
+            // project-scoped (coverImages). None must ever leak into the
             // workspace/drafts/library.
-            .or('category.is.null,and(category.neq.product,category.neq.character,category.neq.reframe)'),
+            .or('category.is.null,and(category.neq.product,category.neq.character,category.neq.reframe,category.neq.cover)'),
         ])
         if (cancelled) return
 
