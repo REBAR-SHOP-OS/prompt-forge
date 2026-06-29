@@ -564,6 +564,27 @@ const MODEL_CHOICES: ModelChoice[] = [
   },
 ]
 
+// Resolve the Image-to-Video counterpart of a chosen model. When a character
+// start frame is baked in we must drive an I2V model even if the user is in
+// Text-to-Video mode, otherwise the provider ignores the frame. Prefers the
+// same engine family (wan/ltx/local), then any I2V model of the same provider,
+// then Wan I2V as a last resort.
+function toImageToVideoModel(model: ModelChoice): ModelChoice {
+  if (model.supports.includes('i2v')) return model
+  const base = model.id.replace(/-t2v$/, '')
+  const sibling = MODEL_CHOICES.find(
+    (m) => m.providerKey === model.providerKey && m.supports.includes('i2v') && m.id.replace(/-i2v$/, '') === base,
+  )
+  return (
+    sibling ??
+    MODEL_CHOICES.find((m) => m.providerKey === model.providerKey && m.supports.includes('i2v')) ??
+    MODEL_CHOICES.find((m) => m.id === 'wan-i2v') ??
+    model
+  )
+}
+
+
+
 type LocalPlannerModelChoice = {
   id: string
   label: string
@@ -1415,6 +1436,10 @@ export default function DashboardPage() {
   // Character picked as a *descriptive reference* for the current project's film.
   type ProjectCharacter = { id: string; url: string; title: string | null }
   const [selectedCharacter, setSelectedCharacter] = useState<ProjectCharacter | null>(null)
+  // Which view of the Character Sheet to bake into each scene's start frame.
+  // 'auto' lets the image-edit model pick the angle that best matches the scene text.
+  type CharacterView = 'auto' | 'front' | 'side' | 'back'
+  const [characterView, setCharacterView] = useState<CharacterView>('auto')
   const [characterList, setCharacterList] = useState<ProjectCharacter[]>([])
   const [characterMenuOpen, setCharacterMenuOpen] = useState(false)
   const [characterListLoading, setCharacterListLoading] = useState(false)
@@ -6271,6 +6296,59 @@ export default function DashboardPage() {
     }
   }
 
+  // Build a clean, single-view start frame from a Character Sheet so Wan I2V can
+  // lock onto the character. The sheet is usually a multi-pose collage that the
+  // model cannot animate directly; this extracts ONE full-body view (front/side/
+  // back, or auto = the angle that best fits the scene text) into a clean frame,
+  // uploads it to wan-frames and returns a downloadable URL. Non-destructive:
+  // any failure returns undefined so the caller can fall back gracefully.
+  async function extractCharacterStartFrame(
+    character: ProjectCharacter | null,
+    view: CharacterView,
+    ratio: Ratio,
+    sceneText?: string,
+  ): Promise<string | undefined> {
+    if (!character?.url) return undefined
+    const userId = session?.user?.id
+    if (!userId) return undefined
+    const editRatio: '1:1' | '9:16' | '16:9' =
+      ratio === '9:16' ? '9:16' : ratio === '1:1' ? '1:1' : '16:9'
+    const viewInstruction =
+      view === 'front'
+        ? 'Render a front-facing full-body view.'
+        : view === 'side'
+          ? 'Render a side-profile full-body view.'
+          : view === 'back'
+            ? 'Render a back full-body view.'
+            : `Choose the single camera angle (front, 3/4, side or back) that best fits this scene and render that full-body view.${sceneText ? ` Scene: ${sceneText.slice(0, 280)}` : ''}`
+    try {
+      const instruction = [
+        `The provided image is a CHARACTER SHEET showing the same character from multiple angles.`,
+        `Produce ONE single, clean, full-body image of EXACTLY this character — same face, hair, body, proportions and the EXACT same outfit (same clothing items, colors, logos/prints, trousers, shoes and accessories).`,
+        viewInstruction,
+        `The character must stand naturally, fully in frame, on a clean neutral studio background. Do not show a grid, multiple poses, panels or text — just one character in one shot.`,
+      ].join(' ')
+      const { data, error } = await supabase.functions.invoke('ai-image-edit', {
+        body: { imageUrls: [character.url], aspectRatio: editRatio, prompt: instruction },
+      })
+      if (error) throw error
+      const dataUrl = (data as { dataUrl?: string } | null)?.dataUrl
+      if (!dataUrl) return undefined
+      const res = await fetch(dataUrl)
+      const blob = await res.blob()
+      const storagePath = `${userId}/character-frame-${Date.now()}-${crypto.randomUUID()}.png`
+      const { error: upErr } = await supabase.storage
+        .from(FRAMES_BUCKET)
+        .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false })
+      if (upErr) return undefined
+      const { data: pub } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+      return await signFramesUrl(storagePath).catch(() => pub.publicUrl)
+    } catch {
+      return undefined
+    }
+  }
+
+
   // Pin the project product from a product image URL (Product AD flow). Matches a
   // saved product when possible so the title/id are meaningful, else creates one.
   function pinProductFromImageUrl(imageUrl: string) {
@@ -6420,16 +6498,38 @@ export default function DashboardPage() {
         bakedStartFrameUrl = await bakeProductIntoFrame(readyStartFrame.url, selectedProduct, effectiveRatio)
         setVideoColumnMessage(null)
       }
+      // When the user picked a character but supplied no Start/End frame, build a
+      // clean single-view start frame from the Character Sheet so the character
+      // stops drifting. This forces Image-to-Video even if the UI is in T2V mode.
+      let characterSeedFrameUrl: string | undefined
+      if (projectCharacter && !readyStartFrame?.url && !readyEndFrame?.url) {
+        setVideoColumnMessage('Building character start frame…')
+        characterSeedFrameUrl = await extractCharacterStartFrame(
+          projectCharacter,
+          characterView,
+          effectiveRatio,
+          promptText.trim(),
+        )
+        if (characterSeedFrameUrl && selectedProduct) {
+          setVideoColumnMessage('Locking product into character frame…')
+          characterSeedFrameUrl = await bakeProductIntoFrame(characterSeedFrameUrl, selectedProduct, effectiveRatio)
+        }
+        setVideoColumnMessage(null)
+        if (characterSeedFrameUrl) setGenerationMode('image-to-video')
+      }
+      // Drive an I2V model (and bypass the T2V branch) when a character frame was baked.
+      const effectiveModel = characterSeedFrameUrl ? toImageToVideoModel(selectedModel) : selectedModel
+      const treatTextToVideo = isTextToVideo && !characterSeedFrameUrl
       for (let i = 0; i < iterations; i++) {
         let createdJob
         let seedFrames: { firstFrameUrl?: string; lastFrameUrl?: string } = {}
         const pendingEndAppendUrl: string | null = null
         const pendingStartPrependUrl: string | null = null
 
-        if (isTextToVideo) {
+        if (treatTextToVideo) {
           createdJob = await jobOrchestratorGateway.createJob({
-            providerKey: selectedModel.providerKey,
-            requestedModel: selectedModel.model,
+            providerKey: effectiveModel.providerKey,
+            requestedModel: effectiveModel.model,
             prompt: plannedPrompt,
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
@@ -6439,8 +6539,8 @@ export default function DashboardPage() {
           })
         } else if (readyStartFrame?.url && readyEndFrame?.url) {
           createdJob = await jobOrchestratorGateway.createJob({
-            providerKey: selectedModel.providerKey,
-            requestedModel: selectedModel.model,
+            providerKey: effectiveModel.providerKey,
+            requestedModel: effectiveModel.model,
             prompt: plannedPrompt,
             firstFrameUrl: bakedStartFrameUrl,
             lastFrameUrl: readyEndFrame.url,
@@ -6451,23 +6551,24 @@ export default function DashboardPage() {
             referenceImageUrls: projectReferenceUrls,
           })
           seedFrames = { firstFrameUrl: bakedStartFrameUrl, lastFrameUrl: readyEndFrame.url }
-        } else if (readyStartFrame?.url) {
+        } else if (bakedStartFrameUrl ?? characterSeedFrameUrl) {
+          const startUrl = bakedStartFrameUrl ?? characterSeedFrameUrl
           createdJob = await jobOrchestratorGateway.createJob({
-            providerKey: selectedModel.providerKey,
-            requestedModel: selectedModel.model,
+            providerKey: effectiveModel.providerKey,
+            requestedModel: effectiveModel.model,
             prompt: plannedPrompt,
-            firstFrameUrl: bakedStartFrameUrl,
+            firstFrameUrl: startUrl,
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
             draftGroupId,
             narrationText: plannedNarration,
             referenceImageUrls: projectReferenceUrls,
           })
-          seedFrames = { firstFrameUrl: bakedStartFrameUrl }
+          seedFrames = { firstFrameUrl: startUrl }
         } else if (readyEndFrame?.url) {
           createdJob = await jobOrchestratorGateway.createJob({
-            providerKey: selectedModel.providerKey,
-            requestedModel: selectedModel.model,
+            providerKey: effectiveModel.providerKey,
+            requestedModel: effectiveModel.model,
             prompt: plannedPrompt,
             lastFrameUrl: readyEndFrame.url,
             durationSeconds: perClipDuration,
@@ -6641,6 +6742,10 @@ export default function DashboardPage() {
       }
       setVideoColumnMessage(null)
     }
+    // When a character is anchored, every scene must run on an I2V model so the
+    // baked character / previous-frame seed is actually used by the provider.
+    const scenarioModel = continuityCharacterRef ? toImageToVideoModel(selectedModel) : selectedModel
+    if (continuityCharacterRef) setGenerationMode('image-to-video')
     try {
       for (let i = 0; i < scenes.length; i++) {
         const sourcePrompt = scenes[i].trim()
@@ -6661,6 +6766,18 @@ export default function DashboardPage() {
         let startFrameUrl: string | undefined
         if (i === 0) {
           startFrameUrl = firstSceneImageUrl
+          // No uploaded start frame but a character is anchored: build a clean
+          // single-view start frame from the Character Sheet so card 1 locks onto
+          // the character instead of drifting in pure text-to-video.
+          if (!startFrameUrl && continuityCharacterRef) {
+            setVideoColumnMessage(`Building character start frame for ${sceneLabel}…`)
+            startFrameUrl = await extractCharacterStartFrame(
+              continuityCharacterRef,
+              characterView,
+              effectiveRatio,
+              sourcePrompt,
+            )
+          }
         } else if (previousJobId) {
           startFrameUrl = await waitForLastFrameUrl(previousJobId, `Scene ${i}`)
         }
@@ -6674,8 +6791,8 @@ export default function DashboardPage() {
 
         setVideoColumnMessage(`Queuing ${sceneLabel}…`)
         const createdJob = await jobOrchestratorGateway.createJob({
-          providerKey: selectedModel.providerKey,
-          requestedModel: selectedModel.model,
+          providerKey: scenarioModel.providerKey,
+          requestedModel: scenarioModel.model,
           prompt,
           durationSeconds: perClipDuration,
           aspectRatio: effectiveRatio,
@@ -11978,6 +12095,33 @@ export default function DashboardPage() {
                     ))}
                   </div>
                 )}
+                {selectedCharacter ? (
+                  <div className="mt-2 border-t border-white/10 px-1 pt-2">
+                    <p className="mb-1 text-[11px] font-medium text-zinc-400">
+                      Start-frame view (baked from the sheet)
+                    </p>
+                    <div className="grid grid-cols-4 gap-1">
+                      {(['auto', 'front', 'side', 'back'] as const).map((v) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => setCharacterView(v)}
+                          className={`rounded-md border px-1.5 py-1 text-[11px] capitalize transition ${
+                            characterView === v
+                              ? 'border-fuchsia-400/70 bg-fuchsia-500/10 text-fuchsia-200'
+                              : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:border-white/20'
+                          }`}
+                        >
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-1 text-[10px] text-zinc-500">
+                      A clean single-view frame is generated from the Character Sheet so the
+                      character stays consistent (Image-to-Video).
+                    </p>
+                  </div>
+                ) : null}
               </PopoverContent>
             </Popover>
 
