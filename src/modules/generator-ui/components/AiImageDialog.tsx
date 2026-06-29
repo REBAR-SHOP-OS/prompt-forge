@@ -171,6 +171,8 @@ export default function AiImageDialog({
       setIsSaving(false)
       setIsMaskMode(false)
       setHasMask(false)
+      setSelectedTheme(null)
+      setThemeMenuOpen(false)
       if (referenceInputRef.current) {
         referenceInputRef.current.value = ''
       }
