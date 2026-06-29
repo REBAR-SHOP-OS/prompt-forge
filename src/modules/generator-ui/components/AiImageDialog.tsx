@@ -796,7 +796,7 @@ export default function AiImageDialog({
                   type="button"
                   onClick={() => void handleWritePrompt()}
                   disabled={isLoading || isWritingPrompt}
-                  className="absolute bottom-3 right-3 inline-flex items-center gap-2 rounded-full border border-amber-300/40 bg-amber-300/10 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:border-amber-300/70 hover:bg-amber-300/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-full border border-amber-300/40 bg-amber-300/10 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:border-amber-300/70 hover:bg-amber-300/20 disabled:cursor-not-allowed disabled:opacity-50"
                   title="Write a professional prompt from your references & theme"
                 >
                   {isWritingPrompt ? (
