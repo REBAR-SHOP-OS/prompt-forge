@@ -368,8 +368,8 @@ export const PreviewSoundtrackWaveforms = forwardRef<
 
   return (
     <div className="flex flex-col gap-2 border-t border-white/10 px-4 py-3">
-      {musicUrl ? <audio ref={musicAudioRef} src={musicUrl} preload="auto" className="hidden" crossOrigin="anonymous" /> : null}
-      {voiceoverUrl ? <audio ref={voiceAudioRef} src={voiceoverUrl} preload="auto" className="hidden" crossOrigin="anonymous" /> : null}
+      {musicUrl ? <audio ref={musicAudioRef} src={musicUrl} preload="auto" className="hidden" /> : null}
+      {voiceoverUrl ? <audio ref={voiceAudioRef} src={voiceoverUrl} preload="auto" className="hidden" /> : null}
       {musicUrl ? (
         <div className="flex items-center gap-2">
           <span
