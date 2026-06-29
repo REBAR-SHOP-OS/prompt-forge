@@ -146,6 +146,8 @@ export default function AiImageDialog({
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [selectedTheme, setSelectedTheme] = useState<string | null>(null)
+  const [themeMenuOpen, setThemeMenuOpen] = useState(false)
 
   const [isMaskMode, setIsMaskMode] = useState(false)
   const [brushSize, setBrushSize] = useState(36)
