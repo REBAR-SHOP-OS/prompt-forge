@@ -5111,7 +5111,8 @@ export default function DashboardPage() {
               !workspaceHiddenImageIds.has(r.id) &&
               (r.category ?? 'general') !== 'product' &&
               (r.category ?? 'general') !== 'character' &&
-              (r.category ?? 'general') !== 'reframe',
+              (r.category ?? 'general') !== 'reframe' &&
+              (r.category ?? 'general') !== 'cover',
           ),
         )
         if (cancelled) return
