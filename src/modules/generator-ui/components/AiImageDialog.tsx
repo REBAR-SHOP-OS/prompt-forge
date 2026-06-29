@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { LoaderCircle, Sparkles, Wand2, RefreshCw, Check, X, Brush, Eraser, ImagePlus, Download } from 'lucide-react'
+import { LoaderCircle, Sparkles, Wand2, RefreshCw, Check, X, Brush, Eraser, ImagePlus, Download, Palette } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -7,10 +7,50 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { supabase } from '@/integrations/supabase/client'
 import { normalizeImageAspect } from '@/modules/generator-ui/lib/normalizeImageAspect'
+
+type ThemeOption = { id: string; faLabel: string; enLabel: string; descriptor: string }
+
+const THEME_OPTIONS: ThemeOption[] = [
+  { id: 'minimalist', faLabel: 'مینیمال', enLabel: 'Minimalist', descriptor: 'minimalist style, clean composition, lots of negative space, simple shapes' },
+  { id: 'dark-moody', faLabel: 'تاریک و مرموز', enLabel: 'Dark & Moody', descriptor: 'dark moody atmosphere, dramatic low-key lighting, deep shadows' },
+  { id: 'pop-art', faLabel: 'پاپ‌آرت', enLabel: 'Vibrant & Pop-Art', descriptor: 'vibrant pop-art style, bold saturated colors, halftone dots, high contrast' },
+  { id: 'vintage', faLabel: 'وینتیج و نوستالژیک', enLabel: 'Vintage & Retro', descriptor: 'vintage retro aesthetic, faded film tones, nostalgic warm grain' },
+  { id: 'editorial', faLabel: 'مجله‌ای', enLabel: 'Magazine / Editorial', descriptor: 'magazine editorial layout, refined typography, premium fashion photography look' },
+  { id: 'corporate', faLabel: 'شرکتی و تجاری', enLabel: 'Corporate', descriptor: 'corporate business style, clean professional, polished commercial look' },
+  { id: 'typography', faLabel: 'تایپوگرافی و متن‌محور', enLabel: 'Typography', descriptor: 'typography-driven design, bold expressive lettering, text as the focal element' },
+  { id: 'pastel', faLabel: 'پاستلی', enLabel: 'Pastel', descriptor: 'soft pastel palette, gentle muted colors, airy light tones' },
+  { id: 'monochrome', faLabel: 'مونوکروم و تک‌رنگ', enLabel: 'Monochrome', descriptor: 'monochrome single-color palette, tonal variations of one hue' },
+  { id: 'black-white', faLabel: 'سیاه و سفید', enLabel: 'Black & White', descriptor: 'black and white, high-contrast grayscale, dramatic monochrome photography' },
+  { id: 'neon', faLabel: 'نئونی', enLabel: 'Neon', descriptor: 'vibrant neon glow, cyberpunk color palette, luminous accents' },
+  { id: 'earthy', faLabel: 'طبیعت و ارگانیک', enLabel: 'Earthy / Organic', descriptor: 'earthy organic style, natural textures, warm botanical tones' },
+  { id: 'watercolor', faLabel: 'آبرنگی', enLabel: 'Watercolor', descriptor: 'watercolor painting style, soft bleeding washes, hand-painted texture' },
+  { id: 'grunge', faLabel: 'گرانج و خشن', enLabel: 'Grunge', descriptor: 'grunge style, rough distressed textures, gritty raw aesthetic' },
+  { id: 'collage', faLabel: 'کلاژ و ترکیب تصاویر', enLabel: 'Collage', descriptor: 'collage style, mixed-media cut-and-paste composition, layered fragments' },
+  { id: 'grid', faLabel: 'پازلی و پیوسته', enLabel: 'Puzzle / Grid', descriptor: 'grid-based puzzle layout, modular tiled composition' },
+  { id: 'flat', faLabel: 'فلت‌دیزاین', enLabel: 'Flat Design', descriptor: 'flat design, solid colors, no gradients, simple vector shapes' },
+  { id: '3d', faLabel: 'سه‌بعدی', enLabel: '3D Elements', descriptor: '3D rendered elements, realistic depth, soft studio lighting' },
+  { id: 'gradient', faLabel: 'گرادیانت و شیب‌رنگ', enLabel: 'Gradient', descriptor: 'smooth gradient color transitions, blended hues, modern gradient mesh' },
+  { id: 'checkerboard', faLabel: 'شطرنجی', enLabel: 'Checkerboard', descriptor: 'checkerboard pattern motif, bold geometric tiling' },
+  { id: 'doodle', faLabel: 'دودل و خط‌خطی دست‌نویس', enLabel: 'Doodle', descriptor: 'hand-drawn doodle style, playful sketchy line art' },
+  { id: 'cinematic', faLabel: 'سینمایی و فیلم', enLabel: 'Cinematic', descriptor: 'cinematic film look, anamorphic widescreen, dramatic color grading' },
+  { id: 'geometric', faLabel: 'اشکال هندسی', enLabel: 'Geometric', descriptor: 'geometric abstract style, precise shapes, structured composition' },
+  { id: 'framed', faLabel: 'قاب‌دار و حاشیه‌دار', enLabel: 'Borders & Frames', descriptor: 'decorative bordered frame composition, ornamental edges' },
+  { id: 'metallic', faLabel: 'متالیک و براق', enLabel: 'Metallic', descriptor: 'metallic glossy finish, shiny reflective chrome and gold surfaces' },
+  { id: 'glassmorphism', faLabel: 'گلس‌مورفیسم', enLabel: 'Glassmorphism', descriptor: 'glassmorphism style, frosted translucent glass, soft blur and light' },
+  { id: 'duotone', faLabel: 'دوآتون و دورنگ', enLabel: 'Duotone', descriptor: 'duotone two-color treatment, bold paired color overlay' },
+  { id: 'comic', faLabel: 'کمیک‌بوک و کارتونی', enLabel: 'Comic Book', descriptor: 'comic book style, bold outlines, cartoon shading, speech-bubble energy' },
+  { id: 'bullet-journal', faLabel: 'بولت‌ژورنال', enLabel: 'Bullet Journal', descriptor: 'bullet journal aesthetic, hand-lettered planner spread, doodled icons' },
+  { id: 'scrapbook', faLabel: 'اسکرپ‌بوک و دفترچه خاطرات', enLabel: 'Scrapbook', descriptor: 'scrapbook diary style, paper textures, tape, stickers and handwritten notes' },
+]
 
 const USER_IMAGES_BUCKET = 'user-images'
 
@@ -106,6 +146,8 @@ export default function AiImageDialog({
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [selectedTheme, setSelectedTheme] = useState<string | null>(null)
+  const [themeMenuOpen, setThemeMenuOpen] = useState(false)
 
   const [isMaskMode, setIsMaskMode] = useState(false)
   const [brushSize, setBrushSize] = useState(36)
@@ -129,6 +171,8 @@ export default function AiImageDialog({
       setIsSaving(false)
       setIsMaskMode(false)
       setHasMask(false)
+      setSelectedTheme(null)
+      setThemeMenuOpen(false)
       if (referenceInputRef.current) {
         referenceInputRef.current.value = ''
       }
@@ -351,9 +395,16 @@ export default function AiImageDialog({
     try {
       let url: string | undefined
 
+      const themeDescriptor = selectedTheme
+        ? THEME_OPTIONS.find((t) => t.id === selectedTheme)?.descriptor
+        : null
+      const finalPrompt = themeDescriptor
+        ? `${prompt.trim()}, ${themeDescriptor}`
+        : prompt.trim()
+
       if (referenceImages.length > 0) {
         const { data, error: fnErr } = await supabase.functions.invoke('ai-image-edit', {
-          body: { prompt: prompt.trim(), imageUrls: referenceImages.map((r) => r.dataUrl), aspectRatio: aspect },
+          body: { prompt: finalPrompt, imageUrls: referenceImages.map((r) => r.dataUrl), aspectRatio: aspect },
         })
         if (fnErr) {
           const msg = await extractFnError(fnErr, 'Failed to generate image.')
@@ -362,7 +413,7 @@ export default function AiImageDialog({
         url = (data as { dataUrl?: string } | null)?.dataUrl
       } else {
         const { data, error: fnErr } = await supabase.functions.invoke('ai-image-generate', {
-          body: { prompt: prompt.trim(), aspectRatio: aspect },
+          body: { prompt: finalPrompt, aspectRatio: aspect },
         })
         if (fnErr) {
           const msg = await extractFnError(fnErr, 'Failed to generate image.')
@@ -522,6 +573,70 @@ export default function AiImageDialog({
                   <ImagePlus className="h-4 w-4" />
                   <span>{referenceImages.length > 0 ? 'Add image' : 'Upload image'}</span>
                 </button>
+                <Popover open={themeMenuOpen} onOpenChange={setThemeMenuOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      disabled={isLoading}
+                      className={`absolute bottom-3 left-[8.5rem] inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                        selectedTheme
+                          ? 'border-amber-300/60 bg-amber-300/10 text-amber-100 hover:bg-amber-300/20'
+                          : 'border-white/10 bg-black/40 text-zinc-200 hover:border-white/20 hover:bg-white/[0.08] hover:text-white'
+                      }`}
+                      title="Pick a visual theme"
+                    >
+                      <Palette className="h-4 w-4" />
+                      <span>
+                        {selectedTheme
+                          ? THEME_OPTIONS.find((t) => t.id === selectedTheme)?.faLabel ?? 'تم'
+                          : 'انتخاب تم'}
+                      </span>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-72 p-2" dir="rtl">
+                    <div className="mb-2 flex items-center justify-between px-1">
+                      <span className="text-xs font-medium text-zinc-300">انتخاب تم تصویر</span>
+                      {selectedTheme ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedTheme(null)
+                            setThemeMenuOpen(false)
+                          }}
+                          className="text-[11px] text-rose-300 hover:text-rose-200"
+                        >
+                          حذف انتخاب
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="max-h-72 space-y-0.5 overflow-y-auto pr-1">
+                      {THEME_OPTIONS.map((t) => {
+                        const active = selectedTheme === t.id
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedTheme(t.id)
+                              setThemeMenuOpen(false)
+                            }}
+                            className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-right transition ${
+                              active
+                                ? 'bg-amber-300/15 text-amber-100'
+                                : 'text-zinc-200 hover:bg-white/[0.06]'
+                            }`}
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm">{t.faLabel}</span>
+                              <span className="block truncate text-[11px] text-zinc-500">{t.enLabel}</span>
+                            </span>
+                            {active ? <Check className="h-4 w-4 shrink-0" /> : null}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
               {referenceImages.length > 0 ? (
                 <div className="mt-3 space-y-2">
