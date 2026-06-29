@@ -5874,12 +5874,10 @@ export default function DashboardPage() {
       persistProjectSourceImages(rest)
       return rest
     })
-    setProjectAudio((prev) => {
-      if (!(finalId in prev)) return prev
-      const { [finalId]: _dropAudio, ...rest } = prev
-      persistProjectAudio(rest)
-      return rest
-    })
+    // NOTE: the final film's audio is NOT removed here. It is moved atomically
+    // to the draft scope in step 8b below. Deleting it here (in a separate
+    // functional update) would race the move and leave the draft without any
+    // persisted soundtrack — the exact bug this avoids.
 
 
 
@@ -5975,9 +5973,11 @@ export default function DashboardPage() {
 
     // 8b. Move the film's persisted audio over to the draft scope so the
     // soundtrack stays attached and is restored into the live audio state.
+    // Single atomic update: drop finalId AND write draftId in one pass so the
+    // draft always ends up with a durable soundtrack mapping.
     const movedAudio = projectAudio[finalId]
     setProjectAudio((prev) => {
-      const audio = prev[finalId]
+      const audio = prev[finalId] ?? movedAudio
       if (!audio) return prev
       const { [finalId]: _dropAudio, ...rest } = prev
       const next = { ...rest, [draftId]: audio }
@@ -6002,6 +6002,19 @@ export default function DashboardPage() {
   const restoreDraftAudio = useCallback((draftId: string, override?: ProjectAudio) => {
     const audio = override ?? projectAudio[draftId]
     if (!audio) return
+    // Always persist the restored audio under the draft scope so it survives
+    // refresh / draft switch even when this was driven by an override (move).
+    if (audio.music || audio.voiceover) {
+      setProjectAudio((prev) => {
+        if (prev[draftId] && JSON.stringify(prev[draftId]) === JSON.stringify(audio)) return prev
+        const next = { ...prev, [draftId]: audio }
+        persistProjectAudio(next)
+        return next
+      })
+    }
+    // The film length may not be measured yet; fall back to the track's own
+    // duration so the timeline window is valid even before the preview loads.
+    const tlEnd = (d: number) => (mergedDurationSec > 0 ? mergedDurationSec : d)
     if (audio.music?.url) {
       const url = audio.music.url
       setMusicName(audio.music.name)
@@ -6012,7 +6025,11 @@ export default function DashboardPage() {
         a.src = url
         a.addEventListener('loadedmetadata', () => {
           const d = a.duration
-          if (Number.isFinite(d) && d > 0) { setMusicDuration(d); setMusicRange([0, d]) }
+          if (Number.isFinite(d) && d > 0) {
+            setMusicDuration(d)
+            setMusicRange([0, d])
+            if (mergedDurationSec <= 0) setMusicTimeline([0, tlEnd(d)])
+          }
         })
       } catch { /* ignore */ }
       draftAudioSnapshotRef.current[draftId] = {
@@ -6030,7 +6047,11 @@ export default function DashboardPage() {
         a.src = url
         a.addEventListener('loadedmetadata', () => {
           const d = a.duration
-          if (Number.isFinite(d) && d > 0) { setVoiceoverDuration(d); setVoiceoverRange([0, d]) }
+          if (Number.isFinite(d) && d > 0) {
+            setVoiceoverDuration(d)
+            setVoiceoverRange([0, d])
+            if (mergedDurationSec <= 0) setVoiceoverTimeline([0, tlEnd(d)])
+          }
         })
       } catch { /* ignore */ }
       draftAudioSnapshotRef.current[draftId] = {
