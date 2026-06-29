@@ -640,7 +640,6 @@ export default function AiImageDialog({
                   placeholder="A dark industrial workshop with glowing blue rebar stirrups, cinematic lighting…"
                   rows={5}
                   disabled={isLoading}
-                  className="pb-14"
                 />
                 <input
                   ref={referenceInputRef}
@@ -650,11 +649,13 @@ export default function AiImageDialog({
                   className="hidden"
                   onChange={handleReferenceChange}
                 />
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => referenceInputRef.current?.click()}
                   disabled={isLoading || referenceImages.length >= MAX_REFERENCE_IMAGES}
-                  className="absolute bottom-3 left-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                   title="Upload reference images"
                 >
                   <ImagePlus className="h-4 w-4" />
@@ -665,7 +666,7 @@ export default function AiImageDialog({
                     <button
                       type="button"
                       disabled={isLoading}
-                      className={`absolute bottom-3 left-[8.5rem] inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
                         selectedTheme
                           ? 'border-amber-300/60 bg-amber-300/10 text-amber-100 hover:bg-amber-300/20'
                           : 'border-white/10 bg-black/40 text-zinc-200 hover:border-white/20 hover:bg-white/[0.08] hover:text-white'
@@ -742,7 +743,7 @@ export default function AiImageDialog({
                     <button
                       type="button"
                       disabled={isLoading || referenceImages.length >= MAX_REFERENCE_IMAGES}
-                      className="absolute bottom-3 left-[15rem] inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                       title="Use one of your saved products as a reference"
                     >
                       <Package className="h-4 w-4" />
@@ -795,7 +796,7 @@ export default function AiImageDialog({
                   type="button"
                   onClick={() => void handleWritePrompt()}
                   disabled={isLoading || isWritingPrompt}
-                  className="absolute bottom-3 right-3 inline-flex items-center gap-2 rounded-full border border-amber-300/40 bg-amber-300/10 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:border-amber-300/70 hover:bg-amber-300/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-full border border-amber-300/40 bg-amber-300/10 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:border-amber-300/70 hover:bg-amber-300/20 disabled:cursor-not-allowed disabled:opacity-50"
                   title="Write a professional prompt from your references & theme"
                 >
                   {isWritingPrompt ? (
