@@ -1,41 +1,77 @@
-# Fix: Music & narration lost when reverting Final Film to Draft
+## هدف
+بازگشت Final Film به Draft باید واقعاً موسیقی و نریشن را هم به پروژه برگرداند، نه فقط آیکون‌های خالی را نشان دهد؛ سپس خودم با preview بررسی کنم که waveform و state صدا فعال شده‌اند.
 
-## Problem
-`reopenFinalAsDraft` (DashboardPage.tsx) restores the soundtrack only from `projectAudio[finalId]`. When that entry is missing or empty (best‑effort snapshot at finalize can fail, or the audio is still stored under the original draft key), the reopened draft loses its music and narration even though the audio files still exist in storage.
+## تشخیص ریشه‌ای
+مشکل فقط fallback قبلی نبود. دو ریشه اصلی در کد دیده می‌شود:
 
-## Goal
-When a Final Film is reverted to Draft, music and narration are always reattached if they exist anywhere for that project — safely, without touching unrelated behavior or other audio of other projects.
+1. **URL صدا از bucket خصوصی به صورت public/raw برمی‌گردد**
+   - `projectAudio` آدرس‌هایی مثل `merged-videos/...` را ذخیره می‌کند.
+   - کارت Library برای پخش همین صداها از `signStorageUrl` استفاده می‌کند.
+   - اما `restoreDraftAudio` همان URL خام را مستقیم داخل `musicUrl` / `voiceoverUrl` می‌گذارد؛ بنابراین WaveSurfer و Final Film merge نمی‌توانند فایل صوتی را بخوانند و نتیجه Draft/Final بدون صدا می‌شود.
 
-## Changes (single file: `src/modules/generator-ui/pages/DashboardPage.tsx`)
+2. **باز کردن Final به Draft گاهی با state قدیمی `projectAudio` کار می‌کند**
+   - `reopenFinalAsDraft` قبل از اینکه آخرین localStorage/server-hydrated state قطعی باشد، `projectAudio[finalId]` را از React state می‌خواند.
+   - اگر state خالی/قدیمی باشد، mapping صدا به Draft منتقل می‌شود یا ذخیره می‌شود، ولی live audio state برای preview/merge دوباره تنظیم نمی‌شود.
 
-### 1. Resolve audio from a fallback chain in `reopenFinalAsDraft`
-Replace the single lookup `const movedAudio = projectAudio[finalId]` with a resolved source that checks, in order:
-1. `projectAudio[finalId]` — audio snapshotted onto the final film.
-2. `projectAudio[draftId]` — the recovered original draft's soundtrack (the `draftId` is already computed from `draft_group_id` earlier in the function).
+## تغییرات پیشنهادی
+فقط در مسیر صوت Final→Draft و امضای URLها تغییر می‌دهم؛ UI generation، auth، storage policies و backend framework دست نمی‌خورد.
 
-Pick the first entry that actually has `music` or `voiceover`. This recovers the soundtrack for older/failed finalizations where only the draft-scoped copy survives.
+### 1. Helper امن برای خواندن آخرین `projectAudio`
+در `DashboardPage.tsx` یک helper کوچک اضافه می‌کنم که:
+- آخرین `project-audio:${userId}` را مستقیم از localStorage بخواند.
+- با React state فعلی merge شود.
+- فقط entryهای مربوط به `finalId` و `draftId` را استفاده کند.
 
-### 2. Make the atomic move tolerant of the source key
-Update the `setProjectAudio` atomic update so it:
-- Writes the resolved audio under `draftId`.
-- Removes the `finalId` entry (as today).
-- Leaves an existing `draftId` entry in place if no better audio was resolved (never overwrites good audio with nothing).
+### 2. Helper برای پیدا کردن audio معتبر
+یک تابع `resolveProjectAudioForReopen(finalId, draftId)` می‌سازم که به ترتیب این منابع را بررسی کند:
+1. `projectAudio[finalId]` از آخرین persisted map
+2. `projectAudio[draftId]` از آخرین persisted map
+3. نسخه‌های state فعلی به عنوان fallback
 
-### 3. Pass the resolved audio to `restoreDraftAudio`
-Call `restoreDraftAudio(draftId, resolvedAudio)` so the live `musicUrl`/`voiceoverUrl`/timeline state is repopulated from the resolved source (not just `projectAudio[finalId]`). `restoreDraftAudio` already persists the override under the draft scope, so the soundtrack survives refresh and is re-used when the film is finalized again.
+و فقط وقتی `music` یا `voiceover` واقعی دارد آن را انتخاب کند.
 
-### 4. Safety / non-regression
-- No storage deletions; only key remapping in `projectAudio` (purely additive for the draft, removes the now-defunct final entry).
-- Other projects' audio entries are untouched (we only read `finalId`/`draftId`).
-- If no audio exists anywhere, behavior is unchanged (draft simply has no soundtrack).
+### 3. امضای URL قبل از restore live audio
+`restoreDraftAudio` را async می‌کنم تا قبل از `setMusicUrl` و `setVoiceoverUrl`:
+- برای URLهای `merged-videos` / storage private از `signStorageUrl` استفاده کند.
+- اگر URL از قبل `blob:` / `data:` / signed باشد، همان را نگه دارد.
+- اگر signing شکست خورد، raw URL را ذخیره در metadata نگه دارد ولی برای live playback/merge فقط URL قابل fetch را ترجیح دهد.
 
-## Verification
-1. `bun run tsc --noEmit` clean.
-2. Manual: take a Final Film that has music + narration, click the reopen (pencil) icon → confirm the music and voiceover chips/waveforms reappear under the preview and the timelines are set.
-3. Refresh the page while in the reopened draft → soundtrack persists.
-4. Re-run Final Film → output contains the same music + narration.
-5. Reopen a Final Film that genuinely had no audio → no errors, no phantom soundtrack.
+نتیجه: waveform زیر preview واقعاً فایل را load می‌کند و merge بعدی صدا را هم دریافت می‌کند.
 
-## Technical notes
-- `draftId` is derived from `draft_group_id` (`draftIdForGroupUuid`) so the draft-scoped audio key matches the original draft that produced the film — this is what makes the fallback reliable across sessions.
-- All updates remain inside the existing single atomic `setProjectAudio` pass to avoid the race that previously dropped audio.
+### 4. انتقال atomic اما با آخرین persisted state
+در `reopenFinalAsDraft`:
+- audio resolved شده را از helper جدید می‌گیرم.
+- آن را زیر `draftId` ذخیره می‌کنم و `finalId` را حذف می‌کنم.
+- سپس `await/void restoreDraftAudio(draftId, resolvedAudio)` را اجرا می‌کنم تا live music/voiceover state immediately فعال شود.
+- `ensureActiveDraftIdRef.current = draftId` را هم همان لحظه تنظیم می‌کنم تا submit بعدی روی همان Draft ادامه پیدا کند.
+
+### 5. جلوگیری از Final Film بی‌صدا بعد از restore
+قبل از ساخت `audioOpt` در Final Film:
+- اگر `musicUrl` یا `voiceoverUrl` از storage خصوصی باشد، یک URL fetchable/signed تازه برای merge می‌گیرم.
+- این کار باعث می‌شود حتی اگر preview URL قبلی منقضی شده باشد، خروجی Final Film دوباره silent نشود.
+
+### 6. اصلاح snapshot صدا
+`persistAudioToStorage` را طوری امن‌تر می‌کنم که وقتی source خودش private storage URL است:
+- اول آن را sign کند.
+- سپس fetch/upload کند.
+این باعث می‌شود snapshotهای بعدی music/voiceover دوباره fail نشوند.
+
+## اعتبارسنجی
+بعد از اعمال تغییرات:
+1. Typecheck را اجرا می‌کنم.
+2. با Playwright preview را باز می‌کنم.
+3. localStorage test fixture با یک Final Film دارای `projectAudio` می‌سازم.
+4. action بازگشت Final→Draft را اجرا/شبیه‌سازی می‌کنم.
+5. بررسی می‌کنم:
+   - `projectAudio[draftId]` وجود دارد.
+   - `musicUrl` / `voiceoverUrl` به signed/fetchable URL تبدیل شده‌اند.
+   - waveform containerها blank/error نیستند.
+   - preview صدا را به player پاس می‌دهد.
+
+## محدوده‌ای که تغییر نمی‌دهم
+- UI تولید و layout اصلی
+- auth
+- storage policies
+- backend/functions
+- credit ledger
+- merge encoder اصلی
