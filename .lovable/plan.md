@@ -1,31 +1,22 @@
 ## Goal
-In the **Generate image with AI** dialog, add an icon button (in the prompt toolbar, in the empty spot circled in yellow — right of the theme picker) that lets the user pick from their **saved product photos** and attach the chosen one as a reference image for generation. This mirrors how products already feed into video generation, but makes them reachable while building a cover/image.
+Add a fourth control — a **prompt-writer** icon — to the "Generate image with AI" dialog (the empty bottom-right area circled in the screenshot). When clicked, it analyzes the attached reference image(s) / selected product and the chosen theme, then writes a single polished, professional image-generation prompt and fills the Prompt textarea.
 
-## What exists today
-- `AiImageDialog.tsx` already supports up to `MAX_REFERENCE_IMAGES` (4) reference images, an "Upload image" button, and a "Pick a theme" popover in the prompt toolbar.
-- `DashboardPage.tsx` already holds the user's product photos in `archiveProductImages` (UserImageItem[] with signed `storage_path`, `description`), and renders `<AiImageDialog />`.
+## Backend — new edge function `write-image-prompt`
+File: `supabase/functions/write-image-prompt/index.ts`
+- Why a new function: the existing `enhance-prompt` is video-oriented (cinematic motion / no-narration rules) and restricts image URLs to Supabase hosts only, but the dialog's references are base64 data URLs. A small dedicated function is the clean, safe choice and won't touch the working video flow.
+- Standard boilerplate: CORS on every response (incl. errors), JWT validated in code, Zod-validate the body.
+- Input: `{ themeDescriptor?: string, themeLabel?: string, existingPrompt?: string, referenceImages?: string[] (base64 data URLs, max 4) }`.
+- Calls Lovable AI Gateway model `google/gemini-2.5-flash` via multimodal chat completions: text instruction + `image_url` blocks for each reference data URL.
+- System instruction: act as an expert image-prompt engineer; analyze the references (products, lighting, materials, composition), incorporate the theme descriptor, and output ONE concise, vivid, professional English image prompt (no explanations, no markdown, no quotes). Mirror the language already typed in `existingPrompt` if non-English; default English.
+- Returns `{ prompt: string }`. Surface 429/402 gateway errors clearly.
+- Deploy the function.
 
-## Plan
-
-### 1. Pass products into the dialog (`DashboardPage.tsx`)
-- Add a new prop to the `<AiImageDialog />` render: `products={archiveProductImages.map(p => ({ id: p.id, url: p.storage_path, title: <name/derived label>, description: p.description ?? null }))}`.
-- No business-logic/storage changes — purely passing already-loaded, signed product URLs down.
-
-### 2. Add the "Select product" control (`AiImageDialog.tsx`)
-- Extend `Props` with optional `products?: { id: string; url: string; title: string | null; description?: string | null }[]`.
-- Add a new toolbar button next to the theme picker (positioned in the empty area circled in the screenshot), using a product icon (e.g. `ShoppingBag`/`Package` from lucide), label **"Select product"**.
-- Clicking opens a `Popover` showing a scrollable grid of the user's product photos (thumbnail + title). If there are no products, show a short empty-state hint ("No saved products yet").
-- Selecting a product:
-  - Fetches its URL → converts to a data URL (reuse existing fetch→blob→dataUrl helpers / `fileToDataUrl` pattern).
-  - Adds it to `referenceImages` (respecting the 4-image cap, reusing the same guard/error messaging as upload).
-  - Closes the popover. The selected product then appears in the existing reference-images list with remove support — no separate UI needed.
-- All labels in English, consistent with the existing theme picker styling.
-
-### 3. Verify
-- `bunx tsgo --noEmit` clean.
-- Confirm the button renders in the toolbar, the popover lists products, selecting one adds it to the reference list, and the 4-image cap still holds.
+## Frontend — `AiImageDialog.tsx`
+- Add a `Wand2`-style "Write prompt" icon button placed in the bottom-right of the Prompt textarea (the circled spot). Since the three existing buttons use hardcoded absolute left offsets and already crowd the row, anchor the new button at `absolute bottom-3 right-3` so it does not collide.
+- New state: `isWritingPrompt`. On click: gather `referenceImages` data URLs, the selected theme's `descriptor`/`enLabel`, and current `prompt`; invoke `write-image-prompt`; on success set `prompt` to the returned text; show spinner + disable while running; reuse existing `extractFnError` for errors.
+- Button disabled while `isLoading`/`isWritingPrompt`. Tooltip: "Write a professional prompt from your references & theme".
 
 ## Technical notes
-- Reuses existing reference-image state, cap logic, and preview/remove UI — only a new entry point (button + popover) and a new prop are added.
-- Product URLs are already signed in `archiveProductImages`; fetch-to-dataUrl keeps them consistent with how uploaded references are stored before sending to the edge function.
-- No changes to generation UI flow, auth, storage policies, or the credit/job pipeline.
+- No changes to generation UI logic, auth, storage policies, or the video pipeline.
+- Reference images are already kept as base64 data URLs in `referenceImages`, so no extra conversion needed.
+- Verify with a live `curl` test of the new function and a TS typecheck after wiring.
