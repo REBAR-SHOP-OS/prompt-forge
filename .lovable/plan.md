@@ -1,32 +1,23 @@
-## مشکل
-وقتی هیچ کاراکتری به پروژه اضافه نشده (دکمه «Add character» در حالت خالی است و `selectedCharacter = null`)، باز هم ممکن است یک کاراکتر در ویدئو استفاده شود. علت این است که اپ به یک «لنگرگاه پیوستگی» قبلی برمی‌گردد:
+برنامه‌ی اصلاح امن و محدود:
 
-```text
-projectCharacter = selectedCharacter ?? continuity.characterRef ?? null
-```
+1. **رفع اتصال eventهای ویدئو به soundtrack**
+   - در `VideoWithSoundtrack.tsx` وابستگی sync effect را به `resolvedSrc` / `videoKey` هم وصل می‌کنم.
+   - دلیل: الان وقتی URL ویدئو ابتدا در حالت loading/proxy است، effect ممکن است قبل از ساخته‌شدن `<video>` اجرا شود و دیگر به ویدئوی واقعی وصل نشود؛ در نتیجه waveform دیده می‌شود ولی play/pause/seek به audio نمی‌رسد.
 
-اگر کاربر قبلاً کاراکتری انتخاب کرده و سپس آن را حذف کرده باشد، `continuity.characterRef` همچنان مقدار دارد و در همهٔ کارت‌ها به ساخت ویدئو تزریق می‌شود — یعنی «حق استفاده» کاراکتر همچنان وجود دارد در حالی که کاربری کاراکتری اضافه نکرده است.
+2. **پایدار کردن lifecycle پخش native audio**
+   - در `PreviewSoundtrackWaveforms.tsx` برای هر ترک (`music`, `voiceover`) readiness جداگانه با `loadedmetadata/canplay/error` اضافه می‌کنم.
+   - اگر play قبل از آماده شدن فایل صدا صدا زده شود، درخواست play ذخیره می‌شود و بعد از آماده شدن فایل اجرا می‌شود.
+   - هنگام تغییر URL یا unmount، audio قبلی pause/reset می‌شود تا نمونه‌های قدیمی یا promiseهای قدیمی باعث سکوت/تداخل نشوند.
 
-## هدف
-وقتی کاربر صراحتاً کاراکتری اضافه نکرده باشد، هیچ کاراکتری نباید در ساخت ویدئو استفاده شود (نه descriptive reference، نه baked start-frame، نه reference image).
+3. **همگام‌سازی دقیق‌تر با playhead**
+   - `handleSeek` و `syncTime` همچنان تنها منبع زمان فیلم می‌مانند.
+   - در `VideoWithSoundtrack` بعد از `loadedmetadata`، یک sync اولیه با `currentTime` انجام می‌شود تا صدا بعد از resolve شدن ویدئو از همان ثانیه درست شروع شود.
+   - در `SequentialClipPlayer` فقط اگر لازم باشد، play state فعلی بعد از mount شدن waveform دوباره اعمال می‌شود؛ UI یا مدل تولید تغییر نمی‌کند.
 
-## تغییرات
+4. **حفظ مسیر Final→Draft بدون دستکاری گسترده**
+   - منطق `restoreDraftAudio` را فقط برای جلوگیری از timeline صفر/نامعتبر سخت‌تر می‌کنم؛ اگر duration فیلم هنوز معلوم نیست، ترک صوتی با بازه معتبر خودش فعال می‌ماند تا در preview خاموش نشود.
+   - مسیرهای backend، storage policy، auth و generation UI دست‌نخورده می‌مانند.
 
-1. **اتکا فقط به انتخاب صریح کاربر** (`DashboardPage.tsx`، خط ۳۵۹۴):
-   منبع حقیقت برای کاراکترِ پروژه فقط `selectedCharacter` باشد:
-   ```text
-   projectCharacter = selectedCharacter ?? null
-   ```
-   با این کار وقتی دکمه روی «Add character» است، هیچ مسیر ساختی کاراکتر را استفاده نمی‌کند (خطوط ۶۵۹۲، ۶۶۸۳، ۶۹۰۲ و ادامهٔ سناریو همگی روی `projectCharacter` تکیه دارند).
-
-2. **پاک‌سازی لنگرگاه هنگام حذف کاراکتر:**
-   در هر دو نقطهٔ حذف (دکمهٔ X روی چیپ، خط ۱۲۲۳۹ و دکمهٔ Remove، خط ۱۲۲۶۷) علاوه بر `setSelectedCharacter(null)` لنگرگاه پیوستگی هم پاک شود تا حالت پایدار بماند:
-   ```text
-   updateContinuity({ characterRef: null })
-   ```
-   (در صورت نیاز نوع `characterRef` در `updateContinuity` برای پذیرش `null` بررسی می‌شود.)
-
-## نتیجه
-- بدون افزودن کاراکتر → ویدئو بدون هیچ کاراکتری ساخته می‌شود.
-- با افزودن کاراکتر → رفتار فعلی حفظ تغییر نمی‌کند و کاراکتر در همهٔ کارت‌ها ثابت می‌ماند.
-- بدون دست‌زدن به UI تولید، احراز هویت، storage یا بک‌اند.
+5. **اعتبارسنجی بعد از پیاده‌سازی**
+   - TypeScript check را اجرا می‌کنم.
+   - با Playwright مسیر preview را بررسی می‌کنم: waveform موجود باشد، ویدئو play شود، hidden audioها src معتبر بگیرند، `paused=false` بعد از play شود، و seek/pause/play دوباره soundtrack را از دست ندهد.

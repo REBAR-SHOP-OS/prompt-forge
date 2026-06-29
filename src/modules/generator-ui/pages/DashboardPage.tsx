@@ -6172,12 +6172,16 @@ export default function DashboardPage() {
     // The film length may not be measured yet; fall back to the track's own
     // duration so the timeline window is valid even before the preview loads.
     const timelineDuration = mergedDurationSec > 0 ? mergedDurationSec : fallbackTimelineSec
-    const tlEnd = (d: number) => (timelineDuration > 0 ? timelineDuration : d)
+    const tlEnd = (d: number) => {
+      const trackDuration = Number.isFinite(d) && d > 0 ? d : 0
+      const end = timelineDuration > 0 ? timelineDuration : trackDuration
+      return end > 0 ? end : 1
+    }
     if (audio.music?.url) {
       const url = await resolveAudioPlaybackUrl(audio.music.url)
       setMusicName(audio.music.name)
       setMusicUrl(url)
-      setMusicTimeline([0, tlEnd(fallbackTimelineSec || 0)])
+      setMusicTimeline([0, tlEnd(fallbackTimelineSec)])
       try {
         const a = new Audio()
         a.src = url
@@ -6200,7 +6204,7 @@ export default function DashboardPage() {
       const url = await resolveAudioPlaybackUrl(audio.voiceover.url)
       setVoiceoverName(audio.voiceover.name)
       setVoiceoverUrl(url)
-      setVoiceoverTimeline([0, tlEnd(fallbackTimelineSec || 0)])
+      setVoiceoverTimeline([0, tlEnd(fallbackTimelineSec)])
       try {
         const a = new Audio()
         a.src = url
