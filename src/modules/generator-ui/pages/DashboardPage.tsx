@@ -1674,7 +1674,7 @@ export default function DashboardPage() {
       setArchiveVideos(videos)
       const allImages = ((imagesRes as { data?: UserImageItem[] }).data ?? []) as UserImageItem[]
       const signedImages = await signUserImageRows(allImages)
-      setArchiveImages(signedImages.filter((i) => (i.category ?? 'general') !== 'product'))
+      setArchiveImages(signedImages.filter((i) => (i.category ?? 'general') !== 'product' && (i.category ?? 'general') !== 'cover'))
       setArchiveProductImages(signedImages.filter((i) => (i.category ?? 'general') === 'product'))
       const audioRows = ((audioRes as { data?: UserAudioItem[] }).data ?? []) as UserAudioItem[]
       // Generate short-lived signed URLs for private-bucket playback.
@@ -4020,6 +4020,8 @@ export default function DashboardPage() {
     for (const img of userImages) {
       // Reframe images (Product Ad "Choose from products") never become drafts.
       if ((img.category ?? 'general') === 'reframe') continue
+      // Film covers are project-scoped, never a standalone draft.
+      if ((img.category ?? 'general') === 'cover') continue
       if (finalClaimedImages.has(img.id)) continue
       if (coverImageIds.has(img.id)) continue
       const did = img.draft_group_id ? draftIdForGroupUuid(img.draft_group_id) : imageDraftMap[img.id]
@@ -4180,6 +4182,8 @@ export default function DashboardPage() {
     for (const img of userImages) {
       // Reframe images (Product Ad "Choose from products") never become drafts.
       if ((img.category ?? 'general') === 'reframe') continue
+      // Film covers are project-scoped, never a standalone draft.
+      if ((img.category ?? 'general') === 'cover') continue
       if (img.draft_group_id) continue // durably owned by a server draft group
       if (imageDraftMap[img.id]) continue
       if (claimedImageIds.has(img.id)) continue
@@ -4321,6 +4325,17 @@ export default function DashboardPage() {
 
     const coverIds = new Set<string>()
     for (const ci of Object.values(coverImages)) coverIds.add(ci.id)
+
+    // Durably tag every known cover in the DB so it can never be rebuilt into
+    // a standalone draft after a refresh (category is checked by the draft
+    // builders and the workspace image load).
+    if (coverIds.size > 0) {
+      void supabase
+        .from('generator_user_images')
+        .update({ category: 'cover' })
+        .in('id', Array.from(coverIds))
+    }
+
 
     const ghostDraftIds = new Set<string>()
     for (const [draftId, imgs] of Object.entries(draftSourceImages)) {
@@ -5083,11 +5098,12 @@ export default function DashboardPage() {
             .eq('user_id', userId)
             .is('deleted_at', null)
             // Product photos live only in the Storage > Product Photos tab,
-            // character images live only in the Character Sheet dialog, and
+            // character images live only in the Character Sheet dialog,
             // reframe images (Product Ad > "Choose from products") live only in
-            // "Previously made images" + Storage. None must ever leak into the
+            // "Previously made images" + Storage, and film covers are
+            // project-scoped (coverImages). None must ever leak into the
             // workspace/drafts/library.
-            .or('category.is.null,and(category.neq.product,category.neq.character,category.neq.reframe)'),
+            .or('category.is.null,and(category.neq.product,category.neq.character,category.neq.reframe,category.neq.cover)'),
         ])
         if (cancelled) return
 
@@ -5106,7 +5122,8 @@ export default function DashboardPage() {
               !workspaceHiddenImageIds.has(r.id) &&
               (r.category ?? 'general') !== 'product' &&
               (r.category ?? 'general') !== 'character' &&
-              (r.category ?? 'general') !== 'reframe',
+              (r.category ?? 'general') !== 'reframe' &&
+              (r.category ?? 'general') !== 'cover',
           ),
         )
         if (cancelled) return
@@ -9810,15 +9827,23 @@ export default function DashboardPage() {
               setAiDialogMode('frame')
               return
             }
+            // Durably tag this image as a film cover so it can NEVER be turned
+            // into a standalone orphan draft (the draft builders skip category
+            // 'cover'). This does not rely on the async coverImages map.
+            const coverRow = { ...(row as UserImageItem), category: 'cover' }
+            void supabase
+              .from('generator_user_images')
+              .update({ category: 'cover' })
+              .eq('id', coverRow.id)
             // Pin this image as the film cover for the current scope.
             // Do NOT stage it as a Start frame, do NOT add it to the regular
             // pending source-image list (it's excluded via allCoverImageIds).
             setUserImages((prev) => {
-              if (prev.some((p) => p.id === row.id)) return prev
-              return [row as UserImageItem, ...prev]
+              if (prev.some((p) => p.id === coverRow.id)) return prev
+              return [coverRow as UserImageItem, ...prev]
             })
             setCoverImages((prev) => {
-              const next = { ...prev, [coverScopeKey]: row as UserImageItem }
+              const next = { ...prev, [coverScopeKey]: coverRow as UserImageItem }
               persistCoverImages(next)
               return next
             })
