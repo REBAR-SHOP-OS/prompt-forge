@@ -1,9 +1,9 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from '@/components/ui/hover-card'
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 
 type Props = {
   /** The trigger element (the style chip/button). */
@@ -16,20 +16,46 @@ type Props = {
   preview?: string
   /** Disable RTL-aware alignment when needed. */
   rtl?: boolean
+  /** Runs the actual selection logic when the user presses the select button. */
+  onSelect?: () => void
+  /** Whether this style is currently selected (controls the button label). */
+  selected?: boolean
+  /** Label for the select button when not selected. */
+  selectLabel?: string
+  /** Label for the select button when already selected. */
+  selectedLabel?: string
 }
 
 /**
- * Wraps a style chip and shows a small hover card with a looping, muted
- * preview clip (when available) plus the style name and a short description.
- * Falls back to a text-only card when no preview clip exists yet.
+ * Wraps a style chip. Clicking the chip opens a popover showing a looping,
+ * muted preview clip (when available) plus the style name and a short
+ * description. Selection happens only via the explicit button inside the
+ * popover — clicking the chip itself never selects the style.
  *
- * On touch devices HoverCard opens on tap, so this works on mobile too.
+ * Works on touch devices too, since it is click/tap based.
  */
-export function StylePreviewCard({ children, title, description, preview, rtl }: Props) {
+export function StylePreviewCard({
+  children,
+  title,
+  description,
+  preview,
+  rtl,
+  onSelect,
+  selected,
+  selectLabel,
+  selectedLabel,
+}: Props) {
+  const [open, setOpen] = useState(false)
+
+  const handleSelect = () => {
+    onSelect?.()
+    setOpen(false)
+  }
+
   return (
-    <HoverCard openDelay={120} closeDelay={80}>
-      <HoverCardTrigger asChild>{children}</HoverCardTrigger>
-      <HoverCardContent
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>{children}</PopoverTrigger>
+      <PopoverContent
         side="top"
         align="center"
         className="w-64 border-white/10 bg-zinc-900/95 p-2 text-zinc-100 shadow-xl"
@@ -50,8 +76,21 @@ export function StylePreviewCard({ children, title, description, preview, rtl }:
         {description ? (
           <p className="mt-1 text-[11px] leading-relaxed text-zinc-400">{description}</p>
         ) : null}
-      </HoverCardContent>
-    </HoverCard>
+        {onSelect ? (
+          <button
+            type="button"
+            onClick={handleSelect}
+            className={`mt-2 inline-flex w-full items-center justify-center gap-1 rounded-md border px-3 py-1.5 text-xs font-semibold transition ${
+              selected
+                ? 'border-amber-300/60 bg-amber-300/15 text-amber-100 hover:bg-amber-300/25'
+                : 'border-white/15 bg-white/[0.06] text-zinc-100 hover:bg-white/[0.12]'
+            }`}
+          >
+            {selected ? (selectedLabel ?? 'Selected ✓') : (selectLabel ?? 'Select')}
+          </button>
+        ) : null}
+      </PopoverContent>
+    </Popover>
   )
 }
 

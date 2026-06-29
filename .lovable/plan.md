@@ -1,51 +1,43 @@
-## Plan
+# پیشنمایش با کلیک + دکمهٔ انتخاب
 
-### Verified state
-- Active app route: `/` dashboard preview.
-- Relevant files checked:
-  - `src/modules/generator-ui/pages/DashboardPage.tsx`
-  - `src/modules/generator-ui/lib/continuity.ts`
-  - `src/modules/generator-ui/components/ProductAdDialog.tsx`
-  - `supabase/functions/jobs-create/index.ts`
-  - `supabase/functions/_shared/modules/job-orchestrator/service.ts`
+## هدف
+الان پیشنمایش هر استایل فقط با **هاور** باز می‌شود و **کلیک روی چیپ مستقیماً آن را انتخاب می‌کند**. طبق درخواست، باید:
+- کلیک روی هر چیپ/آیکون، پیشنمایش (ویدئو + عنوان + توضیح) را باز کند.
+- انتخاب استایل فقط از طریق یک دکمهٔ «انتخاب» داخل خود پیشنمایش انجام شود.
+- این رفتار در **همهٔ چیپ‌های استایل در همه جا** یکسان باشد (دوربین، ژانر، صحنه، قالب‌های ویدئو در Product Ad و چیپ‌های استایل در داشبورد).
 
-### Likely cause
-A stale persisted continuity anchor can still be applied even when the UI shows **Add character**.
+## رویکرد (تغییر متمرکز در یک کامپوننت)
+منطق در `StylePreviewCard` متمرکز است و در دو محل استفاده می‌شود، پس با تغییر همان کامپوننت + اصلاح محل‌های فراخوانی، همه جا یکدست می‌شود.
 
-The risky logic is:
-```ts
-const projectCharacter = selectedCharacter ?? continuity.characterRef ?? null
-```
-So if `selectedCharacter` is empty but `continuity.characterRef` still exists in local storage for that project/draft, generation can still:
-- prepend character identity prompt text,
-- create a character start frame,
-- send character reference images,
-- force image-to-video character behavior.
+### ۱) بازنویسی `StylePreviewCard`
+`src/modules/generator-ui/components/StylePreviewCard.tsx`
+- جایگزینی `HoverCard` با `Popover` (از `@/components/ui/popover`) به‌صورت کنترل‌شده (state داخلی `open`).
+- چیپ (`children`) به‌عنوان `PopoverTrigger asChild` رندر می‌شود؛ کلیک روی چیپ فقط پیشنمایش را باز/بسته می‌کند و دیگر انتخاب انجام نمی‌دهد.
+- props جدید:
+  - `onSelect: () => void` — اجرای منطق انتخاب اصلی.
+  - `selected?: boolean` — وضعیت فعلی برای نمایش متن دکمه.
+  - `selectLabel?: string` / `selectedLabel?: string` — برچسب دکمه (مثلاً «انتخاب» / «انتخاب‌شده ✓» یا «حذف انتخاب»).
+- محتوای `PopoverContent`: همان ویدئوی پیشنمایش (در صورت وجود) + عنوان + توضیح + یک دکمهٔ «انتخاب» در پایین. کلیک روی دکمه `onSelect()` را صدا می‌زند و سپس پیشنمایش را می‌بندد.
+- حفظ `dir` برای RTL و استایل فعلی کارت.
 
-This matches the screenshot: the UI button says **Add character**, but the produced film contains a character.
+### ۲) اصلاح محل‌های فراخوانی
+در هر دو فایل، `onClick` از روی دکمهٔ داخلی چیپ حذف می‌شود و به‌جای آن `onSelect` به `StylePreviewCard` پاس داده می‌شود (تا کلیک روی چیپ فقط پیشنمایش را باز کند).
 
-### Fix to apply
-1. Make the visible UI selection the only authority for character usage:
-   - Change generation logic so `projectCharacter` comes only from `selectedCharacter`.
-   - Do not silently fall back to `continuity.characterRef` during job creation.
+`src/modules/generator-ui/components/ProductAdDialog.tsx` — چهار بخش:
+- دوربین: `onSelect={() => setCameraStyle(style.label.en)}`، `selected={cameraStyle === style.label.en}`
+- ژانر: `onSelect={() => setGenre(cur => cur === g.id ? '' : g.id)}`، `selected={genre === g.id}`
+- صحنه: `onSelect={() => setScene(cur => cur === s.id ? '' : s.id)}`، `selected={scene === s.id}`
+- قالب ویدئو: `onSelect={() => toggleTemplate(v.id)}`، `selected={templateIds.has(v.id)}`
+- برچسب دکمه از زبان فعلی (`lang`) ساخته می‌شود (فارسی/انگلیسی و سایر زبان‌های موجود) — یک helper کوچک دوزبانه اضافه می‌شود.
 
-2. Keep continuity memory safe:
-   - Continuity can still preserve scene/environment/style between cards.
-   - It must not apply character identity/reference unless the user explicitly selected a character in the current project UI.
+`src/modules/generator-ui/pages/DashboardPage.tsx` — چیپ استایل:
+- حذف `onClick={() => onToggle(item.id)}` از دکمه و افزودن `onSelect={() => onToggle(item.id)}` و `selected={active}` به `StylePreviewCard`.
 
-3. Add a defensive cleanup path:
-   - When loading a project/draft, if the selected character is absent, ensure any stale persisted `characterRef` is cleared for that chain.
-   - Existing remove buttons will continue clearing both UI state and continuity state.
+## نکات
+- روی موبایل هم چون مبتنی بر کلیک/تپ است، طبیعی کار می‌کند.
+- چون انتخاب از چیپ به دکمهٔ داخل پیشنمایش منتقل می‌شود، رفتار قبلیِ «کلیک = انتخاب» حذف می‌شود (مطابق گزینهٔ انتخابی شما).
+- بدون تغییر در منطق تولید ویدئو، اعتبارسنجی، یا بک‌اند.
 
-4. Fix regeneration safety:
-   - Regenerate should preserve a card’s original reference images only if that card really had them.
-   - It must not fall back to the current/stale project character when none is selected.
-   - Product reference can still be used when a product is selected.
-
-5. Add regression coverage:
-   - Add/update a targeted test for the character-selection helper logic so: `selectedCharacter = null` + stale `continuity.characterRef` results in **no character reference URLs**.
-
-### Verification
-- Source check: confirm no generation path uses `continuity.characterRef` as a fallback character.
-- Test check: run the targeted regression test.
-- Manual expected behavior: if the button shows **Add character**, generated jobs must not include character prompt locks, character start frame generation, or character reference URLs. Product AD references should continue working.
+## تأیید
+- اجرای `bun run tsc --noEmit` برای پاک بودن تایپ‌ها.
+- بررسی بصری با Playwright: کلیک روی یک چیپ → باز شدن پیشنمایش با ویدئو و دکمهٔ انتخاب؛ کلیک روی «انتخاب» → فعال‌شدن چیپ و بسته‌شدن پیشنمایش.
