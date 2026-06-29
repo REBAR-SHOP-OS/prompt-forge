@@ -7638,7 +7638,39 @@ export default function DashboardPage() {
           return { id, durationMs: TRANSITION_DURATION[id] ?? 0 }
         })
 
-      const hasMusic = Boolean(musicUrl && musicRange[1] > musicRange[0])
+      let effectiveMusicRange = musicRange
+      if (musicUrl && effectiveMusicRange[1] <= effectiveMusicRange[0]) {
+        const probedDuration = musicDuration > 0 ? musicDuration : await probeAudioMetadataDuration(musicUrl, 3000)
+        if (probedDuration && Number.isFinite(probedDuration) && probedDuration > 0) {
+          effectiveMusicRange = [0, probedDuration]
+          setMusicDuration(probedDuration)
+          setMusicRange(effectiveMusicRange)
+        }
+      }
+      let effectiveVoiceoverRange = voiceoverRange
+      if (voiceoverUrl && effectiveVoiceoverRange[1] <= effectiveVoiceoverRange[0]) {
+        const probedDuration = voiceoverDuration > 0 ? voiceoverDuration : await probeAudioMetadataDuration(voiceoverUrl, 3000)
+        if (probedDuration && Number.isFinite(probedDuration) && probedDuration > 0) {
+          effectiveVoiceoverRange = [0, probedDuration]
+          setVoiceoverDuration(probedDuration)
+          setVoiceoverRange(effectiveVoiceoverRange)
+        }
+      }
+      const fallbackTimelineEnd = durationForDraftSources(
+        eligibleClips.filter((c): c is Extract<UnifiedClip, { kind: 'video' }> => c.kind === 'video').map((c) => c.job),
+        eligibleClips.filter((c): c is Extract<UnifiedClip, { kind: 'image' }> => c.kind === 'image').map((c) => c.image),
+        mergedDurationSec,
+      )
+      const effectiveMusicTimeline: [number, number] = musicTimeline[1] > musicTimeline[0]
+        ? musicTimeline
+        : [0, fallbackTimelineEnd]
+      const effectiveVoiceoverTimeline: [number, number] = voiceoverTimeline[1] > voiceoverTimeline[0]
+        ? voiceoverTimeline
+        : [0, fallbackTimelineEnd]
+      if (musicUrl && musicTimeline[1] <= musicTimeline[0]) setMusicTimeline(effectiveMusicTimeline)
+      if (voiceoverUrl && voiceoverTimeline[1] <= voiceoverTimeline[0]) setVoiceoverTimeline(effectiveVoiceoverTimeline)
+
+      const hasMusic = Boolean(musicUrl && effectiveMusicRange[1] > effectiveMusicRange[0])
       const hasVoiceover = Boolean(voiceoverUrl)
       const mixedClipVolume = hasMusic
         ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
@@ -7648,21 +7680,21 @@ export default function DashboardPage() {
             music: hasMusic
               ? {
                   src: musicUrl as string,
-                  startSec: musicRange[0],
-                  endSec: musicRange[1],
+                  startSec: effectiveMusicRange[0],
+                  endSec: effectiveMusicRange[1],
                   musicVolume,
-                  timelineStartSec: musicTimeline[1] > musicTimeline[0] ? musicTimeline[0] : undefined,
-                  timelineEndSec: musicTimeline[1] > musicTimeline[0] ? musicTimeline[1] : undefined,
+                  timelineStartSec: effectiveMusicTimeline[1] > effectiveMusicTimeline[0] ? effectiveMusicTimeline[0] : undefined,
+                  timelineEndSec: effectiveMusicTimeline[1] > effectiveMusicTimeline[0] ? effectiveMusicTimeline[1] : undefined,
                 }
               : undefined,
             voiceover: hasVoiceover
               ? {
                   src: voiceoverUrl as string,
                   volume: voiceoverVolume,
-                  sourceStartSec: voiceoverRange[1] > voiceoverRange[0] ? voiceoverRange[0] : undefined,
-                  sourceEndSec: voiceoverRange[1] > voiceoverRange[0] ? voiceoverRange[1] : undefined,
-                  timelineStartSec: voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[0] : undefined,
-                  timelineEndSec: voiceoverTimeline[1] > voiceoverTimeline[0] ? voiceoverTimeline[1] : undefined,
+                  sourceStartSec: effectiveVoiceoverRange[1] > effectiveVoiceoverRange[0] ? effectiveVoiceoverRange[0] : undefined,
+                  sourceEndSec: effectiveVoiceoverRange[1] > effectiveVoiceoverRange[0] ? effectiveVoiceoverRange[1] : undefined,
+                  timelineStartSec: effectiveVoiceoverTimeline[1] > effectiveVoiceoverTimeline[0] ? effectiveVoiceoverTimeline[0] : undefined,
+                  timelineEndSec: effectiveVoiceoverTimeline[1] > effectiveVoiceoverTimeline[0] ? effectiveVoiceoverTimeline[1] : undefined,
                 }
               : undefined,
             clipVolume: mixedClipVolume,
