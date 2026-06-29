@@ -1,28 +1,28 @@
-# افزودن انتخاب‌گر تم برای تصویر کاور
+## Goal
+In the AI image theme picker (`AiImageDialog.tsx`), make all text English and give each of the 30 themes a large, visible preview so the user can see what each theme looks like at a glance. This is a UI/presentation-only change.
 
-یک آیکون کنار دکمه «Upload image» در پنجره «Generate image with AI» اضافه می‌شود تا کاربر بتواند از بین ۳۰ تم آماده یکی را برای ظاهر تصویر انتخاب کند. تم انتخاب‌شده به‌صورت خودکار به پرامپت اعمال می‌شود تا تصویر تولیدشده آن سبک را داشته باشد.
+## Changes (all in `src/modules/generator-ui/components/AiImageDialog.tsx`)
 
-## آنچه اضافه می‌شود
+### 1. English-only text
+- Trigger button: replace `انتخاب تم` / `selectedTheme?.faLabel` with English `Pick a theme` / `enLabel`.
+- Popover header: `انتخاب تم تصویر` → `Choose a theme`.
+- Clear button: `حذف انتخاب` → `Clear`.
+- Each theme row: show only the English `enLabel` (drop the Persian `faLabel` line).
+- Remove `dir="rtl"` from the popover so layout is left-to-right.
+- Keep the `faLabel` field in the data for now (harmless), but it is no longer rendered.
 
-1. **آیکون انتخاب تم** (کنار «Upload image») با آیکون `Palette` از lucide-react. کلیک روی آن یک `Popover`/منو باز می‌کند با لیست ۳۰ تم.
-2. **لیست ۳۰ تم** با برچسب فارسی + انگلیسی:
-   مینیمال، تاریک و مرموز، پاپ‌آرت، وینتیج، مجله‌ای، شرکتی، تایپوگرافی، پاستلی، مونوکروم، سیاه‌وسفید، نئونی، طبیعت/ارگانیک، آبرنگی، گرانج، کلاژ، پازلی/گرید، فلت‌دیزاین، سه‌بعدی، گرادیانت، شطرنجی، دودل، سینمایی، هندسی، قاب‌دار، متالیک، گلس‌مورفیسم، دوآتون، کمیک‌بوک، بولت‌ژورنال، اسکرپ‌بوک.
-3. هر تم یک **توصیف سبک انگلیسی** (style descriptor) دارد که هنگام تولید به انتهای پرامپت افزوده می‌شود، مثلاً:
-   - تاریک و مرموز → `dark moody atmosphere, dramatic low-key lighting, deep shadows`
-   - نئونی → `vibrant neon glow, cyberpunk color palette, luminous accents`
-4. **نمایش تم انتخاب‌شده**: نام تم فعال روی دکمه/کنار آن نشان داده می‌شود و امکان حذف انتخاب (None) وجود دارد.
+### 2. Large visual previews per theme
+- Add a `swatch` style to each `THEME_OPTIONS` entry — a CSS background (gradient / pattern) that visually represents the theme (e.g. Neon = dark bg with bright magenta/cyan glow, Pastel = soft pastel gradient, Black & White = grayscale, Watercolor = soft blended washes, Duotone = two-color split, Metallic = chrome-like gradient, etc.). Pure CSS so no image assets are added and it stays fast/deterministic.
+- Change the popover from a narrow vertical list to a **2-column grid of large preview cards**. Each card shows:
+  - A tall swatch thumbnail (the visual preview, the "درشت/large" part).
+  - The English theme name beneath it.
+  - A check overlay when selected.
+- Widen the `PopoverContent` (e.g. `w-[22rem]`) and keep it vertically scrollable (`max-h`) so all 30 cards are reachable.
 
-## رفتار
+### Technical notes
+- No backend, generation logic, or prompt-descriptor changes — `descriptor` text passed to generation stays exactly the same.
+- Selection state (`selectedTheme`), reset-on-close behavior, and `handleGenerate` logic are unchanged.
+- Previews are CSS-driven (inline `style={{ background: ... }}` or Tailwind classes), so they render instantly with zero added assets.
 
-- انتخاب تم فقط متن سبک را به پرامپت تولید (`handleGenerate`) تزریق می‌کند؛ هیچ تغییری در منطق بک‌اند، اعتبار، یا توابع edge ایجاد نمی‌شود.
-- اگر کاربر تم انتخاب نکند، رفتار دقیقاً مثل قبل می‌ماند.
-- با بسته‌شدن پنجره، انتخاب تم هم ریست می‌شود (همگام با ریست فعلی state).
-
-## جزئیات فنی
-
-- فایل: `src/modules/generator-ui/components/AiImageDialog.tsx`
-- یک ثابت `THEME_OPTIONS: { id, faLabel, enLabel, descriptor }[]` با ۳۰ آیتم.
-- state جدید: `selectedTheme: string | null`، ریست‌شده در `useEffect` باز/بسته‌شدن.
-- در `handleGenerate`، پرامپت نهایی = `prompt.trim()` + (در صورت وجود تم) `", " + descriptor`.
-- UI با کامپوننت `Popover` موجود در `@/components/ui/popover` و دکمه‌ای هم‌استایل با دکمه Upload (گرد، حاشیه‌دار) در کنار آن قرار می‌گیرد.
-- بدون تغییر طرح‌رنگ/توکن‌ها؛ از کلاس‌های موجود استفاده می‌شود.
+## Result
+The theme menu becomes an English, grid-based gallery of large visual swatches, letting the user preview each theme's look before applying it.
