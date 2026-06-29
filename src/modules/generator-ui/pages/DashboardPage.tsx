@@ -12820,20 +12820,22 @@ export default function DashboardPage() {
                   </div>
                 )
               }
-              const overall = tone(copyrightResult.verdict)
+              const display = (copyrightLang && copyrightTranslations[copyrightLang]) || copyrightResult
+              const isRtl = COPYRIGHT_LANGS.find((l) => l.value === copyrightLang)?.rtl ?? false
+              const overall = tone(display.verdict)
               return (
-                <div className="space-y-3">
+                <div className="space-y-3" dir={isRtl ? 'rtl' : 'ltr'}>
                   <div className={`flex items-center gap-3 rounded-xl border p-3 ${overall.bg}`}>
-                    <overall.Icon className={`h-6 w-6 ${overall.text}`} aria-hidden="true" />
+                    <overall.Icon className={`h-6 w-6 shrink-0 ${overall.text}`} aria-hidden="true" />
                     <div>
                       <p className={`text-sm font-semibold ${overall.text}`}>{overall.label}</p>
-                      {copyrightResult.summary ? (
-                        <p className="text-xs leading-5 text-zinc-300">{copyrightResult.summary}</p>
+                      {display.summary ? (
+                        <p className="text-xs leading-5 text-zinc-300">{display.summary}</p>
                       ) : null}
                     </div>
                   </div>
-                  <Section title="Video" section={copyrightResult.video} />
-                  <Section title="Music & voiceover" section={copyrightResult.music} />
+                  <Section title="Video" section={display.video} />
+                  <Section title="Music & voiceover" section={display.music} />
                   <p className="text-[11px] leading-5 text-zinc-500">
                     This is an AI-based estimate, not legal advice or definitive song matching.
                   </p>
