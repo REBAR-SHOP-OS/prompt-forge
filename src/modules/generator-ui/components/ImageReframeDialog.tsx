@@ -91,7 +91,18 @@ export default function ImageReframeDialog({ open, onOpenChange, onUseAsStartFra
       if (!resp.ok) {
         throw new Error(json?.error || `Request failed (${resp.status})`)
       }
-      setResultUrl(json.publicUrl as string)
+      // The result is stored in the PRIVATE `wan-frames` bucket, so the raw
+      // public URL returns 400/404 in an <img>. Resolve a signed URL from the
+      // returned storage path (mirrors signFramesUrl elsewhere in the app).
+      let displayUrl = json.publicUrl as string
+      const path = typeof json.path === 'string' ? json.path : ''
+      if (path) {
+        const { data: signed } = await supabase.storage
+          .from('wan-frames')
+          .createSignedUrl(path, 60 * 60 * 24 * 365)
+        if (signed?.signedUrl) displayUrl = signed.signedUrl
+      }
+      setResultUrl(displayUrl)
       toast({ title: 'Image reframed', description: `Converted to ${ratio}` })
     } catch (e) {
       const msg = (e as Error).message || 'Something went wrong.'
