@@ -640,7 +640,6 @@ export default function AiImageDialog({
                   placeholder="A dark industrial workshop with glowing blue rebar stirrups, cinematic lighting…"
                   rows={5}
                   disabled={isLoading}
-                  className="pb-14"
                 />
                 <input
                   ref={referenceInputRef}
