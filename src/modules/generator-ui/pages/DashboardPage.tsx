@@ -12747,6 +12747,31 @@ export default function DashboardPage() {
             </DialogDescription>
           </DialogHeader>
 
+          {copyrightResult && !copyrightLoading && !copyrightError ? (
+            <div className="flex items-center justify-end gap-2 pb-1">
+              {copyrightTranslating ? (
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin text-violet-300" aria-hidden="true" />
+              ) : null}
+              <Languages className="h-3.5 w-3.5 text-zinc-400" aria-hidden="true" />
+              <select
+                value={copyrightLang}
+                onChange={(e) => {
+                  const next = e.target.value
+                  setCopyrightLang(next)
+                  if (next) void translateCopyrightResult(next)
+                }}
+                disabled={copyrightTranslating}
+                className="h-8 rounded-md border border-white/10 bg-white/[0.04] px-2 text-xs text-zinc-200 outline-none focus:border-violet-300/40"
+              >
+                {COPYRIGHT_LANGS.map((l) => (
+                  <option key={l.value} value={l.value} className="bg-[#0b0c0e]">
+                    {l.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+
           {copyrightLoading ? (
             <div className="flex flex-col items-center gap-3 py-8 text-center">
               <LoaderCircle className="h-7 w-7 animate-spin text-violet-300" aria-hidden="true" />
