@@ -6159,7 +6159,15 @@ export default function DashboardPage() {
     // contains the mixed soundtrack. Use that movie file as a one-shot restored
     // voiceover track so reopening a Final Film can never produce a silent draft.
     const recoveredFilmAudio: ProjectAudio | undefined = !movedAudio && video.video?.storage_path
-      ? { voiceover: { url: video.video.storage_path, name: 'Restored final film audio' } }
+      ? {
+          // Last-resort recovery for older final films that do not have separate
+          // music/voice snapshots. This URL is the final movie's already-mixed
+          // audio, so source clip audio must be muted when previewing/re-rendering
+          // the reopened draft; otherwise the same soundtrack is layered twice
+          // and becomes echoey/noisy.
+          voiceover: { url: video.video.storage_path, name: 'Restored final film audio' },
+          voiceoverClipVolume: 0,
+        }
       : undefined
     const audioToRestore = movedAudio ?? recoveredFilmAudio
     // Single atomic update: drop finalId AND write draftId in one pass so the
