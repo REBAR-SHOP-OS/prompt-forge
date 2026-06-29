@@ -1,23 +1,52 @@
-برنامه‌ی اصلاح امن و محدود:
+### هدف نهایی
+صدا و موزیک در Preview، Final Film و وقتی Final دوباره به Draft برمی‌گردد باید پایدار، بدون نویز/به‌هم‌ریختگی، و بدون دوبل‌شدن/از دست رفتن اجرا شود.
 
-1. **رفع اتصال eventهای ویدئو به soundtrack**
-   - در `VideoWithSoundtrack.tsx` وابستگی sync effect را به `resolvedSrc` / `videoKey` هم وصل می‌کنم.
-   - دلیل: الان وقتی URL ویدئو ابتدا در حالت loading/proxy است، effect ممکن است قبل از ساخته‌شدن `<video>` اجرا شود و دیگر به ویدئوی واقعی وصل نشود؛ در نتیجه waveform دیده می‌شود ولی play/pause/seek به audio نمی‌رسد.
+### مشکل واقعی که پیدا شد
+- مسیر فعلی چند موتور هم‌زمان برای یک صدا دارد: WaveSurfer برای نمایش، `<audio>` مخفی برای پخش، و در Final Film یک mixer جدا. این باعث race، seekهای تکراری و گاهی دوبل/نویز می‌شود.
+- در `PreviewSoundtrackWaveforms` هر `timeupdate` می‌تواند voice/music را seek/play کند؛ برای voiceover این کار روی صدای انسانی می‌تواند glitch/noise بسازد.
+- در `mergeVideosWebCodecs.ts` صدای نهایی با AAC/WebCodecs encode می‌شود، اما قبل از encode هیچ limiter/normalizer وجود ندارد. اگر music + voiceover + clip audio جمعاً از سقف عبور کنند، خروجی می‌تواند clipping و نویز داشته باشد.
+- مسیر Final→Draft فقط URL/نام track را نگه می‌دارد؛ range/timeline/volume/mode را از snapshot اصلی برنمی‌گرداند، پس بعد از reopen ممکن است موسیقی/نریشن با زمان‌بندی یا ولوم اشتباه اجرا شوند.
 
-2. **پایدار کردن lifecycle پخش native audio**
-   - در `PreviewSoundtrackWaveforms.tsx` برای هر ترک (`music`, `voiceover`) readiness جداگانه با `loadedmetadata/canplay/error` اضافه می‌کنم.
-   - اگر play قبل از آماده شدن فایل صدا صدا زده شود، درخواست play ذخیره می‌شود و بعد از آماده شدن فایل اجرا می‌شود.
-   - هنگام تغییر URL یا unmount، audio قبلی pause/reset می‌شود تا نمونه‌های قدیمی یا promiseهای قدیمی باعث سکوت/تداخل نشوند.
+### تغییرات پیشنهادی
+1. **یک مسیر واحد برای Preview audio**
+   - WaveSurfer فقط waveform را بسازد و هرگز درگیر playback نباشد.
+   - پخش فقط با native `<audio>` انجام شود.
+   - `play()` فقط یک بار و بعد از sync/seek اجرا شود؛ از play/seek تکراری در هر tick جلوگیری شود.
 
-3. **همگام‌سازی دقیق‌تر با playhead**
-   - `handleSeek` و `syncTime` همچنان تنها منبع زمان فیلم می‌مانند.
-   - در `VideoWithSoundtrack` بعد از `loadedmetadata`، یک sync اولیه با `currentTime` انجام می‌شود تا صدا بعد از resolve شدن ویدئو از همان ثانیه درست شروع شود.
-   - در `SequentialClipPlayer` فقط اگر لازم باشد، play state فعلی بعد از mount شدن waveform دوباره اعمال می‌شود؛ UI یا مدل تولید تغییر نمی‌کند.
+2. **حذف عامل نویز در sync زنده**
+   - برای voiceover، در `syncTime` فقط وقتی drift زیاد است seek شود؛ نه روی هر `timeupdate`.
+   - برای music looping هم threshold و clamp امن‌تر شود تا در مرز loop کلیک/پرش ندهد.
+   - هنگام تغییر URL، audio قبلی کامل pause/reset/unload شود تا نمونه قدیمی هم‌زمان پخش نشود.
 
-4. **حفظ مسیر Final→Draft بدون دستکاری گسترده**
-   - منطق `restoreDraftAudio` را فقط برای جلوگیری از timeline صفر/نامعتبر سخت‌تر می‌کنم؛ اگر duration فیلم هنوز معلوم نیست، ترک صوتی با بازه معتبر خودش فعال می‌ماند تا در preview خاموش نشود.
-   - مسیرهای backend، storage policy، auth و generation UI دست‌نخورده می‌مانند.
+3. **Snapshot کامل Audio برای Draft/Final**
+   - `ProjectAudioTrack` فقط `url/name` نباشد؛ `range`, `timeline`, `volume`, و برای پروژه `clipVolume/soundtrackMode` هم ذخیره شود.
+   - هنگام Final Film و auto draft snapshot همین تنظیمات ذخیره شود.
+   - هنگام Final→Draft، همان snapshot کامل برگردد، نه اینکه timeline/range از duration حدسی دوباره ساخته شود.
 
-5. **اعتبارسنجی بعد از پیاده‌سازی**
-   - TypeScript check را اجرا می‌کنم.
-   - با Playwright مسیر preview را بررسی می‌کنم: waveform موجود باشد، ویدئو play شود، hidden audioها src معتبر بگیرند، `paused=false` بعد از play شود، و seek/pause/play دوباره soundtrack را از دست ندهد.
+4. **Final Film audio بدون clipping**
+   - در `mergeVideosWebCodecs.ts` بعد از offline mix، peak scan انجام شود.
+   - اگر مجموع صدا از سقف عبور کرد، gain کل به شکل deterministic پایین آورده شود تا clipping/noise تولید نشود.
+   - clip audio وقتی music/voiceover وجود دارد مثل تنظیم فعلی کاربر حفظ شود، اما از overload جلوگیری شود.
+
+5. **Fallback قدیمی را هم امن نگه داریم**
+   - در `mergeVideos.ts` gainها clamp شوند و مسیر live-recorder از ولوم‌های خارج از محدوده/overlap شدید نویز نسازد.
+   - رفتار cloud/video generation/UI/auth/storage policies تغییر نمی‌کند.
+
+6. **اعتبارسنجی بعد از پیاده‌سازی**
+   - TypeScript باید clean باشد.
+   - با Playwright در preview بررسی می‌کنم که فقط دو audio element وجود دارد، با Play/Pause صدای تکراری ساخته نمی‌شود، seek صدا را دوبل نمی‌کند، و Final→Draft دوباره music/voiceover را با تنظیمات درست نشان می‌دهد.
+   - برای Final Film، مسیر encode را با یک پروژه دارای music + voiceover بررسی می‌کنم تا خروجی audio mix clipping نداشته باشد.
+
+### فایل‌های محدود به تغییر
+- `src/modules/generator-ui/components/PreviewSoundtrackWaveforms.tsx`
+- `src/modules/generator-ui/pages/DashboardPage.tsx`
+- `src/modules/generator-ui/lib/mergeVideosWebCodecs.ts`
+- در صورت نیاز محدود: `src/modules/generator-ui/lib/mergeVideos.ts`
+
+### چیزهایی که دست نمی‌زنم
+- UI ساخت ویدئو/generation
+- auth
+- storage policies
+- backend framework
+- credit ledger
+- مدل‌ها یا provider routing

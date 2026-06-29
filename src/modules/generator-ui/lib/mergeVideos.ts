@@ -738,17 +738,27 @@ export async function mergeVideoUrls(
     ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)
   let audioCtx: AudioContext | null = null
   let audioDest: MediaStreamAudioDestinationNode | null = null
+  let audioOutput: AudioNode | null = null
   let outStream: MediaStream = videoStream
 
   try {
     audioCtx = new Ctor()
     audioDest = audioCtx.createMediaStreamDestination()
+    const limiter = audioCtx.createDynamicsCompressor()
+    limiter.threshold.value = -6
+    limiter.knee.value = 6
+    limiter.ratio.value = 12
+    limiter.attack.value = 0.003
+    limiter.release.value = 0.25
+    limiter.connect(audioDest)
+    audioOutput = limiter
     const tracks = [...videoStream.getVideoTracks(), ...audioDest.stream.getAudioTracks()]
     outStream = new MediaStream(tracks)
   } catch (err) {
     console.warn('[mergeVideoUrls] AudioContext unavailable, recording video-only:', err)
     audioCtx = null
     audioDest = null
+    audioOutput = null
     outStream = videoStream
   }
 
@@ -774,7 +784,7 @@ export async function mergeVideoUrls(
       const gain = audioCtx.createGain()
       gain.gain.value = musicVolume
       source.connect(gain)
-      gain.connect(audioDest)
+      gain.connect(audioOutput ?? audioDest)
       soundtrackGain = gain
     } catch (err) {
       console.warn('[mergeVideoUrls] soundtrack disabled:', err)
@@ -803,7 +813,7 @@ export async function mergeVideoUrls(
       const vGain = audioCtx.createGain()
       vGain.gain.value = voiceoverVolume
       vSource.connect(vGain)
-      vGain.connect(audioDest)
+      vGain.connect(audioOutput ?? audioDest)
       voiceoverGain = vGain
     } catch (err) {
       console.warn('[mergeVideoUrls] voiceover disabled:', err)
@@ -1120,8 +1130,10 @@ export async function mergeVideoUrls(
         const inWin = gt >= musicTlStart && gt < musicTlEnd
         if (inWin) {
           soundtrackGain.gain.value = musicVolume
-          if (soundtrackEl.currentTime >= musicWinEnd || soundtrackEl.currentTime < musicWinStart) {
-            try { soundtrackEl.currentTime = musicWinStart } catch { /* ignore */ }
+          const winLen = Math.max(0.05, musicWinEnd - musicWinStart)
+          const target = musicWinStart + ((gt - musicTlStart) % winLen)
+          if (Math.abs(soundtrackEl.currentTime - target) > 0.35) {
+            try { soundtrackEl.currentTime = Math.max(0, target) } catch { /* ignore */ }
           }
           if (soundtrackEl.paused) void soundtrackEl.play().catch(() => { /* ignore */ })
         } else {
@@ -1215,7 +1227,7 @@ export async function mergeVideoUrls(
         const gain = audioCtx.createGain()
         gain.gain.value = clipVolume
         clipNode.connect(gain)
-        gain.connect(audioDest)
+        gain.connect(audioOutput ?? audioDest)
       } catch (err) {
         console.warn('[mergeVideoUrls] clip audio skipped:', err)
         clipNode = null
