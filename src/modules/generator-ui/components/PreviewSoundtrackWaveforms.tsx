@@ -3,6 +3,7 @@ import {
   useEffect,
   useImperativeHandle,
   useRef,
+  type MutableRefObject,
 } from 'react'
 import WaveSurfer from 'wavesurfer.js'
 import { Music, Mic } from 'lucide-react'
@@ -250,7 +251,7 @@ export const PreviewSoundtrackWaveforms = forwardRef<
     }
   }
 
-  const playNative = (audio: HTMLAudioElement | null, readyRef: React.MutableRefObject<boolean>) => {
+  const playNative = (audio: HTMLAudioElement | null, readyRef: MutableRefObject<boolean>) => {
     if (!audio || !wantPlayingRef.current || !audio.paused) return
     if (!readyRef.current && audio.readyState < HTMLMediaElement.HAVE_METADATA) {
       try { audio.load() } catch { /* ignore */ }

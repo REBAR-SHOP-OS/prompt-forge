@@ -50,6 +50,15 @@ export function VideoWithSoundtrack({
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const soundtrackRef = useRef<PreviewSoundtrackHandle | null>(null)
 
+  const {
+    className: videoClassName,
+    style: videoStyle,
+    onLoadedMetadata,
+    ...restVideoProps
+  } = videoProps
+
+  const { url: resolvedSrc, loading: srcLoading } = usePlayableVideoUrl(src)
+
   // Apply clip volume / mute to the video element.
   useEffect(() => {
     const v = videoRef.current
@@ -97,15 +106,6 @@ export function VideoWithSoundtrack({
       v.removeEventListener('timeupdate', onTimeUpdate)
     }
   }, [musicUrl, voiceoverUrl, resolvedSrc, videoKey])
-
-  const {
-    className: videoClassName,
-    style: videoStyle,
-    onLoadedMetadata,
-    ...restVideoProps
-  } = videoProps
-
-  const { url: resolvedSrc, loading: srcLoading } = usePlayableVideoUrl(src)
 
   return (
     <div className="flex w-full flex-col">
