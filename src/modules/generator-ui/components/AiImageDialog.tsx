@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { LoaderCircle, Sparkles, Wand2, RefreshCw, Check, X, Brush, Eraser, ImagePlus, Download, Palette } from 'lucide-react'
+import { LoaderCircle, Sparkles, Wand2, RefreshCw, Check, X, Brush, Eraser, ImagePlus, Download, Palette, Package } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -65,12 +65,20 @@ export type AiImageSavedRow = {
   height?: number | null
 }
 
+type AiProductOption = {
+  id: string
+  url: string
+  title: string | null
+  description?: string | null
+}
+
 type Props = {
   open: boolean
   onOpenChange: (open: boolean) => void
   userId: string | null
   defaultAspect: AiImageAspect
   onSaved: (row: AiImageSavedRow) => void
+  products?: AiProductOption[]
 }
 
 type AiReferenceImage = {
@@ -136,6 +144,7 @@ export default function AiImageDialog({
   userId,
   defaultAspect,
   onSaved,
+  products = [],
 }: Props) {
   const [aspect, setAspect] = useState<AiImageAspect>(defaultAspect)
   const [prompt, setPrompt] = useState('')
@@ -148,6 +157,8 @@ export default function AiImageDialog({
   const [error, setError] = useState<string | null>(null)
   const [selectedTheme, setSelectedTheme] = useState<string | null>(null)
   const [themeMenuOpen, setThemeMenuOpen] = useState(false)
+  const [productMenuOpen, setProductMenuOpen] = useState(false)
+  const [productLoadingId, setProductLoadingId] = useState<string | null>(null)
 
   const [isMaskMode, setIsMaskMode] = useState(false)
   const [brushSize, setBrushSize] = useState(36)
@@ -273,6 +284,43 @@ export default function AiImageDialog({
       setError(e instanceof Error ? e.message : 'Failed to read image.')
     } finally {
       event.target.value = ''
+    }
+  }
+
+  async function handleSelectProduct(product: AiProductOption) {
+    setError(null)
+    if (referenceImages.length >= MAX_REFERENCE_IMAGES) {
+      setError(`You can add up to ${MAX_REFERENCE_IMAGES} reference images.`)
+      return
+    }
+    if (referenceImages.some((r) => r.dataUrl === product.url || r.name === (product.title ?? product.id))) {
+      setProductMenuOpen(false)
+      return
+    }
+    setProductLoadingId(product.id)
+    try {
+      const res = await fetch(product.url)
+      if (!res.ok) throw new Error('Could not load the product image.')
+      const blob = await res.blob()
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          if (typeof reader.result === 'string') resolve(reader.result)
+          else reject(new Error('Failed to read product image.'))
+        }
+        reader.onerror = () => reject(new Error('Failed to read product image.'))
+        reader.readAsDataURL(blob)
+      })
+      setReferenceImages((prev) =>
+        prev.length >= MAX_REFERENCE_IMAGES
+          ? prev
+          : [...prev, { name: product.title || 'Product', dataUrl }],
+      )
+      setProductMenuOpen(false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to add product image.')
+    } finally {
+      setProductLoadingId(null)
     }
   }
 
@@ -648,6 +696,60 @@ export default function AiImageDialog({
                         )
                       })}
                     </div>
+                  </PopoverContent>
+                </Popover>
+                <Popover open={productMenuOpen} onOpenChange={setProductMenuOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      disabled={isLoading || referenceImages.length >= MAX_REFERENCE_IMAGES}
+                      className="absolute bottom-3 left-[15rem] inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Use one of your saved products as a reference"
+                    >
+                      <Package className="h-4 w-4" />
+                      <span>Select product</span>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-[22rem] p-3">
+                    <div className="mb-2 px-1 text-xs font-medium text-zinc-300">
+                      Choose a product
+                    </div>
+                    {products.length === 0 ? (
+                      <p className="px-1 py-4 text-center text-[11px] text-zinc-500">
+                        No saved products yet. Add product photos in Storage → Products first.
+                      </p>
+                    ) : (
+                      <div className="grid max-h-80 grid-cols-2 gap-2 overflow-y-auto pr-1">
+                        {products.map((p) => {
+                          const busy = productLoadingId === p.id
+                          return (
+                            <button
+                              key={p.id}
+                              type="button"
+                              disabled={busy || productLoadingId !== null}
+                              onClick={() => void handleSelectProduct(p)}
+                              className="group flex flex-col gap-1.5 rounded-xl border border-white/10 p-1.5 text-left transition hover:border-white/25 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <span className="relative block h-20 w-full overflow-hidden rounded-lg border border-white/10 bg-black/30">
+                                <img
+                                  src={p.url}
+                                  alt={p.title ?? 'Product'}
+                                  className="absolute inset-0 h-full w-full object-cover"
+                                />
+                                {busy ? (
+                                  <span className="absolute inset-0 flex items-center justify-center bg-black/50">
+                                    <LoaderCircle className="h-5 w-5 animate-spin text-white" />
+                                  </span>
+                                ) : null}
+                              </span>
+                              <span className="block truncate text-xs font-medium text-zinc-200">
+                                {p.title || 'Product'}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
                   </PopoverContent>
                 </Popover>
               </div>

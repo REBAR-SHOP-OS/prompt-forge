@@ -9819,6 +9819,12 @@ export default function DashboardPage() {
         onOpenChange={setIsAiImageDialogOpen}
         userId={userId}
         defaultAspect={lockedProjectRatio ?? aspectRatio}
+        products={archiveProductImages.map((p) => ({
+          id: p.id,
+          url: p.storage_path,
+          title: p.title ?? null,
+          description: p.description ?? null,
+        }))}
         onSaved={async (rawRow) => {
           const row = { ...(rawRow as UserImageItem), storage_path: await signUserImageUrl((rawRow as UserImageItem).storage_path) }
           if (aiDialogMode === 'cover') {

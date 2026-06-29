@@ -1,28 +1,31 @@
 ## Goal
-In the AI image theme picker (`AiImageDialog.tsx`), make all text English and give each of the 30 themes a large, visible preview so the user can see what each theme looks like at a glance. This is a UI/presentation-only change.
+In the **Generate image with AI** dialog, add an icon button (in the prompt toolbar, in the empty spot circled in yellow — right of the theme picker) that lets the user pick from their **saved product photos** and attach the chosen one as a reference image for generation. This mirrors how products already feed into video generation, but makes them reachable while building a cover/image.
 
-## Changes (all in `src/modules/generator-ui/components/AiImageDialog.tsx`)
+## What exists today
+- `AiImageDialog.tsx` already supports up to `MAX_REFERENCE_IMAGES` (4) reference images, an "Upload image" button, and a "Pick a theme" popover in the prompt toolbar.
+- `DashboardPage.tsx` already holds the user's product photos in `archiveProductImages` (UserImageItem[] with signed `storage_path`, `description`), and renders `<AiImageDialog />`.
 
-### 1. English-only text
-- Trigger button: replace `انتخاب تم` / `selectedTheme?.faLabel` with English `Pick a theme` / `enLabel`.
-- Popover header: `انتخاب تم تصویر` → `Choose a theme`.
-- Clear button: `حذف انتخاب` → `Clear`.
-- Each theme row: show only the English `enLabel` (drop the Persian `faLabel` line).
-- Remove `dir="rtl"` from the popover so layout is left-to-right.
-- Keep the `faLabel` field in the data for now (harmless), but it is no longer rendered.
+## Plan
 
-### 2. Large visual previews per theme
-- Add a `swatch` style to each `THEME_OPTIONS` entry — a CSS background (gradient / pattern) that visually represents the theme (e.g. Neon = dark bg with bright magenta/cyan glow, Pastel = soft pastel gradient, Black & White = grayscale, Watercolor = soft blended washes, Duotone = two-color split, Metallic = chrome-like gradient, etc.). Pure CSS so no image assets are added and it stays fast/deterministic.
-- Change the popover from a narrow vertical list to a **2-column grid of large preview cards**. Each card shows:
-  - A tall swatch thumbnail (the visual preview, the "درشت/large" part).
-  - The English theme name beneath it.
-  - A check overlay when selected.
-- Widen the `PopoverContent` (e.g. `w-[22rem]`) and keep it vertically scrollable (`max-h`) so all 30 cards are reachable.
+### 1. Pass products into the dialog (`DashboardPage.tsx`)
+- Add a new prop to the `<AiImageDialog />` render: `products={archiveProductImages.map(p => ({ id: p.id, url: p.storage_path, title: <name/derived label>, description: p.description ?? null }))}`.
+- No business-logic/storage changes — purely passing already-loaded, signed product URLs down.
 
-### Technical notes
-- No backend, generation logic, or prompt-descriptor changes — `descriptor` text passed to generation stays exactly the same.
-- Selection state (`selectedTheme`), reset-on-close behavior, and `handleGenerate` logic are unchanged.
-- Previews are CSS-driven (inline `style={{ background: ... }}` or Tailwind classes), so they render instantly with zero added assets.
+### 2. Add the "Select product" control (`AiImageDialog.tsx`)
+- Extend `Props` with optional `products?: { id: string; url: string; title: string | null; description?: string | null }[]`.
+- Add a new toolbar button next to the theme picker (positioned in the empty area circled in the screenshot), using a product icon (e.g. `ShoppingBag`/`Package` from lucide), label **"Select product"**.
+- Clicking opens a `Popover` showing a scrollable grid of the user's product photos (thumbnail + title). If there are no products, show a short empty-state hint ("No saved products yet").
+- Selecting a product:
+  - Fetches its URL → converts to a data URL (reuse existing fetch→blob→dataUrl helpers / `fileToDataUrl` pattern).
+  - Adds it to `referenceImages` (respecting the 4-image cap, reusing the same guard/error messaging as upload).
+  - Closes the popover. The selected product then appears in the existing reference-images list with remove support — no separate UI needed.
+- All labels in English, consistent with the existing theme picker styling.
 
-## Result
-The theme menu becomes an English, grid-based gallery of large visual swatches, letting the user preview each theme's look before applying it.
+### 3. Verify
+- `bunx tsgo --noEmit` clean.
+- Confirm the button renders in the toolbar, the popover lists products, selecting one adds it to the reference list, and the 4-image cap still holds.
+
+## Technical notes
+- Reuses existing reference-image state, cap logic, and preview/remove UI — only a new entry point (button + popover) and a new prop are added.
+- Product URLs are already signed in `archiveProductImages`; fetch-to-dataUrl keeps them consistent with how uploaded references are stored before sending to the edge function.
+- No changes to generation UI flow, auth, storage policies, or the credit/job pipeline.
