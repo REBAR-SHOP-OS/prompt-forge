@@ -12240,12 +12240,14 @@ export default function DashboardPage() {
                           e.preventDefault()
                           e.stopPropagation()
                           setSelectedCharacter(null)
+                          updateContinuity({ characterRef: null })
                         }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault()
                             e.stopPropagation()
                             setSelectedCharacter(null)
+                            updateContinuity({ characterRef: null })
                           }
                         }}
                         className="ml-0.5 grid h-5 w-5 place-items-center rounded-full text-fuchsia-200/80 transition hover:bg-fuchsia-500/20 hover:text-fuchsia-50"
