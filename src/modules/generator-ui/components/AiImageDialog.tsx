@@ -325,6 +325,44 @@ export default function AiImageDialog({
     }
   }
 
+  async function handleWritePrompt() {
+    setError(null)
+    const theme = selectedTheme ? THEME_OPTIONS.find((t) => t.id === selectedTheme) : null
+    if (referenceImages.length === 0 && !theme && prompt.trim().length === 0) {
+      setError('Add a reference image, a product, or pick a theme first so I can write a prompt.')
+      return
+    }
+    setIsWritingPrompt(true)
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('write-image-prompt', {
+        body: {
+          referenceImages: referenceImages.map((r) => r.dataUrl),
+          themeDescriptor: theme?.descriptor ?? '',
+          themeLabel: theme?.enLabel ?? '',
+          existingPrompt: prompt.trim(),
+        },
+      })
+      if (fnError) {
+        setError(await extractFnError(fnError, 'Could not write a prompt. Try again.'))
+        return
+      }
+      const written = typeof (data as { prompt?: unknown })?.prompt === 'string'
+        ? (data as { prompt: string }).prompt.trim()
+        : ''
+      if (!written) {
+        setError('The AI returned an empty prompt. Try again.')
+        return
+      }
+      setPrompt(written)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not write a prompt.')
+    } finally {
+      setIsWritingPrompt(false)
+    }
+  }
+
+
+
   function handleRemoveRefineReference(index: number) {
     setRefineReferenceImages((prev) => prev.filter((_, i) => i !== index))
     if (refineReferenceInputRef.current) {
