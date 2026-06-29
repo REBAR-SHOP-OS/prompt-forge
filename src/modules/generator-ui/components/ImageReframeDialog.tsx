@@ -67,13 +67,16 @@ export default function ImageReframeDialog({ open, onOpenChange, onUseAsStartFra
     setError(null)
     setResultUrl(null)
     try {
-      const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace('jpeg', 'jpg')
-      const inputPath = `${user.id}/reframe-input-${Date.now()}-${crypto.randomUUID()}.${ext}`
-      const up = await supabase.storage
-        .from('user-images')
-        .upload(inputPath, file, { contentType: file.type, upsert: false })
-      if (up.error) throw new Error(up.error.message)
-      const { data: pub } = supabase.storage.from('user-images').getPublicUrl(inputPath)
+      // Read the picked file into a base64 data URL and send it straight to the
+      // edge function. We deliberately avoid the intermediate `user-images`
+      // storage upload (which was being rejected with a raw nginx 400 and also
+      // produced a private "public" URL the function couldn't fetch).
+      const imageBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result || ''))
+        reader.onerror = () => reject(new Error('Could not read the selected image.'))
+        reader.readAsDataURL(file)
+      })
 
       const { data: sess } = await supabase.auth.getSession()
       const token = sess.session?.access_token
@@ -85,8 +88,9 @@ export default function ImageReframeDialog({ open, onOpenChange, onUseAsStartFra
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ imageUrl: pub.publicUrl, aspectRatio: ratio }),
+        body: JSON.stringify({ imageBase64, aspectRatio: ratio }),
       })
+
       const json = await resp.json().catch(() => ({}))
       if (!resp.ok) {
         throw new Error(json?.error || `Request failed (${resp.status})`)

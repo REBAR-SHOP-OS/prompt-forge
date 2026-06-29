@@ -254,10 +254,11 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const imageUrl = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
+    const imageBase64 = typeof body?.imageBase64 === "string" ? body.imageBase64.trim() : "";
     const aspectRatio = typeof body?.aspectRatio === "string" ? body.aspectRatio.trim() : "";
 
-    if (!imageUrl || !isAllowedImageUrl(imageUrl)) {
-      return new Response(JSON.stringify({ error: "valid imageUrl is required" }), {
+    if (!imageBase64 && (!imageUrl || !isAllowedImageUrl(imageUrl))) {
+      return new Response(JSON.stringify({ error: "valid imageUrl or imageBase64 is required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -275,40 +276,69 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 1) Source image. Public fetch first; if that fails (e.g. the object is in
-    //    a private bucket), fall back to an authenticated service-client download
-    //    by parsing the bucket + object path out of the storage URL.
-    const svcEarly = getServiceClient();
+    const MAX_BYTES = 10 * 1024 * 1024; // 10MB
     let srcBytes: Uint8Array | null = null;
     let srcMime = "image/png";
 
-    try {
-      const srcResp = await fetch(imageUrl);
-      if (srcResp.ok) {
-        srcBytes = new Uint8Array(await srcResp.arrayBuffer());
-        srcMime = srcResp.headers.get("content-type")?.split(";")[0]?.trim() || "image/png";
+    if (imageBase64) {
+      // 1a) Inline data URL provided by the client (preferred path).
+      const m = imageBase64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/s);
+      if (!m) {
+        return new Response(JSON.stringify({ error: "imageBase64 must be a valid data:image/...;base64 URL" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
-    } catch (_e) { /* fall through to storage download */ }
+      if (!/^image\/(png|jpe?g|webp)$/i.test(m[1])) {
+        return new Response(JSON.stringify({ error: "Unsupported image type. Use PNG, JPEG, or WebP." }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      try {
+        srcBytes = decodeBase64(m[2]);
+      } catch {
+        return new Response(JSON.stringify({ error: "Could not decode imageBase64" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (srcBytes.length > MAX_BYTES) {
+        return new Response(JSON.stringify({ error: "Image is larger than 10MB." }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      srcMime = m[1];
+    } else {
+      // 1b) Source by URL (backward compatible). Public fetch first; if that
+      //     fails (e.g. private bucket), fall back to an authenticated
+      //     service-client download by parsing the storage URL.
+      const svcEarly = getServiceClient();
+      try {
+        const srcResp = await fetch(imageUrl);
+        if (srcResp.ok) {
+          srcBytes = new Uint8Array(await srcResp.arrayBuffer());
+          srcMime = srcResp.headers.get("content-type")?.split(";")[0]?.trim() || "image/png";
+        }
+      } catch (_e) { /* fall through to storage download */ }
 
-    if (!srcBytes) {
-      // Match /storage/v1/object/(public|sign|authenticated)/<bucket>/<path>
-      const m = imageUrl.match(/\/storage\/v1\/object\/(?:public|sign|authenticated)\/([^/]+)\/(.+?)(?:\?|$)/);
-      if (m) {
-        const bucket = decodeURIComponent(m[1]);
-        const objectPath = decodeURIComponent(m[2]);
-        const { data: dl, error: dlErr } = await svcEarly.storage.from(bucket).download(objectPath);
-        if (!dlErr && dl) {
-          srcBytes = new Uint8Array(await dl.arrayBuffer());
-          srcMime = dl.type?.split(";")[0]?.trim() || "image/png";
+      if (!srcBytes) {
+        const m = imageUrl.match(/\/storage\/v1\/object\/(?:public|sign|authenticated)\/([^/]+)\/(.+?)(?:\?|$)/);
+        if (m) {
+          const bucket = decodeURIComponent(m[1]);
+          const objectPath = decodeURIComponent(m[2]);
+          const { data: dl, error: dlErr } = await svcEarly.storage.from(bucket).download(objectPath);
+          if (!dlErr && dl) {
+            srcBytes = new Uint8Array(await dl.arrayBuffer());
+            srcMime = dl.type?.split(";")[0]?.trim() || "image/png";
+          }
         }
       }
+
+      if (!srcBytes) {
+        return new Response(JSON.stringify({ error: "Could not fetch source image" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
-    if (!srcBytes) {
-      return new Response(JSON.stringify({ error: "Could not fetch source image" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
     if (!/^image\/(png|jpe?g|webp)$/i.test(srcMime)) srcMime = "image/png";
     const srcDataUrl = `data:${srcMime};base64,${bytesToBase64(srcBytes)}`;
 
