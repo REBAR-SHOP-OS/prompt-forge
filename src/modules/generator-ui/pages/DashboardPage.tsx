@@ -2316,6 +2316,36 @@ export default function DashboardPage() {
     return Math.max(1, Math.round(total || 1))
   }
 
+  function loadAudioMetadataDuration(url: string, onDuration: (duration: number) => void) {
+    try {
+      const audio = new Audio()
+      let settled = false
+      const cleanup = () => {
+        audio.removeEventListener('loadedmetadata', handleReady)
+        audio.removeEventListener('durationchange', handleReady)
+        audio.removeEventListener('canplay', handleReady)
+        audio.removeEventListener('error', cleanup)
+      }
+      const handleReady = () => {
+        const duration = audio.duration
+        if (!Number.isFinite(duration) || duration <= 0) return
+        if (settled) return
+        settled = true
+        cleanup()
+        onDuration(duration)
+        try { audio.removeAttribute('src'); audio.load() } catch { /* ignore */ }
+      }
+      audio.preload = 'metadata'
+      audio.crossOrigin = 'anonymous'
+      audio.addEventListener('loadedmetadata', handleReady)
+      audio.addEventListener('durationchange', handleReady)
+      audio.addEventListener('canplay', handleReady)
+      audio.addEventListener('error', cleanup)
+      audio.src = url
+      try { audio.load() } catch { /* ignore */ }
+    } catch { /* ignore */ }
+  }
+
   // Persist a music/voiceover source into the public MERGED_BUCKET so it
   // survives refresh and project switches. Returns a durable public URL, or
   // null on failure. Reused by both Final Film finalize and Draft snapshots.
