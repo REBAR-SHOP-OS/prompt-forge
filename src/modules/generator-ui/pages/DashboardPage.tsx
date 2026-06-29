@@ -6498,16 +6498,38 @@ export default function DashboardPage() {
         bakedStartFrameUrl = await bakeProductIntoFrame(readyStartFrame.url, selectedProduct, effectiveRatio)
         setVideoColumnMessage(null)
       }
+      // When the user picked a character but supplied no Start/End frame, build a
+      // clean single-view start frame from the Character Sheet so the character
+      // stops drifting. This forces Image-to-Video even if the UI is in T2V mode.
+      let characterSeedFrameUrl: string | undefined
+      if (projectCharacter && !readyStartFrame?.url && !readyEndFrame?.url) {
+        setVideoColumnMessage('Building character start frame…')
+        characterSeedFrameUrl = await extractCharacterStartFrame(
+          projectCharacter,
+          characterView,
+          effectiveRatio,
+          promptText.trim(),
+        )
+        if (characterSeedFrameUrl && selectedProduct) {
+          setVideoColumnMessage('Locking product into character frame…')
+          characterSeedFrameUrl = await bakeProductIntoFrame(characterSeedFrameUrl, selectedProduct, effectiveRatio)
+        }
+        setVideoColumnMessage(null)
+        if (characterSeedFrameUrl) setGenerationMode('image-to-video')
+      }
+      // Drive an I2V model (and bypass the T2V branch) when a character frame was baked.
+      const effectiveModel = characterSeedFrameUrl ? toImageToVideoModel(selectedModel) : selectedModel
+      const treatTextToVideo = isTextToVideo && !characterSeedFrameUrl
       for (let i = 0; i < iterations; i++) {
         let createdJob
         let seedFrames: { firstFrameUrl?: string; lastFrameUrl?: string } = {}
         const pendingEndAppendUrl: string | null = null
         const pendingStartPrependUrl: string | null = null
 
-        if (isTextToVideo) {
+        if (treatTextToVideo) {
           createdJob = await jobOrchestratorGateway.createJob({
-            providerKey: selectedModel.providerKey,
-            requestedModel: selectedModel.model,
+            providerKey: effectiveModel.providerKey,
+            requestedModel: effectiveModel.model,
             prompt: plannedPrompt,
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
@@ -6517,8 +6539,8 @@ export default function DashboardPage() {
           })
         } else if (readyStartFrame?.url && readyEndFrame?.url) {
           createdJob = await jobOrchestratorGateway.createJob({
-            providerKey: selectedModel.providerKey,
-            requestedModel: selectedModel.model,
+            providerKey: effectiveModel.providerKey,
+            requestedModel: effectiveModel.model,
             prompt: plannedPrompt,
             firstFrameUrl: bakedStartFrameUrl,
             lastFrameUrl: readyEndFrame.url,
@@ -6529,19 +6551,20 @@ export default function DashboardPage() {
             referenceImageUrls: projectReferenceUrls,
           })
           seedFrames = { firstFrameUrl: bakedStartFrameUrl, lastFrameUrl: readyEndFrame.url }
-        } else if (readyStartFrame?.url) {
+        } else if (bakedStartFrameUrl ?? characterSeedFrameUrl) {
+          const startUrl = bakedStartFrameUrl ?? characterSeedFrameUrl
           createdJob = await jobOrchestratorGateway.createJob({
-            providerKey: selectedModel.providerKey,
-            requestedModel: selectedModel.model,
+            providerKey: effectiveModel.providerKey,
+            requestedModel: effectiveModel.model,
             prompt: plannedPrompt,
-            firstFrameUrl: bakedStartFrameUrl,
+            firstFrameUrl: startUrl,
             durationSeconds: perClipDuration,
             aspectRatio: effectiveRatio,
             draftGroupId,
             narrationText: plannedNarration,
             referenceImageUrls: projectReferenceUrls,
           })
-          seedFrames = { firstFrameUrl: bakedStartFrameUrl }
+          seedFrames = { firstFrameUrl: startUrl }
         } else if (readyEndFrame?.url) {
           createdJob = await jobOrchestratorGateway.createJob({
             providerKey: selectedModel.providerKey,
