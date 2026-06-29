@@ -6274,7 +6274,7 @@ export default function DashboardPage() {
       ensureActiveDraftIdRef.current = pid
       setActiveDraftId(pid)
       persistActiveDraftId(pid)
-      restoreDraftAudio(pid)
+      restoreDraftAudio(pid, undefined, durationForDraftSources(videoSnapshot, imageSnapshot, null))
     } else {
       ensureActiveDraftIdRef.current = null
       setActiveDraftId(null)
@@ -6316,7 +6316,7 @@ export default function DashboardPage() {
 
       setSelectedProjectId(did)
       setPreviewVideoId(firstPlayableId)
-      restoreDraftAudio(did)
+      restoreDraftAudio(did, undefined, durationForDraftSources(clips, images, video.video?.duration ?? video.requested_duration ?? null))
       return
     }
 
