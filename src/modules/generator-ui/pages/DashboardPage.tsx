@@ -3591,7 +3591,10 @@ export default function DashboardPage() {
   // Project-wide character anchor: the character chosen for this project, falling
   // back to the persisted continuity anchor. Sent on EVERY card so the character
   // never drifts as the film continues.
-  const projectCharacter = selectedCharacter ?? continuity.characterRef ?? null
+  // Only an explicitly-added character may be used in generation. We do NOT fall
+  // back to a stale continuity anchor — if the user hasn't added a character,
+  // no character is injected into any card.
+  const projectCharacter = selectedCharacter ?? null
   // Combined identity anchor for every card: character + product reference images.
   // Veo accepts up to 3 reference images; cap defensively. Sent on EVERY card so
   // both the character (logo on body) and the selected product stay identical.
@@ -12237,12 +12240,14 @@ export default function DashboardPage() {
                           e.preventDefault()
                           e.stopPropagation()
                           setSelectedCharacter(null)
+                          updateContinuity({ characterRef: null })
                         }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault()
                             e.stopPropagation()
                             setSelectedCharacter(null)
+                            updateContinuity({ characterRef: null })
                           }
                         }}
                         className="ml-0.5 grid h-5 w-5 place-items-center rounded-full text-fuchsia-200/80 transition hover:bg-fuchsia-500/20 hover:text-fuchsia-50"
@@ -12264,7 +12269,7 @@ export default function DashboardPage() {
                   {selectedCharacter ? (
                     <button
                       type="button"
-                      onClick={() => { setSelectedCharacter(null); setCharacterMenuOpen(false) }}
+                      onClick={() => { setSelectedCharacter(null); updateContinuity({ characterRef: null }); setCharacterMenuOpen(false) }}
                       className="text-[11px] text-zinc-400 hover:text-rose-300"
                     >
                       Remove
