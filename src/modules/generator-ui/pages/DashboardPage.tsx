@@ -1201,14 +1201,25 @@ export default function DashboardPage() {
     try {
       let bucket = MERGED_BUCKET
       let path = input
+      const storagePathRe = /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/
       if (/^https?:\/\//i.test(input)) {
         const parsed = new URL(input)
-        const m = parsed.pathname.match(
-          /\/storage\/v1\/object\/(?:public\/|sign\/|authenticated\/)?([^/]+)\/(.+)$/,
-        )
+        const m = parsed.pathname.match(storagePathRe)
         if (!m) return input // unknown shape; let the function try as-is
         bucket = m[1]
         try { path = decodeURIComponent(m[2]) } catch { path = m[2] }
+      } else if (input.startsWith('/storage/v1/object/')) {
+        const m = input.match(storagePathRe)
+        if (m) {
+          bucket = m[1]
+          try { path = decodeURIComponent(m[2].split('?')[0]) } catch { path = m[2].split('?')[0] }
+        }
+      } else {
+        const parts = input.split('/').filter(Boolean)
+        if (parts.length > 1 && (parts[0] === MERGED_BUCKET || parts[0] === 'user-videos' || parts[0] === 'user-audio')) {
+          bucket = parts.shift() as string
+          path = parts.join('/')
+        }
       }
       const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 30)
       if (!error && data?.signedUrl) return data.signedUrl
@@ -1217,6 +1228,21 @@ export default function DashboardPage() {
       return null
     }
   }, [])
+
+  // Audio tracks are kept in private storage. Any persisted/raw storage URL must
+  // be freshly signed before it is handed to WaveSurfer, <audio>, fetch(), or the
+  // Final Film merger; otherwise the UI can show an audio row while playback and
+  // merge silently fail.
+  const resolveAudioPlaybackUrl = useCallback(async (input: string): Promise<string> => {
+    if (!input) return input
+    if (/^blob:|^data:/i.test(input)) return input
+    try {
+      const signed = await signStorageUrl(input)
+      return signed || input
+    } catch {
+      return input
+    }
+  }, [signStorageUrl])
 
   // Run a real AI copyright review of the final video + its music/voiceover.
   // `silent` runs the check in the background (no dialog) — used for the
@@ -2234,6 +2260,48 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
+  function hasProjectAudio(a: ProjectAudio | undefined): a is ProjectAudio {
+    return !!a && (!!a.music?.url || !!a.voiceover?.url)
+  }
+
+  function readPersistedProjectAudio(): Record<string, ProjectAudio> {
+    if (!projectAudioKey || typeof window === 'undefined') return {}
+    try {
+      const raw = window.localStorage.getItem(projectAudioKey)
+      const parsed = raw ? (JSON.parse(raw) as Record<string, ProjectAudio>) : {}
+      return parsed && typeof parsed === 'object' ? parsed : {}
+    } catch {
+      return {}
+    }
+  }
+
+  function latestProjectAudioMap(): Record<string, ProjectAudio> {
+    // localStorage wins because library-state hydration and previous writes may
+    // have updated it before React's projectAudio state has flushed.
+    return { ...projectAudio, ...readPersistedProjectAudio() }
+  }
+
+  function resolveProjectAudioForReopen(finalId: string, draftId: string): ProjectAudio | undefined {
+    const latest = latestProjectAudioMap()
+    return hasProjectAudio(latest[finalId]) ? latest[finalId]
+      : hasProjectAudio(latest[draftId]) ? latest[draftId]
+      : hasProjectAudio(projectAudio[finalId]) ? projectAudio[finalId]
+      : hasProjectAudio(projectAudio[draftId]) ? projectAudio[draftId]
+      : undefined
+  }
+
+  function durationFromProjectSources(jobs: JobDetail[], images: UserImageItem[]): number {
+    let total = 0
+    for (const job of jobs) {
+      const d = job.video?.duration ?? job.requested_duration ?? null
+      total += d && Number.isFinite(d) && d > 0 ? d : 8
+    }
+    for (const img of images) {
+      total += Math.max(1, Math.min(15, img.still_duration_seconds || 3))
+    }
+    return total > 0 ? Math.max(1, Math.round(total)) : 0
+  }
+
   // Persist a music/voiceover source into the public MERGED_BUCKET so it
   // survives refresh and project switches. Returns a durable public URL, or
   // null on failure. Reused by both Final Film finalize and Draft snapshots.
@@ -2248,7 +2316,8 @@ export default function DashboardPage() {
           ),
         ])
       try {
-        const resp = await withTimeout(fetch(src), 60_000)
+        const fetchSrc = await resolveAudioPlaybackUrl(src)
+        const resp = await withTimeout(fetch(fetchSrc), 60_000)
         if (!resp.ok) throw new Error(`fetch ${resp.status}`)
         const blob = await withTimeout(resp.blob(), 60_000)
         const ct = (blob.type || 'audio/mpeg').toLowerCase()
@@ -2273,7 +2342,7 @@ export default function DashboardPage() {
         return null
       }
     },
-    [userId],
+    [userId, resolveAudioPlaybackUrl],
   )
 
 
@@ -5976,28 +6045,34 @@ export default function DashboardPage() {
     // Resolve from a fallback chain: prefer the final film's snapshot, then the
     // recovered draft's original soundtrack. This recovers audio for older or
     // failed finalizations where only the draft-scoped copy survived.
-    const hasAudio = (a: ProjectAudio | undefined): a is ProjectAudio =>
-      !!a && (!!a.music || !!a.voiceover)
-    const movedAudio: ProjectAudio | undefined =
-      (hasAudio(projectAudio[finalId]) && projectAudio[finalId]) ||
-      (hasAudio(projectAudio[draftId]) && projectAudio[draftId]) ||
-      undefined
+    const movedAudio = resolveProjectAudioForReopen(finalId, draftId)
+    // Recovery path for older/broken finalizations: if we never managed to
+    // persist separate music/voiceover tracks, the finalized movie itself still
+    // contains the mixed soundtrack. Use that movie file as a one-shot restored
+    // voiceover track so reopening a Final Film can never produce a silent draft.
+    const recoveredFilmAudio: ProjectAudio | undefined = !movedAudio && video.video?.storage_path
+      ? { voiceover: { url: video.video.storage_path, name: 'Restored final film audio' } }
+      : undefined
+    const audioToRestore = movedAudio ?? recoveredFilmAudio
     // Single atomic update: drop finalId AND write draftId in one pass so the
     // draft always ends up with a durable soundtrack mapping. Never overwrite an
     // existing draft soundtrack with nothing.
     setProjectAudio((prev) => {
-      const audio = movedAudio ?? prev[finalId] ?? prev[draftId]
-      const { [finalId]: _dropAudio, ...rest } = prev
-      if (!hasAudio(audio)) return _dropAudio === undefined ? prev : rest
+      const persisted = readPersistedProjectAudio()
+      const audio = audioToRestore ?? persisted[finalId] ?? persisted[draftId] ?? prev[finalId] ?? prev[draftId]
+      const base = { ...persisted, ...prev }
+      const { [finalId]: _dropAudio, ...rest } = base
+      if (!hasProjectAudio(audio)) return _dropAudio === undefined ? prev : rest
       const next = { ...rest, [draftId]: audio }
       persistProjectAudio(next)
       return next
     })
 
     // 9. Activate edit mode on the draft.
+    ensureActiveDraftIdRef.current = draftId
     setActiveDraftId(draftId)
     persistActiveDraftId(draftId)
-    restoreDraftAudio(draftId, movedAudio)
+    void restoreDraftAudio(draftId, audioToRestore, durationFromProjectSources(sourceJobs, sourceImages))
 
     setSelectedProjectId(null)
     setPreviewVideoId(null)
@@ -6009,8 +6084,8 @@ export default function DashboardPage() {
   // Restore a draft's persisted music/voiceover back into the live audio state
   // so the soundtrack chip reappears and applies to the exact same film. Audio
   // durations are loaded so the music range is set to the full track.
-  const restoreDraftAudio = useCallback((draftId: string, override?: ProjectAudio) => {
-    const audio = override ?? projectAudio[draftId]
+  const restoreDraftAudio = useCallback(async (draftId: string, override?: ProjectAudio, fallbackTimelineSec = 0) => {
+    const audio = override ?? latestProjectAudioMap()[draftId]
     if (!audio) return
     // Always persist the restored audio under the draft scope so it survives
     // refresh / draft switch even when this was driven by an override (move).
@@ -6024,12 +6099,13 @@ export default function DashboardPage() {
     }
     // The film length may not be measured yet; fall back to the track's own
     // duration so the timeline window is valid even before the preview loads.
-    const tlEnd = (d: number) => (mergedDurationSec > 0 ? mergedDurationSec : d)
+    const timelineDuration = mergedDurationSec > 0 ? mergedDurationSec : fallbackTimelineSec
+    const tlEnd = (d: number) => (timelineDuration > 0 ? timelineDuration : d)
     if (audio.music?.url) {
-      const url = audio.music.url
+      const url = await resolveAudioPlaybackUrl(audio.music.url)
       setMusicName(audio.music.name)
       setMusicUrl(url)
-      setMusicTimeline([0, mergedDurationSec])
+      setMusicTimeline([0, tlEnd(fallbackTimelineSec || 0)])
       try {
         const a = new Audio()
         a.src = url
@@ -6038,9 +6114,10 @@ export default function DashboardPage() {
           if (Number.isFinite(d) && d > 0) {
             setMusicDuration(d)
             setMusicRange([0, d])
-            if (mergedDurationSec <= 0) setMusicTimeline([0, tlEnd(d)])
+            setMusicTimeline([0, tlEnd(d)])
           }
         })
+        a.load()
       } catch { /* ignore */ }
       draftAudioSnapshotRef.current[draftId] = {
         ...(draftAudioSnapshotRef.current[draftId] ?? {}),
@@ -6048,10 +6125,10 @@ export default function DashboardPage() {
       }
     }
     if (audio.voiceover?.url) {
-      const url = audio.voiceover.url
+      const url = await resolveAudioPlaybackUrl(audio.voiceover.url)
       setVoiceoverName(audio.voiceover.name)
       setVoiceoverUrl(url)
-      setVoiceoverTimeline([0, mergedDurationSec])
+      setVoiceoverTimeline([0, tlEnd(fallbackTimelineSec || 0)])
       try {
         const a = new Audio()
         a.src = url
@@ -6060,16 +6137,17 @@ export default function DashboardPage() {
           if (Number.isFinite(d) && d > 0) {
             setVoiceoverDuration(d)
             setVoiceoverRange([0, d])
-            if (mergedDurationSec <= 0) setVoiceoverTimeline([0, tlEnd(d)])
+            setVoiceoverTimeline([0, tlEnd(d)])
           }
         })
+        a.load()
       } catch { /* ignore */ }
       draftAudioSnapshotRef.current[draftId] = {
         ...(draftAudioSnapshotRef.current[draftId] ?? {}),
         voice: url,
       }
     }
-  }, [projectAudio, mergedDurationSec])
+  }, [projectAudio, mergedDurationSec, resolveAudioPlaybackUrl])
 
 
 
@@ -6148,7 +6226,7 @@ export default function DashboardPage() {
       ensureActiveDraftIdRef.current = pid
       setActiveDraftId(pid)
       persistActiveDraftId(pid)
-      restoreDraftAudio(pid)
+      void restoreDraftAudio(pid, undefined, durationFromProjectSources(videoSnapshot, imageSnapshot))
     } else {
       ensureActiveDraftIdRef.current = null
       setActiveDraftId(null)
@@ -6190,7 +6268,7 @@ export default function DashboardPage() {
 
       setSelectedProjectId(did)
       setPreviewVideoId(firstPlayableId)
-      restoreDraftAudio(did)
+      void restoreDraftAudio(did, undefined, durationFromProjectSources(clips, images))
       return
     }
 
@@ -7210,7 +7288,7 @@ export default function DashboardPage() {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
-    if (musicUrl) {
+    if (musicUrl?.startsWith('blob:')) {
       try { URL.revokeObjectURL(musicUrl) } catch { /* ignore */ }
     }
     const url = URL.createObjectURL(file)
@@ -7236,7 +7314,7 @@ export default function DashboardPage() {
   }
 
   function handleClearMusic() {
-    if (musicUrl) {
+    if (musicUrl?.startsWith('blob:')) {
       try { URL.revokeObjectURL(musicUrl) } catch { /* ignore */ }
     }
     setMusicName(null)
@@ -7248,7 +7326,7 @@ export default function DashboardPage() {
   }
 
   function handleVoiceoverAsSoundtrack(url: string, name: string) {
-    if (voiceoverUrl) {
+    if (voiceoverUrl?.startsWith('blob:')) {
       try { URL.revokeObjectURL(voiceoverUrl) } catch { /* ignore */ }
     }
     setVoiceoverUrl(url)
@@ -7264,7 +7342,7 @@ export default function DashboardPage() {
 
 
   function handleClearVoiceover() {
-    if (voiceoverUrl) {
+    if (voiceoverUrl?.startsWith('blob:')) {
       try { URL.revokeObjectURL(voiceoverUrl) } catch { /* ignore */ }
     }
     setVoiceoverUrl(null)
@@ -7760,18 +7838,31 @@ export default function DashboardPage() {
       if ((hasMusic || hasVoiceover) && userId) {
         try {
           const entry: ProjectAudio = {}
+          const audioFallbackKeys = [activeDraftId, selectedProjectId]
+            .filter((k): k is string => !!k && k.startsWith('draft-'))
+          const fallbackAudio = (() => {
+            const latest = latestProjectAudioMap()
+            for (const key of audioFallbackKeys) {
+              if (hasProjectAudio(latest[key])) return latest[key]
+            }
+            return undefined
+          })()
           if (hasMusic && musicUrl) {
             const url = await persistAudioToStorage(musicUrl, 'music', mergedId)
             if (url) entry.music = { url, name: musicName ?? 'Music' }
+            else if (fallbackAudio?.music) entry.music = fallbackAudio.music
           }
           if (hasVoiceover && voiceoverUrl) {
             const url = await persistAudioToStorage(voiceoverUrl, 'voice', mergedId)
             if (url) entry.voiceover = { url, name: voiceoverName ?? 'Voiceover' }
+            else if (fallbackAudio?.voiceover) entry.voiceover = fallbackAudio.voiceover
           }
           if (entry.music || entry.voiceover) {
-            const nextAudio = { ...projectAudio, [mergedId]: entry }
-            setProjectAudio(nextAudio)
-            persistProjectAudio(nextAudio)
+            setProjectAudio((prev) => {
+              const nextAudio = { ...readPersistedProjectAudio(), ...prev, [mergedId]: entry }
+              persistProjectAudio(nextAudio)
+              return nextAudio
+            })
           }
         } catch (err) {
           console.warn('[audio-snapshot] failed', err)
@@ -7958,7 +8049,7 @@ export default function DashboardPage() {
       try { window.localStorage.setItem(pendingStartPrependsKey, JSON.stringify({})) } catch { /* ignore */ }
     }
     // Tear down the soundtrack so the audio chip in the top tabs disappears.
-    if (musicUrl) {
+    if (musicUrl?.startsWith('blob:')) {
       try { URL.revokeObjectURL(musicUrl) } catch { /* ignore */ }
     }
     setMusicName(null)
@@ -7966,7 +8057,7 @@ export default function DashboardPage() {
     setMusicDuration(0)
     setMusicRange([0, 0])
     setIsMusicDialogOpen(false)
-    if (voiceoverUrl) {
+    if (voiceoverUrl?.startsWith('blob:')) {
       try { URL.revokeObjectURL(voiceoverUrl) } catch { /* ignore */ }
     }
     setVoiceoverUrl(null)
@@ -10025,7 +10116,19 @@ export default function DashboardPage() {
                       controls
                       playsInline
                       preload="metadata"
-                      clipVolume={1}
+                      musicUrl={musicUrl}
+                      musicRange={musicRange}
+                      musicVolume={musicVolume}
+                      musicTimeline={musicTimeline}
+                      voiceoverUrl={voiceoverUrl}
+                      voiceoverVolume={voiceoverVolume}
+                      voiceoverRange={voiceoverRange}
+                      voiceoverTimeline={voiceoverTimeline}
+                      clipVolume={
+                        musicUrl && musicRange[1] > musicRange[0]
+                          ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
+                          : (voiceoverUrl ? voiceoverClipVolume : 1)
+                      }
                     />
                     {contactActive && !isMergedFinalPreview ? (() => {
                       // Mirror the burn-in ratios from mergeVideos.ts so the live
