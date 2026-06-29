@@ -243,6 +243,9 @@ const tr = (m: Loc, lang: Lang) => m[lang] ?? m.en
 
 const RTL_LANGS: Lang[] = ['fa', 'ar']
 
+const SELECT_LABEL: Loc = { en: 'Select', fa: 'انتخاب', ar: 'اختيار', tr: 'Seç', es: 'Seleccionar', fr: 'Choisir' }
+const SELECTED_LABEL: Loc = { en: 'Selected ✓', fa: 'انتخاب‌شده ✓', ar: 'محدد ✓', tr: 'Seçildi ✓', es: 'Seleccionado ✓', fr: 'Sélectionné ✓' }
+
 // All localized narration labels the edge function may emit, used to split a
 // scene block into its visual scenario part and its narration part.
 const NARRATION_LABELS = ['Narration', 'نریشن', 'التعليق الصوتي', 'Anlatım', 'Narración']
@@ -1985,12 +1988,15 @@ export default function ProductAdDialog({
                     description={style.desc ? tr(style.desc, lang) : undefined}
                     preview={style.preview}
                     rtl={RTL_LANGS.includes(lang)}
+                    selected={active}
+                    onSelect={() => setCameraStyle(style.label.en)}
+                    selectLabel={tr(SELECT_LABEL, lang)}
+                    selectedLabel={tr(SELECTED_LABEL, lang)}
                   >
                     <button
                       type="button"
                       role="radio"
                       aria-checked={active}
-                      onClick={() => setCameraStyle(style.label.en)}
                       className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                         active
                           ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
@@ -2021,12 +2027,15 @@ export default function ProductAdDialog({
                     description={g.prompt}
                     preview={g.preview}
                     rtl={RTL_LANGS.includes(lang)}
+                    selected={active}
+                    onSelect={() => setGenre((cur) => (cur === g.id ? '' : g.id))}
+                    selectLabel={tr(SELECT_LABEL, lang)}
+                    selectedLabel={tr(SELECTED_LABEL, lang)}
                   >
                     <button
                       type="button"
                       role="radio"
                       aria-checked={active}
-                      onClick={() => setGenre((cur) => (cur === g.id ? '' : g.id))}
                       className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                         active
                           ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
@@ -2063,12 +2072,15 @@ export default function ProductAdDialog({
                           description={s.prompt}
                           preview={s.preview}
                           rtl={RTL_LANGS.includes(lang)}
+                          selected={active}
+                          onSelect={() => setScene((cur) => (cur === s.id ? '' : s.id))}
+                          selectLabel={tr(SELECT_LABEL, lang)}
+                          selectedLabel={tr(SELECTED_LABEL, lang)}
                         >
                           <button
                             type="button"
                             role="radio"
                             aria-checked={active}
-                            onClick={() => setScene((cur) => (cur === s.id ? '' : s.id))}
                             className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                               active
                                 ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
@@ -2108,11 +2120,14 @@ export default function ProductAdDialog({
                           description={v.prompt}
                           preview={v.preview}
                           rtl={RTL_LANGS.includes(lang)}
+                          selected={active}
+                          onSelect={() => toggleTemplate(v.id)}
+                          selectLabel={tr(SELECT_LABEL, lang)}
+                          selectedLabel={tr(SELECTED_LABEL, lang)}
                         >
                           <button
                             type="button"
                             aria-pressed={active}
-                            onClick={() => toggleTemplate(v.id)}
                             className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                               active
                                 ? 'border-amber-300/60 bg-amber-300/15 text-amber-100'
