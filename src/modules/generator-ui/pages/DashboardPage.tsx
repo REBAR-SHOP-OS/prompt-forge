@@ -7837,15 +7837,13 @@ export default function DashboardPage() {
           })()
           if (hasMusic && musicUrl) {
             const url = await persistAudioToStorage(musicUrl, 'music', mergedId)
-            entry.music = url
-              ? { url, name: musicName ?? 'Music' }
-              : fallbackAudio?.music
+            if (url) entry.music = { url, name: musicName ?? 'Music' }
+            else if (fallbackAudio?.music) entry.music = fallbackAudio.music
           }
           if (hasVoiceover && voiceoverUrl) {
             const url = await persistAudioToStorage(voiceoverUrl, 'voice', mergedId)
-            entry.voiceover = url
-              ? { url, name: voiceoverName ?? 'Voiceover' }
-              : fallbackAudio?.voiceover
+            if (url) entry.voiceover = { url, name: voiceoverName ?? 'Voiceover' }
+            else if (fallbackAudio?.voiceover) entry.voiceover = fallbackAudio.voiceover
           }
           if (entry.music || entry.voiceover) {
             setProjectAudio((prev) => {
