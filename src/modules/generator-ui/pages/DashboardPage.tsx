@@ -4326,6 +4326,17 @@ export default function DashboardPage() {
     const coverIds = new Set<string>()
     for (const ci of Object.values(coverImages)) coverIds.add(ci.id)
 
+    // Durably tag every known cover in the DB so it can never be rebuilt into
+    // a standalone draft after a refresh (category is checked by the draft
+    // builders and the workspace image load).
+    if (coverIds.size > 0) {
+      void supabase
+        .from('generator_user_images')
+        .update({ category: 'cover' })
+        .in('id', Array.from(coverIds))
+    }
+
+
     const ghostDraftIds = new Set<string>()
     for (const [draftId, imgs] of Object.entries(draftSourceImages)) {
       const onlyCovers = imgs.length > 0 && imgs.every((i) => coverIds.has(i.id))
