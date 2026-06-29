@@ -6515,6 +6515,16 @@ export default function DashboardPage() {
     }
   }
 
+  // When a product is pinned but the user supplied no Start frame, Wan I2V has
+  // nothing to condition on and the film won't resemble the product. The most
+  // faithful fix (per product decision) is to use the REAL product photo itself
+  // as the start frame — no AI redraw, so the exact product pixels drive the
+  // first frame. The product image URLs are already signed/downloadable, so we
+  // return the URL directly. Returns undefined only when there is no product.
+  function productStartFrame(product: ProjectProduct | null): string | undefined {
+    return product?.url || undefined
+  }
+
   // Build a clean, single-view start frame from a Character Sheet so Wan I2V can
   // lock onto the character. The sheet is usually a multi-pose collage that the
   // model cannot animate directly; this extracts ONE full-body view (front/side/
@@ -6736,9 +6746,26 @@ export default function DashboardPage() {
         setVideoColumnMessage(null)
         if (characterSeedFrameUrl) setGenerationMode('image-to-video')
       }
-      // Drive an I2V model (and bypass the T2V branch) when a character frame was baked.
-      const effectiveModel = characterSeedFrameUrl ? toImageToVideoModel(selectedModel) : selectedModel
-      const treatTextToVideo = isTextToVideo && !characterSeedFrameUrl
+      // Product pinned but NO start frame and NO character seed: use the real
+      // product photo itself as the start frame so Wan I2V actually reproduces
+      // the selected product instead of generating an unrelated item from text.
+      let productSeedFrameUrl: string | undefined
+      if (
+        selectedProduct &&
+        !readyStartFrame?.url &&
+        !readyEndFrame?.url &&
+        !characterSeedFrameUrl
+      ) {
+        productSeedFrameUrl = productStartFrame(selectedProduct)
+        if (productSeedFrameUrl) {
+          bakedStartFrameUrl = productSeedFrameUrl
+          setGenerationMode('image-to-video')
+        }
+      }
+      // Drive an I2V model (and bypass the T2V branch) when a character/product frame was seeded.
+      const seededAnyFrame = Boolean(characterSeedFrameUrl || productSeedFrameUrl)
+      const effectiveModel = seededAnyFrame ? toImageToVideoModel(selectedModel) : selectedModel
+      const treatTextToVideo = isTextToVideo && !seededAnyFrame
       for (let i = 0; i < iterations; i++) {
         let createdJob
         let seedFrames: { firstFrameUrl?: string; lastFrameUrl?: string } = {}
@@ -6959,10 +6986,11 @@ export default function DashboardPage() {
       }
       setVideoColumnMessage(null)
     }
-    // When a character is anchored, every scene must run on an I2V model so the
-    // baked character / previous-frame seed is actually used by the provider.
-    const scenarioModel = continuityCharacterRef ? toImageToVideoModel(selectedModel) : selectedModel
-    if (continuityCharacterRef) setGenerationMode('image-to-video')
+    // When a character OR product is anchored, every scene must run on an I2V
+    // model so the seeded start frame is actually used by the provider.
+    const scenarioModel =
+      continuityCharacterRef || selectedProduct ? toImageToVideoModel(selectedModel) : selectedModel
+    if (continuityCharacterRef || selectedProduct) setGenerationMode('image-to-video')
     try {
       for (let i = 0; i < scenes.length; i++) {
         const sourcePrompt = scenes[i].trim()
@@ -6981,6 +7009,7 @@ export default function DashboardPage() {
         if (continuityActive && i > 0) prompt = applyContinuityPrompt(prompt, continuity.memory)
 
         let startFrameUrl: string | undefined
+        let startFrameIsProductPhoto = false
         if (i === 0) {
           startFrameUrl = firstSceneImageUrl
           // No uploaded start frame but a character is anchored: build a clean
@@ -6995,12 +7024,20 @@ export default function DashboardPage() {
               sourcePrompt,
             )
           }
+          // Still no start frame but a product is pinned: use the real product
+          // photo as the start frame so card 1 reproduces the exact product
+          // instead of drifting in pure text-to-video.
+          if (!startFrameUrl && selectedProduct) {
+            startFrameUrl = productStartFrame(selectedProduct)
+            startFrameIsProductPhoto = Boolean(startFrameUrl)
+          }
         } else if (previousJobId) {
           startFrameUrl = await waitForLastFrameUrl(previousJobId, `Scene ${i}`)
         }
         // Bake the pinned product into this scene's start frame so Wan reproduces
-        // the exact product (it only conditions on the start frame).
-        if (selectedProduct && startFrameUrl) {
+        // the exact product (it only conditions on the start frame). Skip when the
+        // start frame already IS the real product photo — no redraw needed.
+        if (selectedProduct && startFrameUrl && !startFrameIsProductPhoto) {
           setVideoColumnMessage(`Locking product into ${sceneLabel}…`)
           startFrameUrl = await bakeProductIntoFrame(startFrameUrl, selectedProduct, effectiveRatio)
         }
@@ -7308,6 +7345,10 @@ export default function DashboardPage() {
         setVideoColumnMessage('Locking product into start frame…')
         regenFirstFrameUrl = await bakeProductIntoFrame(firstFrameUrl, selectedProduct, ratio)
         setVideoColumnMessage(null)
+      } else if (selectedProduct && !firstFrameUrl) {
+        // Source clip had no start frame: seed with the real product photo so the
+        // regenerated clip actually reproduces the selected product.
+        regenFirstFrameUrl = productStartFrame(selectedProduct)
       }
       const createdJob = await jobOrchestratorGateway.createJob({
         providerKey,
