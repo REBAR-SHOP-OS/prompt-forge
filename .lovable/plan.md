@@ -1,43 +1,25 @@
-# پیشنمایش با کلیک + دکمهٔ انتخاب
+# Fix: pinned product persists after "Start Over"
 
-## هدف
-الان پیشنمایش هر استایل فقط با **هاور** باز می‌شود و **کلیک روی چیپ مستقیماً آن را انتخاب می‌کند**. طبق درخواست، باید:
-- کلیک روی هر چیپ/آیکون، پیشنمایش (ویدئو + عنوان + توضیح) را باز کند.
-- انتخاب استایل فقط از طریق یک دکمهٔ «انتخاب» داخل خود پیشنمایش انجام شود.
-- این رفتار در **همهٔ چیپ‌های استایل در همه جا** یکسان باشد (دوربین، ژانر، صحنه، قالب‌های ویدئو در Product Ad و چیپ‌های استایل در داشبورد).
+## Problem
+When the user clicks **Start Over**, the previously pinned product chip stays in the composer. This is a real bug: the reset routine clears almost every workspace value (prompt, character, music, voiceover, uploads, duration, etc.) but forgets the product.
 
-## رویکرد (تغییر متمرکز در یک کامپوننت)
-منطق در `StylePreviewCard` متمرکز است و در دو محل استفاده می‌شود، پس با تغییر همان کامپوننت + اصلاح محل‌های فراخوانی، همه جا یکدست می‌شود.
+## Root cause
+In `src/modules/generator-ui/pages/DashboardPage.tsx`, `resetWorkspace()` (lines ~8092–8175) resets composer state including `setSelectedCharacter(null)` — but never touches `selectedProduct` or `productMenuOpen`. Since the product lives only in in-memory React state (it is not persisted to storage), simply resetting it in this function fully fixes the issue. `handleStartOver()` calls `resetWorkspace()`, so the fix applies to both the Start Over button and the fresh-login auto-reset path.
 
-### ۱) بازنویسی `StylePreviewCard`
-`src/modules/generator-ui/components/StylePreviewCard.tsx`
-- جایگزینی `HoverCard` با `Popover` (از `@/components/ui/popover`) به‌صورت کنترل‌شده (state داخلی `open`).
-- چیپ (`children`) به‌عنوان `PopoverTrigger asChild` رندر می‌شود؛ کلیک روی چیپ فقط پیشنمایش را باز/بسته می‌کند و دیگر انتخاب انجام نمی‌دهد.
-- props جدید:
-  - `onSelect: () => void` — اجرای منطق انتخاب اصلی.
-  - `selected?: boolean` — وضعیت فعلی برای نمایش متن دکمه.
-  - `selectLabel?: string` / `selectedLabel?: string` — برچسب دکمه (مثلاً «انتخاب» / «انتخاب‌شده ✓» یا «حذف انتخاب»).
-- محتوای `PopoverContent`: همان ویدئوی پیشنمایش (در صورت وجود) + عنوان + توضیح + یک دکمهٔ «انتخاب» در پایین. کلیک روی دکمه `onSelect()` را صدا می‌زند و سپس پیشنمایش را می‌بندد.
-- حفظ `dir` برای RTL و استایل فعلی کارت.
+## Change (single, minimal, safe)
+In `resetWorkspace()`, alongside the existing composer resets (right after `setSelectedCharacter(null)`), add:
 
-### ۲) اصلاح محل‌های فراخوانی
-در هر دو فایل، `onClick` از روی دکمهٔ داخلی چیپ حذف می‌شود و به‌جای آن `onSelect` به `StylePreviewCard` پاس داده می‌شود (تا کلیک روی چیپ فقط پیشنمایش را باز کند).
+```ts
+setSelectedProduct(null)
+setProductMenuOpen(false)
+```
 
-`src/modules/generator-ui/components/ProductAdDialog.tsx` — چهار بخش:
-- دوربین: `onSelect={() => setCameraStyle(style.label.en)}`، `selected={cameraStyle === style.label.en}`
-- ژانر: `onSelect={() => setGenre(cur => cur === g.id ? '' : g.id)}`، `selected={genre === g.id}`
-- صحنه: `onSelect={() => setScene(cur => cur === s.id ? '' : s.id)}`، `selected={scene === s.id}`
-- قالب ویدئو: `onSelect={() => toggleTemplate(v.id)}`، `selected={templateIds.has(v.id)}`
-- برچسب دکمه از زبان فعلی (`lang`) ساخته می‌شود (فارسی/انگلیسی و سایر زبان‌های موجود) — یک helper کوچک دوزبانه اضافه می‌شود.
+## Why this is safe
+- Product state is in-memory only (no DB/storage writes), so clearing it has no side effects on saved Library projects or storage files.
+- It mirrors the existing `setSelectedCharacter(null)` handling, keeping reset behavior consistent.
+- No change to generation logic, identity anchors, or persisted drafts. Reopening a saved/draft project still restores its own product because that path sets `selectedProduct` explicitly.
 
-`src/modules/generator-ui/pages/DashboardPage.tsx` — چیپ استایل:
-- حذف `onClick={() => onToggle(item.id)}` از دکمه و افزودن `onSelect={() => onToggle(item.id)}` و `selected={active}` به `StylePreviewCard`.
-
-## نکات
-- روی موبایل هم چون مبتنی بر کلیک/تپ است، طبیعی کار می‌کند.
-- چون انتخاب از چیپ به دکمهٔ داخل پیشنمایش منتقل می‌شود، رفتار قبلیِ «کلیک = انتخاب» حذف می‌شود (مطابق گزینهٔ انتخابی شما).
-- بدون تغییر در منطق تولید ویدئو، اعتبارسنجی، یا بک‌اند.
-
-## تأیید
-- اجرای `bun run tsc --noEmit` برای پاک بودن تایپ‌ها.
-- بررسی بصری با Playwright: کلیک روی یک چیپ → باز شدن پیشنمایش با ویدئو و دکمهٔ انتخاب؛ کلیک روی «انتخاب» → فعال‌شدن چیپ و بسته‌شدن پیشنمایش.
+## Verification
+- Pin a product, click **Start Over** → the product chip disappears and the composer shows the empty "Start forging a prompt" state.
+- Confirm character, prompt, music, and voiceover still clear as before.
+- Typecheck remains clean.

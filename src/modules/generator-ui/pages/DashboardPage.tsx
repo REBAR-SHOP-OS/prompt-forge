@@ -8137,6 +8137,8 @@ export default function DashboardPage() {
     // Reset the composer to a fresh state.
     setPromptText('')
     setSelectedCharacter(null)
+    setSelectedProduct(null)
+    setProductMenuOpen(false)
     setUploadedFiles([])
     setComposerError(null)
     setVideoColumnMessage(null)
