@@ -12269,7 +12269,7 @@ export default function DashboardPage() {
                   {selectedCharacter ? (
                     <button
                       type="button"
-                      onClick={() => { setSelectedCharacter(null); setCharacterMenuOpen(false) }}
+                      onClick={() => { setSelectedCharacter(null); updateContinuity({ characterRef: null }); setCharacterMenuOpen(false) }}
                       className="text-[11px] text-zinc-400 hover:text-rose-300"
                     >
                       Remove
