@@ -65,12 +65,20 @@ export type AiImageSavedRow = {
   height?: number | null
 }
 
+type AiProductOption = {
+  id: string
+  url: string
+  title: string | null
+  description?: string | null
+}
+
 type Props = {
   open: boolean
   onOpenChange: (open: boolean) => void
   userId: string | null
   defaultAspect: AiImageAspect
   onSaved: (row: AiImageSavedRow) => void
+  products?: AiProductOption[]
 }
 
 type AiReferenceImage = {
