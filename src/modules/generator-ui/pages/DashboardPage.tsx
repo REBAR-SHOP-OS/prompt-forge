@@ -639,6 +639,24 @@ function toImageToVideoModel(model: ModelChoice): ModelChoice {
   )
 }
 
+// Resolve the Text-to-Video counterpart of a chosen model. When the user
+// switches to Text-to-Video mode we want to stay inside the same provider
+// family (wan/ltx/local) instead of falling back to the first generic t2v
+// model in the list.
+function toTextToVideoModel(model: ModelChoice): ModelChoice {
+  if (model.supports.includes('t2v')) return model
+  const base = model.id.replace(/-i2v$/, '')
+  const sibling = MODEL_CHOICES.find(
+    (m) => m.providerKey === model.providerKey && m.supports.includes('t2v') && m.id.replace(/-t2v$/, '') === base,
+  )
+  return (
+    sibling ??
+    MODEL_CHOICES.find((m) => m.providerKey === model.providerKey && m.supports.includes('t2v')) ??
+    MODEL_CHOICES.find((m) => m.id === 'wan-t2v') ??
+    model
+  )
+}
+
 
 
 type LocalPlannerModelChoice = {
