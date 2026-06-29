@@ -30,6 +30,7 @@ import {
    CalendarPlus,
    LayoutGrid,
    Library,
+  Languages,
   LoaderCircle,
   Lock,
   LogOut,
