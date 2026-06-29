@@ -666,7 +666,7 @@ export default function AiImageDialog({
                     <button
                       type="button"
                       disabled={isLoading}
-                      className={`absolute bottom-3 left-[8.5rem] inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
                         selectedTheme
                           ? 'border-amber-300/60 bg-amber-300/10 text-amber-100 hover:bg-amber-300/20'
                           : 'border-white/10 bg-black/40 text-zinc-200 hover:border-white/20 hover:bg-white/[0.08] hover:text-white'
