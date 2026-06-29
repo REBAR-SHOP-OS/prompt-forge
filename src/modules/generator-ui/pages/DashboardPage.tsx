@@ -207,7 +207,6 @@ function StyleSection({
             <button
               key={item.id}
               type="button"
-              onClick={() => onToggle(item.id)}
               className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition ${
                 active
                   ? 'border-amber-300 bg-amber-300/15 text-amber-100'
@@ -224,6 +223,8 @@ function StyleSection({
               title={item.label}
               description={item.prompt}
               preview={item.preview}
+              selected={active}
+              onSelect={() => onToggle(item.id)}
             >
               {chip}
             </StylePreviewCard>
