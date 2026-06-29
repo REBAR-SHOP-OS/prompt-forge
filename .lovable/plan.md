@@ -1,77 +1,24 @@
-## هدف
-بازگشت Final Film به Draft باید واقعاً موسیقی و نریشن را هم به پروژه برگرداند، نه فقط آیکون‌های خالی را نشان دهد؛ سپس خودم با preview بررسی کنم که waveform و state صدا فعال شده‌اند.
+# Add translation to the Copyright check dialog
 
-## تشخیص ریشه‌ای
-مشکل فقط fallback قبلی نبود. دو ریشه اصلی در کد دیده می‌شود:
+## Goal
+The Copyright check result is shown only in English (summary, video/music reasons and risk bullets). Add a translate control so the user can read the full review accurately in their own language — Persian by default — while keeping the original English text intact.
 
-1. **URL صدا از bucket خصوصی به صورت public/raw برمی‌گردد**
-   - `projectAudio` آدرس‌هایی مثل `merged-videos/...` را ذخیره می‌کند.
-   - کارت Library برای پخش همین صداها از `signStorageUrl` استفاده می‌کند.
-   - اما `restoreDraftAudio` همان URL خام را مستقیم داخل `musicUrl` / `voiceoverUrl` می‌گذارد؛ بنابراین WaveSurfer و Final Film merge نمی‌توانند فایل صوتی را بخوانند و نتیجه Draft/Final بدون صدا می‌شود.
+## What the user will see
+- A small "Translate" control (language picker + button) added to the top of the Copyright check dialog, next to the description.
+- After choosing a language and clicking translate, every text part of the result (overall summary, Video reason + risks, Music & voiceover reason + risks) is replaced/augmented with the translated version.
+- The original English stays available (a "Show original / نمایش متن اصلی" toggle), matching the existing translation pattern used in the Voiceover/Narration dialogs (translation is for reference, original is preserved).
+- For RTL languages (Persian, Arabic) the translated text blocks render right-aligned with `dir="rtl"`.
 
-2. **باز کردن Final به Draft گاهی با state قدیمی `projectAudio` کار می‌کند**
-   - `reopenFinalAsDraft` قبل از اینکه آخرین localStorage/server-hydrated state قطعی باشد، `projectAudio[finalId]` را از React state می‌خواند.
-   - اگر state خالی/قدیمی باشد، mapping صدا به Draft منتقل می‌شود یا ذخیره می‌شود، ولی live audio state برای preview/merge دوباره تنظیم نمی‌شود.
+## How it works (technical)
+- Reuse the existing `translate-text` edge function (already supports fa/en/ar/tr/es/fr/de/ru/zh, 5000-char limit, returns `{ translation }`). No backend changes needed.
+- In `src/modules/generator-ui/pages/DashboardPage.tsx`, in the Copyright dialog block (around lines 12771–12863):
+  - Add local state: `copyrightLang`, `copyrightTranslating`, `copyrightTranslated` (a structured object mirroring `CopyrightResult`: summary, video.reason, video.risks[], music.reason, music.risks[]), and `showOriginal`.
+  - Add a language `Select` + Translate button in the dialog header area, reusing the `TRANSLATE_LANGS` list/labels already used in `VoiceoverDialog.tsx` (extract to a shared constant or duplicate the small array).
+  - On translate: serialize the result's text fields into one delimited string, call `supabase.functions.invoke('translate-text', { body: { text, targetLang, style: 'plain' } })`, then split the response back into the structured fields. Using a single call keeps it within the char limit and avoids many round-trips; fall back to per-field calls only if parsing fails.
+  - The `Section` and overall summary rendering reads from `copyrightTranslated` when a translation exists and `showOriginal` is false; otherwise from `copyrightResult`. Status labels/icons (Approved/Rejected/Caution) stay as-is since they're UI state, not prose.
+  - Reset the translation state whenever the dialog closes or a new check runs (in the existing `onOpenChange` cleanup and `runCopyrightCheck`).
+- Show a small spinner on the button while translating and a toast on success/error, consistent with existing dialogs.
 
-## تغییرات پیشنهادی
-فقط در مسیر صوت Final→Draft و امضای URLها تغییر می‌دهم؛ UI generation، auth، storage policies و backend framework دست نمی‌خورد.
-
-### 1. Helper امن برای خواندن آخرین `projectAudio`
-در `DashboardPage.tsx` یک helper کوچک اضافه می‌کنم که:
-- آخرین `project-audio:${userId}` را مستقیم از localStorage بخواند.
-- با React state فعلی merge شود.
-- فقط entryهای مربوط به `finalId` و `draftId` را استفاده کند.
-
-### 2. Helper برای پیدا کردن audio معتبر
-یک تابع `resolveProjectAudioForReopen(finalId, draftId)` می‌سازم که به ترتیب این منابع را بررسی کند:
-1. `projectAudio[finalId]` از آخرین persisted map
-2. `projectAudio[draftId]` از آخرین persisted map
-3. نسخه‌های state فعلی به عنوان fallback
-
-و فقط وقتی `music` یا `voiceover` واقعی دارد آن را انتخاب کند.
-
-### 3. امضای URL قبل از restore live audio
-`restoreDraftAudio` را async می‌کنم تا قبل از `setMusicUrl` و `setVoiceoverUrl`:
-- برای URLهای `merged-videos` / storage private از `signStorageUrl` استفاده کند.
-- اگر URL از قبل `blob:` / `data:` / signed باشد، همان را نگه دارد.
-- اگر signing شکست خورد، raw URL را ذخیره در metadata نگه دارد ولی برای live playback/merge فقط URL قابل fetch را ترجیح دهد.
-
-نتیجه: waveform زیر preview واقعاً فایل را load می‌کند و merge بعدی صدا را هم دریافت می‌کند.
-
-### 4. انتقال atomic اما با آخرین persisted state
-در `reopenFinalAsDraft`:
-- audio resolved شده را از helper جدید می‌گیرم.
-- آن را زیر `draftId` ذخیره می‌کنم و `finalId` را حذف می‌کنم.
-- سپس `await/void restoreDraftAudio(draftId, resolvedAudio)` را اجرا می‌کنم تا live music/voiceover state immediately فعال شود.
-- `ensureActiveDraftIdRef.current = draftId` را هم همان لحظه تنظیم می‌کنم تا submit بعدی روی همان Draft ادامه پیدا کند.
-
-### 5. جلوگیری از Final Film بی‌صدا بعد از restore
-قبل از ساخت `audioOpt` در Final Film:
-- اگر `musicUrl` یا `voiceoverUrl` از storage خصوصی باشد، یک URL fetchable/signed تازه برای merge می‌گیرم.
-- این کار باعث می‌شود حتی اگر preview URL قبلی منقضی شده باشد، خروجی Final Film دوباره silent نشود.
-
-### 6. اصلاح snapshot صدا
-`persistAudioToStorage` را طوری امن‌تر می‌کنم که وقتی source خودش private storage URL است:
-- اول آن را sign کند.
-- سپس fetch/upload کند.
-این باعث می‌شود snapshotهای بعدی music/voiceover دوباره fail نشوند.
-
-## اعتبارسنجی
-بعد از اعمال تغییرات:
-1. Typecheck را اجرا می‌کنم.
-2. با Playwright preview را باز می‌کنم.
-3. localStorage test fixture با یک Final Film دارای `projectAudio` می‌سازم.
-4. action بازگشت Final→Draft را اجرا/شبیه‌سازی می‌کنم.
-5. بررسی می‌کنم:
-   - `projectAudio[draftId]` وجود دارد.
-   - `musicUrl` / `voiceoverUrl` به signed/fetchable URL تبدیل شده‌اند.
-   - waveform containerها blank/error نیستند.
-   - preview صدا را به player پاس می‌دهد.
-
-## محدوده‌ای که تغییر نمی‌دهم
-- UI تولید و layout اصلی
-- auth
-- storage policies
-- backend/functions
-- credit ledger
-- merge encoder اصلی
+## Out of scope
+- No changes to the copyright analysis itself or the `copyright-check` edge function.
+- No changes to auth, storage, or other dialogs.
