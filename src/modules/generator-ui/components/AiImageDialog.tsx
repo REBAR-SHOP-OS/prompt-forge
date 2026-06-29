@@ -159,6 +159,7 @@ export default function AiImageDialog({
   const [themeMenuOpen, setThemeMenuOpen] = useState(false)
   const [productMenuOpen, setProductMenuOpen] = useState(false)
   const [productLoadingId, setProductLoadingId] = useState<string | null>(null)
+  const [isWritingPrompt, setIsWritingPrompt] = useState(false)
 
   const [isMaskMode, setIsMaskMode] = useState(false)
   const [brushSize, setBrushSize] = useState(36)
@@ -323,6 +324,44 @@ export default function AiImageDialog({
       setProductLoadingId(null)
     }
   }
+
+  async function handleWritePrompt() {
+    setError(null)
+    const theme = selectedTheme ? THEME_OPTIONS.find((t) => t.id === selectedTheme) : null
+    if (referenceImages.length === 0 && !theme && prompt.trim().length === 0) {
+      setError('Add a reference image, a product, or pick a theme first so I can write a prompt.')
+      return
+    }
+    setIsWritingPrompt(true)
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('write-image-prompt', {
+        body: {
+          referenceImages: referenceImages.map((r) => r.dataUrl),
+          themeDescriptor: theme?.descriptor ?? '',
+          themeLabel: theme?.enLabel ?? '',
+          existingPrompt: prompt.trim(),
+        },
+      })
+      if (fnError) {
+        setError(await extractFnError(fnError, 'Could not write a prompt. Try again.'))
+        return
+      }
+      const written = typeof (data as { prompt?: unknown })?.prompt === 'string'
+        ? (data as { prompt: string }).prompt.trim()
+        : ''
+      if (!written) {
+        setError('The AI returned an empty prompt. Try again.')
+        return
+      }
+      setPrompt(written)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not write a prompt.')
+    } finally {
+      setIsWritingPrompt(false)
+    }
+  }
+
+
 
   function handleRemoveRefineReference(index: number) {
     setRefineReferenceImages((prev) => prev.filter((_, i) => i !== index))
@@ -752,6 +791,20 @@ export default function AiImageDialog({
                     )}
                   </PopoverContent>
                 </Popover>
+                <button
+                  type="button"
+                  onClick={() => void handleWritePrompt()}
+                  disabled={isLoading || isWritingPrompt}
+                  className="absolute bottom-3 right-3 inline-flex items-center gap-2 rounded-full border border-amber-300/40 bg-amber-300/10 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:border-amber-300/70 hover:bg-amber-300/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  title="Write a professional prompt from your references & theme"
+                >
+                  {isWritingPrompt ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Wand2 className="h-4 w-4" />
+                  )}
+                  <span>{isWritingPrompt ? 'Writing…' : 'Write prompt'}</span>
+                </button>
               </div>
               {referenceImages.length > 0 ? (
                 <div className="mt-3 space-y-2">
