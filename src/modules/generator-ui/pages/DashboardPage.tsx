@@ -7009,6 +7009,7 @@ export default function DashboardPage() {
         if (continuityActive && i > 0) prompt = applyContinuityPrompt(prompt, continuity.memory)
 
         let startFrameUrl: string | undefined
+        let startFrameIsProductPhoto = false
         if (i === 0) {
           startFrameUrl = firstSceneImageUrl
           // No uploaded start frame but a character is anchored: build a clean
@@ -7028,13 +7029,15 @@ export default function DashboardPage() {
           // instead of drifting in pure text-to-video.
           if (!startFrameUrl && selectedProduct) {
             startFrameUrl = productStartFrame(selectedProduct)
+            startFrameIsProductPhoto = Boolean(startFrameUrl)
           }
         } else if (previousJobId) {
           startFrameUrl = await waitForLastFrameUrl(previousJobId, `Scene ${i}`)
         }
         // Bake the pinned product into this scene's start frame so Wan reproduces
-        // the exact product (it only conditions on the start frame).
-        if (selectedProduct && startFrameUrl) {
+        // the exact product (it only conditions on the start frame). Skip when the
+        // start frame already IS the real product photo — no redraw needed.
+        if (selectedProduct && startFrameUrl && !startFrameIsProductPhoto) {
           setVideoColumnMessage(`Locking product into ${sceneLabel}…`)
           startFrameUrl = await bakeProductIntoFrame(startFrameUrl, selectedProduct, effectiveRatio)
         }
