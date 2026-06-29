@@ -6123,6 +6123,20 @@ export default function DashboardPage() {
   // durations are loaded so the music range is set to the full track.
   const restoreDraftAudio = useCallback((draftId: string, override?: ProjectAudio) => {
     const audio = override ?? projectAudio[draftId]
+    // Always clear the live soundtrack first so audio NEVER leaks from a
+    // previously-open project into one that has no soundtrack of its own.
+    // Each project must show only its own music/voiceover.
+    setMusicName(null)
+    setMusicUrl(null)
+    setMusicDuration(0)
+    setMusicRange([0, 0])
+    setMusicTimeline([0, 0])
+    setVoiceoverName(null)
+    setVoiceoverUrl(null)
+    setVoiceoverDuration(0)
+    setVoiceoverRange([0, 0])
+    setVoiceoverTimeline([0, 0])
+    delete draftAudioSnapshotRef.current[draftId]
     if (!audio) return
     // Always persist the restored audio under the draft scope so it survives
     // refresh / draft switch even when this was driven by an override (move).
