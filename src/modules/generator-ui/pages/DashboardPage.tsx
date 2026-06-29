@@ -1415,6 +1415,10 @@ export default function DashboardPage() {
   // Character picked as a *descriptive reference* for the current project's film.
   type ProjectCharacter = { id: string; url: string; title: string | null }
   const [selectedCharacter, setSelectedCharacter] = useState<ProjectCharacter | null>(null)
+  // Which view of the Character Sheet to bake into each scene's start frame.
+  // 'auto' lets the image-edit model pick the angle that best matches the scene text.
+  type CharacterView = 'auto' | 'front' | 'side' | 'back'
+  const [characterView, setCharacterView] = useState<CharacterView>('auto')
   const [characterList, setCharacterList] = useState<ProjectCharacter[]>([])
   const [characterMenuOpen, setCharacterMenuOpen] = useState(false)
   const [characterListLoading, setCharacterListLoading] = useState(false)
