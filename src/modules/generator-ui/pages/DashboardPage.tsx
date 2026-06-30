@@ -115,6 +115,7 @@ import { TransitionPreview } from '@/modules/generator-ui/components/TransitionP
 import { SequentialClipPlayer } from '@/modules/generator-ui/components/SequentialClipPlayer'
 import { VideoWithSoundtrack } from '@/modules/generator-ui/components/VideoWithSoundtrack'
 import { PlayableVideo } from '@/modules/generator-ui/components/PlayableVideo'
+import { LiveJobProgress } from '@/modules/generator-ui/components/LiveJobProgress'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { videoLibraryGateway } from '@/modules/video-library/gateway'
@@ -776,7 +777,7 @@ function ImageDurationInput({
 }
 
 
-function isTerminalStatus(status: string) {
+export function isTerminalStatus(status: string) {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
 }
 
@@ -870,7 +871,7 @@ function buildPromptWithUploadedFiles(prompt: string, files: UploadedFile[]) {
 // Keyed by job id; cleared implicitly when the page unmounts.
 const progressMaxRef: Map<string, number> = new Map()
 
-function getJobProgressPercent(job: { id?: string; status: string; progress_percent?: number | null; created_at: string; requested_duration?: number | null }): number | null {
+export function getJobProgressPercent(job: { id?: string; status: string; progress_percent?: number | null; created_at: string; requested_duration?: number | null }): number | null {
   const status = normalizeStatus(job.status)
   if (status === 'completed') {
     if (job.id) progressMaxRef.set(job.id, 100)
@@ -5933,19 +5934,12 @@ export default function DashboardPage() {
     })
   }, [generatedVideos, pendingStartPrepends, userId])
 
-  // Smooth progress ticker: re-render once per second while any job is active
-  // so the time-based progress bar advances visibly between API polls.
-  const [, setProgressTick] = useState(0)
-  useEffect(() => {
-    // Read-only projects are terminal — no live progress to animate, so never
-    // run the 1s re-render loop (it would re-render every PlayableVideo each
-    // second inside the iframe and make the page feel frozen).
-    if (isReadOnlyProject) return
-    const hasActive = generatedVideos.some((job) => !isTerminalStatus(job.status))
-    if (!hasActive) return
-    const id = window.setInterval(() => setProgressTick((tick) => tick + 1), 1000)
-    return () => window.clearInterval(id)
-  }, [generatedVideos, isReadOnlyProject])
+  // NOTE: The per-second progress animation is intentionally NOT driven from a
+  // page-wide re-render here. A previous `setInterval(() => setProgressTick(...))`
+  // re-rendered the entire DashboardPage every second while a job was active,
+  // which forced the Preview <video> subtree to re-render once per second and
+  // caused visible playback stutter/lag. The 1s tick now lives inside the small
+  // `LiveJobProgress` component so only the tiny progress widgets re-render.
 
   function openFileUpload(target: UploadTarget) {
     setUploadTarget(target)
@@ -10541,10 +10535,13 @@ export default function DashboardPage() {
                     {(() => {
                       const status = normalizeStatus(previewItem.job.status)
                       const isRendering = status === 'processing' || status === 'pending'
-                      const pct = isRendering ? getJobProgressPercent(previewItem.job) ?? 0 : 0
                       const startedAt = Date.parse(previewItem.job.created_at)
                       const longRender = Number.isFinite(startedAt) && Date.now() - startedAt > 240_000
                       return (
+                        <LiveJobProgress job={previewItem.job}>
+                          {(livePct) => {
+                            const pct = isRendering ? (livePct ?? 0) : 0
+                            return (
                         <div className="w-full max-w-sm">
                           {isRendering ? (
                             (() => {
@@ -10615,6 +10612,9 @@ export default function DashboardPage() {
                           )}
 
                         </div>
+                            )
+                          }}
+                        </LiveJobProgress>
                       )
                     })()}
                   </div>
@@ -11272,23 +11272,24 @@ export default function DashboardPage() {
                         <span className={`h-1.5 w-1.5 rounded-full ${getStatusDotClassName(video.status)}`} />
                         {formatStatusLabel(video.status)}
                         {(status === 'processing' || status === 'pending') ? (
-                          (() => {
-                            const pct = getJobProgressPercent(video)
-                            return pct !== null ? <span className="tabular-nums text-amber-300">{pct}%</span> : null
-                          })()
+                          <LiveJobProgress job={video}>
+                            {(pct) => (pct !== null ? <span className="tabular-nums text-amber-300">{pct}%</span> : null)}
+                          </LiveJobProgress>
                         ) : null}
                       </span>
                       <span>{formatCreatedAt(video.created_at)}</span>
                     </div>
                     {(status === 'processing' || status === 'pending') ? (
-                      (() => {
-                        const pct = getJobProgressPercent(video) ?? 0
-                        return (
-                          <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/10">
-                            <div className="h-full rounded-full bg-amber-300 transition-all duration-500" style={{ width: `${pct}%` }} />
-                          </div>
-                        )
-                      })()
+                      <LiveJobProgress job={video}>
+                        {(livePct) => {
+                          const pct = livePct ?? 0
+                          return (
+                            <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/10">
+                              <div className="h-full rounded-full bg-amber-300 transition-all duration-500" style={{ width: `${pct}%` }} />
+                            </div>
+                          )
+                        }}
+                      </LiveJobProgress>
                     ) : null}
                     <NarrationDialog
                       open={narrationViewer?.cardId === video.id}
