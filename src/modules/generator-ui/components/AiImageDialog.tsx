@@ -1190,7 +1190,8 @@ export default function AiImageDialog({
                         type="button"
                         size="sm"
                         className="flex-1"
-                        disabled={isWritingPrompt || isLoadingTaglines}
+                        disabled={isWritingPrompt || isLoadingTaglines || !referenceImages.some((r) => r.isProduct)}
+                        title={referenceImages.some((r) => r.isProduct) ? undefined : 'Select a product first'}
                         onClick={() => void loadTaglines()}
                       >
                         {isLoadingTaglines ? (
