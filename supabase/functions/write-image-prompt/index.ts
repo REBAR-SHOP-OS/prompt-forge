@@ -16,8 +16,22 @@ const SYSTEM_PROMPT = [
   "If the user already typed some prompt text, build on its intent and keep its language.",
   "Default to English when there is no existing text to mirror.",
   "Output ONLY the final prompt — no preamble, no quotes, no explanation,",
-  "no markdown, no labels. Keep it under 90 words.",
+  "no markdown, no labels. Keep it under 110 words.",
 ].join(" ");
+
+const AD_COPY_RULES = [
+  "Additionally, the image is a product advertisement: include in the prompt a short,",
+  "legible ADVERTISING HEADLINE/TAGLINE composited onto the image with tasteful,",
+  "well-placed, readable typography that fits the composition and aspect ratio.",
+  "Describe the exact tagline text in quotes so it renders on the image.",
+  "STRICT rules for that on-image text: keep it purely promotional and brand/mood-driven",
+  "(a few words, max ~6). It MUST NOT make any factual or performance claim",
+  "(no 'best', 'strongest', '#1', 'certified', no specs/numbers stated as fact)",
+  "and MUST NOT contain any guarantee or warranty wording",
+  "(no 'guaranteed', 'warranty', '100%', 'risk-free', 'lifetime').",
+  "Write the tagline in the same language as the existing prompt text; English by default.",
+].join(" ");
+
 
 function isDataUrl(u: string): boolean {
   return /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(u);
