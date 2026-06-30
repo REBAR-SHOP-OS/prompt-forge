@@ -4537,6 +4537,7 @@ export default function DashboardPage() {
             (i) =>
               !claimedImgs.has(i.id) &&
               !draftOwnedImageIds.has(i.id) &&
+              (i.category ?? 'general') !== 'cover' &&
               !!i.storage_path &&
               new Date(i.created_at).getTime() <= cutoff,
           )
