@@ -3196,16 +3196,16 @@ export default function DashboardPage() {
   // the Archive dialog opens. Users often open Voiceover → Product narration
   // directly, so load them on demand when the Voiceover dialog opens.
   useEffect(() => {
-    if (isVoiceoverOpen && archiveProductImages.length === 0) {
+    if (isVoiceoverOpen) {
       void loadProductImages()
     }
-  }, [isVoiceoverOpen, archiveProductImages.length, loadProductImages])
+  }, [isVoiceoverOpen, loadProductImages])
 
   useEffect(() => {
-    if (isAiImageDialogOpen && archiveProductImages.length === 0) {
+    if (isAiImageDialogOpen) {
       void loadProductImages()
     }
-  }, [isAiImageDialogOpen, archiveProductImages.length, loadProductImages])
+  }, [isAiImageDialogOpen, loadProductImages])
 
 
   
@@ -9884,7 +9884,15 @@ export default function DashboardPage() {
         userId={userId}
         defaultAspect={lockedProjectRatio ?? aspectRatio}
         productsLoading={archiveLoading}
-        onProductsRefresh={loadProductImages}
+        onProductsRefresh={async () => {
+          const rows = await loadProductImages()
+          return rows.map((p) => ({
+            id: p.id,
+            url: p.storage_path,
+            title: p.title ?? null,
+            description: p.description ?? null,
+          }))
+        }}
         products={archiveProductImages.map((p) => ({
           id: p.id,
           url: p.storage_path,
@@ -12489,7 +12497,7 @@ export default function DashboardPage() {
               open={productMenuOpen}
               onOpenChange={(open) => {
                 setProductMenuOpen(open)
-                if (open && archiveProductImages.length === 0) void loadProductImages()
+                if (open) void loadProductImages()
               }}
             >
               <PopoverTrigger asChild>
