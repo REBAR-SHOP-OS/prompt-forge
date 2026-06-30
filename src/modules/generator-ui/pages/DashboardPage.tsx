@@ -1076,6 +1076,7 @@ function ProjectAudioTrackRow({
 
 export default function DashboardPage() {
   const { session, profile, signOut, loading: authLoading } = useAuth()
+  const userId = session?.user?.id ?? null
   const [promptText, setPromptText] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
@@ -1950,8 +1951,6 @@ export default function DashboardPage() {
   // NOTE: Aspect ratio selector is always free for the user to change.
   // `lockedProjectRatio` is kept only for Final Film merge/preview consistency,
   // not to override the user's per-clip selection.
-  const userId = session?.user?.id ?? null
-
   // Check whether the user has saved their business profile, to flag the
   // "About your business (required)" button when it's still empty.
   useEffect(() => {
