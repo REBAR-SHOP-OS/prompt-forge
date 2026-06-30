@@ -1,30 +1,32 @@
-## Expected outcome
-Product photos uploaded by the user to Storage → Products should reliably appear in the product picker, including inside **Generate image with AI → Select product**, and the selected product image should load from backend storage instead of disappearing due to stale/missing URLs.
+# Add more graphic themes to the theme picker
 
-## Constraints
-- Keep the existing UI layout and generation flow unchanged.
-- Do not touch auth, storage policies, unrelated backend frameworks, or video generation logic.
-- Use existing `generator_user_images` rows and `user-images` storage bucket.
+## Goal
+Extend the "Pick a theme" menu in the "Generate image with AI" dialog with additional professional graphic themes, each with an English label, a descriptor for prompt generation, and a high-quality preview image — matching the existing pattern exactly.
 
-## Plan
-1. **Create one reliable product loader in `DashboardPage.tsx`**
-   - Add a focused helper that queries `generator_user_images` for the current user with `category = product`, `deleted_at IS NULL`, and includes title/description.
-   - Sign every product image URL through the existing `signUserImageRows` / storage URL logic before putting it into state.
-   - Merge by `id` so products uploaded in Storage and products already in memory do not duplicate or disappear.
+## New themes to add (8)
+| ID | Label | Descriptor focus |
+|----|-------|------------------|
+| `industrial-grunge` | Industrial Grunge | raw concrete, steel, exposed pipes, gritty workshop, hard directional light |
+| `golden-hour` | Golden Hour | warm sunset glow, long soft shadows, backlit rim light, cinematic warmth |
+| `studio-gradient` | Studio Gradient | smooth colored gradient backdrop, soft spotlight, modern commercial pop |
+| `nature-fresh` | Nature Fresh | lush greenery, water droplets, dewy daylight, clean organic freshness |
+| `tech-futuristic` | Tech / Futuristic | sleek holographic UI accents, dark glass, blue glow, high-tech product feel |
+| `bold-typographic` | Bold Typographic | strong geometric color blocks, Swiss/Bauhaus layout, poster ad energy |
+| `warm-minimal` | Warm Minimal | beige/sand tones, soft natural shadows, cozy minimalist studio |
+| `dramatic-spotlight` | Dramatic Spotlight | single hard spotlight, deep black background, theatrical product reveal |
 
-2. **Load products when product-dependent UI opens**
-   - When the AI image dialog opens, load product rows if the product list is empty or stale.
-   - Keep the existing on-demand loading for the main “Add product” popover, but route it through the same reliable loader.
-   - Avoid relying on the full archive dialog being opened first.
+(Final list can be trimmed/tuned; all English labels per project convention.)
 
-3. **Make product thumbnails self-heal**
-   - Replace plain `<img>` usage for product thumbnails in product pickers with the existing `UserImageView` where available, so stale/private storage URLs get re-signed once before showing a placeholder.
-   - In `AiImageDialog`, keep the current UI but add a small image-load fallback: if a product thumbnail or selected product fetch fails, surface a clear error and allow reselect after products are refreshed.
+## Implementation
+1. Generate one preview JPG per new theme into `src/assets/theme-previews/` (consistent product-on-backdrop style, matching existing previews).
+2. In `src/modules/generator-ui/components/AiImageDialog.tsx`:
+   - Add the new image imports alongside the existing theme imports (lines ~20-33).
+   - Append the new entries to the `THEME_OPTIONS` array (after line 51), following the exact existing object shape (`id`, `faLabel`, `enLabel`, `descriptor`, `image`).
+3. No other logic changes — the picker, prompt-descriptor injection, and `write-image-prompt` flow already consume `THEME_OPTIONS` generically.
 
-4. **Keep uploaded product rows durable**
-   - For new product uploads, store the durable storage key/path consistently enough for signing, while still supporting old rows that contain full public/signed URLs.
-   - After upload, immediately sign the stored image and add it to `archiveProductImages` so it appears without needing a refresh.
+## Verification
+- `bun run tsc --noEmit` clean.
+- Open the dialog → "Pick a theme" shows the new themes with previews and they scroll/select correctly.
 
-5. **Validate**
-   - Verify the product query path and UI state path: uploaded product rows load into `archiveProductImages`, pass into `AiImageDialog.products`, and render in **Select product**.
-   - Confirm empty state only appears when the backend returns no product rows.
+## Notes / question
+This only touches the theme list + assets (presentation). If you have specific themes in mind (e.g. construction/urban industrial focus for your domain), tell me and I'll use exactly those instead of the suggested set.
