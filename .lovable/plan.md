@@ -1,38 +1,47 @@
-## Goal
-A film cover must appear **only inside its own project** — never in the active workspace pending, never inside another project, and never as its own standalone "Draft project" card. Existing ghost cover-draft cards get auto-cleaned.
+# Write prompt: choose text, pick an ad tagline
 
-## Root cause
-All cover guards rely on `allCoverImageIds`, derived from the per-device `coverImages` localStorage map that loads asynchronously. When it isn't loaded yet (fresh load, other device, stale storage), the cover slips through and:
-- shows as an "Uploaded image" working clip in the open Project (screenshot 1), and
-- gets turned into a standalone "Draft project" by the orphan-draft backfill (screenshot 2).
+Today the ✨ **Write prompt** button (`AiImageDialog.tsx` → `handleWritePrompt`) auto-decides whether to add on-image text (`includeAdCopy = Boolean(productRef)`) and immediately writes one prompt. The goal: when clicked, ask the user **with text / without text**; if they choose text, show several purely-promotional taglines based on the selected product, let them pick one, then bake that exact tagline into the written prompt so it renders on the image.
 
-The durable, cross-device truth is the database flag `generator_user_images.category = 'cover'` (already written at cover creation). The fix is to make every cover guard also honor that flag, not just the localStorage map.
+## New flow
 
-## Changes (all in `src/modules/generator-ui/pages/DashboardPage.tsx`)
+```text
+Click "Write prompt"
+        │
+        ▼
+ ┌─────────────────────────────┐
+ │ Popover: Add text on image? │
+ │  • Without text             │──► write prompt normally (no on-image text)
+ │  • With text                │
+ └─────────────────────────────┘
+        │ (with text)
+        ▼
+ Generate 4–5 advertising taglines (based on selected product/theme)
+        │
+        ▼
+ Show taglines as selectable chips (+ "Regenerate")
+        │ pick one
+        ▼
+ Write final prompt that composites that exact tagline → setPrompt(...)
+```
 
-1. **Exclude covers from the workspace / project pending list** — `visibleUserImages` (around line 4765):
-   - In both the project-snapshot branch and the active-workspace branch, also drop any image whose `category === 'cover'` (in addition to the existing `allCoverImageIds` check). This stops the cover from rendering as a "Working clip" anywhere outside the dedicated cover card.
+## Frontend — `src/modules/generator-ui/components/AiImageDialog.tsx`
 
-2. **Keep covers out of legacy project backfill** — the loose-image claim loop (around line 4535): add `(i.category ?? 'general') !== 'cover'` to the filter so a cover is never pulled into another project's `projectSourceImages`.
+- Replace the single click handler with a small **Popover** anchored on the Write prompt button offering two choices: **Without text** and **With text**.
+- **Without text**: call existing logic with `includeAdCopy: false` → sets the prompt (current behavior, minus auto ad copy).
+- **With text**:
+  1. Call `write-image-prompt` in a new `mode: 'taglines'` to fetch an array of short promotional taglines for the selected product (uses product reference image + name + theme).
+  2. Render the returned taglines as selectable chips inside the popover, with a **Regenerate** button and a loading state.
+  3. On selecting a tagline, call `write-image-prompt` again with `includeAdCopy: true` and the chosen `tagline`, then `setPrompt(written)` and close the popover.
+- Add state: `promptTextMode` popover open flag, `taglines: string[]`, `isLoadingTaglines`, `selectedTagline`. Keep existing `isWritingPrompt` for the final compose step.
+- English-only UI labels (per project convention). Disable "With text" path gracefully if no product is selected — fall back to theme/reference-based taglines.
 
-3. **Make ghost-cover cleanup DB-driven, not localStorage-driven** — rework the cover-ghost cleanup effect (around lines 4404-4467):
-   - Build `coverIds` from BOTH `Object.values(coverImages)` AND every `userImages` row with `category === 'cover'`.
-   - Remove any `draft-orphan-img-*` / single-image draft whose only image is a cover from `draftEntries`, `draftSourceImages`, `imageDraftMap`, and tombstone the ids in `deletedDraftIds` (logic already present — just feed it the DB-derived `coverIds`).
-   - Re-run when `userImages` changes (add to deps) and drop the one-shot `coverGhostCleanedRef` gate guarding against stale state, or relax it so it re-runs once covers are known from the DB. This auto-cleans the existing standalone cover "Draft project" cards.
+## Backend — `supabase/functions/write-image-prompt/index.ts`
 
-4. **Self-heal legacy untagged covers**: when a cover is present in the `coverImages` map but its `userImages`/DB row still has `category !== 'cover'`, issue the `update({ category: 'cover' })` (this call already exists in the effect) so future sessions are protected purely by the DB flag.
+- Accept new optional fields: `mode` (`'prompt' | 'taglines'`, default `'prompt'`) and `tagline` (string).
+- When `mode === 'taglines'`: prompt the model to return **only** a JSON array of 4–5 short taglines (max ~6 words each) that follow the existing STRICT advertising rules (no factual/performance claims, no guarantees/warranty wording). Parse and return `{ taglines: string[] }`.
+- When `mode === 'prompt'` and a `tagline` is provided with `includeAdCopy`: instruct the model to composite that **exact** tagline text (in quotes) onto the image instead of inventing its own. Keep all current ad-copy safety rules.
+- Preserve existing behavior when `mode`/`tagline` are absent.
 
-## Out of scope / unchanged
-- Cover creation flow (already tags `category: 'cover'`).
-- Cover rendering inside its own project scope (`currentCover` via `coverScopeKey`) — already correct.
-- Final Film merge cover injection — unchanged.
-- No generation, auth, storage-policy, or schema changes. `category` column already exists.
-
-## Verification
-- TSC clean (`bun run tsc --noEmit`).
-- Open a project, set a cover → it shows only in the cover card, not in Pending working clips, and no new "Draft project" appears in the Library.
-- Reload with empty localStorage cover map → cover still does not appear in workspace/other projects (DB flag covers it).
-- Existing standalone cover "Draft project" cards disappear after load and do not return after refresh.
-</content>
-<summary>Make film covers strictly project-scoped by guarding on the durable DB category='cover' flag (not just the async localStorage map): exclude covers from workspace/other-project pending lists and backfill, and auto-clean existing standalone cover "Draft project" cards.</summary>
-</invoke>
+## Notes
+- No changes to auth, storage, credit logic, or the generation/merge pipeline.
+- Reuses the existing `write-image-prompt` function and Lovable AI Gateway (no new secrets).
