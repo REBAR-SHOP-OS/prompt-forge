@@ -4746,6 +4746,9 @@ export default function DashboardPage() {
   // the active draft, otherwise the bare workspace.
   const coverScopeKey: string | null = selectedProjectId ?? activeDraftId ?? null
   const currentCover: UserImageItem | null = coverScopeKey ? (coverImages[coverScopeKey] ?? null) : null
+  const currentCoverDuration: number = coverScopeKey
+    ? Math.max(1, Math.min(10, coverDurations[coverScopeKey] ?? DEFAULT_COVER_DURATION))
+    : DEFAULT_COVER_DURATION
   // Opening clip of the current film — its first frame seeds a cover.
   const coverFilmFrameUrl: string | null = useMemo(() => {
     const first = displayedVideos.find((v) => !!v.video?.storage_path)
