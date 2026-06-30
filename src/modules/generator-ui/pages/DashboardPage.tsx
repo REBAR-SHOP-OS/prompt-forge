@@ -776,7 +776,7 @@ function ImageDurationInput({
 }
 
 
-function isTerminalStatus(status: string) {
+export function isTerminalStatus(status: string) {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
 }
 
