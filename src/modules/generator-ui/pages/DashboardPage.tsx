@@ -11927,30 +11927,33 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => setIsReframeOpen(true)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-sky-400 via-cyan-400 to-teal-400 text-white shadow-[0_4px_14px_rgba(34,211,238,0.45)] transition hover:from-sky-300 hover:via-cyan-300 hover:to-teal-300 hover:shadow-[0_6px_18px_rgba(34,211,238,0.6)]"
+            className="inline-flex h-8 items-center gap-1.5 rounded-full bg-gradient-to-br from-sky-400 via-cyan-400 to-teal-400 px-3 text-white shadow-[0_4px_14px_rgba(34,211,238,0.45)] transition hover:from-sky-300 hover:via-cyan-300 hover:to-teal-300 hover:shadow-[0_6px_18px_rgba(34,211,238,0.6)]"
             aria-label="Reframe an image to a target aspect ratio"
             title="Reframe an image (9:16 / 1:1 / 16:9) with Nano Banana"
           >
             <Crop className="h-4 w-4" aria-hidden="true" />
+            <span className="text-xs font-semibold">Reframe</span>
           </button>
           <button
             type="button"
             onClick={() => { setAiDialogMode('frame'); setIsAiImageDialogOpen(true) }}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-fuchsia-500 via-purple-500 to-pink-500 text-white shadow-[0_4px_14px_rgba(217,70,239,0.45)] transition hover:from-fuchsia-400 hover:via-purple-400 hover:to-pink-400 hover:shadow-[0_6px_18px_rgba(217,70,239,0.6)]"
+            className="inline-flex h-8 items-center gap-1.5 rounded-full bg-gradient-to-br from-fuchsia-500 via-purple-500 to-pink-500 px-3 text-white shadow-[0_4px_14px_rgba(217,70,239,0.45)] transition hover:from-fuchsia-400 hover:via-purple-400 hover:to-pink-400 hover:shadow-[0_6px_18px_rgba(217,70,239,0.6)]"
             aria-label="Generate image with AI"
             title="Generate image with AI (Nano Banana)"
           >
             <Sparkles className="h-4 w-4" aria-hidden="true" />
+            <span className="text-xs font-semibold">AI Image</span>
           </button>
 
           <button
             type="button"
             onClick={() => setIsScenarioDialogOpen(true)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 via-orange-400 to-pink-500 text-zinc-950 shadow-[0_4px_14px_rgba(251,146,60,0.45)] transition hover:from-amber-300 hover:via-orange-300 hover:to-pink-400 hover:shadow-[0_6px_18px_rgba(251,146,60,0.6)]"
+            className="inline-flex h-8 items-center gap-1.5 rounded-full bg-gradient-to-br from-amber-400 via-orange-400 to-pink-500 px-3 text-zinc-950 shadow-[0_4px_14px_rgba(251,146,60,0.45)] transition hover:from-amber-300 hover:via-orange-300 hover:to-pink-400 hover:shadow-[0_6px_18px_rgba(251,146,60,0.6)]"
             aria-label="Write a scenario from your idea"
             title="Write a scenario from your idea"
           >
             <Clapperboard className="h-4 w-4" aria-hidden="true" />
+            <span className="text-xs font-semibold">Scenario</span>
           </button>
         </div>
 
