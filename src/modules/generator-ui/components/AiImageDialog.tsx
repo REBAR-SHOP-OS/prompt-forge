@@ -541,13 +541,19 @@ export default function AiImageDialog({
     void onProductsRefresh?.()
   }
 
-  async function handleWritePrompt() {
-    setError(null)
+  function hasPromptInputs(): boolean {
     const theme = selectedTheme ? THEME_OPTIONS.find((t) => t.id === selectedTheme) : null
-    if (referenceImages.length === 0 && !theme && prompt.trim().length === 0) {
+    return referenceImages.length > 0 || Boolean(theme) || prompt.trim().length > 0
+  }
+
+  // Write a prompt, optionally compositing an exact advertising tagline onto the image.
+  async function writePromptInternal(opts: { includeAdCopy: boolean; tagline?: string }) {
+    setError(null)
+    if (!hasPromptInputs()) {
       setError('Add a reference image, a product, or pick a theme first so I can write a prompt.')
       return
     }
+    const theme = selectedTheme ? THEME_OPTIONS.find((t) => t.id === selectedTheme) : null
     setIsWritingPrompt(true)
     try {
       const productRef = referenceImages.find((r) => r.isProduct)
@@ -557,7 +563,8 @@ export default function AiImageDialog({
           themeDescriptor: theme?.descriptor ?? '',
           themeLabel: theme?.enLabel ?? '',
           existingPrompt: prompt.trim(),
-          includeAdCopy: Boolean(productRef),
+          includeAdCopy: opts.includeAdCopy,
+          tagline: opts.tagline ?? '',
           productName: stripProductCode(productRef?.name ?? ''),
         },
       })
@@ -573,12 +580,55 @@ export default function AiImageDialog({
         return
       }
       setPrompt(written)
+      setPromptTextMenuOpen(false)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not write a prompt.')
     } finally {
       setIsWritingPrompt(false)
     }
   }
+
+  // Fetch a fresh batch of promotional taglines for the "with text" path.
+  async function loadTaglines() {
+    setTaglineError(null)
+    setTaglines([])
+    if (!hasPromptInputs()) {
+      setTaglineError('Add a reference image, a product, or pick a theme first.')
+      return
+    }
+    const theme = selectedTheme ? THEME_OPTIONS.find((t) => t.id === selectedTheme) : null
+    setIsLoadingTaglines(true)
+    try {
+      const productRef = referenceImages.find((r) => r.isProduct)
+      const { data, error: fnError } = await supabase.functions.invoke('write-image-prompt', {
+        body: {
+          mode: 'taglines',
+          referenceImages: referenceImages.map((r) => r.dataUrl),
+          themeDescriptor: theme?.descriptor ?? '',
+          themeLabel: theme?.enLabel ?? '',
+          existingPrompt: prompt.trim(),
+          productName: stripProductCode(productRef?.name ?? ''),
+        },
+      })
+      if (fnError) {
+        setTaglineError(await extractFnError(fnError, 'Could not generate taglines. Try again.'))
+        return
+      }
+      const list = Array.isArray((data as { taglines?: unknown })?.taglines)
+        ? ((data as { taglines: unknown[] }).taglines.filter((t): t is string => typeof t === 'string'))
+        : []
+      if (list.length === 0) {
+        setTaglineError('No taglines returned. Try again.')
+        return
+      }
+      setTaglines(list)
+    } catch (e) {
+      setTaglineError(e instanceof Error ? e.message : 'Could not generate taglines.')
+    } finally {
+      setIsLoadingTaglines(false)
+    }
+  }
+
 
   // Guardian: read on-image text + judge ad/cover suitability.
   async function handleInspectCover() {
