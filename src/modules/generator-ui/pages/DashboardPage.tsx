@@ -359,14 +359,15 @@ function resolveImageBucketKey(
   storagePath: string | null | undefined,
 ): { bucket: string; key: string } | null {
   if (!storagePath) return null
+  const cleanKey = (value: string) => value.split('#')[0].split('?')[0].replace(/^\/+/, '')
   for (const bucket of SIGNABLE_IMAGE_BUCKETS) {
     const marker = `/${bucket}/`
     const idx = storagePath.indexOf(marker)
-    if (idx >= 0) return { bucket, key: storagePath.slice(idx + marker.length) }
+    if (idx >= 0) return { bucket, key: cleanKey(storagePath.slice(idx + marker.length)) }
   }
   // Already a bucket-relative key (no http origin, no signed/blob/data URL).
   if (!/^https?:|^blob:|^data:/.test(storagePath)) {
-    return { bucket: USER_IMAGES_BUCKET, key: storagePath }
+    return { bucket: USER_IMAGES_BUCKET, key: cleanKey(storagePath) }
   }
   return null
 }
@@ -376,7 +377,6 @@ async function signUserImageUrl(storagePath: string | null | undefined): Promise
   const raw = storagePath ?? ''
   // Already a directly-usable URL that isn't a (broken) public-bucket URL.
   if (/^blob:|^data:/.test(raw)) return raw
-  if (/\/object\/sign\//.test(raw)) return raw
   const resolved = resolveImageBucketKey(raw)
   if (!resolved) return raw
   try {
