@@ -7839,13 +7839,30 @@ export default function DashboardPage() {
         }
       }
 
+      // Bake the film cover (if any) as the opening segment so it is truly
+      // rendered into the exported file and becomes the natural first-frame
+      // thumbnail. It is held for the user-configured cover duration.
+      if (currentCover?.storage_path) {
+        try {
+          const coverSrc = await proxiedVideoUrl(currentCover.storage_path)
+          mergeClips.unshift({ kind: 'image', url: coverSrc, durationSec: currentCoverDuration })
+        } catch (e) {
+          console.warn('[merge] could not load cover image, skipping cover:', e)
+        }
+      }
+
       // Build per-gap transition specs (one entry per gap = clips - 1).
-      const transitionsForMerge: TransitionSpec[] = eligibleClips
-        .slice(0, -1)
-        .map((clip) => {
-          const id = transitions[clip.id] ?? 'cut'
-          return { id, durationMs: TRANSITION_DURATION[id] ?? 0 }
-        })
+      // The cover (when present) is the first clip; give its trailing gap a
+      // plain cut so the gap count stays mergeClips.length - 1.
+      const transitionsForMerge: TransitionSpec[] = []
+      if (mergeClips.length > eligibleClips.length) {
+        transitionsForMerge.push({ id: 'cut', durationMs: 0 })
+      }
+      for (const clip of eligibleClips.slice(0, -1)) {
+        const id = transitions[clip.id] ?? 'cut'
+        transitionsForMerge.push({ id, durationMs: TRANSITION_DURATION[id] ?? 0 })
+      }
+
 
       const hasMusic = Boolean(musicUrl && musicRange[1] > musicRange[0])
       const hasVoiceover = Boolean(voiceoverUrl)
