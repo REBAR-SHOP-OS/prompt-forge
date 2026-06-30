@@ -265,6 +265,8 @@ type UserImageItem = {
   draft_group_id?: string | null
 }
 
+const USER_IMAGE_ROW_SELECT = 'id, storage_path, created_at, still_duration_seconds, width, height, category, title, description, draft_group_id'
+
 type UnifiedClip =
   | { kind: 'video'; id: string; createdAt: string; job: JobDetail }
   | { kind: 'image'; id: string; createdAt: string; image: UserImageItem }
@@ -357,14 +359,15 @@ function resolveImageBucketKey(
   storagePath: string | null | undefined,
 ): { bucket: string; key: string } | null {
   if (!storagePath) return null
+  const cleanKey = (value: string) => value.split('#')[0].split('?')[0].replace(/^\/+/, '')
   for (const bucket of SIGNABLE_IMAGE_BUCKETS) {
     const marker = `/${bucket}/`
     const idx = storagePath.indexOf(marker)
-    if (idx >= 0) return { bucket, key: storagePath.slice(idx + marker.length) }
+    if (idx >= 0) return { bucket, key: cleanKey(storagePath.slice(idx + marker.length)) }
   }
   // Already a bucket-relative key (no http origin, no signed/blob/data URL).
   if (!/^https?:|^blob:|^data:/.test(storagePath)) {
-    return { bucket: USER_IMAGES_BUCKET, key: storagePath }
+    return { bucket: USER_IMAGES_BUCKET, key: cleanKey(storagePath) }
   }
   return null
 }
@@ -374,7 +377,6 @@ async function signUserImageUrl(storagePath: string | null | undefined): Promise
   const raw = storagePath ?? ''
   // Already a directly-usable URL that isn't a (broken) public-bucket URL.
   if (/^blob:|^data:/.test(raw)) return raw
-  if (/\/object\/sign\//.test(raw)) return raw
   const resolved = resolveImageBucketKey(raw)
   if (!resolved) return raw
   try {
@@ -392,6 +394,15 @@ async function signUserImageUrl(storagePath: string | null | undefined): Promise
 async function signUserImageRows<T extends { storage_path: string }>(rows: T[]): Promise<T[]> {
   return Promise.all(
     rows.map(async (row) => ({ ...row, storage_path: await signUserImageUrl(row.storage_path) })),
+  )
+}
+
+function mergeUserImageRows<T extends { id: string; created_at: string }>(current: T[], incoming: T[]): T[] {
+  const byId = new Map<string, T>()
+  for (const row of current) byId.set(row.id, row)
+  for (const row of incoming) byId.set(row.id, { ...(byId.get(row.id) ?? row), ...row })
+  return Array.from(byId.values()).sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   )
 }
 
@@ -1065,6 +1076,7 @@ function ProjectAudioTrackRow({
 
 export default function DashboardPage() {
   const { session, profile, signOut, loading: authLoading } = useAuth()
+  const userId = session?.user?.id ?? null
   const [promptText, setPromptText] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
@@ -1647,6 +1659,57 @@ export default function DashboardPage() {
   // Per-image draft text for the "Describe for AI" field (keyed by image id).
   const [productDescDraft, setProductDescDraft] = useState<Record<string, string>>({})
   const [archiveLoading, setArchiveLoading] = useState(false)
+  const loadProductImages = useCallback(async (): Promise<UserImageItem[]> => {
+    if (!userId) {
+      setArchiveProductImages([])
+      return []
+    }
+    setArchiveLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('generator_user_images')
+        .select(USER_IMAGE_ROW_SELECT)
+        .eq('user_id', userId)
+        .eq('category', 'product')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+
+      const signedProducts = await signUserImageRows(((data ?? []) as UserImageItem[]))
+      setArchiveProductImages((prev) => mergeUserImageRows(prev, signedProducts))
+      setProductDescDraft((prev) => {
+        let changed = false
+        const next = { ...prev }
+        for (const product of signedProducts) {
+          if (next[product.id] === undefined && product.description) {
+            next[product.id] = product.description
+            changed = true
+          }
+        }
+        return changed ? next : prev
+      })
+      setSelectedProduct((prev) => {
+        if (!prev) return prev
+        const fresh = signedProducts.find((product) => product.id === prev.id)
+        return fresh
+          ? {
+              id: fresh.id,
+              url: fresh.storage_path,
+              title: fresh.title?.trim() || prev.title,
+              description: fresh.description ?? null,
+            }
+          : prev
+      })
+      return signedProducts
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Could not load products.'
+      setProductUploadError(`Product load failed: ${msg}`)
+      return []
+    } finally {
+      setArchiveLoading(false)
+    }
+  }, [userId])
+
   const loadArchive = async () => {
     setArchiveLoading(true)
     try {
@@ -1656,7 +1719,7 @@ export default function DashboardPage() {
         userId
           ? supabase
               .from('generator_user_images')
-              .select('id, storage_path, created_at, still_duration_seconds, width, height, category, title, description, draft_group_id')
+              .select(USER_IMAGE_ROW_SELECT)
               .eq('user_id', userId)
               .is('deleted_at', null)
               .order('created_at', { ascending: false })
@@ -1675,7 +1738,7 @@ export default function DashboardPage() {
       const allImages = ((imagesRes as { data?: UserImageItem[] }).data ?? []) as UserImageItem[]
       const signedImages = await signUserImageRows(allImages)
       setArchiveImages(signedImages.filter((i) => (i.category ?? 'general') !== 'product' && (i.category ?? 'general') !== 'cover'))
-      setArchiveProductImages(signedImages.filter((i) => (i.category ?? 'general') === 'product'))
+      setArchiveProductImages((prev) => mergeUserImageRows(prev, signedImages.filter((i) => (i.category ?? 'general') === 'product')))
       const audioRows = ((audioRes as { data?: UserAudioItem[] }).data ?? []) as UserAudioItem[]
       // Generate short-lived signed URLs for private-bucket playback.
       const withUrls = await Promise.all(
@@ -1888,8 +1951,6 @@ export default function DashboardPage() {
   // NOTE: Aspect ratio selector is always free for the user to change.
   // `lockedProjectRatio` is kept only for Final Film merge/preview consistency,
   // not to override the user's per-clip selection.
-  const userId = session?.user?.id ?? null
-
   // Check whether the user has saved their business profile, to flag the
   // "About your business (required)" button when it's still empty.
   useEffect(() => {
@@ -3135,11 +3196,16 @@ export default function DashboardPage() {
   // the Archive dialog opens. Users often open Voiceover → Product narration
   // directly, so load them on demand when the Voiceover dialog opens.
   useEffect(() => {
-    if (isVoiceoverOpen && archiveProductImages.length === 0) {
-      void loadArchive()
+    if (isVoiceoverOpen) {
+      void loadProductImages()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isVoiceoverOpen])
+  }, [isVoiceoverOpen, loadProductImages])
+
+  useEffect(() => {
+    if (isAiImageDialogOpen) {
+      void loadProductImages()
+    }
+  }, [isAiImageDialogOpen, loadProductImages])
 
 
   
@@ -5231,13 +5297,11 @@ export default function DashboardPage() {
             .upload(path, file, { contentType: file.type, upsert: false })
           if (up.error) throw up.error
           if (!up.data?.path) throw new Error('upload did not persist')
-          const { data: pub } = supabase.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path)
-          const publicUrl = pub.publicUrl
           const { data: row, error: insErr } = await supabase
             .from('generator_user_images')
             .insert({
               user_id: userId,
-              storage_path: publicUrl,
+              storage_path: path,
               size_bytes: file.size,
               mime_type: file.type,
               category: 'product',
@@ -5247,7 +5311,7 @@ export default function DashboardPage() {
             .single()
           if (insErr) throw insErr
           const signedRow = { ...(row as UserImageItem), storage_path: await signUserImageUrl((row as UserImageItem).storage_path) }
-          setArchiveProductImages((prev) => [signedRow, ...prev])
+          setArchiveProductImages((prev) => mergeUserImageRows(prev, [signedRow]))
           uploadedCount += 1
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'upload failed'
@@ -9819,6 +9883,16 @@ export default function DashboardPage() {
         onOpenChange={setIsAiImageDialogOpen}
         userId={userId}
         defaultAspect={lockedProjectRatio ?? aspectRatio}
+        productsLoading={archiveLoading}
+        onProductsRefresh={async () => {
+          const rows = await loadProductImages()
+          return rows.map((p) => ({
+            id: p.id,
+            url: p.storage_path,
+            title: p.title ?? null,
+            description: p.description ?? null,
+          }))
+        }}
         products={archiveProductImages.map((p) => ({
           id: p.id,
           url: p.storage_path,
@@ -12423,7 +12497,7 @@ export default function DashboardPage() {
               open={productMenuOpen}
               onOpenChange={(open) => {
                 setProductMenuOpen(open)
-                if (open && archiveProductImages.length === 0) void loadArchive()
+                if (open) void loadProductImages()
               }}
             >
               <PopoverTrigger asChild>
@@ -12439,10 +12513,11 @@ export default function DashboardPage() {
                 >
                   {selectedProduct ? (
                     <>
-                      <img
+                      <UserImageView
                         src={selectedProduct.url}
                         alt="Product"
                         className="h-6 w-6 rounded-md object-cover"
+                        loading="eager"
                       />
                       <span>Product</span>
                       <span
@@ -12513,7 +12588,12 @@ export default function DashboardPage() {
                         }`}
                         title={p.title ?? 'Product'}
                       >
-                        <img src={p.storage_path} alt={p.title ?? 'Product'} className="h-full w-full object-cover" loading="lazy" />
+                        <UserImageView
+                          src={p.storage_path}
+                          alt={p.title ?? 'Product'}
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                        />
                       </button>
                     ))}
                   </div>
