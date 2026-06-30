@@ -870,7 +870,7 @@ function buildPromptWithUploadedFiles(prompt: string, files: UploadedFile[]) {
 // Keyed by job id; cleared implicitly when the page unmounts.
 const progressMaxRef: Map<string, number> = new Map()
 
-function getJobProgressPercent(job: { id?: string; status: string; progress_percent?: number | null; created_at: string; requested_duration?: number | null }): number | null {
+export function getJobProgressPercent(job: { id?: string; status: string; progress_percent?: number | null; created_at: string; requested_duration?: number | null }): number | null {
   const status = normalizeStatus(job.status)
   if (status === 'completed') {
     if (job.id) progressMaxRef.set(job.id, 100)
