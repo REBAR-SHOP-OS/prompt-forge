@@ -1816,15 +1816,18 @@ export default function DashboardPage() {
     }
   }
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
-  const [hasOccasionToday, setHasOccasionToday] = useState(false)
+  const [upcomingOccasion, setUpcomingOccasion] = useState<{ title: string; daysAway: number } | null>(null)
   const [isBusinessOpen, setIsBusinessOpen] = useState(false)
   const [hasBusinessInfo, setHasBusinessInfo] = useState<boolean | null>(null)
 
-  // Deterministic daily check: is today a curated MAJOR occasion?
-  // No AI / network — avoids false positives from hallucinated dates.
+  // Deterministic daily check: is today (or within the next 3 days) a curated
+  // MAJOR occasion? No AI / network — avoids false positives from hallucinated
+  // dates. Warning ahead of time gives the user room to prepare a film.
   useEffect(() => {
-    setHasOccasionToday(getMajorOccasionForDate(new Date()) !== null)
+    const upcoming = getUpcomingMajorOccasion(new Date(), 3)
+    setUpcomingOccasion(upcoming ? { title: upcoming.occasion.title, daysAway: upcoming.daysAway } : null)
   }, [])
+
 
 
 
