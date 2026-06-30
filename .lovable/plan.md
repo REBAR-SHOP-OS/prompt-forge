@@ -1,25 +1,20 @@
-## Goal
-Make voiceover generation work again. Keep the current UI, character voices (Puck, Leda, etc.), tones, and preview samples exactly as they are.
+## Problem
+In the "Generate image with AI" dialog, choosing a tagline ("with text") — or using "Write prompt" / "Without text" — triggers a call to the `write-image-prompt` edge function in its default `prompt` mode. That mode immediately calls `instructionParts.push(...)`, but the `instructionParts` array is **never declared** in that branch. The undeclared reference throws a `ReferenceError`, which the function's catch block converts into a 500 `{ "error": "Internal error" }` — exactly the "Internal error" shown in the screenshot.
 
-## Root cause
-The `tts-generate` edge function calls Google's Gemini TTS API directly using the `GEMINI_API_KEY` secret. The edge logs show every request failing with:
+The `taglines` mode works (it returns the list), so generating taglines succeeds; the crash only happens on the second call that actually builds the final prompt.
 
-```text
-400 — "API key not valid. Please pass a valid API key." (API_KEY_INVALID)
+## Fix
+In `supabase/functions/write-image-prompt/index.ts`, declare the missing array right after the `taglines` mode block ends (before line 197):
+
+```ts
+const instructionParts: string[] = [];
 ```
 
-The configured `GEMINI_API_KEY` is invalid or expired. Nothing is wrong with the function code — it just has a dead key. So no code changes are needed; the key must be replaced.
-
-## Fix (the only required step)
-1. Open the secure secret form so you can paste a **valid Google AI Studio API key** into `GEMINI_API_KEY`.
-   - Get the key from Google AI Studio → "Get API key" (aistudio.google.com/apikey).
-   - The key must belong to a project where the Generative Language API is enabled and the **Gemini 2.5 Flash Preview TTS** model (`gemini-2.5-flash-preview-tts`) is available.
-2. After you save the new key, I verify the fix by calling `tts-generate` directly with a short test line and confirming it returns audio (HTTP 200 with `audioBase64`) instead of the 400 error.
+That single declaration makes all the existing `instructionParts.push(...)` calls (lines 198–222) and `instructionParts.join(" ")` (line 223) valid, so the function returns a proper prompt instead of crashing.
 
 ## Verification
-- Direct edge-function smoke test (`tts-generate`) returns audio, not a provider error.
-- "Generate voiceover" in the dialog produces a playable clip.
+- Redeploy the edge function.
+- Call `write-image-prompt` with `includeAdCopy: true` and a `tagline` to confirm it returns `{ prompt: "..." }` with HTTP 200 instead of 500.
+- Confirm the "Without text" path (`includeAdCopy: false`) also returns a prompt.
 
-## Notes
-- No code, UI, voice catalog, or preview-sample changes — those all keep working once the key is valid.
-- If the new key still fails, the most likely causes are: the Generative Language API not enabled on that Google project, billing not set up, or the TTS model not enabled for that key — I'll surface the exact provider message from the logs to pinpoint it.
+No UI, auth, storage, or generation-logic changes are needed — this is a one-line backend fix scoped strictly to the broken branch.

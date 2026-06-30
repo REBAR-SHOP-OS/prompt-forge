@@ -194,6 +194,8 @@ Deno.serve(async (req) => {
       });
     }
 
+    const instructionParts: string[] = [];
+
     if (existingPrompt) {
       instructionParts.push(`The user's current prompt draft / intent: "${existingPrompt}".`);
     }
