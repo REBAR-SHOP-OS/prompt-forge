@@ -185,6 +185,7 @@ export default function AiImageDialog({
   const [productLoadingId, setProductLoadingId] = useState<string | null>(null)
   const [brokenProductIds, setBrokenProductIds] = useState<Set<string>>(new Set())
   const [isWritingPrompt, setIsWritingPrompt] = useState(false)
+  const [isGrabbingFrame, setIsGrabbingFrame] = useState(false)
 
   const [isMaskMode, setIsMaskMode] = useState(false)
   const [brushSize, setBrushSize] = useState(36)
