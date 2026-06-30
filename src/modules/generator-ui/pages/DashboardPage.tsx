@@ -13,9 +13,9 @@ import {
   Clapperboard,
   Package,
   Heart,
-
-   
-  
+  RectangleVertical,
+  Square,
+  RectangleHorizontal,
   Combine,
   Crop,
   Database,
@@ -27,9 +27,9 @@ import {
   History,
   Image as ImageIcon,
   ImagePlus,
-   CalendarPlus,
-   LayoutGrid,
-   Library,
+  CalendarPlus,
+  LayoutGrid,
+  Library,
   Languages,
   LoaderCircle,
   Lock,

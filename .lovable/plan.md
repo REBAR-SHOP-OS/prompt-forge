@@ -1,24 +1,16 @@
-# Add labels to Working clips icons
+## Add aspect-ratio shape icons to the ratio selector
 
-The three circled icons in the "Working clips / Pending" panel header are currently icon-only (only a hover `title` tooltip). The user wants visible text so it's clear what each does.
+### What
+The three aspect-ratio buttons (9:16, 1:1, 16:9) in the bottom prompt bar currently only show text labels. Users need a visual shape cue to quickly understand what each ratio looks like.
 
-## The three buttons
-1. **Upload image** (ImagePlus icon)
-2. **Cover** — Generate film cover with AI (Camera icon)
-3. **Upload film** (Upload icon)
+### How
+In `src/modules/generator-ui/pages/DashboardPage.tsx`, inside the aspect-ratio `radiogroup` (around line 11886), add a small shape icon before the label of each button:
 
-## Change (UI only)
-In `src/modules/generator-ui/pages/DashboardPage.tsx` (panel header around lines 10676–10732):
+- **9:16** → `RectangleVertical` icon (tall rectangle)
+- **1:1** → `Square` icon
+- **16:9** → `RectangleHorizontal` icon (wide rectangle)
 
-- Convert each round icon-only button into a pill with icon + short text label, e.g.:
-  - `Image` (upload image)
-  - `Cover` (AI film cover)
-  - `Film` (upload film)
-- Replace `h-8 w-8` circular styling with an auto-width rounded pill (`h-8 px-3 gap-1.5 rounded-full`) containing the icon plus a `text-xs` label.
-- Keep all existing `onClick`, refs, `disabled`, loading spinner, and `aria-label`/`title` behavior unchanged.
-- Labels in English (per project convention), kept short so all three fit on one row in the narrow side panel.
+These three icons already exist in `lucide-react`. They will be imported alongside the other icons at the top of the file. Each icon will render at `h-3 w-3` (or equivalent scaled size) inline with the label text, inside the existing button markup.
+          existing label/hint text, active/locked states, and lock icon remain untouched.
 
-No changes to logic, generation, auth, storage, or any other component.
-
-## Verify
-Run a quick Playwright screenshot of the panel header to confirm the three labeled pills render and fit on one line.
+No backend changes, no auth changes, no new dependencies.
