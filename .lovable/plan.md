@@ -1,34 +1,38 @@
-## Goal
-Add a "Guardian" (نگهبان) icon to the **Generate image with AI** dialog that inspects the on-image text: extracts it, shows it to the user, lets them translate it, and judges whether it is appropriate — advertising-style and suitable for a cover.
+# Make the cover a real cover (with duration)
 
-## What the user gets
-A new shield icon button (🛡️) appears in the generated-image action row (next to Download / Regenerate). Clicking it:
-1. Reads any text baked into the current generated image (OCR via a vision model).
-2. Shows the extracted text in a small results panel inside the dialog.
-3. Offers a **Translate** control (target language dropdown, default Persian) using the existing translation backend, shown alongside the original text (original always preserved).
-4. Shows a verdict: whether the text is **appropriate** and **cover/ad-suitable**, with a short reason and concrete suggestions — flagging factual/performance claims, guarantees/warranty wording, or anything not promotional.
+## Problem
+Today the cover is only a UI element stored in `localStorage` (`coverImages`). It is **deliberately excluded** from the Final Film: `handleMergeAllVideos` builds `mergeClips` only from timeline clips and the cover is filtered out via `allCoverImageIds`. So it never appears in the exported video and is not used as a thumbnail by social platforms.
 
-## Backend
-Create one new edge function `inspect-cover-text`:
-- Input: the current image as a base64 data URL.
-- Uses the Lovable AI Gateway vision model (`google/gemini-2.5-flash`) to:
-  - OCR all visible on-image text (returned verbatim, plus a note if no text found).
-  - Evaluate it against cover/ad guardrails (must be promotional, brand/mood-driven, no claims like "best/#1/certified", no specs-as-fact, no guarantee/warranty wording).
-- Returns structured JSON: `{ text, hasText, language, isAppropriate, isAdSuitable, reason, suggestions[] }`.
-- Same auth + 429/402 error handling pattern as `write-image-prompt`.
+The fix: give the cover a **duration** and prepend it as the opening image segment of the Final Film, so it is truly rendered into the output file (and becomes the first frame that platforms pick up as a thumbnail).
 
-Reuse the existing `translate-text` function for the translation feature — no backend change needed there.
+## What will change (frontend only)
 
-## Frontend (`AiImageDialog.tsx`)
-- Add a `Shield`/`ShieldCheck` lucide icon button in the action row, enabled only when a generated image exists.
-- Add state for: inspection loading, inspection result, translation target language, translated text, translation loading.
-- On click → call `inspect-cover-text` with `imageDataUrl`; render a panel with:
-  - Extracted original text (read-only, selectable).
-  - Verdict badges (Appropriate / Ad-suitable) in green/amber/red + reason + suggestion bullets.
-  - A language selector + **Translate** button that calls `translate-text`; show the translation under the original without replacing it.
-- Reuse existing dialog styling (rounded panels, RTL handling consistent with current dialogs). All UI labels in English to match existing convention.
+### 1. Cover duration value
+- Add a persisted per-project cover duration (e.g. `coverDurations` keyed by `coverScopeKey`, stored in `localStorage` next to `coverImages`), defaulting to **3 seconds**.
+- Range allowed: 1–10 seconds (consistent with existing image still clamps).
 
-## Technical notes
-- The generated image is already in memory as `imageDataUrl` (base64), so OCR needs no storage round-trip.
-- No changes to generation, save/Use, masking, or theme logic.
-- Translation languages reuse the set already supported by `translate-text` (fa, en, ar, tr, es, fr, de, ru, zh).
+### 2. UI control on the cover card
+In the cover card (around the "Film cover" header in `DashboardPage.tsx`), add a small duration control (compact number input or stepper labeled `Duration (s)`) next to the Replace/Remove buttons. Editing it updates and persists the cover duration. All labels in English.
+
+### 3. Bake the cover into the Final Film
+In `handleMergeAllVideos`, after `mergeClips` is built and before the merge runs, **prepend** the current cover (if one exists for the active scope) as an image clip:
+```text
+mergeClips = [ { kind: 'image', url: <proxied cover url>, durationSec: coverDuration }, ...existingClips ]
+```
+- Resolve the cover URL with `proxiedVideoUrl(currentCover.storage_path)` (same as other image clips).
+- The cover is the **first** segment, so it becomes the opening frames and the natural thumbnail.
+- Transitions array (`transitionsForMerge`) is rebuilt to account for the extra leading segment (add a leading `cut`/no transition so gap count stays `clips - 1`).
+- Target-size detection still uses the first **video** clip; cover image does not change target dimensions.
+- Audio offsets are unaffected (music/voiceover keep their own timeline offsets); the cover simply adds lead time at the start.
+
+### 4. Keep existing behavior intact
+- Cover still does not appear as an orphan draft/timeline card (the `allCoverImageIds` filtering stays).
+- If no cover is set, the merge behaves exactly as today.
+
+## Out of scope
+No backend, auth, storage policy, or generation-logic changes. No change to how covers are generated in `AiImageDialog`.
+
+## Verification
+- Set a cover, set duration (e.g. 4s), run Final Film → exported file begins with the cover held for ~4s, then the clips play.
+- Remove cover → Final Film starts directly with clips (unchanged).
+- Typecheck clean.
