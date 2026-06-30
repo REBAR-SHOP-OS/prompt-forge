@@ -31,6 +31,14 @@ import themeBlackWhite from '@/assets/theme-previews/black-white.jpg'
 import themeMetallic from '@/assets/theme-previews/metallic.jpg'
 import themeGlassmorphism from '@/assets/theme-previews/glassmorphism.jpg'
 import themePastel from '@/assets/theme-previews/pastel.jpg'
+import themeIndustrialGrunge from '@/assets/theme-previews/industrial-grunge.jpg'
+import themeGoldenHour from '@/assets/theme-previews/golden-hour.jpg'
+import themeStudioGradient from '@/assets/theme-previews/studio-gradient.jpg'
+import themeNatureFresh from '@/assets/theme-previews/nature-fresh.jpg'
+import themeTechFuturistic from '@/assets/theme-previews/tech-futuristic.jpg'
+import themeBoldTypographic from '@/assets/theme-previews/bold-typographic.jpg'
+import themeWarmMinimal from '@/assets/theme-previews/warm-minimal.jpg'
+import themeDramaticSpotlight from '@/assets/theme-previews/dramatic-spotlight.jpg'
 
 type ThemeOption = { id: string; faLabel: string; enLabel: string; descriptor: string; image: string }
 
@@ -49,6 +57,14 @@ const THEME_OPTIONS: ThemeOption[] = [
   { id: 'metallic', faLabel: 'متالیک و براق', enLabel: 'Metallic / Chrome', descriptor: 'metallic chrome finish, glossy reflective silver surfaces, studio reflections, sleek futuristic premium look', image: themeMetallic },
   { id: 'glassmorphism', faLabel: 'گلس‌مورفیسم', enLabel: 'Glassmorphism', descriptor: 'glassmorphism style, frosted translucent glass, soft blur, light refractions, pastel gradient background, clean modern look', image: themeGlassmorphism },
   { id: 'pastel', faLabel: 'پاستلی', enLabel: 'Pastel Soft', descriptor: 'soft pastel palette, gentle muted blush pink, lilac and sky blue tones, airy dreamy diffused light', image: themePastel },
+  { id: 'industrial-grunge', faLabel: 'صنعتی و گرانج', enLabel: 'Industrial Grunge', descriptor: 'raw industrial grunge style, exposed concrete and steel, pipes and machinery, gritty workshop, hard directional light, moody utilitarian mood', image: themeIndustrialGrunge },
+  { id: 'golden-hour', faLabel: 'نور طلایی غروب', enLabel: 'Golden Hour', descriptor: 'golden hour aesthetic, warm sunset glow, long soft shadows, backlit rim light, cinematic warmth and amber tones', image: themeGoldenHour },
+  { id: 'studio-gradient', faLabel: 'گرادیان استودیویی', enLabel: 'Studio Gradient', descriptor: 'smooth colored gradient studio backdrop, soft spotlight, vibrant modern commercial pop, clean product staging', image: themeStudioGradient },
+  { id: 'nature-fresh', faLabel: 'طبیعت تازه', enLabel: 'Nature Fresh', descriptor: 'fresh nature style, lush green foliage, water droplets, dewy daylight, clean organic freshness', image: themeNatureFresh },
+  { id: 'tech-futuristic', faLabel: 'تکنولوژی و آینده‌نگر', enLabel: 'Tech / Futuristic', descriptor: 'futuristic high-tech style, holographic UI accents, dark glass surfaces, blue luminous glow, sleek sci-fi product feel', image: themeTechFuturistic },
+  { id: 'bold-typographic', faLabel: 'گرافیک تایپوگرافی', enLabel: 'Bold Typographic', descriptor: 'bold typographic poster style, strong geometric color blocks, Swiss Bauhaus layout, flat vivid shapes, punchy advertising energy', image: themeBoldTypographic },
+  { id: 'warm-minimal', faLabel: 'مینیمال گرم', enLabel: 'Warm Minimal', descriptor: 'warm minimal style, beige and sand tones, soft natural shadows, cozy minimalist studio composition', image: themeWarmMinimal },
+  { id: 'dramatic-spotlight', faLabel: 'نورپردازی نمایشی', enLabel: 'Dramatic Spotlight', descriptor: 'dramatic spotlight style, single hard spotlight, deep black background, theatrical product reveal, strong contrast', image: themeDramaticSpotlight },
 ]
 
 
