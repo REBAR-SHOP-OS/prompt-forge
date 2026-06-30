@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { LoaderCircle, Sparkles, Wand2, RefreshCw, Check, X, Brush, Eraser, ImagePlus, Download, Palette, Package, Clapperboard } from 'lucide-react'
+import { LoaderCircle, Sparkles, Wand2, RefreshCw, Check, X, Brush, Eraser, ImagePlus, Download, Palette, Package, Clapperboard, ShieldCheck, ShieldAlert, Languages } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
