@@ -9883,6 +9883,8 @@ export default function DashboardPage() {
         onOpenChange={setIsAiImageDialogOpen}
         userId={userId}
         defaultAspect={lockedProjectRatio ?? aspectRatio}
+        productsLoading={archiveLoading}
+        onProductsRefresh={loadProductImages}
         products={archiveProductImages.map((p) => ({
           id: p.id,
           url: p.storage_path,
