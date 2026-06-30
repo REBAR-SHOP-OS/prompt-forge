@@ -32,6 +32,25 @@ const AD_COPY_RULES = [
   "Write the tagline in the same language as the existing prompt text; English by default.",
 ].join(" ");
 
+// Rules shared by both tagline generation and final compositing.
+const TAGLINE_RULES = [
+  "Each tagline must be purely promotional and brand/mood-driven, a few words (max ~6 words).",
+  "It MUST NOT make any factual or performance claim",
+  "(no 'best', 'strongest', '#1', 'certified', no specs/numbers stated as fact)",
+  "and MUST NOT contain any guarantee or warranty wording",
+  "(no 'guaranteed', 'warranty', '100%', 'risk-free', 'lifetime').",
+].join(" ");
+
+const TAGLINE_SYSTEM_PROMPT = [
+  "You are an expert advertising copywriter.",
+  "If a reference image is attached, silently analyze the product/subject, mood and style.",
+  "Produce short, catchy ADVERTISING taglines suitable to composite onto a product ad image.",
+  TAGLINE_RULES,
+  "Write the taglines in the same language as any existing prompt text; English by default.",
+  "Output ONLY a JSON array of 5 distinct tagline strings — no preamble, no keys,",
+  "no markdown, no code fences. Example: [\"Tagline one\", \"Tagline two\"].",
+].join(" ");
+
 
 function isDataUrl(u: string): boolean {
   return /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(u);
