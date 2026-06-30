@@ -10535,10 +10535,13 @@ export default function DashboardPage() {
                     {(() => {
                       const status = normalizeStatus(previewItem.job.status)
                       const isRendering = status === 'processing' || status === 'pending'
-                      const pct = isRendering ? getJobProgressPercent(previewItem.job) ?? 0 : 0
                       const startedAt = Date.parse(previewItem.job.created_at)
                       const longRender = Number.isFinite(startedAt) && Date.now() - startedAt > 240_000
                       return (
+                        <LiveJobProgress job={previewItem.job}>
+                          {(livePct) => {
+                            const pct = isRendering ? (livePct ?? 0) : 0
+                            return (
                         <div className="w-full max-w-sm">
                           {isRendering ? (
                             (() => {
