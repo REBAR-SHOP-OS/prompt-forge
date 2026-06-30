@@ -5933,19 +5933,12 @@ export default function DashboardPage() {
     })
   }, [generatedVideos, pendingStartPrepends, userId])
 
-  // Smooth progress ticker: re-render once per second while any job is active
-  // so the time-based progress bar advances visibly between API polls.
-  const [, setProgressTick] = useState(0)
-  useEffect(() => {
-    // Read-only projects are terminal — no live progress to animate, so never
-    // run the 1s re-render loop (it would re-render every PlayableVideo each
-    // second inside the iframe and make the page feel frozen).
-    if (isReadOnlyProject) return
-    const hasActive = generatedVideos.some((job) => !isTerminalStatus(job.status))
-    if (!hasActive) return
-    const id = window.setInterval(() => setProgressTick((tick) => tick + 1), 1000)
-    return () => window.clearInterval(id)
-  }, [generatedVideos, isReadOnlyProject])
+  // NOTE: The per-second progress animation is intentionally NOT driven from a
+  // page-wide re-render here. A previous `setInterval(() => setProgressTick(...))`
+  // re-rendered the entire DashboardPage every second while a job was active,
+  // which forced the Preview <video> subtree to re-render once per second and
+  // caused visible playback stutter/lag. The 1s tick now lives inside the small
+  // `LiveJobProgress` component so only the tiny progress widgets re-render.
 
   function openFileUpload(target: UploadTarget) {
     setUploadTarget(target)
