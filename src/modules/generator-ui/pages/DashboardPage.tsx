@@ -171,7 +171,7 @@ const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.red
 )
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
-import { getMajorOccasionForDate } from '@/modules/generator-ui/lib/majorOccasions'
+import { getUpcomingMajorOccasion } from '@/modules/generator-ui/lib/majorOccasions'
 import { StylePreviewCard } from '@/modules/generator-ui/components/StylePreviewCard'
 import {
   CAMERA_STYLES,
@@ -1816,15 +1816,18 @@ export default function DashboardPage() {
     }
   }
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
-  const [hasOccasionToday, setHasOccasionToday] = useState(false)
+  const [upcomingOccasion, setUpcomingOccasion] = useState<{ title: string; daysAway: number } | null>(null)
   const [isBusinessOpen, setIsBusinessOpen] = useState(false)
   const [hasBusinessInfo, setHasBusinessInfo] = useState<boolean | null>(null)
 
-  // Deterministic daily check: is today a curated MAJOR occasion?
-  // No AI / network — avoids false positives from hallucinated dates.
+  // Deterministic daily check: is today (or within the next 3 days) a curated
+  // MAJOR occasion? No AI / network — avoids false positives from hallucinated
+  // dates. Warning ahead of time gives the user room to prepare a film.
   useEffect(() => {
-    setHasOccasionToday(getMajorOccasionForDate(new Date()) !== null)
+    const upcoming = getUpcomingMajorOccasion(new Date(), 3)
+    setUpcomingOccasion(upcoming ? { title: upcoming.occasion.title, daysAway: upcoming.daysAway } : null)
   }, [])
+
 
 
 
@@ -8578,40 +8581,52 @@ export default function DashboardPage() {
       </DropdownMenu>
 
       <div className={`fixed left-14 top-4 flex items-center gap-2 sm:left-16 sm:top-5 ${isApprovedPanelOpen ? 'z-30' : 'z-50'}`}>
+        {(() => {
+          const isAlert = upcomingOccasion !== null
+          const occasionLabel = upcomingOccasion
+            ? upcomingOccasion.daysAway === 0
+              ? `${upcomingOccasion.title} today`
+              : upcomingOccasion.daysAway === 1
+                ? `${upcomingOccasion.title} tomorrow`
+                : `${upcomingOccasion.title} in ${upcomingOccasion.daysAway} days`
+            : 'No occasion'
+          return (
         <button
           type="button"
           onClick={() => { setIsCalendarOpen(true) }}
-          aria-label={hasOccasionToday ? 'Today has an occasion — open calendar' : 'Open calendar'}
-          title={hasOccasionToday ? 'Today has an occasion — take a look' : 'Calendar'}
+          aria-label={isAlert ? `${occasionLabel} — open calendar` : 'Open calendar'}
+          title={isAlert ? `${occasionLabel} — take a look` : 'Calendar'}
           className={`group flex h-9 items-center gap-2 rounded-md border px-2.5 transition ${
-            hasOccasionToday
+            isAlert
               ? 'border-red-500/40 bg-red-500/10 hover:bg-red-500/15'
               : 'border-emerald-500/30 bg-emerald-500/[0.08] hover:bg-emerald-500/15'
           }`}
         >
           <span className="relative grid place-items-center">
             <CalendarDays
-              className={`h-[20px] w-[20px] ${hasOccasionToday ? 'text-red-300' : 'text-emerald-300'}`}
+              className={`h-[20px] w-[20px] ${isAlert ? 'text-red-300' : 'text-emerald-300'}`}
               aria-hidden="true"
             />
-            {hasOccasionToday && (
+            {isAlert && (
               <span className="absolute -right-1 -top-1 inline-flex h-2.5 w-2.5 animate-ping rounded-full bg-red-500/70" aria-hidden="true" />
             )}
             <span
               className={`absolute -right-1 -top-1 inline-block h-2.5 w-2.5 rounded-full ring-2 ring-[#0b0c0e] ${
-                hasOccasionToday ? 'bg-red-500' : 'bg-emerald-500'
+                isAlert ? 'bg-red-500' : 'bg-emerald-500'
               }`}
               aria-hidden="true"
             />
           </span>
           <span
             className={`hidden 2xl:inline text-[11px] font-medium uppercase tracking-[0.12em] ${
-              hasOccasionToday ? 'text-red-300' : 'text-emerald-300'
+              isAlert ? 'text-red-300' : 'text-emerald-300'
             }`}
           >
-            {hasOccasionToday ? 'Occasion today' : 'No occasion'}
+            {occasionLabel}
           </span>
         </button>
+          )
+        })()}
 
         <button
           type="button"
