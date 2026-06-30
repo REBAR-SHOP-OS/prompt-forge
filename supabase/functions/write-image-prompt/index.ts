@@ -32,6 +32,25 @@ const AD_COPY_RULES = [
   "Write the tagline in the same language as the existing prompt text; English by default.",
 ].join(" ");
 
+// Rules shared by both tagline generation and final compositing.
+const TAGLINE_RULES = [
+  "Each tagline must be purely promotional and brand/mood-driven, a few words (max ~6 words).",
+  "It MUST NOT make any factual or performance claim",
+  "(no 'best', 'strongest', '#1', 'certified', no specs/numbers stated as fact)",
+  "and MUST NOT contain any guarantee or warranty wording",
+  "(no 'guaranteed', 'warranty', '100%', 'risk-free', 'lifetime').",
+].join(" ");
+
+const TAGLINE_SYSTEM_PROMPT = [
+  "You are an expert advertising copywriter.",
+  "If a reference image is attached, silently analyze the product/subject, mood and style.",
+  "Produce short, catchy ADVERTISING taglines suitable to composite onto a product ad image.",
+  TAGLINE_RULES,
+  "Write the taglines in the same language as any existing prompt text; English by default.",
+  "Output ONLY a JSON array of 5 distinct tagline strings — no preamble, no keys,",
+  "no markdown, no code fences. Example: [\"Tagline one\", \"Tagline two\"].",
+].join(" ");
+
 
 function isDataUrl(u: string): boolean {
   return /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(u);
@@ -57,6 +76,9 @@ Deno.serve(async (req) => {
     const existingPrompt =
       typeof body?.existingPrompt === "string" ? body.existingPrompt.trim().slice(0, 2000) : "";
     const includeAdCopy = body?.includeAdCopy === true;
+    const mode = body?.mode === "taglines" ? "taglines" : "prompt";
+    const tagline =
+      typeof body?.tagline === "string" ? body.tagline.trim().slice(0, 120) : "";
     const productName =
       typeof body?.productName === "string" ? body.productName.trim().slice(0, 120) : "";
     const referenceImages: string[] = Array.isArray(body?.referenceImages)
@@ -81,7 +103,97 @@ Deno.serve(async (req) => {
       });
     }
 
-    const instructionParts: string[] = [];
+    // ----- Mode: generate several advertising taglines -----
+    if (mode === "taglines") {
+      const tParts: string[] = [];
+      if (productName) {
+        tParts.push(`Write advertising taglines for the product "${productName}".`);
+      }
+      if (themeDescriptor || themeLabel) {
+        tParts.push(`Match this visual theme/mood: ${themeLabel ? themeLabel + " — " : ""}${themeDescriptor}.`);
+      }
+      if (existingPrompt) {
+        tParts.push(`Context from the current prompt: "${existingPrompt}".`);
+      }
+      if (referenceImages.length > 0) {
+        tParts.push("Base the taglines on the attached reference image(s).");
+      }
+      tParts.push("Return ONLY the JSON array of 5 taglines now.");
+      const tInstruction = tParts.join(" ");
+
+      const tUserContent: unknown =
+        referenceImages.length > 0
+          ? [
+              { type: "text", text: tInstruction },
+              ...referenceImages.map((url) => ({ type: "image_url", image_url: { url } })),
+            ]
+          : tInstruction;
+
+      const tResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            { role: "system", content: TAGLINE_SYSTEM_PROMPT },
+            { role: "user", content: tUserContent },
+          ],
+        }),
+      });
+
+      if (tResp.status === 429) {
+        return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (tResp.status === 402) {
+        return new Response(JSON.stringify({ error: "AI credits exhausted. Add credits to continue." }), {
+          status: 402,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (!tResp.ok) {
+        const text = await tResp.text().catch(() => "");
+        console.error("write-image-prompt taglines gateway error", tResp.status, text);
+        return new Response(JSON.stringify({ error: "AI gateway error" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const tData = await tResp.json();
+      const tRaw: string = (tData?.choices?.[0]?.message?.content ?? "").trim();
+      const jsonText = tRaw.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+      let taglines: string[] = [];
+      try {
+        const parsed = JSON.parse(jsonText);
+        if (Array.isArray(parsed)) {
+          taglines = parsed.filter((s): s is string => typeof s === "string").map((s) => s.trim()).filter(Boolean);
+        }
+      } catch {
+        // Fallback: split lines if the model didn't return clean JSON.
+        taglines = jsonText
+          .split("\n")
+          .map((l) => l.replace(/^[-*\d.)\s"]+|["]+$/g, "").trim())
+          .filter(Boolean);
+      }
+      taglines = taglines.slice(0, 6);
+      if (taglines.length === 0) {
+        return new Response(JSON.stringify({ error: "Could not generate taglines. Try again." }), {
+          status: 502,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ taglines }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (existingPrompt) {
       instructionParts.push(`The user's current prompt draft / intent: "${existingPrompt}".`);
     }
@@ -96,11 +208,16 @@ Deno.serve(async (req) => {
       );
     }
     if (includeAdCopy) {
-      instructionParts.push(
-        productName
-          ? `This is an advertisement for the product "${productName}". ${AD_COPY_RULES}`
-          : AD_COPY_RULES,
-      );
+      const adBase = productName
+        ? `This is an advertisement for the product "${productName}". ${AD_COPY_RULES}`
+        : AD_COPY_RULES;
+      if (tagline) {
+        instructionParts.push(
+          `${adBase} Use EXACTLY this on-image tagline text, verbatim in quotes: "${tagline}". Do not change its wording or invent a different tagline.`,
+        );
+      } else {
+        instructionParts.push(adBase);
+      }
     }
     instructionParts.push("Write the final professional image prompt now.");
     const instruction = instructionParts.join(" ");
