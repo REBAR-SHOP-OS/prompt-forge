@@ -13,9 +13,9 @@ import {
   Clapperboard,
   Package,
   Heart,
-
-   
-  
+  RectangleVertical,
+  Square,
+  RectangleHorizontal,
   Combine,
   Crop,
   Database,
@@ -27,9 +27,9 @@ import {
   History,
   Image as ImageIcon,
   ImagePlus,
-   CalendarPlus,
-   LayoutGrid,
-   Library,
+  CalendarPlus,
+  LayoutGrid,
+  Library,
   Languages,
   LoaderCircle,
   Lock,
@@ -11885,9 +11885,9 @@ export default function DashboardPage() {
 
           <div role="radiogroup" aria-label="Aspect ratio" className="inline-flex items-center rounded-full border border-white/10 bg-black/20 p-1 text-xs font-semibold">
             {([
-              { value: '9:16', label: '9:16', hint: 'Reels' },
-              { value: '1:1', label: '1:1', hint: 'Post' },
-              { value: '16:9', label: '16:9', hint: 'YouTube' },
+              { value: '9:16', label: '9:16', hint: 'Reels', icon: RectangleVertical },
+              { value: '1:1', label: '1:1', hint: 'Post', icon: Square },
+              { value: '16:9', label: '16:9', hint: 'YouTube', icon: RectangleHorizontal },
             ] as const).map((opt) => {
               const active = aspectRatio === opt.value
               const isLocked = lockedRatio !== null && opt.value !== lockedRatio
@@ -11897,6 +11897,7 @@ export default function DashboardPage() {
                 : isLockedActive
                   ? `Locked to match the first clip in this chain (${lockedRatio}). Start Over to change.`
                   : `${opt.label} — ${opt.hint}`
+              const Icon = opt.icon
               return (
                 <button
                   key={opt.value}
@@ -11913,6 +11914,7 @@ export default function DashboardPage() {
                       : 'text-zinc-400 hover:text-zinc-200'
                   } ${isLocked ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}
                 >
+                  <Icon className="h-3 w-3" aria-hidden="true" />
                   <span>{opt.label}</span>
                   <span className={`text-[10px] uppercase tracking-wide ${active ? 'text-zinc-500' : 'text-zinc-500'}`}>{opt.hint}</span>
                   {(isLocked || isLockedActive) ? (
