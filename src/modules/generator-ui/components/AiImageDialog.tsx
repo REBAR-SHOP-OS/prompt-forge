@@ -97,6 +97,8 @@ type Props = {
   products?: AiProductOption[]
   productsLoading?: boolean
   onProductsRefresh?: () => Promise<AiProductOption[] | unknown> | AiProductOption[] | unknown
+  /** Playable URL of the current project's film opening clip, used to grab its first frame. */
+  filmFrameSourceUrl?: string | null
 }
 
 type AiReferenceImage = {
