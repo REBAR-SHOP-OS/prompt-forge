@@ -4728,6 +4728,11 @@ export default function DashboardPage() {
   // the active draft, otherwise the bare workspace.
   const coverScopeKey: string | null = selectedProjectId ?? activeDraftId ?? null
   const currentCover: UserImageItem | null = coverScopeKey ? (coverImages[coverScopeKey] ?? null) : null
+  // Opening clip of the current film — its first frame seeds a cover.
+  const coverFilmFrameUrl: string | null = useMemo(() => {
+    const first = displayedVideos.find((v) => !!v.video?.storage_path)
+    return first?.video?.storage_path ?? null
+  }, [displayedVideos])
   // All cover image ids across every scope — used to hide them from the normal
   // clip list so a cover never double-renders as a generation source.
   const allCoverImageIds = useMemo(() => {
