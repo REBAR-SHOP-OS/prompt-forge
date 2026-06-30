@@ -11927,11 +11927,12 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => setIsReframeOpen(true)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-sky-400 via-cyan-400 to-teal-400 text-white shadow-[0_4px_14px_rgba(34,211,238,0.45)] transition hover:from-sky-300 hover:via-cyan-300 hover:to-teal-300 hover:shadow-[0_6px_18px_rgba(34,211,238,0.6)]"
+            className="inline-flex h-8 items-center gap-1.5 rounded-full bg-gradient-to-br from-sky-400 via-cyan-400 to-teal-400 px-3 text-white shadow-[0_4px_14px_rgba(34,211,238,0.45)] transition hover:from-sky-300 hover:via-cyan-300 hover:to-teal-300 hover:shadow-[0_6px_18px_rgba(34,211,238,0.6)]"
             aria-label="Reframe an image to a target aspect ratio"
             title="Reframe an image (9:16 / 1:1 / 16:9) with Nano Banana"
           >
             <Crop className="h-4 w-4" aria-hidden="true" />
+            <span className="text-xs font-semibold">Reframe</span>
           </button>
           <button
             type="button"
