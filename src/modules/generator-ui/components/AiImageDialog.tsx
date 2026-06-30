@@ -376,7 +376,32 @@ export default function AiImageDialog({
     }
   }
 
-  function handleProductMenuOpenChange(nextOpen: boolean) {
+  async function handleUseFilmFrame() {
+    setError(null)
+    if (!filmFrameSourceUrl) {
+      setError('No film clip available yet. Add a clip to your project first.')
+      return
+    }
+    if (referenceImages.length >= MAX_REFERENCE_IMAGES) {
+      setError(`You can add up to ${MAX_REFERENCE_IMAGES} reference images.`)
+      return
+    }
+    setIsGrabbingFrame(true)
+    try {
+      // Resolve through the same-origin video-proxy so the canvas is not tainted.
+      const playUrl = await proxiedVideoUrl(filmFrameSourceUrl)
+      const dataUrl = await captureFirstFrame(playUrl)
+      setReferenceImages((prev) =>
+        prev.length >= MAX_REFERENCE_IMAGES
+          ? prev
+          : [...prev, { name: 'Film first frame', dataUrl }],
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't read the film frame.")
+    } finally {
+      setIsGrabbingFrame(false)
+    }
+  }
     setProductMenuOpen(nextOpen)
     if (nextOpen) {
       void onProductsRefresh?.()
