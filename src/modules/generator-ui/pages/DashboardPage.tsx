@@ -10612,6 +10612,9 @@ export default function DashboardPage() {
                           )}
 
                         </div>
+                            )
+                          }}
+                        </LiveJobProgress>
                       )
                     })()}
                   </div>
