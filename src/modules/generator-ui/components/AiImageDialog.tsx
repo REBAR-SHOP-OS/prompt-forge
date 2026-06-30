@@ -79,6 +79,8 @@ type Props = {
   defaultAspect: AiImageAspect
   onSaved: (row: AiImageSavedRow) => void
   products?: AiProductOption[]
+  productsLoading?: boolean
+  onProductsRefresh?: () => Promise<unknown> | void
 }
 
 type AiReferenceImage = {
@@ -146,6 +148,8 @@ export default function AiImageDialog({
   defaultAspect,
   onSaved,
   products = [],
+  productsLoading = false,
+  onProductsRefresh,
 }: Props) {
   const [aspect, setAspect] = useState<AiImageAspect>(defaultAspect)
   const [prompt, setPrompt] = useState('')
@@ -160,6 +164,7 @@ export default function AiImageDialog({
   const [themeMenuOpen, setThemeMenuOpen] = useState(false)
   const [productMenuOpen, setProductMenuOpen] = useState(false)
   const [productLoadingId, setProductLoadingId] = useState<string | null>(null)
+  const [brokenProductIds, setBrokenProductIds] = useState<Set<string>>(new Set())
   const [isWritingPrompt, setIsWritingPrompt] = useState(false)
 
   const [isMaskMode, setIsMaskMode] = useState(false)
@@ -186,6 +191,8 @@ export default function AiImageDialog({
       setHasMask(false)
       setSelectedTheme(null)
       setThemeMenuOpen(false)
+      setProductMenuOpen(false)
+      setBrokenProductIds(new Set())
       if (referenceInputRef.current) {
         referenceInputRef.current.value = ''
       }
@@ -194,6 +201,10 @@ export default function AiImageDialog({
       }
     }
   }, [open, defaultAspect])
+
+  useEffect(() => {
+    setBrokenProductIds(new Set())
+  }, [products.map((p) => `${p.id}:${p.url}`).join('|')])
 
   useEffect(() => {
     setHasMask(false)
@@ -320,10 +331,30 @@ export default function AiImageDialog({
       )
       setProductMenuOpen(false)
     } catch (e) {
+      try {
+        await onProductsRefresh?.()
+      } catch { /* ignore refresh errors; surface the original image-load problem */ }
       setError(e instanceof Error ? e.message : 'Failed to add product image.')
     } finally {
       setProductLoadingId(null)
     }
+  }
+
+  function handleProductMenuOpenChange(nextOpen: boolean) {
+    setProductMenuOpen(nextOpen)
+    if (nextOpen) {
+      void onProductsRefresh?.()
+    }
+  }
+
+  function handleProductThumbError(productId: string) {
+    setBrokenProductIds((prev) => {
+      if (prev.has(productId)) return prev
+      const next = new Set(prev)
+      next.add(productId)
+      return next
+    })
+    void onProductsRefresh?.()
   }
 
   async function handleWritePrompt() {
@@ -748,7 +779,7 @@ export default function AiImageDialog({
 
                   </PopoverContent>
                 </Popover>
-                <Popover open={productMenuOpen} onOpenChange={setProductMenuOpen}>
+                <Popover open={productMenuOpen} onOpenChange={handleProductMenuOpenChange}>
                   <PopoverTrigger asChild>
                     <button
                       type="button"
@@ -764,7 +795,11 @@ export default function AiImageDialog({
                     <div className="mb-2 px-1 text-xs font-medium text-zinc-300">
                       Choose a product
                     </div>
-                    {products.length === 0 ? (
+                    {productsLoading && products.length === 0 ? (
+                      <div className="flex items-center justify-center py-6 text-zinc-500">
+                        <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+                      </div>
+                    ) : products.length === 0 ? (
                       <p className="px-1 py-4 text-center text-[11px] text-zinc-500">
                         No saved products yet. Add product photos in Storage → Products first.
                       </p>
@@ -781,11 +816,18 @@ export default function AiImageDialog({
                               className="group flex flex-col gap-1.5 rounded-xl border border-white/10 p-1.5 text-left transition hover:border-white/25 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               <span className="relative block h-20 w-full overflow-hidden rounded-lg border border-white/10 bg-black/30">
-                                <img
-                                  src={p.url}
-                                  alt={p.title ?? 'Product'}
-                                  className="absolute inset-0 h-full w-full object-cover"
-                                />
+                                {brokenProductIds.has(p.id) ? (
+                                  <span className="absolute inset-0 grid place-items-center bg-black/30 text-zinc-500">
+                                    <Package className="h-5 w-5" aria-hidden="true" />
+                                  </span>
+                                ) : (
+                                  <img
+                                    src={p.url}
+                                    alt={p.title ?? 'Product'}
+                                    className="absolute inset-0 h-full w-full object-cover"
+                                    onError={() => handleProductThumbError(p.id)}
+                                  />
+                                )}
                                 {busy ? (
                                   <span className="absolute inset-0 flex items-center justify-center bg-black/50">
                                     <LoaderCircle className="h-5 w-5 animate-spin text-white" />
