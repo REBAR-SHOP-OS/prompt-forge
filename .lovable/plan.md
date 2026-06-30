@@ -1,20 +1,23 @@
-## Problem
-In the "Generate image with AI" dialog, choosing a tagline ("with text") — or using "Write prompt" / "Without text" — triggers a call to the `write-image-prompt` edge function in its default `prompt` mode. That mode immediately calls `instructionParts.push(...)`, but the `instructionParts` array is **never declared** in that branch. The undeclared reference throws a `ReferenceError`, which the function's catch block converts into a 500 `{ "error": "Internal error" }` — exactly the "Internal error" shown in the screenshot.
+## Goal
+In the "Add text on the image?" popover (Write prompt → With text) inside `AiImageDialog.tsx`, the advertising taglines must be generated strictly from the user's **selected product**. If no product is selected, no taglines should appear at all.
 
-The `taglines` mode works (it returns the list), so generating taglines succeeds; the crash only happens on the second call that actually builds the final prompt.
+## Current behavior
+- `loadTaglines()` (line ~592) calls the `write-image-prompt` edge function in `mode: 'taglines'`, passing `productName` derived from `referenceImages.find(r => r.isProduct)`.
+- It only blocks when `hasPromptInputs()` is false — so it still produces generic taglines (e.g. "Build your legacy") even when there is no product, just from theme/reference image/prompt text.
 
-## Fix
-In `supabase/functions/write-image-prompt/index.ts`, declare the missing array right after the `taglines` mode block ends (before line 197):
+## Changes (frontend only)
 
-```ts
-const instructionParts: string[] = [];
-```
+1. **Gate `loadTaglines()` on a selected product** (`src/modules/generator-ui/components/AiImageDialog.tsx`):
+   - Compute `productRef = referenceImages.find(r => r.isProduct)` at the top of the function.
+   - If `!productRef`, do not call the function: clear `taglines`, and set a clear message like `"Select a product first to generate taglines."` (English, per project convention).
+   - Keep passing `productName` from the product when present.
 
-That single declaration makes all the existing `instructionParts.push(...)` calls (lines 198–222) and `instructionParts.join(" ")` (line 223) valid, so the function returns a proper prompt instead of crashing.
+2. **Reflect the gate in the popover UI** (lines ~1189–1234):
+   - When no product is selected, the **"With text"** button should be disabled (or, on click, surface the same "Select a product first" hint) and the "Pick a tagline" list must stay hidden.
+   - Keep **"Without text"** fully working regardless of product selection.
 
-## Verification
-- Redeploy the edge function.
-- Call `write-image-prompt` with `includeAdCopy: true` and a `tagline` to confirm it returns `{ prompt: "..." }` with HTTP 200 instead of 500.
-- Confirm the "Without text" path (`includeAdCopy: false`) also returns a prompt.
+3. **No backend change** — the edge function already accepts `productName` and uses it; we simply never request taglines without a product, so no generic text is shown.
 
-No UI, auth, storage, or generation-logic changes are needed — this is a one-line backend fix scoped strictly to the broken branch.
+## Result
+- Product selected → taglines reflect that product.
+- No product → no taglines displayed; only a short hint, with "Without text" still available.

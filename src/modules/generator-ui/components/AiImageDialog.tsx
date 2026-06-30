@@ -592,14 +592,14 @@ export default function AiImageDialog({
   async function loadTaglines() {
     setTaglineError(null)
     setTaglines([])
-    if (!hasPromptInputs()) {
-      setTaglineError('Add a reference image, a product, or pick a theme first.')
+    const productRef = referenceImages.find((r) => r.isProduct)
+    if (!productRef) {
+      setTaglineError('Select a product first to generate taglines.')
       return
     }
     const theme = selectedTheme ? THEME_OPTIONS.find((t) => t.id === selectedTheme) : null
     setIsLoadingTaglines(true)
     try {
-      const productRef = referenceImages.find((r) => r.isProduct)
       const { data, error: fnError } = await supabase.functions.invoke('write-image-prompt', {
         body: {
           mode: 'taglines',
