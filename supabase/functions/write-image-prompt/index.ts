@@ -208,11 +208,16 @@ Deno.serve(async (req) => {
       );
     }
     if (includeAdCopy) {
-      instructionParts.push(
-        productName
-          ? `This is an advertisement for the product "${productName}". ${AD_COPY_RULES}`
-          : AD_COPY_RULES,
-      );
+      const adBase = productName
+        ? `This is an advertisement for the product "${productName}". ${AD_COPY_RULES}`
+        : AD_COPY_RULES;
+      if (tagline) {
+        instructionParts.push(
+          `${adBase} Use EXACTLY this on-image tagline text, verbatim in quotes: "${tagline}". Do not change its wording or invent a different tagline.`,
+        );
+      } else {
+        instructionParts.push(adBase);
+      }
     }
     instructionParts.push("Write the final professional image prompt now.");
     const instruction = instructionParts.join(" ");
