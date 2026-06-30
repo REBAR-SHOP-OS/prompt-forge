@@ -568,6 +568,59 @@ export default function AiImageDialog({
     }
   }
 
+  // Guardian: read on-image text + judge ad/cover suitability.
+  async function handleInspectCover() {
+    if (!imageDataUrl) return
+    setInspectError(null)
+    setInspection(null)
+    setTranslatedText(null)
+    setIsInspecting(true)
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('inspect-cover-text', {
+        body: { image: imageDataUrl },
+      })
+      if (fnError) {
+        setInspectError(await extractFnError(fnError, 'Could not inspect the image. Try again.'))
+        return
+      }
+      setInspection(data as CoverTextInspection)
+    } catch (e) {
+      setInspectError(e instanceof Error ? e.message : 'Could not inspect the image.')
+    } finally {
+      setIsInspecting(false)
+    }
+  }
+
+  // Translate the extracted on-image text without replacing the original.
+  async function handleTranslateCoverText() {
+    const source = inspection?.text?.trim()
+    if (!source) return
+    setInspectError(null)
+    setIsTranslating(true)
+    setTranslatedText(null)
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('translate-text', {
+        body: { text: source, targetLang: translateLang },
+      })
+      if (fnError) {
+        setInspectError(await extractFnError(fnError, 'Could not translate. Try again.'))
+        return
+      }
+      const translated = typeof (data as { translated?: unknown })?.translated === 'string'
+        ? (data as { translated: string }).translated.trim()
+        : typeof (data as { text?: unknown })?.text === 'string'
+          ? (data as { text: string }).text.trim()
+          : ''
+      setTranslatedText(translated || '—')
+    } catch (e) {
+      setInspectError(e instanceof Error ? e.message : 'Could not translate.')
+    } finally {
+      setIsTranslating(false)
+    }
+  }
+
+
+
 
 
   function handleRemoveRefineReference(index: number) {
