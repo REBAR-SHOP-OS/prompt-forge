@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { supabase } from '@/integrations/supabase/client'
 import { normalizeImageAspect } from '@/modules/generator-ui/lib/normalizeImageAspect'
+import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 
 import themeMinimalist from '@/assets/theme-previews/minimalist.jpg'
 import themeDarkMoody from '@/assets/theme-previews/dark-moody.jpg'
