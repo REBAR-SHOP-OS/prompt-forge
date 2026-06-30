@@ -296,6 +296,14 @@ export default function AiImageDialog({
   const [translatedText, setTranslatedText] = useState<string | null>(null)
   const [isTranslating, setIsTranslating] = useState(false)
 
+  // Reset the guardian panel whenever the displayed image changes.
+  useEffect(() => {
+    setInspection(null)
+    setInspectError(null)
+    setTranslatedText(null)
+  }, [imageDataUrl])
+
+
   const [isMaskMode, setIsMaskMode] = useState(false)
   const [brushSize, setBrushSize] = useState(36)
   const [hasMask, setHasMask] = useState(false)
