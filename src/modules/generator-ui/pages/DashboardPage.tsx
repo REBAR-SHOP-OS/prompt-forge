@@ -4769,7 +4769,7 @@ export default function DashboardPage() {
       if (snapshot.length > 0) {
         return snapshot
           .map((s) => liveById.get(s.id) ?? s)
-          .filter((i) => !allCoverImageIds.has(i.id) && (i.category ?? 'general') !== 'reframe')
+          .filter((i) => !allCoverImageIds.has(i.id) && (i.category ?? 'general') !== 'reframe' && (i.category ?? 'general') !== 'cover')
       }
       // Single-clip Library entries never have image sources.
       if (!selectedProjectId.startsWith('merged-') && !selectedProjectId.startsWith('draft-')) return []
@@ -4788,9 +4788,11 @@ export default function DashboardPage() {
         !workspaceHiddenImageIds.has(i.id) &&
         !claimedByProjects.has(i.id) &&
         !allCoverImageIds.has(i.id) &&
-        (i.category ?? 'general') !== 'reframe',
+        (i.category ?? 'general') !== 'reframe' &&
+        (i.category ?? 'general') !== 'cover',
     )
   }, [userImages, selectedProjectId, projectSourceImages, draftSourceImages, activeDraftId, workspaceHiddenImageIds, allCoverImageIds, activeImageIds])
+
 
 
   const displayedClips = useMemo<UnifiedClip[]>(() => {
