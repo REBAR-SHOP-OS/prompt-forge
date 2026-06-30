@@ -2653,6 +2653,24 @@ export default function DashboardPage() {
     if (!coverImagesKey) return
     try { window.localStorage.setItem(coverImagesKey, JSON.stringify(next)) } catch { /* ignore */ }
   }
+  // Per-project cover duration (seconds) — how long the cover is held at the
+  // start of the Final Film. Persisted alongside coverImages.
+  const DEFAULT_COVER_DURATION = 3
+  const [coverDurations, setCoverDurations] = useState<Record<string, number>>({})
+  const coverDurationsKey = userId ? `project-cover-durations:${userId}` : null
+  useEffect(() => {
+    if (!coverDurationsKey) { setCoverDurations({}); return }
+    try {
+      const raw = window.localStorage.getItem(coverDurationsKey)
+      const obj = raw ? (JSON.parse(raw) as Record<string, number>) : {}
+      setCoverDurations(obj && typeof obj === 'object' ? obj : {})
+    } catch { setCoverDurations({}) }
+  }, [coverDurationsKey])
+  function persistCoverDurations(next: Record<string, number>) {
+    if (!coverDurationsKey) return
+    try { window.localStorage.setItem(coverDurationsKey, JSON.stringify(next)) } catch { /* ignore */ }
+  }
+
   // Dialog mode: 'frame' stages the AI image as a Start frame for image-to-video;
   // 'cover' pins it as the film cover at the top of Pending.
   const [aiDialogMode, setAiDialogMode] = useState<'frame' | 'cover'>('frame')
