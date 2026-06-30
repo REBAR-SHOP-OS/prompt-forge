@@ -95,6 +95,13 @@ Deno.serve(async (req) => {
         "Write the prompt for the attached reference image(s); preserve the product/subject exactly.",
       );
     }
+    if (includeAdCopy) {
+      instructionParts.push(
+        productName
+          ? `This is an advertisement for the product "${productName}". ${AD_COPY_RULES}`
+          : AD_COPY_RULES,
+      );
+    }
     instructionParts.push("Write the final professional image prompt now.");
     const instruction = instructionParts.join(" ");
 
