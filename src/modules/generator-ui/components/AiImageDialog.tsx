@@ -606,11 +606,9 @@ export default function AiImageDialog({
         setInspectError(await extractFnError(fnError, 'Could not translate. Try again.'))
         return
       }
-      const translated = typeof (data as { translated?: unknown })?.translated === 'string'
-        ? (data as { translated: string }).translated.trim()
-        : typeof (data as { text?: unknown })?.text === 'string'
-          ? (data as { text: string }).text.trim()
-          : ''
+      const translated = typeof (data as { translation?: unknown })?.translation === 'string'
+        ? (data as { translation: string }).translation.trim()
+        : ''
       setTranslatedText(translated || '—')
     } catch (e) {
       setInspectError(e instanceof Error ? e.message : 'Could not translate.')
