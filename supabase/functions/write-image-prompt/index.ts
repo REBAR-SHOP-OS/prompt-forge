@@ -56,6 +56,9 @@ Deno.serve(async (req) => {
       typeof body?.themeLabel === "string" ? body.themeLabel.trim().slice(0, 120) : "";
     const existingPrompt =
       typeof body?.existingPrompt === "string" ? body.existingPrompt.trim().slice(0, 2000) : "";
+    const includeAdCopy = body?.includeAdCopy === true;
+    const productName =
+      typeof body?.productName === "string" ? body.productName.trim().slice(0, 120) : "";
     const referenceImages: string[] = Array.isArray(body?.referenceImages)
       ? body.referenceImages
           .filter((u: unknown): u is string => typeof u === "string")
