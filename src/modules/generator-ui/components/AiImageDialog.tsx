@@ -1360,6 +1360,20 @@ export default function AiImageDialog({
                   <Download className="mr-2 h-4 w-4" />
                   Download
                 </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void handleInspectCover()}
+                  disabled={!imageDataUrl || isLoading || isSaving || isInspecting}
+                  title="Guardian: read the on-image text, translate it, and check it is appropriate for a cover"
+                >
+                  {isInspecting ? (
+                    <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <ShieldCheck className="mr-2 h-4 w-4" />
+                  )}
+                  {isInspecting ? 'Checking…' : 'Guardian'}
+                </Button>
               </div>
               <Button onClick={handleUse} disabled={isLoading || isSaving || !userId}>
                 {isSaving ? (
