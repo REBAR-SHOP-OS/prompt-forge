@@ -4396,30 +4396,38 @@ export default function DashboardPage() {
     if (toRemove.size === 0) return
   }, [userId, draftEntries, draftSourceJobs, draftSourceImages])
 
-  // One-time cleanup of legacy pollution: earlier builds could turn a Film
-  // Cover image into its own `draft-orphan-img-*` draft. Such a draft has a
-  // single image whose id is a known cover. Remove those ghost drafts, strip
-  // their ownership stamp, and tombstone them so they never come back.
-  const coverGhostCleanedRef = useRef(false)
+  // Cleanup of legacy pollution: earlier builds could turn a Film Cover image
+  // into its own `draft-orphan-img-*` draft. Such a draft has a single image
+  // whose id is a known cover. Remove those ghost drafts, strip their ownership
+  // stamp, and tombstone them so they never come back.
+  //
+  // The set of covers is derived from BOTH the local `coverImages` map AND the
+  // durable DB flag (`category === 'cover'`) carried on `userImages`. The DB
+  // flag is the cross-device source of truth, so this runs whenever `userImages`
+  // changes — it does not depend on the async localStorage cover map being
+  // populated first.
   useEffect(() => {
     if (!userId) return
-    if (coverGhostCleanedRef.current) return
-    if (Object.keys(coverImages).length === 0) return
-    coverGhostCleanedRef.current = true
 
     const coverIds = new Set<string>()
     for (const ci of Object.values(coverImages)) coverIds.add(ci.id)
+    for (const img of userImages) {
+      if ((img.category ?? 'general') === 'cover') coverIds.add(img.id)
+    }
+    if (coverIds.size === 0) return
 
-    // Durably tag every known cover in the DB so it can never be rebuilt into
-    // a standalone draft after a refresh (category is checked by the draft
-    // builders and the workspace image load).
-    if (coverIds.size > 0) {
+    // Self-heal: durably tag every known cover in the DB so it can never be
+    // rebuilt into a standalone draft after a refresh. Only patch rows that are
+    // not already tagged 'cover' to avoid redundant writes.
+    const untagged = Object.values(coverImages)
+      .filter((ci) => (ci.category ?? 'general') !== 'cover')
+      .map((ci) => ci.id)
+    if (untagged.length > 0) {
       void supabase
         .from('generator_user_images')
         .update({ category: 'cover' })
-        .in('id', Array.from(coverIds))
+        .in('id', untagged)
     }
-
 
     const ghostDraftIds = new Set<string>()
     for (const [draftId, imgs] of Object.entries(draftSourceImages)) {
@@ -4459,12 +4467,15 @@ export default function DashboardPage() {
     })
     setDeletedDraftIds((prev) => {
       const next = new Set(prev)
-      for (const id of ghostDraftIds) next.add(id)
+      let changed = false
+      for (const id of ghostDraftIds) { if (!next.has(id)) { next.add(id); changed = true } }
+      if (!changed) return prev
       persistDeletedDraftIds(next)
       return next
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, coverImages, draftSourceImages, draftSourceJobs])
+  }, [userId, coverImages, userImages, draftSourceImages, draftSourceJobs])
+
 
 
 
@@ -4537,6 +4548,7 @@ export default function DashboardPage() {
             (i) =>
               !claimedImgs.has(i.id) &&
               !draftOwnedImageIds.has(i.id) &&
+              (i.category ?? 'general') !== 'cover' &&
               !!i.storage_path &&
               new Date(i.created_at).getTime() <= cutoff,
           )
@@ -4769,7 +4781,7 @@ export default function DashboardPage() {
       if (snapshot.length > 0) {
         return snapshot
           .map((s) => liveById.get(s.id) ?? s)
-          .filter((i) => !allCoverImageIds.has(i.id) && (i.category ?? 'general') !== 'reframe')
+          .filter((i) => !allCoverImageIds.has(i.id) && (i.category ?? 'general') !== 'reframe' && (i.category ?? 'general') !== 'cover')
       }
       // Single-clip Library entries never have image sources.
       if (!selectedProjectId.startsWith('merged-') && !selectedProjectId.startsWith('draft-')) return []
@@ -4788,9 +4800,11 @@ export default function DashboardPage() {
         !workspaceHiddenImageIds.has(i.id) &&
         !claimedByProjects.has(i.id) &&
         !allCoverImageIds.has(i.id) &&
-        (i.category ?? 'general') !== 'reframe',
+        (i.category ?? 'general') !== 'reframe' &&
+        (i.category ?? 'general') !== 'cover',
     )
   }, [userImages, selectedProjectId, projectSourceImages, draftSourceImages, activeDraftId, workspaceHiddenImageIds, allCoverImageIds, activeImageIds])
+
 
 
   const displayedClips = useMemo<UnifiedClip[]>(() => {

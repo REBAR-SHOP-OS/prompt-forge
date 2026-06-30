@@ -1,38 +1,38 @@
-# Make the cover a real cover (with duration)
+## Goal
+A film cover must appear **only inside its own project** — never in the active workspace pending, never inside another project, and never as its own standalone "Draft project" card. Existing ghost cover-draft cards get auto-cleaned.
 
-## Problem
-Today the cover is only a UI element stored in `localStorage` (`coverImages`). It is **deliberately excluded** from the Final Film: `handleMergeAllVideos` builds `mergeClips` only from timeline clips and the cover is filtered out via `allCoverImageIds`. So it never appears in the exported video and is not used as a thumbnail by social platforms.
+## Root cause
+All cover guards rely on `allCoverImageIds`, derived from the per-device `coverImages` localStorage map that loads asynchronously. When it isn't loaded yet (fresh load, other device, stale storage), the cover slips through and:
+- shows as an "Uploaded image" working clip in the open Project (screenshot 1), and
+- gets turned into a standalone "Draft project" by the orphan-draft backfill (screenshot 2).
 
-The fix: give the cover a **duration** and prepend it as the opening image segment of the Final Film, so it is truly rendered into the output file (and becomes the first frame that platforms pick up as a thumbnail).
+The durable, cross-device truth is the database flag `generator_user_images.category = 'cover'` (already written at cover creation). The fix is to make every cover guard also honor that flag, not just the localStorage map.
 
-## What will change (frontend only)
+## Changes (all in `src/modules/generator-ui/pages/DashboardPage.tsx`)
 
-### 1. Cover duration value
-- Add a persisted per-project cover duration (e.g. `coverDurations` keyed by `coverScopeKey`, stored in `localStorage` next to `coverImages`), defaulting to **3 seconds**.
-- Range allowed: 1–10 seconds (consistent with existing image still clamps).
+1. **Exclude covers from the workspace / project pending list** — `visibleUserImages` (around line 4765):
+   - In both the project-snapshot branch and the active-workspace branch, also drop any image whose `category === 'cover'` (in addition to the existing `allCoverImageIds` check). This stops the cover from rendering as a "Working clip" anywhere outside the dedicated cover card.
 
-### 2. UI control on the cover card
-In the cover card (around the "Film cover" header in `DashboardPage.tsx`), add a small duration control (compact number input or stepper labeled `Duration (s)`) next to the Replace/Remove buttons. Editing it updates and persists the cover duration. All labels in English.
+2. **Keep covers out of legacy project backfill** — the loose-image claim loop (around line 4535): add `(i.category ?? 'general') !== 'cover'` to the filter so a cover is never pulled into another project's `projectSourceImages`.
 
-### 3. Bake the cover into the Final Film
-In `handleMergeAllVideos`, after `mergeClips` is built and before the merge runs, **prepend** the current cover (if one exists for the active scope) as an image clip:
-```text
-mergeClips = [ { kind: 'image', url: <proxied cover url>, durationSec: coverDuration }, ...existingClips ]
-```
-- Resolve the cover URL with `proxiedVideoUrl(currentCover.storage_path)` (same as other image clips).
-- The cover is the **first** segment, so it becomes the opening frames and the natural thumbnail.
-- Transitions array (`transitionsForMerge`) is rebuilt to account for the extra leading segment (add a leading `cut`/no transition so gap count stays `clips - 1`).
-- Target-size detection still uses the first **video** clip; cover image does not change target dimensions.
-- Audio offsets are unaffected (music/voiceover keep their own timeline offsets); the cover simply adds lead time at the start.
+3. **Make ghost-cover cleanup DB-driven, not localStorage-driven** — rework the cover-ghost cleanup effect (around lines 4404-4467):
+   - Build `coverIds` from BOTH `Object.values(coverImages)` AND every `userImages` row with `category === 'cover'`.
+   - Remove any `draft-orphan-img-*` / single-image draft whose only image is a cover from `draftEntries`, `draftSourceImages`, `imageDraftMap`, and tombstone the ids in `deletedDraftIds` (logic already present — just feed it the DB-derived `coverIds`).
+   - Re-run when `userImages` changes (add to deps) and drop the one-shot `coverGhostCleanedRef` gate guarding against stale state, or relax it so it re-runs once covers are known from the DB. This auto-cleans the existing standalone cover "Draft project" cards.
 
-### 4. Keep existing behavior intact
-- Cover still does not appear as an orphan draft/timeline card (the `allCoverImageIds` filtering stays).
-- If no cover is set, the merge behaves exactly as today.
+4. **Self-heal legacy untagged covers**: when a cover is present in the `coverImages` map but its `userImages`/DB row still has `category !== 'cover'`, issue the `update({ category: 'cover' })` (this call already exists in the effect) so future sessions are protected purely by the DB flag.
 
-## Out of scope
-No backend, auth, storage policy, or generation-logic changes. No change to how covers are generated in `AiImageDialog`.
+## Out of scope / unchanged
+- Cover creation flow (already tags `category: 'cover'`).
+- Cover rendering inside its own project scope (`currentCover` via `coverScopeKey`) — already correct.
+- Final Film merge cover injection — unchanged.
+- No generation, auth, storage-policy, or schema changes. `category` column already exists.
 
 ## Verification
-- Set a cover, set duration (e.g. 4s), run Final Film → exported file begins with the cover held for ~4s, then the clips play.
-- Remove cover → Final Film starts directly with clips (unchanged).
-- Typecheck clean.
+- TSC clean (`bun run tsc --noEmit`).
+- Open a project, set a cover → it shows only in the cover card, not in Pending working clips, and no new "Draft project" appears in the Library.
+- Reload with empty localStorage cover map → cover still does not appear in workspace/other projects (DB flag covers it).
+- Existing standalone cover "Draft project" cards disappear after load and do not return after refresh.
+</content>
+<summary>Make film covers strictly project-scoped by guarding on the durable DB category='cover' flag (not just the async localStorage map): exclude covers from workspace/other-project pending lists and backfill, and auto-clean existing standalone cover "Draft project" cards.</summary>
+</invoke>
