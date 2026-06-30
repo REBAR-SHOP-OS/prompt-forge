@@ -71,6 +71,18 @@ const THEME_OPTIONS: ThemeOption[] = [
 
 const USER_IMAGES_BUCKET = 'user-images'
 
+// Strips trailing identifier codes/numbers from a product name so they are not
+// baked onto generated images, e.g. "wire_mesh 002" -> "wire mesh",
+// "Rebar Stirrup 008" -> "Rebar Stirrup", "Product #12" -> "Product".
+function stripProductCode(name: string): string {
+  const cleaned = name
+    .replace(/[\s_#-]*\d[\d\s_#-]*$/g, '')
+    .replace(/[_]+/g, ' ')
+    .replace(/[\s#-]+$/g, '')
+    .trim()
+  return cleaned.length > 0 ? cleaned : name.trim()
+}
+
 export type AiImageAspect = '1:1' | '9:16' | '16:9'
 
 export type AiImageSavedRow = {
@@ -502,7 +514,7 @@ export default function AiImageDialog({
           themeLabel: theme?.enLabel ?? '',
           existingPrompt: prompt.trim(),
           includeAdCopy: Boolean(productRef),
-          productName: productRef?.name ?? '',
+          productName: stripProductCode(productRef?.name ?? ''),
         },
       })
       if (fnError) {
