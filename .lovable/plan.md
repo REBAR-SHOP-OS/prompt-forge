@@ -1,55 +1,40 @@
-## Problem
+# Show upcoming occasions ahead of time
 
-When a video is playing in the **Preview** panel, it stutters/lags — but only while a job is active (note the “PENDING 1” job in the screenshot).
+Today the calendar badge only turns red when the current day is a major occasion. This change makes it warn the user up to **3 days in advance** (today + next 3 days) so there is time to create a film, and labels it with the occasion name and how many days remain (e.g. "Eid al-Fitr in 2 days").
 
-## Root cause
+## 1. Add a lookahead helper — `src/modules/generator-ui/lib/majorOccasions.ts`
 
-In `src/modules/generator-ui/pages/DashboardPage.tsx` (lines ~5936–5948) there is a page-wide "smooth progress ticker":
+Add a new function that scans from today forward through a window and returns the soonest occasion:
 
-```ts
-const [, setProgressTick] = useState(0)
-useEffect(() => {
-  if (isReadOnlyProject) return
-  const hasActive = generatedVideos.some((job) => !isTerminalStatus(job.status))
-  if (!hasActive) return
-  const id = window.setInterval(() => setProgressTick((tick) => tick + 1), 1000)
-  return () => window.clearInterval(id)
-}, [generatedVideos, isReadOnlyProject])
+```text
+getUpcomingMajorOccasion(from: Date, windowDays = 3)
+  -> { occasion: MajorOccasion, date: Date, daysAway: number } | null
 ```
 
-While any job is pending/processing, this calls `setState` **once per second**, which re-renders the entire 13k-line `DashboardPage` component — including the Preview player subtree (`VideoWithSoundtrack` / `SequentialClipPlayer`) and its `<video>`. That once-per-second forced re-render of the heavy tree is exactly the periodic hitch the user sees during playback. As soon as the job finishes, the ticker stops and playback is smooth — confirming the diagnosis.
+- Loop `daysAway` from 0 to `windowDays`, build the candidate date, reuse the existing `getMajorOccasionForDate`, and return the first match (closest day wins).
+- `daysAway === 0` means today, `1` means tomorrow, etc.
+- Keep the existing `getMajorOccasionForDate` untouched so nothing else breaks.
 
-This is the same class of bug already solved elsewhere in the file (the `SequentialClipPlayer` playhead was deliberately decoupled from React render to stop stutter); the page-level progress ticker re-introduced it.
+## 2. Update the badge state — `src/modules/generator-ui/pages/DashboardPage.tsx`
 
-## Fix (root cause, scoped to progress UI only)
+- Replace the `hasOccasionToday` boolean (line 1819) with a richer state holding the upcoming result, e.g. `upcomingOccasion: { title, daysAway } | null`.
+- In the daily-check effect (around line 1823-1826), call `getUpcomingMajorOccasion(new Date(), 3)` and store the result.
+- Derive `hasOccasionToday`-style flags from it where needed:
+  - `isAlert = upcomingOccasion !== null`
+  - keep the red styling for an alert, emerald when there is nothing upcoming.
 
-Decouple the per-second progress animation from the whole-page render so only the tiny progress widgets re-render — never the preview player.
+## 3. Update the badge UI (lines 8580-8614)
 
-1. **Remove the page-wide ticker** (`setProgressTick` state + its `useEffect`) at lines ~5936–5948.
+- Drive the red/emerald styling, ping dot, `aria-label`, and `title` from `isAlert` instead of `hasOccasionToday`.
+- Build a label string from `upcomingOccasion`:
+  - `daysAway === 0` -> `"<Name> today"`
+  - `daysAway === 1` -> `"<Name> tomorrow"`
+  - otherwise -> `"<Name> in <daysAway> days"`
+  - no upcoming -> `"No occasion"`
+- Show this label in the existing `2xl:inline` text span; use it for the `title`/`aria-label` tooltip so it is visible even when the text is hidden on smaller widths.
 
-2. **Add a small isolated `LiveJobProgress` component** (new file `src/modules/generator-ui/components/LiveJobProgress.tsx`) that:
-   - owns its own `useState` + 1s `setInterval` (only runs while the job is non-terminal),
-   - computes the percent via the existing module-level `getJobProgressPercent`,
-   - exposes the value through a render prop (`children: (pct: number | null) => ReactNode`).
+## Technical notes
 
-   Because each instance holds its own state, only that small widget re-renders each second — the preview `<video>` is untouched.
-
-3. **Use `LiveJobProgress` at the three progress display sites** in `DashboardPage.tsx` that currently relied on the page re-render:
-   - the Preview circular progress ring (~line 10544),
-   - the pending-card percent label (~line 11276),
-   - the pending-card progress bar (~line 11285).
-
-   To keep `getJobProgressPercent` (and its module `progressMaxRef`) as the single source of truth, export it from `DashboardPage.tsx` (or move it into a tiny shared `lib/jobProgress.ts` imported by both) so the new component reuses the exact same calculation.
-
-## Result
-
-- Progress bars/rings still advance smoothly once per second between API polls.
-- The Preview video no longer re-renders every second, eliminating the playback lag.
-- No change to generation, audio, merge, or any backend logic.
-
-## Verification
-
-- `tsgo` typecheck clean.
-- Manually: start/have an active job, open Preview, play a clip — confirm smooth playback while the pending progress still animates.
-</content>
-<parameter name="summary">Fix preview playback lag caused by a page-wide 1s progress ticker re-rendering the whole DashboardPage; isolate the ticking into a small per-job progress component.
+- Pure date math, deterministic, no AI and no backend changes — only the curated `majorOccasions.ts` table is used.
+- The calendar dialog (`CalendarInfoDialog`) is unchanged; clicking the badge still opens it.
+- TypeScript must stay clean; the new state type replaces the old boolean in all referenced sites (lines 1819, 1826, 8584-8612).

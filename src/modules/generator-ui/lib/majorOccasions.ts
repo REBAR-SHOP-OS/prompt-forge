@@ -64,3 +64,25 @@ export function getMajorOccasionForDate(date: Date): MajorOccasion | null {
   const md = `${mm}-${dd}`
   return MOVABLE[full] ?? FIXED[md] ?? null
 }
+
+export interface UpcomingMajorOccasion {
+  occasion: MajorOccasion
+  date: Date
+  daysAway: number
+}
+
+/**
+ * Scans forward from `from` (inclusive) through `windowDays` and returns the
+ * soonest major occasion, or null if none falls within the window. This lets
+ * the dashboard warn the user a few days ahead so they can prepare a film.
+ */
+export function getUpcomingMajorOccasion(from: Date, windowDays = 3): UpcomingMajorOccasion | null {
+  const base = new Date(from.getFullYear(), from.getMonth(), from.getDate())
+  for (let daysAway = 0; daysAway <= windowDays; daysAway += 1) {
+    const candidate = new Date(base)
+    candidate.setDate(base.getDate() + daysAway)
+    const occasion = getMajorOccasionForDate(candidate)
+    if (occasion) return { occasion, date: candidate, daysAway }
+  }
+  return null
+}
