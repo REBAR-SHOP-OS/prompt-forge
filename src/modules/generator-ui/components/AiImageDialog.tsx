@@ -236,7 +236,28 @@ async function extractFnError(fnErr: unknown, fallback: string): Promise<string>
   return fallback
 }
 
-export default function AiImageDialog({
+type CoverTextInspection = {
+  hasText: boolean
+  text: string
+  language: string
+  isAppropriate: boolean
+  isAdSuitable: boolean
+  reason: string
+  suggestions: string[]
+}
+
+const GUARDIAN_LANGS: { code: string; label: string }[] = [
+  { code: 'fa', label: 'Persian' },
+  { code: 'en', label: 'English' },
+  { code: 'ar', label: 'Arabic' },
+  { code: 'tr', label: 'Turkish' },
+  { code: 'es', label: 'Spanish' },
+  { code: 'fr', label: 'French' },
+  { code: 'de', label: 'German' },
+  { code: 'ru', label: 'Russian' },
+  { code: 'zh', label: 'Chinese' },
+]
+
   open,
   onOpenChange,
   userId,
