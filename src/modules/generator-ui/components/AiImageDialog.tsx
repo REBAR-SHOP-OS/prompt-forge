@@ -1143,20 +1143,97 @@ export default function AiImageDialog({
                   )}
                   <span>{isGrabbingFrame ? 'Reading…' : 'Use film frame'}</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => void handleWritePrompt()}
-                  disabled={isLoading || isWritingPrompt}
-                  className="inline-flex items-center gap-2 rounded-full border border-amber-300/40 bg-amber-300/10 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:border-amber-300/70 hover:bg-amber-300/20 disabled:cursor-not-allowed disabled:opacity-50"
-                  title="Write a professional prompt from your references & theme"
+                <Popover
+                  open={promptTextMenuOpen}
+                  onOpenChange={(next) => {
+                    setPromptTextMenuOpen(next)
+                    if (next) {
+                      setTaglines([])
+                      setTaglineError(null)
+                    }
+                  }}
                 >
-                  {isWritingPrompt ? (
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Wand2 className="h-4 w-4" />
-                  )}
-                  <span>{isWritingPrompt ? 'Writing…' : 'Write prompt'}</span>
-                </button>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      disabled={isLoading || isWritingPrompt}
+                      className="inline-flex items-center gap-2 rounded-full border border-amber-300/40 bg-amber-300/10 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:border-amber-300/70 hover:bg-amber-300/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Write a professional prompt from your references & theme"
+                    >
+                      {isWritingPrompt ? (
+                        <LoaderCircle className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Wand2 className="h-4 w-4" />
+                      )}
+                      <span>{isWritingPrompt ? 'Writing…' : 'Write prompt'}</span>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-80 space-y-3">
+                    <div>
+                      <div className="text-sm font-semibold text-zinc-100">Add text on the image?</div>
+                      <p className="mt-0.5 text-xs text-zinc-400">
+                        Choose whether the generated image should include an advertising tagline.
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="flex-1"
+                        disabled={isWritingPrompt || isLoadingTaglines}
+                        onClick={() => void writePromptInternal({ includeAdCopy: false })}
+                      >
+                        Without text
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="flex-1"
+                        disabled={isWritingPrompt || isLoadingTaglines}
+                        onClick={() => void loadTaglines()}
+                      >
+                        {isLoadingTaglines ? (
+                          <LoaderCircle className="h-4 w-4 animate-spin" />
+                        ) : (
+                          'With text'
+                        )}
+                      </Button>
+                    </div>
+                    {taglineError ? (
+                      <p className="text-xs text-red-400">{taglineError}</p>
+                    ) : null}
+                    {taglines.length > 0 ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-zinc-300">Pick a tagline</span>
+                          <button
+                            type="button"
+                            onClick={() => void loadTaglines()}
+                            disabled={isLoadingTaglines || isWritingPrompt}
+                            className="inline-flex items-center gap-1 text-xs text-amber-200 hover:text-amber-100 disabled:opacity-50"
+                          >
+                            <RefreshCw className={`h-3 w-3 ${isLoadingTaglines ? 'animate-spin' : ''}`} />
+                            Regenerate
+                          </button>
+                        </div>
+                        <div className="space-y-1.5">
+                          {taglines.map((t, i) => (
+                            <button
+                              key={`${t}-${i}`}
+                              type="button"
+                              disabled={isWritingPrompt}
+                              onClick={() => void writePromptInternal({ includeAdCopy: true, tagline: t })}
+                              className="block w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-left text-xs text-zinc-100 transition hover:border-amber-300/50 hover:bg-amber-300/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              “{t}”
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </PopoverContent>
+                </Popover>
               </div>
               {referenceImages.length > 0 ? (
                 <div className="mt-3 space-y-2">
