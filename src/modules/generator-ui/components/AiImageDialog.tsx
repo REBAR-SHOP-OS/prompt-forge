@@ -316,7 +316,7 @@ export default function AiImageDialog({
       setReferenceImages((prev) =>
         prev.length >= MAX_REFERENCE_IMAGES
           ? prev
-          : [...prev, { name: product.title || 'Product', dataUrl }],
+          : [...prev, { name: product.title || 'Product', dataUrl, isProduct: true }],
       )
       setProductMenuOpen(false)
     } catch (e) {
