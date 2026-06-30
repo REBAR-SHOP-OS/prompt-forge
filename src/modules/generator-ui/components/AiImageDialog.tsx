@@ -974,6 +974,20 @@ export default function AiImageDialog({
                 </Popover>
                 <button
                   type="button"
+                  onClick={() => void handleUseFilmFrame()}
+                  disabled={isLoading || isGrabbingFrame || !filmFrameSourceUrl || referenceImages.length >= MAX_REFERENCE_IMAGES}
+                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  title={filmFrameSourceUrl ? "Use the first frame of your film as a reference" : "No film clip available yet"}
+                >
+                  {isGrabbingFrame ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Clapperboard className="h-4 w-4" />
+                  )}
+                  <span>{isGrabbingFrame ? 'Reading…' : 'Use film frame'}</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => void handleWritePrompt()}
                   disabled={isLoading || isWritingPrompt}
                   className="inline-flex items-center gap-2 rounded-full border border-amber-300/40 bg-amber-300/10 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:border-amber-300/70 hover:bg-amber-300/20 disabled:cursor-not-allowed disabled:opacity-50"
