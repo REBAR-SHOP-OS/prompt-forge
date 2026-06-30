@@ -125,6 +125,70 @@ async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
   return await res.blob()
 }
 
+/**
+ * Loads a (same-origin / proxied) video URL into an offscreen element, seeks to
+ * the first frame, and returns it as a PNG data URL. The URL must be CORS-safe
+ * (via the video-proxy) or the canvas readback will throw a SecurityError.
+ */
+async function captureFirstFrame(url: string): Promise<string> {
+  return await new Promise<string>((resolve, reject) => {
+    const video = document.createElement('video')
+    video.crossOrigin = 'anonymous'
+    video.muted = true
+    video.playsInline = true
+    video.preload = 'auto'
+    video.src = url
+
+    let settled = false
+    const cleanup = () => {
+      video.removeAttribute('src')
+      try { video.load() } catch { /* ignore */ }
+    }
+    const fail = (msg: string) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(new Error(msg))
+    }
+    const timer = window.setTimeout(() => fail('Timed out reading the film frame.'), 15000)
+
+    const grab = () => {
+      if (settled) return
+      try {
+        const w = video.videoWidth
+        const h = video.videoHeight
+        if (!w || !h) { fail('The film clip has no readable frame.'); return }
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) { fail('Could not create a drawing surface.'); return }
+        ctx.drawImage(video, 0, 0, w, h)
+        const dataUrl = canvas.toDataURL('image/png')
+        settled = true
+        window.clearTimeout(timer)
+        cleanup()
+        resolve(dataUrl)
+      } catch {
+        fail("Couldn't read the film frame (the clip may not allow frame capture).")
+      }
+    }
+
+    video.onloadeddata = () => {
+      try {
+        if (video.currentTime === 0) {
+          // Nudge to force a decoded frame on browsers that won't paint t=0.
+          video.currentTime = 0.001
+        } else {
+          video.currentTime = 0
+        }
+      } catch { grab() }
+    }
+    video.onseeked = grab
+    video.onerror = () => fail('Could not load the film clip.')
+  })
+}
+
 async function fileToDataUrl(file: File): Promise<string> {
   return await new Promise((resolve, reject) => {
     const reader = new FileReader()
