@@ -11948,11 +11948,12 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => setIsScenarioDialogOpen(true)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 via-orange-400 to-pink-500 text-zinc-950 shadow-[0_4px_14px_rgba(251,146,60,0.45)] transition hover:from-amber-300 hover:via-orange-300 hover:to-pink-400 hover:shadow-[0_6px_18px_rgba(251,146,60,0.6)]"
+            className="inline-flex h-8 items-center gap-1.5 rounded-full bg-gradient-to-br from-amber-400 via-orange-400 to-pink-500 px-3 text-zinc-950 shadow-[0_4px_14px_rgba(251,146,60,0.45)] transition hover:from-amber-300 hover:via-orange-300 hover:to-pink-400 hover:shadow-[0_6px_18px_rgba(251,146,60,0.6)]"
             aria-label="Write a scenario from your idea"
             title="Write a scenario from your idea"
           >
             <Clapperboard className="h-4 w-4" aria-hidden="true" />
+            <span className="text-xs font-semibold">Scenario</span>
           </button>
         </div>
 
