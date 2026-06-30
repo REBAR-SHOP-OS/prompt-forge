@@ -84,6 +84,7 @@ type Props = {
 type AiReferenceImage = {
   name: string
   dataUrl: string
+  isProduct?: boolean
 }
 
 const MAX_REFERENCE_IMAGES = 4
@@ -315,7 +316,7 @@ export default function AiImageDialog({
       setReferenceImages((prev) =>
         prev.length >= MAX_REFERENCE_IMAGES
           ? prev
-          : [...prev, { name: product.title || 'Product', dataUrl }],
+          : [...prev, { name: product.title || 'Product', dataUrl, isProduct: true }],
       )
       setProductMenuOpen(false)
     } catch (e) {
@@ -334,12 +335,15 @@ export default function AiImageDialog({
     }
     setIsWritingPrompt(true)
     try {
+      const productRef = referenceImages.find((r) => r.isProduct)
       const { data, error: fnError } = await supabase.functions.invoke('write-image-prompt', {
         body: {
           referenceImages: referenceImages.map((r) => r.dataUrl),
           themeDescriptor: theme?.descriptor ?? '',
           themeLabel: theme?.enLabel ?? '',
           existingPrompt: prompt.trim(),
+          includeAdCopy: Boolean(productRef),
+          productName: productRef?.name ?? '',
         },
       })
       if (fnError) {
