@@ -264,6 +264,15 @@ export default function AiImageDialog({
   const [isWritingPrompt, setIsWritingPrompt] = useState(false)
   const [isGrabbingFrame, setIsGrabbingFrame] = useState(false)
 
+  // Guardian: inspects the on-image text (OCR), judges ad/cover suitability,
+  // and can translate the extracted text without replacing the original.
+  const [isInspecting, setIsInspecting] = useState(false)
+  const [inspection, setInspection] = useState<CoverTextInspection | null>(null)
+  const [inspectError, setInspectError] = useState<string | null>(null)
+  const [translateLang, setTranslateLang] = useState('fa')
+  const [translatedText, setTranslatedText] = useState<string | null>(null)
+  const [isTranslating, setIsTranslating] = useState(false)
+
   const [isMaskMode, setIsMaskMode] = useState(false)
   const [brushSize, setBrushSize] = useState(36)
   const [hasMask, setHasMask] = useState(false)
