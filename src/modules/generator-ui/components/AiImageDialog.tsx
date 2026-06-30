@@ -285,6 +285,10 @@ export default function AiImageDialog({
   const [productLoadingId, setProductLoadingId] = useState<string | null>(null)
   const [brokenProductIds, setBrokenProductIds] = useState<Set<string>>(new Set())
   const [isWritingPrompt, setIsWritingPrompt] = useState(false)
+  const [promptTextMenuOpen, setPromptTextMenuOpen] = useState(false)
+  const [taglines, setTaglines] = useState<string[]>([])
+  const [isLoadingTaglines, setIsLoadingTaglines] = useState(false)
+  const [taglineError, setTaglineError] = useState<string | null>(null)
   const [isGrabbingFrame, setIsGrabbingFrame] = useState(false)
 
   // Guardian: inspects the on-image text (OCR), judges ad/cover suitability,
