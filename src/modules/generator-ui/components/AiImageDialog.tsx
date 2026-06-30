@@ -502,7 +502,7 @@ export default function AiImageDialog({
           themeLabel: theme?.enLabel ?? '',
           existingPrompt: prompt.trim(),
           includeAdCopy: Boolean(productRef),
-          productName: productRef?.name ?? '',
+          productName: stripProductCode(productRef?.name ?? ''),
         },
       })
       if (fnError) {
