@@ -1316,6 +1316,113 @@ export default function AiImageDialog({
               </div>
             ) : null}
 
+            {inspectError ? (
+              <div className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
+                {inspectError}
+              </div>
+            ) : null}
+
+            {inspection ? (
+              <div className="space-y-3 rounded-xl border border-amber-300/25 bg-amber-300/[0.04] p-3">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-100">
+                  <ShieldCheck className="h-4 w-4" />
+                  Cover text guardian
+                </div>
+
+                {inspection.hasText ? (
+                  <>
+                    <div className="flex flex-wrap gap-2">
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                          inspection.isAppropriate
+                            ? 'bg-emerald-500/15 text-emerald-200 border border-emerald-400/30'
+                            : 'bg-rose-500/15 text-rose-200 border border-rose-400/30'
+                        }`}
+                      >
+                        {inspection.isAppropriate ? <ShieldCheck className="h-3 w-3" /> : <ShieldAlert className="h-3 w-3" />}
+                        {inspection.isAppropriate ? 'Appropriate' : 'Inappropriate'}
+                      </span>
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                          inspection.isAdSuitable
+                            ? 'bg-emerald-500/15 text-emerald-200 border border-emerald-400/30'
+                            : 'bg-amber-500/15 text-amber-200 border border-amber-400/30'
+                        }`}
+                      >
+                        {inspection.isAdSuitable ? 'Ad / cover suitable' : 'Not cover-suitable'}
+                      </span>
+                      {inspection.language ? (
+                        <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] text-zinc-300">
+                          {inspection.language}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div>
+                      <div className="mb-1 text-[11px] uppercase tracking-wide text-zinc-400">Text on image</div>
+                      <p className="select-text whitespace-pre-wrap rounded-md border border-white/10 bg-black/30 px-2.5 py-2 text-sm text-zinc-100">
+                        {inspection.text}
+                      </p>
+                    </div>
+
+                    {inspection.reason ? (
+                      <p className="text-xs text-zinc-300">{inspection.reason}</p>
+                    ) : null}
+
+                    {inspection.suggestions.length > 0 ? (
+                      <div>
+                        <div className="mb-1 text-[11px] uppercase tracking-wide text-zinc-400">Better tagline ideas</div>
+                        <ul className="list-disc space-y-0.5 pl-5 text-xs text-zinc-200">
+                          {inspection.suggestions.map((s, i) => (
+                            <li key={i}>{s}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <Languages className="h-3.5 w-3.5 text-zinc-400" />
+                      <select
+                        value={translateLang}
+                        onChange={(e) => setTranslateLang(e.target.value)}
+                        disabled={isTranslating}
+                        className="rounded-md border border-white/10 bg-black/40 px-2 py-1 text-xs text-zinc-200 outline-none"
+                      >
+                        {GUARDIAN_LANGS.map((l) => (
+                          <option key={l.code} value={l.code}>{l.label}</option>
+                        ))}
+                      </select>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => void handleTranslateCoverText()}
+                        disabled={isTranslating}
+                      >
+                        {isTranslating ? <LoaderCircle className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+                        Translate
+                      </Button>
+                    </div>
+
+                    {translatedText ? (
+                      <div>
+                        <div className="mb-1 text-[11px] uppercase tracking-wide text-zinc-400">Translation</div>
+                        <p
+                          dir="auto"
+                          className="select-text whitespace-pre-wrap rounded-md border border-white/10 bg-black/30 px-2.5 py-2 text-sm text-zinc-100"
+                        >
+                          {translatedText}
+                        </p>
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="text-xs text-zinc-300">No readable text was found composited on this image.</p>
+                )}
+              </div>
+            ) : null}
+
+
+
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex gap-2">
                 <Button
