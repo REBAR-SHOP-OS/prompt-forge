@@ -80,7 +80,7 @@ type Props = {
   onSaved: (row: AiImageSavedRow) => void
   products?: AiProductOption[]
   productsLoading?: boolean
-  onProductsRefresh?: () => Promise<unknown> | void
+  onProductsRefresh?: () => Promise<AiProductOption[] | unknown> | AiProductOption[] | unknown
 }
 
 type AiReferenceImage = {
@@ -312,8 +312,27 @@ export default function AiImageDialog({
     }
     setProductLoadingId(product.id)
     try {
-      const res = await fetch(product.url)
-      if (!res.ok) throw new Error('Could not load the product image.')
+      let currentProduct = product
+      let res: Response | null = null
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          res = await fetch(currentProduct.url)
+          if (res.ok) break
+          throw new Error('Could not load the product image.')
+        } catch (fetchErr) {
+          if (attempt > 0 || !onProductsRefresh) throw fetchErr
+          const refreshed = await onProductsRefresh()
+          if (Array.isArray(refreshed)) {
+            const fresh = refreshed.find((p) => p && typeof p === 'object' && 'id' in p && p.id === product.id) as AiProductOption | undefined
+            if (fresh?.url) {
+              currentProduct = { ...currentProduct, ...fresh }
+              continue
+            }
+          }
+          throw fetchErr
+        }
+      }
+      if (!res?.ok) throw new Error('Could not load the product image.')
       const blob = await res.blob()
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader()
@@ -327,13 +346,10 @@ export default function AiImageDialog({
       setReferenceImages((prev) =>
         prev.length >= MAX_REFERENCE_IMAGES
           ? prev
-          : [...prev, { name: product.title || 'Product', dataUrl, isProduct: true }],
+          : [...prev, { name: currentProduct.title || 'Product', dataUrl, isProduct: true }],
       )
       setProductMenuOpen(false)
     } catch (e) {
-      try {
-        await onProductsRefresh?.()
-      } catch { /* ignore refresh errors; surface the original image-load problem */ }
       setError(e instanceof Error ? e.message : 'Failed to add product image.')
     } finally {
       setProductLoadingId(null)
