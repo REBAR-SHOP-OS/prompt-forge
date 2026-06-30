@@ -76,6 +76,9 @@ Deno.serve(async (req) => {
     const existingPrompt =
       typeof body?.existingPrompt === "string" ? body.existingPrompt.trim().slice(0, 2000) : "";
     const includeAdCopy = body?.includeAdCopy === true;
+    const mode = body?.mode === "taglines" ? "taglines" : "prompt";
+    const tagline =
+      typeof body?.tagline === "string" ? body.tagline.trim().slice(0, 120) : "";
     const productName =
       typeof body?.productName === "string" ? body.productName.trim().slice(0, 120) : "";
     const referenceImages: string[] = Array.isArray(body?.referenceImages)
