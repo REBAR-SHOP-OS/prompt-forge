@@ -9889,6 +9889,7 @@ export default function DashboardPage() {
         userId={userId}
         defaultAspect={lockedProjectRatio ?? aspectRatio}
         productsLoading={archiveLoading}
+        filmFrameSourceUrl={aiDialogMode === 'cover' ? coverFilmFrameUrl : null}
         onProductsRefresh={async () => {
           const rows = await loadProductImages()
           return rows.map((p) => ({
