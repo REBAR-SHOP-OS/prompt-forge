@@ -1,40 +1,25 @@
-# Fix preview video lag
+## Goal
+Make voiceover generation work again. Keep the current UI, character voices (Puck, Leda, etc.), tones, and preview samples exactly as they are.
 
-I found more likely lag sources besides the old global progress ticker. The fix should stay frontend-only and avoid touching generation, auth, storage, or backend code.
+## Root cause
+The `tts-generate` edge function calls Google's Gemini TTS API directly using the `GEMINI_API_KEY` secret. The edge logs show every request failing with:
 
-## 1. Stop transition icons from re-rendering React at animation-frame speed
+```text
+400 — "API key not valid. Please pass a valid API key." (API_KEY_INVALID)
+```
 
-File: `src/modules/generator-ui/components/TransitionPreview.tsx`
+The configured `GEMINI_API_KEY` is invalid or expired. Nothing is wrong with the function code — it just has a dead key. So no code changes are needed; the key must be replaced.
 
-- The transition chips in the right rail currently run a `requestAnimationFrame` loop that calls `setT(progress)` every frame.
-- Multiple mounted transition icons can force React updates while the large Preview video is playing.
-- Replace the per-frame state update with direct DOM style updates via refs (`aRef`, `bRef`).
-- Optionally throttle icon animation to ~24fps because these are small decorative thumbnails.
-- Keep the same visual output and API.
+## Fix (the only required step)
+1. Open the secure secret form so you can paste a **valid Google AI Studio API key** into `GEMINI_API_KEY`.
+   - Get the key from Google AI Studio → "Get API key" (aistudio.google.com/apikey).
+   - The key must belong to a project where the Generative Language API is enabled and the **Gemini 2.5 Flash Preview TTS** model (`gemini-2.5-flash-preview-tts`) is available.
+2. After you save the new key, I verify the fix by calling `tts-generate` directly with a short test line and confirming it returns audio (HTTP 200 with `audioBase64`) instead of the 400 error.
 
-## 2. Make rail/card video thumbnails static when a poster exists
+## Verification
+- Direct edge-function smoke test (`tts-generate`) returns audio, not a provider error.
+- "Generate voiceover" in the dialog produces a playable clip.
 
-File: `src/modules/generator-ui/components/PlayableVideo.tsx`
-
-- In `thumbnail` mode, if a poster exists and the caller did not request `controls` or `autoPlay`, render only the poster image.
-- This prevents many hidden/paused `<video>` elements from competing with the main Preview video for decoder and network resources.
-- Keep the existing video fallback for cards with no poster, and for any explicit interactive/autoplay usage.
-
-## 3. Remove controls from pending-card thumbnails
-
-File: `src/modules/generator-ui/pages/DashboardPage.tsx`
-
-- The small right-rail working clip thumbnails do not need independent video controls while the large Preview is open.
-- Remove the `controls` prop from those thumbnail `PlayableVideo` cards and make the tile video pointer-passive.
-- Clicking the card should still select it for the main Preview exactly as before.
-
-## 4. Prevent ResizeObserver from causing duplicate parent re-renders
-
-File: `src/modules/generator-ui/pages/DashboardPage.tsx`
-
-- Guard `setPreviewMaxHeightPx` and `setPreviewVideoSize` so they only update state when the measured value actually changes.
-- This avoids expensive `DashboardPage` re-renders from tiny/duplicate layout observations during playback.
-
-## Expected result
-
-The main Preview video should no longer stutter from decorative React animation loops, thumbnail video decoders, or redundant layout-state updates. Final film generation remains unchanged.
+## Notes
+- No code, UI, voice catalog, or preview-sample changes — those all keep working once the key is valid.
+- If the new key still fails, the most likely causes are: the Generative Language API not enabled on that Google project, billing not set up, or the TTS model not enabled for that key — I'll surface the exact provider message from the logs to pinpoint it.
