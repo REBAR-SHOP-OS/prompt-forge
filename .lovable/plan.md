@@ -1,32 +1,41 @@
-# Add more graphic themes to the theme picker
+# Add "Use film's first frame" button to the cover dialog
 
 ## Goal
-Extend the "Pick a theme" menu in the "Generate image with AI" dialog with additional professional graphic themes, each with an English label, a descriptor for prompt generation, and a high-quality preview image — matching the existing pattern exactly.
+In the **Generate image with AI** dialog (used to make a film cover), add a new icon button next to *Upload image / Pick a theme / Select product / Write prompt*. Clicking it grabs the **first frame of the current project's film** and adds it as a reference image, so the user can build a cover from the actual opening shot of the film.
 
-## New themes to add (8)
-| ID | Label | Descriptor focus |
-|----|-------|------------------|
-| `industrial-grunge` | Industrial Grunge | raw concrete, steel, exposed pipes, gritty workshop, hard directional light |
-| `golden-hour` | Golden Hour | warm sunset glow, long soft shadows, backlit rim light, cinematic warmth |
-| `studio-gradient` | Studio Gradient | smooth colored gradient backdrop, soft spotlight, modern commercial pop |
-| `nature-fresh` | Nature Fresh | lush greenery, water droplets, dewy daylight, clean organic freshness |
-| `tech-futuristic` | Tech / Futuristic | sleek holographic UI accents, dark glass, blue glow, high-tech product feel |
-| `bold-typographic` | Bold Typographic | strong geometric color blocks, Swiss/Bauhaus layout, poster ad energy |
-| `warm-minimal` | Warm Minimal | beige/sand tones, soft natural shadows, cozy minimalist studio |
-| `dramatic-spotlight` | Dramatic Spotlight | single hard spotlight, deep black background, theatrical product reveal |
+## How it works
+The film's opening shot is the first clip already shown in the right panel (`displayedVideos[0]`). We extract its frame at `t=0`, client-side, and inject it as a reference image into the dialog — exactly like "Select product" does, but sourced from the film.
 
-(Final list can be trimmed/tuned; all English labels per project convention.)
+```text
+[Pending column film] --> first clip video URL
+        |
+        v
+DashboardPage passes filmFrameSourceUrl prop to AiImageDialog
+        |
+        v
+New "Film frame" button -> hidden <video> seeks to 0 -> canvas.drawImage
+        |
+        v
+canvas.toDataURL() -> added to referenceImages[]  (same path as products)
+```
 
-## Implementation
-1. Generate one preview JPG per new theme into `src/assets/theme-previews/` (consistent product-on-backdrop style, matching existing previews).
-2. In `src/modules/generator-ui/components/AiImageDialog.tsx`:
-   - Add the new image imports alongside the existing theme imports (lines ~20-33).
-   - Append the new entries to the `THEME_OPTIONS` array (after line 51), following the exact existing object shape (`id`, `faLabel`, `enLabel`, `descriptor`, `image`).
-3. No other logic changes — the picker, prompt-descriptor injection, and `write-image-prompt` flow already consume `THEME_OPTIONS` generically.
+## Changes
 
-## Verification
-- `bun run tsc --noEmit` clean.
-- Open the dialog → "Pick a theme" shows the new themes with previews and they scroll/select correctly.
+### 1. `DashboardPage.tsx`
+- Compute a memo `coverFilmFrameUrl`: the playable/signed URL of the first available film clip for the current cover scope — `displayedVideos.find(v => v.video?.storage_path)?.video?.storage_path`, signed via the existing video-proxy resolver (`proxiedVideoUrl`). Null when no clip exists.
+- Pass it to `<AiImageDialog filmFrameSourceUrl={coverFilmFrameUrl} />`.
 
-## Notes / question
-This only touches the theme list + assets (presentation). If you have specific themes in mind (e.g. construction/urban industrial focus for your domain), tell me and I'll use exactly those instead of the suggested set.
+### 2. `AiImageDialog.tsx`
+- Add optional prop `filmFrameSourceUrl?: string | null`.
+- Add a new pill button (icon: `Film` or `Clapperboard` from lucide-react) labeled **"Use film frame"**, placed in the same button row, disabled when there's no `filmFrameSourceUrl` or the reference slots are full.
+- Handler `handleUseFilmFrame()`:
+  - Resolve the URL through the existing proxy path (`proxiedVideoUrl`) so the `<video>` is same-origin and the canvas is **not tainted** (required for `toDataURL`).
+  - Create an offscreen `<video>` (`crossOrigin="anonymous"`, `muted`, `playsInline`, `preload="auto"`), load the URL, wait for `loadeddata`, set `currentTime = 0`, wait for `seeked`.
+  - Draw the frame to a canvas at the video's natural size, `toDataURL('image/png')`, and add it to `referenceImages` as `{ name: 'Film first frame', dataUrl }` (reuse the existing MAX_REFERENCE_IMAGES guard).
+  - Surface friendly errors via the existing `setError` (e.g. "Couldn't read the film frame").
+
+## Notes / safety
+- No backend, schema, auth, or storage-policy changes.
+- Frame extraction is purely client-side and reuses the existing `video-proxy` mechanism already trusted elsewhere, so no new CORS surface.
+- The button no-ops gracefully (disabled) when the project has no film clips yet.
+- Cover-saving flow is unchanged — the new button only seeds a reference image; the user still presses Generate.

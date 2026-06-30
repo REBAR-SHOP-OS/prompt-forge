@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { LoaderCircle, Sparkles, Wand2, RefreshCw, Check, X, Brush, Eraser, ImagePlus, Download, Palette, Package } from 'lucide-react'
+import { LoaderCircle, Sparkles, Wand2, RefreshCw, Check, X, Brush, Eraser, ImagePlus, Download, Palette, Package, Clapperboard } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { supabase } from '@/integrations/supabase/client'
 import { normalizeImageAspect } from '@/modules/generator-ui/lib/normalizeImageAspect'
+import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 
 import themeMinimalist from '@/assets/theme-previews/minimalist.jpg'
 import themeDarkMoody from '@/assets/theme-previews/dark-moody.jpg'
@@ -97,6 +98,8 @@ type Props = {
   products?: AiProductOption[]
   productsLoading?: boolean
   onProductsRefresh?: () => Promise<AiProductOption[] | unknown> | AiProductOption[] | unknown
+  /** Playable URL of the current project's film opening clip, used to grab its first frame. */
+  filmFrameSourceUrl?: string | null
 }
 
 type AiReferenceImage = {
@@ -120,6 +123,70 @@ function aspectBoxClass(a: AiImageAspect) {
 async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
   const res = await fetch(dataUrl)
   return await res.blob()
+}
+
+/**
+ * Loads a (same-origin / proxied) video URL into an offscreen element, seeks to
+ * the first frame, and returns it as a PNG data URL. The URL must be CORS-safe
+ * (via the video-proxy) or the canvas readback will throw a SecurityError.
+ */
+async function captureFirstFrame(url: string): Promise<string> {
+  return await new Promise<string>((resolve, reject) => {
+    const video = document.createElement('video')
+    video.crossOrigin = 'anonymous'
+    video.muted = true
+    video.playsInline = true
+    video.preload = 'auto'
+    video.src = url
+
+    let settled = false
+    const cleanup = () => {
+      video.removeAttribute('src')
+      try { video.load() } catch { /* ignore */ }
+    }
+    const fail = (msg: string) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(new Error(msg))
+    }
+    const timer = window.setTimeout(() => fail('Timed out reading the film frame.'), 15000)
+
+    const grab = () => {
+      if (settled) return
+      try {
+        const w = video.videoWidth
+        const h = video.videoHeight
+        if (!w || !h) { fail('The film clip has no readable frame.'); return }
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) { fail('Could not create a drawing surface.'); return }
+        ctx.drawImage(video, 0, 0, w, h)
+        const dataUrl = canvas.toDataURL('image/png')
+        settled = true
+        window.clearTimeout(timer)
+        cleanup()
+        resolve(dataUrl)
+      } catch {
+        fail("Couldn't read the film frame (the clip may not allow frame capture).")
+      }
+    }
+
+    video.onloadeddata = () => {
+      try {
+        if (video.currentTime === 0) {
+          // Nudge to force a decoded frame on browsers that won't paint t=0.
+          video.currentTime = 0.001
+        } else {
+          video.currentTime = 0
+        }
+      } catch { grab() }
+    }
+    video.onseeked = grab
+    video.onerror = () => fail('Could not load the film clip.')
+  })
 }
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -166,6 +233,7 @@ export default function AiImageDialog({
   products = [],
   productsLoading = false,
   onProductsRefresh,
+  filmFrameSourceUrl = null,
 }: Props) {
   const [aspect, setAspect] = useState<AiImageAspect>(defaultAspect)
   const [prompt, setPrompt] = useState('')
@@ -182,6 +250,7 @@ export default function AiImageDialog({
   const [productLoadingId, setProductLoadingId] = useState<string | null>(null)
   const [brokenProductIds, setBrokenProductIds] = useState<Set<string>>(new Set())
   const [isWritingPrompt, setIsWritingPrompt] = useState(false)
+  const [isGrabbingFrame, setIsGrabbingFrame] = useState(false)
 
   const [isMaskMode, setIsMaskMode] = useState(false)
   const [brushSize, setBrushSize] = useState(36)
@@ -369,6 +438,33 @@ export default function AiImageDialog({
       setError(e instanceof Error ? e.message : 'Failed to add product image.')
     } finally {
       setProductLoadingId(null)
+    }
+  }
+
+  async function handleUseFilmFrame() {
+    setError(null)
+    if (!filmFrameSourceUrl) {
+      setError('No film clip available yet. Add a clip to your project first.')
+      return
+    }
+    if (referenceImages.length >= MAX_REFERENCE_IMAGES) {
+      setError(`You can add up to ${MAX_REFERENCE_IMAGES} reference images.`)
+      return
+    }
+    setIsGrabbingFrame(true)
+    try {
+      // Resolve through the same-origin video-proxy so the canvas is not tainted.
+      const playUrl = await proxiedVideoUrl(filmFrameSourceUrl)
+      const dataUrl = await captureFirstFrame(playUrl)
+      setReferenceImages((prev) =>
+        prev.length >= MAX_REFERENCE_IMAGES
+          ? prev
+          : [...prev, { name: 'Film first frame', dataUrl }],
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't read the film frame.")
+    } finally {
+      setIsGrabbingFrame(false)
     }
   }
 
@@ -876,6 +972,20 @@ export default function AiImageDialog({
                     )}
                   </PopoverContent>
                 </Popover>
+                <button
+                  type="button"
+                  onClick={() => void handleUseFilmFrame()}
+                  disabled={isLoading || isGrabbingFrame || !filmFrameSourceUrl || referenceImages.length >= MAX_REFERENCE_IMAGES}
+                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  title={filmFrameSourceUrl ? "Use the first frame of your film as a reference" : "No film clip available yet"}
+                >
+                  {isGrabbingFrame ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Clapperboard className="h-4 w-4" />
+                  )}
+                  <span>{isGrabbingFrame ? 'Reading…' : 'Use film frame'}</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => void handleWritePrompt()}
