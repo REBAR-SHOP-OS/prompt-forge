@@ -701,7 +701,7 @@ export default function AiImageDialog({
                         </button>
                       ) : null}
                     </div>
-                    <div className="grid max-h-80 grid-cols-2 gap-2 overflow-y-auto pr-1">
+                    <div className="grid max-h-96 grid-cols-2 gap-3 overflow-y-auto pr-1">
                       {THEME_OPTIONS.map((t) => {
                         const active = selectedTheme === t.id
                         return (
@@ -712,34 +712,40 @@ export default function AiImageDialog({
                               setSelectedTheme(t.id)
                               setThemeMenuOpen(false)
                             }}
-                            className={`group flex flex-col gap-1.5 rounded-xl border p-1.5 text-left transition ${
+                            className={`group relative block overflow-hidden rounded-xl border text-left transition ${
                               active
-                                ? 'border-amber-300/70 bg-amber-300/10'
-                                : 'border-white/10 hover:border-white/25 hover:bg-white/[0.05]'
+                                ? 'border-amber-300/80 ring-2 ring-amber-300/50'
+                                : 'border-white/10 hover:border-white/30'
                             }`}
                           >
-                            <span className="relative block h-16 w-full overflow-hidden rounded-lg border border-white/10">
-                              <span
-                                className="absolute inset-0"
-                                style={{ background: t.swatch }}
+                            <span className="relative block aspect-[4/5] w-full overflow-hidden">
+                              <img
+                                src={t.image}
+                                alt={t.enLabel}
+                                loading="lazy"
+                                width={512}
+                                height={640}
+                                className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-105"
                               />
+                              <span className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
                               {active ? (
-                                <span className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-black">
+                                <span className="absolute right-2 top-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-black shadow">
                                   <Check className="h-3.5 w-3.5" />
                                 </span>
                               ) : null}
-                            </span>
-                            <span
-                              className={`block truncate text-xs font-medium ${
-                                active ? 'text-amber-100' : 'text-zinc-200'
-                              }`}
-                            >
-                              {t.enLabel}
+                              <span
+                                className={`absolute inset-x-0 bottom-0 truncate px-2.5 pb-2 pt-6 text-xs font-semibold tracking-tight ${
+                                  active ? 'text-amber-100' : 'text-white'
+                                }`}
+                              >
+                                {t.enLabel}
+                              </span>
                             </span>
                           </button>
                         )
                       })}
                     </div>
+
                   </PopoverContent>
                 </Popover>
                 <Popover open={productMenuOpen} onOpenChange={setProductMenuOpen}>
