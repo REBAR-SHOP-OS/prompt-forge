@@ -103,7 +103,97 @@ Deno.serve(async (req) => {
       });
     }
 
-    const instructionParts: string[] = [];
+    // ----- Mode: generate several advertising taglines -----
+    if (mode === "taglines") {
+      const tParts: string[] = [];
+      if (productName) {
+        tParts.push(`Write advertising taglines for the product "${productName}".`);
+      }
+      if (themeDescriptor || themeLabel) {
+        tParts.push(`Match this visual theme/mood: ${themeLabel ? themeLabel + " — " : ""}${themeDescriptor}.`);
+      }
+      if (existingPrompt) {
+        tParts.push(`Context from the current prompt: "${existingPrompt}".`);
+      }
+      if (referenceImages.length > 0) {
+        tParts.push("Base the taglines on the attached reference image(s).");
+      }
+      tParts.push("Return ONLY the JSON array of 5 taglines now.");
+      const tInstruction = tParts.join(" ");
+
+      const tUserContent: unknown =
+        referenceImages.length > 0
+          ? [
+              { type: "text", text: tInstruction },
+              ...referenceImages.map((url) => ({ type: "image_url", image_url: { url } })),
+            ]
+          : tInstruction;
+
+      const tResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            { role: "system", content: TAGLINE_SYSTEM_PROMPT },
+            { role: "user", content: tUserContent },
+          ],
+        }),
+      });
+
+      if (tResp.status === 429) {
+        return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (tResp.status === 402) {
+        return new Response(JSON.stringify({ error: "AI credits exhausted. Add credits to continue." }), {
+          status: 402,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (!tResp.ok) {
+        const text = await tResp.text().catch(() => "");
+        console.error("write-image-prompt taglines gateway error", tResp.status, text);
+        return new Response(JSON.stringify({ error: "AI gateway error" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const tData = await tResp.json();
+      const tRaw: string = (tData?.choices?.[0]?.message?.content ?? "").trim();
+      const jsonText = tRaw.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+      let taglines: string[] = [];
+      try {
+        const parsed = JSON.parse(jsonText);
+        if (Array.isArray(parsed)) {
+          taglines = parsed.filter((s): s is string => typeof s === "string").map((s) => s.trim()).filter(Boolean);
+        }
+      } catch {
+        // Fallback: split lines if the model didn't return clean JSON.
+        taglines = jsonText
+          .split("\n")
+          .map((l) => l.replace(/^[-*\d.)\s"]+|["]+$/g, "").trim())
+          .filter(Boolean);
+      }
+      taglines = taglines.slice(0, 6);
+      if (taglines.length === 0) {
+        return new Response(JSON.stringify({ error: "Could not generate taglines. Try again." }), {
+          status: 502,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ taglines }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (existingPrompt) {
       instructionParts.push(`The user's current prompt draft / intent: "${existingPrompt}".`);
     }
