@@ -402,6 +402,8 @@ export default function AiImageDialog({
       setIsGrabbingFrame(false)
     }
   }
+
+  function handleProductMenuOpenChange(nextOpen: boolean) {
     setProductMenuOpen(nextOpen)
     if (nextOpen) {
       void onProductsRefresh?.()
