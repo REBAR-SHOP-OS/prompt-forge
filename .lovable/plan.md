@@ -1,30 +1,55 @@
-## Add text labels to three icon-only gradient buttons
+## Problem
 
-### What
-The user circled three small circular gradient buttons at the bottom of the prompt bar that currently show only icons:
-1. **Reframe** (teal/cyan gradient, Crop icon)
-2. **Generate image with AI** (purple/fuchsia gradient, Sparkles icon)
-3. **Write scenario** (orange/amber gradient, Scenario/Story icon)
+When a video is playing in the **Preview** panel, it stutters/lags — but only while a job is active (note the “PENDING 1” job in the screenshot).
 
-These need visible text labels so users understand their purpose.
+## Root cause
 
-### How
-In `src/modules/generator-ui/pages/DashboardPage.tsx`:
+In `src/modules/generator-ui/pages/DashboardPage.tsx` (lines ~5936–5948) there is a page-wide "smooth progress ticker":
 
-1. **Reframe button** (~line 11927): Change from `h-8 w-8` to a wider pill shape (e.g., `h-8 px-3` or `h-9 px-3`). Add text span "Reframe" next to the Crop icon. Keep the gradient background, rounded-full shape, shadow, and hover states.
+```ts
+const [, setProgressTick] = useState(0)
+useEffect(() => {
+  if (isReadOnlyProject) return
+  const hasActive = generatedVideos.some((job) => !isTerminalStatus(job.status))
+  if (!hasActive) return
+  const id = window.setInterval(() => setProgressTick((tick) => tick + 1), 1000)
+  return () => window.clearInterval(id)
+}, [generatedVideos, isReadOnlyProject])
+```
 
-2. **AI Image button** (~line 11936): Same treatment. Change to pill shape and add text span "AI Image" (or "Image") next to the Sparkles icon. Preserve gradient, shadow, and hover states.
+While any job is pending/processing, this calls `setState` **once per second**, which re-renders the entire 13k-line `DashboardPage` component — including the Preview player subtree (`VideoWithSoundtrack` / `SequentialClipPlayer`) and its `<video>`. That once-per-second forced re-render of the heavy tree is exactly the periodic hitch the user sees during playback. As soon as the job finishes, the ticker stops and playback is smooth — confirming the diagnosis.
 
-3. **Scenario button** (~line 11946): Same treatment. Add text span "Scenario" next to its icon. Preserve gradient, shadow, and hover states.
+This is the same class of bug already solved elsewhere in the file (the `SequentialClipPlayer` playhead was deliberately decoupled from React render to stop stutter); the page-level progress ticker re-introduced it.
 
-### Styling considerations
-- Use `inline-flex items-center gap-1.5` for icon+text alignment.
-- Keep `rounded-full` (pill shape) instead of small circle.
-- Maintain existing `aria-label` and `title` attributes for accessibility.
-- Text should use the same color as the active state (white for purple/teal, `text-zinc-950` for orange).
-- Ensure the prompt bar layout still fits without wrapping on typical desktop widths; use responsive gap/spacing if needed.
+## Fix (root cause, scoped to progress UI only)
 
-### Files changed
-- `src/modules/generator-ui/pages/DashboardPage.tsx` only.
+Decouple the per-second progress animation from the whole-page render so only the tiny progress widgets re-render — never the preview player.
 
-No backend, auth, storage, or dependency changes.
+1. **Remove the page-wide ticker** (`setProgressTick` state + its `useEffect`) at lines ~5936–5948.
+
+2. **Add a small isolated `LiveJobProgress` component** (new file `src/modules/generator-ui/components/LiveJobProgress.tsx`) that:
+   - owns its own `useState` + 1s `setInterval` (only runs while the job is non-terminal),
+   - computes the percent via the existing module-level `getJobProgressPercent`,
+   - exposes the value through a render prop (`children: (pct: number | null) => ReactNode`).
+
+   Because each instance holds its own state, only that small widget re-renders each second — the preview `<video>` is untouched.
+
+3. **Use `LiveJobProgress` at the three progress display sites** in `DashboardPage.tsx` that currently relied on the page re-render:
+   - the Preview circular progress ring (~line 10544),
+   - the pending-card percent label (~line 11276),
+   - the pending-card progress bar (~line 11285).
+
+   To keep `getJobProgressPercent` (and its module `progressMaxRef`) as the single source of truth, export it from `DashboardPage.tsx` (or move it into a tiny shared `lib/jobProgress.ts` imported by both) so the new component reuses the exact same calculation.
+
+## Result
+
+- Progress bars/rings still advance smoothly once per second between API polls.
+- The Preview video no longer re-renders every second, eliminating the playback lag.
+- No change to generation, audio, merge, or any backend logic.
+
+## Verification
+
+- `tsgo` typecheck clean.
+- Manually: start/have an active job, open Preview, play a clip — confirm smooth playback while the pending progress still animates.
+</content>
+<parameter name="summary">Fix preview playback lag caused by a page-wide 1s progress ticker re-rendering the whole DashboardPage; isolate the ticking into a small per-job progress component.
