@@ -168,6 +168,7 @@ export default function AiImageDialog({
   products = [],
   productsLoading = false,
   onProductsRefresh,
+  filmFrameSourceUrl = null,
 }: Props) {
   const [aspect, setAspect] = useState<AiImageAspect>(defaultAspect)
   const [prompt, setPrompt] = useState('')
