@@ -1,14 +1,27 @@
 ## Goal
-Tidy the four action icons in the "Generate image with AI" dialog so they no longer overlap each other or the helper text.
+When "Write prompt" generates an image prompt for a product, the prompt should also describe a short **advertising text (tagline) rendered on the image**. That overlay text must be purely promotional — no factual claims, no guarantees/warranties, no superlatives that assert proof.
 
-## Problem
-In `src/modules/generator-ui/components/AiImageDialog.tsx`, the buttons **Upload image**, **Pick a theme**, **Select product**, and **Write prompt** are all absolutely positioned over the textarea with fixed offsets (`left-3`, `left-[8.5rem]`, `left-[15rem]`, `right-3`). Hardcoded offsets break when labels change (e.g. theme name) and the row collides with the "Add up to 4 reference images…" text.
+## Where
+The behavior lives in the `write-image-prompt` edge function (`supabase/functions/write-image-prompt/index.ts`), which builds the system + instruction sent to the AI. A small signal is added from the client (`AiImageDialog.tsx`).
 
-## Fix (UI only)
-- Remove the absolute positioning from the four buttons and the extra `pb-14` padding on the `Textarea`.
-- Wrap the four buttons in a single `flex flex-wrap items-center gap-2` container placed directly **below** the textarea, so they flow naturally and wrap on narrow widths instead of overlapping.
-- Keep each button's existing styling, icons, Popover wrappers, handlers, and disabled logic intact — only the layout container/positioning changes.
-- Keep the helper text / reference-image list below the button row with proper spacing so nothing overlaps.
+## Changes
 
-## Scope
-Only `AiImageDialog.tsx` presentation markup. No logic, state, edge function, or data changes.
+### 1. Client — `AiImageDialog.tsx` (`handleWritePrompt`)
+- Detect whether a product is part of the references (the dialog already tracks product references). Pass a new flag `includeAdCopy: true` (and optionally the product title) in the `supabase.functions.invoke('write-image-prompt', { body: ... })` call so the function knows to request on-image ad text.
+
+### 2. Edge function — `write-image-prompt/index.ts`
+- Read the new optional `includeAdCopy` (boolean) and `productName` (string) from the body.
+- Extend `SYSTEM_PROMPT` / instruction so that when `includeAdCopy` is true, the final image prompt explicitly includes a short, legible **advertising headline/tagline composited onto the image** (good placement, readable typography, fits the chosen aspect ratio).
+- Add strict guardrails for that on-image text:
+  - Promotional/brand-style tone only (e.g. evocative tagline).
+  - **No factual or performance claims** (no "strongest", "best", "#1", "certified", numbers/specs presented as fact).
+  - **No guarantees / warranties** ("guaranteed", "lifetime warranty", "100%", "risk-free", etc.).
+  - Keep it short (a few words), in the same language as the existing prompt text, English by default.
+- Keep current behavior unchanged when `includeAdCopy` is false (cloud/theme/reference-only prompts still work).
+
+### 3. Verify
+- Call the deployed function via the edge-function test tool with `includeAdCopy: true` + a sample product/theme and confirm the returned prompt mentions an on-image tagline and contains no claim/guarantee wording.
+
+## Technical notes
+- This is a prompt-content change only; no schema, auth, storage, or generation-pipeline changes.
+- Uses the existing Lovable AI Gateway call (`google/gemini-2.5-flash`) already in the function.
