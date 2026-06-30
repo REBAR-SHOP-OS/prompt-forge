@@ -11937,11 +11937,12 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => { setAiDialogMode('frame'); setIsAiImageDialogOpen(true) }}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-fuchsia-500 via-purple-500 to-pink-500 text-white shadow-[0_4px_14px_rgba(217,70,239,0.45)] transition hover:from-fuchsia-400 hover:via-purple-400 hover:to-pink-400 hover:shadow-[0_6px_18px_rgba(217,70,239,0.6)]"
+            className="inline-flex h-8 items-center gap-1.5 rounded-full bg-gradient-to-br from-fuchsia-500 via-purple-500 to-pink-500 px-3 text-white shadow-[0_4px_14px_rgba(217,70,239,0.45)] transition hover:from-fuchsia-400 hover:via-purple-400 hover:to-pink-400 hover:shadow-[0_6px_18px_rgba(217,70,239,0.6)]"
             aria-label="Generate image with AI"
             title="Generate image with AI (Nano Banana)"
           >
             <Sparkles className="h-4 w-4" aria-hidden="true" />
+            <span className="text-xs font-semibold">AI Image</span>
           </button>
 
           <button
