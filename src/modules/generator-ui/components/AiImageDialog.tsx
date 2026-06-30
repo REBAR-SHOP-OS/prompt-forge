@@ -17,40 +17,40 @@ import { Textarea } from '@/components/ui/textarea'
 import { supabase } from '@/integrations/supabase/client'
 import { normalizeImageAspect } from '@/modules/generator-ui/lib/normalizeImageAspect'
 
-type ThemeOption = { id: string; faLabel: string; enLabel: string; descriptor: string; swatch: string }
+import themeMinimalist from '@/assets/theme-previews/minimalist.jpg'
+import themeDarkMoody from '@/assets/theme-previews/dark-moody.jpg'
+import themeCinematic from '@/assets/theme-previews/cinematic.jpg'
+import themeEditorial from '@/assets/theme-previews/editorial.jpg'
+import themeLuxury from '@/assets/theme-previews/luxury.jpg'
+import themeCorporate from '@/assets/theme-previews/corporate.jpg'
+import themePopArt from '@/assets/theme-previews/pop-art.jpg'
+import themeVintage from '@/assets/theme-previews/vintage.jpg'
+import themeNeon from '@/assets/theme-previews/neon.jpg'
+import themeEarthy from '@/assets/theme-previews/earthy.jpg'
+import themeBlackWhite from '@/assets/theme-previews/black-white.jpg'
+import themeMetallic from '@/assets/theme-previews/metallic.jpg'
+import themeGlassmorphism from '@/assets/theme-previews/glassmorphism.jpg'
+import themePastel from '@/assets/theme-previews/pastel.jpg'
+
+type ThemeOption = { id: string; faLabel: string; enLabel: string; descriptor: string; image: string }
 
 const THEME_OPTIONS: ThemeOption[] = [
-  { id: 'minimalist', faLabel: 'مینیمال', enLabel: 'Minimalist', descriptor: 'minimalist style, clean composition, lots of negative space, simple shapes', swatch: 'linear-gradient(135deg, #f5f5f4 0%, #e7e5e4 60%, #d6d3d1 100%)' },
-  { id: 'dark-moody', faLabel: 'تاریک و مرموز', enLabel: 'Dark & Moody', descriptor: 'dark moody atmosphere, dramatic low-key lighting, deep shadows', swatch: 'radial-gradient(120% 120% at 30% 20%, #3f3f46 0%, #18181b 55%, #09090b 100%)' },
-  { id: 'pop-art', faLabel: 'پاپ‌آرت', enLabel: 'Vibrant & Pop-Art', descriptor: 'vibrant pop-art style, bold saturated colors, halftone dots, high contrast', swatch: 'conic-gradient(from 45deg, #ef4444, #f59e0b, #22c55e, #3b82f6, #ec4899, #ef4444)' },
-  { id: 'vintage', faLabel: 'وینتیج و نوستالژیک', enLabel: 'Vintage & Retro', descriptor: 'vintage retro aesthetic, faded film tones, nostalgic warm grain', swatch: 'linear-gradient(135deg, #d8c3a5 0%, #c79f7f 50%, #8a6d52 100%)' },
-  { id: 'editorial', faLabel: 'مجله‌ای', enLabel: 'Magazine / Editorial', descriptor: 'magazine editorial layout, refined typography, premium fashion photography look', swatch: 'linear-gradient(135deg, #fafafa 0%, #e5e5e5 50%, #171717 100%)' },
-  { id: 'corporate', faLabel: 'شرکتی و تجاری', enLabel: 'Corporate', descriptor: 'corporate business style, clean professional, polished commercial look', swatch: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 55%, #93c5fd 100%)' },
-  { id: 'typography', faLabel: 'تایپوگرافی و متن‌محور', enLabel: 'Typography', descriptor: 'typography-driven design, bold expressive lettering, text as the focal element', swatch: 'linear-gradient(135deg, #ffffff 0%, #ffffff 50%, #000000 50%, #000000 100%)' },
-  { id: 'pastel', faLabel: 'پاستلی', enLabel: 'Pastel', descriptor: 'soft pastel palette, gentle muted colors, airy light tones', swatch: 'linear-gradient(135deg, #fbcfe8 0%, #ddd6fe 40%, #bfdbfe 70%, #bbf7d0 100%)' },
-  { id: 'monochrome', faLabel: 'مونوکروم و تک‌رنگ', enLabel: 'Monochrome', descriptor: 'monochrome single-color palette, tonal variations of one hue', swatch: 'linear-gradient(135deg, #0c4a6e 0%, #0284c7 50%, #bae6fd 100%)' },
-  { id: 'black-white', faLabel: 'سیاه و سفید', enLabel: 'Black & White', descriptor: 'black and white, high-contrast grayscale, dramatic monochrome photography', swatch: 'linear-gradient(135deg, #ffffff 0%, #9ca3af 50%, #000000 100%)' },
-  { id: 'neon', faLabel: 'نئونی', enLabel: 'Neon', descriptor: 'vibrant neon glow, cyberpunk color palette, luminous accents', swatch: 'radial-gradient(120% 120% at 25% 20%, #db2777 0%, #7c3aed 45%, #0e7490 80%, #09090b 100%)' },
-  { id: 'earthy', faLabel: 'طبیعت و ارگانیک', enLabel: 'Earthy / Organic', descriptor: 'earthy organic style, natural textures, warm botanical tones', swatch: 'linear-gradient(135deg, #4d7c0f 0%, #84a98c 50%, #a3886b 100%)' },
-  { id: 'watercolor', faLabel: 'آبرنگی', enLabel: 'Watercolor', descriptor: 'watercolor painting style, soft bleeding washes, hand-painted texture', swatch: 'radial-gradient(80% 80% at 30% 30%, #93c5fd 0%, transparent 55%), radial-gradient(80% 80% at 75% 70%, #f9a8d4 0%, transparent 55%), linear-gradient(135deg, #fef9c3, #ddd6fe)' },
-  { id: 'grunge', faLabel: 'گرانج و خشن', enLabel: 'Grunge', descriptor: 'grunge style, rough distressed textures, gritty raw aesthetic', swatch: 'linear-gradient(135deg, #57534e 0%, #292524 50%, #1c1917 100%)' },
-  { id: 'collage', faLabel: 'کلاژ و ترکیب تصاویر', enLabel: 'Collage', descriptor: 'collage style, mixed-media cut-and-paste composition, layered fragments', swatch: 'conic-gradient(from 0deg, #f59e0b 0deg 90deg, #3b82f6 90deg 180deg, #ec4899 180deg 270deg, #22c55e 270deg 360deg)' },
-  { id: 'grid', faLabel: 'پازلی و پیوسته', enLabel: 'Puzzle / Grid', descriptor: 'grid-based puzzle layout, modular tiled composition', swatch: 'repeating-linear-gradient(0deg, #1e293b 0 14px, #334155 14px 16px), repeating-linear-gradient(90deg, transparent 0 14px, #334155 14px 16px)' },
-  { id: 'flat', faLabel: 'فلت‌دیزاین', enLabel: 'Flat Design', descriptor: 'flat design, solid colors, no gradients, simple vector shapes', swatch: 'linear-gradient(90deg, #ef4444 0 33%, #facc15 33% 66%, #3b82f6 66% 100%)' },
-  { id: '3d', faLabel: 'سه‌بعدی', enLabel: '3D Elements', descriptor: '3D rendered elements, realistic depth, soft studio lighting', swatch: 'radial-gradient(60% 60% at 35% 30%, #c4b5fd 0%, #7c3aed 55%, #312e81 100%)' },
-  { id: 'gradient', faLabel: 'گرادیانت و شیب‌رنگ', enLabel: 'Gradient', descriptor: 'smooth gradient color transitions, blended hues, modern gradient mesh', swatch: 'linear-gradient(135deg, #6366f1 0%, #ec4899 50%, #f59e0b 100%)' },
-  { id: 'checkerboard', faLabel: 'شطرنجی', enLabel: 'Checkerboard', descriptor: 'checkerboard pattern motif, bold geometric tiling', swatch: 'repeating-conic-gradient(#0a0a0a 0 25%, #fafafa 0 50%) 0 / 24px 24px' },
-  { id: 'doodle', faLabel: 'دودل و خط‌خطی دست‌نویس', enLabel: 'Doodle', descriptor: 'hand-drawn doodle style, playful sketchy line art', swatch: 'repeating-linear-gradient(45deg, #fde68a 0 10px, #fef3c7 10px 20px)' },
-  { id: 'cinematic', faLabel: 'سینمایی و فیلم', enLabel: 'Cinematic', descriptor: 'cinematic film look, anamorphic widescreen, dramatic color grading', swatch: 'linear-gradient(180deg, #0a0a0a 0 18%, #0c4a6e 18%, #f59e0b 82%, #0a0a0a 82% 100%)' },
-  { id: 'geometric', faLabel: 'اشکال هندسی', enLabel: 'Geometric', descriptor: 'geometric abstract style, precise shapes, structured composition', swatch: 'conic-gradient(from 90deg at 50% 50%, #0ea5e9, #6366f1, #f43f5e, #0ea5e9)' },
-  { id: 'framed', faLabel: 'قاب‌دار و حاشیه‌دار', enLabel: 'Borders & Frames', descriptor: 'decorative bordered frame composition, ornamental edges', swatch: 'linear-gradient(#1c1917, #1c1917) padding-box, linear-gradient(135deg, #fbbf24, #b45309) border-box' },
-  { id: 'metallic', faLabel: 'متالیک و براق', enLabel: 'Metallic', descriptor: 'metallic glossy finish, shiny reflective chrome and gold surfaces', swatch: 'linear-gradient(135deg, #e5e7eb 0%, #9ca3af 30%, #f9fafb 50%, #6b7280 70%, #d1d5db 100%)' },
-  { id: 'glassmorphism', faLabel: 'گلس‌مورفیسم', enLabel: 'Glassmorphism', descriptor: 'glassmorphism style, frosted translucent glass, soft blur and light', swatch: 'radial-gradient(70% 70% at 30% 25%, rgba(255,255,255,0.55) 0%, transparent 55%), linear-gradient(135deg, #38bdf8, #818cf8)' },
-  { id: 'duotone', faLabel: 'دوآتون و دورنگ', enLabel: 'Duotone', descriptor: 'duotone two-color treatment, bold paired color overlay', swatch: 'linear-gradient(135deg, #db2777 0%, #1e3a8a 100%)' },
-  { id: 'comic', faLabel: 'کمیک‌بوک و کارتونی', enLabel: 'Comic Book', descriptor: 'comic book style, bold outlines, cartoon shading, speech-bubble energy', swatch: 'radial-gradient(#1d4ed8 20%, transparent 21%) 0 0 / 14px 14px, linear-gradient(135deg, #fde047, #f59e0b)' },
-  { id: 'bullet-journal', faLabel: 'بولت‌ژورنال', enLabel: 'Bullet Journal', descriptor: 'bullet journal aesthetic, hand-lettered planner spread, doodled icons', swatch: 'radial-gradient(#cbd5e1 12%, transparent 13%) 0 0 / 16px 16px, #f8fafc' },
-  { id: 'scrapbook', faLabel: 'اسکرپ‌بوک و دفترچه خاطرات', enLabel: 'Scrapbook', descriptor: 'scrapbook diary style, paper textures, tape, stickers and handwritten notes', swatch: 'linear-gradient(135deg, #fecaca 0%, #fde68a 40%, #bbf7d0 70%, #bfdbfe 100%)' },
+  { id: 'minimalist', faLabel: 'مینیمال', enLabel: 'Minimalist Studio', descriptor: 'minimalist studio style, clean seamless background, lots of negative space, soft even studio lighting, premium product look', image: themeMinimalist },
+  { id: 'dark-moody', faLabel: 'تاریک و مرموز', enLabel: 'Dark & Moody', descriptor: 'dark moody atmosphere, dramatic low-key lighting, deep shadows, single rim light, luxurious mysterious mood', image: themeDarkMoody },
+  { id: 'cinematic', faLabel: 'سینمایی و فیلم', enLabel: 'Cinematic', descriptor: 'cinematic film look, anamorphic widescreen feel, dramatic teal and orange color grading, atmospheric haze, film-still quality', image: themeCinematic },
+  { id: 'editorial', faLabel: 'مجله‌ای', enLabel: 'Editorial / Magazine', descriptor: 'magazine editorial layout, refined high-fashion photography, elegant composition, premium glossy print look', image: themeEditorial },
+  { id: 'luxury', faLabel: 'لاکچری و پریمیوم', enLabel: 'Luxury / Premium', descriptor: 'luxury premium aesthetic, gold accents, marble surfaces, soft glamorous lighting, opulent high-end look', image: themeLuxury },
+  { id: 'corporate', faLabel: 'شرکتی و تجاری', enLabel: 'Corporate Clean', descriptor: 'corporate clean style, bright crisp professional commercial lighting, polished modern business aesthetic', image: themeCorporate },
+  { id: 'pop-art', faLabel: 'پاپ‌آرت', enLabel: 'Vibrant Pop', descriptor: 'vibrant pop-art style, bold saturated colors, high contrast, playful energetic backdrop, punchy advertising look', image: themePopArt },
+  { id: 'vintage', faLabel: 'وینتیج و نوستالژیک', enLabel: 'Vintage / Retro', descriptor: 'vintage retro aesthetic, faded warm film tones, nostalgic grain, muted amber palette', image: themeVintage },
+  { id: 'neon', faLabel: 'نئونی', enLabel: 'Neon / Cyberpunk', descriptor: 'neon cyberpunk style, vibrant neon glow, pink and cyan luminous accents, dark futuristic background, reflective wet surface', image: themeNeon },
+  { id: 'earthy', faLabel: 'طبیعت و ارگانیک', enLabel: 'Earthy / Organic', descriptor: 'earthy organic style, natural stone and linen, dried botanicals, warm natural light, sustainable aesthetic', image: themeEarthy },
+  { id: 'black-white', faLabel: 'سیاه و سفید', enLabel: 'Monochrome (B&W)', descriptor: 'black and white, high-contrast grayscale, dramatic monochrome studio lighting, fine art photography', image: themeBlackWhite },
+  { id: 'metallic', faLabel: 'متالیک و براق', enLabel: 'Metallic / Chrome', descriptor: 'metallic chrome finish, glossy reflective silver surfaces, studio reflections, sleek futuristic premium look', image: themeMetallic },
+  { id: 'glassmorphism', faLabel: 'گلس‌مورفیسم', enLabel: 'Glassmorphism', descriptor: 'glassmorphism style, frosted translucent glass, soft blur, light refractions, pastel gradient background, clean modern look', image: themeGlassmorphism },
+  { id: 'pastel', faLabel: 'پاستلی', enLabel: 'Pastel Soft', descriptor: 'soft pastel palette, gentle muted blush pink, lilac and sky blue tones, airy dreamy diffused light', image: themePastel },
 ]
+
 
 const USER_IMAGES_BUCKET = 'user-images'
 
@@ -701,7 +701,7 @@ export default function AiImageDialog({
                         </button>
                       ) : null}
                     </div>
-                    <div className="grid max-h-80 grid-cols-2 gap-2 overflow-y-auto pr-1">
+                    <div className="grid max-h-96 grid-cols-2 gap-3 overflow-y-auto pr-1">
                       {THEME_OPTIONS.map((t) => {
                         const active = selectedTheme === t.id
                         return (
@@ -712,34 +712,40 @@ export default function AiImageDialog({
                               setSelectedTheme(t.id)
                               setThemeMenuOpen(false)
                             }}
-                            className={`group flex flex-col gap-1.5 rounded-xl border p-1.5 text-left transition ${
+                            className={`group relative block overflow-hidden rounded-xl border text-left transition ${
                               active
-                                ? 'border-amber-300/70 bg-amber-300/10'
-                                : 'border-white/10 hover:border-white/25 hover:bg-white/[0.05]'
+                                ? 'border-amber-300/80 ring-2 ring-amber-300/50'
+                                : 'border-white/10 hover:border-white/30'
                             }`}
                           >
-                            <span className="relative block h-16 w-full overflow-hidden rounded-lg border border-white/10">
-                              <span
-                                className="absolute inset-0"
-                                style={{ background: t.swatch }}
+                            <span className="relative block aspect-[4/5] w-full overflow-hidden">
+                              <img
+                                src={t.image}
+                                alt={t.enLabel}
+                                loading="lazy"
+                                width={512}
+                                height={640}
+                                className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-105"
                               />
+                              <span className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
                               {active ? (
-                                <span className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-black">
+                                <span className="absolute right-2 top-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-black shadow">
                                   <Check className="h-3.5 w-3.5" />
                                 </span>
                               ) : null}
-                            </span>
-                            <span
-                              className={`block truncate text-xs font-medium ${
-                                active ? 'text-amber-100' : 'text-zinc-200'
-                              }`}
-                            >
-                              {t.enLabel}
+                              <span
+                                className={`absolute inset-x-0 bottom-0 truncate px-2.5 pb-2 pt-6 text-xs font-semibold tracking-tight ${
+                                  active ? 'text-amber-100' : 'text-white'
+                                }`}
+                              >
+                                {t.enLabel}
+                              </span>
                             </span>
                           </button>
                         )
                       })}
                     </div>
+
                   </PopoverContent>
                 </Popover>
                 <Popover open={productMenuOpen} onOpenChange={setProductMenuOpen}>
