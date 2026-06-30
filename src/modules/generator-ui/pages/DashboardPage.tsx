@@ -10780,7 +10780,52 @@ export default function DashboardPage() {
                     </button>
                   </div>
                 </div>
+                <div className="mt-3 flex items-center justify-between gap-2 border-t border-amber-300/15 pt-3">
+                  <label className="text-[11px] font-medium text-amber-100/80" htmlFor="cover-duration">
+                    Cover duration (seconds at start of film)
+                  </label>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!coverScopeKey) return
+                        const nextVal = Math.max(1, currentCoverDuration - 1)
+                        setCoverDurations((prev) => { const n = { ...prev, [coverScopeKey]: nextVal }; persistCoverDurations(n); return n })
+                      }}
+                      className="grid h-7 w-7 place-items-center rounded-full border border-white/10 bg-black/30 text-zinc-200 transition hover:border-amber-300/40 hover:bg-amber-300/10"
+                      aria-label="Decrease cover duration"
+                    >
+                      −
+                    </button>
+                    <input
+                      id="cover-duration"
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={currentCoverDuration}
+                      onChange={(e) => {
+                        if (!coverScopeKey) return
+                        const v = Math.max(1, Math.min(10, Math.round(Number(e.target.value) || DEFAULT_COVER_DURATION)))
+                        setCoverDurations((prev) => { const n = { ...prev, [coverScopeKey]: v }; persistCoverDurations(n); return n })
+                      }}
+                      className="h-7 w-12 rounded-md border border-white/10 bg-black/30 text-center text-[12px] font-semibold text-amber-100 outline-none focus:border-amber-300/40"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!coverScopeKey) return
+                        const nextVal = Math.min(10, currentCoverDuration + 1)
+                        setCoverDurations((prev) => { const n = { ...prev, [coverScopeKey]: nextVal }; persistCoverDurations(n); return n })
+                      }}
+                      className="grid h-7 w-7 place-items-center rounded-full border border-white/10 bg-black/30 text-zinc-200 transition hover:border-amber-300/40 hover:bg-amber-300/10"
+                      aria-label="Increase cover duration"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
               </article>
+
             </div>
           ) : null}
           {displayedClips.length > 0 ? (
