@@ -10686,7 +10686,7 @@ export default function DashboardPage() {
               type="button"
               onClick={handlePickImage}
               disabled={isUploadingImage}
-              className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-3 text-xs font-medium text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
               aria-label="Upload image"
               title="Upload image"
             >
@@ -10695,16 +10695,18 @@ export default function DashboardPage() {
               ) : (
                 <ImagePlus className="h-4 w-4" aria-hidden="true" />
               )}
+              <span>Image</span>
             </button>
             <button
               type="button"
               onClick={() => { setAiDialogMode('cover'); setIsAiImageDialogOpen(true) }}
               disabled={!coverScopeKey}
-              className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/10 disabled:hover:bg-[#141518]/95 disabled:hover:text-zinc-300"
+              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-3 text-xs font-medium text-zinc-300 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/10 disabled:hover:bg-[#141518]/95 disabled:hover:text-zinc-300"
               aria-label="Generate film cover with AI"
               title={coverScopeKey ? 'Generate film cover with AI' : 'Open or create a project first'}
             >
               <Camera className="h-4 w-4" aria-hidden="true" />
+              <span>Cover</span>
             </button>
             <input
               ref={uploadVideoInputRef}
@@ -10721,14 +10723,16 @@ export default function DashboardPage() {
               aria-label="Upload film"
               aria-disabled={isUploadingVideo}
               title="Upload film"
-              className={`grid h-8 w-8 cursor-pointer place-items-center rounded-full border border-white/10 bg-[#141518]/95 text-zinc-300 transition hover:border-sky-300/30 hover:bg-sky-300/[0.08] hover:text-sky-100 ${isUploadingVideo ? 'pointer-events-none opacity-60' : ''}`}
+              className={`inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-white/10 bg-[#141518]/95 px-3 text-xs font-medium text-zinc-300 transition hover:border-sky-300/30 hover:bg-sky-300/[0.08] hover:text-sky-100 ${isUploadingVideo ? 'pointer-events-none opacity-60' : ''}`}
             >
               {isUploadingVideo ? (
                 <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
               ) : (
                 <Upload className="h-4 w-4" aria-hidden="true" />
               )}
+              <span>Film</span>
             </label>
+
           </div>
 
           )}
