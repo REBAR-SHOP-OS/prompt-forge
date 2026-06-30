@@ -258,7 +258,9 @@ const GUARDIAN_LANGS: { code: string; label: string }[] = [
   { code: 'zh', label: 'Chinese' },
 ]
 
+export default function AiImageDialog({
   open,
+
   onOpenChange,
   userId,
   defaultAspect,
