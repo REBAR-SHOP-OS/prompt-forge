@@ -115,6 +115,7 @@ import { TransitionPreview } from '@/modules/generator-ui/components/TransitionP
 import { SequentialClipPlayer } from '@/modules/generator-ui/components/SequentialClipPlayer'
 import { VideoWithSoundtrack } from '@/modules/generator-ui/components/VideoWithSoundtrack'
 import { PlayableVideo } from '@/modules/generator-ui/components/PlayableVideo'
+import { LiveJobProgress } from '@/modules/generator-ui/components/LiveJobProgress'
 import type { CreateJobResult, JobDetail, JobSummary } from '@/modules/job-orchestrator/contract'
 import { jobOrchestratorGateway } from '@/modules/job-orchestrator/gateway'
 import { videoLibraryGateway } from '@/modules/video-library/gateway'
