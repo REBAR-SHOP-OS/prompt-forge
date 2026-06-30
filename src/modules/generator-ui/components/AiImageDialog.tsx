@@ -84,6 +84,7 @@ type Props = {
 type AiReferenceImage = {
   name: string
   dataUrl: string
+  isProduct?: boolean
 }
 
 const MAX_REFERENCE_IMAGES = 4
