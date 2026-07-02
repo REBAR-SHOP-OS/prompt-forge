@@ -708,7 +708,11 @@ const LOCAL_PLANNER_MODEL_CHOICES: LocalPlannerModelChoice[] = [
 
 // Mirrors backend pricing in supabase/functions/_shared/modules/external-api-adapter/service.ts.
 // 1 USD = 100 credits. Keep in sync with COST_MAP_USD.
-function estimateGenerationCost(model: ModelChoice, totalDurationSec: number): {
+function estimateGenerationCost(
+  model: ModelChoice,
+  totalDurationSec: number,
+  opts?: { hasLastFrame?: boolean; hasReferenceImages?: boolean },
+): {
   usd: number
   credits: number
   clips: number
@@ -721,11 +725,17 @@ function estimateGenerationCost(model: ModelChoice, totalDurationSec: number): {
   // clip >8s is delivered via the extension chain and billed as a fixed 16s
   // (8s base + 8s extension), and Veo Fast >8s is forced up to Veo 3.1 ($0.40/s).
   const billedSec = perClipSec > 8 ? 16 : Math.min(8, perClipSec)
+  // A last-frame or reference (Character Sheet) image forces Veo Fast up to
+  // Veo 3.1 on the backend ($0.40/s), because Fast supports neither two-frame
+  // interpolation nor reference-guided generation. Reflect that here so the
+  // quoted price matches what the server actually charges.
+  const forcesVeo31 = Boolean(opts?.hasLastFrame || opts?.hasReferenceImages)
   let perClipUsd = 0
   if (model.model === 'flow-video-1') {
-    const veoRate = perClipSec > 8 ? 0.40 : 0.10
+    const veoRate = (perClipSec > 8 || forcesVeo31) ? 0.40 : 0.10
     perClipUsd = veoRate * billedSec
   }
+
   else if (model.model === 'flow-video-1-pro') perClipUsd = 0.40 * billedSec
   else if (model.providerKey === 'local') perClipUsd = 0
   else perClipUsd = 0.15 // wan (fixed per clip)
@@ -3864,9 +3874,13 @@ export default function DashboardPage() {
   })
   const submitConfirmedRef = useRef(false)
   const costEstimate = useMemo(
-    () => estimateGenerationCost(selectedModel, durationSeconds),
-    [selectedModel, durationSeconds],
+    () => estimateGenerationCost(selectedModel, durationSeconds, {
+      hasLastFrame: Boolean(readyEndFrame?.url),
+      hasReferenceImages: Boolean(projectReferenceUrls && projectReferenceUrls.length > 0),
+    }),
+    [selectedModel, durationSeconds, readyEndFrame?.url, projectReferenceUrls],
   )
+
   // Local RTX models only support 5/10/15s clips — clamp if a longer duration
   // was selected before switching to a local model.
   useEffect(() => {

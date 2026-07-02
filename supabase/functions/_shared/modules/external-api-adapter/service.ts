@@ -1216,10 +1216,22 @@ async function startVeo(
     instance.image = { bytesBase64Encoded: frame.data, mimeType: frame.mimeType };
   }
   if (input.lastFrameUrl) {
-    // Veo 3.1 supports first+last frame interpolation via the `lastFrame` field.
     const frame = await fetchAsInlineData(input.lastFrameUrl);
-    instance.lastFrame = { bytesBase64Encoded: frame.data, mimeType: frame.mimeType };
+    if (!input.firstFrameUrl) {
+      // "End only" mode: Veo requires an initial `image` for generation and does
+      // not support a lone `lastFrame`. Anchor the generation on the user's End
+      // frame (image-to-video) instead of sending an invalid last-frame-only
+      // request that Veo rejects with a 400. Safe, non-breaking fallback.
+      logInfo("veo: last-frame-only request promoted to image-to-video anchor", {
+        model: veoModel,
+      });
+      instance.image = { bytesBase64Encoded: frame.data, mimeType: frame.mimeType };
+    } else {
+      // Veo 3.1 supports first+last frame interpolation via the `lastFrame` field.
+      instance.lastFrame = { bytesBase64Encoded: frame.data, mimeType: frame.mimeType };
+    }
   }
+
 
   // Persistent identity anchor: forward reference (Character Sheet) images so
   // the subject stays consistent across chained cards. Veo 3.1 only; capped at 3.
