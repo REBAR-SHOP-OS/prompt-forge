@@ -1,23 +1,42 @@
-## Goal
-In the "Add text on the image?" popover (Write prompt → With text) inside `AiImageDialog.tsx`, the advertising taglines must be generated strictly from the user's **selected product**. If no product is selected, no taglines should appear at all.
+## هدف
+اطمینان از اینکه «فرم اول» و «فرم آخر» همیشه به‌درستی در ساخت ویدیو استفاده می‌شوند و حالت خطرناک «فقط فرم آخر» دیگر باعث خطای ۴۰۰ ارائه‌دهنده نشود — به‌شکل امن، اصولی و بدون شکستن مسیرهای فعلی.
 
-## Current behavior
-- `loadTaglines()` (line ~592) calls the `write-image-prompt` edge function in `mode: 'taglines'`, passing `productName` derived from `referenceImages.find(r => r.isProduct)`.
-- It only blocks when `hasPromptInputs()` is false — so it still produces generic taglines (e.g. "Build your legacy") even when there is no product, just from theme/reference image/prompt text.
+## مشکل فعلی (تأیید‌شده در کد)
+در `startVeo` (فایل `supabase/functions/_shared/modules/external-api-adapter/service.ts`):
+- وقتی فقط `lastFrameUrl` وجود دارد و `firstFrameUrl` نیست، فیلد `instance.image` هرگز ست نمی‌شود و فقط `instance.lastFrame` ارسال می‌گردد.
+- Veo برای image-to-video/اینترپولیشن به یک فریم اولیه (`image`) نیاز دارد؛ ارسال تنها `lastFrame` به احتمال زیاد خطای ۴۰۰ می‌دهد.
+- در مقابل، مسیر **Wan** (`startWanI2V`) این حالت را به‌درستی پشتیبانی می‌کند (فقط `last_frame` به‌عنوان anchor).
+- فرانت (`DashboardPage.tsx`) حالت «فقط End» را اجازه می‌دهد ولی هیچ گاردی برای Veo وجود ندارد.
 
-## Changes (frontend only)
+نکتهٔ جانبی: برچسب هزینه روی دکمه ثابت است (`$0.50 - 50 cr`) و وقتی فرم آخر باعث ارتقا به Veo 3.1 می‌شود، عدد با هزینهٔ واقعی هم‌خوان نیست.
 
-1. **Gate `loadTaglines()` on a selected product** (`src/modules/generator-ui/components/AiImageDialog.tsx`):
-   - Compute `productRef = referenceImages.find(r => r.isProduct)` at the top of the function.
-   - If `!productRef`, do not call the function: clear `taglines`, and set a clear message like `"Select a product first to generate taglines."` (English, per project convention).
-   - Keep passing `productName` from the product when present.
+## تغییرات
 
-2. **Reflect the gate in the popover UI** (lines ~1189–1234):
-   - When no product is selected, the **"With text"** button should be disabled (or, on click, surface the same "Select a product first" hint) and the "Pick a tagline" list must stay hidden.
-   - Keep **"Without text"** fully working regardless of product selection.
+### ۱) بک‌اند — گارد امن در آداپتر Veo (اصلی)
+فایل: `supabase/functions/_shared/modules/external-api-adapter/service.ts`، تابع `startVeo`.
+- اگر `lastFrameUrl` وجود دارد ولی `firstFrameUrl` وجود ندارد:
+  - همان فریم آخر را به‌عنوان فریم لنگر (`instance.image`) هم ست کن (image-to-video از روی همان تصویر کاربر) و از ارسال `instance.lastFrame` بدون فریم اول خودداری کن.
+  - یک `logInfo` ثبت شود که این حالت به‌صورت خودکار به image-to-video تبدیل شد.
+- این کار تضمین می‌کند هیچ درخواستی بدون `image` به Veo نرود، خروجی همچنان بر پایهٔ تصویر واقعی کاربر ساخته شود، و رفتار حالت‌های «Start فقط» و «Start+End» دست‌نخورده بماند (non-breaking).
 
-3. **No backend change** — the edge function already accepts `productName` and uses it; we simply never request taglines without a product, so no generic text is shown.
+### ۲) بک‌اند — ولیدیشن شفاف در گیت‌وی (لایهٔ دوم امنیت)
+فایل: `supabase/functions/_shared/modules/job-orchestrator/gateway.ts`.
+- تأیید اینکه حالت «فقط last_frame» به‌طور امن مدیریت می‌شود و در صورت نبودِ هر دو فریم، پیام خطای واضح (همان `Add a Start or End image before rendering.`) برگردد. بدون تغییر در قوانین امنیتی URL (`isAllowedFrameUrl`).
 
-## Result
-- Product selected → taglines reflect that product.
-- No product → no taglines displayed; only a short hint, with "Without text" still available.
+### ۳) فرانت — به‌روزرسانی پویا برچسب هزینه (ثانویه)
+فایل: `src/modules/generator-ui/pages/DashboardPage.tsx`.
+- وقتی «فرم آخر» انتخاب شده و مدل به Veo 3.1 ارتقا می‌یابد، برچسب هزینه روی دکمهٔ رندر به‌صورت پویا هزینهٔ واقعی را نشان دهد تا کاربر غافلگیر نشود. (فقط نمایش UI؛ کسر اعتبار سمت سرور بدون تغییر می‌ماند.)
+
+## چیزی که تغییر نمی‌کند
+- منطق کسر/برگشت اعتبار، RPCها و RLS.
+- قوانین امنیتی پذیرش URL فریم‌ها.
+- مسیر Wan که از قبل درست کار می‌کند.
+
+## تأیید صحت (بعد از پیاده‌سازی)
+- تست edge function با `curl` برای سه حالت: فقط Start، Start+End، فقط End — و بررسی نبودِ خطای ۴۰۰ و ست‌شدن درست فیلدها.
+- بررسی لاگ‌های تابع برای پیام تبدیل خودکار در حالت «فقط End».
+- `bun run tsc --noEmit` تمیز.
+
+## بخش فنی (خلاصه)
+- `startVeo`: افزودن شرط `if (input.lastFrameUrl && !input.firstFrameUrl) { instance.image = <lastFrame inline>; /* skip instance.lastFrame */ }` قبل از ساخت body، با حفظ منطق reference images و انتخاب مدل.
+- تصمیم طراحی: به‌جای route کردن پویا به Wan (که نیازمند تغییر انتخاب provider در فرانت و ریسک بیشتر است)، امن‌ترین و کم‌مداخله‌ترین راه، لنگرکردن همان فریم در Veo است.
