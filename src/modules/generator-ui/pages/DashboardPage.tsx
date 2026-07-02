@@ -3874,9 +3874,13 @@ export default function DashboardPage() {
   })
   const submitConfirmedRef = useRef(false)
   const costEstimate = useMemo(
-    () => estimateGenerationCost(selectedModel, durationSeconds),
-    [selectedModel, durationSeconds],
+    () => estimateGenerationCost(selectedModel, durationSeconds, {
+      hasLastFrame: Boolean(readyEndFrame?.url),
+      hasReferenceImages: Boolean(projectReferenceUrls && projectReferenceUrls.length > 0),
+    }),
+    [selectedModel, durationSeconds, readyEndFrame?.url, projectReferenceUrls],
   )
+
   // Local RTX models only support 5/10/15s clips — clamp if a longer duration
   // was selected before switching to a local model.
   useEffect(() => {
