@@ -791,6 +791,23 @@ export function isTerminalStatus(status: string) {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
 }
 
+const COMPLETED_WITHOUT_VIDEO_TIMEOUT_MS = 60_000
+
+function completedWithoutVideoTimedOut(job: JobDetail) {
+  if (job.status !== 'completed' || job.video?.storage_path) return false
+  const createdAt = Date.parse(job.created_at)
+  return Number.isFinite(createdAt) && Date.now() - createdAt > COMPLETED_WITHOUT_VIDEO_TIMEOUT_MS
+}
+
+function failCompletedWithoutVideo(job: JobDetail): JobDetail {
+  if (!completedWithoutVideoTimedOut(job)) return job
+  return {
+    ...job,
+    status: 'failed',
+    status_message: 'Render finished without a playable video. Please try again.',
+  }
+}
+
 // A job needs more polling when it isn't terminal, OR when it reports
 // "completed" but hasn't yet delivered its video asset. The latter happens with
 // synchronous local models (Wan 2.1 / LTX): createJob returns "completed" but
@@ -798,7 +815,7 @@ export function isTerminalStatus(status: string) {
 // rendered clip URL.
 function isJobAwaitingResolution(job: JobDetail) {
   if (!isTerminalStatus(job.status)) return true
-  return job.status === 'completed' && !job.video?.storage_path
+  return job.status === 'completed' && !job.video?.storage_path && !completedWithoutVideoTimedOut(job)
 }
 
 function normalizeStatus(status: string): VideoJobStatus {
@@ -941,8 +958,38 @@ function generationStartErrorMessage(error: unknown, fallback: string): string {
     return 'Not enough credits for this generation. Add credits or choose a lower-cost model/duration.'
   }
   if (error instanceof ApiError) return `${error.code}: ${error.message}`
-  if (error instanceof Error && error.message) return error.message
+  if (error instanceof Error && error.message) {
+    if (/failed to fetch|networkerror|load failed|timed out|timeout/i.test(error.message)) {
+      return 'Network request failed while starting generation. Please retry.'
+    }
+    return error.message
+  }
   return fallback
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof window.setTimeout> | undefined
+  const timeout = new Promise<T>((_, reject) => {
+    timer = window.setTimeout(() => reject(new Error(`${label} timed out`)), ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) window.clearTimeout(timer)
+  })
+}
+
+async function fetchWithTimeout(url: string, ms: number, label: string): Promise<Response> {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), ms)
+  try {
+    return await fetch(url, { signal: controller.signal })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error(`${label} timed out`)
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timer)
+  }
 }
 
 function readStoredIdSet(key: string | null): Set<string> {
