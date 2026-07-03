@@ -968,7 +968,7 @@ function generationStartErrorMessage(error: unknown, fallback: string): string {
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof window.setTimeout> | undefined
+  let timer: number | undefined
   const timeout = new Promise<T>((_, reject) => {
     timer = window.setTimeout(() => reject(new Error(`${label} timed out`)), ms)
   })
