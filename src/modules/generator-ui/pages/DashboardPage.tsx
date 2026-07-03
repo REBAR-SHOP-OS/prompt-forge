@@ -6716,13 +6716,34 @@ export default function DashboardPage() {
   }
 
   // When a product is pinned but the user supplied no Start frame, Wan I2V has
-  // nothing to condition on and the film won't resemble the product. The most
-  // faithful fix (per product decision) is to use the REAL product photo itself
-  // as the start frame — no AI redraw, so the exact product pixels drive the
-  // first frame. The product image URLs are already signed/downloadable, so we
-  // return the URL directly. Returns undefined only when there is no product.
-  function productStartFrame(product: ProjectProduct | null): string | undefined {
-    return product?.url || undefined
+  // nothing to condition on and the film won't resemble the product. Use the
+  // REAL product photo itself as the start frame, but first stage it into the
+  // wan-frames bucket because jobs-create only accepts frame URLs from there.
+  async function productStartFrame(product: ProjectProduct | null): Promise<string | undefined> {
+    if (!product?.url) return undefined
+    const userId = session?.user?.id
+    if (!userId) return undefined
+    try {
+      const res = await fetchWithTimeout(product.url, 30_000, 'Product image download')
+      if (!res.ok) throw new Error(`Product image download failed (HTTP ${res.status})`)
+      const blob = await withTimeout(res.blob(), 30_000, 'Product image decode')
+      const storagePath = `${userId}/product-start-${Date.now()}-${crypto.randomUUID()}.png`
+      const { error: upErr } = await withTimeout(
+        supabase.storage
+          .from(FRAMES_BUCKET)
+          .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false }),
+        30_000,
+        'Product start frame upload',
+      )
+      if (upErr) throw new Error(upErr.message)
+      const { data: pub } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+      return await signFramesUrl(storagePath).catch(() => pub.publicUrl)
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'unknown error'
+      console.warn('Product start frame staging failed.', reason)
+      setVideoColumnMessage('Could not prepare the product image as a Start frame.')
+      return undefined
+    }
   }
 
   // Build a clean, single-view start frame from a Character Sheet so Wan I2V can
@@ -6956,11 +6977,13 @@ export default function DashboardPage() {
         !readyEndFrame?.url &&
         !characterSeedFrameUrl
       ) {
-        productSeedFrameUrl = productStartFrame(selectedProduct)
+        setVideoColumnMessage('Preparing product as start frame…')
+        productSeedFrameUrl = await productStartFrame(selectedProduct)
         if (productSeedFrameUrl) {
           bakedStartFrameUrl = productSeedFrameUrl
           setGenerationMode('image-to-video')
         }
+        setVideoColumnMessage((current) => current === 'Preparing product as start frame…' ? null : current)
       }
       // Drive an I2V model (and bypass the T2V branch) when a character/product frame was seeded.
       const seededAnyFrame = Boolean(characterSeedFrameUrl || productSeedFrameUrl)
