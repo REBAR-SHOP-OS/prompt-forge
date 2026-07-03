@@ -6916,7 +6916,7 @@ export default function DashboardPage() {
       if (selectedProduct && readyStartFrame?.url) {
         setVideoColumnMessage('Locking product into start frame…')
         bakedStartFrameUrl = await bakeProductIntoFrame(readyStartFrame.url, selectedProduct, effectiveRatio)
-        setVideoColumnMessage(null)
+        setVideoColumnMessage((current) => current === 'Locking product into start frame…' ? null : current)
       }
       // When the user picked a character but supplied no Start/End frame, build a
       // clean single-view start frame from the Character Sheet so the character
@@ -6934,7 +6934,7 @@ export default function DashboardPage() {
           setVideoColumnMessage('Locking product into character frame…')
           characterSeedFrameUrl = await bakeProductIntoFrame(characterSeedFrameUrl, selectedProduct, effectiveRatio)
         }
-        setVideoColumnMessage(null)
+        setVideoColumnMessage((current) => current === 'Building character start frame…' || current === 'Locking product into character frame…' ? null : current)
         if (characterSeedFrameUrl) setGenerationMode('image-to-video')
       }
       // Product pinned but NO start frame and NO character seed: use the real
