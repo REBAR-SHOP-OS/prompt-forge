@@ -5774,6 +5774,15 @@ export default function DashboardPage() {
       return
     }
 
+    const timedOutCompletedJobs = generatedVideos.filter(completedWithoutVideoTimedOut)
+    if (timedOutCompletedJobs.length > 0) {
+      setGeneratedVideos((currentJobs) =>
+        currentJobs.map((job) => completedWithoutVideoTimedOut(job) ? failCompletedWithoutVideo(job) : job),
+      )
+      setVideoColumnMessage('Render finished without a playable video. Please try again.')
+      return
+    }
+
     const activeJobs = generatedVideos.filter((job) => isJobAwaitingResolution(job))
 
     if (activeJobs.length === 0) {
@@ -5818,7 +5827,7 @@ export default function DashboardPage() {
         .filter((id): id is string => Boolean(id) && !draftProtectedIds.has(id))
       const fulfilled = settled
         .filter((r): r is PromiseFulfilledResult<{ jobId: string; detail: JobDetail }> => r.status === 'fulfilled')
-        .map((r) => r.value.detail)
+        .map((r) => failCompletedWithoutVideo(r.value.detail))
       const allFailed = fulfilled.length === 0 && settled.length > 0
 
       if (missingJobIds.length > 0) {
