@@ -7253,7 +7253,8 @@ export default function DashboardPage() {
           // photo as the start frame so card 1 reproduces the exact product
           // instead of drifting in pure text-to-video.
           if (!startFrameUrl && selectedProduct) {
-            startFrameUrl = productStartFrame(selectedProduct)
+            setVideoColumnMessage(`Preparing product as start frame for ${sceneLabel}…`)
+            startFrameUrl = await productStartFrame(selectedProduct)
             startFrameIsProductPhoto = Boolean(startFrameUrl)
           }
         } else if (previousJobId) {
@@ -7573,7 +7574,9 @@ export default function DashboardPage() {
       } else if (selectedProduct && !firstFrameUrl) {
         // Source clip had no start frame: seed with the real product photo so the
         // regenerated clip actually reproduces the selected product.
-        regenFirstFrameUrl = productStartFrame(selectedProduct)
+        setVideoColumnMessage('Preparing product as start frame…')
+        regenFirstFrameUrl = await productStartFrame(selectedProduct)
+        setVideoColumnMessage((current) => current === 'Preparing product as start frame…' ? null : current)
       }
       const createdJob = await jobOrchestratorGateway.createJob({
         providerKey,
