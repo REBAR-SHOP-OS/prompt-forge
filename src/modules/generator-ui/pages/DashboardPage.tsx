@@ -6654,7 +6654,7 @@ export default function DashboardPage() {
   // product the user pinned. Uses ai-image-edit (multi-image) to composite the
   // reference product into the frame, then uploads the result to wan-frames and
   // returns a downloadable URL. Non-destructive: any failure returns the
-  // original start frame so generation never breaks.
+  // original start frame so generation never breaks or leaves the UI spinning.
   async function bakeProductIntoFrame(
     startFrameUrl: string | undefined,
     product: ProjectProduct | null,
@@ -6674,22 +6674,34 @@ export default function DashboardPage() {
         desc ? `Product description (for accuracy): ${desc}.` : '',
         `Keep everything else in image 1 unchanged: same character, face, pose, hands, lighting, background and composition. The product should sit naturally in the scene where the original product was.`,
       ].filter(Boolean).join(' ')
-      const { data, error } = await supabase.functions.invoke('ai-image-edit', {
-        body: { imageUrls: [startFrameUrl, product.url], aspectRatio: editRatio, prompt: instruction },
-      })
-      if (error) throw error
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('ai-image-edit', {
+          body: { imageUrls: [startFrameUrl, product.url], aspectRatio: editRatio, prompt: instruction },
+        }),
+        90_000,
+        'Product frame preparation',
+      )
+      if (error) throw new Error(error.message || 'Product frame preparation failed')
       const dataUrl = (data as { dataUrl?: string } | null)?.dataUrl
       if (!dataUrl) return startFrameUrl
-      const res = await fetch(dataUrl)
-      const blob = await res.blob()
+      const res = await fetchWithTimeout(dataUrl, 30_000, 'Product frame download')
+      if (!res.ok) throw new Error(`Product frame download failed (HTTP ${res.status})`)
+      const blob = await withTimeout(res.blob(), 30_000, 'Product frame decode')
       const storagePath = `${userId}/product-baked-${Date.now()}-${crypto.randomUUID()}.png`
-      const { error: upErr } = await supabase.storage
-        .from(FRAMES_BUCKET)
-        .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false })
-      if (upErr) return startFrameUrl
+      const { error: upErr } = await withTimeout(
+        supabase.storage
+          .from(FRAMES_BUCKET)
+          .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false }),
+        30_000,
+        'Product frame upload',
+      )
+      if (upErr) throw new Error(upErr.message)
       const { data: pub } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
       return await signFramesUrl(storagePath).catch(() => pub.publicUrl)
-    } catch {
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'unknown error'
+      console.warn('Product frame preparation failed; using original Start frame.', reason)
+      setVideoColumnMessage('Could not prepare the product frame. Using the original Start frame…')
       return startFrameUrl
     }
   }
@@ -7004,8 +7016,7 @@ export default function DashboardPage() {
           })
           seedFrames = { lastFrameUrl: readyEndFrame.url }
         } else {
-          setComposerError('Add a Start or End image before rendering.')
-          return
+          throw new Error('Add a Start or End image before rendering.')
         }
 
         const seededJob = buildSeededJob(plannedPrompt, createdJob, seedFrames)
