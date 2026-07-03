@@ -7055,6 +7055,9 @@ export default function DashboardPage() {
         // Don't pin the preview to this not-yet-ready clip — let it fall
         // through to the sequential auto-stitched preview so the user always
         // sees the full project playing in order.
+        setVideoColumnMessage((current) =>
+          current === 'Could not prepare the product frame. Using the original Start frame…' ? null : current,
+        )
         setPreviewVideoId(null)
         setPreviewDismissed(false)
         setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
