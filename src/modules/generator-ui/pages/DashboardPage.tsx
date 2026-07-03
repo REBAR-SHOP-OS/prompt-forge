@@ -791,6 +791,23 @@ export function isTerminalStatus(status: string) {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
 }
 
+const COMPLETED_WITHOUT_VIDEO_TIMEOUT_MS = 60_000
+
+function completedWithoutVideoTimedOut(job: JobDetail) {
+  if (job.status !== 'completed' || job.video?.storage_path) return false
+  const createdAt = Date.parse(job.created_at)
+  return Number.isFinite(createdAt) && Date.now() - createdAt > COMPLETED_WITHOUT_VIDEO_TIMEOUT_MS
+}
+
+function failCompletedWithoutVideo(job: JobDetail): JobDetail {
+  if (!completedWithoutVideoTimedOut(job)) return job
+  return {
+    ...job,
+    status: 'failed',
+    status_message: 'Render finished without a playable video. Please try again.',
+  }
+}
+
 // A job needs more polling when it isn't terminal, OR when it reports
 // "completed" but hasn't yet delivered its video asset. The latter happens with
 // synchronous local models (Wan 2.1 / LTX): createJob returns "completed" but
@@ -798,7 +815,7 @@ export function isTerminalStatus(status: string) {
 // rendered clip URL.
 function isJobAwaitingResolution(job: JobDetail) {
   if (!isTerminalStatus(job.status)) return true
-  return job.status === 'completed' && !job.video?.storage_path
+  return job.status === 'completed' && !job.video?.storage_path && !completedWithoutVideoTimedOut(job)
 }
 
 function normalizeStatus(status: string): VideoJobStatus {
@@ -941,8 +958,38 @@ function generationStartErrorMessage(error: unknown, fallback: string): string {
     return 'Not enough credits for this generation. Add credits or choose a lower-cost model/duration.'
   }
   if (error instanceof ApiError) return `${error.code}: ${error.message}`
-  if (error instanceof Error && error.message) return error.message
+  if (error instanceof Error && error.message) {
+    if (/failed to fetch|networkerror|load failed|timed out|timeout/i.test(error.message)) {
+      return 'Network request failed while starting generation. Please retry.'
+    }
+    return error.message
+  }
   return fallback
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: number | undefined
+  const timeout = new Promise<T>((_, reject) => {
+    timer = window.setTimeout(() => reject(new Error(`${label} timed out`)), ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) window.clearTimeout(timer)
+  })
+}
+
+async function fetchWithTimeout(url: string, ms: number, label: string): Promise<Response> {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), ms)
+  try {
+    return await fetch(url, { signal: controller.signal })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error(`${label} timed out`)
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timer)
+  }
 }
 
 function readStoredIdSet(key: string | null): Set<string> {
@@ -5727,6 +5774,15 @@ export default function DashboardPage() {
       return
     }
 
+    const timedOutCompletedJobs = generatedVideos.filter(completedWithoutVideoTimedOut)
+    if (timedOutCompletedJobs.length > 0) {
+      setGeneratedVideos((currentJobs) =>
+        currentJobs.map((job) => completedWithoutVideoTimedOut(job) ? failCompletedWithoutVideo(job) : job),
+      )
+      setVideoColumnMessage('Render finished without a playable video. Please try again.')
+      return
+    }
+
     const activeJobs = generatedVideos.filter((job) => isJobAwaitingResolution(job))
 
     if (activeJobs.length === 0) {
@@ -5771,7 +5827,7 @@ export default function DashboardPage() {
         .filter((id): id is string => Boolean(id) && !draftProtectedIds.has(id))
       const fulfilled = settled
         .filter((r): r is PromiseFulfilledResult<{ jobId: string; detail: JobDetail }> => r.status === 'fulfilled')
-        .map((r) => r.value.detail)
+        .map((r) => failCompletedWithoutVideo(r.value.detail))
       const allFailed = fulfilled.length === 0 && settled.length > 0
 
       if (missingJobIds.length > 0) {
@@ -6607,7 +6663,7 @@ export default function DashboardPage() {
   // product the user pinned. Uses ai-image-edit (multi-image) to composite the
   // reference product into the frame, then uploads the result to wan-frames and
   // returns a downloadable URL. Non-destructive: any failure returns the
-  // original start frame so generation never breaks.
+  // original start frame so generation never breaks or leaves the UI spinning.
   async function bakeProductIntoFrame(
     startFrameUrl: string | undefined,
     product: ProjectProduct | null,
@@ -6627,34 +6683,67 @@ export default function DashboardPage() {
         desc ? `Product description (for accuracy): ${desc}.` : '',
         `Keep everything else in image 1 unchanged: same character, face, pose, hands, lighting, background and composition. The product should sit naturally in the scene where the original product was.`,
       ].filter(Boolean).join(' ')
-      const { data, error } = await supabase.functions.invoke('ai-image-edit', {
-        body: { imageUrls: [startFrameUrl, product.url], aspectRatio: editRatio, prompt: instruction },
-      })
-      if (error) throw error
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('ai-image-edit', {
+          body: { imageUrls: [startFrameUrl, product.url], aspectRatio: editRatio, prompt: instruction },
+        }),
+        90_000,
+        'Product frame preparation',
+      )
+      if (error) throw new Error(error.message || 'Product frame preparation failed')
       const dataUrl = (data as { dataUrl?: string } | null)?.dataUrl
       if (!dataUrl) return startFrameUrl
-      const res = await fetch(dataUrl)
-      const blob = await res.blob()
+      const res = await fetchWithTimeout(dataUrl, 30_000, 'Product frame download')
+      if (!res.ok) throw new Error(`Product frame download failed (HTTP ${res.status})`)
+      const blob = await withTimeout(res.blob(), 30_000, 'Product frame decode')
       const storagePath = `${userId}/product-baked-${Date.now()}-${crypto.randomUUID()}.png`
-      const { error: upErr } = await supabase.storage
-        .from(FRAMES_BUCKET)
-        .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false })
-      if (upErr) return startFrameUrl
+      const { error: upErr } = await withTimeout(
+        supabase.storage
+          .from(FRAMES_BUCKET)
+          .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false }),
+        30_000,
+        'Product frame upload',
+      )
+      if (upErr) throw new Error(upErr.message)
       const { data: pub } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
       return await signFramesUrl(storagePath).catch(() => pub.publicUrl)
-    } catch {
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'unknown error'
+      console.warn('Product frame preparation failed; using original Start frame.', reason)
+      setVideoColumnMessage('Could not prepare the product frame. Using the original Start frame…')
       return startFrameUrl
     }
   }
 
   // When a product is pinned but the user supplied no Start frame, Wan I2V has
-  // nothing to condition on and the film won't resemble the product. The most
-  // faithful fix (per product decision) is to use the REAL product photo itself
-  // as the start frame — no AI redraw, so the exact product pixels drive the
-  // first frame. The product image URLs are already signed/downloadable, so we
-  // return the URL directly. Returns undefined only when there is no product.
-  function productStartFrame(product: ProjectProduct | null): string | undefined {
-    return product?.url || undefined
+  // nothing to condition on and the film won't resemble the product. Use the
+  // REAL product photo itself as the start frame, but first stage it into the
+  // wan-frames bucket because jobs-create only accepts frame URLs from there.
+  async function productStartFrame(product: ProjectProduct | null): Promise<string | undefined> {
+    if (!product?.url) return undefined
+    const userId = session?.user?.id
+    if (!userId) return undefined
+    try {
+      const res = await fetchWithTimeout(product.url, 30_000, 'Product image download')
+      if (!res.ok) throw new Error(`Product image download failed (HTTP ${res.status})`)
+      const blob = await withTimeout(res.blob(), 30_000, 'Product image decode')
+      const storagePath = `${userId}/product-start-${Date.now()}-${crypto.randomUUID()}.png`
+      const { error: upErr } = await withTimeout(
+        supabase.storage
+          .from(FRAMES_BUCKET)
+          .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false }),
+        30_000,
+        'Product start frame upload',
+      )
+      if (upErr) throw new Error(upErr.message)
+      const { data: pub } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+      return await signFramesUrl(storagePath).catch(() => pub.publicUrl)
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'unknown error'
+      console.warn('Product start frame staging failed.', reason)
+      setVideoColumnMessage('Could not prepare the product image as a Start frame.')
+      return undefined
+    }
   }
 
   // Build a clean, single-view start frame from a Character Sheet so Wan I2V can
@@ -6857,7 +6946,7 @@ export default function DashboardPage() {
       if (selectedProduct && readyStartFrame?.url) {
         setVideoColumnMessage('Locking product into start frame…')
         bakedStartFrameUrl = await bakeProductIntoFrame(readyStartFrame.url, selectedProduct, effectiveRatio)
-        setVideoColumnMessage(null)
+        setVideoColumnMessage((current) => current === 'Locking product into start frame…' ? null : current)
       }
       // When the user picked a character but supplied no Start/End frame, build a
       // clean single-view start frame from the Character Sheet so the character
@@ -6875,7 +6964,7 @@ export default function DashboardPage() {
           setVideoColumnMessage('Locking product into character frame…')
           characterSeedFrameUrl = await bakeProductIntoFrame(characterSeedFrameUrl, selectedProduct, effectiveRatio)
         }
-        setVideoColumnMessage(null)
+        setVideoColumnMessage((current) => current === 'Building character start frame…' || current === 'Locking product into character frame…' ? null : current)
         if (characterSeedFrameUrl) setGenerationMode('image-to-video')
       }
       // Product pinned but NO start frame and NO character seed: use the real
@@ -6888,11 +6977,13 @@ export default function DashboardPage() {
         !readyEndFrame?.url &&
         !characterSeedFrameUrl
       ) {
-        productSeedFrameUrl = productStartFrame(selectedProduct)
+        setVideoColumnMessage('Preparing product as start frame…')
+        productSeedFrameUrl = await productStartFrame(selectedProduct)
         if (productSeedFrameUrl) {
           bakedStartFrameUrl = productSeedFrameUrl
           setGenerationMode('image-to-video')
         }
+        setVideoColumnMessage((current) => current === 'Preparing product as start frame…' ? null : current)
       }
       // Drive an I2V model (and bypass the T2V branch) when a character/product frame was seeded.
       const seededAnyFrame = Boolean(characterSeedFrameUrl || productSeedFrameUrl)
@@ -6957,8 +7048,7 @@ export default function DashboardPage() {
           })
           seedFrames = { lastFrameUrl: readyEndFrame.url }
         } else {
-          setComposerError('Add a Start or End image before rendering.')
-          return
+          throw new Error('Add a Start or End image before rendering.')
         }
 
         const seededJob = buildSeededJob(plannedPrompt, createdJob, seedFrames)
@@ -6988,6 +7078,9 @@ export default function DashboardPage() {
         // Don't pin the preview to this not-yet-ready clip — let it fall
         // through to the sequential auto-stitched preview so the user always
         // sees the full project playing in order.
+        setVideoColumnMessage((current) =>
+          current === 'Could not prepare the product frame. Using the original Start frame…' ? null : current,
+        )
         setPreviewVideoId(null)
         setPreviewDismissed(false)
         setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
@@ -7160,7 +7253,8 @@ export default function DashboardPage() {
           // photo as the start frame so card 1 reproduces the exact product
           // instead of drifting in pure text-to-video.
           if (!startFrameUrl && selectedProduct) {
-            startFrameUrl = productStartFrame(selectedProduct)
+            setVideoColumnMessage(`Preparing product as start frame for ${sceneLabel}…`)
+            startFrameUrl = await productStartFrame(selectedProduct)
             startFrameIsProductPhoto = Boolean(startFrameUrl)
           }
         } else if (previousJobId) {
@@ -7480,7 +7574,9 @@ export default function DashboardPage() {
       } else if (selectedProduct && !firstFrameUrl) {
         // Source clip had no start frame: seed with the real product photo so the
         // regenerated clip actually reproduces the selected product.
-        regenFirstFrameUrl = productStartFrame(selectedProduct)
+        setVideoColumnMessage('Preparing product as start frame…')
+        regenFirstFrameUrl = await productStartFrame(selectedProduct)
+        setVideoColumnMessage((current) => current === 'Preparing product as start frame…' ? null : current)
       }
       const createdJob = await jobOrchestratorGateway.createJob({
         providerKey,
