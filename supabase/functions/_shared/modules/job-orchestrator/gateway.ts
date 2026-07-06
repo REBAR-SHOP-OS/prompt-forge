@@ -245,6 +245,36 @@ function buildStatusMessage(
   return "Still rendering — provider is taking longer than usual";
 }
 
+function safeUserStatusMessage(raw: string | null | undefined): string | null {
+  const value = raw?.replace(/\s+/g, " ").trim();
+  if (!value) return null;
+  if (/api[_-]?key|bearer\s+|token|secret|password|authorization/i.test(value)) {
+    return "Render failed — credits refunded";
+  }
+  return value.slice(0, 240);
+}
+
+async function failedJobMessage(
+  svc: ReturnType<typeof getServiceClient>,
+  userId: string,
+  jobId: string,
+): Promise<string | null> {
+  const { data, error } = await svc
+    .from("billing_credit_transactions")
+    .select("description")
+    .eq("user_id", userId)
+    .eq("job_id", jobId)
+    .eq("type", "refund")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    logError("failedJobMessage lookup failed", { error: error.message, jobId });
+    return null;
+  }
+  return safeUserStatusMessage((data as { description?: string | null } | null)?.description);
+}
+
 type EdgeRuntimeGlobal = typeof globalThis & {
   EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void };
 };
