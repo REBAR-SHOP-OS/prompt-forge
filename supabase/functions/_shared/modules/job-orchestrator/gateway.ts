@@ -710,136 +710,20 @@ export const jobOrchestratorGateway = {
               referenceCount: referenceImageUrls.length,
             });
           }
-          let gen;
-          try {
-            gen = await aiGateway.startGeneration(route.providerKey, route.resolvedModel, {
-              prompt,
-              firstFrameUrl,
-              lastFrameUrl,
-              referenceImageUrls: referenceImageUrls.length > 0 ? referenceImageUrls : null,
-              durationSeconds: parsed.data.durationSeconds ?? null,
-              aspectRatio: chosenAspectRatio,
-            });
-          } catch (e) {
-            const genErr = (e as Error).message ?? "";
-            // Refund credits + mark failed atomically.
-            try {
-              await jobService.failJob(svc, {
-                userId: auth.userId,
-                jobId,
-                reason: genErr,
-                refundCredits: true,
-              });
-            } catch (_) { /* best-effort */ }
-            logError("startGeneration failed", { error: genErr, jobId });
-
-            // Surface a precise, user-readable message when the Local router
-            // isn't set up or is unreachable — instead of a generic provider
-            // error. Credits are already refunded above. No secrets/URLs leak.
-            if (route.providerKey === "local") {
-              const endpointNotFound = /no video create endpoint|endpoint not found|router 404|\b404\b/i.test(genErr);
-              if (endpointNotFound) {
-                await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 502, latencyMs: Date.now() - ctx.startedAt, errorCode: "LOCAL_ENDPOINT_NOT_FOUND" });
-                return errorResponse(
-                  "LOCAL_ENDPOINT_NOT_FOUND",
-                  // genErr contains the exact attempted paths (host omitted) and the
-                  // LOCAL_VIDEO_ROUTER_CREATE_PATH hint — surface it directly.
-                  genErr || "Local video router is reachable, but its video generation endpoint was not found. Set LOCAL_VIDEO_ROUTER_CREATE_PATH to your router's create endpoint, for example /prompt for ComfyUI.",
-                  502,
-                  ctx.requestId,
-                );
-              }
-              const notConfigured = /not configured|add LOCAL_VIDEO_ROUTER_URL/i.test(genErr);
-              if (notConfigured) {
-                await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 503, latencyMs: Date.now() - ctx.startedAt, errorCode: "LOCAL_NOT_CONFIGURED" });
-                return errorResponse(
-                  "LOCAL_NOT_CONFIGURED",
-                  "Local video router is not configured. Add LOCAL_VIDEO_ROUTER_URL or choose a cloud model.",
-                  503,
-                  ctx.requestId,
-                );
-              }
-              const unreachable = /unreachable|unable to reach|router .* unreachable/i.test(genErr);
-              if (unreachable) {
-                await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 502, latencyMs: Date.now() - ctx.startedAt, errorCode: "LOCAL_UNREACHABLE" });
-                return errorResponse(
-                  "LOCAL_UNREACHABLE",
-                  "Local video router is unreachable. Check that the local router is running and accessible from the backend.",
-                  502,
-                  ctx.requestId,
-                );
-              }
-              await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 502, latencyMs: Date.now() - ctx.startedAt, errorCode: "LOCAL_PROVIDER_ERROR" });
-              return errorResponse(
-                "LOCAL_PROVIDER_ERROR",
-                // Surface the router's actual rejection (e.g. ComfyUI node errors,
-                // missing model/checkpoint, or a bad LoadImage path). genErr never
-                // contains the router host/URL or any secret, so it is safe to show.
-                genErr
-                  ? `Local video router could not start generation: ${genErr}`
-                  : "Local video router could not start generation. Check the router logs and endpoint compatibility.",
-                502,
-                ctx.requestId,
-              );
-            }
-
-            return errorResponse("PROVIDER_ERROR", "The video provider could not start generation. Please try again.", 502, ctx.requestId);
-          }
-
-          // Guard: if the provider returned neither a job id we can poll nor a
-          // complete result, the card would silently sit in `processing` until
-          // the long stuck-timeout fires. Fail fast with a refund instead.
-          if (!gen.providerJobId && !(gen.isComplete && gen.videoUrl)) {
-            try {
-              await jobService.failJob(svc, {
-                userId: auth.userId,
-                jobId,
-                reason: "Provider did not return a job id",
-                refundCredits: true,
-              });
-            } catch (_) { /* best-effort */ }
-            logError("startGeneration returned no providerJobId", { jobId, provider: route.providerKey });
-            return errorResponse("PROVIDER_ERROR", "The video provider did not return a job id. Credits refunded — please try again.", 502, ctx.requestId);
-          }
-
-          try {
-            await jobService.markProcessing(svc, auth.userId, jobId, gen.providerJobId);
-          } catch (e) {
-            await jobService.failJob(svc, {
-              userId: auth.userId,
-              jobId,
-              reason: (e as Error).message,
-              refundCredits: true,
-            });
-            logError("markProcessing failed", { error: (e as Error).message, jobId });
-            return errorResponse("JOB_STATE_ERROR", "Could not update job state", 500, ctx.requestId);
-          }
-
-          let videoAssetId: string | null = null;
-          let finalStatus: "processing" | "completed" = "processing";
-          if (gen.isComplete && gen.videoUrl) {
-            try {
-              const storagePath = await materializeVideoUrl(svc, auth.userId, gen.videoUrl);
-              videoAssetId = await jobService.completeJob(svc, {
-                userId: auth.userId,
-                jobId,
-                storagePath,
-                thumbnailUrl: gen.thumbnailUrl,
-                aspectRatio: gen.aspectRatio,
-                duration: gen.duration,
-              });
-              finalStatus = "completed";
-            } catch (e) {
-              await jobService.failJob(svc, {
-                userId: auth.userId,
-                jobId,
-                reason: (e as Error).message,
-                refundCredits: true,
-              });
-              logError("completeJob failed", { error: (e as Error).message, jobId });
-              return errorResponse("JOB_COMPLETE_ERROR", "Could not finalize generated video", 500, ctx.requestId);
-            }
-          }
+          waitUntilBackground(startProviderGenerationInBackground(svc, {
+            userId: auth.userId,
+            jobId,
+            requestId: ctx.requestId,
+            providerKey: route.providerKey,
+            resolvedModel: route.resolvedModel,
+            estimatedCost: route.estimatedCost,
+            prompt,
+            firstFrameUrl,
+            lastFrameUrl,
+            referenceImageUrls,
+            durationSeconds: parsed.data.durationSeconds ?? null,
+            aspectRatio: chosenAspectRatio,
+          }));
 
           await writeAuditLog(svc, {
             actorUserId: auth.userId,
@@ -847,21 +731,21 @@ export const jobOrchestratorGateway = {
             targetType: "generation_job",
             targetId: jobId,
             requestId: ctx.requestId,
-            metadata: { provider: route.providerKey, model: route.resolvedModel, status: finalStatus },
+            metadata: { provider: route.providerKey, model: route.resolvedModel, status: "pending" },
           });
           await writeApiRequestLog(svc, {
-            ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt,
+            ...ctx, userId: auth.userId, statusCode: 202, latencyMs: Date.now() - ctx.startedAt,
             providerKey: route.providerKey, modelKey: route.resolvedModel, estimatedCost: route.estimatedCost,
           });
 
           return jsonResponse({
             jobId,
-            status: finalStatus,
-            videoAssetId,
+            status: "pending",
+            videoAssetId: null,
             providerKey: route.providerKey,
             resolvedModel: route.resolvedModel,
             requestId: ctx.requestId,
-          });
+          }, 202);
         }
 
         case "deleteJob": {
