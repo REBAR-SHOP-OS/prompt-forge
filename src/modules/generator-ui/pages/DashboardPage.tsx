@@ -7089,6 +7089,17 @@ export default function DashboardPage() {
       setUploadedFiles([])
     } catch (error) {
       if (!isExpectedBillingError(error) && !isExpectedLocalRouterError(error)) console.error('handleSubmit failed', error)
+      if (error instanceof ApiError && error.code === 'TIMEOUT') {
+        try {
+          const summaries = await jobOrchestratorGateway.listMyJobs(20)
+          const hydrated = await hydrateJobs(summaries.filter((job) => !workspaceHiddenJobIds.has(job.id)))
+          if (hydrated.length > 0) {
+            setGeneratedVideos((currentJobs) => hydrated.reduce((jobs, job) => mergeJob(jobs, job), currentJobs))
+          }
+        } catch {
+          /* best-effort recovery refresh */
+        }
+      }
       const message = generationStartErrorMessage(error, 'Could not start video generation.')
       // Don't overwrite a more specific message set by submitScenesAsJobs.
       setComposerError((current) => current ?? message)
@@ -7296,6 +7307,17 @@ export default function DashboardPage() {
       }
       setVideoColumnMessage(null)
     } catch (error) {
+      if (error instanceof ApiError && error.code === 'TIMEOUT') {
+        try {
+          const summaries = await jobOrchestratorGateway.listMyJobs(20)
+          const hydrated = await hydrateJobs(summaries.filter((job) => !workspaceHiddenJobIds.has(job.id)))
+          if (hydrated.length > 0) {
+            setGeneratedVideos((currentJobs) => hydrated.reduce((jobs, job) => mergeJob(jobs, job), currentJobs))
+          }
+        } catch {
+          /* best-effort recovery refresh */
+        }
+      }
       const message = generationStartErrorMessage(error, 'Could not start scenario generation.')
       setComposerError(message)
       setVideoColumnMessage(message)
