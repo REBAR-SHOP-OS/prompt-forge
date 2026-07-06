@@ -802,6 +802,7 @@ export const jobOrchestratorGateway = {
               providerKey: route.providerKey,
               modelKey: route.resolvedModel,
               estimatedCost: costCredits,
+              clientRequestId: parsed.data.clientRequestId ?? null,
               firstFrameUrl,
               lastFrameUrl,
               referenceImageUrls: referenceImageUrls.length > 0 ? referenceImageUrls : null,
