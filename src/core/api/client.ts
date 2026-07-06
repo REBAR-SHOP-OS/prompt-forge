@@ -48,15 +48,49 @@ async function authHeader(path: string): Promise<Record<string, string>> {
   throw new ApiError(401, "SESSION_EXPIRED", "Please sign in again.");
 }
 
-export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+export type RequestInitWithTimeout = RequestInit & {
+  /**
+   * Abort the request after this many milliseconds. Without it a hung backend
+   * call (e.g. a slow synchronous provider start in jobs-create) would leave a
+   * fetch pending forever and freeze the UI's loading state. Omit to keep the
+   * legacy no-timeout behavior.
+   */
+  timeoutMs?: number;
+};
+
+export async function request<T>(path: string, init: RequestInitWithTimeout = {}): Promise<T> {
+  const { timeoutMs, ...fetchInit } = init;
+
   const buildHeaders = async (): Promise<Record<string, string>> => ({
     "Content-Type": "application/json",
     ...(await authHeader(path)),
-    ...((init.headers as Record<string, string>) ?? {}),
+    ...((fetchInit.headers as Record<string, string>) ?? {}),
   });
 
-  const doFetch = async () =>
-    fetch(`${FUNCTIONS_BASE}${path}`, { ...init, headers: await buildHeaders() });
+  // Each attempt (initial + post-refresh retry) gets its own controller/timer so
+  // a timeout on one attempt never aborts the other.
+  const doFetch = async () => {
+    const headers = await buildHeaders();
+    if (timeoutMs === undefined) {
+      return fetch(`${FUNCTIONS_BASE}${path}`, { ...fetchInit, headers });
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(`${FUNCTIONS_BASE}${path}`, {
+        ...fetchInit,
+        headers,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new ApiError(408, "TIMEOUT", "The request took too long. Please try again.");
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
 
   let res = await doFetch();
 

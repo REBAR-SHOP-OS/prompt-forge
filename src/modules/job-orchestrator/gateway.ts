@@ -28,6 +28,10 @@ export const jobOrchestratorGateway = {
     request<CreateJobResult>("/jobs-create", {
       method: "POST",
       body: JSON.stringify(input),
+      // jobs-create runs the provider start synchronously. Bound the wait so a
+      // slow/hung provider can never freeze the composer's loading state. Local
+      // routers can generate the whole clip inline, so give them far more room.
+      timeoutMs: input.providerKey === "local" ? 600_000 : 120_000,
     }),
 
   getJob: (jobId: string): Promise<JobDetail> => {
@@ -36,6 +40,9 @@ export const jobOrchestratorGateway = {
     const promise = (async () => {
       const result = await request<JobDetail | { error?: { code?: string; message?: string }; missing?: boolean; requestId?: string }>(
         `/jobs-get?jobId=${encodeURIComponent(jobId)}`,
+        // A poll should never hang forever; the caller's failure/backoff logic
+        // retries on a thrown error, so a stuck poll self-heals.
+        { timeoutMs: 90_000 },
       );
       if ('missing' in result && result.missing) {
         throw new ApiError(404, result.error?.code ?? 'NOT_FOUND', result.error?.message ?? 'Job not found', result.requestId);
