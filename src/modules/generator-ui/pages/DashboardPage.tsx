@@ -953,14 +953,14 @@ function isExpectedLocalRouterError(error: unknown): boolean {
   )
 }
 
-function generationStartErrorMessage(error: unknown, fallback: string): string {
+export function generationStartErrorMessage(error: unknown, fallback: string): string {
   if (isExpectedBillingError(error)) {
     return 'Not enough credits for this generation. Add credits or choose a lower-cost model/duration.'
   }
   if (error instanceof ApiError) return `${error.code}: ${error.message}`
   if (error instanceof Error && error.message) {
     if (/failed to fetch|networkerror|load failed|timed out|timeout/i.test(error.message)) {
-      return 'Network request failed while starting generation. Please retry.'
+      return 'Connection dropped while queuing generation. Check Pending; if no card appears, retry.'
     }
     return error.message
   }

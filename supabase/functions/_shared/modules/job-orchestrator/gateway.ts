@@ -225,6 +225,13 @@ function stuckTimeoutMsForDuration(durationSeconds: number | null | undefined): 
   return Math.min(45 * 60_000, Math.max(15 * 60_000, dur * 2.5 * 60_000));
 }
 
+function providerStartHandoffTimeoutMs(durationSeconds: number | null | undefined): number {
+  // With async create, a job can legitimately sit in pending while a slow local
+  // router or provider accepts the request. Fail the handoff before the final
+  // stuck-timeout, but never at the old 60s synchronous-start threshold.
+  return Math.min(stuckTimeoutMsForDuration(durationSeconds) - 60_000, 10 * 60_000);
+}
+
 function buildStatusMessage(
   status: string,
   createdAt: string | undefined,
@@ -243,6 +250,186 @@ function buildStatusMessage(
   if (elapsedMin < expectedMin * 0.8) return "Rendering";
   if (elapsedMin < expectedMin * 1.5) return "Still rendering — almost there";
   return "Still rendering — provider is taking longer than usual";
+}
+
+function safeUserStatusMessage(raw: string | null | undefined): string | null {
+  const value = raw?.replace(/\s+/g, " ").trim();
+  if (!value) return null;
+  if (/api[_-]?key|bearer\s+|token|secret|password|authorization/i.test(value)) {
+    return "Render failed — credits refunded";
+  }
+  return value.slice(0, 240);
+}
+
+function safeProviderFailureReason(raw: string | null | undefined): string {
+  return safeUserStatusMessage(raw) ?? "Provider start failed — credits refunded";
+}
+
+async function failedJobMessage(
+  svc: ReturnType<typeof getServiceClient>,
+  userId: string,
+  jobId: string,
+): Promise<string | null> {
+  const { data, error } = await svc
+    .from("billing_credit_transactions")
+    .select("description")
+    .eq("user_id", userId)
+    .eq("job_id", jobId)
+    .eq("type", "refund")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    logError("failedJobMessage lookup failed", { error: error.message, jobId });
+    return null;
+  }
+  return safeUserStatusMessage((data as { description?: string | null } | null)?.description);
+}
+
+type EdgeRuntimeGlobal = typeof globalThis & {
+  EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void };
+};
+
+interface BackgroundStartParams {
+  userId: string;
+  jobId: string;
+  requestId: string;
+  providerKey: ProviderKey;
+  resolvedModel: string;
+  estimatedCost: number;
+  prompt: string;
+  firstFrameUrl: string | null;
+  lastFrameUrl: string | null;
+  referenceImageUrls: string[];
+  durationSeconds: 5 | 10 | 15 | null;
+  aspectRatio: "9:16" | "1:1" | "16:9";
+}
+
+function waitUntilBackground(task: Promise<unknown>) {
+  const runtime = globalThis as EdgeRuntimeGlobal;
+  if (typeof runtime.EdgeRuntime?.waitUntil === "function") {
+    runtime.EdgeRuntime.waitUntil(task);
+    return;
+  }
+  // Local/Deno test fallback. The task itself owns its errors, so this is safe.
+  void task;
+}
+
+async function startProviderGenerationInBackground(
+  svc: ReturnType<typeof getServiceClient>,
+  params: BackgroundStartParams,
+): Promise<void> {
+  const startedAt = Date.now();
+  let statusCode = 200;
+  let errorCode: string | null = null;
+
+  try {
+    logInfo("provider start queued", {
+      requestId: params.requestId,
+      jobId: params.jobId,
+      provider: params.providerKey,
+      model: params.resolvedModel,
+    });
+
+    const gen = await aiGateway.startGeneration(params.providerKey, params.resolvedModel, {
+      prompt: params.prompt,
+      firstFrameUrl: params.firstFrameUrl,
+      lastFrameUrl: params.lastFrameUrl,
+      referenceImageUrls: params.referenceImageUrls.length > 0 ? params.referenceImageUrls : null,
+      durationSeconds: params.durationSeconds,
+      aspectRatio: params.aspectRatio,
+    });
+
+    if (!gen.providerJobId && !(gen.isComplete && gen.videoUrl)) {
+      errorCode = "PROVIDER_NO_JOB_ID";
+      statusCode = 502;
+      await jobService.failJob(svc, {
+        userId: params.userId,
+        jobId: params.jobId,
+        reason: "Provider did not return a job id",
+        refundCredits: true,
+      });
+      logError("background start returned no providerJobId", {
+        requestId: params.requestId,
+        jobId: params.jobId,
+        provider: params.providerKey,
+      });
+      return;
+    }
+
+    if (gen.providerJobId) {
+      await jobService.markProcessing(svc, params.userId, params.jobId, gen.providerJobId);
+    }
+
+    if (gen.isComplete && gen.videoUrl) {
+      const storagePath = await materializeVideoUrl(svc, params.userId, gen.videoUrl);
+      await jobService.completeJob(svc, {
+        userId: params.userId,
+        jobId: params.jobId,
+        storagePath,
+        thumbnailUrl: gen.thumbnailUrl,
+        aspectRatio: gen.aspectRatio,
+        duration: gen.duration,
+      });
+    }
+
+    await writeAuditLog(svc, {
+      actorUserId: params.userId,
+      action: "job_orchestrator.provider_start",
+      targetType: "generation_job",
+      targetId: params.jobId,
+      requestId: params.requestId,
+      metadata: {
+        provider: params.providerKey,
+        model: params.resolvedModel,
+        status: gen.isComplete ? "completed" : "processing",
+      },
+    });
+    logInfo("provider start finished", {
+      requestId: params.requestId,
+      jobId: params.jobId,
+      provider: params.providerKey,
+      providerJobId: gen.providerJobId,
+      complete: gen.isComplete,
+    });
+  } catch (e) {
+    const reason = safeProviderFailureReason((e as Error).message);
+    statusCode = 502;
+    errorCode = "PROVIDER_START_FAILED";
+    try {
+      await jobService.failJob(svc, {
+        userId: params.userId,
+        jobId: params.jobId,
+        reason,
+        refundCredits: true,
+      });
+    } catch (failError) {
+      logError("background failJob persist failed", {
+        requestId: params.requestId,
+        jobId: params.jobId,
+        error: (failError as Error).message,
+      });
+    }
+    logError("background provider start failed", {
+      requestId: params.requestId,
+      jobId: params.jobId,
+      provider: params.providerKey,
+      error: reason,
+    });
+  } finally {
+    await writeApiRequestLog(svc, {
+      requestId: params.requestId,
+      userId: params.userId,
+      route: "/job-orchestrator/provider-start",
+      method: "BACKGROUND",
+      statusCode,
+      latencyMs: Date.now() - startedAt,
+      providerKey: params.providerKey,
+      modelKey: params.resolvedModel,
+      estimatedCost: params.estimatedCost,
+      errorCode,
+    });
+  }
 }
 
 export const jobOrchestratorGateway = {
@@ -359,16 +546,16 @@ export const jobOrchestratorGateway = {
 
           // Early-stuck guard: if the row sits in pending/processing without a
           // provider_job_id (so the inline poll above can never advance it),
-          // fail with refund after ~60s. Without this, the only safety net is
-          // the 15–45min stuck-timeout below — which looks to the user like
-          // "the card never executed".
+          // fail with refund after the async provider-start handoff window.
+          // This must be comfortably longer than slow router start calls; the
+          // previous 60s threshold was only safe for synchronous provider start.
           if (
             !terminalFailedReason &&
             (detail.status === "processing" || detail.status === "pending") &&
             !detail.provider_job_id
           ) {
             const startedAt = Date.parse(detail.created_at);
-            if (Number.isFinite(startedAt) && Date.now() - startedAt > 60_000) {
+            if (Number.isFinite(startedAt) && Date.now() - startedAt > providerStartHandoffTimeoutMs(requestedDuration)) {
               terminalFailedReason = "Provider never returned a job id — credits refunded. Please try again.";
               try {
                 await jobService.failJob(svc, {
@@ -416,8 +603,12 @@ export const jobOrchestratorGateway = {
           const responseDetail = terminalFailedReason
             ? { ...detail, status: "failed" as const }
             : detail;
+          const persistedFailedMessage = responseStatus === "failed"
+            ? await failedJobMessage(svc, auth.userId, detail.id)
+            : null;
           const statusMessage = terminalFailedReason
-            ?? buildStatusMessage(responseStatus, detail.created_at, requestedDuration, false);
+            ?? persistedFailedMessage
+            ?? buildStatusMessage(responseStatus, detail.created_at, requestedDuration, Boolean(persistedFailedMessage));
 
           await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
           return jsonResponse({
@@ -564,136 +755,20 @@ export const jobOrchestratorGateway = {
               referenceCount: referenceImageUrls.length,
             });
           }
-          let gen;
-          try {
-            gen = await aiGateway.startGeneration(route.providerKey, route.resolvedModel, {
-              prompt,
-              firstFrameUrl,
-              lastFrameUrl,
-              referenceImageUrls: referenceImageUrls.length > 0 ? referenceImageUrls : null,
-              durationSeconds: parsed.data.durationSeconds ?? null,
-              aspectRatio: chosenAspectRatio,
-            });
-          } catch (e) {
-            const genErr = (e as Error).message ?? "";
-            // Refund credits + mark failed atomically.
-            try {
-              await jobService.failJob(svc, {
-                userId: auth.userId,
-                jobId,
-                reason: genErr,
-                refundCredits: true,
-              });
-            } catch (_) { /* best-effort */ }
-            logError("startGeneration failed", { error: genErr, jobId });
-
-            // Surface a precise, user-readable message when the Local router
-            // isn't set up or is unreachable — instead of a generic provider
-            // error. Credits are already refunded above. No secrets/URLs leak.
-            if (route.providerKey === "local") {
-              const endpointNotFound = /no video create endpoint|endpoint not found|router 404|\b404\b/i.test(genErr);
-              if (endpointNotFound) {
-                await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 502, latencyMs: Date.now() - ctx.startedAt, errorCode: "LOCAL_ENDPOINT_NOT_FOUND" });
-                return errorResponse(
-                  "LOCAL_ENDPOINT_NOT_FOUND",
-                  // genErr contains the exact attempted paths (host omitted) and the
-                  // LOCAL_VIDEO_ROUTER_CREATE_PATH hint — surface it directly.
-                  genErr || "Local video router is reachable, but its video generation endpoint was not found. Set LOCAL_VIDEO_ROUTER_CREATE_PATH to your router's create endpoint, for example /prompt for ComfyUI.",
-                  502,
-                  ctx.requestId,
-                );
-              }
-              const notConfigured = /not configured|add LOCAL_VIDEO_ROUTER_URL/i.test(genErr);
-              if (notConfigured) {
-                await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 503, latencyMs: Date.now() - ctx.startedAt, errorCode: "LOCAL_NOT_CONFIGURED" });
-                return errorResponse(
-                  "LOCAL_NOT_CONFIGURED",
-                  "Local video router is not configured. Add LOCAL_VIDEO_ROUTER_URL or choose a cloud model.",
-                  503,
-                  ctx.requestId,
-                );
-              }
-              const unreachable = /unreachable|unable to reach|router .* unreachable/i.test(genErr);
-              if (unreachable) {
-                await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 502, latencyMs: Date.now() - ctx.startedAt, errorCode: "LOCAL_UNREACHABLE" });
-                return errorResponse(
-                  "LOCAL_UNREACHABLE",
-                  "Local video router is unreachable. Check that the local router is running and accessible from the backend.",
-                  502,
-                  ctx.requestId,
-                );
-              }
-              await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 502, latencyMs: Date.now() - ctx.startedAt, errorCode: "LOCAL_PROVIDER_ERROR" });
-              return errorResponse(
-                "LOCAL_PROVIDER_ERROR",
-                // Surface the router's actual rejection (e.g. ComfyUI node errors,
-                // missing model/checkpoint, or a bad LoadImage path). genErr never
-                // contains the router host/URL or any secret, so it is safe to show.
-                genErr
-                  ? `Local video router could not start generation: ${genErr}`
-                  : "Local video router could not start generation. Check the router logs and endpoint compatibility.",
-                502,
-                ctx.requestId,
-              );
-            }
-
-            return errorResponse("PROVIDER_ERROR", "The video provider could not start generation. Please try again.", 502, ctx.requestId);
-          }
-
-          // Guard: if the provider returned neither a job id we can poll nor a
-          // complete result, the card would silently sit in `processing` until
-          // the long stuck-timeout fires. Fail fast with a refund instead.
-          if (!gen.providerJobId && !(gen.isComplete && gen.videoUrl)) {
-            try {
-              await jobService.failJob(svc, {
-                userId: auth.userId,
-                jobId,
-                reason: "Provider did not return a job id",
-                refundCredits: true,
-              });
-            } catch (_) { /* best-effort */ }
-            logError("startGeneration returned no providerJobId", { jobId, provider: route.providerKey });
-            return errorResponse("PROVIDER_ERROR", "The video provider did not return a job id. Credits refunded — please try again.", 502, ctx.requestId);
-          }
-
-          try {
-            await jobService.markProcessing(svc, auth.userId, jobId, gen.providerJobId);
-          } catch (e) {
-            await jobService.failJob(svc, {
-              userId: auth.userId,
-              jobId,
-              reason: (e as Error).message,
-              refundCredits: true,
-            });
-            logError("markProcessing failed", { error: (e as Error).message, jobId });
-            return errorResponse("JOB_STATE_ERROR", "Could not update job state", 500, ctx.requestId);
-          }
-
-          let videoAssetId: string | null = null;
-          let finalStatus: "processing" | "completed" = "processing";
-          if (gen.isComplete && gen.videoUrl) {
-            try {
-              const storagePath = await materializeVideoUrl(svc, auth.userId, gen.videoUrl);
-              videoAssetId = await jobService.completeJob(svc, {
-                userId: auth.userId,
-                jobId,
-                storagePath,
-                thumbnailUrl: gen.thumbnailUrl,
-                aspectRatio: gen.aspectRatio,
-                duration: gen.duration,
-              });
-              finalStatus = "completed";
-            } catch (e) {
-              await jobService.failJob(svc, {
-                userId: auth.userId,
-                jobId,
-                reason: (e as Error).message,
-                refundCredits: true,
-              });
-              logError("completeJob failed", { error: (e as Error).message, jobId });
-              return errorResponse("JOB_COMPLETE_ERROR", "Could not finalize generated video", 500, ctx.requestId);
-            }
-          }
+          waitUntilBackground(startProviderGenerationInBackground(svc, {
+            userId: auth.userId,
+            jobId,
+            requestId: ctx.requestId,
+            providerKey: route.providerKey,
+            resolvedModel: route.resolvedModel,
+            estimatedCost: route.estimatedCost,
+            prompt,
+            firstFrameUrl,
+            lastFrameUrl,
+            referenceImageUrls,
+            durationSeconds: parsed.data.durationSeconds ?? null,
+            aspectRatio: chosenAspectRatio,
+          }));
 
           await writeAuditLog(svc, {
             actorUserId: auth.userId,
@@ -701,21 +776,21 @@ export const jobOrchestratorGateway = {
             targetType: "generation_job",
             targetId: jobId,
             requestId: ctx.requestId,
-            metadata: { provider: route.providerKey, model: route.resolvedModel, status: finalStatus },
+            metadata: { provider: route.providerKey, model: route.resolvedModel, status: "pending" },
           });
           await writeApiRequestLog(svc, {
-            ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt,
+            ...ctx, userId: auth.userId, statusCode: 202, latencyMs: Date.now() - ctx.startedAt,
             providerKey: route.providerKey, modelKey: route.resolvedModel, estimatedCost: route.estimatedCost,
           });
 
           return jsonResponse({
             jobId,
-            status: finalStatus,
-            videoAssetId,
+            status: "pending",
+            videoAssetId: null,
             providerKey: route.providerKey,
             resolvedModel: route.resolvedModel,
             requestId: ctx.requestId,
-          });
+          }, 202);
         }
 
         case "deleteJob": {
