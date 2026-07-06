@@ -495,10 +495,21 @@ async function dispatchProviderStartIfClaimed(
 async function failProviderStartAfterRetries(
   svc: ReturnType<typeof getServiceClient>,
   userId: string,
-  detail: { id: string; provider_start_attempts?: number | null; provider_start_last_error?: string | null },
+  detail: {
+    id: string;
+    provider_key?: string | null;
+    provider_start_attempts?: number | null;
+    provider_start_claimed_at?: string | null;
+    provider_start_last_error?: string | null;
+  },
+  requestedDuration: number | null | undefined,
 ): Promise<boolean> {
   const attempts = detail.provider_start_attempts ?? 0;
   if (attempts < MAX_PROVIDER_START_ATTEMPTS) return false;
+  const claimStartedAt = detail.provider_start_claimed_at ? Date.parse(detail.provider_start_claimed_at) : NaN;
+  const hasFreshClaim = Number.isFinite(claimStartedAt) &&
+    Date.now() - claimStartedAt < providerStartClaimStaleSeconds(detail.provider_key, requestedDuration) * 1000;
+  if (hasFreshClaim) return false;
   const reason = safeProviderFailureReason(
     detail.provider_start_last_error ?? "Provider start could not be confirmed after several attempts — credits refunded.",
   );
@@ -636,7 +647,7 @@ export const jobOrchestratorGateway = {
             detail.model_key
           ) {
             try {
-              const failedAfterRetries = await failProviderStartAfterRetries(svc, auth.userId, detail);
+              const failedAfterRetries = await failProviderStartAfterRetries(svc, auth.userId, detail, requestedDuration);
               if (failedAfterRetries) {
                 terminalFailedReason = safeProviderFailureReason(detail.provider_start_last_error);
                 detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
