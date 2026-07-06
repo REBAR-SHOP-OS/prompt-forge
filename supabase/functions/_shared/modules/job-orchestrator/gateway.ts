@@ -245,6 +245,152 @@ function buildStatusMessage(
   return "Still rendering — provider is taking longer than usual";
 }
 
+type EdgeRuntimeGlobal = typeof globalThis & {
+  EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void };
+};
+
+interface BackgroundStartParams {
+  userId: string;
+  jobId: string;
+  requestId: string;
+  providerKey: ProviderKey;
+  resolvedModel: string;
+  estimatedCost: number;
+  prompt: string;
+  firstFrameUrl: string | null;
+  lastFrameUrl: string | null;
+  referenceImageUrls: string[];
+  durationSeconds: 5 | 10 | 15 | null;
+  aspectRatio: "9:16" | "1:1" | "16:9";
+}
+
+function waitUntilBackground(task: Promise<unknown>) {
+  const runtime = globalThis as EdgeRuntimeGlobal;
+  if (typeof runtime.EdgeRuntime?.waitUntil === "function") {
+    runtime.EdgeRuntime.waitUntil(task);
+    return;
+  }
+  // Local/Deno test fallback. The task itself owns its errors, so this is safe.
+  void task;
+}
+
+async function startProviderGenerationInBackground(
+  svc: ReturnType<typeof getServiceClient>,
+  params: BackgroundStartParams,
+): Promise<void> {
+  const startedAt = Date.now();
+  let statusCode = 200;
+  let errorCode: string | null = null;
+
+  try {
+    logInfo("provider start queued", {
+      requestId: params.requestId,
+      jobId: params.jobId,
+      provider: params.providerKey,
+      model: params.resolvedModel,
+    });
+
+    const gen = await aiGateway.startGeneration(params.providerKey, params.resolvedModel, {
+      prompt: params.prompt,
+      firstFrameUrl: params.firstFrameUrl,
+      lastFrameUrl: params.lastFrameUrl,
+      referenceImageUrls: params.referenceImageUrls.length > 0 ? params.referenceImageUrls : null,
+      durationSeconds: params.durationSeconds,
+      aspectRatio: params.aspectRatio,
+    });
+
+    if (!gen.providerJobId && !(gen.isComplete && gen.videoUrl)) {
+      errorCode = "PROVIDER_NO_JOB_ID";
+      statusCode = 502;
+      await jobService.failJob(svc, {
+        userId: params.userId,
+        jobId: params.jobId,
+        reason: "Provider did not return a job id",
+        refundCredits: true,
+      });
+      logError("background start returned no providerJobId", {
+        requestId: params.requestId,
+        jobId: params.jobId,
+        provider: params.providerKey,
+      });
+      return;
+    }
+
+    if (gen.providerJobId) {
+      await jobService.markProcessing(svc, params.userId, params.jobId, gen.providerJobId);
+    }
+
+    if (gen.isComplete && gen.videoUrl) {
+      const storagePath = await materializeVideoUrl(svc, params.userId, gen.videoUrl);
+      await jobService.completeJob(svc, {
+        userId: params.userId,
+        jobId: params.jobId,
+        storagePath,
+        thumbnailUrl: gen.thumbnailUrl,
+        aspectRatio: gen.aspectRatio,
+        duration: gen.duration,
+      });
+    }
+
+    await writeAuditLog(svc, {
+      actorUserId: params.userId,
+      action: "job_orchestrator.provider_start",
+      targetType: "generation_job",
+      targetId: params.jobId,
+      requestId: params.requestId,
+      metadata: {
+        provider: params.providerKey,
+        model: params.resolvedModel,
+        status: gen.isComplete ? "completed" : "processing",
+      },
+    });
+    logInfo("provider start finished", {
+      requestId: params.requestId,
+      jobId: params.jobId,
+      provider: params.providerKey,
+      providerJobId: gen.providerJobId,
+      complete: gen.isComplete,
+    });
+  } catch (e) {
+    const reason = (e as Error).message ?? "Provider start failed";
+    statusCode = 502;
+    errorCode = "PROVIDER_START_FAILED";
+    try {
+      await jobService.failJob(svc, {
+        userId: params.userId,
+        jobId: params.jobId,
+        reason,
+        refundCredits: true,
+      });
+    } catch (failError) {
+      logError("background failJob persist failed", {
+        requestId: params.requestId,
+        jobId: params.jobId,
+        error: (failError as Error).message,
+      });
+    }
+    logError("background provider start failed", {
+      requestId: params.requestId,
+      jobId: params.jobId,
+      provider: params.providerKey,
+      error: reason,
+    });
+  } finally {
+    await writeApiRequestLog(svc, {
+      requestId: params.requestId,
+      userId: params.userId,
+      route: "/job-orchestrator/provider-start",
+      method: "BACKGROUND",
+      statusCode,
+      latencyMs: Date.now() - startedAt,
+      providerKey: params.providerKey,
+      modelKey: params.resolvedModel,
+      estimatedCost: params.estimatedCost,
+      errorCode,
+    });
+  }
+}
+
 export const jobOrchestratorGateway = {
   contract: JOB_ORCHESTRATOR_CONTRACT,
 
