@@ -26,6 +26,28 @@ function isCreateTimeout(error: unknown): boolean {
   return error instanceof ApiError && error.code === "TIMEOUT";
 }
 
+function recoveredCreateResult(job: JobSummary): CreateJobResult | null {
+  const status = job.status === "pending" || job.status === "processing" || job.status === "completed"
+    ? job.status
+    : null;
+  if (!status || !job.provider_key || !job.model_key) return null;
+  return {
+    jobId: job.id,
+    status,
+    videoAssetId: null,
+    providerKey: job.provider_key,
+    resolvedModel: job.model_key,
+    requestId: "recovered-after-timeout",
+  };
+}
+
+async function recoverCreateTimeout(input: CreateJobInput): Promise<CreateJobResult | null> {
+  if (!input.clientRequestId) return null;
+  const response = await request<{ items: JobSummary[] }>("/jobs-list?limit=50", { timeoutMs: 30_000 });
+  const recovered = (response.items ?? []).find((job) => job.client_request_id === input.clientRequestId);
+  return recovered ? recoveredCreateResult(recovered) : null;
+}
+
 export const jobOrchestratorGateway = {
   contractVersion: JOB_ORCHESTRATOR_CONTRACT_VERSION,
 
@@ -40,10 +62,10 @@ export const jobOrchestratorGateway = {
     const options = {
       method: "POST",
       body: JSON.stringify(idempotentInput),
-      // jobs-create now queues provider start in the backend background and
-      // returns as soon as the durable Pending job exists. Keep this bounded so
-      // auth/network problems never freeze the composer.
-      timeoutMs: 45_000,
+      // jobs-create returns once the durable Pending job exists and provider
+      // handoff is recorded. Give cold starts/DB handshakes enough room while
+      // still preventing the composer from hanging forever.
+      timeoutMs: 120_000,
     };
     try {
       return await request<CreateJobResult>("/jobs-create", options);
@@ -52,7 +74,14 @@ export const jobOrchestratorGateway = {
       // The first request may have reached the backend but timed out before the
       // response returned. Retry once with the same clientRequestId; the backend
       // returns the already-created job without charging or dispatching twice.
-      return await request<CreateJobResult>("/jobs-create", options);
+      try {
+        return await request<CreateJobResult>("/jobs-create", { ...options, timeoutMs: 30_000 });
+      } catch (retryError) {
+        if (!isCreateTimeout(retryError)) throw retryError;
+        const recovered = await recoverCreateTimeout(idempotentInput);
+        if (recovered) return recovered;
+        throw retryError;
+      }
     }
   },
 

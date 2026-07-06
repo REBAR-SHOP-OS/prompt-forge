@@ -958,12 +958,12 @@ export function generationStartErrorMessage(error: unknown, fallback: string): s
     return 'Not enough credits for this generation. Add credits or choose a lower-cost model/duration.'
   }
   if (error instanceof ApiError && error.code === 'TIMEOUT') {
-    return 'Generation may still be queued. Check Pending; if no card appears, retry.'
+    return 'Still queuing. Pending was refreshed automatically; if no card appears, try again.'
   }
   if (error instanceof ApiError) return `${error.code}: ${error.message}`
   if (error instanceof Error && error.message) {
     if (/failed to fetch|networkerror|load failed|timed out|timeout/i.test(error.message)) {
-      return 'Connection dropped while queuing generation. Check Pending; if no card appears, retry.'
+      return 'Connection dropped while queuing. Pending was refreshed automatically; if no card appears, try again.'
     }
     return error.message
   }
@@ -1050,7 +1050,8 @@ function buildSeededJob(
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     video: null,
-    requestId: result.requestId
+    requestId: result.requestId,
+    status_message: result.status === 'pending' ? 'Queued — waiting for provider' : undefined,
   }
 }
 
@@ -7088,6 +7089,17 @@ export default function DashboardPage() {
       setUploadedFiles([])
     } catch (error) {
       if (!isExpectedBillingError(error) && !isExpectedLocalRouterError(error)) console.error('handleSubmit failed', error)
+      if (error instanceof ApiError && error.code === 'TIMEOUT') {
+        try {
+          const summaries = await jobOrchestratorGateway.listMyJobs(20)
+          const hydrated = await hydrateJobs(summaries.filter((job) => !workspaceHiddenJobIds.has(job.id)))
+          if (hydrated.length > 0) {
+            setGeneratedVideos((currentJobs) => hydrated.reduce((jobs, job) => mergeJob(jobs, job), currentJobs))
+          }
+        } catch {
+          /* best-effort recovery refresh */
+        }
+      }
       const message = generationStartErrorMessage(error, 'Could not start video generation.')
       // Don't overwrite a more specific message set by submitScenesAsJobs.
       setComposerError((current) => current ?? message)
@@ -7295,6 +7307,17 @@ export default function DashboardPage() {
       }
       setVideoColumnMessage(null)
     } catch (error) {
+      if (error instanceof ApiError && error.code === 'TIMEOUT') {
+        try {
+          const summaries = await jobOrchestratorGateway.listMyJobs(20)
+          const hydrated = await hydrateJobs(summaries.filter((job) => !workspaceHiddenJobIds.has(job.id)))
+          if (hydrated.length > 0) {
+            setGeneratedVideos((currentJobs) => hydrated.reduce((jobs, job) => mergeJob(jobs, job), currentJobs))
+          }
+        } catch {
+          /* best-effort recovery refresh */
+        }
+      }
       const message = generationStartErrorMessage(error, 'Could not start scenario generation.')
       setComposerError(message)
       setVideoColumnMessage(message)
