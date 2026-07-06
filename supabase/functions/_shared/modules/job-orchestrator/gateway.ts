@@ -516,6 +516,7 @@ export const jobOrchestratorGateway = {
           let progressPercent: number | null = null;
           let terminalFailedReason: string | null = null;
           const requestedDuration = (detail as { requested_duration?: number | null }).requested_duration ?? null;
+          let providerStartRedispatched = false;
           if (
             detail.status === "processing" &&
             detail.provider_job_id &&
@@ -588,6 +589,46 @@ export const jobOrchestratorGateway = {
             progressPercent = estimateProgressFromJob(detail.status, detail.created_at, requestedDuration);
           }
 
+          // Self-healing fallback: EdgeRuntime.waitUntil is fast but not a
+          // durable queue. If a pending job has no provider id and no active
+          // fresh claim, polling can safely re-dispatch provider start. The DB
+          // claim guarantees only one caller actually starts the provider.
+          if (
+            !terminalFailedReason &&
+            (detail.status === "processing" || detail.status === "pending") &&
+            !detail.provider_job_id &&
+            (detail.provider_key === "wan" || detail.provider_key === "flow" || detail.provider_key === "local") &&
+            detail.model_key
+          ) {
+            try {
+              providerStartRedispatched = await dispatchProviderStartIfClaimed(svc, {
+                userId: auth.userId,
+                jobId: detail.id,
+                requestId: ctx.requestId,
+                providerKey: detail.provider_key as ProviderKey,
+                resolvedModel: detail.model_key,
+                estimatedCost: 0,
+                prompt: detail.input_prompt,
+                firstFrameUrl: detail.first_frame_url ?? null,
+                lastFrameUrl: detail.last_frame_url ?? null,
+                referenceImageUrls: detail.reference_image_urls ?? [],
+                durationSeconds: (requestedDuration === 5 || requestedDuration === 10 || requestedDuration === 15) ? requestedDuration : null,
+                aspectRatio: detail.requested_aspect_ratio === "9:16" || detail.requested_aspect_ratio === "1:1" || detail.requested_aspect_ratio === "16:9"
+                  ? detail.requested_aspect_ratio
+                  : "16:9",
+              });
+              if (providerStartRedispatched) {
+                progressPercent = estimateProgressFromJob(detail.status, detail.created_at, requestedDuration);
+              }
+            } catch (e) {
+              logError("provider start redispatch failed", {
+                error: (e as Error).message,
+                jobId: detail.id,
+                provider: detail.provider_key,
+              });
+            }
+          }
+
           // Early-stuck guard: if the row sits in pending/processing without a
           // provider_job_id (so the inline poll above can never advance it),
           // fail with refund after the async provider-start handoff window.
@@ -595,11 +636,14 @@ export const jobOrchestratorGateway = {
           // previous 60s threshold was only safe for synchronous provider start.
           if (
             !terminalFailedReason &&
+            !providerStartRedispatched &&
             (detail.status === "processing" || detail.status === "pending") &&
             !detail.provider_job_id
           ) {
             const startedAt = Date.parse(detail.created_at);
-            if (Number.isFinite(startedAt) && Date.now() - startedAt > providerStartHandoffTimeoutMs(requestedDuration)) {
+            const claimStartedAt = detail.provider_start_claimed_at ? Date.parse(detail.provider_start_claimed_at) : NaN;
+            const hasFreshClaim = Number.isFinite(claimStartedAt) && Date.now() - claimStartedAt < providerStartClaimStaleSeconds(detail.provider_key, requestedDuration) * 1000;
+            if (!hasFreshClaim && Number.isFinite(startedAt) && Date.now() - startedAt > providerStartHandoffTimeoutMs(requestedDuration)) {
               terminalFailedReason = "Provider never returned a job id — credits refunded. Please try again.";
               try {
                 await jobService.failJob(svc, {
@@ -621,6 +665,7 @@ export const jobOrchestratorGateway = {
           // forever-rendering card. Skips if we already flipped to terminal.
           if (
             !terminalFailedReason &&
+            !providerStartRedispatched &&
             (detail.status === "processing" || detail.status === "pending")
           ) {
             const startedAt = Date.parse(detail.created_at);
@@ -799,7 +844,7 @@ export const jobOrchestratorGateway = {
               referenceCount: referenceImageUrls.length,
             });
           }
-          waitUntilBackground(startProviderGenerationInBackground(svc, {
+          await dispatchProviderStartIfClaimed(svc, {
             userId: auth.userId,
             jobId,
             requestId: ctx.requestId,
@@ -812,7 +857,7 @@ export const jobOrchestratorGateway = {
             referenceImageUrls,
             durationSeconds: parsed.data.durationSeconds ?? null,
             aspectRatio: chosenAspectRatio,
-          }));
+          });
 
           await writeAuditLog(svc, {
             actorUserId: auth.userId,
