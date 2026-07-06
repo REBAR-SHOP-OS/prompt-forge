@@ -51,7 +51,7 @@ export default function AuthForm({ mode }: Props) {
         if (!data.session) {
           setNeedsConfirm(true);
           setInfo(
-            "Account created. Please check your inbox to verify your email before signing in. / حساب ساخته شد. لطفاً برای فعال‌سازی، ایمیل خود را بررسی کنید.",
+            "Account created. Please check your inbox to verify your email before signing in.",
           );
           return;
         }
@@ -93,7 +93,7 @@ export default function AuthForm({ mode }: Props) {
       });
       if (error) throw error;
       setInfo(
-        "Confirmation email sent. / ایمیل تأیید ارسال شد.",
+        "Confirmation email sent.",
       );
     } catch (err) {
       setError((err as Error).message);
@@ -136,7 +136,7 @@ export default function AuthForm({ mode }: Props) {
           onClick={onResend}
           disabled={resending}
         >
-          {resending ? "Sending…" : "Resend confirmation email / ارسال مجدد ایمیل تأیید"}
+          {resending ? "Sending…" : "Resend confirmation email"}
         </Button>
       )}
       {mode === "signup" && (
