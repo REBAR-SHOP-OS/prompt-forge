@@ -957,6 +957,9 @@ export function generationStartErrorMessage(error: unknown, fallback: string): s
   if (isExpectedBillingError(error)) {
     return 'Not enough credits for this generation. Add credits or choose a lower-cost model/duration.'
   }
+  if (error instanceof ApiError && error.code === 'TIMEOUT') {
+    return 'Generation may still be queued. Check Pending; if no card appears, retry.'
+  }
   if (error instanceof ApiError) return `${error.code}: ${error.message}`
   if (error instanceof Error && error.message) {
     if (/failed to fetch|networkerror|load failed|timed out|timeout/i.test(error.message)) {
