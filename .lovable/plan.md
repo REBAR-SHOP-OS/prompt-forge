@@ -1,22 +1,23 @@
-## هدف
-باکس پرامت در چت‌باکس به‌جای نمایش تک‌خطی با اسکرول افقی کوچک و بریده، متن را در کل عرض باکس پخش کند و در صورت طولانی بودن به خط بعد برود (چندخطی و تمام‌عرض).
+## Goal
+Make the prompt textarea span the full width of the composer/chat box and enlarge the chat box itself so long prompts are readable instead of cramped in a narrow side column.
 
-## تغییر
-در `src/modules/generator-ui/pages/DashboardPage.tsx` (المان `<textarea id="prompt-input">`، حدود خط ۱۲۱۵۴–۱۲۱۶۱):
+## What will change
 
-- `rows={1}` → `rows={2}` (شروع دو خطی، قابل رشد).
-- کلاس‌های فعلی که متن را تک‌خطی و بریده می‌کنند حذف/اصلاح می‌شوند:
-  - حذف `whitespace-nowrap`, `overflow-x-auto`, `max-h-10`.
-  - `min-h-10` → ارتفاع مناسب چندخطی مثل `min-h-16`.
-  - افزودن `whitespace-pre-wrap break-words` تا متن در عرض کامل بپیچد.
-  - نگه‌داشتن `w-full` برای تمام‌عرض بودن و `resize-y` (یا `resize-none`) برای رفتار طبیعی.
-  - `overflow-y-hidden` → `overflow-y-auto` و افزودن یک `max-h` معقول (مثل `max-h-40`) تا در متن‌های خیلی بلند اسکرول عمودی داشته باشیم نه بی‌نهایت رشد.
+1. **Composer width**
+   - Increase `sm:w-[min(96rem,calc(100vw-56rem))]` to use more horizontal space on large screens so the chat box feels larger.
 
-نتیجه: کلاس نهایی چیزی شبیه:
-`min-h-16 max-h-40 w-full resize-y overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent py-2 text-[15px] leading-6 text-zinc-100 outline-none placeholder:text-zinc-500/70`
+2. **Textarea layout**
+   - Remove the `sm:grid-cols-[minmax(0,1fr)_auto]` two-column layout that squeezes the textarea next to the action buttons.
+   - Stack the textarea above the action buttons so it can use the full composer width.
+   - Keep the textarea’s existing `w-full`, `whitespace-pre-wrap`, and `break-words` behavior.
 
-## اعتبارسنجی
-- اجرای تایپ‌چک/بیلد برای اطمینان از نبود خطا.
-- بررسی بصری در پیش‌نمایش که متن پرامت در کل عرض پخش شده و بدون بریدگی/اسکرول افقی به خط بعد می‌رود.
+3. **Textarea height**
+   - Increase `min-h-16` to a taller minimum (e.g., `min-h-20` or `min-h-24`) so the chat box itself feels larger and multi-line prompts are comfortable.
+   - Keep `max-h-40` and `overflow-y-auto` so very long prompts still scroll.
 
-این تغییر فقط ظاهری/frontend است و منطق تولید ویدئو را تغییر نمی‌دهد.
+## Files
+- `src/modules/generator-ui/pages/DashboardPage.tsx` — composer form width class, grid layout, and textarea sizing classes.
+
+## Validation
+- Type-check passes (`bun run tsc --noEmit`).
+- Visual check in preview confirms textarea spans full width and composer is wider.
