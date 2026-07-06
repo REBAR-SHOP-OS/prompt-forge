@@ -953,7 +953,7 @@ function isExpectedLocalRouterError(error: unknown): boolean {
   )
 }
 
-function generationStartErrorMessage(error: unknown, fallback: string): string {
+export function generationStartErrorMessage(error: unknown, fallback: string): string {
   if (isExpectedBillingError(error)) {
     return 'Not enough credits for this generation. Add credits or choose a lower-cost model/duration.'
   }
