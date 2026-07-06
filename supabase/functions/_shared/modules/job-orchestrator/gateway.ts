@@ -592,8 +592,12 @@ export const jobOrchestratorGateway = {
           const responseDetail = terminalFailedReason
             ? { ...detail, status: "failed" as const }
             : detail;
+          const persistedFailedMessage = responseStatus === "failed"
+            ? await failedJobMessage(svc, auth.userId, detail.id)
+            : null;
           const statusMessage = terminalFailedReason
-            ?? buildStatusMessage(responseStatus, detail.created_at, requestedDuration, false);
+            ?? persistedFailedMessage
+            ?? buildStatusMessage(responseStatus, detail.created_at, requestedDuration, Boolean(persistedFailedMessage));
 
           await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 200, latencyMs: Date.now() - ctx.startedAt });
           return jsonResponse({
