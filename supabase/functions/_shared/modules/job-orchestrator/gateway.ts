@@ -225,6 +225,13 @@ function stuckTimeoutMsForDuration(durationSeconds: number | null | undefined): 
   return Math.min(45 * 60_000, Math.max(15 * 60_000, dur * 2.5 * 60_000));
 }
 
+function providerStartHandoffTimeoutMs(durationSeconds: number | null | undefined): number {
+  // With async create, a job can legitimately sit in pending while a slow local
+  // router or provider accepts the request. Fail the handoff before the final
+  // stuck-timeout, but never at the old 60s synchronous-start threshold.
+  return Math.min(stuckTimeoutMsForDuration(durationSeconds) - 60_000, 10 * 60_000);
+}
+
 function buildStatusMessage(
   status: string,
   createdAt: string | undefined,
@@ -539,16 +546,16 @@ export const jobOrchestratorGateway = {
 
           // Early-stuck guard: if the row sits in pending/processing without a
           // provider_job_id (so the inline poll above can never advance it),
-          // fail with refund after ~60s. Without this, the only safety net is
-          // the 15–45min stuck-timeout below — which looks to the user like
-          // "the card never executed".
+          // fail with refund after the async provider-start handoff window.
+          // This must be comfortably longer than slow router start calls; the
+          // previous 60s threshold was only safe for synchronous provider start.
           if (
             !terminalFailedReason &&
             (detail.status === "processing" || detail.status === "pending") &&
             !detail.provider_job_id
           ) {
             const startedAt = Date.parse(detail.created_at);
-            if (Number.isFinite(startedAt) && Date.now() - startedAt > 60_000) {
+            if (Number.isFinite(startedAt) && Date.now() - startedAt > providerStartHandoffTimeoutMs(requestedDuration)) {
               terminalFailedReason = "Provider never returned a job id — credits refunded. Please try again.";
               try {
                 await jobService.failJob(svc, {
