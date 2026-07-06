@@ -960,7 +960,7 @@ function generationStartErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError) return `${error.code}: ${error.message}`
   if (error instanceof Error && error.message) {
     if (/failed to fetch|networkerror|load failed|timed out|timeout/i.test(error.message)) {
-      return 'Network request failed while starting generation. Please retry.'
+      return 'Connection dropped while queuing generation. Check Pending; if no card appears, retry.'
     }
     return error.message
   }
