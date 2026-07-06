@@ -1,39 +1,22 @@
-## Expected outcome
-Video generation should reliably create a visible Pending card, start the provider in the background, keep polling until completion/failure, and show a clear English status instead of timing out or leaving the user with no card.
+## هدف
+باکس پرامت در چت‌باکس به‌جای نمایش تک‌خطی با اسکرول افقی کوچک و بریده، متن را در کل عرض باکس پخش کند و در صورت طولانی بودن به خط بعد برود (چندخطی و تمام‌عرض).
 
-## What I found
-- The visible message comes from the frontend timeout path: `src/core/api/client.ts` aborts `/jobs-create` after 45 seconds and throws `TIMEOUT`.
-- `/jobs-create` has already been partly moved to an async pattern, but the provider-start handoff is still fragile: if background execution is not retained correctly, the job can stay queued without a provider job id.
-- The backend has recovery logic in `jobs-get`, but it needs to be hardened so stuck Pending jobs are re-claimed/re-dispatched instead of silently staying empty.
-- Recent backend logs show `createJob` can return `202`, but the user-facing flow still reports no usable generated result, so the root fix must cover both creation timeout and post-create provider handoff.
+## تغییر
+در `src/modules/generator-ui/pages/DashboardPage.tsx` (المان `<textarea id="prompt-input">`، حدود خط ۱۲۱۵۴–۱۲۱۶۱):
 
-## Implementation plan
-1. **Harden `/jobs-create` backend dispatch**
-   - Make provider start handoff explicitly observable with safe logs.
-   - Ensure the function returns `202` only after the durable job exists and the provider-start claim is recorded.
-   - Avoid unnecessary blocking after the job is created by parallelizing non-critical audit/request logging.
+- `rows={1}` → `rows={2}` (شروع دو خطی، قابل رشد).
+- کلاس‌های فعلی که متن را تک‌خطی و بریده می‌کنند حذف/اصلاح می‌شوند:
+  - حذف `whitespace-nowrap`, `overflow-x-auto`, `max-h-10`.
+  - `min-h-10` → ارتفاع مناسب چندخطی مثل `min-h-16`.
+  - افزودن `whitespace-pre-wrap break-words` تا متن در عرض کامل بپیچد.
+  - نگه‌داشتن `w-full` برای تمام‌عرض بودن و `resize-y` (یا `resize-none`) برای رفتار طبیعی.
+  - `overflow-y-hidden` → `overflow-y-auto` و افزودن یک `max-h` معقول (مثل `max-h-40`) تا در متن‌های خیلی بلند اسکرول عمودی داشته باشیم نه بی‌نهایت رشد.
 
-2. **Strengthen stuck-job recovery in `/jobs-get`**
-   - If a job is still `pending` with no provider job id after the handoff window, re-claim and re-dispatch provider start.
-   - If re-dispatch fails repeatedly, mark the job failed with a safe message and refund credits instead of leaving an invisible/stuck card.
-   - Keep the status text in English and useful: queued, rendering, failed/refunded, ready.
+نتیجه: کلاس نهایی چیزی شبیه:
+`min-h-16 max-h-40 w-full resize-y overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent py-2 text-[15px] leading-6 text-zinc-100 outline-none placeholder:text-zinc-500/70`
 
-3. **Fix frontend timeout behavior**
-   - Increase the `/jobs-create` client timeout from 45s to a safer backend-compatible threshold.
-   - Keep idempotent retry using the same `clientRequestId` so retries do not double-charge or duplicate jobs.
-   - Ensure `TIMEOUT` renders as a clear English recovery message, not a raw technical error.
+## اعتبارسنجی
+- اجرای تایپ‌چک/بیلد برای اطمینان از نبود خطا.
+- بررسی بصری در پیش‌نمایش که متن پرامت در کل عرض پخش شده و بدون بریدگی/اسکرول افقی به خط بعد می‌رود.
 
-4. **Improve Pending visibility**
-   - Make sure the returned job is immediately seeded into Pending as soon as `/jobs-create` returns `202`.
-   - If creation times out but the request may have reached the backend, refresh/list jobs so an already-created job appears instead of telling the user to retry blindly.
-
-5. **Validate end-to-end**
-   - Check relevant Edge Function logs and database job rows after the change.
-   - Deploy the changed functions.
-   - Test the create → Pending → provider start/poll path and confirm no stuck Pending/no-card state.
-
-## Constraints and safeguards
-- No provider keys or secrets will be exposed or hardcoded.
-- Credit ledger will not be edited directly; existing credit/job RPCs remain the authority.
-- Changes stay minimal and focused on generation reliability, not visual redesign.
-- Backend table access/RLS rules will only be changed if investigation during build confirms a permission issue.
+این تغییر فقط ظاهری/frontend است و منطق تولید ویدئو را تغییر نمی‌دهد.
