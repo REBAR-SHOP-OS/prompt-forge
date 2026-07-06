@@ -59,9 +59,7 @@ STRICTLY EXCLUDE:
 
 If nothing fits, return an empty occasions array — do NOT invent.`
 
-    const langInstruction = lang === 'fa'
-      ? `همه فیلدهای متنی (title, whatItIs, history) را به فارسی روان بنویس. در title نام بین‌المللی را در پرانتز انگلیسی بیاور.`
-      : `Write all text fields (title, whatItIs, history) in clear English.`
+    const langInstruction = `Write all text fields (title, whatItIs, history) in clear English.`
 
     let userPrompt: string
     let detailInstruction: string
