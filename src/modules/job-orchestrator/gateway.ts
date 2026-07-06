@@ -40,6 +40,9 @@ export const jobOrchestratorGateway = {
     const promise = (async () => {
       const result = await request<JobDetail | { error?: { code?: string; message?: string }; missing?: boolean; requestId?: string }>(
         `/jobs-get?jobId=${encodeURIComponent(jobId)}`,
+        // A poll should never hang forever; the caller's failure/backoff logic
+        // retries on a thrown error, so a stuck poll self-heals.
+        { timeoutMs: 90_000 },
       );
       if ('missing' in result && result.missing) {
         throw new ApiError(404, result.error?.code ?? 'NOT_FOUND', result.error?.message ?? 'Job not found', result.requestId);
