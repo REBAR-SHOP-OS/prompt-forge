@@ -32,6 +32,7 @@ export const JOB_ORCHESTRATOR_CONTRACT: DomainContractMeta = {
 const CreateJobSchema = z.object({
   providerKey: z.enum(["wan", "flow", "local"]),
   requestedModel: z.string().trim().min(1).max(100).optional(),
+  clientRequestId: z.string().uuid().optional(),
   prompt: z.string().min(1).max(16000),
   firstFrameUrl: z.string().url().max(2048).optional(),
   lastFrameUrl: z.string().url().max(2048).optional(),
@@ -232,6 +233,18 @@ function providerStartHandoffTimeoutMs(durationSeconds: number | null | undefine
   return Math.min(stuckTimeoutMsForDuration(durationSeconds) - 60_000, 10 * 60_000);
 }
 
+function providerStartClaimStaleSeconds(
+  providerKey: ProviderKey | string | null | undefined,
+  durationSeconds: number | null | undefined,
+): number {
+  if (providerKey === "local") {
+    const raw = Number(Deno.env.get("LOCAL_VIDEO_ROUTER_TIMEOUT_MS"));
+    const localTimeoutMs = Number.isFinite(raw) && raw > 0 ? Math.round(raw) : 300_000;
+    return Math.ceil(Math.max(localTimeoutMs + 60_000, 180_000) / 1000);
+  }
+  return Math.ceil(Math.min(providerStartHandoffTimeoutMs(durationSeconds), 120_000) / 1000);
+}
+
 function buildStatusMessage(
   status: string,
   createdAt: string | undefined,
@@ -397,6 +410,15 @@ async function startProviderGenerationInBackground(
     statusCode = 502;
     errorCode = "PROVIDER_START_FAILED";
     try {
+      await jobService.recordProviderStartError(svc, params.userId, params.jobId, reason);
+    } catch (recordError) {
+      logError("background provider-start error persist failed", {
+        requestId: params.requestId,
+        jobId: params.jobId,
+        error: (recordError as Error).message,
+      });
+    }
+    try {
       await jobService.failJob(svc, {
         userId: params.userId,
         jobId: params.jobId,
@@ -430,6 +452,28 @@ async function startProviderGenerationInBackground(
       errorCode,
     });
   }
+}
+
+async function dispatchProviderStartIfClaimed(
+  svc: ReturnType<typeof getServiceClient>,
+  params: BackgroundStartParams,
+): Promise<boolean> {
+  const claimed = await jobService.claimProviderStart(
+    svc,
+    params.userId,
+    params.jobId,
+    providerStartClaimStaleSeconds(params.providerKey, params.durationSeconds),
+  );
+  if (!claimed) {
+    logInfo("provider start claim skipped", {
+      requestId: params.requestId,
+      jobId: params.jobId,
+      provider: params.providerKey,
+    });
+    return false;
+  }
+  waitUntilBackground(startProviderGenerationInBackground(svc, params));
+  return true;
 }
 
 export const jobOrchestratorGateway = {
