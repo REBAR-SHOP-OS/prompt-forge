@@ -417,7 +417,7 @@ const G_INTERIOR: Loc = { en: 'Interior & Moody', }
 const SCENE_TEMPLATES: SceneTemplate[] = [
   // Industrial & Construction
   { id: 'construction-site', label: { en: 'Construction Site', }, icon: '🏗️', group: G_INDUSTRIAL, prompt: 'Construction site environment: steel building skeletons, giant moving cranes, dust and dirt, hard-hat workers at sunset.', preview: scConstructionSite.url },
-  { id: 'heavy-industry', label: { en: 'Heavy Industry Factory',Industrie Lourde" }, icon: '🏭', group: G_INDUSTRIAL, prompt: 'Heavy industry factory environment: molten iron, welding sparks, large gear machinery and huge smokestacks.', preview: scHeavyIndustry.url },
+  { id: 'heavy-industry', label: { en: 'Heavy Industry Factory' }, icon: '🏭', group: G_INDUSTRIAL, prompt: 'Heavy industry factory environment: molten iron, welding sparks, large gear machinery and huge smokestacks.', preview: scHeavyIndustry.url },
   { id: 'abandoned-warehouse', label: { en: 'Abandoned Warehouse', }, icon: '🕸️', group: G_INDUSTRIAL, prompt: 'Abandoned warehouse environment: large empty space, broken windows, light beams piercing from the roof and dust floating in the air.', preview: scAbandonedWarehouse.url },
   { id: 'shipyard-dock', label: { en: 'Shipyard / Dock', }, icon: '🚢', group: G_INDUSTRIAL, prompt: 'Shipyard and dock environment: giant container ships, coastal cranes, seawater and rusty steel structures.', preview: scShipyardDock.url },
   { id: 'high-tech-lab', label: { en: 'High-Tech Laboratory', }, icon: '🔬', group: G_INDUSTRIAL, prompt: 'High-tech laboratory environment: clean white walls, blinking computer server racks, glass chambers and cold blue or laser lighting.', preview: scHighTechLab.url },
