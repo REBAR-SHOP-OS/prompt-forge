@@ -14,6 +14,8 @@ const isOAuthConsentPath = () =>
 function Gate() {
   const { session, loading } = useAuth()
 
+  if (isOAuthConsentPath()) return <OAuthConsent />
+
   if (loading) return <LoadingScreen />
   return session ? (
     <LibrarySyncGate>
