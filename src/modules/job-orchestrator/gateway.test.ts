@@ -20,7 +20,7 @@ describe("jobOrchestratorGateway.createJob", () => {
     vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000001");
   });
 
-  it("queues generation through a short bounded request and accepts pending jobs", async () => {
+  it("queues generation through a bounded request and accepts pending jobs", async () => {
     requestMock.mockResolvedValueOnce({
       jobId: "job-1",
       status: "pending",
@@ -42,7 +42,7 @@ describe("jobOrchestratorGateway.createJob", () => {
     expect(result.status).toBe("pending");
     expect(requestMock).toHaveBeenCalledWith("/jobs-create", expect.objectContaining({
       method: "POST",
-      timeoutMs: 45_000,
+      timeoutMs: 120_000,
     }));
     expect(JSON.parse(requestMock.mock.calls[0][1].body)).toMatchObject({
       providerKey: "wan",
@@ -82,5 +82,40 @@ describe("jobOrchestratorGateway.createJob", () => {
     expect(JSON.parse(requestMock.mock.calls[0][1].body)).toMatchObject({
       clientRequestId: "00000000-0000-4000-8000-000000000001",
     });
+  });
+
+  it("recovers a created pending job after repeated create timeouts", async () => {
+    const { ApiError } = await import("@/core/api/client");
+    requestMock
+      .mockRejectedValueOnce(new ApiError(408, "TIMEOUT", "The request took too long. Please try again."))
+      .mockRejectedValueOnce(new ApiError(408, "TIMEOUT", "The request took too long. Please try again."))
+      .mockResolvedValueOnce({
+        items: [{
+          id: "job-1",
+          status: "pending",
+          input_prompt: "test prompt",
+          provider_key: "wan",
+          model_key: "wan2.7-i2v-2026-04-25",
+          client_request_id: "00000000-0000-4000-8000-000000000001",
+          created_at: "2026-07-06T00:00:00.000Z",
+        }],
+      });
+
+    const { jobOrchestratorGateway } = await import("./gateway");
+    const result = await jobOrchestratorGateway.createJob({
+      providerKey: "wan",
+      requestedModel: "wan2.7-i2v-2026-04-25",
+      prompt: "test prompt",
+      durationSeconds: 5,
+      aspectRatio: "16:9",
+    });
+
+    expect(result).toMatchObject({
+      jobId: "job-1",
+      status: "pending",
+      providerKey: "wan",
+      resolvedModel: "wan2.7-i2v-2026-04-25",
+    });
+    expect(requestMock).toHaveBeenLastCalledWith("/jobs-list?limit=50", { timeoutMs: 30_000 });
   });
 });
