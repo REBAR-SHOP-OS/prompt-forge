@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const requestMock = vi.fn();
+const { requestMock } = vi.hoisted(() => ({
+  requestMock: vi.fn(),
+}));
 
 vi.mock("@/core/api/client", () => ({
   request: requestMock,
