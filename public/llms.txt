@@ -1,0 +1,9 @@
+# REBAR SHOP AI VIDEO
+
+> Forge cinematic AI videos, soundtracks, and voiceovers in one studio — an AI video ad generator built on Wan/Flow providers.
+
+REBAR SHOP AI VIDEO (Prompt Forge) turns product photos and prompts into promotional video ads, with camera-style presets, scene styles, character and product identity locking, and generated voiceovers.
+
+## Pages
+
+- [AI Video Ad Generator](/): Create AI video ads from prompts and product images, choose camera and scene styles, and generate voiceovers.

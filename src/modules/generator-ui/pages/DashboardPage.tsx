@@ -200,7 +200,7 @@ function StyleSection({
 }) {
   return (
     <div className="space-y-1.5">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">{title}</p>
+      <h2 className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">{title}</h2>
       <div className="flex flex-wrap gap-1.5">
         {items.map((item) => {
           const active = selectedIds.includes(item.id)
@@ -8573,7 +8573,7 @@ export default function DashboardPage() {
 
 
   return (
-    <section
+    <main
       className="relative min-h-screen overflow-hidden bg-black text-zinc-100"
       style={{
         backgroundImage:
@@ -8596,6 +8596,7 @@ export default function DashboardPage() {
         addUploadedFiles(event.dataTransfer.files, 'Start')
       }}
     >
+      <h1 className="sr-only">AI Video Ad Generator — Prompt Forge Dashboard</h1>
       {showWelcome && <WelcomeVideoOverlay onClose={dismissWelcome} />}
       {(() => {
         if (!trimmingJobId) return null
@@ -13444,6 +13445,6 @@ export default function DashboardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </section>
+    </main>
   )
 }
