@@ -375,6 +375,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
 type SceneTemplate = { id: string; label: Loc; icon: string; group: Loc; prompt: string; preview?: string }
 
 const G_INDUSTRIAL: Loc = { en: 'Industrial & Construction', fa: 'صنعتی و ساخت‌وساز', ar: 'صناعي وإنشاءات', tr: 'Endüstriyel ve İnşaat', es: 'Industrial y Construcción', fr: 'Industriel et Construction' }
+const G_CONSTRUCTION: Loc = { en: 'Construction & Civil Works', fa: 'ساخت‌وساز و عمران', ar: 'البناء والأعمال المدنية', tr: 'İnşaat ve Altyapı', es: 'Construcción y Obra Civil', fr: 'Construction et Génie Civil' }
 const G_URBAN: Loc = { en: 'Urban & Modern', fa: 'شهری و مدرن', ar: 'حضري وحديث', tr: 'Kentsel ve Modern', es: 'Urbano y Moderno', fr: 'Urbain et Moderne' }
 const G_NATURE: Loc = { en: 'Natural & Epic Landscapes', fa: 'مناظر طبیعی و حماسی', ar: 'مناظر طبيعية ملحمية', tr: 'Doğal ve Epik Manzaralar', es: 'Paisajes Naturales y Épicos', fr: 'Paysages Naturels et Épiques' }
 const G_HISTORICAL: Loc = { en: 'Historical & Fantasy', fa: 'تاریخی و فانتزی', ar: 'تاريخي وخيالي', tr: 'Tarihi ve Fantastik', es: 'Histórico y Fantasía', fr: 'Historique et Fantastique' }
