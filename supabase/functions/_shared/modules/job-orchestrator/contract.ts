@@ -9,6 +9,10 @@ export interface JobSummary {
   provider_key: string | null;
   model_key: string | null;
   provider_job_id?: string | null;
+  client_request_id?: string | null;
+  provider_start_claimed_at?: string | null;
+  provider_start_attempts?: number | null;
+  provider_start_last_error?: string | null;
   first_frame_url?: string | null;
   last_frame_url?: string | null;
   reference_image_urls?: string[] | null;
@@ -39,6 +43,7 @@ export interface CreateJobInput {
   providerKey: string;
   modelKey: string;
   estimatedCost: number;
+  clientRequestId?: string | null;
   firstFrameUrl?: string | null;
   lastFrameUrl?: string | null;
   /** Optional persistent character/reference image URL(s) for identity anchoring. */
@@ -53,6 +58,8 @@ export interface JobService {
   listMyJobs(userId: string, client: SupabaseClient, limit?: number): Promise<JobSummary[]>;
   getMyJob(userId: string, jobId: string, client: SupabaseClient): Promise<JobDetail | null>;
   createJob(svc: SupabaseClient, input: CreateJobInput): Promise<string>;
+  claimProviderStart(svc: SupabaseClient, userId: string, jobId: string, staleAfterSeconds?: number): Promise<boolean>;
+  recordProviderStartError(svc: SupabaseClient, userId: string, jobId: string, reason: string): Promise<void>;
   markProcessing(svc: SupabaseClient, userId: string, jobId: string, providerJobId: string | null): Promise<void>;
   failJob(svc: SupabaseClient, params: {
     userId: string;

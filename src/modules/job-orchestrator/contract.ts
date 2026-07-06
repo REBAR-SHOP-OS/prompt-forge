@@ -7,6 +7,10 @@ export interface JobSummary {
   provider_key: string | null;
   model_key: string | null;
   provider_job_id?: string | null;
+  client_request_id?: string | null;
+  provider_start_claimed_at?: string | null;
+  provider_start_attempts?: number | null;
+  provider_start_last_error?: string | null;
   first_frame_url?: string | null;
   last_frame_url?: string | null;
   /** Persistent Character Sheet reference image URL(s) anchored on this job. */
@@ -41,6 +45,8 @@ export type AspectRatio = "9:16" | "1:1" | "16:9";
 export interface CreateJobInput {
   providerKey: "wan" | "flow" | "local";
   requestedModel?: string;
+  /** Stable idempotency key for safe timeout recovery; generated client-side per submit. */
+  clientRequestId?: string;
   prompt: string;
   firstFrameUrl?: string;
   lastFrameUrl?: string;
