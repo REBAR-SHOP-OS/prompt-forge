@@ -274,15 +274,15 @@ async function signFramesUrl(storagePath: string | null | undefined): Promise<st
 const SPLIT_DURATIONS = [30, 45, 135]
 const sceneRange = (i: number) => `${i * 15}–${(i + 1) * 15}s`
 
-type Lang = 'en' | 'fa' | 'ar' | 'tr' | 'es' | 'fr'
+type Lang = 'en'
 
 type Loc = Partial<Record<Lang, string>> & { en: string }
 const tr = (m: Loc, lang: Lang) => m[lang] ?? m.en
 
-const RTL_LANGS: Lang[] = ['fa', 'ar']
+const RTL_LANGS: Lang[] = []
 
-const SELECT_LABEL: Loc = { en: 'Select', fa: 'انتخاب', ar: 'اختيار', tr: 'Seç', es: 'Seleccionar', fr: 'Choisir' }
-const SELECTED_LABEL: Loc = { en: 'Selected ✓', fa: 'انتخاب‌شده ✓', ar: 'محدد ✓', tr: 'Seçildi ✓', es: 'Seleccionado ✓', fr: 'Sélectionné ✓' }
+const SELECT_LABEL: Loc = { en: 'Select', }
+const SELECTED_LABEL: Loc = { en: 'Selected ✓', }
 
 // All localized narration labels the edge function may emit, used to split a
 // scene block into its visual scenario part and its narration part.
@@ -321,24 +321,19 @@ function SceneText({ text, narrationLabel }: { text: string; narrationLabel: str
 
 const LANG_OPTIONS: { value: Lang; native: string }[] = [
   { value: 'en', native: 'English' },
-  { value: 'fa', native: 'فارسی' },
-  { value: 'ar', native: 'العربية' },
-  { value: 'tr', native: 'Türkçe' },
-  { value: 'es', native: 'Español' },
-  { value: 'fr', native: 'Français' },
 ]
 
 const CAMERA_STYLES: { label: Loc; icon: string; desc?: Loc; preview?: string }[] = [
-  { label: { en: 'Whip Pan', fa: 'پن سریع', ar: 'بان سريع', tr: 'Hızlı Kaydırma', es: 'Barrido Rápido', fr: 'Filé Rapide' }, icon: '💫', preview: camWhipPan.url },
-  { label: { en: 'Orbit Shot', fa: 'نمای مداری', ar: 'لقطة مدارية', tr: 'Yörünge Çekimi', es: 'Toma Orbital', fr: 'Plan Orbital' }, icon: '🛰️', preview: camOrbit.url },
-  { label: { en: 'FPV Drone', fa: 'پهپاد FPV', ar: 'درون FPV', tr: 'FPV Drone', es: 'Dron FPV', fr: 'Drone FPV' }, icon: '🚁', preview: camFpvDrone.url },
-  { label: { en: 'Tracking Shot', fa: 'نمای تعقیبی', ar: 'لقطة تتبع', tr: 'Takip Çekimi', es: 'Toma de Seguimiento', fr: 'Plan de Suivi' }, icon: '🎯', preview: camTracking.url },
-  { label: { en: 'Push In Cinematic', fa: 'پوش‌این سینمایی', ar: 'دفع سينمائي', tr: 'Sinematik Yaklaşma', es: 'Acercamiento Cinematográfico', fr: 'Travelling Avant Cinématique' }, icon: '🎬', preview: camPushIn.url },
-  { label: { en: 'Fly Through', fa: 'عبور پروازی', ar: 'تحليق عبر', tr: 'İçinden Uçuş', es: 'Vuelo a Través', fr: 'Survol Traversant' }, icon: '🕊️', preview: camFlyThrough.url },
-  { label: { en: 'Crash Zoom', fa: 'زوم ضربه‌ای', ar: 'تكبير مفاجئ', tr: 'Ani Zoom', es: 'Zoom Brusco', fr: 'Zoom Brutal' }, icon: '💥', preview: camCrashZoom.url },
-  { label: { en: 'Handheld Dynamic', fa: 'دوربین‌روی‌دست پویا', ar: 'كاميرا محمولة ديناميكية', tr: 'Dinamik Elde Çekim', es: 'Cámara en Mano Dinámica', fr: "Caméra à l'Épaule Dynamique" }, icon: '🤳', preview: camHandheld.url },
-  { label: { en: 'Dolly Zoom', fa: 'دالی زوم', ar: 'دوللي زوم', tr: 'Dolly Zoom', es: 'Dolly Zoom', fr: 'Travelling Compensé' }, icon: '🌀', preview: camDollyZoom.url },
-  { label: { en: 'Parallax Motion', fa: 'حرکت پارالاکس', ar: 'حركة بارالاكس', tr: 'Paralaks Hareketi', es: 'Movimiento Parallax', fr: 'Mouvement Parallaxe' }, icon: '🧊', preview: camParallax.url },
+  { label: { en: 'Whip Pan', }, icon: '💫', preview: camWhipPan.url },
+  { label: { en: 'Orbit Shot', }, icon: '🛰️', preview: camOrbit.url },
+  { label: { en: 'FPV Drone', }, icon: '🚁', preview: camFpvDrone.url },
+  { label: { en: 'Tracking Shot', }, icon: '🎯', preview: camTracking.url },
+  { label: { en: 'Push In Cinematic', }, icon: '🎬', preview: camPushIn.url },
+  { label: { en: 'Fly Through', }, icon: '🕊️', preview: camFlyThrough.url },
+  { label: { en: 'Crash Zoom', }, icon: '💥', preview: camCrashZoom.url },
+  { label: { en: 'Handheld Dynamic',Épaule Dynamique" }, icon: '🤳', preview: camHandheld.url },
+  { label: { en: 'Dolly Zoom', }, icon: '🌀', preview: camDollyZoom.url },
+  { label: { en: 'Parallax Motion', }, icon: '🧊', preview: camParallax.url },
 ]
 
 type GenreTemplate = { id: string; label: Loc; icon: string; prompt: string; preview?: string }
@@ -346,7 +341,7 @@ type GenreTemplate = { id: string; label: Loc; icon: string; prompt: string; pre
 const GENRE_TEMPLATES: GenreTemplate[] = [
   {
     id: 'epic-fantasy',
-    label: { en: 'Epic Fantasy', fa: 'فانتزی حماسی', ar: 'فانتازيا ملحمية', tr: 'Epik Fantezi', es: 'Fantasía Épica', fr: 'Fantaisie Épique' },
+    label: { en: 'Epic Fantasy', },
     icon: '🐉',
     prompt:
       'Epic fantasy directing: sweeping wide vistas of dreamlike landscapes, castles and mythical creatures, magical glowing lighting and an awe-inspiring heroic mood.',
@@ -354,7 +349,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
   },
   {
     id: 'sci-fi-minimalist',
-    label: { en: 'Sci-Fi Minimalist', fa: 'علمی‌تخیلی مینیمال', ar: 'خيال علمي بسيط', tr: 'Minimalist Bilim Kurgu', es: 'Ciencia Ficción Minimalista', fr: 'Science-Fiction Minimaliste' },
+    label: { en: 'Sci-Fi Minimalist', },
     icon: '🛸',
     prompt:
       'Minimalist sci-fi directing: clean white spaces, straight lines, hidden seamless technology and a calm, sleek futuristic atmosphere.',
@@ -362,7 +357,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
   },
   {
     id: 'post-apocalyptic',
-    label: { en: 'Post-Apocalyptic', fa: 'پساآخرالزمانی', ar: 'ما بعد الكارثة', tr: 'Kıyamet Sonrası', es: 'Post-Apocalíptico', fr: 'Post-Apocalyptique' },
+    label: { en: 'Post-Apocalyptic', },
     icon: '☢️',
     prompt:
       'Post-apocalyptic directing: ruined cities, nature overgrowing buildings, ash, dust and a desolate abandoned atmosphere with muted desaturated tones.',
@@ -370,7 +365,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
   },
   {
     id: 'horror-jump-scare',
-    label: { en: 'Horror Jump-Scare', fa: 'وحشت ناگهانی', ar: 'رعب مفاجئ', tr: 'Ani Korku', es: 'Terror de Susto', fr: 'Horreur à Sursaut' },
+    label: { en: 'Horror Jump-Scare', },
     icon: '👻',
     prompt:
       'Sudden-horror directing: deep darkness, harsh localized light (like a flashlight), tense silence and abrupt movement changes that create dread and fear.',
@@ -378,7 +373,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
   },
   {
     id: 'high-octane-action',
-    label: { en: 'High-Octane Action', fa: 'اکشن پرتحرک', ar: 'أكشن عالي الإثارة', tr: 'Yüksek Tempolu Aksiyon', es: 'Acción Trepidante', fr: 'Action à Haute Tension' },
+    label: { en: 'High-Octane Action', },
     icon: '🔥',
     prompt:
       'High-octane action directing: rapid cuts, camera shake, explosions, high speed and motion blur for an intense adrenaline-fueled feel.',
@@ -386,7 +381,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
   },
   {
     id: 'romantic-dreamscape',
-    label: { en: 'Romantic Dreamscape', fa: 'رؤیای رمانتیک', ar: 'حلم رومانسي', tr: 'Romantik Rüya', es: 'Ensueño Romántico', fr: 'Rêverie Romantique' },
+    label: { en: 'Romantic Dreamscape', },
     icon: '💗',
     prompt:
       'Romantic dreamscape directing: soft golden-hour sunlight, gentle soft focus on the subjects and warm dreamy colors for an intimate emotional mood.',
@@ -394,7 +389,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
   },
   {
     id: 'documentary-realism',
-    label: { en: 'Documentary / Realism', fa: 'مستند/واقع‌گرا', ar: 'وثائقي / واقعي', tr: 'Belgesel / Gerçekçilik', es: 'Documental / Realismo', fr: 'Documentaire / Réalisme' },
+    label: { en: 'Documentary / Realism', },
     icon: '🎥',
     prompt:
       'Documentary realism directing: natural light, no stylized grading, true-to-life colors and simple unobtrusive camera movements for an authentic real feel.',
@@ -402,7 +397,7 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
   },
   {
     id: 'anime-manga',
-    label: { en: 'Anime / Manga Style', fa: 'سبک انیمه/مانگا', ar: 'نمط أنمي / مانغا', tr: 'Anime / Manga Tarzı', es: 'Estilo Anime / Manga', fr: 'Style Anime / Manga' },
+    label: { en: 'Anime / Manga Style', },
     icon: '🌸',
     prompt:
       'Anime/manga style directing: bold outline lines, saturated flat 2D colors and exaggerated dynamic motion effects with expressive energetic action.',
@@ -412,78 +407,78 @@ const GENRE_TEMPLATES: GenreTemplate[] = [
 
 type SceneTemplate = { id: string; label: Loc; icon: string; group: Loc; prompt: string; preview?: string }
 
-const G_INDUSTRIAL: Loc = { en: 'Industrial & Construction', fa: 'صنعتی و ساخت‌وساز', ar: 'صناعي وإنشاءات', tr: 'Endüstriyel ve İnşaat', es: 'Industrial y Construcción', fr: 'Industriel et Construction' }
-const G_CONSTRUCTION: Loc = { en: 'Construction & Civil Works', fa: 'ساخت‌وساز و عمران', ar: 'البناء والأعمال المدنية', tr: 'İnşaat ve Altyapı', es: 'Construcción y Obra Civil', fr: 'Construction et Génie Civil' }
-const G_URBAN: Loc = { en: 'Urban & Modern', fa: 'شهری و مدرن', ar: 'حضري وحديث', tr: 'Kentsel ve Modern', es: 'Urbano y Moderno', fr: 'Urbain et Moderne' }
-const G_NATURE: Loc = { en: 'Natural & Epic Landscapes', fa: 'مناظر طبیعی و حماسی', ar: 'مناظر طبيعية ملحمية', tr: 'Doğal ve Epik Manzaralar', es: 'Paisajes Naturales y Épicos', fr: 'Paysages Naturels et Épiques' }
-const G_HISTORICAL: Loc = { en: 'Historical & Fantasy', fa: 'تاریخی و فانتزی', ar: 'تاريخي وخيالي', tr: 'Tarihi ve Fantastik', es: 'Histórico y Fantasía', fr: 'Historique et Fantastique' }
-const G_INTERIOR: Loc = { en: 'Interior & Moody', fa: 'فضای داخلی و حسی', ar: 'داخلي وأجواء', tr: 'İç Mekan ve Atmosferik', es: 'Interior y Atmosférico', fr: 'Intérieur et Atmosphérique' }
+const G_INDUSTRIAL: Loc = { en: 'Industrial & Construction', }
+const G_CONSTRUCTION: Loc = { en: 'Construction & Civil Works', }
+const G_URBAN: Loc = { en: 'Urban & Modern', }
+const G_NATURE: Loc = { en: 'Natural & Epic Landscapes', }
+const G_HISTORICAL: Loc = { en: 'Historical & Fantasy', }
+const G_INTERIOR: Loc = { en: 'Interior & Moody', }
 
 const SCENE_TEMPLATES: SceneTemplate[] = [
   // Industrial & Construction
-  { id: 'construction-site', label: { en: 'Construction Site', fa: 'کارگاه ساختمانی', ar: 'موقع بناء', tr: 'İnşaat Sahası', es: 'Obra de Construcción', fr: 'Chantier de Construction' }, icon: '🏗️', group: G_INDUSTRIAL, prompt: 'Construction site environment: steel building skeletons, giant moving cranes, dust and dirt, hard-hat workers at sunset.', preview: scConstructionSite.url },
-  { id: 'heavy-industry', label: { en: 'Heavy Industry Factory', fa: 'کارخانه صنایع سنگین', ar: 'مصنع صناعات ثقيلة', tr: 'Ağır Sanayi Fabrikası', es: 'Fábrica de Industria Pesada', fr: "Usine d'Industrie Lourde" }, icon: '🏭', group: G_INDUSTRIAL, prompt: 'Heavy industry factory environment: molten iron, welding sparks, large gear machinery and huge smokestacks.', preview: scHeavyIndustry.url },
-  { id: 'abandoned-warehouse', label: { en: 'Abandoned Warehouse', fa: 'انبار متروکه', ar: 'مستودع مهجور', tr: 'Terk Edilmiş Depo', es: 'Almacén Abandonado', fr: 'Entrepôt Abandonné' }, icon: '🕸️', group: G_INDUSTRIAL, prompt: 'Abandoned warehouse environment: large empty space, broken windows, light beams piercing from the roof and dust floating in the air.', preview: scAbandonedWarehouse.url },
-  { id: 'shipyard-dock', label: { en: 'Shipyard / Dock', fa: 'کشتی‌سازی و اسکله', ar: 'حوض سفن / رصيف', tr: 'Tersane / İskele', es: 'Astillero / Muelle', fr: 'Chantier Naval / Quai' }, icon: '🚢', group: G_INDUSTRIAL, prompt: 'Shipyard and dock environment: giant container ships, coastal cranes, seawater and rusty steel structures.', preview: scShipyardDock.url },
-  { id: 'high-tech-lab', label: { en: 'High-Tech Laboratory', fa: 'آزمایشگاه پیشرفته', ar: 'مختبر عالي التقنية', tr: 'Yüksek Teknoloji Laboratuvarı', es: 'Laboratorio de Alta Tecnología', fr: 'Laboratoire High-Tech' }, icon: '🔬', group: G_INDUSTRIAL, prompt: 'High-tech laboratory environment: clean white walls, blinking computer server racks, glass chambers and cold blue or laser lighting.', preview: scHighTechLab.url },
+  { id: 'construction-site', label: { en: 'Construction Site', }, icon: '🏗️', group: G_INDUSTRIAL, prompt: 'Construction site environment: steel building skeletons, giant moving cranes, dust and dirt, hard-hat workers at sunset.', preview: scConstructionSite.url },
+  { id: 'heavy-industry', label: { en: 'Heavy Industry Factory',Industrie Lourde" }, icon: '🏭', group: G_INDUSTRIAL, prompt: 'Heavy industry factory environment: molten iron, welding sparks, large gear machinery and huge smokestacks.', preview: scHeavyIndustry.url },
+  { id: 'abandoned-warehouse', label: { en: 'Abandoned Warehouse', }, icon: '🕸️', group: G_INDUSTRIAL, prompt: 'Abandoned warehouse environment: large empty space, broken windows, light beams piercing from the roof and dust floating in the air.', preview: scAbandonedWarehouse.url },
+  { id: 'shipyard-dock', label: { en: 'Shipyard / Dock', }, icon: '🚢', group: G_INDUSTRIAL, prompt: 'Shipyard and dock environment: giant container ships, coastal cranes, seawater and rusty steel structures.', preview: scShipyardDock.url },
+  { id: 'high-tech-lab', label: { en: 'High-Tech Laboratory', }, icon: '🔬', group: G_INDUSTRIAL, prompt: 'High-tech laboratory environment: clean white walls, blinking computer server racks, glass chambers and cold blue or laser lighting.', preview: scHighTechLab.url },
   // Construction & Civil Works
-  { id: 'high-rise-tower', label: { en: 'High-Rise Tower Construction', fa: 'ساخت برج بلندمرتبه' }, icon: '🏗️', group: G_CONSTRUCTION, prompt: 'High-rise tower construction environment: a partially built concrete tower rising floor by floor, tower cranes swinging loads, workers on open decks and safety nets against a city skyline.', preview: scHighRiseTower.url },
-  { id: 'steel-framework', label: { en: 'Skyscraper Steel Framework', fa: 'اسکلت فلزی آسمان‌خراش' }, icon: '🏙️', group: G_CONSTRUCTION, prompt: 'Skyscraper steel framework environment: exposed structural steel beams and columns being bolted and welded high above the city, ironworkers walking girders with sparks raining down.', preview: scSteelFramework.url },
-  { id: 'concrete-pour', label: { en: 'Concrete Pour / Casting', fa: 'بتن‌ریزی' }, icon: '🧱', group: G_CONSTRUCTION, prompt: 'Concrete pour and casting environment: a boom pump delivering wet concrete into formwork, workers vibrating and screeding the surface, gray slurry and formwork panels everywhere.', preview: scConcretePour.url },
-  { id: 'rebar-site', label: { en: 'Rebar & Reinforcement Site', fa: 'آرماتوربندی و میلگرد' }, icon: '🔩', group: G_CONSTRUCTION, prompt: 'Rebar and reinforcement environment: dense grids of steel reinforcing bars tied together across a slab or column cage, workers bending and fastening bars, orange rust texture and geometric patterns.', preview: scRebarSite.url },
-  { id: 'tower-crane', label: { en: 'Tower Crane Operation', fa: 'عملیات جرثقیل برجی' }, icon: '🏗️', group: G_CONSTRUCTION, prompt: 'Tower crane operation environment: a towering crane lifting heavy loads across a construction site, long jib against the sky, cables tensioning and materials rising slowly with cinematic scale.', preview: scTowerCrane.url },
-  { id: 'bridge-construction', label: { en: 'Highway / Bridge Construction', fa: 'ساخت بزرگراه / پل' }, icon: '🌉', group: G_CONSTRUCTION, prompt: 'Highway and bridge construction environment: massive concrete piers, cantilevered spans reaching across a valley, launching gantries and segmental deck sections with epic infrastructure scale.', preview: scBridgeConstruction.url },
-  { id: 'road-paving', label: { en: 'Road Paving & Asphalt', fa: 'آسفالت و راه‌سازی' }, icon: '🛣️', group: G_CONSTRUCTION, prompt: 'Road paving environment: an asphalt paver laying fresh hot mix, steam rising, rollers compacting the surface and crews in high-vis vests under harsh daylight.', preview: scRoadPaving.url },
-  { id: 'tunnel-boring', label: { en: 'Tunnel Boring / Excavation', fa: 'حفاری تونل' }, icon: '🚧', group: G_CONSTRUCTION, prompt: 'Tunnel boring and excavation environment: a giant tunnel boring machine cutting through rock, dim underground lighting, dust, conveyor belts of spoil and curved concrete tunnel segments.', preview: scTunnelBoring.url },
-  { id: 'foundation-earthworks', label: { en: 'Foundation & Earthworks', fa: 'پی‌کنی و خاک‌برداری' }, icon: '⛏️', group: G_CONSTRUCTION, prompt: 'Foundation and earthworks environment: excavators digging deep pits, piling rigs driving foundations, mounds of soil, muddy access roads and heavy machinery churning the ground.', preview: scFoundationEarthworks.url },
-  { id: 'scaffolding-facade', label: { en: 'Scaffolding & Facade Work', fa: 'داربست و نماکاری' }, icon: '🧗', group: G_CONSTRUCTION, prompt: 'Scaffolding and facade work environment: multi-level metal scaffolding wrapping a building, mesh netting, workers installing cladding and glass panels high on the elevation.', preview: scScaffoldingFacade.url },
-  { id: 'residential-build', label: { en: 'Residential Housing Build', fa: 'ساخت مسکونی' }, icon: '🏘️', group: G_CONSTRUCTION, prompt: 'Residential housing construction environment: rows of half-built homes with timber framing, brickwork and roof trusses, stacks of materials and a developing suburban site.', preview: scResidentialBuild.url },
-  { id: 'prefab-modular', label: { en: 'Prefab / Modular Assembly', fa: 'ساخت پیش‌ساخته / ماژولار' }, icon: '📦', group: G_CONSTRUCTION, prompt: 'Prefabricated modular construction environment: cranes lowering factory-built room modules into place like giant building blocks, clean precise assembly and rapid stacking of units.', preview: scPrefabModular.url },
-  { id: 'demolition-site', label: { en: 'Demolition Site', fa: 'تخریب' }, icon: '💥', group: G_CONSTRUCTION, prompt: 'Demolition environment: an excavator with a hydraulic breaker tearing down a structure, collapsing walls, billowing dust clouds and piles of rubble and twisted rebar.', preview: scDemolitionSite.url },
-  { id: 'dam-hydro', label: { en: 'Dam / Hydro Construction', fa: 'ساخت سد / نیروگاه آبی' }, icon: '🌊', group: G_CONSTRUCTION, prompt: 'Dam and hydro construction environment: a massive concrete dam wall under construction, spillways, diversion channels, huge machinery and turbulent water against monumental scale.', preview: scDamHydro.url },
-  { id: 'refinery-build', label: { en: 'Oil & Gas / Refinery Build', fa: 'ساخت پالایشگاه نفت و گاز' }, icon: '🛢️', group: G_CONSTRUCTION, prompt: 'Oil and gas plant construction environment: a maze of steel piping, pressure vessels and distillation towers being erected, module lifts, flare stacks and industrial complexity.', preview: scRefineryBuild.url },
-  { id: 'renewable-farm', label: { en: 'Solar / Wind Farm Construction', fa: 'ساخت نیروگاه خورشیدی / بادی' }, icon: '☀️', group: G_CONSTRUCTION, prompt: 'Renewable energy construction environment: cranes raising towering wind turbine sections and blades, rows of solar panels being installed across open land under a wide sky.', preview: scRenewableFarm.url },
-  { id: 'site-survey', label: { en: 'Site Groundbreaking / Survey', fa: 'نقشه‌برداری و کلنگ‌زنی' }, icon: '📐', group: G_CONSTRUCTION, prompt: 'Site groundbreaking and survey environment: surveyors with total stations and tripods, marking stakes and string lines across cleared land, early-stage bare ground with heavy equipment arriving.', preview: scSiteSurvey.url },
-  { id: 'deep-piling', label: { en: 'Deep Foundation Piling', fa: 'شمع‌کوبی عمیق' }, icon: '🪛', group: G_CONSTRUCTION, prompt: 'Deep foundation piling environment: tall piling rigs driving steel and concrete piles deep into the ground, rhythmic hammering, mud, drilling augers and reinforced pile caps.', preview: scDeepPiling.url },
-  { id: 'formwork-shuttering', label: { en: 'Formwork & Shuttering', fa: 'قالب‌بندی' }, icon: '🪜', group: G_CONSTRUCTION, prompt: 'Formwork and shuttering environment: intricate timber and metal formwork panels assembled for columns and slabs, props and shoring towers, workers aligning shutters before a pour.', preview: scFormworkShuttering.url },
-  { id: 'precast-yard', label: { en: 'Precast Concrete Yard', fa: 'کارگاه قطعات پیش‌ساخته بتنی' }, icon: '🧊', group: G_CONSTRUCTION, prompt: 'Precast concrete yard environment: rows of factory-cast beams, panels and hollow-core slabs stacked in a storage yard, gantry cranes moving elements and steam-cured concrete surfaces.', preview: scPrecastYard.url },
-  { id: 'masonry-brick', label: { en: 'Masonry & Bricklaying', fa: 'بنایی و آجرچینی' }, icon: '🧱', group: G_CONSTRUCTION, prompt: 'Masonry and bricklaying environment: workers laying bricks and blocks in neat courses, mortar troweled between joints, string lines and rising walls with textured brickwork detail.', preview: scMasonryBrick.url },
-  { id: 'structural-welding', label: { en: 'Structural Welding Close-up', fa: 'جوشکاری سازه' }, icon: '🔥', group: G_CONSTRUCTION, prompt: 'Structural welding close-up environment: intense arc-welding sparks flying off steel joints, glowing molten metal, welder in protective gear and dramatic high-contrast light on heavy beams.', preview: scStructuralWelding.url },
-  { id: 'curtain-wall', label: { en: 'Glass Curtain Wall Install', fa: 'نصب نمای شیشه‌ای' }, icon: '🪟', group: G_CONSTRUCTION, prompt: 'Glass curtain wall installation environment: large reflective glazing panels being lifted by suction cranes and fixed onto a building facade, mullion grids and mirrored sky reflections.', preview: scCurtainWall.url },
-  { id: 'roofing-waterproofing', label: { en: 'Roofing & Waterproofing', fa: 'سقف‌سازی و عایق‌کاری' }, icon: '🏠', group: G_CONSTRUCTION, prompt: 'Roofing and waterproofing environment: workers laying membranes, tiles and insulation across a rooftop, torch-on sealing, exposed trusses and safety harnesses against the sky.', preview: scRoofingWaterproofing.url },
-  { id: 'mep-install', label: { en: 'MEP / Pipes & Ducts Install', fa: 'نصب تأسیسات و لوله' }, icon: '🔧', group: G_CONSTRUCTION, prompt: 'MEP installation environment: overhead runs of HVAC ducts, pipes and cable trays being fitted through an unfinished ceiling, workers on lifts connecting mechanical services.', preview: scMepInstall.url },
-  { id: 'electrical-wiring', label: { en: 'Electrical Wiring & Conduit', fa: 'سیم‌کشی برق' }, icon: '⚡', group: G_CONSTRUCTION, prompt: 'Electrical wiring environment: electricians pulling colorful cables through conduits, distribution boards and busbars being wired, exposed junction boxes across a building under fit-out.', preview: scElectricalWiring.url },
-  { id: 'interior-fitout', label: { en: 'Interior Fit-Out / Drywall', fa: 'نازک‌کاری داخلی' }, icon: '🚪', group: G_CONSTRUCTION, prompt: 'Interior fit-out environment: metal stud framing and drywall partitions being erected, plasterboard sheets, taping and dust, an unfinished interior taking shape under work lights.', preview: scInteriorFitout.url },
-  { id: 'plastering-finishing', label: { en: 'Plastering & Finishing', fa: 'گچ‌کاری و پرداخت' }, icon: '🎨', group: G_CONSTRUCTION, prompt: 'Plastering and finishing environment: workers skimming smooth plaster onto walls, sanding and painting, clean matte surfaces emerging in a near-complete interior.', preview: scPlasteringFinishing.url },
-  { id: 'elevator-shaft', label: { en: 'Elevator / Lift Shaft Work', fa: 'کار در چاه آسانسور' }, icon: '🛗', group: G_CONSTRUCTION, prompt: 'Elevator shaft construction environment: a deep vertical concrete shaft with guide rails, hoist cables and technicians installing the lift car and machinery under dramatic top light.', preview: scElevatorShaft.url },
-  { id: 'metro-railway', label: { en: 'Metro / Railway Construction', fa: 'ساخت مترو / راه‌آهن' }, icon: '🚆', group: G_CONSTRUCTION, prompt: 'Metro and railway construction environment: track ballast and rails being laid, sleepers aligned, overhead catenary masts and tunnel or viaduct sections with heavy rail machinery.', preview: scMetroRailway.url },
-  { id: 'airport-runway', label: { en: 'Airport / Runway Construction', fa: 'ساخت فرودگاه / باند' }, icon: '🛬', group: G_CONSTRUCTION, prompt: 'Airport runway construction environment: vast concrete and asphalt paving stretching to the horizon, line-marking crews, graders and rollers on a massive flat airfield site.', preview: scAirportRunway.url },
-  { id: 'port-marine', label: { en: 'Port & Marine Works', fa: 'کارهای بندری و دریایی' }, icon: '⚓', group: G_CONSTRUCTION, prompt: 'Port and marine construction environment: quay walls and jetties being built over water, piling barges, gantry cranes and concrete caissons against the sea.', preview: scPortMarine.url },
-  { id: 'canal-water', label: { en: 'Canal / Water Infrastructure', fa: 'زیرساخت آبی / کانال' }, icon: '💧', group: G_CONSTRUCTION, prompt: 'Water infrastructure construction environment: concrete canals, culverts and treatment basins under construction, diversion channels, formwork and earth-moving along waterways.', preview: scCanalWater.url },
-  { id: 'pipeline-laying', label: { en: 'Pipeline Laying', fa: 'لوله‌گذاری خطوط انتقال' }, icon: '🧯', group: G_CONSTRUCTION, prompt: 'Pipeline laying environment: long trenches with large steel pipes being welded and lowered by sidebooms across open terrain, coating stations and a linear construction spread.', preview: scPipelineLaying.url },
-  { id: 'power-plant', label: { en: 'Power Plant Construction', fa: 'ساخت نیروگاه' }, icon: '🏭', group: G_CONSTRUCTION, prompt: 'Power plant construction environment: massive turbine halls, cooling towers and boiler structures under erection, thick pipework, cranes and monumental industrial scale.', preview: scPowerPlant.url },
-  { id: 'warehouse-logistics', label: { en: 'Warehouse / Logistics Build', fa: 'ساخت انبار / لجستیک' }, icon: '🏬', group: G_CONSTRUCTION, prompt: 'Warehouse and logistics construction environment: huge steel portal frames and cladding of a distribution center, vast concrete floor slabs and long-span roof structures.', preview: scWarehouseLogistics.url },
-  { id: 'stadium-arena', label: { en: 'Stadium / Arena Construction', fa: 'ساخت استادیوم / سالن' }, icon: '🏟️', group: G_CONSTRUCTION, prompt: 'Stadium and arena construction environment: sweeping curved roof trusses and tiered concrete seating bowls under construction, giant cranes and dramatic structural geometry.', preview: scStadiumArena.url },
-  { id: 'night-construction', label: { en: 'Nighttime Construction Site', fa: 'کارگاه ساختمانی شبانه' }, icon: '🌙', group: G_CONSTRUCTION, prompt: 'Nighttime construction environment: a site lit by powerful floodlights and machinery headlights, glowing dust, long shadows, welding sparks and cranes silhouetted against a dark sky.', preview: scNightConstruction.url },
+  { id: 'high-rise-tower', label: { en: 'High-Rise Tower Construction', }, icon: '🏗️', group: G_CONSTRUCTION, prompt: 'High-rise tower construction environment: a partially built concrete tower rising floor by floor, tower cranes swinging loads, workers on open decks and safety nets against a city skyline.', preview: scHighRiseTower.url },
+  { id: 'steel-framework', label: { en: 'Skyscraper Steel Framework', }, icon: '🏙️', group: G_CONSTRUCTION, prompt: 'Skyscraper steel framework environment: exposed structural steel beams and columns being bolted and welded high above the city, ironworkers walking girders with sparks raining down.', preview: scSteelFramework.url },
+  { id: 'concrete-pour', label: { en: 'Concrete Pour / Casting', }, icon: '🧱', group: G_CONSTRUCTION, prompt: 'Concrete pour and casting environment: a boom pump delivering wet concrete into formwork, workers vibrating and screeding the surface, gray slurry and formwork panels everywhere.', preview: scConcretePour.url },
+  { id: 'rebar-site', label: { en: 'Rebar & Reinforcement Site', }, icon: '🔩', group: G_CONSTRUCTION, prompt: 'Rebar and reinforcement environment: dense grids of steel reinforcing bars tied together across a slab or column cage, workers bending and fastening bars, orange rust texture and geometric patterns.', preview: scRebarSite.url },
+  { id: 'tower-crane', label: { en: 'Tower Crane Operation', }, icon: '🏗️', group: G_CONSTRUCTION, prompt: 'Tower crane operation environment: a towering crane lifting heavy loads across a construction site, long jib against the sky, cables tensioning and materials rising slowly with cinematic scale.', preview: scTowerCrane.url },
+  { id: 'bridge-construction', label: { en: 'Highway / Bridge Construction', }, icon: '🌉', group: G_CONSTRUCTION, prompt: 'Highway and bridge construction environment: massive concrete piers, cantilevered spans reaching across a valley, launching gantries and segmental deck sections with epic infrastructure scale.', preview: scBridgeConstruction.url },
+  { id: 'road-paving', label: { en: 'Road Paving & Asphalt', }, icon: '🛣️', group: G_CONSTRUCTION, prompt: 'Road paving environment: an asphalt paver laying fresh hot mix, steam rising, rollers compacting the surface and crews in high-vis vests under harsh daylight.', preview: scRoadPaving.url },
+  { id: 'tunnel-boring', label: { en: 'Tunnel Boring / Excavation', }, icon: '🚧', group: G_CONSTRUCTION, prompt: 'Tunnel boring and excavation environment: a giant tunnel boring machine cutting through rock, dim underground lighting, dust, conveyor belts of spoil and curved concrete tunnel segments.', preview: scTunnelBoring.url },
+  { id: 'foundation-earthworks', label: { en: 'Foundation & Earthworks', }, icon: '⛏️', group: G_CONSTRUCTION, prompt: 'Foundation and earthworks environment: excavators digging deep pits, piling rigs driving foundations, mounds of soil, muddy access roads and heavy machinery churning the ground.', preview: scFoundationEarthworks.url },
+  { id: 'scaffolding-facade', label: { en: 'Scaffolding & Facade Work', }, icon: '🧗', group: G_CONSTRUCTION, prompt: 'Scaffolding and facade work environment: multi-level metal scaffolding wrapping a building, mesh netting, workers installing cladding and glass panels high on the elevation.', preview: scScaffoldingFacade.url },
+  { id: 'residential-build', label: { en: 'Residential Housing Build', }, icon: '🏘️', group: G_CONSTRUCTION, prompt: 'Residential housing construction environment: rows of half-built homes with timber framing, brickwork and roof trusses, stacks of materials and a developing suburban site.', preview: scResidentialBuild.url },
+  { id: 'prefab-modular', label: { en: 'Prefab / Modular Assembly', }, icon: '📦', group: G_CONSTRUCTION, prompt: 'Prefabricated modular construction environment: cranes lowering factory-built room modules into place like giant building blocks, clean precise assembly and rapid stacking of units.', preview: scPrefabModular.url },
+  { id: 'demolition-site', label: { en: 'Demolition Site', }, icon: '💥', group: G_CONSTRUCTION, prompt: 'Demolition environment: an excavator with a hydraulic breaker tearing down a structure, collapsing walls, billowing dust clouds and piles of rubble and twisted rebar.', preview: scDemolitionSite.url },
+  { id: 'dam-hydro', label: { en: 'Dam / Hydro Construction', }, icon: '🌊', group: G_CONSTRUCTION, prompt: 'Dam and hydro construction environment: a massive concrete dam wall under construction, spillways, diversion channels, huge machinery and turbulent water against monumental scale.', preview: scDamHydro.url },
+  { id: 'refinery-build', label: { en: 'Oil & Gas / Refinery Build', }, icon: '🛢️', group: G_CONSTRUCTION, prompt: 'Oil and gas plant construction environment: a maze of steel piping, pressure vessels and distillation towers being erected, module lifts, flare stacks and industrial complexity.', preview: scRefineryBuild.url },
+  { id: 'renewable-farm', label: { en: 'Solar / Wind Farm Construction', }, icon: '☀️', group: G_CONSTRUCTION, prompt: 'Renewable energy construction environment: cranes raising towering wind turbine sections and blades, rows of solar panels being installed across open land under a wide sky.', preview: scRenewableFarm.url },
+  { id: 'site-survey', label: { en: 'Site Groundbreaking / Survey', }, icon: '📐', group: G_CONSTRUCTION, prompt: 'Site groundbreaking and survey environment: surveyors with total stations and tripods, marking stakes and string lines across cleared land, early-stage bare ground with heavy equipment arriving.', preview: scSiteSurvey.url },
+  { id: 'deep-piling', label: { en: 'Deep Foundation Piling', }, icon: '🪛', group: G_CONSTRUCTION, prompt: 'Deep foundation piling environment: tall piling rigs driving steel and concrete piles deep into the ground, rhythmic hammering, mud, drilling augers and reinforced pile caps.', preview: scDeepPiling.url },
+  { id: 'formwork-shuttering', label: { en: 'Formwork & Shuttering', }, icon: '🪜', group: G_CONSTRUCTION, prompt: 'Formwork and shuttering environment: intricate timber and metal formwork panels assembled for columns and slabs, props and shoring towers, workers aligning shutters before a pour.', preview: scFormworkShuttering.url },
+  { id: 'precast-yard', label: { en: 'Precast Concrete Yard', }, icon: '🧊', group: G_CONSTRUCTION, prompt: 'Precast concrete yard environment: rows of factory-cast beams, panels and hollow-core slabs stacked in a storage yard, gantry cranes moving elements and steam-cured concrete surfaces.', preview: scPrecastYard.url },
+  { id: 'masonry-brick', label: { en: 'Masonry & Bricklaying', }, icon: '🧱', group: G_CONSTRUCTION, prompt: 'Masonry and bricklaying environment: workers laying bricks and blocks in neat courses, mortar troweled between joints, string lines and rising walls with textured brickwork detail.', preview: scMasonryBrick.url },
+  { id: 'structural-welding', label: { en: 'Structural Welding Close-up', }, icon: '🔥', group: G_CONSTRUCTION, prompt: 'Structural welding close-up environment: intense arc-welding sparks flying off steel joints, glowing molten metal, welder in protective gear and dramatic high-contrast light on heavy beams.', preview: scStructuralWelding.url },
+  { id: 'curtain-wall', label: { en: 'Glass Curtain Wall Install', }, icon: '🪟', group: G_CONSTRUCTION, prompt: 'Glass curtain wall installation environment: large reflective glazing panels being lifted by suction cranes and fixed onto a building facade, mullion grids and mirrored sky reflections.', preview: scCurtainWall.url },
+  { id: 'roofing-waterproofing', label: { en: 'Roofing & Waterproofing', }, icon: '🏠', group: G_CONSTRUCTION, prompt: 'Roofing and waterproofing environment: workers laying membranes, tiles and insulation across a rooftop, torch-on sealing, exposed trusses and safety harnesses against the sky.', preview: scRoofingWaterproofing.url },
+  { id: 'mep-install', label: { en: 'MEP / Pipes & Ducts Install', }, icon: '🔧', group: G_CONSTRUCTION, prompt: 'MEP installation environment: overhead runs of HVAC ducts, pipes and cable trays being fitted through an unfinished ceiling, workers on lifts connecting mechanical services.', preview: scMepInstall.url },
+  { id: 'electrical-wiring', label: { en: 'Electrical Wiring & Conduit', }, icon: '⚡', group: G_CONSTRUCTION, prompt: 'Electrical wiring environment: electricians pulling colorful cables through conduits, distribution boards and busbars being wired, exposed junction boxes across a building under fit-out.', preview: scElectricalWiring.url },
+  { id: 'interior-fitout', label: { en: 'Interior Fit-Out / Drywall', }, icon: '🚪', group: G_CONSTRUCTION, prompt: 'Interior fit-out environment: metal stud framing and drywall partitions being erected, plasterboard sheets, taping and dust, an unfinished interior taking shape under work lights.', preview: scInteriorFitout.url },
+  { id: 'plastering-finishing', label: { en: 'Plastering & Finishing', }, icon: '🎨', group: G_CONSTRUCTION, prompt: 'Plastering and finishing environment: workers skimming smooth plaster onto walls, sanding and painting, clean matte surfaces emerging in a near-complete interior.', preview: scPlasteringFinishing.url },
+  { id: 'elevator-shaft', label: { en: 'Elevator / Lift Shaft Work', }, icon: '🛗', group: G_CONSTRUCTION, prompt: 'Elevator shaft construction environment: a deep vertical concrete shaft with guide rails, hoist cables and technicians installing the lift car and machinery under dramatic top light.', preview: scElevatorShaft.url },
+  { id: 'metro-railway', label: { en: 'Metro / Railway Construction', }, icon: '🚆', group: G_CONSTRUCTION, prompt: 'Metro and railway construction environment: track ballast and rails being laid, sleepers aligned, overhead catenary masts and tunnel or viaduct sections with heavy rail machinery.', preview: scMetroRailway.url },
+  { id: 'airport-runway', label: { en: 'Airport / Runway Construction', }, icon: '🛬', group: G_CONSTRUCTION, prompt: 'Airport runway construction environment: vast concrete and asphalt paving stretching to the horizon, line-marking crews, graders and rollers on a massive flat airfield site.', preview: scAirportRunway.url },
+  { id: 'port-marine', label: { en: 'Port & Marine Works', }, icon: '⚓', group: G_CONSTRUCTION, prompt: 'Port and marine construction environment: quay walls and jetties being built over water, piling barges, gantry cranes and concrete caissons against the sea.', preview: scPortMarine.url },
+  { id: 'canal-water', label: { en: 'Canal / Water Infrastructure', }, icon: '💧', group: G_CONSTRUCTION, prompt: 'Water infrastructure construction environment: concrete canals, culverts and treatment basins under construction, diversion channels, formwork and earth-moving along waterways.', preview: scCanalWater.url },
+  { id: 'pipeline-laying', label: { en: 'Pipeline Laying', }, icon: '🧯', group: G_CONSTRUCTION, prompt: 'Pipeline laying environment: long trenches with large steel pipes being welded and lowered by sidebooms across open terrain, coating stations and a linear construction spread.', preview: scPipelineLaying.url },
+  { id: 'power-plant', label: { en: 'Power Plant Construction', }, icon: '🏭', group: G_CONSTRUCTION, prompt: 'Power plant construction environment: massive turbine halls, cooling towers and boiler structures under erection, thick pipework, cranes and monumental industrial scale.', preview: scPowerPlant.url },
+  { id: 'warehouse-logistics', label: { en: 'Warehouse / Logistics Build', }, icon: '🏬', group: G_CONSTRUCTION, prompt: 'Warehouse and logistics construction environment: huge steel portal frames and cladding of a distribution center, vast concrete floor slabs and long-span roof structures.', preview: scWarehouseLogistics.url },
+  { id: 'stadium-arena', label: { en: 'Stadium / Arena Construction', }, icon: '🏟️', group: G_CONSTRUCTION, prompt: 'Stadium and arena construction environment: sweeping curved roof trusses and tiered concrete seating bowls under construction, giant cranes and dramatic structural geometry.', preview: scStadiumArena.url },
+  { id: 'night-construction', label: { en: 'Nighttime Construction Site', }, icon: '🌙', group: G_CONSTRUCTION, prompt: 'Nighttime construction environment: a site lit by powerful floodlights and machinery headlights, glowing dust, long shadows, welding sparks and cranes silhouetted against a dark sky.', preview: scNightConstruction.url },
   // Urban & Modern
-  { id: 'megacity-corporate', label: { en: 'Megacity Corporate', fa: 'کلان‌شهر اداری', ar: 'مدينة شركات عملاقة', tr: 'Megakent Kurumsal', es: 'Megaciudad Corporativa', fr: "Mégapole d'Affaires" }, icon: '🏙️', group: G_URBAN, prompt: 'Megacity corporate environment: giant glass skyscrapers, clouds reflecting on the glass and a sleek upscale business atmosphere.', preview: scMegacityCorporate.url },
-  { id: 'cyberpunk-alleyway', label: { en: 'Cyberpunk Alleyway', fa: 'کوچه سایبرپانک', ar: 'زقاق سايبربانك', tr: 'Siberpunk Ara Sokak', es: 'Callejón Cyberpunk', fr: 'Ruelle Cyberpunk' }, icon: '🌃', group: G_URBAN, prompt: 'Cyberpunk alleyway environment: crowded narrow streets at night, multilingual neon signs, hanging wires and street-food kiosks.', preview: scCyberpunkAlleyway.url },
-  { id: 'subway-station', label: { en: 'Subway / Underground Station', fa: 'ایستگاه مترو', ar: 'محطة مترو', tr: 'Metro İstasyonu', es: 'Estación de Metro', fr: 'Station de Métro' }, icon: '🚇', group: G_URBAN, prompt: 'Subway station environment: dark tunnels, fast moving trains with motion blur and concrete platforms under fluorescent light.', preview: scSubwayStation.url },
-  { id: 'rooftop-overlook', label: { en: 'Rooftop Overlook', fa: 'منظره از پشت‌بام', ar: 'إطلالة من السطح', tr: 'Çatı Manzarası', es: 'Mirador en la Azotea', fr: 'Vue depuis le Toit' }, icon: '🌆', group: G_URBAN, prompt: 'Rooftop overlook environment: the edge of a tall tower rooftop at night while the whole city lights glow in the background with cinematic bokeh.', preview: scRooftopOverlook.url },
+  { id: 'megacity-corporate', label: { en: 'Megacity Corporate',Affaires" }, icon: '🏙️', group: G_URBAN, prompt: 'Megacity corporate environment: giant glass skyscrapers, clouds reflecting on the glass and a sleek upscale business atmosphere.', preview: scMegacityCorporate.url },
+  { id: 'cyberpunk-alleyway', label: { en: 'Cyberpunk Alleyway', }, icon: '🌃', group: G_URBAN, prompt: 'Cyberpunk alleyway environment: crowded narrow streets at night, multilingual neon signs, hanging wires and street-food kiosks.', preview: scCyberpunkAlleyway.url },
+  { id: 'subway-station', label: { en: 'Subway / Underground Station', }, icon: '🚇', group: G_URBAN, prompt: 'Subway station environment: dark tunnels, fast moving trains with motion blur and concrete platforms under fluorescent light.', preview: scSubwayStation.url },
+  { id: 'rooftop-overlook', label: { en: 'Rooftop Overlook', }, icon: '🌆', group: G_URBAN, prompt: 'Rooftop overlook environment: the edge of a tall tower rooftop at night while the whole city lights glow in the background with cinematic bokeh.', preview: scRooftopOverlook.url },
   // Natural & Epic Landscapes
-  { id: 'epic-mountain', label: { en: 'Epic Mountain Range', fa: 'رشته‌کوه حماسی', ar: 'سلسلة جبال ملحمية', tr: 'Epik Dağ Silsilesi', es: 'Cordillera Épica', fr: 'Chaîne de Montagnes Épique' }, icon: '🏔️', group: G_NATURE, prompt: 'Epic mountain range environment: sharp snowy peaks, thick fog in the valleys and steep cliffs.', preview: scEpicMountain.url },
-  { id: 'apocalyptic-wasteland', label: { en: 'Post-Apocalyptic Wasteland', fa: 'بیابان پساآخرالزمانی', ar: 'أرض قاحلة ما بعد الكارثة', tr: 'Kıyamet Sonrası Çorak Toprak', es: 'Páramo Post-Apocalíptico', fr: 'Terre Désolée Post-Apocalyptique' }, icon: '🏜️', group: G_NATURE, prompt: 'Post-apocalyptic wasteland environment: endless sand plains, abandoned worn vehicles, dusty sky and a scorching sun.', preview: scApocalypticWasteland.url },
-  { id: 'mystical-forest', label: { en: 'Deep Mystical Forest', fa: 'جنگل اسرارآمیز', ar: 'غابة غامضة عميقة', tr: 'Derin Gizemli Orman', es: 'Bosque Místico Profundo', fr: 'Forêt Mystique Profonde' }, icon: '🌲', group: G_NATURE, prompt: 'Deep mystical forest environment: ancient tall trees, dense foliage, light filtered through leaves reaching the ground and a misty atmosphere.', preview: scMysticalForest.url },
-  { id: 'arctic-tundra', label: { en: 'Arctic Tundra / Ice Landscape', fa: 'تاندرای قطبی و یخی', ar: 'تندرا قطبية / منظر جليدي', tr: 'Arktik Tundra / Buz Manzarası', es: 'Tundra Ártica / Paisaje Helado', fr: 'Toundra Arctique / Paysage Glacé' }, icon: '❄️', group: G_NATURE, prompt: 'Arctic tundra ice landscape environment: endless white plains, ice caves with blue light reflections and a snowstorm.', preview: scArcticTundra.url },
+  { id: 'epic-mountain', label: { en: 'Epic Mountain Range', }, icon: '🏔️', group: G_NATURE, prompt: 'Epic mountain range environment: sharp snowy peaks, thick fog in the valleys and steep cliffs.', preview: scEpicMountain.url },
+  { id: 'apocalyptic-wasteland', label: { en: 'Post-Apocalyptic Wasteland', }, icon: '🏜️', group: G_NATURE, prompt: 'Post-apocalyptic wasteland environment: endless sand plains, abandoned worn vehicles, dusty sky and a scorching sun.', preview: scApocalypticWasteland.url },
+  { id: 'mystical-forest', label: { en: 'Deep Mystical Forest', }, icon: '🌲', group: G_NATURE, prompt: 'Deep mystical forest environment: ancient tall trees, dense foliage, light filtered through leaves reaching the ground and a misty atmosphere.', preview: scMysticalForest.url },
+  { id: 'arctic-tundra', label: { en: 'Arctic Tundra / Ice Landscape', }, icon: '❄️', group: G_NATURE, prompt: 'Arctic tundra ice landscape environment: endless white plains, ice caves with blue light reflections and a snowstorm.', preview: scArcticTundra.url },
   // Historical & Fantasy
-  { id: 'medieval-castle', label: { en: 'Medieval Castle / Citadel', fa: 'قلعه قرون‌وسطایی', ar: 'قلعة من العصور الوسطى', tr: 'Ortaçağ Kalesi', es: 'Castillo Medieval', fr: 'Château Médiéval' }, icon: '🏰', group: G_HISTORICAL, prompt: 'Medieval castle environment: large stone walls, lit torches on the walls and dark halls with long wooden tables.', preview: scMedievalCastle.url },
-  { id: 'ancient-ruins', label: { en: 'Ancient Ruins', fa: 'ویرانه‌های باستانی', ar: 'أطلال قديمة', tr: 'Antik Harabeler', es: 'Ruinas Antiguas', fr: 'Ruines Antiques' }, icon: '🏛️', group: G_HISTORICAL, prompt: 'Ancient ruins environment: cracked Greek or Egyptian stone columns covered in vines, set in a desert or forest.', preview: scAncientRuins.url },
-  { id: 'gothic-cathedral', label: { en: 'Gothic Cathedral', fa: 'کلیسای گوتیک', ar: 'كاتدرائية قوطية', tr: 'Gotik Katedral', es: 'Catedral Gótica', fr: 'Cathédrale Gothique' }, icon: '⛪', group: G_HISTORICAL, prompt: 'Gothic cathedral environment: pointed architecture and large stained-glass windows casting colorful light into a vast dark hall.', preview: scGothicCathedral.url },
-  { id: 'steampunk-workshop', label: { en: 'Steampunk Workshop', fa: 'کارگاه استیم‌پانک', ar: 'ورشة ستيمبانك', tr: 'Steampunk Atölyesi', es: 'Taller Steampunk', fr: 'Atelier Steampunk' }, icon: '⚙️', group: G_HISTORICAL, prompt: 'Steampunk workshop environment: copper pipes, gauge dials, steam and intricate 19th-century mechanical tools.', preview: scSteampunkWorkshop.url },
+  { id: 'medieval-castle', label: { en: 'Medieval Castle / Citadel', }, icon: '🏰', group: G_HISTORICAL, prompt: 'Medieval castle environment: large stone walls, lit torches on the walls and dark halls with long wooden tables.', preview: scMedievalCastle.url },
+  { id: 'ancient-ruins', label: { en: 'Ancient Ruins', }, icon: '🏛️', group: G_HISTORICAL, prompt: 'Ancient ruins environment: cracked Greek or Egyptian stone columns covered in vines, set in a desert or forest.', preview: scAncientRuins.url },
+  { id: 'gothic-cathedral', label: { en: 'Gothic Cathedral', }, icon: '⛪', group: G_HISTORICAL, prompt: 'Gothic cathedral environment: pointed architecture and large stained-glass windows casting colorful light into a vast dark hall.', preview: scGothicCathedral.url },
+  { id: 'steampunk-workshop', label: { en: 'Steampunk Workshop', }, icon: '⚙️', group: G_HISTORICAL, prompt: 'Steampunk workshop environment: copper pipes, gauge dials, steam and intricate 19th-century mechanical tools.', preview: scSteampunkWorkshop.url },
   // Interior & Moody
-  { id: 'jazz-club', label: { en: 'Dimly Lit Jazz Club', fa: 'کلوب جاز کم‌نور', ar: 'نادي جاز خافت الإضاءة', tr: 'Loş Caz Kulübü', es: 'Club de Jazz Tenue', fr: 'Club de Jazz Tamisé' }, icon: '🎷', group: G_INTERIOR, prompt: 'Dimly lit jazz club environment: a cozy space, cigarette smoke hanging in spot lighting, shiny brass instruments and dark leather furniture.', preview: scJazzClub.url },
-  { id: 'dark-academia-library', label: { en: 'Dark Academia Library', fa: 'کتابخانه کلاسیک', ar: 'مكتبة أكاديمية داكنة', tr: 'Dark Academia Kütüphanesi', es: 'Biblioteca Dark Academia', fr: 'Bibliothèque Dark Academia' }, icon: '📚', group: G_INTERIOR, prompt: 'Dark academia library environment: tall wooden shelves full of old leather books, study desks with green lamps and the scent of old paper.', preview: scDarkAcademiaLibrary.url },
-  { id: 'retro-diner', label: { en: 'Retro Diner', fa: 'رستوران رترو', ar: 'مطعم ريترو', tr: 'Retro Lokanta', es: 'Restaurante Retro', fr: 'Diner Rétro' }, icon: '🍔', group: G_INTERIOR, prompt: 'Retro 80s diner environment: red leather booths, neon interior decor, a jukebox and rain-streaked windows at night.', preview: scRetroDiner.url },
+  { id: 'jazz-club', label: { en: 'Dimly Lit Jazz Club', }, icon: '🎷', group: G_INTERIOR, prompt: 'Dimly lit jazz club environment: a cozy space, cigarette smoke hanging in spot lighting, shiny brass instruments and dark leather furniture.', preview: scJazzClub.url },
+  { id: 'dark-academia-library', label: { en: 'Dark Academia Library', }, icon: '📚', group: G_INTERIOR, prompt: 'Dark academia library environment: tall wooden shelves full of old leather books, study desks with green lamps and the scent of old paper.', preview: scDarkAcademiaLibrary.url },
+  { id: 'retro-diner', label: { en: 'Retro Diner', }, icon: '🍔', group: G_INTERIOR, prompt: 'Retro 80s diner environment: red leather booths, neon interior decor, a jukebox and rain-streaked windows at night.', preview: scRetroDiner.url },
 ]
 
 const SCENE_GROUPS = Array.from(new Set(SCENE_TEMPLATES.map((s) => s.group.en)))
@@ -500,57 +495,57 @@ type VideoTemplate = {
   preview?: string
 }
 
-const VG_SPORTS: Loc = { en: 'Sports & Action', fa: 'ورزشی و پرتحرک', ar: 'رياضة وأكشن', tr: 'Spor ve Aksiyon', es: 'Deportes y Acción', fr: 'Sport et Action' }
-const VG_ANIMATION: Loc = { en: 'Animation & Motion Graphics', fa: 'انیمیشن و موشن گرافیک', ar: 'رسوم متحركة وموشن جرافيك', tr: 'Animasyon ve Hareketli Grafik', es: 'Animación y Motion Graphics', fr: 'Animation et Motion Design' }
-const VG_SOCIAL: Loc = { en: 'Social Media', fa: 'شبکه‌های اجتماعی و تولید محتوا', ar: 'وسائل التواصل الاجتماعي', tr: 'Sosyal Medya', es: 'Redes Sociales', fr: 'Réseaux Sociaux' }
-const VG_CORPORATE: Loc = { en: 'Corporate & Business', fa: 'شرکتی و کسب‌وکار', ar: 'شركات وأعمال', tr: 'Kurumsal ve İş', es: 'Corporativo y Negocios', fr: 'Entreprise et Business' }
-const VG_CINEMATIC: Loc = { en: 'Cinematic & Creative', fa: 'سینمایی و خلاقانه', ar: 'سينمائي وإبداعي', tr: 'Sinematik ve Yaratıcı', es: 'Cinematográfico y Creativo', fr: 'Cinématique et Créatif' }
-const VG_EVENTS: Loc = { en: 'Events & Occasions', fa: 'رویدادها و مناسبت‌ها', ar: 'فعاليات ومناسبات', tr: 'Etkinlikler ve Özel Günler', es: 'Eventos y Ocasiones', fr: 'Événements et Occasions' }
-const VG_EXPLAINER: Loc = { en: 'Explainer & Educational', fa: 'توضیح‌دهنده و آموزشی', ar: 'توضيحي وتعليمي', tr: 'Açıklayıcı ve Eğitici', es: 'Explicativo y Educativo', fr: 'Explicatif et Éducatif' }
+const VG_SPORTS: Loc = { en: 'Sports & Action', }
+const VG_ANIMATION: Loc = { en: 'Animation & Motion Graphics', }
+const VG_SOCIAL: Loc = { en: 'Social Media', }
+const VG_CORPORATE: Loc = { en: 'Corporate & Business', }
+const VG_CINEMATIC: Loc = { en: 'Cinematic & Creative', }
+const VG_EVENTS: Loc = { en: 'Events & Occasions', }
+const VG_EXPLAINER: Loc = { en: 'Explainer & Educational', }
 
 const VIDEO_TEMPLATES: VideoTemplate[] = [
   // 1. Sports & Action
-  { id: 'football-team', label: { en: 'Football / Team Sports', fa: 'فوتبال و ورزش‌های تیمی', ar: 'كرة القدم / رياضات جماعية', tr: 'Futbol / Takım Sporları', es: 'Fútbol / Deportes de Equipo', fr: "Football / Sports d'Équipe" }, icon: '⚽', group: VG_SPORTS, prompt: 'Sports broadcast template: team line-up reveals, player profile cards, animated live-score lower thirds and refereeing graphics with energetic stadium atmosphere.', preview: vtFootballTeam.url },
-  { id: 'sports-highlights', label: { en: 'Sports Highlights', fa: 'هایلایت‌های ورزشی', ar: 'أبرز اللقطات الرياضية', tr: 'Spor Özetleri', es: 'Resúmenes Deportivos', fr: 'Résumés Sportifs' }, icon: '🏆', group: VG_SPORTS, prompt: 'Sports highlights template: fast transitions, high-energy effects and jump cuts to showcase goals and decisive match moments.', preview: vtSportsHighlights.url },
-  { id: 'fitness', label: { en: 'Fitness & Bodybuilding', fa: 'فیتنس و بدنسازی', ar: 'لياقة وكمال أجسام', tr: 'Fitness ve Vücut Geliştirme', es: 'Fitness y Culturismo', fr: 'Fitness et Musculation' }, icon: '💪', group: VG_SPORTS, prompt: 'Fitness template: motivational footage cut to a fast music tempo, promoting gyms or training programs with dynamic energy.', preview: vtFitness.url },
-  { id: 'gaming-esports', label: { en: 'Gaming / Esports', fa: 'گیمینگ و ورزش‌های الکترونیک', ar: 'ألعاب / رياضات إلكترونية', tr: 'Oyun / E-spor', es: 'Gaming / Esports', fr: 'Jeux Vidéo / Esport' }, icon: '🎮', group: VG_SPORTS, prompt: 'Gaming and esports template: stream channel intros, on-screen overlays and team reveals with neon glowing effects.', preview: vtGamingEsports.url },
+  { id: 'football-team', label: { en: 'Football / Team Sports',Équipe" }, icon: '⚽', group: VG_SPORTS, prompt: 'Sports broadcast template: team line-up reveals, player profile cards, animated live-score lower thirds and refereeing graphics with energetic stadium atmosphere.', preview: vtFootballTeam.url },
+  { id: 'sports-highlights', label: { en: 'Sports Highlights', }, icon: '🏆', group: VG_SPORTS, prompt: 'Sports highlights template: fast transitions, high-energy effects and jump cuts to showcase goals and decisive match moments.', preview: vtSportsHighlights.url },
+  { id: 'fitness', label: { en: 'Fitness & Bodybuilding', }, icon: '💪', group: VG_SPORTS, prompt: 'Fitness template: motivational footage cut to a fast music tempo, promoting gyms or training programs with dynamic energy.', preview: vtFitness.url },
+  { id: 'gaming-esports', label: { en: 'Gaming / Esports', }, icon: '🎮', group: VG_SPORTS, prompt: 'Gaming and esports template: stream channel intros, on-screen overlays and team reveals with neon glowing effects.', preview: vtGamingEsports.url },
   // 2. Animation & Motion Graphics
-  { id: 'explainer', label: { en: 'Explainer Video', fa: 'ویدئوی آموزشی/توضیحی', ar: 'فيديو توضيحي', tr: 'Açıklayıcı Video', es: 'Vídeo Explicativo', fr: 'Vidéo Explicative' }, icon: '🧩', group: VG_ANIMATION, prompt: '2D/3D explainer template: animated characters explaining a system, product or service with clean motion graphics.', preview: vtExplainer.url },
-  { id: 'logo-reveal', label: { en: 'Logo Reveal', fa: 'لوگو موشن', ar: 'ظهور الشعار', tr: 'Logo Tanıtımı', es: 'Revelación de Logo', fr: 'Révélation de Logo' }, icon: '✨', group: VG_ANIMATION, prompt: 'Logo reveal template: short, eye-catching few-second animation introducing a brand logo at the start of videos.', preview: vtLogoReveal.url },
-  { id: 'kinetic-typography', label: { en: 'Kinetic Typography', fa: 'تایپوگرافی متحرک', ar: 'تايبوغرافي حركي', tr: 'Kinetik Tipografi', es: 'Tipografía Cinética', fr: 'Typographie Cinétique' }, icon: '🔤', group: VG_ANIMATION, prompt: 'Kinetic typography template: built entirely on creative, rhythmic animated text synced to the beat.', preview: vtKineticTypography.url },
-  { id: 'motion-comic', label: { en: 'Motion Comics', fa: 'موشن کمیک', ar: 'كوميكس متحرك', tr: 'Hareketli Çizgi Roman', es: 'Cómics en Movimiento', fr: 'Bande Dessinée Animée' }, icon: '💥', group: VG_ANIMATION, prompt: 'Motion comic template: animated comic-book panels and visual storytelling with painterly comic effects.', preview: vtMotionComic.url },
+  { id: 'explainer', label: { en: 'Explainer Video', }, icon: '🧩', group: VG_ANIMATION, prompt: '2D/3D explainer template: animated characters explaining a system, product or service with clean motion graphics.', preview: vtExplainer.url },
+  { id: 'logo-reveal', label: { en: 'Logo Reveal', }, icon: '✨', group: VG_ANIMATION, prompt: 'Logo reveal template: short, eye-catching few-second animation introducing a brand logo at the start of videos.', preview: vtLogoReveal.url },
+  { id: 'kinetic-typography', label: { en: 'Kinetic Typography', }, icon: '🔤', group: VG_ANIMATION, prompt: 'Kinetic typography template: built entirely on creative, rhythmic animated text synced to the beat.', preview: vtKineticTypography.url },
+  { id: 'motion-comic', label: { en: 'Motion Comics', }, icon: '💥', group: VG_ANIMATION, prompt: 'Motion comic template: animated comic-book panels and visual storytelling with painterly comic effects.', preview: vtMotionComic.url },
   // 3. Social Media
-  { id: 'youtube-intro-outro', label: { en: 'YouTube Intro & Outro', fa: 'اینترو و اوترو یوتیوب', ar: 'مقدمة وخاتمة يوتيوب', tr: 'YouTube Intro ve Outro', es: 'Intro y Outro de YouTube', fr: 'Intro et Outro YouTube' }, icon: '▶️', group: VG_SOCIAL, prompt: 'YouTube intro/outro template: opening sequences and end screens with animated like and subscribe button prompts.', preview: vtYoutubeIntroOutro.url },
-  { id: 'instagram-reels', label: { en: 'Instagram Story / Reels', fa: 'استوری و ریلز اینستاگرام', ar: 'ستوري / ريلز إنستغرام', tr: 'Instagram Hikaye / Reels', es: 'Historia / Reels de Instagram', fr: 'Story / Reels Instagram' }, icon: '📱', group: VG_SOCIAL, prompt: 'Vertical 9:16 template: minimal, e-commerce or lifestyle designs for quick product showcases in stories and reels.', preview: vtInstagramReels.url },
-  { id: 'tiktok-trends', label: { en: 'TikTok & Trends', fa: 'تیک‌تاک و ترندها', ar: 'تيك توك والترندات', tr: 'TikTok ve Trendler', es: 'TikTok y Tendencias', fr: 'TikTok et Tendances' }, icon: '🎵', group: VG_SOCIAL, prompt: 'TikTok trend template: beat-synced edits and viral transitions matched to the music.', preview: vtTiktokTrends.url },
-  { id: 'vodcast', label: { en: 'Video Podcast (Vodcast)', fa: 'پادکست ویدئویی', ar: 'بودكاست فيديو', tr: 'Video Podcast', es: 'Vídeo Podcast', fr: 'Podcast Vidéo' }, icon: '🎙️', group: VG_SOCIAL, prompt: 'Video podcast template: audio spectrum visualizer and timer overlays for publishing podcasts.', preview: vtVodcast.url },
+  { id: 'youtube-intro-outro', label: { en: 'YouTube Intro & Outro', }, icon: '▶️', group: VG_SOCIAL, prompt: 'YouTube intro/outro template: opening sequences and end screens with animated like and subscribe button prompts.', preview: vtYoutubeIntroOutro.url },
+  { id: 'instagram-reels', label: { en: 'Instagram Story / Reels', }, icon: '📱', group: VG_SOCIAL, prompt: 'Vertical 9:16 template: minimal, e-commerce or lifestyle designs for quick product showcases in stories and reels.', preview: vtInstagramReels.url },
+  { id: 'tiktok-trends', label: { en: 'TikTok & Trends', }, icon: '🎵', group: VG_SOCIAL, prompt: 'TikTok trend template: beat-synced edits and viral transitions matched to the music.', preview: vtTiktokTrends.url },
+  { id: 'vodcast', label: { en: 'Video Podcast (Vodcast)', }, icon: '🎙️', group: VG_SOCIAL, prompt: 'Video podcast template: audio spectrum visualizer and timer overlays for publishing podcasts.', preview: vtVodcast.url },
   // 4. Corporate & Business
-  { id: 'company-profile', label: { en: 'Company Profile', fa: 'معرفی شرکت', ar: 'ملف الشركة', tr: 'Şirket Tanıtımı', es: 'Perfil de Empresa', fr: "Présentation d'Entreprise" }, icon: '🏢', group: VG_CORPORATE, prompt: 'Company profile template: history and goals timeline, leadership team introductions and business vision presentation.', preview: vtCompanyProfile.url },
-  { id: 'infographic', label: { en: 'Presentation / Infographic', fa: 'ارائه‌ها و اینفوگرافیک', ar: 'عرض تقديمي / إنفوجرافيك', tr: 'Sunum / İnfografik', es: 'Presentación / Infografía', fr: 'Présentation / Infographie' }, icon: '📊', group: VG_CORPORATE, prompt: 'Infographic template: animated charts, city or country maps and attractive visual presentation of statistical data.', preview: vtInfographic.url },
-  { id: 'real-estate', label: { en: 'Real Estate', fa: 'املاک و مستغلات', ar: 'عقارات', tr: 'Emlak', es: 'Bienes Raíces', fr: 'Immobilier' }, icon: '🏠', group: VG_CORPORATE, prompt: 'Real estate template: clean professional slideshows with text info to present home details and architecture projects.', preview: vtRealEstate.url },
-  { id: 'product-promo', label: { en: 'Product Promo', fa: 'تبلیغات محصول', ar: 'ترويج منتج', tr: 'Ürün Tanıtımı', es: 'Promoción de Producto', fr: 'Promotion de Produit' }, icon: '🛍️', group: VG_CORPORATE, prompt: 'Product promo template: 3D or video showcase of features, price and multiple angles of a new product.', preview: vtProductPromo.url },
+  { id: 'company-profile', label: { en: 'Company Profile',Entreprise" }, icon: '🏢', group: VG_CORPORATE, prompt: 'Company profile template: history and goals timeline, leadership team introductions and business vision presentation.', preview: vtCompanyProfile.url },
+  { id: 'infographic', label: { en: 'Presentation / Infographic', }, icon: '📊', group: VG_CORPORATE, prompt: 'Infographic template: animated charts, city or country maps and attractive visual presentation of statistical data.', preview: vtInfographic.url },
+  { id: 'real-estate', label: { en: 'Real Estate', }, icon: '🏠', group: VG_CORPORATE, prompt: 'Real estate template: clean professional slideshows with text info to present home details and architecture projects.', preview: vtRealEstate.url },
+  { id: 'product-promo', label: { en: 'Product Promo', }, icon: '🛍️', group: VG_CORPORATE, prompt: 'Product promo template: 3D or video showcase of features, price and multiple angles of a new product.', preview: vtProductPromo.url },
   // 5. Cinematic & Creative
-  { id: 'movie-trailer', label: { en: 'Movie Trailer / Teaser', fa: 'تریلر فیلم و تیزر', ar: 'إعلان فيلم / تشويقي', tr: 'Film Fragmanı', es: 'Tráiler de Película', fr: 'Bande-Annonce de Film' }, icon: '🎬', group: VG_CINEMATIC, prompt: 'Cinematic trailer template: epic dramatic titles, light effects and dark atmospheric mood.', preview: vtMovieTrailer.url },
-  { id: 'photo-slideshow', label: { en: 'Photo / Video Slideshow', fa: 'اسلایدشوی عکس و ویدئو', ar: 'عرض شرائح صور / فيديو', tr: 'Foto / Video Slayt Gösterisi', es: 'Presentación de Fotos / Vídeo', fr: 'Diaporama Photo / Vidéo' }, icon: '🖼️', group: VG_CINEMATIC, prompt: 'Slideshow template: artistic blend of images with soft music, suited for portfolios or travel memories.', preview: vtPhotoSlideshow.url },
-  { id: 'glitch-retro', label: { en: 'Glitch & Retro', fa: 'افکت‌های گلیچ و رترو', ar: 'غليتش وريترو', tr: 'Glitch ve Retro', es: 'Glitch y Retro', fr: 'Glitch et Rétro' }, icon: '📼', group: VG_CINEMATIC, prompt: 'Glitch and retro template: VHS tape simulation, old TV noise and 80s/90s visual styling.', preview: vtGlitchRetro.url },
-  { id: 'vfx', label: { en: 'VFX / Special Effects', fa: 'جلوه‌های ویژه', ar: 'مؤثرات بصرية', tr: 'VFX / Özel Efektler', es: 'VFX / Efectos Especiales', fr: 'VFX / Effets Spéciaux' }, icon: '🌩️', group: VG_CINEMATIC, prompt: 'VFX template: ready-made explosions, magic, smoke, fire and weather changes layered over raw footage.', preview: vtVfx.url },
+  { id: 'movie-trailer', label: { en: 'Movie Trailer / Teaser', }, icon: '🎬', group: VG_CINEMATIC, prompt: 'Cinematic trailer template: epic dramatic titles, light effects and dark atmospheric mood.', preview: vtMovieTrailer.url },
+  { id: 'photo-slideshow', label: { en: 'Photo / Video Slideshow', }, icon: '🖼️', group: VG_CINEMATIC, prompt: 'Slideshow template: artistic blend of images with soft music, suited for portfolios or travel memories.', preview: vtPhotoSlideshow.url },
+  { id: 'glitch-retro', label: { en: 'Glitch & Retro', }, icon: '📼', group: VG_CINEMATIC, prompt: 'Glitch and retro template: VHS tape simulation, old TV noise and 80s/90s visual styling.', preview: vtGlitchRetro.url },
+  { id: 'vfx', label: { en: 'VFX / Special Effects', }, icon: '🌩️', group: VG_CINEMATIC, prompt: 'VFX template: ready-made explosions, magic, smoke, fire and weather changes layered over raw footage.', preview: vtVfx.url },
   // 6. Events & Occasions
-  { id: 'wedding', label: { en: 'Wedding & Formal', fa: 'عروسی و فرمالیته', ar: 'زفاف ورسمي', tr: 'Düğün ve Resmi', es: 'Boda y Formal', fr: 'Mariage et Cérémonie' }, icon: '💍', group: VG_EVENTS, prompt: 'Wedding template: romantic slideshows with warm color grading, floral frames, delicate typography and soft light leaks.', preview: vtWedding.url },
-  { id: 'birthday-party', label: { en: 'Birthday & Party', fa: 'تولد و مهمانی', ar: 'عيد ميلاد وحفلة', tr: 'Doğum Günü ve Parti', es: 'Cumpleaños y Fiesta', fr: 'Anniversaire et Fête' }, icon: '🎉', group: VG_EVENTS, prompt: 'Birthday and party template: colorful, joyful video invitations with balloon and confetti animations.', preview: vtBirthdayParty.url },
-  { id: 'calendar-campaigns', label: { en: 'Holidays & Campaigns', fa: 'مناسبت‌های تقویمی و کمپین‌ها', ar: 'أعياد وحملات', tr: 'Tatiller ve Kampanyalar', es: 'Festividades y Campañas', fr: 'Fêtes et Campagnes' }, icon: '🎄', group: VG_EVENTS, prompt: 'Seasonal campaign template: tailored for Christmas, Halloween, Nowruz, Ramadan, Black Friday and seasonal discount sales.', preview: vtCalendarCampaigns.url },
+  { id: 'wedding', label: { en: 'Wedding & Formal', }, icon: '💍', group: VG_EVENTS, prompt: 'Wedding template: romantic slideshows with warm color grading, floral frames, delicate typography and soft light leaks.', preview: vtWedding.url },
+  { id: 'birthday-party', label: { en: 'Birthday & Party', }, icon: '🎉', group: VG_EVENTS, prompt: 'Birthday and party template: colorful, joyful video invitations with balloon and confetti animations.', preview: vtBirthdayParty.url },
+  { id: 'calendar-campaigns', label: { en: 'Holidays & Campaigns', }, icon: '🎄', group: VG_EVENTS, prompt: 'Seasonal campaign template: tailored for Christmas, Halloween, Nowruz, Ramadan, Black Friday and seasonal discount sales.', preview: vtCalendarCampaigns.url },
   // 7. Explainer & Educational
-  { id: 'whiteboard', label: { en: 'Whiteboard Animation', fa: 'انیمیشن وایت‌برد', ar: 'رسوم السبورة البيضاء', tr: 'Beyaz Tahta Animasyonu', es: 'Animación de Pizarra Blanca', fr: 'Animation Tableau Blanc' }, icon: '✍️', group: VG_EXPLAINER, prompt: 'Whiteboard animation template: a visible hand drawing simple sketches and text on a white board, building the explanation step by step with marker strokes.', preview: vtWhiteboard.url },
-  { id: 'blackboard', label: { en: 'Blackboard Animation', fa: 'انیمیشن بلک‌برد', ar: 'رسوم السبورة السوداء', tr: 'Kara Tahta Animasyonu', es: 'Animación de Pizarra Negra', fr: 'Animation Tableau Noir' }, icon: '🟢', group: VG_EXPLAINER, prompt: 'Blackboard animation template: chalk-style white and colored drawings appearing on a dark blackboard, nostalgic classroom feel with hand-drawn diagrams.', preview: vtBlackboard.url },
-  { id: 'glassboard', label: { en: 'Glassboard Animation', fa: 'انیمیشن گلس‌برد', ar: 'رسوم اللوح الزجاجي', tr: 'Cam Tahta Animasyonu', es: 'Animación de Pizarra de Vidrio', fr: 'Animation Tableau de Verre' }, icon: '🟩', group: VG_EXPLAINER, prompt: 'Glassboard animation template: a real presenter behind a transparent glass writing with glowing neon markers, mirrored so the text reads correctly, dark studio background.', preview: vtGlassboard.url },
-  { id: 'line-art', label: { en: 'Line Art Animation', fa: 'انیمیشن خطی', ar: 'رسوم خطية', tr: 'Çizgi Sanatı Animasyonu', es: 'Animación de Arte Lineal', fr: 'Animation Line Art' }, icon: '〰️', group: VG_EXPLAINER, prompt: 'Line art animation template: continuous single-line illustrations with no fill, lines flowing smoothly and morphing from one shape into the next.', preview: vtLineArt.url },
-  { id: 'infographic-motion', label: { en: 'Infographic Animation', fa: 'موشن گرافیک اینفوگرافیک', ar: 'رسوم إنفوجرافيك متحركة', tr: 'İnfografik Animasyon', es: 'Animación de Infografía', fr: 'Animation Infographique' }, icon: '📊', group: VG_EXPLAINER, prompt: 'Infographic animation template: animated charts, graphs, percentages and data visualizations that bring statistics to life for easy digestion.', preview: vtInfographicMotion.url },
-  { id: 'flat-2d', label: { en: '2D Flat Animation', fa: 'انیمیشن تخت دوبعدی', ar: 'رسوم مسطحة ثنائية الأبعاد', tr: '2D Düz Animasyon', es: 'Animación 2D Plana', fr: 'Animation 2D Plate' }, icon: '🟦', group: VG_EXPLAINER, prompt: '2D flat animation template: solid flat colors, no complex shadows and simple clean characters, ideal for startup explainer videos.', preview: vtFlat2d.url },
-  { id: 'isometric', label: { en: 'Isometric Animation', fa: 'انیمیشن ایزومتریک', ar: 'رسوم متساوية القياس', tr: 'İzometrik Animasyon', es: 'Animación Isométrica', fr: 'Animation Isométrique' }, icon: '📐', group: VG_EXPLAINER, prompt: 'Isometric animation template: 2D illustrations drawn at a 30-degree angle to convey depth, great for showing cities, system architecture and technology.', preview: vtIsometric.url },
-  { id: 'character-2d', label: { en: '2D Character Animation', fa: 'انیمیشن کاراکترمحور دوبعدی', ar: 'رسوم شخصيات ثنائية الأبعاد', tr: '2D Karakter Animasyonu', es: 'Animación de Personajes 2D', fr: 'Animation de Personnage 2D' }, icon: '🧍', group: VG_EXPLAINER, prompt: '2D character animation template: a central character facing a problem, then the product or idea introduced as the solution, narrative-driven storytelling.', preview: vtCharacter2d.url },
-  { id: 'cut-out', label: { en: 'Cut-out Animation', fa: 'انیمیشن کات‌اوت', ar: 'رسوم القص واللصق', tr: 'Kesme Kağıt Animasyonu', es: 'Animación de Recortes', fr: 'Animation Découpée' }, icon: '✂️', group: VG_EXPLAINER, prompt: 'Cut-out animation template: characters and environments built from cut paper or cardboard pieces, giving a playful handmade crafty feel.', preview: vtCutOut.url },
-  { id: 'stop-motion', label: { en: 'Stop Motion', fa: 'استاپ موشن', ar: 'إيقاف الحركة', tr: 'Stop Motion', es: 'Stop Motion', fr: 'Stop Motion' }, icon: '🧩', group: VG_EXPLAINER, prompt: 'Stop motion template: frame-by-frame photography of real objects like clay, Lego or everyday items, played fast to create the illusion of movement.', preview: vtStopMotion.url },
-  { id: 'screencast-ui', label: { en: 'Screencast / UI Animation', fa: 'اسکرین‌کست و انیمیشن رابط کاربری', ar: 'تسجيل شاشة / رسوم واجهة', tr: 'Ekran Kaydı / Arayüz Animasyonu', es: 'Screencast / Animación de UI', fr: "Capture d'Écran / Animation UI" }, icon: '🖥️', group: VG_EXPLAINER, prompt: 'Screencast / UI animation template: an app or website interface shown with smooth animated buttons, menus and zoom highlights instead of a plain screen recording.', preview: vtScreencastUi.url },
-  { id: 'live-action-tracked', label: { en: 'Live-Action + Tracked Graphics', fa: 'لایو اکشن با گرافیک شناور', ar: 'لقطات حية مع عناصر متتبعة', tr: 'Canlı Çekim + Takipli Grafikler', es: 'Acción Real + Gráficos Rastreados', fr: 'Prises Réelles + Éléments Suivis' }, icon: '🎞️', group: VG_EXPLAINER, prompt: 'Live-action with tracked elements template: real footage of people or environments with 3D floating graphics, numbers and text tracked into the scene.', preview: vtLiveActionTracked.url },
+  { id: 'whiteboard', label: { en: 'Whiteboard Animation', }, icon: '✍️', group: VG_EXPLAINER, prompt: 'Whiteboard animation template: a visible hand drawing simple sketches and text on a white board, building the explanation step by step with marker strokes.', preview: vtWhiteboard.url },
+  { id: 'blackboard', label: { en: 'Blackboard Animation', }, icon: '🟢', group: VG_EXPLAINER, prompt: 'Blackboard animation template: chalk-style white and colored drawings appearing on a dark blackboard, nostalgic classroom feel with hand-drawn diagrams.', preview: vtBlackboard.url },
+  { id: 'glassboard', label: { en: 'Glassboard Animation', }, icon: '🟩', group: VG_EXPLAINER, prompt: 'Glassboard animation template: a real presenter behind a transparent glass writing with glowing neon markers, mirrored so the text reads correctly, dark studio background.', preview: vtGlassboard.url },
+  { id: 'line-art', label: { en: 'Line Art Animation', }, icon: '〰️', group: VG_EXPLAINER, prompt: 'Line art animation template: continuous single-line illustrations with no fill, lines flowing smoothly and morphing from one shape into the next.', preview: vtLineArt.url },
+  { id: 'infographic-motion', label: { en: 'Infographic Animation', }, icon: '📊', group: VG_EXPLAINER, prompt: 'Infographic animation template: animated charts, graphs, percentages and data visualizations that bring statistics to life for easy digestion.', preview: vtInfographicMotion.url },
+  { id: 'flat-2d', label: { en: '2D Flat Animation', }, icon: '🟦', group: VG_EXPLAINER, prompt: '2D flat animation template: solid flat colors, no complex shadows and simple clean characters, ideal for startup explainer videos.', preview: vtFlat2d.url },
+  { id: 'isometric', label: { en: 'Isometric Animation', }, icon: '📐', group: VG_EXPLAINER, prompt: 'Isometric animation template: 2D illustrations drawn at a 30-degree angle to convey depth, great for showing cities, system architecture and technology.', preview: vtIsometric.url },
+  { id: 'character-2d', label: { en: '2D Character Animation', }, icon: '🧍', group: VG_EXPLAINER, prompt: '2D character animation template: a central character facing a problem, then the product or idea introduced as the solution, narrative-driven storytelling.', preview: vtCharacter2d.url },
+  { id: 'cut-out', label: { en: 'Cut-out Animation', }, icon: '✂️', group: VG_EXPLAINER, prompt: 'Cut-out animation template: characters and environments built from cut paper or cardboard pieces, giving a playful handmade crafty feel.', preview: vtCutOut.url },
+  { id: 'stop-motion', label: { en: 'Stop Motion', }, icon: '🧩', group: VG_EXPLAINER, prompt: 'Stop motion template: frame-by-frame photography of real objects like clay, Lego or everyday items, played fast to create the illusion of movement.', preview: vtStopMotion.url },
+  { id: 'screencast-ui', label: { en: 'Screencast / UI Animation',Écran / Animation UI" }, icon: '🖥️', group: VG_EXPLAINER, prompt: 'Screencast / UI animation template: an app or website interface shown with smooth animated buttons, menus and zoom highlights instead of a plain screen recording.', preview: vtScreencastUi.url },
+  { id: 'live-action-tracked', label: { en: 'Live-Action + Tracked Graphics', }, icon: '🎞️', group: VG_EXPLAINER, prompt: 'Live-action with tracked elements template: real footage of people or environments with 3D floating graphics, numbers and text tracked into the scene.', preview: vtLiveActionTracked.url },
 ]
 
 const VIDEO_GROUPS = Array.from(new Set(VIDEO_TEMPLATES.map((v) => v.group.en)))
@@ -576,8 +571,8 @@ const T: Record<Lang, Record<string, string>> = {
     cameraStyle: 'Camera style',
     genre: 'Genre & atmosphere',
     scene: 'Scene & environment',
-    videoTemplates: 'Video templates',
-    cameraNotes: 'Camera movement notes',
+    videoTemplat
+    cameraNot
     cameraNotesPlaceholder:
       'Describe how the camera should move, e.g. slow rise then fast push-in on the label…',
     adScenario: 'Ad scenario',
@@ -606,8 +601,8 @@ const T: Record<Lang, Record<string, string>> = {
     back: 'Back',
     viewImage: 'View image',
     reframeHistory: 'Previously made images',
-    loadingReframes: 'Loading history…',
-    noReframes: 'No reframed images yet.',
+    loadingRefram
+    noRefram
     reuseHint: 'Click to reuse without regenerating.',
     businessLabel: 'About your business',
     businessRequiredTag: '(required)',
@@ -620,316 +615,6 @@ const T: Record<Lang, Record<string, string>> = {
     contactPhone: 'Phone',
     contactAddress: 'Address',
     contactLogo: 'Company logo',
-  },
-  fa: {
-    title: 'سناریوی تبلیغ محصول',
-    description:
-      'عکس و نام محصول را اضافه کنید، به چند سؤال پاسخ دهید و یک سناریوی تبلیغاتی سینمایی متناسب با سبک دوربین انتخابی‌تان دریافت کنید.',
-    photo: 'عکس',
-    productName: 'نام محصول',
-    productNamePlaceholder: 'مثلاً سرم آوراگلو',
-    descriptionLabel: 'توضیحات',
-    optional: '(اختیاری)',
-    descriptionPlaceholder: 'ویژگی‌های کلیدی، حال‌وهوا، مخاطب هدف…',
-    yourPrompt: 'پرامت شما',
-    yourPromptPlaceholder:
-      'پرامت یا ایده‌ی خودتان را بنویسید — برای مدت‌زمان و سبک دوربین انتخابی بازنویسی می‌شود…',
-    duration: 'مدت‌زمان',
-    cameraStyle: 'سبک دوربین',
-    genre: 'ژانر و حال‌وهوا',
-    scene: 'صحنه و محیط',
-    videoTemplates: 'تمپلیت‌های ویدئویی',
-    cameraNotes: 'یادداشت‌های حرکت دوربین',
-    cameraNotesPlaceholder:
-      'توضیح دهید دوربین چطور حرکت کند، مثلاً بالا آمدن آرام سپس پوش‌این سریع روی برچسب…',
-    adScenario: 'سناریوی تبلیغ',
-    scene_: 'صحنه',
-    narration: 'نریشن',
-    copy: 'کپی',
-    copyAll: 'کپی همه',
-    copied: 'کپی شد',
-    regenerate: 'تولید دوباره',
-    sendAll: 'ارسال همه به Pending',
-    useAsPrompt: 'استفاده به‌عنوان پرامت',
-    preparingFrame: 'در حال آماده‌سازی فریم…',
-    generate: 'تولید سناریوی تبلیغ',
-    withNarration: 'با نریشن',
-    withoutNarration: 'بدون نریشن',
-    language: 'زبان',
-    chooseFromProducts: 'انتخاب از محصولات',
-    generateWithAi: 'ساخت با هوش مصنوعی',
-    pickAspect: 'انتخاب ابعاد تصویر',
-    pickProduct: 'یک محصول را انتخاب کنید',
-    aspectHint: 'ابتدا ابعاد را انتخاب کنید، سپس محصول را برگزینید.',
-    noProducts: 'هنوز عکس محصولی ذخیره نشده است.',
-    untitled: 'بدون نام',
-    preparing: 'در حال آماده‌سازی تصویر…',
-    loadingProducts: 'در حال بارگذاری محصولات…',
-    back: 'بازگشت',
-    viewImage: 'نمایش تصویر',
-    reframeHistory: 'عکس‌های قبلاً ساخته‌شده',
-    loadingReframes: 'در حال بارگذاری تاریخچه…',
-    noReframes: 'هنوز عکسی در این بخش ساخته نشده است.',
-    reuseHint: 'برای استفاده دوباره بدون ساخت مجدد کلیک کنید.',
-    businessLabel: 'درباره کسب‌وکار شما',
-    businessRequiredTag: '(الزامی)',
-    businessPlaceholder: 'کسب‌وکارتان را توضیح دهید: چه می‌فروشید، محصولات/خدمات، مخاطب هدف و لحن برند…',
-    businessRequired: 'ابتدا کسب‌وکارتان را توضیح دهید — سناریو باید مرتبط با آن باشد.',
-    businessSave: 'ذخیره',
-    businessSaved: 'ذخیره شد',
-    contactLabel: 'اطلاعات تماس (روی ویدیو نمایش داده می‌شود)',
-    contactWebsite: 'وب‌سایت',
-    contactPhone: 'شماره تماس',
-    contactAddress: 'آدرس',
-    contactLogo: 'لوگوی شرکت',
-  },
-  ar: {
-    title: 'سيناريو إعلان المنتج',
-    description:
-      'أضف صورة واسم منتجك، أجب عن بعض الأسئلة، واحصل على سيناريو إعلاني سينمائي متوافق مع أسلوب الكاميرا الذي تختاره.',
-    photo: 'صورة',
-    productName: 'اسم المنتج',
-    productNamePlaceholder: 'مثال: سيروم أوراغلو',
-    descriptionLabel: 'الوصف',
-    optional: '(اختياري)',
-    descriptionPlaceholder: 'الميزات الرئيسية، الأجواء، الجمهور المستهدف…',
-    yourPrompt: 'موجّهك',
-    yourPromptPlaceholder:
-      'اكتب موجّهك أو فكرتك — ستتم إعادة صياغتها حسب المدة وأسلوب الكاميرا المختار…',
-    duration: 'المدة',
-    cameraStyle: 'أسلوب الكاميرا',
-    genre: 'النوع والأجواء',
-    scene: 'المشهد والبيئة',
-    videoTemplates: 'قوالب الفيديو',
-    cameraNotes: 'ملاحظات حركة الكاميرا',
-    cameraNotesPlaceholder:
-      'صف كيف ينبغي أن تتحرك الكاميرا، مثلاً ارتفاع بطيء ثم دفع سريع نحو الملصق…',
-    adScenario: 'سيناريو الإعلان',
-    scene_: 'مشهد',
-    narration: 'التعليق الصوتي',
-    copy: 'نسخ',
-    copyAll: 'نسخ الكل',
-    copied: 'تم النسخ',
-    regenerate: 'إعادة التوليد',
-    sendAll: 'إرسال الكل إلى قائمة الانتظار',
-    useAsPrompt: 'استخدام كموجّه',
-    preparingFrame: 'جارٍ تجهيز الإطار…',
-    generate: 'توليد سيناريو الإعلان',
-    withNarration: 'مع التعليق الصوتي',
-    withoutNarration: 'بدون تعليق صوتي',
-    language: 'اللغة',
-    chooseFromProducts: 'اختر من المنتجات',
-    generateWithAi: 'إنشاء بالذكاء الاصطناعي',
-    pickAspect: 'اختر أبعاد الصورة',
-    pickProduct: 'اختر منتجًا',
-    aspectHint: 'اختر الأبعاد أولاً ثم اختر المنتج.',
-    noProducts: 'لا توجد صور منتجات محفوظة بعد.',
-    untitled: 'بدون اسم',
-    preparing: 'جارٍ تحضير الصورة…',
-    loadingProducts: 'جارٍ تحميل المنتجات…',
-    back: 'رجوع',
-    viewImage: 'عرض الصورة',
-    reframeHistory: 'الصور المُعاد تأطيرها سابقًا',
-    loadingReframes: 'جارٍ تحميل السجل…',
-    noReframes: 'لا توجد صور مُعاد تأطيرها بعد.',
-    reuseHint: 'انقر لإعادة الاستخدام دون إعادة الإنشاء.',
-    businessLabel: 'عن عملك التجاري',
-    businessRequiredTag: '(مطلوب)',
-    businessPlaceholder: 'صِف عملك: ماذا تبيع، منتجاتك/خدماتك، الجمهور المستهدف ونبرة العلامة التجارية…',
-    businessRequired: 'يرجى وصف عملك أولاً — يجب أن يكون السيناريو ذا صلة به.',
-    businessSave: 'حفظ',
-    businessSaved: 'تم الحفظ',
-    contactLabel: 'بيانات الاتصال (تظهر على الفيديو)',
-    contactWebsite: 'الموقع الإلكتروني',
-    contactPhone: 'الهاتف',
-    contactAddress: 'العنوان',
-    contactLogo: 'شعار الشركة',
-  },
-  tr: {
-    title: 'Ürün Reklam Senaryosu',
-    description:
-      'Ürün fotoğrafınızı ve adını ekleyin, birkaç soruyu yanıtlayın ve seçtiğiniz kamera stiline uygun sinematik bir reklam senaryosu alın.',
-    photo: 'Fotoğraf',
-    productName: 'Ürün adı',
-    productNamePlaceholder: 'örn. AuraGlow Serum',
-    descriptionLabel: 'Açıklama',
-    optional: '(isteğe bağlı)',
-    descriptionPlaceholder: 'Temel özellikler, atmosfer, hedef kitle…',
-    yourPrompt: 'İsteminiz',
-    yourPromptPlaceholder:
-      'Kendi isteminizi / fikrinizi yazın — seçtiğiniz süre ve kamera stiline göre yeniden yazılacaktır…',
-    duration: 'Süre',
-    cameraStyle: 'Kamera stili',
-    genre: 'Tür ve atmosfer',
-    scene: 'Sahne ve ortam',
-    videoTemplates: 'Video şablonları',
-    cameraNotes: 'Kamera hareketi notları',
-    cameraNotesPlaceholder:
-      'Kameranın nasıl hareket etmesi gerektiğini açıklayın, örn. yavaş yükseliş ardından etikete hızlı yaklaşma…',
-    adScenario: 'Reklam senaryosu',
-    scene_: 'Sahne',
-    narration: 'Anlatım',
-    copy: 'Kopyala',
-    copyAll: 'Tümünü kopyala',
-    copied: 'Kopyalandı',
-    regenerate: 'Yeniden oluştur',
-    sendAll: 'Tümünü Bekleyenlere gönder',
-    useAsPrompt: 'İstem olarak kullan',
-    preparingFrame: 'Kare hazırlanıyor…',
-    generate: 'Reklam senaryosu oluştur',
-    withNarration: 'Anlatımlı',
-    withoutNarration: 'Anlatımsız',
-    language: 'Dil',
-    chooseFromProducts: 'Ürünlerden seç',
-    generateWithAi: 'Yapay zeka ile oluştur',
-    pickAspect: 'Görüntü boyutlarını seç',
-    pickProduct: 'Bir ürün seç',
-    aspectHint: 'Önce boyutları, sonra ürünü seçin.',
-    noProducts: 'Henüz kayıtlı ürün fotoğrafı yok.',
-    untitled: 'Adsız',
-    preparing: 'Görüntü hazırlanıyor…',
-    loadingProducts: 'Ürünler yükleniyor…',
-    back: 'Geri',
-    viewImage: 'Görseli görüntüle',
-    reframeHistory: 'Daha önce yeniden çerçevelenenler',
-    loadingReframes: 'Geçmiş yükleniyor…',
-    noReframes: 'Henüz yeniden çerçevelenmiş görsel yok.',
-    reuseHint: 'Yeniden oluşturmadan kullanmak için tıklayın.',
-    businessLabel: 'İşletmeniz hakkında',
-    businessRequiredTag: '(zorunlu)',
-    businessPlaceholder: 'İşletmenizi açıklayın: ne sattığınız, ürün/hizmetleriniz, hedef kitle ve marka tonu…',
-    businessRequired: 'Lütfen önce işletmenizi açıklayın — senaryo bununla ilgili olmalı.',
-    businessSave: 'Kaydet',
-    businessSaved: 'Kaydedildi',
-    contactLabel: 'İletişim bilgileri (videoda gösterilir)',
-    contactWebsite: 'Web sitesi',
-    contactPhone: 'Telefon',
-    contactAddress: 'Adres',
-    contactLogo: 'Şirket logosu',
-  },
-  es: {
-    title: 'Guion de Anuncio de Producto',
-    description:
-      'Añade la foto y el nombre de tu producto, responde unas preguntas y obtén un guion publicitario cinematográfico ajustado al estilo de cámara que elijas.',
-    photo: 'Foto',
-    productName: 'Nombre del producto',
-    productNamePlaceholder: 'p. ej. Sérum AuraGlow',
-    descriptionLabel: 'Descripción',
-    optional: '(opcional)',
-    descriptionPlaceholder: 'Características clave, ambiente, público objetivo…',
-    yourPrompt: 'Tu prompt',
-    yourPromptPlaceholder:
-      'Escribe tu propio prompt / idea — se reescribirá según la duración y el estilo de cámara seleccionados…',
-    duration: 'Duración',
-    cameraStyle: 'Estilo de cámara',
-    genre: 'Género y atmósfera',
-    scene: 'Escena y entorno',
-    videoTemplates: 'Plantillas de vídeo',
-    cameraNotes: 'Notas de movimiento de cámara',
-    cameraNotesPlaceholder:
-      'Describe cómo debe moverse la cámara, p. ej. subida lenta y luego acercamiento rápido a la etiqueta…',
-    adScenario: 'Guion del anuncio',
-    scene_: 'Escena',
-    narration: 'Narración',
-    copy: 'Copiar',
-    copyAll: 'Copiar todo',
-    copied: 'Copiado',
-    regenerate: 'Regenerar',
-    sendAll: 'Enviar todo a Pendientes',
-    useAsPrompt: 'Usar como prompt',
-    preparingFrame: 'Preparando fotograma…',
-    generate: 'Generar guion del anuncio',
-    withNarration: 'Con narración',
-    withoutNarration: 'Sin narración',
-    language: 'Idioma',
-    chooseFromProducts: 'Elegir de productos',
-    generateWithAi: 'Generar con IA',
-    pickAspect: 'Elige las dimensiones de la imagen',
-    pickProduct: 'Elige un producto',
-    aspectHint: 'Elige primero las dimensiones y luego el producto.',
-    noProducts: 'Aún no hay fotos de productos guardadas.',
-    untitled: 'Sin título',
-    preparing: 'Preparando imagen…',
-    loadingProducts: 'Cargando productos…',
-    back: 'Atrás',
-    viewImage: 'Ver imagen',
-    reframeHistory: 'Imágenes ya recortadas',
-    loadingReframes: 'Cargando historial…',
-    noReframes: 'Aún no hay imágenes recortadas.',
-    reuseHint: 'Haz clic para reutilizar sin regenerar.',
-    businessLabel: 'Sobre tu negocio',
-    businessRequiredTag: '(obligatorio)',
-    businessPlaceholder: 'Describe tu negocio: qué vendes, tus productos/servicios, público objetivo y tono de marca…',
-    businessRequired: 'Describe primero tu negocio: el escenario debe ser relevante para él.',
-    businessSave: 'Guardar',
-    businessSaved: 'Guardado',
-    contactLabel: 'Datos de contacto (se muestran en el video)',
-    contactWebsite: 'Sitio web',
-    contactPhone: 'Teléfono',
-    contactAddress: 'Dirección',
-    contactLogo: 'Logo de la empresa',
-  },
-  fr: {
-    title: 'Scénario de Publicité Produit',
-    description:
-      'Ajoutez la photo et le nom de votre produit, répondez à quelques questions et obtenez un scénario publicitaire cinématographique adapté au style de caméra choisi.',
-    photo: 'Photo',
-    productName: 'Nom du produit',
-    productNamePlaceholder: 'p. ex. Sérum AuraGlow',
-    descriptionLabel: 'Description',
-    optional: '(optionnel)',
-    descriptionPlaceholder: 'Caractéristiques clés, ambiance, public cible…',
-    yourPrompt: 'Votre prompt',
-    yourPromptPlaceholder:
-      'Écrivez votre propre prompt / idée — il sera réécrit selon la durée et le style de caméra sélectionnés…',
-    duration: 'Durée',
-    cameraStyle: 'Style de caméra',
-    genre: 'Genre et atmosphère',
-    scene: 'Scène et environnement',
-    videoTemplates: 'Modèles vidéo',
-    cameraNotes: 'Notes de mouvement de caméra',
-    cameraNotesPlaceholder:
-      "Décrivez comment la caméra doit bouger, p. ex. montée lente puis travelling avant rapide sur l'étiquette…",
-    adScenario: 'Scénario publicitaire',
-    scene_: 'Scène',
-    narration: 'Narration',
-    copy: 'Copier',
-    copyAll: 'Tout copier',
-    copied: 'Copié',
-    regenerate: 'Régénérer',
-    sendAll: 'Tout envoyer en attente',
-    useAsPrompt: 'Utiliser comme prompt',
-    preparingFrame: 'Préparation de l’image…',
-    generate: 'Générer le scénario publicitaire',
-    withNarration: 'Avec narration',
-    withoutNarration: 'Sans narration',
-    language: 'Langue',
-    chooseFromProducts: 'Choisir parmi les produits',
-    generateWithAi: 'Générer avec l\'IA',
-    pickAspect: 'Choisissez les dimensions de l’image',
-    pickProduct: 'Choisissez un produit',
-    aspectHint: 'Choisissez d’abord les dimensions, puis le produit.',
-    noProducts: 'Aucune photo de produit enregistrée.',
-    untitled: 'Sans titre',
-    preparing: 'Préparation de l’image…',
-    loadingProducts: 'Chargement des produits…',
-    back: 'Retour',
-    viewImage: "Voir l'image",
-    reframeHistory: 'Images déjà recadrées',
-    loadingReframes: 'Chargement de l’historique…',
-    noReframes: 'Aucune image recadrée pour le moment.',
-    reuseHint: 'Cliquez pour réutiliser sans régénérer.',
-    businessLabel: 'À propos de votre entreprise',
-    businessRequiredTag: '(obligatoire)',
-    businessPlaceholder: 'Décrivez votre entreprise : ce que vous vendez, vos produits/services, votre public cible et le ton de la marque…',
-    businessRequired: "Décrivez d'abord votre entreprise — le scénario doit y être pertinent.",
-    businessSave: 'Enregistrer',
-    businessSaved: 'Enregistré',
-    contactLabel: 'Coordonnées (affichées sur la vidéo)',
-    contactWebsite: 'Site web',
-    contactPhone: 'Téléphone',
-    contactAddress: 'Adresse',
-    contactLogo: "Logo de l'entreprise",
   },
 }
 
@@ -944,56 +629,6 @@ const CHAR_T: Record<Lang, Record<string, string>> = {
     productNamePlaceholder: 'e.g. Captain Aria',
     descriptionPlaceholder: 'Personality, role, age, vibe, backstory…',
     generate: 'Generate film scenario',
-  },
-  fa: {
-    title: 'شناسنامه کاراکتر',
-    description:
-      'تصویر کاراکتر خود را آپلود کنید، به چند سؤال پاسخ دهید و یک سناریوی سینمایی کامل که کاملاً حول همان کاراکتر ساخته شده دریافت کنید.',
-    photo: 'کاراکتر',
-    productName: 'نام کاراکتر',
-    productNamePlaceholder: 'مثلاً کاپیتان آریا',
-    descriptionPlaceholder: 'شخصیت، نقش، سن، حال‌وهوا، پیشینه…',
-    generate: 'ساخت سناریوی فیلم',
-  },
-  ar: {
-    title: 'بطاقة الشخصية',
-    description:
-      'حمّل صورة شخصيتك، أجب عن بعض الأسئلة، واحصل على سيناريو فيلم سينمائي مبني بالكامل حول تلك الشخصية.',
-    photo: 'الشخصية',
-    productName: 'اسم الشخصية',
-    productNamePlaceholder: 'مثال: الكابتن آريا',
-    descriptionPlaceholder: 'الشخصية، الدور، العمر، الأجواء، الخلفية…',
-    generate: 'إنشاء سيناريو الفيلم',
-  },
-  tr: {
-    title: 'Karakter Sayfası',
-    description:
-      'Karakter görselinizi yükleyin, birkaç soruyu yanıtlayın ve tamamen o karakter etrafında kurgulanmış sinematik bir film senaryosu alın.',
-    photo: 'Karakter',
-    productName: 'Karakter adı',
-    productNamePlaceholder: 'örn. Kaptan Aria',
-    descriptionPlaceholder: 'Kişilik, rol, yaş, atmosfer, geçmiş…',
-    generate: 'Film senaryosu oluştur',
-  },
-  es: {
-    title: 'Ficha de Personaje',
-    description:
-      'Sube la imagen de tu personaje, responde unas preguntas y obtén un guion de película cinematográfico construido por completo en torno a ese personaje.',
-    photo: 'Personaje',
-    productName: 'Nombre del personaje',
-    productNamePlaceholder: 'p. ej. Capitana Aria',
-    descriptionPlaceholder: 'Personalidad, rol, edad, ambiente, historia…',
-    generate: 'Generar guion de película',
-  },
-  fr: {
-    title: 'Fiche de Personnage',
-    description:
-      'Téléchargez l’image de votre personnage, répondez à quelques questions et obtenez un scénario de film cinématographique entièrement construit autour de ce personnage.',
-    photo: 'Personnage',
-    productName: 'Nom du personnage',
-    productNamePlaceholder: 'p. ex. Capitaine Aria',
-    descriptionPlaceholder: 'Personnalité, rôle, âge, ambiance, histoire…',
-    generate: 'Générer le scénario du film',
   },
 }
 
