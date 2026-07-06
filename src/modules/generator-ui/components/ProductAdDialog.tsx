@@ -505,7 +505,7 @@ const VG_EXPLAINER: Loc = { en: 'Explainer & Educational', }
 
 const VIDEO_TEMPLATES: VideoTemplate[] = [
   // 1. Sports & Action
-  { id: 'football-team', label: { en: 'Football / Team Sports',Équipe" }, icon: '⚽', group: VG_SPORTS, prompt: 'Sports broadcast template: team line-up reveals, player profile cards, animated live-score lower thirds and refereeing graphics with energetic stadium atmosphere.', preview: vtFootballTeam.url },
+  { id: 'football-team', label: { en: 'Football / Team Sports' }, icon: '⚽', group: VG_SPORTS, prompt: 'Sports broadcast template: team line-up reveals, player profile cards, animated live-score lower thirds and refereeing graphics with energetic stadium atmosphere.', preview: vtFootballTeam.url },
   { id: 'sports-highlights', label: { en: 'Sports Highlights', }, icon: '🏆', group: VG_SPORTS, prompt: 'Sports highlights template: fast transitions, high-energy effects and jump cuts to showcase goals and decisive match moments.', preview: vtSportsHighlights.url },
   { id: 'fitness', label: { en: 'Fitness & Bodybuilding', }, icon: '💪', group: VG_SPORTS, prompt: 'Fitness template: motivational footage cut to a fast music tempo, promoting gyms or training programs with dynamic energy.', preview: vtFitness.url },
   { id: 'gaming-esports', label: { en: 'Gaming / Esports', }, icon: '🎮', group: VG_SPORTS, prompt: 'Gaming and esports template: stream channel intros, on-screen overlays and team reveals with neon glowing effects.', preview: vtGamingEsports.url },
