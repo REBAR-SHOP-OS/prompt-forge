@@ -1,50 +1,42 @@
-## هدف نهایی
-تولید ویدئو بعد از کلیک روی دکمه ساخت نباید روی حالت چرخش/Loading گیر کند؛ اگر مرحله آماده‌سازی تصویر، قفل‌کردن محصول، یا شروع Job خطا داد، کاربر باید پیام دقیق ببیند و UI آزاد شود. اگر Job واقعاً ساخته شد، Polling باید یا به ویدئو برسد یا با خطای امن و قابل فهم متوقف شود.
+## Goal
+Add a dedicated "Construction" scene category with many construction-focused styles, so it appears as its own group in the Scene & Environment section (Product Ad Scenario dialog + the composer's Styles picker).
 
-## تشخیص فعلی
-از اسکرین‌شات‌ها مسیر دقیق مشخص است:
-- UI قبل از ساخت Job روی پیام `Locking product into start frame…` می‌ماند.
-- بعد خطای `Failed to fetch` نمایش داده می‌شود.
-- در این مرحله احتمالاً درخواست ساخت ویدئو هنوز به `jobs-create` نرسیده؛ خطا در مرحله پیش‌پردازش `ai-image-edit` / fetch تصویر محصول یا Start frame رخ می‌دهد.
-- یک مسیر خطرناک هم در `DashboardPage.tsx` وجود دارد که در حالت نبودن Start/End frame از داخل حلقه `return` می‌کند و می‌تواند وضعیت submit را به شکل نادرست رها کند.
+## Where it lives
+All scene styles come from `SCENE_STYLES` in `src/modules/generator-ui/lib/promptStyles.ts`. Each item has `id`, `label`, `icon`, `group`, `prompt`, and an optional `preview` clip. Groups are just string labels (e.g. `Industrial & Construction`, `Urban & Modern`) — the UI renders one sub-heading per distinct `group` automatically, in list order. Items without a preview clip simply show no hover preview (fully supported).
 
-## طرح اصلاح ریشه‌ای و امن
+## Changes (single file: `promptStyles.ts`)
 
-### 1. ایمن‌سازی مرحله `Locking product into start frame`
-در `src/modules/generator-ui/pages/DashboardPage.tsx` تابع `bakeProductIntoFrame` را طوری اصلاح می‌کنم که:
-- برای `ai-image-edit` و fetch تصویر خروجی timeout کنترل‌شده داشته باشد.
-- خطای شبکه/timeout را نبلعد و تبدیل به پیام قابل فهم کند.
-- اگر قفل‌کردن محصول شکست خورد، UI روی Spinner نماند و پیام دقیق نشان دهد.
-- در صورت شکست قابل بازیابی، به‌صورت امن به همان Start frame اصلی fallback کند تا کاربر بتواند ویدئو را بسازد، نه اینکه کل جریان بی‌دلیل گیر کند.
+1. Add a new group constant:
+   ```ts
+   const G_CONSTRUCTION = 'Construction & Civil Works'
+   ```
 
-### 2. جلوگیری از گیر کردن دکمه Submit در مسیرهای early-return
-در `handleSubmit` مسیر `else { setComposerError(...); return }` داخل حلقه را به خطای کنترل‌شده تبدیل می‌کنم تا همیشه `finally { setIsSubmitting(false) }` اجرا شود و دکمه چرخان گیر نکند.
+2. Insert a block of new construction scene items at the top of `SCENE_STYLES` (so the category renders first). Roughly 14–16 styles, each with a distinct icon and an English directing `prompt` (prompts stay English since they feed the enhance-prompt function). Proposed styles:
+   - High-Rise Tower Construction 🏗️
+   - Skyscraper Steel Framework 🏙️
+   - Concrete Pour / Casting 🧱
+   - Rebar & Reinforcement Site 🔩
+   - Tower Crane Operation 🏗️
+   - Highway / Bridge Construction 🌉
+   - Road Paving & Asphalt 🛣️
+   - Tunnel Boring / Excavation 🚧
+   - Foundation & Earthworks 🪏
+   - Scaffolding & Facade Work 🧗
+   - Residential Housing Build 🏘️
+   - Prefab / Modular Assembly 📦
+   - Demolition Site 💣
+   - Dam / Hydro Construction 🌊
+   - Oil & Gas / Refinery Build 🛢️
+   - Solar / Wind Farm Construction ☀️
 
-### 3. شفاف‌سازی خطا برای کاربر
-پیام خام `Failed to fetch` را به پیام قابل عمل تبدیل می‌کنم، مثل:
-- `Could not prepare the product frame. The original Start frame will be used.`
-یا اگر شروع Job شکست خورد:
-- `Could not start video generation. Please try again.`
-بدون نمایش اطلاعات حساس، URL داخلی، یا جزئیات secret.
+   The existing "Construction Site", "Heavy Industry Factory", "Shipyard / Dock", etc. under `Industrial & Construction` remain unchanged.
 
-### 4. سخت‌کردن Polling تا بی‌نهایت نچرخد
-منطق `isJobAwaitingResolution` و مسیر Polling را فقط در حد لازم بررسی/اصلاح می‌کنم تا اگر Job به وضعیت terminal بدون ویدئو رسید، UI آن را به خطای قابل مشاهده تبدیل کند، نه اینکه تا ابد poll کند.
+3. No changes to `STYLE_PREVIEWS` — the new items have no video clips yet, so they'll render without hover previews (consistent with existing behavior). The attach loop already handles missing previews gracefully.
 
-### 5. اعتبارسنجی بعد از اصلاح
-بعد از اعمال تغییرات:
-1. TypeScript/typecheck پروژه بررسی می‌شود.
-2. مسیر ساخت ویدئو با Start frame + Product انتخاب‌شده تست می‌شود.
-3. بررسی می‌شود که در صورت شکست آماده‌سازی تصویر، دکمه Submit آزاد شود و پیام مناسب نمایش داده شود.
-4. بررسی می‌شود که اگر Job ساخته شود، کارت Pending وارد Polling شود و یا Completed شود یا خطای مشخص بدهد.
+## Notes / trade-offs
+- The new items get no looping preview video (we have no matching clips). Everything else (selection, prompt injection, category heading) works immediately.
+- If you later want preview clips for these, we can generate/attach them in a follow-up.
 
-## فایل‌های احتمالی تغییر
-- `src/modules/generator-ui/pages/DashboardPage.tsx`
-- فقط اگر لازم شد: `supabase/functions/_shared/modules/job-orchestrator/gateway.ts` برای guard سمت backend/polling
-
-## ریسک‌ها و محدودیت‌ها
-- مشکل اصلی فعلی قبل از ساخت Job و در مرحله آماده‌سازی تصویر محصول دیده می‌شود، پس اولویت اصلاح frontend است.
-- APIهای تصویر/ویدئو طولانی هستند؛ نباید آن‌ها را synchronous و بدون timeout رها کنیم.
-- هیچ کلید/API secret در کد اضافه یا نمایش داده نمی‌شود.
-
-## خروجی مورد انتظار
-بعد از اصلاح، ساخت ویدئو یا واقعاً شروع می‌شود و وارد Pending/Rendering قابل پیگیری می‌شود، یا اگر مرحله آماده‌سازی شکست بخورد، UI آزاد می‌شود و خطای دقیق و امن نمایش داده می‌شود؛ دیگر «مدام می‌چرخد» بدون نتیجه نخواهیم داشت.
+## Validation
+- `bun run tsc --noEmit` clean.
+- Open the Product Ad Scenario dialog → Scene & Environment shows the new "Construction & Civil Works" heading with all the new chips; selecting them adds their prompt fragment to the generated scenario.
