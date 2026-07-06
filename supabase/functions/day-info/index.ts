@@ -24,7 +24,7 @@ Deno.serve(async (req) => {
 
 
     const body = await req.json().catch(() => ({}))
-    const lang: 'en' | 'fa' = body?.lang === 'fa' ? 'fa' : 'en'
+    const lang: 'en' = 'en'
     const date = typeof body?.date === 'string' ? body.date : ''
     const month = typeof body?.month === 'string' ? body.month : ''
     const isMonthMode = !date && /^\d{4}-\d{2}$/.test(month)
