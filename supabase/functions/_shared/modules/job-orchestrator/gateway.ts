@@ -254,6 +254,10 @@ function safeUserStatusMessage(raw: string | null | undefined): string | null {
   return value.slice(0, 240);
 }
 
+function safeProviderFailureReason(raw: string | null | undefined): string {
+  return safeUserStatusMessage(raw) ?? "Provider start failed — credits refunded";
+}
+
 async function failedJobMessage(
   svc: ReturnType<typeof getServiceClient>,
   userId: string,
@@ -382,7 +386,7 @@ async function startProviderGenerationInBackground(
       complete: gen.isComplete,
     });
   } catch (e) {
-    const reason = (e as Error).message ?? "Provider start failed";
+    const reason = safeProviderFailureReason((e as Error).message);
     statusCode = 502;
     errorCode = "PROVIDER_START_FAILED";
     try {
