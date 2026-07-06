@@ -48,6 +48,7 @@ const CreateJobSchema = z.object({
 
 const GetJobSchema = z.object({ jobId: z.string().uuid() });
 const DeleteJobSchema = z.object({ jobId: z.string().uuid() });
+const MAX_PROVIDER_START_ATTEMPTS = 3;
 
 const SUPABASE_STORAGE_ORIGIN = new URL(getEnv("SUPABASE_URL")).origin;
 
@@ -318,12 +319,23 @@ interface BackgroundStartParams {
   aspectRatio: "9:16" | "1:1" | "16:9";
 }
 
-function waitUntilBackground(task: Promise<unknown>) {
+function waitUntilBackground(task: Promise<unknown>, context?: { requestId?: string; jobId?: string; provider?: string }) {
   const runtime = globalThis as EdgeRuntimeGlobal;
   if (typeof runtime.EdgeRuntime?.waitUntil === "function") {
     runtime.EdgeRuntime.waitUntil(task);
+    logInfo("background provider start retained", {
+      requestId: context?.requestId,
+      jobId: context?.jobId,
+      provider: context?.provider,
+      mode: "waitUntil",
+    });
     return;
   }
+  logError("EdgeRuntime.waitUntil unavailable; provider start is best-effort", {
+    requestId: context?.requestId,
+    jobId: context?.jobId,
+    provider: context?.provider,
+  });
   // Local/Deno test fallback. The task itself owns its errors, so this is safe.
   void task;
 }
@@ -472,7 +484,30 @@ async function dispatchProviderStartIfClaimed(
     });
     return false;
   }
-  waitUntilBackground(startProviderGenerationInBackground(svc, params));
+  waitUntilBackground(startProviderGenerationInBackground(svc, params), {
+    requestId: params.requestId,
+    jobId: params.jobId,
+    provider: params.providerKey,
+  });
+  return true;
+}
+
+async function failProviderStartAfterRetries(
+  svc: ReturnType<typeof getServiceClient>,
+  userId: string,
+  detail: { id: string; provider_start_attempts?: number | null; provider_start_last_error?: string | null },
+): Promise<boolean> {
+  const attempts = detail.provider_start_attempts ?? 0;
+  if (attempts < MAX_PROVIDER_START_ATTEMPTS) return false;
+  const reason = safeProviderFailureReason(
+    detail.provider_start_last_error ?? "Provider start could not be confirmed after several attempts — credits refunded.",
+  );
+  await jobService.failJob(svc, {
+    userId,
+    jobId: detail.id,
+    reason,
+    refundCredits: true,
+  });
   return true;
 }
 
@@ -601,23 +636,31 @@ export const jobOrchestratorGateway = {
             detail.model_key
           ) {
             try {
-              providerStartRedispatched = await dispatchProviderStartIfClaimed(svc, {
-                userId: auth.userId,
-                jobId: detail.id,
-                requestId: ctx.requestId,
-                providerKey: detail.provider_key as ProviderKey,
-                resolvedModel: detail.model_key,
-                estimatedCost: 0,
-                prompt: detail.input_prompt,
-                firstFrameUrl: detail.first_frame_url ?? null,
-                lastFrameUrl: detail.last_frame_url ?? null,
-                referenceImageUrls: detail.reference_image_urls ?? [],
-                durationSeconds: (requestedDuration === 5 || requestedDuration === 10 || requestedDuration === 15) ? requestedDuration : null,
-                aspectRatio: detail.requested_aspect_ratio === "9:16" || detail.requested_aspect_ratio === "1:1" || detail.requested_aspect_ratio === "16:9"
-                  ? detail.requested_aspect_ratio
-                  : "16:9",
-              });
+              const failedAfterRetries = await failProviderStartAfterRetries(svc, auth.userId, detail);
+              if (failedAfterRetries) {
+                terminalFailedReason = safeProviderFailureReason(detail.provider_start_last_error);
+                detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
+                progressPercent = null;
+              } else {
+                providerStartRedispatched = await dispatchProviderStartIfClaimed(svc, {
+                  userId: auth.userId,
+                  jobId: detail.id,
+                  requestId: ctx.requestId,
+                  providerKey: detail.provider_key as ProviderKey,
+                  resolvedModel: detail.model_key,
+                  estimatedCost: 0,
+                  prompt: detail.input_prompt,
+                  firstFrameUrl: detail.first_frame_url ?? null,
+                  lastFrameUrl: detail.last_frame_url ?? null,
+                  referenceImageUrls: detail.reference_image_urls ?? [],
+                  durationSeconds: (requestedDuration === 5 || requestedDuration === 10 || requestedDuration === 15) ? requestedDuration : null,
+                  aspectRatio: detail.requested_aspect_ratio === "9:16" || detail.requested_aspect_ratio === "1:1" || detail.requested_aspect_ratio === "16:9"
+                    ? detail.requested_aspect_ratio
+                    : "16:9",
+                });
+              }
               if (providerStartRedispatched) {
+                detail = await jobService.getMyJob(auth.userId, parsed.data.jobId, userClient) ?? detail;
                 progressPercent = estimateProgressFromJob(detail.status, detail.created_at, requestedDuration);
               }
             } catch (e) {
@@ -845,7 +888,7 @@ export const jobOrchestratorGateway = {
               referenceCount: referenceImageUrls.length,
             });
           }
-          await dispatchProviderStartIfClaimed(svc, {
+          const providerStartDispatched = await dispatchProviderStartIfClaimed(svc, {
             userId: auth.userId,
             jobId,
             requestId: ctx.requestId,
@@ -859,19 +902,27 @@ export const jobOrchestratorGateway = {
             durationSeconds: parsed.data.durationSeconds ?? null,
             aspectRatio: chosenAspectRatio,
           });
-
-          await writeAuditLog(svc, {
-            actorUserId: auth.userId,
-            action: "job_orchestrator.create_job",
-            targetType: "generation_job",
-            targetId: jobId,
+          logInfo("provider start handoff recorded", {
             requestId: ctx.requestId,
-            metadata: { provider: route.providerKey, model: route.resolvedModel, status: "pending" },
+            jobId,
+            provider: route.providerKey,
+            dispatched: providerStartDispatched,
           });
-          await writeApiRequestLog(svc, {
-            ...ctx, userId: auth.userId, statusCode: 202, latencyMs: Date.now() - ctx.startedAt,
-            providerKey: route.providerKey, modelKey: route.resolvedModel, estimatedCost: route.estimatedCost,
-          });
+
+          await Promise.all([
+            writeAuditLog(svc, {
+              actorUserId: auth.userId,
+              action: "job_orchestrator.create_job",
+              targetType: "generation_job",
+              targetId: jobId,
+              requestId: ctx.requestId,
+              metadata: { provider: route.providerKey, model: route.resolvedModel, status: "pending" },
+            }),
+            writeApiRequestLog(svc, {
+              ...ctx, userId: auth.userId, statusCode: 202, latencyMs: Date.now() - ctx.startedAt,
+              providerKey: route.providerKey, modelKey: route.resolvedModel, estimatedCost: route.estimatedCost,
+            }),
+          ]);
 
           return jsonResponse({
             jobId,
