@@ -28,10 +28,10 @@ export const jobOrchestratorGateway = {
     request<CreateJobResult>("/jobs-create", {
       method: "POST",
       body: JSON.stringify(input),
-      // jobs-create runs the provider start synchronously. Bound the wait so a
-      // slow/hung provider can never freeze the composer's loading state. Local
-      // routers can generate the whole clip inline, so give them far more room.
-      timeoutMs: input.providerKey === "local" ? 600_000 : 120_000,
+      // jobs-create now queues provider start in the backend background and
+      // returns as soon as the durable Pending job exists. Keep this bounded so
+      // auth/network problems never freeze the composer.
+      timeoutMs: 45_000,
     }),
 
   getJob: (jobId: string): Promise<JobDetail> => {
