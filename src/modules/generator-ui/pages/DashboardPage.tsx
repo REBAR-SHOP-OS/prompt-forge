@@ -958,12 +958,12 @@ export function generationStartErrorMessage(error: unknown, fallback: string): s
     return 'Not enough credits for this generation. Add credits or choose a lower-cost model/duration.'
   }
   if (error instanceof ApiError && error.code === 'TIMEOUT') {
-    return 'Generation may still be queued. Check Pending; if no card appears, retry.'
+    return 'Still queuing. Pending was refreshed automatically; if no card appears, try again.'
   }
   if (error instanceof ApiError) return `${error.code}: ${error.message}`
   if (error instanceof Error && error.message) {
     if (/failed to fetch|networkerror|load failed|timed out|timeout/i.test(error.message)) {
-      return 'Connection dropped while queuing generation. Check Pending; if no card appears, retry.'
+      return 'Connection dropped while queuing. Pending was refreshed automatically; if no card appears, try again.'
     }
     return error.message
   }
@@ -1050,7 +1050,8 @@ function buildSeededJob(
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     video: null,
-    requestId: result.requestId
+    requestId: result.requestId,
+    status_message: result.status === 'pending' ? 'Queued — waiting for provider' : undefined,
   }
 }
 
