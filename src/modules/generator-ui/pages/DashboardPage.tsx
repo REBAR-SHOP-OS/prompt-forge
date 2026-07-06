@@ -12134,8 +12134,8 @@ export default function DashboardPage() {
               value={promptText}
               onChange={(event) => setPromptText(event.target.value)}
               placeholder="What do you want to forge?"
-              rows={3}
-              className="min-h-24 max-h-80 w-full resize-y border-0 bg-transparent py-2 text-[15px] leading-6 text-zinc-100 outline-none placeholder:text-zinc-500/70"
+              rows={1}
+              className="min-h-10 max-h-10 w-full resize-none overflow-x-auto overflow-y-hidden whitespace-nowrap border-0 bg-transparent py-2 text-[15px] leading-6 text-zinc-100 outline-none placeholder:text-zinc-500/70"
             />
 
             {uploadedFiles.length > 0 ? (
