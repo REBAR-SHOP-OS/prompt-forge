@@ -12146,7 +12146,7 @@ export default function DashboardPage() {
           </div>
         ) : null}
 
-        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+        <div className="grid gap-3">
           <div className="grid gap-3">
             <label className="sr-only" htmlFor="prompt-input">
               Prompt
