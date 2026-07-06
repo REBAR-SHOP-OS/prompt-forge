@@ -132,6 +132,7 @@ export const GENRE_STYLES: StyleItem[] = [
 ]
 
 // ---------------- Scene & environment ----------------
+const G_CONSTRUCTION = 'Construction & Civil Works'
 const G_INDUSTRIAL = 'Industrial & Construction'
 const G_URBAN = 'Urban & Modern'
 const G_NATURE = 'Natural & Epic Landscapes'
@@ -139,7 +140,24 @@ const G_HISTORICAL = 'Historical & Fantasy'
 const G_INTERIOR = 'Interior & Moody'
 
 export const SCENE_STYLES: StyleItem[] = [
+  { id: 'high-rise-tower', label: 'High-Rise Tower Construction', icon: '🏗️', group: G_CONSTRUCTION, prompt: 'High-rise tower construction environment: a partially built concrete tower rising floor by floor, tower cranes swinging loads, workers on open decks and safety nets against a city skyline.' },
+  { id: 'steel-framework', label: 'Skyscraper Steel Framework', icon: '🏙️', group: G_CONSTRUCTION, prompt: 'Skyscraper steel framework environment: exposed structural steel beams and columns being bolted and welded high above the city, ironworkers walking girders with sparks raining down.' },
+  { id: 'concrete-pour', label: 'Concrete Pour / Casting', icon: '🧱', group: G_CONSTRUCTION, prompt: 'Concrete pour and casting environment: a boom pump delivering wet concrete into formwork, workers vibrating and screeding the surface, gray slurry and formwork panels everywhere.' },
+  { id: 'rebar-site', label: 'Rebar & Reinforcement Site', icon: '🔩', group: G_CONSTRUCTION, prompt: 'Rebar and reinforcement environment: dense grids of steel reinforcing bars tied together across a slab or column cage, workers bending and fastening bars, orange rust texture and geometric patterns.' },
+  { id: 'tower-crane', label: 'Tower Crane Operation', icon: '🏗️', group: G_CONSTRUCTION, prompt: 'Tower crane operation environment: a towering crane lifting heavy loads across a construction site, long jib against the sky, cables tensioning and materials rising slowly with cinematic scale.' },
+  { id: 'bridge-construction', label: 'Highway / Bridge Construction', icon: '🌉', group: G_CONSTRUCTION, prompt: 'Highway and bridge construction environment: massive concrete piers, cantilevered spans reaching across a valley, launching gantries and segmental deck sections with epic infrastructure scale.' },
+  { id: 'road-paving', label: 'Road Paving & Asphalt', icon: '🛣️', group: G_CONSTRUCTION, prompt: 'Road paving environment: an asphalt paver laying fresh hot mix, steam rising, rollers compacting the surface and crews in high-vis vests under harsh daylight.' },
+  { id: 'tunnel-boring', label: 'Tunnel Boring / Excavation', icon: '🚧', group: G_CONSTRUCTION, prompt: 'Tunnel boring and excavation environment: a giant tunnel boring machine cutting through rock, dim underground lighting, dust, conveyor belts of spoil and curved concrete tunnel segments.' },
+  { id: 'foundation-earthworks', label: 'Foundation & Earthworks', icon: '⛏️', group: G_CONSTRUCTION, prompt: 'Foundation and earthworks environment: excavators digging deep pits, piling rigs driving foundations, mounds of soil, muddy access roads and heavy machinery churning the ground.' },
+  { id: 'scaffolding-facade', label: 'Scaffolding & Facade Work', icon: '🧗', group: G_CONSTRUCTION, prompt: 'Scaffolding and facade work environment: multi-level metal scaffolding wrapping a building, mesh netting, workers installing cladding and glass panels high on the elevation.' },
+  { id: 'residential-build', label: 'Residential Housing Build', icon: '🏘️', group: G_CONSTRUCTION, prompt: 'Residential housing construction environment: rows of half-built homes with timber framing, brickwork and roof trusses, stacks of materials and a developing suburban site.' },
+  { id: 'prefab-modular', label: 'Prefab / Modular Assembly', icon: '📦', group: G_CONSTRUCTION, prompt: 'Prefabricated modular construction environment: cranes lowering factory-built room modules into place like giant building blocks, clean precise assembly and rapid stacking of units.' },
+  { id: 'demolition-site', label: 'Demolition Site', icon: '💥', group: G_CONSTRUCTION, prompt: 'Demolition environment: an excavator with a hydraulic breaker tearing down a structure, collapsing walls, billowing dust clouds and piles of rubble and twisted rebar.' },
+  { id: 'dam-hydro', label: 'Dam / Hydro Construction', icon: '🌊', group: G_CONSTRUCTION, prompt: 'Dam and hydro construction environment: a massive concrete dam wall under construction, spillways, diversion channels, huge machinery and turbulent water against monumental scale.' },
+  { id: 'refinery-build', label: 'Oil & Gas / Refinery Build', icon: '🛢️', group: G_CONSTRUCTION, prompt: 'Oil and gas plant construction environment: a maze of steel piping, pressure vessels and distillation towers being erected, module lifts, flare stacks and industrial complexity.' },
+  { id: 'renewable-farm', label: 'Solar / Wind Farm Construction', icon: '☀️', group: G_CONSTRUCTION, prompt: 'Renewable energy construction environment: cranes raising towering wind turbine sections and blades, rows of solar panels being installed across open land under a wide sky.' },
   { id: 'construction-site', label: 'Construction Site', icon: '🏗️', group: G_INDUSTRIAL, prompt: 'Construction site environment: steel building skeletons, giant moving cranes, dust and dirt, hard-hat workers at sunset.' },
+
   { id: 'heavy-industry', label: 'Heavy Industry Factory', icon: '🏭', group: G_INDUSTRIAL, prompt: 'Heavy industry factory environment: molten iron, welding sparks, large gear machinery and huge smokestacks.' },
   { id: 'abandoned-warehouse', label: 'Abandoned Warehouse', icon: '🕸️', group: G_INDUSTRIAL, prompt: 'Abandoned warehouse environment: large empty space, broken windows, light beams piercing from the roof and dust floating in the air.' },
   { id: 'shipyard-dock', label: 'Shipyard / Dock', icon: '🚢', group: G_INDUSTRIAL, prompt: 'Shipyard and dock environment: giant container ships, coastal cranes, seawater and rusty steel structures.' },
