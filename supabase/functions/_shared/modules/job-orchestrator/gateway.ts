@@ -32,6 +32,7 @@ export const JOB_ORCHESTRATOR_CONTRACT: DomainContractMeta = {
 const CreateJobSchema = z.object({
   providerKey: z.enum(["wan", "flow", "local"]),
   requestedModel: z.string().trim().min(1).max(100).optional(),
+  clientRequestId: z.string().uuid().optional(),
   prompt: z.string().min(1).max(16000),
   firstFrameUrl: z.string().url().max(2048).optional(),
   lastFrameUrl: z.string().url().max(2048).optional(),
@@ -232,6 +233,18 @@ function providerStartHandoffTimeoutMs(durationSeconds: number | null | undefine
   return Math.min(stuckTimeoutMsForDuration(durationSeconds) - 60_000, 10 * 60_000);
 }
 
+function providerStartClaimStaleSeconds(
+  providerKey: ProviderKey | string | null | undefined,
+  durationSeconds: number | null | undefined,
+): number {
+  if (providerKey === "local") {
+    const raw = Number(Deno.env.get("LOCAL_VIDEO_ROUTER_TIMEOUT_MS"));
+    const localTimeoutMs = Number.isFinite(raw) && raw > 0 ? Math.round(raw) : 300_000;
+    return Math.ceil(Math.max(localTimeoutMs + 60_000, 180_000) / 1000);
+  }
+  return Math.ceil(Math.min(providerStartHandoffTimeoutMs(durationSeconds), 120_000) / 1000);
+}
+
 function buildStatusMessage(
   status: string,
   createdAt: string | undefined,
@@ -397,6 +410,15 @@ async function startProviderGenerationInBackground(
     statusCode = 502;
     errorCode = "PROVIDER_START_FAILED";
     try {
+      await jobService.recordProviderStartError(svc, params.userId, params.jobId, reason);
+    } catch (recordError) {
+      logError("background provider-start error persist failed", {
+        requestId: params.requestId,
+        jobId: params.jobId,
+        error: (recordError as Error).message,
+      });
+    }
+    try {
       await jobService.failJob(svc, {
         userId: params.userId,
         jobId: params.jobId,
@@ -430,6 +452,28 @@ async function startProviderGenerationInBackground(
       errorCode,
     });
   }
+}
+
+async function dispatchProviderStartIfClaimed(
+  svc: ReturnType<typeof getServiceClient>,
+  params: BackgroundStartParams,
+): Promise<boolean> {
+  const claimed = await jobService.claimProviderStart(
+    svc,
+    params.userId,
+    params.jobId,
+    providerStartClaimStaleSeconds(params.providerKey, params.durationSeconds),
+  );
+  if (!claimed) {
+    logInfo("provider start claim skipped", {
+      requestId: params.requestId,
+      jobId: params.jobId,
+      provider: params.providerKey,
+    });
+    return false;
+  }
+  waitUntilBackground(startProviderGenerationInBackground(svc, params));
+  return true;
 }
 
 export const jobOrchestratorGateway = {
@@ -472,6 +516,7 @@ export const jobOrchestratorGateway = {
           let progressPercent: number | null = null;
           let terminalFailedReason: string | null = null;
           const requestedDuration = (detail as { requested_duration?: number | null }).requested_duration ?? null;
+          let providerStartRedispatched = false;
           if (
             detail.status === "processing" &&
             detail.provider_job_id &&
@@ -544,6 +589,46 @@ export const jobOrchestratorGateway = {
             progressPercent = estimateProgressFromJob(detail.status, detail.created_at, requestedDuration);
           }
 
+          // Self-healing fallback: EdgeRuntime.waitUntil is fast but not a
+          // durable queue. If a pending job has no provider id and no active
+          // fresh claim, polling can safely re-dispatch provider start. The DB
+          // claim guarantees only one caller actually starts the provider.
+          if (
+            !terminalFailedReason &&
+            (detail.status === "processing" || detail.status === "pending") &&
+            !detail.provider_job_id &&
+            (detail.provider_key === "wan" || detail.provider_key === "flow" || detail.provider_key === "local") &&
+            detail.model_key
+          ) {
+            try {
+              providerStartRedispatched = await dispatchProviderStartIfClaimed(svc, {
+                userId: auth.userId,
+                jobId: detail.id,
+                requestId: ctx.requestId,
+                providerKey: detail.provider_key as ProviderKey,
+                resolvedModel: detail.model_key,
+                estimatedCost: 0,
+                prompt: detail.input_prompt,
+                firstFrameUrl: detail.first_frame_url ?? null,
+                lastFrameUrl: detail.last_frame_url ?? null,
+                referenceImageUrls: detail.reference_image_urls ?? [],
+                durationSeconds: (requestedDuration === 5 || requestedDuration === 10 || requestedDuration === 15) ? requestedDuration : null,
+                aspectRatio: detail.requested_aspect_ratio === "9:16" || detail.requested_aspect_ratio === "1:1" || detail.requested_aspect_ratio === "16:9"
+                  ? detail.requested_aspect_ratio
+                  : "16:9",
+              });
+              if (providerStartRedispatched) {
+                progressPercent = estimateProgressFromJob(detail.status, detail.created_at, requestedDuration);
+              }
+            } catch (e) {
+              logError("provider start redispatch failed", {
+                error: (e as Error).message,
+                jobId: detail.id,
+                provider: detail.provider_key,
+              });
+            }
+          }
+
           // Early-stuck guard: if the row sits in pending/processing without a
           // provider_job_id (so the inline poll above can never advance it),
           // fail with refund after the async provider-start handoff window.
@@ -551,11 +636,14 @@ export const jobOrchestratorGateway = {
           // previous 60s threshold was only safe for synchronous provider start.
           if (
             !terminalFailedReason &&
+            !providerStartRedispatched &&
             (detail.status === "processing" || detail.status === "pending") &&
             !detail.provider_job_id
           ) {
             const startedAt = Date.parse(detail.created_at);
-            if (Number.isFinite(startedAt) && Date.now() - startedAt > providerStartHandoffTimeoutMs(requestedDuration)) {
+            const claimStartedAt = detail.provider_start_claimed_at ? Date.parse(detail.provider_start_claimed_at) : NaN;
+            const hasFreshClaim = Number.isFinite(claimStartedAt) && Date.now() - claimStartedAt < providerStartClaimStaleSeconds(detail.provider_key, requestedDuration) * 1000;
+            if (!hasFreshClaim && Number.isFinite(startedAt) && Date.now() - startedAt > providerStartHandoffTimeoutMs(requestedDuration)) {
               terminalFailedReason = "Provider never returned a job id — credits refunded. Please try again.";
               try {
                 await jobService.failJob(svc, {
@@ -577,6 +665,7 @@ export const jobOrchestratorGateway = {
           // forever-rendering card. Skips if we already flipped to terminal.
           if (
             !terminalFailedReason &&
+            !providerStartRedispatched &&
             (detail.status === "processing" || detail.status === "pending")
           ) {
             const startedAt = Date.parse(detail.created_at);
@@ -713,6 +802,7 @@ export const jobOrchestratorGateway = {
               providerKey: route.providerKey,
               modelKey: route.resolvedModel,
               estimatedCost: costCredits,
+              clientRequestId: parsed.data.clientRequestId ?? null,
               firstFrameUrl,
               lastFrameUrl,
               referenceImageUrls: referenceImageUrls.length > 0 ? referenceImageUrls : null,
@@ -755,7 +845,7 @@ export const jobOrchestratorGateway = {
               referenceCount: referenceImageUrls.length,
             });
           }
-          waitUntilBackground(startProviderGenerationInBackground(svc, {
+          await dispatchProviderStartIfClaimed(svc, {
             userId: auth.userId,
             jobId,
             requestId: ctx.requestId,
@@ -768,7 +858,7 @@ export const jobOrchestratorGateway = {
             referenceImageUrls,
             durationSeconds: parsed.data.durationSeconds ?? null,
             aspectRatio: chosenAspectRatio,
-          }));
+          });
 
           await writeAuditLog(svc, {
             actorUserId: auth.userId,

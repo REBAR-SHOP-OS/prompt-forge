@@ -15,6 +15,17 @@ export const JOB_ORCHESTRATOR_CONTRACT_VERSION = "v1" as const;
 // per tick and avoids contradictory snapshots in the UI.
 const inflightGetJob = new Map<string, Promise<JobDetail>>();
 
+function withClientRequestId(input: CreateJobInput): CreateJobInput {
+  return {
+    ...input,
+    clientRequestId: input.clientRequestId ?? crypto.randomUUID(),
+  };
+}
+
+function isCreateTimeout(error: unknown): boolean {
+  return error instanceof ApiError && error.code === "TIMEOUT";
+}
+
 export const jobOrchestratorGateway = {
   contractVersion: JOB_ORCHESTRATOR_CONTRACT_VERSION,
 
@@ -24,15 +35,26 @@ export const jobOrchestratorGateway = {
     return r.items ?? [];
   },
 
-  createJob: (input: CreateJobInput) =>
-    request<CreateJobResult>("/jobs-create", {
+  createJob: async (input: CreateJobInput) => {
+    const idempotentInput = withClientRequestId(input);
+    const options = {
       method: "POST",
-      body: JSON.stringify(input),
+      body: JSON.stringify(idempotentInput),
       // jobs-create now queues provider start in the backend background and
       // returns as soon as the durable Pending job exists. Keep this bounded so
       // auth/network problems never freeze the composer.
       timeoutMs: 45_000,
-    }),
+    };
+    try {
+      return await request<CreateJobResult>("/jobs-create", options);
+    } catch (error) {
+      if (!isCreateTimeout(error)) throw error;
+      // The first request may have reached the backend but timed out before the
+      // response returned. Retry once with the same clientRequestId; the backend
+      // returns the already-created job without charging or dispatching twice.
+      return await request<CreateJobResult>("/jobs-create", options);
+    }
+  },
 
   getJob: (jobId: string): Promise<JobDetail> => {
     const existing = inflightGetJob.get(jobId);

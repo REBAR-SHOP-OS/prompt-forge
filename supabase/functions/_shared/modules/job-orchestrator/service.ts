@@ -3,7 +3,7 @@ import type { SupabaseClient } from "../../core/supabase.ts";
 import type { CreateJobInput, JobDetail, JobService, JobSummary } from "./contract.ts";
 
 const JOB_COLUMNS =
-  "id, status, input_prompt, narration_text, provider_key, model_key, provider_job_id, first_frame_url, last_frame_url, reference_image_urls, requested_duration, requested_aspect_ratio, draft_group_id, created_at, updated_at";
+  "id, status, input_prompt, narration_text, provider_key, model_key, provider_job_id, client_request_id, provider_start_claimed_at, provider_start_attempts, provider_start_last_error, first_frame_url, last_frame_url, reference_image_urls, requested_duration, requested_aspect_ratio, draft_group_id, created_at, updated_at";
 
 export const jobService: JobService = {
   async listMyJobs(userId, client, limit = 20) {
@@ -39,40 +39,42 @@ export const jobService: JobService = {
   },
 
   async createJob(svc, input: CreateJobInput): Promise<string> {
-    const { data, error } = await svc.rpc("generator_start_job", {
+    const { data, error } = await svc.rpc("generator_start_job_v2", {
       _user_id: input.userId,
       _prompt: input.prompt,
       _provider_key: input.providerKey,
       _model_key: input.modelKey,
       _cost: Math.max(0, Math.ceil(input.estimatedCost || 0)),
+      _client_request_id: input.clientRequestId ?? null,
+      _first_frame_url: input.firstFrameUrl ?? null,
+      _last_frame_url: input.lastFrameUrl ?? null,
+      _reference_image_urls: input.referenceImageUrls && input.referenceImageUrls.length > 0 ? input.referenceImageUrls : null,
+      _requested_aspect_ratio: input.aspectRatio ?? null,
+      _requested_duration: input.durationSeconds ?? null,
+      _draft_group_id: input.draftGroupId ?? null,
+      _narration_text: input.narrationText ?? null,
     });
     if (error) throw new Error(error.message);
-    const jobId = data as string;
+    return data as string;
+  },
 
-    // Persist optional first/last frame URLs and the user's requested
-    // aspect ratio / duration on the job row (not part of the credit RPC).
-    const updates: Record<string, unknown> = {};
-    if (input.firstFrameUrl !== undefined) updates.first_frame_url = input.firstFrameUrl ?? null;
-    if (input.lastFrameUrl !== undefined) updates.last_frame_url = input.lastFrameUrl ?? null;
-    if (input.referenceImageUrls !== undefined) {
-      updates.reference_image_urls =
-        input.referenceImageUrls && input.referenceImageUrls.length > 0
-          ? input.referenceImageUrls
-          : null;
-    }
-    if (input.aspectRatio) updates.requested_aspect_ratio = input.aspectRatio;
-    if (input.durationSeconds) updates.requested_duration = input.durationSeconds;
-    if (input.draftGroupId) updates.draft_group_id = input.draftGroupId;
-    if (input.narrationText !== undefined) updates.narration_text = input.narrationText ?? null;
-    if (Object.keys(updates).length > 0) {
-      const { error: updErr } = await svc
-        .from("generator_generation_jobs")
-        .update(updates)
-        .eq("id", jobId)
-        .eq("user_id", input.userId);
-      if (updErr) throw new Error(`job metadata persist failed: ${updErr.message}`);
-    }
-    return jobId;
+  async claimProviderStart(svc, userId, jobId, staleAfterSeconds = 120) {
+    const { data, error } = await svc.rpc("generator_claim_provider_start", {
+      _user_id: userId,
+      _job_id: jobId,
+      _stale_after_seconds: staleAfterSeconds,
+    });
+    if (error) throw new Error(error.message);
+    return Boolean(data);
+  },
+
+  async recordProviderStartError(svc, userId, jobId, reason) {
+    const { error } = await svc.rpc("generator_record_provider_start_error", {
+      _user_id: userId,
+      _job_id: jobId,
+      _reason: reason,
+    });
+    if (error) throw new Error(error.message);
   },
 
   async markProcessing(svc, userId, jobId, providerJobId) {

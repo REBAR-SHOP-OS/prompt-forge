@@ -433,6 +433,7 @@ export type Database = {
       }
       generator_generation_jobs: {
         Row: {
+          client_request_id: string | null
           created_at: string
           deleted_at: string | null
           draft_group_id: string | null
@@ -446,6 +447,9 @@ export type Database = {
           parent_final_job_id: string | null
           provider_job_id: string | null
           provider_key: string | null
+          provider_start_attempts: number
+          provider_start_claimed_at: string | null
+          provider_start_last_error: string | null
           reference_image_urls: string[] | null
           requested_aspect_ratio: string | null
           requested_duration: number | null
@@ -454,6 +458,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          client_request_id?: string | null
           created_at?: string
           deleted_at?: string | null
           draft_group_id?: string | null
@@ -467,6 +472,9 @@ export type Database = {
           parent_final_job_id?: string | null
           provider_job_id?: string | null
           provider_key?: string | null
+          provider_start_attempts?: number
+          provider_start_claimed_at?: string | null
+          provider_start_last_error?: string | null
           reference_image_urls?: string[] | null
           requested_aspect_ratio?: string | null
           requested_duration?: number | null
@@ -475,6 +483,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          client_request_id?: string | null
           created_at?: string
           deleted_at?: string | null
           draft_group_id?: string | null
@@ -488,6 +497,9 @@ export type Database = {
           parent_final_job_id?: string | null
           provider_job_id?: string | null
           provider_key?: string | null
+          provider_start_attempts?: number
+          provider_start_claimed_at?: string | null
+          provider_start_last_error?: string | null
           reference_image_urls?: string[] | null
           requested_aspect_ratio?: string | null
           requested_duration?: number | null
@@ -788,6 +800,14 @@ export type Database = {
         Args: { _daily: number; _monthly: number; _user_id: string }
         Returns: undefined
       }
+      generator_claim_provider_start: {
+        Args: {
+          _job_id: string
+          _stale_after_seconds?: number
+          _user_id: string
+        }
+        Returns: boolean
+      }
       generator_complete_job: {
         Args: {
           _aspect_ratio: string
@@ -833,6 +853,10 @@ export type Database = {
         Args: { _job_id: string; _provider_job_id: string; _user_id: string }
         Returns: undefined
       }
+      generator_record_provider_start_error: {
+        Args: { _job_id: string; _reason: string; _user_id: string }
+        Returns: undefined
+      }
       generator_set_draft_group: {
         Args: {
           _group_id: string
@@ -848,6 +872,24 @@ export type Database = {
           _model_key: string
           _prompt: string
           _provider_key: string
+          _user_id: string
+        }
+        Returns: string
+      }
+      generator_start_job_v2: {
+        Args: {
+          _client_request_id?: string
+          _cost: number
+          _draft_group_id?: string
+          _first_frame_url?: string
+          _last_frame_url?: string
+          _model_key: string
+          _narration_text?: string
+          _prompt: string
+          _provider_key: string
+          _reference_image_urls?: string[]
+          _requested_aspect_ratio?: string
+          _requested_duration?: number
           _user_id: string
         }
         Returns: string

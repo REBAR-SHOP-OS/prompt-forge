@@ -1,57 +1,63 @@
-# پلن رفع اصولی خطای شروع ساخت ویدئو
+بررسی خواندنی انجام شد. نتیجه فعلی: بک‌اند سالم است، اما پیام `TIMEOUT: The request took too long` از تایم‌اوت کلاینت در مسیر `jobs-create` می‌آید. در لاگ‌های اخیر job جدیدی ثبت نشده و عمدتاً فقط pollingهای `getJob` دیده می‌شود؛ بنابراین باید مسیر ساخت job را idempotent، قابل بازیابی و مستقل از اجرای background کنیم، نه فقط پیام خطا را عوض کنیم.
 
-## نتیجه نهایی مورد انتظار
-- هنگام زدن دکمه ساخت ویدئو، UI دیگر با پیام مبهم `Network request failed while starting generation` متوقف نشود.
-- job بلافاصله و امن ساخته شود، در ستون Pending قابل مشاهده باشد، و شروع واقعی تولید در بک‌گراند انجام شود.
-- اگر provider کند، timeout، یا unreachable شود، job با پیام دقیق fail شود و credit به‌صورت امن refund شود.
-- مسیرهای فعلی polling، progress، completed/failed، و نمایش کارت‌ها حفظ شوند.
+## Plan
 
-## تشخیص فعلی
-- پیام خطای دیده‌شده در UI از `generationStartErrorMessage` در `DashboardPage.tsx` می‌آید و وقتی fetch به edge function قبل از پاسخ‌گرفتن fail/timeout شود، به همین متن عمومی تبدیل می‌شود.
-- `jobs-create` در حال حاضر provider start را داخل همان request انجام می‌دهد. این یعنی اگر provider یا network کند/قطع شود، کاربر قبل از اینکه کارت Pending قابل اتکا بگیرد با خطای network مواجه می‌شود.
-- backend و database در بررسی سلامت سالم هستند؛ مشکل بیشتر از الگوی synchronous start در مسیر ساخت ویدئو است، نه خرابی کلی backend.
+1. **Make job creation idempotent and recoverable**
+   - Add a safe `client_request_id` to generation jobs.
+   - The frontend will generate this ID once per submit.
+   - If the first request times out, retry/recovery with the same ID returns the same job instead of charging twice or creating duplicates.
 
-## تغییرات پیشنهادی
+2. **Move all create metadata into one atomic backend operation**
+   - Replace the current `create job → update metadata` two-step with one safe database function that:
+     - checks quota/credits,
+     - debits credits once,
+     - creates the Pending job,
+     - stores frame URLs, duration, ratio, references, narration, draft group, and client request ID together.
+   - Keep credit ledger protected behind backend/database functions; no direct client credit writes.
 
-1. **تبدیل `jobs-create` به شروع asynchronous**
-   - بعد از اعتبارسنجی، محاسبه هزینه، debit امن credit، و ساخت job، پاسخ سریع برگردد.
-   - پاسخ شامل `jobId`, `status: "pending"`, provider/model و `requestId` باشد تا کارت فوراً در Pending دیده شود.
-   - شروع provider در background با `EdgeRuntime.waitUntil(...)` انجام شود.
+3. **Add a durable provider-start claim**
+   - Add provider-start tracking fields such as claimed/attempt count.
+   - Only one backend worker/poll request can claim a job for provider start at a time.
+   - This prevents duplicate provider calls if the browser retries or polling overlaps.
 
-2. **افزودن تابع background امن برای start provider**
-   - همان منطق فعلی `aiGateway.startGeneration` از request اصلی جدا شود.
-   - اگر provider job id برگرداند: job به `processing` برود.
-   - اگر provider همان لحظه ویدئو کامل برگرداند: ویدئو materialize و job `completed` شود.
-   - اگر provider خطا داد یا job id نداد: job `failed` شود و credits refund شوند.
-   - هیچ secret یا URL داخلی در پیام خطای کاربر لو نرود؛ پیام‌ها برای local/cloud provider تمیز و قابل فهم بمانند.
+4. **Self-healing provider startup**
+   - Keep `EdgeRuntime.waitUntil` for fast background start.
+   - Add a fallback in `jobs-get`: if a job is still Pending/Processing without a provider job ID and the start claim is missing/stale, polling safely re-dispatches provider start.
+   - This fixes the root case where background work is dropped, killed, or delayed after `jobs-create` returns.
 
-3. **حفظ سازگاری UI و contract**
-   - `CreateJobResult.status` در frontend اجازه `pending` را دارد و کارت Pending فوراً ساخته می‌شود.
-   - polling موجود (`getJob`) بدون تغییر اصلی، job را از pending → processing → completed/failed جلو می‌برد.
-   - پیام خطای network در UI دقیق‌تر شود: اگر شروع request قطع شد، کاربر بداند generation ممکن است queue شده باشد و Pending refresh می‌شود، نه اینکه فقط retry کند.
+5. **Frontend timeout recovery**
+   - Update `jobOrchestratorGateway.createJob` to send `clientRequestId`.
+   - On `TIMEOUT`, automatically retry/resolve the same request once instead of leaving the composer with only an error.
+   - If a job was created, immediately show it in Pending and continue polling.
+   - Only show an error if recovery confirms no job exists.
 
-4. **بهبود ریکاوری و لاگینگ**
-   - برای start background، لاگ ساخت‌یافته با `requestId`, `jobId`, provider/model و نتیجه ثبت شود.
-   - مسیرهای fail/refund همان RPC موجود را استفاده کنند تا credit ledger مستقیم دستکاری نشود.
-   - stuck guards فعلی برای pending/processing حفظ شوند تا هیچ job برای همیشه گیر نکند.
+6. **Clean user-facing errors safely**
+   - Keep provider/API details sanitized.
+   - Replace ambiguous timeout text with a recoverable status message like “Generation was queued; checking Pending…” while recovery runs.
 
-5. **اعتبارسنجی**
-   - تست edge function `jobs-create` به‌روزرسانی/افزوده شود تا ثابت کند:
-     - پاسخ create سریع و `pending` است.
-     - background start، job را processing/completed می‌کند.
-     - خطای provider باعث failed + refund می‌شود.
-   - تابع `jobs-create` deploy و با فراخوانی مستقیم backend تست شود.
-   - در صورت امکان، یک ساخت ویدئو از preview بررسی شود که کارت Pending ایجاد و وضعیت آن polling می‌شود.
+7. **Tests and validation**
+   - Add/adjust tests for:
+     - duplicate `clientRequestId` does not double-charge,
+     - timed-out create can recover the job,
+     - provider-start claim prevents duplicate provider starts,
+     - `jobs-get` can re-dispatch stuck Pending jobs.
+   - Validate with typecheck and targeted function tests.
+   - Deploy the impacted backend functions after implementation.
 
-## فایل‌های تحت تأثیر
-- `supabase/functions/_shared/modules/job-orchestrator/gateway.ts`
+## Files expected to change
+
+- `supabase/migrations/...` — add safe idempotency/claim fields and RPCs.
+- `supabase/functions/_shared/modules/job-orchestrator/service.ts`
 - `supabase/functions/_shared/modules/job-orchestrator/contract.ts`
+- `supabase/functions/_shared/modules/job-orchestrator/gateway.ts`
 - `src/modules/job-orchestrator/contract.ts`
+- `src/modules/job-orchestrator/gateway.ts`
 - `src/modules/generator-ui/pages/DashboardPage.tsx`
-- احتمالاً تست‌های `supabase/functions/jobs-create/*test.ts`
+- Existing/new targeted tests.
 
-## مواردی که نباید بشکند
-- credit-management و ledger مستقیم دستکاری نمی‌شود.
-- RLS/database schema تغییر نمی‌کند مگر در صورت ضرورت؛ برای این fix فعلاً migration لازم نیست.
-- provider routing فعلی Wan/Flow/Local حفظ می‌شود.
-- نمایش Pending، polling، progress، completed video و refund فعلی حفظ و فقط پایدارتر می‌شود.
+## Safety notes
+
+- No provider keys or secrets will be exposed.
+- No direct credit ledger manipulation from the frontend.
+- Existing completed jobs remain untouched.
+- The fix is backward-compatible for any older jobs without `client_request_id`.
