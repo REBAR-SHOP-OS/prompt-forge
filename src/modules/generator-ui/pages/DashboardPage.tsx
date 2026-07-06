@@ -8596,6 +8596,7 @@ export default function DashboardPage() {
         addUploadedFiles(event.dataTransfer.files, 'Start')
       }}
     >
+      <h1 className="sr-only">AI Video Ad Generator — Prompt Forge Dashboard</h1>
       {showWelcome && <WelcomeVideoOverlay onClose={dismissWelcome} />}
       {(() => {
         if (!trimmingJobId) return null
