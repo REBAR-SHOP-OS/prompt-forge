@@ -52,22 +52,7 @@ const labels = {
     badge10s: '10s',
     scenarioError: 'Could not generate scenario.',
   },
-  fa: {
-    whatItIs: 'معرفی', history: 'تاریخچه',
-    empty: 'مناسبت مهمی برای این روز ثبت نشده است.',
-    loading: 'در حال بارگذاری…',
-    pick: 'یک تاریخ انتخاب کنید تا مناسبت‌ها را ببینید.',
-    monthTitle: 'این ماه',
-    monthEmpty: 'مناسبت مهمی در این ماه نیست.',
-    canada: 'کانادا', international: 'بین‌المللی', religious: 'دینی',
-    scenarioTitle: 'سناریو',
-    pickOccasion: 'روی یک مناسبت کلیک کنید تا سناریوی سینمایی ۱۰ ثانیه‌ای ساخته شود.',
-    generating: 'در حال نوشتن سناریو…',
-    regenerate: 'تولید دوباره',
-    useInPrompt: 'استفاده در پرامت',
-    badge10s: '۱۰ ثانیه',
-    scenarioError: 'ساخت سناریو ممکن نشد.',
-  },
+
 }
 
 const ALL_CATEGORIES: Category[] = ['canada', 'international', 'religious']
@@ -75,7 +60,7 @@ const ALL_CATEGORIES: Category[] = ['canada', 'international', 'religious']
 export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, todayOnly = false }: CalendarInfoDialogProps) {
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date())
   const [visibleMonth, setVisibleMonth] = useState<Date>(() => new Date())
-  const [lang, setLang] = useState<'en' | 'fa'>('en')
+  const [lang, setLang] = useState<'en'>('en')
   const [dayCache, setDayCache] = useState<Record<string, Occasion[]>>({})
   const [monthCache, setMonthCache] = useState<Record<string, MonthOccasion[]>>({})
   const [loading, setLoading] = useState(false)
@@ -172,17 +157,17 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
   }, [open, monthKey, lang, monthCacheKey, monthCache])
 
   const longLabel = useMemo(
-    () => selectedDate.toLocaleDateString(lang === 'fa' ? 'fa-IR' : 'en-US', {
+    () => selectedDate.toLocaleDateString('en-US', {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     }),
-    [selectedDate, lang],
+    [selectedDate],
   )
 
   const monthLabel = useMemo(
-    () => visibleMonth.toLocaleDateString(lang === 'fa' ? 'fa-IR' : 'en-US', {
+    () => visibleMonth.toLocaleDateString('en-US', {
       year: 'numeric', month: 'long',
     }),
-    [visibleMonth, lang],
+    [visibleMonth],
   )
 
   const filteredMonthOccasions = useMemo(() => {
@@ -226,9 +211,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
     setScenarioLoading(true)
     setScenarioError(null)
     try {
-      const seed = lang === 'fa'
-        ? `یک صحنه سینمایی ۱۰ ثانیه‌ای درباره «${occ.title}». ${occ.whatItIs}`
-        : `A cinematic 10-second scene about "${occ.title}". ${occ.whatItIs}`
+      const seed = `A cinematic 10-second scene about "${occ.title}". ${occ.whatItIs}`
       const { data, error: fnError } = await supabase.functions.invoke('enhance-prompt', {
         body: { prompt: seed, mode: 'silent' },
       })
@@ -262,7 +245,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
         <DialogHeader className="border-b border-white/10 px-6 py-4">
           <DialogTitle className="flex items-center gap-2 text-base font-medium">
             <CalendarDays className="h-4 w-4 text-amber-300" />
-            <span>{todayOnly ? (lang === 'fa' ? 'مناسبت‌های امروز' : "Today's Occasions") : 'Calendar'}</span>
+            <span>{todayOnly ? "Today's Occasions" : 'Calendar'}</span>
           </DialogTitle>
         </DialogHeader>
         <div className={cn('grid gap-0', todayOnly ? 'md:grid-cols-[1fr,1fr]' : 'md:grid-cols-[auto,1fr,1fr,1fr]')}>
@@ -285,20 +268,7 @@ export default function CalendarInfoDialog({ open, onOpenChange, onApplyPrompt, 
           <div className="flex max-h-[70vh] min-h-[420px] flex-col md:border-r border-white/10">
             <div className="flex items-center justify-between gap-2 border-b border-white/10 px-5 py-2">
               <div className="text-sm font-medium text-zinc-200" dir="auto">{longLabel}</div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setLang((l) => (l === 'en' ? 'fa' : 'en'))}
-                className={cn(
-                  'h-8 gap-1.5 px-2 text-xs',
-                  lang === 'fa' ? 'text-amber-300 hover:text-amber-200' : 'text-zinc-400 hover:text-zinc-200',
-                )}
-                aria-label="Toggle Persian translation"
-                title={lang === 'en' ? 'نمایش به فارسی' : 'Show in English'}
-              >
-                <Languages className="h-4 w-4" />
-                {lang === 'en' ? 'EN' : 'فا'}
-              </Button>
+
             </div>
             <div className="flex-1 overflow-y-auto px-3 py-3">
               {loading && (
