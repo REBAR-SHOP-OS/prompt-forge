@@ -11969,7 +11969,7 @@ export default function DashboardPage() {
       {!isReadOnlyProject && (
       <form
         ref={composerRef}
-        className="fixed bottom-4 left-1/2 z-30 grid w-[min(96rem,calc(100vw-2rem))] -translate-x-1/2 gap-3 rounded-[22px] border border-white/10 bg-[#111214]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(96rem,calc(100vw-56rem))] sm:p-4"
+        className="fixed bottom-4 left-1/2 z-30 grid w-[min(96rem,calc(100vw-2rem))] -translate-x-1/2 gap-3 rounded-[22px] border border-white/10 bg-[#111214]/95 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:bottom-[clamp(1rem,4.8vh,3.4rem)] sm:w-[min(100rem,calc(100vw-8rem))] sm:p-4"
         onSubmit={(e) => {
           e.preventDefault()
           if (isSubmitting || hasUploadingFiles || isEnhancingPrompt) return
@@ -12146,7 +12146,7 @@ export default function DashboardPage() {
           </div>
         ) : null}
 
-        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+        <div className="grid gap-3">
           <div className="grid gap-3">
             <label className="sr-only" htmlFor="prompt-input">
               Prompt
@@ -12158,7 +12158,7 @@ export default function DashboardPage() {
               onChange={(event) => setPromptText(event.target.value)}
               placeholder="What do you want to forge?"
               rows={2}
-              className="min-h-16 max-h-40 w-full resize-y overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent py-2 text-[15px] leading-6 text-zinc-100 outline-none placeholder:text-zinc-500/70"
+              className="min-h-20 max-h-40 w-full resize-y overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent py-2 text-[15px] leading-6 text-zinc-100 outline-none placeholder:text-zinc-500/70"
             />
 
             {uploadedFiles.length > 0 ? (
