@@ -40,17 +40,17 @@ describe("jobOrchestratorGateway.createJob", () => {
     });
 
     expect(result.status).toBe("pending");
-    expect(requestMock).toHaveBeenCalledWith("/jobs-create", {
+    expect(requestMock).toHaveBeenCalledWith("/jobs-create", expect.objectContaining({
       method: "POST",
-      body: JSON.stringify({
-        providerKey: "wan",
-        requestedModel: "wan2.7-i2v-2026-04-25",
-        clientRequestId: "00000000-0000-4000-8000-000000000001",
-        prompt: "test prompt",
-        durationSeconds: 5,
-        aspectRatio: "16:9",
-      }),
       timeoutMs: 45_000,
+    }));
+    expect(JSON.parse(requestMock.mock.calls[0][1].body)).toMatchObject({
+      providerKey: "wan",
+      requestedModel: "wan2.7-i2v-2026-04-25",
+      clientRequestId: "00000000-0000-4000-8000-000000000001",
+      prompt: "test prompt",
+      durationSeconds: 5,
+      aspectRatio: "16:9",
     });
   });
 
