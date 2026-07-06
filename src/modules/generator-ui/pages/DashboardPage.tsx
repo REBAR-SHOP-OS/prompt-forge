@@ -8573,7 +8573,7 @@ export default function DashboardPage() {
 
 
   return (
-    <section
+    <main
       className="relative min-h-screen overflow-hidden bg-black text-zinc-100"
       style={{
         backgroundImage:
