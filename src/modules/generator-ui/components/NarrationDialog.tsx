@@ -368,8 +368,8 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
     setMissingWordsTranslation(null)
     setExtraWordsTranslation(null)
     try {
-      const missingJoined = check?.missingWords?.length ? check.missingWords.join('، ') : ''
-      const extraJoined = check?.extraWords?.length ? check.extraWords.join('، ') : ''
+      const missingJoined = check?.missingWords?.length ? check.missingWords.join(', ') : ''
+      const extraJoined = check?.extraWords?.length ? check.extraWords.join(', ') : ''
       const [pt, tt, cm, mw, ew] = await Promise.all([
         translateOne(promptText, lang),
         translateOne(transcript ?? '', lang),
@@ -397,8 +397,8 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
     let cancelled = false
     ;(async () => {
       try {
-        const missingJoined = check?.missingWords?.length ? check.missingWords.join('، ') : ''
-        const extraJoined = check?.extraWords?.length ? check.extraWords.join('، ') : ''
+        const missingJoined = check?.missingWords?.length ? check.missingWords.join(', ') : ''
+        const extraJoined = check?.extraWords?.length ? check.extraWords.join(', ') : ''
         const [tt, cm, mw, ew] = await Promise.all([
           translateOne(transcript, targetLang),
           translateOne(check?.message ?? '', targetLang),
@@ -748,12 +748,12 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
                 </p>
                 {check.missingWords.length > 0 ? (
                   <p dir="auto" className="text-[12px] leading-5 text-rose-300/90">
-                    {t('missingOnFilm')} {missingWordsTranslation ?? check.missingWords.join('، ')}
+                    {t('missingOnFilm')} {missingWordsTranslation ?? check.missingWords.join(', ')}
                   </p>
                 ) : null}
                 {check.extraWords.length > 0 ? (
                   <p dir="auto" className="text-[12px] leading-5 text-amber-300/90">
-                    {t('extraOnFilm')} {extraWordsTranslation ?? check.extraWords.join('، ')}
+                    {t('extraOnFilm')} {extraWordsTranslation ?? check.extraWords.join(', ')}
                   </p>
                 ) : null}
               </div>
@@ -761,7 +761,7 @@ export function NarrationDialog({ open, onClose, prompt, narrationText, videoSto
 
             {lowConfWords.length > 0 ? (
               <p className="text-[12px] leading-5 text-amber-300/90">
-                {t('pronIssues')} {lowConfWords.map((w) => w.text).join('، ')}
+                {t('pronIssues')} {lowConfWords.map((w) => w.text).join(', ')}
               </p>
             ) : null}
           </section>
