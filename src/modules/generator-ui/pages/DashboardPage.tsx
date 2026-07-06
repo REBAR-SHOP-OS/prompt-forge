@@ -200,7 +200,7 @@ function StyleSection({
 }) {
   return (
     <div className="space-y-1.5">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">{title}</p>
+      <h2 className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">{title}</h2>
       <div className="flex flex-wrap gap-1.5">
         {items.map((item) => {
           const active = selectedIds.includes(item.id)
