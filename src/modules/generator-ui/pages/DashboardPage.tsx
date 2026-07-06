@@ -461,7 +461,7 @@ function UserImageView({
     return (
       <div className={`flex flex-col items-center justify-center gap-2 bg-[#0b0d10] text-center ${className ?? ''}`}>
         <ImageIcon className="h-7 w-7 text-zinc-600" aria-hidden="true" />
-        <span className="px-2 text-xs text-zinc-500">تصویر در دسترس نیست</span>
+        <span className="px-2 text-xs text-zinc-500">Image unavailable</span>
       </div>
     )
   }
