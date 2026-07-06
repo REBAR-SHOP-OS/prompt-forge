@@ -1183,13 +1183,7 @@ export default function DashboardPage() {
 
   const COPYRIGHT_LANGS: Array<{ value: string; label: string; rtl?: boolean }> = [
     { value: '', label: 'Original' },
-    { value: 'fa', label: 'فارسی', rtl: true },
-    { value: 'ar', label: 'العربية', rtl: true },
     { value: 'en', label: 'English' },
-    { value: 'tr', label: 'Türkçe' },
-    { value: 'es', label: 'Español' },
-    { value: 'fr', label: 'Français' },
-    { value: 'de', label: 'Deutsch' },
   ]
 
   // Translate every human-readable string in a CopyrightResult in one batched
