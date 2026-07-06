@@ -1,23 +1,21 @@
-## Goal
-Make the prompt textarea span the full width of the composer/chat box and enlarge the chat box itself so long prompts are readable instead of cramped in a narrow side column.
+## هدف
+متن ورودی پرامت به‌جای جمع‌شدن در نیمه‌ی چپ، در تمام عرض چت‌باکس پخش شود و نیمه‌ی خالی از بین برود.
 
-## What will change
+## تغییرات
 
-1. **Composer width**
-   - Increase `sm:w-[min(96rem,calc(100vw-56rem))]` to use more horizontal space on large screens so the chat box feels larger.
+فقط روی `<textarea>` پرامت در `src/modules/generator-ui/pages/DashboardPage.tsx` (خطوط ۱۲۱۵۴–۱۲۱۶۲):
 
-2. **Textarea layout**
-   - Remove the `sm:grid-cols-[minmax(0,1fr)_auto]` two-column layout that squeezes the textarea next to the action buttons.
-   - Stack the textarea above the action buttons so it can use the full composer width.
-   - Keep the textarea’s existing `w-full`, `whitespace-pre-wrap`, and `break-words` behavior.
+1. **کشیدن متن به کل عرض** — افزودن `text-align: justify` (کلاس `text-justify`) به textarea تا خطوطی که می‌پیچند در کل عرض باکس کشیده شوند و فضای راست خالی نماند.
 
-3. **Textarea height**
-   - Increase `min-h-16` to a taller minimum (e.g., `min-h-20` or `min-h-24`) so the chat box itself feels larger and multi-line prompts are comfortable.
-   - Keep `max-h-40` and `overflow-y-auto` so very long prompts still scroll.
+2. **جهت خودکار** — افزودن `dir="auto"` تا متن فارسی/انگلیسی از لبه‌ی درست شروع شده و ترازبندی صحیح داشته باشد.
 
-## Files
-- `src/modules/generator-ui/pages/DashboardPage.tsx` — composer form width class, grid layout, and textarea sizing classes.
+3. **اطمینان از عرض کامل** — textarea همین حالا `w-full` دارد؛ بررسی می‌شود که هیچ محدودیت عرض دیگری روی آن یا والدش اعمال نشده باشد تا واقعاً کل عرض چت‌باکس را بگیرد.
 
-## Validation
-- Type-check passes (`bun run tsc --noEmit`).
-- Visual check in preview confirms textarea spans full width and composer is wider.
+## فایل
+- `src/modules/generator-ui/pages/DashboardPage.tsx` — تنها کلاس‌ها و ویژگی‌های خودِ textarea پرامت.
+
+## اعتبارسنجی
+- تایپ‌چک تمیز (`bun run tsc --noEmit`).
+- بررسی بصری در preview: تایپ متن فارسی و انگلیسی و اطمینان از اینکه متن کل عرض چت‌باکس را پر می‌کند.
+
+> نکته: این یک تغییر صرفاً ظاهری (frontend) است و هیچ منطق تولید ویدیو یا بک‌اند را تغییر نمی‌دهد.
