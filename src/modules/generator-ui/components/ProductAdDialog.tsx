@@ -331,7 +331,7 @@ const CAMERA_STYLES: { label: Loc; icon: string; desc?: Loc; preview?: string }[
   { label: { en: 'Push In Cinematic', }, icon: '🎬', preview: camPushIn.url },
   { label: { en: 'Fly Through', }, icon: '🕊️', preview: camFlyThrough.url },
   { label: { en: 'Crash Zoom', }, icon: '💥', preview: camCrashZoom.url },
-  { label: { en: 'Handheld Dynamic',Épaule Dynamique" }, icon: '🤳', preview: camHandheld.url },
+  { label: { en: 'Handheld Dynamic' }, icon: '🤳', preview: camHandheld.url },
   { label: { en: 'Dolly Zoom', }, icon: '🌀', preview: camDollyZoom.url },
   { label: { en: 'Parallax Motion', }, icon: '🧊', preview: camParallax.url },
 ]
