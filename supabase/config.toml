@@ -38,3 +38,6 @@ verify_jwt = false
 
 [functions.local-llm-plan-video]
 verify_jwt = false
+
+[functions.mcp]
+verify_jwt = false
