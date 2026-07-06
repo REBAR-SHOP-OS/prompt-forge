@@ -75,7 +75,7 @@ export const jobOrchestratorGateway = {
       // response returned. Retry once with the same clientRequestId; the backend
       // returns the already-created job without charging or dispatching twice.
       try {
-        return await request<CreateJobResult>("/jobs-create", options);
+        return await request<CreateJobResult>("/jobs-create", { ...options, timeoutMs: 30_000 });
       } catch (retryError) {
         if (!isCreateTimeout(retryError)) throw retryError;
         const recovered = await recoverCreateTimeout(idempotentInput);
