@@ -41,31 +41,31 @@ import themeBoldTypographic from '@/assets/theme-previews/bold-typographic.jpg'
 import themeWarmMinimal from '@/assets/theme-previews/warm-minimal.jpg'
 import themeDramaticSpotlight from '@/assets/theme-previews/dramatic-spotlight.jpg'
 
-type ThemeOption = { id: string; faLabel: string; enLabel: string; descriptor: string; image: string }
+type ThemeOption = { id: string; enLabel: string; descriptor: string; image: string }
 
 const THEME_OPTIONS: ThemeOption[] = [
-  { id: 'minimalist', faLabel: 'مینیمال', enLabel: 'Minimalist Studio', descriptor: 'minimalist studio style, clean seamless background, lots of negative space, soft even studio lighting, premium product look', image: themeMinimalist },
-  { id: 'dark-moody', faLabel: 'تاریک و مرموز', enLabel: 'Dark & Moody', descriptor: 'dark moody atmosphere, dramatic low-key lighting, deep shadows, single rim light, luxurious mysterious mood', image: themeDarkMoody },
-  { id: 'cinematic', faLabel: 'سینمایی و فیلم', enLabel: 'Cinematic', descriptor: 'cinematic film look, anamorphic widescreen feel, dramatic teal and orange color grading, atmospheric haze, film-still quality', image: themeCinematic },
-  { id: 'editorial', faLabel: 'مجله‌ای', enLabel: 'Editorial / Magazine', descriptor: 'magazine editorial layout, refined high-fashion photography, elegant composition, premium glossy print look', image: themeEditorial },
-  { id: 'luxury', faLabel: 'لاکچری و پریمیوم', enLabel: 'Luxury / Premium', descriptor: 'luxury premium aesthetic, gold accents, marble surfaces, soft glamorous lighting, opulent high-end look', image: themeLuxury },
-  { id: 'corporate', faLabel: 'شرکتی و تجاری', enLabel: 'Corporate Clean', descriptor: 'corporate clean style, bright crisp professional commercial lighting, polished modern business aesthetic', image: themeCorporate },
-  { id: 'pop-art', faLabel: 'پاپ‌آرت', enLabel: 'Vibrant Pop', descriptor: 'vibrant pop-art style, bold saturated colors, high contrast, playful energetic backdrop, punchy advertising look', image: themePopArt },
-  { id: 'vintage', faLabel: 'وینتیج و نوستالژیک', enLabel: 'Vintage / Retro', descriptor: 'vintage retro aesthetic, faded warm film tones, nostalgic grain, muted amber palette', image: themeVintage },
-  { id: 'neon', faLabel: 'نئونی', enLabel: 'Neon / Cyberpunk', descriptor: 'neon cyberpunk style, vibrant neon glow, pink and cyan luminous accents, dark futuristic background, reflective wet surface', image: themeNeon },
-  { id: 'earthy', faLabel: 'طبیعت و ارگانیک', enLabel: 'Earthy / Organic', descriptor: 'earthy organic style, natural stone and linen, dried botanicals, warm natural light, sustainable aesthetic', image: themeEarthy },
-  { id: 'black-white', faLabel: 'سیاه و سفید', enLabel: 'Monochrome (B&W)', descriptor: 'black and white, high-contrast grayscale, dramatic monochrome studio lighting, fine art photography', image: themeBlackWhite },
-  { id: 'metallic', faLabel: 'متالیک و براق', enLabel: 'Metallic / Chrome', descriptor: 'metallic chrome finish, glossy reflective silver surfaces, studio reflections, sleek futuristic premium look', image: themeMetallic },
-  { id: 'glassmorphism', faLabel: 'گلس‌مورفیسم', enLabel: 'Glassmorphism', descriptor: 'glassmorphism style, frosted translucent glass, soft blur, light refractions, pastel gradient background, clean modern look', image: themeGlassmorphism },
-  { id: 'pastel', faLabel: 'پاستلی', enLabel: 'Pastel Soft', descriptor: 'soft pastel palette, gentle muted blush pink, lilac and sky blue tones, airy dreamy diffused light', image: themePastel },
-  { id: 'industrial-grunge', faLabel: 'صنعتی و گرانج', enLabel: 'Industrial Grunge', descriptor: 'raw industrial grunge style, exposed concrete and steel, pipes and machinery, gritty workshop, hard directional light, moody utilitarian mood', image: themeIndustrialGrunge },
-  { id: 'golden-hour', faLabel: 'نور طلایی غروب', enLabel: 'Golden Hour', descriptor: 'golden hour aesthetic, warm sunset glow, long soft shadows, backlit rim light, cinematic warmth and amber tones', image: themeGoldenHour },
-  { id: 'studio-gradient', faLabel: 'گرادیان استودیویی', enLabel: 'Studio Gradient', descriptor: 'smooth colored gradient studio backdrop, soft spotlight, vibrant modern commercial pop, clean product staging', image: themeStudioGradient },
-  { id: 'nature-fresh', faLabel: 'طبیعت تازه', enLabel: 'Nature Fresh', descriptor: 'fresh nature style, lush green foliage, water droplets, dewy daylight, clean organic freshness', image: themeNatureFresh },
-  { id: 'tech-futuristic', faLabel: 'تکنولوژی و آینده‌نگر', enLabel: 'Tech / Futuristic', descriptor: 'futuristic high-tech style, holographic UI accents, dark glass surfaces, blue luminous glow, sleek sci-fi product feel', image: themeTechFuturistic },
-  { id: 'bold-typographic', faLabel: 'گرافیک تایپوگرافی', enLabel: 'Bold Typographic', descriptor: 'bold typographic poster style, strong geometric color blocks, Swiss Bauhaus layout, flat vivid shapes, punchy advertising energy', image: themeBoldTypographic },
-  { id: 'warm-minimal', faLabel: 'مینیمال گرم', enLabel: 'Warm Minimal', descriptor: 'warm minimal style, beige and sand tones, soft natural shadows, cozy minimalist studio composition', image: themeWarmMinimal },
-  { id: 'dramatic-spotlight', faLabel: 'نورپردازی نمایشی', enLabel: 'Dramatic Spotlight', descriptor: 'dramatic spotlight style, single hard spotlight, deep black background, theatrical product reveal, strong contrast', image: themeDramaticSpotlight },
+  { id: 'minimalist', enLabel: 'Minimalist Studio', descriptor: 'minimalist studio style, clean seamless background, lots of negative space, soft even studio lighting, premium product look', image: themeMinimalist },
+  { id: 'dark-moody', enLabel: 'Dark & Moody', descriptor: 'dark moody atmosphere, dramatic low-key lighting, deep shadows, single rim light, luxurious mysterious mood', image: themeDarkMoody },
+  { id: 'cinematic', enLabel: 'Cinematic', descriptor: 'cinematic film look, anamorphic widescreen feel, dramatic teal and orange color grading, atmospheric haze, film-still quality', image: themeCinematic },
+  { id: 'editorial', enLabel: 'Editorial / Magazine', descriptor: 'magazine editorial layout, refined high-fashion photography, elegant composition, premium glossy print look', image: themeEditorial },
+  { id: 'luxury', enLabel: 'Luxury / Premium', descriptor: 'luxury premium aesthetic, gold accents, marble surfaces, soft glamorous lighting, opulent high-end look', image: themeLuxury },
+  { id: 'corporate', enLabel: 'Corporate Clean', descriptor: 'corporate clean style, bright crisp professional commercial lighting, polished modern business aesthetic', image: themeCorporate },
+  { id: 'pop-art', enLabel: 'Vibrant Pop', descriptor: 'vibrant pop-art style, bold saturated colors, high contrast, playful energetic backdrop, punchy advertising look', image: themePopArt },
+  { id: 'vintage', enLabel: 'Vintage / Retro', descriptor: 'vintage retro aesthetic, faded warm film tones, nostalgic grain, muted amber palette', image: themeVintage },
+  { id: 'neon', enLabel: 'Neon / Cyberpunk', descriptor: 'neon cyberpunk style, vibrant neon glow, pink and cyan luminous accents, dark futuristic background, reflective wet surface', image: themeNeon },
+  { id: 'earthy', enLabel: 'Earthy / Organic', descriptor: 'earthy organic style, natural stone and linen, dried botanicals, warm natural light, sustainable aesthetic', image: themeEarthy },
+  { id: 'black-white', enLabel: 'Monochrome (B&W)', descriptor: 'black and white, high-contrast grayscale, dramatic monochrome studio lighting, fine art photography', image: themeBlackWhite },
+  { id: 'metallic', enLabel: 'Metallic / Chrome', descriptor: 'metallic chrome finish, glossy reflective silver surfaces, studio reflections, sleek futuristic premium look', image: themeMetallic },
+  { id: 'glassmorphism', enLabel: 'Glassmorphism', descriptor: 'glassmorphism style, frosted translucent glass, soft blur, light refractions, pastel gradient background, clean modern look', image: themeGlassmorphism },
+  { id: 'pastel', enLabel: 'Pastel Soft', descriptor: 'soft pastel palette, gentle muted blush pink, lilac and sky blue tones, airy dreamy diffused light', image: themePastel },
+  { id: 'industrial-grunge', enLabel: 'Industrial Grunge', descriptor: 'raw industrial grunge style, exposed concrete and steel, pipes and machinery, gritty workshop, hard directional light, moody utilitarian mood', image: themeIndustrialGrunge },
+  { id: 'golden-hour', enLabel: 'Golden Hour', descriptor: 'golden hour aesthetic, warm sunset glow, long soft shadows, backlit rim light, cinematic warmth and amber tones', image: themeGoldenHour },
+  { id: 'studio-gradient', enLabel: 'Studio Gradient', descriptor: 'smooth colored gradient studio backdrop, soft spotlight, vibrant modern commercial pop, clean product staging', image: themeStudioGradient },
+  { id: 'nature-fresh', enLabel: 'Nature Fresh', descriptor: 'fresh nature style, lush green foliage, water droplets, dewy daylight, clean organic freshness', image: themeNatureFresh },
+  { id: 'tech-futuristic', enLabel: 'Tech / Futuristic', descriptor: 'futuristic high-tech style, holographic UI accents, dark glass surfaces, blue luminous glow, sleek sci-fi product feel', image: themeTechFuturistic },
+  { id: 'bold-typographic', enLabel: 'Bold Typographic', descriptor: 'bold typographic poster style, strong geometric color blocks, Swiss Bauhaus layout, flat vivid shapes, punchy advertising energy', image: themeBoldTypographic },
+  { id: 'warm-minimal', enLabel: 'Warm Minimal', descriptor: 'warm minimal style, beige and sand tones, soft natural shadows, cozy minimalist studio composition', image: themeWarmMinimal },
+  { id: 'dramatic-spotlight', enLabel: 'Dramatic Spotlight', descriptor: 'dramatic spotlight style, single hard spotlight, deep black background, theatrical product reveal, strong contrast', image: themeDramaticSpotlight },
 ]
 
 
@@ -247,15 +247,7 @@ type CoverTextInspection = {
 }
 
 const GUARDIAN_LANGS: { code: string; label: string }[] = [
-  { code: 'fa', label: 'Persian' },
   { code: 'en', label: 'English' },
-  { code: 'ar', label: 'Arabic' },
-  { code: 'tr', label: 'Turkish' },
-  { code: 'es', label: 'Spanish' },
-  { code: 'fr', label: 'French' },
-  { code: 'de', label: 'German' },
-  { code: 'ru', label: 'Russian' },
-  { code: 'zh', label: 'Chinese' },
 ]
 
 export default function AiImageDialog({

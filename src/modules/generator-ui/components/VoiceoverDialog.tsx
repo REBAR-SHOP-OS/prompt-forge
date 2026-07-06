@@ -109,15 +109,7 @@ function formatTimeMS(s: number): string {
 
 // Supported translation targets (must match the translate-text edge function).
 const TRANSLATE_LANGS: { code: string; label: string }[] = [
-  { code: 'fa', label: 'فارسی' },
   { code: 'en', label: 'English' },
-  { code: 'ar', label: 'العربية' },
-  { code: 'tr', label: 'Türkçe' },
-  { code: 'es', label: 'Español' },
-  { code: 'fr', label: 'Français' },
-  { code: 'de', label: 'Deutsch' },
-  { code: 'ru', label: 'Русский' },
-  { code: 'zh', label: '中文' },
 ]
 
 // A token in the reference-script comparison. `ok` = spoken as written,

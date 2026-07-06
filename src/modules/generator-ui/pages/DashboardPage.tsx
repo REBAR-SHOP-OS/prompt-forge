@@ -461,7 +461,7 @@ function UserImageView({
     return (
       <div className={`flex flex-col items-center justify-center gap-2 bg-[#0b0d10] text-center ${className ?? ''}`}>
         <ImageIcon className="h-7 w-7 text-zinc-600" aria-hidden="true" />
-        <span className="px-2 text-xs text-zinc-500">تصویر در دسترس نیست</span>
+        <span className="px-2 text-xs text-zinc-500">Image unavailable</span>
       </div>
     )
   }
@@ -1183,13 +1183,7 @@ export default function DashboardPage() {
 
   const COPYRIGHT_LANGS: Array<{ value: string; label: string; rtl?: boolean }> = [
     { value: '', label: 'Original' },
-    { value: 'fa', label: 'فارسی', rtl: true },
-    { value: 'ar', label: 'العربية', rtl: true },
     { value: 'en', label: 'English' },
-    { value: 'tr', label: 'Türkçe' },
-    { value: 'es', label: 'Español' },
-    { value: 'fr', label: 'Français' },
-    { value: 'de', label: 'Deutsch' },
   ]
 
   // Translate every human-readable string in a CopyrightResult in one batched
@@ -12139,7 +12133,7 @@ export default function DashboardPage() {
               ref={promptInputRef}
               value={promptText}
               onChange={(event) => setPromptText(event.target.value)}
-              placeholder="چه ویدیویی می‌خواهی بسازی؟"
+              placeholder="What do you want to forge?"
               rows={3}
               className="min-h-24 max-h-80 w-full resize-y border-0 bg-transparent py-2 text-[15px] leading-6 text-zinc-100 outline-none placeholder:text-zinc-500/70"
             />

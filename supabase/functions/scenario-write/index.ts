@@ -323,7 +323,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const idea = typeof body?.idea === "string" ? body.idea.trim() : "";
     const businessInfo = typeof body?.businessInfo === "string" ? body.businessInfo.trim().slice(0, 2000) : "";
-    const ALLOWED_LANGS = ["en", "fa", "ar", "tr", "es", "fr"];
+    const ALLOWED_LANGS = ["en"];
     const outputLanguage = ALLOWED_LANGS.includes(body?.outputLanguage) ? body.outputLanguage : "en";
     const narration = typeof body?.narration === "boolean" ? body.narration : true;
     const durationRaw = Number(body?.durationSeconds);

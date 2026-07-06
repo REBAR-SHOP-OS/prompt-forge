@@ -24,7 +24,7 @@ Deno.serve(async (req) => {
 
 
     const body = await req.json().catch(() => ({}))
-    const lang: 'en' | 'fa' = body?.lang === 'fa' ? 'fa' : 'en'
+    const lang: 'en' = 'en'
     const date = typeof body?.date === 'string' ? body.date : ''
     const month = typeof body?.month === 'string' ? body.month : ''
     const isMonthMode = !date && /^\d{4}-\d{2}$/.test(month)
@@ -59,9 +59,7 @@ STRICTLY EXCLUDE:
 
 If nothing fits, return an empty occasions array — do NOT invent.`
 
-    const langInstruction = lang === 'fa'
-      ? `همه فیلدهای متنی (title, whatItIs, history) را به فارسی روان بنویس. در title نام بین‌المللی را در پرانتز انگلیسی بیاور.`
-      : `Write all text fields (title, whatItIs, history) in clear English.`
+    const langInstruction = `Write all text fields (title, whatItIs, history) in clear English.`
 
     let userPrompt: string
     let detailInstruction: string
@@ -77,9 +75,7 @@ If nothing fits, return an empty occasions array — do NOT invent.`
 - "date": "${date}" (the same date).
 - "whatItIs": short paragraph (2-3 sentences).
 - "history": paragraph (3-5 sentences) about origin, year founded, evolution.`
-      userPrompt = lang === 'fa'
-        ? `مناسبت‌های این تاریخ را با تاریخچه‌شان بده: ${longDate} (${date}).`
-        : `Provide notable occasions and their history for: ${longDate} (${date}).`
+      userPrompt = `Provide notable occasions and their history for: ${longDate} (${date}).`
     } else {
       const [y, m] = month.split('-').map(Number)
       const monthName = MONTH_NAMES[m - 1]
@@ -91,9 +87,7 @@ If nothing fits, return an empty occasions array — do NOT invent.`
 - "history": ONE concise sentence (max ~30 words) — origin/year only.
 
 Be exhaustive but strict — include every qualifying observance in the month, but nothing outside the three categories.`
-      userPrompt = lang === 'fa'
-        ? `همهٔ مناسبت‌های واجد شرایط در ماه ${monthName} ${y} را برگردان.`
-        : `Return all qualifying occasions across ${monthName} ${y}.`
+      userPrompt = `Return all qualifying occasions across ${monthName} ${y}.`
     }
 
     const systemPrompt = `${baseRules}\n\n${detailInstruction}\n\n${langInstruction}\n\nYou MUST respond by calling the return_occasions function.`
