@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "sdk_version": "0.20.0",
+  "path": "/mcp",
+  "auth": {
+    "type": "oauth",
+    "issuer": "https://sacxoanuyetjfrfllkzx.supabase.co/auth/v1",
+    "accepted_audiences": [
+      "authenticated"
+    ]
+  },
+  "mcp": {
+    "server": {
+      "name": "prompt-forge-mcp",
+      "version": "0.1.0",
+      "title": "Prompt Forge MCP"
+    },
+    "tools": [
+      {
+        "name": "list_jobs",
+        "title": "List generation jobs",
+        "description": "List the signed-in user's most recent video generation jobs, including prompt, status, model and timestamps.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "limit": {
+              "description": "Maximum number of jobs to return (default 10, capped at 50).",
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_job",
+        "title": "Get generation job",
+        "description": "Fetch a single video generation job by its id for the signed-in user.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "jobId": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The generation job id (UUID)."
+            }
+          },
+          "required": [
+            "jobId"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_videos",
+        "title": "List generated videos",
+        "description": "List the signed-in user's generated video assets, including duration, aspect ratio and thumbnail.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "limit": {
+              "description": "Maximum number of videos to return (default 10, capped at 50).",
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_credit_balance",
+        "title": "Get credit balance",
+        "description": "Get the signed-in user's credit quota: daily and monthly limits and how much has been used.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}
