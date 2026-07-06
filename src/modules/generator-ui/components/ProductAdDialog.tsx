@@ -571,8 +571,8 @@ const T: Record<Lang, Record<string, string>> = {
     cameraStyle: 'Camera style',
     genre: 'Genre & atmosphere',
     scene: 'Scene & environment',
-    videoTemplat
-    cameraNot
+    videoTemplates: 'Video templates',
+    cameraNotes: 'Camera movement notes',
     cameraNotesPlaceholder:
       'Describe how the camera should move, e.g. slow rise then fast push-in on the label…',
     adScenario: 'Ad scenario',
@@ -601,8 +601,8 @@ const T: Record<Lang, Record<string, string>> = {
     back: 'Back',
     viewImage: 'View image',
     reframeHistory: 'Previously made images',
-    loadingRefram
-    noRefram
+    loadingReframes: 'Loading history…',
+    noReframes: 'No reframed images yet.',
     reuseHint: 'Click to reuse without regenerating.',
     businessLabel: 'About your business',
     businessRequiredTag: '(required)',
