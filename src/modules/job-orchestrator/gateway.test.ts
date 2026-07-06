@@ -15,6 +15,7 @@ vi.mock("@/core/api/client", () => ({
 
 describe("jobOrchestratorGateway.createJob", () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     requestMock.mockReset();
     vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000001");
   });
