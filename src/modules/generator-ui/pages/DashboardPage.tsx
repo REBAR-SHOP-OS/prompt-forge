@@ -960,6 +960,9 @@ export function generationStartErrorMessage(error: unknown, fallback: string): s
   if (error instanceof ApiError && error.code === 'TIMEOUT') {
     return 'Still queuing. Pending was refreshed automatically; if no card appears, try again.'
   }
+  if (error instanceof ApiError && (error.code === 'JOB_START_BUSY' || error.status === 503)) {
+    return 'The service is busy finishing your previous request. Please try again in a moment.'
+  }
   if (error instanceof ApiError) return `${error.code}: ${error.message}`
   if (error instanceof Error && error.message) {
     if (/failed to fetch|networkerror|load failed|timed out|timeout/i.test(error.message)) {

@@ -25,10 +25,13 @@ interface ModelCost {
 }
 
 const COST_MAP_USD: Record<string, ModelCost> = {
-  // Google Veo — pricing per second of generated video
-  "veo-3.0-fast-generate-001": { perSecondUsd: 0.10 },
-  "veo-3.0-generate-001":      { perSecondUsd: 0.40 },
-  "veo-3.1-generate-preview":  { perSecondUsd: 0.40 },
+  // Google Veo — pricing per second of generated video.
+  // NOTE: the Veo 3.0 GA model ids were retired from the Gemini API
+  // (predictLongRunning now 404s for them). Only the Veo 3.1 preview family is
+  // available, so all flow routes resolve to these.
+  "veo-3.1-fast-generate-preview": { perSecondUsd: 0.10 },
+  "veo-3.1-generate-preview":      { perSecondUsd: 0.40 },
+  "veo-3.1-lite-generate-preview": { perSecondUsd: 0.10 },
   // Alibaba Wan — flat per clip (5–10s)
   "wan-video-1":              { flatUsd: 0.15 },
   "wan2.7-i2v-2026-04-25":    { flatUsd: 0.15 },
@@ -50,30 +53,34 @@ function computeUsd(resolvedModel: string, durationSeconds: number): number {
 }
 
 /** Map the public model alias to a concrete provider model. The cheaper
- *  Veo 3 Fast tier is preferred by default; we fall back to Veo 3.1
+ *  Veo 3.1 Fast tier is preferred by default; we fall back to Veo 3.1
  *  Standard when the request *requires* a capability Fast does not support:
- *   - first+last frame interpolation (lastFrame), or
- *   - durations > 8s, which are delivered via the Veo extension chain and
- *     are NOT allowed on veo-3.0-fast (Google returns 400 "Video extension
- *     is not allowed for this model"). */
+ *   - first+last frame interpolation (lastFrame),
+ *   - reference (character) images, or
+ *   - durations > 8s, delivered via the Veo extension chain.
+ *  NOTE: the Veo 3.0 model ids were retired from the Gemini API, so every
+ *  flow route now resolves to a Veo 3.1 preview model. */
 function resolveVeoModel(model: string, opts: ResolveRouteOptions = {}): string {
   const needs31 =
     Boolean(opts.hasLastFrame) ||
     Boolean(opts.hasReferenceImages) ||
     (opts.durationSeconds ?? 0) > 8;
   if (model === "flow-video-1") {
-    return needs31 ? "veo-3.1-generate-preview" : "veo-3.0-fast-generate-001";
+    return needs31 ? "veo-3.1-generate-preview" : "veo-3.1-fast-generate-preview";
   }
   if (model === "flow-video-1-pro") return "veo-3.1-generate-preview";
+  // Legacy/retired Veo 3.0 ids → map onto the closest available 3.1 tier.
+  if (model === "veo-3.0-fast-generate-001") return "veo-3.1-fast-generate-preview";
+  if (model === "veo-3.0-generate-001") return "veo-3.1-generate-preview";
   return model;
 }
 
 /** Veo Fast cannot be extended. When a job needs more than a single 8s base
- *  clip (i.e. an extension chain), force the model up to Veo 3.1 even if an
- *  alias/legacy route resolved to Fast. Keeps the fix independent of the
+ *  clip (i.e. an extension chain), force the model up to Veo 3.1 Standard even
+ *  if an alias/legacy route resolved to Fast. Keeps the fix independent of the
  *  route-preview path. */
 function ensureVeoExtensionCapable(model: string, willExtend: boolean): string {
-  if (willExtend && model === "veo-3.0-fast-generate-001") {
+  if (willExtend && model === "veo-3.1-fast-generate-preview") {
     return "veo-3.1-generate-preview";
   }
   return model;
@@ -90,6 +97,7 @@ const MOCK_THUMB = "https://commondatastorage.googleapis.com/gtv-videos-bucket/s
 const DASHSCOPE_BASE_URL = "https://dashscope-intl.aliyuncs.com";
 const DASHSCOPE_CREATE_PATH = "/api/v1/services/aigc/video-generation/video-synthesis";
 const DASHSCOPE_TASK_PATH = "/api/v1/tasks";
+const PROVIDER_START_TIMEOUT_MS = 45_000;
 const LOCAL_VIDEO_MODELS = new Set([
   "local/wan-2.1-i2v",
   "local/wan-2.1-t2v",
@@ -192,6 +200,21 @@ function sanitizePrompt(p: string): string {
   return p.replace(/\s+/g, " ").trim();
 }
 
+async function providerStartFetch(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROVIDER_START_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (controller.signal.aborted) {
+      throw new Error("Provider did not accept the job before the start timeout. Please try again.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ---- Provider capability helpers -------------------------------------------
 // Centralize which providers/models can accept which kinds of image
 // conditioning, so reference-image continuity logic stays explicit instead of
@@ -216,9 +239,9 @@ function supportsStartImage(providerKey: ProviderKey, resolvedModel: string): bo
 
 function supportsReferenceImages(providerKey: ProviderKey, resolvedModel: string): boolean {
   // Veo 3.1 (resolved from flow aliases) supports dedicated referenceImages.
-  // Veo Fast (veo-3.0-fast-*) does NOT, but startVeo upgrades to 3.1 whenever
-  // references are present, so we report true for the flow provider here and
-  // let startVeo gate on the concrete model.
+  // Veo 3.1 Standard supports dedicated reference images; startVeo upgrades
+  // from Fast when references are present, so report true for the flow provider
+  // here and let startVeo gate on the concrete model.
   if (providerKey === "flow") return true;
   // No other provider has a proven dedicated reference-image input.
   return false;
@@ -781,7 +804,7 @@ async function startWanI2V(
     },
   };
 
-  const res = await fetch(`${DASHSCOPE_BASE_URL}${DASHSCOPE_CREATE_PATH}`, {
+  const res = await providerStartFetch(`${DASHSCOPE_BASE_URL}${DASHSCOPE_CREATE_PATH}`, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
@@ -837,7 +860,7 @@ async function startWanT2V(
     },
   };
 
-  const res = await fetch(`${DASHSCOPE_BASE_URL}${DASHSCOPE_CREATE_PATH}`, {
+  const res = await providerStartFetch(`${DASHSCOPE_BASE_URL}${DASHSCOPE_CREATE_PATH}`, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
@@ -1197,8 +1220,7 @@ async function startVeo(
 
   // Expand any alias (no-op when already concrete) and then guarantee the
   // model can actually be extended. Veo Fast does not support the extension
-  // chain, so a 10s/15s request must run on Veo 3.1 even if a legacy/route
-  // path handed us veo-3.0-fast.
+  // chain, so a 10s/15s request must run on Veo 3.1 Standard.
   const hasReferenceImages = Boolean(input.referenceImageUrls && input.referenceImageUrls.length > 0);
   const veoModel = ensureVeoExtensionCapable(
     resolveVeoModel(resolvedModel, {
@@ -1266,7 +1288,7 @@ async function startVeo(
     },
   };
 
-  const res = await fetch(
+  const res = await providerStartFetch(
     `${GEMINI_BASE}/models/${encodeURIComponent(veoModel)}:predictLongRunning?key=${encodeURIComponent(apiKey)}`,
     {
       method: "POST",
@@ -1342,7 +1364,7 @@ async function startVeoExtension(
     },
   };
 
-  const res = await fetch(
+  const res = await providerStartFetch(
     `${GEMINI_BASE}/models/${encodeURIComponent(state.model)}:predictLongRunning?key=${encodeURIComponent(apiKey)}`,
     {
       method: "POST",
