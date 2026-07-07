@@ -886,6 +886,14 @@ export const jobOrchestratorGateway = {
               await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 402, latencyMs: Date.now() - ctx.startedAt, errorCode: "INSUFFICIENT_CREDITS" });
               return errorResponse("INSUFFICIENT_CREDITS", "Not enough credits for this generation. Top up to continue.", 402, ctx.requestId);
             }
+            // Row locks on the user's profile/quota were held by another in-flight
+            // create for too long (lock_timeout) or the statement ran long
+            // (statement_timeout). Fail fast and tell the client to retry instead
+            // of letting the request hang to the 120s client timeout.
+            if (/lock_timeout|statement_timeout|canceling statement due to|lock timeout/i.test(msg)) {
+              await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 503, latencyMs: Date.now() - ctx.startedAt, errorCode: "JOB_START_BUSY" });
+              return errorResponse("JOB_START_BUSY", "The service is busy finishing your previous request. Please try again in a moment.", 503, ctx.requestId);
+            }
             await writeApiRequestLog(svc, { ...ctx, userId: auth.userId, statusCode: 500, latencyMs: Date.now() - ctx.startedAt, errorCode: "JOB_START_FAILED" });
             return errorResponse("JOB_START_FAILED", "Could not start the job. Please try again.", 500, ctx.requestId);
           }

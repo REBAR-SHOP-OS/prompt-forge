@@ -25,10 +25,13 @@ interface ModelCost {
 }
 
 const COST_MAP_USD: Record<string, ModelCost> = {
-  // Google Veo — pricing per second of generated video
-  "veo-3.0-fast-generate-001": { perSecondUsd: 0.10 },
-  "veo-3.0-generate-001":      { perSecondUsd: 0.40 },
-  "veo-3.1-generate-preview":  { perSecondUsd: 0.40 },
+  // Google Veo — pricing per second of generated video.
+  // NOTE: the Veo 3.0 GA model ids were retired from the Gemini API
+  // (predictLongRunning now 404s for them). Only the Veo 3.1 preview family is
+  // available, so all flow routes resolve to these.
+  "veo-3.1-fast-generate-preview": { perSecondUsd: 0.10 },
+  "veo-3.1-generate-preview":      { perSecondUsd: 0.40 },
+  "veo-3.1-lite-generate-preview": { perSecondUsd: 0.10 },
   // Alibaba Wan — flat per clip (5–10s)
   "wan-video-1":              { flatUsd: 0.15 },
   "wan2.7-i2v-2026-04-25":    { flatUsd: 0.15 },
@@ -50,30 +53,34 @@ function computeUsd(resolvedModel: string, durationSeconds: number): number {
 }
 
 /** Map the public model alias to a concrete provider model. The cheaper
- *  Veo 3 Fast tier is preferred by default; we fall back to Veo 3.1
+ *  Veo 3.1 Fast tier is preferred by default; we fall back to Veo 3.1
  *  Standard when the request *requires* a capability Fast does not support:
- *   - first+last frame interpolation (lastFrame), or
- *   - durations > 8s, which are delivered via the Veo extension chain and
- *     are NOT allowed on veo-3.0-fast (Google returns 400 "Video extension
- *     is not allowed for this model"). */
+ *   - first+last frame interpolation (lastFrame),
+ *   - reference (character) images, or
+ *   - durations > 8s, delivered via the Veo extension chain.
+ *  NOTE: the Veo 3.0 model ids were retired from the Gemini API, so every
+ *  flow route now resolves to a Veo 3.1 preview model. */
 function resolveVeoModel(model: string, opts: ResolveRouteOptions = {}): string {
   const needs31 =
     Boolean(opts.hasLastFrame) ||
     Boolean(opts.hasReferenceImages) ||
     (opts.durationSeconds ?? 0) > 8;
   if (model === "flow-video-1") {
-    return needs31 ? "veo-3.1-generate-preview" : "veo-3.0-fast-generate-001";
+    return needs31 ? "veo-3.1-generate-preview" : "veo-3.1-fast-generate-preview";
   }
   if (model === "flow-video-1-pro") return "veo-3.1-generate-preview";
+  // Legacy/retired Veo 3.0 ids → map onto the closest available 3.1 tier.
+  if (model === "veo-3.0-fast-generate-001") return "veo-3.1-fast-generate-preview";
+  if (model === "veo-3.0-generate-001") return "veo-3.1-generate-preview";
   return model;
 }
 
 /** Veo Fast cannot be extended. When a job needs more than a single 8s base
- *  clip (i.e. an extension chain), force the model up to Veo 3.1 even if an
- *  alias/legacy route resolved to Fast. Keeps the fix independent of the
+ *  clip (i.e. an extension chain), force the model up to Veo 3.1 Standard even
+ *  if an alias/legacy route resolved to Fast. Keeps the fix independent of the
  *  route-preview path. */
 function ensureVeoExtensionCapable(model: string, willExtend: boolean): string {
-  if (willExtend && model === "veo-3.0-fast-generate-001") {
+  if (willExtend && model === "veo-3.1-fast-generate-preview") {
     return "veo-3.1-generate-preview";
   }
   return model;
