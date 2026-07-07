@@ -44,7 +44,7 @@ This is the permanent instruction file for every approved Rebar.Shop employee ag
 Every PR must include how to undo the change:
 
 - If simple: "Revert this PR through GitHub."
-- If rollback needs DB/storage/manual steps: flag Sattar **before** merge.
+- If rollback needs DB/storage/manual steps: flag Sattar **before the PR is merged**.
 
 ## 5. Never do
 
