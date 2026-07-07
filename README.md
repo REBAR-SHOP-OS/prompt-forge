@@ -21,3 +21,4 @@ npm run lint
 - TypeScript
 - Tailwind CSS
 - lucide-react
+radin july7,2026
