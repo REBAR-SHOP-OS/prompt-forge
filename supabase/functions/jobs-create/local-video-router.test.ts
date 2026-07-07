@@ -82,7 +82,7 @@ Deno.test("flow route never resolves retired Veo 3.0 model ids", async () => {
         }),
       }),
     }),
-  } as Parameters<typeof aiGateway.resolveRoute>[0];
+  } as unknown as Parameters<typeof aiGateway.resolveRoute>[0];
 
   const fast = await aiGateway.resolveRoute(
     fakeClient,
