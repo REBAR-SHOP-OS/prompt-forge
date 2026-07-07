@@ -55,3 +55,31 @@ Do not work in it yet. Start and stay in `prompt-forge` for training.
 ## 8. Support
 Login or access problems -> **contact Sattar directly.**
 Do **not** borrow another account, and do **not** work around access — wait until it is fixed.
+
+
+## 9. Mandatory scope selection (before ANY task)
+Before starting any task, the agent must **show the work-area list and ask which one to work on**. Do not assume the target.
+
+**Available work areas:**
+1. `prompt-forge` — employee training / prompt tools / docs-first tasks
+2. `rebar-os-core-29f266f2` — restricted production app, **Sattar approval required**
+3. Lovable Cloud — **view/reference only**, no direct editing/publishing
+4. Rebar.Shop website / WooCommerce — production website, **restricted**
+5. NAS / NAS2 / backups — infrastructure, **owner-only**
+6. Paperless — infrastructure/document system, **owner-only**
+7. Vaultwarden — password manager, **owner-only**
+8. OpenClaw config / agents / worktrees — **owner-only**
+9. Local AI / PersonaPlex / Ollama / ComfyUI — local AI systems, **restricted**
+10. GitHub org / branch protection / repo permissions — **owner-only**
+11. Supabase / Lovable Cloud secrets / Edge Functions — **owner-only**
+12. QuickBooks / finance / accounting — **restricted**
+13. RingCentral / Gmail / Workspace integrations — **restricted**
+
+The agent must ask: **"Which work area do you want to work on?"**
+
+**Rules:**
+- Do not assume the target. Do not start until Sattar or the assigned employee chooses one work area.
+- If the work area is restricted or owner-only, **stop and ask for Sattar approval**.
+- Do not mix unrelated areas in one task.
+- Do not touch NAS, secrets, Lovable, production, finance, or Rebar OS Core unless that area is explicitly selected AND approved.
+- **For employees, the default allowed area is `prompt-forge` only** unless Sattar assigns another area.
