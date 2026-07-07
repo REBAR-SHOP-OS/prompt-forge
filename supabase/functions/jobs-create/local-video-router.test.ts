@@ -70,7 +70,7 @@ Deno.test("local video router 404 on /videos/generations falls back to /videos",
   }
 });
 
-Deno.test("flow route never resolves retired Veo 3.0 model ids", async () => {
+Deno.test("flow route never returns retired Veo 3.0 model ids", async () => {
   const fakeClient = {
     from: () => ({
       select: () => ({
