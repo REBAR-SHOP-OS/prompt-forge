@@ -16,3 +16,5 @@ This document validates that the OpenClaw coder agent used its assigned worktree
 3. Created this file using the write tool (not PowerShell, to avoid BOM corruption).
 4. Ran `oc-ship-work.ps1` to commit, push, and open a PR.
 5. Did not merge — stopped after PR creation as instructed.
+
+Re-validated after routing patch, 2026-07-06.
