@@ -97,6 +97,7 @@ const MOCK_THUMB = "https://commondatastorage.googleapis.com/gtv-videos-bucket/s
 const DASHSCOPE_BASE_URL = "https://dashscope-intl.aliyuncs.com";
 const DASHSCOPE_CREATE_PATH = "/api/v1/services/aigc/video-generation/video-synthesis";
 const DASHSCOPE_TASK_PATH = "/api/v1/tasks";
+const PROVIDER_START_TIMEOUT_MS = 45_000;
 const LOCAL_VIDEO_MODELS = new Set([
   "local/wan-2.1-i2v",
   "local/wan-2.1-t2v",
@@ -197,6 +198,21 @@ async function localVideoFetch(
 
 function sanitizePrompt(p: string): string {
   return p.replace(/\s+/g, " ").trim();
+}
+
+async function providerStartFetch(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROVIDER_START_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (controller.signal.aborted) {
+      throw new Error("Provider did not accept the job before the start timeout. Please try again.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ---- Provider capability helpers -------------------------------------------
@@ -788,7 +804,7 @@ async function startWanI2V(
     },
   };
 
-  const res = await fetch(`${DASHSCOPE_BASE_URL}${DASHSCOPE_CREATE_PATH}`, {
+  const res = await providerStartFetch(`${DASHSCOPE_BASE_URL}${DASHSCOPE_CREATE_PATH}`, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
@@ -844,7 +860,7 @@ async function startWanT2V(
     },
   };
 
-  const res = await fetch(`${DASHSCOPE_BASE_URL}${DASHSCOPE_CREATE_PATH}`, {
+  const res = await providerStartFetch(`${DASHSCOPE_BASE_URL}${DASHSCOPE_CREATE_PATH}`, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
@@ -1273,7 +1289,7 @@ async function startVeo(
     },
   };
 
-  const res = await fetch(
+  const res = await providerStartFetch(
     `${GEMINI_BASE}/models/${encodeURIComponent(veoModel)}:predictLongRunning?key=${encodeURIComponent(apiKey)}`,
     {
       method: "POST",
@@ -1349,7 +1365,7 @@ async function startVeoExtension(
     },
   };
 
-  const res = await fetch(
+  const res = await providerStartFetch(
     `${GEMINI_BASE}/models/${encodeURIComponent(state.model)}:predictLongRunning?key=${encodeURIComponent(apiKey)}`,
     {
       method: "POST",
