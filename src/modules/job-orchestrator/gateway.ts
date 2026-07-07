@@ -43,9 +43,21 @@ function recoveredCreateResult(job: JobSummary): CreateJobResult | null {
 
 async function recoverCreateTimeout(input: CreateJobInput): Promise<CreateJobResult | null> {
   if (!input.clientRequestId) return null;
-  const response = await request<{ items: JobSummary[] }>("/jobs-list?limit=50", { timeoutMs: 30_000 });
-  const recovered = (response.items ?? []).find((job) => job.client_request_id === input.clientRequestId);
-  return recovered ? recoveredCreateResult(recovered) : null;
+  const RECOVERY_ATTEMPTS = 4;
+  const RECOVERY_DELAY_MS = 1_500;
+  for (let attempt = 0; attempt < RECOVERY_ATTEMPTS; attempt++) {
+    try {
+      const response = await request<{ items: JobSummary[] }>("/jobs-list?limit=50", { timeoutMs: 30_000 });
+      const recovered = (response.items ?? []).find((job) => job.client_request_id === input.clientRequestId);
+      if (recovered) return recoveredCreateResult(recovered);
+    } catch {
+      /* transient list failure — fall through to the next attempt */
+    }
+    if (attempt < RECOVERY_ATTEMPTS - 1) {
+      await new Promise((resolve) => setTimeout(resolve, RECOVERY_DELAY_MS));
+    }
+  }
+  return null;
 }
 
 export const jobOrchestratorGateway = {

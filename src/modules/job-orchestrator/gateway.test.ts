@@ -118,4 +118,41 @@ describe("jobOrchestratorGateway.createJob", () => {
     });
     expect(requestMock).toHaveBeenLastCalledWith("/jobs-list?limit=50", { timeoutMs: 30_000 });
   });
+
+  it("keeps polling jobs-list until the created job becomes visible", async () => {
+    vi.useFakeTimers();
+    try {
+      const { ApiError } = await import("@/core/api/client");
+      requestMock
+      .mockRejectedValueOnce(new ApiError(408, "TIMEOUT", "The request took too long. Please try again."))
+      .mockRejectedValueOnce(new ApiError(408, "TIMEOUT", "The request took too long. Please try again."))
+      .mockResolvedValueOnce({ items: [] })
+      .mockResolvedValueOnce({
+        items: [{
+          id: "job-1",
+          status: "pending",
+          input_prompt: "test prompt",
+          provider_key: "wan",
+          model_key: "wan2.7-i2v-2026-04-25",
+          client_request_id: "00000000-0000-4000-8000-000000000001",
+          created_at: "2026-07-06T00:00:00.000Z",
+        }],
+      });
+      const { jobOrchestratorGateway } = await import("./gateway");
+      const resultPromise = jobOrchestratorGateway.createJob({
+        providerKey: "wan",
+        requestedModel: "wan2.7-i2v-2026-04-25",
+        prompt: "test prompt",
+        durationSeconds: 5,
+        aspectRatio: "16:9",
+      });
+      await vi.runAllTimersAsync();
+      const result = await resultPromise;
+      expect(result).toMatchObject({ jobId: "job-1", status: "pending" });
+      const listCalls = requestMock.mock.calls.filter((c) => c[0] === "/jobs-list?limit=50");
+      expect(listCalls.length).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
