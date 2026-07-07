@@ -18,3 +18,4 @@ This document validates that the OpenClaw coder agent used its assigned worktree
 5. Did not merge — stopped after PR creation as instructed.
 
 Re-validated after routing patch, 2026-07-06.
+Hard-enforced worktree routing validated, 2026-07-06.
