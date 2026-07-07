@@ -1,6 +1,6 @@
 # Your First PR — GitHub Website Only (No Installs Required)
 
-**Who this is for:** Radin and Zahra, on day one.
+**Who this is for:** Any new Rebar.Shop team member (approved employee), on day one.
 **Where:** `REBAR-SHOP-OS/prompt-forge` ONLY. This is the safe training repo.
 **What you need:** A web browser and your own GitHub account. Nothing else. No OpenClaw, no Git, no terminal.
 
@@ -20,12 +20,12 @@
 2. Go to `https://github.com/REBAR-SHOP-OS/prompt-forge`.
 3. Open the `docs/` folder.
 4. Click **Add file → Create new file** (top right of the file list).
-5. Name the file: `first-pr-<yourname>.md` (example: `first-pr-radin.md`).
+5. Name the file: `first-pr-<yourname>.md` (example: `first-pr-newdev.md`).
 6. Put ONE line in it:
    `Employee PR workflow test completed by <yourname> on <today's date>.`
 7. Click **Commit changes...** (green button).
 8. In the dialog, choose **"Create a new branch for this commit and start a pull request."**
-   Name the branch: `docs/<yourname>-first-pr` (example: `docs/radin-first-pr`).
+   Name the branch: `docs/<yourname>-first-pr` (example: `docs/newdev-first-pr`).
 9. Click **Propose changes**, then on the next page click **Create pull request**.
    Base must be `main`; do not change it.
 10. Wait a few minutes. A check named **`Typecheck · Lint · Test · Build`** runs automatically.
