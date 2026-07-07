@@ -70,6 +70,48 @@ Deno.test("local video router 404 on /videos/generations falls back to /videos",
   }
 });
 
+Deno.test("flow route never resolves retired Veo 3.0 model ids", async () => {
+  const fakeClient = {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () => Promise.resolve({
+            data: { provider_key: "flow", default_model: "flow-video-1", enabled: true },
+            error: null,
+          }),
+        }),
+      }),
+    }),
+  };
+
+  const fast = await aiGateway.resolveRoute(
+    fakeClient,
+    "flow",
+    "veo-3.0-fast-generate-001",
+    "test prompt",
+    { durationSeconds: 5 },
+  );
+  assertEquals(fast.resolvedModel, "veo-3.1-fast-generate-preview");
+
+  const standard = await aiGateway.resolveRoute(
+    fakeClient,
+    "flow",
+    "veo-3.0-generate-001",
+    "test prompt",
+    { durationSeconds: 5 },
+  );
+  assertEquals(standard.resolvedModel, "veo-3.1-generate-preview");
+
+  const extended = await aiGateway.resolveRoute(
+    fakeClient,
+    "flow",
+    "flow-video-1",
+    "test prompt",
+    { durationSeconds: 15 },
+  );
+  assertEquals(extended.resolvedModel, "veo-3.1-generate-preview");
+});
+
 Deno.test("local video status probes the ComfyUI create endpoint with POST", async () => {
   const restoreEnv = isolateEnv();
   const originalFetch = globalThis.fetch;
