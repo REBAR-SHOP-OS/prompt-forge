@@ -239,9 +239,9 @@ function supportsStartImage(providerKey: ProviderKey, resolvedModel: string): bo
 
 function supportsReferenceImages(providerKey: ProviderKey, resolvedModel: string): boolean {
   // Veo 3.1 (resolved from flow aliases) supports dedicated referenceImages.
-  // Veo Fast (veo-3.0-fast-*) does NOT, but startVeo upgrades to 3.1 whenever
-  // references are present, so we report true for the flow provider here and
-  // let startVeo gate on the concrete model.
+  // Veo 3.1 Standard supports dedicated reference images; startVeo upgrades
+  // from Fast when references are present, so report true for the flow provider
+  // here and let startVeo gate on the concrete model.
   if (providerKey === "flow") return true;
   // No other provider has a proven dedicated reference-image input.
   return false;
@@ -1220,8 +1220,7 @@ async function startVeo(
 
   // Expand any alias (no-op when already concrete) and then guarantee the
   // model can actually be extended. Veo Fast does not support the extension
-  // chain, so a 10s/15s request must run on Veo 3.1 even if a legacy/route
-  // path handed us veo-3.0-fast.
+  // chain, so a 10s/15s request must run on Veo 3.1 Standard.
   const hasReferenceImages = Boolean(input.referenceImageUrls && input.referenceImageUrls.length > 0);
   const veoModel = ensureVeoExtensionCapable(
     resolveVeoModel(resolvedModel, {
