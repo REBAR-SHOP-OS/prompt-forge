@@ -59,7 +59,15 @@ export async function proxiedVideoUrl(url: string): Promise<string> {
     const { data, error } = await supabase.storage
       .from(own.bucket)
       .createSignedUrl(own.path, SIGNED_URL_TTL_SECONDS);
-    if (!error && data?.signedUrl) return data.signedUrl;
+    if (!error && data?.signedUrl) {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const proxyToken = sessionData.session?.access_token;
+      if (proxyToken) {
+        const pq = new URLSearchParams({ url: data.signedUrl, token: proxyToken });
+        return `${FUNCTIONS_BASE}/video-proxy?${pq.toString()}`;
+      }
+      return data.signedUrl;
+    }
     return url;
   }
 
