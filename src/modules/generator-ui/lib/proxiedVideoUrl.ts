@@ -19,7 +19,7 @@ import { FUNCTIONS_BASE } from "@/core/api/client";
 // form) must be re-signed on demand so the bytes load. Owners can sign their
 // own files via RLS; the resulting signed URL is CORS-enabled and Range-capable
 // and needs no auth header, so it can feed a <video> element directly.
-const PRIVATE_STORAGE_BUCKETS = ["merged-videos", "user-videos"];
+const PRIVATE_STORAGE_BUCKETS = ["merged-videos", "user-videos"];h
 const SIGNED_URL_TTL_SECONDS = 60 * 60 * 2; // 2 hours
 
 function parseOwnStorage(parsed: URL): { bucket: string; path: string } | null {
@@ -59,7 +59,15 @@ export async function proxiedVideoUrl(url: string): Promise<string> {
     const { data, error } = await supabase.storage
       .from(own.bucket)
       .createSignedUrl(own.path, SIGNED_URL_TTL_SECONDS);
-    if (!error && data?.signedUrl) return data.signedUrl;
+    if (!error && data?.signedUrl) {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const proxyToken = sessionData.session?.access_token;
+      if (proxyToken) {
+        const pq = new URLSearchParams({ url: data.signedUrl, token: proxyToken });
+        return `${FUNCTIONS_BASE}/video-proxy?${pq.toString()}`;
+      }
+      return data.signedUrl;
+    }
     return url;
   }
 
