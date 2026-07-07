@@ -55,7 +55,7 @@ Every PR must include how to undo the change:
 - Do not touch Rebar OS Core.
 - Do not touch secrets, `.env`, credentials, tokens.
 - Do not change CI, branch protection, GitHub permissions.
-- Do not change Supabase, RLS, migrations, storage policies, edge functions.
+- Do not change production Supabase directly (dashboard, RLS, migrations, storage policies). Backend/edge-function code changes in the repo are allowed via PR — see section 10.
 - Do not touch NAS, Paperless, Vaultwarden, production deployment.
 
 ## 6. Stop and ask Sattar before acting if the task touches
@@ -63,10 +63,8 @@ Every PR must include how to undo the change:
 - Rebar OS Core
 - Lovable
 - Checkout / payment / RFQ / customer forms
-- Auth / RLS / database / Supabase
-- Storage policies
+- Production database changes (Supabase dashboard, RLS, migrations against production, storage policies)
 - Secrets / credentials / `.env`
-- Edge functions
 - CI or branch protection
 - GitHub permissions
 - NAS / Paperless / Vaultwarden
@@ -87,3 +85,23 @@ Every PR must include how to undo the change:
 
 Every employee agent starts every task by reading this file: `docs/EMPLOYEE_AGENT_RULES.md`.
 For a first-ever PR, also follow `docs/FIRST-GITHUB-PR.md` (GitHub website only, no installs).
+
+## 10. Backend / Supabase / edge-function tasks (updated rule from Sattar)
+
+Role split: the assigned employee investigates and prepares the fix. Sattar only reviews and approves the Pull Request.
+
+Allowed:
+
+- Investigate the issue.
+- Change code in the repo (including edge-function code under `supabase/functions/`).
+- Open a PR.
+
+Not allowed:
+
+- Do not deploy.
+- Do not manually change the Supabase dashboard.
+- Do not run migrations against production.
+- Do not change secrets.
+- Do not merge.
+
+Stop at the PR and ask Sattar for review.
