@@ -10016,7 +10016,7 @@ export default function DashboardPage() {
       <button
         type="button"
         onClick={() => setIsVoiceoverOpen(true)}
-        className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-violet-300/30 hover:bg-violet-300/[0.06] hover:text-violet-100"
+        className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-red-500/40 bg-red-500/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-red-300 transition hover:border-red-400/60 hover:bg-red-500/[0.15] hover:text-red-100"
         aria-label={voiceoverUrl ? 'Replace voiceover' : 'Generate AI voiceover'}
         title={voiceoverUrl ? 'Replace AI voiceover' : 'Generate an AI voiceover from text (Gemini)'}
       >
