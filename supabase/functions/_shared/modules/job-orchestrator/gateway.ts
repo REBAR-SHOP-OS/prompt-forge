@@ -340,6 +340,16 @@ function waitUntilBackground(task: Promise<unknown>, context?: { requestId?: str
   void task;
 }
 
+async function runProviderStartInline(task: Promise<unknown>, context?: { requestId?: string; jobId?: string; provider?: string }) {
+  logInfo("provider start retained", {
+    requestId: context?.requestId,
+    jobId: context?.jobId,
+    provider: context?.provider,
+    mode: "inline",
+  });
+  await task;
+}
+
 async function startProviderGenerationInBackground(
   svc: ReturnType<typeof getServiceClient>,
   params: BackgroundStartParams,
@@ -469,6 +479,7 @@ async function startProviderGenerationInBackground(
 async function dispatchProviderStartIfClaimed(
   svc: ReturnType<typeof getServiceClient>,
   params: BackgroundStartParams,
+  options: { inline?: boolean } = {},
 ): Promise<boolean> {
   const claimed = await jobService.claimProviderStart(
     svc,
@@ -484,11 +495,17 @@ async function dispatchProviderStartIfClaimed(
     });
     return false;
   }
-  waitUntilBackground(startProviderGenerationInBackground(svc, params), {
+  const task = startProviderGenerationInBackground(svc, params);
+  const context = {
     requestId: params.requestId,
     jobId: params.jobId,
     provider: params.providerKey,
-  });
+  };
+  if (options.inline) {
+    await runProviderStartInline(task, context);
+  } else {
+    waitUntilBackground(task, context);
+  }
   return true;
 }
 
@@ -907,7 +924,7 @@ export const jobOrchestratorGateway = {
               referenceCount: referenceImageUrls.length,
             });
           }
-          const providerStartDispatched = await dispatchProviderStartIfClaimed(svc, {
+          const providerStartParams = {
             userId: auth.userId,
             jobId,
             requestId: ctx.requestId,
@@ -920,13 +937,41 @@ export const jobOrchestratorGateway = {
             referenceImageUrls,
             durationSeconds: parsed.data.durationSeconds ?? null,
             aspectRatio: chosenAspectRatio,
+          } satisfies BackgroundStartParams;
+          // For cloud providers, the external create call is short and must be
+          // durable before we answer the browser. Relying only on waitUntil is
+          // best-effort in edge runtimes and is what leaves user-visible Pending
+          // cards with no provider_job_id. Local routers can be long-running, so
+          // they keep the background/self-healing path.
+          const providerStartInline = route.providerKey === "flow" || route.providerKey === "wan";
+          const providerStartDispatched = await dispatchProviderStartIfClaimed(svc, providerStartParams, {
+            inline: providerStartInline,
           });
           logInfo("provider start handoff recorded", {
             requestId: ctx.requestId,
             jobId,
             provider: route.providerKey,
             dispatched: providerStartDispatched,
+            mode: providerStartInline ? "inline" : "background",
           });
+
+          const postStartDetail = providerStartInline
+            ? await jobService.getMyJob(auth.userId, jobId, svc)
+            : null;
+          if (postStartDetail?.status === "failed") {
+            const reason = safeProviderFailureReason(postStartDetail.provider_start_last_error);
+            await writeApiRequestLog(svc, {
+              ...ctx,
+              userId: auth.userId,
+              statusCode: 502,
+              latencyMs: Date.now() - ctx.startedAt,
+              providerKey: route.providerKey,
+              modelKey: route.resolvedModel,
+              estimatedCost: route.estimatedCost,
+              errorCode: "PROVIDER_START_FAILED",
+            });
+            return errorResponse("PROVIDER_START_FAILED", reason, 502, ctx.requestId);
+          }
 
           await Promise.all([
             writeAuditLog(svc, {
@@ -945,7 +990,11 @@ export const jobOrchestratorGateway = {
 
           return jsonResponse({
             jobId,
-            status: "pending",
+            status: postStartDetail?.status === "completed"
+              ? "completed"
+              : postStartDetail?.status === "processing"
+                ? "processing"
+                : "pending",
             videoAssetId: null,
             providerKey: route.providerKey,
             resolvedModel: route.resolvedModel,
