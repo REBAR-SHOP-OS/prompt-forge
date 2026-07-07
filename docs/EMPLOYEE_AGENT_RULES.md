@@ -1,6 +1,6 @@
 # Employee Agent Rules — Prompt Forge
 
-Permanent instruction file for every approved Rebar.Shop employee agent working in Prompt Forge.
+This is the permanent instruction file for every approved Rebar.Shop employee agent working in Prompt Forge.
 **Every employee agent must read this file at the start of every task.**
 
 ## 1. Scope
