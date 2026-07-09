@@ -141,6 +141,9 @@ type Props = {
   defaultDuration: ProductAdDuration
   userId: string | null
   variant?: 'product' | 'character'
+  /** Prefill from the main composer's current selections (identity handoff). */
+  initialProduct?: { url: string; title?: string | null; description?: string | null } | null
+  initialCharacter?: { url: string; title?: string | null } | null
   onUseAsPrompt: (
     scenario: string,
     imageUrl?: string,
@@ -159,6 +162,7 @@ export type ProductAdIdentity = {
   productRefUrl?: string
   characterRefUrl?: string
   productName?: string
+  characterName?: string
 }
 
 const DURATIONS: ProductAdDuration[] = [5, 10, 15, 30, 45, 135]
@@ -654,6 +658,8 @@ export default function ProductAdDialog({
   defaultDuration,
   userId,
   variant = 'product',
+  initialProduct = null,
+  initialCharacter = null,
   onUseAsPrompt,
   onSendScenes,
 }: Props) {
@@ -714,6 +720,31 @@ export default function ProductAdDialog({
   const [characterRefDisplayUrl, setCharacterRefDisplayUrl] = useState<string | null>(null)
   const [characterRefSendUrl, setCharacterRefSendUrl] = useState<string | null>(null)
   const [characterRefName, setCharacterRefName] = useState<string | null>(null)
+
+  // Prefill from the main composer's existing selections when the dialog opens,
+  // instead of starting empty (identity handoff).
+  useEffect(() => {
+    if (!open) return
+    if (!isCharacter && initialProduct?.url && !uploadedImageUrl && !imagePreviewUrl) {
+      const productUrl = initialProduct.url
+      setUploadedImageUrl(productUrl)
+      void signProductPhotoUrl(productUrl)
+        .then((signed) => setImagePreviewUrl(signed))
+        .catch(() => setImagePreviewUrl(productUrl))
+      if (initialProduct.title?.trim() && !productName.trim()) {
+        setProductName(initialProduct.title.trim())
+      }
+      if (initialProduct.description?.trim() && !productDescription.trim()) {
+        setProductDescription(initialProduct.description.trim())
+      }
+    }
+    if (initialCharacter?.url && !characterRefSendUrl) {
+      setCharacterRefSendUrl(initialCharacter.url)
+      setCharacterRefDisplayUrl(initialCharacter.url)
+      if (initialCharacter.title) setCharacterRefName(initialCharacter.title)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
   const [uploadingCharacter, setUploadingCharacter] = useState(false)
 
   async function openCharacterPicker() {
@@ -1288,6 +1319,7 @@ export default function ProductAdDialog({
       }
     }
     if (characterRefSendUrl) identity.characterRefUrl = characterRefSendUrl
+    if (characterRefName?.trim()) identity.characterName = characterRefName.trim()
     if (productName.trim()) identity.productName = productName.trim()
     return identity
   }

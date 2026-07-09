@@ -6802,12 +6802,12 @@ export default function DashboardPage() {
 
   // Pin the project product from a product image URL (Product AD flow). Matches a
   // saved product when possible so the title/id are meaningful, else creates one.
-  function pinProductFromImageUrl(imageUrl: string) {
+  function pinProductFromImageUrl(imageUrl: string, title?: string | null) {
     const match = archiveProductImages.find((p) => p.storage_path === imageUrl)
     setSelectedProduct({
       id: match?.id ?? `product-${imageUrl.slice(-24)}`,
       url: imageUrl,
-      title: match?.title?.trim() || 'Selected product',
+      title: match?.title?.trim() || title?.trim() || 'Selected product',
       description: match?.description ?? null,
     })
   }
@@ -10223,25 +10223,60 @@ export default function DashboardPage() {
         onOpenChange={setIsProductAdOpen}
         defaultDuration={durationSeconds === 30 || durationSeconds === 45 || durationSeconds === 135 ? durationSeconds : (durationSeconds as 5 | 10 | 15)}
         userId={userId}
-        onUseAsPrompt={(text, imageUrl, duration) => {
+        initialProduct={
+          selectedProduct
+            ? { url: selectedProduct.url, title: selectedProduct.title, description: selectedProduct.description }
+            : null
+        }
+        initialCharacter={
+          selectedCharacter ? { url: selectedCharacter.url, title: selectedCharacter.title } : null
+        }
+        onUseAsPrompt={(text, imageUrl, duration, identity) => {
           if (duration) setDurationSeconds(duration)
           setPromptText(text)
           if (imageUrl) {
+            // The composed product+character frame is the Start frame ONLY.
+            // It must never be pinned as Product Identity.
             setUploadTarget('Start')
             void handleUseImageAsStart(imageUrl)
-            pinProductFromImageUrl(imageUrl)
+          }
+          if (identity?.productRefUrl) {
+            pinProductFromImageUrl(identity.productRefUrl, identity.productName)
+          }
+          if (identity?.characterRefUrl && !selectedCharacter) {
+            // Prefer the composer's existing character; only adopt the dialog's
+            // reference when no character is already selected.
+            const character: ProjectCharacter = {
+              id: `character-${identity.characterRefUrl.slice(-24)}`,
+              url: identity.characterRefUrl,
+              title: identity.characterName ?? null,
+            }
+            setSelectedCharacter(character)
+            updateContinuity({ characterRef: character })
           }
         }}
-        onSendScenes={async (scenes, imageUrl, duration) => {
+        onSendScenes={async (scenes, imageUrl, duration, identity) => {
           if (duration) setDurationSeconds(duration)
           const tagged = scenes
             .map((s, i) => `=== Scene ${i + 1} ===\n${s.trim()}`)
             .join('\n\n')
           setPromptText(tagged)
           if (imageUrl) {
+            // Start frame only — never Product Identity (see onUseAsPrompt).
             setUploadTarget('Start')
             await handleUseImageAsStart(imageUrl)
-            pinProductFromImageUrl(imageUrl)
+          }
+          if (identity?.productRefUrl) {
+            pinProductFromImageUrl(identity.productRefUrl, identity.productName)
+          }
+          if (identity?.characterRefUrl && !selectedCharacter) {
+            const character: ProjectCharacter = {
+              id: `character-${identity.characterRefUrl.slice(-24)}`,
+              url: identity.characterRefUrl,
+              title: identity.characterName ?? null,
+            }
+            setSelectedCharacter(character)
+            updateContinuity({ characterRef: character })
           }
         }}
       />
