@@ -141,8 +141,24 @@ type Props = {
   defaultDuration: ProductAdDuration
   userId: string | null
   variant?: 'product' | 'character'
-  onUseAsPrompt: (scenario: string, imageUrl?: string, duration?: ProductAdDuration) => void
-  onSendScenes?: (scenes: string[], imageUrl?: string, duration?: ProductAdDuration) => void | Promise<void>
+  onUseAsPrompt: (
+    scenario: string,
+    imageUrl?: string,
+    duration?: ProductAdDuration,
+    identity?: ProductAdIdentity,
+  ) => void
+  onSendScenes?: (
+    scenes: string[],
+    imageUrl?: string,
+    duration?: ProductAdDuration,
+    identity?: ProductAdIdentity,
+  ) => void | Promise<void>
+}
+
+export type ProductAdIdentity = {
+  productRefUrl?: string
+  characterRefUrl?: string
+  productName?: string
 }
 
 const DURATIONS: ProductAdDuration[] = [5, 10, 15, 30, 45, 135]
@@ -1257,6 +1273,24 @@ export default function ProductAdDialog({
     return undefined
   }
 
+  /**
+   * The clean identity anchors for the generation. These are kept separate from
+   * the composed opening frame so that the Product Identity is never
+   * contaminated with the combined product+character frame.
+   */
+  async function buildIdentity(): Promise<ProductAdIdentity> {
+    const identity: ProductAdIdentity = {}
+    if (!isCharacter && uploadedImageUrl) {
+      try {
+        identity.productRefUrl = await signProductPhotoUrl(uploadedImageUrl)
+      } catch {
+        identity.productRefUrl = uploadedImageUrl
+      }
+    }
+    if (characterRefSendUrl) identity.characterRefUrl = characterRefSendUrl
+    if (productName.trim()) identity.productName = productName.trim()
+    return identity
+  }
 
   async function handleUseAsPrompt() {
     if (scenes.length === 0 || isPreparingFrame) return
@@ -1264,7 +1298,8 @@ export default function ProductAdDialog({
     setError(null)
     try {
       const frameUrl = await buildFirstFrame()
-      onUseAsPrompt(scenes.join('\n\n'), frameUrl, duration)
+      const identity = await buildIdentity()
+      onUseAsPrompt(scenes.join('\n\n'), frameUrl, duration, identity)
       onOpenChange(false)
     } finally {
       setIsPreparingFrame(false)
@@ -1277,7 +1312,8 @@ export default function ProductAdDialog({
     setError(null)
     try {
       const frameUrl = await buildFirstFrame()
-      await onSendScenes(scenes, frameUrl, duration)
+      const identity = await buildIdentity()
+      await onSendScenes(scenes, frameUrl, duration, identity)
       onOpenChange(false)
     } catch (e) {
       setError((e as Error).message ?? 'Failed to send to Pending')
