@@ -141,8 +141,24 @@ type Props = {
   defaultDuration: ProductAdDuration
   userId: string | null
   variant?: 'product' | 'character'
-  onUseAsPrompt: (scenario: string, imageUrl?: string, duration?: ProductAdDuration) => void
-  onSendScenes?: (scenes: string[], imageUrl?: string, duration?: ProductAdDuration) => void | Promise<void>
+  onUseAsPrompt: (
+    scenario: string,
+    imageUrl?: string,
+    duration?: ProductAdDuration,
+    identity?: ProductAdIdentity,
+  ) => void
+  onSendScenes?: (
+    scenes: string[],
+    imageUrl?: string,
+    duration?: ProductAdDuration,
+    identity?: ProductAdIdentity,
+  ) => void | Promise<void>
+}
+
+export type ProductAdIdentity = {
+  productRefUrl?: string
+  characterRefUrl?: string
+  productName?: string
 }
 
 const DURATIONS: ProductAdDuration[] = [5, 10, 15, 30, 45, 135]
