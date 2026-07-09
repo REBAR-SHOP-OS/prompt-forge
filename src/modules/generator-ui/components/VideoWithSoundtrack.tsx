@@ -1,4 +1,4 @@
-import { useEffect, useRef, type CSSProperties, type VideoHTMLAttributes } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type VideoHTMLAttributes } from 'react'
 import { LoaderCircle } from 'lucide-react'
 import { usePlayableVideoUrl } from '@/modules/generator-ui/lib/usePlayableVideoUrl'
 import {
@@ -93,7 +93,47 @@ export function VideoWithSoundtrack({
 
   const { className: videoClassName, style: videoStyle, ...restVideoProps } = videoProps
 
-  const { url: resolvedSrc, loading: srcLoading } = usePlayableVideoUrl(src)
+  const { url: resolvedSrc, loading: srcLoading, reload } = usePlayableVideoUrl(src)
+
+  // ---- Expired-token / transient-error recovery (mirrors PlayableVideo). ----
+  // The resolved URL for private buckets is a video-proxy URL with embedded
+  // short-lived tokens (signed storage URL + user access token). When the tab
+  // stays open past expiry, metadata may already be buffered but any further
+  // byte-range request fails: the <video> fires 'error' and, without recovery,
+  // the play button silently does nothing forever. Retry with a cache-buster,
+  // then re-resolve the URL once with fresh tokens.
+  const MAX_RETRIES = 3
+  const retriesRef = useRef(0)
+  const reloadedRef = useRef(false)
+  const [retryToken, setRetryToken] = useState(0)
+
+  // Reset the retry/reload budget only when the SOURCE truly changes —
+  // reload() changes `resolvedSrc` for the same `src` and must not reset it
+  // (see PlayableVideo for the infinite-loop failure mode this prevents).
+  useEffect(() => {
+    retriesRef.current = 0
+    reloadedRef.current = false
+    setRetryToken(0)
+  }, [src])
+
+  const handleVideoError: VideoHTMLAttributes<HTMLVideoElement>['onError'] = (e) => {
+    if (retriesRef.current < MAX_RETRIES) {
+      retriesRef.current += 1
+      setRetryToken((n) => n + 1)
+      return
+    }
+    if (!reloadedRef.current && src) {
+      reloadedRef.current = true
+      reload()
+      return
+    }
+    videoProps.onError?.(e)
+  }
+
+  const playUrl =
+    resolvedSrc && retryToken > 0
+      ? `${resolvedSrc}${resolvedSrc.includes('?') ? '&' : '?'}_r=${retryToken}`
+      : resolvedSrc
 
   return (
     <div className="flex w-full flex-col">
@@ -105,12 +145,16 @@ export function VideoWithSoundtrack({
         ) : (
           <video
             {...restVideoProps}
-            key={videoKey}
+            key={`${videoKey ?? ''}#${retryToken}`}
             ref={videoRef}
-            src={resolvedSrc}
+            src={playUrl}
             className={videoClassName}
             style={videoStyle}
+            onError={handleVideoError}
             onLoadedMetadata={(e) => {
+              // A successful load proves the current URL works — restore the
+              // full retry budget for any later mid-play failure.
+              retriesRef.current = 0
               // Apply clip volume as soon as the element is ready — the volume
               // effect may have run while the <video> was still loading.
               const el = e.currentTarget
