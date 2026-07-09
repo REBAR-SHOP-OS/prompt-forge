@@ -149,7 +149,7 @@ type Props = {
     imageUrl?: string,
     duration?: ProductAdDuration,
     identity?: ProductAdIdentity,
-  ) => void
+  ) => void | Promise<void>
   onSendScenes?: (
     scenes: string[],
     imageUrl?: string,
@@ -1331,8 +1331,12 @@ export default function ProductAdDialog({
     try {
       const frameUrl = await buildFirstFrame()
       const identity = await buildIdentity()
-      onUseAsPrompt(scenes.join('\n\n'), frameUrl, duration, identity)
+      // Wait for the composer to finish staging the Start frame before closing.
+      // Closing early lets a generation submit without a valid firstFrameUrl.
+      await onUseAsPrompt(scenes.join('\n\n'), frameUrl, duration, identity)
       onOpenChange(false)
+    } catch (e) {
+      setError((e as Error).message ?? 'Failed to prepare the start frame')
     } finally {
       setIsPreparingFrame(false)
     }

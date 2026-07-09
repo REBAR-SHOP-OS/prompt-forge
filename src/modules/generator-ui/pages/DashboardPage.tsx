@@ -132,6 +132,7 @@ import {
   type ContinuityState,
 } from '@/modules/generator-ui/lib/continuity'
 import { recordBlobToMp4, canRecordMp4 } from '@/modules/generator-ui/lib/recordToMp4'
+import { stageProductAdStartFrame } from '@/modules/generator-ui/lib/productAdHandoff'
 import ClipTrimmerDialog from '@/modules/generator-ui/components/ClipTrimmerDialog'
 import UsageStatsPopover from '@/modules/generator-ui/components/UsageStatsPopover'
 import VideoToVideoDialog from '@/modules/generator-ui/components/VideoToVideoDialog'
@@ -6043,8 +6044,8 @@ export default function DashboardPage() {
   // switch to image-to-video, and scroll the composer into view.
   // The image must be re-staged into the wan-frames bucket because the
   // jobs-create validator only accepts firstFrameUrl under wan-frames/{userId}/.
-  async function handleUseImageAsStart(url: string) {
-    if (!url) return
+  async function handleUseImageAsStart(url: string): Promise<boolean> {
+    if (!url) return false
     setGenerationMode('image-to-video')
     const seedId = Date.now()
     setUploadedFiles((cur) => [
@@ -6084,6 +6085,7 @@ export default function DashboardPage() {
             : f,
         ),
       )
+      return true
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Could not stage image as frame'
       setUploadedFiles((current) =>
@@ -6091,6 +6093,7 @@ export default function DashboardPage() {
           f.id === seedId ? { ...f, status: 'failed', error: msg } : f,
         ),
       )
+      return false
     }
   }
 
@@ -10231,15 +10234,10 @@ export default function DashboardPage() {
         initialCharacter={
           selectedCharacter ? { url: selectedCharacter.url, title: selectedCharacter.title } : null
         }
-        onUseAsPrompt={(text, imageUrl, duration, identity) => {
+        onUseAsPrompt={async (text, imageUrl, duration, identity) => {
           if (duration) setDurationSeconds(duration)
           setPromptText(text)
-          if (imageUrl) {
-            // The composed product+character frame is the Start frame ONLY.
-            // It must never be pinned as Product Identity.
-            setUploadTarget('Start')
-            void handleUseImageAsStart(imageUrl)
-          }
+          // Pin identities first so they survive even if frame staging fails.
           if (identity?.productRefUrl) {
             pinProductFromImageUrl(identity.productRefUrl, identity.productName)
           }
@@ -10254,6 +10252,13 @@ export default function DashboardPage() {
             setSelectedCharacter(character)
             updateContinuity({ characterRef: character })
           }
+          if (imageUrl) {
+            // The composed product+character frame is the Start frame ONLY.
+            // It must never be pinned as Product Identity. Await staging so the
+            // dialog stays open (spinner) until the frame is actually ready.
+            setUploadTarget('Start')
+            await stageProductAdStartFrame(imageUrl, handleUseImageAsStart)
+          }
         }}
         onSendScenes={async (scenes, imageUrl, duration, identity) => {
           if (duration) setDurationSeconds(duration)
@@ -10261,11 +10266,7 @@ export default function DashboardPage() {
             .map((s, i) => `=== Scene ${i + 1} ===\n${s.trim()}`)
             .join('\n\n')
           setPromptText(tagged)
-          if (imageUrl) {
-            // Start frame only — never Product Identity (see onUseAsPrompt).
-            setUploadTarget('Start')
-            await handleUseImageAsStart(imageUrl)
-          }
+          // Pin identities first so they survive even if frame staging fails.
           if (identity?.productRefUrl) {
             pinProductFromImageUrl(identity.productRefUrl, identity.productName)
           }
@@ -10277,6 +10278,11 @@ export default function DashboardPage() {
             }
             setSelectedCharacter(character)
             updateContinuity({ characterRef: character })
+          }
+          if (imageUrl) {
+            // Start frame only — never Product Identity (see onUseAsPrompt).
+            setUploadTarget('Start')
+            await stageProductAdStartFrame(imageUrl, handleUseImageAsStart)
           }
         }}
       />
