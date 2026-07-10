@@ -6,11 +6,13 @@
 const SAFE_PROTOCOLS = new Set(["http:", "https:", "blob:", "data:"]);
 
 export function safeMediaUrl(url: string | null | undefined): string | undefined {
-  if (!url) return undefined;
+  const raw = typeof url === 'string' ? url.trim() : ''
+  if (!raw) return undefined
   try {
-    const parsed = new URL(url, typeof location !== "undefined" ? location.href : "http://localhost");
-    return SAFE_PROTOCOLS.has(parsed.protocol) ? url : undefined;
+    const base = typeof location !== 'undefined' ? location.href : 'http://localhost'
+    const parsed = new URL(raw, base)
+    return SAFE_PROTOCOLS.has(parsed.protocol) ? raw : undefined
   } catch {
-    return undefined;
+    return undefined
   }
 }
