@@ -21,8 +21,8 @@ Fill this before requesting review. If a section cannot be answered, keep the PR
 - [ ] GitHub identity verified with `gh api user --jq .login`
 - [ ] No secrets, tokens, PATs, API keys, passwords, cookies, sessions, recovery codes, or private keys were requested or pasted.
 - [ ] No hidden merge, auto-merge, deploy, publish, branch-protection, repo-settings, or secrets change.
-- [ ] No Lovable Fix, Publish, Deploy, Sync, or GitHub push from Lovable unless Sattar approved that exact action.
-- [ ] PR remains draft unless Sattar explicitly approved marking it ready.
+- [ ] No agent used Lovable Fix, Publish, Deploy, Sync, or GitHub push from Lovable; Sattar personally performs any approved Lovable action.
+- [ ] PR remains draft; only Sattar personally marks it ready, approves, or merges.
 - [ ] Sensitive paths are disclosed and manually reviewed if touched: `.github/**`, `supabase/**`, auth, payments, runtime, deploy, environment, or config.
 
 ## 4. Validation Evidence
@@ -42,6 +42,7 @@ Fill this before requesting review. If a section cannot be answered, keep the PR
 - Exact action requested now:
 - Actions not requested:
   - merge
+  - approve
   - enable auto-merge
   - deploy / publish
   - repo settings / secrets / branch protection

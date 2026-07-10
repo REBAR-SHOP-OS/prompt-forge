@@ -1,10 +1,12 @@
 # COPILOT SAFE REPAIR POLICY - Rebar.Shop
 
 ## Goal
-Copilot may debug and repair unsafe PRs, but it may not merge unsafe PRs.
+Copilot may debug and repair unsafe PRs, but it may not merge any PR.
 
 ## Core rule
-If a PR is not safe, Copilot must repair it or stop. **Never merge unsafe PRs.**
+If a PR is not safe, Copilot must repair it or stop. If it is safe, Copilot
+prepares the proof strip and stops. **Copilot never marks ready, approves,
+merges, enables auto-merge, deploys, or publishes. Sattar performs final buttons personally.**
 
 ## Credentials and secrets - never in chat
 - Copilot must never ask Sattar or any user to paste tokens, PATs, API keys,
@@ -18,9 +20,9 @@ If a PR is not safe, Copilot must repair it or stop. **Never merge unsafe PRs.**
 
 ## Lovable restriction
 - Lovable is preview/inspection only by default.
-- Copilot must not use, or instruct anyone to use, Lovable Fix, Publish, Deploy,
-  Sync, or GitHub push from Lovable unless Sattar explicitly approves that
-  exact action.
+- Copilot must not use Lovable Fix, Publish, Deploy, Sync, or GitHub push from
+  Lovable. If Sattar approves a Lovable action, Copilot may prepare the exact
+  handoff and verify afterward; Sattar performs the action personally.
 - No Lovable-generated change may be merged unless it is reviewed through a
   GitHub pull request.
 
@@ -35,9 +37,9 @@ If a PR is not safe, Copilot must repair it or stop. **Never merge unsafe PRs.**
 8. If unsafe, repair.
 9. Re-run checks.
 10. Re-evaluate safety.
-11. If safe and all gates pass, Copilot may recommend auto-merge eligibility
-    only. Only Sattar, or a GitHub workflow explicitly named as approved in this
-    file, may enable auto-merge. No auto-merge workflow is currently approved.
+11. If safe and all gates pass, Copilot may recommend review eligibility only.
+    Sattar personally controls ready, approval, merge, and release actions. No
+    auto-merge workflow is currently approved.
 12. If still unsafe, stop and ask Sattar.
 
 ## Copilot MAY repair
@@ -80,6 +82,9 @@ missing info; do not change code unless needed.
 only if Sattar names it explicitly in this file and that workflow file is
 reviewed and merged manually. Until then, Copilot may only recommend auto-merge
 eligibility; it may not enable auto-merge.
+
+This section is advisory for a possible future, separately reviewed policy. It
+does not authorize Copilot to mark ready, approve, merge, deploy, or publish.
 
 Auto-merge is allowed only if ALL are true:
 1. PR has label `safe-automerge`.

@@ -3,10 +3,10 @@
 This repo uses the canonical Rebar.Shop agent operating stack from:
 
 - `REBAR-SHOP-OS/rebar-os-core-29f266f2`
-- Core PR: `https://github.com/REBAR-SHOP-OS/rebar-os-core-29f266f2/pull/89`
+- Canonical rules: Core `main` under `docs/team`
 
-After Core PR #89 is merged, agents must load the Core repo's `docs/team`
-policy files before changing this repo:
+Agents must load the Core repo's `docs/team` policy files before changing this
+repo:
 
 1. `docs/team/STARTUP-PROTOCOL.md`
 2. `docs/team/AGENT-OPERATING-STANDARD.md`
@@ -16,9 +16,15 @@ policy files before changing this repo:
 6. `docs/team/CLAUDE-COMMAND-TEMPLATE.md`
 7. the active persona file: `START-SATTAR`, `START-ZAHRA`, or `START-RADIN`
 
-If Core PR #89 is not merged yet, keep this repo's agent work draft-only and
-use PR #89 as the review source. Do not treat this pointer as standalone
-authority.
+Do not treat this pointer as standalone authority. If the Core rules cannot be
+loaded, keep work draft-only and stop for Sattar.
+
+## Final Button Rule
+
+Only Sattar personally marks ready, approves, merges, enables auto-merge,
+publishes/deploys, changes settings or branch protection, runs production
+database actions, and touches secrets. An approval phrase is a decision record,
+not delegation of those actions to an agent.
 
 ## Required Identity Check
 
@@ -45,7 +51,8 @@ If identity is wrong, unknown, or unavailable, stop before writing.
 - Open or update draft PRs only.
 - Do not mark ready, merge, approve, enable auto-merge, deploy, publish, change
   settings, alter branch protection, change secrets, or use Lovable
-  Fix/Publish/Deploy/Sync without Sattar approving that exact action.
+  Fix/Publish/Deploy/Sync. Prepare the exact handoff; Sattar performs the final
+  action personally.
 - Report proof strip: requester, repo, branch, PR, draft/ready state, changed
   files, local checks, GitHub checks, risk, rollback, and approval still needed.
 - If ready/merge/deploy/publish is requested, use the Core
