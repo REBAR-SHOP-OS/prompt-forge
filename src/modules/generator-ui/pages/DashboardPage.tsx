@@ -175,15 +175,6 @@ import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 import { getUpcomingMajorOccasion } from '@/modules/generator-ui/lib/majorOccasions'
 import { StylePreviewCard } from '@/modules/generator-ui/components/StylePreviewCard'
 import {
-
-/** Cryptographically-secure random id (replaces Math.random fallbacks). */
-function secureRandomId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
-  const bytes = new Uint8Array(16);
-  (globalThis.crypto as Crypto).getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-}
-
   CAMERA_STYLES,
   GENRE_STYLES,
   SCENE_STYLES,
@@ -196,6 +187,14 @@ function secureRandomId(): string {
   type StyleItem,
   type StyleSelection,
 } from '@/modules/generator-ui/lib/promptStyles'
+
+/** Cryptographically-secure random id (replaces Math.random fallbacks). */
+function secureRandomId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
+  const bytes = new Uint8Array(16)
+  globalThis.crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+}
 
 function StyleSection({
   title,
