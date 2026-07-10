@@ -189,7 +189,12 @@ import {
   type StyleSelection,
 } from '@/modules/generator-ui/lib/promptStyles'
 
-/** Cryptographically-secure random id (replaces Math.random fallbacks). */
+/**
+ * Generates a unique random id. Uses WebCrypto (randomUUID / getRandomValues) when
+ * available for cryptographic strength. Falls back to a timestamp-based id on runtimes
+ * without WebCrypto — that path is NOT cryptographically secure but still avoids
+ * Math.random() and is sufficient for non-security-critical draft identifiers.
+ */
 function secureRandomId(): string {
   const c = globalThis.crypto as unknown as { randomUUID?: () => string; getRandomValues?: (a: Uint8Array) => Uint8Array } | undefined
   if (c?.randomUUID) return c.randomUUID()
