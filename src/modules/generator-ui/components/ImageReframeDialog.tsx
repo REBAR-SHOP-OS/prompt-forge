@@ -7,6 +7,7 @@ import { Crop, LoaderCircle, UploadCloud, Wand2, Download, RefreshCw } from 'luc
 import { supabase } from '@/integrations/supabase/client'
 import { useAuth } from '@/core/auth/AuthProvider'
 import { useToast } from '@/hooks/use-toast'
+import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 
 const RATIOS = [
   { value: '9:16', label: '9:16', hint: 'Reels', cls: 'aspect-[9/16]' },
@@ -200,8 +201,8 @@ export default function ImageReframeDialog({ open, onOpenChange, onUseAsStartFra
             <div>
               <div className="mb-1 text-xs text-zinc-500">Original</div>
               <div className={`flex items-center justify-center overflow-hidden rounded-md border border-white/10 bg-black/40 ${RATIOS.find((r) => r.value === ratio)?.cls}`}>
-                {previewUrl ? (
-                  <img src={previewUrl} alt="Original" className="max-h-full max-w-full object-contain" />
+                {safeMediaUrl(previewUrl) ? (
+                  <img src={safeMediaUrl(previewUrl) ?? ''} alt="Original" className="max-h-full max-w-full object-contain" />
                 ) : (
                   <span className="text-xs text-zinc-600">No image yet</span>
                 )}

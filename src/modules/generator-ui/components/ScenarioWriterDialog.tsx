@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { supabase } from '@/integrations/supabase/client'
+import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 
 type Lang = 'en'
 const RTL_LANGS: Lang[] = []
@@ -550,10 +551,10 @@ export default function ScenarioWriterDialog({
                     <ImagePlus className="h-4 w-4" aria-hidden="true" />
                   )}
                 </button>
-                {imagePreviewUrl ? (
+                {safeMediaUrl(imagePreviewUrl) ? (
                   <div className="relative">
                     <img
-                      src={imagePreviewUrl}
+                      src={safeMediaUrl(imagePreviewUrl) ?? ''}
                       alt="Reference"
                       className="h-8 w-8 rounded-md border border-white/10 object-cover"
                     />
