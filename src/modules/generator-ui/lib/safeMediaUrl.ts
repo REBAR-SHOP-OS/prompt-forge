@@ -11,7 +11,7 @@ function isSafeImageDataUrl(raw: string): boolean {
   const mime = match[1].trim().toLowerCase()
   return mime.startsWith('image/')
 }
-    return SAFE_PROTOCOLS.has(parsed.protocol) ? parsed.href : undefined
+
 export function safeMediaUrl(url: string | null | undefined): string | undefined {
   const raw = typeof url === 'string' ? url.trim() : ''
   if (!raw) return undefined
