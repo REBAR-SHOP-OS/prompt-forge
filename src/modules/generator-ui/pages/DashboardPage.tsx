@@ -148,6 +148,7 @@ import { TranscriptPanel } from '@/modules/generator-ui/components/TranscriptPan
 import { NarrationDialog } from '@/modules/generator-ui/components/NarrationDialog'
 import { extractNarration } from '@/modules/generator-ui/lib/narration'
 import { buildReferenceImageUrls, explicitCharacterAnchor } from '@/modules/generator-ui/lib/identityAnchors'
+import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 import CharacterSheetDialog from '@/modules/generator-ui/components/CharacterSheetDialog'
 
 
