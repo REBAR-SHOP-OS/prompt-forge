@@ -21,6 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { supabase } from '@/integrations/supabase/client'
 import { StylePreviewCard } from './StylePreviewCard'
 import AiImageDialog, { type AiImageSavedRow } from './AiImageDialog'
+import { safeMediaUrl } from '../lib/safeMediaUrl'
 import camWhipPan from '@/assets/style-previews/cam-whip-pan.mp4.asset.json'
 import camOrbit from '@/assets/style-previews/cam-orbit.mp4.asset.json'
 import camFpvDrone from '@/assets/style-previews/cam-fpv-drone.mp4.asset.json'
@@ -1552,7 +1553,7 @@ export default function ProductAdDialog({
             <div className="flex shrink-0 flex-col items-center gap-1.5">
             <div className="relative">
               {/* spacer wrapper */}
-              {imagePreviewUrl ? (
+              {safeMediaUrl(imagePreviewUrl) ? (
                 <div className="relative">
                   <button
                     type="button"
@@ -2306,12 +2307,12 @@ export default function ProductAdDialog({
         </Dialog>
 
 
-        <Dialog open={previewLightboxOpen && Boolean(imagePreviewUrl)} onOpenChange={setPreviewLightboxOpen}>
+        <Dialog open={previewLightboxOpen && Boolean(safeMediaUrl(imagePreviewUrl))} onOpenChange={setPreviewLightboxOpen}>
           <DialogContent dir={dir} className="max-w-3xl border-white/10 bg-[#0b0c0e]/95 text-zinc-100">
             <DialogHeader>
               <DialogTitle className="text-base">{t.viewImage}</DialogTitle>
             </DialogHeader>
-            {imagePreviewUrl ? (
+            {safeMediaUrl(imagePreviewUrl) ? (
               <div className="flex max-h-[80vh] items-center justify-center">
                 <img
                   src={safeMediaUrl(imagePreviewUrl)}
