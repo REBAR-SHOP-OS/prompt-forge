@@ -9787,7 +9787,7 @@ export default function DashboardPage() {
 
         <AlertDialogTrigger asChild>
           <button
-            className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100"
+            className="flex h-9 items-center gap-1.5 rounded-md border border-violet-400/40 bg-violet-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-violet-300 transition hover:border-violet-300/60 hover:bg-violet-400/[0.15] hover:text-violet-100"
             type="button"
             aria-label="Start over"
           >
