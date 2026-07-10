@@ -1570,7 +1570,7 @@ export default function ProductAdDialog({
                     ) : (
                       <div className="relative h-20 w-20">
                         <img
-                          src={safeMediaUrl(imagePreviewUrl)}
+                          src={safeMediaUrl(imagePreviewUrl) ?? ''}
                           alt="Product"
                           className="h-20 w-20 rounded-md border border-white/10 object-cover transition hover:border-white/30"
                           onLoad={() => setPreviewLoading(false)}
@@ -2315,7 +2315,7 @@ export default function ProductAdDialog({
             {safeMediaUrl(imagePreviewUrl) ? (
               <div className="flex max-h-[80vh] items-center justify-center">
                 <img
-                  src={safeMediaUrl(imagePreviewUrl)}
+                  src={safeMediaUrl(imagePreviewUrl) ?? ''}
                   alt="Product preview"
                   className="max-h-[80vh] w-auto max-w-full rounded-lg object-contain"
                 />

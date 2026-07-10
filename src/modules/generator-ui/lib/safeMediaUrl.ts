@@ -3,7 +3,7 @@
  * Permits the real cases used by the UI: remote http(s) assets and
  * in-memory object URLs (blob:).
  */
-const SAFE_PROTOCOLS = new Set(["http:", "https:", "blob:"]);
+const SAFE_PROTOCOLS = new Set(["http:", "https:", "blob:", "data:"]);
 
 function isSafeImageDataUrl(raw: string): boolean {
   const match = raw.match(/^data:([^;,]+)[;,]/i)

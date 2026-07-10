@@ -554,7 +554,7 @@ export default function ScenarioWriterDialog({
                 {imagePreviewUrl ? (
                   <div className="relative">
                     <img
-                      src={safeMediaUrl(imagePreviewUrl)}
+                      src={safeMediaUrl(imagePreviewUrl) ?? ''}
                       alt="Reference"
                       className="h-8 w-8 rounded-md border border-white/10 object-cover"
                     />
