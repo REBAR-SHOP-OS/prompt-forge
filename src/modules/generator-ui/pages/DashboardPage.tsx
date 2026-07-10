@@ -175,6 +175,15 @@ import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 import { getUpcomingMajorOccasion } from '@/modules/generator-ui/lib/majorOccasions'
 import { StylePreviewCard } from '@/modules/generator-ui/components/StylePreviewCard'
 import {
+
+/** Cryptographically-secure random id (replaces Math.random fallbacks). */
+function secureRandomId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  (globalThis.crypto as Crypto).getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
   CAMERA_STYLES,
   GENRE_STYLES,
   SCENE_STYLES,
@@ -2646,7 +2655,7 @@ export default function DashboardPage() {
   function ensureActiveDraftId(): string {
     let did = ensureActiveDraftIdRef.current
     if (!did) {
-      did = `draft-${typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`
+      did = `draft-${secureRandomId()}`
       ensureActiveDraftIdRef.current = did
       setActiveDraftId(did)
       persistActiveDraftId(did)
@@ -5711,7 +5720,7 @@ export default function DashboardPage() {
         resolve(result)
       }
       v.onerror = () => { URL.revokeObjectURL(url); resolve(null) }
-      v.src = url
+      v.src = safeMediaUrl(url) ?? ''
     })
 
     let pickedRatio: '16:9' | '1:1' | '9:16' | undefined
@@ -6197,7 +6206,7 @@ export default function DashboardPage() {
       sourceImages.map((i) => i.draft_group_id).find((g): g is string => !!g)
     const draftId = groupUuid
       ? draftIdForGroupUuid(groupUuid)
-      : `draft-${typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`
+      : `draft-${secureRandomId()}`
 
     // 3. Remove the final film from the Library.
     setMergedEntries((prev) => {
