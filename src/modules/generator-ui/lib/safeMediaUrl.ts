@@ -1,9 +1,9 @@
 /**
  * Allow only safe media URL schemes before binding to an <img>/<video> src.
- * Breaks XSS-through-DOM flows while permitting the real cases: remote http(s)
- * assets, in-memory object URLs (blob:), and inline image data previews.
+ * Permits the real cases used by the UI: remote http(s) assets and
+ * in-memory object URLs (blob:).
  */
-const SAFE_PROTOCOLS = new Set(["http:", "https:", "blob:", "data:"]);
+const SAFE_PROTOCOLS = new Set(["http:", "https:", "blob:"]);
 
 function isSafeImageDataUrl(raw: string): boolean {
   const match = raw.match(/^data:([^;,]+)[;,]/i)
@@ -11,7 +11,7 @@ function isSafeImageDataUrl(raw: string): boolean {
   const mime = match[1].trim().toLowerCase()
   return mime.startsWith('image/')
 }
-
+    return SAFE_PROTOCOLS.has(parsed.protocol) ? parsed.href : undefined
 export function safeMediaUrl(url: string | null | undefined): string | undefined {
   const raw = typeof url === 'string' ? url.trim() : ''
   if (!raw) return undefined
