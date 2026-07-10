@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { supabase } from '@/integrations/supabase/client'
+import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 
 type Lang = 'en'
 const RTL_LANGS: Lang[] = []

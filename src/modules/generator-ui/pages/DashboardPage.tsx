@@ -174,6 +174,7 @@ const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.red
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 import { getUpcomingMajorOccasion } from '@/modules/generator-ui/lib/majorOccasions'
+import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 import { StylePreviewCard } from '@/modules/generator-ui/components/StylePreviewCard'
 import {
   CAMERA_STYLES,

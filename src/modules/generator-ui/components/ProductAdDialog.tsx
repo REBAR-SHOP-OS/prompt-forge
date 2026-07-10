@@ -133,6 +133,7 @@ import vtCutOut from '@/assets/style-previews/vid-cut-out.mp4.asset.json'
 import vtStopMotion from '@/assets/style-previews/vid-stop-motion.mp4.asset.json'
 import vtScreencastUi from '@/assets/style-previews/vid-screencast-ui.mp4.asset.json'
 import vtLiveActionTracked from '@/assets/style-previews/vid-live-action-tracked.mp4.asset.json'
+import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 
 export type ProductAdDuration = 5 | 10 | 15 | 30 | 45 | 135
 
