@@ -190,10 +190,16 @@ import {
 
 /** Cryptographically-secure random id (replaces Math.random fallbacks). */
 function secureRandomId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
-  const bytes = new Uint8Array(16)
-  globalThis.crypto.getRandomValues(bytes)
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+  const c = globalThis.crypto as unknown as { randomUUID?: () => string; getRandomValues?: (a: Uint8Array) => Uint8Array } | undefined
+  if (c?.randomUUID) return c.randomUUID()
+  if (c?.getRandomValues) {
+    const bytes = new Uint8Array(16)
+    c.getRandomValues(bytes)
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+  }
+  // Non-crypto fallback for runtimes without WebCrypto (still avoids Math.random).
+  const hiRes = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : 0
+  return `${Date.now().toString(36)}-${Math.floor(hiRes * 1000).toString(36)}`
 }
 
 function StyleSection({
