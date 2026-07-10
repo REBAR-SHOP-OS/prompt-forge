@@ -551,7 +551,7 @@ export default function ScenarioWriterDialog({
                     <ImagePlus className="h-4 w-4" aria-hidden="true" />
                   )}
                 </button>
-                {imagePreviewUrl ? (
+                {safeMediaUrl(imagePreviewUrl) ? (
                   <div className="relative">
                     <img
                       src={safeMediaUrl(imagePreviewUrl) ?? ''}
