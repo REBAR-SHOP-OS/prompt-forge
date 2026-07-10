@@ -148,6 +148,7 @@ import { TranscriptPanel } from '@/modules/generator-ui/components/TranscriptPan
 import { NarrationDialog } from '@/modules/generator-ui/components/NarrationDialog'
 import { extractNarration } from '@/modules/generator-ui/lib/narration'
 import { buildReferenceImageUrls, explicitCharacterAnchor } from '@/modules/generator-ui/lib/identityAnchors'
+import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 import CharacterSheetDialog from '@/modules/generator-ui/components/CharacterSheetDialog'
 
 
@@ -187,6 +188,25 @@ import {
   type StyleItem,
   type StyleSelection,
 } from '@/modules/generator-ui/lib/promptStyles'
+
+/**
+ * Generates a unique random id. Uses WebCrypto (randomUUID / getRandomValues) when
+ * available for cryptographic strength. Falls back to a timestamp-based id on runtimes
+ * without WebCrypto — that path is NOT cryptographically secure but still avoids
+ * Math.random() and is sufficient for non-security-critical draft identifiers.
+ */
+function secureRandomId(): string {
+  const c = globalThis.crypto as unknown as { randomUUID?: () => string; getRandomValues?: (a: Uint8Array) => Uint8Array } | undefined
+  if (c?.randomUUID) return c.randomUUID()
+  if (c?.getRandomValues) {
+    const bytes = new Uint8Array(16)
+    c.getRandomValues(bytes)
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+  }
+  // Non-crypto fallback for runtimes without WebCrypto (still avoids Math.random).
+  const hiRes = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : 0
+  return `${Date.now().toString(36)}-${Math.floor(hiRes * 1000).toString(36)}`
+}
 
 function StyleSection({
   title,
@@ -2646,7 +2666,7 @@ export default function DashboardPage() {
   function ensureActiveDraftId(): string {
     let did = ensureActiveDraftIdRef.current
     if (!did) {
-      did = `draft-${typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`
+      did = `draft-${secureRandomId()}`
       ensureActiveDraftIdRef.current = did
       setActiveDraftId(did)
       persistActiveDraftId(did)
@@ -5711,7 +5731,7 @@ export default function DashboardPage() {
         resolve(result)
       }
       v.onerror = () => { URL.revokeObjectURL(url); resolve(null) }
-      v.src = url
+      v.src = safeMediaUrl(url) ?? ''
     })
 
     let pickedRatio: '16:9' | '1:1' | '9:16' | undefined
@@ -6197,7 +6217,7 @@ export default function DashboardPage() {
       sourceImages.map((i) => i.draft_group_id).find((g): g is string => !!g)
     const draftId = groupUuid
       ? draftIdForGroupUuid(groupUuid)
-      : `draft-${typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`
+      : `draft-${secureRandomId()}`
 
     // 3. Remove the final film from the Library.
     setMergedEntries((prev) => {
@@ -9787,7 +9807,7 @@ export default function DashboardPage() {
 
         <AlertDialogTrigger asChild>
           <button
-            className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-zinc-100"
+            className="flex h-9 items-center gap-1.5 rounded-md border border-violet-400/40 bg-violet-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-violet-300 transition hover:border-violet-300/60 hover:bg-violet-400/[0.15] hover:text-violet-100"
             type="button"
             aria-label="Start over"
           >

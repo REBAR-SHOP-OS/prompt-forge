@@ -160,7 +160,7 @@ function addUrlAttempt(target: Set<string>, fullUrl: string) {
     const parsed = new URL(fullUrl);
     if (!parsed.pathname.endsWith("/")) {
       parsed.pathname = `${parsed.pathname}/`.replace(/\/+/g, "/");
-      target.add(parsed.toString().replace(/\/$/, "/"));
+      target.add(parsed.toString());
     }
   } catch {
     // Ignore malformed derived attempts; the original URL is already present.
