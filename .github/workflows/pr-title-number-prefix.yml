@@ -1,0 +1,52 @@
+# Auto-prefix every PR title with its number: "(#123) <title>".
+#
+# Lovable's activity feed truncates long titles and cuts off the trailing
+# "(#N)" that GitHub appends on squash-merge, so PR numbers disappear from the
+# feed. This workflow guarantees the number leads the title regardless of which
+# person or agent (Lovable, Codex, Copilot, Claude) opened the PR — a docs
+# convention alone can't cover automation that never reads the docs.
+name: PR title number prefix
+
+on:
+  pull_request:
+    types: [opened, reopened, edited]
+
+# Only needs to rewrite the PR title.
+permissions:
+  pull-requests: write
+
+concurrency:
+  group: pr-title-prefix-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  prefix:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Ensure "(#N)" prefix on the PR title
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+
+          # Already correctly prefixed → nothing to do. This also breaks the
+          # self-trigger loop: our own edit re-fires `edited`, but the retry
+          # sees the prefix and exits.
+          if printf '%s' "$TITLE" | grep -qE "^\(#$PR\) "; then
+            echo "Title already prefixed with (#$PR); no change."
+            exit 0
+          fi
+
+          # Drop any leading "(#<other>)" and any trailing "(#N)" GitHub added,
+          # so we never double-stamp or stack stale numbers.
+          CLEAN=$(printf '%s' "$TITLE" \
+            | sed -E "s/^\(#[0-9]+\)[[:space:]]*//" \
+            | sed -E "s/[[:space:]]*\(#[0-9]+\)[[:space:]]*$//")
+
+          NEW="(#$PR) $CLEAN"
+          echo "Retitling PR #$PR: '$TITLE' -> '$NEW'"
+          gh pr edit "$PR" --repo "$REPO" --title "$NEW"
