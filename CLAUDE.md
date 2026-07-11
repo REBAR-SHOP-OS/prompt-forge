@@ -28,7 +28,8 @@ Stack: React + Vite + TypeScript + Supabase
 
 ## Critical rules
 - TSC must be clean before pushing
-- Push to agent/forge-agent -- Supervisor will gate and merge
+- Work on a scoped branch, run the repo checks, and open/update a DRAFT PR. Only
+  Sattar may mark ready, approve, merge, or publish through Lovable Cloud.
 - Do not touch credit ledger directly -- use credit-management module API
 - Provider API keys are in Supabase secrets -- never hardcode
 
