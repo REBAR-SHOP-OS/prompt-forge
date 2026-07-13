@@ -115,7 +115,11 @@ Deno.serve(async (req) => {
 
     const data = await readJsonLoose(geminiResp, "video-analyze");
     const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    let analysis: Record<string, string> = {};
+    if (!text) {
+      return new Response(JSON.stringify({ error: "Empty AI response" }), {
+        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     try { analysis = JSON.parse(text); } catch {
       // Fallback: wrap raw text as summary.
       analysis = { summary: text.slice(0, 2000) };
