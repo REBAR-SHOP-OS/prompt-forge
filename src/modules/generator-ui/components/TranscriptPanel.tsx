@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, RefreshCw, Volume2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/integrations/supabase/client'
+import { extractAudioAsBase64 } from '../lib/extractAudio'
 import {
   Select,
   SelectContent,
@@ -132,9 +133,21 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
     setLoading(true)
     setError(null)
     try {
+      let bodyPayload: any = { videoUrl }
+      try {
+        const res = await fetch(videoUrl)
+        const blob = await res.blob()
+        if (blob.size > 10 * 1024 * 1024) {
+          const audioBase64 = await extractAudioAsBase64(blob)
+          bodyPayload = { audioBase64, mimeType: 'audio/mp3' }
+        }
+      } catch (e) {
+        console.warn('Failed to extract audio locally:', e)
+      }
+
       const { data, error: fnError } = await supabase.functions.invoke<TranscriptResponse>(
         'video-transcript',
-        { body: { videoUrl } },
+        { body: bodyPayload },
       )
       if (fnError) throw new Error(fnError.message)
       if (data?.error) throw new Error(data.error)
