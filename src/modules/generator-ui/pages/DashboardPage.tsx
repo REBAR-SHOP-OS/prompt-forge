@@ -10622,7 +10622,19 @@ export default function DashboardPage() {
                       controls
                       playsInline
                       preload="metadata"
-                      clipVolume={1}
+                      musicUrl={musicUrl}
+                      musicRange={musicRange}
+                      musicVolume={musicVolume}
+                      musicTimeline={musicTimeline}
+                      voiceoverUrl={voiceoverUrl}
+                      voiceoverVolume={voiceoverVolume}
+                      voiceoverRange={voiceoverRange}
+                      voiceoverTimeline={voiceoverTimeline}
+                      clipVolume={
+                        musicUrl && musicRange[1] > musicRange[0]
+                          ? (soundtrackMode === 'music-only' ? 0 : clipVolume)
+                          : (voiceoverUrl ? voiceoverClipVolume : 1)
+                      }
                     />
                     {contactActive && !isMergedFinalPreview ? (() => {
                       // Mirror the burn-in ratios from mergeVideos.ts so the live

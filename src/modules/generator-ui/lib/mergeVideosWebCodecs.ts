@@ -123,6 +123,21 @@ async function pickVideoCodec(
   throw new WebCodecsUnsupportedError('No supported H.264 encoder configuration')
 }
 
+async function ensureAacEncoderSupported(): Promise<void> {
+  try {
+    const res = await AudioEncoder.isConfigSupported({
+      codec: 'mp4a.40.2',
+      numberOfChannels: AUDIO_CHANNELS,
+      sampleRate: SAMPLE_RATE,
+      bitrate: 192_000,
+    })
+    if (res.supported) return
+  } catch {
+    /* fall through */
+  }
+  throw new WebCodecsUnsupportedError('AAC audio encoding is not supported in this browser')
+}
+
 async function decodeAudio(url: string): Promise<AudioBuffer | null> {
   try {
     const res = await fetch(url)
@@ -267,6 +282,7 @@ export async function mergeVideoUrlsWebCodecs(
   const useSoundtrack = Boolean(music || voiceover)
   const clipVolume = Math.max(0, Math.min(1, norm?.clipVolume ?? (useSoundtrack ? 0 : 1)))
   const captureClipAudio = clipVolume > 0
+  const requiresAudioTrack = Boolean(audio) && (useSoundtrack || captureClipAudio)
 
   const totalClips = clipDefs.length
 
@@ -323,9 +339,15 @@ export async function mergeVideoUrlsWebCodecs(
   try {
     audioBuffer = await renderAudioMix(clips, clipDefs, totalDuration, norm)
   } catch (err) {
-    console.warn('[webcodecs] audio mix failed, encoding video-only:', err)
-    audioBuffer = null
+    console.warn('[webcodecs] audio mix failed:', err)
+    if (requiresAudioTrack) {
+      throw new WebCodecsUnsupportedError('Could not render the requested Final Film audio mix')
+    }
   }
+  if (requiresAudioTrack && !audioBuffer) {
+    throw new WebCodecsUnsupportedError('Could not decode the requested Final Film audio track')
+  }
+  if (audioBuffer) await ensureAacEncoderSupported()
   checkAbort()
 
   // --- Muxer + encoders ----------------------------------------------------
