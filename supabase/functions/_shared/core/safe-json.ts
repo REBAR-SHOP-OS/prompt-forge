@@ -24,8 +24,8 @@ export async function readJsonSafe<T = unknown>(res: Response): Promise<SafeJson
     return { ok: false, raw: "", contentType };
   }
 
-  // Body does not even start like JSON (e.g. "<html>", "<!DOCTYPE html>").
-  if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) {
+  // Body looks like HTML (e.g. "<html>", "<!DOCTYPE html>").
+  if (trimmed.startsWith("<")) {
     return { ok: false, raw: trimmed, contentType };
   }
 
