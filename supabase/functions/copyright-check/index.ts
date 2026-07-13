@@ -259,6 +259,11 @@ Deno.serve(async (req) => {
     }
 
     const data = await readJsonLoose(geminiResp, "copyright-check");
+    if (!data) {
+      return new Response(JSON.stringify({ error: "Analysis service returned an invalid response" }), {
+        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
     let result: Record<string, unknown>;
     try {
