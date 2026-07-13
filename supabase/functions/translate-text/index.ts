@@ -2,6 +2,7 @@
 // language using the Lovable AI Gateway. Returns only the translated text.
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
+import { readJsonLoose } from "../_shared/core/safe-json.ts";
 
 const LANG_NAMES: Record<string, string> = {
   fa: "Persian (Farsi)",
@@ -111,7 +112,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const data = await resp.json();
+    const data = await readJsonLoose(resp, "translate-text");
     const raw: string = (data?.choices?.[0]?.message?.content ?? "").trim();
     const translation = raw.replace(/^["'`]+|["'`]+$/g, "").trim();
     if (!translation) {

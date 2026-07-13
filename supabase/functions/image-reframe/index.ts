@@ -6,6 +6,7 @@
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 import { getServiceClient } from "../_shared/core/supabase.ts";
+import { readJsonLoose } from "../_shared/core/safe-json.ts";
 // deno-lint-ignore-file no-explicit-any
 
 const TARGETS: Record<string, { label: string; w: number; h: number }> = {
@@ -369,7 +370,7 @@ Deno.serve(async (req) => {
           status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const data = await resp.json();
+      const data = await readJsonLoose(resp, "image-reframe");
       const dataUrl: string = data?.choices?.[0]?.message?.images?.[0]?.image_url?.url ?? "";
       const m = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
       if (!m) {

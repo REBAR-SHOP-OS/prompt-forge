@@ -3,6 +3,7 @@
 // and a chosen visual theme, using the Lovable AI Gateway.
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
+import { readJsonLoose } from "../_shared/core/safe-json.ts";
 
 const MAX_REFERENCES = 4;
 
@@ -165,7 +166,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      const tData = await tResp.json();
+      const tData = await readJsonLoose(tResp, "write-image-prompt");
       const tRaw: string = (tData?.choices?.[0]?.message?.content ?? "").trim();
       const jsonText = tRaw.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
       let taglines: string[] = [];
@@ -268,7 +269,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const data = await resp.json();
+    const data = await readJsonLoose(resp, "write-image-prompt");
     const raw: string = (data?.choices?.[0]?.message?.content ?? "").trim();
     if (!raw) {
       return new Response(JSON.stringify({ error: "Empty AI response" }), {

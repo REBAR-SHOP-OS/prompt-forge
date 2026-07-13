@@ -1,6 +1,7 @@
 // Generates an image from a text prompt using Lovable AI Gateway (Nano Banana).
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
+import { readJsonLoose } from "../_shared/core/safe-json.ts";
 
 const ALLOWED_RATIOS = new Set(["1:1", "9:16", "16:9"]);
 
@@ -107,14 +108,14 @@ Deno.serve(async (req) => {
       });
     }
 
-    let data = await resp.json();
+    let data = await readJsonLoose(resp, "ai-image-generate");
     let dataUrl = extractImage(data);
 
     if (!dataUrl) {
       console.warn("ai-image-generate primary returned no image, retrying with fallback model");
       resp = await callModel(FALLBACK);
       if (resp.ok) {
-        data = await resp.json();
+        data = await readJsonLoose(resp, "ai-image-generate");
         dataUrl = extractImage(data);
       } else {
         const text = await resp.text().catch(() => "");

@@ -3,6 +3,7 @@
 // is appropriate and suitable for an advertising cover. Returns structured JSON.
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
+import { readJsonLoose } from "../_shared/core/safe-json.ts";
 
 const SYSTEM_PROMPT = [
   "You are a strict cover-text guardian for advertising/cover images.",
@@ -96,7 +97,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const data = await resp.json();
+    const data = await readJsonLoose(resp, "inspect-cover-text");
     const raw: string = (data?.choices?.[0]?.message?.content ?? "").trim();
     if (!raw) {
       return new Response(JSON.stringify({ error: "Empty AI response" }), {

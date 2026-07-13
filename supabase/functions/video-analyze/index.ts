@@ -2,6 +2,7 @@
 // return a structured scene analysis used to enrich the V2V edit prompt.
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
+import { readJsonLoose } from "../_shared/core/safe-json.ts";
 
 const MAX_BYTES = 25 * 1024 * 1024; // 25MB cap (inline base64)
 
@@ -112,9 +113,13 @@ Deno.serve(async (req) => {
       });
     }
 
-    const data = await geminiResp.json();
+    const data = await readJsonLoose(geminiResp, "video-analyze");
     const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    let analysis: Record<string, string> = {};
+    if (!text) {
+      return new Response(JSON.stringify({ error: "Empty AI response" }), {
+        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     try { analysis = JSON.parse(text); } catch {
       // Fallback: wrap raw text as summary.
       analysis = { summary: text.slice(0, 2000) };

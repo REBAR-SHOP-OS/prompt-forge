@@ -3,6 +3,7 @@
 // assessment with separate verdicts + reasons for the video and the music.
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
+import { readJsonLoose } from "../_shared/core/safe-json.ts";
 
 const INLINE_VIDEO_BYTES = 18 * 1024 * 1024; // inline only small videos (Gemini ~20MB request cap)
 const MAX_VIDEO_BYTES = 500 * 1024 * 1024; // larger videos go through the Files API (up to 2GB supported)
@@ -257,7 +258,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    const data = await geminiResp.json();
+    const data = await readJsonLoose(geminiResp, "copyright-check");
+    if (!data) {
+      return new Response(JSON.stringify({ error: "Analysis service returned an invalid response" }), {
+        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
     let result: Record<string, unknown>;
     try {
