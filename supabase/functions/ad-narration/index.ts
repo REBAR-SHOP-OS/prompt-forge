@@ -3,6 +3,7 @@
 // Returns spoken words only (no scene/visual directions, no labels).
 import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors'
 import { authenticate } from '../_shared/core/auth.ts'
+import { readJsonLoose } from '../_shared/core/safe-json.ts';
 
 interface Body {
   productName?: string
@@ -163,7 +164,7 @@ Deno.serve(async (req) => {
       })
     }
 
-    const json = await resp.json()
+    const json = await readJsonLoose(resp, "ad-narration")
     const narration: string = (json?.choices?.[0]?.message?.content || '').trim()
     if (!narration) {
       return new Response(JSON.stringify({ error: 'No narration returned' }), {

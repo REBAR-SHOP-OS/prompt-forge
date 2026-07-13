@@ -5,6 +5,7 @@
 // (no start-frame locking).
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
+import { readJsonLoose } from "../_shared/core/safe-json.ts";
 
 function isAllowedImageUrl(u: string): boolean {
   try {
@@ -108,7 +109,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const data = await resp.json();
+    const data = await readJsonLoose(resp, "describe-character");
     // deno-lint-ignore no-explicit-any
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const description: string = ((data as any)?.choices?.[0]?.message?.content ?? "").toString().trim();

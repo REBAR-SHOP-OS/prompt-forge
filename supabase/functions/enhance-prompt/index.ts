@@ -5,6 +5,7 @@
 // preserving subject identity and adding camera/motion/mood.
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
+import { readJsonLoose } from "../_shared/core/safe-json.ts";
 
 const BASE_SYSTEM_PROMPT = [
   "You are an expert prompt engineer for AI video generation models",
@@ -210,7 +211,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const data = await resp.json();
+    const data = await readJsonLoose(resp, "enhance-prompt");
     const enhanced: string = (data?.choices?.[0]?.message?.content ?? "").trim();
     if (!enhanced) {
       return new Response(JSON.stringify({ error: "Empty AI response" }), {

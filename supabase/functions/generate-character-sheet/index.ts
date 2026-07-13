@@ -7,6 +7,7 @@
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 import { getServiceClient } from "../_shared/core/supabase.ts";
+import { readJsonLoose } from "../_shared/core/safe-json.ts";
 // deno-lint-ignore-file no-explicit-any
 
 const USER_IMAGES_BUCKET = "user-images";
@@ -194,7 +195,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const data = await resp.json();
+    const data = await readJsonLoose(resp, "generate-character-sheet");
     const outDataUrl: string = data?.choices?.[0]?.message?.images?.[0]?.image_url?.url ?? "";
     const m = outDataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
     if (!m) {

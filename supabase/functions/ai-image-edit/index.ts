@@ -2,6 +2,7 @@
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 import { getServiceClient } from "../_shared/core/supabase.ts";
+import { readJsonLoose } from "../_shared/core/safe-json.ts";
 
 // Our storage buckets are private, so public URLs return 400 when the AI gateway
 // tries to fetch them. Download via the service client and inline as a data URL.
@@ -188,14 +189,14 @@ Deno.serve(async (req) => {
       });
     }
 
-    let data = await resp.json();
+    let data = await readJsonLoose(resp, "ai-image-edit");
     let dataUrl = extractImage(data);
 
     if (!dataUrl) {
       console.warn("ai-image-edit primary returned no image, retrying with fallback model");
       resp = await callModel(FALLBACK);
       if (resp.ok) {
-        data = await resp.json();
+        data = await readJsonLoose(resp, "ai-image-edit");
         dataUrl = extractImage(data);
       } else {
         const text = await resp.text().catch(() => "");

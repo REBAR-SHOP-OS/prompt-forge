@@ -2,6 +2,7 @@
 // Calls Google AI Studio (Gemini 2.5 Flash Preview TTS) and returns base64 WAV.
 
 import { authenticate } from '../_shared/core/auth.ts'
+import { readJsonLoose } from '../_shared/core/safe-json.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -312,7 +313,7 @@ Deno.serve(async (req) => {
       )
     }
 
-    const json = await geminiResp.json()
+    const json = await readJsonLoose(geminiResp, "tts-generate")
     const part = json?.candidates?.[0]?.content?.parts?.find(
       (p: { inlineData?: { data?: string; mimeType?: string } }) => p?.inlineData?.data,
     )

@@ -3,6 +3,7 @@
 // For 45s, returns three sequential 15s scene prompts.
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
+import { readJsonLoose } from "../_shared/core/safe-json.ts";
 
 const WORD_CAPS: Record<number, number> = { 5: 40, 10: 70, 15: 100, 30: 180, 45: 270, 135: 810 };
 const BEAT_GUIDE: Record<number, string> = {
@@ -458,7 +459,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    let data = await resp.json();
+    let data = await readJsonLoose(resp, "scenario-write");
     let raw: string = (data?.choices?.[0]?.message?.content ?? "").trim();
     let scenes = parseScenes(raw, duration);
 
@@ -467,7 +468,7 @@ Deno.serve(async (req) => {
     if (expected > 1 && scenes.length === 0) {
       resp = await callGateway(apiKey, duration, effectiveIdea, resolvedImageUrl, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage, narration);
       if (resp.ok) {
-        data = await resp.json();
+        data = await readJsonLoose(resp, "scenario-write");
         raw = (data?.choices?.[0]?.message?.content ?? "").trim();
         scenes = parseScenes(raw, duration);
       }
