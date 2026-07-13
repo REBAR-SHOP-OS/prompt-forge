@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, RefreshCw, Volume2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/integrations/supabase/client'
+import { extractAudioAsBase64 } from '../lib/extractAudio'
 import {
   Select,
   SelectContent,
@@ -34,6 +35,12 @@ type TranscriptResponse = {
   targetLanguage?: string
   error?: string
 }
+
+type TranscriptRequest =
+  | { videoUrl: string }
+  | { audioBase64: string; mimeType: 'audio/mpeg' }
+
+const LOCAL_AUDIO_THRESHOLD_BYTES = 10 * 1024 * 1024
 
 export interface TranscriptPanelProps {
   /** A directly-fetchable (signed/public) URL to the film video. */
@@ -132,9 +139,34 @@ export function TranscriptPanel({ videoUrl, onClose }: TranscriptPanelProps) {
     setLoading(true)
     setError(null)
     try {
+      let bodyPayload: TranscriptRequest = { videoUrl }
+      let isLargeVideo = false
+      try {
+        const res = await fetch(videoUrl)
+        if (!res.ok) throw new Error(`Could not load video (${res.status})`)
+        const blob = await res.blob()
+        if (blob.size > LOCAL_AUDIO_THRESHOLD_BYTES) {
+          isLargeVideo = true
+          try {
+            const audioBase64 = await extractAudioAsBase64(blob)
+            bodyPayload = { audioBase64, mimeType: 'audio/mpeg' }
+          } catch (error) {
+            throw new Error(
+              `This video is too large to transcribe directly. ${error instanceof Error ? error.message : 'Local audio extraction failed.'}`,
+            )
+          }
+        }
+      } catch (e) {
+        if (!isLargeVideo) {
+          console.warn('Could not inspect video size locally; using the server URL path:', e)
+        } else {
+          throw e
+        }
+      }
+
       const { data, error: fnError } = await supabase.functions.invoke<TranscriptResponse>(
         'video-transcript',
-        { body: { videoUrl } },
+        { body: bodyPayload },
       )
       if (fnError) throw new Error(fnError.message)
       if (data?.error) throw new Error(data.error)
