@@ -168,6 +168,11 @@ Be exhaustive but strict — include every qualifying observance in the month, b
 
     const data = await readJsonLoose(aiResp, "day-info")
     const toolCall = data?.choices?.[0]?.message?.tool_calls?.[0]
+    if (!toolCall) {
+      return new Response(JSON.stringify({ error: 'Empty AI response' }), {
+        status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
     let occasions: Array<Record<string, unknown>> = []
     try {
       const args = toolCall?.function?.arguments
