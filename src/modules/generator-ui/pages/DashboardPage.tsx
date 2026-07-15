@@ -148,6 +148,14 @@ import { TranscriptPanel } from '@/modules/generator-ui/components/TranscriptPan
 import { NarrationDialog } from '@/modules/generator-ui/components/NarrationDialog'
 import { extractNarration } from '@/modules/generator-ui/lib/narration'
 import { buildReferenceImageUrls, explicitCharacterAnchor } from '@/modules/generator-ui/lib/identityAnchors'
+import {
+  type ModelMeta,
+  getAvailableModels,
+  toImageToVideoModel,
+  toTextToVideoModel,
+  getFallbackModel,
+  DEFAULT_MODEL_ID,
+} from '@/modules/generator-ui/lib/modelRegistry'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 import CharacterSheetDialog from '@/modules/generator-ui/components/CharacterSheetDialog'
 
@@ -577,118 +585,7 @@ function audioUrlLoads(url: string, timeoutMs = 12_000): Promise<boolean> {
   })
 }
 
-type ModelChoice = {
-  id: string
-  label: string
-  description: string
-  providerKey: 'wan' | 'flow' | 'local'
-  model: string
-  supports: Array<'t2v' | 'i2v'>
-}
-
-const MODEL_CHOICES: ModelChoice[] = [
-  {
-    id: 'flow-v1',
-    label: 'Google Veo 3 Fast',
-    description: 'Default. ~$0.10/s, good quality, fast generation. Recommended.',
-    providerKey: 'flow',
-    model: 'flow-video-1',
-    supports: ['t2v', 'i2v'],
-  },
-  {
-    id: 'flow-v1-pro',
-    label: 'Google Veo 3.1 Pro',
-    description: 'Highest quality Veo 3.1. ~$0.40/s — 4× more expensive than Fast.',
-    providerKey: 'flow',
-    model: 'flow-video-1-pro',
-    supports: ['t2v', 'i2v'],
-  },
-  {
-    id: 'wan-i2v',
-    label: 'Wan 2.7 — Image to Video',
-    description: 'Animate a Start and/or End frame. ~$0.15 / clip.',
-    providerKey: 'wan',
-    model: 'wan2.7-i2v-2026-04-25',
-    supports: ['i2v'],
-  },
-  {
-    id: 'wan-t2v',
-    label: 'Wan 2.7 — Text to Video',
-    description: 'Generate a clip purely from a prompt. ~$0.15 / clip.',
-    providerKey: 'wan',
-    model: 'wan2.7-t2v-2026-04-25',
-    supports: ['t2v'],
-  },
-  {
-    id: 'local-wan21-i2v',
-    label: 'Local Wan 2.1 - Image to Video',
-    description: 'Runs on your local RTX router. Free (no cloud cost). Requires the local video router to be configured.',
-    providerKey: 'local',
-    model: 'local/wan-2.1-i2v',
-    supports: ['i2v'],
-  },
-  {
-    id: 'local-wan21-t2v',
-    label: 'Local Wan 2.1 - Text to Video',
-    description: 'Runs on your local RTX router. Free (no cloud cost). Requires the local video router to be configured.',
-    providerKey: 'local',
-    model: 'local/wan-2.1-t2v',
-    supports: ['t2v'],
-  },
-  {
-    id: 'local-ltx-i2v',
-    label: 'Local LTX Video - Image to Video',
-    description: 'Runs on your local RTX router. Free (no cloud cost). Requires the local video router to be configured.',
-    providerKey: 'local',
-    model: 'local/ltx-video-i2v',
-    supports: ['i2v'],
-  },
-  {
-    id: 'local-ltx-t2v',
-    label: 'Local LTX Video - Text to Video',
-    description: 'Runs on your local RTX router. Free (no cloud cost). Requires the local video router to be configured.',
-    providerKey: 'local',
-    model: 'local/ltx-video-t2v',
-    supports: ['t2v'],
-  },
-]
-
-// Resolve the Image-to-Video counterpart of a chosen model. When a character
-// start frame is baked in we must drive an I2V model even if the user is in
-// Text-to-Video mode, otherwise the provider ignores the frame. Prefers the
-// same engine family (wan/ltx/local), then any I2V model of the same provider,
-// then Wan I2V as a last resort.
-function toImageToVideoModel(model: ModelChoice): ModelChoice {
-  if (model.supports.includes('i2v')) return model
-  const base = model.id.replace(/-t2v$/, '')
-  const sibling = MODEL_CHOICES.find(
-    (m) => m.providerKey === model.providerKey && m.supports.includes('i2v') && m.id.replace(/-i2v$/, '') === base,
-  )
-  return (
-    sibling ??
-    MODEL_CHOICES.find((m) => m.providerKey === model.providerKey && m.supports.includes('i2v')) ??
-    MODEL_CHOICES.find((m) => m.id === 'wan-i2v') ??
-    model
-  )
-}
-
-// Resolve the Text-to-Video counterpart of a chosen model. When the user
-// switches to Text-to-Video mode we want to stay inside the same provider
-// family (wan/ltx/local) instead of falling back to the first generic t2v
-// model in the list.
-function toTextToVideoModel(model: ModelChoice): ModelChoice {
-  if (model.supports.includes('t2v')) return model
-  const base = model.id.replace(/-i2v$/, '')
-  const sibling = MODEL_CHOICES.find(
-    (m) => m.providerKey === model.providerKey && m.supports.includes('t2v') && m.id.replace(/-t2v$/, '') === base,
-  )
-  return (
-    sibling ??
-    MODEL_CHOICES.find((m) => m.providerKey === model.providerKey && m.supports.includes('t2v')) ??
-    MODEL_CHOICES.find((m) => m.id === 'wan-t2v') ??
-    model
-  )
-}
+// ModelMeta and model utilities are imported from modelRegistry.
 
 
 
@@ -730,7 +627,7 @@ const LOCAL_PLANNER_MODEL_CHOICES: LocalPlannerModelChoice[] = [
 // Mirrors backend pricing in supabase/functions/_shared/modules/external-api-adapter/service.ts.
 // 1 USD = 100 credits. Keep in sync with COST_MAP_USD.
 function estimateGenerationCost(
-  model: ModelChoice,
+  model: ModelMeta,
   totalDurationSec: number,
   opts?: { hasLastFrame?: boolean; hasReferenceImages?: boolean },
 ): {
@@ -3807,7 +3704,7 @@ export default function DashboardPage() {
   const [composerError, setComposerError] = useState<string | null>(null)
   const [isPromptMenuOpen, setIsPromptMenuOpen] = useState(false)
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false)
-  const [selectedModelId, setSelectedModelId] = useState<string>('wan-i2v')
+  const [selectedModelId, setSelectedModelId] = useState<string>(DEFAULT_MODEL_ID)
   const [localPlannerModel, setLocalPlannerModel] = useState<string>(() => {
     if (typeof window === 'undefined') return 'gpt-oss:20b'
     try {
@@ -3833,26 +3730,33 @@ export default function DashboardPage() {
     })
   }
 
-  const selectedModel = useMemo<ModelChoice>(() => {
+  const pickerModels = useMemo(
+    () => getAvailableModels({ localRouterReachable: localStatus?.status === 'configured' }),
+    [localStatus?.status],
+  )
+
+  const selectedModel = useMemo<ModelMeta>(() => {
     const needed: 't2v' | 'i2v' = isTextToVideo ? 't2v' : 'i2v'
-    const chosen = MODEL_CHOICES.find((m) => m.id === selectedModelId)
+    const chosen = pickerModels.find((m) => m.id === selectedModelId)
     if (chosen && chosen.supports.includes(needed)) return chosen
-    return MODEL_CHOICES.find((m) => m.supports.includes(needed)) ?? MODEL_CHOICES[0]
-  }, [selectedModelId, isTextToVideo])
+    // Requested model unavailable — use registry fallback
+    const fb = getFallbackModel(selectedModelId, { mode: needed })
+    return fb?.model ?? pickerModels.find((m) => m.supports.includes(needed)) ?? pickerModels[0]
+  }, [selectedModelId, isTextToVideo, pickerModels])
 
   // When the user switches between Text-to-Video and Image-to-Video, keep
   // the selected provider family (Wan / local / Flow) by swapping to the
   // counterpart model that supports the new mode.
   useEffect(() => {
-    const current = MODEL_CHOICES.find((m) => m.id === selectedModelId)
+    const current = pickerModels.find((m) => m.id === selectedModelId)
     if (!current) return
     if (generationMode === 'text-to-video' && !current.supports.includes('t2v')) {
-      setSelectedModelId(toTextToVideoModel(current).id)
+      setSelectedModelId(toTextToVideoModel(current, pickerModels).id)
     }
     if (generationMode === 'image-to-video' && !current.supports.includes('i2v')) {
-      setSelectedModelId(toImageToVideoModel(current).id)
+      setSelectedModelId(toImageToVideoModel(current, pickerModels).id)
     }
-  }, [generationMode])
+  }, [generationMode, pickerModels, selectedModelId])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -11390,7 +11294,7 @@ export default function DashboardPage() {
                             const isRegenerating = regeneratingIds.has(video.id)
                             const hasFrame = Boolean(video.first_frame_url || video.last_frame_url)
                             const mode: 't2v' | 'i2v' = hasFrame ? 'i2v' : 't2v'
-                            const choices = MODEL_CHOICES.filter((c) => c.supports.includes(mode))
+                            const choices = pickerModels.filter((c) => c.supports.includes(mode))
                             const currentModel = video.model_key
                             return (
                               <DropdownMenu>
@@ -12310,7 +12214,7 @@ export default function DashboardPage() {
                 align="end"
                 className="w-72 border-white/10 bg-[#0b0c0e]/95 p-2 text-zinc-200 shadow-[0_22px_70px_rgba(0,0,0,0.5)] backdrop-blur-xl"
               >
-                {MODEL_CHOICES.map((choice) => {
+                {pickerModels.map((choice) => {
                   const needed: 't2v' | 'i2v' = isTextToVideo ? 't2v' : 'i2v'
                   const compatible = choice.supports.includes(needed)
                   const isActive = choice.id === selectedModel.id
@@ -12329,9 +12233,29 @@ export default function DashboardPage() {
                         {isActive ? <Check className="h-4 w-4" aria-hidden="true" /> : <Cpu className="h-4 w-4" aria-hidden="true" />}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-semibold text-zinc-100">{choice.label}</span>
+                        <span className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-sm font-semibold text-zinc-100">{choice.label}</span>
+                          {compatible && choice.badges.map((badge) => (
+                            <span
+                              key={badge.kind}
+                              className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none ${
+                                badge.kind === 'recommended'
+                                  ? 'bg-amber-400/20 text-amber-300'
+                                  : badge.kind === 'fast'
+                                    ? 'bg-sky-400/15 text-sky-300'
+                                    : badge.kind === 'best-quality'
+                                      ? 'bg-violet-400/15 text-violet-300'
+                                      : 'bg-emerald-400/15 text-emerald-300'
+                              }`}
+                            >
+                              {badge.label}
+                            </span>
+                          ))}
+                        </span>
                         <span className="block text-xs leading-5 text-zinc-500">
-                          {compatible ? choice.description : `Not available in ${isTextToVideo ? 'Text to Video' : 'Image to Video'} mode.`}
+                          {compatible
+                            ? `${choice.description} ${choice.costHint}`
+                            : `Not available in ${isTextToVideo ? 'Text to Video' : 'Image to Video'} mode.`}
                         </span>
                       </span>
                     </button>
