@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import fs from 'node:fs'
-import path from 'node:path'
+// ?raw import is resolved by Vite at bundle/transform time — no node:fs, node:path,
+// or __dirname needed at runtime. Works identically in jsdom and node environments,
+// and is portable across Node versions (no CJS-default-export TDZ in jsdom).
+import source from './DashboardPage.tsx?raw'
 
 // Regression for: "Cannot access 'Q' before initialization" production crash.
 // The minified prod bundle exposes a TDZ error when const [localStatus] = useState(...)
@@ -8,11 +10,6 @@ import path from 'node:path'
 // The dep array is evaluated eagerly by useMemo(); reading a const before its
 // declaration throws in native-const bundles (modern browsers) even though
 // dev builds (transpiled to var) silently treat it as undefined.
-const source = fs.readFileSync(
-  path.resolve(__dirname, 'DashboardPage.tsx'),
-  'utf-8',
-)
-
 describe('DashboardPage hook declaration order', () => {
   it('declares localStatus before pickerModels to avoid TDZ crash in production', () => {
     const lines = source.split('\n')
