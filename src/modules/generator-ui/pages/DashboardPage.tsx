@@ -3730,6 +3730,11 @@ export default function DashboardPage() {
     })
   }
 
+  // Must be declared before pickerModels: the dep array [localStatus?.status] is evaluated
+  // eagerly by useMemo(); reading a const in TDZ crashes the minified production bundle.
+  const [localStatus, setLocalStatus] = useState<LocalVideoStatusResult | null>(null)
+  const [localStatusLoading, setLocalStatusLoading] = useState(false)
+
   const pickerModels = useMemo(
     () => getAvailableModels({ localRouterReachable: localStatus?.status === 'configured' }),
     [localStatus?.status],
@@ -3771,8 +3776,6 @@ export default function DashboardPage() {
 
   // Local video router config/health status — only checked while a local model
   // is selected, so cloud-only users never trigger the probe.
-  const [localStatus, setLocalStatus] = useState<LocalVideoStatusResult | null>(null)
-  const [localStatusLoading, setLocalStatusLoading] = useState(false)
   useEffect(() => {
     if (selectedModel?.providerKey !== 'local') {
       setLocalStatus(null)
