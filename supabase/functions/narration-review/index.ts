@@ -1,5 +1,7 @@
 // narration-review: transcribe a final film with word-level timestamps and
 // return the raw word list so the client can diff against expected narration.
+// Supports a second translation-only mode: send `translate_texts` + `target_language`
+// to translate an array of strings without triggering transcription.
 //
 // Security notes:
 //   SSRF — videoUrl is restricted to https:// on this project's Supabase host
@@ -21,6 +23,8 @@ const MAX_VIDEO_BYTES        = 18 * 1024 * 1024  // server-side cap for URL down
 const MAX_AUDIO_DECODED_BYTES = 18 * 1024 * 1024  // decoded cap for audioBase64 path
 // audioBase64 is ~4/3× the decoded size; 30 MB body = ~22 MB decoded, with headroom.
 const MAX_BODY_BYTES         = 30 * 1024 * 1024
+const MAX_TRANSLATE_TEXTS    = 50
+const MAX_TRANSLATE_TEXT_LEN = 4000
 
 // Fail-closed SSRF guard: only https:// from this project's Supabase host.
 function isAllowedVideoUrl(url: string, allowedHost: string): boolean {
@@ -35,14 +39,20 @@ function isAllowedVideoUrl(url: string, allowedHost: string): boolean {
 // Schema: storagePath removed — it would be fetched as a raw URL (SSRF vector).
 // Callers send either a videoUrl (must be the project's Supabase host) or
 // audioBase64 extracted client-side for large films.
-const BodySchema = z.object({
-  videoUrl:    z.string().url().optional(),
-  audioBase64: z.string().min(1).optional(),
-  mimeType:    z.string().min(1).max(128).optional(),
+const TranscriptionBodySchema = z.object({
+  videoUrl:     z.string().url().optional(),
+  audioBase64:  z.string().min(1).optional(),
+  mimeType:     z.string().min(1).max(128).optional(),
+  translate_to: z.string().min(1).max(64).optional(),
 }).refine(
   (v) => Boolean(v.videoUrl || v.audioBase64),
   { message: 'videoUrl or audioBase64 is required' },
 )
+
+const TranslationBodySchema = z.object({
+  translate_texts:  z.array(z.string().max(MAX_TRANSLATE_TEXT_LEN)).min(1).max(MAX_TRANSLATE_TEXTS),
+  target_language:  z.string().min(1).max(64),
+})
 
 type MediaExtension = 'flac' | 'mp3' | 'mp4' | 'mpeg' | 'mpga' | 'm4a' | 'ogg' | 'wav' | 'webm'
 
@@ -122,6 +132,58 @@ async function transcribeWithTimestamps(
   return { transcript, words }
 }
 
+export async function translateTexts(
+  apiKey: string,
+  texts: string[],
+  targetLanguage: string,
+): Promise<string[]> {
+  const payload = JSON.stringify(texts)
+  const res = await fetch(`${GATEWAY}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'openai/gpt-4o-mini',
+      temperature: 0,
+      messages: [
+        {
+          role: 'system',
+          content:
+            `You are a precise translator. Translate every string in the JSON array to ${targetLanguage}. ` +
+            `Preserve meaning, tone, and any quoted words. Return ONLY a valid JSON array of translated strings ` +
+            `in the same order. No markdown fences, no explanations.`,
+        },
+        { role: 'user', content: payload },
+      ],
+    }),
+  })
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw Object.assign(new Error(`Translation failed: ${res.status} ${text}`), { status: res.status })
+  }
+
+  const data = await res.json().catch(() => null) as {
+    choices?: Array<{ message?: { content?: string } }>
+  } | null
+  const raw = (data?.choices?.[0]?.message?.content ?? '').trim()
+
+  // Strip optional markdown code fence
+  const clean = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
+  try {
+    const parsed: unknown = JSON.parse(clean)
+    if (Array.isArray(parsed) && parsed.every((v) => typeof v === 'string')) {
+      if (parsed.length !== texts.length) throw new Error('Length mismatch in translation response')
+      return parsed as string[]
+    }
+    throw new Error('Translation response is not a string array')
+  } catch (e) {
+    throw new Error(`Translation parse error: ${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -145,12 +207,21 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'Invalid JSON body' }, 400)
     }
 
-    const parsed = BodySchema.safeParse(parsedBody)
+    // ── Translation-only mode ──────────────────────────────────────────────
+    const translationParsed = TranslationBodySchema.safeParse(parsedBody)
+    if (translationParsed.success) {
+      const { translate_texts, target_language } = translationParsed.data
+      const translations = await translateTexts(apiKey, translate_texts, target_language)
+      return jsonResponse({ translations })
+    }
+
+    // ── Transcription mode ─────────────────────────────────────────────────
+    const parsed = TranscriptionBodySchema.safeParse(parsedBody)
     if (!parsed.success) {
       return jsonResponse({ error: parsed.error.flatten().formErrors.join(', ') || 'Invalid request' }, 400)
     }
 
-    const { videoUrl, audioBase64, mimeType } = parsed.data
+    const { videoUrl, audioBase64, mimeType, translate_to } = parsed.data
     let videoBytes: Blob
     let sourceUrl: string
     let contentType: string | null
@@ -225,7 +296,23 @@ Deno.serve(async (req) => {
       return jsonResponse({ transcript: '', words: [], error: 'No speech detected in this film.' })
     }
 
-    return jsonResponse({ transcript, words })
+    // Optional: translate the transcript for display. Alignment always uses
+    // the original transcript + words, never the translated version.
+    let transcript_translated: string | undefined
+    if (translate_to) {
+      try {
+        const [t] = await translateTexts(apiKey, [transcript], translate_to)
+        transcript_translated = t
+      } catch {
+        // Non-fatal: return result without translation if it fails.
+      }
+    }
+
+    return jsonResponse({
+      transcript,
+      words,
+      ...(transcript_translated ? { transcript_translated, translate_to } : {}),
+    })
   } catch (e) {
     const status = (e as { status?: number }).status
     const message = e instanceof Error ? e.message : 'Unexpected error'
