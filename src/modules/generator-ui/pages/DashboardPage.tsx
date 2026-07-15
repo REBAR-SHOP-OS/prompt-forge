@@ -62,6 +62,7 @@ import {
   Eye,
   EyeOff,
   Building2,
+  ScanText,
   X
 } from 'lucide-react'
 import {
@@ -146,6 +147,7 @@ import ProductAdDialog from '@/modules/generator-ui/components/ProductAdDialog'
 import { BusinessProfileDialog } from '@/modules/generator-ui/components/BusinessProfileDialog'
 import { TranscriptPanel } from '@/modules/generator-ui/components/TranscriptPanel'
 import { NarrationDialog } from '@/modules/generator-ui/components/NarrationDialog'
+import { NarrationReviewPanel } from '@/modules/generator-ui/components/NarrationReviewPanel'
 import { extractNarration } from '@/modules/generator-ui/lib/narration'
 import { buildReferenceImageUrls, explicitCharacterAnchor } from '@/modules/generator-ui/lib/identityAnchors'
 import {
@@ -1065,6 +1067,7 @@ export default function DashboardPage() {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
   const [promptViewer, setPromptViewer] = useState<string | null>(null)
   const [narrationViewer, setNarrationViewer] = useState<{ cardId: string; prompt: string | null; narrationText: string | null; videoStoragePath: string | null } | null>(null)
+  const [narrationReview, setNarrationReview] = useState<{ cardId: string; storagePath: string; narrationText: string | null; prompt: string | null } | null>(null)
   const [editPromptJob, setEditPromptJob] = useState<JobDetail | null>(null)
   const [editPromptText, setEditPromptText] = useState('')
   const [startContext] = useState('Start')
@@ -11769,6 +11772,25 @@ export default function DashboardPage() {
                             <Pencil className="h-3 w-3" aria-hidden="true" />
                           </button>
                         ) : null}
+                        {variant === 'final' ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setNarrationReview({
+                                cardId: video.id,
+                                storagePath: video.video?.storage_path ?? '',
+                                narrationText: video.narration_text ?? null,
+                                prompt: video.input_prompt ?? null,
+                              })
+                            }}
+                            aria-label="Review narration"
+                            title="Review narration"
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-violet-300/40 hover:bg-violet-300/10 hover:text-violet-200"
+                          >
+                            <ScanText className="h-3 w-3" aria-hidden="true" />
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={(event) => {
@@ -11800,6 +11822,15 @@ export default function DashboardPage() {
                       <span className="tabular-nums">{formatCreatedAt(video.created_at)}</span>
                     </div>
                   </div>
+                  {variant === 'final' ? (
+                    <NarrationReviewPanel
+                      open={narrationReview?.cardId === video.id}
+                      onClose={() => setNarrationReview(null)}
+                      videoStoragePath={narrationReview?.cardId === video.id ? (narrationReview.storagePath || null) : null}
+                      narrationText={narrationReview?.cardId === video.id ? narrationReview.narrationText : null}
+                      prompt={narrationReview?.cardId === video.id ? narrationReview.prompt : null}
+                    />
+                  ) : null}
                 </article>
               )
             }
