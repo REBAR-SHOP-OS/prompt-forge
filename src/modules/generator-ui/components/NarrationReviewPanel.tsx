@@ -3,6 +3,7 @@ import { CheckCircle2, AlertCircle, Loader2, ScanText, RotateCcw, X } from 'luci
 import { supabase } from '@/integrations/supabase/client'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 import { extractNarration } from '@/modules/generator-ui/lib/narration'
+import { extractAudioAsBase64 } from '@/modules/generator-ui/lib/extractAudio'
 import {
   reviewNarration,
   type NarrationReviewResult,
@@ -29,7 +30,15 @@ type FnResponse = {
   transcript?: string
   words?: TimestampedWord[]
   error?: string
+  code?: string
 }
+
+type ReviewBody =
+  | { videoUrl: string }
+  | { audioBase64: string; mimeType: 'audio/mpeg' }
+
+// Mirrors TranscriptPanel's LOCAL_AUDIO_THRESHOLD_BYTES.
+const LOCAL_AUDIO_THRESHOLD_BYTES = 10 * 1024 * 1024
 
 export function NarrationReviewPanel({
   open,
@@ -39,6 +48,7 @@ export function NarrationReviewPanel({
   prompt,
 }: NarrationReviewPanelProps) {
   const [loading, setLoading] = useState(false)
+  const [loadingStage, setLoadingStage] = useState<'transcribing' | 'extracting'>('transcribing')
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<NarrationReviewResult | null>(null)
 
@@ -57,6 +67,7 @@ export function NarrationReviewPanel({
     }
 
     setLoading(true)
+    setLoadingStage('transcribing')
     setError(null)
     setResult(null)
 
@@ -64,12 +75,44 @@ export function NarrationReviewPanel({
       let fetchUrl = videoStoragePath
       try { fetchUrl = await proxiedVideoUrl(videoStoragePath) } catch { /* fall back */ }
 
+      // Mirror TranscriptPanel: pre-fetch blob to check size; extract audio locally
+      // for large videos so the edge function never receives a payload > 18 MB.
+      let body: ReviewBody = { videoUrl: fetchUrl }
+      let isLargeVideo = false
+      try {
+        const videoRes = await fetch(fetchUrl)
+        if (!videoRes.ok) throw new Error(`Could not load video (${videoRes.status})`)
+        const blob = await videoRes.blob()
+        if (blob.size > LOCAL_AUDIO_THRESHOLD_BYTES) {
+          isLargeVideo = true
+          setLoadingStage('extracting')
+          const audioBase64 = await extractAudioAsBase64(blob)
+          body = { audioBase64, mimeType: 'audio/mpeg' }
+          setLoadingStage('transcribing')
+        }
+      } catch (e) {
+        if (isLargeVideo) {
+          // Audio extraction failed — surface a clear message.
+          throw new Error(
+            `This video is too large to analyze directly. ${e instanceof Error ? e.message : 'Audio extraction failed.'}`,
+          )
+        }
+        // Size check failed (network issue) — fall through to URL path.
+        console.warn('Could not inspect video size locally; using server URL path:', e)
+      }
+
       const { data, error: fnError } = await supabase.functions.invoke<FnResponse>(
         'narration-review',
-        { body: { videoUrl: fetchUrl } },
+        { body },
       )
 
       if (fnError) throw new Error(fnError.message)
+      if (data?.code === 'MEDIA_TOO_LARGE') {
+        // Server-side cap hit after the local check was skipped — should be rare.
+        throw new Error(
+          'Video is too large to analyze. Try again — audio will be extracted locally on retry.',
+        )
+      }
       if (data?.error && !data.transcript) throw new Error(data.error)
 
       const transcript = (data?.transcript ?? '').trim()
@@ -89,7 +132,6 @@ export function NarrationReviewPanel({
     if (open && !result && !loading && !error) {
       void runReview()
     }
-    // Reset when closed.
     if (!open) {
       setResult(null)
       setError(null)
@@ -98,6 +140,10 @@ export function NarrationReviewPanel({
   }, [open])
 
   if (!open) return null
+
+  const loadingLabel = loadingStage === 'extracting'
+    ? 'Extracting audio from film…'
+    : 'Listening to the film narration…'
 
   return (
     <div
@@ -140,7 +186,7 @@ export function NarrationReviewPanel({
         {loading && (
           <div className="flex items-center gap-2.5 py-6 text-sm text-zinc-400">
             <Loader2 className="h-4 w-4 animate-spin shrink-0" aria-hidden="true" />
-            <span>Listening to the film narration…</span>
+            <span>{loadingLabel}</span>
           </div>
         )}
 
