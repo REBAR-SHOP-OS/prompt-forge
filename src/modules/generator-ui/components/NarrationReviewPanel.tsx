@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import { CheckCircle2, AlertCircle, Loader2, ScanText, RotateCcw, X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { CheckCircle2, AlertCircle, Loader2, ScanText, RotateCcw, X, Languages } from 'lucide-react'
 import { supabase } from '@/integrations/supabase/client'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 import { extractNarration } from '@/modules/generator-ui/lib/narration'
@@ -29,16 +29,30 @@ function fmtSec(s: number): string {
 type FnResponse = {
   transcript?: string
   words?: TimestampedWord[]
+  transcript_translated?: string
+  translate_to?: string
   error?: string
   code?: string
+  translations?: string[]
 }
 
 type ReviewBody =
-  | { videoUrl: string }
-  | { audioBase64: string; mimeType: 'audio/mpeg' }
+  | { videoUrl: string; translate_to?: string }
+  | { audioBase64: string; mimeType: 'audio/mpeg'; translate_to?: string }
 
 // Mirrors TranscriptPanel's LOCAL_AUDIO_THRESHOLD_BYTES.
 const LOCAL_AUDIO_THRESHOLD_BYTES = 10 * 1024 * 1024
+
+export const DISPLAY_LANGUAGES: { code: string; label: string; nativeLabel: string }[] = [
+  { code: 'English',          label: 'English',      nativeLabel: 'English' },
+  { code: 'Persian/Farsi',    label: 'Persian',      nativeLabel: 'فارسی' },
+  { code: 'Arabic',           label: 'Arabic',       nativeLabel: 'العربية' },
+  { code: 'Turkish',          label: 'Turkish',      nativeLabel: 'Türkçe' },
+  { code: 'Spanish',          label: 'Spanish',      nativeLabel: 'Español' },
+  { code: 'French',           label: 'French',       nativeLabel: 'Français' },
+  { code: 'German',           label: 'German',       nativeLabel: 'Deutsch' },
+  { code: 'Chinese',          label: 'Chinese',      nativeLabel: '中文' },
+]
 
 export function NarrationReviewPanel({
   open,
@@ -48,21 +62,75 @@ export function NarrationReviewPanel({
   prompt,
 }: NarrationReviewPanelProps) {
   const [loading, setLoading] = useState(false)
-  const [loadingStage, setLoadingStage] = useState<'transcribing' | 'extracting'>('transcribing')
+  const [loadingStage, setLoadingStage] = useState<'transcribing' | 'extracting' | 'translating'>('transcribing')
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<NarrationReviewResult | null>(null)
+  const [originalTranscript, setOriginalTranscript] = useState<string>('')
+
+  // Translation state
+  const [translateTo, setTranslateTo] = useState<string | null>(null)
+  const [translatedTexts, setTranslatedTexts] = useState<Map<string, string>>(new Map())
+  const [translating, setTranslating] = useState(false)
+  const [translationError, setTranslationError] = useState<string | null>(null)
+  // Ref to abort in-flight translation if language changes again
+  const translationAbortRef = useRef<AbortController | null>(null)
 
   const expectedLines = narrationText
     ? narrationText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
     : extractNarration(prompt)
 
+  // Collect all display strings that need translation for the current result.
+  function collectTranslatableTexts(r: NarrationReviewResult, oTranscript: string): string[] {
+    const texts: string[] = []
+    if (oTranscript) texts.push(oTranscript)
+    for (const issue of r.issues) {
+      if (issue.text) texts.push(issue.text)
+      if (issue.suggestion) texts.push(issue.suggestion)
+    }
+    return texts
+  }
+
+  async function applyTranslation(r: NarrationReviewResult, oTranscript: string, language: string) {
+    const texts = collectTranslatableTexts(r, oTranscript)
+    if (texts.length === 0) return
+
+    translationAbortRef.current?.abort()
+    const abort = new AbortController()
+    translationAbortRef.current = abort
+
+    setTranslating(true)
+    setTranslationError(null)
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke<FnResponse>(
+        'narration-review',
+        { body: { translate_texts: texts, target_language: language } },
+      )
+      if (abort.signal.aborted) return
+      if (fnError) throw new Error(fnError.message)
+      const translations = data?.translations
+      if (!Array.isArray(translations) || translations.length !== texts.length) {
+        throw new Error('Unexpected translation response')
+      }
+      const map = new Map<string, string>()
+      texts.forEach((orig, i) => { map.set(orig, translations[i]) })
+      setTranslatedTexts(map)
+    } catch (e) {
+      if (abort.signal.aborted) return
+      setTranslationError(e instanceof Error ? e.message : 'Translation failed.')
+    } finally {
+      if (!abort.signal.aborted) setTranslating(false)
+    }
+  }
+
   const runReview = useCallback(async () => {
     if (!videoStoragePath) {
       setResult({ status: 'no-video', issues: [], matchPercent: 0, transcript: '' })
+      setOriginalTranscript('')
       return
     }
     if (expectedLines.length === 0) {
       setResult({ status: 'no-narration', issues: [], matchPercent: 100, transcript: '' })
+      setOriginalTranscript('')
       return
     }
 
@@ -70,6 +138,8 @@ export function NarrationReviewPanel({
     setLoadingStage('transcribing')
     setError(null)
     setResult(null)
+    setOriginalTranscript('')
+    setTranslatedTexts(new Map())
 
     try {
       let fetchUrl = videoStoragePath
@@ -78,6 +148,7 @@ export function NarrationReviewPanel({
       // Mirror TranscriptPanel: pre-fetch blob to check size; extract audio locally
       // for large videos so the edge function never receives a payload > 18 MB.
       let body: ReviewBody = { videoUrl: fetchUrl }
+      if (translateTo) (body as ReviewBody & { translate_to?: string }).translate_to = translateTo
       let isLargeVideo = false
       try {
         const videoRes = await fetch(fetchUrl)
@@ -87,17 +158,15 @@ export function NarrationReviewPanel({
           isLargeVideo = true
           setLoadingStage('extracting')
           const audioBase64 = await extractAudioAsBase64(blob)
-          body = { audioBase64, mimeType: 'audio/mpeg' }
+          body = { audioBase64, mimeType: 'audio/mpeg', ...(translateTo ? { translate_to: translateTo } : {}) }
           setLoadingStage('transcribing')
         }
       } catch (e) {
         if (isLargeVideo) {
-          // Audio extraction failed — surface a clear message.
           throw new Error(
             `This video is too large to analyze directly. ${e instanceof Error ? e.message : 'Audio extraction failed.'}`,
           )
         }
-        // Size check failed (network issue) — fall through to URL path.
         console.warn('Could not inspect video size locally; using server URL path:', e)
       }
 
@@ -108,7 +177,6 @@ export function NarrationReviewPanel({
 
       if (fnError) throw new Error(fnError.message)
       if (data?.code === 'MEDIA_TOO_LARGE') {
-        // Server-side cap hit after the local check was skipped — should be rare.
         throw new Error(
           'Video is too large to analyze. Try again — audio will be extracted locally on retry.',
         )
@@ -120,13 +188,27 @@ export function NarrationReviewPanel({
 
       const reviewed = reviewNarration(expectedLines, words, transcript)
       setResult(reviewed)
+      setOriginalTranscript(transcript)
+
+      // If server already translated (translate_to passed in body) seed the map.
+      if (data?.transcript_translated && translateTo) {
+        const newMap = new Map<string, string>()
+        newMap.set(transcript, data.transcript_translated)
+        setTranslatedTexts(newMap)
+        // Still need to translate issue texts — kick off second-pass translation.
+        if (reviewed.issues.length > 0) {
+          void applyTranslation(reviewed, transcript, translateTo)
+        }
+      } else if (translateTo && transcript) {
+        void applyTranslation(reviewed, transcript, translateTo)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Review failed. Please try again.')
     } finally {
       setLoading(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [videoStoragePath, narrationText, prompt])
+  }, [videoStoragePath, narrationText, prompt, translateTo])
 
   useEffect(() => {
     if (open && !result && !loading && !error) {
@@ -135,15 +217,40 @@ export function NarrationReviewPanel({
     if (!open) {
       setResult(null)
       setError(null)
+      setOriginalTranscript('')
+      setTranslatedTexts(new Map())
+      setTranslationError(null)
+      setTranslateTo(null)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
+  // When the user changes translation language after a review already ran,
+  // trigger translation without re-transcribing.
+  const prevTranslateToRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!result || !open || loading) return
+    if (translateTo === prevTranslateToRef.current) return
+    prevTranslateToRef.current = translateTo
+    if (translateTo === null) {
+      setTranslatedTexts(new Map())
+      setTranslationError(null)
+      return
+    }
+    void applyTranslation(result, originalTranscript, translateTo)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [translateTo])
+
   if (!open) return null
 
-  const loadingLabel = loadingStage === 'extracting'
-    ? 'Extracting audio from film…'
+  const loadingLabel =
+    loadingStage === 'extracting' ? 'Extracting audio from film…'
+    : loadingStage === 'translating' ? 'Translating…'
     : 'Listening to the film narration…'
+
+  // Resolve display text: show translated version if available, else original.
+  const t = (orig: string | undefined) => (orig && translatedTexts.has(orig) ? translatedTexts.get(orig)! : orig ?? '')
+  const displayTranscript = t(originalTranscript)
 
   return (
     <div
@@ -164,6 +271,28 @@ export function NarrationReviewPanel({
         <div className="mb-4 flex items-center gap-2.5">
           <ScanText className="h-4 w-4 shrink-0 text-violet-300" aria-hidden="true" />
           <h2 className="flex-1 text-sm font-semibold text-zinc-100">Narration Review</h2>
+
+          {/* Language selector — visible once a review is done */}
+          {result && result.status !== 'no-video' && result.status !== 'no-narration' && (
+            <div className="relative flex items-center gap-1">
+              <Languages className="h-3 w-3 text-zinc-500 pointer-events-none" aria-hidden="true" />
+              <select
+                value={translateTo ?? ''}
+                onChange={(e) => setTranslateTo(e.target.value || null)}
+                aria-label="Display language"
+                className="appearance-none bg-transparent text-[11px] text-zinc-400 cursor-pointer hover:text-zinc-200 focus:outline-none pr-1"
+              >
+                <option value="">Original</option>
+                {DISPLAY_LANGUAGES.map((lang) => (
+                  <option key={lang.code} value={lang.code}>
+                    {lang.nativeLabel}
+                  </option>
+                ))}
+              </select>
+              {translating && <Loader2 className="h-3 w-3 animate-spin text-zinc-500" aria-hidden="true" />}
+            </div>
+          )}
+
           <button
             type="button"
             onClick={onClose}
@@ -205,6 +334,13 @@ export function NarrationReviewPanel({
               <RotateCcw className="h-3 w-3" aria-hidden="true" />
               Retry
             </button>
+          </div>
+        )}
+
+        {/* Translation error (non-fatal) */}
+        {!loading && !error && translationError && (
+          <div className="mb-3 rounded-lg border border-amber-300/20 bg-amber-300/[0.06] p-2.5 text-[11px] text-amber-200">
+            Translation unavailable: {translationError}
           </div>
         )}
 
@@ -259,16 +395,18 @@ export function NarrationReviewPanel({
                           {fmtSec(issue.startSeconds)} – {fmtSec(issue.endSeconds)}
                         </span>
                         {issue.text ? (
-                          <span className="truncate text-[11px] italic text-zinc-400">"{issue.text}"</span>
+                          <span className="truncate text-[11px] italic text-zinc-400">
+                            "{t(issue.text)}"
+                          </span>
                         ) : null}
                       </div>
-                      {/* Problem */}
+                      {/* Problem description (always in original — contains cited words) */}
                       <p className="text-xs leading-5 text-amber-100">{issue.problem}</p>
                       {/* Suggestion */}
                       {issue.suggestion ? (
                         <p className="text-[11px] text-zinc-400">
                           <span className="font-medium text-zinc-300">Should be: </span>
-                          <span className="italic">"{issue.suggestion}"</span>
+                          <span className="italic">"{t(issue.suggestion)}"</span>
                         </p>
                       ) : null}
                     </li>
@@ -287,13 +425,13 @@ export function NarrationReviewPanel({
             )}
 
             {/* Transcript footer */}
-            {result.transcript ? (
+            {displayTranscript ? (
               <details className="group mt-2">
                 <summary className="cursor-pointer text-[10px] font-medium uppercase tracking-widest text-zinc-600 transition hover:text-zinc-400 select-none">
-                  On-film transcript ▾
+                  On-film transcript{translateTo ? ` (${translateTo})` : ''} ▾
                 </summary>
                 <p className="mt-1.5 rounded-lg border border-white/10 bg-white/[0.03] p-2.5 text-[11px] leading-5 text-zinc-400">
-                  {result.transcript}
+                  {displayTranscript}
                 </p>
               </details>
             ) : null}
