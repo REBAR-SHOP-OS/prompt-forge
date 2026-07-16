@@ -5,7 +5,11 @@ import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 import { extractNarration } from '@/modules/generator-ui/lib/narration'
 import { extractAudioAsBase64 } from '@/modules/generator-ui/lib/extractAudio'
 import {
+  collectReviewTranslationTexts,
+  formatNarrationTimestamp,
   reviewNarration,
+  reviewVerdictDetail,
+  reviewVerdictTitle,
   type NarrationReviewResult,
   type TimestampedWord,
 } from '@/modules/generator-ui/lib/narrationReview'
@@ -17,13 +21,6 @@ export interface NarrationReviewPanelProps {
   /** Authoritative narration lines (one per newline). Overrides extraction from prompt. */
   narrationText: string | null
   prompt: string | null
-}
-
-function fmtSec(s: number): string {
-  if (!Number.isFinite(s) || s < 0) return '0:00'
-  const m = Math.floor(s / 60)
-  const sec = Math.floor(s % 60)
-  return `${m}:${sec.toString().padStart(2, '0')}`
 }
 
 type FnResponse = {
@@ -42,8 +39,28 @@ type ReviewBody =
 
 // Mirrors TranscriptPanel's LOCAL_AUDIO_THRESHOLD_BYTES.
 const LOCAL_AUDIO_THRESHOLD_BYTES = 10 * 1024 * 1024
+const TRANSLATION_BATCH_SIZE = 40
 
-export const DISPLAY_LANGUAGES: { code: string; label: string; nativeLabel: string }[] = [
+async function edgeFunctionErrorMessage(error: unknown, fallback: string): Promise<string> {
+  try {
+    const context = (error as { context?: { json?: () => Promise<unknown>; text?: () => Promise<string> } })?.context
+    if (context && typeof context.json === 'function') {
+      const body = await context.json() as { error?: string } | null
+      if (body?.error) return body.error
+    }
+    if (context && typeof context.text === 'function') {
+      const text = await context.text()
+      try {
+        const body = JSON.parse(text) as { error?: string }
+        if (body?.error) return body.error
+      } catch { /* response was not JSON */ }
+      if (text) return text
+    }
+  } catch { /* use the SDK error below */ }
+  return error instanceof Error && error.message ? error.message : fallback
+}
+
+const DISPLAY_LANGUAGES: { code: string; label: string; nativeLabel: string }[] = [
   { code: 'English',          label: 'English',      nativeLabel: 'English' },
   { code: 'Persian/Farsi',    label: 'Persian',      nativeLabel: 'فارسی' },
   { code: 'Arabic',           label: 'Arabic',       nativeLabel: 'العربية' },
@@ -78,20 +95,10 @@ export function NarrationReviewPanel({
   const expectedLines = narrationText
     ? narrationText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
     : extractNarration(prompt)
-
-  // Collect all display strings that need translation for the current result.
-  function collectTranslatableTexts(r: NarrationReviewResult, oTranscript: string): string[] {
-    const texts: string[] = []
-    if (oTranscript) texts.push(oTranscript)
-    for (const issue of r.issues) {
-      if (issue.text) texts.push(issue.text)
-      if (issue.suggestion) texts.push(issue.suggestion)
-    }
-    return texts
-  }
+  const expectedNarration = expectedLines.join(' ')
 
   async function applyTranslation(r: NarrationReviewResult, oTranscript: string, language: string) {
-    const texts = collectTranslatableTexts(r, oTranscript)
+    const texts = collectReviewTranslationTexts(r, oTranscript, expectedNarration)
     if (texts.length === 0) return
 
     translationAbortRef.current?.abort()
@@ -101,18 +108,21 @@ export function NarrationReviewPanel({
     setTranslating(true)
     setTranslationError(null)
     try {
-      const { data, error: fnError } = await supabase.functions.invoke<FnResponse>(
-        'narration-review',
-        { body: { translate_texts: texts, target_language: language } },
-      )
-      if (abort.signal.aborted) return
-      if (fnError) throw new Error(fnError.message)
-      const translations = data?.translations
-      if (!Array.isArray(translations) || translations.length !== texts.length) {
-        throw new Error('Unexpected translation response')
-      }
       const map = new Map<string, string>()
-      texts.forEach((orig, i) => { map.set(orig, translations[i]) })
+      for (let offset = 0; offset < texts.length; offset += TRANSLATION_BATCH_SIZE) {
+        const batch = texts.slice(offset, offset + TRANSLATION_BATCH_SIZE)
+        const { data, error: fnError } = await supabase.functions.invoke<FnResponse>(
+          'narration-review',
+          { body: { translate_texts: batch, target_language: language } },
+        )
+        if (abort.signal.aborted) return
+        if (fnError) throw new Error(await edgeFunctionErrorMessage(fnError, 'Translation failed.'))
+        const translations = data?.translations
+        if (!Array.isArray(translations) || translations.length !== batch.length) {
+          throw new Error('Unexpected translation response')
+        }
+        batch.forEach((original, index) => { map.set(original, translations[index]) })
+      }
       setTranslatedTexts(map)
     } catch (e) {
       if (abort.signal.aborted) return
@@ -128,12 +138,6 @@ export function NarrationReviewPanel({
       setOriginalTranscript('')
       return
     }
-    if (expectedLines.length === 0) {
-      setResult({ status: 'no-narration', issues: [], matchPercent: 100, transcript: '' })
-      setOriginalTranscript('')
-      return
-    }
-
     setLoading(true)
     setLoadingStage('transcribing')
     setError(null)
@@ -175,13 +179,13 @@ export function NarrationReviewPanel({
         { body },
       )
 
-      if (fnError) throw new Error(fnError.message)
+      if (fnError) throw new Error(await edgeFunctionErrorMessage(fnError, 'Narration review failed.'))
       if (data?.code === 'MEDIA_TOO_LARGE') {
         throw new Error(
           'Video is too large to analyze. Try again — audio will be extracted locally on retry.',
         )
       }
-      if (data?.error && !data.transcript) throw new Error(data.error)
+      if (data?.error && data.code !== 'NO_SPEECH' && !data.transcript) throw new Error(data.error)
 
       const transcript = (data?.transcript ?? '').trim()
       const words: TimestampedWord[] = Array.isArray(data?.words) ? data!.words : []
@@ -251,6 +255,8 @@ export function NarrationReviewPanel({
   // Resolve display text: show translated version if available, else original.
   const t = (orig: string | undefined) => (orig && translatedTexts.has(orig) ? translatedTexts.get(orig)! : orig ?? '')
   const displayTranscript = t(originalTranscript)
+  const verdictTitle = result ? t(reviewVerdictTitle(result)) : ''
+  const verdictDetail = result ? t(reviewVerdictDetail(result)) : ''
 
   return (
     <div
@@ -273,7 +279,7 @@ export function NarrationReviewPanel({
           <h2 className="flex-1 text-sm font-semibold text-zinc-100">Narration Review</h2>
 
           {/* Language selector — visible once a review is done */}
-          {result && result.status !== 'no-video' && result.status !== 'no-narration' && (
+          {result && result.status !== 'no-video' && (
             <div className="relative flex items-center gap-1">
               <Languages className="h-3 w-3 text-zinc-500 pointer-events-none" aria-hidden="true" />
               <select
@@ -306,8 +312,8 @@ export function NarrationReviewPanel({
         {/* Expected narration */}
         {expectedLines.length > 0 && (
           <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Expected narration</p>
-            <p className="text-xs leading-5 text-zinc-300">{expectedLines.join(' ')}</p>
+            <p dir="auto" className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">{t('Expected narration')}</p>
+            <p dir="auto" className="text-xs leading-5 text-zinc-300">{t(expectedNarration)}</p>
           </div>
         )}
 
@@ -352,13 +358,22 @@ export function NarrationReviewPanel({
             )}
 
             {result.status === 'no-narration' && (
-              <p className="text-xs text-zinc-500">No narration found in this project's prompt. Narration lines appear here when the scene includes spoken dialogue or a narration line.</p>
+              <div className="flex items-start gap-2.5 rounded-xl border border-amber-300/20 bg-amber-300/[0.06] p-3">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" />
+                <div>
+                  <p dir="auto" className="text-xs font-semibold text-amber-200">{verdictTitle}</p>
+                  <p dir="auto" className="mt-0.5 text-[11px] leading-5 text-amber-300/80">{verdictDetail}</p>
+                </div>
+              </div>
             )}
 
             {result.status === 'no-speech' && (
               <div className="flex items-start gap-2.5 rounded-xl border border-amber-300/20 bg-amber-300/[0.06] p-3">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" />
-                <p className="text-xs leading-5 text-amber-200">No speech was detected in this film. Make sure the video has an audio track with spoken narration.</p>
+                <div>
+                  <p dir="auto" className="text-xs font-semibold text-amber-200">{verdictTitle}</p>
+                  <p dir="auto" className="mt-0.5 text-[11px] leading-5 text-amber-300/80">{verdictDetail}</p>
+                </div>
               </div>
             )}
 
@@ -366,10 +381,8 @@ export function NarrationReviewPanel({
               <div className="flex items-start gap-2.5 rounded-xl border border-emerald-300/20 bg-emerald-300/[0.06] p-3">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" aria-hidden="true" />
                 <div>
-                  <p className="text-xs font-semibold text-emerald-200">Narration looks good</p>
-                  <p className="mt-0.5 text-[11px] text-emerald-300/70">
-                    {result.matchPercent}% match — no significant problems detected.
-                  </p>
+                  <p dir="auto" className="text-xs font-semibold text-emerald-200">{verdictTitle}</p>
+                  <p dir="auto" className="mt-0.5 text-[11px] text-emerald-300/70">{verdictDetail}</p>
                 </div>
               </div>
             )}
@@ -378,8 +391,8 @@ export function NarrationReviewPanel({
               <div className="space-y-2.5">
                 <div className="flex items-center gap-2">
                   <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-300" aria-hidden="true" />
-                  <p className="text-[11px] font-semibold text-amber-200">
-                    {result.issues.length} issue{result.issues.length !== 1 ? 's' : ''} found · {result.matchPercent}% match
+                  <p dir="auto" className="text-[11px] font-semibold text-amber-200">
+                    {verdictTitle}: {verdictDetail}
                   </p>
                 </div>
 
@@ -392,20 +405,25 @@ export function NarrationReviewPanel({
                       {/* Time range badge */}
                       <div className="flex items-center gap-2">
                         <span className="inline-flex items-center rounded-md bg-white/[0.06] px-2 py-0.5 font-mono text-[10px] text-zinc-300 tabular-nums">
-                          {fmtSec(issue.startSeconds)} – {fmtSec(issue.endSeconds)}
+                          {formatNarrationTimestamp(issue.startSeconds)} – {formatNarrationTimestamp(issue.endSeconds)}
                         </span>
                         {issue.text ? (
-                          <span className="truncate text-[11px] italic text-zinc-400">
-                            "{t(issue.text)}"
+                          <span dir="auto" className="truncate text-[11px] italic text-zinc-400">
+                            {t('Spoken')}: "{issue.text}"
+                            {translateTo && t(issue.text) !== issue.text ? (
+                              <> · {t('Translation')}: "{t(issue.text)}"</>
+                            ) : null}
                           </span>
-                        ) : null}
+                        ) : (
+                          <span dir="auto" className="text-[11px] italic text-zinc-500">{t('Spoken')}: {t('No words')}</span>
+                        )}
                       </div>
-                      {/* Problem description (always in original — contains cited words) */}
-                      <p className="text-xs leading-5 text-amber-100">{issue.problem}</p>
+                      {/* Problem description */}
+                      <p dir="auto" className="text-xs leading-5 text-amber-100">{t(issue.problem)}</p>
                       {/* Suggestion */}
                       {issue.suggestion ? (
                         <p className="text-[11px] text-zinc-400">
-                          <span className="font-medium text-zinc-300">Should be: </span>
+                          <span dir="auto" className="font-medium text-zinc-300">{t('Should be')}: </span>
                           <span className="italic">"{t(issue.suggestion)}"</span>
                         </p>
                       ) : null}
@@ -428,9 +446,9 @@ export function NarrationReviewPanel({
             {displayTranscript ? (
               <details className="group mt-2">
                 <summary className="cursor-pointer text-[10px] font-medium uppercase tracking-widest text-zinc-600 transition hover:text-zinc-400 select-none">
-                  On-film transcript{translateTo ? ` (${translateTo})` : ''} ▾
+                  {t('On-film transcript')}{translateTo ? ` (${translateTo})` : ''} ▾
                 </summary>
-                <p className="mt-1.5 rounded-lg border border-white/10 bg-white/[0.03] p-2.5 text-[11px] leading-5 text-zinc-400">
+                <p dir="auto" className="mt-1.5 rounded-lg border border-white/10 bg-white/[0.03] p-2.5 text-[11px] leading-5 text-zinc-400">
                   {displayTranscript}
                 </p>
               </details>

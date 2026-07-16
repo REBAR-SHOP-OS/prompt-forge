@@ -1,11 +1,26 @@
 import { describe, it, expect } from 'vitest'
-import { reviewNarration, type TimestampedWord } from './narrationReview'
+import panelSource from '../components/NarrationReviewPanel.tsx?raw'
+import dashboardSource from '../pages/DashboardPage.tsx?raw'
+import edgeSource from '../../../../supabase/functions/narration-review/index.ts?raw'
+import {
+  collectReviewTranslationTexts,
+  formatNarrationTimestamp,
+  reviewNarration,
+  reviewVerdictDetail,
+  reviewVerdictTitle,
+  type TimestampedWord,
+} from './narrationReview'
 
 function w(word: string, start: number, end: number): TimestampedWord {
   return { word, start, end }
 }
 
 describe('reviewNarration', () => {
+  it('formats exact word timestamps to hundredths of a second', () => {
+    expect(formatNarrationTimestamp(65.432)).toBe('1:05.43')
+    expect(formatNarrationTimestamp(0.7)).toBe('0:00.70')
+  })
+
   it('returns pass when transcript matches expected well', () => {
     const words = [w('Hello', 0, 0.4), w('world', 0.5, 0.9), w('today', 1.0, 1.4)]
     const result = reviewNarration(['Hello world today'], words, 'Hello world today')
@@ -39,9 +54,33 @@ describe('reviewNarration', () => {
     expect(result.issues.length).toBeGreaterThan(0)
     // The issue should reference the "store" vs "shop" mismatch
     const issue = result.issues[0]
-    expect(issue.startSeconds).toBeGreaterThanOrEqual(0)
-    expect(issue.endSeconds).toBeGreaterThan(issue.startSeconds)
-    expect(issue.problem).toBeTruthy()
+    expect(issue.startSeconds).toBe(0.7)
+    expect(issue.endSeconds).toBe(1)
+    expect(issue.text).toBe('shop')
+    expect(issue.problem).toContain('expected "store", got "shop"')
+  })
+
+  it('[regression] reports even one wrong word instead of passing at the former 80% threshold', () => {
+    const words = [
+      w('one', 0, 0.2), w('two', 0.3, 0.5), w('three', 0.6, 0.8),
+      w('four', 0.9, 1.1), w('five', 1.2, 1.4), w('WRONG', 1.5, 1.8),
+    ]
+    const result = reviewNarration(['one two three four five six'], words, 'one two three four five WRONG')
+    expect(result.matchPercent).toBeGreaterThanOrEqual(80)
+    expect(result.status).toBe('issues')
+    expect(result.issues[0]).toMatchObject({ startSeconds: 1.5, endSeconds: 1.8, text: 'WRONG' })
+  })
+
+  it('[regression] locates an omitted word at the surrounding timestamp gap', () => {
+    const words = [w('hello', 0, 0.4), w('world', 1, 1.4)]
+    const result = reviewNarration(['hello missing world'], words, 'hello world')
+    expect(result.status).toBe('issues')
+    expect(result.issues[0]).toMatchObject({
+      startSeconds: 0.4,
+      endSeconds: 1,
+      text: '',
+      suggestion: 'missing',
+    })
   })
 
   it('catches extra speech not in expected narration', () => {
@@ -187,6 +226,44 @@ describe('reviewNarration', () => {
   })
 })
 
+describe('complete translated review content', () => {
+  it('collects verdict, expected narration, transcript, and every mismatch field once', () => {
+    const result = reviewNarration(
+      ['Order free delivery'],
+      [w('Order', 0, 0.4), w('fast', 0.5, 0.8), w('shipping', 0.9, 1.2)],
+      'Order fast shipping',
+    )
+    const texts = collectReviewTranslationTexts(result, result.transcript, 'Order free delivery')
+    expect(texts).toContain(reviewVerdictTitle(result))
+    expect(texts).toContain(reviewVerdictDetail(result))
+    expect(texts).toContain('Order free delivery')
+    expect(texts).toContain('Order fast shipping')
+    expect(texts).toContain(result.issues[0].problem)
+    expect(texts).toContain(result.issues[0].text)
+    expect(new Set(texts).size).toBe(texts.length)
+  })
+})
+
+describe('final-film narration review integration contracts', () => {
+  it('always transcribes available final media even when expected narration is unavailable', () => {
+    const start = panelSource.indexOf('const runReview')
+    const runReview = panelSource.slice(start, panelSource.indexOf('useEffect(() =>', start))
+    expect(runReview).toContain('supabase.functions.invoke<FnResponse>')
+    expect(runReview).not.toContain('expectedLines.length === 0')
+  })
+
+  it('persists merged narration and retains a legacy source-clip fallback', () => {
+    expect(dashboardSource).toContain('narration_text: aggregatedNarrationText')
+    expect(dashboardSource).toContain('(projectSourceJobs[video.id] ?? [])')
+    expect(dashboardSource).toContain('.map((j) => j.narration_text)')
+  })
+
+  it('returns no-speech as a review result instead of an invocation error', () => {
+    expect(edgeSource).toContain("code: 'NO_SPEECH'")
+    expect(panelSource).toContain("data.code !== 'NO_SPEECH'")
+  })
+})
+
 // ── Translation helper logic (pure/unit-testable) ────────────────────────────
 
 describe('translation text resolution', () => {
@@ -209,29 +286,6 @@ describe('translation text resolution', () => {
     const t = (orig: string | undefined) =>
       (orig && map.has(orig) ? map.get(orig)! : orig ?? '')
     expect(t(undefined)).toBe('')
-  })
-
-  it('collects all unique translatable texts from a review result', () => {
-    // Mirrors collectTranslatableTexts logic in NarrationReviewPanel
-    function collectTranslatableTexts(transcript: string, issues: { text: string; suggestion?: string }[]) {
-      const texts: string[] = []
-      if (transcript) texts.push(transcript)
-      for (const issue of issues) {
-        if (issue.text) texts.push(issue.text)
-        if (issue.suggestion) texts.push(issue.suggestion)
-      }
-      return texts
-    }
-
-    const transcript = 'fast shipping'
-    const issues = [
-      { text: 'fast shipping', suggestion: 'free delivery' },
-    ]
-    const texts = collectTranslatableTexts(transcript, issues)
-    // transcript + issue.text + issue.suggestion = 3 strings (note: 'fast shipping' appears twice as distinct strings)
-    expect(texts).toContain('fast shipping')
-    expect(texts).toContain('free delivery')
-    expect(texts.length).toBe(3)
   })
 
   it('handles translation error gracefully — original text preserved in fallback', () => {

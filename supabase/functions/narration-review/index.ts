@@ -237,7 +237,9 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: 'Invalid audioBase64 payload.' }, 400)
       }
       contentType = mimeType ?? 'audio/wav'
-      videoBytes = new Blob([bytes], { type: contentType })
+      const audioBuffer = new ArrayBuffer(bytes.byteLength)
+      new Uint8Array(audioBuffer).set(bytes)
+      videoBytes = new Blob([audioBuffer], { type: contentType })
       sourceUrl = `audio.${contentType.includes('mp3') || contentType.includes('mpeg') ? 'mp3' : contentType.includes('webm') ? 'webm' : contentType.includes('mp4') || contentType.includes('m4a') ? 'm4a' : 'wav'}`
       if (videoBytes.size < 1024) return jsonResponse({ error: 'Audio is too small to transcribe.' }, 400)
       if (videoBytes.size > MAX_AUDIO_DECODED_BYTES) {
@@ -286,14 +288,21 @@ Deno.serve(async (req) => {
       for (const chunk of chunks) { merged.set(chunk, offset); offset += chunk.byteLength }
 
       contentType = videoRes.headers.get('content-type')
-      videoBytes = new Blob([merged], { type: contentType ?? 'video/mp4' })
+      const videoBuffer = new ArrayBuffer(merged.byteLength)
+      new Uint8Array(videoBuffer).set(merged)
+      videoBytes = new Blob([videoBuffer], { type: contentType ?? 'video/mp4' })
       if (videoBytes.size < 1024) return jsonResponse({ error: 'Video file is empty or too small.' }, 400)
     }
 
     const { transcript, words } = await transcribeWithTimestamps(apiKey, videoBytes, sourceUrl, contentType)
 
     if (!transcript) {
-      return jsonResponse({ transcript: '', words: [], error: 'No speech detected in this film.' })
+      return jsonResponse({
+        transcript: '',
+        words: [],
+        code: 'NO_SPEECH',
+        error: 'No speech detected in this film.',
+      })
     }
 
     // Optional: translate the transcript for display. Alignment always uses
