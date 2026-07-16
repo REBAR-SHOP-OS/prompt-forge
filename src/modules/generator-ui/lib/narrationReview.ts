@@ -29,6 +29,17 @@ export type NarrationReviewResult = {
   transcript: string
 }
 
+/** Preserve Whisper's timing precision in the UI (minutes:seconds.hundredths). */
+export function formatNarrationTimestamp(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00.00'
+  const totalHundredths = Math.round(seconds * 100)
+  const minutes = Math.floor(totalHundredths / 6000)
+  const remainder = totalHundredths % 6000
+  const wholeSeconds = Math.floor(remainder / 100)
+  const hundredths = remainder % 100
+  return `${minutes}:${wholeSeconds.toString().padStart(2, '0')}.${hundredths.toString().padStart(2, '0')}`
+}
+
 // Tokenize keeping both the display text and a normalized key.
 function tokenize(text: string): { raw: string; norm: string }[] {
   return (text ?? '')
@@ -110,10 +121,24 @@ function groupToIssues(
     const extraWords    = extraSlots.map((s) => s.word.word)
     const timestampedWords = extraSlots.map((s) => s.word)
 
-    const startSeconds = timestampedWords.length > 0 ? timestampedWords[0].start : firstTs
-    const endSeconds   = timestampedWords.length > 0
+    // When words were spoken, Whisper's word timestamps give the exact range.
+    // For missing-only runs there is no spoken word to timestamp, so locate the
+    // omission at the gap between the surrounding matched words instead of
+    // misleadingly marking the entire film.
+    const previousMatch = runStart > 0 && slots[runStart - 1]?.kind === 'match'
+      ? slots[runStart - 1] as Extract<AlignedSlot, { kind: 'match' }>
+      : null
+    const nextIndex = runStart + run.length
+    const nextMatch = nextIndex < slots.length && slots[nextIndex]?.kind === 'match'
+      ? slots[nextIndex] as Extract<AlignedSlot, { kind: 'match' }>
+      : null
+
+    const startSeconds = timestampedWords.length > 0
+      ? timestampedWords[0].start
+      : previousMatch?.word.end ?? firstTs
+    const endSeconds = timestampedWords.length > 0
       ? timestampedWords[timestampedWords.length - 1].end
-      : lastTs
+      : nextMatch?.word.start ?? previousMatch?.word.end ?? lastTs
 
     const spokenText   = extraWords.join(' ')
 
@@ -186,10 +211,63 @@ export function reviewNarration(
   const denom = 2 * matched + mismatched
   const matchPercent = denom === 0 ? 100 : Math.round((2 * matched / denom) * 100)
 
-  if (matchPercent >= 80) {
+  // A verdict of "correct" means every normalized word matched. Case and
+  // punctuation are intentionally ignored, but even one missing, extra, or
+  // substituted spoken word must be reported to the user.
+  if (mismatched === 0) {
     return { status: 'pass', issues: [], matchPercent, transcript }
   }
 
   const issues = groupToIssues(slots, transcriptWords)
   return { status: 'issues', issues, matchPercent, transcript }
+}
+
+export function reviewVerdictTitle(result: NarrationReviewResult): string {
+  if (result.status === 'pass') return 'Correct narration'
+  if (result.status === 'issues') return 'Incorrect narration'
+  if (result.status === 'no-speech') return 'Incorrect narration: no speech detected'
+  if (result.status === 'no-narration') return 'Unable to verify narration'
+  return 'Unable to review narration'
+}
+
+export function reviewVerdictDetail(result: NarrationReviewResult): string {
+  if (result.status === 'pass') return `${result.matchPercent}% match. No narration differences found.`
+  if (result.status === 'issues') {
+    return `${result.issues.length} narration ${result.issues.length === 1 ? 'issue' : 'issues'} found. ${result.matchPercent}% match.`
+  }
+  if (result.status === 'no-speech') return 'No speech was detected in the final film.'
+  if (result.status === 'no-narration') {
+    return 'The final film was transcribed, but no expected narration was saved, so correctness cannot be verified.'
+  }
+  return 'No final film is available to review.'
+}
+
+/** All dynamic review content that should follow the user's display language. */
+export function collectReviewTranslationTexts(
+  result: NarrationReviewResult,
+  transcript: string,
+  expectedNarration: string,
+): string[] {
+  const texts = new Set<string>()
+  const add = (value: string | undefined) => {
+    const clean = value?.trim()
+    if (clean) texts.add(clean)
+  }
+
+  add(reviewVerdictTitle(result))
+  add(reviewVerdictDetail(result))
+  add('Expected narration')
+  add('Spoken')
+  add('No words')
+  add('Should be')
+  add('Translation')
+  add('On-film transcript')
+  add(expectedNarration)
+  add(transcript)
+  for (const issue of result.issues) {
+    add(issue.problem)
+    add(issue.text)
+    add(issue.suggestion)
+  }
+  return [...texts]
 }

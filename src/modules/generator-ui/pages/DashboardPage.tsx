@@ -8069,9 +8069,17 @@ export default function DashboardPage() {
       // saved library cards.
       const mergedId = `merged-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
       const nowIso = new Date().toISOString()
+      // Aggregate narration from source clips (in merge order) so the narration-review
+      // panel can find the expected narration on this merged entry without querying clips.
+      const aggregatedNarrationText = eligibleClips
+        .filter((c): c is Extract<UnifiedClip, { kind: 'video' }> => c.kind === 'video')
+        .map((c) => c.job.narration_text)
+        .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
+        .join('\n') || null
       const libraryEntry: JobDetail = {
         id: mergedId,
         status: 'completed',
+        narration_text: aggregatedNarrationText,
         input_prompt: `Final Film (${mergeClips.length} clip${mergeClips.length === 1 ? '' : 's'})`,
         provider_key: 'final-film',
         model_key: 'merge',
@@ -11780,7 +11788,15 @@ export default function DashboardPage() {
                               setNarrationReview({
                                 cardId: video.id,
                                 storagePath: video.video?.storage_path ?? '',
-                                narrationText: video.narration_text ?? null,
+                                // narration_text is set on new merged entries at merge time.
+                                // For legacy Final films already saved to localStorage without
+                                // narration_text, fall back to aggregating from source clips.
+                                narrationText:
+                                  video.narration_text ??
+                                  ((projectSourceJobs[video.id] ?? [])
+                                    .map((j) => j.narration_text)
+                                    .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
+                                    .join('\n') || null),
                                 prompt: video.input_prompt ?? null,
                               })
                             }}
