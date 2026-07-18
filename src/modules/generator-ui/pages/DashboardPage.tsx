@@ -10156,6 +10156,7 @@ export default function DashboardPage() {
             setUploadTarget('Start')
             await handleUseImageAsStart(imageUrl)
           }
+          await submitScenesAsJobs(scenes, imageUrl ?? undefined)
         }}
       />
 
@@ -10222,6 +10223,7 @@ export default function DashboardPage() {
             setUploadTarget('Start')
             await stageProductAdStartFrame(imageUrl, handleUseImageAsStart)
           }
+          await submitScenesAsJobs(scenes, imageUrl ?? undefined)
         }}
       />
 
