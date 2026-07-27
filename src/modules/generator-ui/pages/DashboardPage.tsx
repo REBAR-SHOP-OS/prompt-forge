@@ -10250,7 +10250,11 @@ export default function DashboardPage() {
 
 
       <Dialog open={isMusicDialogOpen} onOpenChange={setIsMusicDialogOpen}>
-        <DialogContent className="border-white/10 bg-black text-zinc-100 sm:max-w-md">
+        {/* max-h + scroll: this dialog is taller than short viewports; without
+            it the fixed-centered panel clips top/bottom and content can render
+            past the panel border. overflow-x-hidden keeps any over-wide child
+            (e.g. the waveform) clipped inside the rounded frame. */}
+        <DialogContent className="max-h-[85vh] overflow-y-auto overflow-x-hidden border-white/10 bg-black text-zinc-100 sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Soundtrack for Final Film</DialogTitle>
             <DialogDescription>
