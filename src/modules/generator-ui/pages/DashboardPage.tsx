@@ -1112,6 +1112,9 @@ export default function DashboardPage() {
   const COPYRIGHT_LANGS: Array<{ value: string; label: string; rtl?: boolean }> = [
     { value: '', label: 'Original' },
     { value: 'en', label: 'English' },
+    // Per Radin (2026-07-28): Persian translation for the Copyright dialog.
+    // translate-text already supports `fa`; rtl flips the dialog body.
+    { value: 'fa', label: 'فارسی', rtl: true },
   ]
 
   // Translate every human-readable string in a CopyrightResult in one batched
