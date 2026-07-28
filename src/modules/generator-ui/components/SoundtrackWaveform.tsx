@@ -198,7 +198,7 @@ export const SoundtrackWaveform = forwardRef<SoundtrackWaveformHandle, Props>(
           className="w-full overflow-hidden rounded-md border border-white/10 bg-black/40 px-2 py-2"
           style={{ minHeight: height + 16 }}
         />
-        <div className="flex items-center justify-between gap-3 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
           <div className="flex items-center gap-2">
             <button
               type="button"
