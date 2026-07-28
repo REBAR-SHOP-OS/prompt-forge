@@ -316,6 +316,9 @@ type UserAudioItem = {
 
 
 const FRAMES_BUCKET = 'wan-frames'
+// Error name marking a continuity seed-frame capture failure — the scenario
+// chain treats it as degradable (scene continues unseeded) rather than fatal.
+const SEED_FRAME_ERROR = 'SeedFrameCaptureError'
 const MERGED_BUCKET = 'merged-videos'
 // Locked parent origin for the "Schedule to Social Media" hand-off. The Final
 // Film card posts to this exact origin in production (never "*") so the schedule
@@ -7081,31 +7084,37 @@ export default function DashboardPage() {
             : null
         if (serverLastFrame) return serverLastFrame
 
-        let proxied: string
-        try {
-          proxied = await proxiedVideoUrl(detail.video.storage_path)
-        } catch (err) {
-          console.error(`${sceneLabel}: proxiedVideoUrl failed`, err)
-          throw new Error(`${sceneLabel}: could not load previous clip (proxy)`)
+        // The proxy → canvas-capture → upload pipeline is network-sensitive and
+        // used to hard-fail the WHOLE scenario on the first transient hiccup
+        // (the recurring "scene 2 errors after scene 1" report). Retry the full
+        // pipeline before giving up; the caller downgrades a final failure to
+        // an unseeded scene instead of aborting the chain.
+        const SEED_ATTEMPTS = 3
+        let lastError: unknown = null
+        for (let attempt = 1; attempt <= SEED_ATTEMPTS; attempt++) {
+          try {
+            const proxied = await proxiedVideoUrl(detail.video.storage_path)
+            const blob = await captureLastFrameAsBlob(proxied)
+            const storagePath = `${userId}/scene-chain-${Date.now()}-${crypto.randomUUID()}.png`
+            const { error } = await supabase.storage
+              .from(FRAMES_BUCKET)
+              .upload(storagePath, blob, { contentType: 'image/png', upsert: false })
+            if (error) throw new Error(`could not upload seed frame (${error.message})`)
+            const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+            return data.publicUrl
+          } catch (err) {
+            lastError = err
+            console.error(`${sceneLabel}: seed-frame attempt ${attempt}/${SEED_ATTEMPTS} failed`, err)
+            if (attempt < SEED_ATTEMPTS) {
+              setVideoColumnMessage(`Retrying last-frame capture for ${sceneLabel} (${attempt + 1}/${SEED_ATTEMPTS})…`)
+              await new Promise((r) => setTimeout(r, 1500 * attempt))
+            }
+          }
         }
-        let blob: Blob
-        try {
-          blob = await captureLastFrameAsBlob(proxied)
-        } catch (err) {
-          console.error(`${sceneLabel}: captureLastFrameAsBlob failed`, err)
-          const reason = err instanceof Error ? err.message : 'unknown'
-          throw new Error(`${sceneLabel}: could not capture last frame (${reason})`)
-        }
-        const storagePath = `${userId}/scene-chain-${Date.now()}-${crypto.randomUUID()}.png`
-        const { error } = await supabase.storage
-          .from(FRAMES_BUCKET)
-          .upload(storagePath, blob, { contentType: 'image/png', upsert: false })
-        if (error) {
-          console.error(`${sceneLabel}: storage upload failed`, error)
-          throw new Error(`${sceneLabel}: could not upload seed frame (${error.message})`)
-        }
-        const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
-        return data.publicUrl
+        const reason = lastError instanceof Error ? lastError.message : 'unknown'
+        const seedError = new Error(`${sceneLabel}: could not capture last frame (${reason})`)
+        seedError.name = SEED_FRAME_ERROR
+        throw seedError
       }
       await new Promise((r) => setTimeout(r, intervalMs))
     }
@@ -7203,7 +7212,22 @@ export default function DashboardPage() {
             startFrameIsProductPhoto = Boolean(startFrameUrl)
           }
         } else if (previousJobId) {
-          startFrameUrl = await waitForLastFrameUrl(previousJobId, `Scene ${i}`)
+          try {
+            startFrameUrl = await waitForLastFrameUrl(previousJobId, `Scene ${i}`)
+          } catch (err) {
+            // Only seed-frame CAPTURE failures are degradable. A previous scene
+            // that failed/was removed/timed out still aborts the chain — those
+            // clips would not exist to continue from.
+            if (!(err instanceof Error && err.name === SEED_FRAME_ERROR)) throw err
+            console.error(`Scene ${i + 1}: continuing without continuity seed`, err)
+            // Fall back to the scenario's original start frame (or none). The
+            // character/product referenceImageUrls still anchor the subject, so
+            // one unseeded scene beats erroring the whole 30s/45s/135s scenario.
+            startFrameUrl = firstSceneImageUrl
+            setVideoColumnMessage(
+              `Scene ${i + 1}: previous frame could not be captured — continuing without it.`,
+            )
+          }
         }
         // Bake the pinned product into this scene's start frame so Wan reproduces
         // the exact product (it only conditions on the start frame). Skip when the
@@ -7265,6 +7289,16 @@ export default function DashboardPage() {
 
   async function captureLastFrameAsBlob(videoUrl: string): Promise<Blob> {
     return await new Promise((resolve, reject) => {
+      // Hard cap: a stalled metadata load or a never-firing seek used to hang
+      // the scenario chain forever on "Waiting for Scene N…". Fail instead so
+      // the retry/degrade path in waitForLastFrameUrl can take over.
+      const timer = setTimeout(() => reject(new Error('Timed out loading previous clip for continuation')), 30_000)
+      const settle = <T,>(fn: (value: T) => void) => (value: T) => {
+        clearTimeout(timer)
+        fn(value)
+      }
+      resolve = settle(resolve)
+      reject = settle(reject)
       const v = document.createElement('video')
       v.crossOrigin = 'anonymous'
       v.muted = true
