@@ -10299,7 +10299,7 @@ export default function DashboardPage() {
 
           <div className="space-y-4">
             <div className="rounded-md border border-white/10 bg-black/40 px-3 py-2 text-xs text-zinc-300">
-              <div className="truncate font-medium">{musicName ?? '—'}</div>
+              <div className="break-all font-medium">{musicName ?? '—'}</div>
               <div className="mt-0.5 text-zinc-500">
                 Duration: {formatTimeMS(musicDuration)}
               </div>
@@ -10325,7 +10325,7 @@ export default function DashboardPage() {
             )}
 
             {musicDuration > 0 ? (
-              <div className="flex items-center justify-between text-xs text-zinc-400">
+              <div className="flex flex-wrap items-center justify-between gap-x-2 text-xs text-zinc-400">
                 <span>Selection</span>
                 <span className="tabular-nums text-zinc-200">
                   {formatTimeMS(musicRange[0])} – {formatTimeMS(musicRange[1])}
@@ -10335,14 +10335,14 @@ export default function DashboardPage() {
 
             {/* Placement on the video timeline */}
             <div className="space-y-3 rounded-md border border-white/10 bg-black/40 p-3">
-              <div className="flex items-center justify-between text-xs text-zinc-300">
+              <div className="flex flex-wrap items-center justify-between gap-x-2 text-xs text-zinc-300">
                 <span className="font-medium">Play on video from … to</span>
                 <span className="tabular-nums text-zinc-200">
                   {formatTimeMS(musicTimeline[0])} – {formatTimeMS(musicTimeline[1] > musicTimeline[0] ? musicTimeline[1] : mergedDurationSec)}
                 </span>
               </div>
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                <div className="flex flex-wrap items-center justify-between gap-x-2 text-[11px] text-zinc-400">
                   <span>Start</span>
                   <span className="tabular-nums text-zinc-200">{formatTimeMS(musicTimeline[0])}</span>
                 </div>
@@ -10356,7 +10356,7 @@ export default function DashboardPage() {
                     setMusicTimeline([Math.max(0, s), musicTimeline[1] || mergedDurationSec])
                   }}
                 />
-                <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                <div className="flex flex-wrap items-center justify-between gap-x-2 text-[11px] text-zinc-400">
                   <span>End</span>
                   <span className="tabular-nums text-zinc-200">{formatTimeMS(musicTimeline[1] > musicTimeline[0] ? musicTimeline[1] : mergedDurationSec)}</span>
                 </div>
@@ -10390,7 +10390,7 @@ export default function DashboardPage() {
 
               <div className="space-y-3 pt-1">
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                  <div className="flex flex-wrap items-center justify-between gap-x-2 text-[11px] text-zinc-400">
                     <span>Clip audio</span>
                     <span className="tabular-nums text-zinc-200">{Math.round(clipVolume * 100)}%</span>
                   </div>
@@ -10403,7 +10403,7 @@ export default function DashboardPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                  <div className="flex flex-wrap items-center justify-between gap-x-2 text-[11px] text-zinc-400">
                     <span>Music</span>
                     <span className="tabular-nums text-zinc-200">{Math.round(musicVolume * 100)}%</span>
                   </div>
