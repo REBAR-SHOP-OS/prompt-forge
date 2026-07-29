@@ -3182,6 +3182,14 @@ export default function DashboardPage() {
     'recording' | 'encoding' | 'uploading' | 'finalizing' | null
   >(null)
   const mergeAbortRef = useRef<AbortController | null>(null)
+  // One-button "prompt + duration → auto multi-scene film" is running. Blocks a
+  // second run and disables the composer's Make Full Film button while active.
+  const [isAutoFilming, setIsAutoFilming] = useState(false)
+  // Always-fresh pointer to handleMergeAllVideos so the long-lived auto-film
+  // orchestrator (which starts minutes before the batch completes) invokes the
+  // LATEST closure — reading current generatedVideos/activeJobIds state — instead
+  // of a stale merge function captured when the orchestrator was first called.
+  const handleMergeAllVideosRef = useRef<() => Promise<void>>(() => Promise.resolve())
   // Transient preview of the latest Final Film output. Lives only in memory:
   // never added to Pending, Library, or History. Cleared on Start Over.
   const [lastMergedPreview, setLastMergedPreview] = useState<
@@ -7123,8 +7131,12 @@ export default function DashboardPage() {
     }
   }
 
-  async function submitScenesAsJobs(scenes: string[], firstSceneImageUrl?: string) {
-    if (!scenes || scenes.length === 0) return
+  async function submitScenesAsJobs(
+    scenes: string[],
+    firstSceneImageUrl?: string,
+    opts?: { perSceneImageUrls?: (string | undefined)[] },
+  ): Promise<string[]> {
+    if (!scenes || scenes.length === 0) return []
     if (!selectedModel) {
       const msg = 'Pick a model before sending scenes.'
       setComposerError(msg)
@@ -7170,9 +7182,20 @@ export default function DashboardPage() {
     }
     // When a character OR product is anchored, every scene must run on an I2V
     // model so the seeded start frame is actually used by the provider.
+    // When the caller pre-generated a dedicated start image for EVERY scene
+    // (one-button auto-film), every card is seeded from a real image, so the
+    // whole scenario must run on an I2V model even without a character/product.
+    const hasPerSceneImages = Boolean(
+      opts?.perSceneImageUrls && opts.perSceneImageUrls.some((u) => Boolean(u)),
+    )
     const scenarioModel =
-      continuityCharacterRef || selectedProduct ? toImageToVideoModel(selectedModel) : selectedModel
-    if (continuityCharacterRef || selectedProduct) setGenerationMode('image-to-video')
+      continuityCharacterRef || selectedProduct || hasPerSceneImages
+        ? toImageToVideoModel(selectedModel)
+        : selectedModel
+    if (continuityCharacterRef || selectedProduct || hasPerSceneImages) setGenerationMode('image-to-video')
+    // Job ids created in this batch, returned so an orchestrator can await the
+    // batch's completion (e.g. to auto-assemble the Final Film).
+    const createdJobIds: string[] = []
     try {
       for (let i = 0; i < scenes.length; i++) {
         const sourcePrompt = scenes[i].trim()
@@ -7192,7 +7215,14 @@ export default function DashboardPage() {
 
         let startFrameUrl: string | undefined
         let startFrameIsProductPhoto = false
-        if (i === 0) {
+        // Per-scene pre-generated start image (one-button auto-film): when the
+        // caller supplied this scene's own image, seed the card from it instead
+        // of the last-frame chain. Missing entries fall through to the existing
+        // behavior below, so this stays additive + backward compatible.
+        const perSceneImageUrl = opts?.perSceneImageUrls?.[i]
+        if (perSceneImageUrl) {
+          startFrameUrl = perSceneImageUrl
+        } else if (i === 0) {
           startFrameUrl = firstSceneImageUrl
           // No uploaded start frame but a character is anchored: build a clean
           // single-view start frame from the Character Sheet so card 1 locks onto
@@ -7267,8 +7297,10 @@ export default function DashboardPage() {
         markNewClip(seededJob.id)
         hydrateIfComplete(createdJob)
         previousJobId = seededJob.id
+        createdJobIds.push(seededJob.id)
       }
       setVideoColumnMessage(null)
+      return createdJobIds
     } catch (error) {
       if (error instanceof ApiError && error.code === 'TIMEOUT') {
         try {
@@ -7287,6 +7319,188 @@ export default function DashboardPage() {
       throw error
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  // Stage a generated image (data URL or remote URL) into the private
+  // wan-frames bucket and return a usable frame URL. The jobs-create validator
+  // only accepts firstFrameUrl under wan-frames/{userId}/, so every auto-film
+  // scene image must pass through here before it can seed a job. Mirrors the
+  // staging in handleUseImageAsStart / the AI-image save path.
+  async function stageImageIntoFramesBucket(imageUrl: string): Promise<string> {
+    const uid = session?.user?.id
+    if (!uid) throw new Error('Sign in before generating a film')
+    const res = await fetch(imageUrl)
+    if (!res.ok) throw new Error(`Could not read generated image (HTTP ${res.status})`)
+    const blob = await res.blob()
+    const storagePath = `${uid}/auto-film-${Date.now()}-${crypto.randomUUID()}.png`
+    const { error: upErr } = await supabase.storage
+      .from(FRAMES_BUCKET)
+      .upload(storagePath, blob, { contentType: blob.type || 'image/png', upsert: false })
+    if (upErr) throw new Error(upErr.message)
+    const { data } = supabase.storage.from(FRAMES_BUCKET).getPublicUrl(storagePath)
+    return await signFramesUrl(storagePath).catch(() => data.publicUrl)
+  }
+
+  // Poll the created jobs directly until every one reaches a terminal state,
+  // merging each finished detail into state so the subsequent Final Film merge
+  // sees the completed clips. Returns true when at least one clip completed with
+  // a playable video. Independent of the component's own poll loop (that loop
+  // also runs; both are idempotent reads).
+  async function waitForAutoFilmBatch(jobIds: string[]): Promise<boolean> {
+    const deadline = Date.now() + 45 * 60_000
+    const pending = new Set(jobIds)
+    let anyPlayable = false
+    while (pending.size > 0 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 5_000))
+      for (const id of Array.from(pending)) {
+        let detail: JobDetail
+        try {
+          detail = await jobOrchestratorGateway.getJob(id)
+        } catch {
+          continue // transient poll failure — retry on the next tick
+        }
+        if (!isTerminalStatus(detail.status)) continue
+        pending.delete(id)
+        setGeneratedVideos((cur) => mergeJob(cur, detail))
+        if (normalizeStatus(detail.status) === 'completed' && detail.video?.storage_path) {
+          anyPlayable = true
+        }
+      }
+    }
+    return anyPlayable && pending.size === 0
+  }
+
+  // One-button orchestrator: prompt + duration → unified scenario split into N
+  // sequential scenes → each scene gets its OWN generated start image → one
+  // video job per scene seeded by that image → await the whole batch → auto
+  // assemble the Final Film. No further clicks required.
+  async function autoGenerateFilm() {
+    if (isAutoFilming || isSubmitting || isMerging) return
+    const idea = promptText.trim()
+    if (!idea) {
+      setComposerError('Type a prompt first so I can write the film.')
+      return
+    }
+    if (!selectedModel) {
+      setComposerError('Pick a model before generating a film.')
+      return
+    }
+    setIsAutoFilming(true)
+    setComposerError(null)
+    setVideoColumnMessage('Writing your film scenario…')
+    // Per-scene start images are generated at the ratio the clips will use, so
+    // the seed frame matches the video (submitScenesAsJobs uses aspectRatio too).
+    const ratio: Ratio = aspectRatio
+    try {
+      // 1. One unified scenario split into N sequential 15s scenes.
+      // scenario-write hard-requires the saved business info (400 without it),
+      // so fetch it first, exactly like the product-ad caller does.
+      let businessInfo = ''
+      if (userId) {
+        const { data: profile } = await supabase
+          .from('generator_business_profiles')
+          .select('business_info')
+          .eq('user_id', userId)
+          .maybeSingle()
+        businessInfo = profile?.business_info?.trim() ?? ''
+      }
+      // How many 15s scenes this duration expects (mirrors scenario-write).
+      const expectedScenes =
+        durationSeconds === 135 ? 9 : durationSeconds === 45 ? 3 : durationSeconds === 30 ? 2 : 1
+      let scenes: string[] = []
+      if (businessInfo) {
+        try {
+          const { data, error } = await supabase.functions.invoke('scenario-write', {
+            body: { idea, durationSeconds, businessInfo },
+          })
+          if (error) throw error
+          const raw = (data as { scenes?: unknown } | null)?.scenes
+          if (Array.isArray(raw)) {
+            scenes = raw
+              .map((s) => (typeof s === 'string' ? s.trim() : ''))
+              .filter((s) => s.length > 0)
+          }
+        } catch (err) {
+          // Non-fatal: the film still renders from the prompt below. Only the
+          // per-scene scenario writing is lost, so degrade instead of aborting.
+          console.error('Auto-film: scenario-write failed, falling back to prompt', err)
+          setVideoColumnMessage('Could not write distinct scenes — building from your prompt…')
+        }
+      } else {
+        setVideoColumnMessage('Tip: add your business info for richer, distinct scenes.')
+      }
+      // Fallback (no business info, sub-30 duration, or a failed/empty split):
+      // build the expected number of scenes straight from the prompt so the film
+      // always has something to render.
+      if (scenes.length === 0) {
+        scenes = Array.from({ length: expectedScenes }, () => idea)
+      }
+      if (scenes.length === 1) {
+        setVideoColumnMessage('Short duration — building a single-scene film…')
+      }
+
+      // 2. Generate each scene's OWN start image, then stage it into wan-frames.
+      const perSceneImageUrls: (string | undefined)[] = []
+      for (let i = 0; i < scenes.length; i++) {
+        setVideoColumnMessage(`Designing the image for scene ${i + 1} of ${scenes.length}…`)
+        try {
+          // Optional polish: turn the scene text into a tighter image prompt.
+          let imagePrompt = scenes[i]
+          try {
+            const { data: pData, error: pErr } = await supabase.functions.invoke('write-image-prompt', {
+              body: { existingPrompt: scenes[i], themeDescriptor: '', themeLabel: '' },
+            })
+            if (!pErr) {
+              const written = (pData as { prompt?: unknown } | null)?.prompt
+              if (typeof written === 'string' && written.trim()) imagePrompt = written.trim()
+            }
+          } catch {
+            /* keep the raw scene text as the image prompt */
+          }
+          const { data: iData, error: iErr } = await supabase.functions.invoke('ai-image-generate', {
+            body: { prompt: imagePrompt, aspectRatio: ratio },
+          })
+          if (iErr) throw iErr
+          const dataUrl = (iData as { dataUrl?: unknown } | null)?.dataUrl
+          if (typeof dataUrl !== 'string' || !dataUrl) throw new Error('No image returned')
+          perSceneImageUrls.push(await stageImageIntoFramesBucket(dataUrl))
+        } catch (err) {
+          // One scene's image failing must not abort the whole film: leave the
+          // entry empty so submitScenesAsJobs falls back to the last-frame chain
+          // (or plain text-to-video) for that scene only. Surfaced to the log.
+          console.error(`Auto-film: scene ${i + 1} image generation failed`, err)
+          perSceneImageUrls.push(undefined)
+        }
+      }
+
+      // 3. One video job per scene, each seeded by its own generated image.
+      const createdJobIds = await submitScenesAsJobs(scenes, perSceneImageUrls[0], { perSceneImageUrls })
+      if (!createdJobIds || createdJobIds.length === 0) {
+        throw new Error('No scenes could be queued for the film.')
+      }
+      // Clear the composer prompt like the existing auto-split path does.
+      setPromptText('')
+
+      // 4. Wait for the whole batch, then auto-assemble the Final Film.
+      setVideoColumnMessage('Generating every scene… keep this tab open.')
+      const anyPlayable = await waitForAutoFilmBatch(createdJobIds)
+      if (!anyPlayable) {
+        setComposerError('The scenes did not finish rendering — please try again.')
+        setVideoColumnMessage('No scenes finished rendering. Nothing to assemble.')
+        return
+      }
+      // Let the just-merged job details settle into state (and the merge ref
+      // refresh) before assembling, so the merge sees the completed clips.
+      await new Promise((r) => setTimeout(r, 1_200))
+      setVideoColumnMessage('All scenes ready — assembling your final film…')
+      await handleMergeAllVideosRef.current()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Could not generate the film.'
+      setComposerError(msg)
+      setVideoColumnMessage(msg)
+    } finally {
+      setIsAutoFilming(false)
     }
   }
 
@@ -8407,6 +8621,13 @@ export default function DashboardPage() {
     }
 
   }
+
+  // Keep the merge ref pointing at the current-render closure so the auto-film
+  // orchestrator always merges with up-to-date state. No dep array: refreshes
+  // after every render, which is exactly when the closed-over state changes.
+  useEffect(() => {
+    handleMergeAllVideosRef.current = handleMergeAllVideos
+  })
 
   function resetWorkspace({ keepPreview }: { keepPreview: boolean }) {
     // Library cards (Final Film outputs in mergedEntries + approvedIds) are
@@ -9904,6 +10125,29 @@ export default function DashboardPage() {
 
       {!isReadOnlyProject && (
       <>
+      {/* One-button auto-film: prompt + duration → scenario → per-scene images →
+          per-scene video jobs → auto Final Film. Sits next to the Final Film
+          control in the composer header. */}
+      <button
+        type="button"
+        onClick={autoGenerateFilm}
+        disabled={isAutoFilming || isSubmitting || isMerging || promptText.trim().length === 0}
+        className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-fuchsia-300/30 hover:bg-fuchsia-300/[0.06] hover:text-fuchsia-100 disabled:cursor-not-allowed disabled:opacity-40"
+        aria-label="Generate a full multi-scene film from the prompt and duration"
+        title={
+          promptText.trim().length === 0
+            ? 'Type a prompt first'
+            : 'Auto-generate a full film: scenario → per-scene images → clips → Final Film'
+        }
+      >
+        {isAutoFilming ? (
+          <LoaderCircle className="h-[14px] w-[14px] animate-spin" aria-hidden="true" />
+        ) : (
+          <Clapperboard className="h-[14px] w-[14px]" aria-hidden="true" />
+        )}
+        <span className="hidden xl:inline">{isAutoFilming ? 'Making film…' : 'Make full film'}</span>
+      </button>
+
       {isMerging ? (
         <div className="flex h-9 items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-2 text-xs uppercase tracking-[0.18em] text-zinc-200/80">
           <LoaderCircle className="h-[14px] w-[14px] animate-spin" aria-hidden="true" />
