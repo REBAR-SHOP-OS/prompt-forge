@@ -143,6 +143,7 @@ import CalendarInfoDialog from '@/modules/generator-ui/components/CalendarInfoDi
 import ImageReframeDialog from '@/modules/generator-ui/components/ImageReframeDialog'
 import AiImageDialog from '@/modules/generator-ui/components/AiImageDialog'
 import ScenarioWriterDialog from '@/modules/generator-ui/components/ScenarioWriterDialog'
+import MakeFilmWizardDialog from '@/modules/generator-ui/components/MakeFilmWizardDialog'
 import ProductAdDialog from '@/modules/generator-ui/components/ProductAdDialog'
 import { BusinessProfileDialog } from '@/modules/generator-ui/components/BusinessProfileDialog'
 import { TranscriptPanel } from '@/modules/generator-ui/components/TranscriptPanel'
@@ -3185,6 +3186,10 @@ export default function DashboardPage() {
   // One-button "prompt + duration → auto multi-scene film" is running. Blocks a
   // second run and disables the composer's Make Full Film button while active.
   const [isAutoFilming, setIsAutoFilming] = useState(false)
+  // Gated "Make Full Film" review wizard: prompt → scenario review → per-scene
+  // preview images (each regenerable) → explicit approval → render. Nothing
+  // renders until the user approves in this flow.
+  const [isMakeFilmWizardOpen, setIsMakeFilmWizardOpen] = useState(false)
   // Always-fresh pointer to handleMergeAllVideos so the long-lived auto-film
   // orchestrator (which starts minutes before the batch completes) invokes the
   // LATEST closure — reading current generatedVideos/activeJobIds state — instead
@@ -7371,15 +7376,98 @@ export default function DashboardPage() {
     return anyPlayable && pending.size === 0
   }
 
-  // One-button orchestrator: prompt + duration → unified scenario split into N
-  // sequential scenes → each scene gets its OWN generated start image → one
-  // video job per scene seeded by that image → await the whole batch → auto
-  // assemble the Final Film. No further clicks required.
-  async function autoGenerateFilm() {
+  // ── Gated "Make Full Film" wizard helpers ────────────────────────────────
+  // The old one-click auto-film (prompt → scenario → images → video → merge, no
+  // review) is now split into three reviewable steps driven by
+  // MakeFilmWizardDialog. NOTHING renders video until the user clicks
+  // "Approve & Make Film" (which calls renderApprovedFilm).
+
+  // Step 1 — write the scene-by-scene scenario from the prompt. Reuses the same
+  // business-info + scenario-write + fallback logic the auto path used, but
+  // only returns the scenes for on-screen review; it renders nothing.
+  async function writeFilmScenario(idea: string): Promise<string[]> {
+    const trimmed = idea.trim()
+    if (!trimmed) throw new Error('Type a prompt first so I can write the film.')
+    // scenario-write hard-requires the saved business info (400 without it), so
+    // fetch it first, exactly like the product-ad caller does.
+    let businessInfo = ''
+    if (userId) {
+      const { data: profile } = await supabase
+        .from('generator_business_profiles')
+        .select('business_info')
+        .eq('user_id', userId)
+        .maybeSingle()
+      businessInfo = profile?.business_info?.trim() ?? ''
+    }
+    // How many 15s scenes this duration expects (mirrors scenario-write).
+    const expectedScenes =
+      durationSeconds === 135 ? 9 : durationSeconds === 45 ? 3 : durationSeconds === 30 ? 2 : 1
+    let scenes: string[] = []
+    if (businessInfo) {
+      try {
+        const { data, error } = await supabase.functions.invoke('scenario-write', {
+          body: { idea: trimmed, durationSeconds, businessInfo },
+        })
+        if (error) throw error
+        const raw = (data as { scenes?: unknown } | null)?.scenes
+        if (Array.isArray(raw)) {
+          scenes = raw
+            .map((s) => (typeof s === 'string' ? s.trim() : ''))
+            .filter((s) => s.length > 0)
+        }
+      } catch (err) {
+        // Non-fatal: degrade to prompt-derived scenes so the wizard still has
+        // something reviewable rather than aborting.
+        console.error('Make-film wizard: scenario-write failed, falling back to prompt', err)
+      }
+    }
+    // Fallback (no business info, sub-30 duration, or a failed/empty split):
+    // build the expected number of scenes straight from the prompt.
+    if (scenes.length === 0) {
+      scenes = Array.from({ length: expectedScenes }, () => trimmed)
+    }
+    return scenes
+  }
+
+  // Step 2 / Regenerate — generate ONE scene's preview start image and stage it
+  // into wan-frames. Returns the staged URL (used both for the initial batch and
+  // for a single-scene "Regenerate"). Renders no video.
+  async function generateFilmSceneImage(sceneText: string): Promise<string> {
+    // Preview images are generated at the ratio the clips will use, so the seed
+    // frame matches the video (submitScenesAsJobs uses aspectRatio too).
+    const ratio: Ratio = aspectRatio
+    // Optional polish: turn the scene text into a tighter image prompt.
+    let imagePrompt = sceneText
+    try {
+      const { data: pData, error: pErr } = await supabase.functions.invoke('write-image-prompt', {
+        body: { existingPrompt: sceneText, themeDescriptor: '', themeLabel: '' },
+      })
+      if (!pErr) {
+        const written = (pData as { prompt?: unknown } | null)?.prompt
+        if (typeof written === 'string' && written.trim()) imagePrompt = written.trim()
+      }
+    } catch {
+      /* keep the raw scene text as the image prompt */
+    }
+    const { data: iData, error: iErr } = await supabase.functions.invoke('ai-image-generate', {
+      body: { prompt: imagePrompt, aspectRatio: ratio },
+    })
+    if (iErr) throw iErr
+    const dataUrl = (iData as { dataUrl?: unknown } | null)?.dataUrl
+    if (typeof dataUrl !== 'string' || !dataUrl) throw new Error('No image returned')
+    return await stageImageIntoFramesBucket(dataUrl)
+  }
+
+  // Step 3 (ONLY after the explicit Approve click) — seed one video job per
+  // scene with the approved preview images, await the whole batch, then assemble
+  // the Final Film. This is the sole path that renders video.
+  async function renderApprovedFilm(
+    scenes: string[],
+    perSceneImageUrls: (string | undefined)[],
+  ): Promise<void> {
     if (isAutoFilming || isSubmitting || isMerging) return
-    const idea = promptText.trim()
-    if (!idea) {
-      setComposerError('Type a prompt first so I can write the film.')
+    if (scenes.length === 0) {
+      setComposerError('No scenes to render.')
       return
     }
     if (!selectedModel) {
@@ -7388,93 +7476,9 @@ export default function DashboardPage() {
     }
     setIsAutoFilming(true)
     setComposerError(null)
-    setVideoColumnMessage('Writing your film scenario…')
-    // Per-scene start images are generated at the ratio the clips will use, so
-    // the seed frame matches the video (submitScenesAsJobs uses aspectRatio too).
-    const ratio: Ratio = aspectRatio
+    setVideoColumnMessage('Queueing your approved scenes…')
     try {
-      // 1. One unified scenario split into N sequential 15s scenes.
-      // scenario-write hard-requires the saved business info (400 without it),
-      // so fetch it first, exactly like the product-ad caller does.
-      let businessInfo = ''
-      if (userId) {
-        const { data: profile } = await supabase
-          .from('generator_business_profiles')
-          .select('business_info')
-          .eq('user_id', userId)
-          .maybeSingle()
-        businessInfo = profile?.business_info?.trim() ?? ''
-      }
-      // How many 15s scenes this duration expects (mirrors scenario-write).
-      const expectedScenes =
-        durationSeconds === 135 ? 9 : durationSeconds === 45 ? 3 : durationSeconds === 30 ? 2 : 1
-      let scenes: string[] = []
-      if (businessInfo) {
-        try {
-          const { data, error } = await supabase.functions.invoke('scenario-write', {
-            body: { idea, durationSeconds, businessInfo },
-          })
-          if (error) throw error
-          const raw = (data as { scenes?: unknown } | null)?.scenes
-          if (Array.isArray(raw)) {
-            scenes = raw
-              .map((s) => (typeof s === 'string' ? s.trim() : ''))
-              .filter((s) => s.length > 0)
-          }
-        } catch (err) {
-          // Non-fatal: the film still renders from the prompt below. Only the
-          // per-scene scenario writing is lost, so degrade instead of aborting.
-          console.error('Auto-film: scenario-write failed, falling back to prompt', err)
-          setVideoColumnMessage('Could not write distinct scenes — building from your prompt…')
-        }
-      } else {
-        setVideoColumnMessage('Tip: add your business info for richer, distinct scenes.')
-      }
-      // Fallback (no business info, sub-30 duration, or a failed/empty split):
-      // build the expected number of scenes straight from the prompt so the film
-      // always has something to render.
-      if (scenes.length === 0) {
-        scenes = Array.from({ length: expectedScenes }, () => idea)
-      }
-      if (scenes.length === 1) {
-        setVideoColumnMessage('Short duration — building a single-scene film…')
-      }
-
-      // 2. Generate each scene's OWN start image, then stage it into wan-frames.
-      const perSceneImageUrls: (string | undefined)[] = []
-      for (let i = 0; i < scenes.length; i++) {
-        setVideoColumnMessage(`Designing the image for scene ${i + 1} of ${scenes.length}…`)
-        try {
-          // Optional polish: turn the scene text into a tighter image prompt.
-          let imagePrompt = scenes[i]
-          try {
-            const { data: pData, error: pErr } = await supabase.functions.invoke('write-image-prompt', {
-              body: { existingPrompt: scenes[i], themeDescriptor: '', themeLabel: '' },
-            })
-            if (!pErr) {
-              const written = (pData as { prompt?: unknown } | null)?.prompt
-              if (typeof written === 'string' && written.trim()) imagePrompt = written.trim()
-            }
-          } catch {
-            /* keep the raw scene text as the image prompt */
-          }
-          const { data: iData, error: iErr } = await supabase.functions.invoke('ai-image-generate', {
-            body: { prompt: imagePrompt, aspectRatio: ratio },
-          })
-          if (iErr) throw iErr
-          const dataUrl = (iData as { dataUrl?: unknown } | null)?.dataUrl
-          if (typeof dataUrl !== 'string' || !dataUrl) throw new Error('No image returned')
-          perSceneImageUrls.push(await stageImageIntoFramesBucket(dataUrl))
-        } catch (err) {
-          // One scene's image failing must not abort the whole film: leave the
-          // entry empty so submitScenesAsJobs falls back to the last-frame chain
-          // (or plain text-to-video) for that scene only. Surfaced to the log.
-          console.error(`Auto-film: scene ${i + 1} image generation failed`, err)
-          perSceneImageUrls.push(undefined)
-        }
-      }
-
-      // 3. One video job per scene, each seeded by its own generated image.
+      // One video job per scene, each seeded by its approved image.
       const createdJobIds = await submitScenesAsJobs(scenes, perSceneImageUrls[0], { perSceneImageUrls })
       if (!createdJobIds || createdJobIds.length === 0) {
         throw new Error('No scenes could be queued for the film.')
@@ -7482,7 +7486,7 @@ export default function DashboardPage() {
       // Clear the composer prompt like the existing auto-split path does.
       setPromptText('')
 
-      // 4. Wait for the whole batch, then auto-assemble the Final Film.
+      // Wait for the whole batch, then auto-assemble the Final Film.
       setVideoColumnMessage('Generating every scene… keep this tab open.')
       const anyPlayable = await waitForAutoFilmBatch(createdJobIds)
       if (!anyPlayable) {
@@ -10125,20 +10129,16 @@ export default function DashboardPage() {
 
       {!isReadOnlyProject && (
       <>
-      {/* One-button auto-film: prompt + duration → scenario → per-scene images →
-          per-scene video jobs → auto Final Film. Sits next to the Final Film
-          control in the composer header. */}
+      {/* Gated Make Full Film wizard: always clickable. Opens a review flow —
+          prompt → scenario review → per-scene preview images (regenerable) →
+          explicit approval → render. Never auto-renders. Sits next to the Final
+          Film control in the composer header. */}
       <button
         type="button"
-        onClick={autoGenerateFilm}
-        disabled={isAutoFilming || isSubmitting || isMerging || promptText.trim().length === 0}
+        onClick={() => setIsMakeFilmWizardOpen(true)}
         className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-fuchsia-300/30 hover:bg-fuchsia-300/[0.06] hover:text-fuchsia-100 disabled:cursor-not-allowed disabled:opacity-40"
-        aria-label="Generate a full multi-scene film from the prompt and duration"
-        title={
-          promptText.trim().length === 0
-            ? 'Type a prompt first'
-            : 'Auto-generate a full film: scenario → per-scene images → clips → Final Film'
-        }
+        aria-label="Open the Make Full Film review wizard"
+        title="Make full film: review the scenario and preview images before rendering"
       >
         {isAutoFilming ? (
           <LoaderCircle className="h-[14px] w-[14px] animate-spin" aria-hidden="true" />
@@ -10298,6 +10298,19 @@ export default function DashboardPage() {
         open={isReframeOpen}
         onOpenChange={setIsReframeOpen}
         onUseAsStartFrame={handleReframeAsStart}
+      />
+
+      {/* Gated Make Full Film review wizard. Renders video only on approval. */}
+      <MakeFilmWizardDialog
+        open={isMakeFilmWizardOpen}
+        onOpenChange={setIsMakeFilmWizardOpen}
+        initialPrompt={promptText}
+        durationSeconds={durationSeconds}
+        writeScenario={writeFilmScenario}
+        generateSceneImage={generateFilmSceneImage}
+        onApprove={(scenes, perSceneImageUrls) => {
+          void renderApprovedFilm(scenes, perSceneImageUrls)
+        }}
       />
 
       <AiImageDialog
