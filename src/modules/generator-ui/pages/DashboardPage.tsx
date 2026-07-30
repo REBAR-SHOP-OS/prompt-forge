@@ -10125,20 +10125,6 @@ export default function DashboardPage() {
 
       {!isReadOnlyProject && (
       <>
-      {/* Direct shortcut into the AI Image Studio (AI Image dialog), so the user
-          can jump straight to generating a still without going through the
-          cover/frame entry points. Opens in the standalone 'cover' mode. */}
-      <button
-        type="button"
-        onClick={() => { setAiDialogMode('cover'); setIsAiImageDialogOpen(true) }}
-        className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-sky-300/30 hover:bg-sky-300/[0.06] hover:text-sky-100"
-        aria-label="Open the AI Image Studio to generate an image"
-        title="Open AI Image Studio"
-      >
-        <Wand2 className="h-[14px] w-[14px]" aria-hidden="true" />
-        <span className="hidden xl:inline">AI Image Studio</span>
-      </button>
-
       {/* One-button auto-film: prompt + duration → scenario → per-scene images →
           per-scene video jobs → auto Final Film. Sits next to the Final Film
           control in the composer header. */}
