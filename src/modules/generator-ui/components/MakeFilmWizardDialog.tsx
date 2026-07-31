@@ -38,6 +38,14 @@ import { supabase } from '@/integrations/supabase/client'
 
 export type FilmDuration = 5 | 10 | 15 | 30 | 45 | 135
 
+export type FilmAspect = '16:9' | '9:16' | '1:1' | '4:3'''
+
+const ASPECTS: { value: FilmAspect; label: string; dims: string }[] = [
+  { value: '16:9', label: 'Landscape (16:9)', dims: '1920×1080' },
+  { value: '9:16', label: 'Portrait/Story (9:16)', dims: '1080×1920' },
+  { value: '1:1', label: 'Square (1:1)', dims: '1080×1080' },
+  { value: '4:3', label: 'Standard (4:3)', dims: '1440×1080' },
+]
 const DURATIONS: FilmDuration[] = [5, 10, 15, 30, 45, 135]
 
 const PRODUCTS_BUCKET = 'user-images'
@@ -77,10 +85,11 @@ export interface MakeFilmWizardDialogProps {
   onOpenChange: (open: boolean) => void
   initialPrompt: string
   defaultDuration: FilmDuration
+  defaultAspect: FilmAspect
   userId: string | null
-  writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean }) => Promise<string[]>
-  generateSceneImage: (sceneText: string) => Promise<string>
-  onApprove: (scenes: string[], perSceneImageUrls: (string | undefined)[], options?: { duration?: number; withNarration?: boolean }) => void
+  writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean; aspect?: FilmAspect }) => Promise<string[]>
+  generateSceneImage: (sceneText: string, aspect?: FilmAspect, productUrl?: string, characterUrl?: string) => Promise<string>
+  onApprove: (scenes: string[], perSceneImageUrls: (string | undefined)[], options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean }) => void
 }
 
 export function MakeFilmWizardDialog({
@@ -102,6 +111,7 @@ export function MakeFilmWizardDialog({
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<string | null>(null)
   const [duration, setDuration] = useState<FilmDuration>(defaultDuration)
+  const [aspect, setAspect] = useState<FilmAspect>(defaultAspect)
   const [withNarration, setWithNarration] = useState(true)
   const [productPhotos, setProductPhotos] = useState<ProductPhoto[]>([])
   const [characterPhotos, setCharacterPhotos] = useState<ProductPhoto[]>([])
@@ -148,6 +158,7 @@ export function MakeFilmWizardDialog({
       const { data, error: qErr } = await supabase
         .from('generator_user_images')
         .select('id, storage_path, title')
+        .eq('category', 'product')
         .eq('user_id', userId)
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
@@ -219,11 +230,19 @@ export function MakeFilmWizardDialog({
     setError(null)
     setProgress('Writing your film scenario…')
     try {
-      const written = await writeScenario(idea, {
+      let enrichedPrompt = idea
+      if (selectedProduct) {
+        enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${selectedProduct.title || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every scene of the film.`
+      }
+      if (selectedCharacter) {
+        enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${selectedCharacter.title || 'Selected Character'}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every scene of the film.`
+      }
+      const written = await writeScenario(enrichedPrompt, {
         duration,
         productUrl: selectedProduct?.url,
         characterUrl: selectedCharacter?.url,
         withNarration,
+        aspect,
       })
       const cleaned = written.map((s) => s.trim()).filter((s) => s.length > 0)
       if (cleaned.length === 0) {
@@ -249,7 +268,7 @@ export function MakeFilmWizardDialog({
     for (let i = 0; i < scenes.length; i++) {
       setProgress(`Designing preview image ${i + 1} of ${scenes.length}…`)
       try {
-        next[i] = await generateSceneImage(scenes[i])
+        next[i] = await generateSceneImage(scenes[i], aspect, selectedProduct?.url, selectedCharacter?.url)
       } catch (err) {
         console.error(`Make-film wizard: preview image ${i + 1} failed`, err)
         next[i] = undefined
@@ -287,7 +306,7 @@ export function MakeFilmWizardDialog({
 
   function handleApprove() {
     onOpenChange(false)
-    onApprove(scenes, images, { duration, withNarration })
+    onApprove(scenes, images, { duration, aspect, withNarration })
   }
 
   const stepLabel =
@@ -332,6 +351,28 @@ export function MakeFilmWizardDialog({
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+                {/* Aspect ratio selector */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                    <MonitorPlay className="h-3.5 w-3.5" />
+                    Aspect ratio
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {ASPECTS.map((a) => (
+                      <Button
+                        key={a.value}
+                        type="button"
+                        variant={aspect === a.value ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setAspect(a.value)}
+                        className={`h-8 gap-1 text-xs ${aspect === a.value ? 'bg-fuchsia-500/90 text-white hover:bg-fuchsia-500' : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'}`}
+                      >
+                        {a.label}
+                        <span className="text-[10px] opacity-60">({a.dims})</span>
+                      </Button>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Product selector */}
