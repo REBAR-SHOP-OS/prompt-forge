@@ -7449,7 +7449,12 @@ export default function DashboardPage() {
   // Step 2 / Regenerate — generate ONE scene's preview start image and stage it
   // into wan-frames. Returns the staged URL (used both for the initial batch and
   // for a single-scene "Regenerate"). Renders no video.
-  async function generateFilmSceneImage(sceneText: string, aspect?: FilmAspect): Promise<string> {
+  async function generateFilmSceneImage(
+    sceneText: string,
+    aspect?: FilmAspect,
+    productUrl?: string,
+    characterUrl?: string,
+  ): Promise<string> {
     // Preview images are generated at the ratio the clips will use, so the seed
     // frame matches the video (submitScenesAsJobs uses aspectRatio too).
     // The wizard's own aspect choice wins when it supplies one. FilmAspect is
@@ -7468,8 +7473,9 @@ export default function DashboardPage() {
     } catch {
       /* keep the raw scene text as the image prompt */
     }
+    const referenceImageUrls = [productUrl, characterUrl].filter((u): u is string => !!u)
     const { data: iData, error: iErr } = await supabase.functions.invoke('ai-image-generate', {
-      body: { prompt: imagePrompt, aspectRatio: ratio },
+      body: { prompt: imagePrompt, aspectRatio: ratio, referenceImageUrls },
     })
     if (iErr) throw iErr
     const dataUrl = (iData as { dataUrl?: unknown } | null)?.dataUrl
@@ -10329,11 +10335,13 @@ export default function DashboardPage() {
         open={isMakeFilmWizardOpen}
         onOpenChange={setIsMakeFilmWizardOpen}
         initialPrompt={promptText}
-        defaultDuration={30}
-        defaultAspect="16:9"
+        defaultDuration={durationSeconds}
+        defaultAspect={aspectRatio}
         userId={userId}
         writeScenario={writeFilmScenario}
-        generateSceneImage={generateFilmSceneImage}
+        generateSceneImage={(sceneText, aspect, productUrl, characterUrl) =>
+          generateFilmSceneImage(sceneText, aspect, productUrl ?? selectedProduct?.url, characterUrl ?? selectedCharacter?.url)
+        }
         onApprove={(scenes, perSceneImageUrls, options) => {
           void renderApprovedFilm(scenes, perSceneImageUrls, options)
         }}
