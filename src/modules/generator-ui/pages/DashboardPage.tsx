@@ -10305,11 +10305,14 @@ export default function DashboardPage() {
         open={isMakeFilmWizardOpen}
         onOpenChange={setIsMakeFilmWizardOpen}
         initialPrompt={promptText}
-        durationSeconds={durationSeconds}
+        defaultDuration={30}
+        defaultAspect="16:9"
+        userId={userId}
         writeScenario={writeFilmScenario}
         generateSceneImage={generateFilmSceneImage}
-        onApprove={(scenes, perSceneImageUrls) => {
-          void renderApprovedFilm(scenes, perSceneImageUrls)
+        renderFinalFilm={renderApprovedFilm}
+        onApprove={(scenes, perSceneImageUrls, options) => {
+          void renderApprovedFilm(scenes, perSceneImageUrls, options)
         }}
       />
 
