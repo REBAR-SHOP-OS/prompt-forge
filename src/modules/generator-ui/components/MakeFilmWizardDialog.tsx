@@ -168,6 +168,11 @@ export function MakeFilmWizardDialog({
         .from('generator_user_images')
         .select('id, storage_path, title')
         .eq('user_id', userId)
+        // Products are identified by the category column, matching the
+        // canonical product query in DashboardPage (`.eq('category','product')`)
+        // and the dedicated product-upload path that writes it. The previous
+        // title heuristic below let any 'general' upload through as a product.
+        .eq('category', 'product')
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
       if (qErr) throw new Error(qErr.message)
