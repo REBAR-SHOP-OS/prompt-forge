@@ -241,6 +241,78 @@ IMPORTANT: Create exactly ${sceneCount} scenes, each approximately ${sceneDurati
 Each scene should flow logically into the next, building toward a single cohesive narrative. All scenes must serve the same overall story goal.`
   }
 
+  async function loadProductPhotos() {
+    if (!userId) {
+      setError('Please sign in to choose a product.')
+      return
+    }
+    setLoadingProducts(true)
+    setError(null)
+    try {
+      const { data, error: qErr } = await supabase
+        .from('generator_user_images')
+        .select('id, storage_path, title')
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+      if (qErr) throw new Error(qErr.message)
+      const rows = (data ?? []).filter((r) => !r.title?.toLowerCase().includes('character'))
+      const photos: ProductPhoto[] = await Promise.all(
+        rows.map(async (r) => ({
+          id: r.id,
+          title: r.title ?? null,
+          url: await signProductPhotoUrl(r.storage_path),
+        })),
+      )
+      setProductPhotos(photos)
+    } catch (e) {
+      setError((e as Error).message ?? 'Failed to load products')
+    } finally {
+      setLoadingProducts(false)
+    }
+  }
+
+  async function loadCharacterPhotos() {
+    if (!userId) {
+      setError('Please sign in to choose a character.')
+      return
+    }
+    setLoadingCharacters(true)
+    setError(null)
+    try {
+      const { data, error: qErr } = await supabase
+        .from('generator_user_images')
+        .select('id, storage_path, title, category')
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+      if (qErr) throw new Error(qErr.message)
+      const rows = (data ?? []).filter((r) => (r.category ?? 'general') === 'character')
+      const photos: ProductPhoto[] = await Promise.all(
+        rows.map(async (r) => ({
+          id: r.id,
+          title: r.title ?? null,
+          url: await signProductPhotoUrl(r.storage_path),
+        })),
+      )
+      setCharacterPhotos(photos)
+    } catch (e) {
+      setError((e as Error).message ?? 'Failed to load characters')
+    } finally {
+      setLoadingCharacters(false)
+    }
+  }
+
+  function pickProduct(photo: ProductPhoto) {
+    setSelectedProduct(photo)
+    setProductPickerOpen(false)
+  }
+
+  function pickCharacter(photo: ProductPhoto) {
+    setSelectedCharacter(photo)
+    setCharacterPickerOpen(false)
+  }
+
   async function handleWriteScenario() {
     const idea = prompt.trim()
     if (!idea) {
