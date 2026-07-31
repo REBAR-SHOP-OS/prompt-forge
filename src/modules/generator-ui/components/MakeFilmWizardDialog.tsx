@@ -62,7 +62,7 @@ function storageObjectKey(storagePath: string | null | undefined, bucket: string
     const tail = storagePath.slice(idx + marker.length).split('?')[0]
     return decodeURIComponent(tail)
   }
-  if (!/^https?:|^blob:|^data:/.test(storagePath)) return storagePath
+  if (!/^https?:\/\/|^blob:|^data:/.test(storagePath)) return storagePath
   return null
 }
 
@@ -169,11 +169,6 @@ export function MakeFilmWizardDialog({
         .select('id, storage_path, title')
         .eq('category', 'product')
         .eq('user_id', userId)
-        // Products are identified by the category column, matching the
-        // canonical product query in DashboardPage (`.eq('category','product')`)
-        // and the dedicated product-upload path that writes it. The previous
-        // title heuristic below let any 'general' upload through as a product.
-        .eq('category', 'product')
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
       if (qErr) throw new Error(qErr.message)
@@ -309,7 +304,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
     setRegenIndex(index)
     setError(null)
     try {
-      const url = await generateSceneImage(scenes[index], aspect)
+      const url = await generateSceneImage(scenes[index], aspect, selectedProduct?.url, selectedCharacter?.url)
       setImages((cur) => {
         const copy = [...cur]
         copy[index] = url
@@ -329,8 +324,12 @@ Each scene should flow logically into the next, building toward a single cohesiv
   }
 
   function handleApprove() {
-    onOpenChange(false)
-    onApprove(scenes, images, { duration, aspect, withNarration })
+    try {
+      onApprove(scenes, images, { duration, aspect, withNarration })
+      onOpenChange(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start film render.')
+    }
   }
 
   const stepLabel =
@@ -382,28 +381,6 @@ Each scene should flow logically into the next, building toward a single cohesiv
                   </p>
                 </div>
 
-                {/* Aspect ratio selector */}
-                <div className="space-y-2">
-                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                    <MonitorPlay className="h-3.5 w-3.5" />
-                    Aspect ratio
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {ASPECTS.map((a) => (
-                      <Button
-                        key={a.value}
-                        type="button"
-                        variant={aspect === a.value ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => setAspect(a.value)}
-                        className={`h-8 gap-1 text-xs ${aspect === a.value ? 'bg-fuchsia-500/90 text-white hover:bg-fuchsia-500' : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'}`}
-                      >
-                        {a.label}
-                        <span className="text-[10px] opacity-60">({a.dims})</span>
-                      </Button>
-                    ))}
-                  </div>
-                </div>
                 {/* Aspect ratio selector */}
                 <div className="space-y-2">
                   <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
