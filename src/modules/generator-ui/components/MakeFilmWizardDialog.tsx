@@ -38,14 +38,17 @@ import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 import { supabase } from '@/integrations/supabase/client'
 
 export type FilmDuration = 5 | 10 | 15 | 30 | 45 | 60 | 90 | 135
-export type FilmAspect = '16:9' | '9:16' | '1:1' | '4:3'
+// Must stay a subset of DashboardPage's `Ratio` ('9:16' | '1:1' | '16:9') —
+// that is what ai-image-generate and submitScenesAsJobs accept. 4:3 is
+// deliberately absent: offering it here produced an aspect the render
+// pipeline cannot honour.
+export type FilmAspect = '16:9' | '9:16' | '1:1'
 
 const DURATIONS: FilmDuration[] = [5, 10, 15, 30, 45, 60, 90, 135]
 const ASPECTS: { value: FilmAspect; label: string; dims: string }[] = [
   { value: '16:9', label: 'Landscape (16:9)', dims: '1920×1080' },
   { value: '9:16', label: 'Portrait/Story (9:16)', dims: '1080×1920' },
   { value: '1:1', label: 'Square (1:1)', dims: '1080×1080' },
-  { value: '4:3', label: 'Standard (4:3)', dims: '1440×1080' },
 ]
 
 const PRODUCTS_BUCKET = 'user-images'
@@ -66,7 +69,7 @@ function storageObjectKey(storagePath: string | null | undefined, bucket: string
 async function signStorageUrl(storagePath: string | null | undefined, bucket: string): Promise<string> {
   const raw = storagePath ?? ''
   if (/^blob:|^data:/.test(raw)) return raw
-  if (//object/sign//.test(raw)) return raw
+  if (/\/object\/sign\//.test(raw)) return raw
   const key = storageObjectKey(raw, bucket)
   if (!key) return raw
   try {
@@ -82,7 +85,7 @@ async function signStorageUrl(storagePath: string | null | undefined, bucket: st
 
 type ProductPhoto = { id: string; title: string | null; url: string }
 
-type WizardStep = 'prompt' | 'scenario' | 'images' | 'preview'
+type WizardStep = 'prompt' | 'scenario' | 'images'
 
 export interface MakeFilmWizardDialogProps {
   open: boolean
@@ -93,7 +96,6 @@ export interface MakeFilmWizardDialogProps {
   userId: string | null
   writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean }) => Promise<string[]>
   generateSceneImage: (sceneText: string, aspect?: FilmAspect) => Promise<string>
-  renderFinalFilm: (scenes: string[], images: (string | undefined)[], options: { duration: number; aspect: FilmAspect; withNarration: boolean }) => Promise<string>
   onApprove: (scenes: string[], perSceneImageUrls: (string | undefined)[], options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean }) => void
 }
 
@@ -106,14 +108,13 @@ export function MakeFilmWizardDialog({
   userId,
   writeScenario,
   generateSceneImage,
-  renderFinalFilm,
   onApprove,
 }: MakeFilmWizardDialogProps) {
   const [step, setStep] = useState<WizardStep>('prompt')
   const [prompt, setPrompt] = useState('')
   const [scenes, setScenes] = useState<string[]>([])
   const [images, setImages] = useState<(string | undefined)[]>([])
-  const [busy, setBusy] = useState<'idle' | 'scenario' | 'images' | 'preview'>('idle')
+  const [busy, setBusy] = useState<'idle' | 'scenario' | 'images'>('idle')
   const [regenIndex, setRegenIndex] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<string | null>(null)
@@ -131,8 +132,6 @@ export function MakeFilmWizardDialog({
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
   const [lightboxScene, setLightboxScene] = useState<string>('')
-  const [finalFilmUrl, setFinalFilmUrl] = useState<string | null>(null)
-  const [isRenderingFinal, setIsRenderingFinal] = useState(false)
 
   useEffect(() => {
     if (open) {
@@ -152,12 +151,10 @@ export function MakeFilmWizardDialog({
       setProductPickerOpen(false)
       setCharacterPickerOpen(false)
       setLightboxOpen(false)
-      setFinalFilmUrl(null)
-      setIsRenderingFinal(false)
     }
   }, [open, initialPrompt, defaultDuration, defaultAspect])
 
-  const working = busy !== 'idle' || regenIndex !== null || isRenderingFinal
+  const working = busy !== 'idle' || regenIndex !== null
 
   async function loadProductPhotos() {
     if (!userId) {
@@ -318,37 +315,15 @@ Each scene should flow logically into the next, building toward a single cohesiv
     setLightboxOpen(true)
   }
 
-  async function handlePreviewFinalFilm() {
-    setIsRenderingFinal(true)
-    setError(null)
-    setProgress('Rendering final film preview…')
-    try {
-      const filmUrl = await renderFinalFilm(scenes, images, { duration, aspect, withNarration })
-      setFinalFilmUrl(filmUrl)
-      setStep('preview')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not render final film.')
-    } finally {
-      setIsRenderingFinal(false)
-      setProgress(null)
-    }
-  }
-
   function handleApprove() {
     onOpenChange(false)
     onApprove(scenes, images, { duration, aspect, withNarration })
   }
 
-  function handleBackToEdit() {
-    setStep('images')
-    setFinalFilmUrl(null)
-  }
-
   const stepLabel =
-    step === 'prompt' ? 'Step 1 of 4 · Prompt' :
-    step === 'scenario' ? 'Step 2 of 4 · Scenario' :
-    step === 'images' ? 'Step 3 of 4 · Preview images' :
-    'Step 4 of 4 · Final Preview'
+    step === 'prompt' ? 'Step 1 of 3 · Prompt' :
+    step === 'scenario' ? 'Step 2 of 3 · Scenario' :
+    'Step 3 of 3 · Preview images'
 
   return (
     <>
@@ -631,39 +606,6 @@ Each scene should flow logically into the next, building toward a single cohesiv
               </div>
             )}
 
-            {/* Step 4 — Final film preview */}
-            {step === 'preview' && (
-              <div className="space-y-4">
-                <p className="text-sm text-zinc-300">
-                  Final film preview. Review before approving or go back to make changes.
-                </p>
-                {finalFilmUrl ? (
-                  <div className="space-y-3">
-                    <div className="overflow-hidden rounded-lg border border-white/10 bg-black/40">
-                      <video 
-                        src={finalFilmUrl} 
-                        controls 
-                        className="w-full aspect-video"
-                        poster={safeMediaUrl(images[0])}
-                      />
-                    </div>
-                    <div className="flex items-center justify-center gap-2 text-xs text-zinc-400">
-                      <span>Duration: {duration}s</span>
-                      <span>·</span>
-                      <span>Aspect: {aspect}</span>
-                      <span>·</span>
-                      <span>Scenes: {scenes.length}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center py-10 text-sm text-zinc-400">
-                    <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-                    Rendering final film…
-                  </div>
-                )}
-              </div>
-            )}
-
             {progress && (
               <div className="flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-zinc-300">
                 <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
@@ -690,12 +632,6 @@ Each scene should flow logically into the next, building toward a single cohesiv
                 <Button type="button" variant="ghost" disabled={working} onClick={() => setStep('scenario')} className="gap-1 text-zinc-400">
                   <ArrowLeft className="h-4 w-4" aria-hidden="true" />
                   Scenario
-                </Button>
-              )}
-              {step === 'preview' && (
-                <Button type="button" variant="ghost" disabled={working} onClick={handleBackToEdit} className="gap-1 text-zinc-400">
-                  <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                  Edit
                 </Button>
               )}
             </div>
@@ -733,36 +669,14 @@ Each scene should flow logically into the next, building toward a single cohesiv
                 </Button>
               )}
               {step === 'images' && (
-                <>
-                  <Button
-                    type="button"
-                    disabled={working || images.filter(Boolean).length === 0}
-                    onClick={handlePreviewFinalFilm}
-                    className="gap-1.5 bg-amber-500/90 text-white hover:bg-amber-500"
-                  >
-                    <Film className="h-4 w-4" aria-hidden="true" />
-                    Preview Film
-                  </Button>
-                  <Button
-                    type="button"
-                    disabled={working || images.filter(Boolean).length === 0}
-                    onClick={handleApprove}
-                    className="gap-1.5 bg-emerald-500/90 text-white hover:bg-emerald-500"
-                  >
-                    <Check className="h-4 w-4" aria-hidden="true" />
-                    Approve &amp; Make Film
-                  </Button>
-                </>
-              )}
-              {step === 'preview' && (
                 <Button
                   type="button"
-                  disabled={working || !finalFilmUrl}
+                  disabled={working || images.filter(Boolean).length === 0}
                   onClick={handleApprove}
                   className="gap-1.5 bg-emerald-500/90 text-white hover:bg-emerald-500"
                 >
                   <Check className="h-4 w-4" aria-hidden="true" />
-                  Approve &amp; Finalize
+                  Approve &amp; Make Film
                 </Button>
               )}
             </div>
