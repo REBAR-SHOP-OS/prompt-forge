@@ -94,8 +94,8 @@ export interface MakeFilmWizardDialogProps {
   defaultDuration: FilmDuration
   defaultAspect: FilmAspect
   userId: string | null
-  writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean }) => Promise<string[]>
-  generateSceneImage: (sceneText: string, aspect?: FilmAspect) => Promise<string>
+  writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean; aspect?: FilmAspect }) => Promise<string[]>
+  generateSceneImage: (sceneText: string, aspect?: FilmAspect, productUrl?: string, characterUrl?: string) => Promise<string>
   onApprove: (scenes: string[], perSceneImageUrls: (string | undefined)[], options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean }) => void
 }
 
@@ -167,6 +167,7 @@ export function MakeFilmWizardDialog({
       const { data, error: qErr } = await supabase
         .from('generator_user_images')
         .select('id, storage_path, title')
+        .eq('category', 'product')
         .eq('user_id', userId)
         // Products are identified by the category column, matching the
         // canonical product query in DashboardPage (`.eq('category','product')`)
@@ -253,12 +254,19 @@ Each scene should flow logically into the next, building toward a single cohesiv
     setError(null)
     setProgress('Writing your film scenario…')
     try {
-      const enhancedPrompt = generateDurationPrompt(idea, duration)
-      const written = await writeScenario(enhancedPrompt, {
+      let enrichedPrompt = generateDurationPrompt(idea, duration)
+      if (selectedProduct) {
+        enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${selectedProduct.title || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every scene of the film.`
+      }
+      if (selectedCharacter) {
+        enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${selectedCharacter.title || 'Selected Character'}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every scene of the film.`
+      }
+      const written = await writeScenario(enrichedPrompt, {
         duration,
         productUrl: selectedProduct?.url,
         characterUrl: selectedCharacter?.url,
         withNarration,
+        aspect,
       })
       const cleaned = written.map((s) => s.trim()).filter((s) => s.length > 0)
       if (cleaned.length === 0) {
@@ -284,7 +292,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
     for (let i = 0; i < scenes.length; i++) {
       setProgress(`Designing preview image ${i + 1} of ${scenes.length}…`)
       try {
-        next[i] = await generateSceneImage(scenes[i], aspect)
+        next[i] = await generateSceneImage(scenes[i], aspect, selectedProduct?.url, selectedCharacter?.url)
       } catch (err) {
         console.error(`Make-film wizard: preview image ${i + 1} failed`, err)
         next[i] = undefined
@@ -374,6 +382,28 @@ Each scene should flow logically into the next, building toward a single cohesiv
                   </p>
                 </div>
 
+                {/* Aspect ratio selector */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                    <MonitorPlay className="h-3.5 w-3.5" />
+                    Aspect ratio
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {ASPECTS.map((a) => (
+                      <Button
+                        key={a.value}
+                        type="button"
+                        variant={aspect === a.value ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setAspect(a.value)}
+                        className={`h-8 gap-1 text-xs ${aspect === a.value ? 'bg-fuchsia-500/90 text-white hover:bg-fuchsia-500' : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'}`}
+                      >
+                        {a.label}
+                        <span className="text-[10px] opacity-60">({a.dims})</span>
+                      </Button>
+                    ))}
+                  </div>
+                </div>
                 {/* Aspect ratio selector */}
                 <div className="space-y-2">
                   <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
