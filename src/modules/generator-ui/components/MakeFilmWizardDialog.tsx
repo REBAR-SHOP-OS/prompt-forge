@@ -16,6 +16,7 @@ import {
   MicOff,
   ZoomIn,
   X,
+  MonitorPlay,
 } from 'lucide-react'
 import {
   Dialog,
@@ -36,39 +37,45 @@ import {
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 import { supabase } from '@/integrations/supabase/client'
 
-export type FilmDuration = 5 | 10 | 15 | 30 | 45 | 135
+export type FilmDuration = 5 | 10 | 15 | 30 | 45 | 60 | 90 | 135
+// Must stay a subset of DashboardPage's `Ratio` ('9:16' | '1:1' | '16:9') —
+// that is what ai-image-generate and submitScenesAsJobs accept. 4:3 is
+// deliberately absent: offering it here produced an aspect the render
+// pipeline cannot honour.
+export type FilmAspect = '16:9' | '9:16' | '1:1'
 
-export type FilmAspect = '16:9' | '9:16' | '1:1' | '4:3'''
-
+const DURATIONS: FilmDuration[] = [5, 10, 15, 30, 45, 60, 90, 135]
 const ASPECTS: { value: FilmAspect; label: string; dims: string }[] = [
   { value: '16:9', label: 'Landscape (16:9)', dims: '1920×1080' },
   { value: '9:16', label: 'Portrait/Story (9:16)', dims: '1080×1920' },
   { value: '1:1', label: 'Square (1:1)', dims: '1080×1080' },
-  { value: '4:3', label: 'Standard (4:3)', dims: '1440×1080' },
 ]
-const DURATIONS: FilmDuration[] = [5, 10, 15, 30, 45, 135]
 
 const PRODUCTS_BUCKET = 'user-images'
+const FRAMES_BUCKET = 'wan-frames'
 
-function productObjectKey(storagePath: string | null | undefined): string | null {
+function storageObjectKey(storagePath: string | null | undefined, bucket: string): string | null {
   if (!storagePath) return null
-  const marker = `/${PRODUCTS_BUCKET}/`
+  const marker = `/${bucket}/`
   const idx = storagePath.indexOf(marker)
-  if (idx >= 0) return decodeURIComponent(storagePath.slice(idx + marker.length))
+  if (idx >= 0) {
+    const tail = storagePath.slice(idx + marker.length).split('?')[0]
+    return decodeURIComponent(tail)
+  }
   if (!/^https?:|^blob:|^data:/.test(storagePath)) return storagePath
   return null
 }
 
-async function signProductPhotoUrl(storagePath: string | null | undefined): Promise<string> {
+async function signStorageUrl(storagePath: string | null | undefined, bucket: string): Promise<string> {
   const raw = storagePath ?? ''
   if (/^blob:|^data:/.test(raw)) return raw
   if (/\/object\/sign\//.test(raw)) return raw
-  const key = productObjectKey(raw)
+  const key = storageObjectKey(raw, bucket)
   if (!key) return raw
   try {
     const { data, error } = await supabase.storage
-      .from(PRODUCTS_BUCKET)
-      .createSignedUrl(key, 60 * 60 * 24 * 365)
+      .from(bucket)
+      .createSignedUrl(key, 60 * 60 * 24 * 7)
     if (!error && data?.signedUrl) return data.signedUrl
   } catch {
     /* fall through */
@@ -97,6 +104,7 @@ export function MakeFilmWizardDialog({
   onOpenChange,
   initialPrompt,
   defaultDuration,
+  defaultAspect,
   userId,
   writeScenario,
   generateSceneImage,
@@ -136,6 +144,7 @@ export function MakeFilmWizardDialog({
       setError(null)
       setProgress(null)
       setDuration(defaultDuration)
+      setAspect(defaultAspect)
       setWithNarration(true)
       setSelectedProduct(null)
       setSelectedCharacter(null)
@@ -143,7 +152,7 @@ export function MakeFilmWizardDialog({
       setCharacterPickerOpen(false)
       setLightboxOpen(false)
     }
-  }, [open, initialPrompt, defaultDuration])
+  }, [open, initialPrompt, defaultDuration, defaultAspect])
 
   const working = busy !== 'idle' || regenIndex !== null
 
@@ -160,6 +169,11 @@ export function MakeFilmWizardDialog({
         .select('id, storage_path, title')
         .eq('category', 'product')
         .eq('user_id', userId)
+        // Products are identified by the category column, matching the
+        // canonical product query in DashboardPage (`.eq('category','product')`)
+        // and the dedicated product-upload path that writes it. The previous
+        // title heuristic below let any 'general' upload through as a product.
+        .eq('category', 'product')
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
       if (qErr) throw new Error(qErr.message)
@@ -168,7 +182,7 @@ export function MakeFilmWizardDialog({
         rows.map(async (r) => ({
           id: r.id,
           title: r.title ?? null,
-          url: await signProductPhotoUrl(r.storage_path),
+          url: await signStorageUrl(r.storage_path, PRODUCTS_BUCKET),
         })),
       )
       setProductPhotos(photos)
@@ -199,7 +213,7 @@ export function MakeFilmWizardDialog({
         rows.map(async (r) => ({
           id: r.id,
           title: r.title ?? null,
-          url: await signProductPhotoUrl(r.storage_path),
+          url: await signStorageUrl(r.storage_path, PRODUCTS_BUCKET),
         })),
       )
       setCharacterPhotos(photos)
@@ -220,6 +234,16 @@ export function MakeFilmWizardDialog({
     setCharacterPickerOpen(false)
   }
 
+  function generateDurationPrompt(basePrompt: string, durationSeconds: number): string {
+    const sceneCount = Math.ceil(durationSeconds / 15)
+    const sceneDuration = Math.floor(durationSeconds / sceneCount)
+    
+    return `${basePrompt}
+
+IMPORTANT: Create exactly ${sceneCount} scenes, each approximately ${sceneDuration} seconds long. Total film duration must be ${durationSeconds} seconds.
+Each scene should flow logically into the next, building toward a single cohesive narrative. All scenes must serve the same overall story goal.`
+  }
+
   async function handleWriteScenario() {
     const idea = prompt.trim()
     if (!idea) {
@@ -230,7 +254,7 @@ export function MakeFilmWizardDialog({
     setError(null)
     setProgress('Writing your film scenario…')
     try {
-      let enrichedPrompt = idea
+      let enrichedPrompt = generateDurationPrompt(idea, duration)
       if (selectedProduct) {
         enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${selectedProduct.title || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every scene of the film.`
       }
@@ -285,7 +309,7 @@ export function MakeFilmWizardDialog({
     setRegenIndex(index)
     setError(null)
     try {
-      const url = await generateSceneImage(scenes[index])
+      const url = await generateSceneImage(scenes[index], aspect)
       setImages((cur) => {
         const copy = [...cur]
         copy[index] = url
@@ -310,7 +334,9 @@ export function MakeFilmWizardDialog({
   }
 
   const stepLabel =
-    step === 'prompt' ? 'Step 1 of 3 · Prompt' : step === 'scenario' ? 'Step 2 of 3 · Scenario' : 'Step 3 of 3 · Preview images'
+    step === 'prompt' ? 'Step 1 of 3 · Prompt' :
+    step === 'scenario' ? 'Step 2 of 3 · Scenario' :
+    'Step 3 of 3 · Preview images'
 
   return (
     <>
@@ -351,6 +377,32 @@ export function MakeFilmWizardDialog({
                       ))}
                     </SelectContent>
                   </Select>
+                  <p className="text-[11px] text-zinc-500">
+                    {Math.ceil(duration / 15)} scenes × ~{Math.floor(duration / Math.ceil(duration / 15))}s each
+                  </p>
+                </div>
+
+                {/* Aspect ratio selector */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                    <MonitorPlay className="h-3.5 w-3.5" />
+                    Aspect ratio
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {ASPECTS.map((a) => (
+                      <Button
+                        key={a.value}
+                        type="button"
+                        variant={aspect === a.value ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setAspect(a.value)}
+                        className={`h-8 gap-1 text-xs ${aspect === a.value ? 'bg-fuchsia-500/90 text-white hover:bg-fuchsia-500' : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'}`}
+                      >
+                        {a.label}
+                        <span className="text-[10px] opacity-60">({a.dims})</span>
+                      </Button>
+                    ))}
+                  </div>
                 </div>
                 {/* Aspect ratio selector */}
                 <div className="space-y-2">
@@ -485,6 +537,9 @@ export function MakeFilmWizardDialog({
                     rows={5}
                     className="resize-none border-white/10 bg-white/[0.03] text-sm text-zinc-100"
                   />
+                  <p className="text-[11px] text-zinc-500">
+                    AI will auto-adjust scene count based on {duration}s duration.
+                  </p>
                 </div>
               </div>
             )}
@@ -498,7 +553,7 @@ export function MakeFilmWizardDialog({
                 {scenes.map((scene, i) => (
                   <div key={i} className="space-y-1.5 rounded-md border border-white/10 bg-white/[0.02] p-3">
                     <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
-                      Scene {i + 1}
+                      Scene {i + 1} (~{Math.floor(duration / scenes.length)}s)
                     </div>
                     <Textarea
                       value={scene}
@@ -521,7 +576,7 @@ export function MakeFilmWizardDialog({
             {step === 'images' && (
               <div className="space-y-3">
                 <p className="text-sm text-zinc-300">
-                  One preview image per scene. Click to zoom. Regenerate any you dislike. When you are happy, approve to render the film.
+                  One preview image per scene. Click to zoom. Regenerate any you dislike. Preview final film before approving.
                 </p>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {scenes.map((scene, i) => {
@@ -651,13 +706,12 @@ export function MakeFilmWizardDialog({
               {step === 'images' && (
                 <Button
                   type="button"
-                  disabled={working}
+                  disabled={working || images.filter(Boolean).length === 0}
                   onClick={handleApprove}
                   className="gap-1.5 bg-emerald-500/90 text-white hover:bg-emerald-500"
                 >
                   <Check className="h-4 w-4" aria-hidden="true" />
                   Approve &amp; Make Film
-                  <Film className="h-4 w-4" aria-hidden="true" />
                 </Button>
               )}
             </div>

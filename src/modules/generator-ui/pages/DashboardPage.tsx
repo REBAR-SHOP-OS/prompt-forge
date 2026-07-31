@@ -143,7 +143,7 @@ import CalendarInfoDialog from '@/modules/generator-ui/components/CalendarInfoDi
 import ImageReframeDialog from '@/modules/generator-ui/components/ImageReframeDialog'
 import AiImageDialog from '@/modules/generator-ui/components/AiImageDialog'
 import ScenarioWriterDialog from '@/modules/generator-ui/components/ScenarioWriterDialog'
-import MakeFilmWizardDialog from '@/modules/generator-ui/components/MakeFilmWizardDialog'
+import MakeFilmWizardDialog, { type FilmAspect } from '@/modules/generator-ui/components/MakeFilmWizardDialog'
 import ProductAdDialog from '@/modules/generator-ui/components/ProductAdDialog'
 import { BusinessProfileDialog } from '@/modules/generator-ui/components/BusinessProfileDialog'
 import { TranscriptPanel } from '@/modules/generator-ui/components/TranscriptPanel'
@@ -7139,7 +7139,7 @@ export default function DashboardPage() {
   async function submitScenesAsJobs(
     scenes: string[],
     firstSceneImageUrl?: string,
-    opts?: { perSceneImageUrls?: (string | undefined)[] },
+    opts?: { perSceneImageUrls?: (string | undefined)[]; aspect?: Ratio },
   ): Promise<string[]> {
     if (!scenes || scenes.length === 0) return []
     if (!selectedModel) {
@@ -7152,12 +7152,15 @@ export default function DashboardPage() {
     setComposerError(null)
     setVideoColumnMessage(null)
     resumeSelectedProject()
+    // The Make-Film wizard picks its own aspect; every other caller keeps using
+    // the composer's current ratio.
+    const requestedRatio: Ratio = opts?.aspect ?? aspectRatio
     if (!lockedProjectRatio) {
-      setLockedProjectRatio(aspectRatio)
-      persistLockedRatio(aspectRatio)
+      setLockedProjectRatio(requestedRatio)
+      persistLockedRatio(requestedRatio)
     }
 
-    const effectiveRatio: Ratio = aspectRatio
+    const effectiveRatio: Ratio = requestedRatio
     const perClipDuration: 5 | 10 | 15 = 15
 
     let previousJobId: string | null = null
@@ -7385,9 +7388,15 @@ export default function DashboardPage() {
   // Step 1 — write the scene-by-scene scenario from the prompt. Reuses the same
   // business-info + scenario-write + fallback logic the auto path used, but
   // only returns the scenes for on-screen review; it renders nothing.
-  async function writeFilmScenario(idea: string): Promise<string[]> {
+  async function writeFilmScenario(
+    idea: string,
+    options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean },
+  ): Promise<string[]> {
     const trimmed = idea.trim()
     if (!trimmed) throw new Error('Type a prompt first so I can write the film.')
+    // The wizard owns these choices; fall back to the composer's duration only
+    // when it did not supply one (the non-wizard auto-split path).
+    const filmDuration = options?.duration ?? durationSeconds
     // scenario-write hard-requires the saved business info (400 without it), so
     // fetch it first, exactly like the product-ad caller does.
     let businessInfo = ''
@@ -7400,13 +7409,21 @@ export default function DashboardPage() {
       businessInfo = profile?.business_info?.trim() ?? ''
     }
     // How many 15s scenes this duration expects (mirrors scenario-write).
-    const expectedScenes =
-      durationSeconds === 135 ? 9 : durationSeconds === 45 ? 3 : durationSeconds === 30 ? 2 : 1
+    // Derived rather than table-matched so the durations the wizard added
+    // (60 -> 4, 90 -> 6) are covered; 135/45/30/15 keep their previous values.
+    const expectedScenes = Math.max(1, Math.round(filmDuration / 15))
     let scenes: string[] = []
     if (businessInfo) {
       try {
         const { data, error } = await supabase.functions.invoke('scenario-write', {
-          body: { idea: trimmed, durationSeconds, businessInfo },
+          body: {
+            idea: trimmed,
+            durationSeconds: filmDuration,
+            businessInfo,
+            productUrl: options?.productUrl,
+            characterUrl: options?.characterUrl,
+            withNarration: options?.withNarration,
+          },
         })
         if (error) throw error
         const raw = (data as { scenes?: unknown } | null)?.scenes
@@ -7432,10 +7449,12 @@ export default function DashboardPage() {
   // Step 2 / Regenerate — generate ONE scene's preview start image and stage it
   // into wan-frames. Returns the staged URL (used both for the initial batch and
   // for a single-scene "Regenerate"). Renders no video.
-  async function generateFilmSceneImage(sceneText: string): Promise<string> {
+  async function generateFilmSceneImage(sceneText: string, aspect?: FilmAspect): Promise<string> {
     // Preview images are generated at the ratio the clips will use, so the seed
     // frame matches the video (submitScenesAsJobs uses aspectRatio too).
-    const ratio: Ratio = aspectRatio
+    // The wizard's own aspect choice wins when it supplies one. FilmAspect is
+    // constrained to a subset of Ratio, so no cast is needed.
+    const ratio: Ratio = aspect ?? aspectRatio
     // Optional polish: turn the scene text into a tighter image prompt.
     let imagePrompt = sceneText
     try {
@@ -7464,6 +7483,7 @@ export default function DashboardPage() {
   async function renderApprovedFilm(
     scenes: string[],
     perSceneImageUrls: (string | undefined)[],
+    options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean },
   ): Promise<void> {
     if (isAutoFilming || isSubmitting || isMerging) return
     if (scenes.length === 0) {
@@ -7478,8 +7498,12 @@ export default function DashboardPage() {
     setComposerError(null)
     setVideoColumnMessage('Queueing your approved scenes…')
     try {
-      // One video job per scene, each seeded by its approved image.
-      const createdJobIds = await submitScenesAsJobs(scenes, perSceneImageUrls[0], { perSceneImageUrls })
+      // One video job per scene, each seeded by its approved image, rendered at
+      // the aspect the wizard chose (falls back to the composer's ratio).
+      const createdJobIds = await submitScenesAsJobs(scenes, perSceneImageUrls[0], {
+        perSceneImageUrls,
+        aspect: options?.aspect,
+      })
       if (!createdJobIds || createdJobIds.length === 0) {
         throw new Error('No scenes could be queued for the film.')
       }
@@ -10310,7 +10334,6 @@ export default function DashboardPage() {
         userId={userId}
         writeScenario={writeFilmScenario}
         generateSceneImage={generateFilmSceneImage}
-        renderFinalFilm={renderApprovedFilm}
         onApprove={(scenes, perSceneImageUrls, options) => {
           void renderApprovedFilm(scenes, perSceneImageUrls, options)
         }}
