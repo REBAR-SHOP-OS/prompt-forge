@@ -51,28 +51,6 @@ const ASPECTS: { value: FilmAspect; label: string; dims: string }[] = [
   { value: '1:1', label: 'Square (1:1)', dims: '1080×1080' },
 ]
 
-const CAMERA_ANGLES: { value: string; label: string; prompt: string }[] = [
-  { value: 'auto', label: 'Auto (AI decides)', prompt: '' },
-  { value: 'close-up', label: 'Close-up', prompt: 'Close-up shot, intimate framing, focus on subject details.' },
-  { value: 'medium-shot', label: 'Medium shot', prompt: 'Medium shot, waist-up framing, balanced composition.' },
-  { value: 'wide-shot', label: 'Wide shot', prompt: 'Wide shot, full body or environment visible, establishing composition.' },
-  { value: 'low-angle', label: 'Low angle', prompt: 'Low angle shot, looking up at subject, dramatic perspective.' },
-  { value: 'high-angle', label: 'High angle', prompt: 'High angle shot, looking down at subject, overview perspective.' },
-  { value: 'side-angle', label: 'Side angle', prompt: 'Side profile angle, dramatic lighting from the side.' },
-  { value: 'over-shoulder', label: 'Over the shoulder', prompt: 'Over-the-shoulder shot, perspective from behind subject.' },
-]
-
-const THEMES: { value: string; label: string; prompt: string }[] = [
-  { value: 'auto', label: 'Auto (AI decides)', prompt: '' },
-  { value: 'cinematic', label: 'Cinematic', prompt: 'Cinematic film look, dramatic lighting, shallow depth of field, color graded.' },
-  { value: 'bright', label: 'Bright & Clean', prompt: 'Bright, clean, well-lit, professional studio lighting, white background feel.' },
-  { value: 'dark', label: 'Dark & Moody', prompt: 'Dark, moody, low-key lighting, shadows, atmospheric, noir feel.' },
-  { value: 'vibrant', label: 'Vibrant & Colorful', prompt: 'Vibrant, saturated colors, energetic, lively, pop art feel.' },
-  { value: 'minimal', label: 'Minimal', prompt: 'Minimal, clean lines, simple composition, lots of negative space, elegant.' },
-  { value: 'retro', label: 'Retro/Vintage', prompt: 'Retro vintage film look, grain, warm tones, old school aesthetic.' },
-  { value: 'futuristic', label: 'Futuristic', prompt: 'Futuristic, neon lights, cyberpunk, high-tech, sleek modern aesthetic.' },
-]
-
 const PRODUCTS_BUCKET = 'user-images'
 const FRAMES_BUCKET = 'wan-frames'
 
@@ -144,8 +122,6 @@ export function MakeFilmWizardDialog({
   const [aspect, setAspect] = useState<FilmAspect>(defaultAspect)
   const [withNarration, setWithNarration] = useState(true)
   const [noTextOnImages, setNoTextOnImages] = useState(true)
-  const [selectedCameraAngle, setSelectedCameraAngle] = useState('auto')
-  const [selectedTheme, setSelectedTheme] = useState('auto')
   const [productPhotos, setProductPhotos] = useState<ProductPhoto[]>([])
   const [characterPhotos, setCharacterPhotos] = useState<ProductPhoto[]>([])
   const [selectedProduct, setSelectedProduct] = useState<ProductPhoto | null>(null)
@@ -171,9 +147,6 @@ export function MakeFilmWizardDialog({
       setDuration(defaultDuration)
       setAspect(defaultAspect)
       setWithNarration(true)
-      setNoTextOnImages(true)
-      setSelectedCameraAngle('auto')
-      setSelectedTheme('auto')
       setSelectedProduct(null)
       setSelectedCharacter(null)
       setProductPickerOpen(false)
@@ -284,18 +257,6 @@ Each scene should flow logically into the next, building toward a single cohesiv
         enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${selectedProduct.title || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every scene of the film.`
       } else if (selectedCharacter) {
         enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${selectedCharacter.title || 'Selected Character'}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every scene of the film.`
-      }
-      
-      // Add camera angle directive
-      const cameraAngle = CAMERA_ANGLES.find((a) => a.value === selectedCameraAngle)
-      if (cameraAngle && cameraAngle.prompt) {
-        enrichedPrompt += `\n\nCAMERA ANGLE: ${cameraAngle.prompt}`
-      }
-      
-      // Add visual theme directive
-      const theme = THEMES.find((t) => t.value === selectedTheme)
-      if (theme && theme.prompt) {
-        enrichedPrompt += `\n\nVISUAL STYLE: ${theme.prompt}`
       }
       const written = await writeScenario(enrichedPrompt, {
         duration,
@@ -571,46 +532,6 @@ Each scene should flow logically into the next, building toward a single cohesiv
                       With text overlays
                     </Button>
                   </div>
-                </div>
-
-                {/* Camera angle selector */}
-                <div className="space-y-2">
-                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                    <ZoomIn className="h-3.5 w-3.5" />
-                    Camera angle
-                  </label>
-                  <Select value={selectedCameraAngle} onValueChange={(v) => setSelectedCameraAngle(v)}>
-                    <SelectTrigger className="w-full border-white/10 bg-white/[0.03] text-xs text-zinc-100">
-                      <SelectValue placeholder="Select camera angle" />
-                    </SelectTrigger>
-                    <SelectContent className="border-white/10 bg-zinc-900 text-zinc-100">
-                      {CAMERA_ANGLES.map((a) => (
-                        <SelectItem key={a.value} value={a.value} className="text-xs">
-                          {a.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Theme selector */}
-                <div className="space-y-2">
-                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                    <Clapperboard className="h-3.5 w-3.5" />
-                    Visual theme
-                  </label>
-                  <Select value={selectedTheme} onValueChange={(v) => setSelectedTheme(v)}>
-                    <SelectTrigger className="w-full border-white/10 bg-white/[0.03] text-xs text-zinc-100">
-                      <SelectValue placeholder="Select visual theme" />
-                    </SelectTrigger>
-                    <SelectContent className="border-white/10 bg-zinc-900 text-zinc-100">
-                      {THEMES.map((t) => (
-                        <SelectItem key={t.value} value={t.value} className="text-xs">
-                          {t.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                 </div>
 
                 {/* Prompt */}
