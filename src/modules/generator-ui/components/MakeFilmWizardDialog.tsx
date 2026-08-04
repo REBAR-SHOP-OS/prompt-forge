@@ -95,7 +95,7 @@ export interface MakeFilmWizardDialogProps {
   defaultAspect: FilmAspect
   userId: string | null
   writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean; aspect?: FilmAspect }) => Promise<string[]>
-  generateSceneImage: (sceneText: string, aspect?: FilmAspect, productUrl?: string, characterUrl?: string) => Promise<string>
+  generateSceneImage: (sceneText: string, aspect?: FilmAspect, productUrl?: string, characterUrl?: string, noText?: boolean) => Promise<string>
   onApprove: (scenes: string[], perSceneImageUrls: (string | undefined)[], options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean }) => void
 }
 
@@ -121,6 +121,7 @@ export function MakeFilmWizardDialog({
   const [duration, setDuration] = useState<FilmDuration>(defaultDuration)
   const [aspect, setAspect] = useState<FilmAspect>(defaultAspect)
   const [withNarration, setWithNarration] = useState(true)
+  const [noTextOnImages, setNoTextOnImages] = useState(true)
   const [productPhotos, setProductPhotos] = useState<ProductPhoto[]>([])
   const [characterPhotos, setCharacterPhotos] = useState<ProductPhoto[]>([])
   const [selectedProduct, setSelectedProduct] = useState<ProductPhoto | null>(null)
@@ -287,7 +288,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
     for (let i = 0; i < scenes.length; i++) {
       setProgress(`Designing preview image ${i + 1} of ${scenes.length}…`)
       try {
-        next[i] = await generateSceneImage(scenes[i], aspect, selectedProduct?.url, selectedCharacter?.url)
+        next[i] = await generateSceneImage(scenes[i], aspect, selectedProduct?.url, selectedCharacter?.url, noTextOnImages)
       } catch (err) {
         console.error(`Make-film wizard: preview image ${i + 1} failed`, err)
         next[i] = undefined
@@ -304,7 +305,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
     setRegenIndex(index)
     setError(null)
     try {
-      const url = await generateSceneImage(scenes[index], aspect, selectedProduct?.url, selectedCharacter?.url)
+      const url = await generateSceneImage(scenes[index], aspect, selectedProduct?.url, selectedCharacter?.url, noTextOnImages)
       setImages((cur) => {
         const copy = [...cur]
         copy[index] = url
@@ -498,6 +499,36 @@ Each scene should flow logically into the next, building toward a single cohesiv
                     >
                       <MicOff className="h-3.5 w-3.5" />
                       Without narration
+                    </Button>
+                  </div>
+                </div>
+
+                {/* No text on images toggle */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                    <ImageIcon className="h-3.5 w-3.5" />
+                    Text on images
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant={noTextOnImages ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setNoTextOnImages(true)}
+                      className={`h-8 gap-1 text-xs ${noTextOnImages ? 'bg-emerald-500/90 text-white hover:bg-emerald-500' : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'}`}
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                      Clean images (no text)
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={!noTextOnImages ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setNoTextOnImages(false)}
+                      className={`h-8 gap-1 text-xs ${!noTextOnImages ? 'bg-emerald-500/90 text-white hover:bg-emerald-500' : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'}`}
+                    >
+                      <ImageIcon className="h-3.5 w-3.5" />
+                      With text overlays
                     </Button>
                   </div>
                 </div>
