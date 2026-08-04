@@ -342,10 +342,10 @@ Each scene should flow logically into the next, building toward a single cohesiv
   return (
     <>
       <Dialog open={open} onOpenChange={(v) => (working ? undefined : onOpenChange(v))}>
-        <DialogContent className="max-w-3xl border-white/10 bg-zinc-950/95 text-zinc-100">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-zinc-100">
-              <Clapperboard className="h-5 w-5 text-fuchsia-300" aria-hidden="true" />
+        <DialogContent className="max-w-[95vw] max-h-[95vh] w-full h-full border-white/10 bg-zinc-950/95 text-zinc-100 flex flex-col">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle className="flex items-center gap-2 text-zinc-100 text-lg">
+              <Clapperboard className="h-6 w-6 text-fuchsia-300" aria-hidden="true" />
               Make Full Film
             </DialogTitle>
             <DialogDescription className="text-zinc-400">
@@ -353,7 +353,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
             </DialogDescription>
           </DialogHeader>
 
-          <div className="max-h-[65vh] space-y-4 overflow-y-auto pr-1">
+          <div className="flex-1 space-y-4 overflow-y-auto pr-1 min-h-0">
             {/* Step 1 — write / edit the prompt + options. */}
             {step === 'prompt' && (
               <div className="space-y-4">
@@ -587,7 +587,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                 <p className="text-sm text-zinc-300">
                   One preview image per scene. Click to zoom. Regenerate any you dislike. Preview final film before approving.
                 </p>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {scenes.map((scene, i) => {
                     const url = safeMediaUrl(images[i])
                     const isRegen = regenIndex === i
@@ -628,7 +628,8 @@ Each scene should flow logically into the next, building toward a single cohesiv
                           </div>
                         </div>
                         <div 
-                          className="grid aspect-video place-items-center overflow-hidden rounded bg-black/40 cursor-pointer"
+                          className="grid place-items-center overflow-hidden rounded bg-black/40 cursor-pointer"
+                          style={{ aspectRatio: aspect === '9:16' ? '9/16' : aspect === '16:9' ? '16/9' : '1/1' }}
                           onClick={() => url && openLightbox(url, scene)}
                         >
                           {isRegen ? (
