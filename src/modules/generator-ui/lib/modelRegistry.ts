@@ -54,10 +54,7 @@ export const MODEL_REGISTRY: ModelMeta[] = [
     qualityTier: 'high',
     costTier: 'medium',
     costHint: '~$0.10/s',
-    badges: [
-      { kind: 'recommended', label: 'Recommended' },
-      { kind: 'fast', label: 'Fast' },
-    ],
+    badges: [{ kind: 'fast', label: 'Fast' }],
     requiresLocalRouter: false,
   },
   {
@@ -83,7 +80,10 @@ export const MODEL_REGISTRY: ModelMeta[] = [
     qualityTier: 'standard',
     costTier: 'low',
     costHint: '~$0.15/clip',
-    badges: [{ kind: 'cost', label: 'Low cost' }],
+    badges: [
+      { kind: 'recommended', label: 'Recommended' },
+      { kind: 'cost', label: 'Low cost' },
+    ],
     requiresLocalRouter: false,
   },
   {
@@ -262,4 +262,4 @@ export function toTextToVideoModel(model: ModelMeta, pool: ModelMeta[] = MODEL_R
 }
 
 /** The canonical default model id for new sessions. */
-export const DEFAULT_MODEL_ID = 'flow-v1'
+export const DEFAULT_MODEL_ID = 'wan-i2v'
