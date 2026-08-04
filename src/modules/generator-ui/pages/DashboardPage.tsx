@@ -7454,7 +7454,6 @@ export default function DashboardPage() {
     aspect?: FilmAspect,
     productUrl?: string,
     characterUrl?: string,
-    noText?: boolean,
   ): Promise<string> {
     // Preview images are generated at the ratio the clips will use, so the seed
     // frame matches the video (submitScenesAsJobs uses aspectRatio too).
@@ -7473,12 +7472,6 @@ export default function DashboardPage() {
       }
     } catch {
       /* keep the raw scene text as the image prompt */
-    }
-    // The wizard's "clean images" toggle: the model only avoids lettering when
-    // the prompt says so, and the polish step above may have reworded the
-    // prompt, so the directive is appended after it.
-    if (noText) {
-      imagePrompt = `${imagePrompt}\n\nStrictly no text of any kind in the image: no words, letters, numbers, captions, subtitles, signage text, logos, or watermarks.`
     }
     const referenceImageUrls = [productUrl, characterUrl].filter((u): u is string => !!u)
     const { data: iData, error: iErr } = await supabase.functions.invoke('ai-image-generate', {
@@ -10346,8 +10339,8 @@ export default function DashboardPage() {
         defaultAspect={aspectRatio}
         userId={userId}
         writeScenario={writeFilmScenario}
-        generateSceneImage={(sceneText, aspect, productUrl, characterUrl, noText) =>
-          generateFilmSceneImage(sceneText, aspect, productUrl ?? selectedProduct?.url, characterUrl ?? selectedCharacter?.url, noText)
+        generateSceneImage={(sceneText, aspect, productUrl, characterUrl) =>
+          generateFilmSceneImage(sceneText, aspect, productUrl ?? selectedProduct?.url, characterUrl ?? selectedCharacter?.url)
         }
         onApprove={(scenes, perSceneImageUrls, options) => {
           void renderApprovedFilm(scenes, perSceneImageUrls, options)
