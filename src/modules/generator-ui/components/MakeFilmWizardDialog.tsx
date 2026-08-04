@@ -251,11 +251,10 @@ Each scene should flow logically into the next, building toward a single cohesiv
     setProgress('Writing your film scenario…')
     try {
       let enrichedPrompt = generateDurationPrompt(idea, duration)
-      if (selectedProduct && selectedCharacter) {
-        enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${selectedProduct.title || 'Selected Product'}" (image: ${selectedProduct.url}) AND the character "${selectedCharacter.title || 'Selected Character'}" (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every scene of the film. Show the character interacting with or holding the product.`
-      } else if (selectedProduct) {
+      if (selectedProduct) {
         enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${selectedProduct.title || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every scene of the film.`
-      } else if (selectedCharacter) {
+      }
+      if (selectedCharacter) {
         enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${selectedCharacter.title || 'Selected Character'}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every scene of the film.`
       }
       const written = await writeScenario(enrichedPrompt, {
