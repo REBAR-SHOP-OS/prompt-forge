@@ -262,4 +262,4 @@ export function toTextToVideoModel(model: ModelMeta, pool: ModelMeta[] = MODEL_R
 }
 
 /** The canonical default model id for new sessions. */
-export const DEFAULT_MODEL_ID = 'wan-i2v'
+export const DEFAULT_MODEL_ID = 'flow-v1'
