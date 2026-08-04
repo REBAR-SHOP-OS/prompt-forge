@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Clapperboard,
   LoaderCircle,
@@ -157,9 +157,11 @@ export function MakeFilmWizardDialog({
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
   const [lightboxScene, setLightboxScene] = useState<string>('')
+  const hasInitialized = useRef(false)
 
   useEffect(() => {
-    if (open) {
+    if (open && !hasInitialized.current) {
+      hasInitialized.current = true
       setStep('prompt')
       setPrompt(initialPrompt ?? '')
       setScenes([])
@@ -175,10 +177,12 @@ export function MakeFilmWizardDialog({
       setSelectedCameraAngle('auto')
       setSelectedTheme('auto')
       setSelectedProduct(null)
-      setSelectedCharacter(null)
       setProductPickerOpen(false)
       setCharacterPickerOpen(false)
       setLightboxOpen(false)
+    }
+    if (!open) {
+      hasInitialized.current = false
     }
   }, [open, initialPrompt, defaultDuration, defaultAspect])
 
