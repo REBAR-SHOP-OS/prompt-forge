@@ -2313,9 +2313,12 @@ export default function DashboardPage() {
   }, [])
   const setContactBoxRef = useCallback((el: HTMLDivElement | null) => {
     if (contactBoxRef.current === el) return
+    // Invalidate the old node before disconnecting. Lovable can flush a queued
+    // observer callback during ref cleanup; it must see the replacement/null
+    // node and return before it can commit React state from safelyDetachRef.
+    contactBoxRef.current = el
     contactRoRef.current?.disconnect()
     contactRoRef.current = null
-    contactBoxRef.current = el
     if (!el || typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver((entries) => {
       if (contactBoxRef.current !== el) return

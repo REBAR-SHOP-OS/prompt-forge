@@ -28,5 +28,10 @@ describe('preview video size lifecycle', () => {
     expect(callbackRef).not.toContain('applyPreviewVideoSize(0, 0)')
     expect(callbackRef).toContain('contactRoRef.current?.disconnect()')
     expect(callbackRef).toContain('if (!el || typeof ResizeObserver === \'undefined\') return')
+
+    const invalidateOldNode = callbackRef.indexOf('contactBoxRef.current = el')
+    const disconnectObserver = callbackRef.indexOf('contactRoRef.current?.disconnect()')
+    expect(invalidateOldNode).toBeGreaterThan(-1)
+    expect(disconnectObserver).toBeGreaterThan(invalidateOldNode)
   })
 })
