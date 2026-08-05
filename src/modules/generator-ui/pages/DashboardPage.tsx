@@ -160,6 +160,7 @@ import {
   DEFAULT_MODEL_ID,
 } from '@/modules/generator-ui/lib/modelRegistry'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
+import { getNextPreviewSize } from '@/modules/generator-ui/lib/previewSize'
 import CharacterSheetDialog from '@/modules/generator-ui/components/CharacterSheetDialog'
 
 
@@ -2302,19 +2303,28 @@ export default function DashboardPage() {
   // proportionally (matching the burn-in ratios in mergeVideos.ts), giving a
   // true WYSIWYG preview of the final film.
   const [previewVideoSize, setPreviewVideoSize] = useState({ w: 0, h: 0 })
+  const previewVideoSizeRef = useRef(previewVideoSize)
   const contactRoRef = useRef<ResizeObserver | null>(null)
+  const applyPreviewVideoSize = useCallback((width: number, height: number) => {
+    const next = getNextPreviewSize(previewVideoSizeRef.current, width, height)
+    if (next === previewVideoSizeRef.current) return
+    previewVideoSizeRef.current = next
+    setPreviewVideoSize(next)
+  }, [])
   const setContactBoxRef = useCallback((el: HTMLDivElement | null) => {
-    contactBoxRef.current = el
+    if (contactBoxRef.current === el) return
     contactRoRef.current?.disconnect()
-    if (!el || typeof ResizeObserver === 'undefined') { setPreviewVideoSize({ w: 0, h: 0 }); return }
+    contactRoRef.current = null
+    contactBoxRef.current = el
+    if (!el || typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver((entries) => {
+      if (contactBoxRef.current !== el) return
       const r = entries[0]?.contentRect
-      setPreviewVideoSize({ w: r?.width ?? el.clientWidth, h: r?.height ?? el.clientHeight })
+      applyPreviewVideoSize(r?.width ?? el.clientWidth, r?.height ?? el.clientHeight)
     })
     ro.observe(el)
     contactRoRef.current = ro
-    setPreviewVideoSize({ w: el.clientWidth, h: el.clientHeight })
-  }, [])
+  }, [applyPreviewVideoSize])
 
 
 
