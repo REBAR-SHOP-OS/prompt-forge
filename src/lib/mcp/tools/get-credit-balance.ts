@@ -14,7 +14,7 @@ export default defineTool({
   description:
     "Get the signed-in user's credit quota: daily and monthly limits and how much has been used.",
   inputSchema: {},
-  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
   handler: async (_input, ctx) => {
     if (!ctx.isAuthenticated())
       return { content: [{ type: "text", text: "Not authenticated" }], isError: true };
@@ -23,11 +23,13 @@ export default defineTool({
     const client = supabaseForUser(ctx);
     
     // Try to get existing quota
-    let { data, error } = await client
+    const quotaResult = await client
       .from("billing_user_quotas")
       .select("daily_limit_credits, monthly_limit_credits, used_today, used_this_month, last_reset_day, last_reset_month")
       .eq("user_id", userId)
       .maybeSingle();
+    let { data } = quotaResult;
+    const { error } = quotaResult;
     
     if (error) return { content: [{ type: "text", text: error.message }], isError: true };
     
