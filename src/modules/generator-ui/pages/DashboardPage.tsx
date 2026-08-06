@@ -12529,16 +12529,36 @@ export default function DashboardPage() {
             <label className="sr-only" htmlFor="prompt-input">
               Prompt
             </label>
-            <textarea
-              id="prompt-input"
-              ref={promptInputRef}
-              value={promptText}
-              onChange={(event) => setPromptText(event.target.value)}
-              placeholder="What do you want to forge?"
-              rows={2}
-              dir="auto"
-              className="min-h-20 max-h-40 w-full resize-y overflow-y-auto whitespace-pre-wrap break-words text-justify border-0 bg-transparent py-2 text-[15px] leading-6 text-zinc-100 outline-none placeholder:text-zinc-500/70"
-            />
+            <div className="relative">
+              <textarea
+                id="prompt-input"
+                ref={promptInputRef}
+                value={promptText}
+                onChange={(event) => setPromptText(event.target.value)}
+                placeholder="What do you want to forge?"
+                rows={2}
+                dir="auto"
+                className="min-h-20 max-h-40 w-full resize-y overflow-y-auto whitespace-pre-wrap break-words text-justify border-0 bg-transparent py-2 pr-10 text-[15px] leading-6 text-zinc-100 outline-none placeholder:text-zinc-500/70"
+              />
+              {promptText.trim().length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    runEnhancePrompt({ mode: 'silent' })
+                  }}
+                  disabled={isEnhancingPrompt}
+                  title="Enhance prompt"
+                  aria-label="Enhance prompt"
+                  className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full border border-white/10 bg-white/[0.06] text-zinc-400 transition hover:border-amber-300/50 hover:bg-amber-300/10 hover:text-amber-200 disabled:opacity-40"
+                >
+                  {isEnhancingPrompt ? (
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Wand2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                </button>
+              )}
+            </div>
 
             {uploadedFiles.length > 0 ? (
               <div className="flex flex-wrap gap-2">
