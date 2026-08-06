@@ -4,6 +4,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { StylePreviewPlaceholder } from './StylePreviewPlaceholder'
 
 type Props = {
   /** The trigger element (the style chip/button). */
@@ -47,6 +48,17 @@ export function StylePreviewCard({
 }: Props) {
   const [open, setOpen] = useState(false)
 
+  // Try to derive a stable style id from the popover title for the placeholder.
+  // Falls back to a generic placeholder when no mapping is possible.
+  const styleIdFromTitle = (() => {
+    const normalized = title.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    // If it looks like our kebab-case ids, return it directly.
+    if (/^[a-z0-9]+(-[a-z0-9]+)*$/.test(normalized)) {
+      return normalized
+    }
+    return ''
+  })()
+
   const handleSelect = () => {
     onSelect?.()
     setOpen(false)
@@ -71,6 +83,8 @@ export function StylePreviewCard({
             preload="metadata"
             className="mb-2 aspect-video w-full rounded-md bg-black object-cover"
           />
+        ) : styleIdFromTitle ? (
+          <StylePreviewPlaceholder styleId={styleIdFromTitle} label={title} />
         ) : null}
         <div className="text-xs font-semibold text-zinc-100">{title}</div>
         {description ? (
