@@ -160,6 +160,7 @@ import {
   DEFAULT_MODEL_ID,
 } from '@/modules/generator-ui/lib/modelRegistry'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
+import { syncPreviewSizeCssVars } from '@/modules/generator-ui/lib/previewSize'
 import CharacterSheetDialog from '@/modules/generator-ui/components/CharacterSheetDialog'
 
 
@@ -2298,23 +2299,36 @@ export default function DashboardPage() {
   }, [contactKey])
   const [contactDragging, setContactDragging] = useState(false)
   const contactBoxRef = useRef<HTMLDivElement | null>(null)
-  // Track the displayed video height so the live contact overlay can be sized
-  // proportionally (matching the burn-in ratios in mergeVideos.ts), giving a
-  // true WYSIWYG preview of the final film.
-  const [previewVideoSize, setPreviewVideoSize] = useState({ w: 0, h: 0 })
+  // Resize measurements are written directly to CSS variables on the video
+  // box. They must never enter React state: Lovable's ref instrumentation can
+  // detach refs during a commit, and a state dispatch from this lifecycle
+  // recursively re-enters the same commit.
+  const previewVideoSizeRef = useRef({ w: 0, h: 0 })
   const contactRoRef = useRef<ResizeObserver | null>(null)
+  const applyPreviewVideoSize = useCallback((el: HTMLDivElement, width: number, height: number) => {
+    previewVideoSizeRef.current = syncPreviewSizeCssVars(
+      el.style,
+      previewVideoSizeRef.current,
+      width,
+      height,
+    )
+  }, [])
   const setContactBoxRef = useCallback((el: HTMLDivElement | null) => {
+    if (contactBoxRef.current === el) return
     contactBoxRef.current = el
     contactRoRef.current?.disconnect()
-    if (!el || typeof ResizeObserver === 'undefined') { setPreviewVideoSize({ w: 0, h: 0 }); return }
+    contactRoRef.current = null
+    if (!el) return
+    applyPreviewVideoSize(el, el.clientWidth, el.clientHeight)
+    if (typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver((entries) => {
+      if (contactBoxRef.current !== el) return
       const r = entries[0]?.contentRect
-      setPreviewVideoSize({ w: r?.width ?? el.clientWidth, h: r?.height ?? el.clientHeight })
+      applyPreviewVideoSize(el, r?.width ?? el.clientWidth, r?.height ?? el.clientHeight)
     })
     ro.observe(el)
     contactRoRef.current = ro
-    setPreviewVideoSize({ w: el.clientWidth, h: el.clientHeight })
-  }, [])
+  }, [applyPreviewVideoSize])
 
 
 
@@ -10905,18 +10919,20 @@ export default function DashboardPage() {
                     {contactActive && !isMergedFinalPreview ? (() => {
                       // Mirror the burn-in ratios from mergeVideos.ts so the live
                       // overlay matches the final film exactly (WYSIWYG). `scale`
-                      // is baked into the metrics once, just like drawOverlay.
+                      // is baked into the CSS metrics once, just like drawOverlay.
                       const scale = Math.min(2, Math.max(0.5, contactOverlay.scale ?? 1))
-                      const ch = previewVideoSize.h || 0
-                      const cw = previewVideoSize.w || 0
-                      const fontSize = Math.max(10, ch * 0.032 * scale)
-                      const lineGap = fontSize * 0.45
-                      const lineHeight = fontSize + lineGap
-                      const padY = fontSize * 0.6
-                      const padX = cw ? cw * 0.04 : fontSize * 0.9
-                      const radius = fontSize * 0.6
-                      const logoH = ch * 0.12 * scale
-                      const logoGap = fontSize * 0.6
+                      const previewHeight = 'var(--preview-video-height, 0px)'
+                      const previewWidth = 'var(--preview-video-width, 0px)'
+                      const fontSize = `max(10px, calc(${previewHeight} * ${0.032 * scale}))`
+                      const lineGap = `max(4.5px, calc(${previewHeight} * ${0.0144 * scale}))`
+                      const lineHeight = `max(14.5px, calc(${previewHeight} * ${0.0464 * scale}))`
+                      const padY = `max(6px, calc(${previewHeight} * ${0.0192 * scale}))`
+                      const padX = `calc(${previewWidth} * 0.04)`
+                      const radius = padY
+                      const logoH = `calc(${previewHeight} * ${0.12 * scale})`
+                      const logoMarginBottom = contactLines.length
+                        ? `max(1.5px, calc(${previewHeight} * ${0.0048 * scale}))`
+                        : 0
                       const content = (
                         <>
                           {contactLogoActive ? (
@@ -10924,7 +10940,7 @@ export default function DashboardPage() {
                               src={contactOverlay.logoUrl}
                               alt="Company logo"
                               className="w-auto object-contain"
-                              style={{ height: logoH, marginBottom: contactLines.length ? logoGap - lineGap : 0 }}
+                              style={{ height: logoH, marginBottom: logoMarginBottom }}
                             />
                           ) : null}
                           {contactLines.map((line, i) => (
@@ -10932,7 +10948,7 @@ export default function DashboardPage() {
                             <span
                               key={i}
                               className="truncate font-semibold drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]"
-                              style={{ fontSize, lineHeight: `${lineHeight}px`, color: contactOverlay.textColor ?? '#ffffff', fontFamily: contactOverlay.fontFamily || undefined }}
+                              style={{ fontSize, lineHeight, color: contactOverlay.textColor ?? '#ffffff', fontFamily: contactOverlay.fontFamily || undefined }}
                             >
                               {line}
                             </span>
