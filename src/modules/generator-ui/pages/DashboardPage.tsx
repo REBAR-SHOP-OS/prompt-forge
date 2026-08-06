@@ -7100,6 +7100,14 @@ export default function DashboardPage() {
             : null
         if (serverLastFrame) return serverLastFrame
 
+        // Fallback: use first_frame_url as continuity seed if last_frame_url is unavailable.
+        // This preserves subject identity across scenes even if the exact end-frame is missing.
+        const serverFirstFrame =
+          typeof detail.first_frame_url === 'string' && /^https?:\/\//i.test(detail.first_frame_url)
+            ? detail.first_frame_url
+            : null
+        if (serverFirstFrame) return serverFirstFrame
+
         // The proxy → canvas-capture → upload pipeline is network-sensitive and
         // used to hard-fail the WHOLE scenario on the first transient hiccup
         // (the recurring "scene 2 errors after scene 1" report). Retry the full
@@ -7127,10 +7135,10 @@ export default function DashboardPage() {
             }
           }
         }
-        const reason = lastError instanceof Error ? lastError.message : 'unknown'
-        const seedError = new Error(`${sceneLabel}: could not capture last frame (${reason})`)
-        seedError.name = SEED_FRAME_ERROR
-        throw seedError
+        // Degradable: return null instead of throwing so the caller can continue
+        // without a seed frame rather than aborting the entire multi-scene chain.
+        console.warn(`${sceneLabel}: all seed-frame attempts failed; continuing unseeded`, lastError)
+        return null
       }
       await new Promise((r) => setTimeout(r, intervalMs))
     }
