@@ -7474,6 +7474,15 @@ export default function DashboardPage() {
     } catch {
       /* keep the raw scene text as the image prompt */
     }
+    // Explicitly tag which reference image is product vs character so the AI
+    // knows to include BOTH in the generated scene.
+    if (productUrl && characterUrl) {
+      imagePrompt += `\n\nREFERENCE IMAGES (use BOTH in this scene):\n- PRODUCT image: ${productUrl}\n- CHARACTER image: ${characterUrl}\nThe product and the character MUST appear together prominently in the same shot. Show the character interacting with or holding the product.`
+    } else if (productUrl) {
+      imagePrompt += `\n\nREFERENCE PRODUCT image: ${productUrl}\nThis product MUST appear prominently in this scene.`
+    } else if (characterUrl) {
+      imagePrompt += `\n\nREFERENCE CHARACTER image: ${characterUrl}\nThis character MUST appear prominently in this scene.`
+    }
     // The wizard's "clean images" toggle: the model only avoids lettering when
     // the prompt says so, and the polish step above may have reworded the
     // prompt, so the directive is appended after it.
