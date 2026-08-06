@@ -718,7 +718,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                           {isRegen ? (
                             <LoaderCircle className="h-6 w-6 animate-spin text-zinc-500" aria-hidden="true" />
                           ) : url ? (
-                            <img src={url} alt={`Preview for scene ${i + 1}`} className="h-full w-full object-cover" />
+                            <img src={url} alt={`Preview for scene ${i + 1}`} className="h-full w-full max-h-48 object-cover" />
                           ) : (
                             <div className="flex flex-col items-center gap-1 text-zinc-600">
                               <ImageIcon className="h-6 w-6" aria-hidden="true" />
