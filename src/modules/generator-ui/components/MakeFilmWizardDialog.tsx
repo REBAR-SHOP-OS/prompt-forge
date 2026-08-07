@@ -670,7 +670,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                 <p className="text-sm text-zinc-300">
                   One preview image per scene. Click to zoom. Regenerate any you dislike. Preview final film before approving.
                 </p>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
                   {scenes.map((scene, i) => {
                     const url = safeMediaUrl(images[i])
                     const isRegen = regenIndex === i
@@ -711,14 +711,14 @@ Each scene should flow logically into the next, building toward a single cohesiv
                           </div>
                         </div>
                         <div 
-                          className="grid place-items-center overflow-hidden rounded bg-black/40 cursor-pointer"
+                          className="grid place-items-center overflow-hidden rounded bg-black/40 cursor-pointer max-h-[240px]"
                           style={{ aspectRatio: aspect === '9:16' ? '9/16' : aspect === '16:9' ? '16/9' : '1/1' }}
                           onClick={() => url && openLightbox(url, scene)}
                         >
                           {isRegen ? (
                             <LoaderCircle className="h-6 w-6 animate-spin text-zinc-500" aria-hidden="true" />
                           ) : url ? (
-                            <img src={url} alt={`Preview for scene ${i + 1}`} className="h-full w-full object-cover" />
+                            <img src={url} alt={`Preview for scene ${i + 1}`} className="h-full w-full object-cover max-h-[240px]" />
                           ) : (
                             <div className="flex flex-col items-center gap-1 text-zinc-600">
                               <ImageIcon className="h-6 w-6" aria-hidden="true" />
