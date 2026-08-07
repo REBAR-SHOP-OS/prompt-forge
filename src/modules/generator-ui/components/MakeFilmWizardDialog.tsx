@@ -51,26 +51,26 @@ const ASPECTS: { value: FilmAspect; label: string; dims: string }[] = [
   { value: '1:1', label: 'Square (1:1)', dims: '1080×1080' },
 ]
 
-const CAMERA_ANGLES: { value: string; label: string; prompt: string }[] = [
-  { value: 'auto', label: 'Auto (AI decides)', prompt: '' },
-  { value: 'close-up', label: 'Close-up', prompt: 'Close-up shot, intimate framing, focus on subject details.' },
-  { value: 'medium-shot', label: 'Medium shot', prompt: 'Medium shot, waist-up framing, balanced composition.' },
-  { value: 'wide-shot', label: 'Wide shot', prompt: 'Wide shot, full body or environment visible, establishing composition.' },
-  { value: 'low-angle', label: 'Low angle', prompt: 'Low angle shot, looking up at subject, dramatic perspective.' },
-  { value: 'high-angle', label: 'High angle', prompt: 'High angle shot, looking down at subject, overview perspective.' },
-  { value: 'side-angle', label: 'Side angle', prompt: 'Side profile angle, dramatic lighting from the side.' },
-  { value: 'over-shoulder', label: 'Over the shoulder', prompt: 'Over-the-shoulder shot, perspective from behind subject.' },
+const CAMERA_ANGLES: { value: string; label: string; prompt: string; imageUrl: string }[] = [
+  { value: 'auto', label: 'Auto (AI decides)', prompt: '', imageUrl: '/placeholder.svg' },
+  { value: 'close-up', label: 'Close-up', prompt: 'Close-up shot, intimate framing, focus on subject details.', imageUrl: 'https://images.unsplash.com/photo-1554048612-387768052bf7?w=120&h=80&fit=crop&q=80' },
+  { value: 'medium-shot', label: 'Medium shot', prompt: 'Medium shot, waist-up framing, balanced composition.', imageUrl: 'https://images.unsplash.com/photo-1511367461989-f85a21fda167?w=120&h=80&fit=crop&q=80' },
+  { value: 'wide-shot', label: 'Wide shot', prompt: 'Wide shot, full body or environment visible, establishing composition.', imageUrl: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=120&h=80&fit=crop&q=80' },
+  { value: 'low-angle', label: 'Low angle', prompt: 'Low angle shot, looking up at subject, dramatic perspective.', imageUrl: 'https://images.unsplash.com/photo-1469334031218-e382a71b4f77?w=120&h=80&fit=crop&q=80' },
+  { value: 'high-angle', label: 'High angle', prompt: 'High angle shot, looking down at subject, overview perspective.', imageUrl: 'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?w=120&h=80&fit=crop&q=80' },
+  { value: 'side-angle', label: 'Side angle', prompt: 'Side profile angle, dramatic lighting from the side.', imageUrl: 'https://images.unsplash.com/photo-1542206395-9feb3a2f9e7c?w=120&h=80&fit=crop&q=80' },
+  { value: 'over-shoulder', label: 'Over the shoulder', prompt: 'Over-the-shoulder shot, perspective from behind subject.', imageUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&h=80&fit=crop&q=80' },
 ]
 
-const THEMES: { value: string; label: string; prompt: string }[] = [
-  { value: 'auto', label: 'Auto (AI decides)', prompt: '' },
-  { value: 'cinematic', label: 'Cinematic', prompt: 'Cinematic film look, dramatic lighting, shallow depth of field, color graded.' },
-  { value: 'bright', label: 'Bright & Clean', prompt: 'Bright, clean, well-lit, professional studio lighting, white background feel.' },
-  { value: 'dark', label: 'Dark & Moody', prompt: 'Dark, moody, low-key lighting, shadows, atmospheric, noir feel.' },
-  { value: 'vibrant', label: 'Vibrant & Colorful', prompt: 'Vibrant, saturated colors, energetic, lively, pop art feel.' },
-  { value: 'minimal', label: 'Minimal', prompt: 'Minimal, clean lines, simple composition, lots of negative space, elegant.' },
-  { value: 'retro', label: 'Retro/Vintage', prompt: 'Retro vintage film look, grain, warm tones, old school aesthetic.' },
-  { value: 'futuristic', label: 'Futuristic', prompt: 'Futuristic, neon lights, cyberpunk, high-tech, sleek modern aesthetic.' },
+const THEMES: { value: string; label: string; prompt: string; imageUrl: string }[] = [
+  { value: 'auto', label: 'Auto (AI decides)', prompt: '', imageUrl: '/placeholder.svg' },
+  { value: 'cinematic', label: 'Cinematic', prompt: 'Cinematic film look, dramatic lighting, shallow depth of field, color graded.', imageUrl: 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=120&h=80&fit=crop&q=80' },
+  { value: 'bright', label: 'Bright & Clean', prompt: 'Bright, clean, well-lit, professional studio lighting, white background feel.', imageUrl: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=120&h=80&fit=crop&q=80' },
+  { value: 'dark', label: 'Dark & Moody', prompt: 'Dark, moody, low-key lighting, shadows, atmospheric, noir feel.', imageUrl: 'https://images.unsplash.com/photo-1514306191717-452ec28c0404?w=120&h=80&fit=crop&q=80' },
+  { value: 'vibrant', label: 'Vibrant & Colorful', prompt: 'Vibrant, saturated colors, energetic, lively, pop art feel.', imageUrl: 'https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=120&h=80&fit=crop&q=80' },
+  { value: 'minimal', label: 'Minimal', prompt: 'Minimal, clean lines, simple composition, lots of negative space, elegant.', imageUrl: 'https://images.unsplash.com/photo-1494438639946-1ebd1d20bf85?w=120&h=80&fit=crop&q=80' },
+  { value: 'retro', label: 'Retro/Vintage', prompt: 'Retro vintage film look, grain, warm tones, old school aesthetic.', imageUrl: 'https://images.unsplash.com/photo-1461360370896-922624d12aad?w=120&h=80&fit=crop&q=80' },
+  { value: 'futuristic', label: 'Futuristic', prompt: 'Futuristic, neon lights, cyberpunk, high-tech, sleek modern aesthetic.', imageUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=120&h=80&fit=crop&q=80' },
 ]
 
 const PRODUCTS_BUCKET = 'user-images'
@@ -590,7 +590,12 @@ Each scene should flow logically into the next, building toward a single cohesiv
                     <SelectContent className="border-white/10 bg-zinc-900 text-zinc-100">
                       {CAMERA_ANGLES.map((a) => (
                         <SelectItem key={a.value} value={a.value} className="text-xs">
-                          {a.label}
+                          <div className="flex items-center gap-2">
+                            {a.imageUrl && a.imageUrl !== '/placeholder.svg' && (
+                              <img src={a.imageUrl} alt={a.label} className="h-8 w-12 rounded object-cover" />
+                            )}
+                            <span>{a.label}</span>
+                          </div>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -610,7 +615,12 @@ Each scene should flow logically into the next, building toward a single cohesiv
                     <SelectContent className="border-white/10 bg-zinc-900 text-zinc-100">
                       {THEMES.map((t) => (
                         <SelectItem key={t.value} value={t.value} className="text-xs">
-                          {t.label}
+                          <div className="flex items-center gap-2">
+                            {t.imageUrl && t.imageUrl !== '/placeholder.svg' && (
+                              <img src={t.imageUrl} alt={t.label} className="h-8 w-12 rounded object-cover" />
+                            )}
+                            <span>{t.label}</span>
+                          </div>
                         </SelectItem>
                       ))}
                     </SelectContent>
