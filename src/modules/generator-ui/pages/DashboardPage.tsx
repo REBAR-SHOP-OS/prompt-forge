@@ -7488,6 +7488,15 @@ export default function DashboardPage() {
     } catch {
       /* keep the raw scene text as the image prompt */
     }
+    // Explicitly tag which reference image is product vs character so the AI
+    // knows to include BOTH in the generated scene.
+    if (productUrl && characterUrl) {
+      imagePrompt += `\n\nREFERENCE IMAGES (use BOTH in this scene):\n- PRODUCT image: ${productUrl}\n- CHARACTER image: ${characterUrl}\nThe product and the character MUST appear together prominently in the same shot. Show the character interacting with or holding the product.`
+    } else if (productUrl) {
+      imagePrompt += `\n\nREFERENCE PRODUCT image: ${productUrl}\nThis product MUST appear prominently in this scene.`
+    } else if (characterUrl) {
+      imagePrompt += `\n\nREFERENCE CHARACTER image: ${characterUrl}\nThis character MUST appear prominently in this scene.`
+    }
     // The wizard's "clean images" toggle: the model only avoids lettering when
     // the prompt says so, and the polish step above may have reworded the
     // prompt, so the directive is appended after it.
@@ -7505,8 +7514,8 @@ export default function DashboardPage() {
   }
 
   // Step 3 (ONLY after the explicit Approve click) — seed one video job per
-  // scene with the approved preview images, await the whole batch, then assemble
-  // the Final Film. This is the sole path that renders video.
+  // scene with the approved preview images, await the whole batch.
+  // Does NOT auto-assemble the Final Film — that is a separate user action.
   async function renderApprovedFilm(
     scenes: string[],
     perSceneImageUrls: (string | undefined)[],
@@ -7537,7 +7546,7 @@ export default function DashboardPage() {
       // Clear the composer prompt like the existing auto-split path does.
       setPromptText('')
 
-      // Wait for the whole batch, then auto-assemble the Final Film.
+      // Wait for the whole batch.
       setVideoColumnMessage('Generating every scene… keep this tab open.')
       const anyPlayable = await waitForAutoFilmBatch(createdJobIds)
       if (!anyPlayable) {
@@ -7545,11 +7554,9 @@ export default function DashboardPage() {
         setVideoColumnMessage('No scenes finished rendering. Nothing to assemble.')
         return
       }
-      // Let the just-merged job details settle into state (and the merge ref
-      // refresh) before assembling, so the merge sees the completed clips.
-      await new Promise((r) => setTimeout(r, 1_200))
-      setVideoColumnMessage('All scenes ready — assembling your final film…')
-      await handleMergeAllVideosRef.current()
+      setVideoColumnMessage('All scenes ready — review in the timeline.')
+      // NOTE: We intentionally do NOT call handleMergeAllVideosRef here.
+      // The user must explicitly trigger Final Film assembly themselves.
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Could not generate the film.'
       setComposerError(msg)
