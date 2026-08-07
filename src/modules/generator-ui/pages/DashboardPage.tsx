@@ -7454,8 +7454,10 @@ export default function DashboardPage() {
     }
     // Fallback (no business info, sub-30 duration, or a failed/empty split):
     // build the expected number of scenes straight from the prompt.
-    if (scenes.length === 0) {
-      scenes = Array.from({ length: expectedScenes }, () => trimmed)
+    if (scenes.length < expectedScenes) {
+      const missing = expectedScenes - scenes.length
+      const padded = Array.from({ length: missing }, () => trimmed)
+      scenes = [...scenes, ...padded]
     }
     return scenes
   }
