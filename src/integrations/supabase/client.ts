@@ -3,7 +3,11 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://sacxoanuyetjfrfllkzx.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+// The anon (publishable) key is public by design; hardcoding it as the fallback
+// is safe and standard for Supabase frontends. PR #83 changed the fallback to ""
+// which shipped an EMPTY key to production (VITE_SUPABASE_ANON_KEY is not set in
+// the build environment), breaking every browser-side Supabase call with 401s.
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNhY3hvYW51eWV0amZyZmxsa3p4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc1NzU0MTIsImV4cCI6MjA5MzE1MTQxMn0.QRgtAVJjNMLN8-Lsdxj4_DlooWkNBjcqu92cizwpIlY";
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
