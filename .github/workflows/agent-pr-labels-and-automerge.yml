@@ -35,22 +35,21 @@ permissions:
   pull-requests: write
   statuses: read
 
-concurrency:
-  # One repository-wide gate prevents cross-event races between comments, reviews, checks, and commits.
-  group: agent-pr-labels-and-automerge-${{ github.repository }}
-  cancel-in-progress: false
-
 jobs:
-  evaluate:
-    name: Label and arm eligible agent PRs
+  resolve:
+    name: Resolve pull request
     if: github.event_name != 'issue_comment' || github.actor == 'rebar-agent-bot[bot]'
     runs-on: ubuntu-latest
+    outputs:
+      pr: ${{ steps.resolve.outputs.pr }}
+      skip: ${{ steps.resolve.outputs.skip }}
     steps:
       - name: Resolve pull request number
         id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
           INPUT_PR: ${{ inputs.pr }}
           PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
@@ -82,12 +81,20 @@ jobs:
           echo "pr=$pr" >> "$GITHUB_OUTPUT"
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
+  evaluate:
+    name: Label and arm eligible agent PRs
+    needs: resolve
+    if: needs.resolve.outputs.skip != 'true'
+    concurrency:
+      group: agent-pr-labels-and-automerge-${{ github.repository }}-${{ needs.resolve.outputs.pr }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    steps:
       - name: Label, gate, and arm auto-merge
-        if: steps.resolve.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          PR: ${{ steps.resolve.outputs.pr }}
+          PR: ${{ needs.resolve.outputs.pr }}
           SELF_CHECK_NAME: Label and arm eligible agent PRs
         run: |
           set -euo pipefail
