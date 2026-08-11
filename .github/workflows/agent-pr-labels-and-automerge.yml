@@ -35,7 +35,7 @@ permissions:
   statuses: read
 
 concurrency:
-  group: agent-pr-labels-and-automerge-${{ github.event.pull_request.number || github.event.issue.number || github.event.review.pull_request_url || github.event.check_suite.head_sha || inputs.pr }}
+  group: agent-pr-labels-and-automerge-${{ github.event.pull_request.number || github.event.issue.number || github.event.check_suite.pull_requests[0].number || inputs.pr || github.event.check_suite.head_sha }}
   cancel-in-progress: false
 
 jobs:
