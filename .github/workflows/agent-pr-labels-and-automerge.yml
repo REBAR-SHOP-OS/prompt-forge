@@ -175,23 +175,28 @@ jobs:
             exit 0
           fi
 
-          REVIEW_COMMENTS_JSON="$(gh api --paginate "repos/$REPO/issues/$PR/comments?per_page=100" | jq -s 'add')"
-          openclaw_review_ok="$(echo "$REVIEW_COMMENTS_JSON" | jq -r --arg sha "$head_sha" '[.[] | select(.user.login == "rebar-agent-bot[bot]") | select(.body == ("OPENCLAW_REVIEW_PASS head_sha=" + $sha))] | length')"
+          load_review_evidence() {
+            REVIEW_COMMENTS_JSON="$(gh api --paginate "repos/$REPO/issues/$PR/comments?per_page=100" | jq -s 'add')"
+            openclaw_review_ok="$(echo "$REVIEW_COMMENTS_JSON" | jq -r --arg sha "$head_sha" '[.[] | select(.user.login == "rebar-agent-bot[bot]") | select(.body == ("OPENCLAW_REVIEW_PASS head_sha=" + $sha))] | length')"
 
-          GITHUB_REVIEWS_JSON="$(gh api --paginate "repos/$REPO/pulls/$PR/reviews?per_page=100" | jq -s 'add')"
-          GITHUB_REVIEW_COMMENTS_JSON="$(gh api --paginate "repos/$REPO/pulls/$PR/comments?per_page=100" | jq -s 'add')"
-          qualifying_review_ids="$(echo "$GITHUB_REVIEWS_JSON" | jq -c --arg sha "$head_sha" '[.[] | select(.commit_id == $sha) | select(.user.login == "chatgpt-codex-connector[bot]" or .user.login == "copilot-pull-request-reviewer[bot]") | select(.state == "APPROVED" or .state == "COMMENTED") | .id]')"
-          github_bot_review_count="$(echo "$qualifying_review_ids" | jq -r 'length')"
-          github_bot_inline_findings="$(echo "$GITHUB_REVIEW_COMMENTS_JSON" | jq -r --argjson ids "$qualifying_review_ids" '[.[] | select(.pull_request_review_id as $review_id | $ids | index($review_id))] | length')"
-          if [ "$github_bot_review_count" -ge 1 ] && [ "$github_bot_inline_findings" -eq 0 ]; then
-            github_bot_review_ok=1
-          else
-            github_bot_review_ok=0
-          fi
+            GITHUB_REVIEWS_JSON="$(gh api --paginate "repos/$REPO/pulls/$PR/reviews?per_page=100" | jq -s 'add')"
+            GITHUB_REVIEW_COMMENTS_JSON="$(gh api --paginate "repos/$REPO/pulls/$PR/comments?per_page=100" | jq -s 'add')"
+            active_review_ids="$(echo "$GITHUB_REVIEWS_JSON" | jq -c --arg sha "$head_sha" '[.[] | select(.commit_id == $sha) | select(.user.login == "chatgpt-codex-connector[bot]" or .user.login == "copilot-pull-request-reviewer[bot]") | select(.state != "DISMISSED") | .id]')"
+            github_bot_review_count="$(echo "$GITHUB_REVIEWS_JSON" | jq -r --arg sha "$head_sha" '[.[] | select(.commit_id == $sha) | select(.user.login == "chatgpt-codex-connector[bot]" or .user.login == "copilot-pull-request-reviewer[bot]") | select(.state == "APPROVED" or .state == "COMMENTED")] | length')"
+            github_bot_blocking_reviews="$(echo "$GITHUB_REVIEWS_JSON" | jq -r --arg sha "$head_sha" '[.[] | select(.commit_id == $sha) | select(.user.login == "chatgpt-codex-connector[bot]" or .user.login == "copilot-pull-request-reviewer[bot]") | select(.state == "CHANGES_REQUESTED")] | length')"
+            github_bot_inline_findings="$(echo "$GITHUB_REVIEW_COMMENTS_JSON" | jq -r --argjson ids "$active_review_ids" '[.[] | select(.pull_request_review_id as $review_id | $ids | index($review_id))] | length')"
+            if [ "$github_bot_review_count" -ge 1 ] && [ "$github_bot_blocking_reviews" -eq 0 ] && [ "$github_bot_inline_findings" -eq 0 ]; then
+              github_bot_review_ok=1
+            else
+              github_bot_review_ok=0
+            fi
+          }
+
+          load_review_evidence
 
           if [ "$openclaw_review_ok" -lt 1 ] || [ "$github_bot_review_ok" -lt 1 ]; then
             add_label "status:review-needed"
-            echo "::notice::Waiting for independent exact-head review evidence on $head_sha (OpenClaw reviewer=$openclaw_review_ok, GitHub bot reviews=$github_bot_review_count, inline findings=$github_bot_inline_findings)."
+            echo "::notice::Waiting for independent exact-head review evidence on $head_sha (OpenClaw reviewer=$openclaw_review_ok, clean GitHub reviews=$github_bot_review_count, blocking reviews=$github_bot_blocking_reviews, inline findings=$github_bot_inline_findings)."
             gh pr merge "$PR" --repo "$REPO" --disable-auto || true
             exit 0
           fi
@@ -235,7 +240,16 @@ jobs:
             exit 0
           fi
 
-          echo "Agent PR passed OpenClaw reviewer, GitHub rebar bot review, mergeability, and every check is green. Enabling native GitHub auto-merge for exact head $head_sha."
+          # Refresh evidence immediately before the SHA-pinned merge call.
+          load_review_evidence
+          if [ "$openclaw_review_ok" -lt 1 ] || [ "$github_bot_review_ok" -lt 1 ]; then
+            add_label "status:review-needed"
+            echo "::notice::Review evidence changed before merge (OpenClaw=$openclaw_review_ok, clean GitHub reviews=$github_bot_review_count, blocking reviews=$github_bot_blocking_reviews, inline findings=$github_bot_inline_findings)."
+            gh pr merge "$PR" --repo "$REPO" --disable-auto || true
+            exit 0
+          fi
+
+          echo "Agent PR passed freshly reloaded review evidence, mergeability, and every check. Enabling native GitHub auto-merge for exact head $head_sha."
           set +e
           out="$(gh pr merge "$PR" --repo "$REPO" --auto --squash --match-head-commit "$head_sha" 2>&1)"
           rc=$?
