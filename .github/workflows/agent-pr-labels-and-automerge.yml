@@ -96,6 +96,8 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ needs.resolve.outputs.pr }}
           SELF_CHECK_NAME: Label and arm eligible agent PRs
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
         run: |
           set -euo pipefail
 
@@ -198,6 +200,11 @@ jobs:
             add_label "status:review-needed"
             echo "::notice::Waiting for independent exact-head review evidence on $head_sha (OpenClaw reviewer=$openclaw_review_ok, clean GitHub reviews=$github_bot_review_count, blocking reviews=$github_bot_blocking_reviews, inline findings=$github_bot_inline_findings)."
             gh pr merge "$PR" --repo "$REPO" --disable-auto || true
+            exit 0
+          fi
+
+          if [ "$EVENT_NAME" = "issue_comment" ] && [ "$EVENT_ACTION" = "deleted" ]; then
+            echo "Deleted-comment events may only re-evaluate and disarm stale evidence; they never arm or merge."
             exit 0
           fi
 
