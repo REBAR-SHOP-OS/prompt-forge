@@ -5,6 +5,7 @@ on:
     types:
       - created
       - edited
+      - deleted
   pull_request:
     types:
       - opened
@@ -35,7 +36,8 @@ permissions:
   statuses: read
 
 concurrency:
-  group: agent-pr-labels-and-automerge-${{ github.event.pull_request.number || github.event.issue.number || github.event.check_suite.pull_requests[0].number || inputs.pr || github.event.check_suite.head_sha }}
+  # One repository-wide gate prevents cross-event races between comments, reviews, checks, and commits.
+  group: agent-pr-labels-and-automerge-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
@@ -171,8 +173,9 @@ jobs:
 
           GITHUB_REVIEWS_JSON="$(gh api --paginate "repos/$REPO/pulls/$PR/reviews?per_page=100" | jq -s 'add')"
           GITHUB_REVIEW_COMMENTS_JSON="$(gh api --paginate "repos/$REPO/pulls/$PR/comments?per_page=100" | jq -s 'add')"
-          github_bot_review_count="$(echo "$GITHUB_REVIEWS_JSON" | jq -r --arg sha "$head_sha" '[.[] | select(.commit_id == $sha) | select(.user.login == "chatgpt-codex-connector[bot]" or .user.login == "copilot-pull-request-reviewer[bot]") | select(.state == "APPROVED" or .state == "COMMENTED")] | length')"
-          github_bot_inline_findings="$(echo "$GITHUB_REVIEW_COMMENTS_JSON" | jq -r --arg sha "$head_sha" '[.[] | select(.commit_id == $sha) | select(.user.login == "chatgpt-codex-connector[bot]" or .user.login == "copilot-pull-request-reviewer[bot]")] | length')"
+          qualifying_review_ids="$(echo "$GITHUB_REVIEWS_JSON" | jq -c --arg sha "$head_sha" '[.[] | select(.commit_id == $sha) | select(.user.login == "chatgpt-codex-connector[bot]" or .user.login == "copilot-pull-request-reviewer[bot]") | select(.state == "APPROVED" or .state == "COMMENTED") | .id]')"
+          github_bot_review_count="$(echo "$qualifying_review_ids" | jq -r 'length')"
+          github_bot_inline_findings="$(echo "$GITHUB_REVIEW_COMMENTS_JSON" | jq -r --argjson ids "$qualifying_review_ids" '[.[] | select(.pull_request_review_id as $review_id | $ids | index($review_id))] | length')"
           if [ "$github_bot_review_count" -ge 1 ] && [ "$github_bot_inline_findings" -eq 0 ]; then
             github_bot_review_ok=1
           else
@@ -217,9 +220,17 @@ jobs:
             exit 0
           fi
 
-          echo "Agent PR passed OpenClaw reviewer, GitHub rebar bot review, mergeability, and every check is green. Enabling native GitHub auto-merge."
+          current_head_sha="$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq '.headRefOid')"
+          if [ "$current_head_sha" != "$head_sha" ]; then
+            add_label "status:review-needed"
+            echo "::notice::PR head changed from reviewed $head_sha to $current_head_sha; fresh reviews are required."
+            gh pr merge "$PR" --repo "$REPO" --disable-auto || true
+            exit 0
+          fi
+
+          echo "Agent PR passed OpenClaw reviewer, GitHub rebar bot review, mergeability, and every check is green. Enabling native GitHub auto-merge for exact head $head_sha."
           set +e
-          out="$(gh pr merge "$PR" --repo "$REPO" --auto --squash 2>&1)"
+          out="$(gh pr merge "$PR" --repo "$REPO" --auto --squash --match-head-commit "$head_sha" 2>&1)"
           rc=$?
           set -e
           echo "$out"
@@ -231,7 +242,7 @@ jobs:
 
           if echo "$out" | grep -qi "clean status"; then
             echo "GitHub cannot arm because status is already clean; merging directly after all gates passed."
-            gh pr merge "$PR" --repo "$REPO" --squash
+            gh pr merge "$PR" --repo "$REPO" --squash --match-head-commit "$head_sha"
             add_label "status:auto-merge-armed"
             exit 0
           fi
