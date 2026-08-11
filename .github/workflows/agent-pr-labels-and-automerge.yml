@@ -1,0 +1,205 @@
+name: Agent PR labels and full auto-merge
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+      - converted_to_draft
+      - labeled
+      - unlabeled
+  check_suite:
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to evaluate
+        required: true
+
+permissions:
+  contents: write
+  checks: read
+  issues: write
+  pull-requests: write
+  statuses: read
+
+concurrency:
+  group: agent-pr-labels-and-automerge-${{ github.event.pull_request.number || github.event.check_suite.head_sha || inputs.pr }}
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    name: Label and arm eligible agent PRs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve pull request number
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          INPUT_PR: ${{ inputs.pr }}
+          PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
+          CHECK_SUITE_SHA: ${{ github.event.check_suite.head_sha }}
+        run: |
+          set -euo pipefail
+
+          pr=""
+          if [ -n "${INPUT_PR:-}" ]; then
+            pr="$INPUT_PR"
+          elif [ -n "${PULL_REQUEST_NUMBER:-}" ]; then
+            pr="$PULL_REQUEST_NUMBER"
+          elif [ -n "${CHECK_SUITE_SHA:-}" ]; then
+            pr="$(gh pr list --repo "$REPO" --state open --search "$CHECK_SUITE_SHA" --json number --jq '.[0].number // empty')"
+          fi
+
+          if [ -z "$pr" ]; then
+            echo "No open PR resolved for this event; nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Label, gate, and arm auto-merge
+        if: steps.resolve.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ steps.resolve.outputs.pr }}
+          SELF_CHECK_NAME: Label and arm eligible agent PRs
+        run: |
+          set -euo pipefail
+
+          add_label() {
+            gh pr edit "$PR" --repo "$REPO" --add-label "$1" >/dev/null 2>&1 || true
+          }
+
+          remove_label() {
+            gh pr edit "$PR" --repo "$REPO" --remove-label "$1" >/dev/null 2>&1 || true
+          }
+
+          clear_status_labels() {
+            for label in status:draft status:checks-pending status:auto-merge-armed status:blocked; do
+              remove_label "$label"
+            done
+          }
+
+          PR_JSON="$(gh pr view "$PR" --repo "$REPO" --json author,headRefName,headRefOid,headRepository,isDraft,labels,mergeable,title,url)"
+          echo "$PR_JSON" | jq .
+
+          author="$(echo "$PR_JSON" | jq -r '.author.login')"
+          head_repo="$(echo "$PR_JSON" | jq -r '.headRepository.nameWithOwner')"
+          head_ref="$(echo "$PR_JSON" | jq -r '.headRefName')"
+          head_sha="$(echo "$PR_JSON" | jq -r '.headRefOid')"
+          draft="$(echo "$PR_JSON" | jq -r '.isDraft')"
+          mergeable="$(echo "$PR_JSON" | jq -r '.mergeable')"
+          labels="$(echo "$PR_JSON" | jq -r '[.labels[].name] | join(",")')"
+
+          is_agent_pr="false"
+          case "$author:$head_ref" in
+            app/rebar-agent-bot:agent/*|app/rebar-agent-bot:codex/*|rebar-agent-bot:agent/*|rebar-agent-bot:codex/*)
+              is_agent_pr="true"
+              ;;
+            *:agent/*|*:codex/*)
+              is_agent_pr="true"
+              ;;
+          esac
+
+          if [ "$is_agent_pr" != "true" ]; then
+            echo "Not an agent PR; leaving human PR policy in control."
+            exit 0
+          fi
+
+          if [ "$author" = "app/rebar-agent-bot" ] || [ "$author" = "rebar-agent-bot" ]; then
+            add_label "bot-pr"
+          fi
+          case "$head_ref" in
+            agent/coder/*|codex/*) add_label "agent:coder" ;;
+            agent/supervisor/*) add_label "agent:supervisor" ;;
+          esac
+          add_label "lovable:handoff-pending"
+
+          clear_status_labels
+
+          if [ "$head_repo" != "$REPO" ]; then
+            add_label "status:blocked"
+            echo "::notice::Fork PRs are not auto-merged."
+            exit 0
+          fi
+
+          if echo ",$labels," | grep -Eq ",(do-not-merge|blocked|hold|needs-owner),"; then
+            add_label "status:blocked"
+            echo "::notice::Blocked/hold label present; not eligible for auto-merge."
+            gh pr merge "$PR" --repo "$REPO" --disable-auto || true
+            exit 0
+          fi
+
+          if [ "$draft" = "true" ]; then
+            echo "Agent PR is draft; marking ready for review before evaluating auto-merge."
+            gh pr ready "$PR" --repo "$REPO" || true
+          fi
+
+          if [ "$mergeable" != "MERGEABLE" ]; then
+            add_label "status:blocked"
+            echo "::notice::PR mergeability is $mergeable; not eligible for auto-merge."
+            gh pr merge "$PR" --repo "$REPO" --disable-auto || true
+            exit 0
+          fi
+
+          CHECK_RUNS_JSON="$(gh api "repos/$REPO/commits/$head_sha/check-runs?per_page=100")"
+          COMBINED_STATUS_JSON="$(gh api "repos/$REPO/commits/$head_sha/status" || echo '{"statuses":[]}' )"
+
+          bad_checks="$(echo "$CHECK_RUNS_JSON" | jq -r --arg self "$SELF_CHECK_NAME" '
+            [ .check_runs[]
+              | select(.name != $self)
+              | select(.status != "completed"
+                       or (.conclusion != "success"
+                           and .conclusion != "neutral"
+                           and .conclusion != "skipped"))
+              | "\(.name): \(.status) \(.conclusion // "")" ]
+            | unique
+            | join("\n")')"
+
+          bad_statuses="$(echo "$COMBINED_STATUS_JSON" | jq -r '
+            [ .statuses[]
+              | select(.state != "success")
+              | "\(.context): \(.state)" ]
+            | unique
+            | join("\n")')"
+
+          not_green="$(printf '%s\n%s\n' "$bad_checks" "$bad_statuses" | sed '/^$/d')"
+
+          if [ -n "$not_green" ]; then
+            add_label "status:checks-pending"
+            echo "Checks are not green yet:"
+            echo "$not_green"
+            gh pr merge "$PR" --repo "$REPO" --disable-auto || true
+            exit 0
+          fi
+
+          echo "Agent PR is same-repo, non-held, mergeable, and every check is green. Enabling native GitHub auto-merge."
+          set +e
+          out="$(gh pr merge "$PR" --repo "$REPO" --auto --squash 2>&1)"
+          rc=$?
+          set -e
+          echo "$out"
+
+          if [ "$rc" -eq 0 ]; then
+            add_label "status:auto-merge-armed"
+            exit 0
+          fi
+
+          if echo "$out" | grep -qi "clean status"; then
+            echo "GitHub cannot arm because status is already clean; merging directly after all gates passed."
+            gh pr merge "$PR" --repo "$REPO" --squash
+            add_label "status:auto-merge-armed"
+            exit 0
+          fi
+
+          add_label "status:blocked"
+          echo "::error::Could not enable auto-merge: $out"
+          exit 1
