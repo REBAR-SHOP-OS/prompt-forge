@@ -14,6 +14,10 @@ on:
       - converted_to_draft
       - labeled
       - unlabeled
+  pull_request_review:
+    types:
+      - submitted
+      - dismissed
   check_suite:
     types:
       - completed
@@ -31,7 +35,7 @@ permissions:
   statuses: read
 
 concurrency:
-  group: agent-pr-labels-and-automerge-${{ github.event.pull_request.number || github.event.issue.number || github.event.check_suite.head_sha || inputs.pr }}
+  group: agent-pr-labels-and-automerge-${{ github.event.pull_request.number || github.event.issue.number || github.event.review.pull_request_url || github.event.check_suite.head_sha || inputs.pr }}
   cancel-in-progress: false
 
 jobs:
@@ -49,6 +53,7 @@ jobs:
           PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_IS_PR: ${{ github.event.issue.pull_request.url }}
+          REVIEW_PR_URL: ${{ github.event.review.pull_request_url }}
           CHECK_SUITE_SHA: ${{ github.event.check_suite.head_sha }}
         run: |
           set -euo pipefail
@@ -60,6 +65,8 @@ jobs:
             pr="$PULL_REQUEST_NUMBER"
           elif [ -n "${ISSUE_NUMBER:-}" ] && [ -n "${ISSUE_IS_PR:-}" ]; then
             pr="$ISSUE_NUMBER"
+          elif [ -n "${REVIEW_PR_URL:-}" ]; then
+            pr="${REVIEW_PR_URL##*/}"
           elif [ -n "${CHECK_SUITE_SHA:-}" ]; then
             pr="$(gh pr list --repo "$REPO" --state open --search "$CHECK_SUITE_SHA" --json number --jq '.[0].number // empty')"
           fi
@@ -168,7 +175,7 @@ jobs:
             [ $reviews[]
               | select(.commit_id == $sha)
               | select(.user.login == "chatgpt-codex-connector[bot]" or .user.login == "copilot-pull-request-reviewer[bot]")
-              | select(.state != "CHANGES_REQUESTED" and .state != "DISMISSED")
+              | select(.state == "APPROVED" or .state == "COMMENTED")
               | .id as $review_id
               | select([ $comments[] | select(.pull_request_review_id == $review_id) ] | length == 0)
             ] | length')"
