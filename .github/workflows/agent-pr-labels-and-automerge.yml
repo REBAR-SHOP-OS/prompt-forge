@@ -84,7 +84,7 @@ jobs:
   evaluate:
     name: Label and arm eligible agent PRs
     needs: resolve
-    if: needs.resolve.outputs.skip != 'true'
+    if: needs.resolve.outputs.skip == 'false'
     concurrency:
       group: agent-pr-labels-and-automerge-${{ github.repository }}-${{ needs.resolve.outputs.pr }}
       cancel-in-progress: false
