@@ -171,18 +171,17 @@ jobs:
 
           GITHUB_REVIEWS_JSON="$(gh api --paginate "repos/$REPO/pulls/$PR/reviews?per_page=100" | jq -s 'add')"
           GITHUB_REVIEW_COMMENTS_JSON="$(gh api --paginate "repos/$REPO/pulls/$PR/comments?per_page=100" | jq -s 'add')"
-          github_bot_review_ok="$(jq -n -r --arg sha "$head_sha" --argjson reviews "$GITHUB_REVIEWS_JSON" --argjson comments "$GITHUB_REVIEW_COMMENTS_JSON" '
-            [ $reviews[]
-              | select(.commit_id == $sha)
-              | select(.user.login == "chatgpt-codex-connector[bot]" or .user.login == "copilot-pull-request-reviewer[bot]")
-              | select(.state == "APPROVED" or .state == "COMMENTED")
-              | .id as $review_id
-              | select([ $comments[] | select(.pull_request_review_id == $review_id) ] | length == 0)
-            ] | length')"
+          github_bot_review_count="$(echo "$GITHUB_REVIEWS_JSON" | jq -r --arg sha "$head_sha" '[.[] | select(.commit_id == $sha) | select(.user.login == "chatgpt-codex-connector[bot]" or .user.login == "copilot-pull-request-reviewer[bot]") | select(.state == "APPROVED" or .state == "COMMENTED")] | length')"
+          github_bot_inline_findings="$(echo "$GITHUB_REVIEW_COMMENTS_JSON" | jq -r --arg sha "$head_sha" '[.[] | select(.commit_id == $sha) | select(.user.login == "chatgpt-codex-connector[bot]" or .user.login == "copilot-pull-request-reviewer[bot]")] | length')"
+          if [ "$github_bot_review_count" -ge 1 ] && [ "$github_bot_inline_findings" -eq 0 ]; then
+            github_bot_review_ok=1
+          else
+            github_bot_review_ok=0
+          fi
 
           if [ "$openclaw_review_ok" -lt 1 ] || [ "$github_bot_review_ok" -lt 1 ]; then
             add_label "status:review-needed"
-            echo "::notice::Waiting for independent exact-head review evidence on $head_sha (OpenClaw reviewer=$openclaw_review_ok, clean GitHub bot review=$github_bot_review_ok)."
+            echo "::notice::Waiting for independent exact-head review evidence on $head_sha (OpenClaw reviewer=$openclaw_review_ok, GitHub bot reviews=$github_bot_review_count, inline findings=$github_bot_inline_findings)."
             gh pr merge "$PR" --repo "$REPO" --disable-auto || true
             exit 0
           fi
