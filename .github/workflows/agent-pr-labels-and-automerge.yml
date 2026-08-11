@@ -38,7 +38,7 @@ permissions:
 jobs:
   resolve:
     name: Resolve pull request
-    if: github.event_name != 'issue_comment' || github.actor == 'rebar-agent-bot[bot]'
+    if: github.event_name != 'issue_comment' || github.event.action == 'deleted' || github.actor == 'rebar-agent-bot[bot]'
     runs-on: ubuntu-latest
     outputs:
       pr: ${{ steps.resolve.outputs.pr }}
