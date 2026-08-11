@@ -1,6 +1,10 @@
 name: Agent PR labels and full auto-merge
 
 on:
+  issue_comment:
+    types:
+      - created
+      - edited
   pull_request:
     types:
       - opened
@@ -27,12 +31,13 @@ permissions:
   statuses: read
 
 concurrency:
-  group: agent-pr-labels-and-automerge-${{ github.event.pull_request.number || github.event.check_suite.head_sha || inputs.pr }}
+  group: agent-pr-labels-and-automerge-${{ github.event.pull_request.number || github.event.issue.number || github.event.check_suite.head_sha || inputs.pr }}
   cancel-in-progress: false
 
 jobs:
   evaluate:
     name: Label and arm eligible agent PRs
+    if: github.event_name != 'issue_comment' || github.actor == 'rebar-agent-bot[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Resolve pull request number
@@ -42,6 +47,8 @@ jobs:
           REPO: ${{ github.repository }}
           INPUT_PR: ${{ inputs.pr }}
           PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_IS_PR: ${{ github.event.issue.pull_request.url }}
           CHECK_SUITE_SHA: ${{ github.event.check_suite.head_sha }}
         run: |
           set -euo pipefail
@@ -51,6 +58,8 @@ jobs:
             pr="$INPUT_PR"
           elif [ -n "${PULL_REQUEST_NUMBER:-}" ]; then
             pr="$PULL_REQUEST_NUMBER"
+          elif [ -n "${ISSUE_NUMBER:-}" ] && [ -n "${ISSUE_IS_PR:-}" ]; then
+            pr="$ISSUE_NUMBER"
           elif [ -n "${CHECK_SUITE_SHA:-}" ]; then
             pr="$(gh pr list --repo "$REPO" --state open --search "$CHECK_SUITE_SHA" --json number --jq '.[0].number // empty')"
           fi
@@ -83,7 +92,7 @@ jobs:
           }
 
           clear_status_labels() {
-            for label in status:draft status:checks-pending status:auto-merge-armed status:blocked; do
+            for label in status:draft status:review-needed status:checks-pending status:auto-merge-armed status:blocked; do
               remove_label "$label"
             done
           }
@@ -150,6 +159,27 @@ jobs:
             exit 0
           fi
 
+          REVIEW_COMMENTS_JSON="$(gh api --paginate "repos/$REPO/issues/$PR/comments?per_page=100" | jq -s 'add')"
+          openclaw_review_ok="$(echo "$REVIEW_COMMENTS_JSON" | jq -r --arg sha "$head_sha" '[.[] | select(.user.login == "rebar-agent-bot[bot]") | select(.body == ("OPENCLAW_REVIEW_PASS head_sha=" + $sha))] | length')"
+
+          GITHUB_REVIEWS_JSON="$(gh api --paginate "repos/$REPO/pulls/$PR/reviews?per_page=100" | jq -s 'add')"
+          GITHUB_REVIEW_COMMENTS_JSON="$(gh api --paginate "repos/$REPO/pulls/$PR/comments?per_page=100" | jq -s 'add')"
+          github_bot_review_ok="$(jq -n -r --arg sha "$head_sha" --argjson reviews "$GITHUB_REVIEWS_JSON" --argjson comments "$GITHUB_REVIEW_COMMENTS_JSON" '
+            [ $reviews[]
+              | select(.commit_id == $sha)
+              | select(.user.login == "chatgpt-codex-connector[bot]" or .user.login == "copilot-pull-request-reviewer[bot]")
+              | select(.state != "CHANGES_REQUESTED" and .state != "DISMISSED")
+              | .id as $review_id
+              | select([ $comments[] | select(.pull_request_review_id == $review_id) ] | length == 0)
+            ] | length')"
+
+          if [ "$openclaw_review_ok" -lt 1 ] || [ "$github_bot_review_ok" -lt 1 ]; then
+            add_label "status:review-needed"
+            echo "::notice::Waiting for independent exact-head review evidence on $head_sha (OpenClaw reviewer=$openclaw_review_ok, clean GitHub bot review=$github_bot_review_ok)."
+            gh pr merge "$PR" --repo "$REPO" --disable-auto || true
+            exit 0
+          fi
+
           CHECK_RUNS_JSON="$(gh api "repos/$REPO/commits/$head_sha/check-runs?per_page=100")"
           COMBINED_STATUS_JSON="$(gh api "repos/$REPO/commits/$head_sha/status" || echo '{"statuses":[]}' )"
 
@@ -181,7 +211,7 @@ jobs:
             exit 0
           fi
 
-          echo "Agent PR is same-repo, non-held, mergeable, and every check is green. Enabling native GitHub auto-merge."
+          echo "Agent PR passed OpenClaw reviewer, GitHub rebar bot review, mergeability, and every check is green. Enabling native GitHub auto-merge."
           set +e
           out="$(gh pr merge "$PR" --repo "$REPO" --auto --squash 2>&1)"
           rc=$?
