@@ -31,12 +31,13 @@ permissions:
   statuses: read
 
 concurrency:
-  group: agent-pr-labels-and-automerge-${{ github.event.pull_request.number || github.event.check_suite.head_sha || inputs.pr }}
+  group: agent-pr-labels-and-automerge-${{ github.event.pull_request.number || github.event.issue.number || github.event.check_suite.head_sha || inputs.pr }}
   cancel-in-progress: false
 
 jobs:
   evaluate:
     name: Label and arm eligible agent PRs
+    if: github.event_name != 'issue_comment' || github.actor == 'rebar-agent-bot[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Resolve pull request number
@@ -159,12 +160,22 @@ jobs:
           fi
 
           REVIEW_COMMENTS_JSON="$(gh api --paginate "repos/$REPO/issues/$PR/comments?per_page=100" | jq -s 'add')"
-          openclaw_review_ok="$(echo "$REVIEW_COMMENTS_JSON" | jq -r --arg sha "$head_sha" '[.[] | select(.user.login == "rebar-agent-bot[bot]") | select(.body | contains("OPENCLAW_REVIEW_PASS head_sha=" + $sha))] | length')"
-          github_bot_review_ok="$(echo "$REVIEW_COMMENTS_JSON" | jq -r --arg sha "$head_sha" '[.[] | select(.user.login == "rebar-agent-bot[bot]") | select(.body | contains("REBAR_BOT_REVIEW_PASS head_sha=" + $sha))] | length')"
+          openclaw_review_ok="$(echo "$REVIEW_COMMENTS_JSON" | jq -r --arg sha "$head_sha" '[.[] | select(.user.login == "rebar-agent-bot[bot]") | select(.body == ("OPENCLAW_REVIEW_PASS head_sha=" + $sha))] | length')"
+
+          GITHUB_REVIEWS_JSON="$(gh api --paginate "repos/$REPO/pulls/$PR/reviews?per_page=100" | jq -s 'add')"
+          GITHUB_REVIEW_COMMENTS_JSON="$(gh api --paginate "repos/$REPO/pulls/$PR/comments?per_page=100" | jq -s 'add')"
+          github_bot_review_ok="$(jq -n -r --arg sha "$head_sha" --argjson reviews "$GITHUB_REVIEWS_JSON" --argjson comments "$GITHUB_REVIEW_COMMENTS_JSON" '
+            [ $reviews[]
+              | select(.commit_id == $sha)
+              | select(.user.login == "chatgpt-codex-connector[bot]" or .user.login == "copilot-pull-request-reviewer[bot]")
+              | select(.state != "CHANGES_REQUESTED" and .state != "DISMISSED")
+              | .id as $review_id
+              | select([ $comments[] | select(.pull_request_review_id == $review_id) ] | length == 0)
+            ] | length')"
 
           if [ "$openclaw_review_ok" -lt 1 ] || [ "$github_bot_review_ok" -lt 1 ]; then
             add_label "status:review-needed"
-            echo "::notice::Waiting for review evidence on exact head SHA $head_sha (OpenClaw reviewer=$openclaw_review_ok, GitHub rebar bot=$github_bot_review_ok)."
+            echo "::notice::Waiting for independent exact-head review evidence on $head_sha (OpenClaw reviewer=$openclaw_review_ok, clean GitHub bot review=$github_bot_review_ok)."
             gh pr merge "$PR" --repo "$REPO" --disable-auto || true
             exit 0
           fi
