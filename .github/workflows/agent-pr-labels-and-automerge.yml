@@ -1,6 +1,10 @@
 name: Agent PR labels and full auto-merge
 
 on:
+  issue_comment:
+    types:
+      - created
+      - edited
   pull_request:
     types:
       - opened
@@ -42,6 +46,8 @@ jobs:
           REPO: ${{ github.repository }}
           INPUT_PR: ${{ inputs.pr }}
           PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_IS_PR: ${{ github.event.issue.pull_request.url }}
           CHECK_SUITE_SHA: ${{ github.event.check_suite.head_sha }}
         run: |
           set -euo pipefail
@@ -51,6 +57,8 @@ jobs:
             pr="$INPUT_PR"
           elif [ -n "${PULL_REQUEST_NUMBER:-}" ]; then
             pr="$PULL_REQUEST_NUMBER"
+          elif [ -n "${ISSUE_NUMBER:-}" ] && [ -n "${ISSUE_IS_PR:-}" ]; then
+            pr="$ISSUE_NUMBER"
           elif [ -n "${CHECK_SUITE_SHA:-}" ]; then
             pr="$(gh pr list --repo "$REPO" --state open --search "$CHECK_SUITE_SHA" --json number --jq '.[0].number // empty')"
           fi
@@ -83,7 +91,7 @@ jobs:
           }
 
           clear_status_labels() {
-            for label in status:draft status:checks-pending status:auto-merge-armed status:blocked; do
+            for label in status:draft status:review-needed status:checks-pending status:auto-merge-armed status:blocked; do
               remove_label "$label"
             done
           }
@@ -150,6 +158,17 @@ jobs:
             exit 0
           fi
 
+          REVIEW_COMMENTS_JSON="$(gh api --paginate "repos/$REPO/issues/$PR/comments?per_page=100" | jq -s 'add')"
+          openclaw_review_ok="$(echo "$REVIEW_COMMENTS_JSON" | jq -r --arg sha "$head_sha" '[.[] | select(.user.login == "rebar-agent-bot[bot]") | select(.body | contains("OPENCLAW_REVIEW_PASS head_sha=" + $sha))] | length')"
+          github_bot_review_ok="$(echo "$REVIEW_COMMENTS_JSON" | jq -r --arg sha "$head_sha" '[.[] | select(.user.login == "rebar-agent-bot[bot]") | select(.body | contains("REBAR_BOT_REVIEW_PASS head_sha=" + $sha))] | length')"
+
+          if [ "$openclaw_review_ok" -lt 1 ] || [ "$github_bot_review_ok" -lt 1 ]; then
+            add_label "status:review-needed"
+            echo "::notice::Waiting for review evidence on exact head SHA $head_sha (OpenClaw reviewer=$openclaw_review_ok, GitHub rebar bot=$github_bot_review_ok)."
+            gh pr merge "$PR" --repo "$REPO" --disable-auto || true
+            exit 0
+          fi
+
           CHECK_RUNS_JSON="$(gh api "repos/$REPO/commits/$head_sha/check-runs?per_page=100")"
           COMBINED_STATUS_JSON="$(gh api "repos/$REPO/commits/$head_sha/status" || echo '{"statuses":[]}' )"
 
@@ -181,7 +200,7 @@ jobs:
             exit 0
           fi
 
-          echo "Agent PR is same-repo, non-held, mergeable, and every check is green. Enabling native GitHub auto-merge."
+          echo "Agent PR passed OpenClaw reviewer, GitHub rebar bot review, mergeability, and every check is green. Enabling native GitHub auto-merge."
           set +e
           out="$(gh pr merge "$PR" --repo "$REPO" --auto --squash 2>&1)"
           rc=$?
