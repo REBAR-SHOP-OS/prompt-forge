@@ -7603,8 +7603,14 @@ export default function DashboardPage() {
       imagePrompt = `${imagePrompt}\n\nStrictly no text of any kind in the image: no words, letters, numbers, captions, subtitles, signage text, logos, or watermarks.`
     }
     const referenceImageUrls = [productUrl, characterUrl].filter((u): u is string => !!u)
+    // Role labels aligned 1:1 with referenceImageUrls so the model knows which
+    // image is the product vs the character and preserves BOTH identities.
+    const referenceRoles = [
+      ...(productUrl ? ["product"] : []),
+      ...(characterUrl ? ["character"] : []),
+    ]
     const { data: iData, error: iErr } = await supabase.functions.invoke('ai-image-generate', {
-      body: { prompt: imagePrompt, aspectRatio: ratio, referenceImageUrls },
+      body: { prompt: imagePrompt, aspectRatio: ratio, referenceImageUrls, referenceRoles },
     })
     if (iErr) throw iErr
     const dataUrl = (iData as { dataUrl?: unknown } | null)?.dataUrl
