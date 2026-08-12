@@ -35,7 +35,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
-import { canApproveFilm, isCharacterSheet, type FilmDuration, type FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { canApproveFilm, isCharacterSheet, loadCharacterRows, type FilmDuration, type FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { supabase } from '@/integrations/supabase/client'
 
 export type { FilmDuration, FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
@@ -274,23 +274,28 @@ export function MakeFilmWizardDialog({
     setLoadingCharacters(true)
     setError(null)
     try {
-      const { data, error: qErr } = await supabase
-        .from('generator_user_images')
-        .select('id, storage_path, title, category, image_type')
-        .eq('user_id', userId)
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false })
-      if (qErr) throw new Error(qErr.message)
-      const rows = (data ?? []).filter((r) => (r.category ?? 'general') === 'character')
+      const { rows, fellBack } = await loadCharacterRows((columns) =>
+        supabase
+          .from('generator_user_images')
+          .select(columns)
+          .eq('user_id', userId)
+          .is('deleted_at', null)
+          .order('created_at', { ascending: false }),
+      )
+      const filtered = rows.filter((r) => (r.category ?? 'general') === 'character')
       const photos: ProductPhoto[] = await Promise.all(
-        rows.map(async (r) => ({
+        filtered.map(async (r) => ({
           id: r.id,
-          title: r.title ?? null,
+          title: r.title,
           url: await signStorageUrl(r.storage_path, PRODUCTS_BUCKET),
-          imageType: r.image_type ?? null,
+          imageType: r.imageType,
         })),
       )
       setCharacterPhotos(photos)
+      // fellBack is intentionally unused here: the legacy rows carry
+      // imageType=null and the existing isCharacterSheet heuristic classifies
+      // them. Keeping the variable named documents the fallback path.
+      void fellBack
     } catch (e) {
       setError((e as Error).message ?? 'Failed to load characters')
     } finally {

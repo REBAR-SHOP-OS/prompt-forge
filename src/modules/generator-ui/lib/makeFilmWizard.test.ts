@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   expectedSceneCount,
   computeClipDurations,
@@ -10,6 +10,8 @@ import {
   resolveSceneNarration,
   canApproveFilm,
   isCharacterSheet,
+  isMissingImageTypeColumnError,
+  loadCharacterRows,
   FILM_DURATIONS,
 } from './makeFilmWizard'
 
@@ -216,5 +218,153 @@ describe('isCharacterSheet', () => {
   })
   it('handles null image_type, title and url', () => {
     expect(isCharacterSheet(null, null, null)).toBe(false)
+  })
+})
+
+describe('isMissingImageTypeColumnError', () => {
+  it('matches the exact missing-column error for generator_user_images.image_type', () => {
+    expect(
+      isMissingImageTypeColumnError('column generator_user_images.image_type does not exist'),
+    ).toBe(true)
+  })
+  it('matches a Postgres-style missing column message', () => {
+    expect(
+      isMissingImageTypeColumnError('column "generator_user_images.image_type" does not exist'),
+    ).toBe(true)
+  })
+  it('does not match an auth error', () => {
+    expect(isMissingImageTypeColumnError('JWT expired')).toBe(false)
+  })
+  it('does not match an RLS / permission error', () => {
+    expect(isMissingImageTypeColumnError('new row violates row-level security policy')).toBe(false)
+  })
+  it('does not match a network / timeout error', () => {
+    expect(isMissingImageTypeColumnError('fetch failed: connection refused')).toBe(false)
+  })
+  it('does not match a missing column on a different table', () => {
+    expect(isMissingImageTypeColumnError('column generator_user_images.other does not exist')).toBe(false)
+  })
+  it('does not match null or empty message', () => {
+    expect(isMissingImageTypeColumnError(null)).toBe(false)
+    expect(isMissingImageTypeColumnError('')).toBe(false)
+  })
+})
+
+describe('loadCharacterRows', () => {
+  const row = (over: Partial<Record<string, unknown>> = {}) => ({
+    id: 'r1',
+    storage_path: 'user/character-sheet-1712345-abc.png',
+    title: 'Sarah',
+    category: 'character',
+    ...over,
+  })
+
+  it('returns rows with image_type when the primary query succeeds', async () => {
+    const query = vi.fn(async () => ({
+      data: [row({ image_type: 'character_sheet' })],
+      error: null,
+    }))
+    const { rows, fellBack } = await loadCharacterRows(query)
+    expect(fellBack).toBe(false)
+    expect(rows[0].imageType).toBe('character_sheet')
+    // Primary query used the image_type column; no retry.
+    expect(query).toHaveBeenCalledTimes(1)
+    expect(query).toHaveBeenCalledWith('id, storage_path, title, category, image_type')
+  })
+
+  it('falls back once on missing-column and marks legacy rows imageType=null', async () => {
+    const query = vi.fn()
+    query
+      .mockResolvedValueOnce({
+        data: null,
+        error: { message: 'column generator_user_images.image_type does not exist' },
+      })
+      .mockResolvedValueOnce({
+        data: [row()],
+        error: null,
+      })
+    const { rows, fellBack } = await loadCharacterRows(query)
+    expect(fellBack).toBe(true)
+    expect(rows[0].imageType).toBeNull()
+    // Exactly one retry with the legacy select (no image_type).
+    expect(query).toHaveBeenCalledTimes(2)
+    expect(query).toHaveBeenNthCalledWith(1, 'id, storage_path, title, category, image_type')
+    expect(query).toHaveBeenNthCalledWith(2, 'id, storage_path, title, category')
+  })
+
+  it('does NOT fall back on an auth error and surfaces the real error', async () => {
+    const query = vi.fn(async () => ({
+      data: null,
+      error: { message: 'JWT expired' },
+    }))
+    await expect(loadCharacterRows(query)).rejects.toThrow('JWT expired')
+    expect(query).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT fall back on an RLS / permission error', async () => {
+    const query = vi.fn(async () => ({
+      data: null,
+      error: { message: 'new row violates row-level security policy' },
+    }))
+    await expect(loadCharacterRows(query)).rejects.toThrow('row-level security')
+    expect(query).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT fall back on a network / timeout error', async () => {
+    const query = vi.fn(async () => ({
+      data: null,
+      error: { message: 'fetch failed: connection refused' },
+    }))
+    await expect(loadCharacterRows(query)).rejects.toThrow('connection refused')
+    expect(query).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT retry more than once even if the legacy query also fails', async () => {
+    const query = vi.fn()
+    query
+      .mockResolvedValueOnce({
+        data: null,
+        error: { message: 'column generator_user_images.image_type does not exist' },
+      })
+      .mockResolvedValueOnce({
+        data: null,
+        error: { message: 'column generator_user_images.other does not exist' },
+      })
+    await expect(loadCharacterRows(query)).rejects.toThrow('generator_user_images.other')
+    // Primary + exactly one legacy retry, then the real error surfaces.
+    expect(query).toHaveBeenCalledTimes(2)
+  })
+
+  it('preserves legacy sheet classification via the existing heuristic when imageType is null', async () => {
+    const query = vi.fn()
+    query
+      .mockResolvedValueOnce({
+        data: null,
+        error: { message: 'column generator_user_images.image_type does not exist' },
+      })
+      .mockResolvedValueOnce({
+        data: [row({ title: 'Sarah — sheet' })],
+        error: null,
+      })
+    const { rows } = await loadCharacterRows(query)
+    // imageType is null, so isCharacterSheet falls back to the title heuristic.
+    expect(rows[0].imageType).toBeNull()
+    expect(isCharacterSheet(rows[0].imageType, rows[0].title, rows[0].storage_path)).toBe(true)
+  })
+
+  it('keeps a legacy plain character as a non-sheet when imageType is null', async () => {
+    const query = vi.fn()
+    query
+      .mockResolvedValueOnce({
+        data: null,
+        error: { message: 'column generator_user_images.image_type does not exist' },
+      })
+      .mockResolvedValueOnce({
+        data: [row({ title: 'Sarah', storage_path: 'user/portrait-1712345-abc.png' })],
+        error: null,
+      })
+    const { rows } = await loadCharacterRows(query)
+    expect(rows[0].imageType).toBeNull()
+    expect(isCharacterSheet(rows[0].imageType, rows[0].title, rows[0].storage_path)).toBe(false)
   })
 })
