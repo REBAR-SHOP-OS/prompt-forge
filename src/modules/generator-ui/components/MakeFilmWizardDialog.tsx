@@ -437,10 +437,11 @@ Each scene should flow logically into the next, building toward a single cohesiv
     }
   }
 
+  const stepIndex = step === 'prompt' ? 1 : step === 'scenario' ? 2 : 3
   const stepLabel =
-    step === 'prompt' ? 'Step 1 of 3 · Prompt' :
-    step === 'scenario' ? 'Step 2 of 3 · Scenario' :
-    'Step 3 of 3 · Preview images'
+    step === 'prompt' ? 'Prompt' :
+    step === 'scenario' ? 'Scenario' :
+    'Preview images'
 
   return (
     <>
@@ -451,8 +452,14 @@ Each scene should flow logically into the next, building toward a single cohesiv
               <Clapperboard className="h-6 w-6 text-fuchsia-300" aria-hidden="true" />
               Make Full Film
             </DialogTitle>
-            <DialogDescription className="text-zinc-400">
-              {stepLabel}. Review the scenario and one preview image per scene. Nothing renders until you approve.
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="text-sm font-semibold tracking-wide text-fuchsia-300">
+                Step {stepIndex} of 3
+              </span>
+              <span className="text-base font-semibold text-zinc-100">{stepLabel}</span>
+            </div>
+            <DialogDescription className="text-sm text-zinc-400">
+              Review the scenario and one preview image per scene. Nothing renders until you approve.
             </DialogDescription>
           </DialogHeader>
 
@@ -826,16 +833,28 @@ Each scene should flow logically into the next, building toward a single cohesiv
           {/* Footer navigation */}
           <div className="flex items-center justify-between gap-2 border-t border-white/10 pt-3">
             <div>
-              {step === 'scenario' && (
-                <Button type="button" variant="ghost" disabled={working} onClick={() => setStep('prompt')} className="gap-1 text-zinc-400">
+              {step === 'prompt' && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={working}
+                  onClick={() => onOpenChange(false)}
+                  className="gap-1 text-zinc-300 hover:text-zinc-100"
+                >
                   <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                  Prompt
+                  Back
+                </Button>
+              )}
+              {step === 'scenario' && (
+                <Button type="button" variant="ghost" disabled={working} onClick={() => setStep('prompt')} className="gap-1 text-zinc-300 hover:text-zinc-100">
+                  <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                  Back
                 </Button>
               )}
               {step === 'images' && (
-                <Button type="button" variant="ghost" disabled={working} onClick={() => setStep('scenario')} className="gap-1 text-zinc-400">
+                <Button type="button" variant="ghost" disabled={working} onClick={() => setStep('scenario')} className="gap-1 text-zinc-300 hover:text-zinc-100">
                   <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                  Scenario
+                  Back
                 </Button>
               )}
             </div>
