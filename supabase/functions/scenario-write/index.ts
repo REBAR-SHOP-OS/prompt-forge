@@ -5,13 +5,15 @@ import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 import { readJsonLoose } from "../_shared/core/safe-json.ts";
 
-const WORD_CAPS: Record<number, number> = { 5: 40, 10: 70, 15: 100, 30: 180, 45: 270, 135: 810 };
+const WORD_CAPS: Record<number, number> = { 5: 40, 10: 70, 15: 100, 30: 180, 45: 270, 60: 360, 90: 540, 135: 810 };
 const BEAT_GUIDE: Record<number, string> = {
   5: "5s = 1 beat (one decisive shot)",
   10: "10s = 2 beats",
   15: "15s = 3 beats",
   30: "30s = two sequential 15s scenes",
   45: "45s = three sequential 15s scenes",
+  60: "60s = four sequential 15s scenes",
+  90: "90s = six sequential 15s scenes",
   135: "135s = nine sequential 15s scenes",
 };
 
@@ -19,6 +21,8 @@ const SCENE_DELIM = "===SCENE===";
 
 function expectedSceneCount(duration: number): number {
   if (duration === 135) return 9;
+  if (duration === 90) return 6;
+  if (duration === 60) return 4;
   if (duration === 45) return 3;
   if (duration === 30) return 2;
   return 1;
@@ -326,13 +330,35 @@ Deno.serve(async (req) => {
     const businessInfo = typeof body?.businessInfo === "string" ? body.businessInfo.trim().slice(0, 2000) : "";
     const ALLOWED_LANGS = ["en"];
     const outputLanguage = ALLOWED_LANGS.includes(body?.outputLanguage) ? body.outputLanguage : "en";
-    const narration = typeof body?.narration === "boolean" ? body.narration : true;
+    // narration (canonical) or withNarration (Make Film Wizard alias).
+    const narration =
+      typeof body?.narration === "boolean"
+        ? body.narration
+        : typeof body?.withNarration === "boolean"
+          ? body.withNarration
+          : true;
     const durationRaw = Number(body?.durationSeconds);
-    const duration = [5, 10, 15, 30, 45, 135].includes(durationRaw) ? durationRaw : 0;
-    const imageUrlRaw = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
+    const duration = [5, 10, 15, 30, 45, 60, 90, 135].includes(durationRaw) ? durationRaw : 0;
+    // Accept both the canonical field name (imageUrl) and the Make Film Wizard
+    // alias (productUrl) so the frontend and backend stay compatible.
+    const imageUrlRaw =
+      (typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "") ||
+      (typeof body?.productUrl === "string" ? body.productUrl.trim() : "");
     const autoFromImageReq = body?.autoFromImage === true;
-    const isProductAd = body?.mode === "product-ad";
-    const isCharacterSheet = body?.mode === "character-sheet";
+    // The Make Film Wizard does not send `mode`; it sends productUrl/productName
+    // and characterUrl/characterName directly. Treat the presence of a product
+    // as a product-ad scenario, and a character without a product as a
+    // character-sheet scenario, so the frontend and backend agree.
+    const hasProductFields =
+      typeof body?.productUrl === "string" && body.productUrl.trim().length > 0
+        ? true
+        : typeof body?.productName === "string" && body.productName.trim().length > 0;
+    const hasCharacterFields =
+      typeof body?.characterUrl === "string" && body.characterUrl.trim().length > 0
+        ? true
+        : typeof body?.characterName === "string" && body.characterName.trim().length > 0;
+    const isProductAd = body?.mode === "product-ad" || hasProductFields;
+    const isCharacterSheet = body?.mode === "character-sheet" || (hasCharacterFields && !hasProductFields);
     const clip = (v: unknown, max: number): string | undefined => {
       const s = typeof v === "string" ? v.trim() : "";
       return s ? s.slice(0, max) : undefined;
@@ -379,7 +405,9 @@ Deno.serve(async (req) => {
     // Only used when a product image is present, since prompts reference it as
     // the "second attached image".
     if (productAd && imageUrl) {
-      const charRaw = typeof body?.characterImageUrl === "string" ? body.characterImageUrl.trim() : "";
+      const charRaw =
+        (typeof body?.characterImageUrl === "string" ? body.characterImageUrl.trim() : "") ||
+        (typeof body?.characterUrl === "string" ? body.characterUrl.trim() : "");
       if (charRaw && charRaw.length <= 2048 && isAllowedImageUrl(charRaw)) {
         productAd.characterImageUrl = charRaw;
       }
@@ -404,7 +432,7 @@ Deno.serve(async (req) => {
       });
     }
     if (!duration) {
-      return new Response(JSON.stringify({ error: "durationSeconds must be 5, 10, 15, 30, 45, or 135" }), {
+      return new Response(JSON.stringify({ error: "durationSeconds must be 5, 10, 15, 30, 45, 60, 90, or 135" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
