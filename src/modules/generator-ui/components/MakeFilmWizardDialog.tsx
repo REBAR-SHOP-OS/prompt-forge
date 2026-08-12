@@ -166,6 +166,14 @@ export function MakeFilmWizardDialog({
   const [characterPhotos, setCharacterPhotos] = useState<ProductPhoto[]>([])
   const [selectedProduct, setSelectedProduct] = useState<ProductPhoto | null>(null)
   const [selectedCharacter, setSelectedCharacter] = useState<ProductPhoto | null>(null)
+  // Immutable snapshot of the product/character selection, frozen when image
+  // generation starts. Both initial generation and Regenerate consume this
+  // snapshot so a later change to the Step 1 selection cannot silently change
+  // the identities used for the already-started film.
+  const [identitySnapshot, setIdentitySnapshot] = useState<{
+    productUrl?: string
+    characterUrl?: string
+  } | null>(null)
   const [productPickerOpen, setProductPickerOpen] = useState(false)
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false)
   const [loadingProducts, setLoadingProducts] = useState(false)
@@ -195,6 +203,7 @@ export function MakeFilmWizardDialog({
       setSelectedTheme('auto')
       setSelectedProduct(null)
       setSelectedCharacter(null)
+      setIdentitySnapshot(null)
       setProductPickerOpen(false)
       setCharacterPickerOpen(false)
       setLightboxOpen(false)
@@ -361,13 +370,23 @@ Each scene should flow logically into the next, building toward a single cohesiv
     if (scenes.length === 0) return
     setBusy('images')
     setError(null)
+    // Freeze the product/character selection into an immutable snapshot so both
+    // this initial generation and any later Regenerate use the SAME identities.
+    setIdentitySnapshot({
+      productUrl: selectedProduct?.url,
+      characterUrl: selectedCharacter?.url,
+    })
+    const snapshot = {
+      productUrl: selectedProduct?.url,
+      characterUrl: selectedCharacter?.url,
+    }
     const next: (string | undefined)[] = new Array(scenes.length).fill(undefined)
     const nextErrors: (string | undefined)[] = new Array(scenes.length).fill(undefined)
     const creative = currentCreative()
     for (let i = 0; i < scenes.length; i++) {
       setProgress(`Designing preview image ${i + 1} of ${scenes.length}…`)
       try {
-        next[i] = await generateSceneImage(scenes[i], aspect, selectedProduct?.url, selectedCharacter?.url, noTextOnImages, creative)
+        next[i] = await generateSceneImage(scenes[i], aspect, snapshot.productUrl, snapshot.characterUrl, noTextOnImages, creative)
         nextErrors[i] = undefined
       } catch (err) {
         console.error(`Make-film wizard: preview image ${i + 1} failed`, err)
@@ -387,7 +406,12 @@ Each scene should flow logically into the next, building toward a single cohesiv
     setRegenIndex(index)
     setError(null)
     try {
-      const url = await generateSceneImage(scenes[index], aspect, selectedProduct?.url, selectedCharacter?.url, noTextOnImages, currentCreative())
+      // Consume the frozen snapshot (same identities as the initial generation).
+      const snapshot = identitySnapshot ?? {
+        productUrl: selectedProduct?.url,
+        characterUrl: selectedCharacter?.url,
+      }
+      const url = await generateSceneImage(scenes[index], aspect, snapshot.productUrl, snapshot.characterUrl, noTextOnImages, currentCreative())
       setImages((cur) => {
         const copy = [...cur]
         copy[index] = url
