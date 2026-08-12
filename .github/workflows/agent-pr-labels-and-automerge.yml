@@ -230,7 +230,7 @@ jobs:
             GITHUB_REVIEW_COMMENTS_JSON="$(gh api --paginate "repos/$REPO/pulls/$PR/comments?per_page=100" | jq -s 'add')"
             active_review_ids="$(echo "$GITHUB_REVIEWS_JSON" | jq -c --arg sha "$head_sha" '[.[] | select(.commit_id == $sha) | select(.user.login == "chatgpt-codex-connector[bot]" or .user.login == "copilot-pull-request-reviewer[bot]") | select(.state != "DISMISSED") | .id]')"
             github_bot_submitted_review_count="$(echo "$GITHUB_REVIEWS_JSON" | jq -r --arg sha "$head_sha" '[.[] | select(.commit_id == $sha) | select(.user.login == "chatgpt-codex-connector[bot]" or .user.login == "copilot-pull-request-reviewer[bot]") | select(.state == "APPROVED" or .state == "COMMENTED")] | length')"
-            clean_comment_prefixes="$(echo "$REVIEW_COMMENTS_JSON" | jq -r '[.[] | select(.user.login == "chatgpt-codex-connector[bot]") | select(.body | contains("Codex Review: Didn'\"'\"'t find any major issues.")) | .body | capture("\\*\\*Reviewed commit:\\*\\* `(?<sha>[0-9a-fA-F]{7,40})`").sha] | .[]')"
+            clean_comment_prefixes="$(echo "$REVIEW_COMMENTS_JSON" | jq -r '[.[] | select(.user.login == "chatgpt-codex-connector[bot]") | select((.body | contains("Codex Review: Didn")) and (.body | contains("find any major issues."))) | .body | capture("\\*\\*Reviewed commit:\\*\\* `(?<sha>[0-9a-fA-F]{7,40})`").sha] | .[]')"
             github_bot_clean_comment_count=0
             while IFS= read -r reviewed_prefix; do
               [ -n "$reviewed_prefix" ] || continue
