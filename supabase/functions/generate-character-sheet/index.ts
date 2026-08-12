@@ -222,7 +222,10 @@ Deno.serve(async (req) => {
     }
     const { data: pub } = svc.storage.from(USER_IMAGES_BUCKET).getPublicUrl(path);
 
-    // 3) Insert a character row.
+    // 3) Insert a character row. The image_type is set explicitly to
+    //    'character_sheet' so the wizard and evaluator know this is a multi-view
+    //    character sheet (a single identity) without guessing from the title or
+    //    URL. This is the authoritative, persistent marker.
     const { data: row, error: insErr } = await svc
       .from("generator_user_images")
       .insert({
@@ -231,9 +234,10 @@ Deno.serve(async (req) => {
         size_bytes: outBytes.byteLength,
         mime_type: outMime,
         category: "character",
+        image_type: "character_sheet",
         title: (title ? `${title} — sheet` : (promptText ? `${promptText.slice(0, 80)} — sheet` : "Character sheet")).slice(0, 100),
       })
-      .select("id, storage_path, created_at, title")
+      .select("id, storage_path, created_at, title, image_type")
       .single();
     if (insErr) {
       console.error("generate-character-sheet insert failed", insErr.message);

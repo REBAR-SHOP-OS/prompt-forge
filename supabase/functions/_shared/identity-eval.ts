@@ -55,26 +55,35 @@ export const ALLOWED_ROLES: readonly ReferenceRole[] = ["product", "character"];
 export const MAX_REFERENCE_IMAGES = 2;
 
 /**
- * Validate the reference payload. Returns the validated specs (url + role) or a
- * clear error string. Enforces:
+ * Validate the reference payload. Returns the validated specs (url + role +
+ * characterSheet) or a clear error string. Enforces:
  *   - roles must be one of "product" | "character",
  *   - referenceRoles and referenceImageUrls must be the same length,
  *   - at most one product and one character (max 2 references),
  *   - roles must be unique (no duplicate product or duplicate character),
  *   - deterministic order: product first, then character,
  *   - each URL must be a non-empty string.
+ *
+ * The optional `characterSheets` array (aligned 1:1 with the ORIGINAL input
+ * order) is attached to each spec BEFORE the deterministic sort, so the flag
+ * always travels with its own reference and is never misaligned by reordering.
+ *
  * Accessibility (SSRF / ownership) is validated separately by the caller via
  * isAllowedReferenceUrl, because it needs the authenticated user id.
  */
 export function validateReferenceSpecs(
   urls: unknown,
   roles: unknown,
+  characterSheets?: unknown,
 ): { ok: true; specs: ReferenceSpec[] } | { ok: false; error: string } {
   const urlList = Array.isArray(urls)
     ? urls.filter((u): u is string => typeof u === "string" && u.length > 0)
     : [];
   const roleList = Array.isArray(roles)
     ? roles.filter((r): r is string => typeof r === "string" && r.length > 0)
+    : [];
+  const sheetList = Array.isArray(characterSheets)
+    ? characterSheets.map((v) => v === true)
     : [];
 
   if (urlList.length === 0 && roleList.length === 0) {
@@ -109,9 +118,13 @@ export function validateReferenceSpecs(
       };
     }
     seen.add(role);
-    specs.push({ url: urlList[i], role: role as ReferenceRole });
+    // Attach the character-sheet flag to THIS spec (by original index) BEFORE
+    // the deterministic sort below, so the flag stays with its own reference.
+    const characterSheet = role === "character" && sheetList[i] === true;
+    specs.push({ url: urlList[i], role: role as ReferenceRole, characterSheet });
   }
-  // Deterministic order: product first, then character.
+  // Deterministic order: product first, then character. The characterSheet
+  // flag was attached per-spec above, so reordering cannot misalign it.
   specs.sort((a, b) => (a.role === "product" ? -1 : 1) - (b.role === "product" ? -1 : 1));
   return { ok: true, specs };
 }

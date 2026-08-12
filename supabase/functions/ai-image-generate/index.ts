@@ -122,18 +122,22 @@ Deno.serve(async (req) => {
       : [];
     // Validate role/count/order of the reference payload. A mismatch is a hard
     // error, not a silent drop — otherwise the model would render without the
-    // identity the user explicitly chose.
-    const refValidation = validateReferenceSpecs(referenceImageUrls, referenceRoles);
+    // identity the user explicitly chose. The character-sheet flags are passed
+    // in and attached to each spec BEFORE the deterministic sort, so the flag
+    // always travels with its own reference (character-first input stays
+    // correctly flagged after reordering).
+    const refValidation = validateReferenceSpecs(
+      referenceImageUrls,
+      referenceRoles,
+      referenceCharacterSheets,
+    );
     if (!refValidation.ok) {
       return new Response(JSON.stringify({ error: refValidation.error }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const refSpecs: ReferenceSpec[] = refValidation.specs.map((s, i) => ({
-      ...s,
-      characterSheet: s.role === "character" && referenceCharacterSheets[i] === true,
-    }));
+    const refSpecs: ReferenceSpec[] = refValidation.specs;
     // Cap the number of reference images and validate each against the same
     // security rules as the job orchestrator (own storage under user folder or
     // allowlisted host). Never accept arbitrary insecure URLs server-side.

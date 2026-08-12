@@ -83,6 +83,11 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
   const [logoUploading, setLogoUploading] = useState(false)
   const [applyLogo, setApplyLogo] = useState(false)
   const [promptText, setPromptText] = useState('')
+  // Explicit user choice on manual upload: is this file a multi-view character
+  // sheet (a single image with several turnaround views + facial expressions of
+  // ONE person) or a plain character photo? This is stored as persistent
+  // image_type metadata so the wizard/evaluator never guess from title or URL.
+  const [uploadIsSheet, setUploadIsSheet] = useState(false)
 
 
   useEffect(() => {
@@ -163,9 +168,13 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
               size_bytes: file.size,
               mime_type: file.type,
               category: CHARACTER_CATEGORY,
+              // Explicit, persistent type: the user decides whether this upload
+              // is a character sheet or a plain character. Never guessed from
+              // the file name or URL.
+              image_type: uploadIsSheet ? 'character_sheet' : 'character',
               title: file.name.replace(/\.[^/.]+$/, '').slice(0, 100) || null,
             })
-            .select('id, storage_path, created_at, title')
+            .select('id, storage_path, created_at, title, image_type')
             .single()
           if (insErr) throw insErr
           const signed = { ...(row as CharacterImage), storage_path: await signUrl((row as CharacterImage).storage_path) }
@@ -338,6 +347,22 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
             )}
             {uploading ? 'Uploading…' : 'Upload character'}
           </Button>
+
+          <label
+            className={`flex items-center gap-2 text-xs ${
+              userId ? 'text-zinc-300' : 'cursor-not-allowed text-zinc-600'
+            }`}
+          >
+            <input
+              type="checkbox"
+              checked={uploadIsSheet}
+              disabled={!userId}
+              onChange={(e) => setUploadIsSheet(e.target.checked)}
+              className="h-4 w-4 rounded border-white/20 bg-transparent accent-fuchsia-500"
+            />
+            This upload is a multi-view character sheet (turnaround views + facial
+            expressions of one person)
+          </label>
 
           <div className="space-y-1.5">
             <p className="text-xs font-medium text-zinc-400">Character sheet model</p>
