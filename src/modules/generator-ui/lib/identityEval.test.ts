@@ -95,6 +95,33 @@ describe('buildIdentityEvalPrompt', () => {
     expect(prompt).toContain('REF_1 (PRODUCT)')
     expect(prompt).toContain('REF_2 (CHARACTER)')
   })
+
+  it('treats a character sheet as a single identity in the prompt', () => {
+    const prompt = buildIdentityEvalPrompt([
+      { url: 'https://x/c.png', role: 'character', characterSheet: true },
+    ])
+    // The per-reference note is added only for a character sheet.
+    expect(prompt).toContain('REF_1 (CHARACTER): the image labelled "REF_1" (a multi-view character sheet: every view shows the SAME one person)')
+    // The general instruction tells the evaluator a sheet is one identity and
+    // that a different person must be rejected.
+    expect(prompt).toContain('MULTI-VIEW CHARACTER SHEET')
+    expect(prompt).toContain('every view is the same person')
+    expect(prompt).toContain('A different person — even a real-looking woman or man — is NOT a match')
+  })
+
+  it('does not add the per-reference sheet note for a plain character reference', () => {
+    const prompt = buildIdentityEvalPrompt([
+      { url: 'https://x/c.png', role: 'character' },
+    ])
+    expect(prompt).not.toContain('(a multi-view character sheet: every view shows the SAME one person)')
+  })
+
+  it('does not add the per-reference sheet note for a product reference', () => {
+    const prompt = buildIdentityEvalPrompt([
+      { url: 'https://x/p.png', role: 'product', characterSheet: true },
+    ])
+    expect(prompt).not.toContain('(a multi-view character sheet: every view shows the SAME one person)')
+  })
 })
 
 describe('parseIdentityEvalResponse', () => {

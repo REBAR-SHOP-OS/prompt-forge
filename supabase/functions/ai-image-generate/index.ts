@@ -113,6 +113,13 @@ Deno.serve(async (req) => {
     const referenceRoles = Array.isArray(body?.referenceRoles)
       ? (body.referenceRoles as unknown[]).filter((r): r is string => typeof r === "string" && r.length > 0)
       : [];
+    // Optional per-reference flag marking a character reference as a multi-view
+    // character sheet (a single image with several turnaround views + facial
+    // expressions of ONE person). The sheet must be treated as a single
+    // identity by both the generator and the evaluator.
+    const referenceCharacterSheets = Array.isArray(body?.referenceCharacterSheets)
+      ? (body.referenceCharacterSheets as unknown[]).map((v) => v === true)
+      : [];
     // Validate role/count/order of the reference payload. A mismatch is a hard
     // error, not a silent drop — otherwise the model would render without the
     // identity the user explicitly chose.
@@ -123,7 +130,15 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const refSpecs: ReferenceSpec[] = refValidation.specs;
+    // validateReferenceSpecs normalizes to a deterministic order (product first,
+    // then character). referenceCharacterSheets is supplied by the caller in the
+    // SAME order as referenceImageUrls/referenceRoles, so align the flag by the
+    // original index of each spec. The flag only ever applies to a character
+    // reference; a product reference is never a sheet.
+    const refSpecs: ReferenceSpec[] = refValidation.specs.map((s, i) => ({
+      ...s,
+      characterSheet: s.role === "character" && referenceCharacterSheets[i] === true,
+    }));
     // Cap the number of reference images and validate each against the same
     // security rules as the job orchestrator (own storage under user folder or
     // allowlisted host). Never accept arbitrary insecure URLs server-side.
@@ -181,9 +196,12 @@ Deno.serve(async (req) => {
     // reference is the product vs the character.
     const userContent: unknown[] = [{ type: "text", text: fullPrompt }];
     for (const spec of safeReferenceUrls) {
+      const sheetNote = spec.role === "character" && spec.characterSheet
+        ? " This is a MULTI-VIEW CHARACTER SHEET: every view shows the SAME one person. Preserve that exact person (same face, hair, skin tone, body type, and outfit) in the output — do NOT substitute a different person."
+        : "";
       userContent.push({
         type: "text",
-        text: `${spec.role.toUpperCase()} reference image (preserve this exact ${spec.role} in the output):`,
+        text: `${spec.role.toUpperCase()} reference image (preserve this exact ${spec.role} in the output):${sheetNote}`,
       });
       const resolved = await resolveImageForGateway(spec.url);
       userContent.push({ type: "image_url", image_url: { url: resolved } });
@@ -278,7 +296,7 @@ Deno.serve(async (req) => {
             ...userContent.slice(1),
             {
               type: "text",
-              text: "IMPORTANT: The previous attempt did not preserve the required identities. The output MUST contain the SAME product and the SAME character from the reference images, together in the same shot.",
+              text: "IMPORTANT: The previous attempt did not preserve the required identities. The output MUST contain the SAME product and the SAME character from the reference images, together in the same shot. If the character reference is a multi-view character sheet, the output MUST show the exact same person (same face, hair, skin tone, body type, and outfit) — never a different person.",
             },
           ]
         : userContent;

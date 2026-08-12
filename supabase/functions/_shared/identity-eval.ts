@@ -15,6 +15,13 @@ export type ReferenceRole = "product" | "character";
 export interface ReferenceSpec {
   url: string;
   role: ReferenceRole;
+  /**
+   * True when the reference is a multi-view character sheet (a single image
+   * containing several turnaround views + facial expressions of ONE character).
+   * A character sheet must be treated as a single identity: the generated
+   * output must match the SAME person across every view, not just "a person".
+   */
+  characterSheet?: boolean;
 }
 
 export interface IdentityEvalResult {
@@ -117,14 +124,21 @@ export function validateReferenceSpecs(
  */
 export function buildIdentityEvalPrompt(specs: ReferenceSpec[]): string {
   const refs = specs
-    .map((s, i) => `- REF_${i + 1} (${s.role.toUpperCase()}): the image labelled "REF_${i + 1}"`)
+    .map((s, i) => {
+      const sheetNote = s.role === "character" && s.characterSheet
+        ? " (a multi-view character sheet: every view shows the SAME one person)"
+        : "";
+      return `- REF_${i + 1} (${s.role.toUpperCase()}): the image labelled "REF_${i + 1}"${sheetNote}`;
+    })
     .join("\n");
   return [
     "You are a strict identity-preservation judge for AI-generated advertising images.",
     "You receive ONE generated image (labelled GENERATED_OUTPUT) plus reference images of a product and/or a character (labelled REF_1, REF_2, ...).",
     "For EACH reference, decide whether the SAME identity (the exact same product or the exact same character) is present in GENERATED_OUTPUT and matches closely enough.",
     "A product matches when it is the same item (same shape, materials, colors, branding) — not a similar-looking substitute.",
-    "A character matches when it is the same person (same face, hair, body, outfit) — not a different person.",
+    "A character matches when it is the same person (same face, hair, skin tone, body type, and outfit) — not a different person.",
+    "A character reference may be a MULTI-VIEW CHARACTER SHEET: a single image containing several turnaround views and facial expressions of ONE person. Treat the whole sheet as a single identity — every view is the same person.",
+    "For a character sheet, the output is a match ONLY if the person in GENERATED_OUTPUT is the SAME person shown across the sheet's views (same face, hairstyle, skin tone, body type, and outfit). A different person — even a real-looking woman or man — is NOT a match, even if a person is present.",
     "Be strict: if the identity is absent or clearly different, mark it as not present / not matching.",
     "",
     `References to evaluate:`,

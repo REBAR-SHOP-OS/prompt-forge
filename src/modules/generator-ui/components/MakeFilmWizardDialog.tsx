@@ -132,7 +132,7 @@ export interface MakeFilmWizardDialogProps {
   defaultAspect: FilmAspect
   userId: string | null
   writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean; aspect?: FilmAspect; productName?: string | null; characterName?: string | null; cameraStyle?: string; theme?: string }) => Promise<string[]>
-  generateSceneImage: (sceneText: string, aspect?: FilmAspect, productUrl?: string, characterUrl?: string, noText?: boolean, creative?: FilmCreative) => Promise<string>
+  generateSceneImage: (sceneText: string, aspect?: FilmAspect, productUrl?: string, characterUrl?: string, noText?: boolean, creative?: FilmCreative, characterSheet?: boolean) => Promise<string>
   onApprove: (scenes: string[], perSceneImageUrls: (string | undefined)[], options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean; identity?: FilmIdentity; creative?: FilmCreative }) => void
 }
 
@@ -288,6 +288,15 @@ export function MakeFilmWizardDialog({
     setCharacterPickerOpen(false)
   }
 
+  // A character reference is a multi-view character sheet when its title ends
+  // with the "— sheet" marker that generate-character-sheet appends. The sheet
+  // is a single image with several turnaround views + facial expressions of ONE
+  // person, so it must be treated as a single identity by the generator and the
+  // identity evaluator.
+  function isCharacterSheet(photo: ProductPhoto | null): boolean {
+    return !!photo?.title?.toLowerCase().includes('— sheet')
+  }
+
   function generateDurationPrompt(basePrompt: string, durationSeconds: number): string {
     const sceneCount = Math.ceil(durationSeconds / 15)
     const sceneDuration = Math.floor(durationSeconds / sceneCount)
@@ -380,13 +389,14 @@ Each scene should flow logically into the next, building toward a single cohesiv
       productUrl: selectedProduct?.url,
       characterUrl: selectedCharacter?.url,
     }
+    const characterSheet = isCharacterSheet(selectedCharacter)
     const next: (string | undefined)[] = new Array(scenes.length).fill(undefined)
     const nextErrors: (string | undefined)[] = new Array(scenes.length).fill(undefined)
     const creative = currentCreative()
     for (let i = 0; i < scenes.length; i++) {
       setProgress(`Designing preview image ${i + 1} of ${scenes.length}…`)
       try {
-        next[i] = await generateSceneImage(scenes[i], aspect, snapshot.productUrl, snapshot.characterUrl, noTextOnImages, creative)
+        next[i] = await generateSceneImage(scenes[i], aspect, snapshot.productUrl, snapshot.characterUrl, noTextOnImages, creative, characterSheet)
         nextErrors[i] = undefined
       } catch (err) {
         console.error(`Make-film wizard: preview image ${i + 1} failed`, err)
@@ -411,7 +421,8 @@ Each scene should flow logically into the next, building toward a single cohesiv
         productUrl: selectedProduct?.url,
         characterUrl: selectedCharacter?.url,
       }
-      const url = await generateSceneImage(scenes[index], aspect, snapshot.productUrl, snapshot.characterUrl, noTextOnImages, currentCreative())
+      const characterSheet = isCharacterSheet(selectedCharacter)
+      const url = await generateSceneImage(scenes[index], aspect, snapshot.productUrl, snapshot.characterUrl, noTextOnImages, currentCreative(), characterSheet)
       setImages((cur) => {
         const copy = [...cur]
         copy[index] = url
