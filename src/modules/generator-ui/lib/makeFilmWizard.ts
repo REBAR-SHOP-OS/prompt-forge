@@ -79,6 +79,26 @@ export interface FilmSelections {
 }
 
 /**
+ * Decide whether a character reference is a multi-view character sheet (a
+ * single image with several turnaround views + facial expressions of ONE
+ * person). Detection is explicit and stable, NOT title-only: a sheet is
+ * recognized when EITHER its title carries the "— sheet" marker that
+ * generate-character-sheet appends, OR its URL/storage key uses the
+ * "character-sheet-" prefix that generate-character-sheet writes. This means
+ * an uploaded sheet with a different title is still detected, and a plain
+ * character with neither marker is never misclassified as a sheet.
+ */
+export function isCharacterSheet(title: string | null | undefined, url: string | null | undefined): boolean {
+  const t = (title ?? '').toLowerCase()
+  if (t.includes('— sheet')) return true
+  const u = url ?? ''
+  // The storage key (e.g. "<userId>/character-sheet-<ts>-<uuid>.png") is the
+  // stable marker written by generate-character-sheet. The signed URL embeds
+  // the object path, so we can inspect it without a separate lookup.
+  return /\/character-sheet-[^/]+\.(png|jpe?g|webp)(\?|$)/i.test(u)
+}
+
+/**
  * Build the scenario prompt enrichment for product + character + camera +
  * theme. Returns the base prompt with the directives appended. Pure and
  * deterministic so it can be unit-tested.

@@ -18,13 +18,13 @@ describe('validateReferenceSpecs', () => {
   it('accepts a single product reference', () => {
     const r = validateReferenceSpecs(['https://x/p.png'], ['product'])
     expect(r.ok).toBe(true)
-    if (r.ok) expect(r.specs).toEqual([{ url: 'https://x/p.png', role: 'product' }])
+    if (r.ok) expect(r.specs).toEqual([{ url: 'https://x/p.png', role: 'product', characterSheet: false }])
   })
 
   it('accepts a single character reference', () => {
     const r = validateReferenceSpecs(['https://x/c.png'], ['character'])
     expect(r.ok).toBe(true)
-    if (r.ok) expect(r.specs).toEqual([{ url: 'https://x/c.png', role: 'character' }])
+    if (r.ok) expect(r.specs).toEqual([{ url: 'https://x/c.png', role: 'character', characterSheet: false }])
   })
 
   it('accepts product + character and normalizes to deterministic order', () => {
@@ -36,8 +36,8 @@ describe('validateReferenceSpecs', () => {
     expect(r.ok).toBe(true)
     if (r.ok) {
       expect(r.specs).toEqual([
-        { url: 'https://x/p.png', role: 'product' },
-        { url: 'https://x/c.png', role: 'character' },
+        { url: 'https://x/p.png', role: 'product', characterSheet: false },
+        { url: 'https://x/c.png', role: 'character', characterSheet: false },
       ])
     }
   })
@@ -82,6 +82,61 @@ describe('validateReferenceSpecs', () => {
 
   it('exposes only product and character as allowed roles', () => {
     expect(ALLOWED_ROLES).toEqual(['product', 'character'])
+  })
+
+  it('attaches the character-sheet flag to its own reference across a character-first sort', () => {
+    // Character-first input: the sheet flag must stay with the character even
+    // though validateReferenceSpecs reorders to product-first. This is the
+    // regression that caused the flag to be dropped/misaligned in the real
+    // data path.
+    const r = validateReferenceSpecs(
+      ['https://x/c.png', 'https://x/p.png'],
+      ['character', 'product'],
+      [true, false],
+    )
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.specs).toEqual([
+        { url: 'https://x/p.png', role: 'product', characterSheet: false },
+        { url: 'https://x/c.png', role: 'character', characterSheet: true },
+      ])
+    }
+  })
+
+  it('keeps the character-sheet flag false for a plain character in product-first input', () => {
+    const r = validateReferenceSpecs(
+      ['https://x/p.png', 'https://x/c.png'],
+      ['product', 'character'],
+      [false, false],
+    )
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.specs[1]).toEqual({ url: 'https://x/c.png', role: 'character', characterSheet: false })
+    }
+  })
+
+  it('never sets characterSheet on a product reference even if the flag is true', () => {
+    const r = validateReferenceSpecs(
+      ['https://x/p.png', 'https://x/c.png'],
+      ['product', 'character'],
+      [true, true],
+    )
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.specs[0]).toEqual({ url: 'https://x/p.png', role: 'product', characterSheet: false })
+      expect(r.specs[1]).toEqual({ url: 'https://x/c.png', role: 'character', characterSheet: true })
+    }
+  })
+
+  it('treats a missing characterSheets array as no sheets (backward compatible)', () => {
+    const r = validateReferenceSpecs(
+      ['https://x/c.png'],
+      ['character'],
+    )
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.specs[0]).toEqual({ url: 'https://x/c.png', role: 'character', characterSheet: false })
+    }
   })
 })
 

@@ -9,6 +9,7 @@ import {
   buildReferenceImageUrls,
   resolveSceneNarration,
   canApproveFilm,
+  isCharacterSheet,
   FILM_DURATIONS,
 } from './makeFilmWizard'
 
@@ -181,5 +182,31 @@ describe('canApproveFilm', () => {
   })
   it('is true only when every scene image is present', () => {
     expect(canApproveFilm(['https://x/1.png', 'https://x/2.png', 'https://x/3.png'])).toBe(true)
+  })
+})
+
+describe('isCharacterSheet', () => {
+  it('detects a generated sheet by its "— sheet" title marker', () => {
+    expect(isCharacterSheet('Sarah — sheet', 'https://x/1.png')).toBe(true)
+  })
+  it('detects a generated sheet by its character-sheet- storage key even with a different title', () => {
+    // An uploaded sheet with a non-standard title is still detected via the
+    // stable storage-key marker that generate-character-sheet writes.
+    expect(isCharacterSheet('My custom sheet', 'https://x/user/character-sheet-1712345-abc.png')).toBe(true)
+  })
+  it('detects a generated sheet by storage key when the title is null', () => {
+    expect(isCharacterSheet(null, 'https://x/user/character-sheet-1712345-abc.png')).toBe(true)
+  })
+  it('does not treat a plain character as a sheet', () => {
+    expect(isCharacterSheet('Sarah', 'https://x/user/portrait-1712345-abc.png')).toBe(false)
+  })
+  it('does not treat a plain character with no markers as a sheet', () => {
+    expect(isCharacterSheet('Sarah', 'https://x/user/photo.png')).toBe(false)
+  })
+  it('does not treat a product as a sheet', () => {
+    expect(isCharacterSheet('Sneaker', 'https://x/user/product-1.png')).toBe(false)
+  })
+  it('handles null title and url', () => {
+    expect(isCharacterSheet(null, null)).toBe(false)
   })
 })

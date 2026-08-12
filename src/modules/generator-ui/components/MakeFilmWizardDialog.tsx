@@ -35,7 +35,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
-import { canApproveFilm, type FilmDuration, type FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { canApproveFilm, isCharacterSheet, type FilmDuration, type FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { supabase } from '@/integrations/supabase/client'
 
 export type { FilmDuration, FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
@@ -117,6 +117,25 @@ export interface FilmIdentity {
   characterName?: string | null
 }
 
+// A single reference identity frozen at selection time. Carries the URL, the
+// role, and the character-sheet flag together so that initial generation,
+// Regenerate, and Approve all consume the SAME identity without re-deriving it
+// from the (possibly changed) Step 1 selection.
+export interface IdentityRef {
+  url: string
+  role: 'product' | 'character'
+  characterSheet: boolean
+}
+
+// Immutable snapshot of the product/character selection, frozen when image
+// generation starts. Both initial generation and Regenerate consume this
+// snapshot so a later change to the Step 1 selection cannot silently change
+// the identities used for the already-started film.
+export interface IdentitySnapshot {
+  product?: IdentityRef
+  character?: IdentityRef
+}
+
 export interface FilmCreative {
   cameraStyle?: string
   cameraLabel?: string
@@ -170,10 +189,7 @@ export function MakeFilmWizardDialog({
   // generation starts. Both initial generation and Regenerate consume this
   // snapshot so a later change to the Step 1 selection cannot silently change
   // the identities used for the already-started film.
-  const [identitySnapshot, setIdentitySnapshot] = useState<{
-    productUrl?: string
-    characterUrl?: string
-  } | null>(null)
+  const [identitySnapshot, setIdentitySnapshot] = useState<IdentitySnapshot | null>(null)
   const [productPickerOpen, setProductPickerOpen] = useState(false)
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false)
   const [loadingProducts, setLoadingProducts] = useState(false)
@@ -288,13 +304,22 @@ export function MakeFilmWizardDialog({
     setCharacterPickerOpen(false)
   }
 
-  // A character reference is a multi-view character sheet when its title ends
-  // with the "— sheet" marker that generate-character-sheet appends. The sheet
-  // is a single image with several turnaround views + facial expressions of ONE
-  // person, so it must be treated as a single identity by the generator and the
-  // identity evaluator.
-  function isCharacterSheet(photo: ProductPhoto | null): boolean {
-    return !!photo?.title?.toLowerCase().includes('— sheet')
+  // A character reference is a multi-view character sheet when it was produced
+  // by generate-character-sheet. Detection is explicit and stable, NOT title-
+  // only: a sheet is recognized when EITHER its title carries the "— sheet"
+  // marker that generate-character-sheet appends, OR its storage key uses the
+  // "character-sheet-" prefix that generate-character-sheet writes. This means
+  // an uploaded sheet with a different title is still detected, and a plain
+  // character with neither marker is never misclassified as a sheet.
+  function isCharacterSheetRef(photo: ProductPhoto | null): boolean {
+    return isCharacterSheet(photo?.title, photo?.url)
+  }
+
+  // Build a structured identity ref from a selected photo, or undefined when
+  // nothing is selected. Used to freeze the selection into the snapshot.
+  function toIdentityRef(photo: ProductPhoto | null, role: 'product' | 'character'): IdentityRef | undefined {
+    if (!photo) return undefined
+    return { url: photo.url, role, characterSheet: role === 'character' && isCharacterSheetRef(photo) }
   }
 
   function generateDurationPrompt(basePrompt: string, durationSeconds: number): string {
@@ -381,22 +406,21 @@ Each scene should flow logically into the next, building toward a single cohesiv
     setError(null)
     // Freeze the product/character selection into an immutable snapshot so both
     // this initial generation and any later Regenerate use the SAME identities.
-    setIdentitySnapshot({
-      productUrl: selectedProduct?.url,
-      characterUrl: selectedCharacter?.url,
-    })
-    const snapshot = {
-      productUrl: selectedProduct?.url,
-      characterUrl: selectedCharacter?.url,
+    // The snapshot carries url + role + characterSheet together, so nothing is
+    // re-derived from the (possibly changed) Step 1 selection later.
+    const snapshot: IdentitySnapshot = {
+      product: toIdentityRef(selectedProduct, 'product'),
+      character: toIdentityRef(selectedCharacter, 'character'),
     }
-    const characterSheet = isCharacterSheet(selectedCharacter)
+    setIdentitySnapshot(snapshot)
+    const characterSheet = snapshot.character?.characterSheet ?? false
     const next: (string | undefined)[] = new Array(scenes.length).fill(undefined)
     const nextErrors: (string | undefined)[] = new Array(scenes.length).fill(undefined)
     const creative = currentCreative()
     for (let i = 0; i < scenes.length; i++) {
       setProgress(`Designing preview image ${i + 1} of ${scenes.length}…`)
       try {
-        next[i] = await generateSceneImage(scenes[i], aspect, snapshot.productUrl, snapshot.characterUrl, noTextOnImages, creative, characterSheet)
+        next[i] = await generateSceneImage(scenes[i], aspect, snapshot.product?.url, snapshot.character?.url, noTextOnImages, creative, characterSheet)
         nextErrors[i] = undefined
       } catch (err) {
         console.error(`Make-film wizard: preview image ${i + 1} failed`, err)
@@ -417,12 +441,15 @@ Each scene should flow logically into the next, building toward a single cohesiv
     setError(null)
     try {
       // Consume the frozen snapshot (same identities as the initial generation).
+      // The characterSheet flag comes from the snapshot, NOT from the current
+      // Step 1 selection, so a later selection change cannot flip the sheet flag
+      // used for Regenerate.
       const snapshot = identitySnapshot ?? {
-        productUrl: selectedProduct?.url,
-        characterUrl: selectedCharacter?.url,
+        product: toIdentityRef(selectedProduct, 'product'),
+        character: toIdentityRef(selectedCharacter, 'character'),
       }
-      const characterSheet = isCharacterSheet(selectedCharacter)
-      const url = await generateSceneImage(scenes[index], aspect, snapshot.productUrl, snapshot.characterUrl, noTextOnImages, currentCreative(), characterSheet)
+      const characterSheet = snapshot.character?.characterSheet ?? false
+      const url = await generateSceneImage(scenes[index], aspect, snapshot.product?.url, snapshot.character?.url, noTextOnImages, currentCreative(), characterSheet)
       setImages((cur) => {
         const copy = [...cur]
         copy[index] = url
@@ -459,9 +486,12 @@ Each scene should flow logically into the next, building toward a single cohesiv
         aspect,
         withNarration,
         identity: {
-          productUrl: selectedProduct?.url,
+          // Approve consumes the frozen snapshot so the rendered film uses the
+          // SAME identities that were previewed, even if the Step 1 selection
+          // changed after generation started.
+          productUrl: (identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product'))?.url,
           productName: selectedProduct?.title ?? null,
-          characterUrl: selectedCharacter?.url,
+          characterUrl: (identitySnapshot?.character ?? toIdentityRef(selectedCharacter, 'character'))?.url,
           characterName: selectedCharacter?.title ?? null,
         },
         creative: currentCreative(),
