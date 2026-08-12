@@ -38,7 +38,7 @@ permissions:
 jobs:
   resolve:
     name: Resolve pull request
-    if: github.event_name != 'issue_comment' || github.event.action == 'deleted' || github.actor == 'rebar-agent-bot[bot]'
+    if: github.event_name != 'issue_comment' || github.event.action == 'deleted' || github.actor == 'rebar-agent-bot[bot]' || github.actor == 'chatgpt-codex-connector[bot]'
     runs-on: ubuntu-latest
     outputs:
       pr: ${{ steps.resolve.outputs.pr }}
@@ -98,6 +98,8 @@ jobs:
           SELF_CHECK_NAME: Label and arm eligible agent PRs
           EVENT_NAME: ${{ github.event_name }}
           EVENT_ACTION: ${{ github.event.action }}
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
           set -euo pipefail
 
@@ -113,6 +115,23 @@ jobs:
             for label in status:draft status:review-needed status:checks-pending status:auto-merge-armed status:blocked; do
               remove_label "$label"
             done
+          }
+
+          disarm_auto_merge() {
+            set +e
+            disable_output="$(gh pr merge "$PR" --repo "$REPO" --disable-auto 2>&1)"
+            disable_rc=$?
+            set -e
+
+            auto_merge_enabled="$(gh pr view "$PR" --repo "$REPO" --json autoMergeRequest --jq '.autoMergeRequest != null')"
+            if [ "$auto_merge_enabled" = "true" ]; then
+              echo "::error::Auto-merge is still enabled after the disarm attempt: $disable_output"
+              return 1
+            fi
+
+            if [ "$disable_rc" -ne 0 ]; then
+              echo "::notice::Auto-merge was already disabled or GitHub returned a non-fatal response: $disable_output"
+            fi
           }
 
           PR_JSON="$(gh pr view "$PR" --repo "$REPO" --json author,headRefName,headRefOid,headRepository,isDraft,labels,mergeable,title,url)"
@@ -142,8 +161,21 @@ jobs:
           fi
 
           if [ "$EVENT_NAME" = "issue_comment" ] && [ "$EVENT_ACTION" = "deleted" ]; then
-            echo "Deleted-comment events are disarm-only and exit before any PR-state mutation."
-            gh pr merge "$PR" --repo "$REPO" --disable-auto || true
+            trusted_evidence="false"
+            if [ "$COMMENT_AUTHOR" = "rebar-agent-bot[bot]" ] && [[ "$COMMENT_BODY" == OPENCLAW_REVIEW_PASS\ head_sha=* ]]; then
+              trusted_evidence="true"
+            elif [ "$COMMENT_AUTHOR" = "chatgpt-codex-connector[bot]" ] && [[ "$COMMENT_BODY" == *"Codex Review: Didn't find any major issues."* ]] && [[ "$COMMENT_BODY" == *"Reviewed commit:"* ]]; then
+              trusted_evidence="true"
+            fi
+
+            if [ "$trusted_evidence" != "true" ]; then
+              echo "Deleted comment was not trusted review evidence; leaving PR state unchanged."
+              exit 0
+            fi
+
+            echo "Trusted review evidence was deleted; disarming before changing labels."
+            disarm_auto_merge
+            clear_status_labels
             add_label "status:review-needed"
             exit 0
           fi
@@ -168,7 +200,7 @@ jobs:
           if echo ",$labels," | grep -Eq ",(do-not-merge|blocked|hold|needs-owner),"; then
             add_label "status:blocked"
             echo "::notice::Blocked/hold label present; not eligible for auto-merge."
-            gh pr merge "$PR" --repo "$REPO" --disable-auto || true
+            disarm_auto_merge
             exit 0
           fi
 
@@ -180,7 +212,7 @@ jobs:
           if [ "$mergeable" != "MERGEABLE" ]; then
             add_label "status:blocked"
             echo "::notice::PR mergeability is $mergeable; not eligible for auto-merge."
-            gh pr merge "$PR" --repo "$REPO" --disable-auto || true
+            disarm_auto_merge
             exit 0
           fi
 
@@ -216,7 +248,7 @@ jobs:
           if [ "$openclaw_review_ok" -lt 1 ] || [ "$github_bot_review_ok" -lt 1 ]; then
             add_label "status:review-needed"
             echo "::notice::Waiting for independent exact-head review evidence on $head_sha (OpenClaw reviewer=$openclaw_review_ok, clean GitHub reviews=$github_bot_review_count, blocking reviews=$github_bot_blocking_reviews, inline findings=$github_bot_inline_findings)."
-            gh pr merge "$PR" --repo "$REPO" --disable-auto || true
+            disarm_auto_merge
             exit 0
           fi
 
@@ -247,7 +279,7 @@ jobs:
             add_label "status:checks-pending"
             echo "Checks are not green yet:"
             echo "$not_green"
-            gh pr merge "$PR" --repo "$REPO" --disable-auto || true
+            disarm_auto_merge
             exit 0
           fi
 
@@ -255,7 +287,7 @@ jobs:
           if [ "$current_head_sha" != "$head_sha" ]; then
             add_label "status:review-needed"
             echo "::notice::PR head changed from reviewed $head_sha to $current_head_sha; fresh reviews are required."
-            gh pr merge "$PR" --repo "$REPO" --disable-auto || true
+            disarm_auto_merge
             exit 0
           fi
 
@@ -264,7 +296,7 @@ jobs:
           if [ "$openclaw_review_ok" -lt 1 ] || [ "$github_bot_review_ok" -lt 1 ]; then
             add_label "status:review-needed"
             echo "::notice::Review evidence changed before merge (OpenClaw=$openclaw_review_ok, clean GitHub reviews=$github_bot_review_count, blocking reviews=$github_bot_blocking_reviews, inline findings=$github_bot_inline_findings)."
-            gh pr merge "$PR" --repo "$REPO" --disable-auto || true
+            disarm_auto_merge
             exit 0
           fi
 
