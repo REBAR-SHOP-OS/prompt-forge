@@ -105,7 +105,7 @@ async function signStorageUrl(storagePath: string | null | undefined, bucket: st
   return raw
 }
 
-type ProductPhoto = { id: string; title: string | null; url: string }
+type ProductPhoto = { id: string; title: string | null; url: string; imageType?: string | null }
 
 type WizardStep = 'prompt' | 'scenario' | 'images'
 
@@ -118,13 +118,16 @@ export interface FilmIdentity {
 }
 
 // A single reference identity frozen at selection time. Carries the URL, the
-// role, and the character-sheet flag together so that initial generation,
-// Regenerate, and Approve all consume the SAME identity without re-deriving it
-// from the (possibly changed) Step 1 selection.
+// role, the explicit image type, the character-sheet flag, and the display name
+// together so that initial generation, Regenerate, and Approve all consume the
+// SAME identity without re-deriving it from the (possibly changed) Step 1
+// selection.
 export interface IdentityRef {
   url: string
   role: 'product' | 'character'
+  imageType?: string | null
   characterSheet: boolean
+  name?: string | null
 }
 
 // Immutable snapshot of the product/character selection, frozen when image
@@ -273,7 +276,7 @@ export function MakeFilmWizardDialog({
     try {
       const { data, error: qErr } = await supabase
         .from('generator_user_images')
-        .select('id, storage_path, title, category')
+        .select('id, storage_path, title, category, image_type')
         .eq('user_id', userId)
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
@@ -284,6 +287,7 @@ export function MakeFilmWizardDialog({
           id: r.id,
           title: r.title ?? null,
           url: await signStorageUrl(r.storage_path, PRODUCTS_BUCKET),
+          imageType: r.image_type ?? null,
         })),
       )
       setCharacterPhotos(photos)
@@ -305,21 +309,25 @@ export function MakeFilmWizardDialog({
   }
 
   // A character reference is a multi-view character sheet when it was produced
-  // by generate-character-sheet. Detection is explicit and stable, NOT title-
-  // only: a sheet is recognized when EITHER its title carries the "— sheet"
-  // marker that generate-character-sheet appends, OR its storage key uses the
-  // "character-sheet-" prefix that generate-character-sheet writes. This means
-  // an uploaded sheet with a different title is still detected, and a plain
-  // character with neither marker is never misclassified as a sheet.
+  // by generate-character-sheet or explicitly marked by the user on upload.
+  // The authoritative source is the persistent image_type metadata; the
+  // title/URL heuristic is only a backward-compatible fallback for legacy rows
+  // written before image_type existed.
   function isCharacterSheetRef(photo: ProductPhoto | null): boolean {
-    return isCharacterSheet(photo?.title, photo?.url)
+    return isCharacterSheet(photo?.imageType, photo?.title, photo?.url)
   }
 
   // Build a structured identity ref from a selected photo, or undefined when
   // nothing is selected. Used to freeze the selection into the snapshot.
   function toIdentityRef(photo: ProductPhoto | null, role: 'product' | 'character'): IdentityRef | undefined {
     if (!photo) return undefined
-    return { url: photo.url, role, characterSheet: role === 'character' && isCharacterSheetRef(photo) }
+    return {
+      url: photo.url,
+      role,
+      imageType: photo.imageType ?? null,
+      characterSheet: role === 'character' && isCharacterSheetRef(photo),
+      name: photo.title ?? null,
+    }
   }
 
   function generateDurationPrompt(basePrompt: string, durationSeconds: number): string {
@@ -487,12 +495,12 @@ Each scene should flow logically into the next, building toward a single cohesiv
         withNarration,
         identity: {
           // Approve consumes the frozen snapshot so the rendered film uses the
-          // SAME identities that were previewed, even if the Step 1 selection
-          // changed after generation started.
+          // SAME identities (url, name, type) that were previewed, even if the
+          // Step 1 selection changed after generation started.
           productUrl: (identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product'))?.url,
-          productName: selectedProduct?.title ?? null,
+          productName: (identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product'))?.name ?? null,
           characterUrl: (identitySnapshot?.character ?? toIdentityRef(selectedCharacter, 'character'))?.url,
-          characterName: selectedCharacter?.title ?? null,
+          characterName: (identitySnapshot?.character ?? toIdentityRef(selectedCharacter, 'character'))?.name ?? null,
         },
         creative: currentCreative(),
       })

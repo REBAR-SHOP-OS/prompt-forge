@@ -592,6 +592,7 @@ export type Database = {
           draft_group_id: string | null
           height: number | null
           id: string
+          image_type: string | null
           mime_type: string | null
           size_bytes: number | null
           still_duration_seconds: number
@@ -609,6 +610,7 @@ export type Database = {
           draft_group_id?: string | null
           height?: number | null
           id?: string
+          image_type?: string | null
           mime_type?: string | null
           size_bytes?: number | null
           still_duration_seconds?: number
@@ -626,6 +628,7 @@ export type Database = {
           draft_group_id?: string | null
           height?: number | null
           id?: string
+          image_type?: string | null
           mime_type?: string | null
           size_bytes?: number | null
           still_duration_seconds?: number

@@ -186,27 +186,35 @@ describe('canApproveFilm', () => {
 })
 
 describe('isCharacterSheet', () => {
-  it('detects a generated sheet by its "— sheet" title marker', () => {
-    expect(isCharacterSheet('Sarah — sheet', 'https://x/1.png')).toBe(true)
+  it('treats explicit image_type character_sheet as a sheet regardless of title/url', () => {
+    // An uploaded sheet with a non-standard title and a UUID storage key is
+    // still detected because the explicit metadata is authoritative.
+    expect(isCharacterSheet('character_sheet', 'My custom sheet', 'https://x/user/410b50ff-abc.png')).toBe(true)
   })
-  it('detects a generated sheet by its character-sheet- storage key even with a different title', () => {
-    // An uploaded sheet with a non-standard title is still detected via the
-    // stable storage-key marker that generate-character-sheet writes.
-    expect(isCharacterSheet('My custom sheet', 'https://x/user/character-sheet-1712345-abc.png')).toBe(true)
+  it('treats explicit image_type character as a plain character even with a sheet-like title', () => {
+    // A plain character explicitly marked as such is never misclassified, even
+    // if its title happens to contain the "— sheet" marker.
+    expect(isCharacterSheet('character', 'Sarah — sheet', 'https://x/user/410b50ff-abc.png')).toBe(false)
   })
-  it('detects a generated sheet by storage key when the title is null', () => {
-    expect(isCharacterSheet(null, 'https://x/user/character-sheet-1712345-abc.png')).toBe(true)
+  it('detects a legacy generated sheet by its "— sheet" title marker when image_type is null', () => {
+    expect(isCharacterSheet(null, 'Sarah — sheet', 'https://x/1.png')).toBe(true)
   })
-  it('does not treat a plain character as a sheet', () => {
-    expect(isCharacterSheet('Sarah', 'https://x/user/portrait-1712345-abc.png')).toBe(false)
+  it('detects a legacy generated sheet by its character-sheet- storage key when image_type is null', () => {
+    expect(isCharacterSheet(null, 'My custom sheet', 'https://x/user/character-sheet-1712345-abc.png')).toBe(true)
   })
-  it('does not treat a plain character with no markers as a sheet', () => {
-    expect(isCharacterSheet('Sarah', 'https://x/user/photo.png')).toBe(false)
+  it('detects a legacy generated sheet by storage key when title is null', () => {
+    expect(isCharacterSheet(null, null, 'https://x/user/character-sheet-1712345-abc.png')).toBe(true)
+  })
+  it('does not treat a legacy plain character as a sheet', () => {
+    expect(isCharacterSheet(null, 'Sarah', 'https://x/user/portrait-1712345-abc.png')).toBe(false)
+  })
+  it('does not treat a legacy plain character with no markers as a sheet', () => {
+    expect(isCharacterSheet(null, 'Sarah', 'https://x/user/photo.png')).toBe(false)
   })
   it('does not treat a product as a sheet', () => {
-    expect(isCharacterSheet('Sneaker', 'https://x/user/product-1.png')).toBe(false)
+    expect(isCharacterSheet(null, 'Sneaker', 'https://x/user/product-1.png')).toBe(false)
   })
-  it('handles null title and url', () => {
-    expect(isCharacterSheet(null, null)).toBe(false)
+  it('handles null image_type, title and url', () => {
+    expect(isCharacterSheet(null, null, null)).toBe(false)
   })
 })

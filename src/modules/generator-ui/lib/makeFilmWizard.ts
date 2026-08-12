@@ -81,14 +81,27 @@ export interface FilmSelections {
 /**
  * Decide whether a character reference is a multi-view character sheet (a
  * single image with several turnaround views + facial expressions of ONE
- * person). Detection is explicit and stable, NOT title-only: a sheet is
+ * person).
+ *
+ * The authoritative source is the explicit, persistent `image_type` metadata
+ * written at save time ('character_sheet' vs 'character'). The title/URL
+ * heuristic is ONLY a backward-compatible fallback for legacy rows written
+ * before the image_type column existed (image_type === null): a sheet is then
  * recognized when EITHER its title carries the "— sheet" marker that
- * generate-character-sheet appends, OR its URL/storage key uses the
- * "character-sheet-" prefix that generate-character-sheet writes. This means
- * an uploaded sheet with a different title is still detected, and a plain
- * character with neither marker is never misclassified as a sheet.
+ * generate-character-sheet appends, OR its storage key uses the
+ * "character-sheet-" prefix. For new data the explicit metadata always wins,
+ * so an uploaded sheet with a different title is still detected and a plain
+ * character is never misclassified.
  */
-export function isCharacterSheet(title: string | null | undefined, url: string | null | undefined): boolean {
+export function isCharacterSheet(
+  imageType: string | null | undefined,
+  title: string | null | undefined,
+  url: string | null | undefined,
+): boolean {
+  // Explicit metadata is authoritative when present.
+  if (imageType === 'character_sheet') return true
+  if (imageType === 'character') return false
+  // Legacy row (image_type is null): fall back to the title/URL heuristic.
   const t = (title ?? '').toLowerCase()
   if (t.includes('— sheet')) return true
   const u = url ?? ''
