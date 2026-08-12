@@ -112,6 +112,80 @@ export function isCharacterSheet(
 }
 
 /**
+ * A character row as returned by the generator_user_images query. `imageType`
+ * is null for legacy rows written before the image_type column existed.
+ */
+export interface CharacterImageRow {
+  id: string
+  storage_path: string | null
+  title: string | null
+  category: string | null
+  imageType: string | null
+}
+
+/**
+ * The exact Postgres error raised when the generator_user_images.image_type
+ * column does not exist yet (migration not deployed to the current Lovable
+ * Cloud Preview). We match ONLY this missing-column error so we never mask
+ * auth, RLS, network, timeout or any other failure.
+ */
+export function isMissingImageTypeColumnError(message: string | null | undefined): boolean {
+  if (!message) return false
+  const m = message.toLowerCase()
+  return (
+    m.includes('generator_user_images.image_type') &&
+    (m.includes('does not exist') || m.includes('column') && m.includes('not exist'))
+  )
+}
+
+/**
+ * Load character rows from generator_user_images with a single, scoped
+ * fallback for the missing image_type column.
+ *
+ * The primary query selects image_type. If (and only if) the error is exactly
+ * the missing-column error for generator_user_images.image_type — i.e. the
+ * migration has not been deployed to the current Lovable Cloud Preview — we
+ * retry ONCE with the legacy select (no image_type) and mark every row
+ * imageType=null so the existing title/URL heuristic still classifies legacy
+ * sheets. Any other error (auth, RLS, network, timeout, …) is returned as-is
+ * and never retried.
+ *
+ * `query` is injected so the logic is pure and unit-testable without a live
+ * Supabase client. It receives the select columns and returns the Supabase
+ * result shape ({ data, error }).
+ */
+export async function loadCharacterRows(
+  query: (columns: string) => Promise<{ data: Array<Record<string, unknown>> | null; error: { message: string } | null }>,
+): Promise<{ rows: CharacterImageRow[]; fellBack: boolean }> {
+  const primary = await query('id, storage_path, title, category, image_type')
+  if (!primary.error) {
+    return { rows: normalizeCharacterRows(primary.data), fellBack: false }
+  }
+  if (!isMissingImageTypeColumnError(primary.error.message)) {
+    throw new Error(primary.error.message)
+  }
+  // Missing image_type column: retry exactly once with the legacy select.
+  const legacy = await query('id, storage_path, title, category')
+  if (legacy.error) {
+    throw new Error(legacy.error.message)
+  }
+  return { rows: normalizeCharacterRows(legacy.data, true), fellBack: true }
+}
+
+function normalizeCharacterRows(
+  data: Array<Record<string, unknown>> | null | undefined,
+  legacy = false,
+): CharacterImageRow[] {
+  return (data ?? []).map((r) => ({
+    id: String(r.id ?? ''),
+    storage_path: (r.storage_path as string | null) ?? null,
+    title: (r.title as string | null) ?? null,
+    category: (r.category as string | null) ?? null,
+    imageType: legacy ? null : ((r.image_type as string | null) ?? null),
+  }))
+}
+
+/**
  * Build the scenario prompt enrichment for product + character + camera +
  * theme. Returns the base prompt with the directives appended. Pure and
  * deterministic so it can be unit-tested.
