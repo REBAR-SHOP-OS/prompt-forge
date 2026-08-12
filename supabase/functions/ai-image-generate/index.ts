@@ -2,6 +2,13 @@
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 import { readJsonLoose } from "../_shared/core/safe-json.ts";
+import {
+  validateReferenceSpecs,
+  buildIdentityEvalPrompt,
+  parseIdentityEvalResponse,
+  type ReferenceSpec,
+  type IdentityEvalOutcome,
+} from "../_shared/identity-eval.ts";
 
 const ALLOWED_RATIOS = new Set(["1:1", "9:16", "16:9"]);
 
@@ -101,23 +108,31 @@ Deno.serve(async (req) => {
     const referenceImageUrls = Array.isArray(body?.referenceImageUrls)
       ? (body.referenceImageUrls as unknown[]).filter((u): u is string => typeof u === "string" && u.length > 0)
       : [];
-    // Optional role labels aligned 1:1 with referenceImageUrls (e.g. "product",
-    // "character"). When present, the model is told which image is which so it
-    // can preserve BOTH identities instead of guessing from an unordered list.
     const referenceRoles = Array.isArray(body?.referenceRoles)
       ? (body.referenceRoles as unknown[]).filter((r): r is string => typeof r === "string" && r.length > 0)
       : [];
+    // Validate role/count/order of the reference payload. A mismatch is a hard
+    // error, not a silent drop — otherwise the model would render without the
+    // identity the user explicitly chose.
+    const refValidation = validateReferenceSpecs(referenceImageUrls, referenceRoles);
+    if (!refValidation.ok) {
+      return new Response(JSON.stringify({ error: refValidation.error }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const refSpecs: ReferenceSpec[] = refValidation.specs;
     // Cap the number of reference images and validate each against the same
     // security rules as the job orchestrator (own storage under user folder or
     // allowlisted host). Never accept arbitrary insecure URLs server-side.
     const MAX_REFERENCE_IMAGES = 3;
-    const safeReferenceUrls = referenceImageUrls
+    const safeReferenceUrls = refSpecs
       .slice(0, MAX_REFERENCE_IMAGES)
-      .filter((u) => u.length <= 2048 && isAllowedReferenceUrl(u, auth.userId));
+      .filter((s) => s.url.length <= 2048 && isAllowedReferenceUrl(s.url, auth.userId));
     // A reference that was supplied but failed security validation is a hard
     // error, not a silent drop — otherwise the model would render without the
     // identity the user explicitly chose.
-    const droppedReferenceCount = referenceImageUrls.length - safeReferenceUrls.length;
+    const droppedReferenceCount = refSpecs.length - safeReferenceUrls.length;
     if (droppedReferenceCount > 0) {
       return new Response(JSON.stringify({
         error: "One or more reference images could not be validated. Re-select the product/character and try again.",
@@ -159,23 +174,17 @@ Deno.serve(async (req) => {
     // Build the multimodal user content. Reference images (product, character,
     // and optionally the previous scene for continuity) are attached as real
     // image blocks so the model can preserve their identity, not just read their
-    // URLs as text. Private-bucket URLs are inlined as data URLs first. When
-    // role labels are supplied, each image is preceded by an explicit label so
-    // the model knows which reference is the product vs the character.
+    // URLs as text. Private-bucket URLs are inlined as data URLs first. Each
+    // image is preceded by an explicit role label so the model knows which
+    // reference is the product vs the character.
     const userContent: unknown[] = [{ type: "text", text: fullPrompt }];
-    if (safeReferenceUrls.length > 0) {
-      for (let i = 0; i < safeReferenceUrls.length; i++) {
-        const refUrl = safeReferenceUrls[i];
-        const role = referenceRoles[i]?.toLowerCase();
-        if (role === "product" || role === "character") {
-          userContent.push({
-            type: "text",
-            text: `${role.toUpperCase()} reference image (preserve this exact ${role} in the output):`,
-          });
-        }
-        const resolved = await resolveImageForGateway(refUrl);
-        userContent.push({ type: "image_url", image_url: { url: resolved } });
-      }
+    for (const spec of safeReferenceUrls) {
+      userContent.push({
+        type: "text",
+        text: `${spec.role.toUpperCase()} reference image (preserve this exact ${spec.role} in the output):`,
+      });
+      const resolved = await resolveImageForGateway(spec.url);
+      userContent.push({ type: "image_url", image_url: { url: resolved } });
     }
 
     const extractImage = (data: unknown): string | undefined => {
@@ -186,34 +195,69 @@ Deno.serve(async (req) => {
 
     const PRIMARY = "google/gemini-3.1-flash-image-preview";
     const FALLBACK = "google/gemini-2.5-flash-image";
-
-    // When the caller supplied BOTH a product and a character reference, the
-    // output must preserve both identities. We cannot reliably auto-detect
-    // identity presence from the returned image bytes, so we retry a bounded
-    // number of times with an explicit instruction to include both, then surface
-    // a clear error instead of silently returning a dropped-identity image.
-    const hasProductRef = referenceRoles.some((r) => r.toLowerCase() === "product");
-    const hasCharacterRef = referenceRoles.some((r) => r.toLowerCase() === "character");
-    const requireBoth = hasProductRef && hasCharacterRef;
     const MAX_ATTEMPTS = 3;
 
-    let resp: Response | null = null;
+    // Vision-based identity evaluation: after each generation, the output image
+    // is compared against each reference image to confirm the SAME product and
+    // the SAME character are present and match. A dataUrl alone is NOT success.
+    // When references are supplied, the output is only accepted if every
+    // reference is present AND matches. Invalid output is rejected and retried
+    // (bounded), then a clear error is returned.
+    const evalModel = "google/gemini-2.5-flash";
+    const evalPrompt = buildIdentityEvalPrompt(safeReferenceUrls);
+
+    async function evaluateIdentity(dataUrl: string): Promise<IdentityEvalOutcome | null> {
+      if (safeReferenceUrls.length === 0) {
+        // No references to preserve — nothing to evaluate.
+        return { perReference: [], passed: true };
+      }
+      const evalContent: unknown[] = [
+        { type: "text", text: evalPrompt },
+        { type: "image_url", image_url: { url: dataUrl } },
+      ];
+      for (const spec of safeReferenceUrls) {
+        const resolved = await resolveImageForGateway(spec.url);
+        evalContent.push({ type: "image_url", image_url: { url: resolved } });
+      }
+      const evalResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: evalModel,
+          messages: [{ role: "user", content: evalContent }],
+        }),
+      });
+      if (!evalResp.ok) {
+        const text = await evalResp.text().catch(() => "");
+        console.error("ai-image-generate identity-eval gateway error", evalResp.status, text);
+        return null;
+      }
+      const evalData = await readJsonLoose(evalResp, "ai-image-generate-identity-eval");
+      const raw: string = (evalData?.choices?.[0]?.message?.content ?? "").trim();
+      if (!raw) return null;
+      return parseIdentityEvalResponse(raw, safeReferenceUrls.length);
+    }
+
     let data: unknown = null;
     let dataUrl: string | undefined;
+    let lastEval: IdentityEvalOutcome | null = null;
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       const model = attempt === 0 ? PRIMARY : FALLBACK;
-      const attemptContent = requireBoth && attempt > 0
+      const attemptContent = attempt > 0 && safeReferenceUrls.length > 0
         ? [
             { type: "text", text: fullPrompt },
             ...userContent.slice(1),
             {
               type: "text",
-              text: "IMPORTANT: The previous attempt dropped one or both of the required identities. The output MUST contain BOTH the product AND the character from the reference images, together in the same shot.",
+              text: "IMPORTANT: The previous attempt did not preserve the required identities. The output MUST contain the SAME product and the SAME character from the reference images, together in the same shot.",
             },
           ]
         : userContent;
-      resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -250,14 +294,39 @@ Deno.serve(async (req) => {
 
       data = await readJsonLoose(resp, "ai-image-generate");
       dataUrl = extractImage(data);
-      if (dataUrl) break;
-      console.warn(`ai-image-generate attempt ${attempt + 1} returned no image`);
+      if (!dataUrl) {
+        console.warn(`ai-image-generate attempt ${attempt + 1} returned no image`);
+        continue;
+      }
+
+      // Evaluate the output against the references. Only accept when every
+      // reference is present AND matches. A dataUrl alone is not success.
+      lastEval = await evaluateIdentity(dataUrl);
+      if (lastEval && lastEval.passed) break;
+      console.warn(
+        `ai-image-generate attempt ${attempt + 1} failed identity evaluation`,
+        JSON.stringify(lastEval),
+      );
     }
 
     if (!dataUrl) {
       console.error("ai-image-generate empty image after retries", JSON.stringify(data).slice(0, 500));
       return new Response(JSON.stringify({
         error: "The AI returned text instead of an image. Try a more visual prompt — describe the scene, subject, lighting, and style.",
+      }), {
+        status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (safeReferenceUrls.length > 0 && (!lastEval || !lastEval.passed)) {
+      const missing = lastEval?.perReference
+        ?.filter((r) => !r.present)
+        .map((r) => r.reason)
+        .filter(Boolean)
+        .join(" ") || "The generated image did not preserve the selected product and/or character.";
+      console.error("ai-image-generate identity not preserved after retries", JSON.stringify(lastEval));
+      return new Response(JSON.stringify({
+        error: `Could not preserve the selected product and character in the image. ${missing} Try re-selecting them or rephrasing the scene.`,
       }), {
         status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
