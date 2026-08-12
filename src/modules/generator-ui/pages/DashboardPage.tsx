@@ -143,7 +143,7 @@ import CalendarInfoDialog from '@/modules/generator-ui/components/CalendarInfoDi
 import ImageReframeDialog from '@/modules/generator-ui/components/ImageReframeDialog'
 import AiImageDialog from '@/modules/generator-ui/components/AiImageDialog'
 import ScenarioWriterDialog from '@/modules/generator-ui/components/ScenarioWriterDialog'
-import MakeFilmWizardDialog, { type FilmAspect } from '@/modules/generator-ui/components/MakeFilmWizardDialog'
+import MakeFilmWizardDialog, { type FilmAspect, type FilmIdentity, type FilmCreative } from '@/modules/generator-ui/components/MakeFilmWizardDialog'
 import ProductAdDialog from '@/modules/generator-ui/components/ProductAdDialog'
 import { BusinessProfileDialog } from '@/modules/generator-ui/components/BusinessProfileDialog'
 import { TranscriptPanel } from '@/modules/generator-ui/components/TranscriptPanel'
@@ -151,6 +151,7 @@ import { NarrationDialog } from '@/modules/generator-ui/components/NarrationDial
 import { NarrationReviewPanel } from '@/modules/generator-ui/components/NarrationReviewPanel'
 import { extractNarration } from '@/modules/generator-ui/lib/narration'
 import { buildReferenceImageUrls, explicitCharacterAnchor } from '@/modules/generator-ui/lib/identityAnchors'
+import { computeClipDurations, resolveSceneNarration } from '@/modules/generator-ui/lib/makeFilmWizard'
 import {
   type ModelMeta,
   getAvailableModels,
@@ -7166,7 +7167,22 @@ export default function DashboardPage() {
   async function submitScenesAsJobs(
     scenes: string[],
     firstSceneImageUrl?: string,
-    opts?: { perSceneImageUrls?: (string | undefined)[]; aspect?: Ratio },
+    opts?: {
+      perSceneImageUrls?: (string | undefined)[]
+      aspect?: Ratio
+      /** Total film duration in seconds; used to split into per-clip durations. */
+      durationSeconds?: number
+      /** Wizard-selected product (overrides the composer's pinned product). */
+      product?: ProjectProduct | null
+      /** Wizard-selected character (overrides the composer's pinned character). */
+      character?: ProjectCharacter | null
+      /** Wizard camera style prompt (applied to every clip). */
+      cameraStyle?: string
+      /** Wizard visual theme prompt (applied to every clip). */
+      theme?: string
+      /** When false, no narration/voiceover is produced for any clip. */
+      withNarration?: boolean
+    },
   ): Promise<string[]> {
     if (!scenes || scenes.length === 0) return []
     if (!selectedModel) {
@@ -7188,7 +7204,20 @@ export default function DashboardPage() {
     }
 
     const effectiveRatio: Ratio = requestedRatio
-    const perClipDuration: 5 | 10 | 15 = 15
+    // Split the chosen total duration into per-clip durations the job contract
+    // supports (5 | 10 | 15). The sum always equals the chosen total.
+    const totalDuration = opts?.durationSeconds ?? durationSeconds
+    const clipDurations = computeClipDurations(totalDuration)
+    const perClipDuration: 5 | 10 | 15 = clipDurations[0] ?? 15
+
+    // The wizard's product/character selections win when supplied; otherwise
+    // fall back to the composer's pinned product/character.
+    const wizardProduct = opts?.product ?? null
+    const wizardCharacter = opts?.character ?? null
+    const activeProduct = wizardProduct ?? selectedProduct
+    const activeCharacter = wizardCharacter ?? projectCharacter
+    const cameraStyle = opts?.cameraStyle
+    const theme = opts?.theme
 
     let previousJobId: string | null = null
     // One durable project group id for every scene clip in this scenario.
@@ -7196,14 +7225,14 @@ export default function DashboardPage() {
 
     // Content continuity for chained cards: resolve the character description once
     // and reuse it as a prefix on every scene so all cards keep the same subject.
-    const continuityCharacterRef = projectCharacter
+    const continuityCharacterRef = activeCharacter
     // Persistent identity anchor: the actual Character Sheet image URL, sent on
     // EVERY card (card 1 included) in addition to the previous-frame seed so the
     // provider keeps the same character instead of drifting. Independent of the
     // text description prefix below.
     const referenceImageUrls: string[] | undefined = buildReferenceImageUrls([
       continuityCharacterRef?.url,
-      selectedProduct?.url,
+      activeProduct?.url,
     ])
     let characterPrefixDesc: string | null = null
     if (continuityCharacterRef) {
@@ -7224,10 +7253,10 @@ export default function DashboardPage() {
       opts?.perSceneImageUrls && opts.perSceneImageUrls.some((u) => Boolean(u)),
     )
     const scenarioModel =
-      continuityCharacterRef || selectedProduct || hasPerSceneImages
+      continuityCharacterRef || activeProduct || hasPerSceneImages
         ? toImageToVideoModel(selectedModel)
         : selectedModel
-    if (continuityCharacterRef || selectedProduct || hasPerSceneImages) setGenerationMode('image-to-video')
+    if (continuityCharacterRef || activeProduct || hasPerSceneImages) setGenerationMode('image-to-video')
     // Job ids created in this batch, returned so an orchestrator can await the
     // batch's completion (e.g. to auto-assemble the Final Film).
     const createdJobIds: string[] = []
@@ -7237,19 +7266,31 @@ export default function DashboardPage() {
         if (!sourcePrompt) continue
         const sceneLabel = `Scene ${i + 1}`
         // Capture the authoritative narration written in this scene so it stays
-        // the reference even if the visual prompt is later edited.
-        const narrationText = extractNarration(sourcePrompt).join('\n') || undefined
+        // the reference even if the visual prompt is later edited. When the
+        // wizard chose "Without narration", suppress narration entirely.
+        const narrationText = resolveSceneNarration(sourcePrompt, opts?.withNarration, extractNarration)
         // Enrich each card so the sequence stays content-connected: keep the same
         // character, and (after the first) explicitly continue from the prior card.
         let prompt = sourcePrompt
         // Always anchor the character (every card) so identity never drifts.
         if (characterPrefixDesc) prompt = applyCharacterPrefix(prompt, characterPrefixDesc)
         // Always anchor the selected product (every card) so it never drifts.
-        if (selectedProduct) prompt = applyProductPrefix(prompt, selectedProduct)
+        if (activeProduct) prompt = applyProductPrefix(prompt, activeProduct)
         if (continuityActive && i > 0) prompt = applyContinuityPrompt(prompt, continuity.memory)
+        // Apply the wizard's camera angle + visual theme to every clip so the
+        // shot plan stays coherent across the whole film.
+        if (cameraStyle) prompt += `\n\nCAMERA ANGLE: ${cameraStyle}`
+        if (theme) prompt += `\n\nVISUAL STYLE: ${theme}`
+        prompt += `\n\nSCENE ${i + 1} OF ${scenes.length}: This clip is one shot in a continuous sequence. Keep the same subject, setting and lighting as the surrounding clips so the film flows seamlessly.`
 
         let startFrameUrl: string | undefined
         let startFrameIsProductPhoto = false
+        // Continuity end-frame: when this scene has its own approved start image
+        // AND a previous clip exists, also pass the previous clip's last frame as
+        // the end frame so the provider interpolates between the approved start
+        // image and the previous scene's end — keeping both the approved image
+        // and visual continuity between scenes.
+        let endFrameUrl: string | undefined
         // Per-scene pre-generated start image (one-button auto-film): when the
         // caller supplied this scene's own image, seed the card from it instead
         // of the last-frame chain. Missing entries fall through to the existing
@@ -7257,6 +7298,20 @@ export default function DashboardPage() {
         const perSceneImageUrl = opts?.perSceneImageUrls?.[i]
         if (perSceneImageUrl) {
           startFrameUrl = perSceneImageUrl
+          // Keep continuity: capture the previous clip's last frame as the end
+          // frame for this scene so the sequence still flows from scene to scene.
+          if (i > 0 && previousJobId) {
+            try {
+              endFrameUrl = await waitForLastFrameUrl(previousJobId, `Scene ${i}`)
+            } catch (err) {
+              // A continuity end-frame is best-effort — never abort the scene
+              // over it. The approved start image still anchors the subject.
+              if (!(err instanceof Error && err.name === SEED_FRAME_ERROR)) {
+                console.error(`Scene ${i + 1}: continuity end-frame failed`, err)
+              }
+              endFrameUrl = undefined
+            }
+          }
         } else if (i === 0) {
           startFrameUrl = firstSceneImageUrl
           // No uploaded start frame but a character is anchored: build a clean
@@ -7274,9 +7329,9 @@ export default function DashboardPage() {
           // Still no start frame but a product is pinned: use the real product
           // photo as the start frame so card 1 reproduces the exact product
           // instead of drifting in pure text-to-video.
-          if (!startFrameUrl && selectedProduct) {
+          if (!startFrameUrl && activeProduct) {
             setVideoColumnMessage(`Preparing product as start frame for ${sceneLabel}…`)
-            startFrameUrl = await productStartFrame(selectedProduct)
+            startFrameUrl = await productStartFrame(activeProduct)
             startFrameIsProductPhoto = Boolean(startFrameUrl)
           }
         } else if (previousJobId) {
@@ -7300,9 +7355,9 @@ export default function DashboardPage() {
         // Bake the pinned product into this scene's start frame so Wan reproduces
         // the exact product (it only conditions on the start frame). Skip when the
         // start frame already IS the real product photo — no redraw needed.
-        if (selectedProduct && startFrameUrl && !startFrameIsProductPhoto) {
+        if (activeProduct && startFrameUrl && !startFrameIsProductPhoto) {
           setVideoColumnMessage(`Locking product into ${sceneLabel}…`)
-          startFrameUrl = await bakeProductIntoFrame(startFrameUrl, selectedProduct, effectiveRatio)
+          startFrameUrl = await bakeProductIntoFrame(startFrameUrl, activeProduct, effectiveRatio)
         }
 
 
@@ -7314,6 +7369,7 @@ export default function DashboardPage() {
           durationSeconds: perClipDuration,
           aspectRatio: effectiveRatio,
           firstFrameUrl: startFrameUrl,
+          lastFrameUrl: endFrameUrl,
           referenceImageUrls,
           draftGroupId,
           narrationText,
@@ -7417,7 +7473,16 @@ export default function DashboardPage() {
   // only returns the scenes for on-screen review; it renders nothing.
   async function writeFilmScenario(
     idea: string,
-    options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean },
+    options?: {
+      duration?: number
+      productUrl?: string
+      characterUrl?: string
+      withNarration?: boolean
+      productName?: string | null
+      characterName?: string | null
+      cameraStyle?: string
+      theme?: string
+    },
   ): Promise<string[]> {
     const trimmed = idea.trim()
     if (!trimmed) throw new Error('Type a prompt first so I can write the film.')
@@ -7439,38 +7504,46 @@ export default function DashboardPage() {
     // Derived rather than table-matched so the durations the wizard added
     // (60 -> 4, 90 -> 6) are covered; 135/45/30/15 keep their previous values.
     const expectedScenes = Math.max(1, Math.round(filmDuration / 15))
-    let scenes: string[] = []
-    if (businessInfo) {
-      try {
-        const { data, error } = await supabase.functions.invoke('scenario-write', {
-          body: {
-            idea: trimmed,
-            durationSeconds: filmDuration,
-            businessInfo,
-            productUrl: options?.productUrl,
-            characterUrl: options?.characterUrl,
-            withNarration: options?.withNarration,
-          },
-        })
-        if (error) throw error
-        const raw = (data as { scenes?: unknown } | null)?.scenes
-        if (Array.isArray(raw)) {
-          scenes = raw
-            .map((s) => (typeof s === 'string' ? s.trim() : ''))
-            .filter((s) => s.length > 0)
-        }
-      } catch (err) {
-        // Non-fatal: degrade to prompt-derived scenes so the wizard still has
-        // something reviewable rather than aborting.
-        console.error('Make-film wizard: scenario-write failed, falling back to prompt', err)
-      }
+    // If the user has not saved business info, scenario-write will 400. Surface
+    // a clear, actionable message instead of silently degrading to a repeated
+    // prompt — the spec requires a real connected scenario or a clear error.
+    if (!businessInfo) {
+      throw new Error(
+        'Add your business info first so the film can promote the right product. Open the Business Info panel and save a short description, then try again.',
+      )
     }
-    // Fallback (no business info, sub-30 duration, or a failed/empty split):
-    // build the expected number of scenes straight from the prompt.
-    if (scenes.length < expectedScenes) {
-      const missing = expectedScenes - scenes.length
-      const padded = Array.from({ length: missing }, () => trimmed)
-      scenes = [...scenes, ...padded]
+    let scenes: string[] = []
+    try {
+      const { data, error } = await supabase.functions.invoke('scenario-write', {
+        body: {
+          idea: trimmed,
+          durationSeconds: filmDuration,
+          businessInfo,
+          productUrl: options?.productUrl,
+          characterUrl: options?.characterUrl,
+          productName: options?.productName ?? undefined,
+          characterName: options?.characterName ?? undefined,
+          withNarration: options?.withNarration,
+          cameraStyle: options?.cameraStyle,
+          genre: options?.theme,
+        },
+      })
+      if (error) throw error
+      const raw = (data as { scenes?: unknown } | null)?.scenes
+      if (Array.isArray(raw)) {
+        scenes = raw
+          .map((s) => (typeof s === 'string' ? s.trim() : ''))
+          .filter((s) => s.length > 0)
+      }
+    } catch (err) {
+      // Do NOT silently repeat the prompt. A failed scenario is a hard error so
+      // the user can retry or fix their business info rather than approving a
+      // film of duplicated scenes.
+      const msg = err instanceof Error ? err.message : 'Could not write the scenario.'
+      throw new Error(`Could not write the film scenario: ${msg}`)
+    }
+    if (scenes.length === 0) {
+      throw new Error('The scenario came back empty — try rephrasing your prompt.')
     }
     return scenes
   }
@@ -7484,17 +7557,24 @@ export default function DashboardPage() {
     productUrl?: string,
     characterUrl?: string,
     noText?: boolean,
+    creative?: { cameraStyle?: string; cameraLabel?: string; theme?: string; themeLabel?: string },
   ): Promise<string> {
     // Preview images are generated at the ratio the clips will use, so the seed
     // frame matches the video (submitScenesAsJobs uses aspectRatio too).
     // The wizard's own aspect choice wins when it supplies one. FilmAspect is
     // constrained to a subset of Ratio, so no cast is needed.
     const ratio: Ratio = aspect ?? aspectRatio
-    // Optional polish: turn the scene text into a tighter image prompt.
+    // Optional polish: turn the scene text into a tighter image prompt, passing
+    // the wizard's camera angle + visual theme so they are enforced in the
+    // image, not just the initial text.
     let imagePrompt = sceneText
     try {
       const { data: pData, error: pErr } = await supabase.functions.invoke('write-image-prompt', {
-        body: { existingPrompt: sceneText, themeDescriptor: '', themeLabel: '' },
+        body: {
+          existingPrompt: sceneText,
+          themeDescriptor: creative?.theme ?? '',
+          themeLabel: creative?.themeLabel ?? '',
+        },
       })
       if (!pErr) {
         const written = (pData as { prompt?: unknown } | null)?.prompt
@@ -7502,6 +7582,10 @@ export default function DashboardPage() {
       }
     } catch {
       /* keep the raw scene text as the image prompt */
+    }
+    // Enforce the camera angle in the image prompt too (not just the scenario).
+    if (creative?.cameraStyle) {
+      imagePrompt = `${imagePrompt}\n\nCAMERA: ${creative.cameraStyle}`
     }
     // Explicitly tag which reference image is product vs character so the AI
     // knows to include BOTH in the generated scene.
@@ -7529,12 +7613,24 @@ export default function DashboardPage() {
   }
 
   // Step 3 (ONLY after the explicit Approve click) — seed one video job per
-  // scene with the approved preview images, await the whole batch.
-  // Does NOT auto-assemble the Final Film — that is a separate user action.
+  // scene with the approved preview images, await the whole batch, then
+  // auto-assemble the Final Film via the existing merge path.
   async function renderApprovedFilm(
     scenes: string[],
     perSceneImageUrls: (string | undefined)[],
-    options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean },
+    options?: {
+      duration?: number
+      aspect?: FilmAspect
+      withNarration?: boolean
+      identity?: {
+        productUrl?: string
+        productName?: string | null
+        productDescription?: string | null
+        characterUrl?: string
+        characterName?: string | null
+      }
+      creative?: { cameraStyle?: string; cameraLabel?: string; theme?: string; themeLabel?: string }
+    },
   ): Promise<void> {
     if (isAutoFilming || isSubmitting || isMerging) return
     if (scenes.length === 0) {
@@ -7550,10 +7646,34 @@ export default function DashboardPage() {
     setVideoColumnMessage('Queueing your approved scenes…')
     try {
       // One video job per scene, each seeded by its approved image, rendered at
-      // the aspect the wizard chose (falls back to the composer's ratio).
+      // the aspect the wizard chose (falls back to the composer's ratio). The
+      // wizard's product/character identity is carried through so every job
+      // anchors the same subject the user picked in the wizard.
       const createdJobIds = await submitScenesAsJobs(scenes, perSceneImageUrls[0], {
         perSceneImageUrls,
         aspect: options?.aspect,
+        // Convert the wizard's identity/creative into the fields submitScenesAsJobs
+        // consumes so the wizard's product/character/camera/theme actually reach
+        // every job (the wizard's selections win over the composer's pinned ones).
+        durationSeconds: options?.duration,
+        product: options?.identity?.productUrl
+          ? {
+              id: 'wizard-product',
+              url: options.identity.productUrl,
+              title: options.identity.productName ?? null,
+              description: options.identity.productDescription ?? null,
+            }
+          : null,
+        character: options?.identity?.characterUrl
+          ? {
+              id: 'wizard-character',
+              url: options.identity.characterUrl,
+              title: options.identity.characterName ?? null,
+            }
+          : null,
+        cameraStyle: options?.creative?.cameraStyle,
+        theme: options?.creative?.theme,
+        withNarration: options?.withNarration,
       })
       if (!createdJobIds || createdJobIds.length === 0) {
         throw new Error('No scenes could be queued for the film.')
@@ -7569,9 +7689,17 @@ export default function DashboardPage() {
         setVideoColumnMessage('No scenes finished rendering. Nothing to assemble.')
         return
       }
-      setVideoColumnMessage('All scenes ready — review in the timeline.')
-      // NOTE: We intentionally do NOT call handleMergeAllVideosRef here.
-      // The user must explicitly trigger Final Film assembly themselves.
+      setVideoColumnMessage('All scenes ready — assembling your Final Film…')
+      // Auto-assemble the Final Film through the existing merge path once every
+      // scene has succeeded, so the user gets a complete film without a manual
+      // step. handleMergeAllVideosRef always points at the current handler.
+      try {
+        await handleMergeAllVideosRef.current()
+      } catch (mergeErr) {
+        const msg = mergeErr instanceof Error ? mergeErr.message : 'Could not assemble the Final Film.'
+        setComposerError(msg)
+        setVideoColumnMessage(msg)
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Could not generate the film.'
       setComposerError(msg)
@@ -10382,8 +10510,8 @@ export default function DashboardPage() {
         defaultAspect={aspectRatio}
         userId={userId}
         writeScenario={writeFilmScenario}
-        generateSceneImage={(sceneText, aspect, productUrl, characterUrl, noText) =>
-          generateFilmSceneImage(sceneText, aspect, productUrl ?? selectedProduct?.url, characterUrl ?? selectedCharacter?.url, noText)
+        generateSceneImage={(sceneText, aspect, productUrl, characterUrl, noText, creative) =>
+          generateFilmSceneImage(sceneText, aspect, productUrl ?? selectedProduct?.url, characterUrl ?? selectedCharacter?.url, noText, creative)
         }
         onApprove={(scenes, perSceneImageUrls, options) => {
           void renderApprovedFilm(scenes, perSceneImageUrls, options)

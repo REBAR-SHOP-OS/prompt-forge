@@ -35,14 +35,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
+import { canApproveFilm, type FilmDuration, type FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { supabase } from '@/integrations/supabase/client'
 
-export type FilmDuration = 5 | 10 | 15 | 30 | 45 | 60 | 90 | 135
+export type { FilmDuration, FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
 // Must stay a subset of DashboardPage's `Ratio` ('9:16' | '1:1' | '16:9') —
 // that is what ai-image-generate and submitScenesAsJobs accept. 4:3 is
 // deliberately absent: offering it here produced an aspect the render
 // pipeline cannot honour.
-export type FilmAspect = '16:9' | '9:16' | '1:1'
 
 const DURATIONS: FilmDuration[] = [5, 10, 15, 30, 45, 60, 90, 135]
 const ASPECTS: { value: FilmAspect; label: string; dims: string }[] = [
@@ -109,6 +109,21 @@ type ProductPhoto = { id: string; title: string | null; url: string }
 
 type WizardStep = 'prompt' | 'scenario' | 'images'
 
+export interface FilmIdentity {
+  productUrl?: string
+  productName?: string | null
+  productDescription?: string | null
+  characterUrl?: string
+  characterName?: string | null
+}
+
+export interface FilmCreative {
+  cameraStyle?: string
+  cameraLabel?: string
+  theme?: string
+  themeLabel?: string
+}
+
 export interface MakeFilmWizardDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -116,9 +131,9 @@ export interface MakeFilmWizardDialogProps {
   defaultDuration: FilmDuration
   defaultAspect: FilmAspect
   userId: string | null
-  writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean; aspect?: FilmAspect }) => Promise<string[]>
-  generateSceneImage: (sceneText: string, aspect?: FilmAspect, productUrl?: string, characterUrl?: string, noText?: boolean) => Promise<string>
-  onApprove: (scenes: string[], perSceneImageUrls: (string | undefined)[], options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean }) => void
+  writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean; aspect?: FilmAspect; productName?: string | null; characterName?: string | null; cameraStyle?: string; theme?: string }) => Promise<string[]>
+  generateSceneImage: (sceneText: string, aspect?: FilmAspect, productUrl?: string, characterUrl?: string, noText?: boolean, creative?: FilmCreative) => Promise<string>
+  onApprove: (scenes: string[], perSceneImageUrls: (string | undefined)[], options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean; identity?: FilmIdentity; creative?: FilmCreative }) => void
 }
 
 export function MakeFilmWizardDialog({
@@ -136,6 +151,7 @@ export function MakeFilmWizardDialog({
   const [prompt, setPrompt] = useState('')
   const [scenes, setScenes] = useState<string[]>([])
   const [images, setImages] = useState<(string | undefined)[]>([])
+  const [imageErrors, setImageErrors] = useState<(string | undefined)[]>([])
   const [busy, setBusy] = useState<'idle' | 'scenario' | 'images'>('idle')
   const [regenIndex, setRegenIndex] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -166,6 +182,7 @@ export function MakeFilmWizardDialog({
       setPrompt(initialPrompt ?? '')
       setScenes([])
       setImages([])
+      setImageErrors([])
       setBusy('idle')
       setRegenIndex(null)
       setError(null)
@@ -177,6 +194,7 @@ export function MakeFilmWizardDialog({
       setSelectedCameraAngle('auto')
       setSelectedTheme('auto')
       setSelectedProduct(null)
+      setSelectedCharacter(null)
       setProductPickerOpen(false)
       setCharacterPickerOpen(false)
       setLightboxOpen(false)
@@ -305,8 +323,12 @@ Each scene should flow logically into the next, building toward a single cohesiv
         duration,
         productUrl: selectedProduct?.url,
         characterUrl: selectedCharacter?.url,
+        productName: selectedProduct?.title ?? null,
+        characterName: selectedCharacter?.title ?? null,
         withNarration,
         aspect,
+        cameraStyle: cameraAngle?.prompt,
+        theme: theme?.prompt,
       })
       const cleaned = written.map((s) => s.trim()).filter((s) => s.length > 0)
       if (cleaned.length === 0) {
@@ -324,20 +346,36 @@ Each scene should flow logically into the next, building toward a single cohesiv
     }
   }
 
+  function currentCreative(): FilmCreative {
+    const cameraAngle = CAMERA_ANGLES.find((a) => a.value === selectedCameraAngle)
+    const theme = THEMES.find((t) => t.value === selectedTheme)
+    return {
+      cameraStyle: cameraAngle?.prompt,
+      cameraLabel: cameraAngle?.label,
+      theme: theme?.prompt,
+      themeLabel: theme?.label,
+    }
+  }
+
   async function handleGenerateImages() {
     if (scenes.length === 0) return
     setBusy('images')
     setError(null)
     const next: (string | undefined)[] = new Array(scenes.length).fill(undefined)
+    const nextErrors: (string | undefined)[] = new Array(scenes.length).fill(undefined)
+    const creative = currentCreative()
     for (let i = 0; i < scenes.length; i++) {
       setProgress(`Designing preview image ${i + 1} of ${scenes.length}…`)
       try {
-        next[i] = await generateSceneImage(scenes[i], aspect, selectedProduct?.url, selectedCharacter?.url, noTextOnImages)
+        next[i] = await generateSceneImage(scenes[i], aspect, selectedProduct?.url, selectedCharacter?.url, noTextOnImages, creative)
+        nextErrors[i] = undefined
       } catch (err) {
         console.error(`Make-film wizard: preview image ${i + 1} failed`, err)
         next[i] = undefined
+        nextErrors[i] = err instanceof Error ? err.message : `Could not generate image ${i + 1}.`
       }
       setImages([...next])
+      setImageErrors([...nextErrors])
     }
     setBusy('idle')
     setProgress(null)
@@ -349,14 +387,25 @@ Each scene should flow logically into the next, building toward a single cohesiv
     setRegenIndex(index)
     setError(null)
     try {
-      const url = await generateSceneImage(scenes[index], aspect, selectedProduct?.url, selectedCharacter?.url, noTextOnImages)
+      const url = await generateSceneImage(scenes[index], aspect, selectedProduct?.url, selectedCharacter?.url, noTextOnImages, currentCreative())
       setImages((cur) => {
         const copy = [...cur]
         copy[index] = url
         return copy
       })
+      setImageErrors((cur) => {
+        const copy = [...cur]
+        copy[index] = undefined
+        return copy
+      })
     } catch (err) {
-      setError(err instanceof Error ? err.message : `Could not regenerate image ${index + 1}.`)
+      const msg = err instanceof Error ? err.message : `Could not regenerate image ${index + 1}.`
+      setImageErrors((cur) => {
+        const copy = [...cur]
+        copy[index] = msg
+        return copy
+      })
+      setError(msg)
     } finally {
       setRegenIndex(null)
     }
@@ -370,7 +419,18 @@ Each scene should flow logically into the next, building toward a single cohesiv
 
   function handleApprove() {
     try {
-      onApprove(scenes, images, { duration, aspect, withNarration })
+      onApprove(scenes, images, {
+        duration,
+        aspect,
+        withNarration,
+        identity: {
+          productUrl: selectedProduct?.url,
+          productName: selectedProduct?.title ?? null,
+          characterUrl: selectedCharacter?.url,
+          characterName: selectedCharacter?.title ?? null,
+        },
+        creative: currentCreative(),
+      })
       onOpenChange(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start film render.')
@@ -684,6 +744,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                   {scenes.map((scene, i) => {
                     const url = safeMediaUrl(images[i])
                     const isRegen = regenIndex === i
+                    const sceneError = imageErrors[i]
                     return (
                       <div key={i} className="space-y-2 rounded-md border border-white/10 bg-white/[0.02] p-3">
                         <div className="flex items-center justify-between">
@@ -736,6 +797,11 @@ Each scene should flow logically into the next, building toward a single cohesiv
                             </div>
                           )}
                         </div>
+                        {sceneError && (
+                          <div className="rounded border border-red-400/30 bg-red-500/10 px-2 py-1 text-[11px] leading-4 text-red-200">
+                            {sceneError}
+                          </div>
+                        )}
                         <p className="line-clamp-2 text-[11px] leading-4 text-zinc-500">{scene}</p>
                       </div>
                     )
@@ -809,7 +875,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
               {step === 'images' && (
                 <Button
                   type="button"
-                  disabled={working || images.filter(Boolean).length === 0}
+                  disabled={working || !canApproveFilm(images)}
                   onClick={handleApprove}
                   className="gap-1.5 bg-emerald-500/90 text-white hover:bg-emerald-500"
                 >
