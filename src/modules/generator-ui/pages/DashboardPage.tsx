@@ -6861,24 +6861,37 @@ export default function DashboardPage() {
         const expectedScenes = durationSeconds === 135 ? 9 : durationSeconds === 45 ? 3 : 2
         setVideoColumnMessage(`Splitting your prompt into ${expectedScenes} scenes…`)
         let autoScenes: string[] = []
-        try {
-          const { data, error } = await supabase.functions.invoke('scenario-write', {
-            body: {
-              idea: plannedPrompt,
-              durationSeconds,
-              imageUrl: readyStartFrame?.url ?? undefined,
-            },
-          })
-          if (!error) {
-            const scenes = (data as { scenes?: unknown } | null)?.scenes
-            if (Array.isArray(scenes)) {
-              autoScenes = scenes
-                .map((s) => (typeof s === 'string' ? s.trim() : ''))
-                .filter((s) => s.length > 0)
+        // Fetch business info first — scenario-write hard-requires it (400 without it).
+        let businessInfo = ''
+        if (userId) {
+          const { data: profile } = await supabase
+            .from('generator_business_profiles')
+            .select('business_info')
+            .eq('user_id', userId)
+            .maybeSingle()
+          businessInfo = profile?.business_info?.trim() ?? ''
+        }
+        if (businessInfo) {
+          try {
+            const { data, error } = await supabase.functions.invoke('scenario-write', {
+              body: {
+                idea: plannedPrompt,
+                durationSeconds,
+                imageUrl: readyStartFrame?.url ?? undefined,
+                businessInfo,
+              },
+            })
+            if (!error) {
+              const scenes = (data as { scenes?: unknown } | null)?.scenes
+              if (Array.isArray(scenes)) {
+                autoScenes = scenes
+                  .map((s) => (typeof s === 'string' ? s.trim() : ''))
+                  .filter((s) => s.length > 0)
+              }
             }
+          } catch {
+            /* fall through to legacy Nx-same-prompt behavior */
           }
-        } catch {
-          /* fall through to legacy Nx-same-prompt behavior */
         }
 
         if (autoScenes.length >= 2) {

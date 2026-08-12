@@ -1,0 +1,330 @@
+name: Agent PR labels and full auto-merge
+
+on:
+  issue_comment:
+    types:
+      - created
+      - edited
+      - deleted
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+      - converted_to_draft
+      - labeled
+      - unlabeled
+  pull_request_review:
+    types:
+      - submitted
+      - dismissed
+  check_suite:
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to evaluate
+        required: true
+
+permissions:
+  contents: write
+  checks: read
+  issues: write
+  pull-requests: write
+  statuses: read
+
+jobs:
+  resolve:
+    name: Resolve pull request
+    if: github.event_name != 'issue_comment' || github.event.action == 'deleted' || github.actor == 'rebar-agent-bot[bot]' || github.actor == 'chatgpt-codex-connector[bot]'
+    runs-on: ubuntu-latest
+    outputs:
+      pr: ${{ steps.resolve.outputs.pr }}
+      skip: ${{ steps.resolve.outputs.skip }}
+    steps:
+      - name: Resolve pull request number
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_PR: ${{ inputs.pr }}
+          PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_IS_PR: ${{ github.event.issue.pull_request.url }}
+          REVIEW_PR_URL: ${{ github.event.review.pull_request_url }}
+          CHECK_SUITE_SHA: ${{ github.event.check_suite.head_sha }}
+        run: |
+          set -euo pipefail
+
+          pr=""
+          if [ -n "${INPUT_PR:-}" ]; then
+            pr="$INPUT_PR"
+          elif [ -n "${PULL_REQUEST_NUMBER:-}" ]; then
+            pr="$PULL_REQUEST_NUMBER"
+          elif [ -n "${ISSUE_NUMBER:-}" ] && [ -n "${ISSUE_IS_PR:-}" ]; then
+            pr="$ISSUE_NUMBER"
+          elif [ -n "${REVIEW_PR_URL:-}" ]; then
+            pr="${REVIEW_PR_URL##*/}"
+          elif [ -n "${CHECK_SUITE_SHA:-}" ]; then
+            pr="$(gh pr list --repo "$REPO" --state open --search "$CHECK_SUITE_SHA" --json number --jq '.[0].number // empty')"
+          fi
+
+          if [ -z "$pr" ]; then
+            echo "No open PR resolved for this event; nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+  evaluate:
+    name: Label and arm eligible agent PRs
+    needs: resolve
+    if: needs.resolve.outputs.skip == 'false'
+    concurrency:
+      group: agent-pr-labels-and-automerge-${{ github.repository }}-${{ needs.resolve.outputs.pr }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Label, gate, and arm auto-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ needs.resolve.outputs.pr }}
+          SELF_CHECK_NAME: Label and arm eligible agent PRs
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          set -euo pipefail
+
+          add_label() {
+            gh pr edit "$PR" --repo "$REPO" --add-label "$1" >/dev/null 2>&1 || true
+          }
+
+          remove_label() {
+            gh pr edit "$PR" --repo "$REPO" --remove-label "$1" >/dev/null 2>&1 || true
+          }
+
+          clear_status_labels() {
+            for label in status:draft status:review-needed status:checks-pending status:auto-merge-armed status:blocked; do
+              remove_label "$label"
+            done
+          }
+
+          disarm_auto_merge() {
+            set +e
+            disable_output="$(gh pr merge "$PR" --repo "$REPO" --disable-auto 2>&1)"
+            disable_rc=$?
+            set -e
+
+            auto_merge_enabled="$(gh pr view "$PR" --repo "$REPO" --json autoMergeRequest --jq '.autoMergeRequest != null')"
+            if [ "$auto_merge_enabled" = "true" ]; then
+              echo "::error::Auto-merge is still enabled after the disarm attempt: $disable_output"
+              return 1
+            fi
+
+            if [ "$disable_rc" -ne 0 ]; then
+              echo "::notice::Auto-merge was already disabled or GitHub returned a non-fatal response: $disable_output"
+            fi
+          }
+
+          PR_JSON="$(gh pr view "$PR" --repo "$REPO" --json author,headRefName,headRefOid,headRepository,isDraft,labels,mergeable,title,url)"
+          echo "$PR_JSON" | jq .
+
+          author="$(echo "$PR_JSON" | jq -r '.author.login')"
+          head_repo="$(echo "$PR_JSON" | jq -r '.headRepository.nameWithOwner')"
+          head_ref="$(echo "$PR_JSON" | jq -r '.headRefName')"
+          head_sha="$(echo "$PR_JSON" | jq -r '.headRefOid')"
+          draft="$(echo "$PR_JSON" | jq -r '.isDraft')"
+          mergeable="$(echo "$PR_JSON" | jq -r '.mergeable')"
+          labels="$(echo "$PR_JSON" | jq -r '[.labels[].name] | join(",")')"
+
+          is_agent_pr="false"
+          case "$author:$head_ref" in
+            app/rebar-agent-bot:agent/*|app/rebar-agent-bot:codex/*|rebar-agent-bot:agent/*|rebar-agent-bot:codex/*)
+              is_agent_pr="true"
+              ;;
+            *:agent/*|*:codex/*)
+              is_agent_pr="true"
+              ;;
+          esac
+
+          if [ "$is_agent_pr" != "true" ]; then
+            echo "Not an agent PR; leaving human PR policy in control."
+            exit 0
+          fi
+
+          if [ "$EVENT_NAME" = "issue_comment" ] && [ "$EVENT_ACTION" = "deleted" ]; then
+            trusted_evidence="false"
+            if [ "$COMMENT_AUTHOR" = "rebar-agent-bot[bot]" ] && [ "$COMMENT_BODY" = "OPENCLAW_REVIEW_PASS head_sha=$head_sha" ]; then
+              trusted_evidence="true"
+            elif [ "$COMMENT_AUTHOR" = "chatgpt-codex-connector[bot]" ] && [[ "$COMMENT_BODY" == *"Codex Review: Didn't find any major issues."* ]] && [[ "$COMMENT_BODY" == *"Reviewed commit:"* ]]; then
+              reviewed_prefix="$(printf '%s\n' "$COMMENT_BODY" | sed -n 's/.*\*\*Reviewed commit:\*\* `\([0-9a-fA-F]\{7,40\}\)`.*/\1/p' | head -1)"
+              if [ -n "$reviewed_prefix" ]; then
+                resolved_review_sha="$(gh api "repos/$REPO/commits/$reviewed_prefix" --jq '.sha' 2>/dev/null || true)"
+                if [ "$resolved_review_sha" = "$head_sha" ]; then
+                  trusted_evidence="true"
+                fi
+              fi
+            fi
+
+            if [ "$trusted_evidence" != "true" ]; then
+              echo "Deleted comment was not trusted review evidence; leaving PR state unchanged."
+              exit 0
+            fi
+
+            echo "Trusted review evidence was deleted; disarming before changing labels."
+            disarm_auto_merge
+            clear_status_labels
+            add_label "status:review-needed"
+            exit 0
+          fi
+
+          if [ "$author" = "app/rebar-agent-bot" ] || [ "$author" = "rebar-agent-bot" ]; then
+            add_label "bot-pr"
+          fi
+          case "$head_ref" in
+            agent/coder/*|codex/*) add_label "agent:coder" ;;
+            agent/supervisor/*) add_label "agent:supervisor" ;;
+          esac
+          add_label "lovable:handoff-pending"
+
+          clear_status_labels
+
+          if [ "$head_repo" != "$REPO" ]; then
+            add_label "status:blocked"
+            echo "::notice::Fork PRs are not auto-merged."
+            exit 0
+          fi
+
+          if echo ",$labels," | grep -Eq ",(do-not-merge|blocked|hold|needs-owner),"; then
+            add_label "status:blocked"
+            echo "::notice::Blocked/hold label present; not eligible for auto-merge."
+            disarm_auto_merge
+            exit 0
+          fi
+
+          if [ "$draft" = "true" ]; then
+            echo "Agent PR is draft; marking ready for review before evaluating auto-merge."
+            gh pr ready "$PR" --repo "$REPO" || true
+          fi
+
+          if [ "$mergeable" != "MERGEABLE" ]; then
+            add_label "status:blocked"
+            echo "::notice::PR mergeability is $mergeable; not eligible for auto-merge."
+            disarm_auto_merge
+            exit 0
+          fi
+
+          load_review_evidence() {
+            REVIEW_COMMENTS_JSON="$(gh api --paginate "repos/$REPO/issues/$PR/comments?per_page=100" | jq -s 'add')"
+            openclaw_review_ok="$(echo "$REVIEW_COMMENTS_JSON" | jq -r --arg sha "$head_sha" '[.[] | select(.user.login == "rebar-agent-bot[bot]") | select(.body == ("OPENCLAW_REVIEW_PASS head_sha=" + $sha))] | length')"
+
+            GITHUB_REVIEWS_JSON="$(gh api --paginate "repos/$REPO/pulls/$PR/reviews?per_page=100" | jq -s 'add')"
+            GITHUB_REVIEW_COMMENTS_JSON="$(gh api --paginate "repos/$REPO/pulls/$PR/comments?per_page=100" | jq -s 'add')"
+            active_review_ids="$(echo "$GITHUB_REVIEWS_JSON" | jq -c --arg sha "$head_sha" '[.[] | select(.commit_id == $sha) | select(.user.login == "chatgpt-codex-connector[bot]" or .user.login == "copilot-pull-request-reviewer[bot]") | select(.state != "DISMISSED") | .id]')"
+            github_bot_submitted_review_count="$(echo "$GITHUB_REVIEWS_JSON" | jq -r --arg sha "$head_sha" '[.[] | select(.commit_id == $sha) | select(.user.login == "chatgpt-codex-connector[bot]" or .user.login == "copilot-pull-request-reviewer[bot]") | select(.state == "APPROVED" or .state == "COMMENTED")] | length')"
+            clean_comment_prefixes="$(echo "$REVIEW_COMMENTS_JSON" | jq -r '[.[] | select(.user.login == "chatgpt-codex-connector[bot]") | select((.body | contains("Codex Review: Didn")) and (.body | contains("find any major issues."))) | .body | capture("\\*\\*Reviewed commit:\\*\\* `(?<sha>[0-9a-fA-F]{7,40})`").sha] | .[]')"
+            github_bot_clean_comment_count=0
+            while IFS= read -r reviewed_prefix; do
+              [ -n "$reviewed_prefix" ] || continue
+              resolved_review_sha="$(gh api "repos/$REPO/commits/$reviewed_prefix" --jq '.sha' 2>/dev/null || true)"
+              if [ "$resolved_review_sha" = "$head_sha" ]; then
+                github_bot_clean_comment_count=$((github_bot_clean_comment_count + 1))
+              fi
+            done <<< "$clean_comment_prefixes"
+            github_bot_review_count=$((github_bot_submitted_review_count + github_bot_clean_comment_count))
+            github_bot_blocking_reviews="$(echo "$GITHUB_REVIEWS_JSON" | jq -r --arg sha "$head_sha" '[.[] | select(.commit_id == $sha) | select(.user.login == "chatgpt-codex-connector[bot]" or .user.login == "copilot-pull-request-reviewer[bot]") | select(.state == "CHANGES_REQUESTED")] | length')"
+            github_bot_inline_findings="$(echo "$GITHUB_REVIEW_COMMENTS_JSON" | jq -r --argjson ids "$active_review_ids" '[.[] | select(.pull_request_review_id as $review_id | $ids | index($review_id))] | length')"
+            if [ "$github_bot_review_count" -ge 1 ] && [ "$github_bot_blocking_reviews" -eq 0 ] && [ "$github_bot_inline_findings" -eq 0 ]; then
+              github_bot_review_ok=1
+            else
+              github_bot_review_ok=0
+            fi
+          }
+
+          load_review_evidence
+
+          if [ "$openclaw_review_ok" -lt 1 ] || [ "$github_bot_review_ok" -lt 1 ]; then
+            add_label "status:review-needed"
+            echo "::notice::Waiting for independent exact-head review evidence on $head_sha (OpenClaw reviewer=$openclaw_review_ok, clean GitHub reviews=$github_bot_review_count, blocking reviews=$github_bot_blocking_reviews, inline findings=$github_bot_inline_findings)."
+            disarm_auto_merge
+            exit 0
+          fi
+
+          CHECK_RUNS_JSON="$(gh api "repos/$REPO/commits/$head_sha/check-runs?per_page=100")"
+          COMBINED_STATUS_JSON="$(gh api "repos/$REPO/commits/$head_sha/status" || echo '{"statuses":[]}' )"
+
+          bad_checks="$(echo "$CHECK_RUNS_JSON" | jq -r --arg self "$SELF_CHECK_NAME" '
+            [ .check_runs[]
+              | select(.name != $self)
+              | select(.status != "completed"
+                       or (.conclusion != "success"
+                           and .conclusion != "neutral"
+                           and .conclusion != "skipped"))
+              | "\(.name): \(.status) \(.conclusion // "")" ]
+            | unique
+            | join("\n")')"
+
+          bad_statuses="$(echo "$COMBINED_STATUS_JSON" | jq -r '
+            [ .statuses[]
+              | select(.state != "success")
+              | "\(.context): \(.state)" ]
+            | unique
+            | join("\n")')"
+
+          not_green="$(printf '%s\n%s\n' "$bad_checks" "$bad_statuses" | sed '/^$/d')"
+
+          if [ -n "$not_green" ]; then
+            add_label "status:checks-pending"
+            echo "Checks are not green yet:"
+            echo "$not_green"
+            disarm_auto_merge
+            exit 0
+          fi
+
+          current_head_sha="$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq '.headRefOid')"
+          if [ "$current_head_sha" != "$head_sha" ]; then
+            add_label "status:review-needed"
+            echo "::notice::PR head changed from reviewed $head_sha to $current_head_sha; fresh reviews are required."
+            disarm_auto_merge
+            exit 0
+          fi
+
+          # Refresh evidence immediately before the SHA-pinned merge call.
+          load_review_evidence
+          if [ "$openclaw_review_ok" -lt 1 ] || [ "$github_bot_review_ok" -lt 1 ]; then
+            add_label "status:review-needed"
+            echo "::notice::Review evidence changed before merge (OpenClaw=$openclaw_review_ok, clean GitHub reviews=$github_bot_review_count, blocking reviews=$github_bot_blocking_reviews, inline findings=$github_bot_inline_findings)."
+            disarm_auto_merge
+            exit 0
+          fi
+
+          echo "Agent PR passed freshly reloaded review evidence, mergeability, and every check. Enabling native GitHub auto-merge for exact head $head_sha."
+          set +e
+          out="$(gh pr merge "$PR" --repo "$REPO" --auto --squash --match-head-commit "$head_sha" 2>&1)"
+          rc=$?
+          set -e
+          echo "$out"
+
+          if [ "$rc" -eq 0 ]; then
+            add_label "status:auto-merge-armed"
+            exit 0
+          fi
+
+          if echo "$out" | grep -qi "clean status"; then
+            echo "GitHub cannot arm because status is already clean; merging directly after all gates passed."
+            gh pr merge "$PR" --repo "$REPO" --squash --match-head-commit "$head_sha"
+            add_label "status:auto-merge-armed"
+            exit 0
+          fi
+
+          add_label "status:blocked"
+          echo "::error::Could not enable auto-merge: $out"
+          exit 1
