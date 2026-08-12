@@ -162,10 +162,16 @@ jobs:
 
           if [ "$EVENT_NAME" = "issue_comment" ] && [ "$EVENT_ACTION" = "deleted" ]; then
             trusted_evidence="false"
-            if [ "$COMMENT_AUTHOR" = "rebar-agent-bot[bot]" ] && [[ "$COMMENT_BODY" == OPENCLAW_REVIEW_PASS\ head_sha=* ]]; then
+            if [ "$COMMENT_AUTHOR" = "rebar-agent-bot[bot]" ] && [ "$COMMENT_BODY" = "OPENCLAW_REVIEW_PASS head_sha=$head_sha" ]; then
               trusted_evidence="true"
             elif [ "$COMMENT_AUTHOR" = "chatgpt-codex-connector[bot]" ] && [[ "$COMMENT_BODY" == *"Codex Review: Didn't find any major issues."* ]] && [[ "$COMMENT_BODY" == *"Reviewed commit:"* ]]; then
-              trusted_evidence="true"
+              reviewed_prefix="$(printf '%s\n' "$COMMENT_BODY" | sed -n 's/.*\*\*Reviewed commit:\*\* `\([0-9a-fA-F]\{7,40\}\)`.*/\1/p' | head -1)"
+              if [ -n "$reviewed_prefix" ]; then
+                resolved_review_sha="$(gh api "repos/$REPO/commits/$reviewed_prefix" --jq '.sha' 2>/dev/null || true)"
+                if [ "$resolved_review_sha" = "$head_sha" ]; then
+                  trusted_evidence="true"
+                fi
+              fi
             fi
 
             if [ "$trusted_evidence" != "true" ]; then
