@@ -7558,6 +7558,7 @@ export default function DashboardPage() {
     characterUrl?: string,
     noText?: boolean,
     creative?: { cameraStyle?: string; cameraLabel?: string; theme?: string; themeLabel?: string },
+    characterSheet?: boolean,
   ): Promise<string> {
     // Preview images are generated at the ratio the clips will use, so the seed
     // frame matches the video (submitScenesAsJobs uses aspectRatio too).
@@ -7588,13 +7589,21 @@ export default function DashboardPage() {
       imagePrompt = `${imagePrompt}\n\nCAMERA: ${creative.cameraStyle}`
     }
     // Explicitly tag which reference image is product vs character so the AI
-    // knows to include BOTH in the generated scene.
+    // knows to include BOTH in the generated scene. A character reference that
+    // is a multi-view character sheet is flagged so the model treats the whole
+    // sheet as ONE identity and never substitutes a different person.
     if (productUrl && characterUrl) {
       imagePrompt += `\n\nREFERENCE IMAGES (use BOTH in this scene):\n- PRODUCT image: ${productUrl}\n- CHARACTER image: ${characterUrl}\nThe product and the character MUST appear together prominently in the same shot. Show the character interacting with or holding the product.`
+      if (characterSheet) {
+        imagePrompt += `\nThe character reference is a MULTI-VIEW CHARACTER SHEET: every view shows the SAME one person. Preserve that exact person (same face, hair, skin tone, body type, and outfit) — never substitute a different person.`
+      }
     } else if (productUrl) {
       imagePrompt += `\n\nREFERENCE PRODUCT image: ${productUrl}\nThis product MUST appear prominently in this scene.`
     } else if (characterUrl) {
       imagePrompt += `\n\nREFERENCE CHARACTER image: ${characterUrl}\nThis character MUST appear prominently in this scene.`
+      if (characterSheet) {
+        imagePrompt += `\nThe character reference is a MULTI-VIEW CHARACTER SHEET: every view shows the SAME one person. Preserve that exact person (same face, hair, skin tone, body type, and outfit) — never substitute a different person.`
+      }
     }
     // The wizard's "clean images" toggle: the model only avoids lettering when
     // the prompt says so, and the polish step above may have reworded the
@@ -7609,8 +7618,13 @@ export default function DashboardPage() {
       ...(productUrl ? ["product"] : []),
       ...(characterUrl ? ["character"] : []),
     ]
+    // Per-reference character-sheet flag aligned 1:1 with referenceImageUrls.
+    const referenceCharacterSheets = [
+      ...(productUrl ? [false] : []),
+      ...(characterUrl ? [!!characterSheet] : []),
+    ]
     const { data: iData, error: iErr } = await supabase.functions.invoke('ai-image-generate', {
-      body: { prompt: imagePrompt, aspectRatio: ratio, referenceImageUrls, referenceRoles },
+      body: { prompt: imagePrompt, aspectRatio: ratio, referenceImageUrls, referenceRoles, referenceCharacterSheets },
     })
     if (iErr) throw iErr
     const dataUrl = (iData as { dataUrl?: unknown } | null)?.dataUrl
@@ -10516,8 +10530,8 @@ export default function DashboardPage() {
         defaultAspect={aspectRatio}
         userId={userId}
         writeScenario={writeFilmScenario}
-        generateSceneImage={(sceneText, aspect, productUrl, characterUrl, noText, creative) =>
-          generateFilmSceneImage(sceneText, aspect, productUrl ?? selectedProduct?.url, characterUrl ?? selectedCharacter?.url, noText, creative)
+        generateSceneImage={(sceneText, aspect, productUrl, characterUrl, noText, creative, characterSheet) =>
+          generateFilmSceneImage(sceneText, aspect, productUrl ?? selectedProduct?.url, characterUrl ?? selectedCharacter?.url, noText, creative, characterSheet)
         }
         onApprove={(scenes, perSceneImageUrls, options) => {
           void renderApprovedFilm(scenes, perSceneImageUrls, options)
