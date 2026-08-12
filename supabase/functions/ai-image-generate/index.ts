@@ -101,6 +101,12 @@ Deno.serve(async (req) => {
     const referenceImageUrls = Array.isArray(body?.referenceImageUrls)
       ? (body.referenceImageUrls as unknown[]).filter((u): u is string => typeof u === "string" && u.length > 0)
       : [];
+    // Optional role labels aligned 1:1 with referenceImageUrls (e.g. "product",
+    // "character"). When present, the model is told which image is which so it
+    // can preserve BOTH identities instead of guessing from an unordered list.
+    const referenceRoles = Array.isArray(body?.referenceRoles)
+      ? (body.referenceRoles as unknown[]).filter((r): r is string => typeof r === "string" && r.length > 0)
+      : [];
     // Cap the number of reference images and validate each against the same
     // security rules as the job orchestrator (own storage under user folder or
     // allowlisted host). Never accept arbitrary insecure URLs server-side.
@@ -108,6 +114,18 @@ Deno.serve(async (req) => {
     const safeReferenceUrls = referenceImageUrls
       .slice(0, MAX_REFERENCE_IMAGES)
       .filter((u) => u.length <= 2048 && isAllowedReferenceUrl(u, auth.userId));
+    // A reference that was supplied but failed security validation is a hard
+    // error, not a silent drop — otherwise the model would render without the
+    // identity the user explicitly chose.
+    const droppedReferenceCount = referenceImageUrls.length - safeReferenceUrls.length;
+    if (droppedReferenceCount > 0) {
+      return new Response(JSON.stringify({
+        error: "One or more reference images could not be validated. Re-select the product/character and try again.",
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (!prompt) {
       return new Response(JSON.stringify({ error: "prompt is required" }), {
@@ -141,30 +159,24 @@ Deno.serve(async (req) => {
     // Build the multimodal user content. Reference images (product, character,
     // and optionally the previous scene for continuity) are attached as real
     // image blocks so the model can preserve their identity, not just read their
-    // URLs as text. Private-bucket URLs are inlined as data URLs first.
+    // URLs as text. Private-bucket URLs are inlined as data URLs first. When
+    // role labels are supplied, each image is preceded by an explicit label so
+    // the model knows which reference is the product vs the character.
     const userContent: unknown[] = [{ type: "text", text: fullPrompt }];
     if (safeReferenceUrls.length > 0) {
-      for (const refUrl of safeReferenceUrls) {
+      for (let i = 0; i < safeReferenceUrls.length; i++) {
+        const refUrl = safeReferenceUrls[i];
+        const role = referenceRoles[i]?.toLowerCase();
+        if (role === "product" || role === "character") {
+          userContent.push({
+            type: "text",
+            text: `${role.toUpperCase()} reference image (preserve this exact ${role} in the output):`,
+          });
+        }
         const resolved = await resolveImageForGateway(refUrl);
         userContent.push({ type: "image_url", image_url: { url: resolved } });
       }
     }
-
-    const callModel = async (model: string) => {
-      return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: "user", content: userContent }],
-          modalities: ["image", "text"],
-          image_config: { aspect_ratio: aspectRatio },
-        }),
-      });
-    };
 
     const extractImage = (data: unknown): string | undefined => {
       // deno-lint-ignore no-explicit-any
@@ -175,43 +187,75 @@ Deno.serve(async (req) => {
     const PRIMARY = "google/gemini-3.1-flash-image-preview";
     const FALLBACK = "google/gemini-2.5-flash-image";
 
-    let resp = await callModel(PRIMARY);
+    // When the caller supplied BOTH a product and a character reference, the
+    // output must preserve both identities. We cannot reliably auto-detect
+    // identity presence from the returned image bytes, so we retry a bounded
+    // number of times with an explicit instruction to include both, then surface
+    // a clear error instead of silently returning a dropped-identity image.
+    const hasProductRef = referenceRoles.some((r) => r.toLowerCase() === "product");
+    const hasCharacterRef = referenceRoles.some((r) => r.toLowerCase() === "character");
+    const requireBoth = hasProductRef && hasCharacterRef;
+    const MAX_ATTEMPTS = 3;
 
-    if (resp.status === 429) {
-      return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
-        status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    if (resp.status === 402) {
-      return new Response(JSON.stringify({ error: "AI credits exhausted. Add credits to continue." }), {
-        status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => "");
-      console.error("ai-image-generate gateway error", resp.status, text);
-      return new Response(JSON.stringify({ error: "AI gateway error" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    let resp: Response | null = null;
+    let data: unknown = null;
+    let dataUrl: string | undefined;
 
-    let data = await readJsonLoose(resp, "ai-image-generate");
-    let dataUrl = extractImage(data);
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const model = attempt === 0 ? PRIMARY : FALLBACK;
+      const attemptContent = requireBoth && attempt > 0
+        ? [
+            { type: "text", text: fullPrompt },
+            ...userContent.slice(1),
+            {
+              type: "text",
+              text: "IMPORTANT: The previous attempt dropped one or both of the required identities. The output MUST contain BOTH the product AND the character from the reference images, together in the same shot.",
+            },
+          ]
+        : userContent;
+      resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: attemptContent }],
+          modalities: ["image", "text"],
+          image_config: { aspect_ratio: aspectRatio },
+        }),
+      });
 
-    if (!dataUrl) {
-      console.warn("ai-image-generate primary returned no image, retrying with fallback model");
-      resp = await callModel(FALLBACK);
-      if (resp.ok) {
-        data = await readJsonLoose(resp, "ai-image-generate");
-        dataUrl = extractImage(data);
-      } else {
-        const text = await resp.text().catch(() => "");
-        console.error("ai-image-generate fallback gateway error", resp.status, text);
+      if (resp.status === 429) {
+        return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
+      if (resp.status === 402) {
+        return new Response(JSON.stringify({ error: "AI credits exhausted. Add credits to continue." }), {
+          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => "");
+        console.error("ai-image-generate gateway error", resp.status, text);
+        if (attempt === MAX_ATTEMPTS - 1) {
+          return new Response(JSON.stringify({ error: "AI gateway error" }), {
+            status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        continue;
+      }
+
+      data = await readJsonLoose(resp, "ai-image-generate");
+      dataUrl = extractImage(data);
+      if (dataUrl) break;
+      console.warn(`ai-image-generate attempt ${attempt + 1} returned no image`);
     }
 
     if (!dataUrl) {
-      console.error("ai-image-generate empty image after fallback", JSON.stringify(data).slice(0, 500));
+      console.error("ai-image-generate empty image after retries", JSON.stringify(data).slice(0, 500));
       return new Response(JSON.stringify({
         error: "The AI returned text instead of an image. Try a more visual prompt — describe the scene, subject, lighting, and style.",
       }), {
