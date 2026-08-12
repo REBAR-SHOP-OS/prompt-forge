@@ -3,6 +3,7 @@ import {
   validateReferenceSpecs,
   buildIdentityEvalPrompt,
   parseIdentityEvalResponse,
+  classifyEvalVerdict,
   ALLOWED_ROLES,
   MAX_REFERENCE_IMAGES,
 } from '../../../../supabase/functions/_shared/identity-eval'
@@ -26,10 +27,11 @@ describe('validateReferenceSpecs', () => {
     if (r.ok) expect(r.specs).toEqual([{ url: 'https://x/c.png', role: 'character' }])
   })
 
-  it('accepts product + character in order', () => {
+  it('accepts product + character and normalizes to deterministic order', () => {
+    // Character-first input is reordered to product-first.
     const r = validateReferenceSpecs(
-      ['https://x/p.png', 'https://x/c.png'],
-      ['product', 'character'],
+      ['https://x/c.png', 'https://x/p.png'],
+      ['character', 'product'],
     )
     expect(r.ok).toBe(true)
     if (r.ok) {
@@ -52,7 +54,25 @@ describe('validateReferenceSpecs', () => {
     if (!r.ok) expect(r.error).toContain('Invalid reference role')
   })
 
-  it('rejects more than the max reference count', () => {
+  it('rejects a duplicate product role', () => {
+    const r = validateReferenceSpecs(
+      ['https://x/p1.png', 'https://x/p2.png'],
+      ['product', 'product'],
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain('Duplicate reference role')
+  })
+
+  it('rejects a duplicate character role', () => {
+    const r = validateReferenceSpecs(
+      ['https://x/c1.png', 'https://x/c2.png'],
+      ['character', 'character'],
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain('Duplicate reference role')
+  })
+
+  it('rejects more than the max reference count (one product + one character)', () => {
     const urls = Array.from({ length: MAX_REFERENCE_IMAGES + 1 }, (_, i) => `https://x/${i}.png`)
     const roles = Array.from({ length: MAX_REFERENCE_IMAGES + 1 }, () => 'product')
     const r = validateReferenceSpecs(urls, roles)
@@ -66,15 +86,14 @@ describe('validateReferenceSpecs', () => {
 })
 
 describe('buildIdentityEvalPrompt', () => {
-  it('lists each reference with its role', () => {
+  it('labels the generated output and each reference with role', () => {
     const prompt = buildIdentityEvalPrompt([
       { url: 'https://x/p.png', role: 'product' },
       { url: 'https://x/c.png', role: 'character' },
     ])
-    expect(prompt).toContain('PRODUCT')
-    expect(prompt).toContain('CHARACTER')
-    expect(prompt).toContain('Reference 1')
-    expect(prompt).toContain('Reference 2')
+    expect(prompt).toContain('GENERATED_OUTPUT')
+    expect(prompt).toContain('REF_1 (PRODUCT)')
+    expect(prompt).toContain('REF_2 (CHARACTER)')
   })
 })
 
@@ -144,5 +163,32 @@ describe('parseIdentityEvalResponse', () => {
     }) + '\n```'
     const out = parseIdentityEvalResponse(raw, 1)
     expect(out?.passed).toBe(true)
+  })
+})
+
+describe('classifyEvalVerdict', () => {
+  it('classifies a passing outcome as "pass"', () => {
+    const out = { perReference: [{ present: true, match: true, reason: 'ok' }], passed: true }
+    expect(classifyEvalVerdict(out)).toBe('pass')
+  })
+
+  it('classifies a dropped identity as "identity-fail"', () => {
+    const out = {
+      perReference: [{ present: false, match: false, reason: 'absent' }],
+      passed: false,
+    }
+    expect(classifyEvalVerdict(out)).toBe('identity-fail')
+  })
+
+  it('classifies a present-but-not-matching identity as "identity-fail"', () => {
+    const out = {
+      perReference: [{ present: true, match: false, reason: 'different' }],
+      passed: false,
+    }
+    expect(classifyEvalVerdict(out)).toBe('identity-fail')
+  })
+
+  it('classifies a null outcome (unparseable / technical) as "error"', () => {
+    expect(classifyEvalVerdict(null)).toBe('error')
   })
 })

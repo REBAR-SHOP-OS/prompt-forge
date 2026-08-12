@@ -6,8 +6,10 @@ import {
   validateReferenceSpecs,
   buildIdentityEvalPrompt,
   parseIdentityEvalResponse,
+  classifyEvalVerdict,
   type ReferenceSpec,
   type IdentityEvalOutcome,
+  type EvalVerdict,
 } from "../_shared/identity-eval.ts";
 
 const ALLOWED_RATIOS = new Set(["1:1", "9:16", "16:9"]);
@@ -200,22 +202,37 @@ Deno.serve(async (req) => {
     // Vision-based identity evaluation: after each generation, the output image
     // is compared against each reference image to confirm the SAME product and
     // the SAME character are present and match. A dataUrl alone is NOT success.
-    // When references are supplied, the output is only accepted if every
-    // reference is present AND matches. Invalid output is rejected and retried
-    // (bounded), then a clear error is returned.
+    // The evaluation has three outcomes:
+    //   - pass: every reference present AND matches -> accept the image.
+    //   - identity-fail: image produced but identities not preserved -> retry
+    //     (bounded).
+    //   - error: the evaluator itself failed (technical error, invalid response,
+    //     429/402/5xx) -> return immediately, do NOT start a fresh generation.
     const evalModel = "google/gemini-2.5-flash";
     const evalPrompt = buildIdentityEvalPrompt(safeReferenceUrls);
 
-    async function evaluateIdentity(dataUrl: string): Promise<IdentityEvalOutcome | null> {
+    // Returns { verdict, outcome }. verdict is "pass" | "identity-fail" | "error".
+    async function evaluateIdentity(dataUrl: string): Promise<{
+      verdict: EvalVerdict;
+      outcome: IdentityEvalOutcome | null;
+    }> {
       if (safeReferenceUrls.length === 0) {
         // No references to preserve — nothing to evaluate.
-        return { perReference: [], passed: true };
+        return { verdict: "pass", outcome: { perReference: [], passed: true } };
       }
+      // Build the evaluator input: GENERATED_OUTPUT first, then each reference
+      // with its role label immediately beside its image.
       const evalContent: unknown[] = [
         { type: "text", text: evalPrompt },
+        { type: "text", text: "GENERATED_OUTPUT:" },
         { type: "image_url", image_url: { url: dataUrl } },
       ];
-      for (const spec of safeReferenceUrls) {
+      for (let i = 0; i < safeReferenceUrls.length; i++) {
+        const spec = safeReferenceUrls[i];
+        evalContent.push({
+          type: "text",
+          text: `REF_${i + 1} (${spec.role.toUpperCase()}):`,
+        });
         const resolved = await resolveImageForGateway(spec.url);
         evalContent.push({ type: "image_url", image_url: { url: resolved } });
       }
@@ -230,20 +247,28 @@ Deno.serve(async (req) => {
           messages: [{ role: "user", content: evalContent }],
         }),
       });
+      if (evalResp.status === 429) {
+        return { verdict: "error", outcome: null };
+      }
+      if (evalResp.status === 402) {
+        return { verdict: "error", outcome: null };
+      }
       if (!evalResp.ok) {
         const text = await evalResp.text().catch(() => "");
         console.error("ai-image-generate identity-eval gateway error", evalResp.status, text);
-        return null;
+        return { verdict: "error", outcome: null };
       }
       const evalData = await readJsonLoose(evalResp, "ai-image-generate-identity-eval");
       const raw: string = (evalData?.choices?.[0]?.message?.content ?? "").trim();
-      if (!raw) return null;
-      return parseIdentityEvalResponse(raw, safeReferenceUrls.length);
+      if (!raw) return { verdict: "error", outcome: null };
+      const outcome = parseIdentityEvalResponse(raw, safeReferenceUrls.length);
+      return { verdict: classifyEvalVerdict(outcome), outcome };
     }
 
     let data: unknown = null;
     let dataUrl: string | undefined;
     let lastEval: IdentityEvalOutcome | null = null;
+    let lastVerdict: EvalVerdict = "error";
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       const model = attempt === 0 ? PRIMARY : FALLBACK;
@@ -284,12 +309,9 @@ Deno.serve(async (req) => {
       if (!resp.ok) {
         const text = await resp.text().catch(() => "");
         console.error("ai-image-generate gateway error", resp.status, text);
-        if (attempt === MAX_ATTEMPTS - 1) {
-          return new Response(JSON.stringify({ error: "AI gateway error" }), {
-            status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-        continue;
+        return new Response(JSON.stringify({ error: "AI gateway error" }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
       data = await readJsonLoose(resp, "ai-image-generate");
@@ -301,8 +323,21 @@ Deno.serve(async (req) => {
 
       // Evaluate the output against the references. Only accept when every
       // reference is present AND matches. A dataUrl alone is not success.
-      lastEval = await evaluateIdentity(dataUrl);
-      if (lastEval && lastEval.passed) break;
+      const evalResult = await evaluateIdentity(dataUrl);
+      lastEval = evalResult.outcome;
+      lastVerdict = evalResult.verdict;
+      if (evalResult.verdict === "pass") break;
+      if (evalResult.verdict === "error") {
+        // Technical error from the evaluator: return immediately, do NOT start
+        // a fresh generation.
+        console.error("ai-image-generate identity-eval technical error");
+        return new Response(JSON.stringify({
+          error: "Could not verify the generated image. Please try again in a moment.",
+        }), {
+          status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      // identity-fail: retry (bounded).
       console.warn(
         `ai-image-generate attempt ${attempt + 1} failed identity evaluation`,
         JSON.stringify(lastEval),
@@ -318,7 +353,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (safeReferenceUrls.length > 0 && (!lastEval || !lastEval.passed)) {
+    if (safeReferenceUrls.length > 0 && lastVerdict !== "pass") {
       const missing = lastEval?.perReference
         ?.filter((r) => !r.present)
         .map((r) => r.reason)
