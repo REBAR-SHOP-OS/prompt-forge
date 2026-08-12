@@ -1,0 +1,97 @@
+name: PR Drift Sync
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - ready_for_review
+
+concurrency:
+  group: pr-drift-sync-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  sync-and-arm:
+    name: Sync branch with main and arm auto-merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    if: github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - name: Skip when the PR carries a sign-off label
+        id: guard
+        env:
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          set -eu
+          skip=""
+          for l in backend-approved protected-approved automerge; do
+            case ",$LABELS," in
+              *",$l,"*) skip="$l" ;;
+            esac
+          done
+          if [ -n "$skip" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "### PR Drift Sync skipped"
+              echo
+              echo "This PR carries the \`$skip\` label."
+              echo "Sign-off freezes the branch, so drift sync will not push to it and cannot invalidate the approval."
+              echo "Use the **Update branch** button if you want it synced with \`main\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout PR branch
+        if: steps.guard.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Configure Git
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch base branch
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          git fetch origin main
+          git status --short --branch
+
+      - name: Sync with main if behind
+        if: steps.guard.outputs.skip != 'true'
+        id: sync
+        run: |
+          set -e
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          read BEHIND AHEAD <<EOF
+          $(git rev-list --left-right --count origin/main...HEAD)
+          EOF
+          echo "behind=$BEHIND" >> "$GITHUB_OUTPUT"
+          echo "ahead=$AHEAD" >> "$GITHUB_OUTPUT"
+
+          if [ "$BEHIND" -eq 0 ]; then
+            echo "Branch is already up to date with main."
+            exit 0
+          fi
+
+          echo "Branch is behind main by $BEHIND commit(s); merging main into the PR branch."
+          if ! git merge --no-edit origin/main; then
+            echo "::error::Automatic sync with main hit a merge conflict. Please resolve the conflict in the branch."
+            exit 1
+          fi
+
+          git push origin HEAD:"$BRANCH"
+          echo "synced=true" >> "$GITHUB_OUTPUT"
