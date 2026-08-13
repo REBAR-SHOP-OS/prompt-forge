@@ -37,6 +37,7 @@ import {
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 import { canApproveFilm, isCharacterSheet, loadCharacterRows, sanitizeProductName, type FilmDuration, type FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { supabase } from '@/integrations/supabase/client'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 export type { FilmDuration, FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
 // Must stay a subset of DashboardPage's `Ratio` ('9:16' | '1:1' | '16:9') —
@@ -177,6 +178,11 @@ export function MakeFilmWizardDialog({
   const [busy, setBusy] = useState<'idle' | 'scenario' | 'images'>('idle')
   const [regenIndex, setRegenIndex] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Prompt optimization (enhance-prompt edge function).
+  const [optimizing, setOptimizing] = useState(false)
+  const [optimizeError, setOptimizeError] = useState<string | null>(null)
+  // Snapshot of the prompt before optimization so the user can undo the rewrite.
+  const [promptBeforeOptimize, setPromptBeforeOptimize] = useState<string | null>(null)
   const [progress, setProgress] = useState<string | null>(null)
   const [duration, setDuration] = useState<FilmDuration>(defaultDuration)
   const [aspect, setAspect] = useState<FilmAspect>(defaultAspect)
@@ -213,6 +219,9 @@ export function MakeFilmWizardDialog({
       setBusy('idle')
       setRegenIndex(null)
       setError(null)
+      setOptimizing(false)
+      setOptimizeError(null)
+      setPromptBeforeOptimize(null)
       setProgress(null)
       setDuration(defaultDuration)
       setAspect(defaultAspect)
@@ -406,6 +415,47 @@ Each scene should flow logically into the next, building toward a single cohesiv
       setBusy('idle')
       setProgress(null)
     }
+  }
+
+  // Optimize the user's prompt via the enhance-prompt edge function. The
+  // rewrite preserves the original language, goal, constraints and details
+  // while making the text clearer and more suitable for image generation.
+  // The original text is kept so the user can undo the rewrite.
+  async function handleOptimizePrompt() {
+    const current = prompt.trim()
+    if (!current) return
+    if (optimizing) return
+    setOptimizing(true)
+    setOptimizeError(null)
+    setPromptBeforeOptimize(prompt)
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('enhance-prompt', {
+        body: { prompt: current },
+      })
+      if (fnError) throw fnError
+      const enhanced = (data as { enhancedPrompt?: string } | null)?.enhancedPrompt?.trim()
+      if (!enhanced) {
+        throw new Error('The AI returned an empty prompt — your original text was kept.')
+      }
+      setPrompt(enhanced)
+    } catch (err) {
+      // Keep the original text on error and surface a readable message.
+      setPromptBeforeOptimize(null)
+      setOptimizeError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not optimize the prompt. Your original text was kept.',
+      )
+    } finally {
+      setOptimizing(false)
+    }
+  }
+
+  function handleUndoOptimize() {
+    if (promptBeforeOptimize === null) return
+    setPrompt(promptBeforeOptimize)
+    setPromptBeforeOptimize(null)
+    setOptimizeError(null)
   }
 
   function currentCreative(): FilmCreative {
@@ -783,16 +833,58 @@ Each scene should flow logically into the next, building toward a single cohesiv
                   <label className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
                     Your prompt
                   </label>
-                  <Textarea
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    placeholder="Describe the film you want (any language)…"
-                    rows={5}
-                    className="resize-none border-white/10 bg-white/[0.03] text-sm text-zinc-100"
-                  />
-                  <p className="text-[11px] text-zinc-500">
-                    AI will auto-adjust scene count based on {duration}s duration.
-                  </p>
+                  <div className="relative">
+                    <Textarea
+                      value={prompt}
+                      onChange={(e) => {
+                        setPrompt(e.target.value)
+                        setOptimizeError(null)
+                      }}
+                      placeholder="Describe the film you want (any language)…"
+                      rows={5}
+                      className="resize-none border-white/10 bg-white/[0.03] pr-10 text-sm text-zinc-100"
+                    />
+                    <TooltipProvider delayDuration={150}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label="Optimize prompt"
+                            aria-disabled={optimizing || prompt.trim().length === 0}
+                            disabled={optimizing || prompt.trim().length === 0}
+                            onClick={handleOptimizePrompt}
+                            className="absolute bottom-2 right-2 flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {optimizing ? (
+                              <LoaderCircle className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Wand2 className="h-4 w-4" />
+                            )}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">
+                          {optimizing ? 'Optimizing prompt…' : 'Optimize prompt with AI'}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  {optimizeError && (
+                    <p className="text-[11px] text-red-400">{optimizeError}</p>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] text-zinc-500">
+                      AI will auto-adjust scene count based on {duration}s duration.
+                    </p>
+                    {promptBeforeOptimize !== null && !optimizing && (
+                      <button
+                        type="button"
+                        onClick={handleUndoOptimize}
+                        className="text-[11px] font-medium text-fuchsia-300/90 hover:text-fuchsia-200"
+                      >
+                        Undo optimization
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

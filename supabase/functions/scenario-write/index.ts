@@ -162,7 +162,12 @@ function buildSystemPrompt(
         `Write the VISUAL scenario ONLY — subject, action, camera move, and lighting.`,
         `Do NOT include any narration, voiceover, spoken dialogue, captions, or the "${narrationLabel}:" label. No spoken words at all.`,
       ].join(" ");
-  const narrationMulti = narrationFormat;
+  const narrationMulti = narration
+    ? [
+        narrationFormat,
+        `Each scene is 15 seconds. Cap the narration for a scene at ~30 words (about 2 words per second) so it fits the time with natural pauses. Do not exceed the scene's time budget.`,
+      ].join(" ")
+    : narrationFormat;
   const narrationSingle = narrationFormat;
   const labelNote = narration
     ? ` The only label allowed is the "${narrationLabel}:" line described below.`
@@ -180,8 +185,11 @@ function buildSystemPrompt(
       "The scenario MUST follow a clear story arc across the whole sequence: the opening scene is an attention-grabbing hook that establishes the subject and setting, the middle scenes develop the story and build interest and desire, and the final scene delivers a defined payoff/resolution that ends on a strong, memorable note.",
       `Output EXACTLY ${sceneCount} scene blocks separated by the literal delimiter "${SCENE_DELIM}" on its own line.`,
       `Do not number the scenes, no markdown, no preamble.${labelNote}`,
+      "Each scene is a 15-second clip. Break EVERY scene into contiguous, non-overlapping timed beats that sum EXACTLY to 15 seconds: 0-4s, 4-9s, 9-15s.",
+      "For each beat, specify the concrete ACTION, the FRAME/CAMERA MOVE, the VISUAL/EMOTIONAL change, and the LIGHTING. Make the beats vivid and specific (subject, gesture, camera push/pull/pan, light shift, mood) so the scene is dense and varied, not a single flat description.",
       "Each scene must be 70-90 words and self-contained as a video prompt (include subject, action, camera move, lighting),",
       "while clearly continuing the story from the previous scene.",
+      "Vary the shot, movement, environment and story progress across scenes, but keep the product/character identity and continuity consistent.",
       narrationMulti,
     ].filter(Boolean).join(" ");
   }
