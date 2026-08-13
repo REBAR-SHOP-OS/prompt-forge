@@ -208,25 +208,26 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
 })
 
 describe('MakeFilmWizardDialog full style dataset (integration)', () => {
-  // The Radix Select triggers render as comboboxes: [0] = aspect ratio,
-  // [1] = camera angle, [2] = visual theme.
-  const cameraCombobox = () => screen.getAllByRole('combobox')[1]
-  const themeCombobox = () => screen.getAllByRole('combobox')[2]
+  // The camera/theme selectors are buttons that open the StylePickerDialog.
+  // Select an option inside the dialog, then confirm with Apply.
+  const openCameraPicker = () => fireEvent.click(screen.getByLabelText(/^Camera angle:/))
+  const openThemePicker = () => fireEvent.click(screen.getByLabelText(/^Visual theme:/))
+  const applyPicker = () => fireEvent.click(screen.getByText('Apply'))
 
-  it('shows all camera styles and all theme subgroups in the dropdowns', async () => {
+  it('shows all camera styles and all theme subgroups in the picker dialogs', async () => {
     renderWizard()
 
-    // Camera angle dropdown lists every shared camera style.
-    fireEvent.click(cameraCombobox())
+    // Camera angle picker lists every shared camera style.
+    openCameraPicker()
     await waitFor(() => expect(screen.getByText('Whip Pan')).toBeInTheDocument())
     expect(screen.getByText('Orbit Shot')).toBeInTheDocument()
     expect(screen.getByText('FPV Drone')).toBeInTheDocument()
     expect(screen.getByText('Parallax Motion')).toBeInTheDocument()
-    // Close the camera dropdown.
+    // Close the camera picker.
     fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
 
-    // Visual theme dropdown shows the subgroup headers (Genre / Scene / Template).
-    fireEvent.click(themeCombobox())
+    // Visual theme picker shows the subgroup headers (Genre / Scene / Template).
+    openThemePicker()
     await waitFor(() => expect(screen.getByText('Genre & atmosphere')).toBeInTheDocument())
     expect(screen.getByText('Scene · Construction & Civil Works')).toBeInTheDocument()
     expect(screen.getByText('Scene · Industrial & Construction')).toBeInTheDocument()
@@ -239,14 +240,16 @@ describe('MakeFilmWizardDialog full style dataset (integration)', () => {
     renderWizard()
 
     // Select a camera style.
-    fireEvent.click(cameraCombobox())
+    openCameraPicker()
     await waitFor(() => expect(screen.getByText('Whip Pan')).toBeInTheDocument())
     fireEvent.click(screen.getByText('Whip Pan'))
+    applyPicker()
 
     // Select a theme (a Construction & Civil Works scene).
-    fireEvent.click(themeCombobox())
+    openThemePicker()
     await waitFor(() => expect(screen.getByText('Rebar & Reinforcement Site')).toBeInTheDocument())
     fireEvent.click(screen.getByText('Rebar & Reinforcement Site'))
+    applyPicker()
 
     // Write the scenario.
     fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
@@ -274,12 +277,14 @@ describe('MakeFilmWizardDialog full style dataset (integration)', () => {
     renderWizard()
 
     // Select camera + theme.
-    fireEvent.click(cameraCombobox())
+    openCameraPicker()
     await waitFor(() => expect(screen.getByText('Orbit Shot')).toBeInTheDocument())
     fireEvent.click(screen.getByText('Orbit Shot'))
-    fireEvent.click(themeCombobox())
+    applyPicker()
+    openThemePicker()
     await waitFor(() => expect(screen.getByText('Heavy Industry Factory')).toBeInTheDocument())
     fireEvent.click(screen.getByText('Heavy Industry Factory'))
+    applyPicker()
 
     fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
     fireEvent.click(screen.getByText('Write scenario'))
