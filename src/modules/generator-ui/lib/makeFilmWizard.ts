@@ -63,6 +63,44 @@ export function sumClipDurations(clips: ClipDuration[]): number {
   return clips.reduce((acc, c) => acc + c, 0)
 }
 
+/**
+ * Split a single clip's duration into contiguous, non-overlapping timed beats
+ * whose ranges sum EXACTLY to the clip duration. This is the shared source of
+ * truth for how a scene's action is paced on screen, so the scenario-write
+ * backend and the wizard agree on the beat structure.
+ *
+ *   5s  → ["0-5"]
+ *   10s → ["0-5", "5-10"]
+ *   15s → ["0-4", "4-9", "9-15"]
+ *
+ * The ranges are contiguous (end of one equals start of the next) and cover
+ * the whole clip with no gaps, no overlap and no time beyond the duration.
+ */
+export function computeSceneBeats(clipSeconds: number): string[] {
+  if (clipSeconds === 15) return ['0-4', '4-9', '9-15']
+  if (clipSeconds === 10) return ['0-5', '5-10']
+  return ['0-5']
+}
+
+/**
+ * A short, human-readable beat guide for a clip duration, used to instruct the
+ * scenario model how to pace a single scene. Mirrors computeSceneBeats.
+ */
+export function beatGuideForClip(clipSeconds: number): string {
+  const beats = computeSceneBeats(clipSeconds)
+  return `${clipSeconds}s = ${beats.length} beat${beats.length === 1 ? '' : 's'} (${beats.join(', ')})`
+}
+
+/**
+ * Narration word budget for a clip, tied to its real time so spoken lines stay
+ * realistically timed with pauses. Roughly 2 words per second, so a 15s scene
+ * allows ~30 words of narration. Returns 0 when narration is disabled.
+ */
+export function narrationWordBudget(clipSeconds: number, withNarration: boolean): number {
+  if (!withNarration) return 0
+  return Math.max(1, Math.round(clipSeconds * 2))
+}
+
 /** A product or character selection carried through the wizard. */
 export interface FilmSubject {
   id: string

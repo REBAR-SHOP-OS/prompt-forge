@@ -10,19 +10,23 @@ import MakeFilmWizardDialog, {
 // controlled. This exercises the real data path (selection -> snapshot ->
 // generateSceneImage payload -> Approve) without any network. vi.hoisted is
 // required because vi.mock factories are hoisted above top-level variables.
-const { mockFrom, mockStorage } = vi.hoisted(() => {
+const { mockFrom, mockStorage, mockInvoke } = vi.hoisted(() => {
   const mockFrom = vi.fn()
   const mockStorage = {
     from: vi.fn(() => ({
       createSignedUrl: vi.fn(async () => ({ data: { signedUrl: 'https://signed/1.png' }, error: null })),
     })),
   }
-  return { mockFrom, mockStorage }
+  const mockInvoke = vi.fn()
+  return { mockFrom, mockStorage, mockInvoke }
 })
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     from: (...args: unknown[]) => mockFrom(...args),
     storage: mockStorage,
+    functions: {
+      invoke: (...args: unknown[]) => mockInvoke(...args),
+    },
   },
 }))
 
@@ -91,6 +95,7 @@ beforeEach(() => {
   generateSceneImage.mockResolvedValue('data:image/png;base64,SCENE')
   writeScenario.mockResolvedValue(['Scene one', 'Scene two'])
   onApprove.mockClear()
+  mockInvoke.mockReset()
 })
 
 describe('MakeFilmWizardDialog identity data path (integration)', () => {
@@ -297,5 +302,81 @@ describe('MakeFilmWizardDialog full style dataset (integration)', () => {
     const approveCreative = onApprove.mock.calls[0][2].creative
     expect(approveCreative.cameraStyle).toContain('Orbit shot')
     expect(approveCreative.theme).toContain('Heavy industry factory')
+  })
+})
+
+describe('MakeFilmWizardDialog prompt optimization', () => {
+  it('does nothing when the prompt is empty', async () => {
+    renderWizard({ initialPrompt: '' })
+    const button = screen.getByRole('button', { name: /optimize prompt/i })
+    expect(button).toBeDisabled()
+    fireEvent.click(button)
+    expect(mockInvoke).not.toHaveBeenCalled()
+  })
+
+  it('replaces the prompt with the enhanced text on success and allows undo', async () => {
+    mockInvoke.mockResolvedValue({
+      data: { enhancedPrompt: 'A polished cinematic film about a product.' },
+      error: null,
+    })
+    renderWizard()
+    const textarea = screen.getByPlaceholderText(/Describe the film/i)
+    fireEvent.change(textarea, { target: { value: 'a product film' } })
+
+    const button = screen.getByRole('button', { name: /optimize prompt/i })
+    fireEvent.click(button)
+
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('enhance-prompt', {
+      body: { prompt: 'a product film' },
+    }))
+    await waitFor(() => expect(textarea).toHaveValue('A polished cinematic film about a product.'))
+
+    // Undo restores the original text.
+    fireEvent.click(screen.getByText('Undo optimization'))
+    await waitFor(() => expect(textarea).toHaveValue('a product film'))
+  })
+
+  it('keeps the original text and shows a readable message on error', async () => {
+    mockInvoke.mockResolvedValue({ data: null, error: new Error('Rate limit reached. Try again in a moment.') })
+    renderWizard()
+    const textarea = screen.getByPlaceholderText(/Describe the film/i)
+    fireEvent.change(textarea, { target: { value: 'a product film' } })
+
+    fireEvent.click(screen.getByRole('button', { name: /optimize prompt/i }))
+
+    await waitFor(() => expect(screen.getByText(/Rate limit reached/i)).toBeInTheDocument())
+    expect(textarea).toHaveValue('a product film')
+    // No undo button after a failed optimization.
+    expect(screen.queryByText('Undo optimization')).not.toBeInTheDocument()
+  })
+
+  it('keeps the original text when the AI returns an empty prompt', async () => {
+    mockInvoke.mockResolvedValue({ data: { enhancedPrompt: '   ' }, error: null })
+    renderWizard()
+    const textarea = screen.getByPlaceholderText(/Describe the film/i)
+    fireEvent.change(textarea, { target: { value: 'a product film' } })
+
+    fireEvent.click(screen.getByRole('button', { name: /optimize prompt/i }))
+
+    await waitFor(() => expect(screen.getByText(/empty prompt/i)).toBeInTheDocument())
+    expect(textarea).toHaveValue('a product film')
+  })
+
+  it('disables the button while optimizing and ignores repeated clicks', async () => {
+    let resolveInvoke: (v: unknown) => void
+    mockInvoke.mockImplementation(() => new Promise((res) => { resolveInvoke = res }))
+    renderWizard()
+    const textarea = screen.getByPlaceholderText(/Describe the film/i)
+    fireEvent.change(textarea, { target: { value: 'a product film' } })
+
+    const button = screen.getByRole('button', { name: /optimize prompt/i })
+    fireEvent.click(button)
+    // While pending, the button is disabled and repeated clicks are ignored.
+    expect(button).toBeDisabled()
+    fireEvent.click(button)
+    expect(mockInvoke).toHaveBeenCalledTimes(1)
+
+    resolveInvoke!({ data: { enhancedPrompt: 'Enhanced.' }, error: null })
+    await waitFor(() => expect(textarea).toHaveValue('Enhanced.'))
   })
 })
