@@ -3,6 +3,9 @@ import {
   expectedSceneCount,
   computeClipDurations,
   sumClipDurations,
+  computeSceneBeats,
+  beatGuideForClip,
+  narrationWordBudget,
   buildScenarioPrompt,
   buildSceneImagePrompt,
   buildClipPrompt,
@@ -57,6 +60,48 @@ describe('computeClipDurations', () => {
       // Sum of clip durations equals the chosen time.
       expect(sumClipDurations(clips)).toBe(duration)
     }
+  })
+})
+
+describe('computeSceneBeats', () => {
+  it('splits a 15s clip into contiguous beats that sum exactly to 15', () => {
+    const beats = computeSceneBeats(15)
+    expect(beats).toEqual(['0-4', '4-9', '9-15'])
+    // Contiguous: end of one equals start of the next, no gaps/overlap.
+    for (let i = 1; i < beats.length; i++) {
+      const prevEnd = Number(beats[i - 1].split('-')[1])
+      const nextStart = Number(beats[i].split('-')[0])
+      expect(prevEnd).toBe(nextStart)
+    }
+    // Covers the whole clip with no time beyond the duration.
+    expect(Number(beats[0].split('-')[0])).toBe(0)
+    expect(Number(beats[beats.length - 1].split('-')[1])).toBe(15)
+  })
+
+  it('splits 10s and 5s clips correctly', () => {
+    expect(computeSceneBeats(10)).toEqual(['0-5', '5-10'])
+    expect(computeSceneBeats(5)).toEqual(['0-5'])
+  })
+})
+
+describe('beatGuideForClip', () => {
+  it('describes the beat structure for each clip duration', () => {
+    expect(beatGuideForClip(15)).toBe('15s = 3 beats (0-4, 4-9, 9-15)')
+    expect(beatGuideForClip(10)).toBe('10s = 2 beats (0-5, 5-10)')
+    expect(beatGuideForClip(5)).toBe('5s = 1 beat (0-5)')
+  })
+})
+
+describe('narrationWordBudget', () => {
+  it('caps narration words to the real time budget (~2 words/second)', () => {
+    expect(narrationWordBudget(15, true)).toBe(30)
+    expect(narrationWordBudget(10, true)).toBe(20)
+    expect(narrationWordBudget(5, true)).toBe(10)
+  })
+
+  it('returns 0 when narration is disabled (no speech at all)', () => {
+    expect(narrationWordBudget(15, false)).toBe(0)
+    expect(narrationWordBudget(5, false)).toBe(0)
   })
 })
 
