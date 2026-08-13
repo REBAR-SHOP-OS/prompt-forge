@@ -7,14 +7,20 @@ on:
     types:
       - opened
       - reopened
+      - synchronize
       - ready_for_review
+  schedule:
+    # Keep every open PR branch current with main so branches never fall behind.
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
 
 concurrency:
-  group: pr-drift-sync-${{ github.event.pull_request.number }}
+  group: pr-drift-sync-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 permissions:
   contents: write
+  pull-requests: read
 
 jobs:
   sync-and-arm:
@@ -22,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name != 'schedule' && github.event.pull_request.head.repo.full_name == github.repository
 
     steps:
       - name: Skip when the PR carries a sign-off label
@@ -95,3 +101,66 @@ jobs:
 
           git push origin HEAD:"$BRANCH"
           echo "synced=true" >> "$GITHUB_OUTPUT"
+
+  scheduled-sync:
+    name: Scheduled sync of all open PRs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: List open PRs
+        id: list
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Enumerate open, non-draft PRs targeting main, excluding sign-off-labeled ones.
+          gh pr list --repo "$GITHUB_REPOSITORY" --state open --base main \
+            --json number,headRefName,isDraft,labels \
+            --jq '.[] | select(.isDraft == false) | select([.labels[].name] | index("backend-approved") // index("protected-approved") // index("automerge") | not) | "\(.number) \(.headRefName)"' \
+            > prs.txt || true
+          echo "Found $(wc -l < prs.txt) open PR(s) to sync."
+          cat prs.txt
+
+      - name: Sync each PR branch with main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ ! -s prs.txt ]; then
+            echo "No PRs to sync."
+            exit 0
+          fi
+          while read -r PR_NUM BRANCH; do
+            echo "=== Syncing PR #$PR_NUM (branch $BRANCH) ==="
+            git fetch origin "$BRANCH" || { echo "Could not fetch $BRANCH; skipping."; continue; }
+            git checkout -B "$BRANCH" "origin/$BRANCH" 2>/dev/null || git checkout "$BRANCH"
+            git fetch origin main
+            read BEHIND AHEAD <<EOF
+            $(git rev-list --left-right --count origin/main...HEAD)
+            EOF
+            if [ "$BEHIND" -eq 0 ]; then
+              echo "PR #$PR_NUM already up to date with main."
+              continue
+            fi
+            echo "PR #$PR_NUM is behind main by $BEHIND commit(s); merging main."
+            if ! git merge --no-edit origin/main; then
+              echo "::error::PR #$PR_NUM: automatic sync hit a merge conflict. Needs manual resolution."
+              git merge --abort
+              continue
+            fi
+            git push origin "HEAD:$BRANCH"
+            echo "PR #$PR_NUM synced."
+          done < prs.txt
