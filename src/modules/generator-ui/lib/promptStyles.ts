@@ -264,6 +264,89 @@ export function countSelectedStyles(sel: StyleSelection): number {
   return sel.camera.length + sel.genre.length + sel.scene.length + sel.template.length
 }
 
+/**
+ * A single selectable option for the Make Full Film wizard's Camera angle /
+ * Visual theme dropdowns. Mirrors the shape the wizard's Select already uses
+ * (value, label, prompt, imageUrl) plus an optional group label for the theme
+ * subgroups (Genre / Scene / Video template).
+ */
+export type WizardStyleOption = {
+  value: string
+  label: string
+  prompt: string
+  imageUrl: string
+  group?: string
+}
+
+/**
+ * Build the Camera angle options for the Make Full Film wizard from the shared
+ * dataset: an "auto" option plus every CAMERA_STYLES entry. The value is the
+ * style id, the label/icon/prompt come from the shared item, and the preview
+ * clip is used as the imageUrl so the wizard shows the same previews as the
+ * composer's Styles picker.
+ */
+export function buildWizardCameraOptions(): WizardStyleOption[] {
+  return [
+    { value: 'auto', label: 'Auto (AI decides)', prompt: '', imageUrl: '/placeholder.svg' },
+    ...CAMERA_STYLES.map((s) => ({
+      value: s.id,
+      label: s.label,
+      prompt: s.prompt,
+      imageUrl: s.preview ?? '/placeholder.svg',
+    })),
+  ]
+}
+
+/**
+ * Build the Visual theme options for the Make Full Film wizard from the shared
+ * dataset: an "auto" option, then every GENRE_STYLES entry, then every
+ * SCENE_STYLES entry grouped by SCENE_GROUP_ORDER, then every TEMPLATE_STYLES
+ * entry grouped by TEMPLATE_GROUP_ORDER. The group label is carried on each
+ * option so the wizard can render the subgroups (Genre / Scene / Video
+ * template) exactly like the composer's Styles picker.
+ */
+export function buildWizardThemeOptions(): WizardStyleOption[] {
+  // Build scene groups from the ACTUAL distinct groups present in SCENE_STYLES,
+  // preserving SCENE_GROUP_ORDER first, then appending any remaining groups
+  // (e.g. "Construction & Civil Works") so no scene is ever dropped by the
+  // group order list.
+  const allSceneGroups = Array.from(new Set(SCENE_STYLES.map((s) => s.group).filter((g): g is string => Boolean(g))))
+  const orderedSceneGroups = [
+    ...SCENE_GROUP_ORDER.filter((g) => allSceneGroups.includes(g)),
+    ...allSceneGroups.filter((g) => !SCENE_GROUP_ORDER.includes(g)),
+  ]
+  const sceneGroups = orderedSceneGroups.map((group) =>
+    SCENE_STYLES.filter((s) => s.group === group).map((s) => ({
+      value: s.id,
+      label: s.label,
+      prompt: s.prompt,
+      imageUrl: s.preview ?? '/placeholder.svg',
+      group: `Scene · ${group}`,
+    })),
+  ).flat()
+  const templateGroups = TEMPLATE_GROUP_ORDER.map((group) =>
+    TEMPLATE_STYLES.filter((t) => t.group === group).map((t) => ({
+      value: t.id,
+      label: t.label,
+      prompt: t.prompt,
+      imageUrl: t.preview ?? '/placeholder.svg',
+      group: `Template · ${group}`,
+    })),
+  ).flat()
+  return [
+    { value: 'auto', label: 'Auto (AI decides)', prompt: '', imageUrl: '/placeholder.svg' },
+    ...GENRE_STYLES.map((g) => ({
+      value: g.id,
+      label: g.label,
+      prompt: g.prompt,
+      imageUrl: g.preview ?? '/placeholder.svg',
+      group: 'Genre & atmosphere',
+    })),
+    ...sceneGroups,
+    ...templateGroups,
+  ]
+}
+
 const fragmentsFor = (items: StyleItem[], ids: string[]): string[] =>
   ids
     .map((id) => items.find((it) => it.id === id)?.prompt)

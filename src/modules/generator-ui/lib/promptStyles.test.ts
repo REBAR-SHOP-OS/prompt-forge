@@ -1,0 +1,98 @@
+import { describe, it, expect } from 'vitest'
+import {
+  CAMERA_STYLES,
+  GENRE_STYLES,
+  SCENE_STYLES,
+  TEMPLATE_STYLES,
+  SCENE_GROUP_ORDER,
+  TEMPLATE_GROUP_ORDER,
+  buildWizardCameraOptions,
+  buildWizardThemeOptions,
+} from './promptStyles'
+
+describe('buildWizardCameraOptions', () => {
+  it('includes Auto plus every shared camera style (all 10)', () => {
+    const opts = buildWizardCameraOptions()
+    expect(opts[0].value).toBe('auto')
+    expect(opts[0].label).toBe('Auto (AI decides)')
+    // Auto + all CAMERA_STYLES.
+    expect(opts.length).toBe(1 + CAMERA_STYLES.length)
+    expect(CAMERA_STYLES.length).toBe(10)
+    // Every shared camera style id is present exactly once.
+    for (const s of CAMERA_STYLES) {
+      const matches = opts.filter((o) => o.value === s.id)
+      expect(matches.length).toBe(1)
+      expect(matches[0].label).toBe(s.label)
+      expect(matches[0].prompt).toBe(s.prompt)
+    }
+  })
+
+  it('carries the preview clip as imageUrl for each camera style', () => {
+    const opts = buildWizardCameraOptions()
+    for (const s of CAMERA_STYLES) {
+      const o = opts.find((x) => x.value === s.id)!
+      expect(o.imageUrl).toBe(s.preview ?? '/placeholder.svg')
+    }
+  })
+})
+
+describe('buildWizardThemeOptions', () => {
+  it('includes Auto, all genres, all scenes (grouped) and all templates (grouped)', () => {
+    const opts = buildWizardThemeOptions()
+    expect(opts[0].value).toBe('auto')
+    const ids = opts.map((o) => o.value)
+    // Every genre present.
+    for (const g of GENRE_STYLES) expect(ids).toContain(g.id)
+    // Every scene present (including Industrial and Construction & Civil Works).
+    for (const s of SCENE_STYLES) expect(ids).toContain(s.id)
+    // Every template present.
+    for (const t of TEMPLATE_STYLES) expect(ids).toContain(t.id)
+    // No duplicates.
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('orders scene groups by SCENE_GROUP_ORDER and template groups by TEMPLATE_GROUP_ORDER', () => {
+    const opts = buildWizardThemeOptions()
+    const sceneOpts = opts.filter((o) => o.group?.startsWith('Scene · '))
+    const templateOpts = opts.filter((o) => o.group?.startsWith('Template · '))
+
+    // Scene groups appear in SCENE_GROUP_ORDER first, then any extra groups
+    // (e.g. Construction & Civil Works) are appended so nothing is dropped.
+    const sceneGroupOrder = sceneOpts.map((o) => o.group!.replace('Scene · ', ''))
+    const seenSceneGroups: string[] = []
+    for (const g of sceneGroupOrder) {
+      if (!seenSceneGroups.includes(g)) seenSceneGroups.push(g)
+    }
+    // The SCENE_GROUP_ORDER groups must appear first, in order.
+    expect(seenSceneGroups.slice(0, SCENE_GROUP_ORDER.length)).toEqual(SCENE_GROUP_ORDER)
+    // Every distinct scene group is present (nothing dropped).
+    const allSceneGroups = Array.from(new Set(SCENE_STYLES.map((s) => s.group).filter((g): g is string => Boolean(g))))
+    for (const g of allSceneGroups) expect(seenSceneGroups).toContain(g)
+
+    // Template groups appear in TEMPLATE_GROUP_ORDER.
+    const templateGroupOrder = templateOpts.map((o) => o.group!.replace('Template · ', ''))
+    const seenTemplateGroups: string[] = []
+    for (const g of templateGroupOrder) {
+      if (!seenTemplateGroups.includes(g)) seenTemplateGroups.push(g)
+    }
+    expect(seenTemplateGroups).toEqual(TEMPLATE_GROUP_ORDER)
+  })
+
+  it('keeps Construction & Civil Works scenes accessible (not dropped by group order)', () => {
+    const opts = buildWizardThemeOptions()
+    const construction = opts.filter((o) => o.group === 'Scene · Construction & Civil Works')
+    expect(construction.length).toBeGreaterThan(0)
+    // The rebar site scene is present.
+    expect(construction.some((o) => o.value === 'rebar-site')).toBe(true)
+  })
+
+  it('labels genres, scenes and templates with their subgroup', () => {
+    const opts = buildWizardThemeOptions()
+    const genre = opts.find((o) => o.value === 'epic-fantasy')!
+    expect(genre.group).toBe('Genre & atmosphere')
+    const scene = opts.find((o) => o.value === 'construction-site')!
+    expect(scene.group).toBe('Scene · Industrial & Construction')
+    const template = opts.find((o) => o.value === 'product-promo')!
+    expect(template.group).toBe('Template · Corporate & Business')
+  })
+})

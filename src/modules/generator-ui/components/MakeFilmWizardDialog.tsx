@@ -36,6 +36,7 @@ import {
 } from '@/components/ui/select'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 import { canApproveFilm, isCharacterSheet, loadCharacterRows, sanitizeProductName, type FilmDuration, type FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
 import { supabase } from '@/integrations/supabase/client'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -52,27 +53,14 @@ const ASPECTS: { value: FilmAspect; label: string; dims: string }[] = [
   { value: '1:1', label: 'Square (1:1)', dims: '1080×1080' },
 ]
 
-const CAMERA_ANGLES: { value: string; label: string; prompt: string; imageUrl: string }[] = [
-  { value: 'auto', label: 'Auto (AI decides)', prompt: '', imageUrl: '/placeholder.svg' },
-  { value: 'close-up', label: 'Close-up', prompt: 'Close-up shot, intimate framing, focus on subject details.', imageUrl: 'https://images.unsplash.com/photo-1554048612-387768052bf7?w=120&h=80&fit=crop&q=80' },
-  { value: 'medium-shot', label: 'Medium shot', prompt: 'Medium shot, waist-up framing, balanced composition.', imageUrl: 'https://images.unsplash.com/photo-1511367461989-f85a21fda167?w=120&h=80&fit=crop&q=80' },
-  { value: 'wide-shot', label: 'Wide shot', prompt: 'Wide shot, full body or environment visible, establishing composition.', imageUrl: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=120&h=80&fit=crop&q=80' },
-  { value: 'low-angle', label: 'Low angle', prompt: 'Low angle shot, looking up at subject, dramatic perspective.', imageUrl: 'https://images.unsplash.com/photo-1469334031218-e382a71b4f77?w=120&h=80&fit=crop&q=80' },
-  { value: 'high-angle', label: 'High angle', prompt: 'High angle shot, looking down at subject, overview perspective.', imageUrl: 'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?w=120&h=80&fit=crop&q=80' },
-  { value: 'side-angle', label: 'Side angle', prompt: 'Side profile angle, dramatic lighting from the side.', imageUrl: 'https://images.unsplash.com/photo-1542206395-9feb3a2f9e7c?w=120&h=80&fit=crop&q=80' },
-  { value: 'over-shoulder', label: 'Over the shoulder', prompt: 'Over-the-shoulder shot, perspective from behind subject.', imageUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&h=80&fit=crop&q=80' },
-]
-
-const THEMES: { value: string; label: string; prompt: string; imageUrl: string }[] = [
-  { value: 'auto', label: 'Auto (AI decides)', prompt: '', imageUrl: '/placeholder.svg' },
-  { value: 'cinematic', label: 'Cinematic', prompt: 'Cinematic film look, dramatic lighting, shallow depth of field, color graded.', imageUrl: 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=120&h=80&fit=crop&q=80' },
-  { value: 'bright', label: 'Bright & Clean', prompt: 'Bright, clean, well-lit, professional studio lighting, white background feel.', imageUrl: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=120&h=80&fit=crop&q=80' },
-  { value: 'dark', label: 'Dark & Moody', prompt: 'Dark, moody, low-key lighting, shadows, atmospheric, noir feel.', imageUrl: 'https://images.unsplash.com/photo-1514306191717-452ec28c0404?w=120&h=80&fit=crop&q=80' },
-  { value: 'vibrant', label: 'Vibrant & Colorful', prompt: 'Vibrant, saturated colors, energetic, lively, pop art feel.', imageUrl: 'https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=120&h=80&fit=crop&q=80' },
-  { value: 'minimal', label: 'Minimal', prompt: 'Minimal, clean lines, simple composition, lots of negative space, elegant.', imageUrl: 'https://images.unsplash.com/photo-1494438639946-1ebd1d20bf85?w=120&h=80&fit=crop&q=80' },
-  { value: 'retro', label: 'Retro/Vintage', prompt: 'Retro vintage film look, grain, warm tones, old school aesthetic.', imageUrl: 'https://images.unsplash.com/photo-1461360370896-922624d12aad?w=120&h=80&fit=crop&q=80' },
-  { value: 'futuristic', label: 'Futuristic', prompt: 'Futuristic, neon lights, cyberpunk, high-tech, sleek modern aesthetic.', imageUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=120&h=80&fit=crop&q=80' },
-]
+// Camera angle and Visual theme options are derived from the shared
+// promptStyles dataset (CAMERA_STYLES, GENRE_STYLES, SCENE_STYLES,
+// TEMPLATE_STYLES) so the wizard shows the SAME full set of styles as the
+// composer's Styles picker — all 10 camera styles, all genres, all scenes
+// (including Industrial and Construction & Civil Works) and all video
+// templates, with the same grouping and previews.
+const CAMERA_ANGLES: WizardStyleOption[] = buildWizardCameraOptions()
+const THEMES: WizardStyleOption[] = buildWizardThemeOptions()
 
 const PRODUCTS_BUCKET = 'user-images'
 const FRAMES_BUCKET = 'wan-frames'
@@ -788,7 +776,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                     <SelectTrigger className="w-full border-white/10 bg-white/[0.03] text-xs text-zinc-100">
                       <SelectValue placeholder="Select camera angle" />
                     </SelectTrigger>
-                    <SelectContent className="border-white/10 bg-zinc-900 text-zinc-100">
+                    <SelectContent className="max-h-[50vh] overflow-y-auto border-white/10 bg-zinc-900 text-zinc-100">
                       {CAMERA_ANGLES.map((a) => (
                         <SelectItem key={a.value} value={a.value} className="text-xs">
                           <div className="flex items-center gap-2">
@@ -813,17 +801,27 @@ Each scene should flow logically into the next, building toward a single cohesiv
                     <SelectTrigger className="w-full border-white/10 bg-white/[0.03] text-xs text-zinc-100">
                       <SelectValue placeholder="Select visual theme" />
                     </SelectTrigger>
-                    <SelectContent className="border-white/10 bg-zinc-900 text-zinc-100">
-                      {THEMES.map((t) => (
-                        <SelectItem key={t.value} value={t.value} className="text-xs">
-                          <div className="flex items-center gap-2">
-                            {t.imageUrl && t.imageUrl !== '/placeholder.svg' && (
-                              <img src={t.imageUrl} alt={t.label} className="h-8 w-12 rounded object-cover" />
+                    <SelectContent className="max-h-[50vh] overflow-y-auto border-white/10 bg-zinc-900 text-zinc-100">
+                      {THEMES.map((t, i) => {
+                        const showGroupHeader = t.group && (i === 0 || THEMES[i - 1].group !== t.group)
+                        return (
+                          <div key={t.value}>
+                            {showGroupHeader && (
+                              <div className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                                {t.group}
+                              </div>
                             )}
-                            <span>{t.label}</span>
+                            <SelectItem value={t.value} className="text-xs">
+                              <div className="flex items-center gap-2">
+                                {t.imageUrl && t.imageUrl !== '/placeholder.svg' && (
+                                  <img src={t.imageUrl} alt={t.label} className="h-8 w-12 rounded object-cover" />
+                                )}
+                                <span>{t.label}</span>
+                              </div>
+                            </SelectItem>
                           </div>
-                        </SelectItem>
-                      ))}
+                        )
+                      })}
                     </SelectContent>
                   </Select>
                 </div>
