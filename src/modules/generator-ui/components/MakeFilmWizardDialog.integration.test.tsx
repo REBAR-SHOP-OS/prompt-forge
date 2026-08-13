@@ -1,3 +1,212 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import MakeFilmWizardDialog, {
+  type IdentityRef,
+  type IdentitySnapshot,
+} from './MakeFilmWizardDialog'
+
+// Mock the supabase client so the wizard's storage/query calls are fully
+// controlled. This exercises the real data path (selection -> snapshot ->
+// generateSceneImage payload -> Approve) without any network. vi.hoisted is
+// required because vi.mock factories are hoisted above top-level variables.
+const { mockFrom, mockStorage, mockInvoke } = vi.hoisted(() => {
+  const mockFrom = vi.fn()
+  const mockStorage = {
+    from: vi.fn(() => ({
+      createSignedUrl: vi.fn(async () => ({ data: { signedUrl: 'https://signed/1.png' }, error: null })),
+    })),
+  }
+  const mockInvoke = vi.fn()
+  return { mockFrom, mockStorage, mockInvoke }
+})
+vi.mock('@/integrations/supabase/client', () => ({
+  supabase: {
+    from: (...args: unknown[]) => mockFrom(...args),
+    storage: mockStorage,
+    functions: {
+      invoke: (...args: unknown[]) => mockInvoke(...args),
+    },
+  },
+}))
+
+// A controllable generateSceneImage spy that records the exact payload the
+// wizard passes (urls + characterSheet flag) for both initial and Regenerate.
+const generateSceneImage = vi.fn(async () => 'data:image/png;base64,SCENE')
+
+const writeScenario = vi.fn(async () => ['Scene one', 'Scene two'])
+
+const onApprove = vi.fn()
+
+function renderWizard(overrides: Partial<Parameters<typeof MakeFilmWizardDialog>[0]> = {}) {
+  return render(
+    <MakeFilmWizardDialog
+      open
+      onOpenChange={vi.fn()}
+      initialPrompt="A product film"
+      defaultDuration={30}
+      defaultAspect="16:9"
+      userId="user-1"
+      writeScenario={writeScenario}
+      generateSceneImage={generateSceneImage}
+      onApprove={onApprove}
+      {...overrides}
+    />,
+  )
+}
+
+// Mock the character/product photo query to return controlled rows.
+function mockCharacterRows(rows: Array<{ id: string; title: string | null; image_type: string | null }>) {
+  mockFrom.mockImplementation((table: string) => {
+    if (table === 'generator_user_images') {
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            is: vi.fn(() => ({
+              order: vi.fn(async () => ({
+                data: rows.map((r) => ({
+                  id: r.id,
+                  storage_path: `https://x/user/${r.id}.png`,
+                  title: r.title,
+                  category: 'character',
+                  image_type: r.image_type,
+                })),
+                error: null,
+              })),
+            })),
+          })),
+        })),
+      }
+    }
+    return {
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          is: vi.fn(() => ({
+            order: vi.fn(async () => ({ data: [], error: null })),
+          })),
+        })),
+      })),
+    }
+  })
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  generateSceneImage.mockResolvedValue('data:image/png;base64,SCENE')
+  writeScenario.mockResolvedValue(['Scene one', 'Scene two'])
+  onApprove.mockClear()
+  mockInvoke.mockReset()
+})
+
+describe('MakeFilmWizardDialog identity data path (integration)', () => {
+  it('freezes the selection into a snapshot and passes url + characterSheet to initial generation', async () => {
+    mockCharacterRows([
+      { id: 'sheet-1', title: 'My custom sheet', image_type: 'character_sheet' },
+      { id: 'plain-1', title: 'Sarah', image_type: 'character' },
+    ])
+    renderWizard()
+
+    // Open the character picker and choose the sheet.
+    fireEvent.click(screen.getByText('Choose character'))
+    await waitFor(() => expect(screen.getByText('My custom sheet')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('My custom sheet'))
+
+    // Write the scenario.
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(screen.getByText('Scene one')).toBeInTheDocument())
+
+    // Generate preview images.
+    fireEvent.click(screen.getByText('Generate preview images'))
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
+
+    // The initial generation must receive the sheet URL and characterSheet=true.
+    const calls = generateSceneImage.mock.calls
+    expect(calls.length).toBeGreaterThan(0)
+    for (const c of calls) {
+      expect(c[2]).toBeUndefined() // no product
+      expect(c[3]).toContain('sheet-1') // character url from snapshot
+      expect(c[6]).toBe(true) // characterSheet flag from snapshot
+    }
+  })
+
+  it('Regenerate consumes the frozen snapshot (url + characterSheet), not the current selection', async () => {
+    mockCharacterRows([
+      { id: 'sheet-1', title: 'My custom sheet', image_type: 'character_sheet' },
+      { id: 'plain-1', title: 'Sarah', image_type: 'character' },
+    ])
+    renderWizard()
+
+    // Choose the sheet, write scenario, generate.
+    fireEvent.click(screen.getByText('Choose character'))
+    await waitFor(() => expect(screen.getByText('My custom sheet')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('My custom sheet'))
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(screen.getByText('Scene one')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Generate preview images'))
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
+    generateSceneImage.mockClear()
+
+    // Regenerate scene 0 directly from the images step. Regenerate must use the
+    // frozen snapshot (sheet-1, sheet=true) that was captured at generation
+    // start — the same identity that was previewed.
+    const regenButtons = screen.getAllByText('Regenerate')
+    fireEvent.click(regenButtons[0])
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
+
+    const c = generateSceneImage.mock.calls[0]
+    expect(c[3]).toContain('sheet-1')
+    expect(c[6]).toBe(true)
+  })
+
+  it('Approve passes the frozen snapshot identity (url + name) from the generation run', async () => {
+    mockCharacterRows([
+      { id: 'sheet-1', title: 'My custom sheet', image_type: 'character_sheet' },
+      { id: 'plain-1', title: 'Sarah', image_type: 'character' },
+    ])
+    renderWizard()
+
+    fireEvent.click(screen.getByText('Choose character'))
+    await waitFor(() => expect(screen.getByText('My custom sheet')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('My custom sheet'))
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(screen.getByText('Scene one')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Generate preview images'))
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
+
+    // Approve directly from the images step. The approved identity must be the
+    // frozen snapshot (the sheet), matching what was previewed.
+    fireEvent.click(screen.getByText(/Approve & Make Film/i))
+    await waitFor(() => expect(onApprove).toHaveBeenCalled())
+
+    const identity = onApprove.mock.calls[0][2].identity
+    expect(identity.characterUrl).toContain('sheet-1')
+    expect(identity.characterName).toBe('My custom sheet')
+  })
+
+  it('a plain character (image_type=character) is never treated as a sheet', async () => {
+    mockCharacterRows([
+      { id: 'plain-1', title: 'Sarah', image_type: 'character' },
+    ])
+    renderWizard()
+
+    fireEvent.click(screen.getByText('Choose character'))
+    await waitFor(() => expect(screen.getByText('Sarah')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Sarah'))
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(screen.getByText('Scene one')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Generate preview images'))
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
+
+    for (const c of generateSceneImage.mock.calls) {
+      expect(c[6]).toBe(false) // plain character -> not a sheet
+    }
+  })
+})
+
 describe('MakeFilmWizardDialog full style dataset (integration)', () => {
   // The camera and theme fields are now modal pickers opened from trigger
   // buttons. Each trigger has a distinct aria-label ("Camera angle: …" /
@@ -122,5 +331,133 @@ describe('MakeFilmWizardDialog full style dataset (integration)', () => {
     await waitFor(() => expect(writeScenario).toHaveBeenCalled())
     const promptArg = writeScenario.mock.calls[0][0]
     expect(promptArg).not.toContain('Whip pan camera move')
+  })
+})
+
+describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
+  it('sends the sanitized product name (stirup001 -> stirup) to writeScenario', async () => {
+    // Mock a product row titled "stirup001" (category product).
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'generator_user_images') {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                is: vi.fn(() => ({
+                  order: vi.fn(async () => ({
+                    data: [
+                      { id: 'prod-1', storage_path: 'https://x/user/prod-1.png', title: 'stirup001', category: 'product', image_type: null },
+                    ],
+                    error: null,
+                  })),
+                })),
+              })),
+            })),
+          })),
+        }
+      }
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            is: vi.fn(() => ({
+              order: vi.fn(async () => ({ data: [], error: null })),
+            })),
+          })),
+        })),
+      }
+    })
+    renderWizard()
+
+    // Open the product picker and choose the product.
+    fireEvent.click(screen.getByText('Choose product'))
+    await waitFor(() => expect(screen.getByText('stirup001')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('stirup001'))
+
+    // Write the scenario.
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(writeScenario).toHaveBeenCalled())
+
+    // The productName passed to writeScenario must be sanitized (no "001").
+    const options = writeScenario.mock.calls[0][1]
+    expect(options.productName).toBe('stirup')
+    // The raw title is never sent; the sanitized name is used in the prompt too.
+    expect(options.productName).not.toContain('001')
+  })
+})
+
+describe('MakeFilmWizardDialog prompt optimization', () => {
+  it('does nothing when the prompt is empty', async () => {
+    renderWizard({ initialPrompt: '' })
+    const button = screen.getByRole('button', { name: /optimize prompt/i })
+    expect(button).toBeDisabled()
+    fireEvent.click(button)
+    expect(mockInvoke).not.toHaveBeenCalled()
+  })
+
+  it('replaces the prompt with the enhanced text on success and allows undo', async () => {
+    mockInvoke.mockResolvedValue({
+      data: { enhancedPrompt: 'A polished cinematic film about a product.' },
+      error: null,
+    })
+    renderWizard()
+    const textarea = screen.getByPlaceholderText(/Describe the film/i)
+    fireEvent.change(textarea, { target: { value: 'a product film' } })
+
+    const button = screen.getByRole('button', { name: /optimize prompt/i })
+    fireEvent.click(button)
+
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('enhance-prompt', {
+      body: { prompt: 'a product film' },
+    }))
+    await waitFor(() => expect(textarea).toHaveValue('A polished cinematic film about a product.'))
+
+    // Undo restores the original text.
+    fireEvent.click(screen.getByText('Undo optimization'))
+    await waitFor(() => expect(textarea).toHaveValue('a product film'))
+  })
+
+  it('keeps the original text and shows a readable message on error', async () => {
+    mockInvoke.mockResolvedValue({ data: null, error: new Error('Rate limit reached. Try again in a moment.') })
+    renderWizard()
+    const textarea = screen.getByPlaceholderText(/Describe the film/i)
+    fireEvent.change(textarea, { target: { value: 'a product film' } })
+
+    fireEvent.click(screen.getByRole('button', { name: /optimize prompt/i }))
+
+    await waitFor(() => expect(screen.getByText(/Rate limit reached/i)).toBeInTheDocument())
+    expect(textarea).toHaveValue('a product film')
+    // No undo button after a failed optimization.
+    expect(screen.queryByText('Undo optimization')).not.toBeInTheDocument()
+  })
+
+  it('keeps the original text when the AI returns an empty prompt', async () => {
+    mockInvoke.mockResolvedValue({ data: { enhancedPrompt: '   ' }, error: null })
+    renderWizard()
+    const textarea = screen.getByPlaceholderText(/Describe the film/i)
+    fireEvent.change(textarea, { target: { value: 'a product film' } })
+
+    fireEvent.click(screen.getByRole('button', { name: /optimize prompt/i }))
+
+    await waitFor(() => expect(screen.getByText(/empty prompt/i)).toBeInTheDocument())
+    expect(textarea).toHaveValue('a product film')
+  })
+
+  it('disables the button while optimizing and ignores repeated clicks', async () => {
+    let resolveInvoke: (v: unknown) => void
+    mockInvoke.mockImplementation(() => new Promise((res) => { resolveInvoke = res }))
+    renderWizard()
+    const textarea = screen.getByPlaceholderText(/Describe the film/i)
+    fireEvent.change(textarea, { target: { value: 'a product film' } })
+
+    const button = screen.getByRole('button', { name: /optimize prompt/i })
+    fireEvent.click(button)
+    // While pending, the button is disabled and repeated clicks are ignored.
+    expect(button).toBeDisabled()
+    fireEvent.click(button)
+    expect(mockInvoke).toHaveBeenCalledTimes(1)
+
+    resolveInvoke!({ data: { enhancedPrompt: 'Enhanced.' }, error: null })
+    await waitFor(() => expect(textarea).toHaveValue('Enhanced.'))
   })
 })
