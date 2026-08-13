@@ -207,6 +207,156 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
   })
 })
 
+describe('MakeFilmWizardDialog full style dataset (integration)', () => {
+  // The Radix Select triggers render as comboboxes: [0] = aspect ratio,
+  // [1] = camera angle, [2] = visual theme.
+  const cameraCombobox = () => screen.getAllByRole('combobox')[1]
+  const themeCombobox = () => screen.getAllByRole('combobox')[2]
+
+  it('shows all camera styles and all theme subgroups in the dropdowns', async () => {
+    renderWizard()
+
+    // Camera angle dropdown lists every shared camera style.
+    fireEvent.click(cameraCombobox())
+    await waitFor(() => expect(screen.getByText('Whip Pan')).toBeInTheDocument())
+    expect(screen.getByText('Orbit Shot')).toBeInTheDocument()
+    expect(screen.getByText('FPV Drone')).toBeInTheDocument()
+    expect(screen.getByText('Parallax Motion')).toBeInTheDocument()
+    // Close the camera dropdown.
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+
+    // Visual theme dropdown shows the subgroup headers (Genre / Scene / Template).
+    fireEvent.click(themeCombobox())
+    await waitFor(() => expect(screen.getByText('Genre & atmosphere')).toBeInTheDocument())
+    expect(screen.getByText('Scene · Construction & Civil Works')).toBeInTheDocument()
+    expect(screen.getByText('Scene · Industrial & Construction')).toBeInTheDocument()
+    expect(screen.getByText('Template · Corporate & Business')).toBeInTheDocument()
+    // A Construction & Civil Works scene is present (not dropped by group order).
+    expect(screen.getByText('Rebar & Reinforcement Site')).toBeInTheDocument()
+  })
+
+  it('propagates the selected camera and theme into the scenario and image prompts', async () => {
+    renderWizard()
+
+    // Select a camera style.
+    fireEvent.click(cameraCombobox())
+    await waitFor(() => expect(screen.getByText('Whip Pan')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Whip Pan'))
+
+    // Select a theme (a Construction & Civil Works scene).
+    fireEvent.click(themeCombobox())
+    await waitFor(() => expect(screen.getByText('Rebar & Reinforcement Site')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Rebar & Reinforcement Site'))
+
+    // Write the scenario.
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(writeScenario).toHaveBeenCalled())
+
+    // The scenario prompt must carry the camera + theme directives.
+    const promptArg = writeScenario.mock.calls[0][0]
+    expect(promptArg).toContain('Whip pan camera move')
+    expect(promptArg).toContain('Rebar and reinforcement environment')
+    // The options passed to writeScenario carry the camera/theme prompts.
+    const options = writeScenario.mock.calls[0][1]
+    expect(options.cameraStyle).toContain('Whip pan camera move')
+    expect(options.theme).toContain('Rebar and reinforcement environment')
+
+    // Generate preview images — the creative (camera + theme) must propagate.
+    fireEvent.click(screen.getByText('Generate preview images'))
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
+    const creative = generateSceneImage.mock.calls[0][5]
+    expect(creative.cameraStyle).toContain('Whip pan camera move')
+    expect(creative.theme).toContain('Rebar and reinforcement environment')
+  })
+
+  it('preserves the selected styles across Regenerate and Approve', async () => {
+    renderWizard()
+
+    // Select camera + theme.
+    fireEvent.click(cameraCombobox())
+    await waitFor(() => expect(screen.getByText('Orbit Shot')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Orbit Shot'))
+    fireEvent.click(themeCombobox())
+    await waitFor(() => expect(screen.getByText('Heavy Industry Factory')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Heavy Industry Factory'))
+
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(screen.getByText('Scene one')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Generate preview images'))
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
+    generateSceneImage.mockClear()
+
+    // Regenerate scene 0 — the creative must be preserved.
+    const regenButtons = screen.getAllByText('Regenerate')
+    fireEvent.click(regenButtons[0])
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
+    const regenCreative = generateSceneImage.mock.calls[0][5]
+    expect(regenCreative.cameraStyle).toContain('Orbit shot')
+    expect(regenCreative.theme).toContain('Heavy industry factory')
+
+    // Approve — the creative must be preserved in the approval payload.
+    fireEvent.click(screen.getByText(/Approve & Make Film/i))
+    await waitFor(() => expect(onApprove).toHaveBeenCalled())
+    const approveCreative = onApprove.mock.calls[0][2].creative
+    expect(approveCreative.cameraStyle).toContain('Orbit shot')
+    expect(approveCreative.theme).toContain('Heavy industry factory')
+  })
+})
+
+describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
+  it('sends the sanitized product name (stirup001 -> stirup) to writeScenario', async () => {
+    // Mock a product row titled "stirup001" (category product).
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'generator_user_images') {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                is: vi.fn(() => ({
+                  order: vi.fn(async () => ({
+                    data: [
+                      { id: 'prod-1', storage_path: 'https://x/user/prod-1.png', title: 'stirup001', category: 'product', image_type: null },
+                    ],
+                    error: null,
+                  })),
+                })),
+              })),
+            })),
+          })),
+        }
+      }
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            is: vi.fn(() => ({
+              order: vi.fn(async () => ({ data: [], error: null })),
+            })),
+          })),
+        })),
+      }
+    })
+    renderWizard()
+
+    // Open the product picker and choose the product.
+    fireEvent.click(screen.getByText('Choose product'))
+    await waitFor(() => expect(screen.getByText('stirup001')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('stirup001'))
+
+    // Write the scenario.
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(writeScenario).toHaveBeenCalled())
+
+    // The productName passed to writeScenario must be sanitized (no "001").
+    const options = writeScenario.mock.calls[0][1]
+    expect(options.productName).toBe('stirup')
+    // The raw title is never sent; the sanitized name is used in the prompt too.
+    expect(options.productName).not.toContain('001')
+  })
+})
+
 describe('MakeFilmWizardDialog prompt optimization', () => {
   it('does nothing when the prompt is empty', async () => {
     renderWizard({ initialPrompt: '' })
