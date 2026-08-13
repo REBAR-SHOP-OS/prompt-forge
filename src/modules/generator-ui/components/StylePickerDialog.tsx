@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { X, Search, Check, Film, Clapperboard, ImageIcon } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -25,6 +25,20 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'scene', label: 'Scene' },
   { key: 'template', label: 'Template' },
 ]
+
+// Check if a URL is likely a video based on extension or path patterns
+function isVideoUrl(url: string): boolean {
+  const lowerUrl = url.toLowerCase()
+  return (
+    lowerUrl.endsWith('.mp4') ||
+    lowerUrl.endsWith('.webm') ||
+    lowerUrl.endsWith('.mov') ||
+    lowerUrl.includes('/cam-') ||
+    lowerUrl.includes('/genre-') ||
+    lowerUrl.includes('/scene-') ||
+    lowerUrl.includes('/vid-')
+  )
+}
 
 export function StylePickerDialog({
   open,
@@ -53,15 +67,15 @@ export function StylePickerDialog({
   const filteredOptions = useMemo(() => {
     let result = options
 
-    // Filter by tab
-    if (activeTab !== 'all') {
-      result = result.filter((opt) => {
-        if (activeTab === 'genre') return opt.group === 'Genre & atmosphere'
-        if (activeTab === 'scene') return opt.group?.startsWith('Scene')
-        if (activeTab === 'template') return opt.group?.startsWith('Template')
-        return true
-      })
+    // Filter by tab - only show tabs when there are themed options
+    if (activeTab === 'genre') {
+      result = result.filter((opt) => opt.group === 'Genre & atmosphere')
+    } else if (activeTab === 'scene') {
+      result = result.filter((opt) => opt.group?.startsWith('Scene'))
+    } else if (activeTab === 'template') {
+      result = result.filter((opt) => opt.group?.startsWith('Template'))
     }
+    // 'all' shows everything
 
     // Filter by search
     if (searchQuery.trim()) {
@@ -76,6 +90,11 @@ export function StylePickerDialog({
 
     return result
   }, [options, activeTab, searchQuery])
+
+  // Check if we should show tabs (only if there are themed options)
+  const hasThemedOptions = useMemo(() => {
+    return options.some((opt) => opt.group && opt.group !== 'Genre & atmosphere')
+  }, [options])
 
   // Group options for display
   const groupedOptions = useMemo(() => {
@@ -92,15 +111,33 @@ export function StylePickerDialog({
     return groups
   }, [filteredOptions])
 
-  function handleApply() {
+  const handleApply = useCallback(() => {
     onSelect(pendingSelection)
     onApply()
     onOpenChange(false)
-  }
+  }, [pendingSelection, onSelect, onApply, onOpenChange])
+
+  // Handle keyboard navigation
+  useEffect(() => {
+    if (!open) return
+    
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onOpenChange(false)
+      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        handleApply()
+      }
+    }
+    
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [open, handleApply, onOpenChange])
 
   function renderMedia(option: WizardStyleOption) {
     const url = safeMediaUrl(option.imageUrl)
-    if (!url || url === '/placeholder.svg') {
+    if (!url || url === '/placeholder.svg' || url.includes('placeholder')) {
       return (
         <div className="flex h-full w-full items-center justify-center bg-zinc-800">
           {icon === 'camera' ? (
@@ -112,10 +149,8 @@ export function StylePickerDialog({
       )
     }
 
-    // Check if it's a video URL (mp4)
-    const isVideo = url.endsWith('.mp4') || url.includes('/cam-') || url.includes('/genre-') || url.includes('/scene-') || url.includes('/vid-')
-    
-    if (isVideo) {
+    // Use video tag for video files
+    if (isVideoUrl(url)) {
       return (
         <video
           src={url}
@@ -124,8 +159,9 @@ export function StylePickerDialog({
           muted
           loop
           playsInline
+          preload="metadata"
           onMouseEnter={(e) => {
-            e.currentTarget.play()
+            e.currentTarget.play().catch(() => {})
           }}
           onMouseLeave={(e) => {
             e.currentTarget.pause()
@@ -135,15 +171,32 @@ export function StylePickerDialog({
       )
     }
 
+    // Use img tag for images
     return (
       <img
         src={url}
         alt={option.label}
         className="h-full w-full object-cover"
         loading="lazy"
+        onError={(e) => {
+          const target = e.target as HTMLImageElement
+          target.style.display = 'none'
+          const parent = target.parentElement
+          if (parent) {
+            parent.innerHTML = ''
+            const fallback = document.createElement('div')
+            fallback.className = 'flex h-full w-full items-center justify-center bg-zinc-800'
+            fallback.innerHTML = icon === 'camera' 
+              ? '<svg class="h-6 w-6 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M7 20h10" /></svg>'
+              : '<svg class="h-6 w-6 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M7 20h10" /></svg>'
+            parent.appendChild(fallback)
+          }
+        }}
       />
     )
   }
+
+  const showTabs = hasThemedOptions && activeTab !== 'all'
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -165,6 +218,7 @@ export function StylePickerDialog({
               size="sm"
               onClick={() => onOpenChange(false)}
               className="h-8 w-8 p-0 text-zinc-400 hover:text-zinc-100"
+              aria-label="Close dialog"
             >
               <X className="h-4 w-4" />
             </Button>
@@ -183,7 +237,7 @@ export function StylePickerDialog({
             />
           </div>
           
-          {activeTab !== 'all' && (
+          {showTabs && (
             <div className="flex gap-2">
               {TABS.map((tab) => (
                 <Button
@@ -210,7 +264,7 @@ export function StylePickerDialog({
           {groupedOptions.size === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-zinc-500">
               <ImageIcon className="h-12 w-12 mb-3 opacity-50" />
-              <p className="text-sm">No styles found</p>
+              <p className="text-sm">No styles found{searchQuery ? ` for "${searchQuery}"` : ''}</p>
             </div>
           ) : (
             <div className="space-y-6">
@@ -227,7 +281,14 @@ export function StylePickerDialog({
                           key={opt.value}
                           type="button"
                           onClick={() => setPendingSelection(opt.value)}
-                          className={`group relative rounded-lg border overflow-hidden transition-all ${
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              setPendingSelection(opt.value)
+                            }
+                          }}
+                          aria-pressed={isSelected}
+                          className={`group relative rounded-lg border overflow-hidden transition-all focus:outline-none focus:ring-2 focus:ring-fuchsia-400 focus:ring-offset-2 focus:ring-offset-zinc-950 ${
                             isSelected
                               ? 'border-fuchsia-400 ring-2 ring-fuchsia-400/30'
                               : 'border-white/10 hover:border-white/30'
