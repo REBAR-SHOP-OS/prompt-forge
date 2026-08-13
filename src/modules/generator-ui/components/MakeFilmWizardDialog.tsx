@@ -27,24 +27,14 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 import { canApproveFilm, isCharacterSheet, loadCharacterRows, sanitizeProductName, type FilmDuration, type FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
 import { supabase } from '@/integrations/supabase/client'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { StylePickerDialog } from './StylePickerDialog'
 
 export type { FilmDuration, FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
-// Must stay a subset of DashboardPage's `Ratio` ('9:16' | '1:1' | '16:9') —
-// that is what ai-image-generate and submitScenesAsJobs accept. 4:3 is
-// deliberately absent: offering it here produced an aspect the render
-// pipeline cannot honour.
 
 const DURATIONS: FilmDuration[] = [5, 10, 15, 30, 45, 60, 90, 135]
 const ASPECTS: { value: FilmAspect; label: string; dims: string }[] = [
@@ -53,12 +43,6 @@ const ASPECTS: { value: FilmAspect; label: string; dims: string }[] = [
   { value: '1:1', label: 'Square (1:1)', dims: '1080×1080' },
 ]
 
-// Camera angle and Visual theme options are derived from the shared
-// promptStyles dataset (CAMERA_STYLES, GENRE_STYLES, SCENE_STYLES,
-// TEMPLATE_STYLES) so the wizard shows the SAME full set of styles as the
-// composer's Styles picker — all 10 camera styles, all genres, all scenes
-// (including Industrial and Construction & Civil Works) and all video
-// templates, with the same grouping and previews.
 const CAMERA_ANGLES: WizardStyleOption[] = buildWizardCameraOptions()
 const THEMES: WizardStyleOption[] = buildWizardThemeOptions()
 
@@ -106,11 +90,6 @@ export interface FilmIdentity {
   characterName?: string | null
 }
 
-// A single reference identity frozen at selection time. Carries the URL, the
-// role, the explicit image type, the character-sheet flag, and the display name
-// together so that initial generation, Regenerate, and Approve all consume the
-// SAME identity without re-deriving it from the (possibly changed) Step 1
-// selection.
 export interface IdentityRef {
   url: string
   role: 'product' | 'character'
@@ -119,10 +98,6 @@ export interface IdentityRef {
   name?: string | null
 }
 
-// Immutable snapshot of the product/character selection, frozen when image
-// generation starts. Both initial generation and Regenerate consume this
-// snapshot so a later change to the Step 1 selection cannot silently change
-// the identities used for the already-started film.
 export interface IdentitySnapshot {
   product?: IdentityRef
   character?: IdentityRef
@@ -166,10 +141,8 @@ export function MakeFilmWizardDialog({
   const [busy, setBusy] = useState<'idle' | 'scenario' | 'images'>('idle')
   const [regenIndex, setRegenIndex] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // Prompt optimization (enhance-prompt edge function).
   const [optimizing, setOptimizing] = useState(false)
   const [optimizeError, setOptimizeError] = useState<string | null>(null)
-  // Snapshot of the prompt before optimization so the user can undo the rewrite.
   const [promptBeforeOptimize, setPromptBeforeOptimize] = useState<string | null>(null)
   const [progress, setProgress] = useState<string | null>(null)
   const [duration, setDuration] = useState<FilmDuration>(defaultDuration)
@@ -182,10 +155,6 @@ export function MakeFilmWizardDialog({
   const [characterPhotos, setCharacterPhotos] = useState<ProductPhoto[]>([])
   const [selectedProduct, setSelectedProduct] = useState<ProductPhoto | null>(null)
   const [selectedCharacter, setSelectedCharacter] = useState<ProductPhoto | null>(null)
-  // Immutable snapshot of the product/character selection, frozen when image
-  // generation starts. Both initial generation and Regenerate consume this
-  // snapshot so a later change to the Step 1 selection cannot silently change
-  // the identities used for the already-started film.
   const [identitySnapshot, setIdentitySnapshot] = useState<IdentitySnapshot | null>(null)
   const [productPickerOpen, setProductPickerOpen] = useState(false)
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false)
@@ -195,6 +164,10 @@ export function MakeFilmWizardDialog({
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
   const [lightboxScene, setLightboxScene] = useState<string>('')
   const hasInitialized = useRef(false)
+
+  // Style picker dialogs
+  const [cameraPickerOpen, setCameraPickerOpen] = useState(false)
+  const [themePickerOpen, setThemePickerOpen] = useState(false)
 
   useEffect(() => {
     if (open && !hasInitialized.current) {
@@ -289,9 +262,6 @@ export function MakeFilmWizardDialog({
         })),
       )
       setCharacterPhotos(photos)
-      // fellBack is intentionally unused here: the legacy rows carry
-      // imageType=null and the existing isCharacterSheet heuristic classifies
-      // them. Keeping the variable named documents the fallback path.
       void fellBack
     } catch (e) {
       setError((e as Error).message ?? 'Failed to load characters')
@@ -310,17 +280,10 @@ export function MakeFilmWizardDialog({
     setCharacterPickerOpen(false)
   }
 
-  // A character reference is a multi-view character sheet when it was produced
-  // by generate-character-sheet or explicitly marked by the user on upload.
-  // The authoritative source is the persistent image_type metadata; the
-  // title/URL heuristic is only a backward-compatible fallback for legacy rows
-  // written before image_type existed.
   function isCharacterSheetRef(photo: ProductPhoto | null): boolean {
     return isCharacterSheet(photo?.imageType, photo?.title, photo?.url)
   }
 
-  // Build a structured identity ref from a selected photo, or undefined when
-  // nothing is selected. Used to freeze the selection into the snapshot.
   function toIdentityRef(photo: ProductPhoto | null, role: 'product' | 'character'): IdentityRef | undefined {
     if (!photo) return undefined
     return {
@@ -328,9 +291,6 @@ export function MakeFilmWizardDialog({
       role,
       imageType: photo.imageType ?? null,
       characterSheet: role === 'character' && isCharacterSheetRef(photo),
-      // Sanitize the display name so auto-generated upload/version suffixes
-      // (e.g. "stirup001") never leak into the scenario, narration or clip
-      // prompts. The raw database title is left untouched.
       name: role === 'product' ? sanitizeProductName(photo.title) : photo.title ?? null,
     }
   }
@@ -356,8 +316,6 @@ Each scene should flow logically into the next, building toward a single cohesiv
     setProgress('Writing your film scenario…')
     try {
       let enrichedPrompt = generateDurationPrompt(idea, duration)
-      // Sanitize the product name so auto-generated upload/version suffixes
-      // (e.g. "stirup001") never leak into the scenario or narration text.
       const productName = selectedProduct ? sanitizeProductName(selectedProduct.title) : null
       if (selectedProduct && selectedCharacter) {
         enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${productName || 'Selected Product'}" (image: ${selectedProduct.url}) AND the character "${selectedCharacter.title || 'Selected Character'}" (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every scene of the film. Show the character interacting with or holding the product.`
@@ -367,13 +325,11 @@ Each scene should flow logically into the next, building toward a single cohesiv
         enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${selectedCharacter.title || 'Selected Character'}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every scene of the film.`
       }
       
-      // Add camera angle directive
       const cameraAngle = CAMERA_ANGLES.find((a) => a.value === selectedCameraAngle)
       if (cameraAngle && cameraAngle.prompt) {
         enrichedPrompt += `\n\nCAMERA ANGLE: ${cameraAngle.prompt}`
       }
       
-      // Add visual theme directive
       const theme = THEMES.find((t) => t.value === selectedTheme)
       if (theme && theme.prompt) {
         enrichedPrompt += `\n\nVISUAL STYLE: ${theme.prompt}`
@@ -405,10 +361,6 @@ Each scene should flow logically into the next, building toward a single cohesiv
     }
   }
 
-  // Optimize the user's prompt via the enhance-prompt edge function. The
-  // rewrite preserves the original language, goal, constraints and details
-  // while making the text clearer and more suitable for image generation.
-  // The original text is kept so the user can undo the rewrite.
   async function handleOptimizePrompt() {
     const current = prompt.trim()
     if (!current) return
@@ -427,7 +379,6 @@ Each scene should flow logically into the next, building toward a single cohesiv
       }
       setPrompt(enhanced)
     } catch (err) {
-      // Keep the original text on error and surface a readable message.
       setPromptBeforeOptimize(null)
       setOptimizeError(
         err instanceof Error && err.message
@@ -461,10 +412,6 @@ Each scene should flow logically into the next, building toward a single cohesiv
     if (scenes.length === 0) return
     setBusy('images')
     setError(null)
-    // Freeze the product/character selection into an immutable snapshot so both
-    // this initial generation and any later Regenerate use the SAME identities.
-    // The snapshot carries url + role + characterSheet together, so nothing is
-    // re-derived from the (possibly changed) Step 1 selection later.
     const snapshot: IdentitySnapshot = {
       product: toIdentityRef(selectedProduct, 'product'),
       character: toIdentityRef(selectedCharacter, 'character'),
@@ -497,10 +444,6 @@ Each scene should flow logically into the next, building toward a single cohesiv
     setRegenIndex(index)
     setError(null)
     try {
-      // Consume the frozen snapshot (same identities as the initial generation).
-      // The characterSheet flag comes from the snapshot, NOT from the current
-      // Step 1 selection, so a later selection change cannot flip the sheet flag
-      // used for Regenerate.
       const snapshot = identitySnapshot ?? {
         product: toIdentityRef(selectedProduct, 'product'),
         character: toIdentityRef(selectedCharacter, 'character'),
@@ -543,9 +486,6 @@ Each scene should flow logically into the next, building toward a single cohesiv
         aspect,
         withNarration,
         identity: {
-          // Approve consumes the frozen snapshot so the rendered film uses the
-          // SAME identities (url, name, type) that were previewed, even if the
-          // Step 1 selection changed after generation started.
           productUrl: (identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product'))?.url,
           productName: (identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product'))?.name ?? null,
           characterUrl: (identitySnapshot?.character ?? toIdentityRef(selectedCharacter, 'character'))?.url,
@@ -564,6 +504,10 @@ Each scene should flow logically into the next, building toward a single cohesiv
     step === 'prompt' ? 'Prompt' :
     step === 'scenario' ? 'Scenario' :
     'Preview images'
+
+  // Get display labels for selected styles
+  const selectedCameraLabel = CAMERA_ANGLES.find((a) => a.value === selectedCameraAngle)?.label ?? 'Auto (AI decides)'
+  const selectedThemeLabel = THEMES.find((t) => t.value === selectedTheme)?.label ?? 'Auto (AI decides)'
 
   return (
     <>
@@ -586,7 +530,6 @@ Each scene should flow logically into the next, building toward a single cohesiv
           </DialogHeader>
 
           <div className="flex-1 space-y-4 overflow-y-auto pr-1 min-h-0">
-            {/* Step 1 — write / edit the prompt + options. */}
             {step === 'prompt' && (
               <div className="space-y-4">
                 {/* Duration selector */}
@@ -595,21 +538,24 @@ Each scene should flow logically into the next, building toward a single cohesiv
                     <Clock className="h-3.5 w-3.5" />
                     Film duration
                   </label>
-                  <Select
-                    value={String(duration)}
-                    onValueChange={(v) => setDuration(Number(v) as FilmDuration)}
-                  >
-                    <SelectTrigger className="w-[140px] border-white/10 bg-white/[0.03] text-xs text-zinc-100">
-                      <SelectValue placeholder="Select duration" />
-                    </SelectTrigger>
-                    <SelectContent className="border-white/10 bg-zinc-900 text-zinc-100">
-                      {DURATIONS.map((d) => (
-                        <SelectItem key={d} value={String(d)} className="text-xs">
-                          {d}s
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex flex-wrap gap-2">
+                    {DURATIONS.map((d) => (
+                      <Button
+                        key={d}
+                        type="button"
+                        variant={duration === d ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setDuration(d)}
+                        className={`h-8 px-3 text-xs ${
+                          duration === d
+                            ? 'bg-fuchsia-500/90 text-white hover:bg-fuchsia-500'
+                            : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'
+                        }`}
+                      >
+                        {d}s
+                      </Button>
+                    ))}
+                  </div>
                   <p className="text-[11px] text-zinc-500">
                     {Math.ceil(duration / 15)} scenes × ~{Math.floor(duration / Math.ceil(duration / 15))}s each
                   </p>
@@ -629,7 +575,11 @@ Each scene should flow logically into the next, building toward a single cohesiv
                         variant={aspect === a.value ? 'default' : 'outline'}
                         size="sm"
                         onClick={() => setAspect(a.value)}
-                        className={`h-8 gap-1 text-xs ${aspect === a.value ? 'bg-fuchsia-500/90 text-white hover:bg-fuchsia-500' : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'}`}
+                        className={`h-8 gap-1 text-xs ${
+                          aspect === a.value
+                            ? 'bg-fuchsia-500/90 text-white hover:bg-fuchsia-500'
+                            : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'
+                        }`}
                       >
                         {a.label}
                         <span className="text-[10px] opacity-60">({a.dims})</span>
@@ -718,7 +668,11 @@ Each scene should flow logically into the next, building toward a single cohesiv
                       variant={withNarration ? 'default' : 'outline'}
                       size="sm"
                       onClick={() => setWithNarration(true)}
-                      className={`h-8 gap-1 text-xs ${withNarration ? 'bg-fuchsia-500/90 text-white hover:bg-fuchsia-500' : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'}`}
+                      className={`h-8 gap-1 text-xs ${
+                        withNarration
+                          ? 'bg-fuchsia-500/90 text-white hover:bg-fuchsia-500'
+                          : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'
+                      }`}
                     >
                       <Mic className="h-3.5 w-3.5" />
                       With narration
@@ -728,7 +682,11 @@ Each scene should flow logically into the next, building toward a single cohesiv
                       variant={!withNarration ? 'default' : 'outline'}
                       size="sm"
                       onClick={() => setWithNarration(false)}
-                      className={`h-8 gap-1 text-xs ${!withNarration ? 'bg-fuchsia-500/90 text-white hover:bg-fuchsia-500' : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'}`}
+                      className={`h-8 gap-1 text-xs ${
+                        !withNarration
+                          ? 'bg-fuchsia-500/90 text-white hover:bg-fuchsia-500'
+                          : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'
+                      }`}
                     >
                       <MicOff className="h-3.5 w-3.5" />
                       Without narration
@@ -748,7 +706,11 @@ Each scene should flow logically into the next, building toward a single cohesiv
                       variant={noTextOnImages ? 'default' : 'outline'}
                       size="sm"
                       onClick={() => setNoTextOnImages(true)}
-                      className={`h-8 gap-1 text-xs ${noTextOnImages ? 'bg-emerald-500/90 text-white hover:bg-emerald-500' : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'}`}
+                      className={`h-8 gap-1 text-xs ${
+                        noTextOnImages
+                          ? 'bg-emerald-500/90 text-white hover:bg-emerald-500'
+                          : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'
+                      }`}
                     >
                       <Check className="h-3.5 w-3.5" />
                       Clean images (no text)
@@ -758,7 +720,11 @@ Each scene should flow logically into the next, building toward a single cohesiv
                       variant={!noTextOnImages ? 'default' : 'outline'}
                       size="sm"
                       onClick={() => setNoTextOnImages(false)}
-                      className={`h-8 gap-1 text-xs ${!noTextOnImages ? 'bg-emerald-500/90 text-white hover:bg-emerald-500' : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'}`}
+                      className={`h-8 gap-1 text-xs ${
+                        !noTextOnImages
+                          ? 'bg-emerald-500/90 text-white hover:bg-emerald-500'
+                          : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'
+                      }`}
                     >
                       <ImageIcon className="h-3.5 w-3.5" />
                       With text overlays
@@ -766,64 +732,40 @@ Each scene should flow logically into the next, building toward a single cohesiv
                   </div>
                 </div>
 
-                {/* Camera angle selector */}
-                <div className="space-y-2">
-                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                    <ZoomIn className="h-3.5 w-3.5" />
-                    Camera angle
-                  </label>
-                  <Select value={selectedCameraAngle} onValueChange={(v) => setSelectedCameraAngle(v)}>
-                    <SelectTrigger className="w-full border-white/10 bg-white/[0.03] text-xs text-zinc-100">
-                      <SelectValue placeholder="Select camera angle" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[50vh] overflow-y-auto border-white/10 bg-zinc-900 text-zinc-100">
-                      {CAMERA_ANGLES.map((a) => (
-                        <SelectItem key={a.value} value={a.value} className="text-xs">
-                          <div className="flex items-center gap-2">
-                            {a.imageUrl && a.imageUrl !== '/placeholder.svg' && (
-                              <img src={a.imageUrl} alt={a.label} className="h-8 w-12 rounded object-cover" />
-                            )}
-                            <span>{a.label}</span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Theme selector */}
+                {/* Camera angle selector - opens dialog */}
                 <div className="space-y-2">
                   <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
                     <Clapperboard className="h-3.5 w-3.5" />
+                    Camera angle
+                  </label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setCameraPickerOpen(true)}
+                    aria-label={`Camera angle: ${selectedCameraLabel}`}
+                    className="w-full h-10 justify-between border-white/10 bg-white/[0.03] text-zinc-100 hover:bg-white/[0.06]"
+                  >
+                    <span className="text-sm">{selectedCameraLabel}</span>
+                    <span className="text-xs text-zinc-500">Click to change</span>
+                  </Button>
+                </div>
+
+                {/* Visual theme selector - opens dialog */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                    <Film className="h-3.5 w-3.5" />
                     Visual theme
                   </label>
-                  <Select value={selectedTheme} onValueChange={(v) => setSelectedTheme(v)}>
-                    <SelectTrigger className="w-full border-white/10 bg-white/[0.03] text-xs text-zinc-100">
-                      <SelectValue placeholder="Select visual theme" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[50vh] overflow-y-auto border-white/10 bg-zinc-900 text-zinc-100">
-                      {THEMES.map((t, i) => {
-                        const showGroupHeader = t.group && (i === 0 || THEMES[i - 1].group !== t.group)
-                        return (
-                          <div key={t.value}>
-                            {showGroupHeader && (
-                              <div className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                                {t.group}
-                              </div>
-                            )}
-                            <SelectItem value={t.value} className="text-xs">
-                              <div className="flex items-center gap-2">
-                                {t.imageUrl && t.imageUrl !== '/placeholder.svg' && (
-                                  <img src={t.imageUrl} alt={t.label} className="h-8 w-12 rounded object-cover" />
-                                )}
-                                <span>{t.label}</span>
-                              </div>
-                            </SelectItem>
-                          </div>
-                        )
-                      })}
-                    </SelectContent>
-                  </Select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setThemePickerOpen(true)}
+                    aria-label={`Visual theme: ${selectedThemeLabel}`}
+                    className="w-full h-10 justify-between border-white/10 bg-white/[0.03] text-zinc-100 hover:bg-white/[0.06]"
+                  >
+                    <span className="text-sm">{selectedThemeLabel}</span>
+                    <span className="text-xs text-zinc-500">Click to change</span>
+                  </Button>
                 </div>
 
                 {/* Prompt */}
@@ -1073,13 +1015,37 @@ Each scene should flow logically into the next, building toward a single cohesiv
                   className="gap-1.5 bg-emerald-500/90 text-white hover:bg-emerald-500"
                 >
                   <Check className="h-4 w-4" aria-hidden="true" />
-                  Approve &amp; Make Film
+                  Approve & Make Film
                 </Button>
               )}
             </div>
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Camera Angle Picker Dialog */}
+      <StylePickerDialog
+        open={cameraPickerOpen}
+        onOpenChange={setCameraPickerOpen}
+        title="Select Camera Angle"
+        icon="camera"
+        options={CAMERA_ANGLES}
+        selectedValue={selectedCameraAngle}
+        onSelect={setSelectedCameraAngle}
+        onApply={() => {}}
+      />
+
+      {/* Visual Theme Picker Dialog */}
+      <StylePickerDialog
+        open={themePickerOpen}
+        onOpenChange={setThemePickerOpen}
+        title="Select Visual Theme"
+        icon="theme"
+        options={THEMES}
+        selectedValue={selectedTheme}
+        onSelect={setSelectedTheme}
+        onApply={() => {}}
+      />
 
       {/* Product Picker Dialog */}
       <Dialog open={productPickerOpen} onOpenChange={setProductPickerOpen}>
