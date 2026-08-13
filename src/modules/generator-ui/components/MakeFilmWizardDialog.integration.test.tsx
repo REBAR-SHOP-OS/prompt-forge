@@ -208,45 +208,64 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
 })
 
 describe('MakeFilmWizardDialog full style dataset (integration)', () => {
-  // The Radix Select triggers render as comboboxes: [0] = aspect ratio,
-  // [1] = camera angle, [2] = visual theme.
-  const cameraCombobox = () => screen.getAllByRole('combobox')[1]
-  const themeCombobox = () => screen.getAllByRole('combobox')[2]
+  // Helper functions to get camera and theme picker buttons
+  const cameraButton = () => screen.getByRole('button', { name: /Camera angle/i })
+  const themeButton = () => screen.getByRole('button', { name: /Visual theme/i })
 
-  it('shows all camera styles and all theme subgroups in the dropdowns', async () => {
+  it('opens camera picker dialog and shows all camera styles', async () => {
     renderWizard()
 
-    // Camera angle dropdown lists every shared camera style.
-    fireEvent.click(cameraCombobox())
-    await waitFor(() => expect(screen.getByText('Whip Pan')).toBeInTheDocument())
+    // Open camera picker
+    fireEvent.click(cameraButton())
+    await waitFor(() => expect(screen.getByText('Select Camera Angle')).toBeInTheDocument())
+    
+    // Check camera options are visible
+    expect(screen.getByText('Whip Pan')).toBeInTheDocument()
     expect(screen.getByText('Orbit Shot')).toBeInTheDocument()
     expect(screen.getByText('FPV Drone')).toBeInTheDocument()
     expect(screen.getByText('Parallax Motion')).toBeInTheDocument()
-    // Close the camera dropdown.
+    
+    // Close with Escape
     fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByText('Select Camera Angle')).not.toBeInTheDocument())
+  })
 
-    // Visual theme dropdown shows the subgroup headers (Genre / Scene / Template).
-    fireEvent.click(themeCombobox())
-    await waitFor(() => expect(screen.getByText('Genre & atmosphere')).toBeInTheDocument())
+  it('opens theme picker dialog and shows all theme subgroups', async () => {
+    renderWizard()
+
+    // Open theme picker
+    fireEvent.click(themeButton())
+    await waitFor(() => expect(screen.getByText('Select Visual Theme')).toBeInTheDocument())
+    
+    // Check subgroup headers are visible
+    expect(screen.getByText('Genre & atmosphere')).toBeInTheDocument()
     expect(screen.getByText('Scene · Construction & Civil Works')).toBeInTheDocument()
     expect(screen.getByText('Scene · Industrial & Construction')).toBeInTheDocument()
     expect(screen.getByText('Template · Corporate & Business')).toBeInTheDocument()
+    
     // A Construction & Civil Works scene is present (not dropped by group order).
     expect(screen.getByText('Rebar & Reinforcement Site')).toBeInTheDocument()
+    
+    // Close dialog
+    fireEvent.click(screen.getByText('Cancel'))
   })
 
   it('propagates the selected camera and theme into the scenario and image prompts', async () => {
     renderWizard()
 
-    // Select a camera style.
-    fireEvent.click(cameraCombobox())
+    // Select a camera style via picker dialog
+    fireEvent.click(cameraButton())
+    await waitFor(() => expect(screen.getByText('Select Camera Angle')).toBeInTheDocument())
     await waitFor(() => expect(screen.getByText('Whip Pan')).toBeInTheDocument())
     fireEvent.click(screen.getByText('Whip Pan'))
+    fireEvent.click(screen.getByText('Apply'))
 
-    // Select a theme (a Construction & Civil Works scene).
-    fireEvent.click(themeCombobox())
+    // Select a theme (a Construction & Civil Works scene)
+    fireEvent.click(themeButton())
+    await waitFor(() => expect(screen.getByText('Select Visual Theme')).toBeInTheDocument())
     await waitFor(() => expect(screen.getByText('Rebar & Reinforcement Site')).toBeInTheDocument())
     fireEvent.click(screen.getByText('Rebar & Reinforcement Site'))
+    fireEvent.click(screen.getByText('Apply'))
 
     // Write the scenario.
     fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
@@ -273,13 +292,18 @@ describe('MakeFilmWizardDialog full style dataset (integration)', () => {
   it('preserves the selected styles across Regenerate and Approve', async () => {
     renderWizard()
 
-    // Select camera + theme.
-    fireEvent.click(cameraCombobox())
+    // Select camera + theme via picker dialogs
+    fireEvent.click(cameraButton())
+    await waitFor(() => expect(screen.getByText('Select Camera Angle')).toBeInTheDocument())
     await waitFor(() => expect(screen.getByText('Orbit Shot')).toBeInTheDocument())
     fireEvent.click(screen.getByText('Orbit Shot'))
-    fireEvent.click(themeCombobox())
+    fireEvent.click(screen.getByText('Apply'))
+    
+    fireEvent.click(themeButton())
+    await waitFor(() => expect(screen.getByText('Select Visual Theme')).toBeInTheDocument())
     await waitFor(() => expect(screen.getByText('Heavy Industry Factory')).toBeInTheDocument())
     fireEvent.click(screen.getByText('Heavy Industry Factory'))
+    fireEvent.click(screen.getByText('Apply'))
 
     fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
     fireEvent.click(screen.getByText('Write scenario'))
@@ -302,6 +326,40 @@ describe('MakeFilmWizardDialog full style dataset (integration)', () => {
     const approveCreative = onApprove.mock.calls[0][2].creative
     expect(approveCreative.cameraStyle).toContain('Orbit shot')
     expect(approveCreative.theme).toContain('Heavy industry factory')
+  })
+  
+  it('shows "Auto (AI decides)" when no style is selected', async () => {
+    renderWizard()
+    
+    // Initial state should show Auto
+    const cameraBtn = cameraButton()
+    const themeBtn = themeButton()
+    
+    expect(cameraBtn).toHaveTextContent('Auto (AI decides)')
+    expect(themeBtn).toHaveTextContent('Auto (AI decides)')
+  })
+  
+  it('allows selecting None (Auto) in the picker dialog', async () => {
+    renderWizard()
+    
+    // Select a style first
+    fireEvent.click(cameraButton())
+    await waitFor(() => expect(screen.getByText('Select Camera Angle')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Whip Pan')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Whip Pan'))
+    fireEvent.click(screen.getByText('Apply'))
+    
+    // Verify selection
+    expect(cameraButton()).toHaveTextContent('Whip Pan')
+    
+    // Now select None (Auto)
+    fireEvent.click(cameraButton())
+    await waitFor(() => expect(screen.getByText('Select Camera Angle')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /None \(Auto\)/i }))
+    fireEvent.click(screen.getByText('Apply'))
+    
+    // Should reset to Auto
+    expect(cameraButton()).toHaveTextContent('Auto (AI decides)')
   })
 })
 
@@ -389,7 +447,7 @@ describe('MakeFilmWizardDialog prompt optimization', () => {
   })
 
   it('keeps the original text and shows a readable message on error', async () => {
-    mockInvoke.mockResolvedValue({ data: null, error: new Error('Rate limit reached. Try again in a moment.') })
+    mockInvoke.mockResolvedValue({ data: null, error: new Error('Rate limit reached. Try again in moment.') })
     renderWizard()
     const textarea = screen.getByPlaceholderText(/Describe the film/i)
     fireEvent.change(textarea, { target: { value: 'a product film' } })
