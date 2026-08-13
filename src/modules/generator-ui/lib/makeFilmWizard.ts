@@ -372,3 +372,43 @@ export function resolveSceneNarration(
 export function canApproveFilm(images: Array<string | undefined>): boolean {
   return images.length > 0 && images.every((u) => typeof u === 'string' && u.length > 0)
 }
+
+/**
+ * Sanitize a product title for use in scenario / narration / clip prompts and
+ * the picker label, so auto-generated upload/version suffixes never leak into
+ * the story text.
+ *
+ * Removes ONLY clear auto-generated trailing markers:
+ *   - a trailing file extension (e.g. ".png", ".jpg"),
+ *   - a zero-padded trailing number with an optional separator ("001", "_001",
+ *     "-001", " 001"),
+ *   - a trailing duplicate marker like "(1)", "(2)", "-copy", " copy".
+ *
+ * Meaningful numbers are PRESERVED: "iPhone 15", "Rebar #4", "3M", "ISO 9001",
+ * "stirup" (no suffix). The raw database title, id, storage path, url and image
+ * are never modified — only the derived display/scenario name is cleaned.
+ *
+ * If the result is empty, falls back to the original title (or "Selected
+ * Product" when the title is null/blank).
+ */
+export function sanitizeProductName(title: string | null | undefined): string {
+  const raw = (title ?? '').trim()
+  if (!raw) return 'Selected Product'
+
+  let out = raw
+  // Strip a trailing file extension (e.g. "stirup001.png" -> "stirup001").
+  out = out.replace(/\.(png|jpe?g|webp|gif|bmp|svg|heic|heif|avif)$/i, '').trim()
+  // Strip a trailing duplicate marker: "(1)", "(2)", "-copy", " copy".
+  out = out.replace(/\s*\(\d+\)\s*$/i, '').trim()
+  out = out.replace(/\s*[-–]\s*(copy|duplicate|dup)\s*$/i, '').trim()
+  out = out.replace(/\s+(copy|duplicate|dup)\s*$/i, '').trim()
+  // Strip a trailing ZERO-PADDED auto number ("001", "_001", "-001", " 001").
+  // Only numbers that START with a leading zero are treated as auto upload/version
+  // counters. Meaningful numbers like "iPhone 15", "Rebar #4", "3M", "ISO 9001"
+  // are preserved because they do not start with a leading zero. The negative
+  // lookbehind ensures the zero is the FIRST digit of the trailing number token,
+  // so "9001" (which starts with 9) is never stripped.
+  out = out.replace(/\s*[_-]?\s*(?<![\d.])0\d+\s*$/i, '').trim()
+
+  return out.trim() || raw
+}
