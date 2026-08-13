@@ -208,45 +208,57 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
 })
 
 describe('MakeFilmWizardDialog full style dataset (integration)', () => {
-  // The Radix Select triggers render as comboboxes: [0] = aspect ratio,
-  // [1] = camera angle, [2] = visual theme.
-  const cameraCombobox = () => screen.getAllByRole('combobox')[1]
-  const themeCombobox = () => screen.getAllByRole('combobox')[2]
+  // The camera and theme fields are now modal pickers opened from trigger
+  // buttons. The trigger shows the current selection ("Auto (AI decides)"
+  // initially). Selecting an option only commits when Apply is pressed.
+  const cameraTrigger = () => screen.getByRole('button', { name: /Auto \(AI decides\)/i })
+  const themeTrigger = () => screen.getByRole('button', { name: /Auto \(AI decides\)/i })
 
-  it('shows all camera styles and all theme subgroups in the dropdowns', async () => {
+  // Open the camera picker, choose an option, and press Apply.
+  function pickCamera(label: string) {
+    fireEvent.click(cameraTrigger())
+    fireEvent.click(screen.getByText(label))
+    fireEvent.click(screen.getByText('Apply'))
+  }
+
+  // Open the theme picker, switch to the given tab, choose an option, Apply.
+  function pickTheme(tab: string, label: string) {
+    fireEvent.click(themeTrigger())
+    fireEvent.click(screen.getByRole('tab', { name: new RegExp(tab) }))
+    fireEvent.click(screen.getByText(label))
+    fireEvent.click(screen.getByText('Apply'))
+  }
+
+  it('shows all camera styles and all theme tabs in the pickers', async () => {
     renderWizard()
 
-    // Camera angle dropdown lists every shared camera style.
-    fireEvent.click(cameraCombobox())
+    // Camera picker lists every shared camera style.
+    fireEvent.click(cameraTrigger())
     await waitFor(() => expect(screen.getByText('Whip Pan')).toBeInTheDocument())
     expect(screen.getByText('Orbit Shot')).toBeInTheDocument()
     expect(screen.getByText('FPV Drone')).toBeInTheDocument()
     expect(screen.getByText('Parallax Motion')).toBeInTheDocument()
-    // Close the camera dropdown.
-    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    // Close the camera picker without applying.
+    fireEvent.click(screen.getByText('Cancel'))
 
-    // Visual theme dropdown shows the subgroup headers (Genre / Scene / Template).
-    fireEvent.click(themeCombobox())
-    await waitFor(() => expect(screen.getByText('Genre & atmosphere')).toBeInTheDocument())
-    expect(screen.getByText('Scene · Construction & Civil Works')).toBeInTheDocument()
-    expect(screen.getByText('Scene · Industrial & Construction')).toBeInTheDocument()
-    expect(screen.getByText('Template · Corporate & Business')).toBeInTheDocument()
-    // A Construction & Civil Works scene is present (not dropped by group order).
-    expect(screen.getByText('Rebar & Reinforcement Site')).toBeInTheDocument()
+    // Theme picker shows the Genre / Scene / Video Templates tabs.
+    fireEvent.click(themeTrigger())
+    await waitFor(() => expect(screen.getByRole('tab', { name: /Genre/ })).toBeInTheDocument())
+    expect(screen.getByRole('tab', { name: /Scene/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Video Templates/ })).toBeInTheDocument()
+    // A Construction & Civil Works scene is present under the Scene tab.
+    fireEvent.click(screen.getByRole('tab', { name: /Scene/ }))
+    await waitFor(() => expect(screen.getByText('Rebar & Reinforcement Site')).toBeInTheDocument())
   })
 
   it('propagates the selected camera and theme into the scenario and image prompts', async () => {
     renderWizard()
 
-    // Select a camera style.
-    fireEvent.click(cameraCombobox())
-    await waitFor(() => expect(screen.getByText('Whip Pan')).toBeInTheDocument())
-    fireEvent.click(screen.getByText('Whip Pan'))
+    // Select a camera style (Whip Pan) via the picker + Apply.
+    pickCamera('Whip Pan')
 
-    // Select a theme (a Construction & Civil Works scene).
-    fireEvent.click(themeCombobox())
-    await waitFor(() => expect(screen.getByText('Rebar & Reinforcement Site')).toBeInTheDocument())
-    fireEvent.click(screen.getByText('Rebar & Reinforcement Site'))
+    // Select a theme (a Construction & Civil Works scene) via the Scene tab.
+    pickTheme('Scene', 'Rebar & Reinforcement Site')
 
     // Write the scenario.
     fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
@@ -273,13 +285,9 @@ describe('MakeFilmWizardDialog full style dataset (integration)', () => {
   it('preserves the selected styles across Regenerate and Approve', async () => {
     renderWizard()
 
-    // Select camera + theme.
-    fireEvent.click(cameraCombobox())
-    await waitFor(() => expect(screen.getByText('Orbit Shot')).toBeInTheDocument())
-    fireEvent.click(screen.getByText('Orbit Shot'))
-    fireEvent.click(themeCombobox())
-    await waitFor(() => expect(screen.getByText('Heavy Industry Factory')).toBeInTheDocument())
-    fireEvent.click(screen.getByText('Heavy Industry Factory'))
+    // Select camera (Orbit Shot) + theme (Heavy Industry Factory).
+    pickCamera('Orbit Shot')
+    pickTheme('Scene', 'Heavy Industry Factory')
 
     fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
     fireEvent.click(screen.getByText('Write scenario'))
@@ -302,6 +310,26 @@ describe('MakeFilmWizardDialog full style dataset (integration)', () => {
     const approveCreative = onApprove.mock.calls[0][2].creative
     expect(approveCreative.cameraStyle).toContain('Orbit shot')
     expect(approveCreative.theme).toContain('Heavy industry factory')
+  })
+
+  it('does not change the committed value until Apply is pressed', async () => {
+    renderWizard()
+
+    // Open the camera picker, choose an option, but Cancel instead of Apply.
+    fireEvent.click(cameraTrigger())
+    await waitFor(() => expect(screen.getByText('Whip Pan')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Whip Pan'))
+    fireEvent.click(screen.getByText('Cancel'))
+
+    // The trigger still shows the previous (auto) selection.
+    expect(screen.getByRole('button', { name: /Auto \(AI decides\)/i })).toBeInTheDocument()
+
+    // Write the scenario — no camera directive should be present.
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(writeScenario).toHaveBeenCalled())
+    const promptArg = writeScenario.mock.calls[0][0]
+    expect(promptArg).not.toContain('Whip pan camera move')
   })
 })
 
