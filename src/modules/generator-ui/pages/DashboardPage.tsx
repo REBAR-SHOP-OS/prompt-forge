@@ -152,6 +152,7 @@ import { NarrationReviewPanel } from '@/modules/generator-ui/components/Narratio
 import { extractNarration } from '@/modules/generator-ui/lib/narration'
 import { buildReferenceImageUrls, explicitCharacterAnchor } from '@/modules/generator-ui/lib/identityAnchors'
 import { computeClipDurations, resolveSceneNarration } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { buildSceneCompositionPrompt } from '@/modules/generator-ui/lib/sceneComposition'
 import {
   type ModelMeta,
   getAvailableModels,
@@ -7588,16 +7589,34 @@ export default function DashboardPage() {
     if (creative?.cameraStyle) {
       imagePrompt = `${imagePrompt}\n\nCAMERA: ${creative.cameraStyle}`
     }
-    // Explicitly tag which reference image is product vs character so the AI
-    // knows to include BOTH in the generated scene. A character reference that
-    // is a multi-view character sheet is flagged so the model treats the whole
-    // sheet as ONE identity and never substitutes a different person.
+    // When BOTH a product and a character are present, compose them into a
+    // single frame the same way Product Ad does — via ai-image-edit with the
+    // product as Image 1 (base) and the character as Image 2 (reference). This
+    // reliably keeps both identities together in the shot, while the scene text
+    // still supplies the environment and events. The shared prompt builder is
+    // the single source of truth for this composition.
     if (productUrl && characterUrl) {
-      imagePrompt += `\n\nREFERENCE IMAGES (use BOTH in this scene):\n- PRODUCT image: ${productUrl}\n- CHARACTER image: ${characterUrl}\nThe product and the character MUST appear together prominently in the same shot. Show the character interacting with or holding the product.`
-      if (characterSheet) {
-        imagePrompt += `\nThe character reference is a MULTI-VIEW CHARACTER SHEET: every view shows the SAME one person. Preserve that exact person (same face, hair, skin tone, body type, and outfit) — never substitute a different person.`
-      }
-    } else if (productUrl) {
+      const composePrompt = buildSceneCompositionPrompt({
+        sceneText: imagePrompt,
+        productUrl,
+        characterUrl,
+        cameraStyle: creative?.cameraStyle,
+        theme: creative?.theme,
+        noText,
+        characterSheet,
+      })
+      if (!composePrompt) throw new Error('Could not build the scene composition prompt')
+      const { data: cData, error: cErr } = await supabase.functions.invoke('ai-image-edit', {
+        body: { prompt: composePrompt, imageUrls: [productUrl, characterUrl], aspectRatio: ratio },
+      })
+      if (cErr) throw cErr
+      const composedUrl = (cData as { dataUrl?: unknown } | null)?.dataUrl
+      if (typeof composedUrl !== 'string' || !composedUrl) throw new Error('No composed image returned')
+      return await stageImageIntoFramesBucket(composedUrl)
+    }
+    // Single-identity path (product-only or character-only): keep the existing
+    // ai-image-generate flow, which preserves a single reference identity.
+    if (productUrl) {
       imagePrompt += `\n\nREFERENCE PRODUCT image: ${productUrl}\nThis product MUST appear prominently in this scene.`
     } else if (characterUrl) {
       imagePrompt += `\n\nREFERENCE CHARACTER image: ${characterUrl}\nThis character MUST appear prominently in this scene.`
