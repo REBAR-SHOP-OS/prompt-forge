@@ -12,6 +12,7 @@ import {
   isCharacterSheet,
   isMissingImageTypeColumnError,
   loadCharacterRows,
+  sanitizeProductName,
   FILM_DURATIONS,
 } from './makeFilmWizard'
 
@@ -366,5 +367,44 @@ describe('loadCharacterRows', () => {
     const { rows } = await loadCharacterRows(query)
     expect(rows[0].imageType).toBeNull()
     expect(isCharacterSheet(rows[0].imageType, rows[0].title, rows[0].storage_path)).toBe(false)
+  })
+})
+
+describe('sanitizeProductName', () => {
+  it('strips a zero-padded auto number suffix (stirup001 -> stirup)', () => {
+    expect(sanitizeProductName('stirup001')).toBe('stirup')
+    expect(sanitizeProductName('stirup_001')).toBe('stirup')
+    expect(sanitizeProductName('stirup-001')).toBe('stirup')
+    expect(sanitizeProductName('stirup 001')).toBe('stirup')
+  })
+
+  it('strips a trailing file extension', () => {
+    expect(sanitizeProductName('stirup001.png')).toBe('stirup')
+    expect(sanitizeProductName('stirup.jpg')).toBe('stirup')
+    expect(sanitizeProductName('stirup.webp')).toBe('stirup')
+  })
+
+  it('strips a duplicate marker like (1)', () => {
+    expect(sanitizeProductName('stirup (1)')).toBe('stirup')
+    expect(sanitizeProductName('stirup(2)')).toBe('stirup')
+    expect(sanitizeProductName('stirup - copy')).toBe('stirup')
+  })
+
+  it('preserves meaningful numbers (iPhone 15, Rebar #4, 3M, ISO 9001)', () => {
+    expect(sanitizeProductName('iPhone 15')).toBe('iPhone 15')
+    expect(sanitizeProductName('Rebar #4')).toBe('Rebar #4')
+    expect(sanitizeProductName('3M')).toBe('3M')
+    expect(sanitizeProductName('ISO 9001')).toBe('ISO 9001')
+  })
+
+  it('preserves a plain name with no suffix', () => {
+    expect(sanitizeProductName('stirup')).toBe('stirup')
+    expect(sanitizeProductName('Rebar.Shop')).toBe('Rebar.Shop')
+  })
+
+  it('falls back to the original title or Selected Product when empty', () => {
+    expect(sanitizeProductName(null)).toBe('Selected Product')
+    expect(sanitizeProductName('')).toBe('Selected Product')
+    expect(sanitizeProductName('   ')).toBe('Selected Product')
   })
 })

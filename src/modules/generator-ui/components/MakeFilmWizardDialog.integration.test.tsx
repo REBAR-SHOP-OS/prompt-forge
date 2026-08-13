@@ -201,3 +201,55 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     }
   })
 })
+
+describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
+  it('sends the sanitized product name (stirup001 -> stirup) to writeScenario', async () => {
+    // Mock a product row titled "stirup001" (category product).
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'generator_user_images') {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                is: vi.fn(() => ({
+                  order: vi.fn(async () => ({
+                    data: [
+                      { id: 'prod-1', storage_path: 'https://x/user/prod-1.png', title: 'stirup001', category: 'product', image_type: null },
+                    ],
+                    error: null,
+                  })),
+                })),
+              })),
+            })),
+          })),
+        }
+      }
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            is: vi.fn(() => ({
+              order: vi.fn(async () => ({ data: [], error: null })),
+            })),
+          })),
+        })),
+      }
+    })
+    renderWizard()
+
+    // Open the product picker and choose the product.
+    fireEvent.click(screen.getByText('Choose product'))
+    await waitFor(() => expect(screen.getByText('stirup001')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('stirup001'))
+
+    // Write the scenario.
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(writeScenario).toHaveBeenCalled())
+
+    // The productName passed to writeScenario must be sanitized (no "001").
+    const options = writeScenario.mock.calls[0][1]
+    expect(options.productName).toBe('stirup')
+    // The raw title is never sent; the sanitized name is used in the prompt too.
+    expect(options.productName).not.toContain('001')
+  })
+})

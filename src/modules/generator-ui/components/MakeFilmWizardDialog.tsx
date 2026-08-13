@@ -35,7 +35,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
-import { canApproveFilm, isCharacterSheet, loadCharacterRows, type FilmDuration, type FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { canApproveFilm, isCharacterSheet, loadCharacterRows, sanitizeProductName, type FilmDuration, type FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { supabase } from '@/integrations/supabase/client'
 
 export type { FilmDuration, FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
@@ -331,7 +331,10 @@ export function MakeFilmWizardDialog({
       role,
       imageType: photo.imageType ?? null,
       characterSheet: role === 'character' && isCharacterSheetRef(photo),
-      name: photo.title ?? null,
+      // Sanitize the display name so auto-generated upload/version suffixes
+      // (e.g. "stirup001") never leak into the scenario, narration or clip
+      // prompts. The raw database title is left untouched.
+      name: role === 'product' ? sanitizeProductName(photo.title) : photo.title ?? null,
     }
   }
 
@@ -356,10 +359,13 @@ Each scene should flow logically into the next, building toward a single cohesiv
     setProgress('Writing your film scenario…')
     try {
       let enrichedPrompt = generateDurationPrompt(idea, duration)
+      // Sanitize the product name so auto-generated upload/version suffixes
+      // (e.g. "stirup001") never leak into the scenario or narration text.
+      const productName = selectedProduct ? sanitizeProductName(selectedProduct.title) : null
       if (selectedProduct && selectedCharacter) {
-        enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${selectedProduct.title || 'Selected Product'}" (image: ${selectedProduct.url}) AND the character "${selectedCharacter.title || 'Selected Character'}" (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every scene of the film. Show the character interacting with or holding the product.`
+        enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${productName || 'Selected Product'}" (image: ${selectedProduct.url}) AND the character "${selectedCharacter.title || 'Selected Character'}" (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every scene of the film. Show the character interacting with or holding the product.`
       } else if (selectedProduct) {
-        enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${selectedProduct.title || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every scene of the film.`
+        enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${productName || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every scene of the film.`
       } else if (selectedCharacter) {
         enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${selectedCharacter.title || 'Selected Character'}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every scene of the film.`
       }
@@ -379,7 +385,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
         duration,
         productUrl: selectedProduct?.url,
         characterUrl: selectedCharacter?.url,
-        productName: selectedProduct?.title ?? null,
+        productName,
         characterName: selectedCharacter?.title ?? null,
         withNarration,
         aspect,
@@ -604,7 +610,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                     {selectedProduct ? (
                       <div className="flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1.5">
                         <img src={selectedProduct.url} alt="Product" className="h-8 w-8 rounded object-cover" />
-                        <span className="text-xs text-zinc-300">{selectedProduct.title ?? 'Product'}</span>
+                        <span className="text-xs text-zinc-300">{selectedProduct ? sanitizeProductName(selectedProduct.title) : 'Product'}</span>
                         <button
                           type="button"
                           onClick={() => setSelectedProduct(null)}
