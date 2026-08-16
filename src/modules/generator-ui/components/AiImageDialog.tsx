@@ -12,6 +12,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { supabase } from '@/integrations/supabase/client'
@@ -278,6 +284,9 @@ export default function AiImageDialog({
   const [brokenProductIds, setBrokenProductIds] = useState<Set<string>>(new Set())
   const [isWritingPrompt, setIsWritingPrompt] = useState(false)
   const [promptTextMenuOpen, setPromptTextMenuOpen] = useState(false)
+  const [isOptimizingPrompt, setIsOptimizingPrompt] = useState(false)
+  const [optimizeError, setOptimizeError] = useState<string | null>(null)
+  const [optimizedPrompt, setOptimizedPrompt] = useState<string | null>(null)
   const [taglines, setTaglines] = useState<string[]>([])
   const [isLoadingTaglines, setIsLoadingTaglines] = useState(false)
   const [taglineError, setTaglineError] = useState<string | null>(null)
@@ -326,6 +335,9 @@ export default function AiImageDialog({
       setThemeMenuOpen(false)
       setProductMenuOpen(false)
       setBrokenProductIds(new Set())
+      setIsOptimizingPrompt(false)
+      setOptimizeError(null)
+      setOptimizedPrompt(null)
       if (referenceInputRef.current) {
         referenceInputRef.current.value = ''
       }
@@ -578,6 +590,49 @@ export default function AiImageDialog({
     } finally {
       setIsWritingPrompt(false)
     }
+  }
+
+  // Optimize the user's typed prompt for image generation: rewrites it clearer
+  // and more suitable while preserving language, intent, constraints and key
+  // details. Runs only on non-empty text, shows a loading state, disables
+  // repeat clicks, replaces the text only on success, and lets the user undo.
+  async function optimizePrompt() {
+    const current = prompt.trim()
+    if (!current || isOptimizingPrompt) return
+    setOptimizeError(null)
+    setOptimizedPrompt(null)
+    setIsOptimizingPrompt(true)
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('enhance-prompt', {
+        body: { prompt: current },
+      })
+      if (fnError) {
+        setOptimizeError(await extractFnError(fnError, 'Could not optimize the prompt. Try again.'))
+        return
+      }
+      const enhanced =
+        typeof (data as { enhancedPrompt?: unknown } | null)?.enhancedPrompt === 'string'
+          ? (data as { enhancedPrompt: string }).enhancedPrompt.trim()
+          : ''
+      if (!enhanced) {
+        setOptimizeError('The AI returned an empty prompt. Try again.')
+        return
+      }
+      setOptimizedPrompt(current)
+      setPrompt(enhanced)
+    } catch (e) {
+      setOptimizeError(e instanceof Error ? e.message : 'Could not optimize the prompt. Try again.')
+    } finally {
+      setIsOptimizingPrompt(false)
+    }
+  }
+
+  // Restore the text that was in the box before the last successful optimize.
+  function undoOptimize() {
+    if (optimizedPrompt === null) return
+    setPrompt(optimizedPrompt)
+    setOptimizedPrompt(null)
+    setOptimizeError(null)
   }
 
   // Fetch a fresh batch of promotional taglines for the "with text" path.
@@ -951,8 +1006,32 @@ export default function AiImageDialog({
                   onChange={(e) => setPrompt(e.target.value)}
                   placeholder="A dark industrial workshop with glowing blue rebar stirrups, cinematic lighting…"
                   rows={5}
-                  disabled={isLoading}
+                  disabled={isLoading || isOptimizingPrompt}
+                  aria-describedby="prompt-optimize-status"
                 />
+                <TooltipProvider delayDuration={150}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => void optimizePrompt()}
+                        disabled={!prompt.trim() || isOptimizingPrompt || isLoading}
+                        aria-label="Optimize prompt with AI"
+                        title="Optimize prompt with AI"
+                        className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/10 bg-black/50 text-zinc-300 transition hover:border-white/25 hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {isOptimizingPrompt ? (
+                          <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Sparkles className="h-4 w-4" aria-hidden="true" />
+                        )}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      {isOptimizingPrompt ? 'Optimizing prompt…' : 'Optimize prompt with AI'}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
                 <input
                   ref={referenceInputRef}
                   type="file"
@@ -962,6 +1041,39 @@ export default function AiImageDialog({
                   onChange={handleReferenceChange}
                 />
               </div>
+              {optimizeError ? (
+                <div
+                  id="prompt-optimize-status"
+                  role="alert"
+                  className="mt-2 flex items-start justify-between gap-3 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200"
+                >
+                  <span>{optimizeError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setOptimizeError(null)}
+                    className="shrink-0 text-rose-300 transition hover:text-rose-200"
+                    aria-label="Dismiss error"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : optimizedPrompt !== null ? (
+                <div
+                  id="prompt-optimize-status"
+                  className="mt-2 flex items-center justify-between gap-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200"
+                >
+                  <span>Prompt optimized.</span>
+                  <button
+                    type="button"
+                    onClick={undoOptimize}
+                    disabled={isOptimizingPrompt}
+                    className="inline-flex items-center gap-1 rounded border border-white/10 bg-white/5 px-2 py-0.5 font-medium text-emerald-100 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <RefreshCw className="h-3 w-3" aria-hidden="true" />
+                    Undo
+                  </button>
+                </div>
+              ) : null}
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
