@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { X, Search, Check, Film, Clapperboard, ImageIcon } from 'lucide-react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
@@ -223,6 +223,9 @@ export function StylePickerDialog({
               )}
               {title}
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              Search the available styles, choose one option, and apply it to the film.
+            </DialogDescription>
             <Button
               type="button"
               variant="ghost"
