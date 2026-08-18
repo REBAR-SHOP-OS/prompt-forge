@@ -99,6 +99,7 @@ export function SequentialClipPlayer({
   // instead of looping forever.
   const erroredOnceRef = useRef<string | null>(null)
   const autoPlayAttemptedRef = useRef<string | null>(null)
+  const preparedAutoPlayIdRef = useRef<string | null>(null)
 
   // ── Playhead (decoupled from React render) ──────────────────────────────
   // The live film-wide playhead is written to DOM refs every frame WITHOUT
@@ -249,6 +250,20 @@ export function SequentialClipPlayer({
   )
   const { urls: resolvedAllSrcs } = usePlayableVideoUrls(allVideoSrcs)
 
+  // A new user-created batch is a new film playback session. Reset the player
+  // before its one automatic play attempt, even when the previous film was
+  // paused or had already ended. Refs make this idempotent under Strict Mode.
+  useEffect(() => {
+    if (!autoPlayAttemptId || preparedAutoPlayIdRef.current === autoPlayAttemptId) return
+    preparedAutoPlayIdRef.current = autoPlayAttemptId
+    pendingLocalRef.current = 0
+    setIndex(0)
+    renderPlayhead(0)
+    soundtrackRef.current?.handleSeek(0)
+    setPrefetchNext(false)
+    setIsPlaying(true)
+  }, [autoPlayAttemptId])
+
   // Look-ahead: resolved URL of the NEXT video clip, used to pre-buffer its
   // bytes in a hidden <video> so the swap at the clip boundary is instant.
   const nextIndex = clips.length > 0 ? (index + 1) % clips.length : 0
@@ -321,7 +336,11 @@ export function SequentialClipPlayer({
     const startLocal = pendingLocalRef.current || 0
     pendingLocalRef.current = 0
     try { v.currentTime = startLocal } catch { v.currentTime = 0 }
-    if (isPlaying && autoPlayAttemptId) {
+    if (
+      isPlaying &&
+      autoPlayAttemptId &&
+      preparedAutoPlayIdRef.current === autoPlayAttemptId
+    ) {
       if (index === 0) {
         if (autoPlayAttemptedRef.current !== autoPlayAttemptId) {
           autoPlayAttemptedRef.current = autoPlayAttemptId
@@ -331,7 +350,7 @@ export function SequentialClipPlayer({
             setIsPlaying(false)
           })
         }
-      } else {
+      } else if (autoPlayAttemptedRef.current === autoPlayAttemptId) {
         // Normal sequence continuation is not a new autoplay attempt; it keeps
         // the already-started film moving from one successful clip to the next.
         v.play().catch(() => setIsPlaying(false))
@@ -394,15 +413,13 @@ export function SequentialClipPlayer({
   }
 
   function togglePlay() {
-    setIsPlaying((playing) => {
-      const next = !playing
-      if (next && autoPlayAttemptId) {
-        // This runs inside the user's click gesture, so it is intentionally not
-        // blocked by the one-shot automatic-attempt guard above.
-        videoRef.current?.play().catch(() => setIsPlaying(false))
-      }
-      return next
-    })
+    const next = !isPlaying
+    setIsPlaying(next)
+    if (next && autoPlayAttemptId) {
+      // This runs inside the user's click gesture, so it is intentionally not
+      // blocked by the one-shot automatic-attempt guard above.
+      videoRef.current?.play().catch(() => setIsPlaying(false))
+    }
   }
 
   // Choose the chrome ratio from the first clip so the frame stays stable.
@@ -462,7 +479,6 @@ export function SequentialClipPlayer({
                 className="h-full w-full bg-black object-contain"
                 preload="auto"
                 playsInline
-                autoPlay={isPlaying}
                 controls={false}
                 onLoadedMetadata={(e) => {
                   // Apply clip volume as soon as the element is ready — the

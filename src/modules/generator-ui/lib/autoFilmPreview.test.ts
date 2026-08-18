@@ -103,6 +103,42 @@ describe('Make Full Film automatic Preview', () => {
     expect(next.active?.clips.map((clip) => clip.id)).toEqual(['scene-2'])
   })
 
+  it('clears the active batch on Start Over without clearing its consumed guard', () => {
+    const clip = job('scene-1', 'completed', true)
+    const batchId = createAutoFilmBatchId([clip.id])
+    const opened = autoFilmPreviewReducer(createAutoFilmPreviewState(), {
+      type: 'batch-settled',
+      batchId,
+      clips: [clip],
+    })
+
+    const reset = autoFilmPreviewReducer(opened, { type: 'clear-active' })
+    const stalePoll = autoFilmPreviewReducer(reset, {
+      type: 'batch-settled',
+      batchId,
+      clips: [clip],
+    })
+
+    expect(reset.active).toBeNull()
+    expect(reset.consumedBatchIds).toEqual([batchId])
+    expect(stalePoll).toBe(reset)
+  })
+
+  it('lets manual Preview discard the active auto batch while keeping it exactly-once', () => {
+    const clip = job('scene-1', 'completed', true)
+    const batchId = createAutoFilmBatchId([clip.id])
+    const opened = autoFilmPreviewReducer(createAutoFilmPreviewState(), {
+      type: 'batch-settled',
+      batchId,
+      clips: [clip],
+    })
+
+    const manualPreview = autoFilmPreviewReducer(opened, { type: 'clear-active' })
+
+    expect(manualPreview.active).toBeNull()
+    expect(manualPreview.consumedBatchIds).toEqual([batchId])
+  })
+
   it('starts closed on hydration and does not infer a batch from old clips', () => {
     const hydrated = createAutoFilmPreviewState()
 

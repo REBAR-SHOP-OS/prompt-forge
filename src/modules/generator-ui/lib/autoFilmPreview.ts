@@ -15,6 +15,7 @@ export type AutoFilmPreviewState = {
 export type AutoFilmPreviewAction =
   | { type: 'batch-settled'; batchId: string; clips: JobDetail[] }
   | { type: 'dismiss' }
+  | { type: 'clear-active' }
 
 export function createAutoFilmPreviewState(): AutoFilmPreviewState {
   return { active: null, consumedBatchIds: [] }
@@ -51,7 +52,7 @@ export function autoFilmPreviewReducer(
   state: AutoFilmPreviewState,
   action: AutoFilmPreviewAction,
 ): AutoFilmPreviewState {
-  if (action.type === 'dismiss') {
+  if (action.type === 'dismiss' || action.type === 'clear-active') {
     return state.active ? { ...state, active: null } : state
   }
 

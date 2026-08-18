@@ -10,6 +10,14 @@ function functionBody(source: string, name: string, nextName: string): string {
   return source.slice(start, end)
 }
 
+function sourceBetween(source: string, startText: string, endText: string): string {
+  const start = source.indexOf(startText)
+  const end = source.indexOf(endText, start + startText.length)
+  expect(start).toBeGreaterThan(-1)
+  expect(end).toBeGreaterThan(start)
+  return source.slice(start, end)
+}
+
 describe('Make Full Film automatic Preview integration', () => {
   it('opens only from the user-started approved-film batch path', () => {
     const renderBody = functionBody(
@@ -42,5 +50,23 @@ describe('Make Full Film automatic Preview integration', () => {
     expect(playerSource).toContain('setIsPlaying(false)')
     expect(playerSource).toContain("aria-label={isPlaying ? 'Pause' : 'Play'}")
     expect(playerSource).toContain("videoRef.current?.play().catch(() => setIsPlaying(false))")
+    expect(playerSource).not.toContain('setIsPlaying((playing) =>')
+  })
+
+  it('clears active auto Preview from Start Over and manual Preview without reviving it', () => {
+    const resetBody = sourceBetween(
+      dashboardSource,
+      'function resetWorkspace',
+      'async function handleStartOver',
+    )
+    const manualPreviewButton = sourceBetween(
+      dashboardSource,
+      'const hasReadyClips = playableSequenceClips.length > 0',
+      '<AlertDialog>',
+    )
+
+    expect(resetBody).toContain("dispatchAutoFilmPreview({ type: 'clear-active' })")
+    expect(manualPreviewButton).toContain("dispatchAutoFilmPreview({ type: 'clear-active' })")
+    expect(manualPreviewButton).toContain('setPreviewDismissed(false)')
   })
 })

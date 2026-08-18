@@ -8937,6 +8937,9 @@ export default function DashboardPage() {
     setMergeStage(null)
     // Drop the transient Final Film preview so Start Over fully clears it.
     setLastMergedPreview(null)
+    // Clear the currently displayed automatic batch while preserving its
+    // consumed guard, so Start Over cannot resurrect an old batch.
+    dispatchAutoFilmPreview({ type: 'clear-active' })
     // Reset the composer to a fresh state.
     setPromptText('')
     setSelectedCharacter(null)
@@ -10224,6 +10227,9 @@ export default function DashboardPage() {
               }
               setVideoColumnMessage(null)
               setPreviewVideoId(null)
+              // Manual Preview always reflects the current workspace. Keep the
+              // consumed guard so the previous automatic batch stays one-shot.
+              dispatchAutoFilmPreview({ type: 'clear-active' })
               setPreviewDismissed(false)
             }}
             className={`relative flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs uppercase tracking-[0.18em] transition ${
