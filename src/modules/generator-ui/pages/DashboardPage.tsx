@@ -1,4 +1,4 @@
-import { Fragment, type ChangeEvent, type FormEvent, type SyntheticEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, type ChangeEvent, type FormEvent, type SyntheticEvent, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import {
   ArrowRight,
   BookmarkCheck,
@@ -163,6 +163,12 @@ import {
 } from '@/modules/generator-ui/lib/modelRegistry'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 import { syncPreviewSizeCssVars } from '@/modules/generator-ui/lib/previewSize'
+import {
+  autoFilmPreviewReducer,
+  createAutoFilmPreviewState,
+  summarizeAutoFilmBatch,
+  type AutoFilmBatchSummary,
+} from '@/modules/generator-ui/lib/autoFilmPreview'
 import CharacterSheetDialog from '@/modules/generator-ui/components/CharacterSheetDialog'
 
 
@@ -1598,6 +1604,14 @@ export default function DashboardPage() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
   const [previewDismissed, setPreviewDismissed] = useState(false)
+  // Ephemeral by design: only a user-started Make Full Film batch can populate
+  // this reducer. It is never hydrated or persisted, so refreshes, old clips,
+  // single-clip jobs and ordinary polling cannot auto-open Preview.
+  const [autoFilmPreview, dispatchAutoFilmPreview] = useReducer(
+    autoFilmPreviewReducer,
+    undefined,
+    createAutoFilmPreviewState,
+  )
   // Re-open preview whenever a card is explicitly selected.
   useEffect(() => {
     if (previewVideoId) setPreviewDismissed(false)
@@ -1605,6 +1619,7 @@ export default function DashboardPage() {
   const closePreview = () => {
     setPreviewVideoId(null)
     setPreviewDismissed(true)
+    dispatchAutoFilmPreview({ type: 'dismiss' })
     setTranscriptOpen(false)
     setTranscriptVideoUrl(null)
   }
@@ -3206,11 +3221,6 @@ export default function DashboardPage() {
   // preview images (each regenerable) → explicit approval → render. Nothing
   // renders until the user approves in this flow.
   const [isMakeFilmWizardOpen, setIsMakeFilmWizardOpen] = useState(false)
-  // Always-fresh pointer to handleMergeAllVideos so the long-lived auto-film
-  // orchestrator (which starts minutes before the batch completes) invokes the
-  // LATEST closure — reading current generatedVideos/activeJobIds state — instead
-  // of a stale merge function captured when the orchestrator was first called.
-  const handleMergeAllVideosRef = useRef<() => Promise<void>>(() => Promise.resolve())
   // Transient preview of the latest Final Film output. Lives only in memory:
   // never added to Pending, Library, or History. Cleared on Start Over.
   const [lastMergedPreview, setLastMergedPreview] = useState<
@@ -4876,7 +4886,7 @@ export default function DashboardPage() {
   type PreviewItem =
     | { kind: 'video'; job: JobDetail }
     | { kind: 'image'; image: UserImageItem }
-    | { kind: 'sequence'; clips: UnifiedClip[] }
+    | { kind: 'sequence'; clips: UnifiedClip[]; autoPlayAttemptId?: string }
 
   // A clip is "playable" in the live sequential preview if it's a ready video
   // (completed + has a storage_path) or an uploaded image.
@@ -4938,6 +4948,18 @@ export default function DashboardPage() {
       }
     }
     if (previewDismissed) return null
+    if (autoFilmPreview.active) {
+      return {
+        kind: 'sequence',
+        autoPlayAttemptId: autoFilmPreview.active.batchId,
+        clips: autoFilmPreview.active.clips.map((job) => ({
+          kind: 'video' as const,
+          id: job.id,
+          createdAt: job.created_at,
+          job,
+        })),
+      }
+    }
     // When the user is viewing a Library project, lock the preview to that
     // exact merged project. Never substitute another Library entry.
     if (selectedProjectId) {
@@ -4968,7 +4990,7 @@ export default function DashboardPage() {
     const firstImage = displayedClips.find((c) => c.kind === 'image')
     if (firstImage && firstImage.kind === 'image') return { kind: 'image', image: firstImage.image }
     return null
-  }, [lastMergedPreview, displayedClips, previewVideoId, previewDismissed, selectedProjectId, visibleVideos, playableSequenceClips])
+  }, [lastMergedPreview, displayedClips, previewVideoId, previewDismissed, autoFilmPreview.active, selectedProjectId, visibleVideos, playableSequenceClips])
 
   // Backwards-compat alias used by existing card highlight + start-frame code paths
   const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
@@ -7183,6 +7205,8 @@ export default function DashboardPage() {
       theme?: string
       /** When false, no narration/voiceover is produced for any clip. */
       withNarration?: boolean
+      /** Wizard batches stay closed until their bounded poll produces Preview. */
+      suppressPreviewUntilBatchSettles?: boolean
     },
   ): Promise<string[]> {
     if (!scenes || scenes.length === 0) return []
@@ -7381,10 +7405,13 @@ export default function DashboardPage() {
           setLockedProjectRatio(effectiveRatio)
           persistLockedRatio(effectiveRatio)
         }
-        // Keep the preview on the full sequential auto-stitch instead of
-        // pinning to each pending clip as it's queued.
-        setPreviewVideoId(null)
-        setPreviewDismissed(false)
+        // Other scenario flows preserve their existing live-preview behavior.
+        // The reviewed Make Full Film path opens exactly once after its own
+        // batch settles, never once per queued or polled card.
+        if (!opts?.suppressPreviewUntilBatchSettles) {
+          setPreviewVideoId(null)
+          setPreviewDismissed(false)
+        }
         setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
         markNewClip(seededJob.id)
         hydrateIfComplete(createdJob)
@@ -7434,15 +7461,12 @@ export default function DashboardPage() {
     return await signFramesUrl(storagePath).catch(() => data.publicUrl)
   }
 
-  // Poll the created jobs directly until every one reaches a terminal state,
-  // merging each finished detail into state so the subsequent Final Film merge
-  // sees the completed clips. Returns true when at least one clip completed with
-  // a playable video. Independent of the component's own poll loop (that loop
-  // also runs; both are idempotent reads).
-  async function waitForAutoFilmBatch(jobIds: string[]): Promise<boolean> {
+  // Poll only the jobs created by this user-started batch. The ordered summary
+  // drives the one-time live Preview and preserves partial-failure evidence.
+  async function waitForAutoFilmBatch(jobIds: string[]): Promise<AutoFilmBatchSummary> {
     const deadline = Date.now() + 45 * 60_000
     const pending = new Set(jobIds)
-    let anyPlayable = false
+    const settled = new Map<string, JobDetail>()
     while (pending.size > 0 && Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 5_000))
       for (const id of Array.from(pending)) {
@@ -7454,13 +7478,11 @@ export default function DashboardPage() {
         }
         if (!isTerminalStatus(detail.status)) continue
         pending.delete(id)
+        settled.set(id, detail)
         setGeneratedVideos((cur) => mergeJob(cur, detail))
-        if (normalizeStatus(detail.status) === 'completed' && detail.video?.storage_path) {
-          anyPlayable = true
-        }
       }
     }
-    return anyPlayable && pending.size === 0
+    return summarizeAutoFilmBatch(jobIds, settled, pending)
   }
 
   // ── Gated "Make Full Film" wizard helpers ────────────────────────────────
@@ -7652,8 +7674,8 @@ export default function DashboardPage() {
   }
 
   // Step 3 (ONLY after the explicit Approve click) — seed one video job per
-  // scene with the approved preview images, await the whole batch, then
-  // auto-assemble the Final Film via the existing merge path.
+  // scene with the approved preview images, await the bounded batch, then open
+  // its successful clips in live Preview. Final Film remains manual.
   async function renderApprovedFilm(
     scenes: string[],
     perSceneImageUrls: (string | undefined)[],
@@ -7713,6 +7735,7 @@ export default function DashboardPage() {
         cameraStyle: options?.creative?.cameraStyle,
         theme: options?.creative?.theme,
         withNarration: options?.withNarration,
+        suppressPreviewUntilBatchSettles: true,
       })
       if (!createdJobIds || createdJobIds.length === 0) {
         throw new Error('No scenes could be queued for the film.')
@@ -7722,23 +7745,26 @@ export default function DashboardPage() {
 
       // Wait for the whole batch.
       setVideoColumnMessage('Generating every scene… keep this tab open.')
-      const anyPlayable = await waitForAutoFilmBatch(createdJobIds)
-      if (!anyPlayable) {
+      const batch = await waitForAutoFilmBatch(createdJobIds)
+      if (batch.completed.length === 0) {
         setComposerError('The scenes did not finish rendering — please try again.')
-        setVideoColumnMessage('No scenes finished rendering. Nothing to assemble.')
+        setVideoColumnMessage(
+          `No clips finished. ${batch.failed.length} failed; ${batch.pending.length} still pending after the wait limit.`,
+        )
         return
       }
-      setVideoColumnMessage('All scenes ready — assembling your Final Film…')
-      // Auto-assemble the Final Film through the existing merge path once every
-      // scene has succeeded, so the user gets a complete film without a manual
-      // step. handleMergeAllVideosRef always points at the current handler.
-      try {
-        await handleMergeAllVideosRef.current()
-      } catch (mergeErr) {
-        const msg = mergeErr instanceof Error ? mergeErr.message : 'Could not assemble the Final Film.'
-        setComposerError(msg)
-        setVideoColumnMessage(msg)
-      }
+      const statusParts = [`${batch.completed.length} clip${batch.completed.length === 1 ? '' : 's'} ready`]
+      if (batch.failed.length > 0) statusParts.push(`${batch.failed.length} failed`)
+      if (batch.pending.length > 0) statusParts.push(`${batch.pending.length} still pending`)
+      setVideoColumnMessage(`${statusParts.join('; ')}. Preview opened; use Final Film manually when ready.`)
+      setLastMergedPreview(null)
+      setPreviewVideoId(null)
+      setPreviewDismissed(false)
+      dispatchAutoFilmPreview({
+        type: 'batch-settled',
+        batchId: batch.batchId,
+        clips: batch.completed,
+      })
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Could not generate the film.'
       setComposerError(msg)
@@ -8865,13 +8891,6 @@ export default function DashboardPage() {
     }
 
   }
-
-  // Keep the merge ref pointing at the current-render closure so the auto-film
-  // orchestrator always merges with up-to-date state. No dep array: refreshes
-  // after every render, which is exactly when the closed-over state changes.
-  useEffect(() => {
-    handleMergeAllVideosRef.current = handleMergeAllVideos
-  })
 
   function resetWorkspace({ keepPreview }: { keepPreview: boolean }) {
     // Library cards (Final Film outputs in mergedEntries + approvedIds) are
@@ -10973,6 +10992,7 @@ export default function DashboardPage() {
               ratioToHeight={ratioToHeight}
               ratioToWidth={ratioToWidth}
               maxHeightPx={previewMaxHeightPx}
+              autoPlayAttemptId={previewItem.autoPlayAttemptId}
               onClose={closePreview}
               onActiveClipChange={(id) => { /* highlight handled by HISTORY via previewVideoId on click */ void id }}
               musicUrl={musicUrl}

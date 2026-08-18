@@ -44,6 +44,8 @@ type Props = {
   ratioToHeight: (r: '9:16' | '1:1' | '16:9') => string
   ratioToWidth: (r: '9:16' | '1:1' | '16:9') => string
   maxHeightPx: number
+  /** Stable id for one automatic play attempt when a user-created batch opens. */
+  autoPlayAttemptId?: string
   onClose?: () => void
   /** Called when a clip becomes active so the parent can highlight a card. */
   onActiveClipChange?: (clipId: string) => void
@@ -66,6 +68,7 @@ export function SequentialClipPlayer({
   ratioToHeight,
   ratioToWidth,
   maxHeightPx,
+  autoPlayAttemptId,
   onClose,
   onActiveClipChange,
   musicUrl,
@@ -95,6 +98,7 @@ export function SequentialClipPlayer({
   // clip's source after a playback error, so a permanently-bad source skips
   // instead of looping forever.
   const erroredOnceRef = useRef<string | null>(null)
+  const autoPlayAttemptedRef = useRef<string | null>(null)
 
   // ── Playhead (decoupled from React render) ──────────────────────────────
   // The live film-wide playhead is written to DOM refs every frame WITHOUT
@@ -317,13 +321,24 @@ export function SequentialClipPlayer({
     const startLocal = pendingLocalRef.current || 0
     pendingLocalRef.current = 0
     try { v.currentTime = startLocal } catch { v.currentTime = 0 }
-    if (isPlaying) {
-      v.play().catch(() => {
-        /* autoplay may be blocked — user can click play */
-      })
+    if (isPlaying && autoPlayAttemptId) {
+      if (index === 0) {
+        if (autoPlayAttemptedRef.current !== autoPlayAttemptId) {
+          autoPlayAttemptedRef.current = autoPlayAttemptId
+          v.play().catch(() => {
+            // Keep Preview open, but show the explicit Play control when browser
+            // autoplay policy rejects this single automatic attempt.
+            setIsPlaying(false)
+          })
+        }
+      } else {
+        // Normal sequence continuation is not a new autoplay attempt; it keeps
+        // the already-started film moving from one successful clip to the next.
+        v.play().catch(() => setIsPlaying(false))
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.id, current?.kind, resolvedVideoSrc])
+  }, [current?.id, current?.kind, resolvedVideoSrc, autoPlayAttemptId, index])
 
   // Mirror the play/pause state onto the active video WITHOUT touching
   // currentTime, so clicking the icon stops exactly at the current frame.
@@ -331,14 +346,16 @@ export function SequentialClipPlayer({
     const v = videoRef.current
     if (!v || !current || current.kind !== 'video') return
     if (!resolvedVideoSrc) return
-    if (isPlaying) {
+    if (autoPlayAttemptId) {
+      if (!isPlaying) v.pause()
+    } else if (isPlaying) {
       v.play().catch(() => {
         /* autoplay may be blocked — user can click play */
       })
     } else {
       v.pause()
     }
-  }, [isPlaying, current?.id, current?.kind, resolvedVideoSrc])
+  }, [isPlaying, current?.id, current?.kind, resolvedVideoSrc, autoPlayAttemptId])
 
   // Apply clip volume to the active video element.
   useEffect(() => {
@@ -377,7 +394,15 @@ export function SequentialClipPlayer({
   }
 
   function togglePlay() {
-    setIsPlaying((p) => !p)
+    setIsPlaying((playing) => {
+      const next = !playing
+      if (next && autoPlayAttemptId) {
+        // This runs inside the user's click gesture, so it is intentionally not
+        // blocked by the one-shot automatic-attempt guard above.
+        videoRef.current?.play().catch(() => setIsPlaying(false))
+      }
+      return next
+    })
   }
 
   // Choose the chrome ratio from the first clip so the frame stays stable.
