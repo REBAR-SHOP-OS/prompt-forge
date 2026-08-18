@@ -113,6 +113,36 @@ async function chooseProduct(title = 'Test product') {
   fireEvent.click(screen.getByText('Choose product'))
   await waitFor(() => expect(screen.getByText(title)).toBeInTheDocument())
   fireEvent.click(screen.getByText(title))
+function mockRefreshableCharacterRows(
+  initialRows: Array<{ id: string; title: string | null; image_type: string | null }>,
+) {
+  let rows = [...initialRows]
+  const order = vi.fn(async () => ({
+    data: rows.map((r) => ({
+      id: r.id,
+      storage_path: `https://x.supabase.co/user-1/${r.id}.png`,
+      created_at: '2026-08-18T12:00:00Z',
+      title: r.title,
+      category: 'character',
+      image_type: r.image_type,
+    })),
+    error: null,
+  }))
+  const query: Record<string, ReturnType<typeof vi.fn>> = {}
+  query.select = vi.fn(() => query)
+  query.eq = vi.fn(() => query)
+  query.is = vi.fn(() => query)
+  query.order = order
+  mockFrom.mockImplementation((table: string) => {
+    if (table !== 'generator_user_images') throw new Error(`Unexpected table: ${table}`)
+    return query
+  })
+  return {
+    addRow(row: { id: string; title: string | null; image_type: string | null }) {
+      rows = [row, ...rows]
+    },
+    order,
+  }
 }
 
 beforeEach(() => {
@@ -148,6 +178,91 @@ describe('MakeFilmWizardDialog scenario product requirement (integration)', () =
 })
 
 describe('MakeFilmWizardDialog identity data path (integration)', () => {
+  it('opens the existing sheet flow from a plain character without selecting the card, then refreshes the picker', async () => {
+    const rows = mockRefreshableCharacterRows([
+      { id: 'sheet-1', title: 'Existing sheet', image_type: 'character_sheet' },
+      { id: 'plain-1', title: 'Sarah', image_type: 'character' },
+    ])
+    mockInvoke.mockImplementation(async (functionName: string) => {
+      expect(functionName).toBe('generate-character-sheet')
+      rows.addRow({ id: 'sheet-2', title: 'Sarah — sheet', image_type: 'character_sheet' })
+      return {
+        data: {
+          id: 'sheet-2',
+          storage_path: 'https://x.supabase.co/storage/v1/object/public/user-images/user-1/character-sheet-2.png',
+          title: 'Sarah — sheet',
+        },
+        error: null,
+      }
+    })
+    renderWizard()
+
+    fireEvent.click(screen.getByText('Choose character'))
+    await waitFor(() => expect(screen.getByText('Sarah')).toBeInTheDocument())
+
+    expect(screen.queryByRole('button', { name: 'Create character sheet for Existing sheet' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Create character sheet for Sarah' }))
+
+    expect(screen.getByText('Source character')).toBeInTheDocument()
+    expect(screen.getAllByText('Sarah').length).toBeGreaterThan(0)
+    expect(screen.getByText('Choose character')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create character sheet' }))
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('generate-character-sheet', {
+      body: {
+        imageUrl: expect.stringContaining('plain-1'),
+        model: 'fast',
+        title: 'Sarah',
+      },
+    }))
+    await waitFor(() => expect(screen.getByText('Sarah — sheet')).toBeInTheDocument())
+    expect(rows.order.mock.calls.length).toBeGreaterThanOrEqual(3)
+
+    fireEvent.click(screen.getByText('Sarah — sheet'))
+    await waitFor(() => expect(screen.queryByText('Choose a character')).not.toBeInTheDocument())
+    expect(screen.getByText('Sarah — sheet')).toBeInTheDocument()
+  }, 10_000)
+
+  it('shows a readable sheet error and allows retry without duplicate in-flight clicks', async () => {
+    const rows = mockRefreshableCharacterRows([
+      { id: 'plain-1', title: 'Sarah', image_type: 'character' },
+    ])
+    let resolveFirst: ((value: { data: null; error: Error }) => void) | undefined
+    mockInvoke
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveFirst = resolve
+      }))
+      .mockImplementationOnce(async () => {
+        rows.addRow({ id: 'sheet-2', title: 'Sarah — sheet', image_type: 'character_sheet' })
+        return {
+          data: {
+            id: 'sheet-2',
+            storage_path: 'https://x.supabase.co/storage/v1/object/public/user-images/user-1/character-sheet-2.png',
+            title: 'Sarah — sheet',
+          },
+          error: null,
+        }
+      })
+    renderWizard()
+
+    fireEvent.click(screen.getByText('Choose character'))
+    await waitFor(() => expect(screen.getByText('Sarah')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Create character sheet for Sarah' }))
+
+    const createButton = screen.getByRole('button', { name: 'Create character sheet' })
+    fireEvent.click(createButton)
+    expect(createButton).toBeDisabled()
+    fireEvent.click(createButton)
+    expect(mockInvoke).toHaveBeenCalledTimes(1)
+
+    resolveFirst?.({ data: null, error: new Error('Rate limit reached. Try again in a moment.') })
+    await waitFor(() => expect(screen.getByText(/Could not create the character sheet: Rate limit reached/i)).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.getByText('Sarah — sheet')).toBeInTheDocument())
+  })
+
   it('freezes the selection into a snapshot and passes url + characterSheet to initial generation', async () => {
     mockCharacterRows([
       { id: 'sheet-1', title: 'My custom sheet', image_type: 'character_sheet' },
@@ -415,6 +530,54 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
     expect(options.productName).toBe('stirup')
     // The raw title is never sent; the sanitized name is used in the prompt too.
     expect(options.productName).not.toContain('001')
+  })
+
+  it('uses a saved user product to prefill Product Name and preserves a manual override through prompt and film identity', async () => {
+    const productEq = vi.fn()
+    const productQuery = {
+      is: vi.fn(() => ({
+        order: vi.fn(async () => ({
+          data: [
+            { id: 'prod-2', storage_path: 'https://x/user/prod-2.png', title: 'Saved Widget', category: 'product' },
+          ],
+          error: null,
+        })),
+      })),
+    }
+    productEq.mockImplementation((column: string, value: string) => {
+      if (column === 'category' && value === 'product') return { eq: productEq }
+      if (column === 'user_id' && value === 'user-1') return productQuery
+      throw new Error(`Unexpected product filter: ${column}=${value}`)
+    })
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'generator_user_images') {
+        return { select: vi.fn(() => ({ eq: productEq })) }
+      }
+      throw new Error(`Unexpected table: ${table}`)
+    })
+    renderWizard()
+
+    fireEvent.click(screen.getByText('Choose product'))
+    await waitFor(() => expect(screen.getByText('Saved Widget')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Saved Widget'))
+
+    const productNameInput = screen.getByRole('textbox', { name: 'Product name' })
+    expect(productNameInput).toHaveValue('Saved Widget')
+    fireEvent.change(productNameInput, { target: { value: 'Manual Launch Name' } })
+
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(writeScenario).toHaveBeenCalled())
+
+    expect(productEq).toHaveBeenCalledWith('user_id', 'user-1')
+    expect(writeScenario.mock.calls[0][0]).toContain('PRODUCT TO FEATURE: Manual Launch Name')
+    expect(writeScenario.mock.calls[0][1].productName).toBe('Manual Launch Name')
+
+    fireEvent.click(screen.getByText('Generate preview images'))
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
+    fireEvent.click(screen.getByText(/Approve & Make Film/i))
+    await waitFor(() => expect(onApprove).toHaveBeenCalled())
+    expect(onApprove.mock.calls[0][2].identity.productName).toBe('Manual Launch Name')
   })
 })
 

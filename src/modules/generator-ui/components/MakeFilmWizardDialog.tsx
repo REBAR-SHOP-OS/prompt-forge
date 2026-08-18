@@ -17,6 +17,7 @@ import {
   ZoomIn,
   X,
   MonitorPlay,
+  Sparkles,
 } from 'lucide-react'
 import {
   Dialog,
@@ -26,6 +27,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 import { canApproveFilm, isCharacterSheet, loadCharacterRows, sanitizeProductName, type FilmDuration, type FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
@@ -33,6 +35,7 @@ import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOpti
 import { supabase } from '@/integrations/supabase/client'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { StylePickerDialog } from './StylePickerDialog'
+import CharacterSheetDialog, { type CharacterSheetSource } from './CharacterSheetDialog'
 
 export type { FilmDuration, FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
 
@@ -155,10 +158,13 @@ export function MakeFilmWizardDialog({
   const [characterPhotos, setCharacterPhotos] = useState<ProductPhoto[]>([])
   const [selectedProduct, setSelectedProduct] = useState<ProductPhoto | null>(null)
   const [selectedCharacter, setSelectedCharacter] = useState<ProductPhoto | null>(null)
+  const [productName, setProductName] = useState<string>('')
   const [identitySnapshot, setIdentitySnapshot] = useState<IdentitySnapshot | null>(null)
   const [productPickerOpen, setProductPickerOpen] = useState(false)
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false)
+  const [characterSheetSource, setCharacterSheetSource] = useState<CharacterSheetSource | null>(null)
   const [loadingProducts, setLoadingProducts] = useState(false)
+  const [productLoadError, setProductLoadError] = useState<string | null>(null)
   const [loadingCharacters, setLoadingCharacters] = useState(false)
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
@@ -192,9 +198,12 @@ export function MakeFilmWizardDialog({
       setSelectedTheme('auto')
       setSelectedProduct(null)
       setSelectedCharacter(null)
+      setProductName('')
       setIdentitySnapshot(null)
       setProductPickerOpen(false)
+      setProductLoadError(null)
       setCharacterPickerOpen(false)
+      setCharacterSheetSource(null)
       setLightboxOpen(false)
     }
     if (!open) {
@@ -212,6 +221,7 @@ export function MakeFilmWizardDialog({
     }
     setLoadingProducts(true)
     setError(null)
+    setProductLoadError(null)
     try {
       const { data, error: qErr } = await supabase
         .from('generator_user_images')
@@ -231,7 +241,7 @@ export function MakeFilmWizardDialog({
       )
       setProductPhotos(photos)
     } catch (e) {
-      setError((e as Error).message ?? 'Failed to load products')
+      setProductLoadError((e as Error).message ?? 'Failed to load products')
     } finally {
       setLoadingProducts(false)
     }
@@ -273,12 +283,32 @@ export function MakeFilmWizardDialog({
 
   function pickProduct(photo: ProductPhoto) {
     setSelectedProduct(photo)
+    setProductName(sanitizeProductName(photo.title))
     setProductPickerOpen(false)
+  }
+
+  function currentProductName(): string | null {
+    const manualName = productName.trim()
+    if (manualName) return manualName
+    return selectedProduct ? sanitizeProductName(selectedProduct.title) : null
   }
 
   function pickCharacter(photo: ProductPhoto) {
     setSelectedCharacter(photo)
     setCharacterPickerOpen(false)
+  }
+
+  function openCharacterSheetFlow(photo: ProductPhoto) {
+    setCharacterSheetSource({
+      id: photo.id,
+      url: photo.url,
+      title: photo.title,
+    })
+  }
+
+  function handleCharacterSheetCreated() {
+    setCharacterSheetSource(null)
+    void loadCharacterPhotos()
   }
 
   function isCharacterSheetRef(photo: ProductPhoto | null): boolean {
@@ -292,7 +322,7 @@ export function MakeFilmWizardDialog({
       role,
       imageType: photo.imageType ?? null,
       characterSheet: role === 'character' && isCharacterSheetRef(photo),
-      name: role === 'product' ? sanitizeProductName(photo.title) : photo.title ?? null,
+      name: role === 'product' ? currentProductName() : photo.title ?? null,
     }
   }
 
@@ -321,11 +351,13 @@ Each scene should flow logically into the next, building toward a single cohesiv
     setProgress('Writing your film scenario…')
     try {
       let enrichedPrompt = generateDurationPrompt(idea, duration)
-      const productName = selectedProduct ? sanitizeProductName(selectedProduct.title) : null
+      const resolvedProductName = currentProductName()
       if (selectedProduct && selectedCharacter) {
-        enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${productName || 'Selected Product'}" (image: ${selectedProduct.url}) AND the character "${selectedCharacter.title || 'Selected Character'}" (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every scene of the film. Show the character interacting with or holding the product.`
+        enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${resolvedProductName || 'Selected Product'}" (image: ${selectedProduct.url}) AND the character "${selectedCharacter.title || 'Selected Character'}" (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every scene of the film. Show the character interacting with or holding the product.`
       } else if (selectedProduct) {
-        enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${productName || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every scene of the film.`
+        enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every scene of the film.`
+      } else if (resolvedProductName) {
+        enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName}. This product MUST appear prominently in every scene of the film.`
       } else if (selectedCharacter) {
         enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${selectedCharacter.title || 'Selected Character'}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every scene of the film.`
       }
@@ -343,7 +375,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
         duration,
         productUrl: selectedProduct?.url,
         characterUrl: selectedCharacter?.url,
-        productName,
+        productName: resolvedProductName,
         characterName: selectedCharacter?.title ?? null,
         withNarration,
         aspect,
@@ -492,7 +524,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
         withNarration,
         identity: {
           productUrl: (identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product'))?.url,
-          productName: (identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product'))?.name ?? null,
+          productName: (identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product'))?.name ?? currentProductName(),
           characterUrl: (identitySnapshot?.character ?? toIdentityRef(selectedCharacter, 'character'))?.url,
           characterName: (identitySnapshot?.character ?? toIdentityRef(selectedCharacter, 'character'))?.name ?? null,
         },
@@ -603,10 +635,10 @@ Each scene should flow logically into the next, building toward a single cohesiv
                     {selectedProduct ? (
                       <div className="flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1.5">
                         <img src={selectedProduct.url} alt="Product" className="h-8 w-8 rounded object-cover" />
-                        <span className="text-xs text-zinc-300">{selectedProduct ? sanitizeProductName(selectedProduct.title) : 'Product'}</span>
+                        <span className="text-xs text-zinc-300">{currentProductName() || 'Product'}</span>
                         <button
                           type="button"
-                          onClick={() => setSelectedProduct(null)}
+                          onClick={() => { setSelectedProduct(null); setProductName('') }}
                           aria-label="Remove product"
                           className="ml-1 rounded p-0.5 text-zinc-500 hover:text-zinc-300"
                         >
@@ -626,6 +658,15 @@ Each scene should flow logically into the next, building toward a single cohesiv
                       </Button>
                     )}
                   </div>
+                  <Input
+                    value={productName}
+                    onChange={(event) => setProductName(event.target.value)}
+                    maxLength={100}
+                    aria-label="Product name"
+                    placeholder="Product name (type manually or choose a saved product)"
+                    disabled={working}
+                    className="h-8 border-white/10 bg-white/[0.03] text-xs text-zinc-100 placeholder:text-zinc-500"
+                  />
                 </div>
 
                 {/* Character selector */}
@@ -1063,6 +1104,13 @@ Each scene should flow logically into the next, building toward a single cohesiv
             <div className="flex items-center justify-center py-10 text-sm text-zinc-400">
               <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Loading products…
             </div>
+          ) : productLoadError ? (
+            <div className="space-y-3 py-10 text-center text-sm text-rose-300">
+              <p>Could not load your saved products: {productLoadError}</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => { void loadProductPhotos() }}>
+                Try again
+              </Button>
+            </div>
           ) : productPhotos.length === 0 ? (
             <div className="py-10 text-center text-sm text-zinc-500">No saved product photos yet.</div>
           ) : (
@@ -1098,20 +1146,56 @@ Each scene should flow logically into the next, building toward a single cohesiv
           ) : (
             <div className="grid max-h-[50vh] grid-cols-3 gap-3 overflow-y-auto pr-1 sm:grid-cols-4">
               {characterPhotos.map((photo) => (
-                <button
+                <div
                   key={photo.id}
-                  type="button"
-                  onClick={() => pickCharacter(photo)}
-                  className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-amber-300/40"
+                  className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 transition hover:border-amber-300/40"
                 >
-                  <img src={photo.url} alt={photo.title ?? 'Character'} loading="lazy" className="aspect-square w-full bg-black/40 object-cover" />
-                  <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || 'Untitled'}</div>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => pickCharacter(photo)}
+                    className="block w-full text-left"
+                  >
+                    <img src={photo.url} alt={photo.title ?? 'Character'} loading="lazy" className="aspect-square w-full bg-black/40 object-cover" />
+                    <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || 'Untitled'}</div>
+                  </button>
+                  {!isCharacterSheetRef(photo) ? (
+                    <TooltipProvider delayDuration={150}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label={`Create character sheet for ${photo.title || 'Untitled'}`}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              openCharacterSheetFlow(photo)
+                            }}
+                            className="absolute right-1.5 top-1.5 grid h-10 w-10 touch-manipulation place-items-center rounded-full border border-white/15 bg-black/75 text-fuchsia-200 shadow-sm transition hover:border-fuchsia-300/50 hover:bg-fuchsia-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-300"
+                          >
+                            <Sparkles className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">
+                          Create character sheet
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ) : null}
+                </div>
               ))}
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      <CharacterSheetDialog
+        open={characterSheetSource !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setCharacterSheetSource(null)
+        }}
+        userId={userId}
+        initialCharacter={characterSheetSource}
+        onSheetCreated={handleCharacterSheetCreated}
+      />
 
       {/* Lightbox for zoom */}
       <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
