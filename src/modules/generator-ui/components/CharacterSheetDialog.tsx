@@ -25,8 +25,14 @@ const SHEET_MODELS: { key: SheetModel; label: string; hint: string }[] = [
 type CharacterImage = {
   id: string
   storage_path: string
-  created_at: string
+  created_at?: string
   title?: string | null
+}
+
+export type CharacterSheetSource = {
+  id: string
+  url: string
+  title: string | null
 }
 
 type Props = {
@@ -34,6 +40,8 @@ type Props = {
   onOpenChange: (open: boolean) => void
   userId: string | null
   onUseCharacter?: (c: { id: string; url: string; title: string | null }) => void
+  initialCharacter?: CharacterSheetSource | null
+  onSheetCreated?: (c: { id: string; url: string; title: string | null }) => void
 }
 
 
@@ -68,7 +76,14 @@ async function signUrl(storagePath: string | null | undefined): Promise<string> 
  * The user uploads one or more character images that are saved for later use
  * as a character reference. No scenario generation, no description field.
  */
-export default function CharacterSheetDialog({ open, onOpenChange, userId, onUseCharacter }: Props) {
+export default function CharacterSheetDialog({
+  open,
+  onOpenChange,
+  userId,
+  onUseCharacter,
+  initialCharacter,
+  onSheetCreated,
+}: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const logoInputRef = useRef<HTMLInputElement | null>(null)
   const [images, setImages] = useState<CharacterImage[]>([])
@@ -77,6 +92,7 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
   const [error, setError] = useState<string | null>(null)
   const [sheetModel, setSheetModel] = useState<SheetModel>('fast')
   const [generatingId, setGeneratingId] = useState<string | null>(null)
+  const [failedGenerationId, setFailedGenerationId] = useState<string | null>(null)
   const [zoomImage, setZoomImage] = useState<CharacterImage | null>(null)
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [logoSendUrl, setLogoSendUrl] = useState<string | null>(null)
@@ -95,6 +111,7 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
       setLogoUrl(null)
       setLogoSendUrl(null)
       setApplyLogo(false)
+      setFailedGenerationId(null)
     }
   }, [open])
 
@@ -246,6 +263,7 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
   const handleGenerateSheet = async (img: CharacterImage) => {
     if (!userId || generatingId) return
     setError(null)
+    setFailedGenerationId(null)
     setGeneratingId(img.id)
     try {
       const useLogo = applyLogo && !!logoSendUrl
@@ -262,9 +280,19 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
       if (!row?.id) throw new Error('No sheet returned')
       const signed = { ...row, storage_path: await signUrl(row.storage_path) }
       setImages((prev) => [signed, ...prev])
+      onSheetCreated?.({
+        id: signed.id,
+        url: signed.storage_path,
+        title: signed.title ?? null,
+      })
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to generate character sheet.'
-      setError(msg)
+      const detail = err instanceof Error ? err.message : ''
+      setError(
+        detail
+          ? `Could not create the character sheet: ${detail}`
+          : 'Could not create the character sheet. Please try again.',
+      )
+      setFailedGenerationId(img.id)
     } finally {
       setGeneratingId(null)
     }
@@ -384,6 +412,48 @@ export default function CharacterSheetDialog({ open, onOpenChange, userId, onUse
               ))}
             </div>
           </div>
+
+          {initialCharacter ? (
+            <div className="flex items-center gap-3 rounded-lg border border-fuchsia-400/30 bg-fuchsia-500/[0.06] p-3">
+              <img
+                src={initialCharacter.url}
+                alt={initialCharacter.title ?? 'Source character'}
+                className="h-16 w-16 shrink-0 rounded-md border border-white/10 object-cover"
+              />
+              <div className="min-w-0 flex-1 space-y-2">
+                <div>
+                  <p className="text-xs font-medium text-fuchsia-200">Source character</p>
+                  <p className="truncate text-xs text-zinc-400">
+                    {initialCharacter.title || 'Untitled'}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    void handleGenerateSheet({
+                      id: initialCharacter.id,
+                      storage_path: initialCharacter.url,
+                      title: initialCharacter.title,
+                    })
+                  }}
+                  disabled={generatingId !== null}
+                  className="w-full gap-1.5 bg-fuchsia-600 text-white hover:bg-fuchsia-500"
+                >
+                  {generatingId === initialCharacter.id ? (
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                  {generatingId === initialCharacter.id
+                    ? 'Creating character sheet…'
+                    : failedGenerationId === initialCharacter.id
+                      ? 'Try again'
+                      : 'Create character sheet'}
+                </Button>
+              </div>
+            </div>
+          ) : null}
 
           <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-3">
             <p className="text-xs font-medium text-zinc-400">Describe a character (optional)</p>
