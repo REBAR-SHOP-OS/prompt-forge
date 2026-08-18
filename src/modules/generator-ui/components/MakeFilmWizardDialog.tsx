@@ -17,6 +17,7 @@ import {
   ZoomIn,
   X,
   MonitorPlay,
+  Sparkles,
 } from 'lucide-react'
 import {
   Dialog,
@@ -34,6 +35,7 @@ import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOpti
 import { supabase } from '@/integrations/supabase/client'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { StylePickerDialog } from './StylePickerDialog'
+import CharacterSheetDialog, { type CharacterSheetSource } from './CharacterSheetDialog'
 
 export type { FilmDuration, FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
 
@@ -160,6 +162,7 @@ export function MakeFilmWizardDialog({
   const [identitySnapshot, setIdentitySnapshot] = useState<IdentitySnapshot | null>(null)
   const [productPickerOpen, setProductPickerOpen] = useState(false)
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false)
+  const [characterSheetSource, setCharacterSheetSource] = useState<CharacterSheetSource | null>(null)
   const [loadingProducts, setLoadingProducts] = useState(false)
   const [productLoadError, setProductLoadError] = useState<string | null>(null)
   const [loadingCharacters, setLoadingCharacters] = useState(false)
@@ -200,6 +203,7 @@ export function MakeFilmWizardDialog({
       setProductPickerOpen(false)
       setProductLoadError(null)
       setCharacterPickerOpen(false)
+      setCharacterSheetSource(null)
       setLightboxOpen(false)
     }
     if (!open) {
@@ -291,6 +295,19 @@ export function MakeFilmWizardDialog({
   function pickCharacter(photo: ProductPhoto) {
     setSelectedCharacter(photo)
     setCharacterPickerOpen(false)
+  }
+
+  function openCharacterSheetFlow(photo: ProductPhoto) {
+    setCharacterSheetSource({
+      id: photo.id,
+      url: photo.url,
+      title: photo.title,
+    })
+  }
+
+  function handleCharacterSheetCreated() {
+    setCharacterSheetSource(null)
+    void loadCharacterPhotos()
   }
 
   function isCharacterSheetRef(photo: ProductPhoto | null): boolean {
@@ -1129,20 +1146,56 @@ Each scene should flow logically into the next, building toward a single cohesiv
           ) : (
             <div className="grid max-h-[50vh] grid-cols-3 gap-3 overflow-y-auto pr-1 sm:grid-cols-4">
               {characterPhotos.map((photo) => (
-                <button
+                <div
                   key={photo.id}
-                  type="button"
-                  onClick={() => pickCharacter(photo)}
-                  className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-amber-300/40"
+                  className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 transition hover:border-amber-300/40"
                 >
-                  <img src={photo.url} alt={photo.title ?? 'Character'} loading="lazy" className="aspect-square w-full bg-black/40 object-cover" />
-                  <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || 'Untitled'}</div>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => pickCharacter(photo)}
+                    className="block w-full text-left"
+                  >
+                    <img src={photo.url} alt={photo.title ?? 'Character'} loading="lazy" className="aspect-square w-full bg-black/40 object-cover" />
+                    <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || 'Untitled'}</div>
+                  </button>
+                  {!isCharacterSheetRef(photo) ? (
+                    <TooltipProvider delayDuration={150}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label={`Create character sheet for ${photo.title || 'Untitled'}`}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              openCharacterSheetFlow(photo)
+                            }}
+                            className="absolute right-1.5 top-1.5 grid h-10 w-10 touch-manipulation place-items-center rounded-full border border-white/15 bg-black/75 text-fuchsia-200 shadow-sm transition hover:border-fuchsia-300/50 hover:bg-fuchsia-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-300"
+                          >
+                            <Sparkles className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">
+                          Create character sheet
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ) : null}
+                </div>
               ))}
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      <CharacterSheetDialog
+        open={characterSheetSource !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setCharacterSheetSource(null)
+        }}
+        userId={userId}
+        initialCharacter={characterSheetSource}
+        onSheetCreated={handleCharacterSheetCreated}
+      />
 
       {/* Lightbox for zoom */}
       <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
