@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createLibraryStateSync,
+  mergeLibraryDocs,
+  type LibraryBackendResult,
   type LibraryDoc,
   type LibraryStateBackend,
   type LibraryStateRow,
@@ -15,34 +17,48 @@ class MemoryStorage {
   removeItem(key: string) { this.values.delete(key); }
 }
 
+const success = <T>(value: T): LibraryBackendResult<T> => ({ status: "success", value });
+
 class VersionedBackend implements LibraryStateBackend {
   row: LibraryStateRow | null;
+  readCount = 0;
+  insertCount = 0;
+  updateCount = 0;
+
   constructor(row: LibraryStateRow | null) {
     this.row = row ? { state: { ...row.state }, version: row.version } : null;
   }
+
   async read() {
-    return this.row ? { state: { ...this.row.state }, version: this.row.version } : null;
+    this.readCount += 1;
+    return success(this.row ? { state: { ...this.row.state }, version: this.row.version } : null);
   }
+
   async insert(_userId: string, state: LibraryDoc, version: number) {
-    if (this.row) return false;
+    this.insertCount += 1;
+    if (this.row) return { status: "conflict" } as const;
     this.row = { state: { ...state }, version };
-    return true;
+    return success(undefined);
   }
+
   async updateIfVersion(
     _userId: string,
     state: LibraryDoc,
     expectedVersion: number,
     nextVersion: number,
   ) {
-    if (!this.row || this.row.version !== expectedVersion) return false;
+    this.updateCount += 1;
+    if (!this.row || this.row.version !== expectedVersion) {
+      return { status: "conflict" } as const;
+    }
     this.row = { state: { ...state }, version: nextVersion };
-    return true;
+    return success(undefined);
   }
 }
 
 const userId = "user-1";
 const approvedKey = `approved-videos:${userId}`;
-const staleKey = `draft-entries:${userId}`;
+const draftKey = `draft-entries:${userId}`;
 
 describe("library state synchronization", () => {
   it("replaces the tracked cache exactly and removes stale keys", async () => {
@@ -52,28 +68,84 @@ describe("library state synchronization", () => {
     });
     const storage = new MemoryStorage();
     storage.setItem(approvedKey, '["old-video"]');
-    storage.setItem(staleKey, '["deleted-draft"]');
+    storage.setItem(draftKey, '["deleted-draft"]');
 
     const sync = createLibraryStateSync(backend, storage);
 
-    await expect(sync.hydrate(userId)).resolves.toBe(true);
+    await expect(sync.hydrate(userId)).resolves.toEqual({ status: "success" });
     expect(storage.getItem(approvedKey)).toBe('["server-video"]');
-    expect(storage.getItem(staleKey)).toBeNull();
+    expect(storage.getItem(draftKey)).toBeNull();
   });
 
   it("fails closed when hydration cannot read the server", async () => {
     const backend: LibraryStateBackend = {
-      read: vi.fn().mockRejectedValue(new Error("offline")),
+      read: vi.fn().mockResolvedValue({ status: "error" }),
       insert: vi.fn(),
       updateIfVersion: vi.fn(),
     };
     const sync = createLibraryStateSync(backend, new MemoryStorage());
 
-    await expect(sync.hydrate(userId)).resolves.toBe(false);
-    await expect(sync.push(userId)).resolves.toBe(false);
+    await expect(sync.hydrate(userId)).resolves.toEqual({ status: "error" });
+    await expect(sync.push(userId)).resolves.toEqual({ status: "error" });
+    expect(backend.insert).not.toHaveBeenCalled();
+    expect(backend.updateIfVersion).not.toHaveBeenCalled();
   });
 
-  it("prevents a stale second device from overwriting the first device", async () => {
+  it("combines independent changes from two devices and CASes the merge once", async () => {
+    const backend = new VersionedBackend({
+      state: { [approvedKey]: '["initial"]', [draftKey]: '["initial-draft"]' },
+      version: 1,
+    });
+    const deviceA = new MemoryStorage();
+    const deviceB = new MemoryStorage();
+    const syncA = createLibraryStateSync(backend, deviceA);
+    const syncB = createLibraryStateSync(backend, deviceB);
+
+    await syncA.hydrate(userId);
+    await syncB.hydrate(userId);
+    deviceA.setItem(approvedKey, '["device-a"]');
+    await expect(syncA.push(userId)).resolves.toEqual({ status: "success" });
+
+    deviceB.setItem(draftKey, '["device-b-draft"]');
+    const updatesBeforeConflict = backend.updateCount;
+    await expect(syncB.push(userId)).resolves.toEqual({ status: "success" });
+
+    expect(backend.updateCount - updatesBeforeConflict).toBe(2);
+    expect(backend.row).toEqual({
+      state: {
+        [approvedKey]: '["device-a"]',
+        [draftKey]: '["device-b-draft"]',
+      },
+      version: 3,
+    });
+    expect(deviceB.getItem(approvedKey)).toBe('["device-a"]');
+  });
+
+  it("treats deletion as a change and combines it with an independent edit", async () => {
+    const backend = new VersionedBackend({
+      state: { [approvedKey]: '["initial"]', [draftKey]: '["delete-me"]' },
+      version: 1,
+    });
+    const deviceA = new MemoryStorage();
+    const deviceB = new MemoryStorage();
+    const syncA = createLibraryStateSync(backend, deviceA);
+    const syncB = createLibraryStateSync(backend, deviceB);
+
+    await syncA.hydrate(userId);
+    await syncB.hydrate(userId);
+    deviceA.removeItem(draftKey);
+    await syncA.push(userId);
+    deviceB.setItem(approvedKey, '["device-b"]');
+
+    await expect(syncB.push(userId)).resolves.toEqual({ status: "success" });
+    expect(backend.row).toEqual({
+      state: { [approvedKey]: '["device-b"]' },
+      version: 3,
+    });
+    expect(deviceB.getItem(draftKey)).toBeNull();
+  });
+
+  it("keeps same-key divergence visible without overwriting server or local", async () => {
     const backend = new VersionedBackend({
       state: { [approvedKey]: '["initial"]' },
       version: 1,
@@ -83,22 +155,80 @@ describe("library state synchronization", () => {
     const syncA = createLibraryStateSync(backend, deviceA);
     const syncB = createLibraryStateSync(backend, deviceB);
 
-    await expect(syncA.hydrate(userId)).resolves.toBe(true);
-    await expect(syncB.hydrate(userId)).resolves.toBe(true);
-
+    await syncA.hydrate(userId);
+    await syncB.hydrate(userId);
     deviceA.setItem(approvedKey, '["device-a"]');
-    await expect(syncA.push(userId)).resolves.toBe(true);
-    expect(backend.row).toEqual({
-      state: { [approvedKey]: '["device-a"]' },
-      version: 2,
-    });
+    await syncA.push(userId);
+    deviceB.setItem(approvedKey, '["device-b"]');
 
-    deviceB.setItem(approvedKey, '["device-b-stale"]');
-    await expect(syncB.push(userId)).resolves.toBe(false);
+    const updatesBeforeConflict = backend.updateCount;
+    await expect(syncB.push(userId)).resolves.toEqual({
+      status: "conflict",
+      conflictingKeys: [approvedKey],
+    });
+    expect(backend.updateCount - updatesBeforeConflict).toBe(1);
     expect(backend.row).toEqual({
       state: { [approvedKey]: '["device-a"]' },
       version: 2,
     });
-    expect(deviceB.getItem(approvedKey)).toBe('["device-b-stale"]');
+    expect(deviceB.getItem(approvedKey)).toBe('["device-b"]');
+  });
+
+  it("deduplicates an in-flight push and recovers on the next explicit push", async () => {
+    let resolveFirstUpdate: (result: LibraryBackendResult<void>) => void = () => {};
+    const backend: LibraryStateBackend = {
+      read: vi.fn().mockResolvedValue(success({
+        state: { [approvedKey]: '["initial"]' },
+        version: 1,
+      })),
+      insert: vi.fn(),
+      updateIfVersion: vi.fn()
+        .mockImplementationOnce(() => new Promise((resolve) => { resolveFirstUpdate = resolve; }))
+        .mockResolvedValueOnce(success(undefined)),
+    };
+    const storage = new MemoryStorage();
+    const sync = createLibraryStateSync(backend, storage);
+    await sync.hydrate(userId);
+    storage.setItem(approvedKey, '["changed"]');
+
+    const firstPush = sync.push(userId);
+    await expect(sync.push(userId)).resolves.toEqual({ status: "error" });
+    expect(backend.updateIfVersion).toHaveBeenCalledTimes(1);
+
+    resolveFirstUpdate({ status: "error" });
+    await expect(firstPush).resolves.toEqual({ status: "error" });
+    await expect(sync.push(userId)).resolves.toEqual({ status: "success" });
+    expect(backend.updateIfVersion).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not let an aborted hydration mutate local state", async () => {
+    let resolveRead: (result: LibraryBackendResult<LibraryStateRow | null>) => void = () => {};
+    const backend: LibraryStateBackend = {
+      read: vi.fn(() => new Promise((resolve) => { resolveRead = resolve; })),
+      insert: vi.fn(),
+      updateIfVersion: vi.fn(),
+    };
+    const storage = new MemoryStorage();
+    storage.setItem(approvedKey, '["local"]');
+    const sync = createLibraryStateSync(backend, storage);
+    const controller = new AbortController();
+
+    const hydration = sync.hydrate(userId, controller.signal);
+    controller.abort();
+    resolveRead(success({ state: { [approvedKey]: '["server"]' }, version: 2 }));
+
+    await expect(hydration).resolves.toEqual({ status: "error" });
+    expect(storage.getItem(approvedKey)).toBe('["local"]');
+  });
+});
+
+describe("mergeLibraryDocs", () => {
+  it("recognizes matching deletions as the same change", () => {
+    expect(mergeLibraryDocs(
+      userId,
+      { [approvedKey]: '["initial"]' },
+      {},
+      {},
+    )).toEqual({ state: {}, conflictingKeys: [] });
   });
 });
