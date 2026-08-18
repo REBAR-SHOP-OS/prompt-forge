@@ -245,22 +245,28 @@ describe('complete translated review content', () => {
 })
 
 describe('final-film narration review integration contracts', () => {
-  it('always transcribes available final media even when expected narration is unavailable', () => {
-    const start = panelSource.indexOf('const runReview')
-    const runReview = panelSource.slice(start, panelSource.indexOf('useEffect(() =>', start))
-    expect(runReview).toContain('supabase.functions.invoke<FnResponse>')
-    expect(runReview).not.toContain('expectedLines.length === 0')
+  it('automatically transcribes the selected film through the existing signing/proxy path', () => {
+    expect(panelSource).toContain('proxiedVideoUrl(videoStoragePath)')
+    expect(panelSource).toContain("supabase.functions.invoke<FnResponse>('narration-review'")
+    expect(panelSource).toContain('void runTranscription()')
   })
 
-  it('persists merged narration and retains a legacy source-clip fallback', () => {
-    expect(dashboardSource).toContain('narration_text: aggregatedNarrationText')
-    expect(dashboardSource).toContain('(projectSourceJobs[video.id] ?? [])')
-    expect(dashboardSource).toContain('.map((j) => j.narration_text)')
+  it('is independent from prompt and narration fields', () => {
+    expect(panelSource).not.toContain('extractNarration')
+    expect(panelSource).not.toContain('Expected narration')
+    expect(panelSource).not.toContain('narrationText')
+    expect(panelSource).not.toContain('prompt:')
+    expect(dashboardSource).toContain('aria-label="Transcribe film audio"')
+    expect(dashboardSource).not.toContain('narrationReview.narrationText')
+    expect(dashboardSource).not.toContain('narrationReview.prompt')
   })
 
-  it('returns no-speech as a review result instead of an invocation error', () => {
+  it('treats no-speech as a result and guards against stale card responses', () => {
     expect(edgeSource).toContain("code: 'NO_SPEECH'")
-    expect(panelSource).toContain("data.code !== 'NO_SPEECH'")
+    expect(panelSource).toContain("data?.code === 'NO_SPEECH'")
+    expect(panelSource).toContain('requestId !== requestIdRef.current')
+    expect(panelSource).toContain('fetchAbortRef.current?.abort()')
+    expect(panelSource).toContain('Transcription timed out. Please retry.')
   })
 })
 
