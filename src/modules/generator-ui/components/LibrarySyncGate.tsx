@@ -24,8 +24,9 @@ export default function LibrarySyncGate({ children }: { children: ReactNode }) {
 
     setReady(false);
     (async () => {
-      await hydrateLibraryFromServer(userId);
+      const hydrated = await hydrateLibraryFromServer(userId);
       if (cancelled) return;
+      if (!hydrated) return;
       stopSync = startLibrarySync(userId);
       setReady(true);
     })();

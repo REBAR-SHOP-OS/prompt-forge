@@ -36,96 +36,166 @@ const TRACKED_PREFIXES = [
   "preview-state",
 ] as const;
 
-type LibraryDoc = Record<string, string>;
+export type LibraryDoc = Record<string, string>;
+
+export interface LibraryStateRow {
+  state: LibraryDoc;
+  version: number;
+}
+
+export interface LibraryStateBackend {
+  read(userId: string): Promise<LibraryStateRow | null>;
+  insert(userId: string, state: LibraryDoc, version: number): Promise<boolean>;
+  updateIfVersion(
+    userId: string,
+    state: LibraryDoc,
+    expectedVersion: number,
+    nextVersion: number,
+  ): Promise<boolean>;
+}
+
+type LibraryStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 function trackedKeysFor(userId: string): string[] {
   return TRACKED_PREFIXES.map((p) => `${p}:${userId}`);
 }
 
-function snapshotLocal(userId: string): LibraryDoc {
+function snapshotLocal(userId: string, storage: LibraryStorage): LibraryDoc {
   const doc: LibraryDoc = {};
-  if (typeof window === "undefined") return doc;
   for (const key of trackedKeysFor(userId)) {
-    const raw = window.localStorage.getItem(key);
+    const raw = storage.getItem(key);
     if (raw != null) doc[key] = raw;
   }
   return doc;
 }
 
-function hasAnyLocal(userId: string): boolean {
-  if (typeof window === "undefined") return false;
-  return trackedKeysFor(userId).some((k) => window.localStorage.getItem(k) != null);
+function hasAnyLocal(userId: string, storage: LibraryStorage): boolean {
+  return trackedKeysFor(userId).some((k) => storage.getItem(k) != null);
 }
 
-function writeLocalFromDoc(userId: string, doc: LibraryDoc) {
-  if (typeof window === "undefined" || !doc) return;
-  const valid = new Set(trackedKeysFor(userId));
-  for (const [key, value] of Object.entries(doc)) {
-    if (valid.has(key) && typeof value === "string") {
-      try {
-        window.localStorage.setItem(key, value);
-      } catch {
-        /* ignore quota errors */
+function replaceLocalFromDoc(userId: string, doc: LibraryDoc, storage: LibraryStorage) {
+  for (const key of trackedKeysFor(userId)) {
+    const value = doc[key];
+    try {
+      if (typeof value === "string") {
+        storage.setItem(key, value);
+      } else {
+        storage.removeItem(key);
       }
+    } catch {
+      // Keep hydration best-effort for storage quota/security errors.
     }
   }
 }
 
-let loadedVersion = 0;
+export function createLibraryStateSync(
+  backend: LibraryStateBackend,
+  storage: LibraryStorage,
+) {
+  const loadedVersions = new Map<string, number>();
+  const pushInFlight = new Set<string>();
 
-/**
- * Load server state into localStorage. If the server has nothing yet but this
- * browser already has library data (existing user), push the local data up once
- * so it isn't lost. Returns true on success.
- */
-export async function hydrateLibraryFromServer(userId: string): Promise<boolean> {
-  if (!userId || typeof window === "undefined") return false;
-  try {
+  const hydrate = async (userId: string): Promise<boolean> => {
+    if (!userId) return false;
+    try {
+      const row = await backend.read(userId);
+      if (row) {
+        replaceLocalFromDoc(userId, row.state ?? {}, storage);
+        loadedVersions.set(userId, row.version ?? 0);
+        return true;
+      }
+
+      const localState = snapshotLocal(userId, storage);
+      if (hasAnyLocal(userId, storage)) {
+        const inserted = await backend.insert(userId, localState, 1);
+        if (!inserted) return false;
+        loadedVersions.set(userId, 1);
+      } else {
+        loadedVersions.set(userId, 0);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const push = async (userId: string): Promise<boolean> => {
+    const loadedVersion = loadedVersions.get(userId);
+    if (!userId || loadedVersion === undefined || pushInFlight.has(userId)) return false;
+    pushInFlight.add(userId);
+    try {
+      const state = snapshotLocal(userId, storage);
+      const nextVersion = loadedVersion + 1;
+      const saved = loadedVersion === 0
+        ? await backend.insert(userId, state, nextVersion)
+        : await backend.updateIfVersion(userId, state, loadedVersion, nextVersion);
+      if (saved) loadedVersions.set(userId, nextVersion);
+      return saved;
+    } catch {
+      return false;
+    } finally {
+      pushInFlight.delete(userId);
+    }
+  };
+
+  return { hydrate, push };
+}
+
+const supabaseBackend: LibraryStateBackend = {
+  async read(userId) {
     const { data, error } = await supabase
       .from("generator_library_state")
       .select("state, version")
       .eq("user_id", userId)
       .maybeSingle();
-
-    if (error) return false;
-
-    if (data && data.state && Object.keys(data.state as LibraryDoc).length > 0) {
-      loadedVersion = (data.version as number) ?? 0;
-      writeLocalFromDoc(userId, data.state as LibraryDoc);
-      return true;
-    }
-
-    // Server empty: migrate existing local data up (one-time) if present.
-    if (hasAnyLocal(userId)) {
-      await pushLibraryToServer(userId);
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-let pushInFlight = false;
-
-/** Upsert the current localStorage snapshot to the server. */
-export async function pushLibraryToServer(userId: string): Promise<void> {
-  if (!userId || typeof window === "undefined" || pushInFlight) return;
-  pushInFlight = true;
-  try {
-    const state = snapshotLocal(userId);
-    const nextVersion = loadedVersion + 1;
+    if (error) throw error;
+    if (!data) return null;
+    return {
+      state: (data.state as LibraryDoc | null) ?? {},
+      version: (data.version as number | null) ?? 0,
+    };
+  },
+  async insert(userId, state, version) {
     const { error } = await supabase
       .from("generator_library_state")
-      .upsert(
-        { user_id: userId, state, version: nextVersion },
-        { onConflict: "user_id" },
-      );
-    if (!error) loadedVersion = nextVersion;
-  } catch {
-    /* ignore network errors; next tick retries */
-  } finally {
-    pushInFlight = false;
+      .insert({ user_id: userId, state, version });
+    return !error;
+  },
+  async updateIfVersion(userId, state, expectedVersion, nextVersion) {
+    const { data, error } = await supabase
+      .from("generator_library_state")
+      .update({ state, version: nextVersion })
+      .eq("user_id", userId)
+      .eq("version", expectedVersion)
+      .select("version")
+      .maybeSingle();
+    return !error && data?.version === nextVersion;
+  },
+};
+
+let browserSync: ReturnType<typeof createLibraryStateSync> | null = null;
+
+function getBrowserSync() {
+  if (typeof window === "undefined") return null;
+  if (!browserSync) {
+    browserSync = createLibraryStateSync(supabaseBackend, window.localStorage);
   }
+  return browserSync;
+}
+
+/**
+ * Load server state into localStorage. If the server has nothing yet but this
+ * browser already has library data (existing user), insert it once. A failed
+ * read or compare-and-set keeps the dashboard closed instead of allowing a
+ * stale cache to become authoritative.
+ */
+export async function hydrateLibraryFromServer(userId: string): Promise<boolean> {
+  return (await getBrowserSync()?.hydrate(userId)) ?? false;
+}
+
+/** Save the local snapshot only if the server version still matches. */
+export async function pushLibraryToServer(userId: string): Promise<boolean> {
+  return (await getBrowserSync()?.push(userId)) ?? false;
 }
 
 /**
@@ -137,20 +207,22 @@ export async function pushLibraryToServer(userId: string): Promise<void> {
 export function startLibrarySync(userId: string): () => void {
   if (!userId || typeof window === "undefined") return () => {};
 
-  let lastSerialized = JSON.stringify(snapshotLocal(userId));
+  let lastSerialized = JSON.stringify(snapshotLocal(userId, window.localStorage));
   let debounceTimer: number | undefined;
 
   const schedulePush = () => {
     if (debounceTimer) window.clearTimeout(debounceTimer);
     debounceTimer = window.setTimeout(() => {
-      void pushLibraryToServer(userId);
+      const serialized = JSON.stringify(snapshotLocal(userId, window.localStorage));
+      void pushLibraryToServer(userId).then((saved) => {
+        if (saved) lastSerialized = serialized;
+      });
     }, 800);
   };
 
   const tick = () => {
-    const serialized = JSON.stringify(snapshotLocal(userId));
+    const serialized = JSON.stringify(snapshotLocal(userId, window.localStorage));
     if (serialized !== lastSerialized) {
-      lastSerialized = serialized;
       schedulePush();
     }
   };
@@ -158,10 +230,11 @@ export function startLibrarySync(userId: string): () => void {
   const intervalId = window.setInterval(tick, 1500);
 
   const flushNow = () => {
-    const serialized = JSON.stringify(snapshotLocal(userId));
+    const serialized = JSON.stringify(snapshotLocal(userId, window.localStorage));
     if (serialized !== lastSerialized) {
-      lastSerialized = serialized;
-      void pushLibraryToServer(userId);
+      void pushLibraryToServer(userId).then((saved) => {
+        if (saved) lastSerialized = serialized;
+      });
     }
   };
 
