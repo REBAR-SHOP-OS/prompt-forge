@@ -360,6 +360,54 @@ describe('MakeFilmWizardDialog product name sanitization (integration)', () => {
     // The raw title is never sent; the sanitized name is used in the prompt too.
     expect(options.productName).not.toContain('001')
   })
+
+  it('uses a saved user product to prefill Product Name and preserves a manual override through prompt and film identity', async () => {
+    const productEq = vi.fn()
+    const productQuery = {
+      is: vi.fn(() => ({
+        order: vi.fn(async () => ({
+          data: [
+            { id: 'prod-2', storage_path: 'https://x/user/prod-2.png', title: 'Saved Widget', category: 'product' },
+          ],
+          error: null,
+        })),
+      })),
+    }
+    productEq.mockImplementation((column: string, value: string) => {
+      if (column === 'category' && value === 'product') return { eq: productEq }
+      if (column === 'user_id' && value === 'user-1') return productQuery
+      throw new Error(`Unexpected product filter: ${column}=${value}`)
+    })
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'generator_user_images') {
+        return { select: vi.fn(() => ({ eq: productEq })) }
+      }
+      throw new Error(`Unexpected table: ${table}`)
+    })
+    renderWizard()
+
+    fireEvent.click(screen.getByText('Choose product'))
+    await waitFor(() => expect(screen.getByText('Saved Widget')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Saved Widget'))
+
+    const productNameInput = screen.getByRole('textbox', { name: 'Product name' })
+    expect(productNameInput).toHaveValue('Saved Widget')
+    fireEvent.change(productNameInput, { target: { value: 'Manual Launch Name' } })
+
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(writeScenario).toHaveBeenCalled())
+
+    expect(productEq).toHaveBeenCalledWith('user_id', 'user-1')
+    expect(writeScenario.mock.calls[0][0]).toContain('PRODUCT TO FEATURE: Manual Launch Name')
+    expect(writeScenario.mock.calls[0][1].productName).toBe('Manual Launch Name')
+
+    fireEvent.click(screen.getByText('Generate preview images'))
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
+    fireEvent.click(screen.getByText(/Approve & Make Film/i))
+    await waitFor(() => expect(onApprove).toHaveBeenCalled())
+    expect(onApprove.mock.calls[0][2].identity.productName).toBe('Manual Launch Name')
+  })
 })
 
 describe('MakeFilmWizardDialog prompt optimization', () => {

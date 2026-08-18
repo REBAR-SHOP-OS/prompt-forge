@@ -26,6 +26,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 import { canApproveFilm, isCharacterSheet, loadCharacterRows, sanitizeProductName, type FilmDuration, type FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
@@ -155,10 +156,12 @@ export function MakeFilmWizardDialog({
   const [characterPhotos, setCharacterPhotos] = useState<ProductPhoto[]>([])
   const [selectedProduct, setSelectedProduct] = useState<ProductPhoto | null>(null)
   const [selectedCharacter, setSelectedCharacter] = useState<ProductPhoto | null>(null)
+  const [productName, setProductName] = useState<string>('')
   const [identitySnapshot, setIdentitySnapshot] = useState<IdentitySnapshot | null>(null)
   const [productPickerOpen, setProductPickerOpen] = useState(false)
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false)
   const [loadingProducts, setLoadingProducts] = useState(false)
+  const [productLoadError, setProductLoadError] = useState<string | null>(null)
   const [loadingCharacters, setLoadingCharacters] = useState(false)
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
@@ -192,8 +195,10 @@ export function MakeFilmWizardDialog({
       setSelectedTheme('auto')
       setSelectedProduct(null)
       setSelectedCharacter(null)
+      setProductName('')
       setIdentitySnapshot(null)
       setProductPickerOpen(false)
+      setProductLoadError(null)
       setCharacterPickerOpen(false)
       setLightboxOpen(false)
     }
@@ -211,6 +216,7 @@ export function MakeFilmWizardDialog({
     }
     setLoadingProducts(true)
     setError(null)
+    setProductLoadError(null)
     try {
       const { data, error: qErr } = await supabase
         .from('generator_user_images')
@@ -230,7 +236,7 @@ export function MakeFilmWizardDialog({
       )
       setProductPhotos(photos)
     } catch (e) {
-      setError((e as Error).message ?? 'Failed to load products')
+      setProductLoadError((e as Error).message ?? 'Failed to load products')
     } finally {
       setLoadingProducts(false)
     }
@@ -272,7 +278,14 @@ export function MakeFilmWizardDialog({
 
   function pickProduct(photo: ProductPhoto) {
     setSelectedProduct(photo)
+    setProductName(sanitizeProductName(photo.title))
     setProductPickerOpen(false)
+  }
+
+  function currentProductName(): string | null {
+    const manualName = productName.trim()
+    if (manualName) return manualName
+    return selectedProduct ? sanitizeProductName(selectedProduct.title) : null
   }
 
   function pickCharacter(photo: ProductPhoto) {
@@ -291,7 +304,7 @@ export function MakeFilmWizardDialog({
       role,
       imageType: photo.imageType ?? null,
       characterSheet: role === 'character' && isCharacterSheetRef(photo),
-      name: role === 'product' ? sanitizeProductName(photo.title) : photo.title ?? null,
+      name: role === 'product' ? currentProductName() : photo.title ?? null,
     }
   }
 
@@ -316,11 +329,13 @@ Each scene should flow logically into the next, building toward a single cohesiv
     setProgress('Writing your film scenario…')
     try {
       let enrichedPrompt = generateDurationPrompt(idea, duration)
-      const productName = selectedProduct ? sanitizeProductName(selectedProduct.title) : null
+      const resolvedProductName = currentProductName()
       if (selectedProduct && selectedCharacter) {
-        enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${productName || 'Selected Product'}" (image: ${selectedProduct.url}) AND the character "${selectedCharacter.title || 'Selected Character'}" (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every scene of the film. Show the character interacting with or holding the product.`
+        enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${resolvedProductName || 'Selected Product'}" (image: ${selectedProduct.url}) AND the character "${selectedCharacter.title || 'Selected Character'}" (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every scene of the film. Show the character interacting with or holding the product.`
       } else if (selectedProduct) {
-        enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${productName || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every scene of the film.`
+        enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every scene of the film.`
+      } else if (resolvedProductName) {
+        enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName}. This product MUST appear prominently in every scene of the film.`
       } else if (selectedCharacter) {
         enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${selectedCharacter.title || 'Selected Character'}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every scene of the film.`
       }
@@ -338,7 +353,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
         duration,
         productUrl: selectedProduct?.url,
         characterUrl: selectedCharacter?.url,
-        productName,
+        productName: resolvedProductName,
         characterName: selectedCharacter?.title ?? null,
         withNarration,
         aspect,
@@ -487,7 +502,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
         withNarration,
         identity: {
           productUrl: (identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product'))?.url,
-          productName: (identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product'))?.name ?? null,
+          productName: (identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product'))?.name ?? currentProductName(),
           characterUrl: (identitySnapshot?.character ?? toIdentityRef(selectedCharacter, 'character'))?.url,
           characterName: (identitySnapshot?.character ?? toIdentityRef(selectedCharacter, 'character'))?.name ?? null,
         },
@@ -598,10 +613,10 @@ Each scene should flow logically into the next, building toward a single cohesiv
                     {selectedProduct ? (
                       <div className="flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1.5">
                         <img src={selectedProduct.url} alt="Product" className="h-8 w-8 rounded object-cover" />
-                        <span className="text-xs text-zinc-300">{selectedProduct ? sanitizeProductName(selectedProduct.title) : 'Product'}</span>
+                        <span className="text-xs text-zinc-300">{currentProductName() || 'Product'}</span>
                         <button
                           type="button"
-                          onClick={() => setSelectedProduct(null)}
+                          onClick={() => { setSelectedProduct(null); setProductName('') }}
                           className="ml-1 rounded p-0.5 text-zinc-500 hover:text-zinc-300"
                         >
                           <X className="h-3 w-3" />
@@ -620,6 +635,15 @@ Each scene should flow logically into the next, building toward a single cohesiv
                       </Button>
                     )}
                   </div>
+                  <Input
+                    value={productName}
+                    onChange={(event) => setProductName(event.target.value)}
+                    maxLength={100}
+                    aria-label="Product name"
+                    placeholder="Product name (type manually or choose a saved product)"
+                    disabled={working}
+                    className="h-8 border-white/10 bg-white/[0.03] text-xs text-zinc-100 placeholder:text-zinc-500"
+                  />
                 </div>
 
                 {/* Character selector */}
@@ -1056,6 +1080,13 @@ Each scene should flow logically into the next, building toward a single cohesiv
           {loadingProducts ? (
             <div className="flex items-center justify-center py-10 text-sm text-zinc-400">
               <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Loading products…
+            </div>
+          ) : productLoadError ? (
+            <div className="space-y-3 py-10 text-center text-sm text-rose-300">
+              <p>Could not load your saved products: {productLoadError}</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => { void loadProductPhotos() }}>
+                Try again
+              </Button>
             </div>
           ) : productPhotos.length === 0 ? (
             <div className="py-10 text-center text-sm text-zinc-500">No saved product photos yet.</div>
