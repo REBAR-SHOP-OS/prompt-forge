@@ -212,6 +212,7 @@ export function MakeFilmWizardDialog({
   }, [open, initialPrompt, defaultDuration, defaultAspect])
 
   const working = busy !== 'idle' || regenIndex !== null
+  const canWriteScenario = prompt.trim().length > 0 && selectedProduct !== null && !working
 
   async function loadProductPhotos() {
     if (!userId) {
@@ -337,6 +338,10 @@ Each scene should flow logically into the next, building toward a single cohesiv
 
   async function handleWriteScenario() {
     const idea = prompt.trim()
+    if (!selectedProduct) {
+      setError('Choose a product before writing the scenario.')
+      return
+    }
     if (!idea) {
       setError('Type a prompt first so I can write the film.')
       return
@@ -634,6 +639,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                         <button
                           type="button"
                           onClick={() => { setSelectedProduct(null); setProductName('') }}
+                          aria-label="Remove product"
                           className="ml-1 rounded p-0.5 text-zinc-500 hover:text-zinc-300"
                         >
                           <X className="h-3 w-3" />
@@ -1020,7 +1026,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
               {step === 'prompt' && (
                 <Button
                   type="button"
-                  disabled={busy === 'scenario' || prompt.trim().length === 0}
+                  disabled={!canWriteScenario}
                   onClick={handleWriteScenario}
                   className="gap-1.5 bg-fuchsia-500/90 text-white hover:bg-fuchsia-500"
                 >
