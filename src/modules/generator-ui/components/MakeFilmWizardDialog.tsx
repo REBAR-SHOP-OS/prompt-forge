@@ -85,12 +85,10 @@ type ProductPhoto = { id: string; title: string | null; url: string; imageType?:
 
 type ProductPhotoSource = { id: string; title: string | null; storagePath: string; imageType?: string | null }
 
-type CardRetryState = 'idle' | 'retrying' | 'failed'
-
 export const inFlightSigns = new Map<string, Promise<string>>()
 
-async function signStorageUrlDeduped(storagePath: string, bucket: string): Promise<string> {
-  const cacheKey = `${bucket}:${storagePath}`
+async function signStorageUrlDeduped(storagePath: string, bucket: string, userId?: string | null): Promise<string> {
+  const cacheKey = `${userId ?? 'anon'}:${bucket}:${storagePath}`
   const existing = inFlightSigns.get(cacheKey)
   if (existing) return existing
   const promise = (async () => {
@@ -1165,6 +1163,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                   key={photo.id}
                   photo={photo}
                   bucket={PRODUCTS_BUCKET}
+                  userId={userId}
                   controllerRef={productPickerControllerRef}
                   onSelect={pickProduct}
                 />
@@ -1267,90 +1266,119 @@ Each scene should flow logically into the next, building toward a single cohesiv
 export default MakeFilmWizardDialog
 
 /**
- * Track per-card retry state to prevent duplicate signing requests
- * and to show a clear "Try again" fallback after a second failure.
+ * Per-card retry state.
+ *  'loading'   – signing in progress; spinner shown; disabled.
+ *  'ready'     – signed URL obtained; <img> rendered; onLoad will → 'idle'.
+ *  'idle'      – image loaded; selectable.
+ *  'retrying'  – re-sign after error; spinner shown; disabled.
+ *  'failed'    – exhausted retries; fallback shown; disabled.
  */
-type CardRetryState = 'idle' | 'retrying' | 'failed'
+type CardRetryState = 'loading' | 'ready' | 'idle' | 'retrying' | 'failed'
+
+let globalCardEpoch = 0
 
 /**
- * Re-sign a single product photo URL and call back with the fresh signed URL.
- * Stale responses (after dialog close or user change) are dropped via controller.
+ * Re-sign a single product photo URL.  Stale responses (after dialog
+ * close, unmount, or user change) are dropped via an epoch nonce.
  */
 function useResilientPhotoCard(
   photo: ProductPhotoSource,
   bucket: string,
+  userId: string | null,
   controllerRef: React.MutableRefObject<AbortController | null>,
 ) {
-  const [signedUrl, setSignedUrl] = useState<string>(photo.storagePath)
-  const [retryState, setRetryState] = useState<CardRetryState>('idle')
-  const mountedRef = useRef(true)
-  const autoRetryCount = useRef(0)
+  const [signedUrl, setSignedUrl] = useState<string>('')
+  const [retryState, setRetryState] = useState<CardRetryState>('loading')
+  const epochRef = useRef(0)
+  const retryCountRef = useRef(0)
 
+  // On mount or identity change, start signing.  Any previous epoch
+  // is implicitly abandoned by the component unmounting.
   useEffect(() => {
-    mountedRef.current = true
-    return () => { mountedRef.current = false }
-  }, [photo.id])
+    let cancelled = false
+    setRetryState('loading')
+    setSignedUrl('')
+    retryCountRef.current = 0
+    const nonce = ++globalCardEpoch
+    epochRef.current = nonce
 
-  const handleRetry = useCallback(async () => {
-    if (retryState === 'retrying') return
-    const controller = controllerRef.current
-    setRetryState('retrying')
-    try {
-      const fresh = await signStorageUrlDeduped(photo.storagePath, bucket)
-      if (!mountedRef.current) return
-      if (controller?.signal.aborted) return
-      setSignedUrl(fresh)
-      autoRetryCount.current++
-      setRetryState('idle')
-    } catch {
-      if (!mountedRef.current) return
-      if (controller?.signal.aborted) return
-      setRetryState('failed')
-    }
-  }, [photo.storagePath, bucket, retryState, controllerRef])
-
-  const handleImageError = useCallback(() => {
-    if (retryState === 'idle') {
-      if (autoRetryCount.current === 0) {
-        void handleRetry()
-      } else {
+    async function sign() {
+      try {
+        const fresh = await signStorageUrlDeduped(photo.storagePath, bucket, userId)
+        if (cancelled) return
+        if (epochRef.current !== nonce) return
+        setSignedUrl(fresh)
+        setRetryState('ready')
+      } catch {
+        if (cancelled) return
+        if (epochRef.current !== nonce) return
         setRetryState('failed')
       }
     }
-    // If retryState === 'retrying', ignore subsequent errors — the active retry
-    // will resolve to either 'idle' or 'failed' and handle it then.
-  }, [retryState, handleRetry])
 
-  const resetRetry = useCallback(() => {
-    autoRetryCount.current = 0
+    void sign()
+
+    return () => { cancelled = true }
+  }, [photo.id, photo.storagePath, bucket, userId])
+
+  const handleLoad = useCallback(() => {
     setRetryState('idle')
   }, [])
 
-  return { signedUrl, retryState, handleImageError, handleRetry, resetRetry }
+  const handleRetry = useCallback(async () => {
+    const nonce = ++globalCardEpoch
+    epochRef.current = nonce
+    setRetryState('retrying')
+    try {
+      const fresh = await signStorageUrlDeduped(photo.storagePath, bucket, userId)
+      if (epochRef.current !== nonce) return
+      setSignedUrl(fresh)
+      setRetryState('ready')
+    } catch {
+      if (epochRef.current !== nonce) return
+      setRetryState('failed')
+    }
+  }, [photo.storagePath, bucket, userId])
+
+  const handleImageError = useCallback(() => {
+    if (retryCountRef.current === 0) {
+      retryCountRef.current = 1
+      void handleRetry()
+    } else {
+      setRetryState('failed')
+    }
+  }, [handleRetry])
+
+  return { signedUrl, retryState, handleLoad, handleImageError, handleRetry }
 }
 
 /**
- * A single product/character card that re-signs its image URL on error,
- * shows a clear fallback after the second failure, and disables selection
- * until the image is successfully loaded.
+ * A single product card.  The image is never rendered with a raw
+ * storage path — a fresh signed URL is obtained first.  The card is
+ * disabled until the image successfully loads (onLoad).  onError
+ * triggers one automatic re-sign; a second failure shows a "Try again"
+ * button that executes a fresh signing attempt immediately.
  */
 function ProductPickerCard({
   photo,
   bucket,
+  userId,
   controllerRef,
   onSelect,
 }: {
   photo: ProductPhotoSource
   bucket: string
+  userId: string | null
   controllerRef: React.MutableRefObject<AbortController | null>
   onSelect: (photo: ProductPhoto) => void
 }) {
-  const { signedUrl, retryState, handleImageError, resetRetry } = useResilientPhotoCard(
+  const { signedUrl, retryState, handleLoad, handleImageError, handleRetry } = useResilientPhotoCard(
     photo,
     bucket,
+    userId,
     controllerRef,
   )
-  const canSelect = retryState !== 'retrying' && retryState !== 'failed'
+  const selectable = retryState === 'idle' || retryState === 'ready'
 
   if (retryState === 'failed') {
     return (
@@ -1363,7 +1391,7 @@ function ProductPickerCard({
           type="button"
           variant="ghost"
           size="sm"
-          onClick={() => { resetRetry(); }}
+          onClick={() => { void handleRetry() }}
           className="mt-1 h-6 text-[10px] text-rose-300 hover:text-rose-200"
         >
           <RefreshCw className="mr-1 h-3 w-3" aria-hidden="true" />
@@ -1373,28 +1401,34 @@ function ProductPickerCard({
     )
   }
 
+  const showSpinner = retryState === 'loading' || retryState === 'retrying'
+  const showImage = retryState === 'ready' || retryState === 'idle'
+
   return (
     <button
       type="button"
-      disabled={!canSelect}
+      disabled={!selectable}
       onClick={() => onSelect({ id: photo.id, title: photo.title, url: signedUrl })}
       className={`group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-fuchsia-300/40 ${
-        canSelect ? '' : 'cursor-not-allowed opacity-60'
+        selectable ? '' : 'cursor-not-allowed opacity-60'
       }`}
     >
-      <img
-        src={signedUrl}
-        alt={photo.title ?? 'Product'}
-        loading="lazy"
-        className="aspect-square w-full bg-black/40 object-cover"
-        onError={handleImageError}
-      />
-      <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || 'Untitled'}</div>
-      {retryState === 'retrying' && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+      {showSpinner && (
+        <div className="flex aspect-square w-full items-center justify-center bg-black/40">
           <LoaderCircle className="h-5 w-5 animate-spin text-zinc-300" aria-hidden="true" />
         </div>
       )}
+      {showImage && (
+        <img
+          src={signedUrl}
+          alt={photo.title ?? 'Product'}
+          loading="lazy"
+          className="aspect-square w-full bg-black/40 object-cover"
+          onLoad={handleLoad}
+          onError={handleImageError}
+        />
+      )}
+      <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || 'Untitled'}</div>
     </button>
   )
 }
