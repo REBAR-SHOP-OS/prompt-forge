@@ -4,29 +4,11 @@
 import { corsHeaders } from "../_shared/core/http.ts";
 import { authenticate } from "../_shared/core/auth.ts";
 import { readJsonLoose } from "../_shared/core/safe-json.ts";
-
-const WORD_CAPS: Record<number, number> = { 5: 40, 10: 70, 15: 100, 30: 180, 45: 270, 60: 360, 90: 540, 135: 810 };
-const BEAT_GUIDE: Record<number, string> = {
-  5: "5s = 1 beat (one decisive shot)",
-  10: "10s = 2 beats",
-  15: "15s = 3 beats",
-  30: "30s = two sequential 15s scenes",
-  45: "45s = three sequential 15s scenes",
-  60: "60s = four sequential 15s scenes",
-  90: "90s = six sequential 15s scenes",
-  135: "135s = nine sequential 15s scenes",
-};
-
-const SCENE_DELIM = "===SCENE===";
-
-function expectedSceneCount(duration: number): number {
-  if (duration === 135) return 9;
-  if (duration === 90) return 6;
-  if (duration === 60) return 4;
-  if (duration === 45) return 3;
-  if (duration === 30) return 2;
-  return 1;
-}
+import {
+  getScenarioDurationPolicy,
+  runScenarioQualityPass,
+  SCENE_DELIMITER,
+} from "./scenario-policy.ts";
 
 interface ProductAdOpts {
   productName?: string;
@@ -108,7 +90,8 @@ export function buildSystemPrompt(
         "The scenario must stay tightly relevant to this business and product. Do not drift into unrelated topics, products, services, or themes.",
       ].join(" ")
     : "";
-  const sceneCount = expectedSceneCount(duration);
+  const durationPolicy = getScenarioDurationPolicy(duration);
+  const sceneCount = durationPolicy.sceneCount;
   const isAd = Boolean(productAd);
   const isCharacter = Boolean(characterSheet);
   const autoLine = autoFromImage
@@ -185,18 +168,16 @@ export function buildSystemPrompt(
       `Given the user's brief, write a CONTINUOUS narrative scenario for a ${duration}-second cinematic ${longForm},`,
       `structured as ${numWord} sequential 15-second scenes that flow into each other.`,
       "The scenario MUST follow a clear story arc across the whole sequence: the opening scene is an attention-grabbing hook that establishes the subject and setting, the middle scenes develop the story and build interest and desire, and the final scene delivers a defined payoff/resolution that ends on a strong, memorable note.",
-      `Output EXACTLY ${sceneCount} scene blocks separated by the literal delimiter "${SCENE_DELIM}" on its own line.`,
+      `Output EXACTLY ${sceneCount} scene blocks separated by the literal delimiter "${SCENE_DELIMITER}" on its own line.`,
       `Do not number the scenes, no markdown, no preamble.${labelNote}`,
-      "Each scene is a 15-second clip. Break EVERY scene into contiguous, non-overlapping timed beats that sum EXACTLY to 15 seconds: 0-4s, 4-9s, 9-15s.",
-      "For each beat, specify the concrete ACTION, the FRAME/CAMERA MOVE, the VISUAL/EMOTIONAL change, and the LIGHTING. Make the beats vivid and specific (subject, gesture, camera push/pull/pan, light shift, mood) so the scene is dense and varied, not a single flat description.",
-      "Each scene must be 70-90 words and self-contained as a video prompt (include subject, action, camera move, lighting),",
+      `Each scene is a 15-second clip with exactly ${durationPolicy.beatsPerScene} contiguous, non-overlapping timed beats: ${durationPolicy.timedBeats}.`,
+      "For each beat, specify the concrete ACTION, the FRAME/CAMERA MOVE, the LIGHTING or EMOTIONAL change, and clear STORY PROGRESS. Make every beat vivid, specific, exciting, and meaningfully different from the previous beat.",
+      `Each scene must be ${durationPolicy.minWordsPerScene}-${durationPolicy.maxWordsPerScene} words and self-contained as a video prompt (include subject, action, camera move, lighting),`,
       "while clearly continuing the story from the previous scene.",
       "Vary the shot, movement, environment and story progress across scenes, but keep the product/character identity and continuity consistent.",
       narrationMulti,
     ].filter(Boolean).join(" ");
   }
-  const cap = WORD_CAPS[duration];
-  const beat = BEAT_GUIDE[duration];
   const singleForm = isCharacter ? "character-driven film scenario" : isAd ? "product advertisement" : "advertising scenario/treatment";
   return [
     persona,
@@ -205,10 +186,11 @@ export function buildSystemPrompt(
     `Given the user's brief, write a single cohesive ${singleForm}`,
     `suitable for a ${duration}-second cinematic video.`,
     "It MUST follow a clear narrative arc with a defined beginning, middle, and end: an attention-grabbing opening hook that establishes the subject and setting, a middle that develops the story, and a clear payoff/resolution that ends on a strong, memorable note.",
-    "Include opening visual hook, beat-by-beat action, camera/lighting cues, and a clear ending.",
-    `Match pacing realistically to the duration: ${beat}.`,
+    `Use exactly ${durationPolicy.beatsPerScene} continuous timed visual beat${durationPolicy.beatsPerScene === 1 ? "" : "s"}: ${durationPolicy.timedBeats}.`,
+    "In every beat specify concrete ACTION, FRAME or CAMERA MOVEMENT, a LIGHTING or EMOTIONAL CHANGE, and forward STORY PROGRESS. Keep the writing vivid, exciting, specific, and non-repetitive.",
     `Output prose only — no markdown headings, no bullet lists, no preamble.${labelNote}`,
-    `Keep it under ${cap} words.`,
+    `Write ${durationPolicy.minWordsPerScene}-${durationPolicy.maxWordsPerScene} words total.`,
+    `Keep narration and dialogue within ${durationPolicy.maxSpokenWordsPerScene} naturally speakable words so it fits the duration with pauses.`,
     narrationSingle,
   ].filter(Boolean).join(" ");
 }
@@ -224,6 +206,7 @@ async function callGateway(
   businessInfo?: string,
   outputLanguage = "en",
   narration = true,
+  correctiveInstruction?: string,
 ): Promise<Response> {
   const refText = characterSheet
     ? `Brief: ${idea}\nThe attached image IS the lead character — match their exact face, hair, wardrobe, body, and overall look in every shot, and keep them perfectly consistent throughout the film.`
@@ -243,9 +226,15 @@ async function callGateway(
     contentBlocks.push({ type: "text", text: "The image below is the recurring human character to feature in the commercial — match their exact face, hair, wardrobe, and body in every shot." });
     contentBlocks.push({ type: "image_url", image_url: { url: characterImageUrl } });
   }
-  const userContent: unknown = imageUrl
+  const baseUserContent: unknown = imageUrl
     ? contentBlocks
     : (productAd || characterSheet) ? `Brief: ${idea}` : `Idea: ${idea}`;
+  if (correctiveInstruction && imageUrl) {
+    contentBlocks.push({ type: "text", text: correctiveInstruction });
+  }
+  const userContent: unknown = correctiveInstruction && !imageUrl
+    ? `${baseUserContent}\n\n${correctiveInstruction}`
+    : baseUserContent;
 
   return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
@@ -296,31 +285,6 @@ async function resolveImageForGateway(url: string): Promise<string> {
     console.error("resolveImageForGateway error", e);
     return url;
   }
-}
-
-function stripQuotes(s: string): string {
-  return s.replace(/^["'`]+|["'`]+$/g, "").trim();
-}
-
-function parseScenes(raw: string, duration: number): string[] {
-  const cleaned = stripQuotes(raw);
-  const expected = expectedSceneCount(duration);
-  if (expected <= 1) return [cleaned];
-
-  const parts = cleaned
-    .split(/\r?\n?\s*===SCENE===\s*\r?\n?/i)
-    .map((s) => stripQuotes(s))
-    .filter((s) => s.length > 0);
-  if (parts.length === expected) return parts;
-
-  // Fallback: try splitting on blank-line paragraphs.
-  const paragraphs = cleaned
-    .split(/\n\s*\n+/)
-    .map((s) => stripQuotes(s))
-    .filter((s) => s.length > 0);
-  if (paragraphs.length === expected) return paragraphs;
-
-  return []; // signal "needs retry"
 }
 
 Deno.serve(async (req) => {
@@ -474,7 +438,7 @@ Deno.serve(async (req) => {
     if (productAd?.characterImageUrl) {
       productAd.characterImageUrl = await resolveImageForGateway(productAd.characterImageUrl);
     }
-    let resp = await callGateway(apiKey, duration, effectiveIdea, resolvedImageUrl, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage, narration);
+    const resp = await callGateway(apiKey, duration, effectiveIdea, resolvedImageUrl, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage, narration);
 
     if (resp.status === 429) {
       return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
@@ -497,36 +461,32 @@ Deno.serve(async (req) => {
       });
     }
 
-    let data = await readJsonLoose(resp, "scenario-write");
-    let raw: string = (data?.choices?.[0]?.message?.content ?? "").trim();
-    let scenes = parseScenes(raw, duration);
-
-    // One retry for multi-scene durations if we didn't get the expected count.
-    const expected = expectedSceneCount(duration);
-    if (expected > 1 && scenes.length === 0) {
-      resp = await callGateway(apiKey, duration, effectiveIdea, resolvedImageUrl, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage, narration);
-      if (resp.ok) {
-        data = await readJsonLoose(resp, "scenario-write");
-        raw = (data?.choices?.[0]?.message?.content ?? "").trim();
-        scenes = parseScenes(raw, duration);
+    const data = await readJsonLoose(resp, "scenario-write");
+    const raw: string = (data?.choices?.[0]?.message?.content ?? "").trim();
+    const quality = await runScenarioQualityPass(duration, raw, async (correctiveInstruction) => {
+      const retryResp = await callGateway(
+        apiKey,
+        duration,
+        effectiveIdea,
+        resolvedImageUrl,
+        productAd,
+        autoFromImage,
+        characterSheet,
+        businessInfo,
+        outputLanguage,
+        narration,
+        correctiveInstruction,
+      );
+      if (!retryResp.ok) {
+        console.error("scenario-write corrective retry error", retryResp.status);
+        return null;
       }
-    }
+      const retryData = await readJsonLoose(retryResp, "scenario-write corrective retry");
+      return (retryData?.choices?.[0]?.message?.content ?? "").trim();
+    });
+    const scenes = quality.scenes;
 
     if (scenes.length === 0) {
-      // Final fallback: return the raw text as a single block so the UI still has something.
-      if (expected > 1) {
-        const fallback = stripQuotes(raw);
-        if (!fallback) {
-          return new Response(JSON.stringify({ error: "Empty AI response" }), {
-            status: 502,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-        return new Response(
-          JSON.stringify({ scenario: fallback, scenes: [fallback], warning: `Could not split into ${expected} scenes` }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
-      }
       return new Response(JSON.stringify({ error: "Empty AI response" }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -535,7 +495,7 @@ Deno.serve(async (req) => {
 
     const scenario = scenes.join("\n\n");
 
-    return new Response(JSON.stringify({ scenario, scenes }), {
+    return new Response(JSON.stringify({ scenario, scenes, ...(quality.warning ? { warning: quality.warning } : {}) }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
