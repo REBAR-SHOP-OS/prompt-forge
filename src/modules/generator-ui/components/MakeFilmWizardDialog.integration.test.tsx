@@ -350,6 +350,33 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     expect(c[6]).toBe(true)
   })
 
+  it('keeps the previous image when Regenerate fails identity validation', async () => {
+    mockCharacterRows([
+      { id: 'sheet-1', title: 'My custom sheet', image_type: 'character_sheet' },
+    ])
+    generateSceneImage
+      .mockResolvedValueOnce('data:image/png;base64,FIRST')
+      .mockResolvedValueOnce('data:image/png;base64,SECOND')
+    renderWizard()
+
+    fireEvent.click(screen.getByText('Choose character'))
+    await waitFor(() => expect(screen.getByText('My custom sheet')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('My custom sheet'))
+    await chooseProduct()
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(screen.getByText('Scene one')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Generate preview images'))
+    await waitFor(() => expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,FIRST'))
+    await waitFor(() => expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SECOND'))
+
+    generateSceneImage.mockRejectedValueOnce(new Error('Could not preserve every selected identity in the edited image.'))
+    fireEvent.click(screen.getAllByText('Regenerate')[0])
+
+    await waitFor(() => expect(screen.getAllByText(/Could not preserve every selected identity/i)).toHaveLength(2))
+    expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,FIRST')
+  })
+
   it('Approve passes the frozen snapshot identity (url + name) from the generation run', async () => {
     mockCharacterRows([
       { id: 'sheet-1', title: 'My custom sheet', image_type: 'character_sheet' },

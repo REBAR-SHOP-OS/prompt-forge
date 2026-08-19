@@ -481,10 +481,8 @@ Each scene should flow logically into the next, building toward a single cohesiv
     setRegenIndex(index)
     setError(null)
     try {
-      const snapshot = identitySnapshot ?? {
-        product: toIdentityRef(selectedProduct, 'product'),
-        character: toIdentityRef(selectedCharacter, 'character'),
-      }
+      const snapshot = identitySnapshot
+      if (!snapshot) throw new Error('The original film identity snapshot is unavailable. Generate the preview batch again.')
       const characterSheet = snapshot.character?.characterSheet ?? false
       const url = await generateSceneImage(scenes[index], aspect, snapshot.product?.url, snapshot.character?.url, noTextOnImages, currentCreative(), characterSheet)
       setImages((cur) => {
