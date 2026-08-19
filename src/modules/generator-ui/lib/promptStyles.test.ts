@@ -27,11 +27,12 @@ describe('buildWizardCameraOptions', () => {
     }
   })
 
-  it('carries the preview clip as imageUrl for each camera style', () => {
+  it('separates the static poster from the opt-in video URL for each camera style', () => {
     const opts = buildWizardCameraOptions()
     for (const s of CAMERA_STYLES) {
       const o = opts.find((x) => x.value === s.id)!
-      expect(o.imageUrl).toBe(s.preview ?? '/placeholder.svg')
+      expect(o.videoUrl).toBe(s.preview)
+      expect(o.posterUrl).toMatch(/\/src\/assets\/style-posters\/.+\.jpg|style-posters\/.+\.jpg/)
     }
   })
 })
@@ -84,6 +85,12 @@ describe('buildWizardThemeOptions', () => {
     expect(construction.length).toBeGreaterThan(0)
     // The rebar site scene is present.
     expect(construction.some((o) => o.value === 'rebar-site')).toBe(true)
+  })
+
+  it('leaves styles without attached media ready for an immediate static fallback', () => {
+    const construction = buildWizardThemeOptions().find((o) => o.value === 'rebar-site')!
+    expect(construction.posterUrl).toBeUndefined()
+    expect(construction.videoUrl).toBeUndefined()
   })
 
   it('labels genres, scenes and templates with their subgroup', () => {
