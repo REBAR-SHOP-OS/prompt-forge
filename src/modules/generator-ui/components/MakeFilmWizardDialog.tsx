@@ -882,25 +882,29 @@ Each scene should flow logically into the next, building toward a single cohesiv
                 <p className="text-sm text-zinc-300">
                   Here is the scenario the AI wrote. Edit any scene, then generate one preview image per scene.
                 </p>
-                {scenes.map((scene, i) => (
-                  <div key={i} className="space-y-1.5 rounded-md border border-white/10 bg-white/[0.02] p-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
-                      Scene {i + 1} (~{Math.floor(duration / scenes.length)}s)
-                    </div>
-                    <Textarea
-                      value={scene}
-                      onChange={(e) =>
-                        setScenes((cur) => {
-                          const copy = [...cur]
-                          copy[i] = e.target.value
-                          return copy
-                        })
-                      }
-                      rows={3}
-                      className="resize-none border-white/10 bg-white/[0.03] text-sm text-zinc-100"
-                    />
+                <div className="-mx-1 overflow-x-auto overscroll-x-contain px-1 pb-3 scroll-smooth [scrollbar-color:rgb(82_82_91)_transparent] [scrollbar-width:thin]">
+                  <div className="flex w-max snap-x snap-proximity gap-3">
+                    {scenes.map((scene, i) => (
+                      <div key={i} className="w-[calc(100vw-4rem)] max-w-[34rem] shrink-0 snap-start space-y-2 rounded-md border border-white/10 bg-white/[0.02] p-4 sm:w-[30rem] lg:w-[34rem]">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
+                          Scene {i + 1} (~{Math.floor(duration / scenes.length)}s)
+                        </div>
+                        <Textarea
+                          value={scene}
+                          onChange={(e) =>
+                            setScenes((cur) => {
+                              const copy = [...cur]
+                              copy[i] = e.target.value
+                              return copy
+                            })
+                          }
+                          rows={3}
+                          className="min-h-44 w-full resize-none overflow-y-auto border-white/10 bg-white/[0.03] text-sm leading-6 text-zinc-100 [overflow-wrap:anywhere]"
+                        />
+                      </div>
+                    ))}
                   </div>
-                ))}
+                </div>
               </div>
             )}
 
