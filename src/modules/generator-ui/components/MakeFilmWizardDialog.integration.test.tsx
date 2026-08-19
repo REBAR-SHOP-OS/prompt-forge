@@ -113,6 +113,7 @@ async function chooseProduct(title = 'Test product') {
   fireEvent.click(screen.getByText('Choose product'))
   await waitFor(() => expect(screen.getByText(title)).toBeInTheDocument())
   fireEvent.click(screen.getByText(title))
+}
 function mockRefreshableCharacterRows(
   initialRows: Array<{ id: string; title: string | null; image_type: string | null }>,
 ) {
