@@ -1080,7 +1080,7 @@ export default function DashboardPage() {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
   const [promptViewer, setPromptViewer] = useState<string | null>(null)
   const [narrationViewer, setNarrationViewer] = useState<{ cardId: string; prompt: string | null; narrationText: string | null; videoStoragePath: string | null } | null>(null)
-  const [narrationReview, setNarrationReview] = useState<{ cardId: string; storagePath: string; narrationText: string | null; prompt: string | null } | null>(null)
+  const [narrationReview, setNarrationReview] = useState<{ cardId: string; storagePath: string } | null>(null)
   const [editPromptJob, setEditPromptJob] = useState<JobDetail | null>(null)
   const [editPromptText, setEditPromptText] = useState('')
   const [startContext] = useState('Start')
@@ -12337,20 +12337,10 @@ export default function DashboardPage() {
                               setNarrationReview({
                                 cardId: video.id,
                                 storagePath: video.video?.storage_path ?? '',
-                                // narration_text is set on new merged entries at merge time.
-                                // For legacy Final films already saved to localStorage without
-                                // narration_text, fall back to aggregating from source clips.
-                                narrationText:
-                                  video.narration_text ??
-                                  ((projectSourceJobs[video.id] ?? [])
-                                    .map((j) => j.narration_text)
-                                    .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
-                                    .join('\n') || null),
-                                prompt: video.input_prompt ?? null,
                               })
                             }}
-                            aria-label="Review narration"
-                            title="Review narration"
+                            aria-label="Transcribe film audio"
+                            title="Transcribe speech from this film"
                             className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-violet-300/40 hover:bg-violet-300/10 hover:text-violet-200"
                           >
                             <ScanText className="h-3 w-3" aria-hidden="true" />
@@ -12392,8 +12382,6 @@ export default function DashboardPage() {
                       open={narrationReview?.cardId === video.id}
                       onClose={() => setNarrationReview(null)}
                       videoStoragePath={narrationReview?.cardId === video.id ? (narrationReview.storagePath || null) : null}
-                      narrationText={narrationReview?.cardId === video.id ? narrationReview.narrationText : null}
-                      prompt={narrationReview?.cardId === video.id ? narrationReview.prompt : null}
                     />
                   ) : null}
                 </article>
