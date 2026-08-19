@@ -90,7 +90,7 @@
       {
         "name": "get_credit_balance",
         "title": "Get credit balance",
-        "description": "Get the signed-in user's credit quota: daily and monthly limits and how much has been used.",
+        "description": "Get the signed-in user's wallet credit balance and, when initialized, daily and monthly quota limits and usage.",
         "annotations": {
           "readOnlyHint": true,
           "idempotentHint": true,
