@@ -157,7 +157,7 @@ export function StylePickerDialog({
     return (
       <img
         src={posterUrl}
-        alt=""
+        alt={`${option.label} poster`}
         className="h-full w-full object-cover"
         loading="lazy"
         decoding="async"
