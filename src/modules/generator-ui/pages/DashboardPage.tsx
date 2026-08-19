@@ -125,6 +125,7 @@ import { generatorUiGateway } from '@/modules/generator-ui/gateway'
 import { externalApiAdapterGateway, type LocalVideoStatusResult } from '@/modules/external-api-adapter/gateway'
 import { mergeVideoUrls, MergeCancelledError, type TransitionId, type TransitionSpec } from '@/modules/generator-ui/lib/mergeVideos'
 import { mergeVideoUrlsWebCodecs, canEncodeWithWebCodecs, WebCodecsUnsupportedError } from '@/modules/generator-ui/lib/mergeVideosWebCodecs'
+import { awaitUploadWithLateCleanup, createFinalFilmPipeline } from '@/modules/generator-ui/lib/finalFilmPipeline'
 import { ensureMp4 } from '@/modules/generator-ui/lib/transcodeToMp4'
 import {
   loadContinuity,
@@ -8293,26 +8294,58 @@ export default function DashboardPage() {
       return
     }
 
+    setIsMerging(true)
+    setMergeProgress(0)
+    setMergeStage(null)
+    setVideoColumnMessage(null)
+    const pipeline = createFinalFilmPipeline(10 * 60_000)
+    mergeAbortRef.current = pipeline.controller
+    const stopPipelineUi = () => {
+      pipeline.finish()
+      mergeAbortRef.current = null
+      setIsMerging(false)
+      setMergeProgress(0)
+      setMergeStage(null)
+    }
+
     // Pre-flight: verify each video clip's source file is actually reachable.
     // Stale snapshots in localStorage can reference Veo files that were deleted
     // on the server; those would 404 inside mergeVideoUrls and abort the whole
     // Final Film with an opaque "Failed to load video" error.
     const brokenClips: { id: string; filename: string; jobId: string }[] = []
     {
-      const checks = await Promise.all(
-        eligibleClips.map(async (clip) => {
-          if (clip.kind !== 'video') return { clip, ok: true }
-          const src = clip.job.video?.storage_path as string | undefined
-          if (!src) return { clip, ok: false }
-          try {
-            const probeUrl = await proxiedVideoUrl(src)
-            const res = await fetch(probeUrl, { method: 'HEAD', cache: 'no-store' })
-            return { clip, ok: res.ok }
-          } catch {
-            return { clip, ok: false }
-          }
-        }),
-      )
+      let checks: { clip: UnifiedClip; ok: boolean }[]
+      try {
+        checks = await pipeline.race(Promise.all(
+          eligibleClips.map(async (clip) => {
+            if (clip.kind !== 'video') return { clip, ok: true }
+            const src = clip.job.video?.storage_path as string | undefined
+            if (!src) return { clip, ok: false }
+            try {
+              const probeUrl = await pipeline.race(proxiedVideoUrl(src))
+              const res = await pipeline.race(fetch(probeUrl, {
+                method: 'HEAD',
+                cache: 'no-store',
+                signal: pipeline.signal,
+              }))
+              return { clip, ok: res.ok }
+            } catch {
+              if (pipeline.signal.aborted) throw pipeline.signal.reason
+              return { clip, ok: false }
+            }
+          }),
+        ))
+      } catch (error) {
+        stopPipelineUi()
+        setVideoColumnMessage(
+          error instanceof MergeCancelledError
+            ? 'Rendering cancelled.'
+            : error instanceof Error
+              ? error.message
+              : 'Could not verify source videos.',
+        )
+        return
+      }
       const goodClips: UnifiedClip[] = []
       for (const { clip, ok } of checks) {
         if (ok) {
@@ -8354,14 +8387,11 @@ export default function DashboardPage() {
           ? `Source file(s) missing on server: ${names}. Broken clip(s) removed from workspace — please regenerate.`
           : 'Need at least 1 finished item (video or image) to finalize.',
       )
+      stopPipelineUi()
       return
     }
 
     // Single-clip Final Film is always allowed — edits and audio are optional.
-    setIsMerging(true)
-    setMergeProgress(0)
-    setMergeStage(null)
-    setVideoColumnMessage(null)
     // Final Film now saves the recorder's stable WebM output directly. Do not
     // pre-load ffmpeg.wasm here; that was the root cause of long projects
     // freezing around the old 95% encoding stage.
@@ -8372,10 +8402,11 @@ export default function DashboardPage() {
     // Pre-flight: refresh the auth session so the storage upload at the end
     // of Final Film never fails with a stale token (which would otherwise
     // leave the UI stuck right after the merge finalizes).
-    try { await supabase.auth.refreshSession() } catch { /* ignore */ }
-    // Declared here so the `finally` block can always clear it on success.
-    let pipelineTimer: ReturnType<typeof setTimeout> | null = null
     try {
+      try { await pipeline.race(supabase.auth.refreshSession()) } catch {
+        if (pipeline.signal.aborted) throw pipeline.signal.reason
+        // A refresh failure is non-fatal; the existing session may still work.
+      }
       // Determine target dimensions from the first video clip (mergeVideos.ts uses
       // the first clip's intrinsic size). If no video, fall back to a 1080p frame.
       const firstVideo = eligibleClips.find((c) => c.kind === 'video') as Extract<UnifiedClip, { kind: 'video' }> | undefined
@@ -8385,8 +8416,8 @@ export default function DashboardPage() {
         : undefined
       if (firstVideoSrc) {
         try {
-          const probeUrl = await proxiedVideoUrl(firstVideoSrc)
-          targetSize = await new Promise((resolve) => {
+          const probeUrl = await pipeline.race(proxiedVideoUrl(firstVideoSrc))
+          targetSize = await pipeline.race(new Promise((resolve) => {
             const v = document.createElement('video')
             v.crossOrigin = 'anonymous'
             v.muted = true
@@ -8394,8 +8425,11 @@ export default function DashboardPage() {
             v.onloadedmetadata = () => resolve({ width: v.videoWidth || 1280, height: v.videoHeight || 720 })
             v.onerror = () => resolve({ width: 1280, height: 720 })
             v.src = probeUrl
-          })
-        } catch { targetSize = { width: 1280, height: 720 } }
+          }))
+        } catch {
+          if (pipeline.signal.aborted) throw pipeline.signal.reason
+          targetSize = { width: 1280, height: 720 }
+        }
       } else {
         const r = aspectRatio
         targetSize = r === '9:16' ? { width: 1080, height: 1920 } : r === '1:1' ? { width: 1080, height: 1080 } : { width: 1920, height: 1080 }
@@ -8415,11 +8449,11 @@ export default function DashboardPage() {
           const rawSrc =
             editedClips[clip.job.id]?.url ??
             (clip.job.video!.storage_path as string)
-          const src = await proxiedVideoUrl(rawSrc)
+          const src = await pipeline.race(proxiedVideoUrl(rawSrc))
           mergeClips.push({ kind: 'video', url: src })
         } else {
           const seconds = Math.max(1, Math.min(15, clip.image.still_duration_seconds || 3))
-          const src = await proxiedVideoUrl(clip.image.storage_path)
+          const src = await pipeline.race(proxiedVideoUrl(clip.image.storage_path))
           mergeClips.push({ kind: 'image', url: src, durationSec: seconds })
         }
       }
@@ -8429,9 +8463,10 @@ export default function DashboardPage() {
       // thumbnail. It is held for the user-configured cover duration.
       if (currentCover?.storage_path) {
         try {
-          const coverSrc = await proxiedVideoUrl(currentCover.storage_path)
+          const coverSrc = await pipeline.race(proxiedVideoUrl(currentCover.storage_path))
           mergeClips.unshift({ kind: 'image', url: coverSrc, durationSec: currentCoverDuration })
         } catch (e) {
+          if (pipeline.signal.aborted) throw pipeline.signal.reason
           console.warn('[merge] could not load cover image, skipping cover:', e)
         }
       }
@@ -8479,18 +8514,6 @@ export default function DashboardPage() {
             clipVolume: mixedClipVolume,
           }
         : undefined
-      // Overall pipeline watchdog: if the entire merge+transcode+upload chain
-      // hasn't finished in 10 min, surface a clear error instead of leaving
-      // the UI stuck on 95% forever. The timer id is cleared in `finally` so a
-      // successful run never leaves a dangling 10-min timeout behind.
-      const PIPELINE_TIMEOUT_MS = 10 * 60_000
-      const pipelineTimeout = new Promise<never>((_, reject) => {
-        pipelineTimer = setTimeout(() => reject(new Error('Final Film took too long (>10 min). Please try again with fewer or shorter clips.')), PIPELINE_TIMEOUT_MS)
-      })
-
-      const abortController = new AbortController()
-      mergeAbortRef.current = abortController
-
       const overlayArg = contactActive
         ? { lines: contactLines, position: contactOverlay.position, offset: contactOverlay.offset ?? undefined, logoUrl: contactLogoActive ? contactOverlay.logoUrl : undefined, scale: contactOverlay.scale ?? 1, panelEnabled: contactOverlay.panelEnabled, panelColor: contactOverlay.panelColor, panelOpacity: contactOverlay.panelOpacity, textColor: contactOverlay.textColor, fontFamily: contactOverlay.fontFamily }
         : undefined
@@ -8510,10 +8533,9 @@ export default function DashboardPage() {
         }
       }
       type MergeFn = typeof mergeVideoUrls
-      const runMerge = (fn: MergeFn) => Promise.race([
-        fn(mergeClips, mergeProgressCb, audioOpt, transitionsForMerge, abortController.signal, overlayArg),
-        pipelineTimeout,
-      ])
+      const runMerge = (fn: MergeFn) => pipeline.race(
+        fn(mergeClips, mergeProgressCb, audioOpt, transitionsForMerge, pipeline.signal, overlayArg),
+      )
 
       // Prefer the deterministic WebCodecs MP4 encoder — it produces a smooth,
       // lag-free file because encoding is decoupled from wall-clock. Fall back
@@ -8535,23 +8557,25 @@ export default function DashboardPage() {
         mergeRes = await runMerge(mergeVideoUrls)
       }
 
-      if (abortController.signal.aborted) throw new MergeCancelledError()
+      if (pipeline.signal.aborted) throw pipeline.signal.reason
 
       setMergeStage('uploading')
       setMergeProgress(99)
       const filename = `merged-${Date.now()}.${mergeRes.extension}`
       const storagePath = `${userId}/${filename}`
-      // Hard timeout on the upload: if Supabase storage hangs (network/CDN
-      // hiccup), we'd otherwise sit at 99% forever. 2 minutes is plenty for
-      // a typical Final Film blob (<200MB).
       const uploadPromise = supabase.storage
         .from(MERGED_BUCKET)
         .upload(storagePath, mergeRes.blob, { contentType: mergeRes.mimeType, upsert: false })
-      const uploadTimeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Upload timed out after 120s. Please check your connection and try again.')), 120_000),
+      const { error: upErr } = await awaitUploadWithLateCleanup(
+        uploadPromise,
+        pipeline.race,
+        async () => {
+          const { error } = await supabase.storage.from(MERGED_BUCKET).remove([storagePath])
+          if (error) console.warn('[merge] failed to clean up late upload', { storagePath, error })
+        },
       )
-      const { error: upErr } = await Promise.race([uploadPromise, uploadTimeout]) as Awaited<typeof uploadPromise>
       if (upErr) throw new Error(upErr.message)
+      pipeline.finish()
 
       setMergeProgress(100)
       setMergeStage(null)
@@ -8870,7 +8894,7 @@ export default function DashboardPage() {
       setVideoColumnMessage(friendly)
       }
     } finally {
-      if (pipelineTimer) { clearTimeout(pipelineTimer); pipelineTimer = null }
+      pipeline.finish()
       mergeAbortRef.current = null
       setIsMerging(false)
       setMergeProgress(0)
@@ -10400,7 +10424,7 @@ export default function DashboardPage() {
           </span>
           <button
             type="button"
-            onClick={() => { mergeAbortRef.current?.abort() }}
+            onClick={() => { mergeAbortRef.current?.abort(new MergeCancelledError()) }}
             className="ml-1 grid h-6 w-6 place-items-center rounded text-zinc-300 transition hover:bg-red-500/20 hover:text-red-200"
             aria-label="Cancel rendering"
             title="Cancel rendering"
