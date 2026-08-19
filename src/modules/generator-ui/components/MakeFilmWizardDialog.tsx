@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Clapperboard,
   LoaderCircle,
@@ -83,6 +83,36 @@ async function signStorageUrl(storagePath: string | null | undefined, bucket: st
 
 type ProductPhoto = { id: string; title: string | null; url: string; imageType?: string | null }
 
+type ProductPhotoSource = { id: string; title: string | null; storagePath: string; imageType?: string | null }
+
+type CardRetryState = 'idle' | 'retrying' | 'failed'
+
+export const inFlightSigns = new Map<string, Promise<string>>()
+
+async function signStorageUrlDeduped(storagePath: string, bucket: string): Promise<string> {
+  const cacheKey = `${bucket}:${storagePath}`
+  const existing = inFlightSigns.get(cacheKey)
+  if (existing) return existing
+  const promise = (async () => {
+    try {
+      const raw = storagePath ?? ''
+      if (/^blob:|^data:/.test(raw)) return raw
+      if (/\/object\/sign\//.test(raw)) return raw
+      const key = storageObjectKey(raw, bucket)
+      if (!key) return raw
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .createSignedUrl(key, 60 * 60 * 24 * 7)
+      if (error || !data?.signedUrl) throw new Error(error?.message ?? 'Failed to create signed URL')
+      return data.signedUrl
+    } finally {
+      inFlightSigns.delete(cacheKey)
+    }
+  })()
+  inFlightSigns.set(cacheKey, promise)
+  return promise
+}
+
 type WizardStep = 'prompt' | 'scenario' | 'images'
 
 export interface FilmIdentity {
@@ -154,8 +184,9 @@ export function MakeFilmWizardDialog({
   const [noTextOnImages, setNoTextOnImages] = useState(true)
   const [selectedCameraAngle, setSelectedCameraAngle] = useState('auto')
   const [selectedTheme, setSelectedTheme] = useState('auto')
-  const [productPhotos, setProductPhotos] = useState<ProductPhoto[]>([])
+  const [productPhotos, setProductPhotos] = useState<ProductPhotoSource[]>([])
   const [characterPhotos, setCharacterPhotos] = useState<ProductPhoto[]>([])
+  const productPickerControllerRef = useRef<AbortController | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<ProductPhoto | null>(null)
   const [selectedCharacter, setSelectedCharacter] = useState<ProductPhoto | null>(null)
   const [productName, setProductName] = useState<string>('')
@@ -232,11 +263,11 @@ export function MakeFilmWizardDialog({
         .order('created_at', { ascending: false })
       if (qErr) throw new Error(qErr.message)
       const rows = (data ?? []).filter((r) => !r.title?.toLowerCase().includes('character'))
-      const photos: ProductPhoto[] = await Promise.all(
+      const photos: ProductPhotoSource[] = await Promise.all(
         rows.map(async (r) => ({
           id: r.id,
           title: r.title ?? null,
-          url: await signStorageUrl(r.storage_path, PRODUCTS_BUCKET),
+          storagePath: r.storage_path,
         })),
       )
       setProductPhotos(photos)
@@ -1097,7 +1128,16 @@ Each scene should flow logically into the next, building toward a single cohesiv
       />
 
       {/* Product Picker Dialog */}
-      <Dialog open={productPickerOpen} onOpenChange={setProductPickerOpen}>
+      <Dialog open={productPickerOpen} onOpenChange={(open) => {
+        setProductPickerOpen(open)
+        if (open) {
+          productPickerControllerRef.current = new AbortController()
+          void loadProductPhotos()
+        } else {
+          productPickerControllerRef.current?.abort()
+          productPickerControllerRef.current = new AbortController()
+        }
+      }}>
         <DialogContent className="max-w-lg border-white/10 bg-zinc-950/95 text-zinc-100">
           <DialogHeader>
             <DialogTitle className="text-base">Choose a product</DialogTitle>
@@ -1121,15 +1161,13 @@ Each scene should flow logically into the next, building toward a single cohesiv
           ) : (
             <div className="grid max-h-[50vh] grid-cols-3 gap-3 overflow-y-auto pr-1 sm:grid-cols-4">
               {productPhotos.map((photo) => (
-                <button
+                <ProductPickerCard
                   key={photo.id}
-                  type="button"
-                  onClick={() => pickProduct(photo)}
-                  className="group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-fuchsia-300/40"
-                >
-                  <img src={photo.url} alt={photo.title ?? 'Product'} loading="lazy" className="aspect-square w-full bg-black/40 object-cover" />
-                  <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || 'Untitled'}</div>
-                </button>
+                  photo={photo}
+                  bucket={PRODUCTS_BUCKET}
+                  controllerRef={productPickerControllerRef}
+                  onSelect={pickProduct}
+                />
               ))}
             </div>
           )}
@@ -1227,3 +1265,136 @@ Each scene should flow logically into the next, building toward a single cohesiv
 }
 
 export default MakeFilmWizardDialog
+
+/**
+ * Track per-card retry state to prevent duplicate signing requests
+ * and to show a clear "Try again" fallback after a second failure.
+ */
+type CardRetryState = 'idle' | 'retrying' | 'failed'
+
+/**
+ * Re-sign a single product photo URL and call back with the fresh signed URL.
+ * Stale responses (after dialog close or user change) are dropped via controller.
+ */
+function useResilientPhotoCard(
+  photo: ProductPhotoSource,
+  bucket: string,
+  controllerRef: React.MutableRefObject<AbortController | null>,
+) {
+  const [signedUrl, setSignedUrl] = useState<string>(photo.storagePath)
+  const [retryState, setRetryState] = useState<CardRetryState>('idle')
+  const mountedRef = useRef(true)
+  const autoRetryCount = useRef(0)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [photo.id])
+
+  const handleRetry = useCallback(async () => {
+    if (retryState === 'retrying') return
+    const controller = controllerRef.current
+    setRetryState('retrying')
+    try {
+      const fresh = await signStorageUrlDeduped(photo.storagePath, bucket)
+      if (!mountedRef.current) return
+      if (controller?.signal.aborted) return
+      setSignedUrl(fresh)
+      autoRetryCount.current++
+      setRetryState('idle')
+    } catch {
+      if (!mountedRef.current) return
+      if (controller?.signal.aborted) return
+      setRetryState('failed')
+    }
+  }, [photo.storagePath, bucket, retryState, controllerRef])
+
+  const handleImageError = useCallback(() => {
+    if (retryState === 'idle') {
+      if (autoRetryCount.current === 0) {
+        void handleRetry()
+      } else {
+        setRetryState('failed')
+      }
+    }
+    // If retryState === 'retrying', ignore subsequent errors — the active retry
+    // will resolve to either 'idle' or 'failed' and handle it then.
+  }, [retryState, handleRetry])
+
+  const resetRetry = useCallback(() => {
+    autoRetryCount.current = 0
+    setRetryState('idle')
+  }, [])
+
+  return { signedUrl, retryState, handleImageError, handleRetry, resetRetry }
+}
+
+/**
+ * A single product/character card that re-signs its image URL on error,
+ * shows a clear fallback after the second failure, and disables selection
+ * until the image is successfully loaded.
+ */
+function ProductPickerCard({
+  photo,
+  bucket,
+  controllerRef,
+  onSelect,
+}: {
+  photo: ProductPhotoSource
+  bucket: string
+  controllerRef: React.MutableRefObject<AbortController | null>
+  onSelect: (photo: ProductPhoto) => void
+}) {
+  const { signedUrl, retryState, handleImageError, resetRetry } = useResilientPhotoCard(
+    photo,
+    bucket,
+    controllerRef,
+  )
+  const canSelect = retryState !== 'retrying' && retryState !== 'failed'
+
+  if (retryState === 'failed') {
+    return (
+      <div className="relative overflow-hidden rounded-md border border-white/10 bg-zinc-900/60 p-2 text-center">
+        <div className="flex aspect-square w-full items-center justify-center bg-zinc-800/50">
+          <ImageIcon className="h-6 w-6 text-zinc-500" aria-hidden="true" />
+        </div>
+        <div className="mt-2 truncate text-[11px] text-zinc-400">{photo.title || 'Untitled'}</div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => { resetRetry(); }}
+          className="mt-1 h-6 text-[10px] text-rose-300 hover:text-rose-200"
+        >
+          <RefreshCw className="mr-1 h-3 w-3" aria-hidden="true" />
+          Try again
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      disabled={!canSelect}
+      onClick={() => onSelect({ id: photo.id, title: photo.title, url: signedUrl })}
+      className={`group relative overflow-hidden rounded-md border border-white/10 bg-black/30 text-left transition hover:border-fuchsia-300/40 ${
+        canSelect ? '' : 'cursor-not-allowed opacity-60'
+      }`}
+    >
+      <img
+        src={signedUrl}
+        alt={photo.title ?? 'Product'}
+        loading="lazy"
+        className="aspect-square w-full bg-black/40 object-cover"
+        onError={handleImageError}
+      />
+      <div className="truncate px-2 py-1 text-[11px] text-zinc-200">{photo.title || 'Untitled'}</div>
+      {retryState === 'retrying' && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+          <LoaderCircle className="h-5 w-5 animate-spin text-zinc-300" aria-hidden="true" />
+        </div>
+      )}
+    </button>
+  )
+}
