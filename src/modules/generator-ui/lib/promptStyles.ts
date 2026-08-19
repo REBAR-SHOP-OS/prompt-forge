@@ -43,6 +43,44 @@ import scSteampunkWorkshop from '@/assets/style-previews/scene-steampunk-worksho
 import scJazzClub from '@/assets/style-previews/scene-jazz-club.mp4.asset.json'
 import scDarkAcademiaLibrary from '@/assets/style-previews/scene-dark-academia-library.mp4.asset.json'
 import scRetroDiner from '@/assets/style-previews/scene-retro-diner.mp4.asset.json'
+import scHighRiseTower from '@/assets/style-previews/scene-high-rise-tower.mp4.asset.json'
+import scSteelFramework from '@/assets/style-previews/scene-steel-framework.mp4.asset.json'
+import scConcretePour from '@/assets/style-previews/scene-concrete-pour.mp4.asset.json'
+import scRebarSite from '@/assets/style-previews/scene-rebar-site.mp4.asset.json'
+import scTowerCrane from '@/assets/style-previews/scene-tower-crane.mp4.asset.json'
+import scBridgeConstruction from '@/assets/style-previews/scene-bridge-construction.mp4.asset.json'
+import scRoadPaving from '@/assets/style-previews/scene-road-paving.mp4.asset.json'
+import scTunnelBoring from '@/assets/style-previews/scene-tunnel-boring.mp4.asset.json'
+import scFoundationEarthworks from '@/assets/style-previews/scene-foundation-earthworks.mp4.asset.json'
+import scScaffoldingFacade from '@/assets/style-previews/scene-scaffolding-facade.mp4.asset.json'
+import scResidentialBuild from '@/assets/style-previews/scene-residential-build.mp4.asset.json'
+import scPrefabModular from '@/assets/style-previews/scene-prefab-modular.mp4.asset.json'
+import scDemolitionSite from '@/assets/style-previews/scene-demolition-site.mp4.asset.json'
+import scDamHydro from '@/assets/style-previews/scene-dam-hydro.mp4.asset.json'
+import scRefineryBuild from '@/assets/style-previews/scene-refinery-build.mp4.asset.json'
+import scRenewableFarm from '@/assets/style-previews/scene-renewable-farm.mp4.asset.json'
+import scSiteSurvey from '@/assets/style-previews/scene-site-survey.mp4.asset.json'
+import scDeepPiling from '@/assets/style-previews/scene-deep-piling.mp4.asset.json'
+import scFormworkShuttering from '@/assets/style-previews/scene-formwork-shuttering.mp4.asset.json'
+import scPrecastYard from '@/assets/style-previews/scene-precast-yard.mp4.asset.json'
+import scMasonryBrick from '@/assets/style-previews/scene-masonry-brick.mp4.asset.json'
+import scStructuralWelding from '@/assets/style-previews/scene-structural-welding.mp4.asset.json'
+import scCurtainWall from '@/assets/style-previews/scene-curtain-wall.mp4.asset.json'
+import scRoofingWaterproofing from '@/assets/style-previews/scene-roofing-waterproofing.mp4.asset.json'
+import scMepInstall from '@/assets/style-previews/scene-mep-install.mp4.asset.json'
+import scElectricalWiring from '@/assets/style-previews/scene-electrical-wiring.mp4.asset.json'
+import scInteriorFitout from '@/assets/style-previews/scene-interior-fitout.mp4.asset.json'
+import scPlasteringFinishing from '@/assets/style-previews/scene-plastering-finishing.mp4.asset.json'
+import scElevatorShaft from '@/assets/style-previews/scene-elevator-shaft.mp4.asset.json'
+import scMetroRailway from '@/assets/style-previews/scene-metro-railway.mp4.asset.json'
+import scAirportRunway from '@/assets/style-previews/scene-airport-runway.mp4.asset.json'
+import scPortMarine from '@/assets/style-previews/scene-port-marine.mp4.asset.json'
+import scCanalWater from '@/assets/style-previews/scene-canal-water.mp4.asset.json'
+import scPipelineLaying from '@/assets/style-previews/scene-pipeline-laying.mp4.asset.json'
+import scPowerPlant from '@/assets/style-previews/scene-power-plant.mp4.asset.json'
+import scWarehouseLogistics from '@/assets/style-previews/scene-warehouse-logistics.mp4.asset.json'
+import scStadiumArena from '@/assets/style-previews/scene-stadium-arena.mp4.asset.json'
+import scNightConstruction from '@/assets/style-previews/scene-night-construction.mp4.asset.json'
 import vtFootballTeam from '@/assets/style-previews/vid-football-team.mp4.asset.json'
 import vtSportsHighlights from '@/assets/style-previews/vid-sports-highlights.mp4.asset.json'
 import vtFitness from '@/assets/style-previews/vid-fitness.mp4.asset.json'
@@ -431,6 +469,44 @@ const STYLE_PREVIEWS: Record<string, string> = {
   'jazz-club': scJazzClub.url,
   'dark-academia-library': scDarkAcademiaLibrary.url,
   'retro-diner': scRetroDiner.url,
+  'high-rise-tower': scHighRiseTower.url,
+  'steel-framework': scSteelFramework.url,
+  'concrete-pour': scConcretePour.url,
+  'rebar-site': scRebarSite.url,
+  'tower-crane': scTowerCrane.url,
+  'bridge-construction': scBridgeConstruction.url,
+  'road-paving': scRoadPaving.url,
+  'tunnel-boring': scTunnelBoring.url,
+  'foundation-earthworks': scFoundationEarthworks.url,
+  'scaffolding-facade': scScaffoldingFacade.url,
+  'residential-build': scResidentialBuild.url,
+  'prefab-modular': scPrefabModular.url,
+  'demolition-site': scDemolitionSite.url,
+  'dam-hydro': scDamHydro.url,
+  'refinery-build': scRefineryBuild.url,
+  'renewable-farm': scRenewableFarm.url,
+  'site-survey': scSiteSurvey.url,
+  'deep-piling': scDeepPiling.url,
+  'formwork-shuttering': scFormworkShuttering.url,
+  'precast-yard': scPrecastYard.url,
+  'masonry-brick': scMasonryBrick.url,
+  'structural-welding': scStructuralWelding.url,
+  'curtain-wall': scCurtainWall.url,
+  'roofing-waterproofing': scRoofingWaterproofing.url,
+  'mep-install': scMepInstall.url,
+  'electrical-wiring': scElectricalWiring.url,
+  'interior-fitout': scInteriorFitout.url,
+  'plastering-finishing': scPlasteringFinishing.url,
+  'elevator-shaft': scElevatorShaft.url,
+  'metro-railway': scMetroRailway.url,
+  'airport-runway': scAirportRunway.url,
+  'port-marine': scPortMarine.url,
+  'canal-water': scCanalWater.url,
+  'pipeline-laying': scPipelineLaying.url,
+  'power-plant': scPowerPlant.url,
+  'warehouse-logistics': scWarehouseLogistics.url,
+  'stadium-arena': scStadiumArena.url,
+  'night-construction': scNightConstruction.url,
   // Template
   'football-team': vtFootballTeam.url,
   'sports-highlights': vtSportsHighlights.url,
