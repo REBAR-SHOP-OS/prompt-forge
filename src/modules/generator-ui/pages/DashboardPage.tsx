@@ -10213,18 +10213,15 @@ export default function DashboardPage() {
               setPreviewVideoId(null)
               setPreviewDismissed(false)
             }}
-            className={`relative flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs uppercase tracking-[0.18em] transition ${
+            className={`relative flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs uppercase tracking-[0.18em] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/55 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:bg-cyan-400/20 ${
               hasReadyClips
-                ? 'border-emerald-400/40 bg-emerald-400/15 text-emerald-100 shadow-[0_0_18px_-4px_rgba(16,185,129,0.7)] hover:border-emerald-300/60 hover:bg-emerald-400/25'
-                : 'border-white/10 bg-white/[0.04] text-zinc-400/70'
+                ? 'border-cyan-400/45 bg-cyan-400/10 text-cyan-200 hover:border-cyan-300/65 hover:bg-cyan-400/15 hover:text-cyan-100'
+                : 'border-cyan-400/20 bg-cyan-400/[0.04] text-cyan-200/60 hover:border-cyan-400/30 hover:bg-cyan-400/[0.07] hover:text-cyan-100/75'
             }`}
             aria-label="Connect all cards into one continuous preview"
             title="Connect all cards into one continuous preview"
           >
-            {hasReadyClips ? (
-              <span className="pointer-events-none absolute inset-0 rounded-md ring-2 ring-emerald-400/50 animate-ping" aria-hidden="true" />
-            ) : null}
-            <Play className={`relative h-[14px] w-[14px] ${hasReadyClips ? 'animate-pulse' : ''}`} aria-hidden="true" />
+            <Play className="relative h-[14px] w-[14px]" aria-hidden="true" />
             <span className="relative hidden xl:inline">Preview</span>
           </button>
         )
@@ -10233,7 +10230,7 @@ export default function DashboardPage() {
 
         <AlertDialogTrigger asChild>
           <button
-            className="flex h-9 items-center gap-1.5 rounded-md border border-violet-400/40 bg-violet-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-violet-300 transition hover:border-violet-300/60 hover:bg-violet-400/[0.15] hover:text-violet-100"
+            className="flex h-9 items-center gap-1.5 rounded-md border border-violet-400/40 bg-violet-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-violet-300 transition hover:border-violet-300/60 hover:bg-violet-400/[0.15] hover:text-violet-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/55 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:bg-violet-400/20"
             type="button"
             aria-label="Start over"
           >
@@ -10382,7 +10379,7 @@ export default function DashboardPage() {
       <button
         type="button"
         onClick={() => setIsMakeFilmWizardOpen(true)}
-        className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-fuchsia-300/30 hover:bg-fuchsia-300/[0.06] hover:text-fuchsia-100 disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex h-9 items-center gap-1.5 rounded-md border border-orange-400/40 bg-orange-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-orange-200 transition hover:border-orange-300/60 hover:bg-orange-400/[0.15] hover:text-orange-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/55 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:bg-orange-400/20 disabled:cursor-not-allowed disabled:border-orange-400/15 disabled:bg-orange-400/[0.03] disabled:text-orange-200/45 disabled:opacity-100 disabled:hover:border-orange-400/15 disabled:hover:bg-orange-400/[0.03] disabled:hover:text-orange-200/45"
         aria-label="Open the Make Full Film review wizard"
         title="Make full film: review the scenario and preview images before rendering"
       >
@@ -10395,7 +10392,7 @@ export default function DashboardPage() {
       </button>
 
       {isMerging ? (
-        <div className="flex h-9 items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-2 text-xs uppercase tracking-[0.18em] text-zinc-200/80">
+        <div className="flex h-9 items-center gap-1 rounded-md border border-emerald-400/30 bg-emerald-400/[0.06] px-2 text-xs uppercase tracking-[0.18em] text-emerald-200/80">
           <LoaderCircle className="h-[14px] w-[14px] animate-spin" aria-hidden="true" />
           <span className="tabular-nums px-1">
             {mergeStage === 'encoding' ? 'Encoding ' : mergeStage === 'uploading' ? 'Uploading ' : mergeStage === 'finalizing' ? 'Finalizing ' : ''}
@@ -10416,7 +10413,7 @@ export default function DashboardPage() {
           type="button"
           onClick={handleMergeAllVideos}
           disabled={(Math.max(completedSourceVideos.length, selectedProjectId ? (projectSourceJobs[selectedProjectId]?.length ?? 0) : 0) + visibleUserImages.length) < 1}
-          className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs uppercase tracking-[0.18em] text-zinc-200/80 transition hover:border-emerald-300/30 hover:bg-emerald-300/[0.06] hover:text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex h-9 items-center gap-1.5 rounded-md border border-emerald-400/40 bg-emerald-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-emerald-200 transition hover:border-emerald-300/60 hover:bg-emerald-400/[0.15] hover:text-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/55 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:bg-emerald-400/20 disabled:cursor-not-allowed disabled:border-emerald-400/15 disabled:bg-emerald-400/[0.03] disabled:text-emerald-200/45 disabled:opacity-100 disabled:hover:border-emerald-400/15 disabled:hover:bg-emerald-400/[0.03] disabled:hover:text-emerald-200/45"
           aria-label="Save cards as a final film"
           title={(() => {
             const totalCards = completedSourceVideos.length + visibleUserImages.length
@@ -10449,7 +10446,7 @@ export default function DashboardPage() {
         <button
           type="button"
           onClick={handleMusicButtonClick}
-          className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-yellow-400/40 bg-yellow-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-yellow-300 transition hover:border-yellow-300/60 hover:bg-yellow-400/[0.15] hover:text-yellow-100"
+          className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-yellow-400/40 bg-yellow-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-yellow-300 transition hover:border-yellow-300/60 hover:bg-yellow-400/[0.15] hover:text-yellow-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/55 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:bg-yellow-400/20"
           aria-label="Edit soundtrack"
           title="Edit soundtrack"
         >
@@ -10472,7 +10469,7 @@ export default function DashboardPage() {
         <button
           type="button"
           onClick={() => musicFileInputRef.current?.click()}
-          className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-yellow-400/40 bg-yellow-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-yellow-300 transition hover:border-yellow-300/60 hover:bg-yellow-400/[0.15] hover:text-yellow-100"
+          className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-yellow-400/40 bg-yellow-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-yellow-300 transition hover:border-yellow-300/60 hover:bg-yellow-400/[0.15] hover:text-yellow-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/55 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:bg-yellow-400/20"
           aria-label="Add soundtrack"
           title="Upload a music file as soundtrack for the Final Film"
         >
@@ -10484,7 +10481,7 @@ export default function DashboardPage() {
       <button
         type="button"
         onClick={() => setIsVoiceoverOpen(true)}
-        className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-red-500/40 bg-red-500/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-red-300 transition hover:border-red-400/60 hover:bg-red-500/[0.15] hover:text-red-100"
+        className="flex h-9 max-w-[220px] items-center gap-1.5 rounded-md border border-rose-400/40 bg-rose-400/[0.08] px-3 text-xs uppercase tracking-[0.18em] text-rose-300 transition hover:border-rose-300/60 hover:bg-rose-400/[0.15] hover:text-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/55 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:bg-rose-400/20"
         aria-label={voiceoverUrl ? 'Replace voiceover' : 'Generate AI voiceover'}
         title={voiceoverUrl ? 'Replace AI voiceover' : 'Generate an AI voiceover from text (Gemini)'}
       >
