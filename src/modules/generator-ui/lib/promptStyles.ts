@@ -89,6 +89,8 @@ export type StyleItem = {
   group?: string
   /** Optional looping preview clip URL shown on hover/tap in the Styles picker. */
   preview?: string
+  /** Optional static poster used by pickers before a preview is explicitly played. */
+  poster?: string
 }
 
 export type StyleSelection = {
@@ -267,32 +269,46 @@ export function countSelectedStyles(sel: StyleSelection): number {
 /**
  * A single selectable option for the Make Full Film wizard's Camera angle /
  * Visual theme dropdowns. Mirrors the shape the wizard's Select already uses
- * (value, label, prompt, imageUrl) plus an optional group label for the theme
- * subgroups (Genre / Scene / Video template).
+ * (value, label, prompt) plus separate static poster / opt-in video URLs and
+ * an optional group label for the theme subgroups (Genre / Scene / Video template).
  */
 export type WizardStyleOption = {
   value: string
   label: string
   prompt: string
-  imageUrl: string
+  posterUrl?: string
+  videoUrl?: string
   group?: string
+}
+
+const STYLE_POSTER_MODULES = import.meta.glob('../../../assets/style-posters/*.jpg', {
+  eager: true,
+  import: 'default',
+  query: '?url',
+}) as Record<string, string>
+
+function posterForVideo(videoUrl?: string): string | undefined {
+  const videoFilename = videoUrl?.split('/').pop()
+  if (!videoFilename) return undefined
+  const posterFilename = videoFilename.replace(/\.mp4(?:\?.*)?$/i, '.jpg')
+  return STYLE_POSTER_MODULES[`../../../assets/style-posters/${posterFilename}`]
 }
 
 /**
  * Build the Camera angle options for the Make Full Film wizard from the shared
  * dataset: an "auto" option plus every CAMERA_STYLES entry. The value is the
- * style id, the label/icon/prompt come from the shared item, and the preview
- * clip is used as the imageUrl so the wizard shows the same previews as the
- * composer's Styles picker.
+ * style id and label/prompt come from the shared item. A local static poster is
+ * shown in the grid while the existing preview clip remains opt-in.
  */
 export function buildWizardCameraOptions(): WizardStyleOption[] {
   return [
-    { value: 'auto', label: 'Auto (AI decides)', prompt: '', imageUrl: '/placeholder.svg' },
+    { value: 'auto', label: 'Auto (AI decides)', prompt: '' },
     ...CAMERA_STYLES.map((s) => ({
       value: s.id,
       label: s.label,
       prompt: s.prompt,
-      imageUrl: s.preview ?? '/placeholder.svg',
+      posterUrl: s.poster ?? posterForVideo(s.preview),
+      videoUrl: s.preview,
     })),
   ]
 }
@@ -320,7 +336,8 @@ export function buildWizardThemeOptions(): WizardStyleOption[] {
       value: s.id,
       label: s.label,
       prompt: s.prompt,
-      imageUrl: s.preview ?? '/placeholder.svg',
+      posterUrl: s.poster ?? posterForVideo(s.preview),
+      videoUrl: s.preview,
       group: `Scene · ${group}`,
     })),
   ).flat()
@@ -329,17 +346,19 @@ export function buildWizardThemeOptions(): WizardStyleOption[] {
       value: t.id,
       label: t.label,
       prompt: t.prompt,
-      imageUrl: t.preview ?? '/placeholder.svg',
+      posterUrl: t.poster ?? posterForVideo(t.preview),
+      videoUrl: t.preview,
       group: `Template · ${group}`,
     })),
   ).flat()
   return [
-    { value: 'auto', label: 'Auto (AI decides)', prompt: '', imageUrl: '/placeholder.svg' },
+    { value: 'auto', label: 'Auto (AI decides)', prompt: '' },
     ...GENRE_STYLES.map((g) => ({
       value: g.id,
       label: g.label,
       prompt: g.prompt,
-      imageUrl: g.preview ?? '/placeholder.svg',
+      posterUrl: g.poster ?? posterForVideo(g.preview),
+      videoUrl: g.preview,
       group: 'Genre & atmosphere',
     })),
     ...sceneGroups,
