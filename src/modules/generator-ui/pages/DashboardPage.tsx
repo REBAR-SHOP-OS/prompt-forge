@@ -154,6 +154,12 @@ import { buildReferenceImageUrls, explicitCharacterAnchor } from '@/modules/gene
 import { computeClipDurations, resolveSceneNarration } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { buildSceneCompositionPrompt } from '@/modules/generator-ui/lib/sceneComposition'
 import {
+  GlobalSceneBatchError,
+  queueSceneBatch,
+  waitForSceneBatch,
+  type SceneBatchResult,
+} from '@/modules/generator-ui/lib/sceneBatch'
+import {
   type ModelMeta,
   getAvailableModels,
   toImageToVideoModel,
@@ -3206,11 +3212,6 @@ export default function DashboardPage() {
   // preview images (each regenerable) → explicit approval → render. Nothing
   // renders until the user approves in this flow.
   const [isMakeFilmWizardOpen, setIsMakeFilmWizardOpen] = useState(false)
-  // Always-fresh pointer to handleMergeAllVideos so the long-lived auto-film
-  // orchestrator (which starts minutes before the batch completes) invokes the
-  // LATEST closure — reading current generatedVideos/activeJobIds state — instead
-  // of a stale merge function captured when the orchestrator was first called.
-  const handleMergeAllVideosRef = useRef<() => Promise<void>>(() => Promise.resolve())
   // Transient preview of the latest Final Film output. Lives only in memory:
   // never added to Pending, Library, or History. Cleared on Start Over.
   const [lastMergedPreview, setLastMergedPreview] = useState<
@@ -7253,19 +7254,20 @@ export default function DashboardPage() {
     const hasPerSceneImages = Boolean(
       opts?.perSceneImageUrls && opts.perSceneImageUrls.some((u) => Boolean(u)),
     )
+    // The review wizard supplies one approved image slot per scene. That makes
+    // every scene an independent job: no scene waits for a previous render or
+    // consumes its last frame. Other callers retain the legacy chained flow.
+    const isIndependentSceneBatch = Array.isArray(opts?.perSceneImageUrls)
     const scenarioModel =
       continuityCharacterRef || activeProduct || hasPerSceneImages
         ? toImageToVideoModel(selectedModel)
         : selectedModel
     if (continuityCharacterRef || activeProduct || hasPerSceneImages) setGenerationMode('image-to-video')
-    // Job ids created in this batch, returned so an orchestrator can await the
-    // batch's completion (e.g. to auto-assemble the Final Film).
+    // Job ids created in this batch, returned so the caller can report each
+    // clip's terminal state. Final Film assembly remains a manual action.
     const createdJobIds: string[] = []
-    try {
-      for (let i = 0; i < scenes.length; i++) {
-        const sourcePrompt = scenes[i].trim()
-        if (!sourcePrompt) continue
-        const sceneLabel = `Scene ${i + 1}`
+    const queueScene = async (sourcePrompt: string, i: number): Promise<string> => {
+      const sceneLabel = `Scene ${i + 1}`
         // Capture the authoritative narration written in this scene so it stays
         // the reference even if the visual prompt is later edited. When the
         // wizard chose "Without narration", suppress narration entirely.
@@ -7299,9 +7301,10 @@ export default function DashboardPage() {
         const perSceneImageUrl = opts?.perSceneImageUrls?.[i]
         if (perSceneImageUrl) {
           startFrameUrl = perSceneImageUrl
-          // Keep continuity: capture the previous clip's last frame as the end
-          // frame for this scene so the sequence still flows from scene to scene.
-          if (i > 0 && previousJobId) {
+          // Legacy chained callers may still interpolate from the previous
+          // clip. Wizard batches never wait here: each approved image starts an
+          // independent job and one failed scene cannot block the next queue.
+          if (!isIndependentSceneBatch && i > 0 && previousJobId) {
             try {
               endFrameUrl = await waitForLastFrameUrl(previousJobId, `Scene ${i}`)
             } catch (err) {
@@ -7313,8 +7316,12 @@ export default function DashboardPage() {
               endFrameUrl = undefined
             }
           }
-        } else if (i === 0) {
-          startFrameUrl = firstSceneImageUrl
+        } else if (i === 0 || isIndependentSceneBatch) {
+          // A missing wizard image never falls back to another scene's image.
+          // Scene 1 may still use the caller's explicit first-frame fallback;
+          // later scenes remain independent and unseeded unless identity prep
+          // below creates their own frame.
+          startFrameUrl = i === 0 ? firstSceneImageUrl : undefined
           // No uploaded start frame but a character is anchored: build a clean
           // single-view start frame from the Character Sheet so card 1 locks onto
           // the character instead of drifting in pure text-to-video.
@@ -7388,10 +7395,32 @@ export default function DashboardPage() {
         setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
         markNewClip(seededJob.id)
         hydrateIfComplete(createdJob)
-        previousJobId = seededJob.id
-        createdJobIds.push(seededJob.id)
+        if (!isIndependentSceneBatch) previousJobId = seededJob.id
+        return seededJob.id
+    }
+    try {
+      if (isIndependentSceneBatch) {
+        const queueResult = await queueSceneBatch(
+          scenes,
+          queueScene,
+          (failure) => {
+            console.error(`Scene ${failure.sceneIndex + 1}: queue failed`, failure.message)
+          },
+        )
+        createdJobIds.push(...queueResult.jobIds)
+        if (queueResult.failed.length > 0) {
+          setVideoColumnMessage(
+            `${queueResult.jobIds.length} scene${queueResult.jobIds.length === 1 ? '' : 's'} queued; ${queueResult.failed.length} failed to queue.`,
+          )
+        }
+      } else {
+        for (let i = 0; i < scenes.length; i += 1) {
+          const sourcePrompt = scenes[i].trim()
+          if (!sourcePrompt) continue
+          createdJobIds.push(await queueScene(sourcePrompt, i))
+        }
       }
-      setVideoColumnMessage(null)
+      if (!isIndependentSceneBatch) setVideoColumnMessage(null)
       return createdJobIds
     } catch (error) {
       if (error instanceof ApiError && error.code === 'TIMEOUT') {
@@ -7434,33 +7463,15 @@ export default function DashboardPage() {
     return await signFramesUrl(storagePath).catch(() => data.publicUrl)
   }
 
-  // Poll the created jobs directly until every one reaches a terminal state,
-  // merging each finished detail into state so the subsequent Final Film merge
-  // sees the completed clips. Returns true when at least one clip completed with
-  // a playable video. Independent of the component's own poll loop (that loop
-  // also runs; both are idempotent reads).
-  async function waitForAutoFilmBatch(jobIds: string[]): Promise<boolean> {
-    const deadline = Date.now() + 45 * 60_000
-    const pending = new Set(jobIds)
-    let anyPlayable = false
-    while (pending.size > 0 && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 5_000))
-      for (const id of Array.from(pending)) {
-        let detail: JobDetail
-        try {
-          detail = await jobOrchestratorGateway.getJob(id)
-        } catch {
-          continue // transient poll failure — retry on the next tick
-        }
-        if (!isTerminalStatus(detail.status)) continue
-        pending.delete(id)
-        setGeneratedVideos((cur) => mergeJob(cur, detail))
-        if (normalizeStatus(detail.status) === 'completed' && detail.video?.storage_path) {
-          anyPlayable = true
-        }
-      }
-    }
-    return anyPlayable && pending.size === 0
+  // Poll every wizard clip independently with a hard deadline. Successful
+  // cards are preserved as they settle; failed and timed-out clips stay
+  // separate in the returned summary.
+  async function waitForApprovedFilmBatch(jobIds: string[]): Promise<SceneBatchResult> {
+    return await waitForSceneBatch(jobIds, jobOrchestratorGateway.getJob, {
+      onSettled: (detail) => {
+        setGeneratedVideos((cur) => mergeJob(cur, detail as JobDetail))
+      },
+    })
   }
 
   // ── Gated "Make Full Film" wizard helpers ────────────────────────────────
@@ -7651,9 +7662,9 @@ export default function DashboardPage() {
     return await stageImageIntoFramesBucket(dataUrl)
   }
 
-  // Step 3 (ONLY after the explicit Approve click) — seed one video job per
-  // scene with the approved preview images, await the whole batch, then
-  // auto-assemble the Final Film via the existing merge path.
+  // Step 3 (ONLY after the explicit Approve click) — seed one independent video
+  // job per approved scene and report the batch. Final Film assembly remains a
+  // separate manual action through the existing Final Film button.
   async function renderApprovedFilm(
     scenes: string[],
     perSceneImageUrls: (string | undefined)[],
@@ -7714,33 +7725,35 @@ export default function DashboardPage() {
         theme: options?.creative?.theme,
         withNarration: options?.withNarration,
       })
+      const requestedSceneCount = scenes.filter((scene) => scene.trim().length > 0).length
+      const queueFailedCount = Math.max(0, requestedSceneCount - createdJobIds.length)
       if (!createdJobIds || createdJobIds.length === 0) {
-        throw new Error('No scenes could be queued for the film.')
+        setComposerError('No scenes could be queued for the film.')
+        setVideoColumnMessage(`No clips finished. ${queueFailedCount} failed to queue; 0 pending.`)
+        return
       }
       // Clear the composer prompt like the existing auto-split path does.
       setPromptText('')
 
-      // Wait for the whole batch.
+      // Wait for queued clips with a bounded poll. Completed cards are kept
+      // even when another clip fails or remains pending at the deadline.
       setVideoColumnMessage('Generating every scene… keep this tab open.')
-      const anyPlayable = await waitForAutoFilmBatch(createdJobIds)
-      if (!anyPlayable) {
+      const batch = await waitForApprovedFilmBatch(createdJobIds)
+      const failedCount = queueFailedCount + batch.failed.length
+      if (batch.completed.length === 0) {
         setComposerError('The scenes did not finish rendering — please try again.')
-        setVideoColumnMessage('No scenes finished rendering. Nothing to assemble.')
+        setVideoColumnMessage(
+          `No clips finished. ${failedCount} failed; ${batch.pending.length} still pending after the wait limit.`,
+        )
         return
       }
-      setVideoColumnMessage('All scenes ready — assembling your Final Film…')
-      // Auto-assemble the Final Film through the existing merge path once every
-      // scene has succeeded, so the user gets a complete film without a manual
-      // step. handleMergeAllVideosRef always points at the current handler.
-      try {
-        await handleMergeAllVideosRef.current()
-      } catch (mergeErr) {
-        const msg = mergeErr instanceof Error ? mergeErr.message : 'Could not assemble the Final Film.'
-        setComposerError(msg)
-        setVideoColumnMessage(msg)
-      }
+      const statusParts = [`${batch.completed.length} clip${batch.completed.length === 1 ? '' : 's'} ready`]
+      if (failedCount > 0) statusParts.push(`${failedCount} failed`)
+      if (batch.pending.length > 0) statusParts.push(`${batch.pending.length} still pending`)
+      setVideoColumnMessage(`${statusParts.join('; ')}. Use Final Film when you are ready to assemble them.`)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Could not generate the film.'
+      const rootError = err instanceof GlobalSceneBatchError ? err.cause : err
+      const msg = generationStartErrorMessage(rootError, 'Could not generate the film.')
       setComposerError(msg)
       setVideoColumnMessage(msg)
     } finally {
@@ -8865,13 +8878,6 @@ export default function DashboardPage() {
     }
 
   }
-
-  // Keep the merge ref pointing at the current-render closure so the auto-film
-  // orchestrator always merges with up-to-date state. No dep array: refreshes
-  // after every render, which is exactly when the closed-over state changes.
-  useEffect(() => {
-    handleMergeAllVideosRef.current = handleMergeAllVideos
-  })
 
   function resetWorkspace({ keepPreview }: { keepPreview: boolean }) {
     // Library cards (Final Film outputs in mergedEntries + approvedIds) are
