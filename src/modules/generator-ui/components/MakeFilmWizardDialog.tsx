@@ -1103,6 +1103,9 @@ Each scene should flow logically into the next, building toward a single cohesiv
         <DialogContent className="max-w-lg border-white/10 bg-zinc-950/95 text-zinc-100">
           <DialogHeader>
             <DialogTitle className="text-base">Choose a product</DialogTitle>
+            <DialogDescription>
+              Select a saved product image to keep the product consistent throughout the film.
+            </DialogDescription>
           </DialogHeader>
           {loadingProducts ? (
             <div className="flex items-center justify-center py-10 text-sm text-zinc-400">
@@ -1140,6 +1143,9 @@ Each scene should flow logically into the next, building toward a single cohesiv
         <DialogContent className="max-w-lg border-white/10 bg-zinc-950/95 text-zinc-100">
           <DialogHeader>
             <DialogTitle className="text-base">Choose a character</DialogTitle>
+            <DialogDescription>
+              Select a saved character or character sheet to feature throughout the film.
+            </DialogDescription>
           </DialogHeader>
           {loadingCharacters ? (
             <div className="flex items-center justify-center py-10 text-sm text-zinc-400">
@@ -1206,6 +1212,9 @@ Each scene should flow logically into the next, building toward a single cohesiv
         <DialogContent className="max-w-4xl border-white/10 bg-zinc-950/95 text-zinc-100">
           <DialogHeader>
             <DialogTitle className="text-base">Preview</DialogTitle>
+            <DialogDescription>
+              Review the selected scene image at full size before approving the film.
+            </DialogDescription>
           </DialogHeader>
           {lightboxImage && (
             <div className="flex flex-col items-center gap-3">

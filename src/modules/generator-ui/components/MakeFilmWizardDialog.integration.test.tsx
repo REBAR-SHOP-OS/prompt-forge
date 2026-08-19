@@ -179,6 +179,28 @@ describe('MakeFilmWizardDialog scenario product requirement (integration)', () =
 })
 
 describe('MakeFilmWizardDialog identity data path (integration)', () => {
+  it('gives every picker dialog an accessible description', async () => {
+    mockCharacterRows([])
+    renderWizard()
+
+    fireEvent.click(screen.getByText('Choose product'))
+    expect(screen.getByRole('dialog', { name: 'Choose a product' })).toHaveAccessibleDescription(
+      'Select a saved product image to keep the product consistent throughout the film.',
+    )
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    fireEvent.click(screen.getByText('Choose character'))
+    expect(screen.getByRole('dialog', { name: 'Choose a character' })).toHaveAccessibleDescription(
+      'Select a saved character or character sheet to feature throughout the film.',
+    )
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    fireEvent.click(screen.getByLabelText(/^Camera angle:/))
+    expect(screen.getByRole('dialog', { name: 'Select Camera Angle' })).toHaveAccessibleDescription(
+      'Search the available styles, choose one option, and apply it to the film.',
+    )
+  })
+
   it('opens the existing sheet flow from a plain character without selecting the card, then refreshes the picker', async () => {
     const rows = mockRefreshableCharacterRows([
       { id: 'sheet-1', title: 'Existing sheet', image_type: 'character_sheet' },
