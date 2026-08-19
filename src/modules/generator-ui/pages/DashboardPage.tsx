@@ -7619,7 +7619,13 @@ export default function DashboardPage() {
       })
       if (!composePrompt) throw new Error('Could not build the scene composition prompt')
       const { data: cData, error: cErr } = await supabase.functions.invoke('ai-image-edit', {
-        body: { prompt: composePrompt, imageUrls: [productUrl, characterUrl], aspectRatio: ratio },
+        body: {
+          prompt: composePrompt,
+          imageUrls: [productUrl, characterUrl],
+          referenceRoles: ['product', 'character'],
+          referenceCharacterSheets: [false, !!characterSheet],
+          aspectRatio: ratio,
+        },
       })
       if (cErr) throw cErr
       const composedUrl = (cData as { dataUrl?: unknown } | null)?.dataUrl
@@ -10577,7 +10583,7 @@ export default function DashboardPage() {
         userId={userId}
         writeScenario={writeFilmScenario}
         generateSceneImage={(sceneText, aspect, productUrl, characterUrl, noText, creative, characterSheet) =>
-          generateFilmSceneImage(sceneText, aspect, productUrl ?? selectedProduct?.url, characterUrl ?? selectedCharacter?.url, noText, creative, characterSheet)
+          generateFilmSceneImage(sceneText, aspect, productUrl, characterUrl, noText, creative, characterSheet)
         }
         onApprove={(scenes, perSceneImageUrls, options) => {
           void renderApprovedFilm(scenes, perSceneImageUrls, options)

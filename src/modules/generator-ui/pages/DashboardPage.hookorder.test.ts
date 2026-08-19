@@ -25,3 +25,15 @@ describe('DashboardPage hook declaration order', () => {
     expect(localStatusLine).toBeLessThan(pickerModelsLine)
   })
 })
+
+describe('DashboardPage Make Full Film identity handoff', () => {
+  it('sends aligned product/character roles and character-sheet flags to ai-image-edit', () => {
+    expect(source).toContain("referenceRoles: ['product', 'character']")
+    expect(source).toContain('referenceCharacterSheets: [false, !!characterSheet]')
+  })
+
+  it('does not replace missing wizard snapshot values with current dashboard selections', () => {
+    expect(source).toContain('generateFilmSceneImage(sceneText, aspect, productUrl, characterUrl, noText, creative, characterSheet)')
+    expect(source).not.toContain('productUrl ?? selectedProduct?.url, characterUrl ?? selectedCharacter?.url')
+  })
+})
