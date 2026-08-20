@@ -1171,13 +1171,13 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
               </div>
             </div>
             <div className="space-y-3">
-              {scenes.map((scene, i) => (
+              {plans.map((plan, i) => (
                 <div key={i} className="rounded-md border border-white/10 bg-white/[0.02] p-3 space-y-1">
                   <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
-                    Scene {i + 1} (~{Math.floor(duration / scenes.length)}s)
+                    Shot {i + 1} (~{Math.floor(duration / plans.length)}s)
                   </div>
                   <p className="text-sm leading-6 text-zinc-200 whitespace-pre-wrap [overflow-wrap:anywhere]">
-                    {scene}
+                    {plan.scenarioText}
                   </p>
                 </div>
               ))}
