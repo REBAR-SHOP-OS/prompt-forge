@@ -579,12 +579,12 @@ Each scene should flow logically into the next, building toward a single cohesiv
     <>
       <Dialog open={open} onOpenChange={(v) => (working ? undefined : onOpenChange(v))}>
         <DialogContent className="max-w-[95vw] max-h-[95vh] w-full h-full border-white/10 bg-zinc-950/95 text-zinc-100 flex flex-col">
-          <DialogHeader className="flex-shrink-0 relative">
-            <DialogTitle className="flex items-center gap-2 text-zinc-100 text-lg pr-20">
-              <Clapperboard className="h-6 w-6 text-fuchsia-300" aria-hidden="true" />
-              Make Full Film
-            </DialogTitle>
-            <div className="absolute right-0 top-0 flex items-center gap-1">
+          <DialogHeader className="flex-shrink-0">
+            <div className="flex items-center justify-between gap-2 pr-10">
+              <DialogTitle className="flex items-center gap-2 text-zinc-100 text-lg">
+                <Clapperboard className="h-6 w-6 text-fuchsia-300" aria-hidden="true" />
+                Make Full Film
+              </DialogTitle>
               {step === 'scenario' && (
                 <Button
                   type="button"
@@ -592,7 +592,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                   size="icon"
                   aria-label="Review full scenario"
                   onClick={() => setScenarioReviewOpen(true)}
-                  className="h-8 w-8 text-zinc-400 hover:text-zinc-100"
+                  className="h-8 w-8 shrink-0 text-zinc-400 hover:text-zinc-100"
                 >
                   <Eye className="h-4 w-4" aria-hidden="true" />
                 </Button>
