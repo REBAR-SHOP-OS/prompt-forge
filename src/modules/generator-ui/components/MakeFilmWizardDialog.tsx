@@ -18,6 +18,7 @@ import {
   X,
   MonitorPlay,
   Sparkles,
+  Eye,
 } from 'lucide-react'
 import {
   Dialog,
@@ -198,6 +199,7 @@ export function MakeFilmWizardDialog({
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
   const [lightboxScene, setLightboxScene] = useState<string>('')
+  const [scenarioReviewOpen, setScenarioReviewOpen] = useState(false)
   const hasInitialized = useRef(false)
 
   // Style picker dialogs
@@ -577,11 +579,25 @@ Each scene should flow logically into the next, building toward a single cohesiv
     <>
       <Dialog open={open} onOpenChange={(v) => (working ? undefined : onOpenChange(v))}>
         <DialogContent className="max-w-[95vw] max-h-[95vh] w-full h-full border-white/10 bg-zinc-950/95 text-zinc-100 flex flex-col">
-          <DialogHeader className="flex-shrink-0">
-            <DialogTitle className="flex items-center gap-2 text-zinc-100 text-lg">
+          <DialogHeader className="flex-shrink-0 relative">
+            <DialogTitle className="flex items-center gap-2 text-zinc-100 text-lg pr-20">
               <Clapperboard className="h-6 w-6 text-fuchsia-300" aria-hidden="true" />
               Make Full Film
             </DialogTitle>
+            <div className="absolute right-0 top-0 flex items-center gap-1">
+              {step === 'scenario' && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Review full scenario"
+                  onClick={() => setScenarioReviewOpen(true)}
+                  className="h-8 w-8 text-zinc-400 hover:text-zinc-100"
+                >
+                  <Eye className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              )}
+            </div>
             <div className="mt-1 flex items-baseline gap-2">
               <span className="text-sm font-semibold tracking-wide text-fuchsia-300">
                 Step {stepIndex} of 3
@@ -1096,6 +1112,47 @@ Each scene should flow logically into the next, building toward a single cohesiv
                   Approve & Make Film
                 </Button>
               )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Scenario Review Dialog */}
+      <Dialog open={scenarioReviewOpen} onOpenChange={setScenarioReviewOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] border-white/10 bg-zinc-950/95 text-zinc-100 flex flex-col">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle className="text-base text-zinc-100">Scenario Review</DialogTitle>
+            <DialogDescription className="text-sm text-zinc-400">
+              Full film scenario with settings and every scene in order.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto pr-1 space-y-4 min-h-0">
+            <div className="rounded-md border border-white/10 bg-white/[0.03] p-3 space-y-1 text-sm text-zinc-300">
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                <span><strong className="text-zinc-200">Duration:</strong> {duration}s</span>
+                <span><strong className="text-zinc-200">Aspect:</strong> {aspect}</span>
+                <span><strong className="text-zinc-200">Narration:</strong> {withNarration ? 'Yes' : 'No'}</span>
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                <span><strong className="text-zinc-200">Product:</strong> {currentProductName() || '—'}</span>
+                <span><strong className="text-zinc-200">Character:</strong> {selectedCharacter?.title || '—'}</span>
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                <span><strong className="text-zinc-200">Camera:</strong> {selectedCameraLabel}</span>
+                <span><strong className="text-zinc-200">Theme:</strong> {selectedThemeLabel}</span>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {scenes.map((scene, i) => (
+                <div key={i} className="rounded-md border border-white/10 bg-white/[0.02] p-3 space-y-1">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
+                    Scene {i + 1} (~{Math.floor(duration / scenes.length)}s)
+                  </div>
+                  <p className="text-sm leading-6 text-zinc-200 whitespace-pre-wrap [overflow-wrap:anywhere]">
+                    {scene}
+                  </p>
+                </div>
+              ))}
             </div>
           </div>
         </DialogContent>
