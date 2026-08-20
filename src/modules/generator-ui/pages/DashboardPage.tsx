@@ -7272,7 +7272,7 @@ export default function DashboardPage() {
     // clip's terminal state. Final Film assembly remains a manual action.
     const createdJobIds: string[] = []
     const queueScene = async (sourcePrompt: string, i: number): Promise<string> => {
-      const sceneLabel = `Scene ${i + 1}`
+      const sceneLabel = isPlanBased ? `Shot ${i + 1}` : `Scene ${i + 1}`
         // Capture the authoritative narration written in this scene so it stays
         // the reference even if the visual prompt is later edited. When the
         // wizard chose "Without narration", suppress narration entirely.
@@ -7289,7 +7289,7 @@ export default function DashboardPage() {
         // shot plan stays coherent across the whole film.
         if (cameraStyle) prompt += `\n\nCAMERA ANGLE: ${cameraStyle}`
         if (theme) prompt += `\n\nVISUAL STYLE: ${theme}`
-        prompt += `\n\nSCENE ${i + 1} OF ${scenes.length}: This clip is one shot in a continuous sequence. Keep the same subject, setting and lighting as the surrounding clips so the film flows seamlessly.`
+        prompt += `\n\n${isPlanBased ? 'SHOT' : 'SCENE'} ${i + 1} OF ${scenes.length}: This clip is one shot in a continuous sequence. Keep the same subject, setting and lighting as the surrounding clips so the film flows seamlessly.`
 
         let startFrameUrl: string | undefined
         let startFrameIsProductPhoto = false
@@ -7349,19 +7349,19 @@ export default function DashboardPage() {
           }
         } else if (previousJobId) {
           try {
-            startFrameUrl = await waitForLastFrameUrl(previousJobId, `Scene ${i}`)
+            startFrameUrl = await waitForLastFrameUrl(previousJobId, isPlanBased ? `Shot ${i}` : `Scene ${i}`)
           } catch (err) {
             // Only seed-frame CAPTURE failures are degradable. A previous scene
             // that failed/was removed/timed out still aborts the chain — those
             // clips would not exist to continue from.
             if (!(err instanceof Error && err.name === SEED_FRAME_ERROR)) throw err
-            console.error(`Scene ${i + 1}: continuing without continuity seed`, err)
+            console.error(`${isPlanBased ? 'Shot' : 'Scene'} ${i + 1}: continuing without continuity seed`, err)
             // Fall back to the scenario's original start frame (or none). The
             // character/product referenceImageUrls still anchor the subject, so
             // one unseeded scene beats erroring the whole 30s/45s/135s scenario.
             startFrameUrl = firstSceneImageUrl
             setVideoColumnMessage(
-              `Scene ${i + 1}: previous frame could not be captured — continuing without it.`,
+              `${isPlanBased ? 'Shot' : 'Scene'} ${i + 1}: previous frame could not be captured — continuing without it.`,
             )
           }
         }
@@ -7409,13 +7409,13 @@ export default function DashboardPage() {
           scenes,
           queueScene,
           (failure) => {
-            console.error(`Scene ${failure.sceneIndex + 1}: queue failed`, failure.message)
+            console.error(`${isPlanBased ? 'Shot' : 'Scene'} ${failure.sceneIndex + 1}: queue failed`, failure.message)
           },
         )
         createdJobIds.push(...queueResult.jobIds)
         if (queueResult.failed.length > 0) {
           setVideoColumnMessage(
-            `${queueResult.jobIds.length} scene${queueResult.jobIds.length === 1 ? '' : 's'} queued; ${queueResult.failed.length} failed to queue.`,
+            `${queueResult.jobIds.length} ${isPlanBased ? 'shot' : 'scene'}${queueResult.jobIds.length === 1 ? '' : 's'} queued; ${queueResult.failed.length} failed to queue.`,
           )
         }
       } else {
@@ -7738,9 +7738,10 @@ export default function DashboardPage() {
         withNarration: options?.withNarration,
       })
       const requestedSceneCount = scenes.filter((scene) => scene.trim().length > 0).length
+      const isPlanBased = options?.duration && (options.duration / scenes.length) === 5
       const queueFailedCount = Math.max(0, requestedSceneCount - createdJobIds.length)
       if (!createdJobIds || createdJobIds.length === 0) {
-        setComposerError('No scenes could be queued for the film.')
+        setComposerError(`No ${isPlanBased ? 'shots' : 'scenes'} could be queued for the film.`)
         setVideoColumnMessage(`No clips finished. ${queueFailedCount} failed to queue; 0 pending.`)
         return
       }
@@ -7749,11 +7750,11 @@ export default function DashboardPage() {
 
       // Wait for queued clips with a bounded poll. Completed cards are kept
       // even when another clip fails or remains pending at the deadline.
-      setVideoColumnMessage('Generating every scene… keep this tab open.')
+      setVideoColumnMessage(`Generating every ${isPlanBased ? 'shot' : 'scene'}… keep this tab open.`)
       const batch = await waitForApprovedFilmBatch(createdJobIds)
       const failedCount = queueFailedCount + batch.failed.length
       if (batch.completed.length === 0) {
-        setComposerError('The scenes did not finish rendering — please try again.')
+        setComposerError(`The ${isPlanBased ? 'shots' : 'scenes'} did not finish rendering — please try again.`)
         setVideoColumnMessage(
           `No clips finished. ${failedCount} failed; ${batch.pending.length} still pending after the wait limit.`,
         )

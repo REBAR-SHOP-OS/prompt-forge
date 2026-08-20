@@ -31,7 +31,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 
-import { buildFilmPlans } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { buildFilmPlans, type FilmPlan, expectedPlanCount, computePlanCredits } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
 import { supabase } from '@/integrations/supabase/client'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -412,7 +412,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         theme: theme?.prompt,
       })
       const rawScenes = written.map((s) => s.trim()).filter((s) => s.length > 0)
-      if (cleaned.length === 0) {
+      if (rawScenes.length === 0) {
         setError('The scenario came back empty — try rephrasing your prompt.')
         return
       }
@@ -622,7 +622,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                     ))}
                   </div>
                   <p className="text-[11px] text-zinc-500">
-                    {expectedPlanCount(duration)} shots × ~{Math.floor(duration / Math.ceil(duration / 15))}s each
+                    {expectedPlanCount(duration)} shots × 5s each = {duration}s total · {computePlanCredits(expectedPlanCount(duration))} credits
                   </p>
                 </div>
 
@@ -908,21 +908,21 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
             {step === 'scenario' && (
               <div className="space-y-3">
                 <p className="text-sm text-zinc-300">
-                  Here is the scenario the AI wrote. Edit any scene, then generate one preview image per scene.
+                  Here is the scenario the AI wrote. Edit any shot, then generate one preview image per shot.
                 </p>
                 <div className="-mx-1 overflow-x-auto overscroll-x-contain px-1 pb-3 scroll-smooth [scrollbar-color:rgb(82_82_91)_transparent] [scrollbar-width:thin]">
                   <div className="flex w-max snap-x snap-proximity gap-3">
                     {plans.map((plan, i) => (
                       <div key={i} className="w-[calc(100vw-4rem)] max-w-[34rem] shrink-0 snap-start space-y-2 rounded-md border border-white/10 bg-white/[0.02] p-4 sm:w-[30rem] lg:w-[34rem]">
                         <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
-                          Shot {i + 1} (~{Math.floor(duration / plans.length)}s)
+                          {plan.label} (~{plan.durationSeconds}s)
                         </div>
                         <Textarea
-                          value={scene}
+                          value={plan.scenarioText}
                           onChange={(e) =>
                             setPlans((cur) => {
                               const copy = [...cur]
-                              copy[i] = e.target.value
+                              copy[i] = { ...copy[i], scenarioText: e.target.value }
                               return copy
                             })
                           }
@@ -940,7 +940,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
             {step === 'images' && (
               <div className="space-y-3">
                 <p className="text-sm text-zinc-300">
-                  One preview image per scene. Click to zoom. Regenerate any you dislike. Preview final film before approving.
+                  One preview image per shot. Click to zoom. Regenerate any you dislike. Preview final film before approving.
                 </p>
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
                   {plans.map((plan, i) => {
@@ -951,7 +951,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                       <div key={i} className="space-y-2 rounded-md border border-white/10 bg-white/[0.02] p-3">
                         <div className="flex items-center justify-between">
                           <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
-                            Shot {i + 1}
+                            {plan.label}
                           </div>
                           <div className="flex items-center gap-1">
                             {url && (
@@ -959,7 +959,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                                 type="button"
                                 size="sm"
                                 variant="ghost"
-                                onClick={() => openLightbox(url, scene)}
+                                onClick={() => openLightbox(url, plan.scenarioText)}
                                 className="h-7 gap-1 px-2 text-xs text-zinc-300 hover:text-fuchsia-100"
                               >
                                 <ZoomIn className="h-3.5 w-3.5" />
@@ -986,12 +986,12 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                         <div 
                           className="grid place-items-center overflow-hidden rounded bg-black/40 cursor-pointer max-h-[240px]"
                           style={{ aspectRatio: aspect === '9:16' ? '9/16' : aspect === '16:9' ? '16/9' : '1/1' }}
-                          onClick={() => url && openLightbox(url, scene)}
+                          onClick={() => url && openLightbox(url, plan.scenarioText)}
                         >
                           {isRegen ? (
                             <LoaderCircle className="h-6 w-6 animate-spin text-zinc-500" aria-hidden="true" />
                           ) : url ? (
-                            <img src={url} alt={`Preview for scene ${i + 1}`} className="h-full w-full object-cover max-h-[240px]" />
+                            <img src={url} alt={`Preview for ${plan.label}`} className="h-full w-full object-cover max-h-[240px]" />
                           ) : (
                             <div className="flex flex-col items-center gap-1 text-zinc-600">
                               <ImageIcon className="h-6 w-6" aria-hidden="true" />
@@ -1004,7 +1004,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                             {sceneError}
                           </div>
                         )}
-                        <p className="line-clamp-2 text-[11px] leading-4 text-zinc-500">{scene}</p>
+                        <p className="line-clamp-2 text-[11px] leading-4 text-zinc-500">{plan.scenarioText}</p>
                       </div>
                     )
                   })}
@@ -1087,15 +1087,20 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                 </Button>
               )}
               {step === 'images' && (
-                <Button
-                  type="button"
-                  disabled={working || !canApproveFilm(images)}
-                  onClick={handleApprove}
-                  className="gap-1.5 bg-emerald-500/90 text-white hover:bg-emerald-500"
-                >
-                  <Check className="h-4 w-4" aria-hidden="true" />
-                  Approve & Make Film
-                </Button>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-zinc-400">
+                    {plans.length} shots · {computePlanCredits(plans.length)} credits
+                  </span>
+                  <Button
+                    type="button"
+                    disabled={working || !canApproveFilm(images)}
+                    onClick={handleApprove}
+                    className="gap-1.5 bg-emerald-500/90 text-white hover:bg-emerald-500"
+                  >
+                    <Check className="h-4 w-4" aria-hidden="true" />
+                    Approve & Make Film
+                  </Button>
+                </div>
               )}
             </div>
           </div>

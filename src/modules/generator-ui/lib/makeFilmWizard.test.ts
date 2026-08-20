@@ -687,3 +687,126 @@ describe('computePlanCredits', () => {
     expect(computePlanCredits(27)).toBe(27)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Plan count and total time validation tests
+// ---------------------------------------------------------------------------
+
+describe('plan count validation', () => {
+  it('maps each duration to the correct plan count (duration/5)', () => {
+    expect(expectedPlanCount(5)).toBe(1)
+    expect(expectedPlanCount(10)).toBe(2)
+    expect(expectedPlanCount(15)).toBe(3)
+    expect(expectedPlanCount(30)).toBe(6)
+    expect(expectedPlanCount(45)).toBe(9)
+    expect(expectedPlanCount(60)).toBe(12)
+    expect(expectedPlanCount(90)).toBe(18)
+    expect(expectedPlanCount(135)).toBe(27)
+  })
+
+  it('produces exactly 5-second plans for all supported durations', () => {
+    for (const duration of FILM_DURATIONS) {
+      const plans = buildFilmPlans(duration, 'Test scenario text.', undefined)
+      expect(plans).toHaveLength(expectedPlanCount(duration))
+      for (const plan of plans) {
+        expect(plan.durationSeconds).toBe(5)
+      }
+    }
+  })
+
+  it('calculates total time correctly as planCount * 5', () => {
+    for (const duration of FILM_DURATIONS) {
+      const plans = buildFilmPlans(duration, 'Test scenario text.', undefined)
+      const total = plans.reduce((acc, p) => acc + p.durationSeconds, 0)
+      expect(total).toBe(duration)
+      expect(total).toBe(plans.length * 5)
+    }
+  })
+
+  it('preserves plan order for all durations', () => {
+    for (const duration of FILM_DURATIONS) {
+      const plans = buildFilmPlans(duration, 'Test scenario text.', undefined)
+      for (let i = 0; i < plans.length; i++) {
+        expect(plans[i].planIndex).toBe(i)
+        expect(plans[i].label).toBe(`SHOT ${i + 1} OF ${plans.length}`)
+      }
+    }
+  })
+
+  it('cycles camera coverage correctly for multi-card films', () => {
+    // 30s = 2 cards × 3 plans = 6 plans
+    const plans30 = buildFilmPlans(30, 'Test scenario.', undefined)
+    expect(plans30.map((p) => p.coverage)).toEqual([
+      'wide', 'medium', 'close',
+      'wide', 'medium', 'close',
+    ])
+
+    // 45s = 3 cards × 3 plans = 9 plans
+    const plans45 = buildFilmPlans(45, 'Test scenario.', undefined)
+    expect(plans45.map((p) => p.coverage)).toEqual([
+      'wide', 'medium', 'close',
+      'wide', 'medium', 'close',
+      'wide', 'medium', 'close',
+    ])
+  })
+
+  it('handles 10s films with wide→close coverage', () => {
+    const plans = buildFilmPlans(10, 'Test scenario.', undefined)
+    expect(plans).toHaveLength(2)
+    expect(plans[0].coverage).toBe('wide')
+    expect(plans[1].coverage).toBe('close')
+  })
+
+  it('handles 5s films with single medium coverage', () => {
+    const plans = buildFilmPlans(5, 'Test scenario.', undefined)
+    expect(plans).toHaveLength(1)
+    expect(plans[0].coverage).toBe('medium')
+  })
+})
+
+describe('total time validation', () => {
+  it('validates total duration matches expected for all durations', () => {
+    for (const duration of FILM_DURATIONS) {
+      const plans = buildFilmPlans(duration, 'Test scenario.', undefined)
+      const result = validateFilmPlans(duration, plans)
+      expect(result.valid).toBe(true)
+      expect(result.error).toBeUndefined()
+    }
+  })
+
+  it('fails validation when total duration does not match', () => {
+    const plans = buildFilmPlans(15, 'Test scenario.', undefined)
+    // Modify one plan to break total duration
+    plans[0].durationSeconds = 10 as 5
+    const result = validateFilmPlans(15, plans)
+    expect(result.valid).toBe(false)
+    expect(result.error).toContain('Plan durations sum to')
+  })
+
+  it('fails validation when plan count is incorrect', () => {
+    const plans = buildFilmPlans(15, 'Test scenario.', undefined)
+    const result = validateFilmPlans(30, plans)
+    expect(result.valid).toBe(false)
+    expect(result.error).toContain('Expected 6 plans')
+  })
+})
+
+describe('plan credit consumption', () => {
+  it('calculates correct credits for all supported durations', () => {
+    for (const duration of FILM_DURATIONS) {
+      const planCount = expectedPlanCount(duration)
+      const credits = computePlanCredits(planCount)
+      expect(credits).toBe(planCount)
+      expect(credits).toBe(duration / 5)
+    }
+  })
+
+  it('shows plan count and credits before production', () => {
+    const duration = 30
+    const planCount = expectedPlanCount(duration)
+    const credits = computePlanCredits(planCount)
+    expect(planCount).toBe(6)
+    expect(credits).toBe(6)
+    expect(planCount * 5).toBe(duration)
+  })
+})
