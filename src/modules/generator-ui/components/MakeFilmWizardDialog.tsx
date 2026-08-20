@@ -231,6 +231,7 @@ export function MakeFilmWizardDialog({
       setSelectedProduct(null)
       setSelectedCharacter(null)
       setProductName('')
+      setCharacterDesc('')
       setIdentitySnapshot(null)
       setProductPickerOpen(false)
       setProductLoadError(null)
@@ -325,8 +326,49 @@ export function MakeFilmWizardDialog({
     return selectedProduct ? sanitizeProductName(selectedProduct.title) : null
   }
 
+  const [characterDesc, setCharacterDesc] = useState<string>('')
+  const characterDescLoadingRef = useRef(false)
+
+  // UUID-like title detector — filenames from uploaded images often look like UUIDs.
+  function isUuidLike(value: string | null | undefined): boolean {
+    if (!value) return false
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim())
+  }
+
+  // Sanitise a character or product title: if it looks like a UUID, drop it.
+  function safeTitle(value: string | null | undefined): string | null {
+    const trimmed = value?.trim() ?? ''
+    if (!trimmed || isUuidLike(trimmed)) return null
+    return trimmed
+  }
+
+  // Build a short description of the selected character via the describe-character
+  // edge function.  Cached in component state so it survives re-renders.
+  async function resolveCharacterDescription(char: ProductPhoto): Promise<string> {
+    if (characterDescLoadingRef.current) return characterDesc
+    characterDescLoadingRef.current = true
+    try {
+      const { data, error } = await supabase.functions.invoke('describe-character', {
+        body: { imageUrl: char.url },
+      })
+      if (error) throw error
+      const desc = (data as { description?: string } | null)?.description?.trim() ?? ''
+      if (desc) {
+        setCharacterDesc(desc)
+        return desc
+      }
+    } catch (e) {
+      console.error('describe-character failed:', e)
+    } finally {
+      characterDescLoadingRef.current = false
+    }
+    return characterDesc
+  }
+
+  // When a character is picked (or changed), clear any stale description.
   function pickCharacter(photo: ProductPhoto) {
     setSelectedCharacter(photo)
+    setCharacterDesc('')
     setCharacterPickerOpen(false)
   }
 
@@ -383,14 +425,22 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     try {
       let enrichedPrompt = generateDurationPrompt(idea, duration)
       const resolvedProductName = currentProductName()
+      const resolvedCharacterName = safeTitle(selectedCharacter?.title)
+      // Build (or reuse) a character-description when a character is selected.
+      let characterDescription = ''
+      if (selectedCharacter) {
+        characterDescription = characterDesc || await resolveCharacterDescription(selectedCharacter)
+      }
       if (selectedProduct && selectedCharacter) {
-        enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${resolvedProductName || 'Selected Product'}" (image: ${selectedProduct.url}) AND the character "${selectedCharacter.title || 'Selected Character'}" (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every shot of the film. Show the character interacting with or holding the product.`
+        const charLabel = resolvedCharacterName || (characterDescription ? 'a character' : 'Selected Character')
+        enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${resolvedProductName || 'Selected Product'}" (image: ${selectedProduct.url}) AND the ${charLabel}${characterDescription ? ` — ${characterDescription}` : ''} (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every shot of the film. Show the character interacting with or holding the product.`
       } else if (selectedProduct) {
         enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every shot of the film.`
       } else if (resolvedProductName) {
         enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName}. This product MUST appear prominently in every shot of the film.`
       } else if (selectedCharacter) {
-        enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${selectedCharacter.title || 'Selected Character'}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every shot of the film.`
+        const charLabel = resolvedCharacterName || (characterDescription ? 'a character' : 'Selected Character')
+        enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${charLabel}${characterDescription ? ` — ${characterDescription}` : ''}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every shot of the film.`
       }
       
       const cameraAngle = CAMERA_ANGLES.find((a) => a.value === selectedCameraAngle)
@@ -407,7 +457,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         productUrl: selectedProduct?.url,
         characterUrl: selectedCharacter?.url,
         productName: resolvedProductName,
-        characterName: selectedCharacter?.title ?? null,
+        characterName: resolvedCharacterName,
         withNarration,
         aspect,
         cameraStyle: cameraAngle?.prompt,
@@ -431,7 +481,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
           productUrl: selectedProduct?.url,
           characterUrl: selectedCharacter?.url,
           productName: resolvedProductName,
-          characterName: selectedCharacter?.title ?? null,
+          characterName: resolvedCharacterName,
           withNarration,
           aspect,
           cameraStyle: cameraAngle?.prompt,
