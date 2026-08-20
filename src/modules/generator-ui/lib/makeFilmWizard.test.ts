@@ -543,7 +543,10 @@ describe('buildFilmPlans', () => {
 
   it('preserves total duration across all plans', () => {
     for (const duration of FILM_DURATIONS) {
-      const plans = buildFilmPlans(duration, 'Test scenario text for the film.', 'Narration: Test narration.')
+      const planCount = expectedPlanCount(duration)
+      // Build text with enough sentences to split across all plans.
+      const sentences = Array.from({ length: planCount }, (_, i) => `Shot ${i + 1} of the film shows the product in action.`).join(' ')
+      const plans = buildFilmPlans(duration, sentences, 'Narration: Test narration.')
       const total = plans.reduce((acc, p) => acc + p.durationSeconds, 0)
       expect(total).toBe(duration)
     }
@@ -552,21 +555,21 @@ describe('buildFilmPlans', () => {
 
 describe('validateFilmPlans', () => {
   it('validates correct plans', () => {
-    const plans = buildFilmPlans(15, 'Test scenario.', undefined)
+    const plans = buildFilmPlans(15, 'First shot. Second shot. Third shot.', undefined)
     const result = validateFilmPlans(15, plans)
     expect(result.valid).toBe(true)
     expect(result.error).toBeUndefined()
   })
 
   it('fails when plan count is wrong', () => {
-    const plans = buildFilmPlans(15, 'Test scenario.', undefined)
+    const plans = buildFilmPlans(15, 'First shot. Second shot. Third shot.', undefined)
     const result = validateFilmPlans(30, plans)
     expect(result.valid).toBe(false)
     expect(result.error).toContain('Expected 6 plans')
   })
 
   it('fails when total duration does not match', () => {
-    const plans = buildFilmPlans(15, 'Test scenario.', undefined)
+    const plans = buildFilmPlans(15, 'First shot. Second shot. Third shot.', undefined)
     plans[0].durationSeconds = 10 as 5 // force invalid
     const result = validateFilmPlans(15, plans)
     expect(result.valid).toBe(false)

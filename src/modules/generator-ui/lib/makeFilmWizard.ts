@@ -393,9 +393,11 @@ export interface FilmPlan {
 }
 
 /**
- * Split a film's full scenario text into per-plan segments. The input is a single
- * cohesive scenario describing the whole film sequentially. We split it by
- * paragraph boundaries when possible, or evenly when paragraphs don't align.
+ * Split a film's full scenario text into per-plan segments.
+ *
+ * The model is instructed to return exactly `planCount` sections separated by
+ * the ===SCENE=== delimiter. We trust the delimiter first, then paragraph
+ * breaks, then sentence-based splitting as a last resort.
  */
 export function splitScenarioIntoPlans(
   scenarioText: string,
@@ -405,27 +407,33 @@ export function splitScenarioIntoPlans(
   const cleaned = scenarioText.trim()
   if (!cleaned) return Array.from({ length: planCount }, () => '')
 
-  // Try splitting by paragraph breaks first.
-  const paragraphs = cleaned.split(/\n\s*\n+/).map((s) => s.trim()).filter(Boolean)
-  if (paragraphs.length === planCount) return paragraphs
-
-  // Try splitting by ===SCENE=== delimiters.
-  const scenes = cleaned
+  // Primary: split by ===SCENE=== delimiters (the explicit contract with the model).
+  const delimited = cleaned
     .split(/\r?\n?\s*===SCENE===\s*\r?\n?/i)
     .map((s) => s.trim())
     .filter(Boolean)
-  if (scenes.length === planCount) return scenes
+  if (delimited.length === planCount) return delimited
 
-  // Fallback: split by sentences, distributing as evenly as possible.
+  // Secondary: split by paragraph breaks.
+  const paragraphs = cleaned.split(/\n\s*\n+/).map((s) => s.trim()).filter(Boolean)
+  if (paragraphs.length === planCount) return paragraphs
+
+  // Tertiary: split by sentences (fallback for legacy or simple text).
   const sentences = cleaned.split(/(?<=[.!?])\s+/).filter(Boolean)
-  const plans: string[] = []
-  for (let i = 0; i < planCount; i++) {
-    const targetStart = Math.floor((sentences.length * i) / planCount)
-    const targetEnd = Math.floor((sentences.length * (i + 1)) / planCount)
-    const chunk = sentences.slice(targetStart, targetEnd).join(' ')
-    plans.push(chunk)
+  if (sentences.length >= planCount) {
+    const result: string[] = []
+    let s = 0
+    for (let i = 0; i < planCount; i++) {
+      const targetEnd = Math.floor((sentences.length * (i + 1)) / planCount)
+      const chunk = sentences.slice(s, targetEnd).join(' ')
+      result.push(chunk)
+      s = targetEnd
+    }
+    return result
   }
-  return plans
+
+  // Mismatch — return raw as single segment so caller can detect and handle it.
+  return [cleaned]
 }
 
 /**
@@ -538,6 +546,10 @@ export function buildPlanClipPrompt(
 /**
  * Build plan objects from a total duration, scenario text, and optional narration.
  * This is the single source of truth for how a film becomes a sequence of plans.
+ *
+ * The model must return exactly `planCount` sections separated by ===SCENE===.
+ * If the returned section count doesn't match, we throw a readable error so the
+ * caller can retry or surface it to the user.
  */
 export function buildFilmPlans(
   totalDurationSeconds: number,
@@ -547,6 +559,13 @@ export function buildFilmPlans(
   const planCount = expectedPlanCount(totalDurationSeconds)
   const coverage = computePlanCoverage(totalDurationSeconds)
   const scenarioParts = splitScenarioIntoPlans(scenarioText, planCount)
+
+  if (scenarioParts.length !== planCount) {
+    throw new Error(
+      `The AI returned ${scenarioParts.length} plan section${scenarioParts.length === 1 ? '' : 's'} for a ${totalDurationSeconds}-second film, but ${planCount} sections are required. Please try again.`,
+    )
+  }
+
   const narrationParts = splitNarrationAcrossPlans(fullNarration, planCount)
 
   return Array.from({ length: planCount }, (_, i) => ({

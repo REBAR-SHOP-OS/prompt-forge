@@ -31,7 +31,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 
-import { buildFilmPlans } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { buildFilmPlans, type FilmPlan, expectedPlanCount, computePlanCredits, sanitizeProductName, canApproveFilm } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
 import { supabase } from '@/integrations/supabase/client'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -149,7 +149,7 @@ export interface MakeFilmWizardDialogProps {
   defaultDuration: FilmDuration
   defaultAspect: FilmAspect
   userId: string | null
-  writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean; aspect?: FilmAspect; productName?: string | null; characterName?: string | null; cameraStyle?: string; theme?: string }) => Promise<string[]>
+  writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean; aspect?: FilmAspect; productName?: string | null; characterName?: string | null; cameraStyle?: string; theme?: string; unit?: 'scene' | 'plan' }) => Promise<string[]>
   generateSceneImage: (sceneText: string, aspect?: FilmAspect, productUrl?: string, characterUrl?: string, noText?: boolean, creative?: FilmCreative, characterSheet?: boolean) => Promise<string>
   onApprove: (scenes: string[], perSceneImageUrls: (string | undefined)[], options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean; identity?: FilmIdentity; creative?: FilmCreative }) => void
 }
@@ -410,13 +410,39 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         aspect,
         cameraStyle: cameraAngle?.prompt,
         theme: theme?.prompt,
+        unit: 'plan',
       })
       const rawScenes = written.map((s) => s.trim()).filter((s) => s.length > 0)
-      if (cleaned.length === 0) {
+      if (rawScenes.length === 0) {
         setError('The scenario came back empty — try rephrasing your prompt.')
         return
       }
-      const builtPlans = buildFilmPlans(duration, rawScenes.join("\n\n"), undefined)
+      // The model must return exactly the expected number of plans. If it
+      // doesn't match, retry once before giving up.
+      let builtPlans: FilmPlan[]
+      try {
+        builtPlans = buildFilmPlans(duration, rawScenes.join('\n\n'), undefined)
+      } catch (firstErr) {
+        setProgress('Retrying scenario…')
+        const retryWritten = await writeScenario(enrichedPrompt, {
+          duration,
+          productUrl: selectedProduct?.url,
+          characterUrl: selectedCharacter?.url,
+          productName: resolvedProductName,
+          characterName: selectedCharacter?.title ?? null,
+          withNarration,
+          aspect,
+          cameraStyle: cameraAngle?.prompt,
+          theme: theme?.prompt,
+          unit: 'plan',
+        })
+        const retryScenes = retryWritten.map((s) => s.trim()).filter((s) => s.length > 0)
+        if (retryScenes.length === 0) {
+          setError('The scenario came back empty — try rephrasing your prompt.')
+          return
+        }
+        builtPlans = buildFilmPlans(duration, retryScenes.join('\n\n'), undefined)
+      }
       setPlans(builtPlans)
       setImages(new Array(builtPlans.length).fill(undefined))
       setStep('scenario')
@@ -918,11 +944,11 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                           Shot {i + 1} (~{Math.floor(duration / plans.length)}s)
                         </div>
                         <Textarea
-                          value={scene}
+                          value={plan.scenarioText}
                           onChange={(e) =>
                             setPlans((cur) => {
                               const copy = [...cur]
-                              copy[i] = e.target.value
+                              copy[i] = { ...copy[i], scenarioText: e.target.value }
                               return copy
                             })
                           }
@@ -959,7 +985,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                                 type="button"
                                 size="sm"
                                 variant="ghost"
-                                onClick={() => openLightbox(url, scene)}
+                                onClick={() => openLightbox(url, plan.scenarioText)}
                                 className="h-7 gap-1 px-2 text-xs text-zinc-300 hover:text-fuchsia-100"
                               >
                                 <ZoomIn className="h-3.5 w-3.5" />
@@ -986,7 +1012,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                         <div 
                           className="grid place-items-center overflow-hidden rounded bg-black/40 cursor-pointer max-h-[240px]"
                           style={{ aspectRatio: aspect === '9:16' ? '9/16' : aspect === '16:9' ? '16/9' : '1/1' }}
-                          onClick={() => url && openLightbox(url, scene)}
+                          onClick={() => url && openLightbox(url, plan.scenarioText)}
                         >
                           {isRegen ? (
                             <LoaderCircle className="h-6 w-6 animate-spin text-zinc-500" aria-hidden="true" />
@@ -1004,7 +1030,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                             {sceneError}
                           </div>
                         )}
-                        <p className="line-clamp-2 text-[11px] leading-4 text-zinc-500">{scene}</p>
+                        <p className="line-clamp-2 text-[11px] leading-4 text-zinc-500">{plan.scenarioText}</p>
                       </div>
                     )
                   })}

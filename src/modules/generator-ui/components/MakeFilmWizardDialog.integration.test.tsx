@@ -34,7 +34,10 @@ vi.mock('@/integrations/supabase/client', () => ({
 // wizard passes (urls + characterSheet flag) for both initial and Regenerate.
 const generateSceneImage = vi.fn(async () => 'data:image/png;base64,SCENE')
 
-const writeScenario = vi.fn(async () => ['Scene one', 'Scene two'])
+// For a 30s film, expectedPlanCount returns 6 plans.
+const writeScenario = vi.fn(async () => [
+  'Plan one: Opening shot with product front and center. ===SCENE=== Plan two: Close-up detail of product features. ===SCENE=== Plan three: Product in use, medium shot. ===SCENE=== Plan four: Dynamic angle showing product benefits. ===SCENE=== Plan five: Character interaction with product. ===SCENE=== Plan six: Final call-to-action with product logo.',
+])
 
 const onApprove = vi.fn()
 
@@ -149,7 +152,9 @@ function mockRefreshableCharacterRows(
 beforeEach(() => {
   vi.clearAllMocks()
   generateSceneImage.mockResolvedValue('data:image/png;base64,SCENE')
-  writeScenario.mockResolvedValue(['Scene one', 'Scene two'])
+  writeScenario.mockResolvedValue([
+    'Plan one: Opening shot with product front and center. ===SCENE=== Plan two: Close-up detail of product features. ===SCENE=== Plan three: Product in use, medium shot. ===SCENE=== Plan four: Dynamic angle showing product benefits. ===SCENE=== Plan five: Character interaction with product. ===SCENE=== Plan six: Final call-to-action with product logo.',
+  ])
   onApprove.mockClear()
   mockInvoke.mockReset()
   mockImageRows()
@@ -302,11 +307,14 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     await chooseProduct()
     fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
     fireEvent.click(screen.getByText('Write scenario'))
-    await waitFor(() => expect(screen.getByText('Scene one')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
+
+    // Verify writeScenario was called with duration 30 (which produces 6 plans).
+    expect(writeScenario.mock.calls[0][1].duration).toBe(30)
 
     // Generate preview images.
     fireEvent.click(screen.getByText('Generate preview images'))
-    await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
 
     // The initial generation must receive the required product plus the sheet
     // URL and characterSheet=true.
@@ -333,9 +341,9 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     await chooseProduct()
     fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
     fireEvent.click(screen.getByText('Write scenario'))
-    await waitFor(() => expect(screen.getByText('Scene one')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
     fireEvent.click(screen.getByText('Generate preview images'))
-    await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
     generateSceneImage.mockClear()
 
     // Regenerate scene 0 directly from the images step. Regenerate must use the
@@ -365,7 +373,7 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     await chooseProduct()
     fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
     fireEvent.click(screen.getByText('Write scenario'))
-    await waitFor(() => expect(screen.getByText('Scene one')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
     fireEvent.click(screen.getByText('Generate preview images'))
     await waitFor(() => expect(screen.getByAltText('Preview for scene 1')).toHaveAttribute('src', 'data:image/png;base64,FIRST'))
     await waitFor(() => expect(screen.getByAltText('Preview for scene 2')).toHaveAttribute('src', 'data:image/png;base64,SECOND'))
@@ -390,9 +398,9 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     await chooseProduct()
     fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
     fireEvent.click(screen.getByText('Write scenario'))
-    await waitFor(() => expect(screen.getByText('Scene one')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
     fireEvent.click(screen.getByText('Generate preview images'))
-    await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
 
     // Approve directly from the images step. The approved identity must be the
     // frozen snapshot (the sheet), matching what was previewed.
@@ -416,9 +424,9 @@ describe('MakeFilmWizardDialog identity data path (integration)', () => {
     await chooseProduct()
     fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
     fireEvent.click(screen.getByText('Write scenario'))
-    await waitFor(() => expect(screen.getByText('Scene one')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
     fireEvent.click(screen.getByText('Generate preview images'))
-    await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
 
     for (const c of generateSceneImage.mock.calls) {
       expect(c[6]).toBe(false) // plain character -> not a sheet
@@ -509,9 +517,9 @@ describe('MakeFilmWizardDialog full style dataset (integration)', () => {
     await chooseProduct()
     fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
     fireEvent.click(screen.getByText('Write scenario'))
-    await waitFor(() => expect(screen.getByText('Scene one')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/Shot 1/)).toBeInTheDocument())
     fireEvent.click(screen.getByText('Generate preview images'))
-    await waitFor(() => expect(generateSceneImage).toHaveBeenCalled())
+    await waitFor(() => expect(generateSceneImage).toHaveBeenCalledTimes(6))
     generateSceneImage.mockClear()
 
     // Regenerate scene 0 — the creative must be preserved.

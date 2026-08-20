@@ -20,7 +20,7 @@ vi.mock('@/integrations/supabase/client', () => ({
 }))
 
 const generateSceneImage = vi.fn(async () => 'data:image/png;base64,SCENE')
-const writeScenario = vi.fn(async () => ['Scene one', 'Scene two'])
+const writeScenario = vi.fn(async () => ['Scene one. ===SCENE=== Scene two. ===SCENE=== Scene three. ===SCENE=== Scene four. ===SCENE=== Scene five. ===SCENE=== Scene six.'])
 const onApprove = vi.fn()
 
 function renderWizard(overrides: Partial<Parameters<typeof MakeFilmWizardDialog>[0]> = {}) {

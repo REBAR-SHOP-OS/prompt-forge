@@ -7185,6 +7185,8 @@ export default function DashboardPage() {
       theme?: string
       /** When false, no narration/voiceover is produced for any clip. */
       withNarration?: boolean
+      /** Explicit flag: true when the wizard produced plan-based 5s shots. */
+      isPlanBased?: boolean
     },
   ): Promise<string[]> {
     if (!scenes || scenes.length === 0) return []
@@ -7212,9 +7214,12 @@ export default function DashboardPage() {
     const totalDuration = opts?.durationSeconds ?? durationSeconds
     const clipDurations = computeClipDurations(totalDuration)
     // For plan-based films (Make Full Film wizard), every plan is a 5-second clip.
-    // For legacy scene-based callers, use the computed clip durations.
-    const isPlanBased = opts?.perSceneImageUrls && opts.perSceneImageUrls.length > 0 &&
+    // Use the explicit isPlanBased flag when provided; otherwise fall back to the
+    // legacy heuristic for backward compatibility.
+    const isPlanBased = opts?.isPlanBased ?? (
+      opts?.perSceneImageUrls && opts.perSceneImageUrls.length > 0 &&
       (opts.durationSeconds ?? durationSeconds) / (opts.perSceneImageUrls.length || 1) === 5
+    )
     const perClipDuration: 5 | 10 | 15 = isPlanBased ? 5 : (clipDurations[0] ?? 15)
 
     // The wizard's product/character selections win when supplied; otherwise
@@ -10591,7 +10596,7 @@ export default function DashboardPage() {
           generateFilmSceneImage(sceneText, aspect, productUrl, characterUrl, noText, creative, characterSheet)
         }
         onApprove={(scenes, perSceneImageUrls, options) => {
-          void renderApprovedFilm(scenes, perSceneImageUrls, options)
+          void renderApprovedFilm(scenes, perSceneImageUrls, { ...options, isPlanBased: true })
         }}
       />
 
