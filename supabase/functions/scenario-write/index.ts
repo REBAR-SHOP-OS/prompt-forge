@@ -6,7 +6,9 @@ import { authenticate } from "../_shared/core/auth.ts";
 import { readJsonLoose } from "../_shared/core/safe-json.ts";
 import {
   getScenarioDurationPolicy,
+  getPlanDurationPolicy,
   runScenarioQualityPass,
+  runPlanQualityPass,
   SCENE_DELIMITER,
 } from "./scenario-policy.ts";
 
@@ -66,6 +68,16 @@ const NARRATION_LABELS: Record<string, string> = {
   fr: "Narration",
 };
 
+/**
+ * Build the system prompt for scenario generation.
+ *
+ * When unit === "plan", the scenario is written as a sequence of 5-second
+ * plans/shots instead of 15-second scenes/cards. The key changes:
+ * - duration maps to duration/5 plans
+ * - each plan is one 5-second beat
+ * - narration is written for the whole film and divided across plans
+ * - camera coverage cycles wide/medium/close per card
+ */
 export function buildSystemPrompt(
   duration: number,
   productAd?: ProductAdOpts,
@@ -74,6 +86,7 @@ export function buildSystemPrompt(
   businessInfo?: string,
   outputLanguage = "en",
   narration = true,
+  unit: "scene" | "plan" = "scene",
 ): string {
   const langName = LANGUAGE_NAMES[outputLanguage] ?? "English";
   const isEnglish = outputLanguage === "en";
@@ -91,7 +104,9 @@ export function buildSystemPrompt(
       ].join(" ")
     : "";
   const durationPolicy = getScenarioDurationPolicy(duration);
+  const planPolicy = getPlanDurationPolicy(duration);
   const sceneCount = durationPolicy.sceneCount;
+  const planCount = planPolicy.planCount;
   const isAd = Boolean(productAd);
   const isCharacter = Boolean(characterSheet);
   const autoLine = autoFromImage
@@ -136,6 +151,57 @@ export function buildSystemPrompt(
     : adWithCharacter
       ? "the on-screen character's spoken dialogue that promotes the product"
       : "a persuasive voiceover line that promotes the product";
+
+  // ---------------------------------------------------------------------------
+  // Plan-based system prompt (unit === "plan")
+  // ---------------------------------------------------------------------------
+  if (unit === "plan") {
+    const numWord = planCount === 1 ? "ONE" : planCount === 2 ? "TWO" : planCount === 3 ? "THREE"
+      : planCount === 6 ? "SIX" : planCount === 9 ? "NINE" : planCount === 12 ? "TWELVE"
+      : planCount === 18 ? "EIGHTEEN" : planCount === 27 ? "TWENTY-SEVEN" : String(planCount);
+    const longForm = isCharacter ? "character-driven film" : isAd ? "product advertisement" : "commercial";
+
+    const planNarrationFormat = narration
+      ? [
+          `STRUCTURE THE ENTIRE SCENARIO AS ONE CONTINUOUS NARRATIVE, then split it into ${planCount} sequential 5-second plans.`,
+          `Each plan must be a self-contained video prompt (subject, action, camera move, lighting) that continues the story from the previous plan.`,
+          ``,
+          `NARRATION INSTRUCTIONS: Write narration for the ENTIRE film as one coherent voiceover, then divide it naturally across the ${planCount} plans.`,
+          `Keep the total narration within ${planPolicy.maxSpokenWordsPerFilm} naturally speakable words (~2 words per second).`,
+          `Start each plan's narration on a NEW line with the exact label "${narrationLabel}:" followed by that plan's spoken lines in quotes.`,
+          `The narration text counts toward each plan's word limit. Keep spoken lines short and realistically timed to 5 seconds with natural pauses.`,
+        ].join(" ")
+      : [
+          `Write the VISUAL scenario ONLY — subject, action, camera move, and lighting.`,
+          `Do NOT include any narration, voiceover, spoken dialogue, captions, or the "${narrationLabel}:" label. No spoken words at all.`,
+        ].join(" ");
+
+    const coverageLine = planCount > 1
+      ? `Camera coverage cycles across the film: ${planPolicy.coverage.join(" → ")}. Each plan must explicitly use its assigned coverage (wide = establishing, medium = mid-shot, close = detail/face).`
+      : `Use a medium shot for this single plan.`;
+
+    return [
+      persona,
+      businessLine,
+      languageLine,
+      `Given the user's brief, write a CONTINUOUS narrative scenario for a ${duration}-second cinematic ${longForm},`,
+      `structured as ${numWord} sequential 5-second plans (shots) that flow into each other.`,
+      "The scenario MUST follow a clear story arc across the whole sequence: the opening plan is an attention-grabbing hook that establishes the subject and setting, the middle plans develop the story and build interest and desire, and the final plan delivers a defined payoff/resolution that ends on a strong, memorable note.",
+      `Output EXACTLY ${planCount} plan blocks separated by the literal delimiter "${SCENE_DELIMITER}" on its own line.`,
+      `Do not number the plans, no markdown, no preamble.`,
+      `Each plan is a 5-second clip with exactly ONE beat (0-5s).`,
+      "For each plan, specify the concrete ACTION, the FRAME/CAMERA MOVE, the LIGHTING or EMOTIONAL change, and clear STORY PROGRESS. Make every plan vivid, specific, exciting, and meaningfully different from the previous plan.",
+      `Each plan must be ${planPolicy.minWordsPerPlan}-${planPolicy.maxWordsPerPlan} words and self-contained as a video prompt (include subject, action, camera move, lighting),`,
+      "while clearly continuing the story from the previous plan.",
+      "Vary the shot, movement, environment and story progress across plans, but keep the product/character identity and continuity consistent.",
+      coverageLine,
+      planNarrationFormat,
+    ].filter(Boolean).join(" ");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Scene-based system prompt (unit === "scene", legacy/default)
+  // ---------------------------------------------------------------------------
   const narrationFormat = narration
     ? [
         `STRUCTURE EACH SCENE IN TWO PARTS, in this exact order:`,
@@ -207,6 +273,7 @@ async function callGateway(
   outputLanguage = "en",
   narration = true,
   correctiveInstruction?: string,
+  unit: "scene" | "plan" = "scene",
 ): Promise<Response> {
   const refText = characterSheet
     ? `Brief: ${idea}\nThe attached image IS the lead character — match their exact face, hair, wardrobe, body, and overall look in every shot, and keep them perfectly consistent throughout the film.`
@@ -245,7 +312,7 @@ async function callGateway(
     body: JSON.stringify({
       model: "google/gemini-2.5-flash",
       messages: [
-        { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage, narration) },
+        { role: "system", content: buildSystemPrompt(duration, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage, narration, unit) },
         { role: "user", content: userContent },
       ],
     }),
@@ -428,6 +495,9 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Determine unit: "plan" when explicitly requested, otherwise "scene" (legacy).
+    const unit: "scene" | "plan" = body?.unit === "plan" ? "plan" : "scene";
+
     const autoFromImage = autoFromImageReq && Boolean(imageUrl) && !productAd && !characterSheet;
     const effectiveIdea = idea
       || (productAd?.productName ? `Create an advertisement for ${productAd.productName}.` : "")
@@ -438,7 +508,7 @@ Deno.serve(async (req) => {
     if (productAd?.characterImageUrl) {
       productAd.characterImageUrl = await resolveImageForGateway(productAd.characterImageUrl);
     }
-    const resp = await callGateway(apiKey, duration, effectiveIdea, resolvedImageUrl, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage, narration);
+    const resp = await callGateway(apiKey, duration, effectiveIdea, resolvedImageUrl, productAd, autoFromImage, characterSheet, businessInfo, outputLanguage, narration, undefined, unit);
 
     if (resp.status === 429) {
       return new Response(JSON.stringify({ error: "Rate limit reached. Try again in a moment." }), {
@@ -463,27 +533,54 @@ Deno.serve(async (req) => {
 
     const data = await readJsonLoose(resp, "scenario-write");
     const raw: string = (data?.choices?.[0]?.message?.content ?? "").trim();
-    const quality = await runScenarioQualityPass(duration, raw, async (correctiveInstruction) => {
-      const retryResp = await callGateway(
-        apiKey,
-        duration,
-        effectiveIdea,
-        resolvedImageUrl,
-        productAd,
-        autoFromImage,
-        characterSheet,
-        businessInfo,
-        outputLanguage,
-        narration,
-        correctiveInstruction,
-      );
-      if (!retryResp.ok) {
-        console.error("scenario-write corrective retry error", retryResp.status);
-        return null;
-      }
-      const retryData = await readJsonLoose(retryResp, "scenario-write corrective retry");
-      return (retryData?.choices?.[0]?.message?.content ?? "").trim();
-    });
+
+    // Use plan-based quality pass when unit === "plan".
+    const quality = unit === "plan"
+      ? await runPlanQualityPass(duration, raw, async (correctiveInstruction) => {
+        const retryResp = await callGateway(
+          apiKey,
+          duration,
+          effectiveIdea,
+          resolvedImageUrl,
+          productAd,
+          autoFromImage,
+          characterSheet,
+          businessInfo,
+          outputLanguage,
+          narration,
+          correctiveInstruction,
+          unit,
+        );
+        if (!retryResp.ok) {
+          console.error("scenario-write corrective retry error", retryResp.status);
+          return null;
+        }
+        const retryData = await readJsonLoose(retryResp, "scenario-write corrective retry");
+        return (retryData?.choices?.[0]?.message?.content ?? "").trim();
+      })
+      : await runScenarioQualityPass(duration, raw, async (correctiveInstruction) => {
+        const retryResp = await callGateway(
+          apiKey,
+          duration,
+          effectiveIdea,
+          resolvedImageUrl,
+          productAd,
+          autoFromImage,
+          characterSheet,
+          businessInfo,
+          outputLanguage,
+          narration,
+          correctiveInstruction,
+          unit,
+        );
+        if (!retryResp.ok) {
+          console.error("scenario-write corrective retry error", retryResp.status);
+          return null;
+        }
+        const retryData = await readJsonLoose(retryResp, "scenario-write corrective retry");
+        return (retryData?.choices?.[0]?.message?.content ?? "").trim();
+      });
+
     const scenes = quality.scenes;
 
     if (scenes.length === 0) {
