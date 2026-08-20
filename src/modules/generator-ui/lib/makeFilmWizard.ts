@@ -397,7 +397,9 @@ export interface FilmPlan {
  *
  * The model is instructed to return exactly `planCount` sections separated by
  * the ===SCENE=== delimiter. We trust the delimiter first, then paragraph
- * breaks, then sentence-based splitting as a last resort.
+ * breaks. Sentence-based splitting is intentionally removed — if the model
+ * doesn't respect the delimiter, we let the caller detect the mismatch and
+ * retry rather than inventing plans.
  */
 export function splitScenarioIntoPlans(
   scenarioText: string,
@@ -417,20 +419,6 @@ export function splitScenarioIntoPlans(
   // Secondary: split by paragraph breaks.
   const paragraphs = cleaned.split(/\n\s*\n+/).map((s) => s.trim()).filter(Boolean)
   if (paragraphs.length === planCount) return paragraphs
-
-  // Tertiary: split by sentences (fallback for legacy or simple text).
-  const sentences = cleaned.split(/(?<=[.!?])\s+/).filter(Boolean)
-  if (sentences.length >= planCount) {
-    const result: string[] = []
-    let s = 0
-    for (let i = 0; i < planCount; i++) {
-      const targetEnd = Math.floor((sentences.length * (i + 1)) / planCount)
-      const chunk = sentences.slice(s, targetEnd).join(' ')
-      result.push(chunk)
-      s = targetEnd
-    }
-    return result
-  }
 
   // Mismatch — return raw as single segment so caller can detect and handle it.
   return [cleaned]

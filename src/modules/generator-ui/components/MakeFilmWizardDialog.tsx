@@ -31,7 +31,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 
-import { buildFilmPlans, type FilmPlan, expectedPlanCount, computePlanCredits, sanitizeProductName, canApproveFilm } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { buildFilmPlans, type FilmPlan, expectedPlanCount, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
 import { supabase } from '@/integrations/supabase/client'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -576,6 +576,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         duration,
         aspect,
         withNarration,
+        isPlanBased: true,
         identity: {
           productUrl: (identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product'))?.url,
           productName: (identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product'))?.name ?? currentProductName(),

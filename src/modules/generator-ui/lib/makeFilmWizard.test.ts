@@ -514,7 +514,7 @@ describe('sanitizeProductName', () => {
 
 describe('buildFilmPlans', () => {
   it('builds correct plans for a 15s film with 3 plans', () => {
-    const plans = buildFilmPlans(15, 'The product is shown in a workshop. A craftsman picks it up. He demonstrates its features.', 'Narration: Discover the power of precision.')
+    const plans = buildFilmPlans(15, 'The product is shown in a workshop. ===SCENE=== A craftsman picks it up. ===SCENE=== He demonstrates its features.', 'Narration: Discover the power of precision.')
     expect(plans).toHaveLength(3)
     expect(plans[0].label).toBe('SHOT 1 OF 3')
     expect(plans[0].coverage).toBe('wide')
@@ -533,7 +533,7 @@ describe('buildFilmPlans', () => {
   })
 
   it('builds correct plans for a 30s film with 6 plans', () => {
-    const plans = buildFilmPlans(30, 'Scene one. Scene two. Scene three. Scene four. Scene five. Scene six.', undefined)
+    const plans = buildFilmPlans(30, 'Scene one. ===SCENE=== Scene two. ===SCENE=== Scene three. ===SCENE=== Scene four. ===SCENE=== Scene five. ===SCENE=== Scene six.', undefined)
     expect(plans).toHaveLength(6)
     expect(plans.map((p) => p.coverage)).toEqual([
       'wide', 'medium', 'close',
@@ -544,9 +544,10 @@ describe('buildFilmPlans', () => {
   it('preserves total duration across all plans', () => {
     for (const duration of FILM_DURATIONS) {
       const planCount = expectedPlanCount(duration)
-      // Build text with enough sentences to split across all plans.
-      const sentences = Array.from({ length: planCount }, (_, i) => `Shot ${i + 1} of the film shows the product in action.`).join(' ')
-      const plans = buildFilmPlans(duration, sentences, 'Narration: Test narration.')
+      // Build text with ===SCENE=== delimiters matching the expected plan count.
+      const parts = Array.from({ length: planCount }, (_, i) => `Shot ${i + 1} of the film shows the product in action.`)
+      const text = parts.join(' ===SCENE=== ')
+      const plans = buildFilmPlans(duration, text, 'Narration: Test narration.')
       const total = plans.reduce((acc, p) => acc + p.durationSeconds, 0)
       expect(total).toBe(duration)
     }
@@ -555,21 +556,21 @@ describe('buildFilmPlans', () => {
 
 describe('validateFilmPlans', () => {
   it('validates correct plans', () => {
-    const plans = buildFilmPlans(15, 'First shot. Second shot. Third shot.', undefined)
+    const plans = buildFilmPlans(15, 'First shot. ===SCENE=== Second shot. ===SCENE=== Third shot.', undefined)
     const result = validateFilmPlans(15, plans)
     expect(result.valid).toBe(true)
     expect(result.error).toBeUndefined()
   })
 
   it('fails when plan count is wrong', () => {
-    const plans = buildFilmPlans(15, 'First shot. Second shot. Third shot.', undefined)
+    const plans = buildFilmPlans(15, 'First shot. ===SCENE=== Second shot. ===SCENE=== Third shot.', undefined)
     const result = validateFilmPlans(30, plans)
     expect(result.valid).toBe(false)
     expect(result.error).toContain('Expected 6 plans')
   })
 
   it('fails when total duration does not match', () => {
-    const plans = buildFilmPlans(15, 'First shot. Second shot. Third shot.', undefined)
+    const plans = buildFilmPlans(15, 'First shot. ===SCENE=== Second shot. ===SCENE=== Third shot.', undefined)
     plans[0].durationSeconds = 10 as 5 // force invalid
     const result = validateFilmPlans(15, plans)
     expect(result.valid).toBe(false)
@@ -620,13 +621,12 @@ describe('splitScenarioIntoPlans', () => {
     expect(parts).toEqual([text])
   })
 
-  it('falls back to sentence splitting when paragraphs do not match', () => {
+  it('returns raw text as single segment when delimiter count does not match', () => {
     const text = 'One. Two. Three. Four. Five. Six.'
     const parts = splitScenarioIntoPlans(text, 3)
-    expect(parts).toHaveLength(3)
-    expect(parts[0]).toContain('One')
-    expect(parts[1]).toContain('Three')
-    expect(parts[2]).toContain('Five')
+    // With sentence-based fallback removed, mismatch returns single segment
+    expect(parts).toHaveLength(1)
+    expect(parts[0]).toBe(text)
   })
 })
 
