@@ -30,7 +30,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
-import { canApproveFilm, isCharacterSheet, loadCharacterRows, sanitizeProductName, type FilmDuration, type FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
+
+import { buildFilmPlans } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
 import { supabase } from '@/integrations/supabase/client'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -166,7 +167,7 @@ export function MakeFilmWizardDialog({
 }: MakeFilmWizardDialogProps) {
   const [step, setStep] = useState<WizardStep>('prompt')
   const [prompt, setPrompt] = useState('')
-  const [scenes, setScenes] = useState<string[]>([])
+  const [plans, setPlans] = useState<FilmPlan[]>([])
   const [images, setImages] = useState<(string | undefined)[]>([])
   const [imageErrors, setImageErrors] = useState<(string | undefined)[]>([])
   const [busy, setBusy] = useState<'idle' | 'scenario' | 'images'>('idle')
@@ -209,7 +210,7 @@ export function MakeFilmWizardDialog({
       hasInitialized.current = true
       setStep('prompt')
       setPrompt(initialPrompt ?? '')
-      setScenes([])
+      setPlans([])
       setImages([])
       setImageErrors([])
       setBusy('idle')
@@ -355,17 +356,16 @@ export function MakeFilmWizardDialog({
     }
   }
 
-  function generateDurationPrompt(basePrompt: string, durationSeconds: number): string {
-    const sceneCount = Math.ceil(durationSeconds / 15)
-    const sceneDuration = Math.floor(durationSeconds / sceneCount)
+    function generateDurationPrompt(basePrompt: string, durationSeconds: number): string {
+    const planCount = expectedPlanCount(durationSeconds)
     
     return `${basePrompt}
 
-IMPORTANT: Create exactly ${sceneCount} scenes, each approximately ${sceneDuration} seconds long. Total film duration must be ${durationSeconds} seconds.
-Each scene should flow logically into the next, building toward a single cohesive narrative. All scenes must serve the same overall story goal.`
+IMPORTANT: Create a continuous narrative for a ${durationSeconds}-second film, split into ${planCount} sequential 5-second plans (shots). Total film duration must be ${durationSeconds} seconds.
+Each plan should be a self-contained video prompt (subject, action, camera move, lighting) that continues the story from the previous plan. All plans must serve the same overall story goal.`
   }
 
-  async function handleWriteScenario() {
+    async function handleWriteScenario() {
     const idea = prompt.trim()
     if (!selectedProduct) {
       setError('Choose a product before writing the scenario.')
@@ -382,13 +382,13 @@ Each scene should flow logically into the next, building toward a single cohesiv
       let enrichedPrompt = generateDurationPrompt(idea, duration)
       const resolvedProductName = currentProductName()
       if (selectedProduct && selectedCharacter) {
-        enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${resolvedProductName || 'Selected Product'}" (image: ${selectedProduct.url}) AND the character "${selectedCharacter.title || 'Selected Character'}" (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every scene of the film. Show the character interacting with or holding the product.`
+        enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${resolvedProductName || 'Selected Product'}" (image: ${selectedProduct.url}) AND the character "${selectedCharacter.title || 'Selected Character'}" (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every shot of the film. Show the character interacting with or holding the product.`
       } else if (selectedProduct) {
-        enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every scene of the film.`
+        enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every shot of the film.`
       } else if (resolvedProductName) {
-        enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName}. This product MUST appear prominently in every scene of the film.`
+        enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName}. This product MUST appear prominently in every shot of the film.`
       } else if (selectedCharacter) {
-        enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${selectedCharacter.title || 'Selected Character'}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every scene of the film.`
+        enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${selectedCharacter.title || 'Selected Character'}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every shot of the film.`
       }
       
       const cameraAngle = CAMERA_ANGLES.find((a) => a.value === selectedCameraAngle)
@@ -411,13 +411,14 @@ Each scene should flow logically into the next, building toward a single cohesiv
         cameraStyle: cameraAngle?.prompt,
         theme: theme?.prompt,
       })
-      const cleaned = written.map((s) => s.trim()).filter((s) => s.length > 0)
+      const rawScenes = written.map((s) => s.trim()).filter((s) => s.length > 0)
       if (cleaned.length === 0) {
         setError('The scenario came back empty — try rephrasing your prompt.')
         return
       }
-      setScenes(cleaned)
-      setImages(new Array(cleaned.length).fill(undefined))
+      const builtPlans = buildFilmPlans(duration, rawScenes.join("\n\n"), undefined)
+      setPlans(builtPlans)
+      setImages(new Array(builtPlans.length).fill(undefined))
       setStep('scenario')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not write the scenario.')
@@ -475,7 +476,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
   }
 
   async function handleGenerateImages() {
-    if (scenes.length === 0) return
+    if (plans.length === 0) return
     setBusy('images')
     setError(null)
     const snapshot: IdentitySnapshot = {
@@ -484,13 +485,13 @@ Each scene should flow logically into the next, building toward a single cohesiv
     }
     setIdentitySnapshot(snapshot)
     const characterSheet = snapshot.character?.characterSheet ?? false
-    const next: (string | undefined)[] = new Array(scenes.length).fill(undefined)
-    const nextErrors: (string | undefined)[] = new Array(scenes.length).fill(undefined)
+    const next: (string | undefined)[] = new Array(plans.length).fill(undefined)
+    const nextErrors: (string | undefined)[] = new Array(plans.length).fill(undefined)
     const creative = currentCreative()
-    for (let i = 0; i < scenes.length; i++) {
-      setProgress(`Designing preview image ${i + 1} of ${scenes.length}…`)
+    for (let i = 0; i < plans.length; i++) {
+      setProgress(`Designing preview image ${i + 1} of ${plans.length}…`)
       try {
-        next[i] = await generateSceneImage(scenes[i], aspect, snapshot.product?.url, snapshot.character?.url, noTextOnImages, creative, characterSheet)
+        next[i] = await generateSceneImage(plans[i].scenarioText, aspect, snapshot.product?.url, snapshot.character?.url, noTextOnImages, creative, characterSheet)
         nextErrors[i] = undefined
       } catch (err) {
         console.error(`Make-film wizard: preview image ${i + 1} failed`, err)
@@ -513,7 +514,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
       const snapshot = identitySnapshot
       if (!snapshot) throw new Error('The original film identity snapshot is unavailable. Generate the preview batch again.')
       const characterSheet = snapshot.character?.characterSheet ?? false
-      const url = await generateSceneImage(scenes[index], aspect, snapshot.product?.url, snapshot.character?.url, noTextOnImages, currentCreative(), characterSheet)
+      const url = await generateSceneImage(plans[index].scenarioText, aspect, snapshot.product?.url, snapshot.character?.url, noTextOnImages, currentCreative(), characterSheet)
       setImages((cur) => {
         const copy = [...cur]
         copy[index] = url
@@ -545,7 +546,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
 
   function handleApprove() {
     try {
-      onApprove(scenes, images, {
+      onApprove(plans.map((p) => p.scenarioText), images, {
         duration,
         aspect,
         withNarration,
@@ -621,7 +622,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                     ))}
                   </div>
                   <p className="text-[11px] text-zinc-500">
-                    {Math.ceil(duration / 15)} scenes × ~{Math.floor(duration / Math.ceil(duration / 15))}s each
+                    {expectedPlanCount(duration)} shots × ~{Math.floor(duration / Math.ceil(duration / 15))}s each
                   </p>
                 </div>
 
@@ -911,15 +912,15 @@ Each scene should flow logically into the next, building toward a single cohesiv
                 </p>
                 <div className="-mx-1 overflow-x-auto overscroll-x-contain px-1 pb-3 scroll-smooth [scrollbar-color:rgb(82_82_91)_transparent] [scrollbar-width:thin]">
                   <div className="flex w-max snap-x snap-proximity gap-3">
-                    {scenes.map((scene, i) => (
+                    {plans.map((plan, i) => (
                       <div key={i} className="w-[calc(100vw-4rem)] max-w-[34rem] shrink-0 snap-start space-y-2 rounded-md border border-white/10 bg-white/[0.02] p-4 sm:w-[30rem] lg:w-[34rem]">
                         <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
-                          Scene {i + 1} (~{Math.floor(duration / scenes.length)}s)
+                          Shot {i + 1} (~{Math.floor(duration / plans.length)}s)
                         </div>
                         <Textarea
                           value={scene}
                           onChange={(e) =>
-                            setScenes((cur) => {
+                            setPlans((cur) => {
                               const copy = [...cur]
                               copy[i] = e.target.value
                               return copy
@@ -942,7 +943,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                   One preview image per scene. Click to zoom. Regenerate any you dislike. Preview final film before approving.
                 </p>
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-                  {scenes.map((scene, i) => {
+                  {plans.map((plan, i) => {
                     const url = safeMediaUrl(images[i])
                     const isRegen = regenIndex === i
                     const sceneError = imageErrors[i]
@@ -950,7 +951,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                       <div key={i} className="space-y-2 rounded-md border border-white/10 bg-white/[0.02] p-3">
                         <div className="flex items-center justify-between">
                           <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
-                            Scene {i + 1}
+                            Shot {i + 1}
                           </div>
                           <div className="flex items-center gap-1">
                             {url && (

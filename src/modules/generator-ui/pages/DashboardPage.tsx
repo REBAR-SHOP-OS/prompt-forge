@@ -7211,7 +7211,11 @@ export default function DashboardPage() {
     // supports (5 | 10 | 15). The sum always equals the chosen total.
     const totalDuration = opts?.durationSeconds ?? durationSeconds
     const clipDurations = computeClipDurations(totalDuration)
-    const perClipDuration: 5 | 10 | 15 = clipDurations[0] ?? 15
+    // For plan-based films (Make Full Film wizard), every plan is a 5-second clip.
+    // For legacy scene-based callers, use the computed clip durations.
+    const isPlanBased = opts?.perSceneImageUrls && opts.perSceneImageUrls.length > 0 &&
+      (opts.durationSeconds ?? durationSeconds) / (opts.perSceneImageUrls.length || 1) === 5
+    const perClipDuration: 5 | 10 | 15 = isPlanBased ? 5 : (clipDurations[0] ?? 15)
 
     // The wizard's product/character selections win when supplied; otherwise
     // fall back to the composer's pinned product/character.
@@ -7539,6 +7543,7 @@ export default function DashboardPage() {
           withNarration: options?.withNarration,
           cameraStyle: options?.cameraStyle,
           genre: options?.theme,
+          unit: "plan",
         },
       })
       if (error) throw error

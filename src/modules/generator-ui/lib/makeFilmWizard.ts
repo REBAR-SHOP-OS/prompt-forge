@@ -22,7 +22,7 @@ export const FILM_DURATIONS: FilmDuration[] = [5, 10, 15, 30, 45, 60, 90, 135]
 /**
  * How many sequential scenes a total duration expects. Mirrors the
  * scenario-write edge function so the frontend and backend agree.
- *   5→1, 10→1, 15→1, 30→2, 45→3, 60→4, 90→6, 135→9
+ *   5->1, 10->1, 15->1, 30->2, 45->3, 60->4, 90->6, 135->9
  */
 export function expectedSceneCount(duration: number): number {
   if (duration === 135) return 9
@@ -37,14 +37,14 @@ export function expectedSceneCount(duration: number): number {
  * Split a chosen total duration into per-clip durations that the job contract
  * supports (5 | 10 | 15). The sum of the returned clip durations ALWAYS equals
  * the chosen total:
- *   5s  → [5]
- *   10s → [10]
- *   15s → [15]
- *   30s → [15, 15]
- *   45s → [15, 15, 15]
- *   60s → [15, 15, 15, 15]
- *   90s → [15, 15, 15, 15, 15, 15]
- *   135s→ [15, 15, 15, 15, 15, 15, 15, 15, 15]
+ *   5s  -> [5]
+ *   10s -> [10]
+ *   15s -> [15]
+ *   30s -> [15, 15]
+ *   45s -> [15, 15, 15]
+ *   60s -> [15, 15, 15, 15]
+ *   90s -> [15, 15, 15, 15, 15, 15]
+ *   135s-> [15, 15, 15, 15, 15, 15, 15, 15, 15]
  */
 export function computeClipDurations(totalSeconds: number): ClipDuration[] {
   const count = expectedSceneCount(totalSeconds)
@@ -58,9 +58,49 @@ export function computeClipDurations(totalSeconds: number): ClipDuration[] {
   return Array.from({ length: count }, () => 15 as ClipDuration)
 }
 
-/** Sum of clip durations — used to assert the split equals the chosen time. */
+/** Sum of clip durations -- used to assert the split equals the chosen time. */
 export function sumClipDurations(clips: ClipDuration[]): number {
   return clips.reduce((acc, c) => acc + c, 0)
+}
+
+/** Camera coverage (framing) for a single 5-second plan/shot. */
+export type PlanCoverage = 'wide' | 'medium' | 'close'
+
+/**
+ * How many 5-second plans (shots) a total duration expects. The unit of work
+ * changed from the card (5|10|15s) to the plan (5s), so every duration maps to
+ * duration/5 plans:
+ *   5->1, 10->2, 15->3, 30->6, 45->9, 60->12, 90->18, 135->27
+ */
+export function expectedPlanCount(duration: number): number {
+  return Math.max(1, Math.round(duration / 5))
+}
+
+/**
+ * Split a total duration into 5-second plan durations. The sum always equals
+ * the total, and every plan is a contract-valid 5s clip.
+ */
+export function computePlanDurations(totalSeconds: number): ClipDuration[] {
+  return Array.from({ length: expectedPlanCount(totalSeconds) }, () => 5 as ClipDuration)
+}
+
+/**
+ * Camera coverage (framing) for each plan, derived from the card structure:
+ *   - a 5s card  -> 1 plan  -> medium
+ *   - a 10s card -> 2 plans -> wide, close
+ *   - a 15s card -> 3 plans -> wide, medium, close
+ * Multi-card films (30/45/60/90/135) are all 15s cards, so coverage cycles
+ * wide -> medium -> close across the whole film.
+ */
+export function computePlanCoverage(totalSeconds: number): PlanCoverage[] {
+  const cards = computeClipDurations(totalSeconds)
+  const coverage: PlanCoverage[] = []
+  for (const card of cards) {
+    if (card === 5) coverage.push('medium')
+    else if (card === 10) coverage.push('wide', 'close')
+    else coverage.push('wide', 'medium', 'close')
+  }
+  return coverage
 }
 
 /**
@@ -69,9 +109,9 @@ export function sumClipDurations(clips: ClipDuration[]): number {
  * truth for how a scene's action is paced on screen, so the scenario-write
  * backend and the wizard agree on the beat structure.
  *
- *   5s  → ["0-5"]
- *   10s → ["0-5", "5-10"]
- *   15s → ["0-4", "4-9", "9-15"]
+ *   5s  -> ["0-5"]
+ *   10s -> ["0-5", "5-10"]
+ *   15s -> ["0-4", "4-9", "9-15"]
  *
  * The ranges are contiguous (end of one equals start of the next) and cover
  * the whole clip with no gaps, no overlap and no time beyond the duration.
@@ -125,7 +165,7 @@ export interface FilmSelections {
  * written at save time ('character_sheet' vs 'character'). The title/URL
  * heuristic is ONLY a backward-compatible fallback for legacy rows written
  * before the image_type column existed (image_type === null): a sheet is then
- * recognized when EITHER its title carries the "— sheet" marker that
+ * recognized when EITHER its title carries the "-- sheet" marker that
  * generate-character-sheet appends, OR its storage key uses the
  * "character-sheet-" prefix. For new data the explicit metadata always wins,
  * so an uploaded sheet with a different title is still detected and a plain
@@ -141,7 +181,7 @@ export function isCharacterSheet(
   if (imageType === 'character') return false
   // Legacy row (image_type is null): fall back to the title/URL heuristic.
   const t = (title ?? '').toLowerCase()
-  if (t.includes('— sheet')) return true
+  if (t.includes('-- sheet')) return true
   const u = url ?? ''
   // The storage key (e.g. "<userId>/character-sheet-<ts>-<uuid>.png") is the
   // stable marker written by generate-character-sheet. The signed URL embeds
@@ -181,11 +221,11 @@ export function isMissingImageTypeColumnError(message: string | null | undefined
  * fallback for the missing image_type column.
  *
  * The primary query selects image_type. If (and only if) the error is exactly
- * the missing-column error for generator_user_images.image_type — i.e. the
- * migration has not been deployed to the current Lovable Cloud Preview — we
+ * the missing-column error for generator_user_images.image_type -- i.e. the
+ * migration has not been deployed to the current Lovable Cloud Preview -- we
  * retry ONCE with the legacy select (no image_type) and mark every row
  * imageType=null so the existing title/URL heuristic still classifies legacy
- * sheets. Any other error (auth, RLS, network, timeout, …) is returned as-is
+ * sheets. Any other error (auth, RLS, network, timeout, ...) is returned as-is
  * and never retried.
  *
  * `query` is injected so the logic is pure and unit-testable without a live
@@ -305,7 +345,7 @@ export function buildClipPrompt(
     out = [
       `CHARACTER IDENTITY LOCK (highest priority): The main character is fixed and must stay identical in every shot:`,
       characterDescription,
-      `Keep the exact same face, hair, body, proportions and the EXACT same outfit — same clothing items, colors, logos/prints, trousers, shoes and accessories. Do not change, restyle, recolor, add or remove any clothing or accessory, and do not redesign the character. Only the pose, action, camera and environment may change.`,
+      `Keep the exact same face, hair, body, proportions and the EXACT same outfit -- same clothing items, colors, logos/prints, trousers, shoes and accessories. Do not change, restyle, recolor, add or remove any clothing or accessory, and do not redesign the character. Only the pose, action, camera and environment may change.`,
       ``,
       out,
     ].join('\n')
@@ -330,7 +370,235 @@ export function buildClipPrompt(
 }
 
 /**
- * Reference image URLs to attach to image/video generation, in a stable order:
+ * A plan is a single 5-second shot with its own image, prompt, and coverage.
+ * The scenario is written for the whole film, then split into plans.
+ */
+export interface FilmPlan {
+  /** Zero-based plan index within the film. */
+  planIndex: number
+  /** Total number of plans in the film. */
+  totalPlans: number
+  /** "SHOT i OF n" label for UI and job metadata. */
+  label: string
+  /** Coverage framing for this plan: wide | medium | close. */
+  coverage: PlanCoverage
+  /** Duration in seconds (always 5). */
+  durationSeconds: 5
+  /** The portion of the scenario text assigned to this plan. */
+  scenarioText: string
+  /** The portion of narration assigned to this plan, if any. */
+  narrationText?: string
+  /** The still image (first frame) URL for this plan, when generated. */
+  imageUrl?: string
+}
+
+/**
+ * Split a film's full scenario text into per-plan segments. The input is a single
+ * cohesive scenario describing the whole film sequentially. We split it by
+ * paragraph boundaries when possible, or evenly when paragraphs don't align.
+ */
+export function splitScenarioIntoPlans(
+  scenarioText: string,
+  planCount: number,
+): string[] {
+  if (planCount <= 1) return [scenarioText.trim()]
+  const cleaned = scenarioText.trim()
+  if (!cleaned) return Array.from({ length: planCount }, () => '')
+
+  // Try splitting by paragraph breaks first.
+  const paragraphs = cleaned.split(/\n\s*\n+/).map((s) => s.trim()).filter(Boolean)
+  if (paragraphs.length === planCount) return paragraphs
+
+  // Try splitting by ===SCENE=== delimiters.
+  const scenes = cleaned
+    .split(/\r?\n?\s*===SCENE===\s*\r?\n?/i)
+    .map((s) => s.trim())
+    .filter(Boolean)
+  if (scenes.length === planCount) return scenes
+
+  // Fallback: split by sentences, distributing as evenly as possible.
+  const sentences = cleaned.split(/(?<=[.!?])\s+/).filter(Boolean)
+  const plans: string[] = []
+  for (let i = 0; i < planCount; i++) {
+    const targetStart = Math.floor((sentences.length * i) / planCount)
+    const targetEnd = Math.floor((sentences.length * (i + 1)) / planCount)
+    const chunk = sentences.slice(targetStart, targetEnd).join(' ')
+    plans.push(chunk)
+  }
+  return plans
+}
+
+/**
+ * Split the full film narration across plans proportionally. Narration is
+ * written for the whole film as one coherent text, then divided so each plan
+ * gets its portion naturally.
+ */
+export function splitNarrationAcrossPlans(
+  fullNarration: string | undefined,
+  planCount: number,
+): (string | undefined)[] {
+  if (!fullNarration || planCount <= 1) {
+    return Array.from({ length: planCount }, (_, i) => (i === 0 ? fullNarration : undefined))
+  }
+  const cleaned = fullNarration.trim()
+  if (!cleaned) return Array.from({ length: planCount }, () => undefined)
+
+  // Try splitting by sentences.
+  const sentences = cleaned.split(/(?<=[.!?])\s+/).filter(Boolean)
+  if (sentences.length >= planCount) {
+    const result: (string | undefined)[] = Array.from({ length: planCount }, () => undefined)
+    let s = 0
+    for (let i = 0; i < planCount; i++) {
+      const targetEnd = Math.floor((sentences.length * (i + 1)) / planCount)
+      const chunk = sentences.slice(s, targetEnd).join(' ')
+      result[i] = chunk || undefined
+      s = targetEnd
+    }
+    return result
+  }
+
+  // Not enough sentences: give everything to plan 0, none to others.
+  const result: (string | undefined)[] = Array.from({ length: planCount }, () => undefined)
+  result[0] = cleaned
+  return result
+}
+
+/**
+ * Build the per-plan image prompt: a fixed identity block plus per-plan
+ * coverage and continuity.
+ */
+export function buildPlanImagePrompt(
+  plan: FilmPlan,
+  selections: FilmSelections,
+  cameraPrompts: Record<string, string>,
+  themePrompts: Record<string, string>,
+  noText?: boolean,
+): string {
+  let out = plan.scenarioText
+  const { product, character, cameraAngle, theme } = selections
+  if (product && character) {
+    out += `\n\nREFERENCE IMAGES (use BOTH in this shot):\n- PRODUCT image: ${product.url}\n- CHARACTER image: ${character.url}\nThe product and the character MUST appear together prominently in the same shot. Show the character interacting with or holding the product.`
+  } else if (product) {
+    out += `\n\nREFERENCE PRODUCT image: ${product.url}\nThis product MUST appear prominently in this shot.`
+  } else if (character) {
+    out += `\n\nREFERENCE CHARACTER image: ${character.url}\nThis character MUST appear prominently in this shot.`
+  }
+  const cameraPrompt = cameraAngle ? cameraPrompts[cameraAngle] : undefined
+  if (cameraPrompt) out += `\n\nCAMERA ANGLE: ${cameraPrompt}`
+  const themePrompt = theme ? themePrompts[theme] : undefined
+  if (themePrompt) out += `\n\nVISUAL STYLE: ${themePrompt}`
+  out += `\n\n${plan.label}: This is one shot in a continuous sequence. Coverage: ${plan.coverage} shot. Keep the same subject, setting and lighting as the surrounding shots so the film flows seamlessly.`
+  if (noText) {
+    out += `\n\nStrictly no text of any kind in the image: no words, letters, numbers, captions, subtitles, signage text, logos, or watermarks.`
+  }
+  return out
+}
+
+/**
+ * Build the per-plan video prompt: identity lock (product + character) plus
+ * camera + theme + continuity + coverage.
+ */
+export function buildPlanClipPrompt(
+  plan: FilmPlan,
+  selections: FilmSelections,
+  cameraPrompts: Record<string, string>,
+  themePrompts: Record<string, string>,
+  characterDescription?: string,
+): string {
+  let out = plan.scenarioText
+  const { product, character, cameraAngle, theme } = selections
+  if (characterDescription) {
+    out = [
+      `CHARACTER IDENTITY LOCK (highest priority): The main character is fixed and must stay identical in every shot:`,
+      characterDescription,
+      `Keep the exact same face, hair, body, proportions and the EXACT same outfit -- same clothing items, colors, logos/prints, trousers, shoes and accessories. Do not change, restyle, recolor, add or remove any clothing or accessory, and do not redesign the character. Only the pose, action, camera and environment may change.`,
+      ``,
+      out,
+    ].join('\n')
+  }
+  if (product) {
+    const name = product.title?.trim()
+    const desc = product.description?.trim()
+    out = [
+      `PRODUCT IDENTITY LOCK (highest priority): The advertised product${name ? ` ("${name}")` : ''} is fixed and must stay identical in every shot, matching the provided product reference image exactly.`,
+      `Keep the exact same product shape, geometry, materials, colors, branding, logos, text and labels. Do not redesign, recolor, relabel, add or remove any part of the product. The product must be the same item the user selected, not a similar-looking substitute. Only the camera, pose and environment may change.`,
+      ...(desc ? [`Product description (use this to render it correctly): ${desc}`] : []),
+      ``,
+      out,
+    ].join('\n')
+  }
+  const cameraPrompt = cameraAngle ? cameraPrompts[cameraAngle] : undefined
+  if (cameraPrompt) out += `\n\nCAMERA ANGLE: ${cameraPrompt}`
+  const themePrompt = theme ? themePrompts[theme] : undefined
+  if (themePrompt) out += `\n\nVISUAL STYLE: ${themePrompt}`
+  out += `\n\n${plan.label}: This clip is one shot in a continuous sequence. Coverage: ${plan.coverage} shot. Keep the same subject, setting and lighting as the surrounding clips so the film flows seamlessly.`
+  return out
+}
+
+/**
+ * Build plan objects from a total duration, scenario text, and optional narration.
+ * This is the single source of truth for how a film becomes a sequence of plans.
+ */
+export function buildFilmPlans(
+  totalDurationSeconds: number,
+  scenarioText: string,
+  fullNarration: string | undefined,
+): FilmPlan[] {
+  const planCount = expectedPlanCount(totalDurationSeconds)
+  const coverage = computePlanCoverage(totalDurationSeconds)
+  const scenarioParts = splitScenarioIntoPlans(scenarioText, planCount)
+  const narrationParts = splitNarrationAcrossPlans(fullNarration, planCount)
+
+  return Array.from({ length: planCount }, (_, i) => ({
+    planIndex: i,
+    totalPlans: planCount,
+    label: `SHOT ${i + 1} OF ${planCount}`,
+    coverage: coverage[i] ?? 'medium',
+    durationSeconds: 5 as const,
+    scenarioText: scenarioParts[i] ?? '',
+    narrationText: narrationParts[i],
+  }))
+}
+
+/**
+ * Compute credit consumption for a plan-based film. Each plan is one job.
+ * For now, credits = planCount * cost_per_5s_job. This is shown to the user
+ * before production starts.
+ */
+export function computePlanCredits(planCount: number, costPerJob = 1): number {
+  return planCount * costPerJob
+}
+
+/**
+ * Verify that the plan structure is valid: plan count matches duration/5,
+ * every plan is 5 seconds, and the total equals the chosen duration.
+ */
+export function validateFilmPlans(
+  totalDurationSeconds: number,
+  plans: FilmPlan[],
+): { valid: boolean; error?: string } {
+  const expectedCount = expectedPlanCount(totalDurationSeconds)
+  if (plans.length !== expectedCount) {
+    return {
+      valid: false,
+      error: `Expected ${expectedCount} plans for ${totalDurationSeconds}s, got ${plans.length}`,
+    }
+  }
+  const totalPlanSeconds = plans.reduce((acc, p) => acc + p.durationSeconds, 0)
+  if (totalPlanSeconds !== totalDurationSeconds) {
+    return {
+      valid: false,
+      error: `Plan durations sum to ${totalPlanSeconds}s, expected ${totalDurationSeconds}s`,
+    }
+  }
+  const allFiveSeconds = plans.every((p) => p.durationSeconds === 5)
+  if (!allFiveSeconds) {
+    return { valid: false, error: 'Every plan must be exactly 5 seconds' }
+  }
+  return { valid: true }
+}
+
+/** Reference image URLs to attach to image/video generation, in a stable order:
  * character first, then product. Deduplicated, capped at the provider limit.
  */
 export function buildReferenceImageUrls(
@@ -386,7 +654,7 @@ export function canApproveFilm(images: Array<string | undefined>): boolean {
  *
  * Meaningful numbers are PRESERVED: "iPhone 15", "Rebar #4", "3M", "ISO 9001",
  * "stirup" (no suffix). The raw database title, id, storage path, url and image
- * are never modified — only the derived display/scenario name is cleaned.
+ * are never modified -- only the derived display/scenario name is cleaned.
  *
  * If the result is empty, falls back to the original title (or "Selected
  * Product" when the title is null/blank).
