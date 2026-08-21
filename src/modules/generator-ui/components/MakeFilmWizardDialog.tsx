@@ -250,6 +250,7 @@ export function MakeFilmWizardDialog({
       setSelectedProduct(null)
       setSelectedCharacter(null)
       setProductName('')
+      setCharacterDesc('')
       setIdentitySnapshot(null)
       setProductPickerOpen(false)
       setProductLoadError(null)
@@ -357,8 +358,49 @@ export function MakeFilmWizardDialog({
     return selectedProduct ? sanitizeProductName(selectedProduct.title) : null
   }
 
+  const [characterDesc, setCharacterDesc] = useState<string>('')
+  const characterDescLoadingRef = useRef(false)
+
+  // UUID-like title detector — filenames from uploaded images often look like UUIDs.
+  function isUuidLike(value: string | null | undefined): boolean {
+    if (!value) return false
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim())
+  }
+
+  // Sanitise a character or product title: if it looks like a UUID, drop it.
+  function safeTitle(value: string | null | undefined): string | null {
+    const trimmed = value?.trim() ?? ''
+    if (!trimmed || isUuidLike(trimmed)) return null
+    return trimmed
+  }
+
+  // Build a short description of the selected character via the describe-character
+  // edge function.  Cached in component state so it survives re-renders.
+  async function resolveCharacterDescription(char: ProductPhoto): Promise<string> {
+    if (characterDescLoadingRef.current) return characterDesc
+    characterDescLoadingRef.current = true
+    try {
+      const { data, error } = await supabase.functions.invoke('describe-character', {
+        body: { imageUrl: char.url },
+      })
+      if (error) throw error
+      const desc = (data as { description?: string } | null)?.description?.trim() ?? ''
+      if (desc) {
+        setCharacterDesc(desc)
+        return desc
+      }
+    } catch (e) {
+      console.error('describe-character failed:', e)
+    } finally {
+      characterDescLoadingRef.current = false
+    }
+    return characterDesc
+  }
+
+  // When a character is picked (or changed), clear any stale description.
   function pickCharacter(photo: ProductPhoto) {
     setSelectedCharacter(photo)
+    setCharacterDesc('')
     setCharacterPickerOpen(false)
   }
 
@@ -399,17 +441,23 @@ IMPORTANT: Create a continuous narrative for a ${durationSeconds}-second film, s
 Each plan should be a self-contained video prompt (subject, action, camera move, lighting) that continues the story from the previous plan. All plans must serve the same overall story goal.`
   }
 
-  function buildScenarioRequest(idea: string, variation: boolean) {
+  function buildScenarioRequest(idea: string, variation: boolean, characterDescription = '') {
     let enrichedPrompt = generateDurationPrompt(idea, duration)
     const resolvedProductName = currentProductName()
+    // Identity-leakage guard: sanitize UUID-like titles so raw character/product
+    // IDs never leak into the scenario text. A real character description is
+    // resolved by the async caller and passed in here.
+    const resolvedCharacterName = safeTitle(selectedCharacter?.title)
     if (selectedProduct && selectedCharacter) {
-      enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${resolvedProductName || 'Selected Product'}" (image: ${selectedProduct.url}) AND the character "${selectedCharacter.title || 'Selected Character'}" (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every shot of the film. Show the character interacting with or holding the product.`
+      const charLabel = resolvedCharacterName || (characterDescription ? 'a character' : 'Selected Character')
+      enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${resolvedProductName || 'Selected Product'}" (image: ${selectedProduct.url}) AND the ${charLabel}${characterDescription ? ` — ${characterDescription}` : ''} (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every shot of the film. Show the character interacting with or holding the product.`
     } else if (selectedProduct) {
       enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every shot of the film.`
     } else if (resolvedProductName) {
       enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName}. This product MUST appear prominently in every shot of the film.`
     } else if (selectedCharacter) {
-      enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${selectedCharacter.title || 'Selected Character'}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every shot of the film.`
+      const charLabel = resolvedCharacterName || (characterDescription ? 'a character' : 'Selected Character')
+      enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${charLabel}${characterDescription ? ` — ${characterDescription}` : ''}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every shot of the film.`
     }
 
     // Film type shapes the tone and structure of the scenario
@@ -439,7 +487,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         productUrl: selectedProduct?.url,
         characterUrl: selectedCharacter?.url,
         productName: resolvedProductName,
-        characterName: selectedCharacter?.title ?? null,
+        characterName: resolvedCharacterName,
         withNarration,
         aspect,
         cameraStyle: cameraAngle?.prompt,
@@ -463,7 +511,11 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     setError(null)
     setProgress('Writing your film scenario…')
     try {
-      const { prompt: enrichedPrompt, options } = buildScenarioRequest(idea, false)
+      // Resolve a real character description (cached in state) so raw character
+      // IDs never leak into the scenario. Skipped synchronously when no
+      // character is selected so the click path stays immediate.
+      const characterDescription = selectedCharacter ? (characterDesc || await resolveCharacterDescription(selectedCharacter)) : ''
+      const { prompt: enrichedPrompt, options } = buildScenarioRequest(idea, false, characterDescription)
       const written = await writeScenario(enrichedPrompt, options)
       const rawScenes = written.map((s) => s.trim()).filter((s) => s.length > 0)
       if (rawScenes.length === 0) {
@@ -503,7 +555,11 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     setError(null)
     setProgress('Regenerating your film scenario…')
     try {
-      const { prompt: enrichedPrompt, options } = buildScenarioRequest(prompt.trim(), true)
+      // Resolve a real character description (cached) so raw character IDs never
+      // leak into the regenerated scenario. Skipped synchronously when no
+      // character is selected.
+      const characterDescription = selectedCharacter ? (characterDesc || await resolveCharacterDescription(selectedCharacter)) : ''
+      const { prompt: enrichedPrompt, options } = buildScenarioRequest(prompt.trim(), true, characterDescription)
       const written = await writeScenario(enrichedPrompt, options)
       const rawScenes = written.map((s) => s.trim()).filter((s) => s.length > 0)
       if (rawScenes.length === 0) {
