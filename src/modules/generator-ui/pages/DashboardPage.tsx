@@ -1,4 +1,4 @@
-import { Fragment, type ChangeEvent, type FormEvent, type SyntheticEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, type ChangeEvent, type FormEvent, type SyntheticEvent, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import {
   ArrowRight,
   BookmarkCheck,
@@ -170,6 +170,11 @@ import {
 } from '@/modules/generator-ui/lib/modelRegistry'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 import { syncPreviewSizeCssVars } from '@/modules/generator-ui/lib/previewSize'
+import {
+  autoFilmPreviewReducer,
+  createAutoFilmPreviewState,
+  summarizeAutoFilmBatch,
+} from '@/modules/generator-ui/lib/autoFilmPreview'
 import CharacterSheetDialog from '@/modules/generator-ui/components/CharacterSheetDialog'
 
 
@@ -1605,6 +1610,14 @@ export default function DashboardPage() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null)
   const [previewDismissed, setPreviewDismissed] = useState(false)
+  // Ephemeral by design: only a user-started Make Full Film batch can populate
+  // this reducer. It is never hydrated or persisted, so refreshes, old clips,
+  // single-clip jobs and ordinary polling cannot auto-open Preview.
+  const [autoFilmPreview, dispatchAutoFilmPreview] = useReducer(
+    autoFilmPreviewReducer,
+    undefined,
+    createAutoFilmPreviewState,
+  )
   // Re-open preview whenever a card is explicitly selected.
   useEffect(() => {
     if (previewVideoId) setPreviewDismissed(false)
@@ -1612,6 +1625,7 @@ export default function DashboardPage() {
   const closePreview = () => {
     setPreviewVideoId(null)
     setPreviewDismissed(true)
+    dispatchAutoFilmPreview({ type: 'dismiss' })
     setTranscriptOpen(false)
     setTranscriptVideoUrl(null)
   }
@@ -4878,7 +4892,7 @@ export default function DashboardPage() {
   type PreviewItem =
     | { kind: 'video'; job: JobDetail }
     | { kind: 'image'; image: UserImageItem }
-    | { kind: 'sequence'; clips: UnifiedClip[] }
+    | { kind: 'sequence'; clips: UnifiedClip[]; autoPlayAttemptId?: string }
 
   // A clip is "playable" in the live sequential preview if it's a ready video
   // (completed + has a storage_path) or an uploaded image.
@@ -4909,6 +4923,10 @@ export default function DashboardPage() {
 
 
   const previewItem = useMemo<PreviewItem | null>(() => {
+    // While a Make Full Film batch is generating, keep the central preview
+    // empty (only per-card loading/progress shows) until the whole batch
+    // settles and auto-opens.
+    if (isAutoFilming) return null
     // Highest priority: the transient Final Film output (not a card).
     if (lastMergedPreview) {
       const synthetic: JobDetail = {
@@ -4940,6 +4958,22 @@ export default function DashboardPage() {
       }
     }
     if (previewDismissed) return null
+    // A completed Make Full Film batch auto-opens its full sequence exactly
+    // once. It is placed after manual selection + dismissal so the user can
+    // still click a card or close it, and before the Library/sequence fallback
+    // so it wins over the generic "2+ playable clips" auto-stitch.
+    if (autoFilmPreview.active) {
+      return {
+        kind: 'sequence',
+        autoPlayAttemptId: autoFilmPreview.active.batchId,
+        clips: autoFilmPreview.active.clips.map((job) => ({
+          kind: 'video' as const,
+          id: job.id,
+          createdAt: job.created_at,
+          job,
+        })),
+      }
+    }
     // When the user is viewing a Library project, lock the preview to that
     // exact merged project. Never substitute another Library entry.
     if (selectedProjectId) {
@@ -4970,7 +5004,7 @@ export default function DashboardPage() {
     const firstImage = displayedClips.find((c) => c.kind === 'image')
     if (firstImage && firstImage.kind === 'image') return { kind: 'image', image: firstImage.image }
     return null
-  }, [lastMergedPreview, displayedClips, previewVideoId, previewDismissed, selectedProjectId, visibleVideos, playableSequenceClips])
+  }, [lastMergedPreview, displayedClips, previewVideoId, previewDismissed, autoFilmPreview.active, isAutoFilming, selectedProjectId, visibleVideos, playableSequenceClips])
 
   // Backwards-compat alias used by existing card highlight + start-frame code paths
   const previewVideo = previewItem?.kind === 'video' ? previewItem.job : null
@@ -7185,6 +7219,8 @@ export default function DashboardPage() {
       theme?: string
       /** When false, no narration/voiceover is produced for any clip. */
       withNarration?: boolean
+      /** Wizard batches stay closed until their bounded poll produces Preview. */
+      suppressPreviewUntilBatchSettles?: boolean
     },
   ): Promise<string[]> {
     if (!scenes || scenes.length === 0) return []
@@ -7389,10 +7425,13 @@ export default function DashboardPage() {
           setLockedProjectRatio(effectiveRatio)
           persistLockedRatio(effectiveRatio)
         }
-        // Keep the preview on the full sequential auto-stitch instead of
-        // pinning to each pending clip as it's queued.
-        setPreviewVideoId(null)
-        setPreviewDismissed(false)
+        // Other scenario flows preserve their existing live-preview behavior.
+        // The reviewed Make Full Film path opens exactly once after its own
+        // batch settles, never once per queued or polled card.
+        if (!opts?.suppressPreviewUntilBatchSettles) {
+          setPreviewVideoId(null)
+          setPreviewDismissed(false)
+        }
         setGeneratedVideos((currentJobs) => mergeJob(currentJobs, seededJob))
         markNewClip(seededJob.id)
         hydrateIfComplete(createdJob)
@@ -7467,12 +7506,18 @@ export default function DashboardPage() {
   // Poll every wizard clip independently with a hard deadline. Successful
   // cards are preserved as they settle; failed and timed-out clips stay
   // separate in the returned summary.
-  async function waitForApprovedFilmBatch(jobIds: string[]): Promise<SceneBatchResult> {
-    return await waitForSceneBatch(jobIds, jobOrchestratorGateway.getJob, {
+  async function waitForApprovedFilmBatch(
+    jobIds: string[],
+  ): Promise<{ result: SceneBatchResult; settled: Map<string, JobDetail> }> {
+    const settled = new Map<string, JobDetail>()
+    const result = await waitForSceneBatch(jobIds, jobOrchestratorGateway.getJob, {
       onSettled: (detail) => {
-        setGeneratedVideos((cur) => mergeJob(cur, detail as JobDetail))
+        const job = detail as JobDetail
+        settled.set(job.id, job)
+        setGeneratedVideos((cur) => mergeJob(cur, job))
       },
     })
+    return { result, settled }
   }
 
   // ── Gated "Make Full Film" wizard helpers ────────────────────────────────
@@ -7731,6 +7776,7 @@ export default function DashboardPage() {
         cameraStyle: options?.creative?.cameraStyle,
         theme: options?.creative?.theme,
         withNarration: options?.withNarration,
+        suppressPreviewUntilBatchSettles: true,
       })
       const requestedSceneCount = scenes.filter((scene) => scene.trim().length > 0).length
       const queueFailedCount = Math.max(0, requestedSceneCount - createdJobIds.length)
@@ -7745,7 +7791,7 @@ export default function DashboardPage() {
       // Wait for queued clips with a bounded poll. Completed cards are kept
       // even when another clip fails or remains pending at the deadline.
       setVideoColumnMessage('Generating every scene… keep this tab open.')
-      const batch = await waitForApprovedFilmBatch(createdJobIds)
+      const { result: batch, settled } = await waitForApprovedFilmBatch(createdJobIds)
       const failedCount = queueFailedCount + batch.failed.length
       if (batch.completed.length === 0) {
         setComposerError('The scenes did not finish rendering — please try again.')
@@ -7758,6 +7804,20 @@ export default function DashboardPage() {
       if (failedCount > 0) statusParts.push(`${failedCount} failed`)
       if (batch.pending.length > 0) statusParts.push(`${batch.pending.length} still pending`)
       setVideoColumnMessage(`${statusParts.join('; ')}. Use Final Film when you are ready to assemble them.`)
+      // Auto-open the full sequence ONLY when every expected card completed.
+      // A failed/cancelled/pending card keeps the existing error/retry surface
+      // and never auto-plays an incomplete preview.
+      if (batch.failed.length === 0 && batch.pending.length === 0) {
+        const summary = summarizeAutoFilmBatch(createdJobIds, settled, new Set(batch.pending))
+        setLastMergedPreview(null)
+        setPreviewVideoId(null)
+        setPreviewDismissed(false)
+        dispatchAutoFilmPreview({
+          type: 'batch-settled',
+          batchId: summary.batchId,
+          clips: summary.completed,
+        })
+      }
     } catch (err) {
       const rootError = err instanceof GlobalSceneBatchError ? err.cause : err
       const msg = generationStartErrorMessage(rootError, 'Could not generate the film.')
@@ -8954,6 +9014,9 @@ export default function DashboardPage() {
     setMergeStage(null)
     // Drop the transient Final Film preview so Start Over fully clears it.
     setLastMergedPreview(null)
+    // Clear the currently displayed automatic batch while preserving its
+    // consumed guard, so Start Over cannot resurrect an old batch.
+    dispatchAutoFilmPreview({ type: 'clear-active' })
     // Reset the composer to a fresh state.
     setPromptText('')
     setSelectedCharacter(null)
@@ -10230,10 +10293,11 @@ export default function DashboardPage() {
 
       <div className="fixed left-1/2 top-[3.25rem] z-50 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:top-5">
       {(() => {
-        const hasReadyClips = playableSequenceClips.length > 0
+        const hasReadyClips = playableSequenceClips.length > 0 && !isAutoFilming
         return (
           <button
             type="button"
+            disabled={isAutoFilming}
             onClick={() => {
               if (playableSequenceClips.length === 0) {
                 setVideoColumnMessage('No ready clips to live-preview yet.')
@@ -10241,9 +10305,12 @@ export default function DashboardPage() {
               }
               setVideoColumnMessage(null)
               setPreviewVideoId(null)
+              // Manual Preview always reflects the current workspace. Keep the
+              // consumed guard so the previous automatic batch stays one-shot.
+              dispatchAutoFilmPreview({ type: 'clear-active' })
               setPreviewDismissed(false)
             }}
-            className={`relative flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs uppercase tracking-[0.18em] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/55 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:bg-cyan-400/20 ${
+            className={`relative flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs uppercase tracking-[0.18em] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/55 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:bg-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50 ${
               hasReadyClips
                 ? 'border-cyan-400/45 bg-cyan-400/10 text-cyan-200 hover:border-cyan-300/65 hover:bg-cyan-400/15 hover:text-cyan-100'
                 : 'border-cyan-400/20 bg-cyan-400/[0.04] text-cyan-200/60 hover:border-cyan-400/30 hover:bg-cyan-400/[0.07] hover:text-cyan-100/75'
@@ -11006,6 +11073,7 @@ export default function DashboardPage() {
               ratioToHeight={ratioToHeight}
               ratioToWidth={ratioToWidth}
               maxHeightPx={previewMaxHeightPx}
+              autoPlayAttemptId={previewItem.autoPlayAttemptId}
               onClose={closePreview}
               onActiveClipChange={(id) => { /* highlight handled by HISTORY via previewVideoId on click */ void id }}
               musicUrl={musicUrl}
