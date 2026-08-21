@@ -19,6 +19,12 @@ import {
   MonitorPlay,
   Sparkles,
   Eye,
+  Megaphone,
+  ClipboardList,
+  Factory,
+  HardHat,
+  Scale,
+  Award,
 } from 'lucide-react'
 import {
   Dialog,
@@ -147,6 +153,7 @@ export interface MakeFilmWizardDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   initialPrompt: string
+  initialFilmType?: string
   defaultDuration: FilmDuration
   defaultAspect: FilmAspect
   userId: string | null
@@ -159,6 +166,7 @@ export function MakeFilmWizardDialog({
   open,
   onOpenChange,
   initialPrompt,
+  initialFilmType,
   defaultDuration,
   defaultAspect,
   userId,
@@ -184,6 +192,7 @@ export function MakeFilmWizardDialog({
   const [noTextOnImages, setNoTextOnImages] = useState(true)
   const [selectedCameraAngle, setSelectedCameraAngle] = useState('auto')
   const [selectedTheme, setSelectedTheme] = useState('auto')
+  const [selectedFilmType, setSelectedFilmType] = useState<string>(initialFilmType ?? '')
   const [productPhotos, setProductPhotos] = useState<ProductPhotoSource[]>([])
   const [characterPhotos, setCharacterPhotos] = useState<ProductPhoto[]>([])
   const productPickerControllerRef = useRef<AbortController | null>(null)
@@ -228,6 +237,7 @@ export function MakeFilmWizardDialog({
       setNoTextOnImages(true)
       setSelectedCameraAngle('auto')
       setSelectedTheme('auto')
+      setSelectedFilmType(initialFilmType ?? '')
       setSelectedProduct(null)
       setSelectedCharacter(null)
       setProductName('')
@@ -241,10 +251,23 @@ export function MakeFilmWizardDialog({
     if (!open) {
       hasInitialized.current = false
     }
-  }, [open, initialPrompt, defaultDuration, defaultAspect])
+  }, [open, initialPrompt, defaultDuration, defaultAspect, initialFilmType])
 
   const working = busy !== 'idle' || regenIndex !== null
   const canWriteScenario = prompt.trim().length > 0 && selectedProduct !== null && !working
+
+  // Film type definitions — each with icon, label, and one-line description
+  const FILM_TYPES: { value: string; label: string; icon: React.ReactNode; description: string }[] = [
+    { value: 'تبلیغاتی', label: 'تبلیغاتی', icon: <Megaphone className="h-3.5 w-3.5" />, description: 'فیلم تبلیغاتی با لحن متقاعدکننده برای جذب مشتری' },
+    { value: 'معرفی محصول', label: 'معرفی محصول', icon: <ClipboardList className="h-3.5 w-3.5" />, description: 'نمایش ویژگیها و کاربردهای محصول بهصورت آموزشی' },
+    { value: 'فرآیند ساخت', label: 'فرآیند ساخت', icon: <Factory className="h-3.5 w-3.5" />, description: 'مستند ساخت و تولید از مواد خام تا محصول نهایی' },
+    { value: 'کاربرد در پروژه', label: 'کاربرد در پروژه', icon: <HardHat className="h-3.5 w-3.5" />, description: 'نمایش عملکرد محصول در پروژههای واقعی' },
+    { value: 'مقایسهای', label: 'مقایسهای', icon: <Scale className="h-3.5 w-3.5" />, description: 'مقایسه قبل/بعد یا رقبا با تضاد بصری' },
+    { value: 'برند', label: 'برند', icon: <Award className="h-3.5 w-3.5" />, description: 'داستانسرایی احساسی و ارزشهای برند' },
+  ]
+
+  const selectedFilmTypeLabel = FILM_TYPES.find((f) => f.value === selectedFilmType)?.label ?? 'انتخاب کنید'
+  const selectedFilmTypeDesc = FILM_TYPES.find((f) => f.value === selectedFilmType)?.description ?? ''
 
   async function loadProductPhotos() {
     if (!userId) {
@@ -393,6 +416,20 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${selectedCharacter.title || 'Selected Character'}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every shot of the film.`
       }
       
+      // Film type shapes the tone and structure of the scenario
+      if (selectedFilmType) {
+        const filmTypeToneMap: Record<string, string> = {
+          'تبلیغاتی': 'ADVERTISEMENT tone: persuasive, energetic, conversion-focused. Build desire for the product with dynamic visuals and clear call-to-action.',
+          'معرفی محصول': 'PRODUCT SHOWCASE tone: clear, informative, engaging. Demonstrate features and benefits smoothly. Educational yet captivating.',
+          'فرآیند ساخت': 'PROCESS DOCUMENTARY tone: documentary-style, showing journey from raw materials to finished product. Emphasize craftsmanship, precision, and scale.',
+          'کاربرد در پروژه': 'CASE STUDY tone: practical, results-oriented. Show real-world application and impact on actual projects.',
+          'مقایسهای': 'COMPARISON tone: analytical, clear contrasts. Use split-screen or sequential before/after visuals to highlight advantages.',
+          'برند': 'BRAND STORYTELLING tone: emotional, aspirational, values-driven. Focus on brand story, mission, and emotional connection rather than product features.',
+        }
+        const filmTone = filmTypeToneMap[selectedFilmType] || `Film type: ${selectedFilmType}.`
+        enrichedPrompt += `\n\nFILM TYPE AND TONE: ${filmTone}`
+      }
+      
       const cameraAngle = CAMERA_ANGLES.find((a) => a.value === selectedCameraAngle)
       if (cameraAngle && cameraAngle.prompt) {
         enrichedPrompt += `\n\nCAMERA ANGLE: ${cameraAngle.prompt}`
@@ -464,8 +501,25 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     setOptimizeError(null)
     setPromptBeforeOptimize(prompt)
     try {
+      const cameraAngle = CAMERA_ANGLES.find((a) => a.value === selectedCameraAngle)
+      const theme = THEMES.find((t) => t.value === selectedTheme)
+      const resolvedProductName = currentProductName()
+      let characterDescriptionText = ''
+      if (selectedCharacter) {
+        characterDescriptionText = characterDesc || await resolveCharacterDescription(selectedCharacter)
+      }
+
       const { data, error: fnError } = await supabase.functions.invoke('enhance-prompt', {
-        body: { prompt: current },
+        body: {
+          prompt: current,
+          filmType: selectedFilmType || undefined,
+          productName: resolvedProductName || undefined,
+          characterDescription: characterDescriptionText || undefined,
+          duration: duration,
+          aspectRatio: aspect,
+          cameraAngle: cameraAngle?.prompt || undefined,
+          visualTheme: theme?.prompt || undefined,
+        },
       })
       if (fnError) throw fnError
       const enhanced = (data as { enhancedPrompt?: string } | null)?.enhancedPrompt?.trim()
@@ -850,6 +904,37 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                   </div>
                 </div>
 
+                {/* Film type selector - inline toggle buttons */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                    <Film className="h-3.5 w-3.5" />
+                    Film type
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {FILM_TYPES.map((ft) => (
+                      <Button
+                        key={ft.value}
+                        type="button"
+                        variant={selectedFilmType === ft.value ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setSelectedFilmType(ft.value)}
+                        title={ft.description}
+                        className={`h-8 gap-1 text-xs ${
+                          selectedFilmType === ft.value
+                            ? 'bg-fuchsia-500/90 text-white hover:bg-fuchsia-500'
+                            : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'
+                        }`}
+                      >
+                        {ft.icon}
+                        {ft.label}
+                      </Button>
+                    ))}
+                  </div>
+                  {selectedFilmTypeDesc && (
+                    <p className="text-[11px] text-zinc-500">{selectedFilmTypeDesc}</p>
+                  )}
+                </div>
+
                 {/* Camera angle selector - opens dialog */}
                 <div className="space-y-2">
                   <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
@@ -1164,6 +1249,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                 <span><strong className="text-zinc-200">Character:</strong> {selectedCharacter?.title || '—'}</span>
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1">
+                <span><strong className="text-zinc-200">Film type:</strong> {selectedFilmType || '—'}</span>
                 <span><strong className="text-zinc-200">Camera:</strong> {selectedCameraLabel}</span>
                 <span><strong className="text-zinc-200">Theme:</strong> {selectedThemeLabel}</span>
               </div>
