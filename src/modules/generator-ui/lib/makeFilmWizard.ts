@@ -20,6 +20,50 @@ export type ClipDuration = 5 | 10 | 15
 export const FILM_DURATIONS: FilmDuration[] = [5, 10, 15, 30, 45, 60, 90, 135]
 
 /**
+ * Stable English identifiers for the film-type selector. These are the values
+ * stored in wizard state and sent to `enhance-prompt`; the display labels are
+ * the same English strings. Legacy Persian values from PR #135 are normalized
+ * to these identifiers on read (see `normalizeFilmType`) so existing user data
+ * keeps working without destructive changes.
+ */
+export const FILM_TYPE_VALUES = [
+  'Advertisement',
+  'Product Showcase',
+  'Manufacturing Process',
+  'Project Application',
+  'Comparison',
+  'Brand Story',
+] as const
+
+export type FilmType = (typeof FILM_TYPE_VALUES)[number]
+
+const FILM_TYPE_LEGACY: Record<string, FilmType> = {
+  'تبلیغاتی': 'Advertisement',
+  'معرفی محصول': 'Product Showcase',
+  'فرآیند ساخت': 'Manufacturing Process',
+  'کاربرد در پروژه': 'Project Application',
+  'مقایسهای': 'Comparison',
+  'برند': 'Brand Story',
+}
+
+/** Normalize a stored film-type value (English or legacy Persian) to a stable English identifier. */
+export function normalizeFilmType(value: string | null | undefined): FilmType | '' {
+  if (!value) return ''
+  if ((FILM_TYPE_VALUES as readonly string[]).includes(value)) return value as FilmType
+  return FILM_TYPE_LEGACY[value] ?? ''
+}
+
+/** Scenario tone guidance per film type, shared by the wizard and enhance-prompt. */
+export const FILM_TYPE_TONES: Record<FilmType, string> = {
+  'Advertisement': 'ADVERTISEMENT tone: persuasive, energetic, conversion-focused. Build desire for the product with dynamic visuals and clear call-to-action.',
+  'Product Showcase': 'PRODUCT SHOWCASE tone: clear, informative, engaging. Demonstrate features and benefits smoothly. Educational yet captivating.',
+  'Manufacturing Process': 'PROCESS DOCUMENTARY tone: documentary-style, showing journey from raw materials to finished product. Emphasize craftsmanship, precision, and scale.',
+  'Project Application': 'CASE STUDY tone: practical, results-oriented. Show real-world application and impact on actual projects.',
+  'Comparison': 'COMPARISON tone: analytical, clear contrasts. Use split-screen or sequential before/after visuals to highlight advantages.',
+  'Brand Story': 'BRAND STORYTELLING tone: emotional, aspirational, values-driven. Focus on brand story, mission, and emotional connection rather than product features.',
+}
+
+/**
  * How many sequential scenes a total duration expects. Mirrors the
  * scenario-write edge function so the frontend and backend agree.
  *   5->1, 10->1, 15->1, 30->2, 45->3, 60->4, 90->6, 135->9

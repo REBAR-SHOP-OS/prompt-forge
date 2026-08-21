@@ -184,7 +184,15 @@ Deno.serve(async (req) => {
     // Build film context from the user's explicit creative choices.
     const filmContextParts: string[] = [];
     if (filmType) {
+      // Stable English identifiers plus legacy Persian values (PR #135) so
+      // existing stored data keeps working without destructive changes.
       const filmTypeDescriptions: Record<string, string> = {
+        "Advertisement": "This is a commercial advertisement film. The tone should be persuasive, energetic, and conversion-focused. Highlight the product's unique selling points with dynamic visuals and compelling storytelling. Each scene should build desire and end with a clear call-to-action.",
+        "Product Showcase": "This is a product showcase / explainer film. The tone should be clear, informative, and engaging. Focus on demonstrating the product's features, benefits, and use cases with smooth, detailed visual storytelling. Educational yet captivating.",
+        "Manufacturing Process": "This is a manufacturing / process film. The tone should be documentary-style, showing the journey from raw materials to finished product. Emphasize craftsmanship, precision, scale, and the beauty of industrial processes.",
+        "Project Application": "This is a real-world application / case study film. The tone should be practical and results-oriented. Show the product being used in actual projects, demonstrating its impact, reliability, and performance on the job site.",
+        "Comparison": "This is a comparison film. The tone should be analytical and clear. Show before/after or side-by-side visuals that highlight advantages. Use split-screen or sequential contrasts to make differences obvious and memorable.",
+        "Brand Story": "This is a brand identity / storytelling film. The tone should be emotional, aspirational, and values-driven. Focus on brand story, mission, culture, and emotional connection rather than individual product features. Cinematic and memorable.",
         "تبلیغاتی": "This is a commercial advertisement film. The tone should be persuasive, energetic, and conversion-focused. Highlight the product's unique selling points with dynamic visuals and compelling storytelling. Each scene should build desire and end with a clear call-to-action.",
         "معرفی محصول": "This is a product showcase / explainer film. The tone should be clear, informative, and engaging. Focus on demonstrating the product's features, benefits, and use cases with smooth, detailed visual storytelling. Educational yet captivating.",
         "فرآیند ساخت": "This is a manufacturing / process film. The tone should be documentary-style, showing the journey from raw materials to finished product. Emphasize craftsmanship, precision, scale, and the beauty of industrial processes.",

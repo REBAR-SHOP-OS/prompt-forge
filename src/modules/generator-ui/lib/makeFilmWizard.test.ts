@@ -29,6 +29,9 @@ import {
   buildPlanClipPrompt,
   computePlanCredits,
   type FilmPlan,
+  normalizeFilmType,
+  FILM_TYPE_VALUES,
+  FILM_TYPE_TONES,
 } from './makeFilmWizard'
 
 const CAMERA: Record<string, string> = {
@@ -745,5 +748,51 @@ describe('computePlanCredits', () => {
     expect(computePlanCredits(3)).toBe(3)
     expect(computePlanCredits(6, 2)).toBe(12)
     expect(computePlanCredits(27)).toBe(27)
+  })
+})
+
+describe('film type identifiers', () => {
+  it('normalizes legacy Persian values to stable English identifiers', () => {
+    expect(normalizeFilmType('تبلیغاتی')).toBe('Advertisement')
+    expect(normalizeFilmType('معرفی محصول')).toBe('Product Showcase')
+    expect(normalizeFilmType('فرآیند ساخت')).toBe('Manufacturing Process')
+    expect(normalizeFilmType('کاربرد در پروژه')).toBe('Project Application')
+    expect(normalizeFilmType('مقایسهای')).toBe('Comparison')
+    expect(normalizeFilmType('برند')).toBe('Brand Story')
+  })
+
+  it('passes through English identifiers unchanged', () => {
+    expect(normalizeFilmType('Advertisement')).toBe('Advertisement')
+    expect(normalizeFilmType('Product Showcase')).toBe('Product Showcase')
+    expect(normalizeFilmType('Manufacturing Process')).toBe('Manufacturing Process')
+    expect(normalizeFilmType('Project Application')).toBe('Project Application')
+    expect(normalizeFilmType('Comparison')).toBe('Comparison')
+    expect(normalizeFilmType('Brand Story')).toBe('Brand Story')
+  })
+
+  it('returns empty string for null, undefined, empty, or unknown values', () => {
+    expect(normalizeFilmType(null)).toBe('')
+    expect(normalizeFilmType(undefined)).toBe('')
+    expect(normalizeFilmType('')).toBe('')
+    expect(normalizeFilmType('Unknown Type')).toBe('')
+  })
+
+  it('exposes exactly six stable identifiers in order', () => {
+    expect(FILM_TYPE_VALUES).toEqual([
+      'Advertisement',
+      'Product Showcase',
+      'Manufacturing Process',
+      'Project Application',
+      'Comparison',
+      'Brand Story',
+    ])
+  })
+
+  it('provides a tone for every film type (Comparison regression)', () => {
+    for (const value of FILM_TYPE_VALUES) {
+      expect(FILM_TYPE_TONES[value]).toBeTruthy()
+    }
+    expect(FILM_TYPE_TONES['Comparison']).toContain('COMPARISON tone')
+    expect(FILM_TYPE_TONES['Comparison']).toContain('split-screen')
   })
 })
