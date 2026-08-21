@@ -13,6 +13,8 @@ export type NarrationIssue = {
   problem: string
   /** What should have been said, when determinable. */
   suggestion?: string
+  /** Category of the mismatch, used to render a precise label + icon. */
+  kind: 'missing' | 'extra' | 'changed'
 }
 
 export type NarrationReviewStatus =
@@ -40,10 +42,12 @@ export function formatNarrationTimestamp(seconds: number): string {
   return `${minutes}:${wholeSeconds.toString().padStart(2, '0')}.${hundredths.toString().padStart(2, '0')}`
 }
 
-// Tokenize keeping both the display text and a normalized key.
+// Tokenize keeping both the display text and a normalized key. Split on
+// whitespace AND on dots so a dotted brand name like "Rebar.Shop" becomes
+// two tokens ("Rebar", "Shop") and matches how speech-to-text renders it.
 function tokenize(text: string): { raw: string; norm: string }[] {
   return (text ?? '')
-    .split(/\s+/)
+    .split(/[\s.]+/)
     .map((raw) => ({ raw, norm: normalizeForCompare(raw) }))
     .filter((t) => t.norm.length > 0)
 }
@@ -145,20 +149,25 @@ function groupToIssues(
     let problem: string
     let suggestion: string | undefined
 
+    let kind: NarrationIssue['kind']
     if (missingWords.length > 0 && extraWords.length > 0) {
-      // Wrong words: something was said but it doesn't match what was expected.
-      problem    = `Wrong narration: expected "${missingWords.join(' ')}", got "${extraWords.join(' ')}"`
+      // Something was said but it doesn't match what was expected. Speech-to-text
+      // alone cannot prove a mispronunciation, so we label this conservatively.
+      problem    = `Possible pronunciation issue: expected "${missingWords.join(' ')}", got "${extraWords.join(' ')}"`
       suggestion = missingWords.join(' ')
+      kind       = 'changed'
     } else if (missingWords.length > 0) {
       // Expected words were not spoken at all.
       problem    = `Not spoken: "${missingWords.join(' ')}"`
       suggestion = missingWords.join(' ')
+      kind       = 'missing'
     } else {
       // Extra speech that wasn't in the expected narration.
       problem    = `Unexpected speech: "${extraWords.join(' ')}"`
+      kind       = 'extra'
     }
 
-    issues.push({ startSeconds, endSeconds, text: spokenText, problem, suggestion })
+    issues.push({ startSeconds, endSeconds, text: spokenText, problem, suggestion, kind })
     run = []
     runStart = -1
   }
@@ -198,7 +207,7 @@ export function reviewNarration(
     const expectedTokens = tokenize(expected)
     const durationSecs = 0
     const issues: NarrationIssue[] = expectedTokens.length > 0
-      ? [{ startSeconds: 0, endSeconds: durationSecs, text: '', problem: `Narration not spoken on film: "${expected}"`, suggestion: expected }]
+      ? [{ startSeconds: 0, endSeconds: durationSecs, text: '', problem: `Narration not spoken on film: "${expected}"`, suggestion: expected, kind: 'missing' }]
       : []
     return { status: 'no-speech', issues, matchPercent: 0, transcript }
   }
@@ -223,10 +232,10 @@ export function reviewNarration(
 }
 
 export function reviewVerdictTitle(result: NarrationReviewResult): string {
-  if (result.status === 'pass') return 'Correct narration'
-  if (result.status === 'issues') return 'Incorrect narration'
-  if (result.status === 'no-speech') return 'Incorrect narration: no speech detected'
-  if (result.status === 'no-narration') return 'Unable to verify narration'
+  if (result.status === 'pass') return 'PASS'
+  if (result.status === 'issues') return 'REVIEW REQUIRED'
+  if (result.status === 'no-speech') return 'REVIEW REQUIRED'
+  if (result.status === 'no-narration') return 'Transcript only'
   return 'Unable to review narration'
 }
 
@@ -235,9 +244,9 @@ export function reviewVerdictDetail(result: NarrationReviewResult): string {
   if (result.status === 'issues') {
     return `${result.issues.length} narration ${result.issues.length === 1 ? 'issue' : 'issues'} found. ${result.matchPercent}% match.`
   }
-  if (result.status === 'no-speech') return 'No speech was detected in the final film.'
+  if (result.status === 'no-speech') return 'Expected narration was not detected.'
   if (result.status === 'no-narration') {
-    return 'The final film was transcribed, but no expected narration was saved, so correctness cannot be verified.'
+    return 'No expected narration was saved, so only the transcript is shown.'
   }
   return 'No final film is available to review.'
 }
