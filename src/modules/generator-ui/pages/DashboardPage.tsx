@@ -195,6 +195,7 @@ const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.red
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 import { getUpcomingMajorOccasion } from '@/modules/generator-ui/lib/majorOccasions'
+import { resolveMusicTimelineEnd } from '@/modules/generator-ui/lib/musicTimeline'
 import { StylePreviewCard } from '@/modules/generator-ui/components/StylePreviewCard'
 import {
   CAMERA_STYLES,
@@ -4908,6 +4909,29 @@ export default function DashboardPage() {
     }
     return Math.max(1, Math.round(total))
   }, [playableSequenceClips])
+
+  // Track the previous film length so we can detect when a new clip extends
+  // the project and auto-extend a full-length music timeline to match.
+  const prevMergedDurationRef = useRef(mergedDurationSec)
+
+  // When the project grows (a new clip is added), a music track that was
+  // previously covering the full film should auto-extend to the new end so the
+  // new clip isn't silent. A manually-shortened timeline is left untouched.
+  useEffect(() => {
+    const prev = prevMergedDurationRef.current
+    const next = mergedDurationSec
+    prevMergedDurationRef.current = next
+    const newEnd = resolveMusicTimelineEnd({
+      prevDurationSec: prev,
+      nextDurationSec: next,
+      hasMusic: Boolean(musicUrl),
+      hasMusicRange: musicRange[1] > musicRange[0],
+      timeline: musicTimeline,
+    })
+    if (newEnd !== null) {
+      setMusicTimeline(([start]) => [start, newEnd])
+    }
+  }, [mergedDurationSec, musicUrl, musicRange, musicTimeline])
 
 
 
