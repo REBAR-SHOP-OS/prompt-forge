@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Clapperboard,
   LoaderCircle,
@@ -19,6 +19,7 @@ import {
   MonitorPlay,
   Sparkles,
   Eye,
+  Languages,
   Megaphone,
   ClipboardList,
   Factory,
@@ -39,6 +40,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 
 import { buildFilmPlans, type FilmPlan, expectedPlanCount, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { REVIEW_LANGS, isRtlLang, englishFilmType, buildUnifiedScenario, chunkScenario, hasNonLatin } from '@/modules/generator-ui/lib/scenarioReview'
 import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
 import { supabase } from '@/integrations/supabase/client'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -210,6 +212,13 @@ export function MakeFilmWizardDialog({
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
   const [lightboxScene, setLightboxScene] = useState<string>('')
   const [scenarioReviewOpen, setScenarioReviewOpen] = useState(false)
+  const [reviewLang, setReviewLang] = useState('en')
+  const [reviewTranslation, setReviewTranslation] = useState<string | null>(null)
+  const [reviewTranslating, setReviewTranslating] = useState(false)
+  const [reviewError, setReviewError] = useState<string | null>(null)
+  const [reviewProductNameEn, setReviewProductNameEn] = useState<string | null>(null)
+  const [reviewCharacterNameEn, setReviewCharacterNameEn] = useState<string | null>(null)
+  const reviewCache = useRef<Map<string, string>>(new Map())
   const hasInitialized = useRef(false)
 
   // Style picker dialogs
@@ -662,6 +671,102 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
   // Get display labels for selected styles
   const selectedCameraLabel = CAMERA_ANGLES.find((a) => a.value === selectedCameraAngle)?.label ?? 'Auto (AI decides)'
   const selectedThemeLabel = THEMES.find((t) => t.value === selectedTheme)?.label ?? 'Auto (AI decides)'
+
+  // Unified English scenario for the review: every plan in order, Markdown
+  // stripped, with SHOT n (start–end s) boundaries preserved.
+  const unifiedScenario = useMemo(() => buildUnifiedScenario(plans), [plans])
+
+  // Translate one chunk via the translate-text edge function, cached per
+  // `${lang}::${text}` so re-selecting a language is instant.
+  const translateChunk = useCallback(async (text: string, lang: string): Promise<string> => {
+    const key = `${lang}::${text}`
+    const cached = reviewCache.current.get(key)
+    if (cached) return cached
+    const { data, error: fnError } = await supabase.functions.invoke<{
+      translation?: string
+      error?: string
+    }>('translate-text', { body: { text, targetLang: lang } })
+    if (fnError) throw new Error(fnError.message)
+    if (data?.error) throw new Error(data.error)
+    if (!data?.translation) throw new Error('No translation returned')
+    reviewCache.current.set(key, data.translation)
+    return data.translation
+  }, [])
+
+  // Translate the whole unified scenario into the chosen language. English is
+  // the original and needs no AI call. Long scenarios are chunked on shot
+  // boundaries (never mid-shot) and reassembled in order.
+  const translateReview = useCallback(async (lang: string) => {
+    setReviewLang(lang)
+    setReviewError(null)
+    if (lang === 'en') {
+      setReviewTranslation(null)
+      return
+    }
+    setReviewTranslating(true)
+    try {
+      const chunks = chunkScenario(unifiedScenario)
+      const parts = await Promise.all(chunks.map((c) => translateChunk(c, lang)))
+      setReviewTranslation(parts.join('\n\n'))
+    } catch (e) {
+      setReviewTranslation(null)
+      setReviewError(e instanceof Error ? e.message : 'Could not translate the scenario.')
+    } finally {
+      setReviewTranslating(false)
+    }
+  }, [unifiedScenario, translateChunk])
+
+  // Show a non-Latin product/character name in English in the review only,
+  // without touching the stored data. Falls back to the original on error.
+  const translateNameToEnglish = useCallback(async (name: string | null | undefined): Promise<string | null> => {
+    if (!name) return null
+    if (!hasNonLatin(name)) return name
+    const key = `en::name::${name}`
+    const cached = reviewCache.current.get(key)
+    if (cached) return cached
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke<{
+        translation?: string
+        error?: string
+      }>('translate-text', { body: { text: name, targetLang: 'en' } })
+      if (fnError || data?.error || !data?.translation) return name
+      reviewCache.current.set(key, data.translation)
+      return data.translation
+    } catch {
+      return name
+    }
+  }, [])
+
+  // Reset the review to English whenever it closes.
+  useEffect(() => {
+    if (!scenarioReviewOpen) {
+      setReviewLang('en')
+      setReviewTranslation(null)
+      setReviewError(null)
+      setReviewProductNameEn(null)
+      setReviewCharacterNameEn(null)
+    }
+  }, [scenarioReviewOpen])
+
+  // Translate non-Latin product/character names to English for display when
+  // the review opens.
+  useEffect(() => {
+    if (!scenarioReviewOpen) return
+    let cancelled = false
+    const productName = currentProductName()
+    const characterName = selectedCharacter?.title ?? null
+    ;(async () => {
+      const [pn, cn] = await Promise.all([
+        translateNameToEnglish(productName),
+        translateNameToEnglish(characterName),
+      ])
+      if (cancelled) return
+      setReviewProductNameEn(pn)
+      setReviewCharacterNameEn(cn)
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scenarioReviewOpen])
 
   return (
     <>
@@ -1238,9 +1343,30 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       <Dialog open={scenarioReviewOpen} onOpenChange={setScenarioReviewOpen}>
         <DialogContent className="max-w-2xl max-h-[85vh] border-white/10 bg-zinc-950/95 text-zinc-100 flex flex-col">
           <DialogHeader className="flex-shrink-0">
-            <DialogTitle className="text-base text-zinc-100">Scenario Review</DialogTitle>
+            <div className="flex items-center justify-between gap-2 pr-10">
+              <DialogTitle className="flex items-center gap-2 text-base text-zinc-100">
+                Scenario Review
+                <div className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/[0.04] pl-2 pr-1 py-0.5">
+                  <Languages className="h-3.5 w-3.5 text-fuchsia-300" aria-hidden="true" />
+                  <select
+                    value={reviewLang}
+                    onChange={(e) => void translateReview(e.target.value)}
+                    disabled={reviewTranslating}
+                    aria-label="Translate scenario"
+                    className="cursor-pointer rounded-full bg-transparent py-0.5 text-xs font-medium text-zinc-200 outline-none [&>option]:bg-[#0b0c10] [&>option]:text-zinc-200"
+                  >
+                    {REVIEW_LANGS.map((l) => (
+                      <option key={l.code} value={l.code}>{l.label}</option>
+                    ))}
+                  </select>
+                  {reviewTranslating ? (
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin text-fuchsia-300" aria-hidden="true" />
+                  ) : null}
+                </div>
+              </DialogTitle>
+            </div>
             <DialogDescription className="text-sm text-zinc-400">
-              Full film scenario with settings and every scene in order.
+              Full film scenario with settings and every shot in order.
             </DialogDescription>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto pr-1 space-y-4 min-h-0">
@@ -1251,26 +1377,29 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                 <span><strong className="text-zinc-200">Narration:</strong> {withNarration ? 'Yes' : 'No'}</span>
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1">
-                <span><strong className="text-zinc-200">Product:</strong> {currentProductName() || '—'}</span>
-                <span><strong className="text-zinc-200">Character:</strong> {selectedCharacter?.title || '—'}</span>
+                <span><strong className="text-zinc-200">Product:</strong> {(reviewProductNameEn ?? currentProductName()) || '—'}</span>
+                <span><strong className="text-zinc-200">Character:</strong> {(reviewCharacterNameEn ?? selectedCharacter?.title) || '—'}</span>
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1">
-                <span><strong className="text-zinc-200">Film type:</strong> {selectedFilmType || '—'}</span>
+                <span><strong className="text-zinc-200">Film type:</strong> {englishFilmType(selectedFilmType) || '—'}</span>
                 <span><strong className="text-zinc-200">Camera:</strong> {selectedCameraLabel}</span>
                 <span><strong className="text-zinc-200">Theme:</strong> {selectedThemeLabel}</span>
               </div>
             </div>
-            <div className="space-y-3">
-              {plans.map((plan, i) => (
-                <div key={i} className="rounded-md border border-white/10 bg-white/[0.02] p-3 space-y-1">
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
-                    Shot {i + 1} (~{Math.floor(duration / plans.length)}s)
-                  </div>
-                  <p className="text-sm leading-6 text-zinc-200 whitespace-pre-wrap [overflow-wrap:anywhere]">
-                    {plan.scenarioText}
-                  </p>
-                </div>
-              ))}
+            {reviewError ? (
+              <div className="space-y-2 rounded-md border border-rose-400/20 bg-rose-500/[0.06] p-3 text-sm text-rose-300">
+                <p>{reviewError}</p>
+                <Button type="button" variant="outline" size="sm" onClick={() => void translateReview(reviewLang)}>
+                  Retry
+                </Button>
+              </div>
+            ) : null}
+            <div
+              data-testid="scenario-review-body"
+              dir={reviewTranslation && isRtlLang(reviewLang) ? 'rtl' : 'ltr'}
+              className="rounded-md border border-white/10 bg-white/[0.02] p-3 text-sm leading-6 text-zinc-200 whitespace-pre-wrap [overflow-wrap:anywhere]"
+            >
+              {reviewTranslation ?? unifiedScenario}
             </div>
           </div>
         </DialogContent>
