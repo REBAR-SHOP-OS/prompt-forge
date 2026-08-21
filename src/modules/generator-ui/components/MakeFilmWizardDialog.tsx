@@ -399,7 +399,65 @@ IMPORTANT: Create a continuous narrative for a ${durationSeconds}-second film, s
 Each plan should be a self-contained video prompt (subject, action, camera move, lighting) that continues the story from the previous plan. All plans must serve the same overall story goal.`
   }
 
-    async function handleWriteScenario() {
+  function buildScenarioRequest(idea: string, variation: boolean) {
+    let enrichedPrompt = generateDurationPrompt(idea, duration)
+    const resolvedProductName = currentProductName()
+    if (selectedProduct && selectedCharacter) {
+      enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${resolvedProductName || 'Selected Product'}" (image: ${selectedProduct.url}) AND the character "${selectedCharacter.title || 'Selected Character'}" (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every shot of the film. Show the character interacting with or holding the product.`
+    } else if (selectedProduct) {
+      enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every shot of the film.`
+    } else if (resolvedProductName) {
+      enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName}. This product MUST appear prominently in every shot of the film.`
+    } else if (selectedCharacter) {
+      enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${selectedCharacter.title || 'Selected Character'}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every shot of the film.`
+    }
+
+    // Film type shapes the tone and structure of the scenario
+    if (selectedFilmType) {
+      const filmTypeToneMap: Record<string, string> = {
+        'تبلیغاتی': 'ADVERTISEMENT tone: persuasive, energetic, conversion-focused. Build desire for the product with dynamic visuals and clear call-to-action.',
+        'معرفی محصول': 'PRODUCT SHOWCASE tone: clear, informative, engaging. Demonstrate features and benefits smoothly. Educational yet captivating.',
+        'فرآیند ساخت': 'PROCESS DOCUMENTARY tone: documentary-style, showing journey from raw materials to finished product. Emphasize craftsmanship, precision, and scale.',
+        'کاربرد در پروژه': 'CASE STUDY tone: practical, results-oriented. Show real-world application and impact on actual projects.',
+        'مقایسهای': 'COMPARISON tone: analytical, clear contrasts. Use split-screen or sequential before/after visuals to highlight advantages.',
+        'برند': 'BRAND STORYTELLING tone: emotional, aspirational, values-driven. Focus on brand story, mission, and emotional connection rather than product features.',
+      }
+      const filmTone = filmTypeToneMap[selectedFilmType] || `Film type: ${selectedFilmType}.`
+      enrichedPrompt += `\n\nFILM TYPE AND TONE: ${filmTone}`
+    }
+
+    const cameraAngle = CAMERA_ANGLES.find((a) => a.value === selectedCameraAngle)
+    if (cameraAngle && cameraAngle.prompt) {
+      enrichedPrompt += `\n\nCAMERA ANGLE: ${cameraAngle.prompt}`
+    }
+
+    const theme = THEMES.find((t) => t.value === selectedTheme)
+    if (theme && theme.prompt) {
+      enrichedPrompt += `\n\nVISUAL STYLE: ${theme.prompt}`
+    }
+
+    if (variation) {
+      enrichedPrompt += `\n\nVARIATION REQUEST: Write a fresh, different variation of this scenario. Do not repeat the previous wording — change the shot descriptions, actions, and camera moves while keeping the same product, character, film type, duration, and visual style.`
+    }
+
+    return {
+      prompt: enrichedPrompt,
+      options: {
+        duration,
+        productUrl: selectedProduct?.url,
+        characterUrl: selectedCharacter?.url,
+        productName: resolvedProductName,
+        characterName: selectedCharacter?.title ?? null,
+        withNarration,
+        aspect,
+        cameraStyle: cameraAngle?.prompt,
+        theme: theme?.prompt,
+        unit: 'plan' as const,
+      },
+    }
+  }
+
+  async function handleWriteScenario() {
     const idea = prompt.trim()
     if (!selectedProduct) {
       setError('Choose a product before writing the scenario.')
@@ -413,53 +471,8 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
     setError(null)
     setProgress('Writing your film scenario…')
     try {
-      let enrichedPrompt = generateDurationPrompt(idea, duration)
-      const resolvedProductName = currentProductName()
-      if (selectedProduct && selectedCharacter) {
-        enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${resolvedProductName || 'Selected Product'}" (image: ${selectedProduct.url}) AND the character "${selectedCharacter.title || 'Selected Character'}" (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every shot of the film. Show the character interacting with or holding the product.`
-      } else if (selectedProduct) {
-        enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every shot of the film.`
-      } else if (resolvedProductName) {
-        enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName}. This product MUST appear prominently in every shot of the film.`
-      } else if (selectedCharacter) {
-        enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${selectedCharacter.title || 'Selected Character'}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every shot of the film.`
-      }
-      
-      // Film type shapes the tone and structure of the scenario
-      if (selectedFilmType) {
-        const filmTypeToneMap: Record<string, string> = {
-          'تبلیغاتی': 'ADVERTISEMENT tone: persuasive, energetic, conversion-focused. Build desire for the product with dynamic visuals and clear call-to-action.',
-          'معرفی محصول': 'PRODUCT SHOWCASE tone: clear, informative, engaging. Demonstrate features and benefits smoothly. Educational yet captivating.',
-          'فرآیند ساخت': 'PROCESS DOCUMENTARY tone: documentary-style, showing journey from raw materials to finished product. Emphasize craftsmanship, precision, and scale.',
-          'کاربرد در پروژه': 'CASE STUDY tone: practical, results-oriented. Show real-world application and impact on actual projects.',
-          'مقایسهای': 'COMPARISON tone: analytical, clear contrasts. Use split-screen or sequential before/after visuals to highlight advantages.',
-          'برند': 'BRAND STORYTELLING tone: emotional, aspirational, values-driven. Focus on brand story, mission, and emotional connection rather than product features.',
-        }
-        const filmTone = filmTypeToneMap[selectedFilmType] || `Film type: ${selectedFilmType}.`
-        enrichedPrompt += `\n\nFILM TYPE AND TONE: ${filmTone}`
-      }
-      
-      const cameraAngle = CAMERA_ANGLES.find((a) => a.value === selectedCameraAngle)
-      if (cameraAngle && cameraAngle.prompt) {
-        enrichedPrompt += `\n\nCAMERA ANGLE: ${cameraAngle.prompt}`
-      }
-      
-      const theme = THEMES.find((t) => t.value === selectedTheme)
-      if (theme && theme.prompt) {
-        enrichedPrompt += `\n\nVISUAL STYLE: ${theme.prompt}`
-      }
-      const written = await writeScenario(enrichedPrompt, {
-        duration,
-        productUrl: selectedProduct?.url,
-        characterUrl: selectedCharacter?.url,
-        productName: resolvedProductName,
-        characterName: selectedCharacter?.title ?? null,
-        withNarration,
-        aspect,
-        cameraStyle: cameraAngle?.prompt,
-        theme: theme?.prompt,
-        unit: 'plan',
-      })
+      const { prompt: enrichedPrompt, options } = buildScenarioRequest(idea, false)
+      const written = await writeScenario(enrichedPrompt, options)
       const rawScenes = written.map((s) => s.trim()).filter((s) => s.length > 0)
       if (rawScenes.length === 0) {
         setError('The scenario came back empty — try rephrasing your prompt.')
@@ -472,18 +485,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
         builtPlans = buildFilmPlans(duration, rawScenes.join('\n\n'), undefined)
       } catch (firstErr) {
         setProgress('Retrying scenario…')
-        const retryWritten = await writeScenario(enrichedPrompt, {
-          duration,
-          productUrl: selectedProduct?.url,
-          characterUrl: selectedCharacter?.url,
-          productName: resolvedProductName,
-          characterName: selectedCharacter?.title ?? null,
-          withNarration,
-          aspect,
-          cameraStyle: cameraAngle?.prompt,
-          theme: theme?.prompt,
-          unit: 'plan',
-        })
+        const retryWritten = await writeScenario(enrichedPrompt, options)
         const retryScenes = retryWritten.map((s) => s.trim()).filter((s) => s.length > 0)
         if (retryScenes.length === 0) {
           setError('The scenario came back empty — try rephrasing your prompt.')
@@ -496,6 +498,47 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       setStep('scenario')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not write the scenario.')
+    } finally {
+      setBusy('idle')
+      setProgress(null)
+    }
+  }
+
+  async function handleRegenerateScenario() {
+    if (working) return
+    if (plans.length === 0) return
+    setBusy('scenario')
+    setError(null)
+    setProgress('Regenerating your film scenario…')
+    try {
+      const { prompt: enrichedPrompt, options } = buildScenarioRequest(prompt.trim(), true)
+      const written = await writeScenario(enrichedPrompt, options)
+      const rawScenes = written.map((s) => s.trim()).filter((s) => s.length > 0)
+      if (rawScenes.length === 0) {
+        setError('The scenario came back empty — try again.')
+        return
+      }
+      let builtPlans: FilmPlan[]
+      try {
+        builtPlans = buildFilmPlans(duration, rawScenes.join('\n\n'), undefined)
+      } catch (firstErr) {
+        setProgress('Retrying scenario…')
+        const retryWritten = await writeScenario(enrichedPrompt, options)
+        const retryScenes = retryWritten.map((s) => s.trim()).filter((s) => s.length > 0)
+        if (retryScenes.length === 0) {
+          setError('The scenario came back empty — try again.')
+          return
+        }
+        builtPlans = buildFilmPlans(duration, retryScenes.join('\n\n'), undefined)
+      }
+      // Success: replace the plans atomically and reset the stale preview
+      // images so they never mismatch the new shots.
+      setPlans(builtPlans)
+      setImages(new Array(builtPlans.length).fill(undefined))
+      setImageErrors(new Array(builtPlans.length).fill(undefined))
+      setIdentitySnapshot(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not regenerate the scenario.')
     } finally {
       setBusy('idle')
       setProgress(null)
@@ -779,16 +822,42 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                 Make Full Film
               </DialogTitle>
               {step === 'scenario' && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Review full scenario"
-                  onClick={() => setScenarioReviewOpen(true)}
-                  className="h-8 w-8 shrink-0 text-zinc-400 hover:text-zinc-100"
-                >
-                  <Eye className="h-4 w-4" aria-hidden="true" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Regenerate full scenario"
+                          disabled={working}
+                          onClick={handleRegenerateScenario}
+                          className="h-8 w-8 shrink-0 text-zinc-400 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {busy === 'scenario' ? (
+                            <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="text-xs">
+                        Regenerate full scenario
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Review full scenario"
+                    onClick={() => setScenarioReviewOpen(true)}
+                    className="h-8 w-8 shrink-0 text-zinc-400 hover:text-zinc-100"
+                  >
+                    <Eye className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                </div>
               )}
             </div>
             <div className="mt-1 flex items-baseline gap-2">
