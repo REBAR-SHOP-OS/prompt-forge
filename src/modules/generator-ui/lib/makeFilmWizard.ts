@@ -539,21 +539,13 @@ export function buildPlanClipPrompt(
  * If the returned section count doesn't match, we throw a readable error so the
  * caller can retry or surface it to the user.
  */
-export function buildFilmPlans(
+function assemblePlans(
   totalDurationSeconds: number,
-  scenarioText: string,
+  scenarioParts: string[],
   fullNarration: string | undefined,
 ): FilmPlan[] {
   const planCount = expectedPlanCount(totalDurationSeconds)
   const coverage = computePlanCoverage(totalDurationSeconds)
-  const scenarioParts = splitScenarioIntoPlans(scenarioText, planCount)
-
-  if (scenarioParts.length !== planCount) {
-    throw new Error(
-      `The AI returned ${scenarioParts.length} plan section${scenarioParts.length === 1 ? '' : 's'} for a ${totalDurationSeconds}-second film, but ${planCount} sections are required. Please try again.`,
-    )
-  }
-
   const narrationParts = splitNarrationAcrossPlans(fullNarration, planCount)
 
   return Array.from({ length: planCount }, (_, i) => ({
@@ -565,6 +557,51 @@ export function buildFilmPlans(
     scenarioText: scenarioParts[i] ?? '',
     narrationText: narrationParts[i],
   }))
+}
+
+export function buildFilmPlans(
+  totalDurationSeconds: number,
+  scenarioText: string,
+  fullNarration: string | undefined,
+): FilmPlan[] {
+  const planCount = expectedPlanCount(totalDurationSeconds)
+  const scenarioParts = splitScenarioIntoPlans(scenarioText, planCount)
+
+  if (scenarioParts.length !== planCount) {
+    throw new Error(
+      `The AI returned ${scenarioParts.length} plan section${scenarioParts.length === 1 ? '' : 's'} for a ${totalDurationSeconds}-second film, but ${planCount} sections are required. Please try again.`,
+    )
+  }
+
+  return assemblePlans(totalDurationSeconds, scenarioParts, fullNarration)
+}
+
+/**
+ * Build plan objects from an array of already-split plan strings.
+ *
+ * The scenario-write backend returns validated plans as an array (one string
+ * per 5-second plan). When that array already has the exact expected count, we
+ * preserve its boundaries directly instead of re-joining with blank lines and
+ * re-parsing — re-parsing destroys plan boundaries when a plan's text contains
+ * its own newlines (e.g. an embedded narration line), which is what caused the
+ * "1 plan section ... 6 required" failure.
+ *
+ * When the array does NOT match the expected count (a legacy single string
+ * carrying ===SCENE=== delimiters, or a backend fallback), we fall back to the
+ * delimiter/paragraph parsing in buildFilmPlans, which throws a readable error
+ * so the caller can retry.
+ */
+export function buildFilmPlansFromScenes(
+  totalDurationSeconds: number,
+  scenes: string[],
+  fullNarration: string | undefined,
+): FilmPlan[] {
+  const planCount = expectedPlanCount(totalDurationSeconds)
+  const cleaned = scenes.map((s) => s.trim()).filter((s) => s.length > 0)
+  if (cleaned.length === planCount) {
+    return assemblePlans(totalDurationSeconds, cleaned, fullNarration)
+  }
+  return buildFilmPlans(totalDurationSeconds, cleaned.join('\n\n'), fullNarration)
 }
 
 /**
