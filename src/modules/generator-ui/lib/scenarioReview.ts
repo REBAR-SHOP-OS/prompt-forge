@@ -28,12 +28,19 @@ export function isRtlLang(lang: string): boolean {
  * never changed — this mapping is only used to render the review in English.
  */
 const FILM_TYPE_EN: Record<string, string> = {
-  'تبلیغاتی': 'Advertising',
-  'معرفی محصول': 'Product Introduction',
+  'Advertisement': 'Advertisement',
+  'Product Showcase': 'Product Showcase',
+  'Manufacturing Process': 'Manufacturing Process',
+  'Project Application': 'Project Application',
+  'Comparison': 'Comparison',
+  'Brand Story': 'Brand Story',
+  // Legacy Persian values (PR #135) kept for backward compatibility.
+  'تبلیغاتی': 'Advertisement',
+  'معرفی محصول': 'Product Showcase',
   'فرآیند ساخت': 'Manufacturing Process',
   'کاربرد در پروژه': 'Project Application',
-  'مقایسهای': 'Comparison',
-  'برند': 'Brand',
+  'مقایسه‌ای': 'Comparison',
+  'برند': 'Brand Story',
 }
 
 export function englishFilmType(value: string | null | undefined): string {
