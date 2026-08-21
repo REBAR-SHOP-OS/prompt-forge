@@ -24,6 +24,27 @@ const BASE_SYSTEM_PROMPT = [
   "no quotes, no explanation, no markdown.",
 ].join(" ");
 
+// Film-wizard mode: the Wand in Make Full Film Step 1 turns a short idea into
+// a polished, scenario-ready prompt. Unlike the generic rewrite, this must
+// ALWAYS output English, stay within 2-5 coherent sentences, and must NOT
+// produce SHOTs / ===SCENE=== / 5-second splits / plan counts / a full
+// scenario — those are the Scenario Writer's job.
+const FILM_SYSTEM_PROMPT = [
+  "You are an expert film director and prompt engineer for AI video generation.",
+  "Rewrite the user's short idea into a polished, professional film prompt.",
+  "ALWAYS write the output in English, even if the user's idea is in Persian or another language.",
+  "Write 2 to 5 coherent sentences (about 60-120 words) that together describe:",
+  "(1) the film's goal and the main story or event,",
+  "(2) the product's key benefit or message,",
+  "(3) the visual feel (camera, lighting, mood, style), and",
+  "(4) a clear ending or brand payoff.",
+  "Preserve the user's core idea faithfully; do NOT invent facts, features, or claims the user did not state.",
+  "The product is the hero. If a character is present, describe their natural interaction with the product while keeping the product central.",
+  "Use the provided film context (product, character, film type, duration, aspect ratio, camera angle, visual theme, narration, text-on-images) to shape the prompt, but do NOT list these settings as a checklist.",
+  "Do NOT write SHOTs, do NOT use \"===SCENE===\" delimiters, do NOT split into 5-second segments, do NOT mention plan counts, and do NOT write a full scenario. Those are the Scenario Writer's job.",
+  "Output ONLY the final prompt — no preamble, no labels, no quotes, no markdown, no explanation.",
+].join(" ");
+
 const SILENT_SUFFIX = [
   "CRITICAL CONSTRAINT: The generated video MUST contain absolutely no narrator,",
   "no voice-over, no spoken dialogue, no character speaking on camera, and no",
@@ -63,8 +84,10 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
-    const mode: "silent" | "narrated" | null =
-      body?.mode === "silent" || body?.mode === "narrated" ? body.mode : null;
+    const mode: "silent" | "narrated" | "film" | null =
+      body?.mode === "silent" || body?.mode === "narrated" || body?.mode === "film"
+        ? body.mode
+        : null;
     const narratorScript: string =
       typeof body?.narratorScript === "string" ? body.narratorScript.trim() : "";
     const styleHints: string =
@@ -83,6 +106,10 @@ Deno.serve(async (req) => {
       typeof body?.cameraAngle === "string" ? body.cameraAngle.trim().slice(0, 200) : "";
     const visualTheme: string =
       typeof body?.visualTheme === "string" ? body.visualTheme.trim().slice(0, 200) : "";
+    const withNarration: boolean | null =
+      typeof body?.withNarration === "boolean" ? body.withNarration : null;
+    const noTextOnImages: boolean | null =
+      typeof body?.noTextOnImages === "boolean" ? body.noTextOnImages : null;
     const rawUrls: unknown = body?.imageUrls;
     // SSRF protection: only allow https URLs from our own Supabase storage host
     // (user-images, wan-frames, merged-videos buckets) and known public CDNs.
@@ -194,18 +221,34 @@ Deno.serve(async (req) => {
     if (visualTheme) {
       filmContextParts.push(`VISUAL THEME: ${visualTheme}`);
     }
+    if (withNarration !== null) {
+      filmContextParts.push(
+        withNarration
+          ? "NARRATION: The film includes a voice-over narrator; the prompt should leave room for spoken narration."
+          : "NARRATION: The film has no narration; the prompt should rely on visual storytelling only.",
+      );
+    }
+    if (noTextOnImages !== null) {
+      filmContextParts.push(
+        noTextOnImages
+          ? "TEXT ON IMAGES: Keep the visuals clean with no on-screen text."
+          : "TEXT ON IMAGES: On-screen text is allowed where it helps the message.",
+      );
+    }
     const filmContext = filmContextParts.length > 0
       ? `\n\nFILM CONTEXT (use these details to shape the prompt, but keep the user's original idea and language intact):\n${filmContextParts.join("\n")}`
       : "";
 
 
-    const systemPrompt = `${BASE_SYSTEM_PROMPT}\n\n${
-      mode === "silent"
-        ? SILENT_SUFFIX
-        : mode === "narrated"
-          ? narratedSuffix(narratorScript)
-          : DEFAULT_SUFFIX
-    }${styleSuffix}${filmContext}`;
+    const systemPrompt = mode === "film"
+      ? `${FILM_SYSTEM_PROMPT}${styleSuffix}${filmContext}`
+      : `${BASE_SYSTEM_PROMPT}\n\n${
+        mode === "silent"
+          ? SILENT_SUFFIX
+          : mode === "narrated"
+            ? narratedSuffix(narratorScript)
+            : DEFAULT_SUFFIX
+      }${styleSuffix}${filmContext}`;
 
 
 

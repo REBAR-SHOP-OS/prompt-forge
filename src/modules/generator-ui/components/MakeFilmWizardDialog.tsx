@@ -564,6 +564,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       const { data, error: fnError } = await supabase.functions.invoke('enhance-prompt', {
         body: {
           prompt: current,
+          mode: 'film',
           filmType: selectedFilmType || undefined,
           productName: resolvedProductName || undefined,
           characterDescription: characterDescriptionText || undefined,
@@ -571,6 +572,8 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
           aspectRatio: aspect,
           cameraAngle: cameraAngle?.prompt || undefined,
           visualTheme: theme?.prompt || undefined,
+          withNarration: withNarration,
+          noTextOnImages: noTextOnImages,
         },
       })
       if (fnError) throw fnError
