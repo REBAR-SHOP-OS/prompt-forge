@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Clapperboard,
   LoaderCircle,
@@ -18,6 +18,14 @@ import {
   X,
   MonitorPlay,
   Sparkles,
+  Eye,
+  Languages,
+  Megaphone,
+  ClipboardList,
+  Factory,
+  HardHat,
+  Scale,
+  Award,
 } from 'lucide-react'
 import {
   Dialog,
@@ -30,7 +38,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
-import { canApproveFilm, isCharacterSheet, loadCharacterRows, sanitizeProductName, type FilmDuration, type FilmAspect } from '@/modules/generator-ui/lib/makeFilmWizard'
+
+import { buildFilmPlans, buildFilmPlansFromScenes, type FilmPlan, expectedPlanCount, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows, normalizeFilmType, FILM_TYPE_TONES } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { REVIEW_LANGS, isRtlLang, englishFilmType, buildUnifiedScenario, chunkScenario, hasNonLatin } from '@/modules/generator-ui/lib/scenarioReview'
 import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
 import { supabase } from '@/integrations/supabase/client'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -145,10 +155,11 @@ export interface MakeFilmWizardDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   initialPrompt: string
+  initialFilmType?: string
   defaultDuration: FilmDuration
   defaultAspect: FilmAspect
   userId: string | null
-  writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean; aspect?: FilmAspect; productName?: string | null; characterName?: string | null; cameraStyle?: string; theme?: string }) => Promise<string[]>
+  writeScenario: (prompt: string, options?: { duration?: number; productUrl?: string; characterUrl?: string; withNarration?: boolean; aspect?: FilmAspect; productName?: string | null; characterName?: string | null; cameraStyle?: string; theme?: string; unit?: 'scene' | 'plan' }) => Promise<string[]>
   generateSceneImage: (sceneText: string, aspect?: FilmAspect, productUrl?: string, characterUrl?: string, noText?: boolean, creative?: FilmCreative, characterSheet?: boolean) => Promise<string>
   onApprove: (scenes: string[], perSceneImageUrls: (string | undefined)[], options?: { duration?: number; aspect?: FilmAspect; withNarration?: boolean; identity?: FilmIdentity; creative?: FilmCreative }) => void
 }
@@ -157,6 +168,7 @@ export function MakeFilmWizardDialog({
   open,
   onOpenChange,
   initialPrompt,
+  initialFilmType,
   defaultDuration,
   defaultAspect,
   userId,
@@ -166,7 +178,7 @@ export function MakeFilmWizardDialog({
 }: MakeFilmWizardDialogProps) {
   const [step, setStep] = useState<WizardStep>('prompt')
   const [prompt, setPrompt] = useState('')
-  const [scenes, setScenes] = useState<string[]>([])
+  const [plans, setPlans] = useState<FilmPlan[]>([])
   const [images, setImages] = useState<(string | undefined)[]>([])
   const [imageErrors, setImageErrors] = useState<(string | undefined)[]>([])
   const [busy, setBusy] = useState<'idle' | 'scenario' | 'images'>('idle')
@@ -182,6 +194,7 @@ export function MakeFilmWizardDialog({
   const [noTextOnImages, setNoTextOnImages] = useState(true)
   const [selectedCameraAngle, setSelectedCameraAngle] = useState('auto')
   const [selectedTheme, setSelectedTheme] = useState('auto')
+  const [selectedFilmType, setSelectedFilmType] = useState<string>(normalizeFilmType(initialFilmType))
   const [productPhotos, setProductPhotos] = useState<ProductPhotoSource[]>([])
   const [characterPhotos, setCharacterPhotos] = useState<ProductPhoto[]>([])
   const productPickerControllerRef = useRef<AbortController | null>(null)
@@ -198,6 +211,14 @@ export function MakeFilmWizardDialog({
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
   const [lightboxScene, setLightboxScene] = useState<string>('')
+  const [scenarioReviewOpen, setScenarioReviewOpen] = useState(false)
+  const [reviewLang, setReviewLang] = useState('en')
+  const [reviewTranslation, setReviewTranslation] = useState<string | null>(null)
+  const [reviewTranslating, setReviewTranslating] = useState(false)
+  const [reviewError, setReviewError] = useState<string | null>(null)
+  const [reviewProductNameEn, setReviewProductNameEn] = useState<string | null>(null)
+  const [reviewCharacterNameEn, setReviewCharacterNameEn] = useState<string | null>(null)
+  const reviewCache = useRef<Map<string, string>>(new Map())
   const hasInitialized = useRef(false)
 
   // Style picker dialogs
@@ -209,7 +230,7 @@ export function MakeFilmWizardDialog({
       hasInitialized.current = true
       setStep('prompt')
       setPrompt(initialPrompt ?? '')
-      setScenes([])
+      setPlans([])
       setImages([])
       setImageErrors([])
       setBusy('idle')
@@ -225,6 +246,7 @@ export function MakeFilmWizardDialog({
       setNoTextOnImages(true)
       setSelectedCameraAngle('auto')
       setSelectedTheme('auto')
+      setSelectedFilmType(normalizeFilmType(initialFilmType))
       setSelectedProduct(null)
       setSelectedCharacter(null)
       setProductName('')
@@ -238,10 +260,23 @@ export function MakeFilmWizardDialog({
     if (!open) {
       hasInitialized.current = false
     }
-  }, [open, initialPrompt, defaultDuration, defaultAspect])
+  }, [open, initialPrompt, defaultDuration, defaultAspect, initialFilmType])
 
   const working = busy !== 'idle' || regenIndex !== null
   const canWriteScenario = prompt.trim().length > 0 && selectedProduct !== null && !working
+
+  // Film type definitions — each with icon, label, and one-line description
+  const FILM_TYPES: { value: string; label: string; icon: React.ReactNode; description: string }[] = [
+    { value: 'Advertisement', label: 'Advertisement', icon: <Megaphone className="h-3.5 w-3.5" />, description: 'Persuasive commercial film designed to attract customers' },
+    { value: 'Product Showcase', label: 'Product Showcase', icon: <ClipboardList className="h-3.5 w-3.5" />, description: 'Educational walkthrough of product features and uses' },
+    { value: 'Manufacturing Process', label: 'Manufacturing Process', icon: <Factory className="h-3.5 w-3.5" />, description: 'Documentary of production from raw materials to finished product' },
+    { value: 'Project Application', label: 'Project Application', icon: <HardHat className="h-3.5 w-3.5" />, description: 'Product performance in real-world projects' },
+    { value: 'Comparison', label: 'Comparison', icon: <Scale className="h-3.5 w-3.5" />, description: 'Before/after or competitor contrast with visual side-by-side' },
+    { value: 'Brand Story', label: 'Brand Story', icon: <Award className="h-3.5 w-3.5" />, description: 'Emotional storytelling around brand values' },
+  ]
+
+  const selectedFilmTypeLabel = FILM_TYPES.find((f) => f.value === selectedFilmType)?.label ?? 'Select'
+  const selectedFilmTypeDesc = FILM_TYPES.find((f) => f.value === selectedFilmType)?.description ?? ''
 
   async function loadProductPhotos() {
     if (!userId) {
@@ -355,14 +390,63 @@ export function MakeFilmWizardDialog({
     }
   }
 
-  function generateDurationPrompt(basePrompt: string, durationSeconds: number): string {
-    const sceneCount = Math.ceil(durationSeconds / 15)
-    const sceneDuration = Math.floor(durationSeconds / sceneCount)
+    function generateDurationPrompt(basePrompt: string, durationSeconds: number): string {
+    const planCount = expectedPlanCount(durationSeconds)
     
     return `${basePrompt}
 
-IMPORTANT: Create exactly ${sceneCount} scenes, each approximately ${sceneDuration} seconds long. Total film duration must be ${durationSeconds} seconds.
-Each scene should flow logically into the next, building toward a single cohesive narrative. All scenes must serve the same overall story goal.`
+IMPORTANT: Create a continuous narrative for a ${durationSeconds}-second film, split into ${planCount} sequential 5-second plans (shots). Total film duration must be ${durationSeconds} seconds.
+Each plan should be a self-contained video prompt (subject, action, camera move, lighting) that continues the story from the previous plan. All plans must serve the same overall story goal.`
+  }
+
+  function buildScenarioRequest(idea: string, variation: boolean) {
+    let enrichedPrompt = generateDurationPrompt(idea, duration)
+    const resolvedProductName = currentProductName()
+    if (selectedProduct && selectedCharacter) {
+      enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${resolvedProductName || 'Selected Product'}" (image: ${selectedProduct.url}) AND the character "${selectedCharacter.title || 'Selected Character'}" (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every shot of the film. Show the character interacting with or holding the product.`
+    } else if (selectedProduct) {
+      enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every shot of the film.`
+    } else if (resolvedProductName) {
+      enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName}. This product MUST appear prominently in every shot of the film.`
+    } else if (selectedCharacter) {
+      enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${selectedCharacter.title || 'Selected Character'}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every shot of the film.`
+    }
+
+    // Film type shapes the tone and structure of the scenario
+    if (selectedFilmType) {
+      const filmTone = FILM_TYPE_TONES[selectedFilmType as keyof typeof FILM_TYPE_TONES] || `Film type: ${selectedFilmType}.`
+      enrichedPrompt += `\n\nFILM TYPE AND TONE: ${filmTone}`
+    }
+
+    const cameraAngle = CAMERA_ANGLES.find((a) => a.value === selectedCameraAngle)
+    if (cameraAngle && cameraAngle.prompt) {
+      enrichedPrompt += `\n\nCAMERA ANGLE: ${cameraAngle.prompt}`
+    }
+
+    const theme = THEMES.find((t) => t.value === selectedTheme)
+    if (theme && theme.prompt) {
+      enrichedPrompt += `\n\nVISUAL STYLE: ${theme.prompt}`
+    }
+
+    if (variation) {
+      enrichedPrompt += `\n\nVARIATION REQUEST: Write a fresh, different variation of this scenario. Do not repeat the previous wording — change the shot descriptions, actions, and camera moves while keeping the same product, character, film type, duration, and visual style.`
+    }
+
+    return {
+      prompt: enrichedPrompt,
+      options: {
+        duration,
+        productUrl: selectedProduct?.url,
+        characterUrl: selectedCharacter?.url,
+        productName: resolvedProductName,
+        characterName: selectedCharacter?.title ?? null,
+        withNarration,
+        aspect,
+        cameraStyle: cameraAngle?.prompt,
+        theme: theme?.prompt,
+        unit: 'plan' as const,
+      },
+    }
   }
 
   async function handleWriteScenario() {
@@ -379,48 +463,76 @@ Each scene should flow logically into the next, building toward a single cohesiv
     setError(null)
     setProgress('Writing your film scenario…')
     try {
-      let enrichedPrompt = generateDurationPrompt(idea, duration)
-      const resolvedProductName = currentProductName()
-      if (selectedProduct && selectedCharacter) {
-        enrichedPrompt += `\n\nPRODUCT AND CHARACTER TO FEATURE TOGETHER: The product "${resolvedProductName || 'Selected Product'}" (image: ${selectedProduct.url}) AND the character "${selectedCharacter.title || 'Selected Character'}" (image: ${selectedCharacter.url}) MUST BOTH appear together prominently in every scene of the film. Show the character interacting with or holding the product.`
-      } else if (selectedProduct) {
-        enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName || 'Selected Product'}. The product image URL is: ${selectedProduct.url}. This product MUST appear prominently in every scene of the film.`
-      } else if (resolvedProductName) {
-        enrichedPrompt += `\n\nPRODUCT TO FEATURE: ${resolvedProductName}. This product MUST appear prominently in every scene of the film.`
-      } else if (selectedCharacter) {
-        enrichedPrompt += `\n\nCHARACTER TO FEATURE: ${selectedCharacter.title || 'Selected Character'}. The character image URL is: ${selectedCharacter.url}. This character MUST appear prominently in every scene of the film.`
-      }
-      
-      const cameraAngle = CAMERA_ANGLES.find((a) => a.value === selectedCameraAngle)
-      if (cameraAngle && cameraAngle.prompt) {
-        enrichedPrompt += `\n\nCAMERA ANGLE: ${cameraAngle.prompt}`
-      }
-      
-      const theme = THEMES.find((t) => t.value === selectedTheme)
-      if (theme && theme.prompt) {
-        enrichedPrompt += `\n\nVISUAL STYLE: ${theme.prompt}`
-      }
-      const written = await writeScenario(enrichedPrompt, {
-        duration,
-        productUrl: selectedProduct?.url,
-        characterUrl: selectedCharacter?.url,
-        productName: resolvedProductName,
-        characterName: selectedCharacter?.title ?? null,
-        withNarration,
-        aspect,
-        cameraStyle: cameraAngle?.prompt,
-        theme: theme?.prompt,
-      })
-      const cleaned = written.map((s) => s.trim()).filter((s) => s.length > 0)
-      if (cleaned.length === 0) {
+      const { prompt: enrichedPrompt, options } = buildScenarioRequest(idea, false)
+      const written = await writeScenario(enrichedPrompt, options)
+      const rawScenes = written.map((s) => s.trim()).filter((s) => s.length > 0)
+      if (rawScenes.length === 0) {
         setError('The scenario came back empty — try rephrasing your prompt.')
         return
       }
-      setScenes(cleaned)
-      setImages(new Array(cleaned.length).fill(undefined))
+      // The model must return exactly the expected number of plans. If it
+      // doesn't match, retry once before giving up.
+      let builtPlans: FilmPlan[]
+      try {
+        builtPlans = buildFilmPlansFromScenes(duration, rawScenes, undefined)
+      } catch (firstErr) {
+        setProgress('Retrying scenario…')
+        const retryWritten = await writeScenario(enrichedPrompt, options)
+        const retryScenes = retryWritten.map((s) => s.trim()).filter((s) => s.length > 0)
+        if (retryScenes.length === 0) {
+          setError('The scenario came back empty — try rephrasing your prompt.')
+          return
+        }
+        builtPlans = buildFilmPlansFromScenes(duration, retryScenes, undefined)
+      }
+      setPlans(builtPlans)
+      setImages(new Array(builtPlans.length).fill(undefined))
       setStep('scenario')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not write the scenario.')
+    } finally {
+      setBusy('idle')
+      setProgress(null)
+    }
+  }
+
+  async function handleRegenerateScenario() {
+    if (working) return
+    if (plans.length === 0) return
+    setBusy('scenario')
+    setError(null)
+    setProgress('Regenerating your film scenario…')
+    try {
+      const { prompt: enrichedPrompt, options } = buildScenarioRequest(prompt.trim(), true)
+      const written = await writeScenario(enrichedPrompt, options)
+      const rawScenes = written.map((s) => s.trim()).filter((s) => s.length > 0)
+      if (rawScenes.length === 0) {
+        setError('The scenario came back empty — try again.')
+        return
+      }
+      let builtPlans: FilmPlan[]
+      try {
+        builtPlans = buildFilmPlansFromScenes(duration, rawScenes, undefined)
+        builtPlans = buildFilmPlans(duration, rawScenes.join('\n\n'), undefined)
+      } catch (firstErr) {
+        setProgress('Retrying scenario…')
+        const retryWritten = await writeScenario(enrichedPrompt, options)
+        const retryScenes = retryWritten.map((s) => s.trim()).filter((s) => s.length > 0)
+        if (retryScenes.length === 0) {
+          setError('The scenario came back empty — try again.')
+          return
+        }
+        builtPlans = buildFilmPlansFromScenes(duration, retryScenes, undefined)
+        builtPlans = buildFilmPlans(duration, retryScenes.join('\n\n'), undefined)
+      }
+      // Success: replace the plans atomically and reset the stale preview
+      // images so they never mismatch the new shots.
+      setPlans(builtPlans)
+      setImages(new Array(builtPlans.length).fill(undefined))
+      setImageErrors(new Array(builtPlans.length).fill(undefined))
+      setIdentitySnapshot(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not regenerate the scenario.')
     } finally {
       setBusy('idle')
       setProgress(null)
@@ -435,8 +547,34 @@ Each scene should flow logically into the next, building toward a single cohesiv
     setOptimizeError(null)
     setPromptBeforeOptimize(prompt)
     try {
+      const cameraAngle = CAMERA_ANGLES.find((a) => a.value === selectedCameraAngle)
+      const theme = THEMES.find((t) => t.value === selectedTheme)
+      const resolvedProductName = currentProductName()
+      let characterDescriptionText = ''
+      if (selectedCharacter) {
+        const { data: descData, error: descError } = await supabase.functions.invoke('describe-character', {
+          body: { imageUrl: selectedCharacter.url },
+        })
+        if (descError) {
+          throw new Error('Could not describe the selected character. Your original text was kept.')
+        }
+        characterDescriptionText = (descData as { description?: string } | null)?.description?.trim() ?? ''
+      }
+
       const { data, error: fnError } = await supabase.functions.invoke('enhance-prompt', {
-        body: { prompt: current },
+        body: {
+          prompt: current,
+          mode: 'film',
+          filmType: selectedFilmType || undefined,
+          productName: resolvedProductName || undefined,
+          characterDescription: characterDescriptionText || undefined,
+          duration: duration,
+          aspectRatio: aspect,
+          cameraAngle: cameraAngle?.prompt || undefined,
+          visualTheme: theme?.prompt || undefined,
+          withNarration: withNarration,
+          noTextOnImages: noTextOnImages,
+        },
       })
       if (fnError) throw fnError
       const enhanced = (data as { enhancedPrompt?: string } | null)?.enhancedPrompt?.trim()
@@ -475,7 +613,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
   }
 
   async function handleGenerateImages() {
-    if (scenes.length === 0) return
+    if (plans.length === 0) return
     setBusy('images')
     setError(null)
     const snapshot: IdentitySnapshot = {
@@ -484,13 +622,13 @@ Each scene should flow logically into the next, building toward a single cohesiv
     }
     setIdentitySnapshot(snapshot)
     const characterSheet = snapshot.character?.characterSheet ?? false
-    const next: (string | undefined)[] = new Array(scenes.length).fill(undefined)
-    const nextErrors: (string | undefined)[] = new Array(scenes.length).fill(undefined)
+    const next: (string | undefined)[] = new Array(plans.length).fill(undefined)
+    const nextErrors: (string | undefined)[] = new Array(plans.length).fill(undefined)
     const creative = currentCreative()
-    for (let i = 0; i < scenes.length; i++) {
-      setProgress(`Designing preview image ${i + 1} of ${scenes.length}…`)
+    for (let i = 0; i < plans.length; i++) {
+      setProgress(`Designing preview image ${i + 1} of ${plans.length}…`)
       try {
-        next[i] = await generateSceneImage(scenes[i], aspect, snapshot.product?.url, snapshot.character?.url, noTextOnImages, creative, characterSheet)
+        next[i] = await generateSceneImage(plans[i].scenarioText, aspect, snapshot.product?.url, snapshot.character?.url, noTextOnImages, creative, characterSheet)
         nextErrors[i] = undefined
       } catch (err) {
         console.error(`Make-film wizard: preview image ${i + 1} failed`, err)
@@ -513,7 +651,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
       const snapshot = identitySnapshot
       if (!snapshot) throw new Error('The original film identity snapshot is unavailable. Generate the preview batch again.')
       const characterSheet = snapshot.character?.characterSheet ?? false
-      const url = await generateSceneImage(scenes[index], aspect, snapshot.product?.url, snapshot.character?.url, noTextOnImages, currentCreative(), characterSheet)
+      const url = await generateSceneImage(plans[index].scenarioText, aspect, snapshot.product?.url, snapshot.character?.url, noTextOnImages, currentCreative(), characterSheet)
       setImages((cur) => {
         const copy = [...cur]
         copy[index] = url
@@ -545,10 +683,11 @@ Each scene should flow logically into the next, building toward a single cohesiv
 
   function handleApprove() {
     try {
-      onApprove(scenes, images, {
+      onApprove(plans.map((p) => p.scenarioText), images, {
         duration,
         aspect,
         withNarration,
+        isPlanBased: true,
         identity: {
           productUrl: (identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product'))?.url,
           productName: (identitySnapshot?.product ?? toIdentityRef(selectedProduct, 'product'))?.name ?? currentProductName(),
@@ -573,15 +712,151 @@ Each scene should flow logically into the next, building toward a single cohesiv
   const selectedCameraLabel = CAMERA_ANGLES.find((a) => a.value === selectedCameraAngle)?.label ?? 'Auto (AI decides)'
   const selectedThemeLabel = THEMES.find((t) => t.value === selectedTheme)?.label ?? 'Auto (AI decides)'
 
+  // Unified English scenario for the review: every plan in order, Markdown
+  // stripped, with SHOT n (start–end s) boundaries preserved.
+  const unifiedScenario = useMemo(() => buildUnifiedScenario(plans), [plans])
+
+  // Translate one chunk via the translate-text edge function, cached per
+  // `${lang}::${text}` so re-selecting a language is instant.
+  const translateChunk = useCallback(async (text: string, lang: string): Promise<string> => {
+    const key = `${lang}::${text}`
+    const cached = reviewCache.current.get(key)
+    if (cached) return cached
+    const { data, error: fnError } = await supabase.functions.invoke<{
+      translation?: string
+      error?: string
+    }>('translate-text', { body: { text, targetLang: lang } })
+    if (fnError) throw new Error(fnError.message)
+    if (data?.error) throw new Error(data.error)
+    if (!data?.translation) throw new Error('No translation returned')
+    reviewCache.current.set(key, data.translation)
+    return data.translation
+  }, [])
+
+  // Translate the whole unified scenario into the chosen language. English is
+  // the original and needs no AI call. Long scenarios are chunked on shot
+  // boundaries (never mid-shot) and reassembled in order.
+  const translateReview = useCallback(async (lang: string) => {
+    setReviewLang(lang)
+    setReviewError(null)
+    if (lang === 'en') {
+      setReviewTranslation(null)
+      return
+    }
+    setReviewTranslating(true)
+    try {
+      const chunks = chunkScenario(unifiedScenario)
+      const parts = await Promise.all(chunks.map((c) => translateChunk(c, lang)))
+      setReviewTranslation(parts.join('\n\n'))
+    } catch (e) {
+      setReviewTranslation(null)
+      setReviewError(e instanceof Error ? e.message : 'Could not translate the scenario.')
+    } finally {
+      setReviewTranslating(false)
+    }
+  }, [unifiedScenario, translateChunk])
+
+  // Show a non-Latin product/character name in English in the review only,
+  // without touching the stored data. Falls back to the original on error.
+  const translateNameToEnglish = useCallback(async (name: string | null | undefined): Promise<string | null> => {
+    if (!name) return null
+    if (!hasNonLatin(name)) return name
+    const key = `en::name::${name}`
+    const cached = reviewCache.current.get(key)
+    if (cached) return cached
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke<{
+        translation?: string
+        error?: string
+      }>('translate-text', { body: { text: name, targetLang: 'en' } })
+      if (fnError || data?.error || !data?.translation) return name
+      reviewCache.current.set(key, data.translation)
+      return data.translation
+    } catch {
+      return name
+    }
+  }, [])
+
+  // Reset the review to English whenever it closes.
+  useEffect(() => {
+    if (!scenarioReviewOpen) {
+      setReviewLang('en')
+      setReviewTranslation(null)
+      setReviewError(null)
+      setReviewProductNameEn(null)
+      setReviewCharacterNameEn(null)
+    }
+  }, [scenarioReviewOpen])
+
+  // Translate non-Latin product/character names to English for display when
+  // the review opens.
+  useEffect(() => {
+    if (!scenarioReviewOpen) return
+    let cancelled = false
+    const productName = currentProductName()
+    const characterName = selectedCharacter?.title ?? null
+    ;(async () => {
+      const [pn, cn] = await Promise.all([
+        translateNameToEnglish(productName),
+        translateNameToEnglish(characterName),
+      ])
+      if (cancelled) return
+      setReviewProductNameEn(pn)
+      setReviewCharacterNameEn(cn)
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scenarioReviewOpen])
+
   return (
     <>
       <Dialog open={open} onOpenChange={(v) => (working ? undefined : onOpenChange(v))}>
         <DialogContent className="max-w-[95vw] max-h-[95vh] w-full h-full border-white/10 bg-zinc-950/95 text-zinc-100 flex flex-col">
           <DialogHeader className="flex-shrink-0">
-            <DialogTitle className="flex items-center gap-2 text-zinc-100 text-lg">
-              <Clapperboard className="h-6 w-6 text-fuchsia-300" aria-hidden="true" />
-              Make Full Film
-            </DialogTitle>
+            <div className="flex items-center justify-between gap-2 pr-10">
+              <DialogTitle className="flex items-center gap-2 text-zinc-100 text-lg">
+                <Clapperboard className="h-6 w-6 text-fuchsia-300" aria-hidden="true" />
+                Make Full Film
+              </DialogTitle>
+              {step === 'scenario' && (
+                <div className="flex items-center gap-1">
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Regenerate full scenario"
+                          disabled={working}
+                          onClick={handleRegenerateScenario}
+                          className="h-8 w-8 shrink-0 text-zinc-400 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {busy === 'scenario' ? (
+                            <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="text-xs">
+                        Regenerate full scenario
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Review full scenario"
+                    onClick={() => setScenarioReviewOpen(true)}
+                    className="h-8 w-8 shrink-0 text-zinc-400 hover:text-zinc-100"
+                  >
+                    <Eye className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                </div>
+              )}
+            </div>
             <div className="mt-1 flex items-baseline gap-2">
               <span className="text-sm font-semibold tracking-wide text-fuchsia-300">
                 Step {stepIndex} of 3
@@ -621,7 +896,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                     ))}
                   </div>
                   <p className="text-[11px] text-zinc-500">
-                    {Math.ceil(duration / 15)} scenes × ~{Math.floor(duration / Math.ceil(duration / 15))}s each
+                    {expectedPlanCount(duration)} shots × ~{Math.floor(duration / Math.ceil(duration / 15))}s each
                   </p>
                 </div>
 
@@ -806,6 +1081,37 @@ Each scene should flow logically into the next, building toward a single cohesiv
                   </div>
                 </div>
 
+                {/* Film type selector - inline toggle buttons */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                    <Film className="h-3.5 w-3.5" />
+                    Film type
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {FILM_TYPES.map((ft) => (
+                      <Button
+                        key={ft.value}
+                        type="button"
+                        variant={selectedFilmType === ft.value ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setSelectedFilmType(ft.value)}
+                        title={ft.description}
+                        className={`h-8 gap-1 text-xs ${
+                          selectedFilmType === ft.value
+                            ? 'bg-fuchsia-500/90 text-white hover:bg-fuchsia-500'
+                            : 'border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.06]'
+                        }`}
+                      >
+                        {ft.icon}
+                        {ft.label}
+                      </Button>
+                    ))}
+                  </div>
+                  {selectedFilmTypeDesc && (
+                    <p className="text-[11px] text-zinc-500">{selectedFilmTypeDesc}</p>
+                  )}
+                </div>
+
                 {/* Camera angle selector - opens dialog */}
                 <div className="space-y-2">
                   <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
@@ -909,19 +1215,18 @@ Each scene should flow logically into the next, building toward a single cohesiv
                 <p className="text-sm text-zinc-300">
                   Here is the scenario the AI wrote. Edit any scene, then generate one preview image per scene.
                 </p>
-                <div className="-mx-1 overflow-x-auto overscroll-x-contain px-1 pb-3 scroll-smooth [scrollbar-color:rgb(82_82_91)_transparent] [scrollbar-width:thin]">
-                  <div className="flex w-max snap-x snap-proximity gap-3">
-                    {scenes.map((scene, i) => (
-                      <div key={i} className="w-[calc(100vw-4rem)] max-w-[34rem] shrink-0 snap-start space-y-2 rounded-md border border-white/10 bg-white/[0.02] p-4 sm:w-[30rem] lg:w-[34rem]">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {plans.map((plan, i) => (
+                      <div key={i} className="space-y-2 rounded-md border border-white/10 bg-white/[0.02] p-4">
                         <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
-                          Scene {i + 1} (~{Math.floor(duration / scenes.length)}s)
+                          Shot {i + 1} (~{Math.floor(duration / plans.length)}s)
                         </div>
                         <Textarea
-                          value={scene}
+                          value={plan.scenarioText}
                           onChange={(e) =>
-                            setScenes((cur) => {
+                            setPlans((cur) => {
                               const copy = [...cur]
-                              copy[i] = e.target.value
+                              copy[i] = { ...copy[i], scenarioText: e.target.value }
                               return copy
                             })
                           }
@@ -930,7 +1235,6 @@ Each scene should flow logically into the next, building toward a single cohesiv
                         />
                       </div>
                     ))}
-                  </div>
                 </div>
               </div>
             )}
@@ -941,8 +1245,8 @@ Each scene should flow logically into the next, building toward a single cohesiv
                 <p className="text-sm text-zinc-300">
                   One preview image per scene. Click to zoom. Regenerate any you dislike. Preview final film before approving.
                 </p>
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-                  {scenes.map((scene, i) => {
+                <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(15rem,1fr))]">
+                  {plans.map((plan, i) => {
                     const url = safeMediaUrl(images[i])
                     const isRegen = regenIndex === i
                     const sceneError = imageErrors[i]
@@ -950,7 +1254,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                       <div key={i} className="space-y-2 rounded-md border border-white/10 bg-white/[0.02] p-3">
                         <div className="flex items-center justify-between">
                           <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
-                            Scene {i + 1}
+                            Shot {i + 1}
                           </div>
                           <div className="flex items-center gap-1">
                             {url && (
@@ -958,7 +1262,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                                 type="button"
                                 size="sm"
                                 variant="ghost"
-                                onClick={() => openLightbox(url, scene)}
+                                onClick={() => openLightbox(url, plan.scenarioText)}
                                 className="h-7 gap-1 px-2 text-xs text-zinc-300 hover:text-fuchsia-100"
                               >
                                 <ZoomIn className="h-3.5 w-3.5" />
@@ -983,14 +1287,14 @@ Each scene should flow logically into the next, building toward a single cohesiv
                           </div>
                         </div>
                         <div 
-                          className="grid place-items-center overflow-hidden rounded bg-black/40 cursor-pointer max-h-[240px]"
+                          className="grid w-full place-items-center overflow-hidden rounded bg-black/40 cursor-pointer"
                           style={{ aspectRatio: aspect === '9:16' ? '9/16' : aspect === '16:9' ? '16/9' : '1/1' }}
-                          onClick={() => url && openLightbox(url, scene)}
+                          onClick={() => url && openLightbox(url, plan.scenarioText)}
                         >
                           {isRegen ? (
                             <LoaderCircle className="h-6 w-6 animate-spin text-zinc-500" aria-hidden="true" />
                           ) : url ? (
-                            <img src={url} alt={`Preview for scene ${i + 1}`} className="h-full w-full object-cover max-h-[240px]" />
+                            <img src={url} alt={`Preview for scene ${i + 1}`} className="h-full w-full object-contain" />
                           ) : (
                             <div className="flex flex-col items-center gap-1 text-zinc-600">
                               <ImageIcon className="h-6 w-6" aria-hidden="true" />
@@ -1003,7 +1307,7 @@ Each scene should flow logically into the next, building toward a single cohesiv
                             {sceneError}
                           </div>
                         )}
-                        <p className="line-clamp-2 text-[11px] leading-4 text-zinc-500">{scene}</p>
+                        <p className="line-clamp-2 text-[11px] leading-4 text-zinc-500">{plan.scenarioText}</p>
                       </div>
                     )
                   })}
@@ -1096,6 +1400,72 @@ Each scene should flow logically into the next, building toward a single cohesiv
                   Approve & Make Film
                 </Button>
               )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Scenario Review Dialog */}
+      <Dialog open={scenarioReviewOpen} onOpenChange={setScenarioReviewOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] border-white/10 bg-zinc-950/95 text-zinc-100 flex flex-col">
+          <DialogHeader className="flex-shrink-0">
+            <div className="flex items-center justify-between gap-2 pr-10">
+              <DialogTitle className="flex items-center gap-2 text-base text-zinc-100">
+                Scenario Review
+                <div className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/[0.04] pl-2 pr-1 py-0.5">
+                  <Languages className="h-3.5 w-3.5 text-fuchsia-300" aria-hidden="true" />
+                  <select
+                    value={reviewLang}
+                    onChange={(e) => void translateReview(e.target.value)}
+                    disabled={reviewTranslating}
+                    aria-label="Translate scenario"
+                    className="cursor-pointer rounded-full bg-transparent py-0.5 text-xs font-medium text-zinc-200 outline-none [&>option]:bg-[#0b0c10] [&>option]:text-zinc-200"
+                  >
+                    {REVIEW_LANGS.map((l) => (
+                      <option key={l.code} value={l.code}>{l.label}</option>
+                    ))}
+                  </select>
+                  {reviewTranslating ? (
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin text-fuchsia-300" aria-hidden="true" />
+                  ) : null}
+                </div>
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-sm text-zinc-400">
+              Full film scenario with settings and every shot in order.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto pr-1 space-y-4 min-h-0">
+            <div className="rounded-md border border-white/10 bg-white/[0.03] p-3 space-y-1 text-sm text-zinc-300">
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                <span><strong className="text-zinc-200">Duration:</strong> {duration}s</span>
+                <span><strong className="text-zinc-200">Aspect:</strong> {aspect}</span>
+                <span><strong className="text-zinc-200">Narration:</strong> {withNarration ? 'Yes' : 'No'}</span>
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                <span><strong className="text-zinc-200">Product:</strong> {(reviewProductNameEn ?? currentProductName()) || '—'}</span>
+                <span><strong className="text-zinc-200">Character:</strong> {(reviewCharacterNameEn ?? selectedCharacter?.title) || '—'}</span>
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                <span><strong className="text-zinc-200">Film type:</strong> {englishFilmType(selectedFilmType) || '—'}</span>
+                <span><strong className="text-zinc-200">Camera:</strong> {selectedCameraLabel}</span>
+                <span><strong className="text-zinc-200">Theme:</strong> {selectedThemeLabel}</span>
+              </div>
+            </div>
+            {reviewError ? (
+              <div className="space-y-2 rounded-md border border-rose-400/20 bg-rose-500/[0.06] p-3 text-sm text-rose-300">
+                <p>{reviewError}</p>
+                <Button type="button" variant="outline" size="sm" onClick={() => void translateReview(reviewLang)}>
+                  Retry
+                </Button>
+              </div>
+            ) : null}
+            <div
+              data-testid="scenario-review-body"
+              dir={reviewTranslation && isRtlLang(reviewLang) ? 'rtl' : 'ltr'}
+              className="rounded-md border border-white/10 bg-white/[0.02] p-3 text-sm leading-6 text-zinc-200 whitespace-pre-wrap [overflow-wrap:anywhere]"
+            >
+              {reviewTranslation ?? unifiedScenario}
             </div>
           </div>
         </DialogContent>

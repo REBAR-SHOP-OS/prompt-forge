@@ -1,7 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   expectedSceneCount,
+  expectedPlanCount,
   computeClipDurations,
+  computePlanDurations,
+  computePlanCoverage,
   sumClipDurations,
   computeSceneBeats,
   beatGuideForClip,
@@ -17,6 +20,18 @@ import {
   loadCharacterRows,
   sanitizeProductName,
   FILM_DURATIONS,
+  buildFilmPlans,
+  buildFilmPlansFromScenes,
+  validateFilmPlans,
+  splitNarrationAcrossPlans,
+  splitScenarioIntoPlans,
+  buildPlanImagePrompt,
+  buildPlanClipPrompt,
+  computePlanCredits,
+  type FilmPlan,
+  normalizeFilmType,
+  FILM_TYPE_VALUES,
+  FILM_TYPE_TONES,
 } from './makeFilmWizard'
 
 const CAMERA: Record<string, string> = {
@@ -38,6 +53,49 @@ describe('expectedSceneCount', () => {
     expect(expectedSceneCount(60)).toBe(4)
     expect(expectedSceneCount(90)).toBe(6)
     expect(expectedSceneCount(135)).toBe(9)
+  })
+})
+
+describe('expectedPlanCount', () => {
+  it('maps each duration to duration/5 plans', () => {
+    expect(expectedPlanCount(5)).toBe(1)
+    expect(expectedPlanCount(10)).toBe(2)
+    expect(expectedPlanCount(15)).toBe(3)
+    expect(expectedPlanCount(30)).toBe(6)
+    expect(expectedPlanCount(45)).toBe(9)
+    expect(expectedPlanCount(60)).toBe(12)
+    expect(expectedPlanCount(90)).toBe(18)
+    expect(expectedPlanCount(135)).toBe(27)
+  })
+})
+
+describe('computePlanDurations', () => {
+  it('splits every duration into 5s plans whose sum equals the total', () => {
+    for (const duration of FILM_DURATIONS) {
+      const plans = computePlanDurations(duration)
+      expect(plans).toHaveLength(expectedPlanCount(duration))
+      for (const p of plans) expect(p).toBe(5)
+      expect(sumClipDurations(plans)).toBe(duration)
+    }
+  })
+})
+
+describe('computePlanCoverage', () => {
+  it('maps 1 plan to medium, 2 plans to wide+close, 3 plans to wide+medium+close', () => {
+    expect(computePlanCoverage(5)).toEqual(['medium'])
+    expect(computePlanCoverage(10)).toEqual(['wide', 'close'])
+    expect(computePlanCoverage(15)).toEqual(['wide', 'medium', 'close'])
+  })
+
+  it('cycles wide→medium→close across a multi-card film', () => {
+    // 30s = 2 cards × 3 plans = 6 plans
+    expect(computePlanCoverage(30)).toEqual(['wide', 'medium', 'close', 'wide', 'medium', 'close'])
+    // 45s = 3 cards × 3 plans = 9 plans
+    expect(computePlanCoverage(45)).toEqual([
+      'wide', 'medium', 'close',
+      'wide', 'medium', 'close',
+      'wide', 'medium', 'close',
+    ])
   })
 })
 
@@ -241,11 +299,11 @@ describe('isCharacterSheet', () => {
   })
   it('treats explicit image_type character as a plain character even with a sheet-like title', () => {
     // A plain character explicitly marked as such is never misclassified, even
-    // if its title happens to contain the "— sheet" marker.
-    expect(isCharacterSheet('character', 'Sarah — sheet', 'https://x/user/410b50ff-abc.png')).toBe(false)
+    // if its title happens to contain the "-- sheet" marker.
+    expect(isCharacterSheet('character', 'Sarah -- sheet', 'https://x/user/410b50ff-abc.png')).toBe(false)
   })
-  it('detects a legacy generated sheet by its "— sheet" title marker when image_type is null', () => {
-    expect(isCharacterSheet(null, 'Sarah — sheet', 'https://x/1.png')).toBe(true)
+  it('detects a legacy generated sheet by its "-- sheet" title marker when image_type is null', () => {
+    expect(isCharacterSheet(null, 'Sarah -- sheet', 'https://x/1.png')).toBe(true)
   })
   it('detects a legacy generated sheet by its character-sheet- storage key when image_type is null', () => {
     expect(isCharacterSheet(null, 'My custom sheet', 'https://x/user/character-sheet-1712345-abc.png')).toBe(true)
@@ -389,7 +447,7 @@ describe('loadCharacterRows', () => {
         error: { message: 'column generator_user_images.image_type does not exist' },
       })
       .mockResolvedValueOnce({
-        data: [row({ title: 'Sarah — sheet' })],
+        data: [row({ title: 'Sarah -- sheet' })],
         error: null,
       })
     const { rows } = await loadCharacterRows(query)
@@ -451,5 +509,290 @@ describe('sanitizeProductName', () => {
     expect(sanitizeProductName(null)).toBe('Selected Product')
     expect(sanitizeProductName('')).toBe('Selected Product')
     expect(sanitizeProductName('   ')).toBe('Selected Product')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Plan-based film tests
+// ---------------------------------------------------------------------------
+
+describe('buildFilmPlans', () => {
+  it('builds correct plans for a 15s film with 3 plans', () => {
+    const plans = buildFilmPlans(15, 'The product is shown in a workshop. ===SCENE=== A craftsman picks it up. ===SCENE=== He demonstrates its features.', 'Narration: Discover the power of precision.')
+    expect(plans).toHaveLength(3)
+    expect(plans[0].label).toBe('SHOT 1 OF 3')
+    expect(plans[0].coverage).toBe('wide')
+    expect(plans[0].durationSeconds).toBe(5)
+    expect(plans[1].label).toBe('SHOT 2 OF 3')
+    expect(plans[1].coverage).toBe('medium')
+    expect(plans[2].label).toBe('SHOT 3 OF 3')
+    expect(plans[2].coverage).toBe('close')
+  })
+
+  it('builds correct plans for a 5s film with 1 plan', () => {
+    const plans = buildFilmPlans(5, 'A quick showcase of the product.', undefined)
+    expect(plans).toHaveLength(1)
+    expect(plans[0].label).toBe('SHOT 1 OF 1')
+    expect(plans[0].coverage).toBe('medium')
+  })
+
+  it('builds correct plans for a 30s film with 6 plans', () => {
+    const plans = buildFilmPlans(30, 'Scene one. ===SCENE=== Scene two. ===SCENE=== Scene three. ===SCENE=== Scene four. ===SCENE=== Scene five. ===SCENE=== Scene six.', undefined)
+    expect(plans).toHaveLength(6)
+    expect(plans.map((p) => p.coverage)).toEqual([
+      'wide', 'medium', 'close',
+      'wide', 'medium', 'close',
+    ])
+  })
+
+  it('preserves total duration across all plans', () => {
+    for (const duration of FILM_DURATIONS) {
+      const planCount = expectedPlanCount(duration)
+      // Build text with ===SCENE=== delimiters matching the expected plan count.
+      const parts = Array.from({ length: planCount }, (_, i) => `Shot ${i + 1} of the film shows the product in action.`)
+      const text = parts.join(' ===SCENE=== ')
+      const plans = buildFilmPlans(duration, text, 'Narration: Test narration.')
+      const total = plans.reduce((acc, p) => acc + p.durationSeconds, 0)
+      expect(total).toBe(duration)
+    }
+  })
+})
+
+describe('buildFilmPlansFromScenes', () => {
+  it('preserves array boundaries when the scene count already matches (30s -> 6 plans)', () => {
+    const scenes = [
+      'Plan one: opening shot.',
+      'Plan two: close-up detail.',
+      'Plan three: product in use.',
+      'Plan four: dynamic angle.',
+      'Plan five: character interaction.',
+      'Plan six: final call-to-action.',
+    ]
+    const plans = buildFilmPlansFromScenes(30, scenes, undefined)
+    expect(plans).toHaveLength(6)
+    expect(plans.map((p) => p.scenarioText)).toEqual(scenes)
+    expect(plans.map((p) => p.coverage)).toEqual(['wide', 'medium', 'close', 'wide', 'medium', 'close'])
+  })
+
+  it('preserves a plan whose text contains its own newlines (embedded narration line)', () => {
+    // A plan with an embedded narration line would collapse under paragraph
+    // parsing; the array path must keep it intact.
+    const scenes = [
+      'Plan one: opening shot.\nNarration: "Welcome to the film."',
+      'Plan two: close-up detail.',
+      'Plan three: product in use.',
+      'Plan four: dynamic angle.',
+      'Plan five: character interaction.',
+      'Plan six: final call-to-action.',
+    ]
+    const plans = buildFilmPlansFromScenes(30, scenes, undefined)
+    expect(plans).toHaveLength(6)
+    expect(plans[0].scenarioText).toBe(scenes[0])
+    expect(plans[0].scenarioText).toContain('Narration:')
+  })
+
+  it('falls back to delimiter parsing when the array is a single legacy string', () => {
+    const scenes = ['Scene one. ===SCENE=== Scene two. ===SCENE=== Scene three. ===SCENE=== Scene four. ===SCENE=== Scene five. ===SCENE=== Scene six.']
+    const plans = buildFilmPlansFromScenes(30, scenes, undefined)
+    expect(plans).toHaveLength(6)
+  })
+
+  it('throws a readable error on a malformed (wrong-count) array', () => {
+    const scenes = ['Only one plan.']
+    expect(() => buildFilmPlansFromScenes(30, scenes, undefined)).toThrow(/1 plan section.*6 sections are required/)
+  })
+
+  it('handles every supported duration with a correctly-sized array', () => {
+    for (const duration of FILM_DURATIONS) {
+      const planCount = expectedPlanCount(duration)
+      const scenes = Array.from({ length: planCount }, (_, i) => `Shot ${i + 1} of the film.`)
+      const plans = buildFilmPlansFromScenes(duration, scenes, undefined)
+      expect(plans).toHaveLength(planCount)
+      const total = plans.reduce((acc, p) => acc + p.durationSeconds, 0)
+      expect(total).toBe(duration)
+    }
+  })
+})
+
+describe('validateFilmPlans', () => {
+  it('validates correct plans', () => {
+    const plans = buildFilmPlans(15, 'First shot. ===SCENE=== Second shot. ===SCENE=== Third shot.', undefined)
+    const result = validateFilmPlans(15, plans)
+    expect(result.valid).toBe(true)
+    expect(result.error).toBeUndefined()
+  })
+
+  it('fails when plan count is wrong', () => {
+    const plans = buildFilmPlans(15, 'First shot. ===SCENE=== Second shot. ===SCENE=== Third shot.', undefined)
+    const result = validateFilmPlans(30, plans)
+    expect(result.valid).toBe(false)
+    expect(result.error).toContain('Expected 6 plans')
+  })
+
+  it('fails when total duration does not match', () => {
+    const plans = buildFilmPlans(15, 'First shot. ===SCENE=== Second shot. ===SCENE=== Third shot.', undefined)
+    plans[0].durationSeconds = 10 as 5 // force invalid
+    const result = validateFilmPlans(15, plans)
+    expect(result.valid).toBe(false)
+  })
+})
+
+describe('splitNarrationAcrossPlans', () => {
+  it('splits narration evenly across plans', () => {
+    const narration = 'First sentence. Second sentence. Third sentence. Fourth sentence.'
+    const parts = splitNarrationAcrossPlans(narration, 4)
+    expect(parts).toHaveLength(4)
+    expect(parts[0]).toContain('First sentence')
+    expect(parts[1]).toContain('Second sentence')
+    expect(parts[2]).toContain('Third sentence')
+    expect(parts[3]).toContain('Fourth sentence')
+  })
+
+  it('puts all narration in plan 0 when not enough sentences', () => {
+    const narration = 'One sentence only.'
+    const parts = splitNarrationAcrossPlans(narration, 3)
+    expect(parts[0]).toBe('One sentence only.')
+    expect(parts[1]).toBeUndefined()
+    expect(parts[2]).toBeUndefined()
+  })
+
+  it('returns undefined for all plans when narration is missing', () => {
+    const parts = splitNarrationAcrossPlans(undefined, 3)
+    expect(parts).toHaveLength(3)
+    expect(parts[0]).toBeUndefined()
+    expect(parts[1]).toBeUndefined()
+    expect(parts[2]).toBeUndefined()
+  })
+})
+
+describe('splitScenarioIntoPlans', () => {
+  it('splits by paragraphs when paragraph count matches plan count', () => {
+    const text = 'Paragraph one.\n\nParagraph two.\n\nParagraph three.'
+    const parts = splitScenarioIntoPlans(text, 3)
+    expect(parts).toHaveLength(3)
+    expect(parts[0]).toContain('Paragraph one')
+    expect(parts[1]).toContain('Paragraph two')
+    expect(parts[2]).toContain('Paragraph three')
+  })
+
+  it('returns whole text as single plan when plan count is 1', () => {
+    const text = 'The entire scenario is here.'
+    const parts = splitScenarioIntoPlans(text, 1)
+    expect(parts).toEqual([text])
+  })
+
+  it('returns raw text as single segment when delimiter count does not match', () => {
+    const text = 'One. Two. Three. Four. Five. Six.'
+    const parts = splitScenarioIntoPlans(text, 3)
+    // With sentence-based fallback removed, mismatch returns single segment
+    expect(parts).toHaveLength(1)
+    expect(parts[0]).toBe(text)
+  })
+})
+
+describe('buildPlanImagePrompt', () => {
+  it('includes plan label and coverage in the prompt', () => {
+    const plan: FilmPlan = {
+      planIndex: 0,
+      totalPlans: 3,
+      label: 'SHOT 1 OF 3',
+      coverage: 'wide',
+      durationSeconds: 5,
+      scenarioText: 'A wide establishing shot.',
+    }
+    const out = buildPlanImagePrompt(plan, {}, {}, {}, false)
+    expect(out).toContain('SHOT 1 OF 3')
+    expect(out).toContain('Coverage: wide shot')
+    expect(out).toContain('A wide establishing shot')
+  })
+
+  it('adds no-text directive when requested', () => {
+    const plan: FilmPlan = {
+      planIndex: 0,
+      totalPlans: 1,
+      label: 'SHOT 1 OF 1',
+      coverage: 'medium',
+      durationSeconds: 5,
+      scenarioText: 'Test.',
+    }
+    const out = buildPlanImagePrompt(plan, {}, {}, {}, true)
+    expect(out).toContain('Strictly no text')
+  })
+})
+
+describe('buildPlanClipPrompt', () => {
+  it('includes identity lock and plan label', () => {
+    const plan: FilmPlan = {
+      planIndex: 0,
+      totalPlans: 3,
+      label: 'SHOT 1 OF 3',
+      coverage: 'wide',
+      durationSeconds: 5,
+      scenarioText: 'The hero enters.',
+    }
+    const out = buildPlanClipPrompt(
+      plan,
+      { product: { id: 'p1', title: 'Widget', url: 'https://x/p.png' } },
+      {},
+      {},
+    )
+    expect(out).toContain('PRODUCT IDENTITY LOCK')
+    expect(out).toContain('Widget')
+    expect(out).toContain('SHOT 1 OF 3')
+  })
+})
+
+describe('computePlanCredits', () => {
+  it('computes credits as planCount * costPerJob', () => {
+    expect(computePlanCredits(1)).toBe(1)
+    expect(computePlanCredits(3)).toBe(3)
+    expect(computePlanCredits(6, 2)).toBe(12)
+    expect(computePlanCredits(27)).toBe(27)
+  })
+})
+
+describe('film type identifiers', () => {
+  it('normalizes legacy Persian values to stable English identifiers', () => {
+    expect(normalizeFilmType('تبلیغاتی')).toBe('Advertisement')
+    expect(normalizeFilmType('معرفی محصول')).toBe('Product Showcase')
+    expect(normalizeFilmType('فرآیند ساخت')).toBe('Manufacturing Process')
+    expect(normalizeFilmType('کاربرد در پروژه')).toBe('Project Application')
+    expect(normalizeFilmType('مقایسهای')).toBe('Comparison')
+    expect(normalizeFilmType('برند')).toBe('Brand Story')
+  })
+
+  it('passes through English identifiers unchanged', () => {
+    expect(normalizeFilmType('Advertisement')).toBe('Advertisement')
+    expect(normalizeFilmType('Product Showcase')).toBe('Product Showcase')
+    expect(normalizeFilmType('Manufacturing Process')).toBe('Manufacturing Process')
+    expect(normalizeFilmType('Project Application')).toBe('Project Application')
+    expect(normalizeFilmType('Comparison')).toBe('Comparison')
+    expect(normalizeFilmType('Brand Story')).toBe('Brand Story')
+  })
+
+  it('returns empty string for null, undefined, empty, or unknown values', () => {
+    expect(normalizeFilmType(null)).toBe('')
+    expect(normalizeFilmType(undefined)).toBe('')
+    expect(normalizeFilmType('')).toBe('')
+    expect(normalizeFilmType('Unknown Type')).toBe('')
+  })
+
+  it('exposes exactly six stable identifiers in order', () => {
+    expect(FILM_TYPE_VALUES).toEqual([
+      'Advertisement',
+      'Product Showcase',
+      'Manufacturing Process',
+      'Project Application',
+      'Comparison',
+      'Brand Story',
+    ])
+  })
+
+  it('provides a tone for every film type (Comparison regression)', () => {
+    for (const value of FILM_TYPE_VALUES) {
+      expect(FILM_TYPE_TONES[value]).toBeTruthy()
+    }
+    expect(FILM_TYPE_TONES['Comparison']).toContain('COMPARISON tone')
+    expect(FILM_TYPE_TONES['Comparison']).toContain('split-screen')
   })
 })

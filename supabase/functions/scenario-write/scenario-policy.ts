@@ -60,6 +60,164 @@ export function getScenarioDurationPolicy(durationSeconds: number): ScenarioDura
   };
 }
 
+// ---------------------------------------------------------------------------
+// Plan-based policy (Make Full Film wizard). The unit of work is a 5-second
+// plan/shot, not a 15-second card. A duration maps to duration/5 plans:
+//   5→1, 10→2, 15→3, 30→6, 45→9, 60→12, 90→18, 135→27
+// ---------------------------------------------------------------------------
+
+export type PlanCoverage = "wide" | "medium" | "close";
+
+export interface PlanDurationPolicy {
+  durationSeconds: number;
+  planCount: number;
+  planSeconds: number;
+  minWordsPerPlan: number;
+  maxWordsPerPlan: number;
+  coverage: PlanCoverage[];
+  maxSpokenWordsPerFilm: number;
+}
+
+/** Per-card clip durations (5|10|15), matching the frontend computeClipDurations. */
+function clipDurationsFor(durationSeconds: number): number[] {
+  if (durationSeconds <= 15) return [durationSeconds];
+  return Array.from({ length: durationSeconds / 15 }, () => 15);
+}
+
+/**
+ * Camera coverage (framing) per plan, derived from the card structure:
+ *   - a 5s card  → 1 plan  → medium
+ *   - a 10s card → 2 plans → wide, close
+ *   - a 15s card → 3 plans → wide, medium, close
+ * Multi-card films (30/45/60/90/135) are all 15s cards, so coverage cycles
+ * wide → medium → close across the whole film.
+ */
+export function computePlanCoverage(durationSeconds: number): PlanCoverage[] {
+  const coverage: PlanCoverage[] = [];
+  for (const card of clipDurationsFor(durationSeconds)) {
+    if (card === 5) coverage.push("medium");
+    else if (card === 10) coverage.push("wide", "close");
+    else coverage.push("wide", "medium", "close");
+  }
+  return coverage;
+}
+
+export function getPlanDurationPolicy(durationSeconds: number): PlanDurationPolicy {
+  if (!SUPPORTED_DURATIONS.includes(durationSeconds as (typeof SUPPORTED_DURATIONS)[number])) {
+    throw new Error(`Unsupported scenario duration: ${durationSeconds}`);
+  }
+  return {
+    durationSeconds,
+    planCount: durationSeconds / 5,
+    planSeconds: 5,
+    minWordsPerPlan: 25,
+    maxWordsPerPlan: 40,
+    coverage: computePlanCoverage(durationSeconds),
+    maxSpokenWordsPerFilm: durationSeconds * 2,
+  };
+}
+
+export function parsePlanScenarios(raw: string, durationSeconds: number): string[] {
+  const cleaned = stripQuotes(raw);
+  if (!cleaned) return [];
+
+  const { planCount } = getPlanDurationPolicy(durationSeconds);
+  if (planCount === 1) return [cleaned];
+
+  const delimited = cleaned
+    .split(/\r?\n?\s*===SCENE===\s*\r?\n?/i)
+    .map(stripQuotes)
+    .filter(Boolean);
+  if (delimited.length === planCount) return delimited;
+
+  const paragraphs = cleaned
+    .split(/\n\s*\n+/)
+    .map(stripQuotes)
+    .filter(Boolean);
+  return paragraphs.length === planCount ? paragraphs : [];
+}
+
+export function assessPlanScenarios(plans: string[], durationSeconds: number): ScenarioQualityIssue[] {
+  const policy = getPlanDurationPolicy(durationSeconds);
+  const issues: ScenarioQualityIssue[] = [];
+
+  if (plans.length !== policy.planCount) {
+    issues.push({
+      type: "scene-count",
+      message: `received ${plans.length} of ${policy.planCount} required plans`,
+    });
+    return issues;
+  }
+
+  plans.forEach((plan, index) => {
+    const words = countScenarioWords(plan);
+    if (words < policy.minWordsPerPlan || words > policy.maxWordsPerPlan) {
+      issues.push({
+        type: "word-count",
+        message: `plan ${index + 1} has ${words} words; expected ${policy.minWordsPerPlan}-${policy.maxWordsPerPlan}`,
+      });
+    }
+  });
+
+  return issues;
+}
+
+export function buildPlanCorrectiveRetryInstruction(durationSeconds: number, issues: ScenarioQualityIssue[]): string {
+  const policy = getPlanDurationPolicy(durationSeconds);
+  const delimiterRule = policy.planCount > 1
+    ? ` Return exactly ${policy.planCount} plans separated only by ${SCENE_DELIMITER} on its own line.`
+    : " Return exactly one plan.";
+
+  return [
+    "CORRECTIVE RETRY — rewrite the complete scenario once; do not explain the correction.",
+    `Problems in the prior output: ${issues.map((issue) => issue.message).join("; ")}.`,
+    delimiterRule,
+    `Every plan must contain ${policy.minWordsPerPlan}-${policy.maxWordsPerPlan} words and exactly one 5-second beat (0-5s).`,
+    "Every plan must include concrete action, framing or camera movement, a lighting or emotional change, and forward story progress without repetition.",
+    `Keep the whole film's narration within ${policy.maxSpokenWordsPerFilm} naturally speakable words, divided across the plans.`,
+  ].join(" ");
+}
+
+function planQualityWarning(durationSeconds: number, issues: ScenarioQualityIssue[]): string {
+  const policy = getPlanDurationPolicy(durationSeconds);
+  return `Scenario quality warning after one corrective retry: ${issues.map((issue) => issue.message).join("; ")}. Expected ${policy.planCount} plan${policy.planCount === 1 ? "" : "s"}, ${policy.minWordsPerPlan}-${policy.maxWordsPerPlan} words per plan, and one 5-second beat per plan.`;
+}
+
+export async function runPlanQualityPass(
+  durationSeconds: number,
+  initialRaw: string,
+  correctiveRetry: (instruction: string) => Promise<string | null>,
+): Promise<ScenarioQualityResult> {
+  const initialPlans = parsePlanScenarios(initialRaw, durationSeconds);
+  const initialIssues = assessPlanScenarios(initialPlans, durationSeconds);
+  if (initialIssues.length === 0) return { scenes: initialPlans, retried: false };
+
+  let retryRaw: string | null = null;
+  try {
+    retryRaw = await correctiveRetry(buildPlanCorrectiveRetryInstruction(durationSeconds, initialIssues));
+  } catch {
+    retryRaw = null;
+  }
+
+  const finalRaw = retryRaw?.trim() || initialRaw;
+  const finalPlans = parsePlanScenarios(finalRaw, durationSeconds);
+  const finalIssues = assessPlanScenarios(finalPlans, durationSeconds);
+  if (finalIssues.length === 0) return { scenes: finalPlans, retried: true };
+
+  // Never let an invalid multi-plan output fall through as a single valid plan.
+  // For planCount === 1 parsePlanScenarios always returns [raw] when non-empty,
+  // so finalPlans is only empty here for planCount > 1 — where wrapping the
+  // whole raw output as one plan would silently defeat the required section
+  // count and produce a confusing "returned 1 of N" error downstream. Returning
+  // an empty result surfaces an actionable error instead of a fake plan.
+  const fallback = finalPlans.length > 0 ? finalPlans : [];
+  return {
+    scenes: fallback,
+    retried: true,
+    warning: planQualityWarning(durationSeconds, finalIssues),
+  };
+}
+
 export function countScenarioWords(value: string): number {
   const normalized = value.trim();
   return normalized ? normalized.split(/\s+/u).length : 0;

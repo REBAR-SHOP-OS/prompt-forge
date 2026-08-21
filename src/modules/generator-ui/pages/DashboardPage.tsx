@@ -200,6 +200,7 @@ const TRANSITION_DURATION: Record<TransitionId, number> = TRANSITION_OPTIONS.red
 import { imageUrlToClip } from '@/modules/generator-ui/lib/imageToClip'
 import { proxiedVideoUrl } from '@/modules/generator-ui/lib/proxiedVideoUrl'
 import { getUpcomingMajorOccasion } from '@/modules/generator-ui/lib/majorOccasions'
+import { resolveMusicTimelineEnd } from '@/modules/generator-ui/lib/musicTimeline'
 import { StylePreviewCard } from '@/modules/generator-ui/components/StylePreviewCard'
 import {
   CAMERA_STYLES,
@@ -3244,6 +3245,9 @@ export default function DashboardPage() {
   const [musicVolume, setMusicVolume] = useState<number>(1)
   const [isMusicDialogOpen, setIsMusicDialogOpen] = useState(false)
   const [isVoiceoverOpen, setIsVoiceoverOpen] = useState(false)
+  // Bumped on Start Over / workspace reset to clear VoiceoverDialog's transient
+  // state (text, generated audio, translation) without touching durable data.
+  const [voiceoverResetKey, setVoiceoverResetKey] = useState(0)
   // Saved products live in `archiveProductImages`, which is normally filled when
   // the Archive dialog opens. Users often open Voiceover → Product narration
   // directly, so load them on demand when the Voiceover dialog opens.
@@ -4919,6 +4923,29 @@ export default function DashboardPage() {
     }
     return Math.max(1, Math.round(total))
   }, [playableSequenceClips])
+
+  // Track the previous film length so we can detect when a new clip extends
+  // the project and auto-extend a full-length music timeline to match.
+  const prevMergedDurationRef = useRef(mergedDurationSec)
+
+  // When the project grows (a new clip is added), a music track that was
+  // previously covering the full film should auto-extend to the new end so the
+  // new clip isn't silent. A manually-shortened timeline is left untouched.
+  useEffect(() => {
+    const prev = prevMergedDurationRef.current
+    const next = mergedDurationSec
+    prevMergedDurationRef.current = next
+    const newEnd = resolveMusicTimelineEnd({
+      prevDurationSec: prev,
+      nextDurationSec: next,
+      hasMusic: Boolean(musicUrl),
+      hasMusicRange: musicRange[1] > musicRange[0],
+      timeline: musicTimeline,
+    })
+    if (newEnd !== null) {
+      setMusicTimeline(([start]) => [start, newEnd])
+    }
+  }, [mergedDurationSec, musicUrl, musicRange, musicTimeline])
 
 
 
@@ -7221,6 +7248,8 @@ export default function DashboardPage() {
       withNarration?: boolean
       /** Wizard batches stay closed until their bounded poll produces Preview. */
       suppressPreviewUntilBatchSettles?: boolean
+      /** Explicit flag: true when the wizard produced plan-based 5s shots. */
+      isPlanBased?: boolean
     },
   ): Promise<string[]> {
     if (!scenes || scenes.length === 0) return []
@@ -7247,7 +7276,14 @@ export default function DashboardPage() {
     // supports (5 | 10 | 15). The sum always equals the chosen total.
     const totalDuration = opts?.durationSeconds ?? durationSeconds
     const clipDurations = computeClipDurations(totalDuration)
-    const perClipDuration: 5 | 10 | 15 = clipDurations[0] ?? 15
+    // For plan-based films (Make Full Film wizard), every plan is a 5-second clip.
+    // Use the explicit isPlanBased flag when provided; otherwise fall back to the
+    // legacy heuristic for backward compatibility.
+    const isPlanBased = opts?.isPlanBased ?? (
+      opts?.perSceneImageUrls && opts.perSceneImageUrls.length > 0 &&
+      (opts.durationSeconds ?? durationSeconds) / (opts.perSceneImageUrls.length || 1) === 5
+    )
+    const perClipDuration: 5 | 10 | 15 = isPlanBased ? 5 : (clipDurations[0] ?? 15)
 
     // The wizard's product/character selections win when supplied; otherwise
     // fall back to the composer's pinned product/character.
@@ -7584,6 +7620,7 @@ export default function DashboardPage() {
           withNarration: options?.withNarration,
           cameraStyle: options?.cameraStyle,
           genre: options?.theme,
+          unit: "plan",
         },
       })
       if (error) throw error
@@ -9055,6 +9092,11 @@ export default function DashboardPage() {
     // Releasing the project lock so the user can pick a different ratio.
     setLockedProjectRatio(null)
     persistLockedRatio(null)
+
+    // Clear the Voiceover dialog's transient state (text, generated audio,
+    // translation) so a new project opens with a clean TEXT field. Durable
+    // Draft/Final Film voiceovers and Library files are untouched.
+    setVoiceoverResetKey((k) => k + 1)
 
     // No server-side cleanup: Library files in `merged-videos` are kept.
   }
@@ -10628,6 +10670,7 @@ export default function DashboardPage() {
         mergedDurationSec={mergedDurationSec}
         waveformRef={voiceoverWaveformRef}
         onClearVoiceover={handleClearVoiceover}
+        resetKey={voiceoverResetKey}
       />
 
 
@@ -10653,7 +10696,7 @@ export default function DashboardPage() {
           generateFilmSceneImage(sceneText, aspect, productUrl, characterUrl, noText, creative, characterSheet)
         }
         onApprove={(scenes, perSceneImageUrls, options) => {
-          void renderApprovedFilm(scenes, perSceneImageUrls, options)
+          void renderApprovedFilm(scenes, perSceneImageUrls, { ...options, isPlanBased: true })
         }}
       />
 
@@ -12196,13 +12239,26 @@ export default function DashboardPage() {
                   : video.video
               const selectMode = variant === 'final' ? finalSelectMode : draftSelectMode
               const isChecked = (variant === 'final' ? selectedFinalIds : selectedDraftIds).has(video.id)
+              // Status-only theming: Draft = soft yellow, Final Film = soft green.
+              // Kept subtle to stay coherent with the dark theme; the existing
+              // DRAFT / Saved text badges remain the accessible, non-color cue.
+              const variantTheme =
+                variant === 'draft'
+                  ? {
+                      base: 'border-amber-300/25 bg-amber-300/[0.05]',
+                      hover: 'hover:border-amber-300/40 hover:bg-amber-300/[0.09]',
+                    }
+                  : {
+                      base: 'border-emerald-300/25 bg-emerald-300/[0.05]',
+                      hover: 'hover:border-emerald-300/40 hover:bg-emerald-300/[0.09]',
+                    }
               return (
                 <article
                   key={video.id}
-                  className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-2.5 transition hover:border-white/20 hover:bg-white/[0.055] ${
+                  className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-2.5 transition ${variantTheme.hover} ${
                     selectMode && isChecked
                       ? 'border-rose-300/40 bg-rose-300/[0.06]'
-                      : isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : 'border-white/10 bg-white/[0.035]'
+                      : isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : variantTheme.base
                   }`}
                   role="button"
                   tabIndex={0}
@@ -12262,7 +12318,7 @@ export default function DashboardPage() {
                       <p className="line-clamp-2 min-w-0 flex-1 text-xs font-medium leading-5 text-zinc-200">
                         {video.input_prompt}
                       </p>
-                      <div className="flex shrink-0 items-center gap-1">
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
                         {variant === 'final' && video.video?.storage_path ? (
                           <>
                           <DropdownMenu>
@@ -12273,16 +12329,16 @@ export default function DashboardPage() {
                                  onClick={(event) => event.stopPropagation()}
                                  aria-label="Download video"
                                  title="Download"
-                                 className="grid h-6 min-w-6 shrink-0 place-items-center rounded-full border border-white/10 px-1 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                 className="grid h-8 min-w-8 shrink-0 place-items-center rounded-full border border-emerald-300/20 px-1.5 text-emerald-300/70 transition hover:border-emerald-300/50 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                                >
                                  {downloadingId === video.id ? (
                                    downloadProgress !== null ? (
                                      <span className="text-[9px] font-semibold tabular-nums text-emerald-200">{downloadProgress}%</span>
                                    ) : (
-                                     <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                     <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
                                    )
                                  ) : (
-                                   <Download className="h-3 w-3" aria-hidden="true" />
+                                   <Download className="h-4 w-4" aria-hidden="true" />
                                  )}
                                </button>
                              </DropdownMenuTrigger>
@@ -12320,13 +12376,13 @@ export default function DashboardPage() {
                                   onClick={(event) => event.stopPropagation()}
                                   aria-label="Project audio"
                                   title="Music & voiceover"
-                                  className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border transition ${
+                                  className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border transition ${
                                     hasAny
-                                      ? 'border-white/10 text-zinc-400 hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200'
+                                      ? 'border-sky-300/20 text-sky-300/70 hover:border-sky-300/50 hover:bg-sky-300/10 hover:text-sky-200'
                                       : 'border-white/10 text-zinc-600 hover:border-white/20 hover:text-zinc-400'
                                   }`}
                                 >
-                                  <Music2 className="h-3 w-3" aria-hidden="true" />
+                                  <Music2 className="h-4 w-4" aria-hidden="true" />
                                 </button>
                               </PopoverTrigger>
                               <PopoverContent
@@ -12383,7 +12439,7 @@ export default function DashboardPage() {
                               ? { border: 'border-rose-300/40 bg-rose-300/10 text-rose-300', Icon: ShieldX, label: 'Content check: Rejected' }
                               : verdict === 'caution'
                                 ? { border: 'border-amber-300/40 bg-amber-300/10 text-amber-300', Icon: ShieldAlert, label: 'Content check: Needs review' }
-                                : { border: 'border-white/10 text-zinc-400 hover:border-violet-300/40 hover:bg-violet-300/10 hover:text-violet-200', Icon: Shield, label: 'Run content check' }
+                                : { border: 'border-violet-300/20 text-violet-300/70 hover:border-violet-300/50 hover:bg-violet-300/10 hover:text-violet-200', Icon: Shield, label: 'Run content check' }
                           const Icon = tone.Icon
                           return (
                             <button
@@ -12402,12 +12458,12 @@ export default function DashboardPage() {
                               }}
                               aria-label={tone.label}
                               title={tone.label}
-                              className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border transition disabled:opacity-70 ${tone.border}`}
+                              className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border transition disabled:opacity-70 ${tone.border}`}
                             >
                               {checking ? (
-                                <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
                               ) : (
-                                <Icon className="h-3 w-3" aria-hidden="true" />
+                                <Icon className="h-4 w-4" aria-hidden="true" />
                               )}
                             </button>
                           )
@@ -12422,9 +12478,9 @@ export default function DashboardPage() {
                             }}
                             aria-label="Reopen for editing"
                             title="Reopen for editing"
-                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-200"
+                            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-amber-300/20 text-amber-300/70 transition hover:border-amber-300/50 hover:bg-amber-300/10 hover:text-amber-200"
                           >
-                            <Pencil className="h-3 w-3" aria-hidden="true" />
+                            <Pencil className="h-4 w-4" aria-hidden="true" />
                           </button>
                         ) : null}
                         {variant === 'final' ? (
@@ -12439,9 +12495,9 @@ export default function DashboardPage() {
                             }}
                             aria-label="Transcribe film audio"
                             title="Transcribe speech from this film"
-                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-violet-300/40 hover:bg-violet-300/10 hover:text-violet-200"
+                            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-violet-300/20 text-violet-300/70 transition hover:border-violet-300/50 hover:bg-violet-300/10 hover:text-violet-200"
                           >
-                            <ScanText className="h-3 w-3" aria-hidden="true" />
+                            <ScanText className="h-4 w-4" aria-hidden="true" />
                           </button>
                         ) : null}
                         <button
@@ -12452,9 +12508,9 @@ export default function DashboardPage() {
                           }}
                           aria-label="Delete card"
                           title="Delete card"
-                          className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                          className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-rose-300/20 text-rose-300/70 transition hover:border-rose-300/50 hover:bg-rose-300/10 hover:text-rose-200"
                         >
-                          <Trash2 className="h-3 w-3" aria-hidden="true" />
+                          <Trash2 className="h-4 w-4" aria-hidden="true" />
                         </button>
                       </div>
                     </div>

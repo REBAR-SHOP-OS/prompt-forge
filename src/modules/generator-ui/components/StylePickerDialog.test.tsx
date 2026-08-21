@@ -27,6 +27,13 @@ const options: WizardStyleOption[] = [
     prompt: 'no media',
     group: 'Scene · Construction',
   },
+  {
+    value: 'photo-only',
+    label: 'Photo only style',
+    prompt: 'photo only',
+    posterUrl: '/photo-only.jpg',
+    group: 'Scene · Construction',
+  },
 ]
 
 function renderPicker(overrides: Partial<ComponentProps<typeof StylePickerDialog>> = {}) {
@@ -69,11 +76,14 @@ describe('StylePickerDialog media previews', () => {
 
     expect(document.querySelectorAll('video')).toHaveLength(0)
     const posters = Array.from(document.querySelectorAll('img'))
-    expect(posters).toHaveLength(2)
+    expect(posters).toHaveLength(3)
     for (const poster of posters) {
       expect(poster).toHaveAttribute('loading', 'lazy')
       expect(poster.getAttribute('src')).not.toContain('.mp4')
     }
+    expect(posters[0]).toHaveAccessibleName('First style poster')
+    expect(posters[1]).toHaveAccessibleName('Second style poster')
+    expect(posters[2]).toHaveAccessibleName('Photo only style poster')
   })
 
   it('mounts one video only after Preview and replaces the previous preview', () => {
@@ -133,6 +143,8 @@ describe('StylePickerDialog media previews', () => {
 
     expect(screen.getByTestId('media-fallback-no-media')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Preview No media style' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Select Photo only style' }).querySelector('img')).not.toBeNull()
+    expect(screen.queryByRole('button', { name: 'Preview Photo only style' })).not.toBeInTheDocument()
   })
 
   it('keeps Preview separate from selection and applies the pending selection', () => {
