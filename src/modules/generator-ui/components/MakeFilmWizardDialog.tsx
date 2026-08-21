@@ -1143,10 +1143,9 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                 <p className="text-sm text-zinc-300">
                   Here is the scenario the AI wrote. Edit any scene, then generate one preview image per scene.
                 </p>
-                <div className="-mx-1 overflow-x-auto overscroll-x-contain px-1 pb-3 scroll-smooth [scrollbar-color:rgb(82_82_91)_transparent] [scrollbar-width:thin]">
-                  <div className="flex w-max snap-x snap-proximity gap-3">
-                    {plans.map((plan, i) => (
-                      <div key={i} className="w-[calc(100vw-4rem)] max-w-[34rem] shrink-0 snap-start space-y-2 rounded-md border border-white/10 bg-white/[0.02] p-4 sm:w-[30rem] lg:w-[34rem]">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {plans.map((plan, i) => (
+                      <div key={i} className="space-y-2 rounded-md border border-white/10 bg-white/[0.02] p-4">
                         <div className="text-[11px] font-semibold uppercase tracking-wide text-fuchsia-300/90">
                           Shot {i + 1} (~{Math.floor(duration / plans.length)}s)
                         </div>
@@ -1164,7 +1163,6 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
                         />
                       </div>
                     ))}
-                  </div>
                 </div>
               </div>
             )}
