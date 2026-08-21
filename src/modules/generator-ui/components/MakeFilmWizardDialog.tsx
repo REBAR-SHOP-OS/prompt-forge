@@ -39,7 +39,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 
-import { buildFilmPlans, buildFilmPlansFromScenes, type FilmPlan, expectedPlanCount, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { buildFilmPlans, buildFilmPlansFromScenes, type FilmPlan, expectedPlanCount, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows, normalizeFilmType, FILM_TYPE_TONES } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { REVIEW_LANGS, isRtlLang, englishFilmType, buildUnifiedScenario, chunkScenario, hasNonLatin } from '@/modules/generator-ui/lib/scenarioReview'
 import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
 import { supabase } from '@/integrations/supabase/client'
@@ -194,7 +194,7 @@ export function MakeFilmWizardDialog({
   const [noTextOnImages, setNoTextOnImages] = useState(true)
   const [selectedCameraAngle, setSelectedCameraAngle] = useState('auto')
   const [selectedTheme, setSelectedTheme] = useState('auto')
-  const [selectedFilmType, setSelectedFilmType] = useState<string>(initialFilmType ?? '')
+  const [selectedFilmType, setSelectedFilmType] = useState<string>(normalizeFilmType(initialFilmType))
   const [productPhotos, setProductPhotos] = useState<ProductPhotoSource[]>([])
   const [characterPhotos, setCharacterPhotos] = useState<ProductPhoto[]>([])
   const productPickerControllerRef = useRef<AbortController | null>(null)
@@ -246,7 +246,7 @@ export function MakeFilmWizardDialog({
       setNoTextOnImages(true)
       setSelectedCameraAngle('auto')
       setSelectedTheme('auto')
-      setSelectedFilmType(initialFilmType ?? '')
+      setSelectedFilmType(normalizeFilmType(initialFilmType))
       setSelectedProduct(null)
       setSelectedCharacter(null)
       setProductName('')
@@ -267,15 +267,15 @@ export function MakeFilmWizardDialog({
 
   // Film type definitions — each with icon, label, and one-line description
   const FILM_TYPES: { value: string; label: string; icon: React.ReactNode; description: string }[] = [
-    { value: 'تبلیغاتی', label: 'تبلیغاتی', icon: <Megaphone className="h-3.5 w-3.5" />, description: 'فیلم تبلیغاتی با لحن متقاعدکننده برای جذب مشتری' },
-    { value: 'معرفی محصول', label: 'معرفی محصول', icon: <ClipboardList className="h-3.5 w-3.5" />, description: 'نمایش ویژگیها و کاربردهای محصول بهصورت آموزشی' },
-    { value: 'فرآیند ساخت', label: 'فرآیند ساخت', icon: <Factory className="h-3.5 w-3.5" />, description: 'مستند ساخت و تولید از مواد خام تا محصول نهایی' },
-    { value: 'کاربرد در پروژه', label: 'کاربرد در پروژه', icon: <HardHat className="h-3.5 w-3.5" />, description: 'نمایش عملکرد محصول در پروژههای واقعی' },
-    { value: 'مقایسهای', label: 'مقایسهای', icon: <Scale className="h-3.5 w-3.5" />, description: 'مقایسه قبل/بعد یا رقبا با تضاد بصری' },
-    { value: 'برند', label: 'برند', icon: <Award className="h-3.5 w-3.5" />, description: 'داستانسرایی احساسی و ارزشهای برند' },
+    { value: 'Advertisement', label: 'Advertisement', icon: <Megaphone className="h-3.5 w-3.5" />, description: 'Persuasive commercial film designed to attract customers' },
+    { value: 'Product Showcase', label: 'Product Showcase', icon: <ClipboardList className="h-3.5 w-3.5" />, description: 'Educational walkthrough of product features and uses' },
+    { value: 'Manufacturing Process', label: 'Manufacturing Process', icon: <Factory className="h-3.5 w-3.5" />, description: 'Documentary of production from raw materials to finished product' },
+    { value: 'Project Application', label: 'Project Application', icon: <HardHat className="h-3.5 w-3.5" />, description: 'Product performance in real-world projects' },
+    { value: 'Comparison', label: 'Comparison', icon: <Scale className="h-3.5 w-3.5" />, description: 'Before/after or competitor contrast with visual side-by-side' },
+    { value: 'Brand Story', label: 'Brand Story', icon: <Award className="h-3.5 w-3.5" />, description: 'Emotional storytelling around brand values' },
   ]
 
-  const selectedFilmTypeLabel = FILM_TYPES.find((f) => f.value === selectedFilmType)?.label ?? 'انتخاب کنید'
+  const selectedFilmTypeLabel = FILM_TYPES.find((f) => f.value === selectedFilmType)?.label ?? 'Select'
   const selectedFilmTypeDesc = FILM_TYPES.find((f) => f.value === selectedFilmType)?.description ?? ''
 
   async function loadProductPhotos() {
@@ -414,15 +414,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
 
     // Film type shapes the tone and structure of the scenario
     if (selectedFilmType) {
-      const filmTypeToneMap: Record<string, string> = {
-        'تبلیغاتی': 'ADVERTISEMENT tone: persuasive, energetic, conversion-focused. Build desire for the product with dynamic visuals and clear call-to-action.',
-        'معرفی محصول': 'PRODUCT SHOWCASE tone: clear, informative, engaging. Demonstrate features and benefits smoothly. Educational yet captivating.',
-        'فرآیند ساخت': 'PROCESS DOCUMENTARY tone: documentary-style, showing journey from raw materials to finished product. Emphasize craftsmanship, precision, and scale.',
-        'کاربرد در پروژه': 'CASE STUDY tone: practical, results-oriented. Show real-world application and impact on actual projects.',
-        'مقایسهای': 'COMPARISON tone: analytical, clear contrasts. Use split-screen or sequential before/after visuals to highlight advantages.',
-        'برند': 'BRAND STORYTELLING tone: emotional, aspirational, values-driven. Focus on brand story, mission, and emotional connection rather than product features.',
-      }
-      const filmTone = filmTypeToneMap[selectedFilmType] || `Film type: ${selectedFilmType}.`
+      const filmTone = FILM_TYPE_TONES[selectedFilmType as keyof typeof FILM_TYPE_TONES] || `Film type: ${selectedFilmType}.`
       enrichedPrompt += `\n\nFILM TYPE AND TONE: ${filmTone}`
     }
 
@@ -572,6 +564,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       const { data, error: fnError } = await supabase.functions.invoke('enhance-prompt', {
         body: {
           prompt: current,
+          mode: 'film',
           filmType: selectedFilmType || undefined,
           productName: resolvedProductName || undefined,
           characterDescription: characterDescriptionText || undefined,
@@ -579,6 +572,8 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
           aspectRatio: aspect,
           cameraAngle: cameraAngle?.prompt || undefined,
           visualTheme: theme?.prompt || undefined,
+          withNarration: withNarration,
+          noTextOnImages: noTextOnImages,
         },
       })
       if (fnError) throw fnError
