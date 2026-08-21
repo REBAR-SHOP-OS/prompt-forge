@@ -2450,7 +2450,25 @@ export default function DashboardPage() {
   // Stores durable public URLs (copied into MERGED_BUCKET at finalize time) so
   // the finalized card can play + download the exact audio that project used.
   type ProjectAudioTrack = { url: string; name: string }
-  type ProjectAudio = { music?: ProjectAudioTrack; voiceover?: ProjectAudioTrack }
+  /** Full audio-mix settings captured at finalization so "Reopen for editing"
+   *  restores the exact Final Film sound (ranges, timelines, volumes, mix mode).
+   *  Every field is optional for backward compatibility with older snapshots. */
+  type ProjectAudioSettings = {
+    musicRange?: [number, number]
+    musicTimeline?: [number, number]
+    musicVolume?: number
+    voiceoverRange?: [number, number]
+    voiceoverTimeline?: [number, number]
+    voiceoverVolume?: number
+    clipVolume?: number
+    voiceoverClipVolume?: number
+    soundtrackMode?: 'music-only' | 'mix'
+  }
+  type ProjectAudio = {
+    music?: ProjectAudioTrack
+    voiceover?: ProjectAudioTrack
+    settings?: ProjectAudioSettings
+  }
   const [projectAudio, setProjectAudio] = useState<Record<string, ProjectAudio>>({})
   const projectAudioKey = userId ? `project-audio:${userId}` : null
   useEffect(() => {
@@ -6397,8 +6415,17 @@ export default function DashboardPage() {
     setVoiceoverDuration(0)
     setVoiceoverRange([0, 0])
     setVoiceoverTimeline([0, 0])
+    setMusicVolume(1)
+    setVoiceoverVolume(1)
+    setClipVolume(1)
+    setVoiceoverClipVolume(0.3)
+    setSoundtrackMode('mix')
     delete draftAudioSnapshotRef.current[draftId]
     if (!audio) return
+    const audioSettings = audio.settings
+    if (audioSettings?.clipVolume !== undefined) setClipVolume(audioSettings.clipVolume)
+    if (audioSettings?.voiceoverClipVolume !== undefined) setVoiceoverClipVolume(audioSettings.voiceoverClipVolume)
+    if (audioSettings?.soundtrackMode) setSoundtrackMode(audioSettings.soundtrackMode)
     // Always persist the restored audio under the draft scope so it survives
     // refresh / draft switch even when this was driven by an override (move).
     if (audio.music || audio.voiceover) {
@@ -6428,7 +6455,9 @@ export default function DashboardPage() {
         }
         setMusicName(name)
         setMusicUrl(url)
-        setMusicTimeline([0, mergedDurationSec])
+        setMusicTimeline(audioSettings?.musicTimeline ?? [0, mergedDurationSec])
+        if (audioSettings?.musicRange) setMusicRange(audioSettings.musicRange)
+        if (audioSettings?.musicVolume !== undefined) setMusicVolume(audioSettings.musicVolume)
         try {
           const a = new Audio()
           a.src = url
@@ -6436,8 +6465,8 @@ export default function DashboardPage() {
             const d = a.duration
             if (Number.isFinite(d) && d > 0) {
               setMusicDuration(d)
-              setMusicRange([0, d])
-              if (mergedDurationSec <= 0) setMusicTimeline([0, tlEnd(d)])
+              if (!audioSettings?.musicRange) setMusicRange([0, d])
+              if (mergedDurationSec <= 0 && !audioSettings?.musicTimeline) setMusicTimeline([0, tlEnd(d)])
             }
           })
         } catch { /* ignore */ }
@@ -6461,7 +6490,9 @@ export default function DashboardPage() {
         }
         setVoiceoverName(name)
         setVoiceoverUrl(url)
-        setVoiceoverTimeline([0, mergedDurationSec])
+        setVoiceoverTimeline(audioSettings?.voiceoverTimeline ?? [0, mergedDurationSec])
+        if (audioSettings?.voiceoverRange) setVoiceoverRange(audioSettings.voiceoverRange)
+        if (audioSettings?.voiceoverVolume !== undefined) setVoiceoverVolume(audioSettings.voiceoverVolume)
         try {
           const a = new Audio()
           a.src = url
@@ -6469,8 +6500,8 @@ export default function DashboardPage() {
             const d = a.duration
             if (Number.isFinite(d) && d > 0) {
               setVoiceoverDuration(d)
-              setVoiceoverRange([0, d])
-              if (mergedDurationSec <= 0) setVoiceoverTimeline([0, tlEnd(d)])
+              if (!audioSettings?.voiceoverRange) setVoiceoverRange([0, d])
+              if (mergedDurationSec <= 0 && !audioSettings?.voiceoverTimeline) setVoiceoverTimeline([0, tlEnd(d)])
             }
           })
         } catch { /* ignore */ }
@@ -8842,6 +8873,19 @@ export default function DashboardPage() {
           if (hasVoiceover && voiceoverUrl) {
             const url = await persistAudioToStorage(voiceoverUrl, 'voice', mergedId)
             if (url) entry.voiceover = { url, name: voiceoverName ?? 'Voiceover' }
+          }
+          // Capture the full mix so "Reopen for editing" restores the exact
+          // Final Film sound, not just the raw music/voiceover files.
+          entry.settings = {
+            musicRange: hasMusic ? musicRange : undefined,
+            musicTimeline: hasMusic ? musicTimeline : undefined,
+            musicVolume: hasMusic ? musicVolume : undefined,
+            voiceoverRange: hasVoiceover ? voiceoverRange : undefined,
+            voiceoverTimeline: hasVoiceover ? voiceoverTimeline : undefined,
+            voiceoverVolume: hasVoiceover ? voiceoverVolume : undefined,
+            clipVolume,
+            voiceoverClipVolume,
+            soundtrackMode,
           }
           if (entry.music || entry.voiceover) {
             const nextAudio = { ...projectAudio, [mergedId]: entry }
