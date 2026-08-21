@@ -12138,13 +12138,26 @@ export default function DashboardPage() {
                   : video.video
               const selectMode = variant === 'final' ? finalSelectMode : draftSelectMode
               const isChecked = (variant === 'final' ? selectedFinalIds : selectedDraftIds).has(video.id)
+              // Status-only theming: Draft = soft yellow, Final Film = soft green.
+              // Kept subtle to stay coherent with the dark theme; the existing
+              // DRAFT / Saved text badges remain the accessible, non-color cue.
+              const variantTheme =
+                variant === 'draft'
+                  ? {
+                      base: 'border-amber-300/25 bg-amber-300/[0.05]',
+                      hover: 'hover:border-amber-300/40 hover:bg-amber-300/[0.09]',
+                    }
+                  : {
+                      base: 'border-emerald-300/25 bg-emerald-300/[0.05]',
+                      hover: 'hover:border-emerald-300/40 hover:bg-emerald-300/[0.09]',
+                    }
               return (
                 <article
                   key={video.id}
-                  className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-2.5 transition hover:border-white/20 hover:bg-white/[0.055] ${
+                  className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-2.5 transition ${variantTheme.hover} ${
                     selectMode && isChecked
                       ? 'border-rose-300/40 bg-rose-300/[0.06]'
-                      : isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : 'border-white/10 bg-white/[0.035]'
+                      : isPreviewSelected ? 'border-emerald-300/30 bg-emerald-300/[0.04]' : variantTheme.base
                   }`}
                   role="button"
                   tabIndex={0}
