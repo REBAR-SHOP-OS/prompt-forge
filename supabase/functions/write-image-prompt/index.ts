@@ -14,8 +14,9 @@ const SYSTEM_PROMPT = [
   "and then write a single vivid, concrete image prompt that faithfully preserves",
   "the subject/product identity while producing a highly professional result.",
   "If a visual theme/style is provided, incorporate its aesthetic naturally.",
-  "If the user already typed some prompt text, build on its intent and keep its language.",
-  "Default to English when there is no existing text to mirror.",
+  "If the user already typed some prompt text, build on its intent.",
+  "Always write the final prompt in ENGLISH regardless of the input language;",
+  "preserve product names, brand names, and proper nouns exactly as written.",
   "Output ONLY the final prompt — no preamble, no quotes, no explanation,",
   "no markdown, no labels. Keep it under 110 words.",
 ].join(" ");
@@ -30,7 +31,7 @@ const AD_COPY_RULES = [
   "(no 'best', 'strongest', '#1', 'certified', no specs/numbers stated as fact)",
   "and MUST NOT contain any guarantee or warranty wording",
   "(no 'guaranteed', 'warranty', '100%', 'risk-free', 'lifetime').",
-  "Write the tagline in the same language as the existing prompt text; English by default.",
+  "Write the tagline in English.",
 ].join(" ");
 
 // Rules shared by both tagline generation and final compositing.
@@ -47,7 +48,7 @@ const TAGLINE_SYSTEM_PROMPT = [
   "If a reference image is attached, silently analyze the product/subject, mood and style.",
   "Produce short, catchy ADVERTISING taglines suitable to composite onto a product ad image.",
   TAGLINE_RULES,
-  "Write the taglines in the same language as any existing prompt text; English by default.",
+  "Write the taglines in English.",
   "Output ONLY a JSON array of 5 distinct tagline strings — no preamble, no keys,",
   "no markdown, no code fences. Example: [\"Tagline one\", \"Tagline two\"].",
 ].join(" ");

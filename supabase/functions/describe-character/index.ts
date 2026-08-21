@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
       "Focus only on stable, identity-defining visual traits: approximate age, gender presentation, body type, skin tone,",
       "hair (color, length, style), facial features, and clothing/outfit (colors, materials, notable accessories).",
       "Do NOT describe the background, pose, camera angle, lighting, or art style.",
-      "Write a single dense paragraph of 40-70 words, no preamble, no markdown, no quotes.",
+      "Write a single dense paragraph of 40-70 words in English, no preamble, no markdown, no quotes.",
     ].join(" ");
 
     const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
