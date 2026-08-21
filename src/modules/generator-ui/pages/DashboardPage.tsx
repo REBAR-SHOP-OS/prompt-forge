@@ -12217,7 +12217,7 @@ export default function DashboardPage() {
                       <p className="line-clamp-2 min-w-0 flex-1 text-xs font-medium leading-5 text-zinc-200">
                         {video.input_prompt}
                       </p>
-                      <div className="flex shrink-0 items-center gap-1">
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
                         {variant === 'final' && video.video?.storage_path ? (
                           <>
                           <DropdownMenu>
@@ -12228,16 +12228,16 @@ export default function DashboardPage() {
                                  onClick={(event) => event.stopPropagation()}
                                  aria-label="Download video"
                                  title="Download"
-                                 className="grid h-6 min-w-6 shrink-0 place-items-center rounded-full border border-white/10 px-1 text-zinc-400 transition hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
+                                 className="grid h-8 min-w-8 shrink-0 place-items-center rounded-full border border-emerald-300/20 px-1.5 text-emerald-300/70 transition hover:border-emerald-300/50 hover:bg-emerald-300/10 hover:text-emerald-200 disabled:opacity-60"
                                >
                                  {downloadingId === video.id ? (
                                    downloadProgress !== null ? (
                                      <span className="text-[9px] font-semibold tabular-nums text-emerald-200">{downloadProgress}%</span>
                                    ) : (
-                                     <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                     <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
                                    )
                                  ) : (
-                                   <Download className="h-3 w-3" aria-hidden="true" />
+                                   <Download className="h-4 w-4" aria-hidden="true" />
                                  )}
                                </button>
                              </DropdownMenuTrigger>
@@ -12275,13 +12275,13 @@ export default function DashboardPage() {
                                   onClick={(event) => event.stopPropagation()}
                                   aria-label="Project audio"
                                   title="Music & voiceover"
-                                  className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border transition ${
+                                  className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border transition ${
                                     hasAny
-                                      ? 'border-white/10 text-zinc-400 hover:border-sky-300/40 hover:bg-sky-300/10 hover:text-sky-200'
+                                      ? 'border-sky-300/20 text-sky-300/70 hover:border-sky-300/50 hover:bg-sky-300/10 hover:text-sky-200'
                                       : 'border-white/10 text-zinc-600 hover:border-white/20 hover:text-zinc-400'
                                   }`}
                                 >
-                                  <Music2 className="h-3 w-3" aria-hidden="true" />
+                                  <Music2 className="h-4 w-4" aria-hidden="true" />
                                 </button>
                               </PopoverTrigger>
                               <PopoverContent
@@ -12338,7 +12338,7 @@ export default function DashboardPage() {
                               ? { border: 'border-rose-300/40 bg-rose-300/10 text-rose-300', Icon: ShieldX, label: 'Content check: Rejected' }
                               : verdict === 'caution'
                                 ? { border: 'border-amber-300/40 bg-amber-300/10 text-amber-300', Icon: ShieldAlert, label: 'Content check: Needs review' }
-                                : { border: 'border-white/10 text-zinc-400 hover:border-violet-300/40 hover:bg-violet-300/10 hover:text-violet-200', Icon: Shield, label: 'Run content check' }
+                                : { border: 'border-violet-300/20 text-violet-300/70 hover:border-violet-300/50 hover:bg-violet-300/10 hover:text-violet-200', Icon: Shield, label: 'Run content check' }
                           const Icon = tone.Icon
                           return (
                             <button
@@ -12357,12 +12357,12 @@ export default function DashboardPage() {
                               }}
                               aria-label={tone.label}
                               title={tone.label}
-                              className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border transition disabled:opacity-70 ${tone.border}`}
+                              className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border transition disabled:opacity-70 ${tone.border}`}
                             >
                               {checking ? (
-                                <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
                               ) : (
-                                <Icon className="h-3 w-3" aria-hidden="true" />
+                                <Icon className="h-4 w-4" aria-hidden="true" />
                               )}
                             </button>
                           )
@@ -12377,9 +12377,9 @@ export default function DashboardPage() {
                             }}
                             aria-label="Reopen for editing"
                             title="Reopen for editing"
-                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-200"
+                            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-amber-300/20 text-amber-300/70 transition hover:border-amber-300/50 hover:bg-amber-300/10 hover:text-amber-200"
                           >
-                            <Pencil className="h-3 w-3" aria-hidden="true" />
+                            <Pencil className="h-4 w-4" aria-hidden="true" />
                           </button>
                         ) : null}
                         {variant === 'final' ? (
@@ -12394,9 +12394,9 @@ export default function DashboardPage() {
                             }}
                             aria-label="Transcribe film audio"
                             title="Transcribe speech from this film"
-                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-violet-300/40 hover:bg-violet-300/10 hover:text-violet-200"
+                            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-violet-300/20 text-violet-300/70 transition hover:border-violet-300/50 hover:bg-violet-300/10 hover:text-violet-200"
                           >
-                            <ScanText className="h-3 w-3" aria-hidden="true" />
+                            <ScanText className="h-4 w-4" aria-hidden="true" />
                           </button>
                         ) : null}
                         <button
@@ -12407,9 +12407,9 @@ export default function DashboardPage() {
                           }}
                           aria-label="Delete card"
                           title="Delete card"
-                          className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-400 transition hover:border-rose-300/40 hover:bg-rose-300/10 hover:text-rose-200"
+                          className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-rose-300/20 text-rose-300/70 transition hover:border-rose-300/50 hover:bg-rose-300/10 hover:text-rose-200"
                         >
-                          <Trash2 className="h-3 w-3" aria-hidden="true" />
+                          <Trash2 className="h-4 w-4" aria-hidden="true" />
                         </button>
                       </div>
                     </div>
