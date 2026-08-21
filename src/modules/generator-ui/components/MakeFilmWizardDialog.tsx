@@ -38,7 +38,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { safeMediaUrl } from '@/modules/generator-ui/lib/safeMediaUrl'
 
-import { buildFilmPlans, type FilmPlan, expectedPlanCount, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows } from '@/modules/generator-ui/lib/makeFilmWizard'
+import { buildFilmPlansFromScenes, type FilmPlan, expectedPlanCount, computePlanCredits, sanitizeProductName, canApproveFilm, isCharacterSheet, loadCharacterRows } from '@/modules/generator-ui/lib/makeFilmWizard'
 import { buildWizardCameraOptions, buildWizardThemeOptions, type WizardStyleOption } from '@/modules/generator-ui/lib/promptStyles'
 import { supabase } from '@/integrations/supabase/client'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -473,7 +473,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       // doesn't match, retry once before giving up.
       let builtPlans: FilmPlan[]
       try {
-        builtPlans = buildFilmPlans(duration, rawScenes.join('\n\n'), undefined)
+        builtPlans = buildFilmPlansFromScenes(duration, rawScenes, undefined)
       } catch (firstErr) {
         setProgress('Retrying scenario…')
         const retryWritten = await writeScenario(enrichedPrompt, options)
@@ -482,7 +482,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
           setError('The scenario came back empty — try rephrasing your prompt.')
           return
         }
-        builtPlans = buildFilmPlans(duration, retryScenes.join('\n\n'), undefined)
+        builtPlans = buildFilmPlansFromScenes(duration, retryScenes, undefined)
       }
       setPlans(builtPlans)
       setImages(new Array(builtPlans.length).fill(undefined))
@@ -511,7 +511,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
       }
       let builtPlans: FilmPlan[]
       try {
-        builtPlans = buildFilmPlans(duration, rawScenes.join('\n\n'), undefined)
+        builtPlans = buildFilmPlansFromScenes(duration, rawScenes, undefined)
       } catch (firstErr) {
         setProgress('Retrying scenario…')
         const retryWritten = await writeScenario(enrichedPrompt, options)
@@ -520,7 +520,7 @@ Each plan should be a self-contained video prompt (subject, action, camera move,
           setError('The scenario came back empty — try again.')
           return
         }
-        builtPlans = buildFilmPlans(duration, retryScenes.join('\n\n'), undefined)
+        builtPlans = buildFilmPlansFromScenes(duration, retryScenes, undefined)
       }
       // Success: replace the plans atomically and reset the stale preview
       // images so they never mismatch the new shots.
