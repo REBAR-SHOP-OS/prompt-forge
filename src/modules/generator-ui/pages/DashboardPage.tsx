@@ -1557,21 +1557,24 @@ export default function DashboardPage() {
   const composerRef = useRef<HTMLFormElement | null>(null)
   const [previewMaxHeightPx, setPreviewMaxHeightPx] = useState<number>(() => {
     if (typeof window === 'undefined') return 600
-    return Math.max(240, window.innerHeight - 320)
+    return Math.max(240, Math.round(Math.min(window.innerHeight - 320, window.innerHeight * 0.72) * 0.88))
   })
   useEffect(() => {
-    const SAFE_GAP = 24 // breathing room between preview card and composer
-    const TOP_RESERVE = 56 // top header strip (Start Over / Final Film / Music)
+    const SAFE_GAP = 28 // breathing room between preview card and composer
+    const TOP_RESERVE = 76 // top header strip (Start Over / Final Film / Music) + gap
+    const PREVIEW_SCALE = 0.88 // ~12% smaller preview for visual balance
+    const VERTICAL_MAX_VH = 0.72 // cap vertical (9:16) preview at ~72vh
     const recompute = () => {
       const el = composerRef.current
       const vh = window.innerHeight
       if (!el) {
-        setPreviewMaxHeightPx(Math.max(240, vh - 320))
+        setPreviewMaxHeightPx(Math.max(240, Math.round(Math.min(vh - 320, vh * VERTICAL_MAX_VH) * PREVIEW_SCALE)))
         return
       }
       const top = el.getBoundingClientRect().top
       const budget = Math.max(240, top - TOP_RESERVE - SAFE_GAP)
-      setPreviewMaxHeightPx(budget)
+      const capped = Math.min(budget, vh * VERTICAL_MAX_VH)
+      setPreviewMaxHeightPx(Math.round(capped * PREVIEW_SCALE))
     }
     recompute()
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(recompute) : null
@@ -11087,7 +11090,7 @@ export default function DashboardPage() {
       <main
         className="grid place-items-center px-4"
         aria-live="polite"
-        style={{ minHeight: `${previewMaxHeightPx + 56}px`, paddingTop: '56px' }}
+        style={{ minHeight: `${previewMaxHeightPx + 76}px`, paddingTop: '76px' }}
       >
         {previewItem ? (
           previewItem.kind === 'sequence' ? (
