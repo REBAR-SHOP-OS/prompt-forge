@@ -788,3 +788,47 @@ describe('MakeFilmWizardDialog prompt optimization', () => {
     expect(screen.queryByText('Undo optimization')).not.toBeInTheDocument()
   })
 })
+
+describe('MakeFilmWizardDialog film type selector (integration)', () => {
+  it('renders all six film types with English labels', () => {
+    renderWizard()
+    for (const label of [
+      'Advertisement',
+      'Product Showcase',
+      'Manufacturing Process',
+      'Project Application',
+      'Comparison',
+      'Brand Story',
+    ]) {
+      expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
+    }
+  })
+
+  it('shows the English description for the selected film type', () => {
+    renderWizard()
+    fireEvent.click(screen.getByRole('button', { name: 'Comparison' }))
+    expect(
+      screen.getByText('Before/after or competitor contrast with visual side-by-side'),
+    ).toBeInTheDocument()
+  })
+
+  it('propagates the selected film type into the scenario prompt and enhance-prompt (Comparison regression)', async () => {
+    renderWizard()
+    fireEvent.click(screen.getByRole('button', { name: 'Comparison' }))
+    await chooseProduct()
+    fireEvent.change(screen.getByPlaceholderText(/Describe the film/i), { target: { value: 'A film' } })
+    fireEvent.click(screen.getByText('Write scenario'))
+    await waitFor(() => expect(writeScenario).toHaveBeenCalled())
+
+    // The scenario prompt carries the Comparison tone directive.
+    const promptArg = writeScenario.mock.calls[0][0]
+    expect(promptArg).toContain('COMPARISON tone')
+    expect(promptArg).toContain('split-screen')
+  })
+
+  it('normalizes a legacy Persian film type on open', () => {
+    renderWizard({ initialFilmType: 'مقایسهای' })
+    // The Comparison button is selected (default variant) and its description shows.
+    expect(screen.getByText('Before/after or competitor contrast with visual side-by-side')).toBeInTheDocument()
+  })
+})
