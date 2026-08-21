@@ -3230,6 +3230,9 @@ export default function DashboardPage() {
   const [musicVolume, setMusicVolume] = useState<number>(1)
   const [isMusicDialogOpen, setIsMusicDialogOpen] = useState(false)
   const [isVoiceoverOpen, setIsVoiceoverOpen] = useState(false)
+  // Bumped on Start Over / workspace reset to clear VoiceoverDialog's transient
+  // state (text, generated audio, translation) without touching durable data.
+  const [voiceoverResetKey, setVoiceoverResetKey] = useState(0)
   // Saved products live in `archiveProductImages`, which is normally filled when
   // the Archive dialog opens. Users often open Voiceover → Product narration
   // directly, so load them on demand when the Voiceover dialog opens.
@@ -9003,6 +9006,11 @@ export default function DashboardPage() {
     setLockedProjectRatio(null)
     persistLockedRatio(null)
 
+    // Clear the Voiceover dialog's transient state (text, generated audio,
+    // translation) so a new project opens with a clean TEXT field. Durable
+    // Draft/Final Film voiceovers and Library files are untouched.
+    setVoiceoverResetKey((k) => k + 1)
+
     // No server-side cleanup: Library files in `merged-videos` are kept.
   }
 
@@ -10571,6 +10579,7 @@ export default function DashboardPage() {
         mergedDurationSec={mergedDurationSec}
         waveformRef={voiceoverWaveformRef}
         onClearVoiceover={handleClearVoiceover}
+        resetKey={voiceoverResetKey}
       />
 
 
