@@ -18,8 +18,10 @@ const BASE_SYSTEM_PROMPT = [
   "If no image is attached, just rewrite the user's text into a single,",
   "vivid, cinematic, concrete prompt with subject, action, setting,",
   "lighting, camera motion, and mood when relevant.",
-  "Preserve the user's original language exactly (Persian stays Persian,",
-  "English stays English, etc.).",
+  "Always write the rewritten prompt in ENGLISH, regardless of the input",
+  "language. Understand the user's meaning if they wrote in another language,",
+  "but output English. Preserve product names, character names, brand names,",
+  "URLs, identifiers, and proper nouns exactly as written — do not translate them.",
   "Output ONLY the rewritten prompt — no preamble,",
   "no quotes, no explanation, no markdown.",
 ].join(" ");
@@ -60,8 +62,8 @@ function narratedSuffix(script: string): string {
     "speaker) reading the following script verbatim. Build the visual scene,",
     "pacing, camera, and mood to match these exact words. Inside the rewritten",
     "prompt, include a clear directive such as 'voice-over narration delivering",
-    "the following script:' followed by the script in its original language and",
-    "wording, kept intact between quotes. Keep the rest of the prompt vivid and",
+    "the following script:' followed by the script kept intact between quotes.",
+    "Keep the rest of the prompt vivid and",
     "cinematic. The total output may be up to 130 words.",
     `\n\nNARRATOR SCRIPT:\n"""${script}"""`,
   ].join(" ");
@@ -176,7 +178,7 @@ Deno.serve(async (req) => {
           "INSPIRATION, not a template to copy literally: borrow their mood, energy,",
           "lighting feel, and visual sensibility, then adapt and reinterpret them to fit",
           "the user's specific subject/content and a believable result — while keeping the",
-          "user's core idea, subject identity, and original language fully intact:",
+          "user's core idea and subject identity fully intact:",
           `\n${styleHints}`,
         ].join(" ")
       : "";
