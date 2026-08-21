@@ -69,6 +69,20 @@ Deno.serve(async (req) => {
       typeof body?.narratorScript === "string" ? body.narratorScript.trim() : "";
     const styleHints: string =
       typeof body?.styleHints === "string" ? body.styleHints.trim().slice(0, 4000) : "";
+    const filmType: string =
+      typeof body?.filmType === "string" ? body.filmType.trim().slice(0, 50) : "";
+    const productName: string =
+      typeof body?.productName === "string" ? body.productName.trim().slice(0, 200) : "";
+    const characterDescription: string =
+      typeof body?.characterDescription === "string" ? body.characterDescription.trim().slice(0, 2000) : "";
+    const duration: number | null =
+      typeof body?.duration === "number" ? body.duration : null;
+    const aspectRatio: string =
+      typeof body?.aspectRatio === "string" ? body.aspectRatio.trim().slice(0, 20) : "";
+    const cameraAngle: string =
+      typeof body?.cameraAngle === "string" ? body.cameraAngle.trim().slice(0, 200) : "";
+    const visualTheme: string =
+      typeof body?.visualTheme === "string" ? body.visualTheme.trim().slice(0, 200) : "";
     const rawUrls: unknown = body?.imageUrls;
     // SSRF protection: only allow https URLs from our own Supabase storage host
     // (user-images, wan-frames, merged-videos buckets) and known public CDNs.
@@ -140,6 +154,42 @@ Deno.serve(async (req) => {
         ].join(" ")
       : "";
 
+    // Build film context from the user's explicit creative choices.
+    const filmContextParts: string[] = [];
+    if (filmType) {
+      const filmTypeDescriptions: Record<string, string> = {
+        "تبلیغاتی": "This is a commercial advertisement film. The tone should be persuasive, energetic, and conversion-focused. Highlight the product's unique selling points with dynamic visuals and compelling storytelling. Each scene should build desire and end with a clear call-to-action.",
+        "معرفی محصول": "This is a product showcase / explainer film. The tone should be clear, informative, and engaging. Focus on demonstrating the product's features, benefits, and use cases with smooth, detailed visual storytelling. Educational yet captivating.",
+        "فرآیند ساخت": "This is a manufacturing / process film. The tone should be documentary-style, showing the journey from raw materials to finished product. Emphasize craftsmanship, precision, scale, and the beauty of industrial processes.",
+        "کاربرد در پروژه": "This is a real-world application / case study film. The tone should be practical and results-oriented. Show the product being used in actual projects, demonstrating its impact, reliability, and performance on the job site.",
+        "مقایسه‌ای": "This is a comparison film. The tone should be analytical and clear. Show before/after or side-by-side visuals that highlight advantages. Use split-screen or sequential contrasts to make differences obvious and memorable.",
+        "برند": "This is a brand identity / storytelling film. The tone should be emotional, aspirational, and values-driven. Focus on brand story, mission, culture, and emotional connection rather than individual product features. Cinematic and memorable.",
+      };
+      const typeDesc = filmTypeDescriptions[filmType] ?? `This is a ${filmType} film.`;
+      filmContextParts.push(`FILM TYPE: ${filmType}. ${typeDesc}`);
+    }
+    if (productName) {
+      filmContextParts.push(`PRODUCT: The video must feature the product named "${productName}" prominently.`);
+    }
+    if (characterDescription) {
+      filmContextParts.push(`CHARACTER: ${characterDescription}`);
+    }
+    if (duration !== null && duration > 0) {
+      filmContextParts.push(`DURATION: ${duration} seconds total.`);
+    }
+    if (aspectRatio) {
+      filmContextParts.push(`ASPECT RATIO: ${aspectRatio}.`);
+    }
+    if (cameraAngle) {
+      filmContextParts.push(`CAMERA ANGLE: ${cameraAngle}`);
+    }
+    if (visualTheme) {
+      filmContextParts.push(`VISUAL THEME: ${visualTheme}`);
+    }
+    const filmContext = filmContextParts.length > 0
+      ? `\n\nFILM CONTEXT (use these details to shape the prompt, but keep the user's original idea and language intact):\n${filmContextParts.join("\n")}`
+      : "";
+
 
     const systemPrompt = `${BASE_SYSTEM_PROMPT}\n\n${
       mode === "silent"
@@ -147,7 +197,7 @@ Deno.serve(async (req) => {
         : mode === "narrated"
           ? narratedSuffix(narratorScript)
           : DEFAULT_SUFFIX
-    }${styleSuffix}`;
+    }${styleSuffix}${filmContext}`;
 
 
 

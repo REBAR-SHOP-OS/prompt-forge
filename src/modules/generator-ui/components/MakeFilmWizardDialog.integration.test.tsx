@@ -660,9 +660,9 @@ describe('MakeFilmWizardDialog prompt optimization', () => {
     const button = screen.getByRole('button', { name: /optimize prompt/i })
     fireEvent.click(button)
 
-    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('enhance-prompt', {
-      body: { prompt: 'a product film' },
-    }))
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('enhance-prompt', expect.objectContaining({
+      body: expect.objectContaining({ prompt: 'a product film' }),
+    })))
     await waitFor(() => expect(textarea).toHaveValue('A polished cinematic film about a product.'))
 
     // Undo restores the original text.
