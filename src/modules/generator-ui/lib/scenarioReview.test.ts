@@ -41,8 +41,8 @@ describe('isRtlLang', () => {
 
 describe('englishFilmType', () => {
   it('maps Persian film types to English', () => {
-    expect(englishFilmType('معرفی محصول')).toBe('Product Introduction')
-    expect(englishFilmType('تبلیغاتی')).toBe('Advertising')
+    expect(englishFilmType('معرفی محصول')).toBe('Product Showcase')
+    expect(englishFilmType('تبلیغاتی')).toBe('Advertisement')
   })
   it('passes through unknown/empty values', () => {
     expect(englishFilmType('Custom')).toBe('Custom')
